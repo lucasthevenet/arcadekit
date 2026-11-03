@@ -33,6 +33,30 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.5(@types/node@26.6.6)(yaml@2.9.1))
 
+  apps/push-puzzle-demo:
+    dependencies:
+      '@effect/platform-browser':
+        specifier: ~4.1.0
+        version: 4.1.2(effect@4.1.2)
+      '@gamekit/content':
+        specifier: workspace:*
+        version: link:../../packages/content
+      '@gamekit/foldkit':
+        specifier: workspace:*
+        version: link:../../packages/foldkit
+      '@gamekit/push-puzzle':
+        specifier: workspace:*
+        version: link:../../packages/push-puzzle
+      '@gamekit/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      effect:
+        specifier: ~4.1.2
+        version: 4.1.2
+      foldkit:
+        specifier: ~0.170.0
+        version: 0.170.0(@effect/platform-browser@4.1.2(effect@4.1.2))(effect@4.1.2)
+
   apps/survivor-demo:
     dependencies:
       '@effect/platform-browser':
