@@ -4,7 +4,7 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **GameDefinition**: the interface a genre implements once (`@gamekit/runtime`): how to create a run's state, advance it by one step, drain its events, read input and draw it. The runtime never looks inside the state.
 
-**Run**: one play-through, from `start` to `stop` or the next `start`. A survivors run is one attempt to survive; a push-puzzle run is one attempt at one level. Restarting starts a new run with the same config.
+**Run**: one play-through, from `start` to `stop` or the next `start`. A survivors run is one attempt to survive; a push-puzzle run is one attempt at one level. Restarting starts a new run with the same config. Each run has its own state object, made by the genre's `create`, so a view can tell runs apart by identity.
 
 **Step**: one fixed-length tick of the simulation (1/60 s by default), driven by the runtime's fixed clock. A slow frame can run several steps to catch up; an input source's `endStep` runs after each one, `endFrame` once per frame. A step must not allocate and must be deterministic: the same state and input give the same result.
 
