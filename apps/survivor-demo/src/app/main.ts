@@ -1,9 +1,10 @@
 import { fetchJsonSource } from "@gamekit/content/browser";
+import { BrowserSaveStorage } from "@gamekit/save/browser";
 import { makeSurvivorsContentLayer } from "@gamekit/survivors";
 import { SurvivorsEngineLayer } from "@gamekit/survivors/browser";
 import { Layer } from "effect";
 
-import { BrowserSaveStorage, SaveLayer } from "./save";
+import { SaveLayer } from "./save";
 
 export { Model } from "./model";
 export { init, update } from "./update";

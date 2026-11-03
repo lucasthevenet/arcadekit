@@ -1,4 +1,4 @@
-import { Effect, Layer, Logger } from "effect";
+import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
@@ -7,60 +7,23 @@ import { SaveSolve } from "./commands";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
-import { BACKUP_KEY, SAVE_KEY, Save, SaveLayer } from "./save";
+import { SAVE_KEY, Save, SaveLayer, mergeRecords } from "./save";
 import { init, update } from "./update";
 
-// The save service runs against an in-memory KeyValueStore, never real localStorage.
-// Each test seeds the store, runs the service, and reads the store and the logs back.
+// The app's save over an in-memory KeyValueStore, never real localStorage.
+// Missing, corrupt and unknown-version saves, the merge with another tab and
+// failed writes are @gamekit/save's tests; these cover this game's record,
+// its merge rule and its key.
 
-const failingWrites = Layer.effect(
-  KeyValueStore.KeyValueStore,
-  Effect.gen(function* () {
-    const store = yield* KeyValueStore.KeyValueStore;
-    return {
-      ...store,
-      set: (key: string) =>
-        Effect.fail(
-          new KeyValueStore.KeyValueStoreError({
-            message: "Storage is full",
-            method: "set",
-            key,
-          })
-        ),
-    };
-  })
-).pipe(Layer.provide(KeyValueStore.layerMemory));
-
-/** Runs `program` with the save over `storage`, after writing `stored` raw under the save key. */
-const run = async <A>(
-  program: Effect.Effect<A, never, Save | KeyValueStore.KeyValueStore>,
-  options: {
-    readonly stored?: string;
-    readonly storage?: Layer.Layer<KeyValueStore.KeyValueStore>;
-  } = {}
-) => {
-  const warnings: unknown[] = [];
-  const logger = Logger.make((log) => {
-    warnings.push(log.message);
-  });
-  const result = await Effect.gen(function* () {
-    if (options.stored !== undefined) {
-      yield* (yield* KeyValueStore.KeyValueStore)
-        .set(SAVE_KEY, options.stored)
-        .pipe(Effect.orDie);
-    }
-    return yield* program;
-  }).pipe(
+const run = <A>(
+  program: Effect.Effect<A, never, Save | KeyValueStore.KeyValueStore>
+) =>
+  program.pipe(
     Effect.provide(
-      SaveLayer.pipe(
-        Layer.provideMerge(options.storage ?? KeyValueStore.layerMemory)
-      )
+      SaveLayer.pipe(Layer.provideMerge(KeyValueStore.layerMemory))
     ),
-    Effect.provide(Logger.layer([logger])),
     Effect.runPromise
   );
-  return { result, warnings };
-};
 
 const readRaw = (key: string) =>
   Effect.gen(function* () {
@@ -78,33 +41,8 @@ const recordSolve = (levelId: string, moves: number) =>
 const stored = (levels: object) => JSON.stringify({ version: 1, levels });
 
 describe("the save", () => {
-  it("reads a missing save as empty", async () => {
-    const { result, warnings } = await run(load);
-    expect(result).toStrictEqual({});
-    expect(warnings).toStrictEqual([]);
-  });
-
-  it("backs up a corrupt save once, logs it and reads it as empty", async () => {
-    const { result, warnings } = await run(
-      Effect.all([load, readRaw(BACKUP_KEY), readRaw(SAVE_KEY), load]),
-      { stored: "{not json" }
-    );
-    expect(result).toStrictEqual([{}, "{not json", undefined, {}]);
-    expect(warnings).toHaveLength(1);
-  });
-
-  it("treats a save of an unknown version like a corrupt one", async () => {
-    const raw = JSON.stringify({ version: 99, levels: {} });
-    const { result, warnings } = await run(
-      Effect.all([load, readRaw(BACKUP_KEY)]),
-      { stored: raw }
-    );
-    expect(result).toStrictEqual([{}, raw]);
-    expect(warnings).toHaveLength(1);
-  });
-
   it("remembers a solve with its moves, under a versioned key", async () => {
-    const { result } = await run(
+    const result = await run(
       Effect.andThen(
         recordSolve("first-push", 6),
         Effect.all([load, readRaw(SAVE_KEY)])
@@ -117,7 +55,7 @@ describe("the save", () => {
   });
 
   it("keeps the best when a later solve takes more moves", async () => {
-    const { result } = await run(
+    const result = await run(
       Effect.andThen(
         Effect.all([
           recordSolve("first-push", 6),
@@ -132,7 +70,7 @@ describe("the save", () => {
   });
 
   it("raises the best when a later solve takes fewer moves", async () => {
-    const { result } = await run(
+    const result = await run(
       Effect.andThen(
         Effect.all([
           recordSolve("first-push", 9),
@@ -146,29 +84,13 @@ describe("the save", () => {
     });
   });
 
-  it("merges with what another tab wrote, keeping ids the content no longer has", async () => {
-    const { result } = await run(recordSolve("first-push", 8), {
-      stored: stored({
-        "first-push": { solved: true, bestMoves: 6 },
-        "mind-the-gap": { solved: true, bestMoves: 13 },
-        "old-level": { solved: true, bestMoves: 3 },
-      }),
-    });
-    expect(result).toStrictEqual({
-      "first-push": { solved: true, bestMoves: 6 },
-      "mind-the-gap": { solved: true, bestMoves: 13 },
-      "old-level": { solved: true, bestMoves: 3 },
-    });
-  });
-
-  it("logs and drops a failed write, and still returns the records", async () => {
-    const { result, warnings } = await run(recordSolve("first-push", 6), {
-      storage: failingWrites,
-    });
-    expect(result).toStrictEqual({
-      "first-push": { solved: true, bestMoves: 6 },
-    });
-    expect(warnings).toHaveLength(1);
+  it("takes a solved record over an unsolved one, whatever its moves", () => {
+    expect(
+      mergeRecords(
+        { "first-push": { solved: true, bestMoves: 12 } },
+        { "first-push": { solved: false, bestMoves: 0 } }
+      )
+    ).toStrictEqual({ "first-push": { solved: true, bestMoves: 12 } });
   });
 });
 
