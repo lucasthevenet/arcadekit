@@ -8,10 +8,17 @@ export interface AxisBinding {
   readonly pointerDrag?: "x" | "y";
 }
 
+export type SwipeDirection = "up" | "down" | "left" | "right";
+
 export interface ButtonBinding {
   readonly keys?: readonly string[];
   /** Indices into `Gamepad.buttons` (0 = A / Cross on standard pads). */
   readonly gamepadButtons?: readonly number[];
+  /**
+   * A short, fast touch or mouse stroke on the surface in this direction counts as one press
+   * (`wasPressed`), never as held. For grid games on a phone: one swipe, one move.
+   */
+  readonly swipe?: SwipeDirection;
 }
 
 /** A game with no axes (a turn-based puzzle) or no buttons (a twin-stick mover) leaves that half out. */
@@ -25,6 +32,10 @@ export interface InputOptions {
   readonly deadzone?: number;
   /** Pixels of drag for a full-strength pointer axis. */
   readonly dragRange?: number;
+  /** Shortest stroke, in pixels, that counts as a swipe. Defaults to 30. */
+  readonly swipeDistance?: number;
+  /** Longest stroke, in milliseconds, that counts as a swipe. Defaults to 300. */
+  readonly swipeMs?: number;
 }
 
 /** Ready-made movement axes: WASD, arrow keys, left stick, and touch drag. */
@@ -59,12 +70,16 @@ export class InputController<
     id: number;
     startX: number;
     startY: number;
+    startTime: number;
     x: number;
     y: number;
   } | null = null;
+  private readonly swipes = new Set<SwipeDirection>();
   private readonly cleanups: (() => void)[] = [];
   private readonly deadzone: number;
   private readonly dragRange: number;
+  private readonly swipeDistance: number;
+  private readonly swipeMs: number;
   private readonly surface: HTMLElement;
   private readonly bindings: InputBindings<Axis, Button>;
 
@@ -77,6 +92,8 @@ export class InputController<
     this.bindings = bindings;
     this.deadzone = options.deadzone ?? 0.2;
     this.dragRange = options.dragRange ?? 60;
+    this.swipeDistance = options.swipeDistance ?? 30;
+    this.swipeMs = options.swipeMs ?? 300;
     this.listen(window, "keydown", (e) => {
       if (!e.repeat) {
         this.pressedKeys.add(e.code);
@@ -94,6 +111,7 @@ export class InputController<
         id: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
+        startTime: e.timeStamp,
         x: e.clientX,
         y: e.clientY,
       };
@@ -104,13 +122,17 @@ export class InputController<
         this.drag.y = e.clientY;
       }
     });
-    const release = (e: PointerEvent) => {
+    this.listen(surface, "pointerup", (e) => {
+      if (this.drag?.id === e.pointerId) {
+        this.endStroke(e.clientX, e.clientY, e.timeStamp);
+        this.drag = null;
+      }
+    });
+    this.listen(surface, "pointercancel", (e) => {
       if (this.drag?.id === e.pointerId) {
         this.drag = null;
       }
-    };
-    this.listen(surface, "pointerup", release);
-    this.listen(surface, "pointercancel", release);
+    });
     surface.style.touchAction = "none";
   }
 
@@ -160,13 +182,16 @@ export class InputController<
     return padButtonDown(binding);
   }
 
-  /** True if the button went down since the last `endFrame()`. */
+  /** True if the button went down since the last `consumePresses()` or `endFrame()`. */
   wasPressed(name: Button): boolean {
     const binding = this.bindings.buttons?.[name];
     if (!binding) {
       return false;
     }
     if (binding.keys?.some((key) => this.pressedKeys.has(key))) {
+      return true;
+    }
+    if (binding.swipe && this.swipes.has(binding.swipe)) {
       return true;
     }
     const down = padButtonDown(binding);
@@ -176,9 +201,25 @@ export class InputController<
     return this.padPressed.has(name);
   }
 
-  /** Call once per frame after the game has read input. Resets `wasPressed`. */
+  /**
+   * Forgets the presses seen so far, so the next `wasPressed` only reports newer ones.
+   * Call it after every simulation step (`InputSource.endStep`) to make one press reach
+   * exactly one step. Held state and axes are untouched.
+   */
+  consumePresses(): void {
+    this.pressedKeys.clear();
+    this.swipes.clear();
+    // A consumed pad press counts as already down, so it isn't detected again while held.
+    for (const name of this.padPressed) {
+      this.padWasDown.add(name);
+    }
+    this.padPressed.clear();
+  }
+
+  /** Call once per frame after the game has read input. Resets `wasPressed` and polls gamepads for the next frame. */
   endFrame(): void {
     this.pressedKeys.clear();
+    this.swipes.clear();
     this.padPressed.clear();
     const { buttons } = this.bindings;
     if (!buttons) {
@@ -200,6 +241,24 @@ export class InputController<
     this.cleanups.length = 0;
     this.heldKeys.clear();
     this.drag = null;
+  }
+
+  /** Records a swipe if the stroke that just ended was long and quick enough. */
+  private endStroke(x: number, y: number, time: number) {
+    const { drag } = this;
+    if (!drag || time - drag.startTime > this.swipeMs) {
+      return;
+    }
+    const dx = x - drag.startX;
+    const dy = y - drag.startY;
+    if (Math.hypot(dx, dy) < this.swipeDistance) {
+      return;
+    }
+    if (Math.abs(dx) > Math.abs(dy)) {
+      this.swipes.add(dx > 0 ? "right" : "left");
+    } else {
+      this.swipes.add(dy > 0 ? "down" : "up");
+    }
   }
 
   private listen<K extends keyof WindowEventMap & keyof HTMLElementEventMap>(

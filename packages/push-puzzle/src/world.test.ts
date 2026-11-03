@@ -69,6 +69,17 @@ describe("moving", () => {
     expect(boardText(puzzle)).toStrictEqual(["####", "#@.#", "# $#", "####"]);
     expect(puzzle.moves).toBe(0);
   });
+
+  it("counts every turn that changed the board, undos included, for the HUD sample", () => {
+    const puzzle = start(["#####", "#@  #", "#  .#", "#  $#", "#####"]);
+    // Two moves, a move into the wall (no turn), two undos, and an undo with nothing left (no turn).
+    taps(puzzle, "RRU");
+    undo(puzzle);
+    undo(puzzle);
+    undo(puzzle);
+    expect(puzzle.moves).toBe(0);
+    expect(puzzle.turns).toBe(4);
+  });
 });
 
 describe("pushing", () => {

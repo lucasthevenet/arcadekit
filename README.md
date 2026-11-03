@@ -21,10 +21,10 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 
 | Package | What it gives you | Depends on |
 | --- | --- | --- |
-| [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool`, `SpatialGrid`, `EventBuffer`, small math | nothing (not even the DOM) |
-| [`@gamekit/input`](packages/input) | `InputController`: keyboard, gamepad and touch-drag mapped to named axes and buttons; `MOVE_AXES` preset | DOM |
-| [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache; `fetchJsonSource`, `memorySource` | Effect |
-| [`@gamekit/render-three`](packages/render-three) | `Stage` (renderer + scene + camera that resize with their container), `InstancedCrowd`, `followTarget`, `orbitAround` | Three.js |
+| [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool` (and `createIdentifiedPool`, whose entities keep stable ids), `SpatialGrid`, `EventBuffer`, small math | nothing (not even the DOM) |
+| [`@gamekit/input`](packages/input) | `InputController`: keyboard, gamepad, touch-drag and swipes mapped to named axes and buttons; `MOVE_AXES` preset | DOM |
+| [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache; `memorySource`. `fetchJsonSource` is in `@gamekit/content/browser` | Effect |
+| [`@gamekit/render-three`](packages/render-three) | `Stage` (renderer + scene + perspective or orthographic camera that resize with their container), `InstancedCrowd`, `followTarget`, `orbitAround`, `fitCamera` | Three.js |
 | [`@gamekit/runtime`](packages/runtime) | `GameDefinition` (the interface a game implements), `GameDriver` (frame loop), `makeGameEngine` (Effect API) | Effect, core |
 | [`@gamekit/foldkit`](packages/foldkit) | `engineMessages` (engine events → Foldkit Subscription), `keyPresses` | Effect, Foldkit, runtime |
 | [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, renderer and engine | all of the above except foldkit |
@@ -32,7 +32,7 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content and Foldkit screens | survivors, foldkit |
 | [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen | push-puzzle, foldkit |
 
-Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. That keeps the simulation runnable in a Web Worker or on a game server.
+Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. `content` and both genre packages check their root entry the same way (`tsconfig.root.json`); only their `./browser` entries may use the DOM. That keeps the simulation runnable in a Web Worker or on a game server.
 
 ## Making a new game
 
@@ -49,8 +49,8 @@ const myGame: GameDefinition<Config, State, Input, Event> = {
   create: (config, seed) => /* new State */,
   step: (state, input, dt) => /* advance; deterministic */,
   drainEvents: state => state.events.drain(),          // EventBuffer from core
-  sample: { everyMs: 100, read: state => /* HUD event */ },
-  createInput: surface => /* wrap an InputController */,
+  sample: { everyMs: 100, read: state => /* HUD event */ },  // or `version: state => state.turns` for a turn-based HUD
+  createInput: surface => /* wrap an InputController; `endStep: () => controller.consumePresses()` if one press must make one move */,
   createView: container => /* a GameView using Stage, InstancedCrowd… */,
 }
 
@@ -82,7 +82,7 @@ With about 750 enemies, three maxed weapons and 480 XP gems on screen, one simul
 
 Levels live in `apps/push-puzzle-demo/public/content/levels.json`, as rows of standard Sokoban text plus `^` for a hole: `#` wall, space floor, `@` player, `+` player on goal, `$` box, `*` box on goal, `.` goal. A box pushed into a hole fills it. They're checked against `packages/push-puzzle/src/schema.ts` at load, and `apps/push-puzzle-demo/src/content.test.ts` plays a known solution for each level.
 
-Arrows, WASD or the d-pad move one cell per press (hold to repeat); Z, Backspace or B undo; R restarts; Escape goes back to level select. There's no touch control yet.
+Arrows, WASD or the d-pad move one cell per press (hold to repeat), and so does a swipe on a touch screen; Z, Backspace or B undo; R restarts; Escape goes back to level select.
 
 ## Not done yet
 

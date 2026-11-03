@@ -1,9 +1,25 @@
 import * as THREE from "three";
 
-export interface StageOptions {
+/** Which camera a Stage builds. */
+export type StageCameraKind = "perspective" | "orthographic";
+
+/** The camera type for a kind: what `Stage.camera` is. */
+export type StageCamera<K extends StageCameraKind> = K extends "orthographic"
+  ? THREE.OrthographicCamera
+  : THREE.PerspectiveCamera;
+
+export interface StageOptions<K extends StageCameraKind = "perspective"> {
+  /**
+   * "perspective" (the default) for a 3D world seen from a point. "orthographic" for a flat
+   * board or a side view, where sizes shouldn't shrink with distance; place it with `fitCamera`.
+   */
+  readonly camera?: K;
+  /** Height of an orthographic camera's view, in world units, until `fitCamera` changes it. Defaults to 10. */
+  readonly viewHeight?: number;
   readonly background?: THREE.ColorRepresentation;
   /** Linear fog from `near` to `far`, in the background color. */
   readonly fog?: { readonly near: number; readonly far: number };
+  /** Perspective camera only. */
   readonly fov?: number;
   readonly near?: number;
   readonly far?: number;
@@ -12,17 +28,19 @@ export interface StageOptions {
 }
 
 /**
- * A renderer, scene and perspective camera that fill a container element and resize with it.
+ * A renderer, scene and camera that fill a container element and resize with it.
+ * The camera is perspective unless `camera: "orthographic"` is passed; on resize, an
+ * orthographic camera keeps its view height and widens or narrows to the new aspect ratio.
  * `dispose()` frees every GPU resource in the scene and removes the canvas.
  */
-export class Stage {
+export class Stage<K extends StageCameraKind = "perspective"> {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera: THREE.PerspectiveCamera;
+  readonly camera: StageCamera<K>;
   private readonly container: HTMLElement;
   private readonly resizeObserver: ResizeObserver;
 
-  constructor(container: HTMLElement, options: StageOptions = {}) {
+  constructor(container: HTMLElement, options: StageOptions<K> = {}) {
     this.container = container;
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -37,12 +55,26 @@ export class Stage {
     canvas.style.height = "100%";
     container.append(canvas);
 
-    this.camera = new THREE.PerspectiveCamera(
-      options.fov ?? 50,
-      1,
-      options.near ?? 0.1,
-      options.far ?? 400
-    );
+    const near = options.near ?? 0.1;
+    const far = options.far ?? 400;
+    if (options.camera === "orthographic") {
+      const half = (options.viewHeight ?? 10) / 2;
+      this.camera = new THREE.OrthographicCamera(
+        -half,
+        half,
+        half,
+        -half,
+        near,
+        far
+      ) as StageCamera<K>;
+    } else {
+      this.camera = new THREE.PerspectiveCamera(
+        options.fov ?? 50,
+        1,
+        near,
+        far
+      ) as StageCamera<K>;
+    }
     if (options.background !== undefined) {
       this.scene.background = new THREE.Color(options.background);
       if (options.fog) {
@@ -74,8 +106,19 @@ export class Stage {
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
     this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
+    const aspect = width / height;
+    const camera = this.camera as
+      | THREE.PerspectiveCamera
+      | THREE.OrthographicCamera;
+    if (camera instanceof THREE.OrthographicCamera) {
+      const centerX = (camera.left + camera.right) / 2;
+      const halfWidth = ((camera.top - camera.bottom) / 2) * aspect;
+      camera.left = centerX - halfWidth;
+      camera.right = centerX + halfWidth;
+    } else {
+      camera.aspect = aspect;
+    }
+    camera.updateProjectionMatrix();
   }
 }
 

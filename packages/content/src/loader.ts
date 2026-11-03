@@ -9,24 +9,6 @@ export type ContentSource = (
   file: string
 ) => Effect.Effect<unknown, ContentError>;
 
-/** Reads JSON files over HTTP, relative to `baseUrl` (which should end with "/"). */
-export const fetchJsonSource =
-  (baseUrl: string): ContentSource =>
-  (file) =>
-    Effect.tryPromise({
-      try: async () => {
-        const response = await fetch(`${baseUrl}${file}`);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        return (await response.json()) as unknown;
-      },
-      catch: (cause) =>
-        new ContentError({
-          message: `Could not load ${file}: ${String(cause)}`,
-        }),
-    });
-
 /** Serves files from memory. For tests, or content bundled into the code. */
 export const memorySource =
   (files: Readonly<Record<string, unknown>>): ContentSource =>

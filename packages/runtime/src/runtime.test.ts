@@ -93,29 +93,22 @@ interface PressState {
 }
 
 /**
- * A one-button input source. Plain, it works like InputController: a press stays visible
- * until `endFrame`. With `reportOnce`, it reports each press to one `read` only, which is how
- * push-puzzle's input source keeps one press to one turn.
+ * A one-button input source that works like InputController: a press stays visible until
+ * it is reset. It resets in `endStep` (as push-puzzle does, via `consumePresses`) or only in
+ * `endFrame` (as a source that reads held state only can).
  */
-const fakeButton = ({ reportOnce }: { readonly reportOnce: boolean }) => {
+const fakeButton = ({ resetOn }: { readonly resetOn: "step" | "frame" }) => {
   let pressed = false;
-  let reported = false;
+  const reset = () => {
+    pressed = false;
+  };
   return {
     press: () => {
       pressed = true;
     },
     source: {
-      read: () => {
-        if (reportOnce && reported) {
-          return false;
-        }
-        reported = pressed;
-        return pressed;
-      },
-      endFrame: () => {
-        pressed = false;
-        reported = false;
-      },
+      read: () => pressed,
+      ...(resetOn === "step" ? { endStep: reset } : { endFrame: reset }),
       dispose: () => {},
     },
   };
@@ -158,7 +151,7 @@ const pressGame = (button: ReturnType<typeof fakeButton>) =>
     createView: () => ({ render: () => {}, dispose: () => {} }),
   }) satisfies GameDefinition<null, PressState, boolean, PressState>;
 
-const setUp = (options: { readonly reportOnce: boolean }) => {
+const setUp = (options: { readonly resetOn: "step" | "frame" }) => {
   const frames = manualFrames();
   const button = fakeButton(options);
   const driver = new GameDriver(pressGame(button));
@@ -177,28 +170,53 @@ describe("button presses", () => {
     vi.restoreAllMocks();
   });
 
-  // The runtime resets presses once per frame (InputSource.endFrame), so a press reaches
-  // every step of a catch-up frame. Changing that changes the GameDefinition contract:
-  // see docs/push-puzzle-findings.md, finding 1.
-  it("reaches every step of a frame that runs several", () => {
-    const { frames, button, detach, read } = setUp({ reportOnce: false });
+  it("reaches one step of a frame that runs several, when reset in endStep", () => {
+    const { frames, button, detach, read } = setUp({ resetOn: "step" });
     button.press();
     // 62.5 ms is four steps.
-    frames.runFrameAt(62.5);
-    detach();
-    expect(read()).toStrictEqual({ steps: 4, presses: 4 });
-  });
-
-  it("reaches one step when the input source reports each press once", () => {
-    const { frames, button, detach, read } = setUp({ reportOnce: true });
-    button.press();
     frames.runFrameAt(62.5);
     detach();
     expect(read()).toStrictEqual({ steps: 4, presses: 1 });
   });
 
+  it("reaches every step of a frame, when reset only in endFrame", () => {
+    const { frames, button, detach, read } = setUp({ resetOn: "frame" });
+    button.press();
+    frames.runFrameAt(62.5);
+    detach();
+    expect(read()).toStrictEqual({ steps: 4, presses: 4 });
+  });
+
+  it("calls endStep after every step and endFrame once per frame that stepped", () => {
+    const frames = manualFrames();
+    const calls: string[] = [];
+    const driver = new GameDriver({
+      ...pressGame(fakeButton({ resetOn: "step" })),
+      step: () => calls.push("step"),
+      createInput: () => ({
+        read: () => false,
+        endStep: () => calls.push("endStep"),
+        endFrame: () => calls.push("endFrame"),
+        dispose: () => {},
+      }),
+    });
+    const detach = driver.attach({} as HTMLElement);
+    driver.start(null, 1);
+    // Two steps, then a frame too short for any.
+    frames.runFrameAt(31.25);
+    frames.runFrameAt(35);
+    detach();
+    expect(calls).toStrictEqual([
+      "step",
+      "endStep",
+      "step",
+      "endStep",
+      "endFrame",
+    ]);
+  });
+
   it("waits for the next step when a frame runs none", () => {
-    const { frames, button, detach, read } = setUp({ reportOnce: false });
+    const { frames, button, detach, read } = setUp({ resetOn: "step" });
     button.press();
     // Less than one step: nothing runs, and the press must not be lost.
     frames.runFrameAt(10);
@@ -206,5 +224,60 @@ describe("button presses", () => {
     frames.runFrameAt(40);
     detach();
     expect(read()).toStrictEqual({ steps: 2, presses: 1 });
+  });
+});
+
+describe("sample with a version", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  // A turn-based counter: the step makes a "turn" every third step.
+  interface TurnState {
+    steps: number;
+    turns: number;
+  }
+
+  it("emits on start, then only right after a frame or modify that changed the version", () => {
+    const frames = manualFrames();
+    const driver = new GameDriver<null, TurnState, null, string>({
+      stepSeconds: 1 / 64,
+      create: () => ({ steps: 0, turns: 0 }),
+      step: (state) => {
+        state.steps += 1;
+        if (state.steps % 3 === 0) {
+          state.turns += 1;
+        }
+      },
+      drainEvents: () => [],
+      sample: {
+        version: (state) => state.turns,
+        read: (state) => `turns ${state.turns} at step ${state.steps}`,
+      },
+      createInput: () => ({ read: () => null, dispose: () => {} }),
+      createView: () => ({ render: () => {}, dispose: () => {} }),
+    });
+    const samples: string[] = [];
+    driver.subscribe((sample) => samples.push(sample));
+    const detach = driver.attach({} as HTMLElement);
+    driver.start(null, 1);
+    // One step per frame (1/64 s = 15.625 ms): turns land on steps 3 and 6.
+    for (let frame = 1; frame <= 7; frame++) {
+      frames.runFrameAt(frame * 15.625);
+    }
+    driver.modify((state) => {
+      state.steps = 100;
+    });
+    driver.modify((state) => {
+      state.turns = 10;
+    });
+    detach();
+    expect(samples).toStrictEqual([
+      "turns 0 at step 0",
+      "turns 1 at step 3",
+      "turns 2 at step 6",
+      "turns 10 at step 100",
+    ]);
   });
 });

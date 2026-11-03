@@ -27,3 +27,68 @@ export const orbitAround = (
   );
   camera.lookAt(center.x, 0, center.z);
 };
+
+/** A rectangle on the ground plane (y = 0), in world units. */
+export interface GroundBounds {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+}
+
+export interface FitCameraOptions {
+  /** World units of space left around the bounds on every side. Defaults to 0. */
+  readonly margin?: number;
+  /**
+   * How far the camera sits back (toward +z) from straight overhead, as a fraction of its
+   * height. 0 looks straight down. Defaults to 0.
+   */
+  readonly tilt?: number;
+}
+
+/**
+ * Places a camera above a rectangle on the ground plane, looking at its center, so that all of
+ * it shows at the camera's current aspect ratio. Board, puzzle and arena games. Call it every
+ * frame (it allocates nothing), or at least after each resize.
+ *
+ * A perspective camera keeps its field of view and moves back far enough. An orthographic
+ * camera (`Stage` with `camera: "orthographic"`) changes its frustum to fit instead.
+ * With a tilt, the fit is worked out as if looking straight down, which leaves a little extra room.
+ */
+export const fitCamera = (
+  camera: THREE.PerspectiveCamera | THREE.OrthographicCamera,
+  bounds: GroundBounds,
+  options: FitCameraOptions = {}
+): void => {
+  const margin = options.margin ?? 0;
+  const tilt = options.tilt ?? 0;
+  const centerX = (bounds.minX + bounds.maxX) / 2;
+  const centerZ = (bounds.minZ + bounds.maxZ) / 2;
+  const halfWidth = (bounds.maxX - bounds.minX) / 2 + margin;
+  const halfDepth = (bounds.maxZ - bounds.minZ) / 2 + margin;
+  let height: number;
+  if (isPerspective(camera)) {
+    const halfTan = Math.tan((camera.fov * Math.PI) / 360);
+    height = Math.max(
+      halfDepth / halfTan,
+      halfWidth / (halfTan * camera.aspect)
+    );
+  } else {
+    const aspect = (camera.right - camera.left) / (camera.top - camera.bottom);
+    const halfHeight = Math.max(halfDepth, halfWidth / aspect);
+    camera.top = halfHeight;
+    camera.bottom = -halfHeight;
+    camera.left = -halfHeight * aspect;
+    camera.right = halfHeight * aspect;
+    camera.updateProjectionMatrix();
+    // Any height works for an orthographic camera; this one keeps the bounds well inside near/far.
+    height = 4 * Math.max(halfWidth, halfDepth, 1);
+  }
+  camera.position.set(centerX, height, centerZ + height * tilt);
+  camera.lookAt(centerX, 0, centerZ);
+};
+
+const isPerspective = (
+  camera: THREE.PerspectiveCamera | THREE.OrthographicCamera
+): camera is THREE.PerspectiveCamera =>
+  (camera as THREE.PerspectiveCamera).isPerspectiveCamera === true;

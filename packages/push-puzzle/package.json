@@ -9,7 +9,7 @@
     "./browser": "./src/browser/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p . && tsc -p tsconfig.sim.json"
+    "typecheck": "tsc -p . && tsc -p tsconfig.root.json"
   },
   "dependencies": {
     "@gamekit/content": "workspace:*",
