@@ -12,12 +12,12 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@gamekit/content": "workspace:*",
+    "@gamekit/core": "workspace:*",
+    "@gamekit/input": "workspace:*",
+    "@gamekit/render-three": "workspace:*",
+    "@gamekit/runtime": "workspace:*",
     "effect": "~4.1.2",
-    "three": "^0.187.0",
-    "@gamekit/core": "*",
-    "@gamekit/content": "*",
-    "@gamekit/input": "*",
-    "@gamekit/render-three": "*",
-    "@gamekit/runtime": "*"
+    "three": "^0.187.0"
   }
 }
