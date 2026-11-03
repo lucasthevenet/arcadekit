@@ -69,7 +69,7 @@ Rules of thumb for the simulation (see `packages/survivors/src/world.ts` for a r
 - Use the run's `Rng` for every random choice, so the same seed and inputs give the same run.
 - Report rare, meaningful facts through an `EventBuffer`. Never send per-entity data to the UI.
 
-`docs/push-puzzle-findings.md` lists what building the second genre showed about the kit: which primitives are known to fit one genre, and the issues filed for them. `CONTEXT.md` is the glossary (step vs turn, SpatialGrid vs tile map).
+`docs/push-puzzle-findings.md` lists what building the second genre showed about the kit: which primitives are known to fit one genre, and the issues filed for them. `docs/architecture-review.md` records the #27 survey of the kit and the demo apps, and where each verdict landed. `docs/adr/` holds the kit's decisions the follow-ups build on. `CONTEXT.md` is the glossary (step vs turn, SpatialGrid vs tile map).
 
 ## The survivors demo
 

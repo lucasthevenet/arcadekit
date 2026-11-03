@@ -2,6 +2,8 @@
 
 What building a second genre, push-puzzle, showed about gamekit's shared packages (issue #4).
 
+The later architecture survey (#27) is in [architecture-review.md](architecture-review.md).
+
 A **finding** (see `CONTEXT.md`) is a place where push-puzzle had to change, work around, copy or bypass a shared primitive, or where a shared primitive's name or docs assume one genre. A primitive push-puzzle simply doesn't use is not a finding.
 
 Each finding names the primitive, what push-puzzle did, the layer a fix belongs in, and a verdict:
