@@ -3,13 +3,9 @@ import { makeGameEngine } from "@gamekit/runtime";
 import type { GameDefinition, GameEngine } from "@gamekit/runtime";
 import { Context, Layer } from "effect";
 
-import { createWorld, hudSnapshot, step } from "../world";
-import type {
-  SurvivorsConfig,
-  SurvivorsEvent,
-  SurvivorsInput,
-  World,
-} from "../world";
+import type { SurvivorsEvent } from "../events";
+import { createWorld, hudSample, step } from "../world";
+import type { SurvivorsConfig, SurvivorsInput, World } from "../world";
 import { SurvivorsView } from "./view";
 
 /** The survivors genre as a @gamekit/runtime game. */
@@ -25,7 +21,7 @@ export const survivorsGame: GameDefinition<
   drainEvents: (world) => world.events.drain(),
   sample: {
     everyMs: 100,
-    read: (world) => ({ type: "hud", hud: hudSnapshot(world) }),
+    read: (world) => ({ type: "hud", hud: hudSample(world) }),
   },
   createInput: (surface) => {
     const controller = new InputController(surface, { axes: MOVE_AXES });

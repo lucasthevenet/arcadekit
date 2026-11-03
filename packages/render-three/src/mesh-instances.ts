@@ -4,9 +4,10 @@ const DEFAULT_COLOR = new THREE.Color("#ffffff");
 
 /**
  * Draws up to `capacity` copies of one mesh in a single draw call.
- * Each frame: call `set` (and optionally `setColor`) for indices 0..count-1, then `commit(count)`.
+ * Call `set` (and optionally `setColor`) for the instances that changed, then `commit(count)`
+ * to show the first `count` instances and upload the changes.
  */
-export class InstancedCrowd {
+export class MeshInstances {
   readonly mesh: THREE.InstancedMesh;
   readonly capacity: number;
   private readonly matrix = new THREE.Matrix4();
@@ -22,7 +23,7 @@ export class InstancedCrowd {
     // Allocates the per-instance color buffer.
     this.mesh.setColorAt(0, DEFAULT_COLOR);
     this.mesh.count = 0;
-    // Instances move every frame, so the mesh's bounding sphere is meaningless: never cull.
+    // Instances can be anywhere, so the mesh's bounding sphere means nothing: never cull.
     this.mesh.frustumCulled = false;
   }
 

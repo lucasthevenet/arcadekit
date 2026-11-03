@@ -1,3 +1,6 @@
+// Every helper here works on the ground plane (y = 0, Y up).
+// A side-view genre would need its own.
+
 import type * as THREE from "three";
 
 /** Keeps the camera at a fixed offset from a target on the ground plane, looking at it. Top-down and isometric games. */
@@ -10,7 +13,11 @@ export const followTarget = (
   camera.lookAt(target.x, 0, target.z);
 };
 
-/** Circles the camera around a point. Menu backdrops and showcase views. */
+/**
+ * Circles the camera around a point on the ground plane at a fixed height, looking at it.
+ * `angle` is in radians; 0 puts the camera on the point's +z side. Menu backdrops and
+ * showcase views.
+ */
 export const orbitAround = (
   camera: THREE.Camera,
   center: { readonly x: number; readonly z: number },
@@ -53,7 +60,10 @@ export interface FitCameraOptions {
  *
  * A perspective camera keeps its field of view and moves back far enough. An orthographic
  * camera (`Stage` with `camera: "orthographic"`) changes its frustum to fit instead.
- * With a tilt, the fit is worked out as if looking straight down, which leaves a little extra room.
+ * With a tilt, the fit is still worked out as if looking straight down. That leaves an
+ * orthographic camera a little extra room. It does not hold for a perspective camera: a small
+ * tilt (below the tangent of half its field of view) can push the near edge of the bounds off
+ * the screen, so give it more margin.
  */
 export const fitCamera = (
   camera: THREE.PerspectiveCamera | THREE.OrthographicCamera,

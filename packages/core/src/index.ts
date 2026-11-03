@@ -1,7 +1,7 @@
 export { FixedStepClock } from "./clock";
 export { EventBuffer } from "./events";
 export { SpatialGrid, type SpatialGridOptions } from "./grid";
-export { clamp, clampLength, lerp } from "./math";
+export { clamp } from "./math";
 export {
   type IdentifiedPool,
   type Pool,

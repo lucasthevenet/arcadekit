@@ -2,7 +2,7 @@
   "name": "@gamekit/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Engine-agnostic primitives: fixed-step clock, seeded RNG, struct-of-arrays pools, spatial grid, event buffer",
+  "description": "Renderer- and DOM-free primitives: fixed-step clock, seeded RNG, struct-of-arrays pools, spatial grid, event buffer",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

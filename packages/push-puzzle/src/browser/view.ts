@@ -1,4 +1,4 @@
-import { InstancedCrowd, Stage, fitCamera } from "@gamekit/render-three";
+import { MeshInstances, Stage, fitCamera } from "@gamekit/render-three";
 import type { GameView } from "@gamekit/runtime";
 import * as THREE from "three";
 
@@ -32,12 +32,12 @@ export class PushPuzzleView implements GameView<Puzzle> {
   // Orthographic: a flat board reads best when far cells aren't drawn smaller.
   private readonly stage: Stage<"orthographic">;
   private readonly player: THREE.Mesh;
-  private crowds: {
-    floor: InstancedCrowd;
-    wall: InstancedCrowd;
-    hole: InstancedCrowd;
-    goal: InstancedCrowd;
-    box: InstancedCrowd;
+  private layers: {
+    floor: MeshInstances;
+    wall: MeshInstances;
+    hole: MeshInstances;
+    goal: MeshInstances;
+    box: MeshInstances;
   } | null = null;
   /** The run being drawn. A new run (a restart, another level) resets everything below. */
   private puzzle: Puzzle | null = null;
@@ -71,13 +71,13 @@ export class PushPuzzleView implements GameView<Puzzle> {
       this.drawPuzzle(puzzle, timeSeconds);
     } else {
       this.player.visible = false;
-      this.removeCrowds();
+      this.removeLayers();
     }
     this.stage.render();
   }
 
   dispose(): void {
-    // Stage.dispose frees everything in the scene, crowds included.
+    // Stage.dispose frees everything in the scene, instances included.
     this.stage.dispose();
   }
 
@@ -85,7 +85,7 @@ export class PushPuzzleView implements GameView<Puzzle> {
     if (this.puzzle !== puzzle) {
       this.startDrawing(puzzle);
     }
-    const crowds = this.crowds!;
+    const layers = this.layers!;
     let walls = 0;
     let holes = 0;
     let floors = 0;
@@ -95,36 +95,36 @@ export class PushPuzzleView implements GameView<Puzzle> {
       const z = this.cellZ(cell);
       const tile = puzzle.tiles[cell];
       if (tile === Tile.wall) {
-        crowds.wall.set(walls, x, 0.5, z);
+        layers.wall.set(walls, x, 0.5, z);
         walls += 1;
       } else if (tile === Tile.hole) {
-        crowds.hole.set(holes, x, -0.04, z);
+        layers.hole.set(holes, x, -0.04, z);
         holes += 1;
       } else if (tile === Tile.floor) {
-        crowds.floor.set(floors, x, -0.05, z);
+        layers.floor.set(floors, x, -0.05, z);
         floors += 1;
       }
       if (puzzle.goals[cell] === 1) {
-        crowds.goal.set(goals, x, 0.01, z);
+        layers.goal.set(goals, x, 0.01, z);
         goals += 1;
       }
     }
-    crowds.wall.commit(walls);
-    crowds.hole.commit(holes);
-    crowds.floor.commit(floors);
-    crowds.goal.commit(goals);
+    layers.wall.commit(walls);
+    layers.hole.commit(holes);
+    layers.floor.commit(floors);
+    layers.goal.commit(goals);
 
     const { boxes } = puzzle;
     for (let i = 0; i < boxes.count; i++) {
       const cell = boxes.fields.cell[i]!;
       const slide = this.slideTo(this.boxSlides[boxes.idOf(i)]!, cell, t);
-      crowds.box.set(i, slide.x, 0.4, slide.z);
-      crowds.box.setColor(
+      layers.box.set(i, slide.x, 0.4, slide.z);
+      layers.box.setColor(
         i,
         puzzle.goals[cell] === 1 ? BOX_ON_GOAL_COLOR : BOX_COLOR
       );
     }
-    crowds.box.commit(puzzle.boxes.count);
+    layers.box.commit(puzzle.boxes.count);
 
     const slide = this.slideTo(this.playerSlide, puzzle.player, t);
     this.player.visible = true;
@@ -133,9 +133,9 @@ export class PushPuzzleView implements GameView<Puzzle> {
     fitCamera(this.stage.camera, this.bounds, CAMERA);
   }
 
-  /** Builds crowds sized for this run's tile map, and puts every slide at rest on its cell. */
+  /** Builds the instance layers sized for this run's tile map, and puts every slide at rest on its cell. */
   private startDrawing(puzzle: Puzzle) {
-    this.removeCrowds();
+    this.removeLayers();
     this.puzzle = puzzle;
     // Cells are one unit wide and centered on the origin.
     this.bounds.maxX = puzzle.cols / 2;
@@ -144,29 +144,29 @@ export class PushPuzzleView implements GameView<Puzzle> {
     this.bounds.minZ = -this.bounds.maxZ;
     const cells = puzzle.tiles.length;
     const flat = (color: string, size: number, height: number) =>
-      new InstancedCrowd(
+      new MeshInstances(
         new THREE.BoxGeometry(size, height, size),
         new THREE.MeshStandardMaterial({ color }),
         cells
       );
-    const goal = new InstancedCrowd(
+    const goal = new MeshInstances(
       new THREE.RingGeometry(0.18, 0.3, 24).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: "#7ddc6a" }),
       cells
     );
-    this.crowds = {
+    this.layers = {
       floor: flat("#3b3748", 0.96, 0.1),
       wall: flat("#7a6f8f", 1, 1),
       hole: flat("#08070b", 0.9, 0.1),
       goal,
-      box: new InstancedCrowd(
+      box: new MeshInstances(
         new THREE.BoxGeometry(0.8, 0.8, 0.8),
         new THREE.MeshStandardMaterial(),
         Math.max(1, puzzle.boxes.capacity)
       ),
     };
-    for (const crowd of Object.values(this.crowds)) {
-      this.stage.scene.add(crowd.mesh);
+    for (const layer of Object.values(this.layers)) {
+      this.stage.scene.add(layer.mesh);
     }
 
     this.playerSlide = this.restingSlide(puzzle.player);
@@ -178,14 +178,14 @@ export class PushPuzzleView implements GameView<Puzzle> {
     }
   }
 
-  private removeCrowds() {
-    if (!this.crowds) {
+  private removeLayers() {
+    if (!this.layers) {
       return;
     }
-    for (const crowd of Object.values(this.crowds)) {
-      crowd.dispose();
+    for (const layer of Object.values(this.layers)) {
+      layer.dispose();
     }
-    this.crowds = null;
+    this.layers = null;
     this.puzzle = null;
   }
 

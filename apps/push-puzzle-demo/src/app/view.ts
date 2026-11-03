@@ -1,9 +1,10 @@
+import { gameViewport } from "@gamekit/foldkit";
+import type { HudSample } from "@gamekit/push-puzzle";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "./message";
 import { Phase } from "./model";
-import type { Hud, Model } from "./model";
-import { GameViewport, VIEWPORT_ID } from "./subscriptions";
+import type { Model } from "./model";
 
 type H = HtmlBuilder<Message>;
 
@@ -12,16 +13,11 @@ export const view = (model: Model, h: H): Document => ({
   body: h.div(
     [h.Class("app")],
     [
-      // The engine draws into this element. It's always rendered, so the canvas is never recreated.
-      h.div(
-        [
-          h.Key("viewport"),
-          h.Id(VIEWPORT_ID),
-          h.Class("viewport"),
-          h.OnMount(GameViewport()),
-        ],
-        []
-      ),
+      // The engine draws here. Rendered on every screen, so the canvas is never recreated.
+      gameViewport(h, {
+        mounted: Message.MountedViewport(),
+        unmounted: Message.UnmountedViewport(),
+      }),
       h.div([h.Key("overlay"), h.Class("overlay")], [overlay(model, h)]),
     ]
   ),
@@ -77,7 +73,7 @@ const levelSelect = (model: Model, h: H): Html =>
     ),
   ]);
 
-const hud = (name: string, data: Hud, h: H): Html =>
+const hud = (name: string, data: HudSample, h: H): Html =>
   h.div(
     [h.Class("hud")],
     [

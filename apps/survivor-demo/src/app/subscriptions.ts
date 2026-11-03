@@ -1,19 +1,11 @@
-import { engineMessages, keyPresses } from "@gamekit/foldkit";
+import { engineEntry, keyPresses } from "@gamekit/foldkit";
 import type { SurvivorsEvent } from "@gamekit/survivors";
 import { SurvivorsEngine } from "@gamekit/survivors/browser";
-import { Effect, Schema, Stream } from "effect";
-import { Mount, Subscription } from "foldkit";
+import { Schema, Stream } from "effect";
+import { Subscription } from "foldkit";
 
 import { Message } from "./message";
 import type { Model } from "./model";
-
-export const VIEWPORT_ID = "game-viewport";
-
-/** Reports that the game's DOM element now exists. The engine subscription below waits for this. */
-export const GameViewport = Mount.define("GameViewport", {
-  messages: [Message.MountedViewport],
-  execute: () => Effect.succeed(Message.MountedViewport()),
-});
 
 const toMessage = (event: SurvivorsEvent): Message => {
   switch (event.type) {
@@ -37,22 +29,11 @@ export const subscriptions = Subscription.make<
   SurvivorsEngine
 >()((entry) => ({
   /** While the viewport exists, the engine renders into it and its events become Messages. */
-  engine: entry(
-    { isViewportMounted: Schema.Boolean },
-    {
-      modelToDependencies: (model) => ({
-        isViewportMounted: model.isViewportMounted,
-      }),
-      dependenciesToStream: ({ isViewportMounted }) =>
-        isViewportMounted
-          ? engineMessages({
-              engine: Effect.service(SurvivorsEngine),
-              elementId: VIEWPORT_ID,
-              toMessage,
-            })
-          : Stream.empty,
-    }
-  ),
+  engine: engineEntry({
+    engine: SurvivorsEngine,
+    isViewportMounted: (model) => model.isViewportMounted,
+    toMessage,
+  }),
 
   /** Escape (or P) toggles pause, but only during a run. */
   pauseKey: entry(

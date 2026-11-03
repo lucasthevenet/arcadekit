@@ -11,13 +11,17 @@ export interface GameDefinition<Config, State, Input, Event> {
   /** Simulation step length in seconds. Defaults to 1/60. */
   readonly stepSeconds?: number;
   readonly create: (config: Config, seed: number) => State;
-  /** Advances the state by `dt` seconds. Should be deterministic: same state, input and dt give the same result. */
+  /**
+   * Advances the state by one step of `dt` seconds. Must be deterministic: the same state, input
+   * and `dt` give the same result. Must not allocate. A turn-based genre may ignore `dt`
+   * (push-puzzle does).
+   */
   readonly step: (state: State, input: Input, dt: number) => void;
   /** Returns, and forgets, the events produced since the last call. */
   readonly drainEvents: (state: State) => readonly Event[];
   /**
-   * Optional snapshot of the state for the UI (a HUD, for example), emitted as an event when a
-   * run starts and then while it is active:
+   * Optional sample: a read of the state for the UI (a HUD, for example), emitted as an event
+   * when a run starts and then while it is active:
    *
    * - every `everyMs` of real time, for a state that changes all the time (a real-time game);
    * - and/or right after any frame or `modify` in which `version` changed, for a state that
@@ -29,9 +33,9 @@ export interface GameDefinition<Config, State, Input, Event> {
     readonly version?: (state: State) => number;
     readonly read: (state: State) => Event;
   };
-  /** Creates the input reader for a surface. Called once per attach. */
+  /** Creates the input source (`InputSource`) that reads input from the viewport element. Called once per attach. */
   readonly createInput: (surface: HTMLElement) => InputSource<Input>;
-  /** Creates the renderer for a container. Called once per attach. */
+  /** Creates the view (`GameView`) that draws into the viewport element. Called once per attach. */
   readonly createView: (container: HTMLElement) => GameView<State>;
 }
 
@@ -57,6 +61,16 @@ export interface InputSource<Input> {
   readonly dispose: () => void;
 }
 
+/**
+ * Draws a game. Three rules apply to every view:
+ *
+ * - `render` reads the state and never changes it.
+ * - Each run has its own state object: `start` calls `create` for every run. `render` gets that
+ *   same object every frame until `stop` or the next `start`, so a view can tell runs apart by
+ *   identity. Push-puzzle's view resets when the object changes, and survivors' view keys its
+ *   color cache on it.
+ * - `alpha` is there for a genre that wants to interpolate between steps. A view may ignore it.
+ */
 export interface GameView<State> {
   /**
    * Draws one frame. `state` is null when no run is active (menus).

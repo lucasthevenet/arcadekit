@@ -1,7 +1,8 @@
+import { HudSample, RunSummary, UpgradeChoice } from "@gamekit/survivors";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
-import { HeroSummary, Hud, RunSummary, UpgradeChoice } from "./model";
+import { HeroSummary } from "./model";
 
 // Every fact the UI can react to. Named for what happened, not what to do.
 export const Message = defineMessageUnion({
@@ -9,6 +10,7 @@ export const Message = defineMessageUnion({
   LoadedContent: { heroes: Schema.Array(HeroSummary) },
   FailedToLoadContent: { error: Schema.String },
   MountedViewport: {},
+  UnmountedViewport: {},
 
   // Menu
   SelectedHero: { heroId: Schema.String },
@@ -17,7 +19,7 @@ export const Message = defineMessageUnion({
   FailedToStartRun: { error: Schema.String },
 
   // From the engine
-  GotHud: { hud: Hud },
+  GotHud: { hud: HudSample },
   GotLevelUp: { choices: Schema.Array(UpgradeChoice) },
   GotRunEnded: { summary: RunSummary },
 

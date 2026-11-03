@@ -45,6 +45,9 @@ export const update = (model: Model, message: Message): Return =>
       model: { ...model, phase: Phase.LoadFailed({ error }) },
     }),
     MountedViewport: () => ({ model: { ...model, isViewportMounted: true } }),
+    UnmountedViewport: () => ({
+      model: { ...model, isViewportMounted: false },
+    }),
 
     ClickedLevel: ({ levelId }) =>
       model.phase._tag === "LevelSelect"

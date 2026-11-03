@@ -1,5 +1,5 @@
 import {
-  InstancedCrowd,
+  MeshInstances,
   Stage,
   followTarget,
   orbitAround,
@@ -22,13 +22,13 @@ export class SurvivorsView implements GameView<World> {
     THREE.CapsuleGeometry,
     THREE.MeshStandardMaterial
   >;
-  private readonly projectiles: InstancedCrowd;
-  private readonly gems: InstancedCrowd;
+  private readonly projectiles: MeshInstances;
+  private readonly gems: MeshInstances;
   private readonly auras: THREE.Mesh<
     THREE.RingGeometry,
     THREE.MeshBasicMaterial
   >[] = [];
-  private enemies: InstancedCrowd | null = null;
+  private enemies: MeshInstances | null = null;
   private ground: THREE.Group | null = null;
   /** Colors cached per World so they're parsed once, not every frame. */
   private palette: {
@@ -65,12 +65,12 @@ export class SurvivorsView implements GameView<World> {
     this.player.visible = false;
     scene.add(this.player);
 
-    this.projectiles = new InstancedCrowd(
+    this.projectiles = new MeshInstances(
       new THREE.SphereGeometry(0.18, 8, 6),
       new THREE.MeshBasicMaterial(),
       512
     );
-    this.gems = new InstancedCrowd(
+    this.gems = new MeshInstances(
       new THREE.OctahedronGeometry(0.22),
       new THREE.MeshStandardMaterial({ color: "#5ef2ff", emissive: "#1a8fa0" }),
       1024
@@ -103,7 +103,7 @@ export class SurvivorsView implements GameView<World> {
   }
 
   dispose(): void {
-    // Stage.dispose frees everything in the scene, crowds included.
+    // Stage.dispose frees everything in the scene, instances included.
     this.stage.dispose();
   }
 
@@ -135,7 +135,7 @@ export class SurvivorsView implements GameView<World> {
       p.hurtTimer > 0 ? "#ff4d4d" : world.hero.color
     );
 
-    const enemies = this.enemyCrowd(world.enemies.capacity);
+    const enemies = this.enemyInstances(world.enemies.capacity);
     const e = world.enemies.fields;
     for (let i = 0; i < world.enemies.count; i++) {
       const def = world.enemyDefs[e.type[i]!]!;
@@ -207,10 +207,10 @@ export class SurvivorsView implements GameView<World> {
     return this.palette;
   }
 
-  private enemyCrowd(capacity: number): InstancedCrowd {
+  private enemyInstances(capacity: number): MeshInstances {
     if (this.enemies?.capacity !== capacity) {
       this.enemies?.dispose();
-      this.enemies = new InstancedCrowd(
+      this.enemies = new MeshInstances(
         new THREE.SphereGeometry(1, 14, 10),
         new THREE.MeshStandardMaterial(),
         capacity

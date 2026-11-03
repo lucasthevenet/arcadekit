@@ -3,10 +3,8 @@ import { readFileSync } from "node:fs";
 import { ContentError, loadContent } from "@gamekit/content";
 import type { ContentSource } from "@gamekit/content";
 import {
-  CONTENT_FILES,
-  PuzzleContent,
   createPuzzle,
-  findLevelProblems,
+  pushPuzzleContentDefinition,
   step,
 } from "@gamekit/push-puzzle";
 import type { Direction, PushPuzzleEvent } from "@gamekit/push-puzzle";
@@ -25,12 +23,7 @@ const fileSource: ContentSource = (file) =>
   });
 
 const content = await Effect.runPromise(
-  loadContent({
-    schema: PuzzleContent,
-    files: CONTENT_FILES,
-    source: fileSource,
-    validate: findLevelProblems,
-  })
+  loadContent({ ...pushPuzzleContentDefinition, source: fileSource })
 );
 
 const SOLUTIONS: Record<string, string> = {

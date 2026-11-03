@@ -8,7 +8,8 @@ const MAX_FRAME_SECONDS = 0.25;
 /**
  * Runs a GameDefinition in the browser: a requestAnimationFrame loop that steps the
  * simulation at a fixed rate, renders, and forwards events to listeners.
- * Plain TypeScript; `makeGameEngine` wraps it in an Effect API.
+ * It's the plain-TypeScript frame loop for callers that don't use Effect. The runtime's
+ * tests drive it frame by frame. `makeGameEngine` wraps it in an Effect API.
  */
 export class GameDriver<Config, State, Input, Event> {
   private state: State | null = null;

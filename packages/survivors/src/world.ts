@@ -7,6 +7,7 @@ import {
 } from "@gamekit/core";
 import type { Pool, Rng } from "@gamekit/core";
 
+import type { HudSample, SurvivorsEvent, UpgradeChoice } from "./events";
 import type { EnemyDef, GameContent, HeroDef, WeaponDef } from "./schema";
 
 // The survivors simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
@@ -40,7 +41,7 @@ export interface WeaponSlot {
   level: number;
   /** Seconds until the next attack. */
   timer: number;
-  /** Seconds since the last attack; the renderer uses it for attack flashes. */
+  /** Seconds since the last attack; the view uses it for attack flashes. */
   sinceFired: number;
 }
 
@@ -55,41 +56,6 @@ export interface Stats {
 }
 
 export type RunStatus = "running" | "won" | "dead";
-
-export interface UpgradeChoice {
-  readonly kind: "weapon" | "passive" | "heal";
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  /** Level the item reaches if picked. */
-  readonly level: number;
-}
-
-export interface HudSnapshot {
-  readonly hp: number;
-  readonly maxHp: number;
-  readonly level: number;
-  readonly xp: number;
-  readonly xpNext: number;
-  readonly time: number;
-  readonly runLength: number;
-  readonly kills: number;
-  readonly enemies: number;
-}
-
-export interface RunSummary {
-  readonly won: boolean;
-  readonly heroName: string;
-  readonly time: number;
-  readonly kills: number;
-  readonly level: number;
-}
-
-/** What a survivors run reports to the outside. */
-export type SurvivorsEvent =
-  | { readonly type: "hud"; readonly hud: HudSnapshot }
-  | { readonly type: "levelUp"; readonly choices: readonly UpgradeChoice[] }
-  | { readonly type: "runEnded"; readonly summary: RunSummary };
 
 const ENEMY_LAYOUT = {
   x: Float32Array,
@@ -107,7 +73,7 @@ const PROJECTILE_LAYOUT = {
   life: Float32Array,
   pierce: Uint8Array,
   rehit: Float32Array,
-  /** Index into `weapons`, so the renderer can color projectiles. */
+  /** Index into `weapons`, so the view can color projectiles. */
   weapon: Uint8Array,
 };
 const GEM_LAYOUT = {
@@ -243,7 +209,7 @@ export const recomputeStats = (world: World): void => {
   world.player.hp += Math.max(0, world.player.maxHp - previousMaxHp);
 };
 
-export const hudSnapshot = (world: World): HudSnapshot => ({
+export const hudSample = (world: World): HudSample => ({
   hp: world.player.hp,
   maxHp: world.player.maxHp,
   level: world.player.level,
@@ -256,7 +222,7 @@ export const hudSnapshot = (world: World): HudSnapshot => ({
 });
 
 // ---------------------------------------------------------------------------
-// Weapon numbers (shared with the renderer so visuals match the rules)
+// Weapon numbers (shared with the view so visuals match the rules)
 
 export const weaponDamage = (world: World, slot: WeaponSlot): number =>
   (slot.def.damage + slot.def.damagePerLevel * (slot.level - 1)) *
@@ -313,7 +279,7 @@ export const step = (world: World, input: SurvivorsInput, dt: number): void => {
 
 const endRun = (world: World, status: "won" | "dead") => {
   world.status = status;
-  world.events.push({ type: "hud", hud: hudSnapshot(world) });
+  world.events.push({ type: "hud", hud: hudSample(world) });
   world.events.push({
     type: "runEnded",
     summary: {

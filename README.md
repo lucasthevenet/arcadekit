@@ -21,16 +21,16 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 
 | Package | What it gives you | Depends on |
 | --- | --- | --- |
-| [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool` (and `createIdentifiedPool`, whose entities keep stable ids), `SpatialGrid`, `EventBuffer`, small math | nothing (not even the DOM) |
+| [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool` (and `createIdentifiedPool`, whose entities keep stable ids), `SpatialGrid`, `EventBuffer`, `clamp` | nothing (not even the DOM) |
 | [`@gamekit/input`](packages/input) | `InputController`: keyboard, gamepad, touch-drag and swipes mapped to named axes and buttons; `MOVE_AXES` preset | DOM |
 | [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache; `memorySource`. `fetchJsonSource` is in `@gamekit/content/browser` | Effect |
-| [`@gamekit/render-three`](packages/render-three) | `Stage` (renderer + scene + perspective or orthographic camera that resize with their container), `InstancedCrowd`, `followTarget`, `orbitAround`, `fitCamera` | Three.js |
+| [`@gamekit/render-three`](packages/render-three) | `Stage` (renderer + scene + perspective or orthographic camera that resize with their container), `MeshInstances`, `followTarget`, `orbitAround`, `fitCamera` | Three.js |
 | [`@gamekit/runtime`](packages/runtime) | `GameDefinition` (the interface a game implements), `GameDriver` (frame loop), `makeGameEngine` (Effect API) | Effect, core |
-| [`@gamekit/foldkit`](packages/foldkit) | `engineMessages` (engine events → Foldkit Subscription), `keyPresses` | Effect, Foldkit, runtime |
-| [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, renderer and engine | all of the above except foldkit |
-| [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, renderer and engine | all of the above except foldkit |
-| [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content and Foldkit screens | survivors, foldkit |
-| [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen | push-puzzle, foldkit |
+| [`@gamekit/foldkit`](packages/foldkit) | `gameViewport` (the element an engine draws into), `engineEntry` (the Subscription that runs the engine there and turns its events into Messages), `keyPresses` | Effect, Foldkit, runtime |
+| [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, view and engine | all of the above except foldkit |
+| [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, view and engine | all of the above except foldkit |
+| [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content and Foldkit screens | survivors, content, foldkit |
+| [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen | push-puzzle, content, foldkit |
 
 Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. `content` and both genre packages check their root entry the same way (`tsconfig.root.json`); only their `./browser` entries may use the DOM. That keeps the simulation runnable in a Web Worker or on a game server.
 
@@ -38,7 +38,7 @@ Each package's `tsconfig.json` sets which environment it may use. `core` compile
 
 ### In an existing genre
 
-Copy `apps/survivor-demo`, then change the JSON in `public/content/` and the screens in `src/app/`.
+Copy the demo app closest to your game (`apps/survivor-demo` or `apps/push-puzzle-demo`), then change the JSON in `public/content/` and the screens in `src/app/`.
 
 ### In a new genre
 
@@ -50,19 +50,18 @@ const myGame: GameDefinition<Config, State, Input, Event> = {
   step: (state, input, dt) => /* advance; deterministic */,
   drainEvents: state => state.events.drain(),          // EventBuffer from core
   sample: { everyMs: 100, read: state => /* HUD event */ },  // or `version: state => state.turns` for a turn-based HUD
-  createInput: surface => /* wrap an InputController; `endStep: () => controller.consumePresses()` if one press must make one move */,
-  createView: container => /* a GameView using Stage, InstancedCrowd… */,
+  createInput: surface => /* wrap an InputController; `endStep: () => controller.consumePresses()` if one press must make one turn */,
+  createView: container => /* a GameView using Stage, MeshInstances… */,
 }
 
 class MyEngine extends Context.Service<MyEngine, GameEngine<Config, State, Event>>()('my-game/Engine') {}
 const MyEngineLayer = Layer.sync(MyEngine, () => makeGameEngine(myGame))
 ```
 
-Then connect it to a Foldkit app the way `apps/survivor-demo/src/app/subscriptions.ts` does:
+Then connect it to a Foldkit app with `@gamekit/foldkit`, as `apps/survivor-demo/src/app/` does:
 
-1. The view always renders the game's container element, with a **Mount** that reports when it exists.
-2. A **Subscription** gated on that returns `engineMessages(...)`, which attaches the engine and turns its events into Messages.
-3. **Commands** call the engine: `start`, `modify` (change state from the UI, e.g. picking an upgrade), `setPaused`, `stop`.
+1. The view renders `gameViewport(h, { mounted, unmounted })`; the Model keeps those Messages as a Boolean, and the Subscription `engineEntry` runs the engine while it is true, turning its events into Messages. The Messages and the Model use the genre's event payload Schemas (`events.ts` in both genres), so a field the genre adds reaches the app.
+2. **Commands** call the engine: `start`, `modify` (change state from the UI, e.g. picking an upgrade), `setPaused`, `stop`.
 
 Rules of thumb for the simulation (see `packages/survivors/src/world.ts` for a real-time genre and `packages/push-puzzle/src/world.ts` for a turn-based one):
 
@@ -70,7 +69,7 @@ Rules of thumb for the simulation (see `packages/survivors/src/world.ts` for a r
 - Use the run's `Rng` for every random choice, so the same seed and inputs give the same run.
 - Report rare, meaningful facts through an `EventBuffer`. Never send per-entity data to the UI.
 
-`docs/push-puzzle-findings.md` lists what building the second genre showed about the kit: which primitives are known to fit one genre, and the issues filed for them. `CONTEXT.md` is the glossary (step vs turn, SpatialGrid vs tile map).
+`docs/push-puzzle-findings.md` lists what building the second genre showed about the kit: which primitives are known to fit one genre, and the issues filed for them. `docs/architecture-review.md` records the #27 survey of the kit and the demo apps, and where each verdict landed. `docs/adr/` holds the kit's decisions the follow-ups build on. `CONTEXT.md` is the glossary (step vs turn, SpatialGrid vs tile map).
 
 ## The survivors demo
 

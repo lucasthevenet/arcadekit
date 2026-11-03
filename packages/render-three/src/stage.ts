@@ -11,7 +11,7 @@ export type StageCamera<K extends StageCameraKind> = K extends "orthographic"
 export interface StageOptions<K extends StageCameraKind = "perspective"> {
   /**
    * "perspective" (the default) for a 3D world seen from a point. "orthographic" for a flat
-   * board or a side view, where sizes shouldn't shrink with distance; place it with `fitCamera`.
+   * board, where sizes shouldn't shrink with distance; place it with `fitCamera`.
    */
   readonly camera?: K;
   /** Height of an orthographic camera's view, in world units, until `fitCamera` changes it. Defaults to 10. */
@@ -122,7 +122,11 @@ export class Stage<K extends StageCameraKind = "perspective"> {
   }
 }
 
-/** Frees the geometries and materials of `root` and everything under it. */
+/**
+ * Frees the geometries and materials of `root` and everything under it.
+ * `Stage.dispose` calls it on the whole scene. A view that removes an object from the
+ * scene calls it on that object, which `Stage.dispose` no longer reaches.
+ */
 export const disposeObject = (root: THREE.Object3D): void => {
   root.traverse((object) => {
     if (

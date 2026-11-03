@@ -38,7 +38,12 @@ export interface InputOptions {
   readonly swipeMs?: number;
 }
 
-/** Ready-made movement axes: WASD, arrow keys, left stick, and touch drag. */
+/**
+ * Ready-made movement axes: WASD, arrow keys, left stick, and touch drag. Both axes follow
+ * screen space: `moveX` is negative to the left and `moveY` is negative upward (W, ArrowUp,
+ * stick up, drag up). A game on the ground plane reads `moveY` as z, with its camera on the
+ * +z side (survivors does).
+ */
 export const MOVE_AXES = {
   moveX: {
     negativeKeys: ["KeyA", "ArrowLeft"],

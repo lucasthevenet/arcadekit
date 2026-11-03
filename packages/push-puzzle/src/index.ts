@@ -1,25 +1,24 @@
-// Push-puzzle genre: content schema, content service and the simulation.
+// Push-puzzle genre: content schema, definition and service, the simulation and its event payloads.
 // No DOM or Three.js here; those are in "@gamekit/push-puzzle/browser".
 
 export {
-  CONTENT_FILES,
   PushPuzzleContent,
   makePushPuzzleContentLayer,
+  pushPuzzleContentDefinition,
 } from "./content";
+export { HudSample, type PushPuzzleEvent } from "./events";
 export { LEVEL_CHARACTERS, Tile, parseLevel } from "./level";
 export type { ParsedLevel } from "./level";
 export { LevelDef, PuzzleContent, findLevelProblems } from "./schema";
 export {
   type Direction,
-  type HudSnapshot,
   type Puzzle,
   type PushPuzzleConfig,
-  type PushPuzzleEvent,
   type PushPuzzleInput,
   boardText,
   boxIdAt,
   boxesLeft,
   createPuzzle,
-  hudSnapshot,
+  hudSample,
   step,
 } from "./world";

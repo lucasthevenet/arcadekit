@@ -5,7 +5,7 @@ export {
   followTarget,
   orbitAround,
 } from "./camera";
-export { InstancedCrowd } from "./crowd";
+export { MeshInstances } from "./mesh-instances";
 export {
   Stage,
   type StageCamera,

@@ -2,7 +2,7 @@
   "name": "@gamekit/render-three",
   "version": "0.0.0",
   "private": true,
-  "description": "Three.js helpers: stage, instanced crowds, camera rigs",
+  "description": "Three.js helpers: stage, mesh instances, camera rigs",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

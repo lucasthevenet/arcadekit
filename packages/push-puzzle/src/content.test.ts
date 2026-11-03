@@ -2,15 +2,13 @@ import { loadContent, memorySource } from "@gamekit/content";
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { CONTENT_FILES, PuzzleContent, findLevelProblems } from "./index";
+import { pushPuzzleContentDefinition } from "./index";
 
 const load = (levels: unknown) =>
   Effect.runPromiseExit(
     loadContent({
-      schema: PuzzleContent,
-      files: CONTENT_FILES,
+      ...pushPuzzleContentDefinition,
       source: memorySource({ "levels.json": levels }),
-      validate: findLevelProblems,
     })
   );
 

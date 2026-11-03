@@ -1,0 +1,326 @@
+import { makeGameEngine } from "@gamekit/runtime";
+import type { GameDefinition, GameEngine } from "@gamekit/runtime";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Option,
+  Queue,
+  Schema,
+  Stream,
+} from "effect";
+import { Scene, Subscription } from "foldkit";
+import type { HtmlBuilder } from "foldkit/html";
+import { defineMessageUnion } from "foldkit/message";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { engineEntry, gameViewport } from "./index";
+
+// No DOM here. Scene renders the view as VNodes and resolves its Mount; `document` and
+// requestAnimationFrame are stubbed; the engine is a real `makeGameEngine` around a tiny game
+// whose view logs the element it draws into. The host app wires the viewport the way the demos
+// do.
+
+const Message = defineMessageUnion({
+  MountedViewport: {},
+  UnmountedViewport: {},
+  HidViewport: {},
+  GotEvent: { name: Schema.String },
+});
+type Message = typeof Message.Type;
+
+interface Model {
+  readonly isViewportMounted: boolean;
+  readonly showsViewport: boolean;
+}
+
+const update = (model: Model, message: Message): { model: Model } =>
+  Message.match(message, {
+    MountedViewport: () => ({ model: { ...model, isViewportMounted: true } }),
+    UnmountedViewport: () => ({
+      model: { ...model, isViewportMounted: false },
+    }),
+    HidViewport: () => ({ model: { ...model, showsViewport: false } }),
+    GotEvent: () => ({ model }),
+  });
+
+const view = (model: Model, h: HtmlBuilder<Message>) =>
+  h.div(
+    [],
+    [
+      model.showsViewport
+        ? gameViewport(h, {
+            mounted: Message.MountedViewport(),
+            unmounted: Message.UnmountedViewport(),
+          })
+        : h.empty,
+      h.p([], [model.isViewportMounted ? "engine on" : "engine off"]),
+    ]
+  );
+
+const unmounted: Model = { isViewportMounted: false, showsViewport: true };
+const mounted: Model = { isViewportMounted: true, showsViewport: true };
+
+interface GameEvent {
+  readonly type: "started" | "noise" | "sample";
+}
+interface GameState {
+  readonly events: GameEvent[];
+}
+
+class TestEngine extends Context.Service<
+  TestEngine,
+  GameEngine<null, GameState, GameEvent>
+>()("test/Engine") {}
+
+/** A game whose run reports "started", "noise" and a sample, and whose view logs its element. */
+const testEngine = () => {
+  const log: string[] = [];
+  const game: GameDefinition<null, GameState, null, GameEvent> = {
+    create: () => ({ events: [{ type: "started" }, { type: "noise" }] }),
+    step: () => {},
+    drainEvents: (state) => state.events.splice(0),
+    sample: { everyMs: 1000, read: () => ({ type: "sample" }) },
+    createInput: () => ({ read: () => null, dispose: () => {} }),
+    createView: (container) => {
+      log.push(`attach ${container.title}`);
+      return {
+        render: () => {},
+        dispose: () => {
+          log.push("detach");
+        },
+      };
+    },
+  };
+  return { engine: makeGameEngine(game), log };
+};
+
+const entry = engineEntry({
+  engine: TestEngine,
+  isViewportMounted: (model: Model) => model.isViewportMounted,
+  toMessage: (event: GameEvent) =>
+    event.type === "noise" ? undefined : Message.GotEvent({ name: event.type }),
+});
+
+/** The Stream Foldkit's runtime runs for `model`: the entry's dependencies, then its Stream. */
+const streamFor = (model: Model) =>
+  entry.dependenciesToStream(entry.modelToDependencies(model));
+
+/** The id `gameViewport` renders, read from the rendered tree rather than assumed. */
+const renderedViewportId = (): string => {
+  let id = "";
+  Scene.scene(
+    { update, view },
+    Scene.given(unmounted),
+    Scene.tap((simulation) => {
+      id = Option.getOrThrow(
+        Option.flatMap(
+          Scene.selector(".viewport")(simulation.html),
+          Scene.attr("id")
+        )
+      );
+    }),
+    Scene.Mount.resolve({ name: "GameViewport" }, Message.MountedViewport())
+  );
+  return id;
+};
+
+const element = (title: string) => ({ title }) as HTMLElement;
+
+const waitUntil = (isDone: () => boolean) =>
+  Effect.gen(function* () {
+    for (let turn = 0; turn < 100 && !isDone(); turn++) {
+      yield* Effect.yieldNow;
+    }
+  });
+
+describe(gameViewport, () => {
+  it("renders an empty .viewport whose Mount reports the app's mounted Message", () => {
+    expect(() =>
+      Scene.scene(
+        { update, view },
+        Scene.given(unmounted),
+        Scene.expect(Scene.selector(".viewport")).toBeEmpty(),
+        Scene.expect(Scene.text("engine off")).toExist(),
+        Scene.Mount.expectExact({ name: "GameViewport" }),
+        Scene.Mount.resolve(
+          { name: "GameViewport" },
+          Message.MountedViewport()
+        ),
+        Scene.expect(Scene.text("engine on")).toExist()
+      )
+    ).not.toThrow();
+  });
+
+  it("ends its Mount when a screen leaves it out", () => {
+    expect(() =>
+      Scene.scene(
+        { update, view },
+        Scene.given(unmounted),
+        Scene.Mount.resolve(
+          { name: "GameViewport" },
+          Message.MountedViewport()
+        ),
+        Scene.Subscription.emit(Message.HidViewport()),
+        Scene.Mount.expectEnded({ name: "GameViewport" }),
+        Scene.expect(Scene.selector(".viewport")).toBeAbsent()
+      )
+    ).not.toThrow();
+  });
+});
+
+describe(engineEntry, () => {
+  let viewportId: string;
+  let elements: Map<string, HTMLElement>;
+  let lookups: string[];
+
+  beforeEach(() => {
+    viewportId = renderedViewportId();
+    elements = new Map([[viewportId, element("first")]]);
+    lookups = [];
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    vi.stubGlobal("document", {
+      getElementById: (lookedUp: string) => {
+        lookups.push(lookedUp);
+        return elements.get(lookedUp) ?? null;
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("does nothing while the viewport isn't mounted", async () => {
+    const { engine, log } = testEngine();
+    const messages = await Effect.runPromise(
+      Stream.runCollect(streamFor(unmounted)).pipe(
+        Effect.provideService(TestEngine, engine)
+      )
+    );
+    expect(messages).toStrictEqual([]);
+    expect(lookups).toStrictEqual([]);
+    expect(log).toStrictEqual([]);
+  });
+
+  it("draws into the element gameViewport rendered and reports a run started right after", async () => {
+    const { engine, log } = testEngine();
+    const messages = await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          Stream.runCollect(Stream.take(streamFor(mounted), 2))
+        );
+        yield* waitUntil(() => log.length > 0);
+        yield* engine.start(null, 1);
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provideService(TestEngine, engine))
+    );
+    expect(log).toStrictEqual(["attach first", "detach"]);
+    // The first event and the first sample arrive; "noise" maps to undefined and is dropped.
+    expect(messages).toStrictEqual([
+      Message.GotEvent({ name: "started" }),
+      Message.GotEvent({ name: "sample" }),
+    ]);
+  });
+
+  it("keeps the engine on one element at a time as the viewport unmounts and remounts", async () => {
+    // Models go through the operators Foldkit's runtime applies to an entry
+    // (foldkit/dist/runtime/subscriptionFibers.js): changesWith, then switchMap. switchMap
+    // starts the next Stream before it stops the previous one, and GameDriver throws on a
+    // second attach, so an overlap fails this test.
+    const { engine, log } = testEngine();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const models = yield* Queue.unbounded<Model>();
+          const messages = yield* Stream.toQueue(
+            Stream.fromQueue(models).pipe(
+              Stream.map(entry.modelToDependencies),
+              Stream.changesWith(
+                Schema.toEquivalence(entry.dependenciesSchema)
+              ),
+              Stream.switchMap(entry.dependenciesToStream)
+            ),
+            { capacity: "unbounded" }
+          );
+          yield* Queue.offerAll(models, [unmounted, mounted]);
+          yield* waitUntil(() => log.length === 1);
+          // Other Model changes while mounted (a HUD sample, a click) leave the engine attached.
+          yield* Queue.offerAll(models, [{ ...mounted }, { ...mounted }]);
+          yield* Effect.sleep("20 millis");
+          expect(log).toStrictEqual(["attach first"]);
+          // Replacing the element in one patch reports its unmount, then the new mount.
+          elements.set(viewportId, element("second"));
+          yield* Queue.offerAll(models, [unmounted, mounted]);
+          yield* waitUntil(() => log.length === 3);
+          yield* engine.start(null, 1);
+          expect(yield* Queue.take(messages)).toStrictEqual(
+            Message.GotEvent({ name: "started" })
+          );
+        }).pipe(Effect.provideService(TestEngine, engine))
+      )
+    );
+    expect(log).toStrictEqual([
+      "attach first",
+      "detach",
+      "attach second",
+      "detach",
+    ]);
+  });
+
+  it("fails loudly when the viewport isn't in the document", async () => {
+    elements.clear();
+    const { engine } = testEngine();
+    const exit = await Effect.runPromiseExit(
+      Stream.runCollect(streamFor(mounted)).pipe(
+        Effect.provideService(TestEngine, engine)
+      )
+    );
+    const cause = Exit.isFailure(exit) ? exit.cause : Cause.empty;
+    expect(Cause.hasDies(cause)).toBe(true);
+    expect(Cause.pretty(cause)).toContain("render gameViewport");
+  });
+});
+
+// Miswired on purpose: each @ts-expect-error must be a real type error, and `pnpm typecheck`
+// checks this file, so a change that loosens the wiring's types fails there.
+const withoutEngineService = Subscription.make<Model, Message>()(() => ({
+  // @ts-expect-error TestEngine is not among these Subscriptions' services.
+  engine: entry,
+}));
+const engineWithOtherEvents = engineEntry({
+  // @ts-expect-error This engine's events are GameEvents, not the strings toMessage takes.
+  engine: TestEngine,
+  isViewportMounted: (model: Model) => model.isViewportMounted,
+  toMessage: (event: string) => Message.GotEvent({ name: event }),
+});
+const eventToNonMessage = Subscription.make<Model, Message, TestEngine>()(
+  () => ({
+    // @ts-expect-error A string is not one of the app's Messages.
+    engine: engineEntry({
+      engine: TestEngine,
+      isViewportMounted: (model) => model.isViewportMounted,
+      toMessage: (event: GameEvent) => event.type,
+    }),
+  })
+);
+const viewportWithNonMessage = (h: HtmlBuilder<Message>) =>
+  gameViewport(h, {
+    // @ts-expect-error A string is not one of the app's Messages.
+    mounted: "mounted",
+    unmounted: Message.UnmountedViewport(),
+  });
+
+describe("miswired apps", () => {
+  it("fail to compile (see the @ts-expect-error lines above)", () => {
+    expect([
+      withoutEngineService,
+      engineWithOtherEvents,
+      eventToNonMessage,
+      viewportWithNonMessage,
+    ]).toHaveLength(4);
+  });
+});

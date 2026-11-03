@@ -2,6 +2,8 @@
 
 What building a second genre, push-puzzle, showed about gamekit's shared packages (issue #4).
 
+The later architecture survey (#27) is in [architecture-review.md](architecture-review.md).
+
 A **finding** (see `CONTEXT.md`) is a place where push-puzzle had to change, work around, copy or bypass a shared primitive, or where a shared primitive's name or docs assume one genre. A primitive push-puzzle simply doesn't use is not a finding.
 
 Each finding names the primitive, what push-puzzle did, the layer a fix belongs in, and a verdict:
@@ -10,7 +12,7 @@ Each finding names the primitive, what push-puzzle did, the layer a fix belongs 
 - **Separate issue**: anything that reshapes `GameDefinition` or `GameDriver`, or whose shape needs a third genre's evidence. All six were filed, then fixed in the kit when the kit's author asked for it (issues #15 to #20); each entry below says which shape was picked and why.
 - **No action**: the kit is fine; the genre was the right place.
 
-Survivors replays identically before and after every kit change: `packages/survivors/src/replay.test.ts` pins a state hash recorded before any kit change.
+Survivors replays identically before and after every kit change: `packages/survivors/src/replay.test.ts` pins a state hash recorded before any kit change. The replay calls the simulation directly, so it guards core and survivors' simulation; the runtime loop and input have their own tests.
 
 ## Summary
 
@@ -24,7 +26,7 @@ Survivors replays identically before and after every kit change: `packages/survi
 | 6 | The DOM-free root entry isn't enforced | content, genre packages | Fixed: [#20](https://github.com/lucasthevenet/gamekit/issues/20) |
 | 7 | `InputBindings` requires both halves | input | Fixed now |
 | 8 | "No allocation in a step" vs `InputSource.read` | runtime (docs) | Fixed now |
-| 9 | `InstancedCrowd` rotates around Y only | render-three (docs) | Fixed now |
+| 9 | `MeshInstances` rotates around Y only | render-three (docs) | Fixed now |
 | 10 | The runtime has only a fixed-clock time model | runtime | No action |
 | 11 | No snapshot or restore of state | runtime | No action |
 | 12 | The view gets no previous positions | runtime | No action |
@@ -98,9 +100,9 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 - **Fix:** `read`'s docs say it runs in the step loop and may return one reused object. Survivors is left as it is: one small object per step hasn't caused a stutter.
 - **Layer:** runtime (docs).
 
-### 9. `InstancedCrowd` rotates around the vertical axis only
+### 9. `MeshInstances` rotates around the vertical axis only
 
-- **Primitive:** `InstancedCrowd.set`.
+- **Primitive:** `MeshInstances.set`. The class was named `InstancedCrowd` until [#27](https://github.com/lucasthevenet/gamekit/issues/27).
 - **What happened:** the goal marker is a flat ring lying on the floor, which needs a rotation around X. `set` only takes a Y rotation. Push-puzzle rotates the ring geometry once (`RingGeometry(...).rotateX(...)`), the usual Three.js answer for a tilt every instance shares.
 - **Fix:** `set`'s docs say so. A per-instance free rotation would be a new shape (quaternions) that no genre needs yet.
 - **Layer:** render-three (docs).
@@ -112,7 +114,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 - **Primitive:** `GameDriver` / `FixedStepClock`, `GameView.render`'s `alpha`.
 - **What happened:** push-puzzle runs 60 steps a second, almost all of which take no turn, and ignores `dt`. A turn is a move or an undo; a step holds at most one. Hold-to-repeat counts steps (a move on the press, then after 12 steps, then every 6), which made replays exact for free. `alpha` (interpolation between steps) is meaningless for a game that jumps a cell per turn; the view tweens in real time instead.
 - **Proposed layer:** runtime.
-- **Verdict:** no action. The fixed clock fit a turn-based game better than expected: the cost is a no-op `step` call per tick, and step-counted timing is what keeps repeat deterministic. The two real frictions are finding 2 (`sample`, now fixed) and finding 12 (the view).
+- **Verdict:** no action. The fixed clock fit a turn-based game better than expected: the cost is a no-op `step` call on almost every step, and step-counted timing is what keeps repeat deterministic. The two real frictions are finding 2 (`sample`, now fixed) and finding 12 (the view).
 
 ### 11. No snapshot or restore of state
 
@@ -138,7 +140,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 ### 14. `MOVE_AXES` naming
 
 - **Primitive:** the `MOVE_AXES` preset (`moveX`, `moveY`; W is negative Y).
-- **What happened:** push-puzzle needs four direction buttons, not analog axes, so it doesn't use the preset; it binds the same keys plus the d-pad as buttons. Survivors reads `moveY` as its `moveZ`, which the preset's docs don't mention.
+- **What happened:** push-puzzle needs four direction buttons, not analog axes, so it doesn't use the preset; it binds the same keys plus the d-pad as buttons. Survivors reads `moveY` as its `moveZ`. The preset's docs didn't say so; #27 documented it.
 - **Proposed layer:** input.
 - **Verdict:** no action. Not using a preset isn't a finding; a direction-buttons preset can wait for a second grid game.
 
