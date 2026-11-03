@@ -12,7 +12,7 @@ export type Records<R> = Readonly<Record<string, R>>;
 
 /** What a game passes in: where its save lives, what one record holds, and how two records merge. */
 export interface SaveDefinition<R, E = R> {
-  /** The game's storage key, such as `gamekit/<game>/save`. A save that can't be read is copied to `backupKey(key)`. */
+  /** The game's storage key, such as `gamekit/<game>/save`. A save that can't be read is copied to `<key>/corrupt`. */
   readonly key: string;
   /** The field of the stored save that holds the records, such as `levels` or `heroes`. */
   readonly field: string;
@@ -35,7 +35,7 @@ export interface SaveStore<R> {
 }
 
 /** Where a save that fails to decode (corrupt, or an unknown version) is copied before it is dropped. */
-export const backupKey = (key: string): string => `${key}/corrupt`;
+const backupKey = (key: string): string => `${key}/corrupt`;
 
 /**
  * Merges two sets of records by id. Ids only one side has are kept; ids on

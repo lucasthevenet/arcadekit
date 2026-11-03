@@ -2,7 +2,7 @@ import { Effect, Layer, Logger, Schema } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { describe, expect, it } from "vitest";
 
-import { backupKey, makeSaveStore, mergeRecords } from "./index";
+import { makeSaveStore, mergeRecords } from "./index";
 import type { Records, SaveDefinition, SaveStore } from "./index";
 
 // The save runs against an in-memory KeyValueStore, never real localStorage.
@@ -15,7 +15,7 @@ const ScoreRecord = Schema.Struct({
 type ScoreRecord = typeof ScoreRecord.Type;
 
 const KEY = "gamekit/test-game/save";
-const BACKUP_KEY = backupKey(KEY);
+const BACKUP_KEY = `${KEY}/corrupt`;
 
 const definition: SaveDefinition<ScoreRecord> = {
   key: KEY,

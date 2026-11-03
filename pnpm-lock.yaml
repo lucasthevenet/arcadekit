@@ -35,9 +35,6 @@ importers:
 
   apps/push-puzzle-demo:
     dependencies:
-      '@effect/platform-browser':
-        specifier: ~4.1.0
-        version: 4.1.2(effect@4.1.2)
       '@gamekit/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -59,9 +56,6 @@ importers:
 
   apps/survivor-demo:
     dependencies:
-      '@effect/platform-browser':
-        specifier: ~4.1.0
-        version: 4.1.2(effect@4.1.2)
       '@gamekit/content':
         specifier: workspace:*
         version: link:../../packages/content

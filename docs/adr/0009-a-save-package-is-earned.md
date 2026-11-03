@@ -43,10 +43,10 @@ Different in each app:
 
 ## Consequences
 
-- The follow-up builds `@gamekit/save` from the identical parts. It takes the key, the record Schema and the per-record merge, and gives back `load` and a write that merges. Neither fails. The record Schema, the merge, `withSolve`/`withRun`, `isNewBest` and all the UI stay in the apps.
+- The follow-up builds `@gamekit/save` from the identical parts. (It was done in #23 itself. See [The shape picked](#the-shape-picked).) It takes the key, the record Schema and the per-record merge, and gives back `load` and a write that merges. Neither fails. The record Schema, the merge, `withSolve`/`withRun`, `isNewBest` and all the UI stay in the apps.
 - The package sits beside `content`: it depends on `effect` and on no other kit package, and no genre package depends on it. The save is UI state, not simulation state.
 - Its root entry holds the store logic over any `KeyValueStore`, with no DOM, checked by a `tsconfig.root.json` as [ADR-0002](0002-genre-root-entries-are-dom-free.md) asks. The localStorage layer and its fallback go in a `./browser` entry, which depends on `@effect/platform-browser`.
-- Neither app has migrated a save yet: both are at version 1. The package should not guess a migration API from no examples. It can take the versioned Schema and a `migrate` function from the app, as each app does today.
+- Neither app has migrated a save yet: both are at version 1. The package should not guess a migration API from no examples. It can take the versioned Schema and a `migrate` function from the app, as each app does today. (Superseded: the package took neither. See [The shape picked](#the-shape-picked).)
 - Tests keep using `KeyValueStore.layerMemory`, never real localStorage. The shared failure cases move to the package's tests, and each app keeps the tests for its own merge and UI.
 - #24's settings get their own key, outside the save. They may reuse the package's store logic, but they don't merge as records do: the last write wins.
 - Revisit if the follow-up finds the generic version needs more code than the two copies it replaces.
@@ -55,9 +55,9 @@ Different in each app:
 
 Done in #23, right after this decision, rather than as a later follow-up.
 
-- The root entry exports `makeSaveStore(definition)`, which needs a `KeyValueStore` and gives a `SaveStore` with `load` and `merge(records)`. Neither fails. `merge` re-reads the stored save, merges, writes, logs and drops a failed write, and returns the merged records. It also exports `mergeRecords(mergeRecord)` and `backupKey(key)`.
+- The root entry exports `makeSaveStore(definition)`, which needs a `KeyValueStore` and gives a `SaveStore` with `load` and `merge(records)`. Neither fails. `merge` re-reads the stored save, merges, writes, logs and drops a failed write, and returns the merged records. It also exports `mergeRecords(mergeRecord)`. The backup key is `<key>/corrupt`, kept inside the package.
 - A game's `SaveDefinition` is its `key`, the `field` the records sit under in the stored save (`levels`, `heroes`), its record Schema and its `mergeRecord`. The field keeps each app's stored format as it was, so existing saves still load.
 - The package owns the stored shape `{ version: 1, <field>: records }`. It takes no versioned Schema or `migrate` from the app: with every save at version 1 there is nothing to migrate, and an app-supplied Schema would have meant two copies of the same three lines. When a game first changes its record shape, the package grows a migration then, from that example.
 - `./browser` exports `BrowserSaveStorage`. Only it imports `@effect/platform-browser`.
 - Each app keeps its Save service (tag, `recordSolve` or `recordRun`), its record Schema and merge, `withSolve`/`withRun` and `isNewBest`, and turns a solve or a run into one record before calling `merge`. The shared failure cases are tested once, in the package, against `KeyValueStore.layerMemory`. Each app tests only its merge, its key and stored format, and its Story wiring.
-- The total is a little more code than the two copies (about 350 lines against 324), from the package's interface and docs. The shared part, and the tests for it, are written once, so the revisit condition above doesn't apply.
+- The total is a little more code than the two copies (about 350 lines against 324), from the package's interface and docs. So the revisit condition above is met, and the tests grew too (465 lines against 435). The extraction is kept anyway: the shared part, and the tests for its failure cases, now exist once, so a fix to them lands in one place.
