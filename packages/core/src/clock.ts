@@ -32,7 +32,7 @@ export class FixedStepClock {
     return steps;
   }
 
-  /** How far (0-1) real time is between the last step and the next one. Renderers can use it to interpolate. */
+  /** How far (0-1) real time is between the last step and the next one. A view can use it to interpolate. */
   get alpha(): number {
     return this.accumulator / this.stepSeconds;
   }

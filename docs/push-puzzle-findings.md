@@ -10,7 +10,7 @@ Each finding names the primitive, what push-puzzle did, the layer a fix belongs 
 - **Separate issue**: anything that reshapes `GameDefinition` or `GameDriver`, or whose shape needs a third genre's evidence. All six were filed, then fixed in the kit when the kit's author asked for it (issues #15 to #20); each entry below says which shape was picked and why.
 - **No action**: the kit is fine; the genre was the right place.
 
-Survivors replays identically before and after every kit change: `packages/survivors/src/replay.test.ts` pins a state hash recorded before any kit change.
+Survivors replays identically before and after every kit change: `packages/survivors/src/replay.test.ts` pins a state hash recorded before any kit change. The replay calls the simulation directly, so it guards core and survivors' simulation; the runtime loop and input have their own tests.
 
 ## Summary
 
@@ -112,7 +112,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 - **Primitive:** `GameDriver` / `FixedStepClock`, `GameView.render`'s `alpha`.
 - **What happened:** push-puzzle runs 60 steps a second, almost all of which take no turn, and ignores `dt`. A turn is a move or an undo; a step holds at most one. Hold-to-repeat counts steps (a move on the press, then after 12 steps, then every 6), which made replays exact for free. `alpha` (interpolation between steps) is meaningless for a game that jumps a cell per turn; the view tweens in real time instead.
 - **Proposed layer:** runtime.
-- **Verdict:** no action. The fixed clock fit a turn-based game better than expected: the cost is a no-op `step` call per tick, and step-counted timing is what keeps repeat deterministic. The two real frictions are finding 2 (`sample`, now fixed) and finding 12 (the view).
+- **Verdict:** no action. The fixed clock fit a turn-based game better than expected: the cost is a no-op `step` call on almost every step, and step-counted timing is what keeps repeat deterministic. The two real frictions are finding 2 (`sample`, now fixed) and finding 12 (the view).
 
 ### 11. No snapshot or restore of state
 

@@ -27,8 +27,8 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | [`@gamekit/render-three`](packages/render-three) | `Stage` (renderer + scene + perspective or orthographic camera that resize with their container), `MeshInstances`, `followTarget`, `orbitAround`, `fitCamera` | Three.js |
 | [`@gamekit/runtime`](packages/runtime) | `GameDefinition` (the interface a game implements), `GameDriver` (frame loop), `makeGameEngine` (Effect API) | Effect, core |
 | [`@gamekit/foldkit`](packages/foldkit) | `engineMessages` (engine events → Foldkit Subscription), `keyPresses` | Effect, Foldkit, runtime |
-| [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, renderer and engine | all of the above except foldkit |
-| [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, renderer and engine | all of the above except foldkit |
+| [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, view and engine | all of the above except foldkit |
+| [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, view and engine | all of the above except foldkit |
 | [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content and Foldkit screens | survivors, content, foldkit |
 | [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen | push-puzzle, content, foldkit |
 
@@ -38,7 +38,7 @@ Each package's `tsconfig.json` sets which environment it may use. `core` compile
 
 ### In an existing genre
 
-Copy `apps/survivor-demo`, then change the JSON in `public/content/` and the screens in `src/app/`.
+Copy the demo app closest to your game (`apps/survivor-demo` or `apps/push-puzzle-demo`), then change the JSON in `public/content/` and the screens in `src/app/`.
 
 ### In a new genre
 
@@ -50,7 +50,7 @@ const myGame: GameDefinition<Config, State, Input, Event> = {
   step: (state, input, dt) => /* advance; deterministic */,
   drainEvents: state => state.events.drain(),          // EventBuffer from core
   sample: { everyMs: 100, read: state => /* HUD event */ },  // or `version: state => state.turns` for a turn-based HUD
-  createInput: surface => /* wrap an InputController; `endStep: () => controller.consumePresses()` if one press must make one move */,
+  createInput: surface => /* wrap an InputController; `endStep: () => controller.consumePresses()` if one press must make one turn */,
   createView: container => /* a GameView using Stage, MeshInstances… */,
 }
 

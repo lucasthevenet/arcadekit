@@ -20,8 +20,8 @@ export interface GameDefinition<Config, State, Input, Event> {
   /** Returns, and forgets, the events produced since the last call. */
   readonly drainEvents: (state: State) => readonly Event[];
   /**
-   * Optional snapshot of the state for the UI (a HUD, for example), emitted as an event when a
-   * run starts and then while it is active:
+   * Optional sample: a read of the state for the UI (a HUD, for example), emitted as an event
+   * when a run starts and then while it is active:
    *
    * - every `everyMs` of real time, for a state that changes all the time (a real-time game);
    * - and/or right after any frame or `modify` in which `version` changed, for a state that
@@ -33,9 +33,9 @@ export interface GameDefinition<Config, State, Input, Event> {
     readonly version?: (state: State) => number;
     readonly read: (state: State) => Event;
   };
-  /** Creates the input reader for a surface. Called once per attach. */
+  /** Creates the input source (`InputSource`) that reads input from the viewport element. Called once per attach. */
   readonly createInput: (surface: HTMLElement) => InputSource<Input>;
-  /** Creates the renderer for a container. Called once per attach. */
+  /** Creates the view (`GameView`) that draws into the viewport element. Called once per attach. */
   readonly createView: (container: HTMLElement) => GameView<State>;
 }
 

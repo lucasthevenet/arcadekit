@@ -7,7 +7,7 @@ import { GameDriver } from "./driver";
 /**
  * The Effect-facing API of a running game. Scoped methods clean up when their scope closes.
  *
- * Each game declares its own service key for it, so several games (or engines) can coexist:
+ * Each genre declares its own service key for it, so several genres can coexist:
  *
  * ```ts
  * class MyEngine extends Context.Service<MyEngine, GameEngine<Config, State, Event>>()('my-game/Engine') {}
@@ -25,7 +25,7 @@ export interface GameEngine<Config, State, Event> {
   ) => Effect.Effect<void, never, Scope.Scope>;
   /** Starts a new run. Without a seed, a random one is used. */
   readonly start: (config: Config, seed?: number) => Effect.Effect<void>;
-  /** Changes the running game's state, then reports any events that produced. Does nothing with no run. */
+  /** Changes the current run's state, then reports any events that produced. Does nothing with no run. */
   readonly modify: (change: (state: State) => void) => Effect.Effect<void>;
   readonly setPaused: (paused: boolean) => Effect.Effect<void>;
   readonly stop: Effect.Effect<void>;
