@@ -127,6 +127,8 @@ const hashWorld = (world: World): number => {
   return h.value;
 };
 
+const LEG_MOVE_X = [1, 0.3, -1, 0.3];
+
 /** Plays a fixed input script: zig-zag movement, the second upgrade when offered. */
 const replay = (seed: number, steps: number) => {
   const world = createWorld({ content, heroId: "bolter" }, seed);
@@ -136,11 +138,7 @@ const replay = (seed: number, steps: number) => {
       chooseUpgrade(world, Math.min(1, world.offer.length - 1));
     }
     const leg = Math.floor(i / 90) % 4;
-    step(
-      world,
-      { moveX: leg === 0 ? 1 : leg === 2 ? -1 : 0.3, moveZ: leg % 2 },
-      1 / 60
-    );
+    step(world, { moveX: LEG_MOVE_X[leg]!, moveZ: leg % 2 }, 1 / 60);
     events += world.events.drain().length;
   }
   return { world, events };

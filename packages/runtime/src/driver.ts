@@ -46,12 +46,12 @@ export class GameDriver<Config, State, Input, Event> {
       last = now;
       const { state } = this;
       if (state !== null && !this.paused) {
-        const steps = this.clock.advance(dt, (stepSeconds) =>
-          this.definition.step(state, input.read(), stepSeconds)
-        );
-        if (steps > 0) {
+        this.clock.advance(dt, (stepSeconds) => {
+          this.definition.step(state, input.read(), stepSeconds);
+          // After every step, not every frame: on a catch-up frame that runs several
+          // steps, a "just pressed" button must reach only the first of them.
           input.endFrame?.();
-        }
+        });
         this.flushEvents(state);
         const { sample } = this.definition;
         if (sample && now - this.lastSample >= sample.everyMs) {

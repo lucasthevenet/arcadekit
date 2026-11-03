@@ -166,7 +166,10 @@ export class InputController<
     return this.padPressed.has(name);
   }
 
-  /** Call once per frame after the game has read input. Resets `wasPressed`. */
+  /**
+   * Resets `wasPressed`. Call it after each simulation step that read input
+   * (`@gamekit/runtime` does, through `InputSource.endFrame`), so one press reaches one step.
+   */
   endFrame(): void {
     this.pressedKeys.clear();
     this.padPressed.clear();
