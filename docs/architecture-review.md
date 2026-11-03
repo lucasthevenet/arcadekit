@@ -10,7 +10,7 @@ Each candidate names what it was, a verdict and where it landed:
 - **Separate issue**: the fix changes a kit contract or a documented behavior, or waits on a follow-up's decision.
 - **No action**: only one genre shows it, or there is nothing to fix. Recorded here for the follow-up it affects.
 
-No commit changes either demo's behavior. `packages/survivors/src/replay.test.ts` is byte-identical to `89665dc`, and both genres' replay hashes didn't move.
+No commit changes either demo's behavior. `packages/survivors/src/replay.test.ts` is byte-identical to `89665dc`, survivors' pinned replay hash didn't move, and push-puzzle's replay test still passes.
 
 ## Summary
 
@@ -64,7 +64,7 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 
 - **What it was:** two core exports had no user, both apps declared `@gamekit/runtime` and never imported it, and some exports were kept for tests or kit-internal use with nothing saying so.
 - **Fix:** core dropped `lerp` and `clampLength`; both apps dropped `@gamekit/runtime`. The exports that stay say why in their doc comments.
-- **Left open:** which genre exports stay public is [#30](https://github.com/lucasthevenet/gamekit/issues/30), decided with #26's question on publishing genres. The clock's `alpha` goes with [#28](https://github.com/lucasthevenet/gamekit/issues/28).
+- **Left open:** which genre exports stay public is [#30](https://github.com/lucasthevenet/gamekit/issues/30), decided with #26's question on publishing genres. The clock's `alpha` goes with [#28](https://github.com/lucasthevenet/gamekit/issues/28). `start`'s seed, `Stage`'s camera options and `InputController`'s options have no user either. #26 settles them before the freeze.
 
 ### 5. Decisions that live only in prose
 
