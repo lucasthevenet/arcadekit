@@ -1,3 +1,6 @@
+// Every helper here works on the ground plane (y = 0, Y up).
+// A side-view genre would need its own.
+
 import type * as THREE from "three";
 
 /** Keeps the camera at a fixed offset from a target on the ground plane, looking at it. Top-down and isometric games. */
@@ -10,7 +13,11 @@ export const followTarget = (
   camera.lookAt(target.x, 0, target.z);
 };
 
-/** Circles the camera around a point. Menu backdrops and showcase views. */
+/**
+ * Circles the camera around a point on the ground plane at a fixed height, looking at it.
+ * `angle` is in radians; 0 puts the camera on the point's +z side. Menu backdrops and
+ * showcase views.
+ */
 export const orbitAround = (
   camera: THREE.Camera,
   center: { readonly x: number; readonly z: number },
