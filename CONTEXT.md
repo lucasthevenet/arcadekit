@@ -26,7 +26,7 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Engine**: the Effect-facing API of a running game (`GameEngine`): attach to an element, listen to events, start, modify, pause, stop. Each genre declares its own engine service.
 
-**Content source**: where content files come from (`ContentSource`), such as `memorySource` in tests or `fetchJsonSource` in the browser. A genre's **content definition** (`ContentDefinition`) is its schema, the file each part comes from, and the checks the schema can't express, as one value. A genre's content service, built with `makeContentLoader` from the definition and a source, loads and checks the files once per app. Tests load the same definition with `loadContent`, so they run the same checks.
+**Content source**: where content files come from (`ContentSource`), such as `memorySource` in tests or `fetchJsonSource` in the browser. A genre's **content definition** (`ContentDefinition`) is its schema, the file each part comes from, and the checks the schema can't express, as one value. A genre's content service, built with `makeContentLoader` from the definition and a source, loads and checks the files once per app; a failed load isn't kept, so it can be retried. Tests load the same definition with `loadContent`, so they run the same checks.
 
 **Pool**: a fixed-capacity set of entities stored as one typed array per field (`createPool` in `@gamekit/core`). Removing swaps the last entity in, so pool indices are not stable. An **identified pool** (`createIdentifiedPool`) also gives each entity a stable id, for a genre that must name one entity across removals (undo, tweening).
 

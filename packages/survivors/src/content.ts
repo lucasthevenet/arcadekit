@@ -29,7 +29,7 @@ export const survivorsContentDefinition: ContentDefinition<typeof GameContent> =
     validate: findBrokenReferences,
   };
 
-/** Loads and validates a survivors game's content. Cached after the first load. */
+/** Loads and validates a survivors game's content. Keeps the first successful load; a failed one can be retried. */
 export class SurvivorsContent extends Context.Service<
   SurvivorsContent,
   ContentLoader<GameContent>

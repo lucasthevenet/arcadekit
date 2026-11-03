@@ -1,4 +1,4 @@
-import { Data, Effect, Schema } from "effect";
+import { Data, Duration, Effect, Exit, Schema } from "effect";
 
 /**
  * The error every content source and loader fails with.
@@ -49,7 +49,7 @@ export interface LoadContentOptions<
  * Loads every file in parallel, decodes the result with the schema, then runs `validate`.
  * Call it to load and check content directly, for example in a test of a game's real
  * content files: `loadContent({ ...definition, source })` runs the genre's own checks.
- * A game's content service uses `makeContentLoader`, which caches the result.
+ * A game's content service uses `makeContentLoader`, which keeps the first successful result.
  */
 export const loadContent = <S extends Schema.Top>(
   options: LoadContentOptions<S>
@@ -79,13 +79,17 @@ export const loadContent = <S extends Schema.Top>(
     return content;
   });
 
-/** A content service shape: `load` runs once, then returns the cached result. */
+/**
+ * A content service shape. After a successful `load`, later calls return the same content
+ * without reading the files again. A failed `load` isn't kept, so calling it again retries.
+ */
 export interface ContentLoader<A> {
   readonly load: Effect.Effect<A, ContentError>;
 }
 
 /**
- * Builds a ContentLoader whose `load` is cached after the first call.
+ * Builds a ContentLoader whose `load` keeps its first success. A failure isn't kept, so a
+ * caller (a "Try again" button) can call `load` again.
  * Use it to implement a game's own content service from its content definition:
  *
  * ```ts
@@ -99,4 +103,9 @@ export const makeContentLoader = <S extends Schema.Top>(
     readonly schema: S & { readonly DecodingServices: never };
   }
 ): Effect.Effect<ContentLoader<S["Type"]>> =>
-  Effect.map(Effect.cached(loadContent(options)), (load) => ({ load }));
+  Effect.map(
+    Effect.cachedWithTTL(loadContent(options), (exit) =>
+      Exit.isSuccess(exit) ? Duration.infinity : Duration.zero
+    ),
+    (load) => ({ load })
+  );
