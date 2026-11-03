@@ -32,11 +32,7 @@ export interface InputSource<Input> {
    * the same object each time, refilled, keeps the loop free of allocation.
    */
   readonly read: () => Input;
-  /**
-   * Called after each simulation step, to reset "just pressed" state, so each press reaches
-   * exactly one step even when a slow frame runs several. Not called on frames that run no step,
-   * so a press is never lost. (The name is older than this rule: it runs per step, not per frame.)
-   */
+  /** Called after each frame that ran at least one step, to reset "just pressed" state. */
   readonly endFrame?: () => void;
   readonly dispose: () => void;
 }

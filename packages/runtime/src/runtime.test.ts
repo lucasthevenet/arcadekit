@@ -92,17 +92,29 @@ interface PressState {
   presses: number;
 }
 
-/** An input source like InputController: a press stays visible until `endFrame`. */
-const fakeButton = () => {
+/**
+ * A one-button input source. Plain, it works like InputController: a press stays visible
+ * until `endFrame`. With `reportOnce`, it reports each press to one `read` only, which is how
+ * push-puzzle's input source keeps one press to one turn.
+ */
+const fakeButton = ({ reportOnce }: { readonly reportOnce: boolean }) => {
   let pressed = false;
+  let reported = false;
   return {
     press: () => {
       pressed = true;
     },
     source: {
-      read: () => pressed,
+      read: () => {
+        if (reportOnce && reported) {
+          return false;
+        }
+        reported = pressed;
+        return pressed;
+      },
       endFrame: () => {
         pressed = false;
+        reported = false;
       },
       dispose: () => {},
     },
@@ -146,9 +158,9 @@ const pressGame = (button: ReturnType<typeof fakeButton>) =>
     createView: () => ({ render: () => {}, dispose: () => {} }),
   }) satisfies GameDefinition<null, PressState, boolean, PressState>;
 
-const setUp = () => {
+const setUp = (options: { readonly reportOnce: boolean }) => {
   const frames = manualFrames();
-  const button = fakeButton();
+  const button = fakeButton(options);
   const driver = new GameDriver(pressGame(button));
   let last: PressState = { steps: 0, presses: 0 };
   driver.subscribe((state) => {
@@ -165,17 +177,28 @@ describe("button presses", () => {
     vi.restoreAllMocks();
   });
 
-  it("reaches exactly one step when a frame runs several", () => {
-    const { frames, button, detach, read } = setUp();
+  // The runtime resets presses once per frame (InputSource.endFrame), so a press reaches
+  // every step of a catch-up frame. Changing that changes the GameDefinition contract:
+  // see docs/push-puzzle-findings.md, finding 1.
+  it("reaches every step of a frame that runs several", () => {
+    const { frames, button, detach, read } = setUp({ reportOnce: false });
     button.press();
     // 62.5 ms is four steps.
+    frames.runFrameAt(62.5);
+    detach();
+    expect(read()).toStrictEqual({ steps: 4, presses: 4 });
+  });
+
+  it("reaches one step when the input source reports each press once", () => {
+    const { frames, button, detach, read } = setUp({ reportOnce: true });
+    button.press();
     frames.runFrameAt(62.5);
     detach();
     expect(read()).toStrictEqual({ steps: 4, presses: 1 });
   });
 
   it("waits for the next step when a frame runs none", () => {
-    const { frames, button, detach, read } = setUp();
+    const { frames, button, detach, read } = setUp({ reportOnce: false });
     button.press();
     // Less than one step: nothing runs, and the press must not be lost.
     frames.runFrameAt(10);
