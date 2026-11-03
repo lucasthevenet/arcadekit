@@ -1,5 +1,5 @@
-import { EventBuffer, createPool } from "@gamekit/core";
-import type { Pool } from "@gamekit/core";
+import { EventBuffer, createIdentifiedPool } from "@gamekit/core";
+import type { IdentifiedPool } from "@gamekit/core";
 
 import { Tile, parseLevel } from "./level";
 import type { PuzzleContent } from "./schema";
@@ -49,11 +49,6 @@ export const REPEAT_INTERVAL_STEPS = 6;
 const BOX_LAYOUT = {
   /** Cell index, `row * cols + col`. */
   cell: Int32Array,
-  /**
-   * Stable id, fixed for the whole run. Pool indices move when a box is removed
-   * (filling a hole), so undo and the view find a box by this, never by index.
-   */
-  id: Uint16Array,
 };
 
 /**
@@ -115,11 +110,17 @@ export interface Puzzle {
   /** 1 where a cell is a goal. */
   readonly goals: Uint8Array;
   readonly goalCount: number;
-  readonly boxes: Pool<typeof BOX_LAYOUT>;
+  /**
+   * Every box still on the board. Pool indices move when a box is removed (filling a hole),
+   * so undo and the view name a box by its stable id (`idOf`, `indexOf`), never by index.
+   */
+  readonly boxes: IdentifiedPool<typeof BOX_LAYOUT>;
   /** The player's cell. */
   player: number;
   /** Moves made, minus moves undone. */
   moves: number;
+  /** Turns that changed the board, moves and undos alike. Only goes up, so the HUD sample can watch it. */
+  turns: number;
   /** Set on the turn every goal gets a box. No further turns are taken. */
   solved: boolean;
   readonly history: History;
@@ -135,11 +136,11 @@ export const createPuzzle = (
   const level =
     content.levels.find((l) => l.id === levelId) ?? content.levels[0];
   const parsed = parseLevel(level.rows);
-  const boxes = createPool(parsed.boxes.length, BOX_LAYOUT);
-  for (const [id, cell] of parsed.boxes.entries()) {
-    const i = boxes.add();
-    boxes.fields.cell[i] = cell;
-    boxes.fields.id[i] = id;
+  // Boxes get ids 0, 1, 2… in level reading order. None is ever added after this, so an id
+  // freed by filling a hole stays free until undo brings that box back.
+  const boxes = createIdentifiedPool(parsed.boxes.length, BOX_LAYOUT);
+  for (const cell of parsed.boxes) {
+    boxes.fields.cell[boxes.add()] = cell;
   }
   return {
     events: new EventBuffer(),
@@ -151,6 +152,7 @@ export const createPuzzle = (
     boxes,
     player: parsed.players[0] ?? 0,
     moves: 0,
+    turns: 0,
     solved: false,
     history: createHistory(historyCapacity ?? DEFAULT_HISTORY_CAPACITY),
     repeat: { direction: null, stepsLeft: 0 },
@@ -240,7 +242,7 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
     if (tile !== Tile.floor && tile !== Tile.hole) {
       return false;
     }
-    boxId = puzzle.boxes.fields.id[box]!;
+    boxId = puzzle.boxes.idOf(box);
     if (tile === Tile.hole) {
       // The box fills the hole: both are gone, and the cell is floor from now on.
       puzzle.tiles[beyond] = Tile.floor;
@@ -258,6 +260,7 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
   history.filledHole[record] = filledHole;
   puzzle.player = target;
   puzzle.moves += 1;
+  puzzle.turns += 1;
   return true;
 };
 
@@ -276,32 +279,20 @@ const undoTurn = (puzzle: Puzzle): void => {
     const boxTo = boxFrom + (boxFrom - playerFrom);
     if (history.filledHole[record] === 1) {
       puzzle.tiles[boxTo] = Tile.hole;
-      const i = boxes.add();
-      boxes.fields.cell[i] = boxFrom;
-      boxes.fields.id[i] = boxId;
+      boxes.fields.cell[boxes.addWithId(boxId)] = boxFrom;
     } else {
-      boxes.fields.cell[boxIndexById(puzzle, boxId)] = boxFrom;
+      boxes.fields.cell[boxes.indexOf(boxId)] = boxFrom;
     }
   }
   puzzle.player = playerFrom;
   puzzle.moves -= 1;
-};
-
-/** Pool index of the box with stable id `id`, or -1 if it's gone (it filled a hole). */
-const boxIndexById = (puzzle: Puzzle, id: number): number => {
-  const { boxes } = puzzle;
-  for (let i = 0; i < boxes.count; i++) {
-    if (boxes.fields.id[i] === id) {
-      return i;
-    }
-  }
-  return -1;
+  puzzle.turns += 1;
 };
 
 /** Stable id of the box at (col, row), or -1. */
 export const boxIdAt = (puzzle: Puzzle, col: number, row: number): number => {
   const i = boxIndexAt(puzzle, row * puzzle.cols + col);
-  return i === -1 ? -1 : puzzle.boxes.fields.id[i]!;
+  return i === -1 ? -1 : puzzle.boxes.idOf(i);
 };
 
 /** Goals that have no box on them yet. */

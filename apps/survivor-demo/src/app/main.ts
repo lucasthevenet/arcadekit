@@ -1,4 +1,4 @@
-import { fetchJsonSource } from "@gamekit/content";
+import { fetchJsonSource } from "@gamekit/content/browser";
 import { makeSurvivorsContentLayer } from "@gamekit/survivors";
 import { SurvivorsEngineLayer } from "@gamekit/survivors/browser";
 import { Layer } from "effect";

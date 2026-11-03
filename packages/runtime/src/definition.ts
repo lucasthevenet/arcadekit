@@ -15,9 +15,18 @@ export interface GameDefinition<Config, State, Input, Event> {
   readonly step: (state: State, input: Input, dt: number) => void;
   /** Returns, and forgets, the events produced since the last call. */
   readonly drainEvents: (state: State) => readonly Event[];
-  /** Optional periodic snapshot (a HUD, for example), emitted as an event every `everyMs` while a run is active. */
+  /**
+   * Optional snapshot of the state for the UI (a HUD, for example), emitted as an event when a
+   * run starts and then while it is active:
+   *
+   * - every `everyMs` of real time, for a state that changes all the time (a real-time game);
+   * - and/or right after any frame or `modify` in which `version` changed, for a state that
+   *   changes rarely (a turn-based game). `version` is a cheap number the game bumps whenever
+   *   what `read` reports may have changed, such as a turn counter.
+   */
   readonly sample?: {
-    readonly everyMs: number;
+    readonly everyMs?: number;
+    readonly version?: (state: State) => number;
     readonly read: (state: State) => Event;
   };
   /** Creates the input reader for a surface. Called once per attach. */
@@ -32,7 +41,18 @@ export interface InputSource<Input> {
    * the same object each time, refilled, keeps the loop free of allocation.
    */
   readonly read: () => Input;
-  /** Called after each frame that ran at least one step, to reset "just pressed" state. */
+  /**
+   * Called after every step. Reset "just pressed" state here, so one press reaches exactly
+   * one step even on a slow frame that runs several catch-up steps (a press that makes one
+   * turn, a jump). `InputController.consumePresses` does this.
+   */
+  readonly endStep?: () => void;
+  /**
+   * Called once after each frame that ran at least one step, after its last `endStep`.
+   * For per-frame work, like `InputController.endFrame`, which polls gamepads. A source that
+   * resets presses here instead of in `endStep` lets one press reach every step of a frame:
+   * fine for a game that reads only held state and axes.
+   */
   readonly endFrame?: () => void;
   readonly dispose: () => void;
 }

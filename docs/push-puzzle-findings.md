@@ -7,7 +7,7 @@ A **finding** (see `CONTEXT.md`) is a place where push-puzzle had to change, wor
 Each finding names the primitive, what push-puzzle did, the layer a fix belongs in, and a verdict:
 
 - **Fixed now**: a shared-layer bug that made the puzzle play wrong, or a small addition with one obvious shape both genres use.
-- **Separate issue**: anything that reshapes `GameDefinition` or `GameDriver`, or whose shape needs a third genre's evidence.
+- **Separate issue**: anything that reshapes `GameDefinition` or `GameDriver`, or whose shape needs a third genre's evidence. All six were filed, then fixed in the kit when the kit's author asked for it (issues #15 to #20); each entry below says which shape was picked and why.
 - **No action**: the kit is fine; the genre was the right place.
 
 Survivors replays identically before and after every kit change: `packages/survivors/src/replay.test.ts` pins a state hash recorded before any kit change.
@@ -16,12 +16,12 @@ Survivors replays identically before and after every kit change: `packages/survi
 
 | # | Primitive | Layer | Verdict |
 | --- | --- | --- | --- |
-| 1 | A press reaches every step of a catch-up frame | runtime, input | Separate issue: [#15](https://github.com/lucasthevenet/gamekit/issues/15) |
-| 2 | `sample` is wall-clock only | runtime | Separate issue: [#16](https://github.com/lucasthevenet/gamekit/issues/16) |
-| 3 | Pools have no stable identity | core | Separate issue: [#17](https://github.com/lucasthevenet/gamekit/issues/17) |
-| 4 | No swipe input | input | Separate issue: [#18](https://github.com/lucasthevenet/gamekit/issues/18) |
-| 5 | Camera helpers | render-three | Separate issue: [#19](https://github.com/lucasthevenet/gamekit/issues/19) |
-| 6 | The DOM-free root entry isn't enforced | content, genre packages | Separate issue: [#20](https://github.com/lucasthevenet/gamekit/issues/20) |
+| 1 | A press reaches every step of a catch-up frame | runtime, input | Fixed: [#15](https://github.com/lucasthevenet/gamekit/issues/15) |
+| 2 | `sample` is wall-clock only | runtime | Fixed: [#16](https://github.com/lucasthevenet/gamekit/issues/16) |
+| 3 | Pools have no stable identity | core | Fixed: [#17](https://github.com/lucasthevenet/gamekit/issues/17) |
+| 4 | No swipe input | input | Fixed: [#18](https://github.com/lucasthevenet/gamekit/issues/18) |
+| 5 | Camera helpers | render-three | Fixed: [#19](https://github.com/lucasthevenet/gamekit/issues/19) |
+| 6 | The DOM-free root entry isn't enforced | content, genre packages | Fixed: [#20](https://github.com/lucasthevenet/gamekit/issues/20) |
 | 7 | `InputBindings` requires both halves | input | Fixed now |
 | 8 | "No allocation in a step" vs `InputSource.read` | runtime (docs) | Fixed now |
 | 9 | `InstancedCrowd` rotates around Y only | render-three (docs) | Fixed now |
@@ -34,51 +34,53 @@ Survivors replays identically before and after every kit change: `packages/survi
 
 Checked and not findings: `Rng`, the replay tests, restart.
 
-## Separate issues
+## Filed as separate issues, then fixed
+
+Each of these was filed because it changes a shared contract or its shape wasn't obvious from two genres. Each fix is additive: a genre that doesn't use it is unchanged, and survivors' replay hash didn't move.
 
 ### 1. A press reaches every step of a catch-up frame
 
 - **Primitive:** `GameDriver`'s frame loop and `InputSource.endFrame`.
-- **What happened:** the driver resets "just pressed" state once per frame (`endFrame`), but a slow frame runs several catch-up steps, and every one of them sees the same press. Push-puzzle makes one turn per press, so one press moved the player up to five cells and one undo undid up to five turns. Survivors never noticed: it reads only axes.
-- **What push-puzzle did:** its input source reports each press to one `read` only, and forgets what it reported when the driver calls `endFrame` (`createInput` in `packages/push-puzzle/src/browser/game.ts`). By a frame's first step, every press that frame will see has already happened, so none is lost. `packages/runtime/src/runtime.test.ts` records the driver's behavior with a plain input source (a press reaches all four steps of a four-step frame) and with one that reports once (one step).
-- **Why not fixed in the kit now:** the obvious fix, having the driver call `endFrame` after every step, was tried and reverted. It keeps the hook's name and type but changes when it runs, so any input source doing per-frame work in it would silently run it up to five times a frame (`InputController.endFrame` polls the gamepads). That is a `GameDefinition` contract change. The other shapes (a new `endStep` hook, or `read` consuming presses itself) change the contract too.
-- **Proposed layer:** runtime and input.
-- **Verdict:** separate issue, [#15](https://github.com/lucasthevenet/gamekit/issues/15). A third genre that reads buttons should pick the shape.
+- **What happened:** the driver reset "just pressed" state once per frame (`endFrame`), but a slow frame runs several catch-up steps, and every one of them saw the same press. Push-puzzle makes one turn per press, so one press moved the player up to five cells and one undo undid up to five turns. Survivors never noticed: it reads only axes.
+- **What push-puzzle did first:** its input source reported each press to one `read` only, and forgot what it reported in `endFrame`.
+- **Why not the obvious fix:** calling `endFrame` after every step was tried and reverted. It keeps the hook's name and type but changes when it runs, so any input source doing per-frame work in it would silently run it up to five times a frame (`InputController.endFrame` polls the gamepads).
+- **Fix ([#15](https://github.com/lucasthevenet/gamekit/issues/15)):** a new optional `InputSource.endStep`, called after every step, and `InputController.consumePresses()` to call from it. `endFrame` keeps its per-frame meaning. Push-puzzle's workaround is gone; survivors needs neither. `packages/runtime/src/runtime.test.ts` checks both behaviors and the call order.
+- **Layer:** runtime and input.
 
 ### 2. `sample` is wall-clock only
 
 - **Primitive:** `GameDefinition.sample`.
-- **What happened:** push-puzzle's HUD (moves, boxes left) changes only on a turn, but `sample` reports it every 100 ms of real time. The HUD can lag a move by up to 100 ms, and ten identical HUD events a second reach the UI while nothing happens. Push-puzzle kept the wall-clock sample unchanged and added no `turnTaken` event, so the gap stays visible.
-- **Proposed layer:** runtime (a sample that fires on change, or after a step that took a turn).
-- **Verdict:** separate issue, [#16](https://github.com/lucasthevenet/gamekit/issues/16). It changes `GameDefinition`.
+- **What happened:** push-puzzle's HUD (moves, boxes left) changes only on a turn, but `sample` reported it every 100 ms of real time. The HUD could lag a move by up to 100 ms, and ten identical HUD events a second reached the UI while nothing happened.
+- **Fix ([#16](https://github.com/lucasthevenet/gamekit/issues/16)):** `sample.everyMs` is optional, and `sample.version` is new: a cheap number the game bumps when what `read` reports may have changed. The driver emits a sample right after any frame or `modify` in which it changed. Push-puzzle's version is a turn counter (`Puzzle.turns`); survivors keeps its 100 ms timer. A game can use both.
+- **Layer:** runtime.
 
 ### 3. Pools have no stable identity
 
 - **Primitive:** `createPool` / `Pool.remove`.
-- **What happened:** filling a hole removes a box, which moves another box to a new index. Undo and the view both need to name a box across turns, so each box carries an `id` field set at creation, found by a linear scan (`boxIndexById`). Undo re-adds a removed box under its old id.
-- **Proposed layer:** core.
-- **Verdict:** separate issue, [#17](https://github.com/lucasthevenet/gamekit/issues/17). Only one genre needs identity, and the right shape (managed ids, generational handles) isn't obvious yet.
+- **What happened:** filling a hole removes a box, which moves another box to a new index. Undo and the view both need to name a box across turns, so each box carried an `id` field set at creation, found by a linear scan.
+- **Fix ([#17](https://github.com/lucasthevenet/gamekit/issues/17)):** `createIdentifiedPool` in core: a pool that also keeps a stable id per entity (`idOf`, `indexOf`), and can bring a removed entity back under its old id (`addWithId`), all O(1) and allocation-free. Ids are reused after removal; generational handles were left out, since neither genre needs them. `createPool` is unchanged, so survivors is untouched. Push-puzzle's id field and scan are gone.
+- **Layer:** core.
 
 ### 4. No swipe input
 
-- **Primitive:** `InputController`'s pointer support, which is only a drag joystick feeding an axis.
-- **What happened:** push-puzzle has no touch controls. A grid game wants a swipe to count as one direction press. Touch input was out of scope, so push-puzzle is keyboard and gamepad only.
-- **Proposed layer:** input (additive).
-- **Verdict:** separate issue, [#18](https://github.com/lucasthevenet/gamekit/issues/18).
+- **Primitive:** `InputController`'s pointer support, which was only a drag joystick feeding an axis.
+- **What happened:** push-puzzle had no touch controls. A grid game wants a swipe to count as one direction press.
+- **Fix ([#18](https://github.com/lucasthevenet/gamekit/issues/18)):** `ButtonBinding.swipe` makes a short, fast stroke in that direction count as a press (never as held), with `swipeDistance` and `swipeMs` options. Push-puzzle binds its four directions to swipes, so it plays on a phone. `InputController` has its first tests (`packages/input/src/input-controller.test.ts`).
+- **Layer:** input.
 
 ### 5. Camera helpers
 
 - **Primitive:** `followTarget`, `orbitAround`, `Stage`'s camera.
-- **What happened:** both helpers chase or circle a point on the ground plane, and `Stage` builds only a perspective camera. Push-puzzle needs a fixed camera that shows the whole tile map at any window shape; it works out the distance from the field of view and aspect ratio itself (`frameCamera` in `packages/push-puzzle/src/browser/view.ts`). An orthographic camera would suit a flat board better, but `Stage` can't make one.
-- **Proposed layer:** render-three (a `fitCamera` helper, an orthographic option).
-- **Verdict:** separate issue, [#19](https://github.com/lucasthevenet/gamekit/issues/19). A side-view genre would want the same, so its evidence should pick the shape.
+- **What happened:** both helpers chase or circle a point on the ground plane, and `Stage` built only a perspective camera. Push-puzzle worked out a fit-the-map distance itself (`frameCamera`).
+- **Fix ([#19](https://github.com/lucasthevenet/gamekit/issues/19)):** `fitCamera(camera, bounds, { margin, tilt })` frames a ground-plane rectangle with either camera kind, and `StageOptions.camera: "orthographic"` builds an orthographic camera that keeps its view height on resize (`Stage` is typed by the kind). Push-puzzle now uses an orthographic stage and `fitCamera`. A side-view genre would want a version for the vertical plane; that waits for one.
+- **Layer:** render-three.
 
 ### 6. The DOM-free root entry isn't enforced
 
 - **Primitive:** the genre-package boundary ("root entry has no DOM") and `@gamekit/content`'s entry.
-- **What happened:** survivors' tsconfig includes DOM types for the whole package, so its rule is a convention only. Push-puzzle added `tsconfig.sim.json`, which checks the simulation files with no DOM types, as `core` does. It can't include `content.ts`: `@gamekit/content` also exports `fetchJsonSource`, which needs `fetch`.
-- **Proposed layer:** content (move `fetchJsonSource` to a browser entry), then each genre package.
-- **Verdict:** separate issue, [#20](https://github.com/lucasthevenet/gamekit/issues/20). Moving an export breaks the apps' imports.
+- **What happened:** survivors' tsconfig included DOM types for the whole package, so its rule was a convention only. Push-puzzle checked only some files without DOM, because `@gamekit/content` also exported `fetchJsonSource`, which needs `fetch`.
+- **Fix ([#20](https://github.com/lucasthevenet/gamekit/issues/20)):** `fetchJsonSource` moved to `@gamekit/content/browser`, and the apps import it from there. `content`, `survivors` and `push-puzzle` each have a `tsconfig.root.json` that checks their root entry with no DOM types, run by `pnpm typecheck`.
+- **Layer:** content, then each genre package.
 
 ## Fixed now
 
@@ -110,7 +112,7 @@ Checked and not findings: `Rng`, the replay tests, restart.
 - **Primitive:** `GameDriver` / `FixedStepClock`, `GameView.render`'s `alpha`.
 - **What happened:** push-puzzle runs 60 steps a second, almost all of which take no turn, and ignores `dt`. A turn is a move or an undo; a step holds at most one. Hold-to-repeat counts steps (a move on the press, then after 12 steps, then every 6), which made replays exact for free. `alpha` (interpolation between steps) is meaningless for a game that jumps a cell per turn; the view tweens in real time instead.
 - **Proposed layer:** runtime.
-- **Verdict:** no action. The fixed clock fit a turn-based game better than expected: the cost is a no-op `step` call per tick, and step-counted timing is what keeps repeat deterministic. The two real frictions are covered by finding 2 (`sample`) and finding 12 (the view).
+- **Verdict:** no action. The fixed clock fit a turn-based game better than expected: the cost is a no-op `step` call per tick, and step-counted timing is what keeps repeat deterministic. The two real frictions are finding 2 (`sample`, now fixed) and finding 12 (the view).
 
 ### 11. No snapshot or restore of state
 
@@ -124,7 +126,7 @@ Checked and not findings: `Rng`, the replay tests, restart.
 - **Primitive:** `GameView.render(state, time, alpha)`.
 - **What happened:** the simulation moves a box to its new cell in one step. The view keeps, per box id and for the player, the cell it last saw and where it was drawn, and slides from there over 90 ms of real time. A box that fills a hole vanishes in the same step, so there's nothing to animate it falling in.
 - **Proposed layer:** genre package.
-- **Verdict:** no action. The tracking is about 40 lines, entirely genre-specific, and depends on finding 3's ids. Revisit if a third genre needs "what changed this step" for its view.
+- **Verdict:** no action. The tracking is about 40 lines, entirely genre-specific, and uses the identified pool's ids from finding 3. Revisit if a third genre needs "what changed this step" for its view.
 
 ### 13. No key repeat in the input layer
 

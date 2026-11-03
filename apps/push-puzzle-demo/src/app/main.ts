@@ -1,4 +1,4 @@
-import { fetchJsonSource } from "@gamekit/content";
+import { fetchJsonSource } from "@gamekit/content/browser";
 import { makePushPuzzleContentLayer } from "@gamekit/push-puzzle";
 import { PushPuzzleEngineLayer } from "@gamekit/push-puzzle/browser";
 import { Layer } from "effect";

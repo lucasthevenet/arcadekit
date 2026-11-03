@@ -1,4 +1,4 @@
-import { InstancedCrowd, Stage } from "@gamekit/render-three";
+import { InstancedCrowd, Stage, fitCamera } from "@gamekit/render-three";
 import type { GameView } from "@gamekit/runtime";
 import * as THREE from "three";
 
@@ -7,9 +7,8 @@ import type { Puzzle } from "../world";
 
 /** Real seconds a slide from one cell to the next takes. Shorter than the hold-repeat interval. */
 const SLIDE_SECONDS = 0.09;
-const CAMERA_MARGIN = 1;
-/** How far the camera sits back from straight overhead, as a fraction of its height. */
-const CAMERA_TILT = 0.35;
+/** A fixed camera, high above and slightly in front, that keeps the whole tile map in view. */
+const CAMERA = { margin: 1, tilt: 0.35 } as const;
 
 const BOX_COLOR = new THREE.Color("#d9a441");
 const BOX_ON_GOAL_COLOR = new THREE.Color("#7ddc6a");
@@ -30,7 +29,8 @@ interface Slide {
 
 /** Draws a Puzzle with Three.js. Reads the simulation; never changes it. */
 export class PushPuzzleView implements GameView<Puzzle> {
-  private readonly stage: Stage;
+  // Orthographic: a flat board reads best when far cells aren't drawn smaller.
+  private readonly stage: Stage<"orthographic">;
   private readonly player: THREE.Mesh;
   private crowds: {
     floor: InstancedCrowd;
@@ -44,9 +44,14 @@ export class PushPuzzleView implements GameView<Puzzle> {
   private playerSlide: Slide = newSlide();
   /** Indexed by box stable id. Pool indices move when a box fills a hole, so they can't be used. */
   private boxSlides: Slide[] = [];
+  /** The tile map's outline in world units, set once per run so framing allocates nothing. */
+  private readonly bounds = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
 
   constructor(container: HTMLElement) {
-    this.stage = new Stage(container, { background: "#1d1b26" });
+    this.stage = new Stage(container, {
+      camera: "orthographic",
+      background: "#1d1b26",
+    });
     const { scene } = this.stage;
     scene.add(new THREE.HemisphereLight("#f2ecff", "#2a2633", 1.8));
     const sun = new THREE.DirectionalLight("#ffffff", 1.2);
@@ -109,10 +114,10 @@ export class PushPuzzleView implements GameView<Puzzle> {
     crowds.floor.commit(floors);
     crowds.goal.commit(goals);
 
-    const { cell: boxCells, id: boxIds } = puzzle.boxes.fields;
-    for (let i = 0; i < puzzle.boxes.count; i++) {
-      const cell = boxCells[i]!;
-      const slide = this.slideTo(this.boxSlides[boxIds[i]!]!, cell, t);
+    const { boxes } = puzzle;
+    for (let i = 0; i < boxes.count; i++) {
+      const cell = boxes.fields.cell[i]!;
+      const slide = this.slideTo(this.boxSlides[boxes.idOf(i)]!, cell, t);
       crowds.box.set(i, slide.x, 0.4, slide.z);
       crowds.box.setColor(
         i,
@@ -125,13 +130,18 @@ export class PushPuzzleView implements GameView<Puzzle> {
     this.player.visible = true;
     this.player.position.set(slide.x, 0.34, slide.z);
 
-    this.frameCamera(puzzle);
+    fitCamera(this.stage.camera, this.bounds, CAMERA);
   }
 
   /** Builds crowds sized for this run's tile map, and puts every slide at rest on its cell. */
   private startDrawing(puzzle: Puzzle) {
     this.removeCrowds();
     this.puzzle = puzzle;
+    // Cells are one unit wide and centered on the origin.
+    this.bounds.maxX = puzzle.cols / 2;
+    this.bounds.minX = -this.bounds.maxX;
+    this.bounds.maxZ = puzzle.rows / 2;
+    this.bounds.minZ = -this.bounds.maxZ;
     const cells = puzzle.tiles.length;
     const flat = (color: string, size: number, height: number) =>
       new InstancedCrowd(
@@ -162,9 +172,9 @@ export class PushPuzzleView implements GameView<Puzzle> {
     this.playerSlide = this.restingSlide(puzzle.player);
     // Every box that will ever exist in this run is in the pool now, before any hole is filled.
     this.boxSlides = [];
-    const { cell, id } = puzzle.boxes.fields;
-    for (let i = 0; i < puzzle.boxes.count; i++) {
-      this.boxSlides[id[i]!] = this.restingSlide(cell[i]!);
+    const { boxes } = puzzle;
+    for (let i = 0; i < boxes.count; i++) {
+      this.boxSlides[boxes.idOf(i)] = this.restingSlide(boxes.fields.cell[i]!);
     }
   }
 
@@ -210,22 +220,6 @@ export class PushPuzzleView implements GameView<Puzzle> {
   private cellZ(cell: number): number {
     const { cols, rows } = this.puzzle!;
     return Math.floor(cell / cols) - (rows - 1) / 2;
-  }
-
-  /**
-   * A fixed camera, high above and slightly in front, far enough back that the whole map fits.
-   * render-three has no "fit these bounds" helper and Stage's camera is perspective only,
-   * so the fit is worked out here (see docs/push-puzzle-findings.md).
-   */
-  private frameCamera(puzzle: Puzzle) {
-    const { camera } = this.stage;
-    const halfTan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    const fitHeight = (puzzle.rows / 2 + CAMERA_MARGIN) / halfTan;
-    const fitWidth =
-      (puzzle.cols / 2 + CAMERA_MARGIN) / (halfTan * camera.aspect);
-    const distance = Math.max(fitHeight, fitWidth);
-    camera.position.set(0, distance, distance * CAMERA_TILT);
-    camera.lookAt(0, 0, 0);
   }
 }
 

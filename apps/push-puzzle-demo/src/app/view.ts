@@ -56,7 +56,7 @@ const levelSelect = (model: Model, h: H): Html =>
     h.p(
       [h.Class("muted")],
       [
-        "Push every box onto a goal. A box pushed into a hole fills it. Move with arrows, WASD or the d-pad; undo with Z, Backspace or B; R restarts.",
+        "Push every box onto a goal. A box pushed into a hole fills it. Move with arrows, WASD, the d-pad or a swipe; undo with Z, Backspace or B; R restarts.",
       ]
     ),
     h.div(

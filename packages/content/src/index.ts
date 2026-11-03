@@ -3,7 +3,6 @@ export {
   type ContentLoader,
   type ContentSource,
   type LoadContentOptions,
-  fetchJsonSource,
   loadContent,
   makeContentLoader,
   memorySource,

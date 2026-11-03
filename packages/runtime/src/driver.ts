@@ -21,6 +21,7 @@ export class GameDriver<Config, State, Input, Event> {
     frame: number;
   } | null = null;
   private lastSample = 0;
+  private lastVersion = 0;
   private readonly definition: GameDefinition<Config, State, Input, Event>;
 
   constructor(definition: GameDefinition<Config, State, Input, Event>) {
@@ -46,17 +47,22 @@ export class GameDriver<Config, State, Input, Event> {
       last = now;
       const { state } = this;
       if (state !== null && !this.paused) {
-        const steps = this.clock.advance(dt, (stepSeconds) =>
-          this.definition.step(state, input.read(), stepSeconds)
-        );
+        const steps = this.clock.advance(dt, (stepSeconds) => {
+          this.definition.step(state, input.read(), stepSeconds);
+          input.endStep?.();
+        });
         if (steps > 0) {
           input.endFrame?.();
         }
         this.flushEvents(state);
         const { sample } = this.definition;
-        if (sample && now - this.lastSample >= sample.everyMs) {
-          this.lastSample = now;
-          this.emit(sample.read(state));
+        if (
+          sample?.everyMs !== undefined &&
+          now - this.lastSample >= sample.everyMs
+        ) {
+          this.emitSample(state, now);
+        } else {
+          this.emitSampleIfChanged(state, now);
         }
       }
       view.render(state, now / 1000, this.clock.alpha);
@@ -82,7 +88,7 @@ export class GameDriver<Config, State, Input, Event> {
     this.clock.reset();
     this.flushEvents(state);
     if (this.definition.sample) {
-      this.emit(this.definition.sample.read(state));
+      this.emitSample(state, performance.now());
     }
   }
 
@@ -93,6 +99,7 @@ export class GameDriver<Config, State, Input, Event> {
     }
     change(this.state);
     this.flushEvents(this.state);
+    this.emitSampleIfChanged(this.state, performance.now());
   }
 
   setPaused(paused: boolean): void {
@@ -107,6 +114,21 @@ export class GameDriver<Config, State, Input, Event> {
   subscribe(listener: (event: Event) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  private emitSample(state: State, nowMs: number) {
+    const sample = this.definition.sample!;
+    this.lastSample = nowMs;
+    this.lastVersion = sample.version?.(state) ?? 0;
+    this.emit(sample.read(state));
+  }
+
+  /** Emits a sample if the game's `version` moved since the last one. */
+  private emitSampleIfChanged(state: State, nowMs: number) {
+    const version = this.definition.sample?.version;
+    if (version && version(state) !== this.lastVersion) {
+      this.emitSample(state, nowMs);
+    }
   }
 
   private flushEvents(state: State) {
