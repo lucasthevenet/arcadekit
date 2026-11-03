@@ -36,6 +36,10 @@ _Avoid_: driver (the driver is the plain frame loop inside the engine), runtime
 A fixed-capacity, struct-of-arrays collection of same-shaped entities, packed into indices [0, count). Indices are not stable across removals.
 _Avoid_: entity list, ECS, store
 
+**Tile map**:
+A level's static cells (floor, wall, hole, goal…) indexed by column and row.
+_Avoid_: grid (that's SpatialGrid, a proximity index of moving points), board, level map
+
 **Genre package**:
 A package that implements a GameDefinition for one kind of game (content schema, simulation, view), so several games of that genre can share it and differ only in content and screens.
 _Avoid_: game package, engine (an engine runs a genre; it isn't one)
