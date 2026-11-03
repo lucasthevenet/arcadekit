@@ -20,6 +20,8 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Tile map**: a genre's grid of static cells (wall, floor, hole), stored in typed arrays and indexed by column and row (`row * cols + col`). It describes the level, not where entities are. Push-puzzle's lives in the genre package.
 
+**Mesh instances**: copies of one mesh drawn in a single draw call (`MeshInstances` in `@gamekit/render-three`), for anything a view draws many times: enemies, gems, floor tiles. Each instance gets a position, a uniform scale, a rotation around the vertical axis and a color. Not a pool: mesh instances belong to the view and hold only what it draws. The view sets them from the state it reads.
+
 **Genre package**: a package that implements one kind of game on the kit (`@gamekit/survivors`, `@gamekit/push-puzzle`). Its root entry holds the content schema, the content service and the simulation, with no DOM or Three.js (checked by its `tsconfig.root.json`); its `./browser` entry holds the `GameDefinition`, the view and the engine.
 
 **Finding**: a place where a genre had to change, work around, copy or bypass a shared primitive, or where a shared primitive's name or docs assume one genre. A primitive a genre simply doesn't use is not a finding. See `docs/push-puzzle-findings.md`.

@@ -24,7 +24,7 @@ Survivors replays identically before and after every kit change: `packages/survi
 | 6 | The DOM-free root entry isn't enforced | content, genre packages | Fixed: [#20](https://github.com/lucasthevenet/gamekit/issues/20) |
 | 7 | `InputBindings` requires both halves | input | Fixed now |
 | 8 | "No allocation in a step" vs `InputSource.read` | runtime (docs) | Fixed now |
-| 9 | `InstancedCrowd` rotates around Y only | render-three (docs) | Fixed now |
+| 9 | `MeshInstances` rotates around Y only | render-three (docs) | Fixed now |
 | 10 | The runtime has only a fixed-clock time model | runtime | No action |
 | 11 | No snapshot or restore of state | runtime | No action |
 | 12 | The view gets no previous positions | runtime | No action |
@@ -98,9 +98,9 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 - **Fix:** `read`'s docs say it runs in the step loop and may return one reused object. Survivors is left as it is: one small object per step hasn't caused a stutter.
 - **Layer:** runtime (docs).
 
-### 9. `InstancedCrowd` rotates around the vertical axis only
+### 9. `MeshInstances` rotates around the vertical axis only
 
-- **Primitive:** `InstancedCrowd.set`.
+- **Primitive:** `MeshInstances.set`. The class was named `InstancedCrowd` until [#27](https://github.com/lucasthevenet/gamekit/issues/27).
 - **What happened:** the goal marker is a flat ring lying on the floor, which needs a rotation around X. `set` only takes a Y rotation. Push-puzzle rotates the ring geometry once (`RingGeometry(...).rotateX(...)`), the usual Three.js answer for a tilt every instance shares.
 - **Fix:** `set`'s docs say so. A per-instance free rotation would be a new shape (quaternions) that no genre needs yet.
 - **Layer:** render-three (docs).
