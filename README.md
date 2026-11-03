@@ -21,7 +21,7 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 
 | Package | What it gives you | Depends on |
 | --- | --- | --- |
-| [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool` (and `createIdentifiedPool`, whose entities keep stable ids), `SpatialGrid`, `EventBuffer`, small math | nothing (not even the DOM) |
+| [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool` (and `createIdentifiedPool`, whose entities keep stable ids), `SpatialGrid`, `EventBuffer`, `clamp` | nothing (not even the DOM) |
 | [`@gamekit/input`](packages/input) | `InputController`: keyboard, gamepad, touch-drag and swipes mapped to named axes and buttons; `MOVE_AXES` preset | DOM |
 | [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache; `memorySource`. `fetchJsonSource` is in `@gamekit/content/browser` | Effect |
 | [`@gamekit/render-three`](packages/render-three) | `Stage` (renderer + scene + perspective or orthographic camera that resize with their container), `InstancedCrowd`, `followTarget`, `orbitAround`, `fitCamera` | Three.js |
@@ -29,8 +29,8 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | [`@gamekit/foldkit`](packages/foldkit) | `engineMessages` (engine events → Foldkit Subscription), `keyPresses` | Effect, Foldkit, runtime |
 | [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, renderer and engine | all of the above except foldkit |
 | [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, renderer and engine | all of the above except foldkit |
-| [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content and Foldkit screens | survivors, foldkit |
-| [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen | push-puzzle, foldkit |
+| [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content and Foldkit screens | survivors, content, foldkit |
+| [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen | push-puzzle, content, foldkit |
 
 Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. `content` and both genre packages check their root entry the same way (`tsconfig.root.json`); only their `./browser` entries may use the DOM. That keeps the simulation runnable in a Web Worker or on a game server.
 

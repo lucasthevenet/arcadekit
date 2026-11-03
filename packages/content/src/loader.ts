@@ -1,5 +1,9 @@
 import { Data, Effect, Schema } from "effect";
 
+/**
+ * The error every content source and loader fails with.
+ * Apps catch it by its tag: `Effect.catchTag("ContentError", ...)`.
+ */
 export class ContentError extends Data.TaggedError("ContentError")<{
   readonly message: string;
 }> {}
@@ -30,7 +34,11 @@ export interface LoadContentOptions<S extends Schema.Top> {
   readonly validate?: (content: S["Type"]) => readonly string[];
 }
 
-/** Loads every file in parallel, decodes the result with the schema, then runs `validate`. */
+/**
+ * Loads every file in parallel, decodes the result with the schema, then runs `validate`.
+ * Call it to load and check content directly, for example in a test of a game's real
+ * content files. A game's content service uses `makeContentLoader`, which caches the result.
+ */
 export const loadContent = <S extends Schema.Top>(
   options: LoadContentOptions<S>
 ): Effect.Effect<S["Type"], ContentError, S["DecodingServices"]> =>

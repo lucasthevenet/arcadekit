@@ -122,7 +122,11 @@ export class Stage<K extends StageCameraKind = "perspective"> {
   }
 }
 
-/** Frees the geometries and materials of `root` and everything under it. */
+/**
+ * Frees the geometries and materials of `root` and everything under it.
+ * `Stage.dispose` calls it on the whole scene. A view that removes an object from the
+ * scene calls it on that object, which `Stage.dispose` no longer reaches.
+ */
 export const disposeObject = (root: THREE.Object3D): void => {
   root.traverse((object) => {
     if (
