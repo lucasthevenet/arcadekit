@@ -1,74 +1,77 @@
-# Survivor Kit
+# gamekit
 
-A starter framework for 3D "survivors-like" browser games: an auto-attacking hero, waves of enemies, XP gems, and a pick-one-of-three upgrade on each level-up.
-
-Stack: **Effect 4** for services and side effects, **Foldkit** for the UI, **Three.js** for rendering, **Vite** for building.
+Reusable packages for building browser games with **Effect 4**, **Foldkit** and **Three.js**, plus a demo survivors-like game built on them.
 
 ```bash
 npm install
-npm run dev        # play at http://localhost:5173
-npm test           # simulation tests
-npm run build      # typecheck + production build into dist/
+npm run dev         # play the demo at http://localhost:5173
+npm test            # all package tests
+npm run typecheck   # every package, each against its own rules
+npm run build       # typecheck + production build of the demo
 ```
 
-## Making a game
+## Packages
 
-Most of a game is data. Edit the JSON files in `public/content/`:
+Lower layers have fewer dependencies. Nothing depends on a layer above it.
 
-| File | What it defines |
-|---|---|
-| `rules.json` | Arena size, enemy cap, XP curve, run length |
-| `heroes.json` | Playable characters and their starting weapon |
-| `enemies.json` | HP, speed, contact damage, size, XP dropped |
-| `weapons.json` | Damage, cooldown, scaling per level, and behavior (`bolt` or `aura`) |
-| `passives.json` | Stat upgrades (damage, cooldown, area, speed, max HP, pickup range, regen) |
-| `waves.json` | The spawn schedule: which enemy, how many per second, between which times |
+| Package | What it gives you | Depends on |
+|---|---|---|
+| [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool`, `SpatialGrid`, `EventBuffer`, small math | nothing (not even the DOM) |
+| [`@gamekit/input`](packages/input) | `InputController`: keyboard, gamepad and touch-drag mapped to named axes and buttons; `MOVE_AXES` preset | DOM |
+| [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache; `fetchJsonSource`, `memorySource` | Effect |
+| [`@gamekit/render-three`](packages/render-three) | `Stage` (renderer + scene + camera that resize with their container), `InstancedCrowd`, `followTarget`, `orbitAround` | Three.js |
+| [`@gamekit/runtime`](packages/runtime) | `GameDefinition` (the interface a game implements), `GameDriver` (frame loop), `makeGameEngine` (Effect API) | Effect, core |
+| [`@gamekit/foldkit`](packages/foldkit) | `engineMessages` (engine events → Foldkit Subscription), `keyPresses` | Effect, Foldkit, runtime |
+| [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, renderer and engine | all of the above except foldkit |
+| [`apps/survivor-demo`](apps/survivor-demo) | The demo game: JSON content and Foldkit screens | survivors, foldkit |
 
-Files are checked against the schemas in `src/kit/content/schema.ts` when the game loads. A typo or a reference to a missing id shows an error on screen instead of breaking mid-run.
+Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. That keeps the simulation runnable in a Web Worker or on a game server.
 
-New weapon behaviors (orbiting blades, chain lightning, …) are a new variant in the `behavior` schema plus a function in `src/kit/sim/world.ts`.
+## Making a new game
 
-## How it fits together
+### In an existing genre
 
+Copy `apps/survivor-demo`, then change the JSON in `public/content/` and the screens in `src/app/`.
+
+### In a new genre
+
+Write a genre package (or start inside your app) that implements `GameDefinition` from `@gamekit/runtime`:
+
+```ts
+const myGame: GameDefinition<Config, State, Input, Event> = {
+  create: (config, seed) => /* new State */,
+  step: (state, input, dt) => /* advance; deterministic */,
+  drainEvents: state => state.events.drain(),          // EventBuffer from core
+  sample: { everyMs: 100, read: state => /* HUD event */ },
+  createInput: surface => /* wrap an InputController */,
+  createView: container => /* a GameView using Stage, InstancedCrowd… */,
+}
+
+class MyEngine extends Context.Service<MyEngine, GameEngine<Config, State, Event>>()('my-game/Engine') {}
+const MyEngineLayer = Layer.sync(MyEngine, () => makeGameEngine(myGame))
 ```
-src/
-  kit/                      the reusable framework
-    content/                Effect Schema for content + ContentService (loads and validates JSON)
-    sim/                    the simulation: plain TypeScript, no Effect, no DOM
-      world.ts              World state and step(world, input, dt)
-      grid.ts               spatial grid for "who is near this point"
-      rng.ts                seeded random numbers
-    render/ThreeRenderer.ts draws a World with Three.js (InstancedMesh per crowd)
-    input/                  keyboard + gamepad + touch-drag joystick
-    engine/
-      EngineCore.ts         frame loop: fixed 60 Hz steps, render, emit events
-      GameEngine.ts         the engine as an Effect service
-  app/                      the Foldkit UI (menus, HUD, level-up, pause, game over)
-    model.ts                UI state (Schema)
-    message.ts              everything that can happen
-    update.ts               how state changes, and which Commands run
-    commands.ts             side effects, as Effects using the services
-    subscriptions.ts        engine events -> Messages, Escape key, the viewport Mount
-    view.ts                 HTML
-```
 
-The split follows one rule: **Effect and Foldkit handle everything around the game. The per-frame simulation is plain code.**
+Then connect it to a Foldkit app the way `apps/survivor-demo/src/app/subscriptions.ts` does:
 
-- The simulation updates hundreds of enemies 60 times per second. It stores them in typed arrays and allocates nothing per frame, so the garbage collector never causes stutters. With ~750 enemies and three maxed weapons, one step takes about 0.3 ms.
-- `step` is a pure function of state, input and a seeded random generator. The same seed and inputs give the same run, which `world.test.ts` checks. This is the basis for replays and lockstep multiplayer later.
-- The engine reports only coarse events to the UI: a HUD snapshot 10 times per second, "level up" with the choices, and "run ended". Foldkit never sees individual enemies.
+1. The view always renders the game's container element, with a **Mount** that reports when it exists.
+2. A **Subscription** gated on that returns `engineMessages(...)`, which attaches the engine and turns its events into Messages.
+3. **Commands** call the engine: `start`, `modify` (change state from the UI, e.g. picking an upgrade), `setPaused`, `stop`.
 
-How the UI and engine connect:
+Rules of thumb for the simulation (see `packages/survivors/src/world.ts`):
 
-1. The view always renders `#game-viewport`, with a **Mount** that reports when the element exists.
-2. A **Subscription** (gated on that) attaches the `GameEngine` service to the element and turns engine events into Messages. When the subscription's scope closes, the engine detaches and cleans up.
-3. `update` sends orders to the engine through **Commands** (`StartRun`, `ChooseUpgrade`, `SetPaused`, `EndRun`).
-4. `ContentService` and `GameEngine` are Effect **Layers** given to Foldkit as app-wide `resources` (see `app/main.ts`). To test or swap a part, provide a different Layer.
+- Keep large collections in `createPool`, and don't allocate inside `step`.
+- Use the run's `Rng` for every random choice, so the same seed and inputs give the same run.
+- Report rare, meaningful facts through an `EventBuffer`. Never send per-entity data to the UI.
 
-## Not included yet
+## The survivors demo
 
-- Art and sound: everything is colored shapes. Three.js `GLTFLoader` for `.glb` models and sprite sheets would slot into `ThreeRenderer`.
-- Saving unlocks between runs.
-- Multiplayer. The deterministic `step` makes lockstep over WebRTC possible: send inputs, not positions.
-- Foldkit's Vite plugin (`@foldkit/vite-plugin`) for keeping UI state across live reloads. It's left out because the engine's run state isn't preserved, so a reload mid-run would show a "Playing" UI with no run.
-- Browsers pause `requestAnimationFrame` in hidden tabs, so the game pauses when you switch tabs. That's fine solo; online play would need the loop driven by a timer instead.
+Content lives in `apps/survivor-demo/public/content/`: rules, heroes, enemies, weapons (`bolt` or `aura`), passive upgrades and the wave schedule. It's checked against `packages/survivors/src/schema.ts` at load and by `apps/survivor-demo/src/content.test.ts`.
+
+With about 750 enemies, three maxed weapons and 480 XP gems on screen, one simulation step takes about 0.3 ms.
+
+## Not done yet
+
+- **Publishing.** Packages export their TypeScript source directly, which suits a workspace. Publishing to npm needs a build step (e.g. tsdown), `effect`/`three`/`foldkit` moved to `peerDependencies`, and the `@gamekit` scope swapped for one you own.
+- Art and sound (everything is colored shapes), saved progress, and multiplayer. The deterministic `step` makes lockstep multiplayer possible: send inputs, not positions.
+- Foldkit's Vite plugin for keeping UI state across live reloads. It's left out because engine state isn't preserved, so a reload mid-run would show a "Playing" UI with no run.
+- Browsers pause `requestAnimationFrame` in hidden tabs, so the game pauses when you switch tabs. Online play would need a timer-driven loop.

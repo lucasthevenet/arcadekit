@@ -1,0 +1,18 @@
+{
+  "name": "@gamekit/foldkit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Connects a @gamekit/runtime engine to a Foldkit app",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "effect": "~4.1.2",
+    "foldkit": "~0.170.0",
+    "@gamekit/runtime": "*"
+  }
+}

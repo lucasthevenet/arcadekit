@@ -1,20 +1,17 @@
 {
-  "name": "survivor-kit",
-  "version": "1.0.0",
-  "description": "Starter framework for 3D survivors-like browser games (Effect 4 + Foldkit + Three.js)",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
-  },
+  "name": "gamekit",
+  "private": true,
   "type": "module",
-  "dependencies": {
-    "@effect/platform-browser": "~4.1.0",
-    "effect": "~4.1.2",
-    "foldkit": "~0.170.0",
-    "three": "^0.187.0"
+  "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @gamekit/survivor-demo",
+    "build": "npm run typecheck && npm run build -w @gamekit/survivor-demo",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -22,6 +19,5 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.1.0"
-  },
-  "private": true
+  }
 }

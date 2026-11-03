@@ -1,0 +1,22 @@
+{
+  "name": "@gamekit/survivor-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Demo survivors-like game built on the @gamekit packages",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@gamekit/content": "*",
+    "@gamekit/foldkit": "*",
+    "@gamekit/runtime": "*",
+    "@gamekit/survivors": "*",
+    "effect": "~4.1.2",
+    "foldkit": "~0.170.0",
+    "@effect/platform-browser": "~4.1.0"
+  }
+}
