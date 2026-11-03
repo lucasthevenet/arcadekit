@@ -3,6 +3,8 @@ import { makeSurvivorsContentLayer } from "@gamekit/survivors";
 import { SurvivorsEngineLayer } from "@gamekit/survivors/browser";
 import { Layer } from "effect";
 
+import { BrowserSaveStorage, SaveLayer } from "./save";
+
 export { Model } from "./model";
 export { init, update } from "./update";
 export { view } from "./view";
@@ -13,5 +15,6 @@ export const resources = Layer.mergeAll(
   SurvivorsEngineLayer,
   makeSurvivorsContentLayer(
     fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
-  )
+  ),
+  SaveLayer.pipe(Layer.provide(BrowserSaveStorage))
 );

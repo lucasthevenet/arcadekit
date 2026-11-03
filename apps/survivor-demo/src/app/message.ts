@@ -3,12 +3,14 @@ import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
 import { HeroSummary } from "./model";
+import { HeroRecords } from "./save";
 
 // Every fact the UI can react to. Named for what happened, not what to do.
 export const Message = defineMessageUnion({
   // Boot
   LoadedContent: { heroes: Schema.Array(HeroSummary) },
   FailedToLoadContent: { error: Schema.String },
+  LoadedSave: { records: HeroRecords },
   MountedViewport: {},
   UnmountedViewport: {},
 
@@ -22,6 +24,7 @@ export const Message = defineMessageUnion({
   GotHud: { hud: HudSample },
   GotLevelUp: { choices: Schema.Array(UpgradeChoice) },
   GotRunEnded: { summary: RunSummary },
+  SavedRun: { records: HeroRecords },
 
   // In-run UI
   ClickedUpgrade: { index: Schema.Number },

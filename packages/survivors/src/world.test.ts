@@ -184,7 +184,7 @@ describe("simulation", () => {
     const ended = events.filter((e) => e.type === "runEnded");
     expect(ended).toHaveLength(1);
     expect(ended[0]).toMatchObject({
-      summary: { won: false, heroName: "Bolter" },
+      summary: { won: false, heroId: "bolter", heroName: "Bolter" },
     });
   });
 

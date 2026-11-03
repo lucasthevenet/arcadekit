@@ -284,6 +284,7 @@ const endRun = (world: World, status: "won" | "dead") => {
     type: "runEnded",
     summary: {
       won: status === "won",
+      heroId: world.hero.id,
       heroName: world.hero.name,
       time: world.time,
       kills: world.kills,
