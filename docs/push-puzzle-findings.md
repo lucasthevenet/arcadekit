@@ -138,7 +138,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 ### 14. `MOVE_AXES` naming
 
 - **Primitive:** the `MOVE_AXES` preset (`moveX`, `moveY`; W is negative Y).
-- **What happened:** push-puzzle needs four direction buttons, not analog axes, so it doesn't use the preset; it binds the same keys plus the d-pad as buttons. Survivors reads `moveY` as its `moveZ`, which the preset's docs don't mention.
+- **What happened:** push-puzzle needs four direction buttons, not analog axes, so it doesn't use the preset; it binds the same keys plus the d-pad as buttons. Survivors reads `moveY` as its `moveZ`. The preset's docs didn't say so; #27 documented it.
 - **Proposed layer:** input.
 - **Verdict:** no action. Not using a preset isn't a finding; a direction-buttons preset can wait for a second grid game.
 

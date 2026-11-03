@@ -41,7 +41,7 @@ export interface WeaponSlot {
   level: number;
   /** Seconds until the next attack. */
   timer: number;
-  /** Seconds since the last attack; the renderer uses it for attack flashes. */
+  /** Seconds since the last attack; the view uses it for attack flashes. */
   sinceFired: number;
 }
 
@@ -73,7 +73,7 @@ const PROJECTILE_LAYOUT = {
   life: Float32Array,
   pierce: Uint8Array,
   rehit: Float32Array,
-  /** Index into `weapons`, so the renderer can color projectiles. */
+  /** Index into `weapons`, so the view can color projectiles. */
   weapon: Uint8Array,
 };
 const GEM_LAYOUT = {
@@ -222,7 +222,7 @@ export const hudSample = (world: World): HudSample => ({
 });
 
 // ---------------------------------------------------------------------------
-// Weapon numbers (shared with the renderer so visuals match the rules)
+// Weapon numbers (shared with the view so visuals match the rules)
 
 export const weaponDamage = (world: World, slot: WeaponSlot): number =>
   (slot.def.damage + slot.def.damagePerLevel * (slot.level - 1)) *

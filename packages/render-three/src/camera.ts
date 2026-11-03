@@ -60,7 +60,10 @@ export interface FitCameraOptions {
  *
  * A perspective camera keeps its field of view and moves back far enough. An orthographic
  * camera (`Stage` with `camera: "orthographic"`) changes its frustum to fit instead.
- * With a tilt, the fit is worked out as if looking straight down, which leaves a little extra room.
+ * With a tilt, the fit is still worked out as if looking straight down. That leaves an
+ * orthographic camera a little extra room. It does not hold for a perspective camera: a small
+ * tilt (below the tangent of half its field of view) can push the near edge of the bounds off
+ * the screen, so give it more margin.
  */
 export const fitCamera = (
   camera: THREE.PerspectiveCamera | THREE.OrthographicCamera,
