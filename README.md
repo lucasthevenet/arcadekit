@@ -1,15 +1,16 @@
 # gamekit
 
-Reusable packages for building browser games with **Effect 4**, **Foldkit** and **Three.js**, plus a demo survivors-like game built on them.
+Reusable packages for building browser games with **Effect 4**, **Foldkit** and **Three.js**, plus two demo games built on them: a survivors-like and a push-puzzle (Sokoban-like).
 
 ```bash
 pnpm install
-pnpm dev         # play the demo at http://localhost:5173
+pnpm dev         # play the survivors demo at http://localhost:5173
+pnpm dev:puzzle  # play the push-puzzle demo
 pnpm test        # all package tests
 pnpm typecheck   # every package, each against its own rules
 pnpm check       # lint + format check (Ultracite: Oxlint + Oxfmt)
 pnpm fix         # apply lint fixes and formatting
-pnpm build       # typecheck + production build of the demo
+pnpm build       # typecheck + production build of both demos
 ```
 
 `pnpm fix` applies Oxlint's autofixes. Run the tests afterwards: a few rules that don't fit this codebase are turned off in `oxlint.config.ts`, each with the reason.
@@ -27,7 +28,9 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | [`@gamekit/runtime`](packages/runtime) | `GameDefinition` (the interface a game implements), `GameDriver` (frame loop), `makeGameEngine` (Effect API) | Effect, core |
 | [`@gamekit/foldkit`](packages/foldkit) | `engineMessages` (engine events → Foldkit Subscription), `keyPresses` | Effect, Foldkit, runtime |
 | [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, renderer and engine | all of the above except foldkit |
-| [`apps/survivor-demo`](apps/survivor-demo) | The demo game: JSON content and Foldkit screens | survivors, foldkit |
+| [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, renderer and engine | all of the above except foldkit |
+| [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content and Foldkit screens | survivors, foldkit |
+| [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen | push-puzzle, foldkit |
 
 Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. That keeps the simulation runnable in a Web Worker or on a game server.
 
@@ -61,17 +64,25 @@ Then connect it to a Foldkit app the way `apps/survivor-demo/src/app/subscriptio
 2. A **Subscription** gated on that returns `engineMessages(...)`, which attaches the engine and turns its events into Messages.
 3. **Commands** call the engine: `start`, `modify` (change state from the UI, e.g. picking an upgrade), `setPaused`, `stop`.
 
-Rules of thumb for the simulation (see `packages/survivors/src/world.ts`):
+Rules of thumb for the simulation (see `packages/survivors/src/world.ts` for a real-time genre and `packages/push-puzzle/src/world.ts` for a turn-based one):
 
 - Keep large collections in `createPool`, and don't allocate inside `step`.
 - Use the run's `Rng` for every random choice, so the same seed and inputs give the same run.
 - Report rare, meaningful facts through an `EventBuffer`. Never send per-entity data to the UI.
+
+`docs/push-puzzle-findings.md` lists what building the second genre showed about the kit: which primitives are known to fit one genre, and the issues filed for them. `CONTEXT.md` is the glossary (step vs turn, SpatialGrid vs tile map).
 
 ## The survivors demo
 
 Content lives in `apps/survivor-demo/public/content/`: rules, heroes, enemies, weapons (`bolt` or `aura`), passive upgrades and the wave schedule. It's checked against `packages/survivors/src/schema.ts` at load and by `apps/survivor-demo/src/content.test.ts`.
 
 With about 750 enemies, three maxed weapons and 480 XP gems on screen, one simulation step takes about 0.3 ms.
+
+## The push-puzzle demo
+
+Levels live in `apps/push-puzzle-demo/public/content/levels.json`, as rows of standard Sokoban text plus `^` for a hole: `#` wall, space floor, `@` player, `+` player on goal, `$` box, `*` box on goal, `.` goal. A box pushed into a hole fills it. They're checked against `packages/push-puzzle/src/schema.ts` at load, and `apps/push-puzzle-demo/src/content.test.ts` plays a known solution for each level.
+
+Arrows, WASD or the d-pad move one cell per press (hold to repeat); Z, Backspace or B undo; R restarts; Escape goes back to level select. There's no touch control yet.
 
 ## Not done yet
 

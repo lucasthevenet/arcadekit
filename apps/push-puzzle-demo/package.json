@@ -1,0 +1,22 @@
+{
+  "name": "@gamekit/push-puzzle-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Demo push-puzzle game built on the @gamekit packages",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@effect/platform-browser": "~4.1.0",
+    "@gamekit/content": "workspace:*",
+    "@gamekit/foldkit": "workspace:*",
+    "@gamekit/push-puzzle": "workspace:*",
+    "@gamekit/runtime": "workspace:*",
+    "effect": "~4.1.2",
+    "foldkit": "~0.170.0"
+  }
+}

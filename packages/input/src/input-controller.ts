@@ -14,9 +14,10 @@ export interface ButtonBinding {
   readonly gamepadButtons?: readonly number[];
 }
 
+/** A game with no axes (a turn-based puzzle) or no buttons (a twin-stick mover) leaves that half out. */
 export interface InputBindings<Axis extends string, Button extends string> {
-  readonly axes: Readonly<Record<Axis, AxisBinding>>;
-  readonly buttons: Readonly<Record<Button, ButtonBinding>>;
+  readonly axes?: Readonly<Record<Axis, AxisBinding>>;
+  readonly buttons?: Readonly<Record<Button, ButtonBinding>>;
 }
 
 export interface InputOptions {
@@ -47,7 +48,7 @@ export const MOVE_AXES = {
  * A game reads `axis()` / `isDown()` / `wasPressed()` and never sees raw devices.
  */
 export class InputController<
-  Axis extends string,
+  Axis extends string = never,
   Button extends string = never,
 > {
   private readonly heldKeys = new Set<string>();
@@ -115,7 +116,10 @@ export class InputController<
 
   /** Current value in [-1, 1]. Sources add up, then clamp. */
   axis(name: Axis): number {
-    const binding = this.bindings.axes[name];
+    const binding = this.bindings.axes?.[name];
+    if (!binding) {
+      return 0;
+    }
     let value = 0;
     for (const key of binding.negativeKeys ?? []) {
       if (this.heldKeys.has(key)) {
@@ -146,7 +150,10 @@ export class InputController<
   }
 
   isDown(name: Button): boolean {
-    const binding = this.bindings.buttons[name];
+    const binding = this.bindings.buttons?.[name];
+    if (!binding) {
+      return false;
+    }
     if (binding.keys?.some((key) => this.heldKeys.has(key))) {
       return true;
     }
@@ -155,7 +162,10 @@ export class InputController<
 
   /** True if the button went down since the last `endFrame()`. */
   wasPressed(name: Button): boolean {
-    const binding = this.bindings.buttons[name];
+    const binding = this.bindings.buttons?.[name];
+    if (!binding) {
+      return false;
+    }
     if (binding.keys?.some((key) => this.pressedKeys.has(key))) {
       return true;
     }
@@ -170,8 +180,12 @@ export class InputController<
   endFrame(): void {
     this.pressedKeys.clear();
     this.padPressed.clear();
-    for (const name of Object.keys(this.bindings.buttons) as Button[]) {
-      if (padButtonDown(this.bindings.buttons[name])) {
+    const { buttons } = this.bindings;
+    if (!buttons) {
+      return;
+    }
+    for (const name of Object.keys(buttons) as Button[]) {
+      if (padButtonDown(buttons[name])) {
         this.padWasDown.add(name);
       } else {
         this.padWasDown.delete(name);

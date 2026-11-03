@@ -27,7 +27,10 @@ export interface GameDefinition<Config, State, Input, Event> {
 }
 
 export interface InputSource<Input> {
-  /** Called once per simulation step. */
+  /**
+   * Called once per simulation step, before `step`. It runs inside the step loop, so returning
+   * the same object each time, refilled, keeps the loop free of allocation.
+   */
   readonly read: () => Input;
   /** Called after each frame that ran at least one step, to reset "just pressed" state. */
   readonly endFrame?: () => void;

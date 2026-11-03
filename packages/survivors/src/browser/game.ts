@@ -28,10 +28,7 @@ export const survivorsGame: GameDefinition<
     read: (world) => ({ type: "hud", hud: hudSnapshot(world) }),
   },
   createInput: (surface) => {
-    const controller = new InputController(surface, {
-      axes: MOVE_AXES,
-      buttons: {},
-    });
+    const controller = new InputController(surface, { axes: MOVE_AXES });
     return {
       read: () => ({
         moveX: controller.axis("moveX"),
