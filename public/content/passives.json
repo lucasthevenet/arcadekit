@@ -1,0 +1,9 @@
+[
+  { "id": "power", "name": "Power Charm", "description": "+12% damage", "stat": "damage", "amountPerLevel": 0.12, "maxLevel": 5 },
+  { "id": "haste", "name": "Quick Feather", "description": "Attacks 8% faster", "stat": "cooldown", "amountPerLevel": 0.08, "maxLevel": 5 },
+  { "id": "boots", "name": "Swift Boots", "description": "+10% move speed", "stat": "moveSpeed", "amountPerLevel": 0.1, "maxLevel": 4 },
+  { "id": "heart", "name": "Big Heart", "description": "+20% max HP", "stat": "maxHp", "amountPerLevel": 0.2, "maxLevel": 5 },
+  { "id": "lens", "name": "Wide Lens", "description": "+12% attack area", "stat": "area", "amountPerLevel": 0.12, "maxLevel": 4 },
+  { "id": "magnet", "name": "Magnet", "description": "+30% pickup range", "stat": "pickupRadius", "amountPerLevel": 0.3, "maxLevel": 3 },
+  { "id": "leftovers", "name": "Leftovers", "description": "Regenerate 0.5 HP per second", "stat": "regen", "amountPerLevel": 0.5, "maxLevel": 4 }
+]

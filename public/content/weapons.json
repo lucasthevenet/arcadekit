@@ -1,0 +1,38 @@
+[
+  {
+    "id": "arc-bolt",
+    "name": "Arc Bolt",
+    "description": "Fires quick bolts at the nearest enemies.",
+    "color": "#fff176",
+    "damage": 8,
+    "damagePerLevel": 3,
+    "cooldown": 0.6,
+    "cooldownScalePerLevel": 0.9,
+    "maxLevel": 6,
+    "behavior": { "kind": "bolt", "projectileSpeed": 22, "count": 1, "countPerLevel": 0.5, "pierce": 0, "range": 14 }
+  },
+  {
+    "id": "bubble-shot",
+    "name": "Bubble Shot",
+    "description": "Slow bubbles that pass through several enemies.",
+    "color": "#8fd3ff",
+    "damage": 12,
+    "damagePerLevel": 4,
+    "cooldown": 1.1,
+    "cooldownScalePerLevel": 0.92,
+    "maxLevel": 6,
+    "behavior": { "kind": "bolt", "projectileSpeed": 11, "count": 2, "countPerLevel": 0.5, "pierce": 3, "range": 12 }
+  },
+  {
+    "id": "heat-aura",
+    "name": "Heat Aura",
+    "description": "Burns every enemy close to you.",
+    "color": "#ff8a50",
+    "damage": 6,
+    "damagePerLevel": 2.5,
+    "cooldown": 0.5,
+    "cooldownScalePerLevel": 0.95,
+    "maxLevel": 6,
+    "behavior": { "kind": "aura", "radius": 2.6, "radiusPerLevel": 0.35 }
+  }
+]

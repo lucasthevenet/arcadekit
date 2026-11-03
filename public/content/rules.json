@@ -1,0 +1,10 @@
+{
+  "arenaHalfSize": 60,
+  "maxEnemies": 800,
+  "xpToLevel2": 5,
+  "xpGrowth": 1.25,
+  "baseMoveSpeedScale": 1,
+  "basePickupRadius": 2.5,
+  "choicesPerLevelUp": 3,
+  "runLength": 300
+}
