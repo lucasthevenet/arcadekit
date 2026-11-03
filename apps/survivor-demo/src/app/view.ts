@@ -1,13 +1,8 @@
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "./message";
-import {
-  type Hud,
-  type Model,
-  Phase,
-  type RunSummary,
-  type UpgradeChoice,
-} from "./model";
+import { Phase } from "./model";
+import type { Hud, Model, RunSummary, UpgradeChoice } from "./model";
 import { GameViewport, VIEWPORT_ID } from "./subscriptions";
 
 type H = HtmlBuilder<Message>;
@@ -68,7 +63,7 @@ const overlay = (model: Model, h: H): Html =>
     GameOver: ({ summary }) => gameOver(summary, h),
   });
 
-const panel = (h: H, children: ReadonlyArray<Html | string>): Html =>
+const panel = (h: H, children: readonly (Html | string)[]): Html =>
   h.div(
     [h.Class("panel-backdrop")],
     [h.div([h.Class("panel")], [...children])]
@@ -152,7 +147,7 @@ const bar = (h: H, kind: string, fraction: number, label: string): Html =>
     ]
   );
 
-const levelUp = (choices: ReadonlyArray<UpgradeChoice>, h: H): Html =>
+const levelUp = (choices: readonly UpgradeChoice[], h: H): Html =>
   panel(h, [
     h.h2([], ["Level up! Choose one"]),
     h.div(

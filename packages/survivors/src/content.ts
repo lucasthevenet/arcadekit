@@ -1,8 +1,5 @@
-import {
-  type ContentLoader,
-  type ContentSource,
-  makeContentLoader,
-} from "@gamekit/content";
+import { makeContentLoader } from "@gamekit/content";
+import type { ContentLoader, ContentSource } from "@gamekit/content";
 import { Context, Layer } from "effect";
 
 import { GameContent, findBrokenReferences } from "./schema";

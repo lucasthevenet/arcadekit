@@ -7,7 +7,8 @@ import {
 import type { GameView } from "@gamekit/runtime";
 import * as THREE from "three";
 
-import { type World, auraRadius } from "../world";
+import { auraRadius } from "../world";
+import type { World } from "../world";
 
 const CAMERA_OFFSET = { x: 0, y: 20, z: 13 };
 const MAX_AURAS = 4;
@@ -23,9 +24,10 @@ export class SurvivorsView implements GameView<World> {
   >;
   private readonly projectiles: InstancedCrowd;
   private readonly gems: InstancedCrowd;
-  private readonly auras: Array<
-    THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
-  > = [];
+  private readonly auras: THREE.Mesh<
+    THREE.RingGeometry,
+    THREE.MeshBasicMaterial
+  >[] = [];
   private enemies: InstancedCrowd | null = null;
   private ground: THREE.Group | null = null;
   /** Colors cached per World so they're parsed once, not every frame. */
@@ -92,8 +94,11 @@ export class SurvivorsView implements GameView<World> {
   }
 
   render(world: World | null, timeSeconds: number): void {
-    if (world) this.drawWorld(world, timeSeconds);
-    else this.drawMenuBackdrop(timeSeconds);
+    if (world) {
+      this.drawWorld(world, timeSeconds);
+    } else {
+      this.drawMenuBackdrop(timeSeconds);
+    }
     this.stage.render();
   }
 
@@ -108,7 +113,9 @@ export class SurvivorsView implements GameView<World> {
     this.enemies?.commit(0);
     this.projectiles.commit(0);
     this.gems.commit(0);
-    for (const ring of this.auras) ring.visible = false;
+    for (const ring of this.auras) {
+      ring.visible = false;
+    }
     orbitAround(
       this.stage.camera,
       { x: 0, z: 0 },
@@ -165,8 +172,11 @@ export class SurvivorsView implements GameView<World> {
     let ringIndex = 0;
     for (let w = 0; w < world.weapons.length && ringIndex < MAX_AURAS; w++) {
       const slot = world.weapons[w]!;
-      if (slot.def.behavior.kind !== "aura") continue;
-      const ring = this.auras[ringIndex++]!;
+      if (slot.def.behavior.kind !== "aura") {
+        continue;
+      }
+      const ring = this.auras[ringIndex]!;
+      ringIndex += 1;
       const r = auraRadius(world, slot);
       ring.visible = true;
       ring.position.set(p.x, 0.05, p.z);
@@ -174,7 +184,9 @@ export class SurvivorsView implements GameView<World> {
       ring.material.color.copy(palette.weapons[w] ?? WHITE);
       ring.material.opacity = 0.25 + Math.max(0, 0.6 - slot.sinceFired * 2);
     }
-    for (let i = ringIndex; i < MAX_AURAS; i++) this.auras[i]!.visible = false;
+    for (let i = ringIndex; i < MAX_AURAS; i++) {
+      this.auras[i]!.visible = false;
+    }
 
     followTarget(this.stage.camera, p, CAMERA_OFFSET);
   }
@@ -188,9 +200,10 @@ export class SurvivorsView implements GameView<World> {
       };
     }
     // Indexed like world.weapons; weapons picked up mid-run get their color here.
-    const weapons = this.palette.weapons;
-    for (let w = weapons.length; w < world.weapons.length; w++)
+    const { weapons } = this.palette;
+    for (let w = weapons.length; w < world.weapons.length; w++) {
       weapons.push(new THREE.Color(world.weapons[w]!.def.color));
+    }
     return this.palette;
   }
 
@@ -208,7 +221,9 @@ export class SurvivorsView implements GameView<World> {
   }
 
   private ensureGround(halfSize: number) {
-    if (this.ground?.userData["halfSize"] === halfSize) return;
+    if (this.ground?.userData["halfSize"] === halfSize) {
+      return;
+    }
     this.ground?.removeFromParent();
     const size = halfSize * 2;
     const plane = new THREE.Mesh(

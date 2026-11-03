@@ -30,10 +30,10 @@ export interface Pool<L extends PoolLayout> {
   readonly count: number;
   readonly fields: PoolFields<L>;
   /** Reserves the next slot and returns its index, or -1 when full. Field values in the slot are stale: set them all. */
-  add(): number;
+  readonly add: () => number;
   /** Removes the entity at `index` by moving the last entity into it. */
-  remove(index: number): void;
-  clear(): void;
+  readonly remove: (index: number) => void;
+  readonly clear: () => void;
 }
 
 export const createPool = <const L extends PoolLayout>(
@@ -54,11 +54,21 @@ export const createPool = <const L extends PoolLayout>(
       return count;
     },
     fields,
-    add: () => (count < capacity ? count++ : -1),
+    add: () => {
+      if (count === capacity) {
+        return -1;
+      }
+      count += 1;
+      return count - 1;
+    },
     remove: (index) => {
-      const last = --count;
-      if (index !== last)
-        for (const array of arrays) array[index] = array[last]!;
+      count -= 1;
+      const last = count;
+      if (index !== last) {
+        for (const array of arrays) {
+          array[index] = array[last]!;
+        }
+      }
     },
     clear: () => {
       count = 0;

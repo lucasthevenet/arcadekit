@@ -1,4 +1,5 @@
-import { Effect, type Scope } from "effect";
+import { Effect } from "effect";
+import type { Scope } from "effect";
 
 import type { GameDefinition } from "./definition";
 import { GameDriver } from "./driver";

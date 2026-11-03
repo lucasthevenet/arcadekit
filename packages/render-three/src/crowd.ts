@@ -8,16 +8,19 @@ const DEFAULT_COLOR = new THREE.Color("#ffffff");
  */
 export class InstancedCrowd {
   readonly mesh: THREE.InstancedMesh;
+  readonly capacity: number;
   private readonly matrix = new THREE.Matrix4();
 
   constructor(
     geometry: THREE.BufferGeometry,
     material: THREE.Material,
-    readonly capacity: number
+    capacity: number
   ) {
+    this.capacity = capacity;
     this.mesh = new THREE.InstancedMesh(geometry, material, capacity);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.setColorAt(0, DEFAULT_COLOR); // allocates the per-instance color buffer
+    // Allocates the per-instance color buffer.
+    this.mesh.setColorAt(0, DEFAULT_COLOR);
     this.mesh.count = 0;
     // Instances move every frame, so the mesh's bounding sphere is meaningless: never cull.
     this.mesh.frustumCulled = false;
@@ -32,10 +35,13 @@ export class InstancedCrowd {
     scale = 1,
     rotationY = 0
   ): void {
-    if (rotationY === 0) this.matrix.makeScale(scale, scale, scale);
-    else {
+    if (rotationY === 0) {
+      this.matrix.makeScale(scale, scale, scale);
+    } else {
       this.matrix.makeRotationY(rotationY);
-      if (scale !== 1) this.matrix.scale(SCALE.set(scale, scale, scale));
+      if (scale !== 1) {
+        this.matrix.scale(SCALE.set(scale, scale, scale));
+      }
     }
     this.matrix.setPosition(x, y, z);
     this.mesh.setMatrixAt(index, this.matrix);
@@ -49,7 +55,9 @@ export class InstancedCrowd {
   commit(count: number): void {
     this.mesh.count = Math.min(count, this.capacity);
     this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    if (this.mesh.instanceColor) {
+      this.mesh.instanceColor.needsUpdate = true;
+    }
   }
 
   dispose(): void {
@@ -58,7 +66,9 @@ export class InstancedCrowd {
     const materials: THREE.Material[] = Array.isArray(this.mesh.material)
       ? this.mesh.material
       : [this.mesh.material];
-    for (const material of materials) material.dispose();
+    for (const material of materials) {
+      material.dispose();
+    }
   }
 }
 

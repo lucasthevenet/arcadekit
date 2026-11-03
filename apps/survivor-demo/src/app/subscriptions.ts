@@ -17,14 +17,17 @@ export const GameViewport = Mount.define("GameViewport", {
 
 const toMessage = (event: SurvivorsEvent): Message => {
   switch (event.type) {
-    case "hud":
+    case "hud": {
       return Message.GotHud({ hud: event.hud });
-    case "levelUp":
+    }
+    case "levelUp": {
       return Message.GotLevelUp({
         choices: event.choices.map((choice) => ({ ...choice })),
       });
-    case "runEnded":
+    }
+    case "runEnded": {
       return Message.GotRunEnded({ summary: event.summary });
+    }
   }
 };
 

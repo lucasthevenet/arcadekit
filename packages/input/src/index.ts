@@ -5,4 +5,4 @@ export {
   InputController,
   type InputOptions,
   MOVE_AXES,
-} from "./InputController";
+} from "./input-controller";

@@ -10,7 +10,8 @@ import {
   StartRun,
 } from "./commands";
 import { Message } from "./message";
-import { type Model, Phase, emptyHud } from "./model";
+import { Phase, emptyHud } from "./model";
+import type { Model } from "./model";
 
 export type Services = SurvivorsContent | SurvivorsEngine;
 type Return = Update.Return<Model, Message, Services>;
@@ -81,18 +82,21 @@ export const update = (model: Model, message: Message): Return =>
             commands: [ChooseUpgrade({ index })],
           }
         : { model },
-    PressedEscape: () =>
-      model.phase._tag === "Playing"
-        ? {
-            model: { ...model, phase: Phase.Paused() },
-            commands: [SetPaused({ paused: true })],
-          }
-        : model.phase._tag === "Paused"
-          ? {
-              model: { ...model, phase: Phase.Playing() },
-              commands: [SetPaused({ paused: false })],
-            }
-          : { model },
+    PressedEscape: () => {
+      if (model.phase._tag === "Playing") {
+        return {
+          model: { ...model, phase: Phase.Paused() },
+          commands: [SetPaused({ paused: true })],
+        };
+      }
+      if (model.phase._tag === "Paused") {
+        return {
+          model: { ...model, phase: Phase.Playing() },
+          commands: [SetPaused({ paused: false })],
+        };
+      }
+      return { model };
+    },
     ClickedResume: () => ({
       model: { ...model, phase: Phase.Playing() },
       commands: [SetPaused({ paused: false })],

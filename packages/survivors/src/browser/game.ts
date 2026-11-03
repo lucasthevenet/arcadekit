@@ -1,19 +1,14 @@
 import { InputController, MOVE_AXES } from "@gamekit/input";
-import {
-  type GameDefinition,
-  type GameEngine,
-  makeGameEngine,
-} from "@gamekit/runtime";
+import { makeGameEngine } from "@gamekit/runtime";
+import type { GameDefinition, GameEngine } from "@gamekit/runtime";
 import { Context, Layer } from "effect";
 
-import {
-  type SurvivorsConfig,
-  type SurvivorsEvent,
-  type SurvivorsInput,
-  type World,
-  createWorld,
-  hudSnapshot,
-  step,
+import { createWorld, hudSnapshot, step } from "../world";
+import type {
+  SurvivorsConfig,
+  SurvivorsEvent,
+  SurvivorsInput,
+  World,
 } from "../world";
 import { SurvivorsView } from "./view";
 

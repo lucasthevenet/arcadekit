@@ -10,28 +10,28 @@
 export interface GameDefinition<Config, State, Input, Event> {
   /** Simulation step length in seconds. Defaults to 1/60. */
   readonly stepSeconds?: number;
-  create(config: Config, seed: number): State;
+  readonly create: (config: Config, seed: number) => State;
   /** Advances the state by `dt` seconds. Should be deterministic: same state, input and dt give the same result. */
-  step(state: State, input: Input, dt: number): void;
+  readonly step: (state: State, input: Input, dt: number) => void;
   /** Returns, and forgets, the events produced since the last call. */
-  drainEvents(state: State): ReadonlyArray<Event>;
+  readonly drainEvents: (state: State) => readonly Event[];
   /** Optional periodic snapshot (a HUD, for example), emitted as an event every `everyMs` while a run is active. */
   readonly sample?: {
     readonly everyMs: number;
-    read(state: State): Event;
+    readonly read: (state: State) => Event;
   };
   /** Creates the input reader for a surface. Called once per attach. */
-  createInput(surface: HTMLElement): InputSource<Input>;
+  readonly createInput: (surface: HTMLElement) => InputSource<Input>;
   /** Creates the renderer for a container. Called once per attach. */
-  createView(container: HTMLElement): GameView<State>;
+  readonly createView: (container: HTMLElement) => GameView<State>;
 }
 
 export interface InputSource<Input> {
   /** Called once per simulation step. */
-  read(): Input;
+  readonly read: () => Input;
   /** Called after each frame that ran at least one step, to reset "just pressed" state. */
-  endFrame?(): void;
-  dispose(): void;
+  readonly endFrame?: () => void;
+  readonly dispose: () => void;
 }
 
 export interface GameView<State> {
@@ -39,6 +39,10 @@ export interface GameView<State> {
    * Draws one frame. `state` is null when no run is active (menus).
    * `alpha` (0-1) is how far real time is between the last step and the next, for interpolation.
    */
-  render(state: State | null, timeSeconds: number, alpha: number): void;
-  dispose(): void;
+  readonly render: (
+    state: State | null,
+    timeSeconds: number,
+    alpha: number
+  ) => void;
+  readonly dispose: () => void;
 }

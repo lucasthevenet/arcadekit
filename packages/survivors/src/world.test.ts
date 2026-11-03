@@ -3,13 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   GameContent,
-  type SurvivorsEvent,
-  type World,
   chooseUpgrade,
   createWorld,
   findBrokenReferences,
   step,
 } from "./index";
+import type { SurvivorsEvent, World } from "./index";
 
 // Small, self-contained content so these tests don't depend on any particular game.
 const content = Schema.decodeUnknownSync(GameContent)({
@@ -111,7 +110,9 @@ const play = (world: World, seconds: number): SurvivorsEvent[] => {
     frame < seconds * 60 && world.status === "running";
     frame++
   ) {
-    if (world.offer) chooseUpgrade(world, 0);
+    if (world.offer) {
+      chooseUpgrade(world, 0);
+    }
     const angle = frame / 200;
     step(world, { moveX: Math.cos(angle), moveZ: Math.sin(angle) }, DT);
     events.push(...world.events.drain());
@@ -121,12 +122,12 @@ const play = (world: World, seconds: number): SurvivorsEvent[] => {
 
 describe("content", () => {
   it("reports ids that point at nothing", () => {
-    expect(findBrokenReferences(content)).toEqual([]);
+    expect(findBrokenReferences(content)).toStrictEqual([]);
     const broken = {
       ...content,
       waves: [{ from: 0, to: 1, enemy: "ghost", perSecond: 1 }] as const,
     };
-    expect(findBrokenReferences(broken)).toEqual([
+    expect(findBrokenReferences(broken)).toStrictEqual([
       'wave 0-1s spawns unknown enemy "ghost"',
     ]);
   });
@@ -157,10 +158,11 @@ describe("simulation", () => {
 
   it("freezes while an upgrade offer is open", () => {
     const world = createWorld({ content, heroId: "bolter" }, 3);
-    while (!world.offer && world.time < 60)
+    while (!world.offer && world.time < 60) {
       step(world, { moveX: 0, moveZ: 0 }, DT);
+    }
     expect(world.offer).not.toBeNull();
-    const time = world.time;
+    const { time } = world;
     step(world, { moveX: 1, moveZ: 0 }, DT);
     expect(world.time).toBe(time);
     expect(chooseUpgrade(world, 0)).toBe(true);
@@ -172,7 +174,9 @@ describe("simulation", () => {
     world.player.hp = 0.0001;
     const events: SurvivorsEvent[] = [];
     for (let i = 0; i < 60 * 60 && world.status === "running"; i++) {
-      if (world.offer) chooseUpgrade(world, 0);
+      if (world.offer) {
+        chooseUpgrade(world, 0);
+      }
       step(world, { moveX: 0, moveZ: 0 }, DT);
       events.push(...world.events.drain());
     }

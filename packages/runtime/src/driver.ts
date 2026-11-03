@@ -21,34 +21,39 @@ export class GameDriver<Config, State, Input, Event> {
     frame: number;
   } | null = null;
   private lastSample = 0;
+  private readonly definition: GameDefinition<Config, State, Input, Event>;
 
-  constructor(
-    private readonly definition: GameDefinition<Config, State, Input, Event>
-  ) {
+  constructor(definition: GameDefinition<Config, State, Input, Event>) {
+    this.definition = definition;
     this.clock = new FixedStepClock(definition.stepSeconds ?? 1 / 60);
   }
 
   /** Starts rendering into `element` and reading input from it. Returns a function that stops and cleans up. */
   attach(element: HTMLElement): () => void {
-    if (this.attached)
+    if (this.attached) {
       throw new Error("GameDriver is already attached to an element");
+    }
     const view = this.definition.createView(element);
     const input = this.definition.createInput(element);
     let last = performance.now();
 
     const frame = (now: number) => {
-      if (!this.attached) return;
+      if (!this.attached) {
+        return;
+      }
       this.attached.frame = requestAnimationFrame(frame);
       const dt = Math.min((now - last) / 1000, MAX_FRAME_SECONDS);
       last = now;
-      const state = this.state;
+      const { state } = this;
       if (state !== null && !this.paused) {
         const steps = this.clock.advance(dt, (stepSeconds) =>
           this.definition.step(state, input.read(), stepSeconds)
         );
-        if (steps > 0) input.endFrame?.();
+        if (steps > 0) {
+          input.endFrame?.();
+        }
         this.flushEvents(state);
-        const sample = this.definition.sample;
+        const { sample } = this.definition;
         if (sample && now - this.lastSample >= sample.everyMs) {
           this.lastSample = now;
           this.emit(sample.read(state));
@@ -59,7 +64,9 @@ export class GameDriver<Config, State, Input, Event> {
 
     this.attached = { view, input, frame: requestAnimationFrame(frame) };
     return () => {
-      if (!this.attached) return;
+      if (!this.attached) {
+        return;
+      }
       cancelAnimationFrame(this.attached.frame);
       this.attached.input.dispose();
       this.attached.view.dispose();
@@ -74,12 +81,16 @@ export class GameDriver<Config, State, Input, Event> {
     this.paused = false;
     this.clock.reset();
     this.flushEvents(state);
-    if (this.definition.sample) this.emit(this.definition.sample.read(state));
+    if (this.definition.sample) {
+      this.emit(this.definition.sample.read(state));
+    }
   }
 
   /** Changes the current state from outside the loop (a menu choice, a cheat, a network message). */
   modify(change: (state: State) => void): void {
-    if (this.state === null) return;
+    if (this.state === null) {
+      return;
+    }
     change(this.state);
     this.flushEvents(this.state);
   }
@@ -99,10 +110,14 @@ export class GameDriver<Config, State, Input, Event> {
   }
 
   private flushEvents(state: State) {
-    for (const event of this.definition.drainEvents(state)) this.emit(event);
+    for (const event of this.definition.drainEvents(state)) {
+      this.emit(event);
+    }
   }
 
   private emit(event: Event) {
-    for (const listener of this.listeners) listener(event);
+    for (const listener of this.listeners) {
+      listener(event);
+    }
   }
 }

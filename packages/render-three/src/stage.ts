@@ -19,12 +19,11 @@ export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
+  private readonly container: HTMLElement;
   private readonly resizeObserver: ResizeObserver;
 
-  constructor(
-    private readonly container: HTMLElement,
-    options: StageOptions = {}
-  ) {
+  constructor(container: HTMLElement, options: StageOptions = {}) {
+    this.container = container;
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: "high-performance",
@@ -36,7 +35,7 @@ export class Stage {
     canvas.style.display = "block";
     canvas.style.width = "100%";
     canvas.style.height = "100%";
-    container.appendChild(canvas);
+    container.append(canvas);
 
     this.camera = new THREE.PerspectiveCamera(
       options.fov ?? 50,
@@ -46,12 +45,13 @@ export class Stage {
     );
     if (options.background !== undefined) {
       this.scene.background = new THREE.Color(options.background);
-      if (options.fog)
+      if (options.fog) {
         this.scene.fog = new THREE.Fog(
           options.background,
           options.fog.near,
           options.fog.far
         );
+      }
     }
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -91,7 +91,9 @@ export const disposeObject = (root: THREE.Object3D): void => {
       const materials: THREE.Material[] = Array.isArray(object.material)
         ? object.material
         : [object.material];
-      for (const material of materials) material.dispose();
+      for (const material of materials) {
+        material.dispose();
+      }
     }
   });
 };

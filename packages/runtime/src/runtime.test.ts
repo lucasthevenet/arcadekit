@@ -1,10 +1,15 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { type GameDefinition, makeGameEngine } from "./index";
+import { makeGameEngine } from "./index";
+import type { GameDefinition } from "./index";
 
 // A tiny game: a counter that reports when it is bumped past a threshold.
-type State = { value: number; seed: number; events: string[] };
+interface State {
+  value: number;
+  seed: number;
+  events: string[];
+}
 
 const counterGame: GameDefinition<{ start: number }, State, number, string> = {
   create: ({ start }, seed) => ({
@@ -40,10 +45,10 @@ const collect = (
     )
   );
 
-describe("makeGameEngine", () => {
+describe(makeGameEngine, () => {
   it("reports creation events and a first sample when a run starts", async () => {
     const events = await collect((engine) => engine.start({ start: 5 }, 42));
-    expect(events).toEqual(["started at 5", "value 5"]);
+    expect(events).toStrictEqual(["started at 5", "value 5"]);
   });
 
   it("reports events produced by modify", async () => {
@@ -56,7 +61,7 @@ describe("makeGameEngine", () => {
         });
       })
     );
-    expect(events).toEqual(["started at 0", "value 0", "jumped to 10"]);
+    expect(events).toStrictEqual(["started at 0", "value 0", "jumped to 10"]);
   });
 
   it("ignores modify when no run is active", async () => {
@@ -67,7 +72,7 @@ describe("makeGameEngine", () => {
       })
     );
     expect(called).toBe(false);
-    expect(events).toEqual([]);
+    expect(events).toStrictEqual([]);
   });
 
   it("stops reporting to a listener once its scope closes", async () => {
@@ -77,6 +82,6 @@ describe("makeGameEngine", () => {
       Effect.scoped(engine.listen((event) => events.push(event)))
     );
     await Effect.runPromise(engine.start({ start: 1 }, 1));
-    expect(events).toEqual([]);
+    expect(events).toStrictEqual([]);
   });
 });

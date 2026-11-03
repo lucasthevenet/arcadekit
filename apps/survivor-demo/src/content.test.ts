@@ -1,10 +1,7 @@
 import { readFileSync } from "node:fs";
 
-import {
-  type ContentSource,
-  ContentError,
-  loadContent,
-} from "@gamekit/content";
+import { ContentError, loadContent } from "@gamekit/content";
+import type { ContentSource } from "@gamekit/content";
 import {
   CONTENT_FILES,
   GameContent,
@@ -23,7 +20,7 @@ const contentDir = new URL("../public/content/", import.meta.url);
 const fileSource: ContentSource = (file) =>
   Effect.try({
     try: () =>
-      JSON.parse(readFileSync(new URL(file, contentDir), "utf8")) as unknown,
+      JSON.parse(readFileSync(new URL(file, contentDir), "utf-8")) as unknown,
     catch: (cause) => new ContentError({ message: String(cause) }),
   });
 
@@ -46,7 +43,9 @@ describe("demo content", () => {
         frame < 60 * 60 && world.status === "running";
         frame++
       ) {
-        if (world.offer) chooseUpgrade(world, 0);
+        if (world.offer) {
+          chooseUpgrade(world, 0);
+        }
         step(
           world,
           { moveX: Math.cos(frame / 200), moveZ: Math.sin(frame / 200) },

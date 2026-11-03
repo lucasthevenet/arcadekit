@@ -1,7 +1,7 @@
 /** Key names are `KeyboardEvent.code` values, e.g. "KeyW", "ArrowLeft", "Space". */
 export interface AxisBinding {
-  readonly negativeKeys?: ReadonlyArray<string>;
-  readonly positiveKeys?: ReadonlyArray<string>;
+  readonly negativeKeys?: readonly string[];
+  readonly positiveKeys?: readonly string[];
   /** Index into `Gamepad.axes` (0 = left stick X, 1 = left stick Y on standard pads). */
   readonly gamepadAxis?: number;
   /** Floating touch/mouse joystick: press anywhere on the surface and drag. */
@@ -9,9 +9,9 @@ export interface AxisBinding {
 }
 
 export interface ButtonBinding {
-  readonly keys?: ReadonlyArray<string>;
+  readonly keys?: readonly string[];
   /** Indices into `Gamepad.buttons` (0 = A / Cross on standard pads). */
-  readonly gamepadButtons?: ReadonlyArray<number>;
+  readonly gamepadButtons?: readonly number[];
 }
 
 export interface InputBindings<Axis extends string, Button extends string> {
@@ -61,25 +61,33 @@ export class InputController<
     x: number;
     y: number;
   } | null = null;
-  private readonly cleanups: Array<() => void> = [];
+  private readonly cleanups: (() => void)[] = [];
   private readonly deadzone: number;
   private readonly dragRange: number;
+  private readonly surface: HTMLElement;
+  private readonly bindings: InputBindings<Axis, Button>;
 
   constructor(
-    private readonly surface: HTMLElement,
-    private readonly bindings: InputBindings<Axis, Button>,
+    surface: HTMLElement,
+    bindings: InputBindings<Axis, Button>,
     options: InputOptions = {}
   ) {
+    this.surface = surface;
+    this.bindings = bindings;
     this.deadzone = options.deadzone ?? 0.2;
     this.dragRange = options.dragRange ?? 60;
     this.listen(window, "keydown", (e) => {
-      if (!e.repeat) this.pressedKeys.add(e.code);
+      if (!e.repeat) {
+        this.pressedKeys.add(e.code);
+      }
       this.heldKeys.add(e.code);
     });
     this.listen(window, "keyup", (e) => this.heldKeys.delete(e.code));
     this.listen(window, "blur", () => this.heldKeys.clear());
     this.listen(surface, "pointerdown", (e) => {
-      if (this.drag) return;
+      if (this.drag) {
+        return;
+      }
       surface.setPointerCapture(e.pointerId);
       this.drag = {
         id: e.pointerId,
@@ -96,7 +104,9 @@ export class InputController<
       }
     });
     const release = (e: PointerEvent) => {
-      if (this.drag?.id === e.pointerId) this.drag = null;
+      if (this.drag?.id === e.pointerId) {
+        this.drag = null;
+      }
     };
     this.listen(surface, "pointerup", release);
     this.listen(surface, "pointercancel", release);
@@ -107,14 +117,22 @@ export class InputController<
   axis(name: Axis): number {
     const binding = this.bindings.axes[name];
     let value = 0;
-    for (const key of binding.negativeKeys ?? [])
-      if (this.heldKeys.has(key)) value -= 1;
-    for (const key of binding.positiveKeys ?? [])
-      if (this.heldKeys.has(key)) value += 1;
+    for (const key of binding.negativeKeys ?? []) {
+      if (this.heldKeys.has(key)) {
+        value -= 1;
+      }
+    }
+    for (const key of binding.positiveKeys ?? []) {
+      if (this.heldKeys.has(key)) {
+        value += 1;
+      }
+    }
     if (binding.gamepadAxis !== undefined) {
-      for (const pad of this.gamepads()) {
+      for (const pad of connectedGamepads()) {
         const v = pad.axes[binding.gamepadAxis] ?? 0;
-        if (Math.abs(v) > this.deadzone) value += v;
+        if (Math.abs(v) > this.deadzone) {
+          value += v;
+        }
       }
     }
     if (binding.pointerDrag && this.drag) {
@@ -124,21 +142,27 @@ export class InputController<
           : this.drag.y - this.drag.startY;
       value += delta / this.dragRange;
     }
-    return value < -1 ? -1 : value > 1 ? 1 : value;
+    return Math.min(Math.max(value, -1), 1);
   }
 
   isDown(name: Button): boolean {
     const binding = this.bindings.buttons[name];
-    if (binding.keys?.some((key) => this.heldKeys.has(key))) return true;
-    return this.padButtonDown(binding);
+    if (binding.keys?.some((key) => this.heldKeys.has(key))) {
+      return true;
+    }
+    return padButtonDown(binding);
   }
 
   /** True if the button went down since the last `endFrame()`. */
   wasPressed(name: Button): boolean {
     const binding = this.bindings.buttons[name];
-    if (binding.keys?.some((key) => this.pressedKeys.has(key))) return true;
-    const down = this.padButtonDown(binding);
-    if (down && !this.padWasDown.has(name)) this.padPressed.add(name);
+    if (binding.keys?.some((key) => this.pressedKeys.has(key))) {
+      return true;
+    }
+    const down = padButtonDown(binding);
+    if (down && !this.padWasDown.has(name)) {
+      this.padPressed.add(name);
+    }
     return this.padPressed.has(name);
   }
 
@@ -147,30 +171,21 @@ export class InputController<
     this.pressedKeys.clear();
     this.padPressed.clear();
     for (const name of Object.keys(this.bindings.buttons) as Button[]) {
-      if (this.padButtonDown(this.bindings.buttons[name]))
+      if (padButtonDown(this.bindings.buttons[name])) {
         this.padWasDown.add(name);
-      else this.padWasDown.delete(name);
+      } else {
+        this.padWasDown.delete(name);
+      }
     }
   }
 
   dispose(): void {
-    for (const cleanup of this.cleanups) cleanup();
+    for (const cleanup of this.cleanups) {
+      cleanup();
+    }
     this.cleanups.length = 0;
     this.heldKeys.clear();
     this.drag = null;
-  }
-
-  private padButtonDown(binding: ButtonBinding): boolean {
-    if (!binding.gamepadButtons) return false;
-    for (const pad of this.gamepads()) {
-      for (const index of binding.gamepadButtons)
-        if (pad.buttons[index]?.pressed) return true;
-    }
-    return false;
-  }
-
-  private *gamepads(): Iterable<Gamepad> {
-    for (const pad of navigator.getGamepads?.() ?? []) if (pad) yield pad;
   }
 
   private listen<K extends keyof WindowEventMap & keyof HTMLElementEventMap>(
@@ -183,3 +198,25 @@ export class InputController<
     this.cleanups.push(() => target.removeEventListener(type, listener));
   }
 }
+
+const connectedGamepads = function* (): Iterable<Gamepad> {
+  for (const pad of navigator.getGamepads?.() ?? []) {
+    if (pad) {
+      yield pad;
+    }
+  }
+};
+
+const padButtonDown = (binding: ButtonBinding): boolean => {
+  if (!binding.gamepadButtons) {
+    return false;
+  }
+  for (const pad of connectedGamepads()) {
+    for (const index of binding.gamepadButtons) {
+      if (pad.buttons[index]?.pressed) {
+        return true;
+      }
+    }
+  }
+  return false;
+};

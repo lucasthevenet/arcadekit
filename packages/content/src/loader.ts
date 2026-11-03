@@ -16,7 +16,9 @@ export const fetchJsonSource =
     Effect.tryPromise({
       try: async () => {
         const response = await fetch(`${baseUrl}${file}`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
         return (await response.json()) as unknown;
       },
       catch: (cause) =>
@@ -39,10 +41,11 @@ export interface LoadContentOptions<S extends Schema.Top> {
   /** Schema for the whole content object. Should be a struct: each field is loaded from its own file. */
   readonly schema: S;
   /** Which file fills each top-level field. */
+  // oxlint-disable-next-line typescript/consistent-indexed-object-style -- a mapped type keeps the schema's per-field modifiers; Record drops them.
   readonly files: { readonly [K in keyof S["Type"] & string]: string };
   readonly source: ContentSource;
   /** Checks the schema can't express, like ids that must point at other entries. Return one message per problem. */
-  readonly validate?: (content: S["Type"]) => ReadonlyArray<string>;
+  readonly validate?: (content: S["Type"]) => readonly string[];
 }
 
 /** Loads every file in parallel, decodes the result with the schema, then runs `validate`. */

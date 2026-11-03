@@ -1,12 +1,11 @@
 import {
   EventBuffer,
-  type Pool,
-  type Rng,
   SpatialGrid,
   clamp,
   createPool,
   makeRng,
 } from "@gamekit/core";
+import type { Pool, Rng } from "@gamekit/core";
 
 import type { EnemyDef, GameContent, HeroDef, WeaponDef } from "./schema";
 
@@ -89,7 +88,7 @@ export interface RunSummary {
 /** What a survivors run reports to the outside. */
 export type SurvivorsEvent =
   | { readonly type: "hud"; readonly hud: HudSnapshot }
-  | { readonly type: "levelUp"; readonly choices: ReadonlyArray<UpgradeChoice> }
+  | { readonly type: "levelUp"; readonly choices: readonly UpgradeChoice[] }
   | { readonly type: "runEnded"; readonly summary: RunSummary };
 
 const ENEMY_LAYOUT = {
@@ -141,7 +140,7 @@ export interface World {
   stats: Stats;
   readonly weapons: WeaponSlot[];
   readonly passiveLevels: Map<string, number>;
-  readonly enemyDefs: ReadonlyArray<EnemyDef>;
+  readonly enemyDefs: readonly EnemyDef[];
   readonly enemyTypeById: ReadonlyMap<string, number>;
   readonly enemies: Pool<typeof ENEMY_LAYOUT>;
   readonly projectiles: Pool<typeof PROJECTILE_LAYOUT>;
@@ -149,7 +148,7 @@ export interface World {
   readonly spawnBudget: Float64Array;
   pendingLevelUps: number;
   /** Set while the run waits for the player to pick an upgrade. The simulation is frozen meanwhile. */
-  offer: ReadonlyArray<UpgradeChoice> | null;
+  offer: readonly UpgradeChoice[] | null;
   readonly grid: SpatialGrid;
   readonly neighbors: Int32Array;
 }
@@ -265,7 +264,7 @@ export const weaponDamage = (world: World, slot: WeaponSlot): number =>
 
 export const weaponCooldown = (world: World, slot: WeaponSlot): number =>
   slot.def.cooldown *
-  Math.pow(slot.def.cooldownScalePerLevel, slot.level - 1) *
+  slot.def.cooldownScalePerLevel ** (slot.level - 1) *
   world.stats.cooldownMult;
 
 export const auraRadius = (world: World, slot: WeaponSlot): number =>
@@ -280,7 +279,9 @@ export const auraRadius = (world: World, slot: WeaponSlot): number =>
 
 /** Advances the run by `dt` seconds. Does nothing while an upgrade offer is open or the run is over. */
 export const step = (world: World, input: SurvivorsInput, dt: number): void => {
-  if (world.status !== "running" || world.offer !== null) return;
+  if (world.status !== "running" || world.offer !== null) {
+    return;
+  }
   world.time += dt;
 
   movePlayer(world, input, dt);
@@ -350,13 +351,17 @@ const spawnEnemies = (world: World, dt: number) => {
   const limit = rules.arenaHalfSize - 1;
   for (let w = 0; w < waves.length; w++) {
     const wave = waves[w]!;
-    if (world.time < wave.from || world.time >= wave.to) continue;
+    if (world.time < wave.from || world.time >= wave.to) {
+      continue;
+    }
     world.spawnBudget[w]! += wave.perSecond * dt;
     const enemyType = world.enemyTypeById.get(wave.enemy)!;
     while (world.spawnBudget[w]! >= 1) {
       world.spawnBudget[w]! -= 1;
       const i = world.enemies.add();
-      if (i === -1) continue;
+      if (i === -1) {
+        continue;
+      }
       const angle = world.rng.next() * Math.PI * 2;
       const distance = world.rng.range(SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX);
       x[i] = clamp(world.player.x + Math.cos(angle) * distance, -limit, limit);
@@ -370,7 +375,7 @@ const spawnEnemies = (world: World, dt: number) => {
 
 const moveEnemies = (world: World, dt: number) => {
   const { x, z, type, hitFlash } = world.enemies.fields;
-  const count = world.enemies.count;
+  const { count } = world.enemies;
   const { x: px, z: pz } = world.player;
   // Chase the player.
   for (let i = 0; i < count; i++) {
@@ -389,13 +394,17 @@ const moveEnemies = (world: World, dt: number) => {
     const found = world.grid.query(x[i]!, z[i]!, ri + 0.8, world.neighbors);
     for (let k = 0; k < found; k++) {
       const j = world.neighbors[k]!;
-      if (j <= i) continue;
+      if (j <= i) {
+        continue;
+      }
       const rj = world.enemyDefs[type[j]!]!.radius;
       const dx = x[j]! - x[i]!;
       const dz = z[j]! - z[i]!;
       const d = Math.hypot(dx, dz);
       const overlap = ri + rj - d;
-      if (overlap <= 0 || d === 0) continue;
+      if (overlap <= 0 || d === 0) {
+        continue;
+      }
       const push = (overlap / d) * 0.5;
       x[i]! -= dx * push;
       z[i]! -= dz * push;
@@ -424,7 +433,9 @@ const fireWeapons = (world: World, dt: number) => {
     const slot = world.weapons[w]!;
     slot.sinceFired += dt;
     slot.timer -= dt;
-    if (slot.timer > 0) continue;
+    if (slot.timer > 0) {
+      continue;
+    }
     const fired =
       slot.def.behavior.kind === "bolt"
         ? fireBolt(world, slot, w)
@@ -441,8 +452,10 @@ const fireBolt = (
   slot: WeaponSlot,
   weaponIndex: number
 ): boolean => {
-  const behavior = slot.def.behavior;
-  if (behavior.kind !== "bolt") return false;
+  const { behavior } = slot.def;
+  if (behavior.kind !== "bolt") {
+    return false;
+  }
   const e = world.enemies.fields;
   const enemyCount = world.enemies.count;
   const p = world.player;
@@ -458,23 +471,36 @@ const fireBolt = (
     let bestD = range;
     for (let i = 0; i < enemyCount; i++) {
       const d = Math.hypot(e.x[i]! - p.x, e.z[i]! - p.z);
-      if (d >= bestD) continue;
+      if (d >= bestD) {
+        continue;
+      }
       let taken = false;
-      for (let t = 0; t < targetCount; t++) if (targets[t] === i) taken = true;
+      for (let t = 0; t < targetCount; t++) {
+        if (targets[t] === i) {
+          taken = true;
+        }
+      }
       if (!taken) {
         best = i;
         bestD = d;
       }
     }
-    if (best === -1) break;
-    targets[targetCount++] = best;
+    if (best === -1) {
+      break;
+    }
+    targets[targetCount] = best;
+    targetCount += 1;
   }
-  if (targetCount === 0) return false;
+  if (targetCount === 0) {
+    return false;
+  }
   const pr = world.projectiles.fields;
   const damage = weaponDamage(world, slot);
   for (let t = 0; t < shots; t++) {
     const i = world.projectiles.add();
-    if (i === -1) break;
+    if (i === -1) {
+      break;
+    }
     // Extra shots beyond the number of targets reuse the nearest ones.
     const target = targets[t % targetCount]!;
     const dx = e.x[target]! - p.x;
@@ -502,8 +528,9 @@ const pulseAura = (world: World, slot: WeaponSlot): boolean => {
   for (let k = 0; k < found; k++) {
     const i = world.neighbors[k]!;
     const r = world.enemyDefs[type[i]!]!.radius;
-    if (Math.hypot(x[i]! - p.x, z[i]! - p.z) < radius + r)
+    if (Math.hypot(x[i]! - p.x, z[i]! - p.z) < radius + r) {
       hitEnemy(world, i, damage);
+    }
   }
   return true;
 };
@@ -523,21 +550,28 @@ const moveProjectiles = (world: World, dt: number) => {
       const found = world.grid.query(pr.x[i]!, pr.z[i]!, 1.2, world.neighbors);
       for (let k = 0; k < found; k++) {
         const j = world.neighbors[k]!;
-        if (e.hp[j]! <= 0) continue;
-        const r = world.enemyDefs[e.type[j]!]!.radius;
-        if (Math.hypot(e.x[j]! - pr.x[i]!, e.z[j]! - pr.z[i]!) > r + 0.25)
+        if (e.hp[j]! <= 0) {
           continue;
+        }
+        const r = world.enemyDefs[e.type[j]!]!.radius;
+        if (Math.hypot(e.x[j]! - pr.x[i]!, e.z[j]! - pr.z[i]!) > r + 0.25) {
+          continue;
+        }
         hitEnemy(world, j, pr.damage[i]!);
-        if (pr.pierce[i] === 0) spent = true;
-        else {
+        if (pr.pierce[i] === 0) {
+          spent = true;
+        } else {
           pr.pierce[i]! -= 1;
           pr.rehit[i] = PROJECTILE_REHIT_DELAY;
         }
         break;
       }
     }
-    if (spent) pool.remove(i);
-    else i++;
+    if (spent) {
+      pool.remove(i);
+    } else {
+      i += 1;
+    }
   }
 };
 
@@ -550,13 +584,17 @@ const removeDeadEnemies = (world: World) => {
   const e = world.enemies.fields;
   const g = world.gems.fields;
   for (let i = world.enemies.count - 1; i >= 0; i--) {
-    if (e.hp[i]! > 0) continue;
-    world.kills++;
-    const xp = world.enemyDefs[e.type[i]!]!.xp;
+    if (e.hp[i]! > 0) {
+      continue;
+    }
+    world.kills += 1;
+    const { xp } = world.enemyDefs[e.type[i]!]!;
     if (xp > 0) {
       const k = world.gems.add();
-      if (k === -1) gainXp(world, xp); // Too many gems on the floor: grant the XP directly.
-      else {
+      if (k === -1) {
+        // Too many gems on the floor: grant the XP directly.
+        gainXp(world, xp);
+      } else {
         g.x[k] = e.x[i]!;
         g.z[k] = e.z[i]!;
         g.value[k] = xp;
@@ -576,7 +614,9 @@ const collectGems = (world: World, dt: number) => {
     const dx = p.x - g.x[i]!;
     const dz = p.z - g.z[i]!;
     const d = Math.hypot(dx, dz);
-    if (d < world.stats.pickupRadius) g.magnet[i] = 1;
+    if (d < world.stats.pickupRadius) {
+      g.magnet[i] = 1;
+    }
     if (g.magnet[i] === 1 && d > 0) {
       const move = Math.min(d, GEM_MAGNET_SPEED * dt);
       g.x[i]! += (dx / d) * move;
@@ -585,7 +625,9 @@ const collectGems = (world: World, dt: number) => {
     if (d < GEM_PICKUP_DISTANCE) {
       gainXp(world, g.value[i]!);
       pool.remove(i);
-    } else i++;
+    } else {
+      i += 1;
+    }
   }
 };
 
@@ -594,19 +636,19 @@ const gainXp = (world: World, amount: number) => {
   p.xp += amount;
   while (p.xp >= p.xpNext) {
     p.xp -= p.xpNext;
-    p.level++;
+    p.level += 1;
     p.xpNext = Math.ceil(
       world.content.rules.xpToLevel2 *
-        Math.pow(world.content.rules.xpGrowth, p.level - 1)
+        world.content.rules.xpGrowth ** (p.level - 1)
     );
-    world.pendingLevelUps++;
+    world.pendingLevelUps += 1;
   }
 };
 
 // ---------------------------------------------------------------------------
 // Upgrades
 
-const rollUpgrades = (world: World): ReadonlyArray<UpgradeChoice> => {
+const rollUpgrades = (world: World): readonly UpgradeChoice[] => {
   const candidates: UpgradeChoice[] = [];
   for (const def of world.content.weapons) {
     const slot = world.weapons.find((s) => s.def.id === def.id);
@@ -666,11 +708,14 @@ const rollUpgrades = (world: World): ReadonlyArray<UpgradeChoice> => {
 /** Applies the chosen upgrade and closes the offer. Returns false if there was no open offer or the index is wrong. */
 export const chooseUpgrade = (world: World, index: number): boolean => {
   const choice = world.offer?.[index];
-  if (!choice) return false;
+  if (!choice) {
+    return false;
+  }
   if (choice.kind === "weapon") {
     const slot = world.weapons.find((s) => s.def.id === choice.id);
-    if (slot) slot.level = choice.level;
-    else {
+    if (slot) {
+      slot.level = choice.level;
+    } else {
       const def = world.content.weapons.find((w) => w.id === choice.id)!;
       world.weapons.push({ def, level: 1, timer: 0, sinceFired: 99 });
     }
@@ -684,6 +729,6 @@ export const chooseUpgrade = (world: World, index: number): boolean => {
     );
   }
   world.offer = null;
-  world.pendingLevelUps--;
+  world.pendingLevelUps -= 1;
   return true;
 };

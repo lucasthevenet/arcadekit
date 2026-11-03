@@ -10,12 +10,14 @@ export class EventBuffer<E> {
   }
 
   /** Returns everything pushed since the last drain, oldest first, and empties the buffer. */
-  drain(): ReadonlyArray<E> {
-    if (this.pending.length === 0) return EMPTY;
+  drain(): readonly E[] {
+    if (this.pending.length === 0) {
+      return EMPTY;
+    }
     const drained = this.pending;
     this.pending = [];
     return drained;
   }
 }
 
-const EMPTY: ReadonlyArray<never> = [];
+const EMPTY: readonly never[] = [];

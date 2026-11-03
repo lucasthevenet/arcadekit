@@ -15,14 +15,14 @@ const files = { items: "items.json", title: "title.json" } as const;
 const run = <A, E>(effect: Effect.Effect<A, E>) =>
   Effect.runPromiseExit(effect);
 
-describe("loadContent", () => {
+describe(loadContent, () => {
   it("loads each field from its file and decodes it", async () => {
     const source = memorySource({
       "items.json": [{ id: "a", next: "a" }],
       "title.json": "Demo",
     });
     const exit = await run(loadContent({ schema: Content, files, source }));
-    expect(exit).toEqual(
+    expect(exit).toStrictEqual(
       Exit.succeed({ items: [{ id: "a", next: "a" }], title: "Demo" })
     );
   });
@@ -60,17 +60,21 @@ describe("loadContent", () => {
   });
 });
 
-describe("makeContentLoader", () => {
+describe(makeContentLoader, () => {
   it("reads the files only once", async () => {
     let reads = 0;
     const inner = memorySource({ "items.json": [], "title.json": "Demo" });
     const source = (file: string) =>
-      Effect.suspend(() => (reads++, inner(file)));
+      Effect.suspend(() => {
+        reads += 1;
+        return inner(file);
+      });
     const loader = await Effect.runPromise(
       makeContentLoader({ schema: Content, files, source })
     );
     await Effect.runPromise(loader.load);
     await Effect.runPromise(loader.load);
-    expect(reads).toBe(2); // two files, read once each
+    // Two files, read once each.
+    expect(reads).toBe(2);
   });
 });

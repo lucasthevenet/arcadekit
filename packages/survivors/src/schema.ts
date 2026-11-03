@@ -7,7 +7,7 @@ import { Schema } from "effect";
 const Id = Schema.String.check(Schema.isNonEmpty());
 const Positive = Schema.Finite.check(Schema.isGreaterThan(0));
 const NonNegative = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
-const HexColor = Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/));
+const HexColor = Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/u));
 
 /** Player stats that passive upgrades can raise. */
 export const StatKey = Schema.Literals([
@@ -127,7 +127,7 @@ export type GameContent = typeof GameContent.Type;
 /** Finds ids that point at nothing (a hero's starting weapon, a wave's enemy). */
 export const findBrokenReferences = (
   content: GameContent
-): ReadonlyArray<string> => {
+): readonly string[] => {
   const weaponIds = new Set(content.weapons.map((w) => w.id));
   const enemyIds = new Set(content.enemies.map((e) => e.id));
   return [

@@ -20,6 +20,12 @@ export default defineConfig({
     "eslint/no-use-before-define": "off",
     // `for (let i = 0; i < n; i++)` is the idiom in pool and simulation loops.
     "eslint/no-plusplus": ["error", { allowForLoopAfterthoughts: true }],
+    // Assumes every `.push()` is Array#push; its autofix merges calls to
+    // `EventBuffer.push`, which takes one event, and silently drops events.
+    "unicorn/prefer-single-call": "off",
+    // Switches over unions are checked for exhaustiveness by TypeScript; a
+    // `default` branch would hide a missing case.
+    "eslint/default-case": "off",
     // `Effect.gen(function* () { ... })` is the Effect idiom.
     "eslint/func-names": "off",
     // Effect and Foldkit APIs take callbacks by design.
@@ -28,6 +34,7 @@ export default defineConfig({
   overrides: [
     {
       files: ["**/*.test.ts"],
+      plugins: ["vitest"],
       rules: {
         // `toBe(true)` is stricter than `toBeTruthy()`.
         "vitest/prefer-to-be-truthy": "off",

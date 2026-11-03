@@ -17,7 +17,7 @@ const application = Runtime.makeApplication({
   view,
   subscriptions,
   resources,
-  container: document.getElementById("root")!,
+  container: document.querySelector("#root")!,
 });
 
 Runtime.run(application);

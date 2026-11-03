@@ -29,7 +29,7 @@ export class SpatialGrid {
 
   private cellCoord(v: number): number {
     const c = Math.floor((v + this.halfSize) / this.cellSize);
-    return c < 0 ? 0 : c >= this.cols ? this.cols - 1 : c;
+    return Math.min(Math.max(c, 0), this.cols - 1);
   }
 
   /** Indexes the first `count` points. Point i is (xs[i], ys[i]). */
@@ -59,8 +59,11 @@ export class SpatialGrid {
           i !== -1;
           i = this.nextInCell[i]!
         ) {
-          if (found === out.length) return found;
-          out[found++] = i;
+          if (found === out.length) {
+            return found;
+          }
+          out[found] = i;
+          found += 1;
         }
       }
     }
