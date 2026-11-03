@@ -26,7 +26,10 @@ export class InstancedCrowd {
     this.mesh.frustumCulled = false;
   }
 
-  /** Places instance `index` at (x, y, z) with a uniform `scale` and a rotation around the vertical axis. */
+  /**
+   * Places instance `index` at (x, y, z) with a uniform `scale` and a rotation around the vertical axis.
+   * For a fixed tilt every instance shares (a flat ring lying on the floor), rotate the geometry once instead.
+   */
   set(
     index: number,
     x: number,

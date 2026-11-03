@@ -25,10 +25,7 @@ const BUTTONS = {
 } as const;
 
 const createInput = (surface: HTMLElement): InputSource<PushPuzzleInput> => {
-  const controller = new InputController<never, keyof typeof BUTTONS>(surface, {
-    axes: {},
-    buttons: BUTTONS,
-  });
+  const controller = new InputController(surface, { buttons: BUTTONS });
   // One object, refilled each step: reading input allocates nothing.
   const input: {
     -readonly [K in keyof PushPuzzleInput]: PushPuzzleInput[K];
