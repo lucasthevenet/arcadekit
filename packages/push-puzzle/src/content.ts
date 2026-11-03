@@ -1,11 +1,27 @@
 import { makeContentLoader } from "@gamekit/content";
-import type { ContentLoader, ContentSource } from "@gamekit/content";
+import type {
+  ContentDefinition,
+  ContentLoader,
+  ContentSource,
+} from "@gamekit/content";
 import { Context, Layer } from "effect";
 
 import { PuzzleContent, findLevelProblems } from "./schema";
 
 /** The file that fills each part of the content. Paths are relative to the content source. */
-export const CONTENT_FILES = { levels: "levels.json" } as const;
+const CONTENT_FILES = { levels: "levels.json" } as const;
+
+/**
+ * The push-puzzle content definition: the level schema, the file it comes from, and the
+ * level checks. The content layer and the tests load it, each with its own source.
+ */
+export const pushPuzzleContentDefinition: ContentDefinition<
+  typeof PuzzleContent
+> = {
+  schema: PuzzleContent,
+  files: CONTENT_FILES,
+  validate: findLevelProblems,
+};
 
 /** Loads and validates a push-puzzle game's levels. Cached after the first load. */
 export class PushPuzzleContent extends Context.Service<
@@ -16,10 +32,5 @@ export class PushPuzzleContent extends Context.Service<
 export const makePushPuzzleContentLayer = (source: ContentSource) =>
   Layer.effect(
     PushPuzzleContent,
-    makeContentLoader({
-      schema: PuzzleContent,
-      files: CONTENT_FILES,
-      source,
-      validate: findLevelProblems,
-    })
+    makeContentLoader({ ...pushPuzzleContentDefinition, source })
   );

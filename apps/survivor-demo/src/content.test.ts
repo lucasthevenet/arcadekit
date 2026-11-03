@@ -3,12 +3,10 @@ import { readFileSync } from "node:fs";
 import { ContentError, loadContent } from "@gamekit/content";
 import type { ContentSource } from "@gamekit/content";
 import {
-  CONTENT_FILES,
-  GameContent,
   chooseUpgrade,
   createWorld,
-  findBrokenReferences,
   step,
+  survivorsContentDefinition,
 } from "@gamekit/survivors";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
@@ -25,12 +23,7 @@ const fileSource: ContentSource = (file) =>
   });
 
 const content = await Effect.runPromise(
-  loadContent({
-    schema: GameContent,
-    files: CONTENT_FILES,
-    source: fileSource,
-    validate: findBrokenReferences,
-  })
+  loadContent({ ...survivorsContentDefinition, source: fileSource })
 );
 
 describe("demo content", () => {
