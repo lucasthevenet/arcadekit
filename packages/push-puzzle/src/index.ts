@@ -11,7 +11,7 @@ export type { ParsedLevel } from "./level";
 export { LevelDef, PuzzleContent, findLevelProblems } from "./schema";
 export {
   type Direction,
-  type HudSnapshot,
+  type HudSample,
   type Puzzle,
   type PushPuzzleConfig,
   type PushPuzzleEvent,
@@ -20,6 +20,6 @@ export {
   boxIdAt,
   boxesLeft,
   createPuzzle,
-  hudSnapshot,
+  hudSample,
   step,
 } from "./world";

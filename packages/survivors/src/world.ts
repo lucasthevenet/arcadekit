@@ -65,7 +65,7 @@ export interface UpgradeChoice {
   readonly level: number;
 }
 
-export interface HudSnapshot {
+export interface HudSample {
   readonly hp: number;
   readonly maxHp: number;
   readonly level: number;
@@ -87,7 +87,7 @@ export interface RunSummary {
 
 /** What a survivors run reports to the outside. */
 export type SurvivorsEvent =
-  | { readonly type: "hud"; readonly hud: HudSnapshot }
+  | { readonly type: "hud"; readonly hud: HudSample }
   | { readonly type: "levelUp"; readonly choices: readonly UpgradeChoice[] }
   | { readonly type: "runEnded"; readonly summary: RunSummary };
 
@@ -243,7 +243,7 @@ export const recomputeStats = (world: World): void => {
   world.player.hp += Math.max(0, world.player.maxHp - previousMaxHp);
 };
 
-export const hudSnapshot = (world: World): HudSnapshot => ({
+export const hudSample = (world: World): HudSample => ({
   hp: world.player.hp,
   maxHp: world.player.maxHp,
   level: world.player.level,
@@ -313,7 +313,7 @@ export const step = (world: World, input: SurvivorsInput, dt: number): void => {
 
 const endRun = (world: World, status: "won" | "dead") => {
   world.status = status;
-  world.events.push({ type: "hud", hud: hudSnapshot(world) });
+  world.events.push({ type: "hud", hud: hudSample(world) });
   world.events.push({
     type: "runEnded",
     summary: {

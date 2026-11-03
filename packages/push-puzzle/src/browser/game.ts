@@ -3,7 +3,7 @@ import { makeGameEngine } from "@gamekit/runtime";
 import type { GameDefinition, GameEngine, InputSource } from "@gamekit/runtime";
 import { Context, Layer } from "effect";
 
-import { createPuzzle, hudSnapshot, step } from "../world";
+import { createPuzzle, hudSample, step } from "../world";
 import type {
   Direction,
   Puzzle,
@@ -71,7 +71,7 @@ export const pushPuzzleGame: GameDefinition<
   // The HUD changes only on a turn, so it's sent right after a turn, and never in between.
   sample: {
     version: (puzzle) => puzzle.turns,
-    read: (puzzle) => ({ type: "hud", hud: hudSnapshot(puzzle) }),
+    read: (puzzle) => ({ type: "hud", hud: hudSample(puzzle) }),
   },
   createInput,
   createView: (container) => new PushPuzzleView(container),

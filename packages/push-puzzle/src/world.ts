@@ -29,7 +29,7 @@ export interface PushPuzzleConfig {
   readonly historyCapacity?: number;
 }
 
-export interface HudSnapshot {
+export interface HudSample {
   readonly moves: number;
   /** Goals that have no box on them yet. */
   readonly boxesLeft: number;
@@ -37,7 +37,7 @@ export interface HudSnapshot {
 
 /** What a push-puzzle run reports to the outside. */
 export type PushPuzzleEvent =
-  | { readonly type: "hud"; readonly hud: HudSnapshot }
+  | { readonly type: "hud"; readonly hud: HudSample }
   | { readonly type: "levelSolved"; readonly moves: number };
 
 const DEFAULT_HISTORY_CAPACITY = 2048;
@@ -305,7 +305,7 @@ export const boxesLeft = (puzzle: Puzzle): number => {
   return puzzle.goalCount - placed;
 };
 
-export const hudSnapshot = (puzzle: Puzzle): HudSnapshot => ({
+export const hudSample = (puzzle: Puzzle): HudSample => ({
   moves: puzzle.moves,
   boxesLeft: boxesLeft(puzzle),
 });

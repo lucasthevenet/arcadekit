@@ -12,7 +12,7 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Frame**: one browser animation frame (`requestAnimationFrame`). The runtime runs zero or more steps per frame, then the view draws once. Don't call a step a frame.
 
-**Event**: a rare, meaningful fact a run reports to the outside ("level solved", "leveled up"), pushed into an `EventBuffer` during a step and drained by the runtime. Never per-entity data. A **sample** is the runtime's read of the state for the UI (a HUD), also delivered as an event: every so many milliseconds of wall-clock time, or right after the game's **version** number changes (a turn-based HUD). _Avoid_: snapshot for a sample.
+**Event**: a rare, meaningful fact a run reports to the outside ("level solved", "leveled up"), pushed into an `EventBuffer` during a step and drained by the runtime. Never per-entity data. A **sample** is the runtime's read of the state for the UI (a HUD), also delivered as an event: every so many milliseconds of wall-clock time, or right after the game's **version** number changes (a turn-based HUD). In both genres, the sample is a `hud` event that carries a `HudSample`. _Avoid_: snapshot for a sample.
 
 **Snapshot**: a copy of a run's whole state that could be restored. The runtime has none (see finding 11). Don't call a sample a snapshot.
 

@@ -18,7 +18,7 @@ export {
   findBrokenReferences,
 } from "./schema";
 export {
-  type HudSnapshot,
+  type HudSample,
   type RunStatus,
   type RunSummary,
   type Stats,
@@ -31,7 +31,7 @@ export {
   auraRadius,
   chooseUpgrade,
   createWorld,
-  hudSnapshot,
+  hudSample,
   recomputeStats,
   step,
   weaponCooldown,
