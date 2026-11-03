@@ -10,6 +10,7 @@ export const Message = defineMessageUnion({
   LoadedContent: { levels: Schema.Array(LevelSummary) },
   FailedToLoadContent: { error: Schema.String },
   MountedViewport: {},
+  UnmountedViewport: {},
 
   // Level select
   ClickedLevel: { levelId: Schema.String },

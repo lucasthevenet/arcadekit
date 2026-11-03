@@ -29,7 +29,7 @@ export const Model = Schema.Struct({
   /** The level being played, or last played. Restart and replay start it again. */
   levelId: Schema.String,
   hud: HudSample,
-  /** True once the game's DOM element exists; the engine subscription waits for it. */
+  /** True while the viewport is in the document: the engine runs only then (see gameViewport). */
   isViewportMounted: Schema.Boolean,
 });
 export type Model = typeof Model.Type;

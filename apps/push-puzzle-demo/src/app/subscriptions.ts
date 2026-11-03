@@ -1,19 +1,11 @@
-import { engineMessages, keyPresses } from "@gamekit/foldkit";
+import { engineEntry, keyPresses } from "@gamekit/foldkit";
 import type { PushPuzzleEvent } from "@gamekit/push-puzzle";
 import { PushPuzzleEngine } from "@gamekit/push-puzzle/browser";
-import { Effect, Schema, Stream } from "effect";
-import { Mount, Subscription } from "foldkit";
+import { Schema, Stream } from "effect";
+import { Subscription } from "foldkit";
 
 import { Message } from "./message";
 import type { Model } from "./model";
-
-export const VIEWPORT_ID = "game-viewport";
-
-/** Reports that the game's DOM element now exists. The engine subscription below waits for this. */
-export const GameViewport = Mount.define("GameViewport", {
-  messages: [Message.MountedViewport],
-  execute: () => Effect.succeed(Message.MountedViewport()),
-});
 
 const toMessage = (event: PushPuzzleEvent): Message => {
   switch (event.type) {
@@ -32,22 +24,11 @@ export const subscriptions = Subscription.make<
   PushPuzzleEngine
 >()((entry) => ({
   /** While the viewport exists, the engine renders into it and its events become Messages. */
-  engine: entry(
-    { isViewportMounted: Schema.Boolean },
-    {
-      modelToDependencies: (model) => ({
-        isViewportMounted: model.isViewportMounted,
-      }),
-      dependenciesToStream: ({ isViewportMounted }) =>
-        isViewportMounted
-          ? engineMessages({
-              engine: Effect.service(PushPuzzleEngine),
-              elementId: VIEWPORT_ID,
-              toMessage,
-            })
-          : Stream.empty,
-    }
-  ),
+  engine: engineEntry({
+    engine: PushPuzzleEngine,
+    isViewportMounted: (model) => model.isViewportMounted,
+    toMessage,
+  }),
 
   /** R restarts and Escape goes back to level select, but only during a run. Not simulation input. */
   runKeys: entry(

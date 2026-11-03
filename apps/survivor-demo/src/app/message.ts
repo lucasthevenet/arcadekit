@@ -10,6 +10,7 @@ export const Message = defineMessageUnion({
   LoadedContent: { heroes: Schema.Array(HeroSummary) },
   FailedToLoadContent: { error: Schema.String },
   MountedViewport: {},
+  UnmountedViewport: {},
 
   // Menu
   SelectedHero: { heroId: Schema.String },

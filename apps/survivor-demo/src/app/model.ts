@@ -32,7 +32,7 @@ export const Model = Schema.Struct({
   heroes: Schema.Array(HeroSummary),
   selectedHeroId: Schema.String,
   hud: HudSample,
-  /** True once the game's DOM element exists; the engine subscription waits for it. */
+  /** True while the viewport is in the document: the engine runs only then (see gameViewport). */
   isViewportMounted: Schema.Boolean,
 });
 export type Model = typeof Model.Type;

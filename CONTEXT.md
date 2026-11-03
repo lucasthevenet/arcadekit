@@ -22,7 +22,7 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **View**: a genre's `GameView`. It draws a run into the viewport every frame and never changes the run's state. Not Foldkit's `view` function, which draws the app's UI. _Avoid_: renderer, which is `Stage`'s `WebGLRenderer`.
 
-**Viewport**: the DOM element the view draws a run into and the input source reads input from. The runtime calls it `element` in `attach`; the view gets it as `container` and the input source as `surface`.
+**Viewport**: the DOM element the view draws a run into and the input source reads input from. The runtime calls it `element` in `attach`; the view gets it as `container` and the input source as `surface`. In a Foldkit app, `gameViewport` (`@gamekit/foldkit`) renders it, and `engineEntry` keeps the engine attached to it while it is in the document. One per document.
 
 **Engine**: the Effect-facing API of a running game (`GameEngine`): attach to an element, listen to events, start, modify, pause, stop. Each genre declares its own engine service.
 
