@@ -1,0 +1,23 @@
+{
+  "name": "@gamekit/push-puzzle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Push-puzzle genre rules: a Sokoban-like tile map played in turns, with undo and holes",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@gamekit/content": "workspace:*",
+    "@gamekit/core": "workspace:*",
+    "@gamekit/input": "workspace:*",
+    "@gamekit/render-three": "workspace:*",
+    "@gamekit/runtime": "workspace:*",
+    "effect": "~4.1.2",
+    "three": "^0.187.0"
+  }
+}
