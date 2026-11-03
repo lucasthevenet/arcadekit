@@ -7,4 +7,4 @@ export {
   loadContent,
   makeContentLoader,
   memorySource,
-} from './loader'
+} from "./loader";

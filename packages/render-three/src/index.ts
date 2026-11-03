@@ -1,3 +1,3 @@
-export { followTarget, orbitAround } from './camera'
-export { InstancedCrowd } from './crowd'
-export { Stage, type StageOptions, disposeObject } from './stage'
+export { followTarget, orbitAround } from "./camera";
+export { InstancedCrowd } from "./crowd";
+export { Stage, type StageOptions, disposeObject } from "./stage";

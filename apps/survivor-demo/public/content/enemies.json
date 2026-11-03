@@ -1,6 +1,42 @@
 [
-  { "id": "slime", "name": "Slime", "color": "#7bd389", "hp": 10, "speed": 2.4, "damage": 8, "radius": 0.45, "xp": 1 },
-  { "id": "bat", "name": "Bat", "color": "#a77bd3", "hp": 6, "speed": 4.2, "damage": 6, "radius": 0.35, "xp": 1 },
-  { "id": "golem", "name": "Golem", "color": "#9a8c7a", "hp": 60, "speed": 1.6, "damage": 20, "radius": 0.8, "xp": 5 },
-  { "id": "wraith", "name": "Wraith", "color": "#e3e3f5", "hp": 30, "speed": 3.4, "damage": 14, "radius": 0.5, "xp": 3 }
+  {
+    "id": "slime",
+    "name": "Slime",
+    "color": "#7bd389",
+    "hp": 10,
+    "speed": 2.4,
+    "damage": 8,
+    "radius": 0.45,
+    "xp": 1
+  },
+  {
+    "id": "bat",
+    "name": "Bat",
+    "color": "#a77bd3",
+    "hp": 6,
+    "speed": 4.2,
+    "damage": 6,
+    "radius": 0.35,
+    "xp": 1
+  },
+  {
+    "id": "golem",
+    "name": "Golem",
+    "color": "#9a8c7a",
+    "hp": 60,
+    "speed": 1.6,
+    "damage": 20,
+    "radius": 0.8,
+    "xp": 5
+  },
+  {
+    "id": "wraith",
+    "name": "Wraith",
+    "color": "#e3e3f5",
+    "hp": 30,
+    "speed": 3.4,
+    "damage": 14,
+    "radius": 0.5,
+    "xp": 3
+  }
 ]

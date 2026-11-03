@@ -1,7 +1,7 @@
-import { Schema } from 'effect'
-import { defineMessageUnion } from 'foldkit/message'
+import { Schema } from "effect";
+import { defineMessageUnion } from "foldkit/message";
 
-import { HeroSummary, Hud, RunSummary, UpgradeChoice } from './model'
+import { HeroSummary, Hud, RunSummary, UpgradeChoice } from "./model";
 
 // Every fact the UI can react to. Named for what happened, not what to do.
 export const Message = defineMessageUnion({
@@ -30,5 +30,5 @@ export const Message = defineMessageUnion({
 
   // Acknowledgements from fire-and-forget engine commands
   CompletedEngineCommand: {},
-})
-export type Message = typeof Message.Type
+});
+export type Message = typeof Message.Type;

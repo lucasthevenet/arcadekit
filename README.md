@@ -15,7 +15,7 @@ npm run build       # typecheck + production build of the demo
 Lower layers have fewer dependencies. Nothing depends on a layer above it.
 
 | Package | What it gives you | Depends on |
-|---|---|---|
+| --- | --- | --- |
 | [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool`, `SpatialGrid`, `EventBuffer`, small math | nothing (not even the DOM) |
 | [`@gamekit/input`](packages/input) | `InputController`: keyboard, gamepad and touch-drag mapped to named axes and buttons; `MOVE_AXES` preset | DOM |
 | [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache; `fetchJsonSource`, `memorySource` | Effect |
