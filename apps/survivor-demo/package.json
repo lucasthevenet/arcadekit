@@ -11,12 +11,12 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@gamekit/content": "*",
-    "@gamekit/foldkit": "*",
-    "@gamekit/runtime": "*",
-    "@gamekit/survivors": "*",
+    "@effect/platform-browser": "~4.1.0",
+    "@gamekit/content": "workspace:*",
+    "@gamekit/foldkit": "workspace:*",
+    "@gamekit/runtime": "workspace:*",
+    "@gamekit/survivors": "workspace:*",
     "effect": "~4.1.2",
-    "foldkit": "~0.170.0",
-    "@effect/platform-browser": "~4.1.0"
+    "foldkit": "~0.170.0"
   }
 }

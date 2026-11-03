@@ -3,19 +3,23 @@
 Reusable packages for building browser games with **Effect 4**, **Foldkit** and **Three.js**, plus a demo survivors-like game built on them.
 
 ```bash
-npm install
-npm run dev         # play the demo at http://localhost:5173
-npm test            # all package tests
-npm run typecheck   # every package, each against its own rules
-npm run build       # typecheck + production build of the demo
+pnpm install
+pnpm dev         # play the demo at http://localhost:5173
+pnpm test        # all package tests
+pnpm typecheck   # every package, each against its own rules
+pnpm check       # lint + format check (Ultracite: Oxlint + Oxfmt)
+pnpm fix         # apply lint fixes and formatting
+pnpm build       # typecheck + production build of the demo
 ```
+
+`pnpm fix` applies Oxlint's autofixes. Run the tests afterwards: a few rules that don't fit this codebase are turned off in `oxlint.config.ts`, each with the reason.
 
 ## Packages
 
 Lower layers have fewer dependencies. Nothing depends on a layer above it.
 
 | Package | What it gives you | Depends on |
-|---|---|---|
+| --- | --- | --- |
 | [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool`, `SpatialGrid`, `EventBuffer`, small math | nothing (not even the DOM) |
 | [`@gamekit/input`](packages/input) | `InputController`: keyboard, gamepad and touch-drag mapped to named axes and buttons; `MOVE_AXES` preset | DOM |
 | [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache; `fetchJsonSource`, `memorySource` | Effect |

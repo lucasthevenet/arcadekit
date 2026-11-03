@@ -1,23 +1,25 @@
 {
   "name": "gamekit",
   "private": true,
-  "type": "module",
   "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
+  "type": "module",
   "scripts": {
-    "dev": "npm run dev -w @gamekit/survivor-demo",
-    "build": "npm run typecheck && npm run build -w @gamekit/survivor-demo",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "vitest run"
+    "dev": "pnpm --filter @gamekit/survivor-demo dev",
+    "build": "pnpm typecheck && pnpm --filter @gamekit/survivor-demo build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "check": "ultracite check",
+    "fix": "ultracite fix"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/three": "^0.187.0",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
     "typescript": "^7.0.2",
+    "ultracite": "8.1.1",
     "vite": "^8.3.5",
     "vitest": "^5.1.0"
-  }
+  },
+  "packageManager": "pnpm@10.28.0"
 }
