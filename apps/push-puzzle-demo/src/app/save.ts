@@ -20,7 +20,7 @@ export type LevelRecords = typeof LevelRecords.Type;
 export const emptyRecords: LevelRecords = {};
 
 export const SAVE_KEY = "gamekit/push-puzzle/save";
-/** Where a save that can't be read is copied before it is dropped. */
+/** Where a save that fails to decode (corrupt, or an unknown version) is copied before it is dropped. */
 export const BACKUP_KEY = `${SAVE_KEY}/corrupt`;
 
 /**
