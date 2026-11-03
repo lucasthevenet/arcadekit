@@ -18,6 +18,10 @@ _Avoid_: session, match, level (unless the genre means a level)
 One fixed-length advance of a run's state, given that step's input. Deterministic, and it allocates nothing.
 _Avoid_: tick, update, frame (a frame is a render, and can contain zero or several steps)
 
+**Turn**:
+One player action that changes a turn-based run's state, such as a move or an undo. A turn happens inside a single step, and most steps contain no turn.
+_Avoid_: step, tick, move (a move is one kind of turn)
+
 **Event**:
 A rare, meaningful fact a run reports to the outside (UI, sound, analytics), drained after steps. Never per-entity data.
 _Avoid_: message (that's Foldkit's word for what an event becomes in the UI), signal
@@ -35,3 +39,9 @@ _Avoid_: entity list, ECS, store
 **Genre package**:
 A package that implements a GameDefinition for one kind of game (content schema, simulation, view), so several games of that genre can share it and differ only in content and screens.
 _Avoid_: game package, engine (an engine runs a genre; it isn't one)
+
+### Evaluating the kit
+
+**Finding**:
+A place where a genre had to change, work around, copy or bypass a primitive in a shared layer, or where a shared primitive's name or docs assume one genre. A primitive a genre simply doesn't use is not a finding.
+_Avoid_: issue, bug, gap
