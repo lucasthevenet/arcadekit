@@ -77,4 +77,23 @@ describe(makeContentLoader, () => {
     // Two files, read once each.
     expect(reads).toBe(2);
   });
+
+  it("reads the files again after a failed load, then keeps the success", async () => {
+    let reads = 0;
+    const inner = memorySource({ "items.json": [], "title.json": "Demo" });
+    // The first read fails, like a network blip; every later read succeeds.
+    const source = (file: string) =>
+      Effect.suspend(() => {
+        reads += 1;
+        return reads === 1 ? memorySource({})(file) : inner(file);
+      });
+    const loader = await Effect.runPromise(
+      makeContentLoader({ schema: Content, files, source })
+    );
+    expect(Exit.isFailure(await run(loader.load))).toBe(true);
+    expect(Exit.isSuccess(await run(loader.load))).toBe(true);
+    const readsAfterSuccess = reads;
+    expect(Exit.isSuccess(await run(loader.load))).toBe(true);
+    expect(reads).toBe(readsAfterSuccess);
+  });
 });

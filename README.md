@@ -23,7 +23,7 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | --- | --- | --- |
 | [`@gamekit/core`](packages/core) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays `createPool` (and `createIdentifiedPool`, whose entities keep stable ids), `SpatialGrid`, `EventBuffer`, `clamp` | nothing (not even the DOM) |
 | [`@gamekit/input`](packages/input) | `InputController`: keyboard, gamepad, touch-drag and swipes mapped to named axes and buttons; `MOVE_AXES` preset | DOM |
-| [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache; `memorySource`. `fetchJsonSource` is in `@gamekit/content/browser` | Effect |
+| [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache the first success; `memorySource`. `fetchJsonSource` is in `@gamekit/content/browser` | Effect |
 | [`@gamekit/render-three`](packages/render-three) | `Stage` (renderer + scene + perspective or orthographic camera that resize with their container), `MeshInstances`, `followTarget`, `orbitAround`, `fitCamera` | Three.js |
 | [`@gamekit/runtime`](packages/runtime) | `GameDefinition` (the interface a game implements), `GameDriver` (frame loop), `makeGameEngine` (Effect API) | Effect, core |
 | [`@gamekit/foldkit`](packages/foldkit) | `gameViewport` (the element an engine draws into), `engineEntry` (the Subscription that runs the engine there and turns its events into Messages), `keyPresses` | Effect, Foldkit, runtime |

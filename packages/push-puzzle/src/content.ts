@@ -23,7 +23,7 @@ export const pushPuzzleContentDefinition: ContentDefinition<
   validate: findLevelProblems,
 };
 
-/** Loads and validates a push-puzzle game's levels. Cached after the first load. */
+/** Loads and validates a push-puzzle game's levels. Keeps the first successful load; a failed one can be retried. */
 export class PushPuzzleContent extends Context.Service<
   PushPuzzleContent,
   ContentLoader<PuzzleContent>
