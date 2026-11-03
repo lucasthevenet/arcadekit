@@ -2,7 +2,7 @@ import { EventBuffer, createPool } from "@gamekit/core";
 import type { Pool } from "@gamekit/core";
 
 import { Tile, parseLevel } from "./level";
-import type { LevelDef, PuzzleContent } from "./schema";
+import type { PuzzleContent } from "./schema";
 
 // The push-puzzle simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
 // The runtime calls `step` on a fixed clock, but the game is played in turns: a step holds
@@ -106,7 +106,6 @@ const popRecord = (history: History): number => {
 };
 
 export interface Puzzle {
-  readonly level: LevelDef;
   readonly events: EventBuffer<PushPuzzleEvent>;
   /** The tile map. Cells are indexed `row * cols + col`. */
   readonly cols: number;
@@ -143,7 +142,6 @@ export const createPuzzle = (
     boxes.fields.id[i] = id;
   }
   return {
-    level,
     events: new EventBuffer(),
     cols: parsed.cols,
     rows: parsed.rows,
@@ -204,7 +202,7 @@ const takeMove = (puzzle: Puzzle, direction: Direction) => {
 const COL_DELTA = { up: 0, down: 0, left: -1, right: 1 } as const;
 const ROW_DELTA = { up: -1, down: 1, left: 0, right: 0 } as const;
 
-/** The cell one step from `cell` in `direction`, or -1 off the map. */
+/** The cell next to `cell` in `direction`, or -1 off the map. */
 const neighbor = (puzzle: Puzzle, cell: number, direction: Direction) => {
   const col = (cell % puzzle.cols) + COL_DELTA[direction];
   const row = Math.floor(cell / puzzle.cols) + ROW_DELTA[direction];
@@ -290,7 +288,7 @@ const undoTurn = (puzzle: Puzzle): void => {
 };
 
 /** Pool index of the box with stable id `id`, or -1 if it's gone (it filled a hole). */
-export const boxIndexById = (puzzle: Puzzle, id: number): number => {
+const boxIndexById = (puzzle: Puzzle, id: number): number => {
   const { boxes } = puzzle;
   for (let i = 0; i < boxes.count; i++) {
     if (boxes.fields.id[i] === id) {

@@ -18,7 +18,6 @@ export {
   type PushPuzzleInput,
   boardText,
   boxIdAt,
-  boxIndexById,
   boxesLeft,
   createPuzzle,
   hudSnapshot,

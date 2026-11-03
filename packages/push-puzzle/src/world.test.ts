@@ -299,6 +299,10 @@ describe("replay", () => {
     }
     return {
       board: boardText(puzzle),
+      // Board text can't tell boxes apart; their stable ids can.
+      boxIds: boardText(puzzle).flatMap((line, row) =>
+        [...line].map((_, col) => boxIdAt(puzzle, col, row))
+      ),
       moves: puzzle.moves,
       events: [...puzzle.events.drain()],
     };
