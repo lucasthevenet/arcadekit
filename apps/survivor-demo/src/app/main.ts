@@ -1,0 +1,15 @@
+import { fetchJsonSource } from '@gamekit/content'
+import { makeSurvivorsContentLayer } from '@gamekit/survivors'
+import { SurvivorsEngineLayer } from '@gamekit/survivors/browser'
+import { Layer } from 'effect'
+
+export { Model } from './model'
+export { init, update } from './update'
+export { view } from './view'
+export { subscriptions } from './subscriptions'
+
+/** App-lifetime services, shared by every Command and Subscription. */
+export const resources = Layer.mergeAll(
+  SurvivorsEngineLayer,
+  makeSurvivorsContentLayer(fetchJsonSource(`${import.meta.env.BASE_URL}content/`)),
+)

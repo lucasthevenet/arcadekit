@@ -1,0 +1,16 @@
+{
+  "name": "@gamekit/content",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Load game content files and validate them with Effect Schema",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "effect": "~4.1.2"
+  }
+}

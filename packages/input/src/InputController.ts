@@ -1,0 +1,153 @@
+/** Key names are `KeyboardEvent.code` values, e.g. "KeyW", "ArrowLeft", "Space". */
+export interface AxisBinding {
+  readonly negativeKeys?: ReadonlyArray<string>
+  readonly positiveKeys?: ReadonlyArray<string>
+  /** Index into `Gamepad.axes` (0 = left stick X, 1 = left stick Y on standard pads). */
+  readonly gamepadAxis?: number
+  /** Floating touch/mouse joystick: press anywhere on the surface and drag. */
+  readonly pointerDrag?: 'x' | 'y'
+}
+
+export interface ButtonBinding {
+  readonly keys?: ReadonlyArray<string>
+  /** Indices into `Gamepad.buttons` (0 = A / Cross on standard pads). */
+  readonly gamepadButtons?: ReadonlyArray<number>
+}
+
+export interface InputBindings<Axis extends string, Button extends string> {
+  readonly axes: Readonly<Record<Axis, AxisBinding>>
+  readonly buttons: Readonly<Record<Button, ButtonBinding>>
+}
+
+export interface InputOptions {
+  /** Stick values smaller than this count as zero. */
+  readonly deadzone?: number
+  /** Pixels of drag for a full-strength pointer axis. */
+  readonly dragRange?: number
+}
+
+/** Ready-made movement axes: WASD, arrow keys, left stick, and touch drag. */
+export const MOVE_AXES = {
+  moveX: { negativeKeys: ['KeyA', 'ArrowLeft'], positiveKeys: ['KeyD', 'ArrowRight'], gamepadAxis: 0, pointerDrag: 'x' },
+  moveY: { negativeKeys: ['KeyW', 'ArrowUp'], positiveKeys: ['KeyS', 'ArrowDown'], gamepadAxis: 1, pointerDrag: 'y' },
+} as const satisfies Record<string, AxisBinding>
+
+/**
+ * Turns keyboard, gamepad and pointer events on `surface` into named axes and buttons.
+ * A game reads `axis()` / `isDown()` / `wasPressed()` and never sees raw devices.
+ */
+export class InputController<Axis extends string, Button extends string = never> {
+  private readonly heldKeys = new Set<string>()
+  private readonly pressedKeys = new Set<string>()
+  private readonly padWasDown = new Set<Button>()
+  private readonly padPressed = new Set<Button>()
+  private drag: { id: number; startX: number; startY: number; x: number; y: number } | null = null
+  private readonly cleanups: Array<() => void> = []
+  private readonly deadzone: number
+  private readonly dragRange: number
+
+  constructor(
+    private readonly surface: HTMLElement,
+    private readonly bindings: InputBindings<Axis, Button>,
+    options: InputOptions = {},
+  ) {
+    this.deadzone = options.deadzone ?? 0.2
+    this.dragRange = options.dragRange ?? 60
+    this.listen(window, 'keydown', e => {
+      if (!e.repeat) this.pressedKeys.add(e.code)
+      this.heldKeys.add(e.code)
+    })
+    this.listen(window, 'keyup', e => this.heldKeys.delete(e.code))
+    this.listen(window, 'blur', () => this.heldKeys.clear())
+    this.listen(surface, 'pointerdown', e => {
+      if (this.drag) return
+      surface.setPointerCapture(e.pointerId)
+      this.drag = { id: e.pointerId, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY }
+    })
+    this.listen(surface, 'pointermove', e => {
+      if (this.drag?.id === e.pointerId) {
+        this.drag.x = e.clientX
+        this.drag.y = e.clientY
+      }
+    })
+    const release = (e: PointerEvent) => {
+      if (this.drag?.id === e.pointerId) this.drag = null
+    }
+    this.listen(surface, 'pointerup', release)
+    this.listen(surface, 'pointercancel', release)
+    surface.style.touchAction = 'none'
+  }
+
+  /** Current value in [-1, 1]. Sources add up, then clamp. */
+  axis(name: Axis): number {
+    const binding = this.bindings.axes[name]
+    let value = 0
+    for (const key of binding.negativeKeys ?? []) if (this.heldKeys.has(key)) value -= 1
+    for (const key of binding.positiveKeys ?? []) if (this.heldKeys.has(key)) value += 1
+    if (binding.gamepadAxis !== undefined) {
+      for (const pad of this.gamepads()) {
+        const v = pad.axes[binding.gamepadAxis] ?? 0
+        if (Math.abs(v) > this.deadzone) value += v
+      }
+    }
+    if (binding.pointerDrag && this.drag) {
+      const delta = binding.pointerDrag === 'x' ? this.drag.x - this.drag.startX : this.drag.y - this.drag.startY
+      value += delta / this.dragRange
+    }
+    return value < -1 ? -1 : value > 1 ? 1 : value
+  }
+
+  isDown(name: Button): boolean {
+    const binding = this.bindings.buttons[name]
+    if (binding.keys?.some(key => this.heldKeys.has(key))) return true
+    return this.padButtonDown(binding)
+  }
+
+  /** True if the button went down since the last `endFrame()`. */
+  wasPressed(name: Button): boolean {
+    const binding = this.bindings.buttons[name]
+    if (binding.keys?.some(key => this.pressedKeys.has(key))) return true
+    const down = this.padButtonDown(binding)
+    if (down && !this.padWasDown.has(name)) this.padPressed.add(name)
+    return this.padPressed.has(name)
+  }
+
+  /** Call once per frame after the game has read input. Resets `wasPressed`. */
+  endFrame(): void {
+    this.pressedKeys.clear()
+    this.padPressed.clear()
+    for (const name of Object.keys(this.bindings.buttons) as Button[]) {
+      if (this.padButtonDown(this.bindings.buttons[name])) this.padWasDown.add(name)
+      else this.padWasDown.delete(name)
+    }
+  }
+
+  dispose(): void {
+    for (const cleanup of this.cleanups) cleanup()
+    this.cleanups.length = 0
+    this.heldKeys.clear()
+    this.drag = null
+  }
+
+  private padButtonDown(binding: ButtonBinding): boolean {
+    if (!binding.gamepadButtons) return false
+    for (const pad of this.gamepads()) {
+      for (const index of binding.gamepadButtons) if (pad.buttons[index]?.pressed) return true
+    }
+    return false
+  }
+
+  private *gamepads(): Iterable<Gamepad> {
+    for (const pad of navigator.getGamepads?.() ?? []) if (pad) yield pad
+  }
+
+  private listen<K extends keyof WindowEventMap & keyof HTMLElementEventMap>(
+    target: Window | HTMLElement,
+    type: K,
+    handler: (event: WindowEventMap[K] & HTMLElementEventMap[K]) => void,
+  ) {
+    const listener = handler as EventListener
+    target.addEventListener(type, listener)
+    this.cleanups.push(() => target.removeEventListener(type, listener))
+  }
+}

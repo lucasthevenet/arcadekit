@@ -1,0 +1,23 @@
+{
+  "name": "@gamekit/survivors",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Survivors-like genre rules: weapons, waves, XP and upgrades",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "effect": "~4.1.2",
+    "three": "^0.187.0",
+    "@gamekit/core": "*",
+    "@gamekit/content": "*",
+    "@gamekit/input": "*",
+    "@gamekit/render-three": "*",
+    "@gamekit/runtime": "*"
+  }
+}

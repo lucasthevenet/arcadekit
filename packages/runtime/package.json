@@ -1,0 +1,17 @@
+{
+  "name": "@gamekit/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runs a game definition in the browser: frame loop, events, and an Effect engine API",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "effect": "~4.1.2",
+    "@gamekit/core": "*"
+  }
+}

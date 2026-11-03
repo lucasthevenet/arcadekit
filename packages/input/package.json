@@ -1,0 +1,13 @@
+{
+  "name": "@gamekit/input",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Keyboard, gamepad and touch mapped to named axes and buttons",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  }
+}
