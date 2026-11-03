@@ -1,6 +1,7 @@
 import { EventBuffer, createIdentifiedPool } from "@gamekit/core";
 import type { IdentifiedPool } from "@gamekit/core";
 
+import type { HudSample, PushPuzzleEvent } from "./events";
 import { Tile, parseLevel } from "./level";
 import type { PuzzleContent } from "./schema";
 
@@ -28,17 +29,6 @@ export interface PushPuzzleConfig {
   /** How many turns undo can go back. Defaults to 2048; the oldest are dropped first. */
   readonly historyCapacity?: number;
 }
-
-export interface HudSample {
-  readonly moves: number;
-  /** Goals that have no box on them yet. */
-  readonly boxesLeft: number;
-}
-
-/** What a push-puzzle run reports to the outside. */
-export type PushPuzzleEvent =
-  | { readonly type: "hud"; readonly hud: HudSample }
-  | { readonly type: "levelSolved"; readonly moves: number };
 
 const DEFAULT_HISTORY_CAPACITY = 2048;
 /** Steps a held direction waits after its press before moving again. */

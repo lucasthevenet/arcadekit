@@ -61,7 +61,7 @@ const MyEngineLayer = Layer.sync(MyEngine, () => makeGameEngine(myGame))
 Then connect it to a Foldkit app the way `apps/survivor-demo/src/app/subscriptions.ts` does:
 
 1. The view always renders the game's container element, with a **Mount** that reports when it exists.
-2. A **Subscription** gated on that returns `engineMessages(...)`, which attaches the engine and turns its events into Messages.
+2. A **Subscription** gated on that returns `engineMessages(...)`, which attaches the engine and turns its events into Messages. The Messages and the Model use the genre's event payload Schemas (`events.ts` in both genres), so a field the genre adds reaches the app.
 3. **Commands** call the engine: `start`, `modify` (change state from the UI, e.g. picking an upgrade), `setPaused`, `stop`.
 
 Rules of thumb for the simulation (see `packages/survivors/src/world.ts` for a real-time genre and `packages/push-puzzle/src/world.ts` for a turn-based one):

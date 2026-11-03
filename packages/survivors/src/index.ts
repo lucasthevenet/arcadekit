@@ -1,4 +1,4 @@
-// Survivors-like genre: content schema, content service and the simulation.
+// Survivors-like genre: content schema, content service, the simulation and its event payloads.
 // No DOM or Three.js here; those are in "@gamekit/survivors/browser".
 
 export {
@@ -6,6 +6,12 @@ export {
   SurvivorsContent,
   makeSurvivorsContentLayer,
 } from "./content";
+export {
+  HudSample,
+  RunSummary,
+  type SurvivorsEvent,
+  UpgradeChoice,
+} from "./events";
 export {
   EnemyDef,
   GameContent,
@@ -18,14 +24,10 @@ export {
   findBrokenReferences,
 } from "./schema";
 export {
-  type HudSample,
   type RunStatus,
-  type RunSummary,
   type Stats,
   type SurvivorsConfig,
-  type SurvivorsEvent,
   type SurvivorsInput,
-  type UpgradeChoice,
   type WeaponSlot,
   type World,
   auraRadius,

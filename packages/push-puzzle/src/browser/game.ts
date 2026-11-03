@@ -3,12 +3,12 @@ import { makeGameEngine } from "@gamekit/runtime";
 import type { GameDefinition, GameEngine, InputSource } from "@gamekit/runtime";
 import { Context, Layer } from "effect";
 
+import type { PushPuzzleEvent } from "../events";
 import { createPuzzle, hudSample, step } from "../world";
 import type {
   Direction,
   Puzzle,
   PushPuzzleConfig,
-  PushPuzzleEvent,
   PushPuzzleInput,
 } from "../world";
 import { PushPuzzleView } from "./view";

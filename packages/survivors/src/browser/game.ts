@@ -3,13 +3,9 @@ import { makeGameEngine } from "@gamekit/runtime";
 import type { GameDefinition, GameEngine } from "@gamekit/runtime";
 import { Context, Layer } from "effect";
 
+import type { SurvivorsEvent } from "../events";
 import { createWorld, hudSample, step } from "../world";
-import type {
-  SurvivorsConfig,
-  SurvivorsEvent,
-  SurvivorsInput,
-  World,
-} from "../world";
+import type { SurvivorsConfig, SurvivorsInput, World } from "../world";
 import { SurvivorsView } from "./view";
 
 /** The survivors genre as a @gamekit/runtime game. */

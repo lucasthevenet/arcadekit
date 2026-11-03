@@ -1,8 +1,9 @@
+import type { HudSample, RunSummary, UpgradeChoice } from "@gamekit/survivors";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "./message";
 import { Phase } from "./model";
-import type { Hud, Model, RunSummary, UpgradeChoice } from "./model";
+import type { Model } from "./model";
 import { GameViewport, VIEWPORT_ID } from "./subscriptions";
 
 type H = HtmlBuilder<Message>;
@@ -104,7 +105,7 @@ const menu = (model: Model, h: H): Html =>
     ),
   ]);
 
-const hud = (data: Hud, h: H): Html =>
+const hud = (data: HudSample, h: H): Html =>
   h.div(
     [h.Class("hud")],
     [

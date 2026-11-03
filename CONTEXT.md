@@ -12,7 +12,7 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Frame**: one browser animation frame (`requestAnimationFrame`). The runtime runs zero or more steps per frame, then the view draws once. Don't call a step a frame.
 
-**Event**: a rare, meaningful fact a run reports to the outside ("level solved", "leveled up"), pushed into an `EventBuffer` during a step and drained by the runtime. Never per-entity data. A **sample** is the runtime's read of the state for the UI (a HUD), also delivered as an event: every so many milliseconds of wall-clock time, or right after the game's **version** number changes (a turn-based HUD). In both genres, the sample is a `hud` event that carries a `HudSample`. _Avoid_: snapshot for a sample.
+**Event**: a rare, meaningful fact a run reports to the outside ("level solved", "leveled up"), pushed into an `EventBuffer` during a step and drained by the runtime. Never per-entity data. An event's **payload** is the data it carries. Each genre declares its events and their payload Schemas once, in its root entry's `events.ts`, and apps use those Schemas in their Model and Messages. A **sample** is the runtime's read of the state for the UI (a HUD), also delivered as an event: every so many milliseconds of wall-clock time, or right after the game's **version** number changes (a turn-based HUD). In both genres, the sample is a `hud` event that carries a `HudSample`. _Avoid_: snapshot for a sample.
 
 **Snapshot**: a copy of a run's whole state that could be restored. The runtime has none (see finding 11). Don't call a sample a snapshot.
 
@@ -38,7 +38,7 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Kit**: the shared packages `core`, `input`, `content`, `render-three`, `runtime` and `foldkit`. Genre packages and demo apps build on it. A **primitive** is one of the kit's building blocks, such as `createPool` or `InputController`.
 
-**Genre package**: a package that implements one kind of game on the kit (`@gamekit/survivors`, `@gamekit/push-puzzle`). Its root entry holds the content schema, the content service and the simulation, with no DOM or Three.js (checked by its `tsconfig.root.json`); its `./browser` entry holds the `GameDefinition`, the view and the engine.
+**Genre package**: a package that implements one kind of game on the kit (`@gamekit/survivors`, `@gamekit/push-puzzle`). Its root entry holds the content schema, the content service, the simulation and the event payload Schemas, with no DOM or Three.js (checked by its `tsconfig.root.json`); its `./browser` entry holds the `GameDefinition`, the view and the engine.
 
 **Finding**: a place where a genre had to change, work around, copy or bypass a shared primitive, or where a shared primitive's name or docs assume one genre. A primitive a genre simply doesn't use is not a finding. See `docs/push-puzzle-findings.md`.
 

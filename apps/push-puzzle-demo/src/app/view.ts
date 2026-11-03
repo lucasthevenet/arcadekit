@@ -1,8 +1,9 @@
+import type { HudSample } from "@gamekit/push-puzzle";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "./message";
 import { Phase } from "./model";
-import type { Hud, Model } from "./model";
+import type { Model } from "./model";
 import { GameViewport, VIEWPORT_ID } from "./subscriptions";
 
 type H = HtmlBuilder<Message>;
@@ -77,7 +78,7 @@ const levelSelect = (model: Model, h: H): Html =>
     ),
   ]);
 
-const hud = (name: string, data: Hud, h: H): Html =>
+const hud = (name: string, data: HudSample, h: H): Html =>
   h.div(
     [h.Class("hud")],
     [

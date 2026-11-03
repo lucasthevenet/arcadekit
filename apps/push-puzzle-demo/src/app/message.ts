@@ -1,7 +1,8 @@
+import { HudSample } from "@gamekit/push-puzzle";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
-import { Hud, LevelSummary } from "./model";
+import { LevelSummary } from "./model";
 
 // Every fact the UI can react to. Named for what happened, not what to do.
 export const Message = defineMessageUnion({
@@ -16,7 +17,7 @@ export const Message = defineMessageUnion({
   FailedToStartRun: { error: Schema.String },
 
   // From the engine
-  GotHud: { hud: Hud },
+  GotHud: { hud: HudSample },
   GotLevelSolved: { moves: Schema.Number },
 
   // In-run UI

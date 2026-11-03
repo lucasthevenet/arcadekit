@@ -7,6 +7,7 @@ import {
 } from "@gamekit/core";
 import type { Pool, Rng } from "@gamekit/core";
 
+import type { HudSample, SurvivorsEvent, UpgradeChoice } from "./events";
 import type { EnemyDef, GameContent, HeroDef, WeaponDef } from "./schema";
 
 // The survivors simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
@@ -55,41 +56,6 @@ export interface Stats {
 }
 
 export type RunStatus = "running" | "won" | "dead";
-
-export interface UpgradeChoice {
-  readonly kind: "weapon" | "passive" | "heal";
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  /** Level the item reaches if picked. */
-  readonly level: number;
-}
-
-export interface HudSample {
-  readonly hp: number;
-  readonly maxHp: number;
-  readonly level: number;
-  readonly xp: number;
-  readonly xpNext: number;
-  readonly time: number;
-  readonly runLength: number;
-  readonly kills: number;
-  readonly enemies: number;
-}
-
-export interface RunSummary {
-  readonly won: boolean;
-  readonly heroName: string;
-  readonly time: number;
-  readonly kills: number;
-  readonly level: number;
-}
-
-/** What a survivors run reports to the outside. */
-export type SurvivorsEvent =
-  | { readonly type: "hud"; readonly hud: HudSample }
-  | { readonly type: "levelUp"; readonly choices: readonly UpgradeChoice[] }
-  | { readonly type: "runEnded"; readonly summary: RunSummary };
 
 const ENEMY_LAYOUT = {
   x: Float32Array,
