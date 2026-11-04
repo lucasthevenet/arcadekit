@@ -5,7 +5,8 @@
   "description": "Play one run on several peers in delay-based lockstep, over a transport it doesn't know",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./browser": "./src/browser/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p . && tsc -p tsconfig.root.json"
@@ -13,6 +14,7 @@
   "dependencies": {
     "@gamekit/core": "workspace:*",
     "@gamekit/runtime": "workspace:*",
+    "@gamekit/signalling": "workspace:*",
     "effect": "~4.1.2"
   }
 }

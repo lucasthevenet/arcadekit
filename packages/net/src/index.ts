@@ -1,6 +1,6 @@
 // Lockstep multiplayer: every peer runs the same GameSimulation on the inputs the host confirms
 // for each step (ADR-0012). The session knows no network; it talks through a Transport.
-// No DOM here; a WebRTC transport will be in "@gamekit/net/browser".
+// No DOM here; the WebRTC transport and the signalling client are in "@gamekit/net/browser".
 
 export { type InputCodec, jsonCodec, schemaCodec } from "./codec";
 export { LockstepError, type StopReason } from "./errors";
