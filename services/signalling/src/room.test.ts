@@ -254,6 +254,17 @@ describe(createRoom, () => {
     });
   });
 
+  it("closes the guests without an error when the host leaves after the start", () => {
+    const room = createRoom("ABC234");
+    admitted(room, "host");
+    admitted(room, "guest");
+    room.receive(HOST_ID, JSON.stringify({ type: "start" }), 1);
+    const outputs = room.leave(HOST_ID);
+    expect(sends(outputs)).toStrictEqual([]);
+    expect(closes(outputs)).toStrictEqual(["guest-1"]);
+    expect(room.peers()).toStrictEqual([]);
+  });
+
   it("sets its expiry when the host opens it", () => {
     const room = createRoom("ABC234", { ttlMs: 1000 });
     expect(room.expiresAtMs()).toBeUndefined();

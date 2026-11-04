@@ -14,8 +14,5 @@
     "@gamekit/core": "workspace:*",
     "@gamekit/runtime": "workspace:*",
     "effect": "~4.1.2"
-  },
-  "devDependencies": {
-    "@gamekit/survivors": "workspace:*"
   }
 }

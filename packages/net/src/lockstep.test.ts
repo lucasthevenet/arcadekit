@@ -287,6 +287,20 @@ describe("lockstep session", () => {
       );
     });
 
+    it("tells a removed peer it was removed when it is heard from again", () => {
+      // p2 waits on a silent host longer than the host waits on it.
+      const run = startRun(BAD_NETWORK, ["p1", "p2"], (id) =>
+        id === "p2" ? { dropAfterMs: 30_000 } : {}
+      );
+      runNetwork(run.network, run.ticked, 0, 1000);
+      run.network.cutOff("p2", true);
+      runNetwork(run.network, run.ticked, 1001, 12_000);
+      expect(run.host.players).toStrictEqual(["host", "p1"]);
+      run.network.cutOff("p2", false);
+      runNetwork(run.network, run.ticked, 12_001, 13_000);
+      expect(run.joined[1]!.error?.reason.kind).toBe("removed");
+    });
+
     it("stops the silent peer itself once it hasn't heard the host for dropAfterMs", () => {
       const run = silenced();
       runNetwork(run.network, run.ticked, 1001, 12_000);
@@ -294,6 +308,31 @@ describe("lockstep session", () => {
       expect(p2.status).toBe("stopped");
       expect(p2.error?.reason.kind).toBe("hostLost");
     });
+  });
+
+  it("removes a peer that still sends but can't keep up, as a throttled hidden tab", () => {
+    const run = startRun({ seed: 1, latencyMs: 20, jitterMs: 5 }, ["p1"]);
+    runNetwork(run.network, run.ticked, 0, 1000);
+    // From here p1's timer fires once a second, as a hidden tab's does.
+    const hidden = [run.ticked[0]!, { session: run.joined[0]!, everyMs: 1000 }];
+    runNetwork(run.network, hidden, 1001, 10_500);
+    expect(run.host.players).toStrictEqual(["host", "p1"]);
+    expect(run.host.waitingFor).toStrictEqual(["p1"]);
+    const stalledAt = run.host.stepIndex;
+    runNetwork(run.network, hidden, 10_501, 13_000);
+    expect(run.host.players).toStrictEqual(["host"]);
+    expect(run.host.stepIndex).toBeGreaterThan(stalledAt + 100);
+  });
+
+  it("keeps the hashes it compares bounded over a long run", () => {
+    const run = startRun(BAD_NETWORK, ["p1", "p2"]);
+    runNetwork(run.network, run.ticked, 0, 30_000);
+    expect(run.host.error).toBeNull();
+    // White-box: the host's per-step store of peers' hashes, which once kept every hash step.
+    const { peerHashes } = (
+      run.host as unknown as { host: { peerHashes: Map<number, unknown> } }
+    ).host;
+    expect(peerHashes.size).toBeLessThan(10);
   });
 
   it("refuses to start with content that differs from the host's", () => {

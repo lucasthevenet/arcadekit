@@ -58,7 +58,7 @@ export type ErrorReason =
   | "started"
   /** The room outlived `ROOM_TTL_MS`. */
   | "expired"
-  /** The host left, so the room is gone. */
+  /** The host left before the start, so the room is gone. After the start, the guests' sockets just close (1000). */
   | "host-left"
   /** A message that isn't valid JSON for this protocol, or is too long. */
   | "bad-message"

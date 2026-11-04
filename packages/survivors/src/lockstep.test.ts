@@ -1,20 +1,22 @@
+import {
+  createMemoryNetwork,
+  hostLockstep,
+  joinLockstep,
+  schemaCodec,
+} from "@gamekit/net";
+import type {
+  ConfirmedStep,
+  LockstepOptions,
+  MemoryNetwork,
+} from "@gamekit/net";
 import { GameLoop } from "@gamekit/runtime";
 import type { StepInput } from "@gamekit/runtime";
-import { GameContent, survivorsSimulation } from "@gamekit/survivors";
-import type {
-  SurvivorsConfig,
-  SurvivorsInput,
-  World,
-} from "@gamekit/survivors";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { schemaCodec } from "./codec";
-import { hostLockstep, joinLockstep } from "./lockstep";
-import type { ConfirmedStep, LockstepOptions } from "./lockstep";
-import { createMemoryNetwork } from "./memory-network";
-import type { MemoryNetwork } from "./memory-network";
-import { hasher, runNetwork } from "./test-harness";
+import { hashWorld } from "./hash-world";
+import { GameContent, survivorsSimulation } from "./index";
+import type { SurvivorsConfig, SurvivorsInput, World } from "./index";
 
 // Survivors' real simulation in lockstep. Survivors is single-player until #25's genre work gives
 // its World N players, so for now every peer runs the same one-hero world and the step input is
@@ -81,29 +83,6 @@ const content = Schema.decodeUnknownSync(GameContent)({
   waves: [{ from: 0, to: 90, enemy: "grunt", perSecond: 4 }],
 });
 
-/** Hashes the clock, kills, the player, the weapon slots and every live entity in the pools. */
-const hashWorld = (world: World): number => {
-  const h = hasher();
-  h.add(world.time);
-  h.add(world.kills);
-  for (const value of Object.values(world.player)) {
-    h.add(value);
-  }
-  for (const slot of world.weapons) {
-    h.add(slot.level);
-    h.add(slot.timer);
-  }
-  for (const pool of [world.enemies, world.projectiles, world.gems]) {
-    h.add(pool.count);
-    for (const array of Object.values(pool.fields)) {
-      for (let i = 0; i < pool.count; i++) {
-        h.add(array[i]!);
-      }
-    }
-  }
-  return h.value;
-};
-
 const SurvivorsInputSchema = Schema.Struct({
   moveX: Schema.Number,
   moveZ: Schema.Number,
@@ -144,6 +123,25 @@ const recorded = () => {
     },
   };
   return { hashes, simulation };
+};
+
+/** Advances the network and ticks each session on its own timer, as @gamekit/net's tests do. */
+const runNetwork = (
+  network: MemoryNetwork,
+  peers: readonly {
+    readonly session: { readonly tick: (nowMs: number) => void };
+    readonly everyMs: number;
+  }[],
+  toMs: number
+) => {
+  for (let nowMs = 0; nowMs <= toMs; nowMs++) {
+    network.advance(nowMs);
+    for (const { session, everyMs } of peers) {
+      if (nowMs % everyMs === 0) {
+        session.tick(nowMs);
+      }
+    }
+  }
 };
 
 const SEED = 1234;
@@ -200,7 +198,6 @@ describe("survivors in lockstep", () => {
     runNetwork(
       network,
       sessions.map((session, i) => ({ session, everyMs: [4, 5, 6][i]! })),
-      0,
       10_000
     );
     const solo = soloHashes(600);

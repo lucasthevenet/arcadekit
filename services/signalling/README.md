@@ -11,9 +11,13 @@ JSON over one WebSocket per peer. `src/protocol.ts` (`@gamekit/signalling/protoc
 1. The host opens `wss://<worker>/host`. The worker picks a join code and answers `welcome` with it; the host's peer id is `host`.
 2. Each guest opens `wss://<worker>/join/<code>` and gets `welcome` with its own id (`guest-1`, `guest-2`, …, never reused). The host gets `peer-joined`.
 3. The host sends `{ type: "signal", to, signal }` with an offer to each guest, and the guest answers the same way. ICE candidates follow in both directions (`candidate: ""` is the end of candidates). The worker relays each one as `{ type: "signal", from, signal }`. A guest may signal only the host, as in the star.
-4. Once every data channel is open, the host sends `{ type: "start" }`. Everyone gets `started`, and the room admits no one else (no late join). The peers then close their sockets.
+4. Once every data channel is open, the host sends `{ type: "start" }`. Everyone gets `started`, and the room admits no one else (no late join). The peers then close their sockets. If the host's closes first, the worker closes the guests' sockets normally (1000), with no error.
 
-The worker answers with `{ type: "error", reason }` and closes the socket (code 4000, the reason as the close reason) when a 5th player tries to join (`full`), the code is unknown or its room has ended (`unknown-code`), the run has started (`started`), the room has lived 10 minutes (`expired`), the host left (`host-left`), or a peer sends something that isn't the protocol (`bad-message`, `not-allowed`). If a guest leaves before the start, the host gets `peer-left`.
+The worker answers with `{ type: "error", reason }` and closes the socket (code 4000, the reason as the close reason) when a 5th player tries to join (`full`), the code is unknown or its room has ended (`unknown-code`), a host's fresh code is already in use (`code-taken`: open `/host` again for another), the run has started (`started`), the room has lived 10 minutes (`expired`), the host left before the start (`host-left`), or a peer sends something that isn't the protocol (`bad-message`, `not-allowed`). If a guest leaves before the start, the host gets `peer-left`.
+
+### Abuse
+
+The worker trusts whoever holds a join code. A code is 6 letters from a 31-letter alphabet, a room lives at most 10 minutes and holds at most 4 players, and a message is at most 16 KB. That is all it limits today: there is no rate limit on `/host` or `/join`, no `Origin` check, no limit on how many messages a socket sends, and the host can't kick a guest. So a stranger who guesses or overhears a live code can take a seat, or fill the room, and each guessed `/join/<code>` wakes a Durable Object. That is acceptable while the worker is undeployed or only shared among friends. Before it is public, it needs a per-IP rate limit (Cloudflare's rate-limiting binding) on `/host` and `/join`, an `Origin` allowlist, a cap on messages per socket that closes with `bad-message`, and a host `kick` message.
 
 ## The code
 

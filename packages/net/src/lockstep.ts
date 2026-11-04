@@ -24,7 +24,7 @@ export interface ConfirmedStep<PlayerInput> {
 export interface LockstepOptions<Config, State, Input, Event, PlayerInput> {
   /** What every peer runs. The session makes its own `GameLoop` for it. */
   readonly simulation: GameSimulation<Config, State, Input, Event>;
-  /** This peer's config. Every peer must pass the same; `contentHash` checks the content part. */
+  /** This peer's config. Every peer must pass the same (the lobby agrees on it); only `contentHash` is checked at the start. */
   readonly config: Config;
   /** A digest of the content the run is played with. A peer whose hash differs from the host's refuses to start. */
   readonly contentHash: string;
@@ -47,8 +47,11 @@ export interface LockstepOptions<Config, State, Input, Event, PlayerInput> {
   /** Peers compare state hashes after every this many steps. */
   readonly hashEvery: number;
   /**
-   * How long the host waits on a silent peer before removing its player, and a peer waits on a
-   * silent host before giving up. Defaults to 10 000 ms.
+   * How long the host lets stepping stall on a player before removing them, and a peer waits on
+   * a silent host before giving up. Defaults to 10 000 ms. A stall is a wait on a player's input
+   * of `STALL_MS` or more; it goes on until a second passes without one. So a peer that still
+   * sends but can't keep up, such as a hidden tab whose timers are throttled to 1 Hz, is
+   * removed as a silent one is.
    */
   readonly dropAfterMs?: number;
 }
@@ -181,6 +184,28 @@ type Message =
 const MAX_BATCH = 64;
 /** Most steps one tick runs to catch up after a wait: 0.25 s at 60 Hz. */
 const MAX_CATCH_UP_SECONDS = 0.25;
+/** A wait on one player this long is a stall: longer than the network's hiccups. */
+const STALL_MS = 250;
+/** A stall ends once stepping has gone this long without stalling on that player. */
+const STALL_RECOVERY_MS = 1000;
+
+interface Stall {
+  /** The step whose input from this player stepping waits on now, if any. */
+  waitingStep: number | undefined;
+  /** Since when stepping has waited on `waitingStep`. */
+  waitingSinceMs: number;
+  /** The start of the first wait in the stall now going on, if any. */
+  stalledSinceMs: number | undefined;
+  /** The last time a wait on this player was long enough to count. */
+  lastStalledMs: number;
+}
+
+const NO_STALL: Stall = {
+  waitingStep: undefined,
+  waitingSinceMs: 0,
+  stalledSinceMs: undefined,
+  lastStalledMs: 0,
+};
 
 interface HostSide {
   /** The other players still in the run, in player order. */
@@ -191,7 +216,10 @@ interface HostSide {
   readonly inputsKnown: Map<PeerId, number>;
   /** Peers the host has heard from since the start; the others get the start message again. */
   readonly started: Set<PeerId>;
-  readonly lastHeardMs: Map<PeerId, number>;
+  /** How long stepping has waited, and stalled, on each peer (see `dropAfterMs`). */
+  readonly stalls: Map<PeerId, Stall>;
+  /** Removed players, with the step they were removed at, to tell them again if they speak. */
+  readonly removed: Map<PeerId, number>;
   /** Confirmed steps some peer may not have yet. */
   readonly wire: Map<number, WireStep>;
   readonly stepsAck: Map<PeerId, number>;
@@ -318,7 +346,8 @@ class Session<
       pending: new Map(players.map((p) => [p, new Map()])),
       inputsKnown: new Map(players.map((p) => [p, -1])),
       started: new Set(),
-      lastHeardMs: new Map(peers.map((p) => [p, nowMs])),
+      stalls: new Map(peers.map((p) => [p, { ...NO_STALL }])),
+      removed: new Map(),
       wire: new Map(),
       stepsAck: new Map(peers.map((p) => [p, -1])),
       peerHashes: new Map(),
@@ -343,7 +372,7 @@ class Session<
       return;
     }
     if (this.host) {
-      this.dropSilentPeers(nowMs);
+      this.dropStalledPeers(nowMs);
       this.confirm();
     } else if (nowMs - this.peer!.lastHeardMs >= this.dropAfterMs) {
       this.stop(
@@ -381,22 +410,20 @@ class Session<
 
   private receive(from: PeerId, message: Message, nowMs: number) {
     if (this.host) {
-      this.receiveAsHost(this.host, from, message, nowMs);
+      this.receiveAsHost(this.host, from, message);
     } else {
       this.receiveAsPeer(this.peer!, from, message, nowMs);
     }
   }
 
-  private receiveAsHost(
-    host: HostSide,
-    from: PeerId,
-    message: Message,
-    nowMs: number
-  ) {
+  private receiveAsHost(host: HostSide, from: PeerId, message: Message) {
     if (!host.peers.includes(from)) {
+      const step = host.removed.get(from);
+      if (step !== undefined) {
+        this.sendRemoved(from, step);
+      }
       return;
     }
-    host.lastHeardMs.set(from, nowMs);
     if (message.kind === "desync") {
       this.stop(
         lockstepError({
@@ -524,28 +551,57 @@ class Session<
     }
   }
 
-  /** Host: removes the players it hasn't heard from for `dropAfterMs`, at the next step it confirms. */
-  private dropSilentPeers(nowMs: number) {
+  /**
+   * Host: removes the players stepping has stalled on for `dropAfterMs`, at the next step it
+   * confirms. A silent peer and one too slow to keep up both stall it. Since the last tick,
+   * stepping has waited on `waitingFor`.
+   */
+  private dropStalledPeers(nowMs: number) {
     const host = this.host!;
-    const silent = host.peers.filter(
-      (peer) => nowMs - host.lastHeardMs.get(peer)! >= this.dropAfterMs
-    );
-    for (const peer of silent) {
+    for (const peer of host.peers) {
+      const stall = host.stalls.get(peer)!;
+      if (this.waitingFor.includes(peer)) {
+        // Stepping on at the pace input arrives isn't a stall; waiting on one step for long is.
+        const step = this.confirmedThrough + 1;
+        if (stall.waitingStep !== step) {
+          stall.waitingStep = step;
+          stall.waitingSinceMs = this.lastTickMs;
+        }
+        if (nowMs - stall.waitingSinceMs >= STALL_MS) {
+          stall.stalledSinceMs ??= stall.waitingSinceMs;
+          stall.lastStalledMs = nowMs;
+        }
+      } else {
+        stall.waitingStep = undefined;
+        if (nowMs - stall.lastStalledMs >= STALL_RECOVERY_MS) {
+          stall.stalledSinceMs = undefined;
+        }
+      }
+    }
+    const stalled = host.peers.filter((peer) => {
+      const since = host.stalls.get(peer)!.stalledSinceMs;
+      return since !== undefined && nowMs - since >= this.dropAfterMs;
+    });
+    for (const peer of stalled) {
+      const step = this.confirmedThrough + 1;
       host.peers.splice(host.peers.indexOf(peer), 1);
       host.removing.push(peer);
+      host.removed.set(peer, step);
       host.pending.delete(peer);
+      host.stalls.delete(peer);
       host.peerHashAck.delete(peer);
       host.hostHashAck.delete(peer);
       host.stepsAck.delete(peer);
-      // Best effort: a peer that has gone silent rarely hears it, and stops on its own timeout.
-      this.options.transport.send(
-        peer,
-        JSON.stringify({
-          kind: "removed",
-          step: this.confirmedThrough + 1,
-        } satisfies Message)
-      );
+      // A silent peer rarely hears it, and stops on its own timeout; one that speaks again is told again.
+      this.sendRemoved(peer, step);
     }
+  }
+
+  private sendRemoved(peer: PeerId, step: number) {
+    this.options.transport.send(
+      peer,
+      JSON.stringify({ kind: "removed", step } satisfies Message)
+    );
   }
 
   /** Host: confirms every next step for which every player still in the run has sent input. */
@@ -804,6 +860,11 @@ class Session<
     for (const step of this.ownHashes.keys()) {
       if (step <= hashesAck) {
         this.ownHashes.delete(step);
+      }
+    }
+    // Not only with `ownHashes`: a peer's resent hash can arrive after the host forgot its step.
+    for (const step of host.peerHashes.keys()) {
+      if (step <= hashesAck) {
         host.peerHashes.delete(step);
       }
     }

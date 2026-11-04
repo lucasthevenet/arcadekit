@@ -96,6 +96,16 @@ export const createRoom = (code: string, options: RoomOptions = {}): Room => {
     }
     if (peer === HOST_ID) {
       members.splice(index, 1);
+      if (phase === "started") {
+        // The run goes on over the data channels; a guest's socket closing late isn't an error.
+        phase = "ended";
+        const outputs = members.map((member): RoomOutput => ({
+          kind: "close",
+          peer: member,
+        }));
+        members.length = 0;
+        return outputs;
+      }
       return end("host-left");
     }
     members.splice(index, 1);

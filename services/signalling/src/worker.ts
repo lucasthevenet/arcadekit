@@ -36,14 +36,21 @@ export default {
       return toRoom(env, request, code, "host");
     }
     const match = /^\/join\/(?<code>[^/]+)$/u.exec(url.pathname);
-    const code = match
-      ? normalizeJoinCode(decodeURIComponent(match.groups!.code!))
-      : undefined;
+    const code = match ? joinCodeFromPath(match.groups!.code!) : undefined;
     if (code === undefined) {
       return new Response("Not found", { status: 404 });
     }
     return toRoom(env, request, code, "guest");
   },
+};
+
+/** The join code in a `/join/<code>` path segment, or `undefined` for a malformed escape. */
+const joinCodeFromPath = (segment: string): string | undefined => {
+  try {
+    return normalizeJoinCode(decodeURIComponent(segment));
+  } catch {
+    return undefined;
+  }
 };
 
 const toRoom = (

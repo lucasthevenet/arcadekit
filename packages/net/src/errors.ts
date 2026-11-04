@@ -17,7 +17,7 @@ export type StopReason =
       readonly hostContentHash: string;
       readonly localContentHash: string;
     }
-  /** The host removed this peer's player at `step`, after not hearing from it. */
+  /** The host removed this peer's player at `step`, after stepping stalled on its input for `dropAfterMs`. */
   | { readonly kind: "removed"; readonly peer: PeerId; readonly step: number }
   /** Nothing came from the host for `silentMs`. With no host, no step can be decided. */
   | {
