@@ -80,6 +80,10 @@ importers:
       foldkit:
         specifier: ~0.170.0
         version: 0.170.0(@effect/platform-browser@4.1.2(effect@4.1.2))(effect@4.1.2)
+    devDependencies:
+      '@gamekit/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
 
   packages/content:
     dependencies:

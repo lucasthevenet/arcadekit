@@ -1,11 +1,15 @@
+import { GameLoop } from "@gamekit/runtime";
+import type { StepInput } from "@gamekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { GameContent, chooseUpgrade, createWorld, step } from "./index";
-import type { World } from "./index";
+import { GameContent, chooseUpgrade, survivorsSimulation } from "./index";
+import type { SurvivorsInput, World } from "./index";
 
 // Replay check: the same seed and the same input script must give the same run, bit for bit.
-// It guards kit changes (runtime, core, input) against changing survivors' behavior.
+// It runs survivors' simulation through @gamekit/runtime's GameLoop, the step order the demo
+// runs (endStep, endFrame and samples included), so it guards the simulation, core's clock and
+// the runtime's step order. It doesn't cover input devices or the view.
 
 const content = Schema.decodeUnknownSync(GameContent)({
   rules: {
@@ -129,19 +133,49 @@ const hashWorld = (world: World): number => {
 
 const LEG_MOVE_X = [1, 0.3, -1, 0.3];
 
-/** Plays a fixed input script: zig-zag movement, the second upgrade when offered. */
+/** Zig-zag movement: a leg every 90 steps. One object, refilled each step, as a device source does. */
+const zigZag = (): StepInput<SurvivorsInput> => {
+  const input = { moveX: 0, moveZ: 0 };
+  return {
+    read: (step) => {
+      const leg = Math.floor(step / 90) % 4;
+      input.moveX = LEG_MOVE_X[leg]!;
+      input.moveZ = leg % 2;
+      return input;
+    },
+  };
+};
+
+/**
+ * Plays a fixed input script, one step per frame at 60 frames a second: zig-zag movement, the
+ * second upgrade when offered. Counts the events and the HUD samples the run reported.
+ */
 const replay = (seed: number, steps: number) => {
-  const world = createWorld({ content, heroId: "bolter" }, seed);
+  const loop = new GameLoop(survivorsSimulation);
+  const script = zigZag();
   let events = 0;
-  for (let i = 0; i < steps && world.status === "running"; i++) {
-    if (world.offer) {
-      chooseUpgrade(world, Math.min(1, world.offer.length - 1));
+  let samples = 0;
+  loop.subscribe((event) => {
+    if (event.type === "hud") {
+      samples += 1;
+    } else {
+      events += 1;
     }
-    const leg = Math.floor(i / 90) % 4;
-    step(world, { moveX: LEG_MOVE_X[leg]!, moveZ: leg % 2 }, 1 / 60);
-    events += world.events.drain().length;
+  });
+  loop.start({ content, heroId: "bolter" }, seed, 0);
+  const world = loop.state!;
+  for (let i = 0; i < steps && world.status === "running"; i++) {
+    const nowMs = (i * 1000) / 60;
+    if (world.offer) {
+      loop.modify(
+        (offered) =>
+          chooseUpgrade(offered, Math.min(1, offered.offer!.length - 1)),
+        nowMs
+      );
+    }
+    loop.frame(script, { steps: 1 }, nowMs);
   }
-  return { world, events };
+  return { world, events, samples };
 };
 
 describe("survivors replay", () => {
@@ -151,8 +185,11 @@ describe("survivors replay", () => {
     // The script must exercise the run, or the hash proves little.
     expect(a.world.kills).toBeGreaterThan(20);
     expect(a.world.player.level).toBeGreaterThan(2);
-    expect(hashWorld(a.world)).toBe(hashWorld(b.world));
-    expect(a.events).toBe(b.events);
+    expect([hashWorld(b.world), b.events, b.samples]).toStrictEqual([
+      hashWorld(a.world),
+      a.events,
+      a.samples,
+    ]);
     // Recorded before any kit change for push-puzzle. If this changes, survivors plays differently.
     expect(hashWorld(a.world)).toBe(1_294_328_663);
   });

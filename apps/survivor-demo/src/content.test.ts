@@ -2,17 +2,19 @@ import { readFileSync } from "node:fs";
 
 import { ContentError, loadContent } from "@gamekit/content";
 import type { ContentSource } from "@gamekit/content";
+import { GameLoop } from "@gamekit/runtime";
+import type { StepInput } from "@gamekit/runtime";
 import {
   chooseUpgrade,
-  createWorld,
-  step,
   survivorsContentDefinition,
+  survivorsSimulation,
 } from "@gamekit/survivors";
+import type { SurvivorsInput } from "@gamekit/survivors";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 // Checks this game's real content files: they decode, reference each other correctly,
-// and every hero can play a minute of a run.
+// and every hero can play a minute of a run, stepped by the runtime's GameLoop as the demo is.
 
 const contentDir = new URL("../public/content/", import.meta.url);
 const fileSource: ContentSource = (file) =>
@@ -26,25 +28,31 @@ const content = await Effect.runPromise(
   loadContent({ ...survivorsContentDefinition, source: fileSource })
 );
 
+/** Walks in a slow circle. */
+const circling: StepInput<SurvivorsInput> = {
+  read: (step) => ({
+    moveX: Math.cos(step / 200),
+    moveZ: Math.sin(step / 200),
+  }),
+};
+
 describe("demo content", () => {
   it.each(content.heroes.map((hero) => hero.id))(
     "%s survives a minute of play",
     (heroId) => {
-      const world = createWorld({ content, heroId }, 1);
+      const loop = new GameLoop(survivorsSimulation);
+      loop.start({ content, heroId }, 1, 0);
+      const world = loop.state!;
       for (
         let frame = 0;
         frame < 60 * 60 && world.status === "running";
         frame++
       ) {
+        const nowMs = (frame * 1000) / 60;
         if (world.offer) {
-          chooseUpgrade(world, 0);
+          loop.modify((offered) => chooseUpgrade(offered, 0), nowMs);
         }
-        step(
-          world,
-          { moveX: Math.cos(frame / 200), moveZ: Math.sin(frame / 200) },
-          1 / 60
-        );
-        world.events.drain();
+        loop.frame(circling, { steps: 1 }, nowMs);
       }
       expect(world.kills).toBeGreaterThan(0);
       expect(world.player.level).toBeGreaterThan(1);
