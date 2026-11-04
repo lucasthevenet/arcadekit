@@ -46,7 +46,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 - **What happened:** the driver reset "just pressed" state once per frame (`endFrame`), but a slow frame runs several catch-up steps, and every one of them saw the same press. Push-puzzle makes one turn per press, so one press moved the player up to five cells and one undo undid up to five turns. Survivors never noticed: it reads only axes.
 - **What push-puzzle did first:** its input source reported each press to one `read` only, and forgot what it reported in `endFrame`.
 - **Why not the obvious fix:** calling `endFrame` after every step was tried and reverted. It keeps the hook's name and type but changes when it runs, so any input source doing per-frame work in it would silently run it up to five times a frame (`InputController.endFrame` polls the gamepads).
-- **Fix ([#15](https://github.com/lucasthevenet/gamekit/issues/15)):** a new optional `InputSource.endStep`, called after every step, and `InputController.consumePresses()` to call from it. `endFrame` keeps its per-frame meaning. Push-puzzle's workaround is gone; survivors needs neither. `packages/runtime/src/runtime.test.ts` checks both behaviors and the call order.
+- **Fix ([#15](https://github.com/lucasthevenet/gamekit/issues/15)):** a new optional `InputSource.endStep`, called after every step, and `InputController.consumePresses()` to call from it. `endFrame` keeps its per-frame meaning. Push-puzzle's workaround is gone; survivors needs neither. `packages/runtime/src/loop.test.ts` checks both behaviors and the call order (moved from `runtime.test.ts` by #28).
 - **Layer:** runtime and input.
 
 ### 2. `sample` is wall-clock only

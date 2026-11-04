@@ -1,6 +1,6 @@
 /**
- * Where `GameDriver` gets its frames and their times: its frame clock, for drawing. It is not
- * where stepping adapters plug in; a test, a replay or a lockstep runner calls `GameLoop.frame`
+ * Where `GameDriver` gets its frames and their times: its own frame clock. It times the driver's
+ * frames, which step by real time and then draw. It is not where stepping adapters plug in; a test, a replay or a lockstep runner calls `GameLoop.frame`
  * instead, so it can step without drawing.
  */
 export interface FrameSource {

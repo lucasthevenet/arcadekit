@@ -107,8 +107,9 @@ export class GameLoop<Config, State, Input, Event> {
    * step ran; then the events; then a sample if `everyMs` has passed since the last one (on
    * `nowMs`), or else if `version` moved.
    *
-   * Returns the number of steps run. 0 means nothing was consumed (no run, or paused), so a
-   * `{ steps }` caller keeps those steps queued.
+   * Returns the number of steps run. For a `{ steps }` budget, 0 means none were consumed (no
+   * run, or paused), so the caller keeps them queued. A `{ seconds }` frame may also return 0
+   * while its time is carried on the clock.
    */
   frame(input: StepInput<Input>, budget: FrameBudget, nowMs: number): number {
     const state = this.run;

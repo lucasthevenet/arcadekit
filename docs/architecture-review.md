@@ -80,7 +80,7 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 ### 9. Views' unwritten rules about a run
 
 - **What it was:** both views tell runs apart by object identity and never write the state, but `GameView`'s doc said neither.
-- **Fix:** `GameView`'s doc gives three rules: `render` never changes the state, each run has its own state object, and a view may ignore `alpha`. `CONTEXT.md`'s "Run" says each run has its own state object. Docs only.
+- **Fix:** `GameView`'s doc gives three rules: `render` never changes the state, each run has its own state object, and a view may ignore `alpha`. (#28 removed `alpha`, so two rules remain.) `CONTEXT.md`'s "Run" says each run has its own state object. Docs only.
 
 ### 10. Event payloads typed twice
 

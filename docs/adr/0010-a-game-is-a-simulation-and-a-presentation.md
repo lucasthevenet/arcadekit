@@ -20,7 +20,7 @@ The game is now split in two.
 - Then the event flush.
 - Then a sample: if `everyMs` has passed on `nowMs`, or else if `version` moved.
 
-`frame` returns how many steps ran. 0 means none were consumed, because there was no run or it was paused. The budget is one of:
+`frame` returns how many steps ran. For a `{ steps }` budget, 0 means none were consumed, because there was no run or it was paused, so the caller keeps them queued. A `{ seconds }` frame may also return 0 while its time is carried on the clock. The budget is one of:
 
 - `{ seconds }`: the fixed clock. At most 0.25 s is counted, the remainder is carried, and the backlog is dropped after five steps.
 - `{ steps }`: exactly that many steps. No clamp, no cap, no drop. It clears any remainder carried from `{ seconds }` frames.
@@ -32,7 +32,7 @@ Input reaches the loop as a `StepInput` (`read(step)`, `endStep?`, `endFrame?`).
 - `GameDriver`, now the `requestAnimationFrame` adapter. Each frame it passes `{ seconds: (now - last) / 1000 }`, then calls `view.render(loop.state, now / 1000)`.
 - Node tests: both replays, survivor-demo's content test and push-puzzle's browser input test, which pass `{ steps }` frames. The genres' rule tests (`world.test.ts`, survivors' `play` helper included) and push-puzzle-demo's solutions test still call `step` directly: they test the simulation's own interface, not the loop.
 
-#25's timer or lockstep runner is the third. Inside `GameDriver`, a smaller seam, `FrameSource` (`now`, `request`), supplies frames and their times. It is only the driver's frame clock, for drawing. A stepping adapter calls `GameLoop.frame`. It does not implement a `FrameSource`, which would step and draw on the same timer. `FrameSource` has two adapters:
+#25's timer or lockstep runner is the third. Inside `GameDriver`, a smaller seam, `FrameSource` (`now`, `request`), supplies frames and their times. It is `GameDriver`'s own frame clock: it times the driver's frames, which step by real time and then draw. It is not where stepping adapters plug in. A stepping adapter calls `GameLoop.frame`. It does not implement a `FrameSource`, which would step and draw on the same timer. `FrameSource` has two adapters:
 
 - `animationFrames` (`requestAnimationFrame` and `performance.now`), the default, exported from `@gamekit/runtime/browser`. `makeGameEngine` takes another as `options.frames`.
 - `manualFrames()`, which a test drives frame by frame. It is not public API: it lives in `@gamekit/runtime/testing`, an entry only tests import, and neither the root nor `./browser` exports it. A package export is the simplest form that serves both the runtime's tests and foldkit's, which import it by package name like any other workspace code. No test stubs `requestAnimationFrame` or spies on `performance.now` any more.
@@ -76,7 +76,7 @@ Input reaches the loop as a `StepInput` (`read(step)`, `endStep?`, `endFrame?`).
   - A lockstep engine can return the same `GameEngine` interface.
   - "Two engines in one process" is two `GameLoop`s in Node.
   - Still open for #25: making `modify` and pause into step-scheduled inputs, and when `endFrame` runs for a peer whose local input sampling is separate from the stepping timer.
-- **#24 fits unchanged.** `makeSurvivorsGame(assets)` spreads `survivorsSimulation` and closes over the loaded assets in a synchronous `createView`. An async `createView` would change only `GamePresentation`.
+- **#24 fits unchanged.** A `makeSurvivorsGame(assets)` could spread `survivorsSimulation` and close over the loaded assets in a synchronous `createView`. An async `createView` would change only `GamePresentation`.
 - **Imports move before #26 publishes.** `GameDefinition`, `GameView`, `GameEngine`, `makeGameEngine` and `GameDriver` now come from `@gamekit/runtime/browser`. `@gamekit/core` loses `FixedStepClock.alpha`. #26 decides whether `@gamekit/runtime/testing` ships at all; nothing outside tests may import it.
 - **Rules for callers of `GameLoop`.**
   - `GameLoop.state` exposes the mutable run state. Callers read it and change it only through `modify`.

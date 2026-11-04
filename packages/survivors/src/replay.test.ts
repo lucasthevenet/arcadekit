@@ -7,9 +7,10 @@ import { GameContent, chooseUpgrade, survivorsSimulation } from "./index";
 import type { SurvivorsInput, World } from "./index";
 
 // Replay check: the same seed and the same input script must give the same run, bit for bit.
-// It runs survivors' simulation through @gamekit/runtime's GameLoop, the step order the demo
-// runs (endStep, endFrame and samples included), so it guards the simulation, core's clock and
-// the runtime's step order. It doesn't cover input devices or the view.
+// It runs survivors' simulation through @gamekit/runtime's GameLoop, with the step order and
+// sample timing the demo runs, so it guards the simulation, core's clock and the runtime's step
+// order. Its script has no endStep or endFrame; runtime's loop.test.ts pins their order. It
+// doesn't cover input devices or the view.
 
 const content = Schema.decodeUnknownSync(GameContent)({
   rules: {
