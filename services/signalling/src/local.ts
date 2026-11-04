@@ -11,7 +11,7 @@ import type { WebSocket } from "ws";
 import {
   MAX_MESSAGE_LENGTH,
   joinCodeFromBytes,
-  normalizeJoinCode,
+  joinCodeFromPath,
 } from "./protocol";
 import { createRoom } from "./room";
 import type { Room, RoomOptions } from "./room";
@@ -113,14 +113,7 @@ export const startLocalSignalling = async (
       } while (code === undefined || rooms.has(code));
     } else {
       role = "guest";
-      const match = /^\/join\/(?<code>[^/]+)$/u.exec(pathname);
-      try {
-        code = match
-          ? normalizeJoinCode(decodeURIComponent(match.groups!.code!))
-          : undefined;
-      } catch {
-        code = undefined;
-      }
+      code = joinCodeFromPath(pathname);
     }
     if (code === undefined) {
       refuse(socket, "404 Not Found");

@@ -52,7 +52,11 @@ interface FakePeer {
 const offer: Signal = { kind: "offer", sdp: "v=0 offer" };
 const answer: Signal = { kind: "answer", sdp: "v=0 answer" };
 
-const setup = (role: "host" | "guest", code = "k7mq2x") => {
+const setup = (
+  role: "host" | "guest",
+  code = "k7mq2x",
+  connectThrows = false
+) => {
   const sent: unknown[] = [];
   const peers: FakePeer[] = [];
   const events: RoomEvent[] = [];
@@ -72,6 +76,9 @@ const setup = (role: "host" | "guest", code = "k7mq2x") => {
       };
     },
     connectPeer: (peerOptions: ConnectPeerOptions) => {
+      if (connectThrows) {
+        throw new SyntaxError("stun.example is not a valid stun or turn URL");
+      }
       const lockstep = fakeChannel();
       const messages = fakeChannel();
       const peer: FakePeer = {
@@ -217,6 +224,42 @@ describe("hosting a room", () => {
       type: "peer-left",
       peer: "guest-1",
     });
+  });
+});
+
+describe("a peer connection that can't be made at all", () => {
+  it("drops the guest on the host, and fails the room on a guest", () => {
+    const reason =
+      "WebRTC setup with guest-1 failed: stun.example is not a valid stun or turn URL";
+    const host = setup("host", undefined, true);
+    host.open();
+    host.server(welcomeHost);
+    host.server({ type: "peer-joined", peer: "guest-1" });
+    expect(host.events.slice(1)).toStrictEqual([
+      { type: "peer-joined", peer: "guest-1" },
+      { type: "peer-left", peer: "guest-1", reason },
+    ]);
+    expect(host.room.status).toBe("open");
+
+    const guest = setup("guest", "k7mq2x", true);
+    guest.open();
+    guest.server({
+      type: "welcome",
+      code: "K7MQ2X",
+      self: "guest-1",
+      host: "host",
+      peers: ["host"],
+    });
+    expect([guest.room.status, guest.events.at(-1)]).toStrictEqual([
+      "failed",
+      {
+        type: "failed",
+        reason: "peer-failed",
+        message:
+          "WebRTC setup with host failed: stun.example is not a valid stun or turn URL",
+      },
+    ]);
+    expect(guest.socketClosed()).toBe(true);
   });
 });
 

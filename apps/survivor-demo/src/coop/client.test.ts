@@ -176,6 +176,9 @@ const client = (hub: ReturnType<typeof fakeHub>) => {
   return { coop, events };
 };
 
+const ended = (events: readonly CoopEvent[]) =>
+  events.some((event) => event.type === "runEnded");
+
 const lastLobby = (events: readonly CoopEvent[]) =>
   events.findLast((event) => event.type === "lobby");
 
@@ -270,6 +273,41 @@ describe("a co-op run", () => {
         type: "failed",
         message: "Lost the host: nothing heard for 10 s. The run is over.",
       },
+    ]);
+  });
+
+  it("keeps the summary when the others leave a run that has ended", async () => {
+    const short: GameContent = {
+      ...content,
+      rules: { ...content.rules, runLength: 1 },
+    };
+    const hub = fakeHub();
+    const host = client(hub);
+    const guest = client(hub);
+    host.coop.host(short, "spark");
+    await settle();
+    guest.coop.join(short, "K7MQ2X", "ember");
+    await settle();
+    host.coop.start();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect([ended(host.events), ended(guest.events)]).toStrictEqual([
+      true,
+      true,
+    ]);
+    host.coop.leave();
+    await vi.advanceTimersByTimeAsync(12_000);
+    // The guest's session lost the host, but the run had ended: no failure, no waiting banner.
+    const afterEnd = guest.events.slice(
+      guest.events.findIndex((event) => event.type === "runEnded")
+    );
+    expect([
+      guest.coop.debug().error,
+      afterEnd
+        .filter((event) => event.type !== "hud")
+        .map((event) => event.type),
+    ]).toStrictEqual([
+      "Lost the host host: nothing heard for 10000 ms",
+      ["runEnded"],
     ]);
   });
 });

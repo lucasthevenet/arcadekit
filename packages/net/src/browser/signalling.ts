@@ -274,34 +274,46 @@ const createRoom = (
   };
 
   const connect = (peer: PeerId) => {
-    const connection = connectPeer({
-      peer,
-      initiator: role === "host",
-      sendSignal: (signal: Signal) =>
-        send({ type: "signal", to: peer, signal }),
-      onOpen: (link) => {
-        if (connecting.get(peer) !== connection) {
-          link.close();
-          return;
-        }
-        connecting.delete(peer);
-        links.set(peer, link);
-        // Before the start, a link that closes is a peer that left. After, it's the run's business.
-        const leftEarly = () => {
-          if (status === "open") {
-            peerLeft(peer);
+    let connection: PeerConnecting;
+    try {
+      connection = connectPeer({
+        peer,
+        initiator: role === "host",
+        sendSignal: (signal: Signal) =>
+          send({ type: "signal", to: peer, signal }),
+        onOpen: (link) => {
+          if (connecting.get(peer) !== connection) {
+            link.close();
+            return;
           }
-        };
-        link.messages.onClose(leftEarly);
-        link.lockstep.onClose(leftEarly);
-        emit({ type: "peer-connected", peer, link });
-      },
-      onFail: (reason) => {
-        if (connecting.get(peer) === connection) {
-          peerLeft(peer, reason);
-        }
-      },
-    });
+          connecting.delete(peer);
+          links.set(peer, link);
+          // Before the start, a link that closes is a peer that left. After, it's the run's business.
+          const leftEarly = () => {
+            if (status === "open") {
+              peerLeft(peer);
+            }
+          };
+          link.messages.onClose(leftEarly);
+          link.lockstep.onClose(leftEarly);
+          emit({ type: "peer-connected", peer, link });
+        },
+        onFail: (reason) => {
+          if (connecting.get(peer) === connection) {
+            peerLeft(peer, reason);
+          }
+        },
+      });
+    } catch (error) {
+      // Such as `RTCPeerConnection` refusing a malformed STUN URL.
+      const reason = `WebRTC setup with ${peer} failed: ${error instanceof Error ? error.message : String(error)}`;
+      if (role === "guest") {
+        fail("peer-failed", reason);
+      } else {
+        emit({ type: "peer-left", peer, reason });
+      }
+      return;
+    }
     connecting.set(peer, connection);
   };
 

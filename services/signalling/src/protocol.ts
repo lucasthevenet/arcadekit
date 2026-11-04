@@ -129,6 +129,22 @@ export const normalizeJoinCode = (typed: string): string | undefined => {
   return code;
 };
 
+/**
+ * The join code in a guest's `/join/<code>` path, normalized; `undefined` for any other path, a
+ * malformed escape or a code that can't be one. The worker and the local server route by it.
+ */
+export const joinCodeFromPath = (pathname: string): string | undefined => {
+  const match = /^\/join\/(?<code>[^/]+)$/u.exec(pathname);
+  if (match === null) {
+    return undefined;
+  }
+  try {
+    return normalizeJoinCode(decodeURIComponent(match.groups!.code!));
+  } catch {
+    return undefined;
+  }
+};
+
 /** Reads a peer's message; `undefined` when it isn't valid for this protocol. */
 export const parseClientMessage = (text: string): ClientMessage | undefined => {
   if (text.length > MAX_MESSAGE_LENGTH) {

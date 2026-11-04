@@ -151,6 +151,8 @@ export class CoopClient {
   private players: readonly string[] = [];
   private ticker: ReturnType<typeof setInterval> | null = null;
   private failed = false;
+  /** The run ended: what the session reports after that (the others leaving) is no failure. */
+  private ended = false;
   private waitingKey = "";
   /** Since when stepping has waited without a break, or null. */
   private waitingSinceMs: number | null = null;
@@ -314,6 +316,7 @@ export class CoopClient {
     this.slot = 0;
     this.players = [];
     this.failed = false;
+    this.ended = false;
     this.waitingKey = "";
     this.waitingSinceMs = null;
     this.pick = null;
@@ -327,15 +330,19 @@ export class CoopClient {
       return;
     }
     this.failed = true;
-    if (this.ticker !== null) {
-      clearInterval(this.ticker);
-      this.ticker = null;
-    }
+    this.stopTicker();
     // The view keeps drawing the run as it stopped.
     this.stopRoom?.();
     this.stopRoom = null;
     this.room?.close();
     this.emit({ type: "failed", message });
+  }
+
+  private stopTicker() {
+    if (this.ticker !== null) {
+      clearInterval(this.ticker);
+      this.ticker = null;
+    }
   }
 
   private openRoom(room: SignallingRoom) {
@@ -516,7 +523,16 @@ export class CoopClient {
     const nowMs = now();
     session.tick(nowMs);
     if (session.error !== null) {
-      this.fail(stopMessage(session.error));
+      if (this.ended) {
+        // The others left the ended run: stop quietly, keeping its summary on screen.
+        this.stopTicker();
+      } else {
+        this.fail(stopMessage(session.error));
+      }
+      return;
+    }
+    if (this.ended) {
+      // Nothing is left to wait on or choose.
       return;
     }
     if (session.waitingFor.length === 0) {
@@ -560,6 +576,7 @@ export class CoopClient {
         return;
       }
       case "runEnded": {
+        this.ended = true;
         const summary = event.summaries[this.slot];
         if (summary !== undefined) {
           this.emit({ type: "runEnded", summary });

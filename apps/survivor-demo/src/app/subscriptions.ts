@@ -10,7 +10,7 @@ import { Message } from "./message";
 import { isCoop } from "./model";
 import type { Model } from "./model";
 
-/** The demo is single-player: its one player's hero is slot 0. */
+/** A single-player run's one hero is slot 0. */
 const LOCAL_HERO = 0;
 
 const toMessage = (event: SurvivorsEvent): Message | undefined => {

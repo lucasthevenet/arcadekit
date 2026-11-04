@@ -160,7 +160,7 @@ const menu = (model: Model, h: H): Html =>
   ]);
 
 const hud = (data: HudSample, h: H): Html => {
-  // The demo is single-player: its hero is the first.
+  // A single-player run's hero is the first.
   const hero = data.heroes[0] ?? { hp: 0, maxHp: 1 };
   return h.div(
     [h.Class("hud")],
