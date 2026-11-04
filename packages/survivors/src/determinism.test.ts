@@ -3,7 +3,7 @@ import type { StepInput } from "@gamekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { hashWorld } from "./hash-world";
+import { hashWorld, visitWorld } from "./hash-world";
 import { GameContent, chooseUpgrade, survivorsSimulation } from "./index";
 import type { SurvivorsInput, World } from "./index";
 
@@ -142,21 +142,10 @@ const mix = (hash: number, value: number): number => {
  * several times faster, which keeps a hash after every one of 20,000 steps affordable.
  */
 const mixWorld = (hash: number, world: World): number => {
-  let h = mix(mix(hash, world.time), world.kills);
-  for (const value of Object.values(world.player)) {
+  let h = hash;
+  visitWorld(world, (value) => {
     h = mix(h, value);
-  }
-  for (const slot of world.weapons) {
-    h = mix(mix(h, slot.level), slot.timer);
-  }
-  for (const pool of [world.enemies, world.projectiles, world.gems]) {
-    h = mix(h, pool.count);
-    for (const array of Object.values(pool.fields)) {
-      for (let i = 0; i < pool.count; i++) {
-        h = mix(h, array[i]!);
-      }
-    }
-  }
+  });
   return h;
 };
 
