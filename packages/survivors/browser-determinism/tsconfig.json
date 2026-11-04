@@ -1,0 +1,9 @@
+{
+  // The cross-browser runner runs in Node (Playwright, Vite's build); page.ts runs in the browser.
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["."]
+}
