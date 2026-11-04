@@ -4,6 +4,7 @@
     "name": "Spark",
     "description": "Fast and fragile. Starts with Arc Bolt.",
     "color": "#ffd23f",
+    "sprite": "spark",
     "maxHp": 80,
     "moveSpeed": 7,
     "startingWeapon": "arc-bolt"
@@ -13,6 +14,7 @@
     "name": "Ember",
     "description": "Slow and sturdy. Starts with Heat Aura.",
     "color": "#ff6b35",
+    "sprite": "ember",
     "maxHp": 140,
     "moveSpeed": 5.5,
     "startingWeapon": "heat-aura"
@@ -22,6 +24,7 @@
     "name": "Tide",
     "description": "Balanced. Starts with Bubble Shot.",
     "color": "#3fa7ff",
+    "sprite": "tide",
     "maxHp": 110,
     "moveSpeed": 6.2,
     "startingWeapon": "bubble-shot"

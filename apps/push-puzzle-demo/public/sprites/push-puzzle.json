@@ -1,0 +1,613 @@
+{
+  "frames": {
+    "floor 0": {
+      "frame": {
+        "x": 1,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "floor 1": {
+      "frame": {
+        "x": 19,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "floor 2": {
+      "frame": {
+        "x": 37,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "wall 0": {
+      "frame": {
+        "x": 55,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "wall/face 0": {
+      "frame": {
+        "x": 73,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "goal 0": {
+      "frame": {
+        "x": 91,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "hole 0": {
+      "frame": {
+        "x": 109,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "hole/filled 0": {
+      "frame": {
+        "x": 127,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "box 0": {
+      "frame": {
+        "x": 145,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "box/on-goal 0": {
+      "frame": {
+        "x": 163,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 100
+    },
+    "player/idle 0": {
+      "frame": {
+        "x": 181,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 600
+    },
+    "player/idle 1": {
+      "frame": {
+        "x": 199,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 400
+    },
+    "player/walk 0": {
+      "frame": {
+        "x": 217,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/walk 1": {
+      "frame": {
+        "x": 235,
+        "y": 1,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/walk 2": {
+      "frame": {
+        "x": 1,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/walk 3": {
+      "frame": {
+        "x": 19,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/up 0": {
+      "frame": {
+        "x": 37,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/up 1": {
+      "frame": {
+        "x": 55,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/up 2": {
+      "frame": {
+        "x": 73,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/up 3": {
+      "frame": {
+        "x": 91,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/down 0": {
+      "frame": {
+        "x": 109,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/down 1": {
+      "frame": {
+        "x": 127,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/down 2": {
+      "frame": {
+        "x": 145,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    },
+    "player/down 3": {
+      "frame": {
+        "x": 163,
+        "y": 19,
+        "w": 16,
+        "h": 16
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "duration": 110
+    }
+  },
+  "meta": {
+    "app": "scripts/generate-sprite-sheets.mjs",
+    "version": "1",
+    "image": "push-puzzle.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 256,
+      "h": 36
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "floor",
+        "from": 0,
+        "to": 2,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "wall",
+        "from": 3,
+        "to": 3,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "wall/face",
+        "from": 4,
+        "to": 4,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "goal",
+        "from": 5,
+        "to": 5,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "hole",
+        "from": 6,
+        "to": 6,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "hole/filled",
+        "from": 7,
+        "to": 7,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "box",
+        "from": 8,
+        "to": 8,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "box/on-goal",
+        "from": 9,
+        "to": 9,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "player/idle",
+        "from": 10,
+        "to": 11,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "player/walk",
+        "from": 12,
+        "to": 15,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "player/up",
+        "from": 16,
+        "to": 19,
+        "direction": "forward",
+        "color": "#000000ff"
+      },
+      {
+        "name": "player/down",
+        "from": 20,
+        "to": 23,
+        "direction": "forward",
+        "color": "#000000ff"
+      }
+    ],
+    "layers": [
+      {
+        "name": "art",
+        "opacity": 255,
+        "blendMode": "normal"
+      }
+    ],
+    "slices": []
+  }
+}

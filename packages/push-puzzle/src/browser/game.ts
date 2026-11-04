@@ -1,6 +1,7 @@
 import { Audio } from "@gamekit/audio";
 import type { AudioSystem } from "@gamekit/audio";
 import { InputController } from "@gamekit/input";
+import type { SpriteSheet } from "@gamekit/render-three";
 import { combineViews, makeGameEngine } from "@gamekit/runtime/browser";
 import type {
   GameDefinition,
@@ -17,6 +18,7 @@ import type {
   PushPuzzleConfig,
   PushPuzzleInput,
 } from "../world";
+import { PushPuzzleSheet } from "./sheet";
 import { PushPuzzleSoundView } from "./sound";
 import type { PushPuzzleSounds } from "./sound";
 import { PushPuzzleView } from "./view";
@@ -73,14 +75,21 @@ export interface PushPuzzleAudio {
   readonly sounds: PushPuzzleSounds;
 }
 
+/** What the push-puzzle game draws and plays: the app's sheet and sounds, which the app owns. */
+export interface PushPuzzleAssets extends PushPuzzleAudio {
+  /** The app's push-puzzle sheet, with every tag in `PUSH_PUZZLE_SPRITE_TAGS`. Never freed by the game. */
+  readonly sheet: SpriteSheet;
+}
+
 /**
  * The push-puzzle genre as a @gamekit/runtime browser game: its simulation, input, and a view
- * that draws it and plays its sounds through `audio`.
+ * that draws it from `sheet` and plays its sounds through `audio`.
  */
 export const makePushPuzzleGame = ({
   audio,
   sounds,
-}: PushPuzzleAudio): GameDefinition<
+  sheet,
+}: PushPuzzleAssets): GameDefinition<
   PushPuzzleConfig,
   Puzzle,
   PushPuzzleInput,
@@ -90,7 +99,7 @@ export const makePushPuzzleGame = ({
   createInput,
   createView: (container) =>
     combineViews<Puzzle>(
-      new PushPuzzleView(container),
+      new PushPuzzleView(container, sheet),
       new PushPuzzleSoundView(audio, sounds)
     ),
 });
@@ -100,14 +109,18 @@ export class PushPuzzleEngine extends Context.Service<
   GameEngine<PushPuzzleConfig, Puzzle, PushPuzzleEvent>
 >()("@gamekit/push-puzzle/Engine") {}
 
-/** Provides the engine, playing the cues' `sounds` through the `Audio` service. */
+/**
+ * Provides the engine, drawing from the `PushPuzzleSheet` and playing the cues' `sounds`
+ * through the `Audio` service.
+ */
 export const makePushPuzzleEngineLayer = (
   sounds: PushPuzzleSounds
-): Layer.Layer<PushPuzzleEngine, never, Audio> =>
+): Layer.Layer<PushPuzzleEngine, never, Audio | PushPuzzleSheet> =>
   Layer.effect(
     PushPuzzleEngine,
     Effect.gen(function* () {
       const audio = yield* Audio;
-      return makeGameEngine(makePushPuzzleGame({ audio, sounds }));
+      const sheet = yield* PushPuzzleSheet;
+      return makeGameEngine(makePushPuzzleGame({ audio, sounds, sheet }));
     })
   );

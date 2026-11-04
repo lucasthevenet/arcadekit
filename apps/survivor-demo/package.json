@@ -20,6 +20,7 @@
     "@gamekit/foldkit": "workspace:*",
     "@gamekit/input": "workspace:*",
     "@gamekit/net": "workspace:*",
+    "@gamekit/render-three": "workspace:*",
     "@gamekit/runtime": "workspace:*",
     "@gamekit/save": "workspace:*",
     "@gamekit/survivors": "workspace:*",

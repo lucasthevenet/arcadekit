@@ -7,21 +7,27 @@ import { Command } from "foldkit";
 import { AudioSettingsStorage, CLICK, MUSIC, SOUND_LIST } from "./audio";
 import { Message } from "./message";
 import { Save } from "./save";
+import { Sprites } from "./sprites";
 
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
 // against the app's services and reports back with a Message.
 
+/** Loads the levels, and checks the sheet loaded: the game can't be played without either. */
 export const LoadContent = Command.define("LoadContent", {
   messages: [Message.LoadedContent, Message.FailedToLoadContent],
   execute: Effect.gen(function* () {
+    yield* (yield* Sprites).sheet;
     const content = yield* (yield* PushPuzzleContent).load;
     return Message.LoadedContent({
       levels: content.levels.map(({ id, name }) => ({ id, name })),
     });
   }).pipe(
-    Effect.catchTag("ContentError", (error) =>
-      Effect.succeed(Message.FailedToLoadContent({ error: error.message }))
-    )
+    Effect.catchTags({
+      ContentError: (error) =>
+        Effect.succeed(Message.FailedToLoadContent({ error: error.message })),
+      SpriteSheetError: (error) =>
+        Effect.succeed(Message.FailedToLoadContent({ error: error.message })),
+    })
   ),
 });
 

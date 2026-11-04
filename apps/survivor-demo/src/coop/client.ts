@@ -34,7 +34,10 @@ import type {
   World,
 } from "@gamekit/survivors";
 import { SurvivorsSoundView, SurvivorsView } from "@gamekit/survivors/browser";
-import type { SurvivorsGameSound } from "@gamekit/survivors/browser";
+import type {
+  SurvivorsArt,
+  SurvivorsGameSound,
+} from "@gamekit/survivors/browser";
 
 import { contentHash } from "./content-hash";
 import { encodeLobbyMessage, parseLobbyMessage, playerName } from "./lobby";
@@ -180,6 +183,7 @@ export class CoopClient {
   private readonly hashes = new Map<number, number>();
   private attached: {
     readonly element: HTMLElement;
+    readonly art: SurvivorsArt;
     readonly controller: InputController<keyof typeof MOVE_AXES>;
     view: GameView<World>;
     frame: number;
@@ -260,14 +264,18 @@ export class CoopClient {
     this.reset(null, "");
   }
 
-  /** Draws the run into `element` on every animation frame, and reads input from it. */
-  attach(element: HTMLElement): () => void {
+  /**
+   * Draws the run into `element` with `art` (the app's sprite sheet) on every animation frame,
+   * and reads input from it.
+   */
+  attach(element: HTMLElement, art: SurvivorsArt): () => void {
     this.detach();
     const controller = new InputController(element, { axes: MOVE_AXES });
     const attached = {
       element,
+      art,
       controller,
-      view: this.makeView(element),
+      view: this.makeView(element, art),
       frame: 0,
     };
     const frame = (timeMs: number) => {
@@ -648,14 +656,14 @@ export class CoopClient {
     const { attached } = this;
     if (attached !== null) {
       attached.view.dispose();
-      attached.view = this.makeView(attached.element);
+      attached.view = this.makeView(attached.element, attached.art);
     }
   }
 
   /** The drawing view, and the sound view beside it, both for the local hero. */
-  private makeView(element: HTMLElement): GameView<World> {
+  private makeView(element: HTMLElement, art: SurvivorsArt): GameView<World> {
     const localHero = this.slot;
-    const view = new SurvivorsView(element, { localHero });
+    const view = new SurvivorsView(element, art, { localHero });
     const { sound } = this.options;
     return sound === undefined
       ? view

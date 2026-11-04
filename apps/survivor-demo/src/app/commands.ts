@@ -4,7 +4,7 @@ import {
   SurvivorsContent,
   chooseUpgrade,
 } from "@gamekit/survivors";
-import { SurvivorsEngine } from "@gamekit/survivors/browser";
+import { SurvivorsEngine, SurvivorsSprites } from "@gamekit/survivors/browser";
 import { Effect, Schema } from "effect";
 import { Command } from "foldkit";
 
@@ -16,10 +16,12 @@ import { CLICK_SOUND, SoundSettings, soundList } from "./sound";
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
 // against the app's services and reports back with a Message.
 
+/** Loads the content and the sprite sheet: the game can't be played or drawn without both. */
 export const LoadContent = Command.define("LoadContent", {
   messages: [Message.LoadedContent, Message.FailedToLoadContent],
   execute: Effect.gen(function* () {
     const content = yield* (yield* SurvivorsContent).load;
+    yield* (yield* SurvivorsSprites).load;
     return Message.LoadedContent({
       heroes: content.heroes.map(({ id, name, description, color }) => ({
         id,
@@ -29,7 +31,7 @@ export const LoadContent = Command.define("LoadContent", {
       })),
     });
   }).pipe(
-    Effect.catchTag("ContentError", (error) =>
+    Effect.catchTag(["ContentError", "SpriteSheetError"], (error) =>
       Effect.succeed(Message.FailedToLoadContent({ error: error.message }))
     )
   ),

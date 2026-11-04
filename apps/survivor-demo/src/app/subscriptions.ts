@@ -112,13 +112,17 @@ export const subscriptions = Subscription.make<
   SurvivorsEngine | Coop | Audio
 >()((entry) => ({
   /**
-   * While the viewport exists, the engine renders into it and its events become Messages.
-   * Co-op's screens hand the viewport to the co-op client instead.
+   * While the viewport exists, the engine renders into it and its events become Messages, once
+   * the content and sprite sheet have loaded: it can't draw before. Co-op's screens hand the
+   * viewport to the co-op client instead.
    */
   engine: engineEntry({
     engine: SurvivorsEngine,
     isViewportMounted: (model) =>
-      model.isViewportMounted && !isCoop(model.phase),
+      model.isViewportMounted &&
+      model.phase._tag !== "Loading" &&
+      model.phase._tag !== "LoadFailed" &&
+      !isCoop(model.phase),
     toMessage,
   }),
 

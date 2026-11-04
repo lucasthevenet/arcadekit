@@ -2,7 +2,7 @@
   "name": "@gamekit/render-three",
   "version": "0.0.0",
   "private": true,
-  "description": "Three.js helpers: stage, mesh instances, camera rigs",
+  "description": "Three.js helpers: stage, mesh instances, camera rigs, pixel-art sprites",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -11,6 +11,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "effect": "~4.1.2",
     "three": "^0.187.0"
   }
 }

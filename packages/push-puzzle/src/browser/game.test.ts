@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PuzzleContent, boardText } from "../index";
 import type { HudSample, PushPuzzleInput } from "../index";
 import { makePushPuzzleGame } from "./index";
+import { testSheet } from "./test-sheet";
 
 // Runs push-puzzle's real browser definition: its input source reads keys through
 // InputController, and a GameLoop steps it the way the demo's driver does. No view is created.
@@ -35,6 +36,7 @@ const pushPuzzleGame = makePushPuzzleGame({
     undo: "undo",
     solved: "solved",
   },
+  sheet: testSheet(),
 });
 
 let window: EventTarget;

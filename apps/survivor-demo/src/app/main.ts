@@ -2,7 +2,10 @@ import { BrowserAudioLayer } from "@gamekit/audio/browser";
 import { fetchJsonSource } from "@gamekit/content/browser";
 import { BrowserSaveStorage } from "@gamekit/save/browser";
 import { makeSurvivorsContentLayer } from "@gamekit/survivors";
-import { makeSurvivorsEngineLayer } from "@gamekit/survivors/browser";
+import {
+  makeSurvivorsEngineLayer,
+  makeSurvivorsSpritesLayer,
+} from "@gamekit/survivors/browser";
 import { Layer } from "effect";
 
 import { CoopLayer } from "./coop";
@@ -17,7 +20,7 @@ export { subscriptions } from "./subscriptions";
 /**
  * App-lifetime services, shared by every Command and Subscription. The engine and the co-op
  * client play through the one audio system, which makes no AudioContext before the first
- * gesture.
+ * gesture, and draw from the one sprite sheet, which LoadContent loads with the content.
  */
 export const resources = Layer.mergeAll(
   makeSurvivorsEngineLayer(survivorsSounds),
@@ -27,4 +30,13 @@ export const resources = Layer.mergeAll(
   SaveLayer.pipe(Layer.provide(BrowserSaveStorage)),
   SoundSettingsLayer.pipe(Layer.provide(BrowserSaveStorage)),
   CoopLayer
-).pipe(Layer.provideMerge(BrowserAudioLayer));
+).pipe(
+  Layer.provideMerge(
+    Layer.merge(
+      BrowserAudioLayer,
+      makeSurvivorsSpritesLayer(
+        `${import.meta.env.BASE_URL}sprites/survivors.json`
+      )
+    )
+  )
+);
