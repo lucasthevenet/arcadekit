@@ -67,7 +67,10 @@ export class GameDriver<Config, State, Input, Event> {
     this.loop.start(config, seed, this.frames.now());
   }
 
-  /** Changes the current state from outside the loop (a menu choice, a cheat, a network message). */
+  /**
+   * Changes the current state from outside the loop (a menu choice, a cheat). A lockstep run
+   * schedules its changes as step input instead (ADR-0012).
+   */
   modify(change: (state: State) => void): void {
     this.loop.modify(change, this.frames.now());
   }

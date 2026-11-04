@@ -28,6 +28,14 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Viewport**: the DOM element the view draws a run into and the input source reads input from. The runtime calls it `element` in `attach`; the view gets it as `container` and the input source as `surface`. In a Foldkit app, `gameViewport` (`@gamekit/foldkit`) renders it, and `engineEntry` keeps the engine attached to it while it is in the document. One per document.
 
+**Lockstep**: how peers play one run together (#25, `@gamekit/net`): each sends only its input, and every peer runs step N once it has every player's input for step N, so all runs stay identical without sending state. Gamekit's lockstep is delay-based: no prediction, no rollback and no snapshots; a step whose inputs haven't arrived waits. Anything that changes a lockstep run (an upgrade pick, a pause, a player's removal) is an input scheduled for a step, never a `modify`. Peers compare a state hash every so many steps, and a mismatch (a **desync**) stops the run with an error naming the step and the hashes ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md)).
+
+**Host**: the peer at the centre of a lockstep run's star. It runs the lobby, sends the seed, config and content hash at the start, receives every peer's input, decides when a step's inputs are complete and relays the merged input to everyone. It alone removes a player who has gone silent for about 10 s, by scheduling the removal as input. The host is also a player, and a peer.
+
+**Peer**: one player's browser in a lockstep run, the host included. A peer that isn't the host connects only to the host: it sends its own input there and steps on the merged inputs the host relays. _Avoid_: client, which suggests the host simulates for it; every peer runs the whole simulation.
+
+**Input delay**: how many steps ahead a peer schedules its local input: input sampled now is for step `N + inputDelay`, so it usually reaches every peer before that step is due and stepping doesn't wait. A few steps (2 to 6 steps is 33 to 100 ms at 60 Hz), tuned by measurement. Not latency, which is how long a message takes to arrive.
+
 **Engine**: the Effect-facing API of a running game (`GameEngine`, `@gamekit/runtime/browser`): attach to an element, listen to events, start, modify, pause, stop. Each genre declares its own engine service.
 
 **Content source**: where content files come from (`ContentSource`), such as `memorySource` in tests or `fetchJsonSource` in the browser. A genre's **content definition** (`ContentDefinition`) is its schema, the file each part comes from, and the checks the schema can't express, as one value. A genre's content service, built with `makeContentLoader` from the definition and a source, loads and checks the files once per app; a failed load isn't kept, so it can be retried. Tests load the same definition with `loadContent`, so they run the same checks.
