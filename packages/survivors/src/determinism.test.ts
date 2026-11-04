@@ -4,8 +4,13 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { hashWorld, visitWorld } from "./hash-world";
-import { GameContent, chooseUpgrade, survivorsSimulation } from "./index";
-import type { SurvivorsInput, World } from "./index";
+import {
+  GameContent,
+  chooseUpgrade,
+  soloInput,
+  survivorsSimulation,
+} from "./index";
+import type { HeroInput, World } from "./index";
 
 // Long-run determinism: 20,000 steps (5.5 minutes) of a full horde under analog input, through
 // the GameLoop the demos run. The pinned replay is too short to catch a change in the last bits
@@ -109,7 +114,7 @@ const axis = (bits: number): number => (bits - 32_767.5) / 32_767.5;
  * step number (no Math.random, so every engine reads the same input). The length can pass 1, so
  * the simulation's own normalisation runs too.
  */
-const wander = (): StepInput<SurvivorsInput> => {
+const wander = (): StepInput<HeroInput> => {
   const input = { moveX: 0, moveZ: 0 };
   return {
     read: (step) => {
@@ -156,16 +161,16 @@ const mixWorld = (hash: number, world: World): number => {
  */
 const longRun = (seed: number) => {
   const loop = new GameLoop(survivorsSimulation);
-  const input = wander();
-  loop.start({ content, heroId: "bolter" }, seed, 0);
+  const input = soloInput(wander());
+  loop.start({ content, heroIds: ["bolter"] }, seed, 0);
   const world = loop.state!;
   let trace = 0x81_1c_9d_c5;
   for (let i = 0; i < STEPS; i++) {
     const nowMs = (i * 1000) / 60;
-    if (world.offer) {
+    const { offer } = world.heroes[0]!;
+    if (offer) {
       loop.modify(
-        (offered) =>
-          chooseUpgrade(offered, Math.min(1, offered.offer!.length - 1)),
+        (offered) => chooseUpgrade(offered, 0, Math.min(1, offer.length - 1)),
         nowMs
       );
     }
@@ -175,7 +180,7 @@ const longRun = (seed: number) => {
   return {
     status: world.status,
     kills: world.kills,
-    level: world.player.level,
+    level: world.level,
     final: hashWorld(world),
     trace,
   };

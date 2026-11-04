@@ -1,8 +1,9 @@
 import type { GameSimulation } from "@gamekit/runtime";
 
 import type { SurvivorsEvent } from "./events";
+import type { SurvivorsInput } from "./input";
 import { createWorld, hudSample, step } from "./world";
-import type { SurvivorsConfig, SurvivorsInput, World } from "./world";
+import type { SurvivorsConfig, World } from "./world";
 
 /**
  * The survivors genre as a @gamekit/runtime simulation: what a GameLoop steps, in a browser,

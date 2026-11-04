@@ -15,7 +15,12 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { hashWorld } from "./hash-world";
-import { GameContent, survivorsSimulation } from "./index";
+import {
+  GameContent,
+  HeroInput,
+  soloInput,
+  survivorsSimulation,
+} from "./index";
 import type { SurvivorsConfig, SurvivorsInput, World } from "./index";
 
 // Survivors' real simulation in lockstep. Survivors is single-player until #25's genre work gives
@@ -83,13 +88,8 @@ const content = Schema.decodeUnknownSync(GameContent)({
   waves: [{ from: 0, to: 90, enemy: "grunt", perSecond: 4 }],
 });
 
-const SurvivorsInputSchema = Schema.Struct({
-  moveX: Schema.Number,
-  moveZ: Schema.Number,
-});
-
 /** Zig-zag movement, a leg every 90 steps; each player turns differently. One object, refilled. */
-const zigZag = (turn: number): StepInput<SurvivorsInput> => {
+const zigZag = (turn: number): StepInput<HeroInput> => {
   const input = { moveX: 0, moveZ: 0 };
   return {
     read: (step) => {
@@ -103,11 +103,10 @@ const zigZag = (turn: number): StepInput<SurvivorsInput> => {
 
 /** The step input: the host's input alone. One object, refilled each step. */
 const hostOnly = () => {
-  const input = { moveX: 0, moveZ: 0 };
-  return (step: ConfirmedStep<SurvivorsInput>): SurvivorsInput => {
-    const host = step.inputs[0]!.input;
-    input.moveX = host.moveX;
-    input.moveZ = host.moveZ;
+  const heroes: HeroInput[] = [{ moveX: 0, moveZ: 0 }];
+  const input: SurvivorsInput = { heroes, leaving: [] };
+  return (step: ConfirmedStep<HeroInput>): SurvivorsInput => {
+    heroes[0] = step.inputs[0]!.input;
     return input;
   };
 };
@@ -154,14 +153,14 @@ const options = (network: MemoryNetwork, id: string) => {
     World,
     SurvivorsInput,
     unknown,
-    SurvivorsInput
+    HeroInput
   > = {
     simulation,
-    config: { content, heroId: "bolter" },
+    config: { content, heroIds: ["bolter"] },
     contentHash: "survivors-test-content",
     transport: network.connect(id),
     local: zigZag(TURNS[id]!),
-    codec: schemaCodec(SurvivorsInputSchema),
+    codec: schemaCodec(HeroInput),
     combine: hostOnly(),
     hash: hashWorld,
     inputDelay: 4,
@@ -174,8 +173,8 @@ const options = (network: MemoryNetwork, id: string) => {
 const soloHashes = (steps: number) => {
   const { hashes, simulation } = recorded();
   const loop = new GameLoop(simulation);
-  loop.start({ content, heroId: "bolter" }, SEED, 0);
-  loop.frame(zigZag(TURNS.host!), { steps }, 0);
+  loop.start({ content, heroIds: ["bolter"] }, SEED, 0);
+  loop.frame(soloInput(zigZag(TURNS.host!)), { steps }, 0);
   return { hashes, world: loop.state! };
 };
 

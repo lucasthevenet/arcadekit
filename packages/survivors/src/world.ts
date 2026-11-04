@@ -7,13 +7,30 @@ import {
 } from "@gamekit/core";
 import type { Pool, Rng } from "@gamekit/core";
 
-import type { HudSample, SurvivorsEvent, UpgradeChoice } from "./events";
+import type { HudSample, SurvivorsEvent } from "./events";
+import {
+  MAX_HEROES,
+  MAX_WEAPONS,
+  applyChoice,
+  auraRadius,
+  createHero,
+  rollUpgrades,
+  weaponCooldown,
+  weaponDamage,
+} from "./hero";
+import type { Hero, WeaponSlot } from "./hero";
+import type { HeroInput, SurvivorsInput } from "./input";
 import { cos, hypot2, powInt, sin } from "./math";
-import type { EnemyDef, GameContent, HeroDef, WeaponDef } from "./schema";
+import type { EnemyDef, GameContent } from "./schema";
 
 // The survivors simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
 // Crowds live in @gamekit/core pools (one typed array per field), so the per-frame loop
 // allocates nothing and the garbage collector never causes a stutter.
+//
+// A run has one hero per player (hero.ts); everything else is shared: the clock, the team's XP
+// and level, the horde, projectiles, gems and the Rng. Heroes are visited in slot order
+// everywhere, so every lockstep peer computes the same step. With one hero, every rule computes
+// exactly what the single-player game always has.
 
 export const PLAYER_RADIUS = 0.5;
 const MAX_PROJECTILES = 512;
@@ -24,36 +41,11 @@ const GEM_PICKUP_DISTANCE = 0.6;
 const GEM_MAGNET_SPEED = 18;
 const SPAWN_DISTANCE_MIN = 16;
 const SPAWN_DISTANCE_MAX = 22;
-const MAX_WEAPONS = 4;
-
-export interface SurvivorsInput {
-  /** Movement direction, each axis in [-1, 1]. */
-  readonly moveX: number;
-  readonly moveZ: number;
-}
 
 export interface SurvivorsConfig {
   readonly content: GameContent;
-  readonly heroId: string;
-}
-
-export interface WeaponSlot {
-  readonly def: WeaponDef;
-  level: number;
-  /** Seconds until the next attack. */
-  timer: number;
-  /** Seconds since the last attack; the view uses it for attack flashes. */
-  sinceFired: number;
-}
-
-export interface Stats {
-  maxHpMult: number;
-  moveSpeed: number;
-  damageMult: number;
-  cooldownMult: number;
-  areaMult: number;
-  pickupRadius: number;
-  regen: number;
+  /** One hero id per player, in player order (the host first in lockstep). 1 to 4. */
+  readonly heroIds: readonly string[];
 }
 
 export type RunStatus = "running" | "won" | "dead";
@@ -74,7 +66,7 @@ const PROJECTILE_LAYOUT = {
   life: Float32Array,
   pierce: Uint8Array,
   rehit: Float32Array,
-  /** Index into `weapons`, so the view can color projectiles. */
+  /** The firing hero's slot times MAX_WEAPONS, plus the index in its weapons, so the view can color projectiles. */
   weapon: Uint8Array,
 };
 const GEM_LAYOUT = {
@@ -86,80 +78,64 @@ const GEM_LAYOUT = {
 
 export interface World {
   readonly content: GameContent;
-  readonly hero: HeroDef;
   readonly rng: Rng;
   readonly events: EventBuffer<SurvivorsEvent>;
   time: number;
   kills: number;
   status: RunStatus;
-  readonly player: {
-    x: number;
-    z: number;
-    hp: number;
-    maxHp: number;
-    level: number;
-    xp: number;
-    xpNext: number;
-    faceX: number;
-    faceZ: number;
-    hurtTimer: number;
-  };
-  stats: Stats;
-  readonly weapons: WeaponSlot[];
-  readonly passiveLevels: Map<string, number>;
+  /** The team's level and XP: any hero's gem feeds them. */
+  level: number;
+  xp: number;
+  xpNext: number;
+  /** Level-ups not yet offered and closed. */
+  pendingLevelUps: number;
+  /** Numbers the offers: bumped each time heroes are offered upgrades, so a pick names the offer it answers. */
+  offerSeq: number;
+  /** The slot the next enemy spawns around, before skipping heroes that aren't playing. */
+  spawnCursor: number;
+  /** One per player, by slot. Never removed from, so slots stay stable; a hero that leaves is marked `left`. */
+  readonly heroes: readonly Hero[];
   readonly enemyDefs: readonly EnemyDef[];
   readonly enemyTypeById: ReadonlyMap<string, number>;
   readonly enemies: Pool<typeof ENEMY_LAYOUT>;
   readonly projectiles: Pool<typeof PROJECTILE_LAYOUT>;
   readonly gems: Pool<typeof GEM_LAYOUT>;
   readonly spawnBudget: Float64Array;
-  pendingLevelUps: number;
-  /** Set while the run waits for the player to pick an upgrade. The simulation is frozen meanwhile. */
-  offer: readonly UpgradeChoice[] | null;
   readonly grid: SpatialGrid;
   readonly neighbors: Int32Array;
 }
 
+/** Starts a run with one hero per id in `heroIds`. Throws a RangeError for no heroes or more than 4. */
 export const createWorld = (
-  { content, heroId }: SurvivorsConfig,
+  { content, heroIds }: SurvivorsConfig,
   seed: number
 ): World => {
-  const hero = content.heroes.find((h) => h.id === heroId) ?? content.heroes[0];
-  const startingWeapon = content.weapons.find(
-    (w) => w.id === hero.startingWeapon
-  )!;
+  if (heroIds.length === 0 || heroIds.length > MAX_HEROES) {
+    throw new RangeError(
+      `A survivors run has 1 to ${MAX_HEROES} heroes, not ${heroIds.length}`
+    );
+  }
   const cap = content.rules.maxEnemies;
   return {
     content,
-    hero,
     rng: makeRng(seed),
     events: new EventBuffer(),
     time: 0,
     kills: 0,
     status: "running",
-    player: {
-      x: 0,
-      z: 0,
-      hp: hero.maxHp,
-      maxHp: hero.maxHp,
-      level: 1,
-      xp: 0,
-      xpNext: content.rules.xpToLevel2,
-      faceX: 0,
-      faceZ: 1,
-      hurtTimer: 0,
-    },
-    stats: baseStats(content, hero),
-    weapons: [{ def: startingWeapon, level: 1, timer: 0.5, sinceFired: 99 }],
-    passiveLevels: new Map(),
+    level: 1,
+    xp: 0,
+    xpNext: content.rules.xpToLevel2,
+    pendingLevelUps: 0,
+    offerSeq: 0,
+    spawnCursor: 0,
+    heroes: heroIds.map((id, slot) => createHero(content, id, slot)),
     enemyDefs: content.enemies,
     enemyTypeById: new Map(content.enemies.map((e, i) => [e.id, i])),
     enemies: createPool(cap, ENEMY_LAYOUT),
     projectiles: createPool(MAX_PROJECTILES, PROJECTILE_LAYOUT),
     gems: createPool(MAX_GEMS, GEM_LAYOUT),
     spawnBudget: new Float64Array(content.waves.length),
-    pendingLevelUps: 0,
-    offer: null,
     grid: new SpatialGrid({
       halfSize: content.rules.arenaHalfSize,
       cellSize: 2,
@@ -169,89 +145,68 @@ export const createWorld = (
   };
 };
 
-const baseStats = (content: GameContent, hero: HeroDef): Stats => ({
-  maxHpMult: 1,
-  moveSpeed: hero.moveSpeed * content.rules.baseMoveSpeedScale,
-  damageMult: 1,
-  cooldownMult: 1,
-  areaMult: 1,
-  pickupRadius: content.rules.basePickupRadius,
-  regen: 0,
-});
-
-/** Recomputes stats from passive levels. Called after every upgrade, never per frame. */
-export const recomputeStats = (world: World): void => {
-  const sum = {
-    maxHp: 0,
-    moveSpeed: 0,
-    damage: 0,
-    cooldown: 0,
-    area: 0,
-    pickupRadius: 0,
-    regen: 0,
-  };
-  for (const passive of world.content.passives) {
-    sum[passive.stat] +=
-      passive.amountPerLevel * (world.passiveLevels.get(passive.id) ?? 0);
-  }
-  const base = baseStats(world.content, world.hero);
-  const previousMaxHp = world.player.maxHp;
-  world.stats = {
-    maxHpMult: 1 + sum.maxHp,
-    moveSpeed: base.moveSpeed * (1 + sum.moveSpeed),
-    damageMult: 1 + sum.damage,
-    cooldownMult: 1 / (1 + sum.cooldown),
-    areaMult: 1 + sum.area,
-    pickupRadius: base.pickupRadius * (1 + sum.pickupRadius),
-    regen: sum.regen,
-  };
-  world.player.maxHp = world.hero.maxHp * world.stats.maxHpMult;
-  // Extra max HP arrives filled.
-  world.player.hp += Math.max(0, world.player.maxHp - previousMaxHp);
-};
-
 export const hudSample = (world: World): HudSample => ({
-  hp: world.player.hp,
-  maxHp: world.player.maxHp,
-  level: world.player.level,
-  xp: world.player.xp,
-  xpNext: world.player.xpNext,
+  level: world.level,
+  xp: world.xp,
+  xpNext: world.xpNext,
   time: world.time,
   runLength: world.content.rules.runLength,
   kills: world.kills,
   enemies: world.enemies.count,
+  heroes: world.heroes.map((hero) => ({
+    heroId: hero.def.id,
+    hp: hero.hp,
+    maxHp: hero.maxHp,
+    status: hero.status,
+    paused: hero.paused,
+  })),
 });
 
-// ---------------------------------------------------------------------------
-// Weapon numbers (shared with the view so visuals match the rules)
+/** True while some hero has an upgrade offer open: the run is frozen until every one is closed. */
+export const isChoosing = (world: World): boolean => {
+  for (const hero of world.heroes) {
+    if (hero.offer !== null) {
+      return true;
+    }
+  }
+  return false;
+};
 
-export const weaponDamage = (world: World, slot: WeaponSlot): number =>
-  (slot.def.damage + slot.def.damagePerLevel * (slot.level - 1)) *
-  world.stats.damageMult;
-
-export const weaponCooldown = (world: World, slot: WeaponSlot): number =>
-  slot.def.cooldown *
-  powInt(slot.def.cooldownScalePerLevel, slot.level - 1) *
-  world.stats.cooldownMult;
-
-export const auraRadius = (world: World, slot: WeaponSlot): number =>
-  slot.def.behavior.kind === "aura"
-    ? (slot.def.behavior.radius +
-        slot.def.behavior.radiusPerLevel * (slot.level - 1)) *
-      world.stats.areaMult
-    : 0;
+const anyPlaying = (world: World): boolean => {
+  for (const hero of world.heroes) {
+    if (hero.status === "playing") {
+      return true;
+    }
+  }
+  return false;
+};
 
 // ---------------------------------------------------------------------------
 // The step function
 
-/** Advances the run by `dt` seconds. Does nothing while an upgrade offer is open or the run is over. */
+/**
+ * Advances the run by `dt` seconds. First the heroes in `input.leaving` leave and the picks in
+ * `input.heroes` apply; then the run stays frozen while any hero has an upgrade offer open, or
+ * while any playing hero's player holds it paused. Does nothing once the run is over.
+ */
 export const step = (world: World, input: SurvivorsInput, dt: number): void => {
-  if (world.status !== "running" || world.offer !== null) {
+  if (world.status !== "running") {
+    return;
+  }
+  for (const slot of input.leaving) {
+    leave(world, slot);
+  }
+  if (!anyPlaying(world)) {
+    endRun(world, "dead");
+    return;
+  }
+  applyPicks(world, input);
+  if (isChoosing(world) || holdPause(world, input)) {
     return;
   }
   world.time += dt;
 
-  movePlayer(world, input, dt);
+  moveHeroes(world, input, dt);
   spawnEnemies(world, dt);
   moveEnemies(world, dt);
   world.grid.build(
@@ -259,23 +214,65 @@ export const step = (world: World, input: SurvivorsInput, dt: number): void => {
     world.enemies.fields.z,
     world.enemies.count
   );
-  touchPlayer(world, dt);
+  touchHeroes(world, dt);
   fireWeapons(world, dt);
   moveProjectiles(world, dt);
   removeDeadEnemies(world);
   collectGems(world, dt);
 
-  const p = world.player;
-  p.hp = Math.min(p.maxHp, p.hp + world.stats.regen * dt);
-  if (p.hp <= 0) {
-    p.hp = 0;
+  for (const hero of world.heroes) {
+    if (hero.status !== "playing") {
+      continue;
+    }
+    hero.hp = Math.min(hero.maxHp, hero.hp + hero.stats.regen * dt);
+    if (hero.hp <= 0) {
+      hero.hp = 0;
+      hero.status = "down";
+    }
+  }
+  if (!anyPlaying(world)) {
     endRun(world, "dead");
   } else if (world.time >= world.content.rules.runLength) {
     endRun(world, "won");
   } else if (world.pendingLevelUps > 0) {
-    world.offer = rollUpgrades(world);
-    world.events.push({ type: "levelUp", choices: world.offer });
+    offerUpgrades(world);
   }
+};
+
+const heroInput = (input: SurvivorsInput, hero: Hero): HeroInput | null =>
+  input.heroes[hero.slot] ?? null;
+
+/** The hero in `slot` leaves the run: it is no longer drawn or chased, and its open offer closes. */
+const leave = (world: World, slot: number) => {
+  const hero = world.heroes[slot];
+  if (!hero || hero.status === "left") {
+    return;
+  }
+  hero.status = "left";
+  hero.paused = false;
+  closeOffer(world, hero);
+  world.events.push({ type: "heroLeft", hero: slot });
+};
+
+/** Applies each hero's pick, in slot order, if it answers the offer the hero has open. */
+const applyPicks = (world: World, input: SurvivorsInput) => {
+  for (const hero of world.heroes) {
+    const pick = heroInput(input, hero)?.pick;
+    if (pick !== undefined && pick.offer === world.offerSeq) {
+      choose(world, hero, pick.index);
+    }
+  }
+};
+
+/** Records which playing heroes' players hold the run paused. True if any does. */
+const holdPause = (world: World, input: SurvivorsInput): boolean => {
+  let paused = false;
+  for (const hero of world.heroes) {
+    hero.paused =
+      hero.status === "playing" && heroInput(input, hero)?.paused === true;
+    paused ||= hero.paused;
+  }
+  return paused;
 };
 
 const endRun = (world: World, status: "won" | "dead") => {
@@ -283,34 +280,54 @@ const endRun = (world: World, status: "won" | "dead") => {
   world.events.push({ type: "hud", hud: hudSample(world) });
   world.events.push({
     type: "runEnded",
-    summary: {
+    summaries: world.heroes.map((hero) => ({
       won: status === "won",
-      heroId: world.hero.id,
-      heroName: world.hero.name,
+      heroId: hero.def.id,
+      heroName: hero.def.name,
       time: world.time,
       kills: world.kills,
-      level: world.player.level,
-    },
+      level: world.level,
+    })),
   });
 };
 
-const movePlayer = (world: World, input: SurvivorsInput, dt: number) => {
-  const p = world.player;
-  let mx = input.moveX;
-  let mz = input.moveZ;
-  const len = hypot2(mx, mz);
-  if (len > 1) {
-    mx /= len;
-    mz /= len;
-  }
-  if (len > 0.05) {
-    p.faceX = mx;
-    p.faceZ = mz;
-  }
+const moveHeroes = (world: World, input: SurvivorsInput, dt: number) => {
   const limit = world.content.rules.arenaHalfSize - 1;
-  p.x = clamp(p.x + mx * world.stats.moveSpeed * dt, -limit, limit);
-  p.z = clamp(p.z + mz * world.stats.moveSpeed * dt, -limit, limit);
-  p.hurtTimer = Math.max(0, p.hurtTimer - dt);
+  for (const hero of world.heroes) {
+    if (hero.status !== "playing") {
+      continue;
+    }
+    const move = heroInput(input, hero);
+    let mx = move === null ? 0 : move.moveX;
+    let mz = move === null ? 0 : move.moveZ;
+    const len = hypot2(mx, mz);
+    if (len > 1) {
+      mx /= len;
+      mz /= len;
+    }
+    if (len > 0.05) {
+      hero.faceX = mx;
+      hero.faceZ = mz;
+    }
+    hero.x = clamp(hero.x + mx * hero.stats.moveSpeed * dt, -limit, limit);
+    hero.z = clamp(hero.z + mz * hero.stats.moveSpeed * dt, -limit, limit);
+    hero.hurtTimer = Math.max(0, hero.hurtTimer - dt);
+  }
+};
+
+/** The playing hero the next enemy spawns around: the heroes take turns, in slot order. */
+const nextSpawnHero = (world: World): Hero => {
+  const { heroes } = world;
+  for (let k = 0; k < heroes.length; k++) {
+    const slot = (world.spawnCursor + k) % heroes.length;
+    const hero = heroes[slot]!;
+    if (hero.status === "playing") {
+      world.spawnCursor = (slot + 1) % heroes.length;
+      return hero;
+    }
+  }
+  // The step ends a run with no playing hero before anything spawns.
+  return heroes[0]!;
 };
 
 const spawnEnemies = (world: World, dt: number) => {
@@ -330,10 +347,11 @@ const spawnEnemies = (world: World, dt: number) => {
       if (i === -1) {
         continue;
       }
+      const hero = nextSpawnHero(world);
       const angle = world.rng.next() * Math.PI * 2;
       const distance = world.rng.range(SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX);
-      x[i] = clamp(world.player.x + cos(angle) * distance, -limit, limit);
-      z[i] = clamp(world.player.z + sin(angle) * distance, -limit, limit);
+      x[i] = clamp(hero.x + cos(angle) * distance, -limit, limit);
+      z[i] = clamp(hero.z + sin(angle) * distance, -limit, limit);
       hp[i] = world.enemyDefs[enemyType]!.hp;
       type[i] = enemyType;
       hitFlash[i] = 0;
@@ -341,18 +359,42 @@ const spawnEnemies = (world: World, dt: number) => {
   }
 };
 
+/**
+ * The playing hero nearest (x, z), by squared distance, with exact arithmetic; the lowest slot
+ * wins a tie. Null if no hero is playing.
+ */
+const nearestHero = (world: World, x: number, z: number): Hero | null => {
+  let best: Hero | null = null;
+  let bestD2 = Infinity;
+  for (const hero of world.heroes) {
+    if (hero.status !== "playing") {
+      continue;
+    }
+    const dx = hero.x - x;
+    const dz = hero.z - z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < bestD2) {
+      best = hero;
+      bestD2 = d2;
+    }
+  }
+  return best;
+};
+
 const moveEnemies = (world: World, dt: number) => {
   const { x, z, type, hitFlash } = world.enemies.fields;
   const { count } = world.enemies;
-  const { x: px, z: pz } = world.player;
-  // Chase the player.
+  // Chase the nearest hero.
   for (let i = 0; i < count; i++) {
     const def = world.enemyDefs[type[i]!]!;
-    const dx = px - x[i]!;
-    const dz = pz - z[i]!;
-    const d = hypot2(dx, dz) || 1;
-    x[i]! += (dx / d) * def.speed * dt;
-    z[i]! += (dz / d) * def.speed * dt;
+    const hero = nearestHero(world, x[i]!, z[i]!);
+    if (hero !== null) {
+      const dx = hero.x - x[i]!;
+      const dz = hero.z - z[i]!;
+      const d = hypot2(dx, dz) || 1;
+      x[i]! += (dx / d) * def.speed * dt;
+      z[i]! += (dz / d) * def.speed * dt;
+    }
     hitFlash[i] = Math.max(0, hitFlash[i]! - dt);
   }
   // Push overlapping enemies apart so the horde spreads out instead of stacking.
@@ -382,41 +424,56 @@ const moveEnemies = (world: World, dt: number) => {
   }
 };
 
-const touchPlayer = (world: World, dt: number) => {
+const touchHeroes = (world: World, dt: number) => {
   const { x, z, type } = world.enemies.fields;
-  const p = world.player;
-  const found = world.grid.query(p.x, p.z, PLAYER_RADIUS + 1, world.neighbors);
-  for (let k = 0; k < found; k++) {
-    const i = world.neighbors[k]!;
-    const def = world.enemyDefs[type[i]!]!;
-    if (hypot2(x[i]! - p.x, z[i]! - p.z) < def.radius + PLAYER_RADIUS) {
-      p.hp -= def.damage * dt;
-      p.hurtTimer = 0.15;
+  for (const hero of world.heroes) {
+    if (hero.status !== "playing") {
+      continue;
+    }
+    const found = world.grid.query(
+      hero.x,
+      hero.z,
+      PLAYER_RADIUS + 1,
+      world.neighbors
+    );
+    for (let k = 0; k < found; k++) {
+      const i = world.neighbors[k]!;
+      const def = world.enemyDefs[type[i]!]!;
+      if (hypot2(x[i]! - hero.x, z[i]! - hero.z) < def.radius + PLAYER_RADIUS) {
+        hero.hp -= def.damage * dt;
+        hero.hurtTimer = 0.15;
+      }
     }
   }
 };
 
 const fireWeapons = (world: World, dt: number) => {
-  for (let w = 0; w < world.weapons.length; w++) {
-    const slot = world.weapons[w]!;
-    slot.sinceFired += dt;
-    slot.timer -= dt;
-    if (slot.timer > 0) {
+  for (const hero of world.heroes) {
+    if (hero.status !== "playing") {
       continue;
     }
-    const fired =
-      slot.def.behavior.kind === "bolt"
-        ? fireBolt(world, slot, w)
-        : pulseAura(world, slot);
-    if (fired) {
-      slot.timer = weaponCooldown(world, slot);
-      slot.sinceFired = 0;
+    for (let w = 0; w < hero.weapons.length; w++) {
+      const slot = hero.weapons[w]!;
+      slot.sinceFired += dt;
+      slot.timer -= dt;
+      if (slot.timer > 0) {
+        continue;
+      }
+      const fired =
+        slot.def.behavior.kind === "bolt"
+          ? fireBolt(world, hero, slot, hero.slot * MAX_WEAPONS + w)
+          : pulseAura(world, hero, slot);
+      if (fired) {
+        slot.timer = weaponCooldown(hero, slot);
+        slot.sinceFired = 0;
+      }
     }
   }
 };
 
 const fireBolt = (
   world: World,
+  p: Hero,
   slot: WeaponSlot,
   weaponIndex: number
 ): boolean => {
@@ -426,11 +483,10 @@ const fireBolt = (
   }
   const e = world.enemies.fields;
   const enemyCount = world.enemies.count;
-  const p = world.player;
   const shots = Math.floor(
     behavior.count + behavior.countPerLevel * (slot.level - 1)
   );
-  const range = behavior.range * world.stats.areaMult;
+  const range = behavior.range * p.stats.areaMult;
   // Pick the `shots` nearest enemies in range. Shots is small, so a simple scan is fine.
   const targets = world.neighbors;
   let targetCount = 0;
@@ -463,7 +519,7 @@ const fireBolt = (
     return false;
   }
   const pr = world.projectiles.fields;
-  const damage = weaponDamage(world, slot);
+  const damage = weaponDamage(p, slot);
   for (let t = 0; t < shots; t++) {
     const i = world.projectiles.add();
     if (i === -1) {
@@ -487,11 +543,10 @@ const fireBolt = (
   return true;
 };
 
-const pulseAura = (world: World, slot: WeaponSlot): boolean => {
+const pulseAura = (world: World, p: Hero, slot: WeaponSlot): boolean => {
   const { x, z, type } = world.enemies.fields;
-  const p = world.player;
-  const radius = auraRadius(world, slot);
-  const damage = weaponDamage(world, slot);
+  const radius = auraRadius(p, slot);
+  const damage = weaponDamage(p, slot);
   const found = world.grid.query(p.x, p.z, radius + 1, world.neighbors);
   for (let k = 0; k < found; k++) {
     const i = world.neighbors[k]!;
@@ -576,13 +631,17 @@ const removeDeadEnemies = (world: World) => {
 const collectGems = (world: World, dt: number) => {
   const pool = world.gems;
   const g = pool.fields;
-  const p = world.player;
   let i = 0;
   while (i < pool.count) {
+    // Gems fly to, and are collected by, the nearest hero.
+    const p = nearestHero(world, g.x[i]!, g.z[i]!);
+    if (p === null) {
+      return;
+    }
     const dx = p.x - g.x[i]!;
     const dz = p.z - g.z[i]!;
     const d = hypot2(dx, dz);
-    if (d < world.stats.pickupRadius) {
+    if (d < p.stats.pickupRadius) {
       g.magnet[i] = 1;
     }
     if (g.magnet[i] === 1 && d > 0) {
@@ -599,15 +658,15 @@ const collectGems = (world: World, dt: number) => {
   }
 };
 
+/** Feeds the team's XP. Each level gained is a pending level-up. */
 const gainXp = (world: World, amount: number) => {
-  const p = world.player;
-  p.xp += amount;
-  while (p.xp >= p.xpNext) {
-    p.xp -= p.xpNext;
-    p.level += 1;
-    p.xpNext = Math.ceil(
+  world.xp += amount;
+  while (world.xp >= world.xpNext) {
+    world.xp -= world.xpNext;
+    world.level += 1;
+    world.xpNext = Math.ceil(
       world.content.rules.xpToLevel2 *
-        powInt(world.content.rules.xpGrowth, p.level - 1)
+        powInt(world.content.rules.xpGrowth, world.level - 1)
     );
     world.pendingLevelUps += 1;
   }
@@ -616,87 +675,55 @@ const gainXp = (world: World, amount: number) => {
 // ---------------------------------------------------------------------------
 // Upgrades
 
-const rollUpgrades = (world: World): readonly UpgradeChoice[] => {
-  const candidates: UpgradeChoice[] = [];
-  for (const def of world.content.weapons) {
-    const slot = world.weapons.find((s) => s.def.id === def.id);
-    if (slot && slot.level < def.maxLevel) {
-      candidates.push({
-        kind: "weapon",
-        id: def.id,
-        name: def.name,
-        description: "Stronger and faster.",
-        level: slot.level + 1,
-      });
-    } else if (!slot && world.weapons.length < MAX_WEAPONS) {
-      candidates.push({
-        kind: "weapon",
-        id: def.id,
-        name: def.name,
-        description: def.description,
-        level: 1,
-      });
+/** Opens a new offer: every playing hero, in slot order, gets its own choices. */
+const offerUpgrades = (world: World) => {
+  world.offerSeq += 1;
+  for (const hero of world.heroes) {
+    if (hero.status !== "playing") {
+      continue;
     }
+    hero.offer = rollUpgrades(world.content, world.rng, hero);
+    world.events.push({
+      type: "levelUp",
+      hero: hero.slot,
+      offer: world.offerSeq,
+      // A copy, so the event is plain data that shares nothing with the state.
+      choices: hero.offer.map((choice) => ({ ...choice })),
+    });
   }
-  for (const def of world.content.passives) {
-    const level = world.passiveLevels.get(def.id) ?? 0;
-    if (level < def.maxLevel) {
-      candidates.push({
-        kind: "passive",
-        id: def.id,
-        name: def.name,
-        description: def.description,
-        level: level + 1,
-      });
-    }
-  }
-  // Partial Fisher-Yates shuffle with the run's seeded RNG, so runs stay reproducible.
-  const count = Math.min(
-    world.content.rules.choicesPerLevelUp,
-    candidates.length
-  );
-  for (let i = 0; i < count; i++) {
-    const j = i + world.rng.int(candidates.length - i);
-    [candidates[i], candidates[j]] = [candidates[j]!, candidates[i]!];
-  }
-  const picks = candidates.slice(0, count);
-  return picks.length > 0
-    ? picks
-    : [
-        {
-          kind: "heal",
-          id: "heal",
-          name: "Snack",
-          description: "Restore 30% of your HP.",
-          level: 1,
-        },
-      ];
 };
 
-/** Applies the chosen upgrade and closes the offer. Returns false if there was no open offer or the index is wrong. */
-export const chooseUpgrade = (world: World, index: number): boolean => {
-  const choice = world.offer?.[index];
+/** Closes a hero's offer. Once no hero has one open, that level-up is done and the run resumes. */
+const closeOffer = (world: World, hero: Hero) => {
+  if (hero.offer === null) {
+    return;
+  }
+  hero.offer = null;
+  if (!isChoosing(world)) {
+    world.pendingLevelUps -= 1;
+  }
+};
+
+const choose = (world: World, hero: Hero, index: number): boolean => {
+  const choice = hero.offer?.[index];
   if (!choice) {
     return false;
   }
-  if (choice.kind === "weapon") {
-    const slot = world.weapons.find((s) => s.def.id === choice.id);
-    if (slot) {
-      slot.level = choice.level;
-    } else {
-      const def = world.content.weapons.find((w) => w.id === choice.id)!;
-      world.weapons.push({ def, level: 1, timer: 0, sinceFired: 99 });
-    }
-  } else if (choice.kind === "passive") {
-    world.passiveLevels.set(choice.id, choice.level);
-    recomputeStats(world);
-  } else {
-    world.player.hp = Math.min(
-      world.player.maxHp,
-      world.player.hp + world.player.maxHp * 0.3
-    );
-  }
-  world.offer = null;
-  world.pendingLevelUps -= 1;
+  applyChoice(world.content, hero, choice);
+  closeOffer(world, hero);
   return true;
+};
+
+/**
+ * Applies the upgrade the hero in `slot` chose and closes its offer, now. Returns false if that
+ * hero has no open offer or the index is wrong. For a single-player run, called through
+ * `GameLoop.modify`; a lockstep run picks through step input instead (`HeroInput.pick`).
+ */
+export const chooseUpgrade = (
+  world: World,
+  slot: number,
+  index: number
+): boolean => {
+  const hero = world.heroes[slot];
+  return hero !== undefined && choose(world, hero, index);
 };
