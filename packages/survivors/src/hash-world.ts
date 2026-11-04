@@ -1,7 +1,8 @@
 import type { World } from "./world";
 
-// Test support, not exported from the root entry: a digest of a run's whole simulation state, so
-// the replay, determinism and lockstep tests notice a change in any bit of it.
+// A digest of a run's whole simulation state, so the replay, determinism and lockstep tests
+// notice a change in any bit of it, and a lockstep session's desync check does too: `hashWorld`
+// is the root entry's `hash` for `@gamekit/net`.
 
 /** FNV-1a over numbers' float64 bits, so any change in any digit shows. */
 export const hasher = () => {

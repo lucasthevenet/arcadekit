@@ -4,6 +4,7 @@ import {
   JOIN_CODE_ALPHABET,
   JOIN_CODE_LENGTH,
   joinCodeFromBytes,
+  joinCodeFromPath,
   normalizeJoinCode,
   parseClientMessage,
   parseServerMessage,
@@ -39,6 +40,28 @@ describe(normalizeJoinCode, () => {
     const code = joinCodeFromBytes([7, 30, 12, 99, 200, 61]);
     expect(code).toHaveLength(JOIN_CODE_LENGTH);
     expect(normalizeJoinCode(code!)).toBe(code);
+  });
+});
+
+describe(joinCodeFromPath, () => {
+  it("reads the code of a /join/<code> path, and nothing else", () => {
+    expect(
+      [
+        "/join/k7mq2x",
+        "/join/%20K7MQ2X",
+        "/join/%E0%A4%A",
+        "/join/K7MQ2",
+        "/host",
+        "/join/K7MQ2X/x",
+      ].map(joinCodeFromPath)
+    ).toStrictEqual([
+      "K7MQ2X",
+      "K7MQ2X",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
 });
 

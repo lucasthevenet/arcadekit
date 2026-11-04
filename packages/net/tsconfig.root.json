@@ -1,6 +1,6 @@
 {
   // The root entry must work without a DOM (a Web Worker, a server, a test), so it is
-  // checked with no DOM types. A WebRTC transport will live in ./browser.
+  // checked with no DOM types. The WebRTC transport lives in ./browser.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],

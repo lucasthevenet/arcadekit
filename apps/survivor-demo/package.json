@@ -14,12 +14,15 @@
     "@effect/platform-browser": "~4.1.0",
     "@gamekit/content": "workspace:*",
     "@gamekit/foldkit": "workspace:*",
+    "@gamekit/input": "workspace:*",
+    "@gamekit/net": "workspace:*",
     "@gamekit/save": "workspace:*",
     "@gamekit/survivors": "workspace:*",
     "effect": "~4.1.2",
     "foldkit": "~0.170.0"
   },
   "devDependencies": {
-    "@gamekit/runtime": "workspace:*"
+    "@gamekit/runtime": "workspace:*",
+    "@gamekit/signalling": "workspace:*"
   }
 }

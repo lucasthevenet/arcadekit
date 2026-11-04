@@ -17,6 +17,13 @@ export const HeroSummary = Schema.Struct({
 });
 export type HeroSummary = typeof HeroSummary.Type;
 
+/** One player in a co-op lobby: its peer id and its hero ("" until it picks). */
+export const CoopPlayer = Schema.Struct({
+  id: Schema.String,
+  heroId: Schema.String,
+});
+export type CoopPlayer = typeof CoopPlayer.Type;
+
 export const Phase = defineTaggedUnion({
   Loading: {},
   LoadFailed: { error: Schema.String },
@@ -26,8 +33,48 @@ export const Phase = defineTaggedUnion({
   Paused: {},
   LevelUp: { choices: Schema.Array(UpgradeChoice) },
   GameOver: { summary: RunSummary },
+
+  // Co-op (#25): a lobby over the signalling worker, then a lockstep run.
+  CoopMenu: { joinCode: Schema.String },
+  CoopConnecting: {},
+  CoopLobby: {
+    role: Schema.Literals(["host", "guest"]),
+    code: Schema.String,
+    self: Schema.String,
+    players: Schema.Array(CoopPlayer),
+  },
+  CoopPlaying: {},
+  CoopLevelUp: { offer: Schema.Number, choices: Schema.Array(UpgradeChoice) },
+  CoopGameOver: { summary: RunSummary },
+  CoopFailed: { error: Schema.String },
 });
 export type Phase = typeof Phase.Type;
+
+/** Whether `phase` is one of co-op's: the co-op client, not the single-player engine, draws then. */
+export const isCoop = (phase: Phase): boolean => phase._tag.startsWith("Coop");
+
+/** A co-op run as the UI shows it. */
+export const CoopRun = Schema.Struct({
+  /** The local player's hero. */
+  slot: Schema.Number,
+  /** Every player's name, by slot. */
+  players: Schema.Array(Schema.String),
+  /** The players stepping waits on ("waiting for X"). */
+  waitingFor: Schema.Array(Schema.String),
+  /** The other players with an upgrade to pick while the run is frozen. */
+  choosing: Schema.Array(Schema.String),
+  /** True while the local player holds the run paused. */
+  paused: Schema.Boolean,
+});
+export type CoopRun = typeof CoopRun.Type;
+
+export const emptyCoopRun: CoopRun = {
+  slot: 0,
+  players: [],
+  waitingFor: [],
+  choosing: [],
+  paused: false,
+};
 
 export const Model = Schema.Struct({
   phase: Phase,
@@ -38,6 +85,7 @@ export const Model = Schema.Struct({
   hud: HudSample,
   /** True while the viewport is in the document: the engine runs only then (see gameViewport). */
   isViewportMounted: Schema.Boolean,
+  coop: CoopRun,
 });
 export type Model = typeof Model.Type;
 

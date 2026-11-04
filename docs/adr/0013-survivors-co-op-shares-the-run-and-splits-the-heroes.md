@@ -37,4 +37,4 @@ status: accepted
 - A lockstep run passes `combineHeroInputs(session players)` as `combine`, `schemaCodec(HeroInput)` as the codec and `heroIds` in player order as the config, and needs no `modify` (tested over the in-memory network in `packages/survivors/src/lockstep.test.ts`).
 - `HudSample` carries the team's numbers plus one `HeroHud` per slot, and `runEnded` carries one `RunSummary` per hero. A single-player app reads slot 0.
 - Events are plain data: a `levelUp`'s choices are copies, not the state's offer.
-- The view draws every hero and follows `localHero` (default 0). It greys and lays down a downed hero only in co-op, so a lone hero's death frame looks as it always has. A lobby UI that picks heroes and shows "waiting for X" is still to come in #25.
+- The view draws every hero and follows `localHero` (default 0). It greys and lays down a downed hero only in co-op, so a lone hero's death frame looks as it always has. The survivors demo's co-op lobby picks heroes, and its run follows the local player's hero and shows "waiting for X".

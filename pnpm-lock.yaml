@@ -68,6 +68,12 @@ importers:
       '@gamekit/foldkit':
         specifier: workspace:*
         version: link:../../packages/foldkit
+      '@gamekit/input':
+        specifier: workspace:*
+        version: link:../../packages/input
+      '@gamekit/net':
+        specifier: workspace:*
+        version: link:../../packages/net
       '@gamekit/save':
         specifier: workspace:*
         version: link:../../packages/save
@@ -84,6 +90,9 @@ importers:
       '@gamekit/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@gamekit/signalling':
+        specifier: workspace:*
+        version: link:../../services/signalling
 
   packages/content:
     dependencies:
@@ -115,6 +124,9 @@ importers:
       '@gamekit/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@gamekit/signalling':
+        specifier: workspace:*
+        version: link:../../services/signalling
       effect:
         specifier: ~4.1.2
         version: 4.1.2
@@ -206,12 +218,18 @@ importers:
       '@effect/platform-node':
         specifier: ~4.1.2
         version: 4.1.2(effect@4.1.2)(redis@6.3.1)
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
       alchemy:
         specifier: 2.0.0-beta.85
         version: 2.0.0-beta.85(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.3.1))(effect@4.1.2)(vite@8.3.5(@types/node@26.6.6)(yaml@2.9.1))(ws@8.22.1)
       effect:
         specifier: ~4.1.2
         version: 4.1.2
+      ws:
+        specifier: ^8.22.1
+        version: 8.22.1
 
 packages:
 

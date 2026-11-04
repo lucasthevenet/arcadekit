@@ -1,0 +1,10 @@
+{
+  // The local signalling server (src/local.ts) runs the worker's room rules in Node, for
+  // development and tests: Node types, no Workers or DOM types.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "files": ["src/local.ts", "src/local.test.ts"]
+}

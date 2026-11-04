@@ -7,6 +7,7 @@ import { SurvivorsEngine } from "@gamekit/survivors/browser";
 import { Effect, Schema } from "effect";
 import { Command } from "foldkit";
 
+import { Coop } from "./coop";
 import { Message } from "./message";
 import { Save } from "./save";
 
@@ -95,4 +96,85 @@ export const SaveRun = Command.define("SaveRun", {
       const records = yield* (yield* Save).recordRun(summary);
       return Message.SavedRun({ records });
     }),
+});
+
+// Co-op. The co-op client reports what follows (the lobby, the start, errors) as events, which
+// the coop Subscription turns into Messages.
+
+export const HostCoop = Command.define("HostCoop", {
+  args: { heroId: Schema.String },
+  messages: [Message.CompletedEngineCommand, Message.GotCoopFailed],
+  execute: ({ heroId }) =>
+    Effect.gen(function* () {
+      const content = yield* (yield* SurvivorsContent).load;
+      yield* (yield* Coop).host(content, heroId);
+      return Message.CompletedEngineCommand();
+    }).pipe(
+      Effect.catchTag("ContentError", (error) =>
+        Effect.succeed(Message.GotCoopFailed({ error: error.message }))
+      )
+    ),
+});
+
+export const JoinCoop = Command.define("JoinCoop", {
+  args: { code: Schema.String, heroId: Schema.String },
+  messages: [Message.CompletedEngineCommand, Message.GotCoopFailed],
+  execute: ({ code, heroId }) =>
+    Effect.gen(function* () {
+      const content = yield* (yield* SurvivorsContent).load;
+      yield* (yield* Coop).join(content, code, heroId);
+      return Message.CompletedEngineCommand();
+    }).pipe(
+      Effect.catchTag("ContentError", (error) =>
+        Effect.succeed(Message.GotCoopFailed({ error: error.message }))
+      )
+    ),
+});
+
+export const ChooseCoopHero = Command.define("ChooseCoopHero", {
+  args: { heroId: Schema.String },
+  messages: [Message.CompletedEngineCommand],
+  execute: ({ heroId }) =>
+    Effect.gen(function* () {
+      yield* (yield* Coop).chooseHero(heroId);
+      return Message.CompletedEngineCommand();
+    }),
+});
+
+export const StartCoop = Command.define("StartCoop", {
+  messages: [Message.CompletedEngineCommand],
+  execute: Effect.gen(function* () {
+    yield* (yield* Coop).start;
+    return Message.CompletedEngineCommand();
+  }),
+});
+
+/** The local hero's pick, as its step input: every peer applies it at the same step. */
+export const ChooseCoopUpgrade = Command.define("ChooseCoopUpgrade", {
+  args: { offer: Schema.Number, index: Schema.Number },
+  messages: [Message.CompletedEngineCommand],
+  execute: ({ offer, index }) =>
+    Effect.gen(function* () {
+      yield* (yield* Coop).pickUpgrade(offer, index);
+      return Message.CompletedEngineCommand();
+    }),
+});
+
+/** Holds the run paused for everyone, through the local hero's pause flag in its step input. */
+export const SetCoopPaused = Command.define("SetCoopPaused", {
+  args: { paused: Schema.Boolean },
+  messages: [Message.CompletedEngineCommand],
+  execute: ({ paused }) =>
+    Effect.gen(function* () {
+      yield* (yield* Coop).setPaused(paused);
+      return Message.CompletedEngineCommand();
+    }),
+});
+
+export const LeaveCoop = Command.define("LeaveCoop", {
+  messages: [Message.CompletedEngineCommand],
+  execute: Effect.gen(function* () {
+    yield* (yield* Coop).leave;
+    return Message.CompletedEngineCommand();
+  }),
 });
