@@ -3,8 +3,9 @@ import type { StepInput } from "@gamekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { hashWorld } from "./hash-world";
 import { GameContent, chooseUpgrade, survivorsSimulation } from "./index";
-import type { SurvivorsInput, World } from "./index";
+import type { SurvivorsInput } from "./index";
 
 // Replay check: the same seed and the same input script must give the same run, bit for bit.
 // It runs survivors' simulation through @gamekit/runtime's GameLoop, with the step order and
@@ -91,46 +92,6 @@ const content = Schema.decodeUnknownSync(GameContent)({
   ],
   waves: [{ from: 0, to: 90, enemy: "grunt", perSecond: 4 }],
 });
-
-/** FNV-1a over numbers' float64 bits, so any change in any digit shows. */
-const hasher = () => {
-  let hash = 0x81_1c_9d_c5;
-  const bits = new Float64Array(1);
-  const bytes = new Uint8Array(bits.buffer);
-  return {
-    add: (value: number) => {
-      bits[0] = value;
-      for (const byte of bytes) {
-        hash = Math.imul(hash ^ byte, 0x01_00_01_93) >>> 0;
-      }
-    },
-    get value() {
-      return hash;
-    },
-  };
-};
-
-const hashWorld = (world: World): number => {
-  const h = hasher();
-  h.add(world.time);
-  h.add(world.kills);
-  for (const value of Object.values(world.player)) {
-    h.add(value);
-  }
-  for (const slot of world.weapons) {
-    h.add(slot.level);
-    h.add(slot.timer);
-  }
-  for (const pool of [world.enemies, world.projectiles, world.gems]) {
-    h.add(pool.count);
-    for (const array of Object.values(pool.fields)) {
-      for (let i = 0; i < pool.count; i++) {
-        h.add(array[i]!);
-      }
-    }
-  }
-  return h.value;
-};
 
 const LEG_MOVE_X = [1, 0.3, -1, 0.3];
 
