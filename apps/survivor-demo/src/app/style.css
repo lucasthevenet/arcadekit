@@ -234,3 +234,38 @@ button:disabled {
   border: 1px solid var(--border);
   font-weight: 700;
 }
+
+/* Volumes and mute, on the menu and pause screens. */
+.sound {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.slider {
+  display: grid;
+  grid-template-columns: 5em 1fr;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: left;
+}
+.slider input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.slider input:disabled {
+  opacity: 0.4;
+}
+button.mute {
+  justify-self: center;
+  font-size: 0.9rem;
+  padding: 6px 14px;
+}
+button.mute.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}

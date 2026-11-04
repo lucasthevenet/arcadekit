@@ -1,3 +1,4 @@
+import { silentAudio } from "@gamekit/audio";
 import { GameLoop } from "@gamekit/runtime";
 import type { InputSource } from "@gamekit/runtime";
 import { Schema } from "effect";
@@ -5,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PuzzleContent, boardText } from "../index";
 import type { HudSample, PushPuzzleInput } from "../index";
-import { pushPuzzleGame } from "./index";
+import { makePushPuzzleGame } from "./index";
 
 // Runs push-puzzle's real browser definition: its input source reads keys through
 // InputController, and a GameLoop steps it the way the demo's driver does. No view is created.
@@ -23,6 +24,17 @@ const ROOM = [
 
 const content = Schema.decodeUnknownSync(PuzzleContent)({
   levels: [{ id: "room", name: "Room", rows: ROOM }],
+});
+
+const pushPuzzleGame = makePushPuzzleGame({
+  audio: silentAudio,
+  sounds: {
+    move: "move",
+    push: "push",
+    hole: "hole",
+    undo: "undo",
+    solved: "solved",
+  },
 });
 
 let window: EventTarget;

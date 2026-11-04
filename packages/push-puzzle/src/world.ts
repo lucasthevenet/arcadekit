@@ -90,6 +90,24 @@ const popRecord = (history: History): number => {
   return (history.oldest + history.length) % history.capacity;
 };
 
+/**
+ * Sound triggers: running totals of the moments that make a sound. The step bumps them and
+ * never reads them, and undo leaves them alone, so they only go up during a run. A sound view
+ * plays a sound for each one that rose since its last frame (ADR-0014).
+ */
+export interface PushPuzzleCues {
+  /** Turns that moved the player without pushing a box. */
+  moves: number;
+  /** Turns that pushed a box, including into a hole. */
+  pushes: number;
+  /** Boxes that fell into a hole and filled it. */
+  holesFilled: number;
+  /** Turns undone. An undo with no history left doesn't count. */
+  undos: number;
+  /** 1 once the level is solved. */
+  solved: number;
+}
+
 export interface Puzzle {
   readonly events: EventBuffer<PushPuzzleEvent>;
   /** The tile map. Cells are indexed `row * cols + col`. */
@@ -116,6 +134,8 @@ export interface Puzzle {
   readonly history: History;
   /** The pressed direction that is still held, and steps until it moves again. Timed in steps, so replays are exact. */
   readonly repeat: { direction: Direction | null; stepsLeft: number };
+  /** Sound triggers, read by the presentation only. Not part of the replay's end state. */
+  readonly cues: PushPuzzleCues;
 }
 
 export const createPuzzle = (
@@ -146,6 +166,7 @@ export const createPuzzle = (
     solved: false,
     history: createHistory(historyCapacity ?? DEFAULT_HISTORY_CAPACITY),
     repeat: { direction: null, stepsLeft: 0 },
+    cues: { moves: 0, pushes: 0, holesFilled: 0, undos: 0, solved: 0 },
   };
 };
 
@@ -187,6 +208,7 @@ export const step = (
 const takeMove = (puzzle: Puzzle, direction: Direction) => {
   if (tryMove(puzzle, direction) && boxesLeft(puzzle) === 0) {
     puzzle.solved = true;
+    puzzle.cues.solved += 1;
     puzzle.events.push({ type: "levelSolved", moves: puzzle.moves });
   }
 };
@@ -251,6 +273,12 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
   puzzle.player = target;
   puzzle.moves += 1;
   puzzle.turns += 1;
+  if (boxId === -1) {
+    puzzle.cues.moves += 1;
+  } else {
+    puzzle.cues.pushes += 1;
+    puzzle.cues.holesFilled += filledHole;
+  }
   return true;
 };
 
@@ -277,6 +305,8 @@ const undoTurn = (puzzle: Puzzle): void => {
   puzzle.player = playerFrom;
   puzzle.moves -= 1;
   puzzle.turns += 1;
+  // The cues stay as they are: undo is a sound of its own, never a move counted back down.
+  puzzle.cues.undos += 1;
 };
 
 /** Stable id of the box at (col, row), or -1. */

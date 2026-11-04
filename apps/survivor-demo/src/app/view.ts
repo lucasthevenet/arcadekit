@@ -1,3 +1,4 @@
+import type { AudioSettings } from "@gamekit/audio";
 import { gameViewport } from "@gamekit/foldkit";
 import type { HudSample, RunSummary, UpgradeChoice } from "@gamekit/survivors";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
@@ -53,6 +54,7 @@ const overlay = (model: Model, h: H): Html =>
                 h.button([h.OnClick(Message.ClickedQuit())], ["Quit to menu"]),
               ]
             ),
+            soundPanel(model.audio, h),
           ]),
         ]
       ),
@@ -157,7 +159,50 @@ const menu = (model: Model, h: H): Html =>
         h.button([h.Class("big"), h.OnClick(Message.ClickedCoop())], ["Co-op"]),
       ]
     ),
+    soundPanel(model.audio, h),
   ]);
+
+const BUSES = [
+  { bus: "master", label: "Volume" },
+  { bus: "sfx", label: "Effects" },
+  { bus: "music", label: "Music" },
+] as const;
+
+/** The volume sliders and mute, on the menu and pause screens. M toggles mute anywhere. */
+const soundPanel = (audio: AudioSettings, h: H): Html =>
+  h.div(
+    [h.Class("sound")],
+    [
+      ...BUSES.map(({ bus, label }) =>
+        h.label(
+          [h.Key(bus), h.Class("slider")],
+          [
+            h.span([], [label]),
+            h.input([
+              h.Type("range"),
+              h.Name(`volume-${bus}`),
+              h.Min("0"),
+              h.Max("1"),
+              h.Step("0.05"),
+              h.Value(String(audio[bus])),
+              h.Disabled(audio.muted),
+              h.OnInput((value) =>
+                Message.ChangedVolume({ bus, volume: Number(value) })
+              ),
+            ]),
+          ]
+        )
+      ),
+      h.button(
+        [
+          h.Class(audio.muted ? "mute on" : "mute"),
+          h.AriaPressed(String(audio.muted)),
+          h.OnClick(Message.ClickedMute()),
+        ],
+        [audio.muted ? "Unmute (M)" : "Mute (M)"]
+      ),
+    ]
+  );
 
 const hud = (data: HudSample, h: H): Html => {
   // A single-player run's hero is the first.
@@ -445,6 +490,7 @@ const coopPlaying = (model: Model, h: H): Html => {
                 ),
               ]
             ),
+            soundPanel(model.audio, h),
           ])
         : h.empty,
     ]

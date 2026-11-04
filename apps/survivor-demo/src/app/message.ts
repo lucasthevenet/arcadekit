@@ -1,3 +1,4 @@
+import { AudioSettings } from "@gamekit/audio";
 import { HudSample, RunSummary, UpgradeChoice } from "@gamekit/survivors";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
@@ -60,7 +61,17 @@ export const Message = defineMessageUnion({
   GotCoopRunEnded: { summary: RunSummary },
   GotCoopFailed: { error: Schema.String },
 
-  // Acknowledgements from fire-and-forget engine commands
+  // Sound
+  LoadedAudioSettings: { settings: AudioSettings },
+  ChangedVolume: {
+    bus: Schema.Literals(["master", "sfx", "music"]),
+    volume: Schema.Number,
+  },
+  ClickedMute: {},
+  PressedMute: {},
+
+  // Acknowledgements from fire-and-forget engine and audio commands
   CompletedEngineCommand: {},
+  CompletedAudioCommand: {},
 });
 export type Message = typeof Message.Type;

@@ -16,7 +16,8 @@
       "countPerLevel": 0.5,
       "pierce": 0,
       "range": 14
-    }
+    },
+    "sound": "shot-arc"
   },
   {
     "id": "bubble-shot",
@@ -35,7 +36,8 @@
       "countPerLevel": 0.5,
       "pierce": 3,
       "range": 12
-    }
+    },
+    "sound": "shot-bubble"
   },
   {
     "id": "heat-aura",

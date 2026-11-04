@@ -15,6 +15,7 @@ export { pushPuzzleSimulation } from "./simulation";
 export {
   type Direction,
   type Puzzle,
+  type PushPuzzleCues,
   type PushPuzzleConfig,
   type PushPuzzleInput,
   boardText,

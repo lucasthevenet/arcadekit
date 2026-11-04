@@ -12,7 +12,8 @@
     "test:e2e": "vitest run --config apps/survivor-demo/vitest.e2e.config.ts",
     "test:browsers": "vitest run --config packages/survivors/browser-determinism/vitest.config.ts",
     "check": "ultracite check",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "sounds": "node scripts/generate-placeholder-sounds.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

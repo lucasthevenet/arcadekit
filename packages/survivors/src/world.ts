@@ -76,6 +76,33 @@ const GEM_LAYOUT = {
   magnet: Uint8Array,
 };
 
+/**
+ * Cue counters (ADR-0014): running totals of the moments that make a sound. The step bumps them
+ * and never reads them, they only go up during a run, and `hashWorld` leaves them out. A sound
+ * view compares them with what it saw last frame and plays a sound for each one that rose.
+ * All preallocated by `createWorld`, so bumping one never allocates.
+ */
+export interface SurvivorsCues {
+  /** Bolt projectiles fired, one per projectile, by weapon def index (`content.weapons`). The aura fires none. */
+  readonly shots: Uint32Array;
+  /** Bolt projectiles hitting an enemy. Aura damage isn't counted: the aura hums instead. */
+  hits: number;
+  /** Enemies killed, by anything. */
+  kills: number;
+  /** Gems picked up by a hero. */
+  pickups: number;
+  /** Steps in which a hero took contact damage, by hero slot. */
+  readonly hurt: Uint32Array;
+  /** Heroes going down, by hero slot. */
+  readonly downed: Uint32Array;
+  /** Team levels gained. */
+  levelUps: number;
+  /** 1 once the run is won. */
+  won: number;
+  /** 1 once the run is lost. */
+  lost: number;
+}
+
 export interface World {
   readonly content: GameContent;
   readonly rng: Rng;
@@ -103,6 +130,8 @@ export interface World {
   readonly spawnBudget: Float64Array;
   readonly grid: SpatialGrid;
   readonly neighbors: Int32Array;
+  /** Sound triggers, read by the presentation only. Not part of the state hash. */
+  readonly cues: SurvivorsCues;
 }
 
 /** Starts a run with one hero per id in `heroIds`. Throws a RangeError for no heroes or more than 4. */
@@ -142,6 +171,17 @@ export const createWorld = (
       capacity: cap,
     }),
     neighbors: new Int32Array(NEIGHBOR_BUFFER),
+    cues: {
+      shots: new Uint32Array(content.weapons.length),
+      hits: 0,
+      kills: 0,
+      pickups: 0,
+      hurt: new Uint32Array(heroIds.length),
+      downed: new Uint32Array(heroIds.length),
+      levelUps: 0,
+      won: 0,
+      lost: 0,
+    },
   };
 };
 
@@ -228,6 +268,7 @@ export const step = (world: World, input: SurvivorsInput, dt: number): void => {
     if (hero.hp <= 0) {
       hero.hp = 0;
       hero.status = "down";
+      world.cues.downed[hero.slot]! += 1;
     }
   }
   if (!anyPlaying(world)) {
@@ -277,6 +318,11 @@ const holdPause = (world: World, input: SurvivorsInput): boolean => {
 
 const endRun = (world: World, status: "won" | "dead") => {
   world.status = status;
+  if (status === "won") {
+    world.cues.won += 1;
+  } else {
+    world.cues.lost += 1;
+  }
   world.events.push({ type: "hud", hud: hudSample(world) });
   world.events.push({
     type: "runEnded",
@@ -436,13 +482,18 @@ const touchHeroes = (world: World, dt: number) => {
       PLAYER_RADIUS + 1,
       world.neighbors
     );
+    let hurt = false;
     for (let k = 0; k < found; k++) {
       const i = world.neighbors[k]!;
       const def = world.enemyDefs[type[i]!]!;
       if (hypot2(x[i]! - hero.x, z[i]! - hero.z) < def.radius + PLAYER_RADIUS) {
         hero.hp -= def.damage * dt;
         hero.hurtTimer = 0.15;
+        hurt = true;
       }
+    }
+    if (hurt) {
+      world.cues.hurt[hero.slot]! += 1;
     }
   }
 };
@@ -520,6 +571,7 @@ const fireBolt = (
   }
   const pr = world.projectiles.fields;
   const damage = weaponDamage(p, slot);
+  const defIndex = world.content.weapons.indexOf(slot.def);
   for (let t = 0; t < shots; t++) {
     const i = world.projectiles.add();
     if (i === -1) {
@@ -539,6 +591,7 @@ const fireBolt = (
     pr.pierce[i] = behavior.pierce;
     pr.rehit[i] = 0;
     pr.weapon[i] = weaponIndex;
+    world.cues.shots[defIndex]! += 1;
   }
   return true;
 };
@@ -581,6 +634,7 @@ const moveProjectiles = (world: World, dt: number) => {
           continue;
         }
         hitEnemy(world, j, pr.damage[i]!);
+        world.cues.hits += 1;
         if (pr.pierce[i] === 0) {
           spent = true;
         } else {
@@ -611,6 +665,7 @@ const removeDeadEnemies = (world: World) => {
       continue;
     }
     world.kills += 1;
+    world.cues.kills += 1;
     const { xp } = world.enemyDefs[e.type[i]!]!;
     if (xp > 0) {
       const k = world.gems.add();
@@ -650,6 +705,7 @@ const collectGems = (world: World, dt: number) => {
       g.z[i]! += (dz / d) * move;
     }
     if (d < GEM_PICKUP_DISTANCE) {
+      world.cues.pickups += 1;
       gainXp(world, g.value[i]!);
       pool.remove(i);
     } else {
@@ -669,6 +725,7 @@ const gainXp = (world: World, amount: number) => {
         powInt(world.content.rules.xpGrowth, world.level - 1)
     );
     world.pendingLevelUps += 1;
+    world.cues.levelUps += 1;
   }
 };
 

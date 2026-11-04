@@ -11,4 +11,4 @@ The simulation pushes events into an `EventBuffer` during a step, and the runtim
 - Survivors reports `levelUp` and `runEnded`, and push-puzzle reports `levelSolved`. Hits, shots, kills and pickups are not events: with about 750 enemies they can happen hundreds of times a second.
 - A frame with no events allocates nothing for them, since `EventBuffer.drain` returns a shared empty array.
 - A turn-based HUD also goes through a sample, timed by a version ([ADR-0005](0005-samples-on-a-timer-or-a-version.md)).
-- #24 decides how sounds are triggered against this rule. New events fit push-puzzle, whose sound-worthy moments are turns. For survivors they would break the rule, or need cue events gathered per step, which allocate in the step loop.
+- #24 decided how sounds are triggered against this rule: not by events, but by cue counters in the state that the presentation reads ([ADR-0014](0014-sounds-come-from-cue-counters-read-by-the-presentation.md)).

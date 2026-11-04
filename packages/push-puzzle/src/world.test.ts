@@ -301,6 +301,63 @@ describe("solving", () => {
   });
 });
 
+describe("cue counters", () => {
+  const ZERO = { moves: 0, pushes: 0, holesFilled: 0, undos: 0, solved: 0 };
+
+  it("start at zero", () => {
+    expect(start(["####", "#@.#", "# $#", "####"]).cues).toStrictEqual(ZERO);
+  });
+
+  it("count a move, a push and a box into a hole", () => {
+    const puzzle = start(["#######", "#@$^ .#", "#  $  #", "#######"]);
+    taps(puzzle, "D");
+    expect(puzzle.cues).toStrictEqual({ ...ZERO, moves: 1 });
+    taps(puzzle, "RR");
+    expect(puzzle.cues).toStrictEqual({ ...ZERO, moves: 2, pushes: 1 });
+    // Left, up, then right pushes the top box into the hole.
+    taps(puzzle, "LLUR");
+    expect(boardText(puzzle)[1]).toBe("# @  .#");
+    expect(puzzle.cues).toStrictEqual({
+      ...ZERO,
+      moves: 5,
+      pushes: 2,
+      holesFilled: 1,
+    });
+  });
+
+  it("don't count a blocked move or an undo with no history left", () => {
+    const puzzle = start(["######", "#@$$.#", "######"]);
+    // Up into a wall, then right into two boxes in a row.
+    taps(puzzle, "UR");
+    undo(puzzle);
+    expect(puzzle.cues).toStrictEqual(ZERO);
+  });
+
+  it("count an undo, and undo counts nothing down", () => {
+    const puzzle = start(["######", "#@$^ #", "#  $.#", "######"]);
+    taps(puzzle, "DUR");
+    const before = { ...puzzle.cues };
+    undo(puzzle);
+    undo(puzzle);
+    undo(puzzle);
+    expect(boardText(puzzle)[1]).toBe("#@$^ #");
+    expect(puzzle.cues).toStrictEqual({ ...before, undos: 3 });
+    expect(before).toStrictEqual({
+      ...ZERO,
+      moves: 2,
+      pushes: 1,
+      holesFilled: 1,
+    });
+  });
+
+  it("count the solve once", () => {
+    const puzzle = start(["#######", "#@$  .#", "#######"]);
+    taps(puzzle, "RRR");
+    taps(puzzle, "LL");
+    expect(puzzle.cues).toStrictEqual({ ...ZERO, pushes: 3, solved: 1 });
+  });
+});
+
 /**
  * The replay's input, one entry per step: taps, holds and undos, mixed with idle steps. Each
  * move is held for 20 steps (every 4th) or 1, with the direction pressed on the first, then a

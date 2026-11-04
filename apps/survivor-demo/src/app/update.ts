@@ -1,3 +1,5 @@
+import { defaultAudioSettings } from "@gamekit/audio";
+import type { Audio, AudioSettings } from "@gamekit/audio";
 import type { SurvivorsContent } from "@gamekit/survivors";
 import type { SurvivorsEngine } from "@gamekit/survivors/browser";
 import type { Runtime, Update } from "foldkit";
@@ -10,8 +12,12 @@ import {
   HostCoop,
   JoinCoop,
   LeaveCoop,
+  LoadAudioSettings,
   LoadContent,
   LoadSave,
+  LoadSounds,
+  PlayClick,
+  SaveAudioSettings,
   SaveRun,
   SetCoopPaused,
   SetPaused,
@@ -24,8 +30,15 @@ import { Phase, emptyCoopRun, emptyHud, isCoop } from "./model";
 import type { Model } from "./model";
 import { emptyRecords, mergeRecords, withRun } from "./save";
 import type { Save } from "./save";
+import type { SoundSettings } from "./sound";
 
-export type Services = SurvivorsContent | SurvivorsEngine | Save | Coop;
+export type Services =
+  | SurvivorsContent
+  | SurvivorsEngine
+  | Save
+  | Coop
+  | Audio
+  | SoundSettings;
 type Return = Update.Return<Model, Message, Services>;
 
 export const init: Runtime.ApplicationInit<
@@ -42,8 +55,33 @@ export const init: Runtime.ApplicationInit<
     hud: emptyHud,
     isViewportMounted: false,
     coop: emptyCoopRun,
+    audio: defaultAudioSettings,
   },
-  commands: [LoadContent(), LoadSave()],
+  commands: [LoadContent(), LoadSave(), LoadAudioSettings(), LoadSounds()],
+});
+
+/** The messages of the menu buttons and upgrade picks: each plays a click. */
+const CLICKS: ReadonlySet<Message["_tag"]> = new Set([
+  "SelectedHero",
+  "ClickedStart",
+  "ClickedUpgrade",
+  "ClickedResume",
+  "ClickedQuit",
+  "ClickedPlayAgain",
+  "ClickedCoop",
+  "ClickedHostCoop",
+  "ClickedJoinCoop",
+  "ClickedStartCoop",
+  "ClickedCoopUpgrade",
+  "ClickedCoopResume",
+  "ClickedLeaveCoop",
+  "ClickedMute",
+]);
+
+/** Changes the audio settings: the sound subscription applies them, and they are saved. */
+const changeAudio = (model: Model, audio: AudioSettings): Return => ({
+  model: { ...model, audio },
+  commands: [SaveAudioSettings({ settings: audio })],
 });
 
 const startRun = (model: Model): Return => ({
@@ -67,7 +105,14 @@ const backToMenu = (model: Model): Return => ({
   commands: [EndRun()],
 });
 
-export const update = (model: Model, message: Message): Return =>
+export const update = (model: Model, message: Message): Return => {
+  const result = handle(model, message);
+  return CLICKS.has(message._tag)
+    ? { ...result, commands: [...(result.commands ?? []), PlayClick()] }
+    : result;
+};
+
+const handle = (model: Model, message: Message): Return =>
   Message.match<Return>(message, {
     LoadedContent: ({ heroes }) => ({
       model: {
@@ -238,5 +283,19 @@ export const update = (model: Model, message: Message): Return =>
         ? { model: { ...model, phase: Phase.CoopFailed({ error }) } }
         : { model },
 
+    LoadedAudioSettings: ({ settings }) => ({
+      model: { ...model, audio: settings },
+    }),
+    ChangedVolume: ({ bus, volume }) =>
+      changeAudio(model, {
+        ...model.audio,
+        [bus]: Math.max(0, Math.min(1, volume)),
+      }),
+    ClickedMute: () =>
+      changeAudio(model, { ...model.audio, muted: !model.audio.muted }),
+    PressedMute: () =>
+      changeAudio(model, { ...model.audio, muted: !model.audio.muted }),
+
     CompletedEngineCommand: () => ({ model }),
+    CompletedAudioCommand: () => ({ model }),
   });

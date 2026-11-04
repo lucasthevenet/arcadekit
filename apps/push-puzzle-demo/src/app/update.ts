@@ -1,11 +1,19 @@
+import { defaultAudioSettings } from "@gamekit/audio";
+import type { Audio, AudioSettings } from "@gamekit/audio";
 import type { PushPuzzleContent } from "@gamekit/push-puzzle";
 import type { PushPuzzleEngine } from "@gamekit/push-puzzle/browser";
 import type { Runtime, Update } from "foldkit";
 
+import { withVolume } from "./audio";
+import type { AudioSettingsStorage } from "./audio";
 import {
+  ChangeAudioSettings,
   EndRun,
+  LoadAudioSettings,
   LoadContent,
   LoadSave,
+  LoadSounds,
+  PlayClick,
   SaveSolve,
   StartLevel,
 } from "./commands";
@@ -15,7 +23,12 @@ import type { Model } from "./model";
 import { emptyRecords, isNewBest, mergeRecords, withSolve } from "./save";
 import type { Save } from "./save";
 
-export type Services = PushPuzzleContent | PushPuzzleEngine | Save;
+export type Services =
+  | Audio
+  | AudioSettingsStorage
+  | PushPuzzleContent
+  | PushPuzzleEngine
+  | Save;
 type Return = Update.Return<Model, Message, Services>;
 
 export const init: Runtime.ApplicationInit<
@@ -30,9 +43,10 @@ export const init: Runtime.ApplicationInit<
     records: emptyRecords,
     levelId: "",
     hud: emptyHud,
+    audio: defaultAudioSettings,
     isViewportMounted: false,
   },
-  commands: [LoadContent(), LoadSave()],
+  commands: [LoadContent(), LoadSave(), LoadAudioSettings(), LoadSounds()],
 });
 
 const startLevel = (model: Model, levelId: string): Return => ({
@@ -45,6 +59,20 @@ const backToLevelSelect = (model: Model): Return => ({
   commands: [EndRun()],
 });
 
+/** A menu button's click, on top of what the button does. */
+const withClick = ({ model, commands = [] }: Return): Return => ({
+  model,
+  commands: [...commands, PlayClick()],
+});
+
+const changeAudio = (model: Model, audio: AudioSettings): Return => ({
+  model: { ...model, audio },
+  commands: [ChangeAudioSettings({ settings: audio })],
+});
+
+const toggleMute = (model: Model): Return =>
+  changeAudio(model, { ...model.audio, muted: !model.audio.muted });
+
 export const update = (model: Model, message: Message): Return =>
   Message.match<Return>(message, {
     LoadedContent: ({ levels }) => ({
@@ -56,6 +84,9 @@ export const update = (model: Model, message: Message): Return =>
     LoadedSave: ({ records }) => ({
       model: { ...model, records: mergeRecords(model.records, records) },
     }),
+    LoadedAudioSettings: ({ settings }) => ({
+      model: { ...model, audio: settings },
+    }),
     MountedViewport: () => ({ model: { ...model, isViewportMounted: true } }),
     UnmountedViewport: () => ({
       model: { ...model, isViewportMounted: false },
@@ -63,7 +94,7 @@ export const update = (model: Model, message: Message): Return =>
 
     ClickedLevel: ({ levelId }) =>
       model.phase._tag === "LevelSelect"
-        ? startLevel(model, levelId)
+        ? withClick(startLevel(model, levelId))
         : { model },
     StartedRun: () => ({ model: { ...model, phase: Phase.Playing() } }),
     FailedToStartRun: ({ error }) => ({
@@ -88,8 +119,14 @@ export const update = (model: Model, message: Message): Return =>
 
     PressedRestart: () => startLevel(model, model.levelId),
     PressedEscape: () => backToLevelSelect(model),
-    ClickedReplay: () => startLevel(model, model.levelId),
-    ClickedLevelSelect: () => backToLevelSelect(model),
+    ClickedReplay: () => withClick(startLevel(model, model.levelId)),
+    ClickedLevelSelect: () => withClick(backToLevelSelect(model)),
+
+    ChangedVolume: ({ bus, volume }) =>
+      changeAudio(model, withVolume(model.audio, bus, volume)),
+    ToggledMute: () => toggleMute(model),
+    PressedMuteKey: () => toggleMute(model),
 
     CompletedEngineCommand: () => ({ model }),
+    CompletedAudioCommand: () => ({ model }),
   });

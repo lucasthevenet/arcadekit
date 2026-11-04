@@ -21,3 +21,46 @@ export const keyPresses = <Message>(
       () => Effect.sync(() => window.removeEventListener("keydown", onKey))
     ).pipe(Effect.andThen(Effect.never));
   });
+
+/** Whether a key press goes into a text field, rather than to the game. A slider or checkbox isn't one. */
+const isTyping = (target: EventTarget | null): boolean => {
+  const element = target as Partial<HTMLInputElement> | null;
+  if (element === null || typeof element.tagName !== "string") {
+    return false;
+  }
+  return (
+    (element.tagName === "INPUT" &&
+      element.type !== "range" &&
+      element.type !== "checkbox") ||
+    element.tagName === "TEXTAREA" ||
+    element.isContentEditable === true
+  );
+};
+
+/**
+ * Like `keyPresses`, for an app shortcut that works on any screen (M to mute): it also ignores
+ * presses with Ctrl, Cmd or Alt held, so the browser's and the system's shortcuts don't trigger
+ * it, and presses that go into a text field.
+ */
+export const shortcutPresses = <Message>(
+  codes: readonly string[],
+  toMessage: (code: string) => Message
+): Stream.Stream<Message> =>
+  Stream.callback<Message>((queue) => {
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        !event.repeat &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        codes.includes(event.code) &&
+        !isTyping(event.target)
+      ) {
+        Queue.offerUnsafe(queue, toMessage(event.code));
+      }
+    };
+    return Effect.acquireRelease(
+      Effect.sync(() => window.addEventListener("keydown", onKey)),
+      () => Effect.sync(() => window.removeEventListener("keydown", onKey))
+    ).pipe(Effect.andThen(Effect.never));
+  });

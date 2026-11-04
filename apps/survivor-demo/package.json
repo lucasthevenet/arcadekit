@@ -15,10 +15,12 @@
   },
   "dependencies": {
     "@effect/platform-browser": "~4.1.0",
+    "@gamekit/audio": "workspace:*",
     "@gamekit/content": "workspace:*",
     "@gamekit/foldkit": "workspace:*",
     "@gamekit/input": "workspace:*",
     "@gamekit/net": "workspace:*",
+    "@gamekit/runtime": "workspace:*",
     "@gamekit/save": "workspace:*",
     "@gamekit/survivors": "workspace:*",
     "effect": "~4.1.2",
@@ -28,7 +30,6 @@
     "@alchemy.run/cloudflare": "2.0.0-beta.85",
     "@cloudflare/workers-types": "^5.20261104.1",
     "@effect/platform-node": "~4.1.2",
-    "@gamekit/runtime": "workspace:*",
     "alchemy": "2.0.0-beta.85"
   }
 }

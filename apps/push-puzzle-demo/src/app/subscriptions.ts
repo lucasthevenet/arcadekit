@@ -1,4 +1,4 @@
-import { engineEntry, keyPresses } from "@gamekit/foldkit";
+import { engineEntry, keyPresses, shortcutPresses } from "@gamekit/foldkit";
 import type { PushPuzzleEvent } from "@gamekit/push-puzzle";
 import { PushPuzzleEngine } from "@gamekit/push-puzzle/browser";
 import { Schema, Stream } from "effect";
@@ -29,6 +29,16 @@ export const subscriptions = Subscription.make<
     isViewportMounted: (model) => model.isViewportMounted,
     toMessage,
   }),
+
+  /** M mutes and unmutes, on any screen, but not with a modifier held or in a text field. */
+  muteKey: entry(
+    {},
+    {
+      modelToDependencies: () => ({}),
+      dependenciesToStream: () =>
+        shortcutPresses(["KeyM"], () => Message.PressedMuteKey()),
+    }
+  ),
 
   /** R restarts and Escape goes back to level select, but only during a run. Not simulation input. */
   runKeys: entry(
