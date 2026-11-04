@@ -12,6 +12,7 @@
     "typecheck": "tsc -p . && tsc -p tsconfig.root.json"
   },
   "dependencies": {
+    "@gamekit/audio": "workspace:*",
     "@gamekit/content": "workspace:*",
     "@gamekit/core": "workspace:*",
     "@gamekit/input": "workspace:*",

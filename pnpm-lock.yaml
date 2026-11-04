@@ -41,6 +41,9 @@ importers:
       '@effect/platform-browser':
         specifier: ~4.1.0
         version: 4.1.2(effect@4.1.2)
+      '@gamekit/audio':
+        specifier: workspace:*
+        version: link:../../packages/audio
       '@gamekit/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -65,6 +68,9 @@ importers:
       '@effect/platform-browser':
         specifier: ~4.1.0
         version: 4.1.2(effect@4.1.2)
+      '@gamekit/audio':
+        specifier: workspace:*
+        version: link:../../packages/audio
       '@gamekit/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -106,6 +112,12 @@ importers:
         specifier: 2.0.0-beta.85
         version: 2.0.0-beta.85(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.3.1))(effect@4.1.2)(vite@8.3.5(@types/node@26.6.6)(yaml@2.9.1))(ws@8.22.1)
 
+  packages/audio:
+    dependencies:
+      effect:
+        specifier: ~4.1.2
+        version: 4.1.2
+
   packages/content:
     dependencies:
       effect:
@@ -142,6 +154,9 @@ importers:
 
   packages/push-puzzle:
     dependencies:
+      '@gamekit/audio':
+        specifier: workspace:*
+        version: link:../audio
       '@gamekit/content':
         specifier: workspace:*
         version: link:../content
@@ -190,6 +205,9 @@ importers:
 
   packages/survivors:
     dependencies:
+      '@gamekit/audio':
+        specifier: workspace:*
+        version: link:../audio
       '@gamekit/content':
         specifier: workspace:*
         version: link:../content

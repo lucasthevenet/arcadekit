@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@effect/platform-browser": "~4.1.0",
+    "@gamekit/audio": "workspace:*",
     "@gamekit/content": "workspace:*",
     "@gamekit/foldkit": "workspace:*",
     "@gamekit/input": "workspace:*",
