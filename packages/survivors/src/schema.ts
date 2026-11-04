@@ -29,6 +29,11 @@ export const HeroDef = Schema.Struct({
   maxHp: Positive,
   moveSpeed: Positive,
   startingWeapon: Id,
+  /**
+   * The prefix of this hero's tags in the app's sprite sheet: `<sprite>/walk`, `<sprite>/idle`
+   * and `<sprite>/down`. Without one, or if the sheet lacks them, a generic hero is drawn in `color`.
+   */
+  sprite: Schema.optional(Schema.String),
 });
 export type HeroDef = typeof HeroDef.Type;
 
@@ -43,6 +48,11 @@ export const EnemyDef = Schema.Struct({
   radius: Positive,
   /** XP dropped on death. */
   xp: NonNegative,
+  /**
+   * This enemy's animation, a tag in the app's sprite sheet (`slime/move`). Without one, or if
+   * the sheet lacks it, a generic enemy is drawn in `color`.
+   */
+  sprite: Schema.optional(Schema.String),
 });
 export type EnemyDef = typeof EnemyDef.Type;
 
@@ -80,6 +90,11 @@ export const WeaponDef = Schema.Struct({
   behavior: Schema.Union([BoltWeapon, AuraWeapon]),
   /** The id of this weapon's shot sound in the app's sound list. Without one, a bolt plays the app's default shot. The aura fires no shots. */
   sound: Schema.optional(Schema.String),
+  /**
+   * A bolt's projectile, a tag in the app's sprite sheet (`bolt/arc`). Without one, or if the
+   * sheet lacks it, a generic projectile is drawn in `color`. The aura is drawn in `color`.
+   */
+  sprite: Schema.optional(Schema.String),
 });
 export type WeaponDef = typeof WeaponDef.Type;
 

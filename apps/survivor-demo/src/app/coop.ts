@@ -1,6 +1,8 @@
 import { Audio } from "@gamekit/audio";
 import type { GameEngine } from "@gamekit/runtime/browser";
 import type { GameContent } from "@gamekit/survivors";
+import { SurvivorsSprites } from "@gamekit/survivors/browser";
+import type { SurvivorsArtLoader } from "@gamekit/survivors/browser";
 import { Context, Effect, Layer } from "effect";
 
 import { CoopClient } from "../coop/client";
@@ -34,12 +36,25 @@ export class Coop extends Context.Service<Coop, CoopApi>()(
   "survivor-demo/Coop"
 ) {}
 
-export const makeCoop = (client: CoopClient): CoopApi => ({
+/**
+ * The co-op API over `client`. `attach` draws with the art from `sprites`, which the app has
+ * loaded before any co-op screen; it dies if the art can't load.
+ */
+export const makeCoop = (
+  client: CoopClient,
+  sprites: SurvivorsArtLoader
+): CoopApi => ({
   attach: (element) =>
-    Effect.acquireRelease(
-      Effect.sync(() => client.attach(element)),
-      (detach) => Effect.sync(detach)
-    ).pipe(Effect.asVoid),
+    sprites.load.pipe(
+      Effect.orDie,
+      Effect.flatMap((art) =>
+        Effect.acquireRelease(
+          Effect.sync(() => client.attach(element, art)),
+          (detach) => Effect.sync(detach)
+        )
+      ),
+      Effect.asVoid
+    ),
   listen: (onEvent) =>
     Effect.acquireRelease(
       Effect.sync(() => client.subscribe(onEvent)),
@@ -56,7 +71,7 @@ export const makeCoop = (client: CoopClient): CoopApi => ({
   leave: Effect.sync(() => client.leave()),
 });
 
-/** The co-op client, playing its sounds through the `Audio` service. */
+/** The co-op client, playing its sounds through the `Audio` service and drawing with `SurvivorsSprites`. */
 export const CoopLayer = Layer.effect(
   Coop,
   Effect.gen(function* () {
@@ -70,6 +85,6 @@ export const CoopLayer = Layer.effect(
         gamekitCoop: { debug: () => client.debug() },
       });
     }
-    return makeCoop(client);
+    return makeCoop(client, yield* SurvivorsSprites);
   })
 );

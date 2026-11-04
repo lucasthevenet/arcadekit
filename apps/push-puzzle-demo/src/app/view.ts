@@ -27,7 +27,7 @@ export const view = (model: Model, h: H): Document => ({
 
 const overlay = (model: Model, h: H): Html =>
   Phase.match(model.phase, {
-    Loading: () => panel(h, [h.p([], ["Loading levels…"])]),
+    Loading: () => panel(h, [h.p([], ["Loading…"])]),
     LoadFailed: ({ error }) =>
       panel(h, [
         h.h2([], ["Something went wrong"]),

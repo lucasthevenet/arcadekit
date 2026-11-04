@@ -9,6 +9,7 @@ status: accepted
 ## Decision
 
 **The look.**
+
 - The camera looks straight down through an orthographic projection.
 - Every sprite pixel covers a whole number of screen pixels, so the art never shimmers.
 - Sprites are camera-facing quads. Those lower on screen draw in front.
@@ -19,6 +20,7 @@ status: accepted
 - The 3D look leaves the demos. Push-puzzle moves to pixel tiles and sprites too, so the kit's sprite code serves two genres ([ADR-0001](0001-kit-changes-need-two-genres.md)).
 
 **The kit.** `@gamekit/render-three` gains:
+
 - **Instanced sprites:** many sprites from one sheet in one draw call, each with its own position, frame, flip, tint and flash.
 - **A sprite sheet loader:** the image and its frames, loaded as an Effect with a typed error.
 - **A pixel camera:** an orthographic camera that snaps so sprite pixels stay whole.

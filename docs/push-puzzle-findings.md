@@ -74,7 +74,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 
 - **Primitive:** `followTarget`, `orbitAround`, `Stage`'s camera.
 - **What happened:** both helpers chase or circle a point on the ground plane, and `Stage` built only a perspective camera. Push-puzzle worked out a fit-the-map distance itself (`frameCamera`).
-- **Fix ([#19](https://github.com/lucasthevenet/gamekit/issues/19)):** `fitCamera(camera, bounds, { margin, tilt })` frames a ground-plane rectangle with either camera kind, and `StageOptions.camera: "orthographic"` builds an orthographic camera that keeps its view height on resize (`Stage` is typed by the kind). Push-puzzle now uses an orthographic stage and `fitCamera`. A side-view genre would want a version for the vertical plane; that waits for one.
+- **Fix ([#19](https://github.com/lucasthevenet/gamekit/issues/19)):** `fitCamera(camera, bounds, { margin, tilt })` frames a ground-plane rectangle with either camera kind, and `StageOptions.camera: "orthographic"` builds an orthographic camera that keeps its view height on resize (`Stage` is typed by the kind). Push-puzzle then used an orthographic stage and `fitCamera`; since [ADR-0015](adr/0015-pixel-art-sprites-loaded-by-the-app.md) it draws sprites on a pixel stage, framed by `PixelCamera.fit`. A side-view genre would want a version for the vertical plane; that waits for one.
 - **Layer:** render-three.
 
 ### 6. The DOM-free root entry isn't enforced
