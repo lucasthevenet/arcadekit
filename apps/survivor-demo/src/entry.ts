@@ -9,15 +9,19 @@ import {
   update,
   view,
 } from "./app/main";
+import { startArtPrototype } from "./prototype-art";
 
-const application = Runtime.makeApplication({
-  Model,
-  init,
-  update,
-  view,
-  subscriptions,
-  resources,
-  container: document.querySelector("#root")!,
-});
+// PROTOTYPE (#24 art): ?art=<key>&showcase shows a crowded fight instead of the app.
+if (!startArtPrototype()) {
+  const application = Runtime.makeApplication({
+    Model,
+    init,
+    update,
+    view,
+    subscriptions,
+    resources,
+    container: document.querySelector("#root")!,
+  });
 
-Runtime.run(application);
+  Runtime.run(application);
+}

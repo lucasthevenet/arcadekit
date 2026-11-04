@@ -13,7 +13,8 @@
     "test:browsers": "vitest run --config packages/survivors/browser-determinism/vitest.config.ts",
     "check": "ultracite check",
     "fix": "ultracite fix",
-    "sounds": "node scripts/generate-placeholder-sounds.mjs"
+    "sounds": "node scripts/generate-placeholder-sounds.mjs",
+    "prototype:art": "pnpm --filter @gamekit/survivor-demo exec vite --host 127.0.0.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

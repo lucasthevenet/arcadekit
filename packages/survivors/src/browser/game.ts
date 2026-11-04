@@ -2,7 +2,11 @@ import { Audio } from "@gamekit/audio";
 import type { AudioSystem } from "@gamekit/audio";
 import { InputController, MOVE_AXES } from "@gamekit/input";
 import { combineViews, makeGameEngine } from "@gamekit/runtime/browser";
-import type { GameDefinition, GameEngine } from "@gamekit/runtime/browser";
+import type {
+  GameDefinition,
+  GameEngine,
+  GameView,
+} from "@gamekit/runtime/browser";
 import { Context, Effect, Layer } from "effect";
 
 import type { SurvivorsEvent } from "../events";
@@ -33,7 +37,10 @@ export interface SurvivorsGameSound {
  * beside the drawing view; without it, the game is silent.
  */
 export const makeSurvivorsGame = (
-  sound?: SurvivorsGameSound
+  sound?: SurvivorsGameSound,
+  // PROTOTYPE (#24 art): replaces the drawing view. Remove with the art prototype.
+  makeView: (container: HTMLElement) => GameView<World> = (container) =>
+    new SurvivorsView(container)
 ): SurvivorsGame => ({
   ...survivorsSimulation,
   createInput: (surface) => {
@@ -49,11 +56,8 @@ export const makeSurvivorsGame = (
   },
   createView: (container) =>
     sound === undefined
-      ? new SurvivorsView(container)
-      : combineViews<World>(
-          new SurvivorsView(container),
-          new SurvivorsSoundView(sound)
-        ),
+      ? makeView(container)
+      : combineViews<World>(makeView(container), new SurvivorsSoundView(sound)),
 });
 
 export class SurvivorsEngine extends Context.Service<
@@ -66,12 +70,14 @@ export class SurvivorsEngine extends Context.Service<
  * Tests provide `SilentAudioLayer`.
  */
 export const makeSurvivorsEngineLayer = (
-  sounds: SurvivorsSounds
+  sounds: SurvivorsSounds,
+  // PROTOTYPE (#24 art): replaces the drawing view. Remove with the art prototype.
+  makeView?: (container: HTMLElement) => GameView<World>
 ): Layer.Layer<SurvivorsEngine, never, Audio> =>
   Layer.effect(
     SurvivorsEngine,
     Effect.gen(function* () {
       const audio = yield* Audio;
-      return makeGameEngine(makeSurvivorsGame({ audio, sounds }));
+      return makeGameEngine(makeSurvivorsGame({ audio, sounds }, makeView));
     })
   );
