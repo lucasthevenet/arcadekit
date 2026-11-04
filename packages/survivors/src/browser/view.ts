@@ -27,8 +27,9 @@ interface HeroFigure {
   readonly body: THREE.Mesh<THREE.CapsuleGeometry, THREE.MeshStandardMaterial>;
 }
 
-const heroColor = (hero: Hero): string => {
-  if (hero.status === "down") {
+/** A downed hero is greyed only in co-op; a lone hero's death frame looks as it always has. */
+const heroColor = (hero: Hero, coop: boolean): string => {
+  if (coop && hero.status === "down") {
     return DOWN;
   }
   return hero.hurtTimer > 0 ? HURT : hero.def.color;
@@ -138,18 +139,19 @@ export class SurvivorsView implements GameView<World> {
     for (const figure of this.heroes) {
       figure.group.visible = false;
     }
+    const coop = world.heroes.length > 1;
     for (const hero of world.heroes) {
       const figure = this.heroFigure(hero.slot);
-      // A hero whose player left is gone; a downed one lies greyed where it fell.
+      // A hero whose player left is gone; in co-op, a downed one lies greyed where it fell.
       figure.group.visible = hero.status !== "left";
       figure.group.position.set(hero.x, 0, hero.z);
       figure.group.rotation.set(
-        hero.status === "down" ? Math.PI / 2 : 0,
+        coop && hero.status === "down" ? Math.PI / 2 : 0,
         Math.atan2(hero.faceX, hero.faceZ),
         0,
         "YXZ"
       );
-      figure.body.material.color.set(heroColor(hero));
+      figure.body.material.color.set(heroColor(hero, coop));
     }
 
     const enemies = this.enemyInstances(world.enemies.capacity);
