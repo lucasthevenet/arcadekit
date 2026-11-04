@@ -118,6 +118,10 @@ importers:
       effect:
         specifier: ~4.1.2
         version: 4.1.2
+    devDependencies:
+      '@gamekit/survivors':
+        specifier: workspace:*
+        version: link:../survivors
 
   packages/push-puzzle:
     dependencies:
