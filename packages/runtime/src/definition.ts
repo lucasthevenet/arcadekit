@@ -1,38 +1,15 @@
+import type { GameSimulation } from "./simulation";
+
 /**
- * Everything the runtime needs to run a game. A genre package implements this once;
- * the runtime handles the frame loop, timing, events and lifecycle.
- *
- * - `Config`: what starting a run needs (content, chosen character, difficulty…).
- * - `State`: the simulation state. The runtime never looks inside it.
- * - `Input`: one step's worth of player input, as the game wants it.
- * - `Event`: the facts the game reports to the outside (UI, sound, analytics).
+ * Everything the runtime needs to run a game in the browser: its simulation, plus how it reads
+ * input from the viewport and draws into it.
  */
-export interface GameDefinition<Config, State, Input, Event> {
-  /** Simulation step length in seconds. Defaults to 1/60. */
-  readonly stepSeconds?: number;
-  readonly create: (config: Config, seed: number) => State;
-  /**
-   * Advances the state by one step of `dt` seconds. Must be deterministic: the same state, input
-   * and `dt` give the same result. Must not allocate. A turn-based genre may ignore `dt`
-   * (push-puzzle does).
-   */
-  readonly step: (state: State, input: Input, dt: number) => void;
-  /** Returns, and forgets, the events produced since the last call. */
-  readonly drainEvents: (state: State) => readonly Event[];
-  /**
-   * Optional sample: a read of the state for the UI (a HUD, for example), emitted as an event
-   * when a run starts and then while it is active:
-   *
-   * - every `everyMs` of real time, for a state that changes all the time (a real-time game);
-   * - and/or right after any frame or `modify` in which `version` changed, for a state that
-   *   changes rarely (a turn-based game). `version` is a cheap number the game bumps whenever
-   *   what `read` reports may have changed, such as a turn counter.
-   */
-  readonly sample?: {
-    readonly everyMs?: number;
-    readonly version?: (state: State) => number;
-    readonly read: (state: State) => Event;
-  };
+export interface GameDefinition<
+  Config,
+  State,
+  Input,
+  Event,
+> extends GameSimulation<Config, State, Input, Event> {
   /** Creates the input source (`InputSource`) that reads input from the viewport element. Called once per attach. */
   readonly createInput: (surface: HTMLElement) => InputSource<Input>;
   /** Creates the view (`GameView`) that draws into the viewport element. Called once per attach. */
