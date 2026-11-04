@@ -5,7 +5,8 @@
   "description": "Introduce the peers of a lockstep run behind a join code: a Cloudflare Worker with a Durable Object per code, defined with Alchemy",
   "type": "module",
   "exports": {
-    "./protocol": "./src/protocol.ts"
+    "./protocol": "./src/protocol.ts",
+    "./local": "./src/local.ts"
   },
   "scripts": {
     "typecheck": "tsc -p . && tsc -p tsconfig.protocol.json && tsc -p tsconfig.local.json",

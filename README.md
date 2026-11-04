@@ -113,6 +113,8 @@ Then pick **Co-op** in two windows. One player hosts and reads out the join code
 
 For a LAN, start the server with `SIGNALLING_HOST=0.0.0.0 pnpm dev:signalling` and the demo with `pnpm dev --host`.
 
+`pnpm test:e2e` checks co-op end to end: it starts the local signalling server and the demo, opens two Chromium pages that host and join, plays a few seconds with different inputs on each, and checks that both report the same state hashes at the same steps with no error. It isn't part of `pnpm test`, since it needs Chromium, starts two servers and takes about 15 s. It skips itself when Playwright or Chromium is missing.
+
 ## The push-puzzle demo
 
 Levels live in `apps/push-puzzle-demo/public/content/levels.json`, as rows of standard Sokoban text plus `^` for a hole: `#` wall, space floor, `@` player, `+` player on goal, `$` box, `*` box on goal, `.` goal. A box pushed into a hole fills it. They're checked against `packages/push-puzzle/src/schema.ts` at load, and `apps/push-puzzle-demo/src/content.test.ts` plays a known solution for each level.

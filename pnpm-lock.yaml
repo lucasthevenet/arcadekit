@@ -90,6 +90,9 @@ importers:
       '@gamekit/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@gamekit/signalling':
+        specifier: workspace:*
+        version: link:../../services/signalling
 
   packages/content:
     dependencies:

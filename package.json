@@ -10,6 +10,7 @@
     "build": "pnpm typecheck && pnpm --filter @gamekit/survivor-demo --filter @gamekit/push-puzzle-demo build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
+    "test:e2e": "vitest run --config apps/survivor-demo/vitest.e2e.config.ts",
     "check": "ultracite check",
     "fix": "ultracite fix"
   },
