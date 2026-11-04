@@ -1,0 +1,110 @@
+import type { ErrorReason, PeerId, ServerMessage } from "./protocol";
+import type { Room, RoomOutput } from "./room";
+
+/** The part of a WebSocket the room needs. A Cloudflare `WebSocket` is one; tests pass a fake. */
+export interface RoomSocket {
+  readonly send: (text: string) => void;
+  readonly close: (code: number, reason: string) => void;
+}
+
+/** WebSocket close codes the worker uses: 1000 normal, 4000+ the protocol's own errors. */
+export const CLOSE_NORMAL = 1000;
+export const CLOSE_PROTOCOL_ERROR = 4000;
+
+/**
+ * Carries out a `Room`'s outputs on sockets: the adapter between the room's rules and the
+ * Durable Object's WebSockets. It keeps which socket is which peer, so the room deals in peer
+ * ids only.
+ */
+export interface SocketRoom {
+  /** A socket was accepted for `role`. Rejected sockets get an error and are closed. */
+  readonly open: (
+    socket: RoomSocket,
+    role: "host" | "guest",
+    nowMs: number
+  ) => void;
+  readonly message: (socket: RoomSocket, text: string, nowMs: number) => void;
+  /** The socket closed or errored. */
+  readonly closed: (socket: RoomSocket) => void;
+  /** The expiry alarm fired. */
+  readonly alarm: (nowMs: number) => void;
+}
+
+export const createSocketRoom = (room: Room): SocketRoom => {
+  const sockets = new Map<PeerId, RoomSocket>();
+  const peers = new Map<RoomSocket, PeerId>();
+
+  const send = (socket: RoomSocket, message: ServerMessage) => {
+    try {
+      socket.send(JSON.stringify(message));
+    } catch {
+      // The socket is already closing; its close event tells the room.
+    }
+  };
+
+  const close = (socket: RoomSocket, reason: ErrorReason | undefined) => {
+    try {
+      socket.close(
+        reason === undefined ? CLOSE_NORMAL : CLOSE_PROTOCOL_ERROR,
+        reason ?? "done"
+      );
+    } catch {
+      // Already closed.
+    }
+  };
+
+  const carryOut = (outputs: readonly RoomOutput[]) => {
+    // The reason a peer is closed for, so the close frame carries it too.
+    const reasons = new Map<PeerId, ErrorReason>();
+    for (const output of outputs) {
+      const socket = sockets.get(
+        output.kind === "send" ? output.to : output.peer
+      );
+      if (socket === undefined) {
+        continue;
+      }
+      if (output.kind === "send") {
+        if (output.message.type === "error") {
+          reasons.set(output.to, output.message.reason);
+        }
+        send(socket, output.message);
+      } else {
+        sockets.delete(output.peer);
+        peers.delete(socket);
+        close(socket, reasons.get(output.peer));
+      }
+    }
+  };
+
+  return {
+    open: (socket, role, nowMs) => {
+      // The alarm may not have run yet: close an expired room's sockets before refusing this one.
+      carryOut(room.expire(nowMs));
+      const admission = room.admit(role, nowMs);
+      if (!admission.ok) {
+        send(socket, { type: "error", reason: admission.reason });
+        close(socket, admission.reason);
+        return;
+      }
+      sockets.set(admission.peer, socket);
+      peers.set(socket, admission.peer);
+      carryOut(admission.outputs);
+    },
+    message: (socket, text, nowMs) => {
+      const peer = peers.get(socket);
+      if (peer !== undefined) {
+        carryOut(room.receive(peer, text, nowMs));
+      }
+    },
+    closed: (socket) => {
+      const peer = peers.get(socket);
+      if (peer === undefined) {
+        return;
+      }
+      sockets.delete(peer);
+      peers.delete(socket);
+      carryOut(room.leave(peer));
+    },
+    alarm: (nowMs) => carryOut(room.expire(nowMs)),
+  };
+};
