@@ -113,7 +113,7 @@ Then pick **Co-op** in two windows. One player hosts and reads out the join code
 
 For a LAN, start the server with `SIGNALLING_HOST=0.0.0.0 pnpm dev:signalling` and the demo with `pnpm dev --host`.
 
-`pnpm test:e2e` checks co-op end to end: it starts the local signalling server and the demo, opens two Chromium pages that host and join, plays a few seconds with different inputs on each, and checks that both report the same state hashes at the same steps with no error. It isn't part of `pnpm test`, since it needs Chromium, starts two servers and takes about 15 s. It skips itself when Playwright or Chromium is missing.
+`pnpm test:e2e` checks co-op end to end: it starts the local signalling server and the demo, opens two Chromium pages that host and join, plays a few seconds with different inputs on each, and checks that both report the same state hashes at the same steps with no error. Then it hides the guest's tab for real (a Chromium of its own, with a second tab in front, so its main-thread timers drop to about once a second) and checks that the run keeps stepping at full rate past the host's 10 s drop-out, with no one removed. It isn't part of `pnpm test`, since it needs Chromium, starts two servers and takes about a minute. It skips itself when Playwright or Chromium is missing.
 
 ## The push-puzzle demo
 
@@ -131,4 +131,4 @@ Level select marks each solved level with its best move count, and the Solved sc
 - Cross-browser lockstep: the end-to-end co-op test runs in Chromium only.
 - More in the save. `@gamekit/save` holds records by id only: no settings, no unlocks and no run in progress. Every save is at version 1, so there is no migration API yet ([ADR-0009](docs/adr/0009-a-save-package-is-earned.md)).
 - Foldkit's Vite plugin for keeping UI state across live reloads. It's left out because engine state isn't preserved, so a reload mid-run would show a "Playing" UI with no run.
-- Browsers pause `requestAnimationFrame` in hidden tabs, so a single-player run pauses when you switch tabs. A co-op run steps on a timer instead, which a hidden tab throttles to about once a second: the others wait for that player, and the host removes them after about 10 s ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md)).
+- Browsers pause `requestAnimationFrame` in hidden tabs, so a single-player run pauses when you switch tabs. A co-op run keeps going: it steps on a timer in a Web Worker, which a hidden tab doesn't throttle, and only stops drawing. A player whose game really stalls (closed, or frozen by the browser) holds the others up until the host removes them after about 10 s ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md)).

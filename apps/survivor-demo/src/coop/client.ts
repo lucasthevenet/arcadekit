@@ -36,6 +36,8 @@ import { SurvivorsView } from "@gamekit/survivors/browser";
 import { contentHash } from "./content-hash";
 import { encodeLobbyMessage, parseLobbyMessage, playerName } from "./lobby";
 import type { LobbyMessage, LobbyPlayer } from "./lobby";
+import { workerTicker } from "./ticker";
+import type { Ticker } from "./ticker";
 
 /**
  * What the co-op client reports to the app. Player names are for display ("Guest 2"); the
@@ -85,6 +87,11 @@ export interface CoopClientOptions {
     readonly host: () => SignallingRoom;
     readonly join: (code: string) => SignallingRoom;
   };
+  /**
+   * What ticks the session. Defaults to a timer in a dedicated worker, which a hidden tab doesn't
+   * throttle (`workerTicker`); tests pass the main thread's timers.
+   */
+  readonly ticker?: Ticker;
   /** Steps ahead local input is scheduled. 4 steps is 67 ms at 60 Hz (ADR-0012). */
   readonly inputDelay?: number;
   /** Steps between state hash comparisons. */
@@ -133,8 +140,9 @@ const stopMessage = (error: LockstepError): string => {
 
 /**
  * One player's side of a co-op survivors run in the browser (#25): the lobby over the
- * signalling worker and WebRTC, then a lockstep session stepped on a timer, and a view drawn on
- * `requestAnimationFrame`. Picks and pause reach the run as this player's step input, never as
+ * signalling worker and WebRTC, then a lockstep session stepped on a worker's timer, and a view
+ * drawn on `requestAnimationFrame`. A hidden tab keeps stepping at full rate, so it holds no one
+ * up, and draws nothing, since the browser runs no animation frames for it (ADR-0012). Picks and pause reach the run as this player's step input, never as
  * a `modify` (ADR-0012).
  */
 export class CoopClient {
@@ -149,7 +157,8 @@ export class CoopClient {
   private session: LockstepSession<World, SurvivorsEvent> | null = null;
   private slot = 0;
   private players: readonly string[] = [];
-  private ticker: ReturnType<typeof setInterval> | null = null;
+  /** Stops the ticker, while one runs. */
+  private stopTicking: (() => void) | null = null;
   private failed = false;
   /** The run ended: what the session reports after that (the others leaving) is no failure. */
   private ended = false;
@@ -255,8 +264,9 @@ export class CoopClient {
     };
     const frame = (timeMs: number) => {
       attached.frame = requestAnimationFrame(frame);
-      // Tick here too: when drawing keeps the main thread busy, the timer fires late, and a tick
-      // per frame keeps input flowing. Ticks go by the clock, so an extra one only runs sooner.
+      // Tick here too: when drawing keeps the main thread busy, the timer's messages wait, and a
+      // tick per frame keeps input flowing. Ticks go by the clock, so an extra one only runs
+      // sooner. A hidden tab gets no frames: the worker's ticks alone step it, and nothing draws.
       this.tick();
       attached.view.render(this.session?.state ?? null, timeMs / 1000);
     };
@@ -300,10 +310,7 @@ export class CoopClient {
   }
 
   private reset(content: GameContent | null, heroId: string) {
-    if (this.ticker !== null) {
-      clearInterval(this.ticker);
-    }
-    this.ticker = null;
+    this.stopTicker();
     this.session?.dispose();
     this.session = null;
     this.stopRoom?.();
@@ -339,10 +346,8 @@ export class CoopClient {
   }
 
   private stopTicker() {
-    if (this.ticker !== null) {
-      clearInterval(this.ticker);
-      this.ticker = null;
-    }
+    this.stopTicking?.();
+    this.stopTicking = null;
   }
 
   private openRoom(room: SignallingRoom) {
@@ -512,7 +517,8 @@ export class CoopClient {
       slot: this.slot,
       players: players.map(playerName),
     });
-    this.ticker = setInterval(() => this.tick(), TICK_MS);
+    const ticker = this.options.ticker ?? workerTicker({ everyMs: TICK_MS });
+    this.stopTicking = ticker(() => this.tick());
   }
 
   private tick() {

@@ -1,5 +1,11 @@
 // oxlint-disable eslint/no-await-in-loop -- the test plays a script in time order, one step after another.
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
@@ -16,6 +22,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // same steps, and no error.
 //
 // A single-player run is checked too, to show it still runs on the single-player engine.
+//
+// Then a hidden guest: the guest plays from a Chromium of its own, in a tab that a second tab then
+// covers, so the browser really hides it and throttles its main-thread timers to about once a
+// second, as a background tab on a desktop. (Playwright keeps its own pages visible, and
+// dispatching `visibilitychange` would throttle nothing.) The run must keep stepping at full rate
+// for longer than the host's 10 s drop-out, with no one removed and the hashes agreeing.
 //
 // Run it with `pnpm test:e2e`. It isn't part of `pnpm test`: it needs Chromium, starts two
 // servers and takes about 15 s. It skips itself when Playwright or Chromium is missing.
@@ -47,10 +59,18 @@ interface Page {
   };
   readonly on: (event: "pageerror", listener: (error: Error) => void) => void;
 }
+interface Context {
+  readonly newPage: () => Promise<Page>;
+  readonly pages: () => Page[];
+}
 interface Browser {
   readonly newContext: (options?: {
     readonly viewport?: { readonly width: number; readonly height: number };
-  }) => Promise<{ readonly newPage: () => Promise<Page> }>;
+  }) => Promise<Context>;
+  readonly contexts: () => Context[];
+  readonly newBrowserCDPSession: () => Promise<{
+    readonly send: (method: string, params?: object) => Promise<unknown>;
+  }>;
   readonly close: () => Promise<void>;
 }
 interface Playwright {
@@ -58,6 +78,11 @@ interface Playwright {
     readonly launch: (options?: {
       readonly args?: string[];
     }) => Promise<Browser>;
+    readonly executablePath: () => string;
+    readonly connectOverCDP: (
+      endpoint: string,
+      options?: { readonly noDefaults?: boolean }
+    ) => Promise<Browser>;
   };
 }
 
@@ -80,6 +105,64 @@ const debug = (page: Page) =>
   page.evaluate<Debug>("globalThis.gamekitCoop.debug()");
 
 const demoRoot = fileURLToPath(new URL("..", import.meta.url));
+
+/**
+ * A Chromium of its own, started as a person's would be, without Playwright's flags that keep
+ * a background tab's timers at full rate, and attached with no default overrides (Playwright's
+ * focus emulation would keep its pages visible). `hide` opens a second tab in front of the page.
+ */
+const startDesktopChromium = async (pw: Playwright) => {
+  const profile = mkdtempSync(path.join(tmpdir(), "gamekit-e2e-"));
+  const child: ChildProcess = spawn(
+    pw.chromium.executablePath(),
+    [
+      "--headless=new",
+      "--no-sandbox",
+      "--no-first-run",
+      "--remote-debugging-port=0",
+      "--window-size=480,360",
+      `--user-data-dir=${profile}`,
+      "about:blank",
+    ],
+    { stdio: ["ignore", "ignore", "pipe"] }
+  );
+  let output = "";
+  let endpoint: string | undefined;
+  for await (const chunk of child.stderr!) {
+    output += String(chunk);
+    endpoint = /DevTools listening on (?<url>ws:\/\/\S+)/u.exec(output)?.groups
+      ?.url;
+    if (endpoint !== undefined) {
+      break;
+    }
+  }
+  if (endpoint === undefined) {
+    throw new Error(`Chromium didn't start: ${output}`);
+  }
+  const desktop = await pw.chromium.connectOverCDP(endpoint, {
+    noDefaults: true,
+  });
+  const context = desktop.contexts()[0]!;
+  const page = context.pages()[0] ?? (await context.newPage());
+  return {
+    page,
+    hide: async () => {
+      const session = await desktop.newBrowserCDPSession();
+      await session.send("Target.createTarget", {
+        url: "about:blank",
+        newWindow: false,
+      });
+    },
+    close: async () => {
+      await desktop.close();
+      const exited =
+        child.exitCode === null ? once(child, "exit") : Promise.resolve();
+      child.kill();
+      await exited;
+      rmSync(profile, { recursive: true, force: true, maxRetries: 5 });
+    },
+  };
+};
 
 let browser: Browser | undefined;
 let signalling: LocalSignalling | undefined;
@@ -156,47 +239,10 @@ describe("co-op in two browsers", () => {
       skip(skipReason);
       return;
     }
-    const url = vite.resolvedUrls!.local[0]!;
     const errors: string[] = [];
-    const open = async () => {
-      // A small window: Chromium draws WebGL in software here, and a big one starves the timers.
-      const context = await browser!.newContext({
-        viewport: { width: 480, height: 360 },
-      });
-      const page = await context.newPage();
-      page.on("pageerror", (error) => errors.push(error.message));
-      await page.goto(url);
-      await page.click("text=Co-op");
-      return page;
-    };
-    const host = await open();
-    const guest = await open();
-
-    await host.click("text=Host a run");
-    await host.waitForSelector(".join-code", { timeout: 15_000 });
-    const code = (await host.textContent(".join-code"))!.trim();
-    await guest.fill("input[name=join-code]", code.toLowerCase());
-    await guest.click("button:has-text('Join')");
-    await guest.waitForSelector("text=Waiting for the host to start", {
-      timeout: 20_000,
-    });
-    // The guest plays the second hero; the host keeps the first.
-    await guest.click(".heroes .hero:nth-child(2)");
-    await host.waitForFunction(
-      "document.querySelectorAll('.players li').length === 2 && !document.body.textContent.includes('choosing…')",
-      undefined,
-      { timeout: 10_000 }
-    );
-    await host.click("button:has-text('Start run')");
-    await Promise.all(
-      [host, guest].map((page) =>
-        page.waitForFunction(
-          "globalThis.gamekitCoop.debug().stepIndex > 60",
-          undefined,
-          { timeout: 15_000 }
-        )
-      )
-    );
+    const host = await openPage(browser, errors);
+    const guest = await openPage(browser, errors);
+    await startRun(host, guest, vite.resolvedUrls!.local[0]!);
 
     // Different inputs on each page, for a few seconds, taking every upgrade offered.
     const legs: [string, string][] = [
@@ -209,41 +255,155 @@ describe("co-op in two browsers", () => {
       await guest.keyboard.down(guestKey);
       for (let i = 0; i < 4; i++) {
         await sleep(400);
-        for (const page of [host, guest]) {
-          if ((await page.locator(".choice").count()) > 0) {
-            await page.locator(".choice").first().click();
-          }
-        }
+        await takeOffers([host, guest]);
       }
       await host.keyboard.up(hostKey);
       await guest.keyboard.up(guestKey);
     }
 
-    // Both report hashes for the same steps, and they agree.
     await host.waitForFunction(
       "globalThis.gamekitCoop.debug().stepIndex > 300",
       undefined,
       { timeout: 10_000 }
     );
-    const [a, b] = await Promise.all([debug(host), debug(guest)]);
-    const common = Object.keys(a.hashes).filter((step) => step in b.hashes);
-    const failed = await Promise.all(
-      [host, guest].map((page) => page.locator(".coop-error").count())
-    );
-    expect([
-      a.error,
-      b.error,
-      failed,
-      errors,
-      common.length >= 3,
-      common.map((step) => a.hashes[step]),
-    ]).toStrictEqual([
-      null,
-      null,
-      [0, 0],
-      [],
-      true,
-      common.map((step) => b.hashes[step]),
-    ]);
+    expect(await outcome(host, guest, errors)).toStrictEqual(AGREED);
+  });
+
+  it("keeps stepping at full rate while the guest's tab is hidden", async ({
+    skip,
+  }) => {
+    if (
+      skipReason !== undefined ||
+      playwright === undefined ||
+      browser === undefined ||
+      vite === undefined
+    ) {
+      skip(skipReason);
+      return;
+    }
+    const errors: string[] = [];
+    const desktop = await startDesktopChromium(playwright);
+    try {
+      const host = await openPage(browser, errors);
+      const guest = desktop.page;
+      guest.on("pageerror", (error) => errors.push(error.message));
+      await startRun(host, guest, vite.resolvedUrls!.local[0]!);
+
+      // A main-thread timer on the guest's page, to see the browser throttle it.
+      await guest.evaluate(
+        "globalThis.probeTicks = 0; setInterval(() => globalThis.probeTicks++, 10); 0"
+      );
+      await desktop.hide();
+      await guest.waitForFunction("document.visibilityState === 'hidden'");
+      const read = async () => {
+        const { stepIndex } = await debug(host);
+        return {
+          hostStep: stepIndex,
+          probe: await guest.evaluate<number>("globalThis.probeTicks"),
+          atMs: performance.now(),
+        };
+      };
+      const before = await read();
+      // Longer than the host's drop-out (about 10 s of stalling on one player).
+      const HIDDEN_MS = 13_000;
+      for (let waited = 0; waited < HIDDEN_MS; waited += 500) {
+        await sleep(500);
+        await takeOffers([host]);
+      }
+      const after = await read();
+      const seconds = (after.atMs - before.atMs) / 1000;
+      const throttled = (after.probe - before.probe) / seconds < 10;
+      if (!throttled) {
+        skip("This Chromium doesn't throttle a hidden tab's timers");
+        return;
+      }
+      // A run steps 60 times a second, even while frozen for a level-up the hidden guest hasn't
+      // picked. A guest ticked by its throttled main thread would hold it to a few.
+      const stepsPerSecond = (after.hostStep - before.hostStep) / seconds;
+      expect({
+        hidden: await guest.evaluate<string>("document.visibilityState"),
+        keptUp: stepsPerSecond > 50,
+      }).toStrictEqual({ hidden: "hidden", keptUp: true });
+      expect(await outcome(host, guest, errors)).toStrictEqual(AGREED);
+    } finally {
+      await desktop.close();
+    }
   });
 });
+
+/** A small window: Chromium draws WebGL in software here, and a big one starves the timers. */
+const openPage = async (from: Browser, errors: string[]) => {
+  const context = await from.newContext({
+    viewport: { width: 480, height: 360 },
+  });
+  const page = await context.newPage();
+  page.on("pageerror", (error) => errors.push(error.message));
+  return page;
+};
+
+/** Opens co-op on both pages, hosts on one, joins on the other, and starts the run. */
+const startRun = async (host: Page, guest: Page, url: string) => {
+  for (const page of [host, guest]) {
+    await page.goto(url);
+    await page.click("text=Co-op");
+  }
+  await host.click("text=Host a run");
+  await host.waitForSelector(".join-code", { timeout: 15_000 });
+  const code = (await host.textContent(".join-code"))!.trim();
+  await guest.fill("input[name=join-code]", code.toLowerCase());
+  await guest.click("button:has-text('Join')");
+  await guest.waitForSelector("text=Waiting for the host to start", {
+    timeout: 20_000,
+  });
+  // The guest plays the second hero; the host keeps the first.
+  await guest.click(".heroes .hero:nth-child(2)");
+  await host.waitForFunction(
+    "document.querySelectorAll('.players li').length === 2 && !document.body.textContent.includes('choosing…')",
+    undefined,
+    { timeout: 10_000 }
+  );
+  await host.click("button:has-text('Start run')");
+  await Promise.all(
+    [host, guest].map((page) =>
+      page.waitForFunction(
+        "globalThis.gamekitCoop.debug().stepIndex > 60",
+        undefined,
+        { timeout: 15_000 }
+      )
+    )
+  );
+};
+
+/** Takes the first choice of every upgrade offer open on these pages. */
+const takeOffers = async (pages: readonly Page[]) => {
+  for (const page of pages) {
+    if ((await page.locator(".choice").count()) > 0) {
+      await page.locator(".choice").first().click();
+    }
+  }
+};
+
+/** What the test expects of `outcome`: no error anywhere, and hashes for the same steps that agree. */
+const AGREED = {
+  errors: [null, null],
+  failed: [0, 0],
+  pageErrors: [],
+  enoughCommonSteps: true,
+  hashesAgree: true,
+};
+
+/** Both pages' errors, and whether they report hashes for the same steps, and those agree. */
+const outcome = async (host: Page, guest: Page, pageErrors: string[]) => {
+  const [a, b] = await Promise.all([debug(host), debug(guest)]);
+  const common = Object.keys(a.hashes).filter((step) => step in b.hashes);
+  const failed = await Promise.all(
+    [host, guest].map((page) => page.locator(".coop-error").count())
+  );
+  return {
+    errors: [a.error, b.error],
+    failed,
+    pageErrors,
+    enoughCommonSteps: common.length >= 3,
+    hashesAgree: common.every((step) => a.hashes[step] === b.hashes[step]),
+  };
+};
