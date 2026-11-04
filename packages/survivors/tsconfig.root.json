@@ -1,11 +1,12 @@
 {
   // The root entry (content schema, content service, simulation) must run without a DOM:
   // in a Web Worker, on a server, in a test. This checks it with no DOM types.
-  // Only ./browser may use the DOM, Three.js or input devices.
+  // Only ./browser may use the DOM, Three.js or input devices. long-run.ts (the determinism
+  // scenario) is checked too: it runs in Node and in each browser.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],
     "types": []
   },
-  "files": ["src/index.ts"]
+  "files": ["src/index.ts", "src/long-run.ts"]
 }

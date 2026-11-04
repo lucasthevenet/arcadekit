@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "test:e2e": "vitest run --config apps/survivor-demo/vitest.e2e.config.ts",
+    "test:browsers": "vitest run --config packages/survivors/browser-determinism/vitest.config.ts",
     "check": "ultracite check",
     "fix": "ultracite fix"
   },
@@ -18,6 +19,7 @@
     "@types/three": "^0.187.0",
     "oxfmt": "^0.75.0",
     "oxlint": "^1.90.0",
+    "playwright": "1.63.0",
     "typescript": "^7.0.2",
     "ultracite": "8.1.1",
     "vite": "^8.3.5",

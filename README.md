@@ -7,6 +7,7 @@ pnpm install
 pnpm dev         # play the survivors demo, co-op included, under `alchemy dev` (http://localhost:1337)
 pnpm dev:puzzle  # play the push-puzzle demo
 pnpm test        # all package tests
+pnpm test:browsers  # the long-run determinism scenario in Chromium, Firefox and WebKit
 pnpm typecheck   # every package, each against its own rules
 pnpm check       # lint + format check (Ultracite: Oxlint + Oxfmt)
 pnpm fix         # apply lint fixes and formatting
@@ -99,6 +100,8 @@ With about 750 enemies, three maxed weapons and 480 XP gems on screen, one simul
 
 `pnpm test:e2e` checks co-op end to end: it starts the demo under `alchemy dev` (in a stage of its own, `e2e`), opens two Chromium pages that host and join, plays a few seconds with different inputs on each, and checks that both report the same state hashes at the same steps with no error. Then it hides the guest's tab for real (a Chromium of its own, with a second tab in front, so its main-thread timers drop to about once a second) and checks that the run keeps stepping at full rate past the host's 10 s drop-out, with no one removed. It isn't part of `pnpm test`, since it needs Chromium and workerd and takes about a minute. It skips itself when Playwright or Chromium is missing, or when `alchemy dev` doesn't start.
 
+`pnpm test:browsers` checks that every browser engine computes the same run ([ADR-0011](docs/adr/0011-a-step-uses-only-exact-math.md)). It bundles survivors' simulation, `GameLoop` and the long-run scenario that `packages/survivors/src/determinism.test.ts` pins in Node (`src/long-run.ts`: three seeds, 20,000 steps each, a full horde under an analog stick), serves the bundle to Chromium, Firefox and WebKit through Playwright with no network, and checks that each gives the recorded final hash and the same trace hash after every step. On a mismatch it names the first step whose state differs from Node's. It takes about 15 s with Chromium alone. A browser Playwright can't launch is skipped with a message; with `CI` set it fails instead. Install the browsers with `pnpm exec playwright install --with-deps chromium firefox webkit`. CI runs it in all three browsers through `.github/workflows/cross-browser.yml`, which caches the browsers by Playwright version.
+
 ## The push-puzzle demo
 
 Levels live in `apps/push-puzzle-demo/public/content/levels.json`, as rows of standard Sokoban text plus `^` for a hole: `#` wall, space floor, `@` player, `+` player on goal, `$` box, `*` box on goal, `.` goal. A box pushed into a hole fills it. They're checked against `packages/push-puzzle/src/schema.ts` at load, and `apps/push-puzzle-demo/src/content.test.ts` plays a known solution for each level.
@@ -112,7 +115,7 @@ Level select marks each solved level with its best move count, and the Solved sc
 - **Publishing.** Packages export their TypeScript source directly, which suits a workspace. Publishing to npm needs a build step (e.g. tsdown), `effect`/`three`/`foldkit` moved to `peerDependencies`, and the `@gamekit` scope swapped for one you own.
 - Art and sound (everything is colored shapes).
 - A public deployment, and TURN. `alchemy deploy` puts the demo and its signalling worker on Cloudflare, but none is public yet (the worker needs rate limits first: see its README), and two peers behind symmetric NATs can't connect without TURN.
-- Cross-browser lockstep: the end-to-end co-op test runs in Chromium only.
+- Cross-browser lockstep: the end-to-end co-op test runs in Chromium only. `pnpm test:browsers` checks the simulation itself in Chromium, Firefox and WebKit, but Linux WebKit isn't Safari (whose JavaScriptCore uses Apple's libm), and nothing runs on Windows or macOS yet.
 - More in the save. `@gamekit/save` holds records by id only: no settings, no unlocks and no run in progress. Every save is at version 1, so there is no migration API yet ([ADR-0009](docs/adr/0009-a-save-package-is-earned.md)).
 - Foldkit's Vite plugin for keeping UI state across live reloads. It's left out because engine state isn't preserved, so a reload mid-run would show a "Playing" UI with no run.
 - Browsers pause `requestAnimationFrame` in hidden tabs, so a single-player run pauses when you switch tabs. A co-op run keeps going: it steps on a timer in a Web Worker, which a hidden tab doesn't throttle, and only stops drawing. A player whose game really stalls (closed, or frozen by the browser) holds the others up until the host removes them after about 10 s ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md)).

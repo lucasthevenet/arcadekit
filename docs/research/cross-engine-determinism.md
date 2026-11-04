@@ -139,7 +139,12 @@ Option 1, as recommended, in its own change with [ADR-0011](../adr/0011-a-step-u
 - `oxlint.config.ts` forbids every implementation-approximated `Math` function (`hypot`, `sin`, `cos`, `pow`, `exp`, `log`, `atan2` and the rest) and `**` in both genres' simulation code.
 - `packages/survivors/src/determinism.test.ts` runs this document's long scenario (`runLength` 400, unkillable hero, 6 enemies/s, the `wander` stick) through `GameLoop` for seeds 1, 1234 and 2026, 20,000 steps each (~1 s per seed in Node), and pins each run's final hash and a per-step trace. Its hashes differ from this harness's: it steps through `GameLoop` and uses the corrected `C2`.
 
-Still open for #25: running those long runs in Chromium, Firefox and WebKit through Playwright, and measuring SpiderMonkey and Safari at all.
+Then the cross-browser test (#25's decision 8):
+
+- `long-run.ts` in `packages/survivors/src` now holds the long scenario, its seeds and its recorded hashes; `determinism.test.ts` plays it in Node.
+- `pnpm test:browsers` (`packages/survivors/browser-determinism/`) bundles that module with survivors' simulation and `GameLoop` using Vite, serves it to Chromium, Firefox and WebKit with Playwright's `route` (no server, no network), plays the three seeds for 20,000 steps in each, and compares each run's final hash and its trace after every step with Node's. A mismatch names the first step whose state differs. Playwright 1.63.0 is now a root dev dependency, so CI can install matching browsers.
+- Chromium 153 gives Node's hashes at every step of every seed (about 1.5 s per seed). A browser-only 1-ulp change to `Math.sqrt` after 2M calls is caught and located (first diverging step 240 to 7,920, depending on the seed).
+- `.github/workflows/cross-browser.yml` runs it in CI on pull requests and on `main` with all three browsers installed, and fails if one can't launch. Its first run is the first measurement of Firefox (SpiderMonkey) and WebKit (JavaScriptCore) here; Safari on macOS, Windows and ARM still aren't run at all.
 
 ## Sources
 
