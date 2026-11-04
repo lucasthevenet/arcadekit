@@ -286,6 +286,8 @@ describe("solving", () => {
 });
 
 describe("replay", () => {
+  /** The recorded box ids by cell index (row * 8 + column); every other cell has none (-1). */
+  const RECORDED_BOX_IDS: Readonly<Record<number, number>> = { 18: 1, 19: 2 };
   const LEVEL = ["########", "#@ $ ^ #", "# $$ . #", "#  ..  #", "########"];
 
   /** A scripted run with taps, holds and undos, mixed with idle steps. */
@@ -318,6 +320,16 @@ describe("replay", () => {
       events: [...puzzle.events.drain()],
     };
   };
+
+  it("ends in the recorded state", () => {
+    // Recorded from this script. A change here changes how a run plays.
+    expect(replay()).toStrictEqual({
+      board: ["########", "#      #", "# $$ . #", "#  ..@ #", "########"],
+      boxIds: Array.from({ length: 40 }, (_, i) => RECORDED_BOX_IDS[i] ?? -1),
+      moves: 16,
+      events: [],
+    });
+  });
 
   it("gives an identical state for the same level and input script", () => {
     const a = replay();
