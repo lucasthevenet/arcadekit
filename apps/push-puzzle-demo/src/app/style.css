@@ -116,6 +116,12 @@ button.big {
   gap: 6px;
   padding: 16px 12px;
 }
+.level.solved {
+  border-color: var(--accent);
+}
+.record {
+  color: var(--accent);
+}
 
 .hud {
   position: absolute;

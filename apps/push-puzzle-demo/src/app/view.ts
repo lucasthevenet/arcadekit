@@ -34,7 +34,8 @@ const overlay = (model: Model, h: H): Html =>
     LevelSelect: () => levelSelect(model, h),
     Starting: () => h.empty,
     Playing: () => hud(levelName(model), model.hud, h),
-    Solved: ({ moves }) => solved(levelName(model), moves, h),
+    Solved: ({ moves, isNewBest }) =>
+      solved(levelName(model), moves, isNewBest, h),
   });
 
 const levelName = (model: Model) =>
@@ -45,6 +46,9 @@ const panel = (h: H, children: readonly (Html | string)[]): Html =>
     [h.Class("panel-backdrop")],
     [h.div([h.Class("panel")], [...children])]
   );
+
+const savedRecord = (model: Model, levelId: string) =>
+  Object.hasOwn(model.records, levelId) ? model.records[levelId] : undefined;
 
 const levelSelect = (model: Model, h: H): Html =>
   panel(h, [
@@ -57,19 +61,26 @@ const levelSelect = (model: Model, h: H): Html =>
     ),
     h.div(
       [h.Class("levels")],
-      model.levels.map((level, index) =>
-        h.button(
+      model.levels.map((level, index) => {
+        const record = savedRecord(model, level.id);
+        return h.button(
           [
             h.Key(level.id),
-            h.Class("level"),
+            h.Class(record?.solved ? "level solved" : "level"),
             h.OnClick(Message.ClickedLevel({ levelId: level.id })),
           ],
           [
             h.small([h.Class("muted")], [`Level ${index + 1}`]),
             h.strong([], [level.name]),
+            record?.solved
+              ? h.small(
+                  [h.Class("record")],
+                  [`✓ Best: ${movesText(record.bestMoves)}`]
+                )
+              : h.empty,
           ]
-        )
-      )
+        );
+      })
     ),
   ]);
 
@@ -89,10 +100,14 @@ const hud = (name: string, data: HudSample, h: H): Html =>
     ]
   );
 
-const solved = (name: string, moves: number, h: H): Html =>
+const movesText = (moves: number) =>
+  `${moves} ${moves === 1 ? "move" : "moves"}`;
+
+const solved = (name: string, moves: number, isNewBest: boolean, h: H): Html =>
   panel(h, [
     h.h2([], ["Solved!"]),
-    h.p([], [`${name} in ${moves} ${moves === 1 ? "move" : "moves"}.`]),
+    h.p([], [`${name} in ${movesText(moves)}.`]),
+    isNewBest ? h.p([h.Class("record")], ["New best!"]) : h.empty,
     h.div(
       [h.Class("row")],
       [

@@ -47,6 +47,9 @@ importers:
       '@gamekit/push-puzzle':
         specifier: workspace:*
         version: link:../../packages/push-puzzle
+      '@gamekit/save':
+        specifier: workspace:*
+        version: link:../../packages/save
       effect:
         specifier: ~4.1.2
         version: 4.1.2
@@ -65,6 +68,9 @@ importers:
       '@gamekit/foldkit':
         specifier: workspace:*
         version: link:../../packages/foldkit
+      '@gamekit/save':
+        specifier: workspace:*
+        version: link:../../packages/save
       '@gamekit/survivors':
         specifier: workspace:*
         version: link:../../packages/survivors
@@ -132,6 +138,15 @@ importers:
       '@gamekit/core':
         specifier: workspace:*
         version: link:../core
+      effect:
+        specifier: ~4.1.2
+        version: 4.1.2
+
+  packages/save:
+    dependencies:
+      '@effect/platform-browser':
+        specifier: ~4.1.0
+        version: 4.1.2(effect@4.1.2)
       effect:
         specifier: ~4.1.2
         version: 4.1.2

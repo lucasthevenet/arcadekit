@@ -6,14 +6,18 @@ import {
   ChooseUpgrade,
   EndRun,
   LoadContent,
+  LoadSave,
+  SaveRun,
   SetPaused,
   StartRun,
 } from "./commands";
 import { Message } from "./message";
 import { Phase, emptyHud } from "./model";
 import type { Model } from "./model";
+import { emptyRecords, mergeRecords, withRun } from "./save";
+import type { Save } from "./save";
 
-export type Services = SurvivorsContent | SurvivorsEngine;
+export type Services = SurvivorsContent | SurvivorsEngine | Save;
 type Return = Update.Return<Model, Message, Services>;
 
 export const init: Runtime.ApplicationInit<
@@ -26,10 +30,11 @@ export const init: Runtime.ApplicationInit<
     phase: Phase.Loading(),
     heroes: [],
     selectedHeroId: "",
+    records: emptyRecords,
     hud: emptyHud,
     isViewportMounted: false,
   },
-  commands: [LoadContent()],
+  commands: [LoadContent(), LoadSave()],
 });
 
 const startRun = (model: Model): Return => ({
@@ -55,6 +60,9 @@ export const update = (model: Model, message: Message): Return =>
     FailedToLoadContent: ({ error }) => ({
       model: { ...model, phase: Phase.LoadFailed({ error }) },
     }),
+    LoadedSave: ({ records }) => ({
+      model: { ...model, records: mergeRecords(model.records, records) },
+    }),
     MountedViewport: () => ({ model: { ...model, isViewportMounted: true } }),
     UnmountedViewport: () => ({
       model: { ...model, isViewportMounted: false },
@@ -75,7 +83,15 @@ export const update = (model: Model, message: Message): Return =>
       model: { ...model, phase: Phase.LevelUp({ choices }) },
     }),
     GotRunEnded: ({ summary }) => ({
-      model: { ...model, phase: Phase.GameOver({ summary }) },
+      model: {
+        ...model,
+        phase: Phase.GameOver({ summary }),
+        records: withRun(model.records, summary),
+      },
+      commands: [SaveRun({ summary })],
+    }),
+    SavedRun: ({ records }) => ({
+      model: { ...model, records: mergeRecords(model.records, records) },
     }),
 
     ClickedUpgrade: ({ index }) =>

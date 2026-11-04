@@ -2,12 +2,20 @@ import type { PushPuzzleContent } from "@gamekit/push-puzzle";
 import type { PushPuzzleEngine } from "@gamekit/push-puzzle/browser";
 import type { Runtime, Update } from "foldkit";
 
-import { EndRun, LoadContent, StartLevel } from "./commands";
+import {
+  EndRun,
+  LoadContent,
+  LoadSave,
+  SaveSolve,
+  StartLevel,
+} from "./commands";
 import { Message } from "./message";
 import { Phase, emptyHud } from "./model";
 import type { Model } from "./model";
+import { emptyRecords, isNewBest, mergeRecords, withSolve } from "./save";
+import type { Save } from "./save";
 
-export type Services = PushPuzzleContent | PushPuzzleEngine;
+export type Services = PushPuzzleContent | PushPuzzleEngine | Save;
 type Return = Update.Return<Model, Message, Services>;
 
 export const init: Runtime.ApplicationInit<
@@ -19,11 +27,12 @@ export const init: Runtime.ApplicationInit<
   model: {
     phase: Phase.Loading(),
     levels: [],
+    records: emptyRecords,
     levelId: "",
     hud: emptyHud,
     isViewportMounted: false,
   },
-  commands: [LoadContent()],
+  commands: [LoadContent(), LoadSave()],
 });
 
 const startLevel = (model: Model, levelId: string): Return => ({
@@ -44,6 +53,9 @@ export const update = (model: Model, message: Message): Return =>
     FailedToLoadContent: ({ error }) => ({
       model: { ...model, phase: Phase.LoadFailed({ error }) },
     }),
+    LoadedSave: ({ records }) => ({
+      model: { ...model, records: mergeRecords(model.records, records) },
+    }),
     MountedViewport: () => ({ model: { ...model, isViewportMounted: true } }),
     UnmountedViewport: () => ({
       model: { ...model, isViewportMounted: false },
@@ -60,7 +72,18 @@ export const update = (model: Model, message: Message): Return =>
 
     GotHud: ({ hud }) => ({ model: { ...model, hud } }),
     GotLevelSolved: ({ moves }) => ({
-      model: { ...model, phase: Phase.Solved({ moves }) },
+      model: {
+        ...model,
+        phase: Phase.Solved({
+          moves,
+          isNewBest: isNewBest(model.records, model.levelId, moves),
+        }),
+        records: withSolve(model.records, model.levelId, moves),
+      },
+      commands: [SaveSolve({ levelId: model.levelId, moves })],
+    }),
+    SavedSolve: ({ records }) => ({
+      model: { ...model, records: mergeRecords(model.records, records) },
     }),
 
     PressedRestart: () => startLevel(model, model.levelId),

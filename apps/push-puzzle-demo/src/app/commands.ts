@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect";
 import { Command } from "foldkit";
 
 import { Message } from "./message";
+import { Save } from "./save";
 
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
 // against the app's services and reports back with a Message.
@@ -44,4 +45,24 @@ export const EndRun = Command.define("EndRun", {
     yield* (yield* PushPuzzleEngine).stop;
     return Message.CompletedEngineCommand();
   }),
+});
+
+/** Reads the save once, at startup. Never fails: a bad save reads as empty. */
+export const LoadSave = Command.define("LoadSave", {
+  messages: [Message.LoadedSave],
+  execute: Effect.gen(function* () {
+    const records = yield* (yield* Save).load;
+    return Message.LoadedSave({ records });
+  }),
+});
+
+/** Writes a solve into the save, merged with what is stored. Never fails: a failed write is logged. */
+export const SaveSolve = Command.define("SaveSolve", {
+  args: { levelId: Schema.String, moves: Schema.Number },
+  messages: [Message.SavedSolve],
+  execute: ({ levelId, moves }) =>
+    Effect.gen(function* () {
+      const records = yield* (yield* Save).recordSolve(levelId, moves);
+      return Message.SavedSolve({ records });
+    }),
 });

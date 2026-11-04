@@ -130,6 +130,9 @@ button.big {
   color: var(--muted);
   font-size: 0.85rem;
 }
+.hero .record {
+  color: var(--accent);
+}
 .swatch {
   width: 28px;
   height: 28px;

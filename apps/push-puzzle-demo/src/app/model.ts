@@ -2,6 +2,8 @@ import { HudSample } from "@gamekit/push-puzzle";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
+import { LevelRecords } from "./save";
+
 // The UI's whole state. The board isn't here: it lives in the simulation.
 // The UI only holds what it shows.
 // HudSample is the genre's Schema for its hud event's payload, so a field the
@@ -19,13 +21,16 @@ export const Phase = defineTaggedUnion({
   LevelSelect: {},
   Starting: {},
   Playing: {},
-  Solved: { moves: Schema.Number },
+  /** `isNewBest` is true when the moves beat an earlier solve of this level. */
+  Solved: { moves: Schema.Number, isNewBest: Schema.Boolean },
 });
 export type Phase = typeof Phase.Type;
 
 export const Model = Schema.Struct({
   phase: Phase,
   levels: Schema.Array(LevelSummary),
+  /** The saved records, by level id: read at startup, updated on each solve. */
+  records: LevelRecords,
   /** The level being played, or last played. Restart and replay start it again. */
   levelId: Schema.String,
   hud: HudSample,

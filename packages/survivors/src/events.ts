@@ -32,6 +32,8 @@ export type UpgradeChoice = typeof UpgradeChoice.Type;
 /** How the run ended. The runEnded event carries it. */
 export const RunSummary = Schema.Struct({
   won: Schema.Boolean,
+  /** The id of the hero that was played. An unknown id falls back to the first hero, so this is the one actually played. */
+  heroId: Schema.String,
   heroName: Schema.String,
   time: Schema.Number,
   kills: Schema.Number,

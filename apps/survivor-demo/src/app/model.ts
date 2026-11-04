@@ -2,6 +2,8 @@ import { HudSample, RunSummary, UpgradeChoice } from "@gamekit/survivors";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
+import { HeroRecords } from "./save";
+
 // The UI's whole state. Note what is NOT here: enemies, projectiles, positions.
 // Those live in the simulation. The UI only holds what it shows.
 // HudSample, UpgradeChoice and RunSummary are the genre's Schemas for its event
@@ -31,6 +33,8 @@ export const Model = Schema.Struct({
   phase: Phase,
   heroes: Schema.Array(HeroSummary),
   selectedHeroId: Schema.String,
+  /** The saved records, by hero id: read at startup, updated when each run ends. */
+  records: HeroRecords,
   hud: HudSample,
   /** True while the viewport is in the document: the engine runs only then (see gameViewport). */
   isViewportMounted: Schema.Boolean,

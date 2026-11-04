@@ -5,6 +5,7 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
+import type { HeroRecord } from "./save";
 
 type H = HtmlBuilder<Message>;
 
@@ -65,6 +66,12 @@ const panel = (h: H, children: readonly (Html | string)[]): Html =>
     [h.div([h.Class("panel")], [...children])]
   );
 
+const savedRecord = (model: Model, heroId: string) =>
+  Object.hasOwn(model.records, heroId) ? model.records[heroId] : undefined;
+
+const recordText = (record: HeroRecord) =>
+  `${record.won ? "Won · " : ""}Best ${formatTime(record.bestTime)} · ${record.mostKills} defeated`;
+
 const menu = (model: Model, h: H): Html =>
   panel(h, [
     h.h1([], ["Survivor Kit"]),
@@ -74,8 +81,9 @@ const menu = (model: Model, h: H): Html =>
     ),
     h.div(
       [h.Class("heroes")],
-      model.heroes.map((hero) =>
-        h.button(
+      model.heroes.map((hero) => {
+        const record = savedRecord(model, hero.id);
+        return h.button(
           [
             h.Key(hero.id),
             h.Class(
@@ -90,9 +98,12 @@ const menu = (model: Model, h: H): Html =>
             ),
             h.strong([], [hero.name]),
             h.small([], [hero.description]),
+            record === undefined
+              ? h.empty
+              : h.small([h.Class("record")], [recordText(record)]),
           ]
-        )
-      )
+        );
+      })
     ),
     h.button(
       [h.Class("primary big"), h.OnClick(Message.ClickedStart())],

@@ -1,7 +1,10 @@
 import { fetchJsonSource } from "@gamekit/content/browser";
 import { makePushPuzzleContentLayer } from "@gamekit/push-puzzle";
 import { PushPuzzleEngineLayer } from "@gamekit/push-puzzle/browser";
+import { BrowserSaveStorage } from "@gamekit/save/browser";
 import { Layer } from "effect";
+
+import { SaveLayer } from "./save";
 
 export { Model } from "./model";
 export { init, update } from "./update";
@@ -13,5 +16,6 @@ export const resources = Layer.mergeAll(
   PushPuzzleEngineLayer,
   makePushPuzzleContentLayer(
     fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
-  )
+  ),
+  SaveLayer.pipe(Layer.provide(BrowserSaveStorage))
 );
