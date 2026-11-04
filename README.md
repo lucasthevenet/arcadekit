@@ -26,14 +26,14 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | [`@gamekit/content`](packages/content) | `loadContent` / `makeContentLoader`: load files, validate with an Effect Schema, cache the first success; `memorySource`. `fetchJsonSource` is in `@gamekit/content/browser` | Effect |
 | [`@gamekit/save`](packages/save) | `makeSaveStore`: a game's records by id under one versioned key, merged with the stored save on each write, with a corrupt save backed up and storage failures logged rather than raised; `mergeRecords`. `BrowserSaveStorage` (localStorage, or memory if the browser refuses) is in `@gamekit/save/browser` | Effect |
 | [`@gamekit/render-three`](packages/render-three) | `Stage` (renderer + scene + perspective or orthographic camera that resize with their container), `MeshInstances`, `followTarget`, `orbitAround`, `fitCamera` | Three.js |
-| [`@gamekit/runtime`](packages/runtime) | `GameDefinition` (the interface a game implements), `GameDriver` (frame loop), `makeGameEngine` (Effect API) | Effect, core |
+| [`@gamekit/runtime`](packages/runtime) | `GameSimulation` (the DOM-free half a game implements) and `GameLoop`, which steps one anywhere: browser, Worker, server or test. In `@gamekit/runtime/browser`: `GameDefinition` (simulation plus input and view), `GameDriver` (the `requestAnimationFrame` loop over `GameLoop`), `makeGameEngine` (Effect API) | Effect, core |
 | [`@gamekit/foldkit`](packages/foldkit) | `gameViewport` (the element an engine draws into), `engineEntry` (the Subscription that runs the engine there and turns its events into Messages), `keyPresses` | Effect, Foldkit, runtime |
 | [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, view and engine | all of the above except foldkit |
 | [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, view and engine | all of the above except foldkit |
 | [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content, Foldkit screens and a save of each hero's best run | survivors, content, save, foldkit |
 | [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen and a save of solved levels | push-puzzle, content, save, foldkit |
 
-Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. `content`, `save` and both genre packages check their root entry the same way (`tsconfig.root.json`); only their `./browser` entries may use the DOM. That keeps the simulation runnable in a Web Worker or on a game server.
+Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. `content`, `save`, `runtime` and both genre packages check their root entry the same way (`tsconfig.root.json`); only their `./browser` entries may use the DOM. That keeps the simulation runnable in a Web Worker or on a game server.
 
 ## Making a new game
 
@@ -43,14 +43,22 @@ Copy the demo app closest to your game (`apps/survivor-demo` or `apps/push-puzzl
 
 ### In a new genre
 
-Write a genre package (or start inside your app) that implements `GameDefinition` from `@gamekit/runtime`:
+Write a genre package (or start inside your app) in two halves. Its root entry exports the simulation, a `GameSimulation` from `@gamekit/runtime`, with no DOM:
 
 ```ts
-const myGame: GameDefinition<Config, State, Input, Event> = {
+export const mySimulation: GameSimulation<Config, State, Input, Event> = {
   create: (config, seed) => /* new State */,
   step: (state, input, dt) => /* advance; deterministic */,
   drainEvents: state => state.events.drain(),          // EventBuffer from core
   sample: { everyMs: 100, read: state => /* HUD event */ },  // or `version: state => state.turns` for a turn-based HUD
+}
+```
+
+Its `./browser` entry adds input and the view, and makes the engine, all from `@gamekit/runtime/browser`:
+
+```ts
+export const myGame: GameDefinition<Config, State, Input, Event> = {
+  ...mySimulation,
   createInput: surface => /* wrap an InputController; `endStep: () => controller.consumePresses()` if one press must make one turn */,
   createView: container => /* a GameView using Stage, MeshInstances… */,
 }
@@ -58,6 +66,8 @@ const myGame: GameDefinition<Config, State, Input, Event> = {
 class MyEngine extends Context.Service<MyEngine, GameEngine<Config, State, Event>>()('my-game/Engine') {}
 const MyEngineLayer = Layer.sync(MyEngine, () => makeGameEngine(myGame))
 ```
+
+Tests and replays step the simulation without a browser, in the same step order as the demo: `const loop = new GameLoop(mySimulation)`, `loop.start(config, seed, 0)`, then `loop.frame({ read: step => inputs[step] }, { steps: 1 }, nowMs)` per step (`packages/survivors/src/replay.test.ts` does this).
 
 Then connect it to a Foldkit app with `@gamekit/foldkit`, as `apps/survivor-demo/src/app/` does:
 
@@ -94,4 +104,4 @@ Level select marks each solved level with its best move count, and the Solved sc
 - Art and sound (everything is colored shapes), and multiplayer. The deterministic `step` makes lockstep multiplayer possible: send inputs, not positions.
 - More in the save. `@gamekit/save` holds records by id only: no settings, no unlocks and no run in progress. Every save is at version 1, so there is no migration API yet ([ADR-0009](docs/adr/0009-a-save-package-is-earned.md)).
 - Foldkit's Vite plugin for keeping UI state across live reloads. It's left out because engine state isn't preserved, so a reload mid-run would show a "Playing" UI with no run.
-- Browsers pause `requestAnimationFrame` in hidden tabs, so the game pauses when you switch tabs. Online play would need a timer-driven loop.
+- Browsers pause `requestAnimationFrame` in hidden tabs, so the game pauses when you switch tabs. Online play would need a timer-driven loop: an adapter that calls `GameLoop.frame` on a timer ([ADR-0010](docs/adr/0010-a-game-is-a-simulation-and-a-presentation.md)).

@@ -4,6 +4,8 @@ status: accepted
 
 # One press reaches one step
 
+> Amended by [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md) on 2026-11-04: `GameLoop.frame` runs this step order under either budget, `endFrame` runs once per frame call that ran a step, and `packages/runtime/src/loop.test.ts` now checks the order.
+
 A slow frame runs up to five catch-up steps, and presses used to be reset once per frame, so one press moved push-puzzle's player up to five cells and one undo undid up to five turns (#15, finding 1). `GameDriver` now calls `InputSource.endStep` after every step, and `endFrame` once per frame that ran a step. A source that needs one press to reach one step resets its presses in `endStep`, as push-puzzle does with `InputController.consumePresses()`.
 
 ## Considered Options
