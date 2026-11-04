@@ -1,4 +1,5 @@
-// Survivors-like genre: content schema, definition and service, the simulation and its event payloads.
+// Survivors-like genre: content schema, definition and service, the simulation (rules and
+// GameSimulation) and its event payloads.
 // No DOM or Three.js here; those are in "@gamekit/survivors/browser".
 
 export {
@@ -23,6 +24,7 @@ export {
   WeaponDef,
   findBrokenReferences,
 } from "./schema";
+export { survivorsSimulation } from "./simulation";
 export {
   type RunStatus,
   type Stats,
