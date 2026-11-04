@@ -46,6 +46,16 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Join code**: the six letters a host reads out so guests can find its room, such as `K7MQ2X`; letters and digits that can't be confused (no 0/O, 1/I/L), typed in any case. The worker picks it; it names the room only while the room lives.
 
+**Hero**: one player's character in a survivors run (`Hero`, `hero.ts`). Each player has one, at its **slot**: the player's place in player order, host first in lockstep (`SurvivorsConfig.heroIds`, 1 to 4). A hero owns its body, stats, weapons, passives and upgrade offer; the run owns everything else (clock, team XP, horde, gems, projectiles, `Rng`). Survivors' rules visit heroes in slot order, and an enemy chases the nearest **playing** hero, the lowest slot winning a tie ([ADR-0013](docs/adr/0013-survivors-co-op-shares-the-run-and-splits-the-heroes.md)). _Avoid_: player for the hero; the player is the person or peer.
+
+**Team XP**: survivors' one XP pool and level for the whole run (`World.level`, `xp`, `xpNext`). Any hero's gem feeds it, and each level gained is a level-up for every hero.
+
+**Offer**: the upgrade choices a survivors hero picks from after a level-up (`Hero.offer`). Every playing hero gets its own, numbered together by `World.offerSeq`. The run is frozen while any hero has one open and resumes in the step that closes the last, by a pick or by its player leaving. A **pick** names the offer it answers (`HeroInput.pick`), so a late or repeated one does nothing. Single-player picks through `chooseUpgrade` and `modify`; lockstep, through step input.
+
+**Down**: a survivors hero at 0 HP. It stays where it fell, does nothing and isn't chased; there is no revive. The run is lost once no hero is playing. With one hero, down is dead.
+
+**Left**: a survivors hero whose player left the run, at the step lockstep removed them (`SurvivorsInput.leaving`, from a confirmed step's removed players). It is no longer drawn or chased, and its open offer closes.
+
 **Engine**: the Effect-facing API of a running game (`GameEngine`, `@gamekit/runtime/browser`): attach to an element, listen to events, start, modify, pause, stop. Each genre declares its own engine service.
 
 **Content source**: where content files come from (`ContentSource`), such as `memorySource` in tests or `fetchJsonSource` in the browser. A genre's **content definition** (`ContentDefinition`) is its schema, the file each part comes from, and the checks the schema can't express, as one value. A genre's content service, built with `makeContentLoader` from the definition and a source, loads and checks the files once per app; a failed load isn't kept, so it can be retried. Tests load the same definition with `loadContent`, so they run the same checks.
