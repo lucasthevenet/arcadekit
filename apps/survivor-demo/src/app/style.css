@@ -184,3 +184,53 @@ button.big {
   font-size: 0.85rem;
   text-shadow: 0 1px 2px #000;
 }
+
+/* Co-op */
+.stack {
+  display: grid;
+  gap: 8px;
+}
+.join {
+  display: flex;
+  gap: 8px;
+}
+.join input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1.1rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.join-code {
+  margin: 4px 0 8px;
+  font-size: 2.4rem;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  color: var(--accent);
+}
+.players {
+  margin: 12px 0;
+  padding-left: 20px;
+  line-height: 1.6;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.banner {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  font-weight: 700;
+}

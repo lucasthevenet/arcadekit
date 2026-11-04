@@ -93,6 +93,26 @@ Hero select shows each hero's best time and most kills. The save keeps them in l
 
 With about 750 enemies, three maxed weapons and 480 XP gems on screen, one simulation step takes about 0.3 ms.
 
+### Co-op
+
+2 to 4 players, each in their own browser, play one run in lockstep ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md), [ADR-0013](docs/adr/0013-survivors-co-op-shares-the-run-and-splits-the-heroes.md)). For local play, run the signalling server beside the demo:
+
+```bash
+pnpm dev:signalling   # ws://127.0.0.1:8787
+pnpm dev
+```
+
+Then pick **Co-op** in two windows. One player hosts and reads out the join code; the others join with it. Everyone picks a hero, and the host starts. The host sends the run's seed and content hash at the start; a player whose content differs refuses to start, with a message naming both hashes, and the host's run goes on without them. The view follows your own hero. A level-up freezes the run until every player has picked; Escape pauses it for everyone until you resume. If a player's input stops arriving, everyone sees "Waiting for …", and the host removes that player after about 10 s. A desync, being removed or losing the host stops the run with a message saying which. Co-op runs aren't saved as records.
+
+`src/coop/` holds the co-op client: the lobby over `@gamekit/net/browser`'s signalling client, then a lockstep session it ticks on a timer and draws on animation frames. Its lobby messages (heroes, the start) travel on each peer link's reliable channel (`src/coop/lobby.ts`). Two Vite env variables configure it (`src/coop/config.ts`):
+
+| Variable | Default |
+| --- | --- |
+| `VITE_SIGNALLING_URL` | `ws://<the page's host>:8787`, the local server; a deployed worker's `wss://` URL otherwise |
+| `VITE_STUN_URLS` | `stun:stun.l.google.com:19302`; comma-separated, or empty for none |
+
+For a LAN, start the server with `SIGNALLING_HOST=0.0.0.0 pnpm dev:signalling` and the demo with `pnpm dev --host`.
+
 ## The push-puzzle demo
 
 Levels live in `apps/push-puzzle-demo/public/content/levels.json`, as rows of standard Sokoban text plus `^` for a hole: `#` wall, space floor, `@` player, `+` player on goal, `$` box, `*` box on goal, `.` goal. A box pushed into a hole fills it. They're checked against `packages/push-puzzle/src/schema.ts` at load, and `apps/push-puzzle-demo/src/content.test.ts` plays a known solution for each level.
@@ -105,7 +125,8 @@ Level select marks each solved level with its best move count, and the Solved sc
 
 - **Publishing.** Packages export their TypeScript source directly, which suits a workspace. Publishing to npm needs a build step (e.g. tsdown), `effect`/`three`/`foldkit` moved to `peerDependencies`, and the `@gamekit` scope swapped for one you own.
 - Art and sound (everything is colored shapes).
-- Online co-op in the demo. Survivors' rules and `@gamekit/net`'s lockstep support it, but there is no lobby UI to pick heroes and show "waiting for X" yet, and no deployed signalling worker. `@gamekit/net/browser` has the WebRTC transport and the signalling client.
+- A deployed signalling worker, and TURN. Co-op works through the local signalling server on one machine or a LAN; across the internet it needs the worker deployed, and two peers behind symmetric NATs can't connect without TURN.
+- Cross-browser lockstep: the end-to-end co-op test runs in Chromium only.
 - More in the save. `@gamekit/save` holds records by id only: no settings, no unlocks and no run in progress. Every save is at version 1, so there is no migration API yet ([ADR-0009](docs/adr/0009-a-save-package-is-earned.md)).
 - Foldkit's Vite plugin for keeping UI state across live reloads. It's left out because engine state isn't preserved, so a reload mid-run would show a "Playing" UI with no run.
-- Browsers pause `requestAnimationFrame` in hidden tabs, so the game pauses when you switch tabs. Online play would need a timer-driven loop: an adapter that calls `GameLoop.frame` on a timer ([ADR-0010](docs/adr/0010-a-game-is-a-simulation-and-a-presentation.md)).
+- Browsers pause `requestAnimationFrame` in hidden tabs, so a single-player run pauses when you switch tabs. A co-op run steps on a timer instead, which a hidden tab throttles to about once a second: the others wait for that player, and the host removes them after about 10 s ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md)).

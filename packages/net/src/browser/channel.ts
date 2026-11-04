@@ -7,7 +7,10 @@ import type { PeerId, Transport } from "../transport";
 export interface TextChannel {
   /** Sends one message. Never throws: a message on a channel that isn't open is lost. */
   readonly send: (text: string) => void;
-  /** Calls `handler` with each message that arrives, until the returned function is called. */
+  /**
+   * Calls `handler` with each message that arrives, until the returned function is called. The
+   * first listener also gets, at once, what arrived before anything listened.
+   */
   readonly listen: (handler: (text: string) => void) => () => void;
   /** Calls `handler` once when the channel closes, until the returned function is called. */
   readonly onClose: (handler: () => void) => () => void;
@@ -60,32 +63,55 @@ export const linksTransport = (
   };
 };
 
-/** An `RTCDataChannel` as a `TextChannel`. Binary messages are ignored: everything here is text. */
-export const dataChannelText = (channel: RTCDataChannel): TextChannel => ({
-  send: (text) => {
-    if (channel.readyState !== "open") {
+/**
+ * An `RTCDataChannel` as a `TextChannel`. Binary messages are ignored: everything here is text.
+ * Make it when the channel is created: until something listens, it keeps what arrives, so a
+ * message the other side sends as soon as its end opens isn't lost before this side's code
+ * gets to listen.
+ */
+export const dataChannelText = (channel: RTCDataChannel): TextChannel => {
+  const handlers = new Set<(text: string) => void>();
+  let early: string[] | null = [];
+  channel.addEventListener("message", (event: MessageEvent<unknown>) => {
+    if (typeof event.data !== "string") {
       return;
     }
-    try {
-      channel.send(text);
-    } catch {
-      // The channel closed, or its send buffer is full: the message is lost, which the
-      // lockstep session tolerates and the lobby's reliable channel never hits in practice.
-    }
-  },
-  listen: (handler) => {
-    const onMessage = (event: MessageEvent<unknown>) => {
-      if (typeof event.data === "string") {
+    if (early === null) {
+      for (const handler of handlers) {
         handler(event.data);
       }
-    };
-    channel.addEventListener("message", onMessage);
-    return () => channel.removeEventListener("message", onMessage);
-  },
-  onClose: (handler) => {
-    const onClose = () => handler();
-    channel.addEventListener("close", onClose, { once: true });
-    return () => channel.removeEventListener("close", onClose);
-  },
-  isOpen: () => channel.readyState === "open",
-});
+    } else {
+      early.push(event.data);
+    }
+  });
+  return {
+    send: (text) => {
+      if (channel.readyState !== "open") {
+        return;
+      }
+      try {
+        channel.send(text);
+      } catch {
+        // The channel closed, or its send buffer is full: the message is lost, which the
+        // lockstep session tolerates and the lobby's reliable channel never hits in practice.
+      }
+    },
+    listen: (handler) => {
+      handlers.add(handler);
+      if (early !== null) {
+        const kept = early;
+        early = null;
+        for (const text of kept) {
+          handler(text);
+        }
+      }
+      return () => handlers.delete(handler);
+    },
+    onClose: (handler) => {
+      const onClose = () => handler();
+      channel.addEventListener("close", onClose, { once: true });
+      return () => channel.removeEventListener("close", onClose);
+    },
+    isOpen: () => channel.readyState === "open",
+  };
+};

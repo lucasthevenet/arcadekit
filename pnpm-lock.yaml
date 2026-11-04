@@ -68,6 +68,12 @@ importers:
       '@gamekit/foldkit':
         specifier: workspace:*
         version: link:../../packages/foldkit
+      '@gamekit/input':
+        specifier: workspace:*
+        version: link:../../packages/input
+      '@gamekit/net':
+        specifier: workspace:*
+        version: link:../../packages/net
       '@gamekit/save':
         specifier: workspace:*
         version: link:../../packages/save

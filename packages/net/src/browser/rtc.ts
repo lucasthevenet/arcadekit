@@ -74,6 +74,9 @@ export const rtcConnectPeer =
       negotiated: true,
       id: MESSAGES_CHANNEL_ID,
     });
+    // Listening from the start, so nothing that arrives before `onOpen` is lost.
+    const lockstepText = dataChannelText(lockstep);
+    const messagesText = dataChannelText(messages);
     let state: "connecting" | "open" | "closed" = "connecting";
 
     const close = () => {
@@ -110,8 +113,8 @@ export const rtcConnectPeer =
         clearTimeout(timeout);
         onOpen({
           peer,
-          lockstep: dataChannelText(lockstep),
-          messages: dataChannelText(messages),
+          lockstep: lockstepText,
+          messages: messagesText,
           close,
         });
       }

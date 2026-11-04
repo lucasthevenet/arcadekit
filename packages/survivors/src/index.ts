@@ -25,6 +25,7 @@ export {
   weaponCooldown,
   weaponDamage,
 } from "./hero";
+export { hashWorld } from "./hash-world";
 export {
   HeroInput,
   type PlayersStep,
