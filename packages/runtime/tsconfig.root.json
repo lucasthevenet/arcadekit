@@ -1,0 +1,10 @@
+{
+  // The root entry (GameSimulation, GameLoop) must run without a DOM: in a Web Worker, on a
+  // server, in a test. This checks it with no DOM types. Only ./browser may use the DOM.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "files": ["src/index.ts"]
+}

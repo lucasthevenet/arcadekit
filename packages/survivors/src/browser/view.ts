@@ -4,7 +4,7 @@ import {
   followTarget,
   orbitAround,
 } from "@gamekit/render-three";
-import type { GameView } from "@gamekit/runtime";
+import type { GameView } from "@gamekit/runtime/browser";
 import * as THREE from "three";
 
 import { auraRadius } from "../world";

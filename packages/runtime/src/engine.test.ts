@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { makeGameEngine } from "./index";
-import type { GameDefinition, GameEngine } from "./index";
+import { makeGameEngine } from "./browser";
+import type { GameDefinition, GameEngine } from "./browser";
 
 /**
  * Replaces requestAnimationFrame so a test decides when frames run and how long they took.

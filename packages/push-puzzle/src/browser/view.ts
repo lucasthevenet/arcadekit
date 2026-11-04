@@ -1,5 +1,5 @@
 import { MeshInstances, Stage, fitCamera } from "@gamekit/render-three";
-import type { GameView } from "@gamekit/runtime";
+import type { GameView } from "@gamekit/runtime/browser";
 import * as THREE from "three";
 
 import { Tile } from "../level";

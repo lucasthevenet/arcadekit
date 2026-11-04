@@ -1,6 +1,6 @@
 import { InputController, MOVE_AXES } from "@gamekit/input";
-import { makeGameEngine } from "@gamekit/runtime";
-import type { GameDefinition, GameEngine } from "@gamekit/runtime";
+import { makeGameEngine } from "@gamekit/runtime/browser";
+import type { GameDefinition, GameEngine } from "@gamekit/runtime/browser";
 import { Context, Layer } from "effect";
 
 import type { SurvivorsEvent } from "../events";

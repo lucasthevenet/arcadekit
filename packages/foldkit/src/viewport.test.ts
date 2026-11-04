@@ -1,5 +1,5 @@
-import { makeGameEngine } from "@gamekit/runtime";
-import type { GameDefinition, GameEngine } from "@gamekit/runtime";
+import { makeGameEngine } from "@gamekit/runtime/browser";
+import type { GameDefinition, GameEngine } from "@gamekit/runtime/browser";
 import {
   Cause,
   Context,

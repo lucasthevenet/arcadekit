@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GameDriver, makeGameEngine } from "./index";
-import type { GameDefinition } from "./index";
+import { GameDriver, makeGameEngine } from "./browser";
+import type { GameDefinition } from "./browser";
 
 // A tiny game: a counter that reports when it is bumped past a threshold.
 interface State {

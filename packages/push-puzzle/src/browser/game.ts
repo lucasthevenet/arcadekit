@@ -1,6 +1,10 @@
 import { InputController } from "@gamekit/input";
-import { makeGameEngine } from "@gamekit/runtime";
-import type { GameDefinition, GameEngine, InputSource } from "@gamekit/runtime";
+import { makeGameEngine } from "@gamekit/runtime/browser";
+import type {
+  GameDefinition,
+  GameEngine,
+  InputSource,
+} from "@gamekit/runtime/browser";
 import { Context, Layer } from "effect";
 
 import type { PushPuzzleEvent } from "../events";
