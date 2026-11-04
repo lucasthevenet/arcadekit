@@ -1,13 +1,13 @@
 /**
- * Everything the runtime needs to run a game. A genre package implements this once;
- * the runtime handles the frame loop, timing, events and lifecycle.
+ * The DOM-free half of a game: everything needed to step a run. It runs in a browser, a Web
+ * Worker, on a server or in a test. A genre exports one from its root entry; `GameLoop` runs it.
  *
  * - `Config`: what starting a run needs (content, chosen character, difficulty…).
  * - `State`: the simulation state. The runtime never looks inside it.
  * - `Input`: one step's worth of player input, as the game wants it.
  * - `Event`: the facts the game reports to the outside (UI, sound, analytics).
  */
-export interface GameDefinition<Config, State, Input, Event> {
+export interface GameSimulation<Config, State, Input, Event> {
   /** Simulation step length in seconds. Defaults to 1/60. */
   readonly stepSeconds?: number;
   readonly create: (config: Config, seed: number) => State;
@@ -23,7 +23,8 @@ export interface GameDefinition<Config, State, Input, Event> {
    * Optional sample: a read of the state for the UI (a HUD, for example), emitted as an event
    * when a run starts and then while it is active:
    *
-   * - every `everyMs` of real time, for a state that changes all the time (a real-time game);
+   * - every `everyMs`, measured on the `nowMs` the loop's caller passes in (real time in the
+   *   browser), for a state that changes all the time (a real-time game);
    * - and/or right after any frame or `modify` in which `version` changed, for a state that
    *   changes rarely (a turn-based game). `version` is a cheap number the game bumps whenever
    *   what `read` reports may have changed, such as a turn counter.
@@ -33,18 +34,17 @@ export interface GameDefinition<Config, State, Input, Event> {
     readonly version?: (state: State) => number;
     readonly read: (state: State) => Event;
   };
-  /** Creates the input source (`InputSource`) that reads input from the viewport element. Called once per attach. */
-  readonly createInput: (surface: HTMLElement) => InputSource<Input>;
-  /** Creates the view (`GameView`) that draws into the viewport element. Called once per attach. */
-  readonly createView: (container: HTMLElement) => GameView<State>;
 }
 
-export interface InputSource<Input> {
+/** Where each step's input comes from: a device, a script, or a buffer of confirmed inputs. */
+export interface StepInput<Input> {
   /**
-   * Called once per simulation step, before `step`. It runs inside the step loop, so returning
-   * the same object each time, refilled, keeps the loop free of allocation.
+   * Called once per simulation step, before `step`. `step` is the run's index of the step about
+   * to run (0 for the first step after `start`). A device source ignores it; a script or a
+   * lockstep buffer indexes by it. It runs inside the step loop, so returning the same object
+   * each time, refilled, keeps the loop free of allocation.
    */
-  readonly read: () => Input;
+  readonly read: (step: number) => Input;
   /**
    * Called after every step. Reset "just pressed" state here, so one press reaches exactly
    * one step even on a slow frame that runs several catch-up steps (a press that makes one
@@ -58,28 +58,9 @@ export interface InputSource<Input> {
    * fine for a game that reads only held state and axes.
    */
   readonly endFrame?: () => void;
-  readonly dispose: () => void;
 }
 
-/**
- * Draws a game. Three rules apply to every view:
- *
- * - `render` reads the state and never changes it.
- * - Each run has its own state object: `start` calls `create` for every run. `render` gets that
- *   same object every frame until `stop` or the next `start`, so a view can tell runs apart by
- *   identity. Push-puzzle's view resets when the object changes, and survivors' view keys its
- *   color cache on it.
- * - `alpha` is there for a genre that wants to interpolate between steps. A view may ignore it.
- */
-export interface GameView<State> {
-  /**
-   * Draws one frame. `state` is null when no run is active (menus).
-   * `alpha` (0-1) is how far real time is between the last step and the next, for interpolation.
-   */
-  readonly render: (
-    state: State | null,
-    timeSeconds: number,
-    alpha: number
-  ) => void;
+/** A StepInput that owns resources (listeners, devices): what a browser game's `createInput` returns. */
+export interface InputSource<Input> extends StepInput<Input> {
   readonly dispose: () => void;
 }

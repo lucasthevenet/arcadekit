@@ -64,7 +64,7 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 
 - **What it was:** two core exports had no user, both apps declared `@gamekit/runtime` and never imported it, and some exports were kept for tests or kit-internal use with nothing saying so.
 - **Fix:** core dropped `lerp` and `clampLength`; both apps dropped `@gamekit/runtime`. The exports that stay say why in their doc comments.
-- **Left open:** which genre exports stay public is [#30](https://github.com/lucasthevenet/gamekit/issues/30), decided with #26's question on publishing genres. The clock's `alpha` goes with [#28](https://github.com/lucasthevenet/gamekit/issues/28). `start`'s seed, `Stage`'s camera options and `InputController`'s options have no user either. #26 settles them before the freeze.
+- **Left open:** which genre exports stay public is [#30](https://github.com/lucasthevenet/gamekit/issues/30), decided with #26's question on publishing genres. The clock's `alpha` went with [#28](https://github.com/lucasthevenet/gamekit/issues/28). `start`'s seed, `Stage`'s camera options and `InputController`'s options have no user either. #26 settles them before the freeze.
 
 ### 5. Decisions that live only in prose
 
@@ -80,7 +80,7 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 ### 9. Views' unwritten rules about a run
 
 - **What it was:** both views tell runs apart by object identity and never write the state, but `GameView`'s doc said neither.
-- **Fix:** `GameView`'s doc gives three rules: `render` never changes the state, each run has its own state object, and a view may ignore `alpha`. `CONTEXT.md`'s "Run" says each run has its own state object. Docs only.
+- **Fix:** `GameView`'s doc gives three rules: `render` never changes the state, each run has its own state object, and a view may ignore `alpha`. (#28 removed `alpha`, so two rules remain.) `CONTEXT.md`'s "Run" says each run has its own state object. Docs only.
 
 ### 10. Event payloads typed twice
 
@@ -104,6 +104,7 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 
 - **What it was:** the step order lives in the frame callback, and two of `GameDefinition`'s fields take an `HTMLElement`. No test, Worker or server can run a genre's definition, and five tests rewrite the loop.
 - **Why an issue:** splitting the DOM-free half from the browser frame reshapes `GameDefinition` and `GameDriver`. Decide it with #25's timer loop and #24's assets, before #26 freezes the interface: [#28](https://github.com/lucasthevenet/gamekit/issues/28).
+- **Landed (#28):** a genre's root exports a `GameSimulation`, and the runtime's DOM-free root steps it with `GameLoop`. `GameDriver` is the `requestAnimationFrame` adapter over it, and both replays and survivor-demo's content test run through it. The clock's `alpha` is gone. See [ADR-0010](adr/0010-a-game-is-a-simulation-and-a-presentation.md).
 
 ### 12. The content loader caches failures
 
@@ -119,7 +120,7 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 
 ## Deviations
 
-- **`replay.test.ts:8` still overstates coverage.** It says the replay guards runtime, core and input, but it calls the simulation directly. The file is kept byte-identical to `89665dc`, so the comment stays; #28 fixes it. The findings doc's matching line was corrected.
+- **`replay.test.ts:8` still overstates coverage.** It says the replay guards runtime, core and input, but it calls the simulation directly. The file is kept byte-identical to `89665dc`, so the comment stays; #28 fixes it. (Fixed: under #28 the replay runs through `GameLoop`, and the comment says what it covers.) The findings doc's matching line was corrected.
 - **The CI comment.** `.github/workflows/ci.yml` still says "the demo's production build" where both demos build. This session couldn't change `.github/`.
 - **`fitCamera` with a tilted perspective camera.** Writing its tests showed that a small tilt can push the near edge of the bounds off screen; the doc had promised extra room. The doc now says so and suggests more margin. Only push-puzzle uses `fitCamera`, with an orthographic camera, so there is no code change (ADR 0001).
 - **The DOM-free check.** `tsconfig.root.json` checks a root entry with no DOM types, but nothing checks it imports no Three.js. `CONTEXT.md` now says keeping Three.js out is a convention. Recorded, no code change.

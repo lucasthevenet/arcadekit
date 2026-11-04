@@ -1,12 +1,21 @@
+import { GameLoop } from "@gamekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { PuzzleContent, boardText, boxIdAt, createPuzzle, step } from "./index";
+import {
+  PuzzleContent,
+  boardText,
+  boxIdAt,
+  createPuzzle,
+  pushPuzzleSimulation,
+  step,
+} from "./index";
 import type {
   Direction,
   Puzzle,
   PushPuzzleConfig,
   PushPuzzleEvent,
+  PushPuzzleInput,
 } from "./index";
 
 // Tests drive a run the way the runtime does: one input per step.
@@ -15,15 +24,22 @@ import type {
 const DT = 1 / 60;
 const NOTHING = { held: null, pressed: null, undo: false } as const;
 
+/** A config for a one-level game whose level is `rows`. */
+const configFor = (
+  rows: readonly string[],
+  options: Partial<PushPuzzleConfig> = {}
+): PushPuzzleConfig => ({
+  content: Schema.decodeUnknownSync(PuzzleContent)({
+    levels: [{ id: "test", name: "Test", rows }],
+  }),
+  levelId: "test",
+  ...options,
+});
+
 const start = (
   rows: readonly string[],
   options: Partial<PushPuzzleConfig> = {}
-): Puzzle => {
-  const content = Schema.decodeUnknownSync(PuzzleContent)({
-    levels: [{ id: "test", name: "Test", rows }],
-  });
-  return createPuzzle({ content, levelId: "test", ...options }, 0);
-};
+): Puzzle => createPuzzle(configFor(rows, options), 0);
 
 /** One tap: a step with the direction pressed, then a step with nothing held. */
 const tap = (puzzle: Puzzle, direction: Direction) => {
@@ -285,29 +301,54 @@ describe("solving", () => {
   });
 });
 
+/**
+ * The replay's input, one entry per step: taps, holds and undos, mixed with idle steps. Each
+ * move is held for 20 steps (every 4th) or 1, with the direction pressed on the first, then a
+ * step with nothing held; every 5th move is followed by an undo and a step with nothing.
+ */
+const REPLAY_INPUTS: readonly PushPuzzleInput[] = [
+  ..."RRDLLURDDRUULRRDDR",
+].flatMap((char, i) => {
+  const direction = DIRECTION_BY_CHAR[char as keyof typeof DIRECTION_BY_CHAR];
+  const held = i % 4 === 0 ? 20 : 1;
+  const steps: PushPuzzleInput[] = Array.from({ length: held }, (_, s) => ({
+    held: direction,
+    pressed: s === 0 ? direction : null,
+    undo: false,
+  }));
+  steps.push(NOTHING);
+  if (i % 5 === 4) {
+    steps.push({ held: null, pressed: null, undo: true }, NOTHING);
+  }
+  return steps;
+});
+
 describe("replay", () => {
+  /** The recorded box ids by cell index (row * 8 + column); every other cell has none (-1). */
+  const RECORDED_BOX_IDS: Readonly<Record<number, number>> = { 18: 1, 19: 2 };
   const LEVEL = ["########", "#@ $ ^ #", "# $$ . #", "#  ..  #", "########"];
 
-  /** A scripted run with taps, holds and undos, mixed with idle steps. */
+  /**
+   * Plays the scripted input through @gamekit/runtime's GameLoop, one step per frame, the step
+   * order the demo runs. Collects the events and counts the HUD samples the run reported.
+   */
   const replay = () => {
-    const puzzle = start(LEVEL);
-    const script = "RRDLLURDDRUULRRDDR";
-    for (const [i, char] of [...script].entries()) {
-      const direction =
-        DIRECTION_BY_CHAR[char as keyof typeof DIRECTION_BY_CHAR];
-      const held = i % 4 === 0 ? 20 : 1;
-      for (let s = 0; s < held; s++) {
-        step(
-          puzzle,
-          { held: direction, pressed: s === 0 ? direction : null, undo: false },
-          DT
-        );
+    const loop = new GameLoop(pushPuzzleSimulation);
+    const events: PushPuzzleEvent[] = [];
+    let samples = 0;
+    loop.subscribe((event) => {
+      if (event.type === "hud") {
+        samples += 1;
+      } else {
+        events.push(event);
       }
-      step(puzzle, NOTHING, DT);
-      if (i % 5 === 4) {
-        undo(puzzle);
-      }
+    });
+    loop.start(configFor(LEVEL), 0, 0);
+    const script = { read: (n: number) => REPLAY_INPUTS[n]! };
+    for (let i = 0; i < REPLAY_INPUTS.length; i++) {
+      loop.frame(script, { steps: 1 }, (i * 1000) / 60);
     }
+    const puzzle = loop.state!;
     return {
       board: boardText(puzzle),
       // Board text can't tell boxes apart; their stable ids can.
@@ -315,9 +356,25 @@ describe("replay", () => {
         [...line].map((_, col) => boxIdAt(puzzle, col, row))
       ),
       moves: puzzle.moves,
-      events: [...puzzle.events.drain()],
+      events,
+      turns: puzzle.turns,
+      samples,
     };
   };
+
+  it("ends in the recorded state", () => {
+    // Recorded from this script before the replay ran through GameLoop. A change here changes
+    // how a run plays.
+    expect(replay()).toStrictEqual({
+      board: ["########", "#      #", "# $$ . #", "#  ..@ #", "########"],
+      boxIds: Array.from({ length: 40 }, (_, i) => RECORDED_BOX_IDS[i] ?? -1),
+      moves: 16,
+      events: [],
+      turns: 22,
+      // The HUD sample comes once at the start, then once per turn.
+      samples: 22 + 1,
+    });
+  });
 
   it("gives an identical state for the same level and input script", () => {
     const a = replay();

@@ -1,10 +1,14 @@
 import { InputController } from "@gamekit/input";
-import { makeGameEngine } from "@gamekit/runtime";
-import type { GameDefinition, GameEngine, InputSource } from "@gamekit/runtime";
+import { makeGameEngine } from "@gamekit/runtime/browser";
+import type {
+  GameDefinition,
+  GameEngine,
+  InputSource,
+} from "@gamekit/runtime/browser";
 import { Context, Layer } from "effect";
 
 import type { PushPuzzleEvent } from "../events";
-import { createPuzzle, hudSample, step } from "../world";
+import { pushPuzzleSimulation } from "../simulation";
 import type {
   Direction,
   Puzzle,
@@ -57,22 +61,14 @@ const createInput = (surface: HTMLElement): InputSource<PushPuzzleInput> => {
   };
 };
 
-/** The push-puzzle genre as a @gamekit/runtime game. */
+/** The push-puzzle genre as a @gamekit/runtime browser game: its simulation, input and view. */
 export const pushPuzzleGame: GameDefinition<
   PushPuzzleConfig,
   Puzzle,
   PushPuzzleInput,
   PushPuzzleEvent
 > = {
-  stepSeconds: 1 / 60,
-  create: createPuzzle,
-  step,
-  drainEvents: (puzzle) => puzzle.events.drain(),
-  // The HUD changes only on a turn, so it's sent right after a turn, and never in between.
-  sample: {
-    version: (puzzle) => puzzle.turns,
-    read: (puzzle) => ({ type: "hud", hud: hudSample(puzzle) }),
-  },
+  ...pushPuzzleSimulation,
   createInput,
   createView: (container) => new PushPuzzleView(container),
 };

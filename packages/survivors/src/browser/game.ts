@@ -1,28 +1,21 @@
 import { InputController, MOVE_AXES } from "@gamekit/input";
-import { makeGameEngine } from "@gamekit/runtime";
-import type { GameDefinition, GameEngine } from "@gamekit/runtime";
+import { makeGameEngine } from "@gamekit/runtime/browser";
+import type { GameDefinition, GameEngine } from "@gamekit/runtime/browser";
 import { Context, Layer } from "effect";
 
 import type { SurvivorsEvent } from "../events";
-import { createWorld, hudSample, step } from "../world";
+import { survivorsSimulation } from "../simulation";
 import type { SurvivorsConfig, SurvivorsInput, World } from "../world";
 import { SurvivorsView } from "./view";
 
-/** The survivors genre as a @gamekit/runtime game. */
+/** The survivors genre as a @gamekit/runtime browser game: its simulation, input and view. */
 export const survivorsGame: GameDefinition<
   SurvivorsConfig,
   World,
   SurvivorsInput,
   SurvivorsEvent
 > = {
-  stepSeconds: 1 / 60,
-  create: createWorld,
-  step,
-  drainEvents: (world) => world.events.drain(),
-  sample: {
-    everyMs: 100,
-    read: (world) => ({ type: "hud", hud: hudSample(world) }),
-  },
+  ...survivorsSimulation,
   createInput: (surface) => {
     const controller = new InputController(surface, { axes: MOVE_AXES });
     return {

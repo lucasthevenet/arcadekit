@@ -4,6 +4,8 @@ status: accepted
 
 # A sample runs on a timer, a version, or both
 
+> Amended by [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md) on 2026-11-04: `GameSimulation.sample` holds these fields, and `everyMs` counts on the `nowMs` that `GameLoop`'s caller passes in: the frame time in the browser.
+
 A sample used to run only every so many milliseconds of real time, so push-puzzle's HUD lagged a turn by up to 100 ms and sent ten identical HUD events a second between turns (#16, finding 2). `GameDefinition.sample` now takes `everyMs` (real time), `version` (a cheap number the game bumps when what `read` reports may have changed), or both. The driver emits a sample when a run starts, each time `everyMs` has passed, and right after any frame or `modify` that changed the version.
 
 ## Considered Options

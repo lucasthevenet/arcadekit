@@ -1,4 +1,4 @@
-import type { GameEngine } from "@gamekit/runtime";
+import type { GameEngine } from "@gamekit/runtime/browser";
 import { Effect, Queue, Schema, Stream } from "effect";
 import { Mount } from "foldkit";
 import type { Subscription } from "foldkit";

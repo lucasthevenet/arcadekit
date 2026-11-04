@@ -2,13 +2,15 @@
   "name": "@gamekit/runtime",
   "version": "0.0.0",
   "private": true,
-  "description": "Runs a game definition in the browser: frame loop, events, and an Effect engine API",
+  "description": "Steps a game anywhere (root) and runs it in the browser (./browser)",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p . && tsc -p tsconfig.root.json"
   },
   "dependencies": {
     "@gamekit/core": "workspace:*",

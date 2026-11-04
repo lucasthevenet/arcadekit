@@ -1,8 +1,9 @@
 import { Effect } from "effect";
 import type { Scope } from "effect";
 
-import type { GameDefinition } from "./definition";
 import { GameDriver } from "./driver";
+import type { FrameSource } from "./frames";
+import type { GameDefinition } from "./presentation";
 
 /**
  * The Effect-facing API of a running game. Scoped methods clean up when their scope closes.
@@ -31,10 +32,16 @@ export interface GameEngine<Config, State, Event> {
   readonly stop: Effect.Effect<void>;
 }
 
+/**
+ * Runs `definition` in the browser behind a GameEngine. `options.frames` replaces the frame
+ * clock (requestAnimationFrame by default); tests pass `manualFrames()` from
+ * `@gamekit/runtime/testing`.
+ */
 export const makeGameEngine = <Config, State, Input, Event>(
-  definition: GameDefinition<Config, State, Input, Event>
+  definition: GameDefinition<Config, State, Input, Event>,
+  options: { readonly frames?: FrameSource } = {}
 ): GameEngine<Config, State, Event> => {
-  const driver = new GameDriver(definition);
+  const driver = new GameDriver(definition, options.frames);
   return {
     attach: (element) =>
       Effect.acquireRelease(

@@ -1,33 +1,9 @@
 import { Effect } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { makeGameEngine } from "./index";
-import type { GameDefinition, GameEngine } from "./index";
-
-/**
- * Replaces requestAnimationFrame so a test decides when frames run and how long they took.
- * A copy of the helper in runtime.test.ts that can also say whether a frame is waiting.
- */
-const manualFrames = () => {
-  let pending: FrameRequestCallback | null = null;
-  vi.spyOn(performance, "now").mockReturnValue(0);
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    pending = callback;
-    return 1;
-  });
-  vi.stubGlobal("cancelAnimationFrame", () => {
-    pending = null;
-  });
-  return {
-    /** Whether the frame loop asked for a frame that has not run or been cancelled. */
-    waiting: () => pending !== null,
-    runFrameAt: (nowMs: number) => {
-      const callback = pending;
-      pending = null;
-      callback?.(nowMs);
-    },
-  };
-};
+import { makeGameEngine } from "./browser";
+import type { GameDefinition, GameEngine } from "./browser";
+import { manualFrames } from "./testing";
 
 interface Counter {
   steps: number;
@@ -67,13 +43,15 @@ const recordingGame = (
 
 /**
  * Attaches an engine for the recording game to `element`, logs its events too, runs
- * `scenario`, then closes the scope. The log keeps recording after that.
+ * `scenario`, then closes the scope. The log keeps recording after that. Frames run only when
+ * the test runs them on `frames`.
  */
 const play = async (
+  frames: ReturnType<typeof manualFrames>,
   scenario: (engine: GameEngine<null, Counter, string>) => Effect.Effect<void>
 ) => {
   const log: string[] = [];
-  const engine = makeGameEngine(recordingGame(log));
+  const engine = makeGameEngine(recordingGame(log), { frames });
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -87,14 +65,9 @@ const play = async (
 };
 
 describe(makeGameEngine, () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  });
-
   it("draws into the element until the scope closes, then cancels the frame loop and disposes the view and input source", async () => {
     const frames = manualFrames();
-    const log = await play(() =>
+    const log = await play(frames, () =>
       Effect.sync(() => {
         frames.runFrameAt(15.625);
         // Each frame asks for the next one.
@@ -115,7 +88,7 @@ describe(makeGameEngine, () => {
 
   it("ends the run on stop: the view then draws a null state and no more steps run", async () => {
     const frames = manualFrames();
-    const log = await play((engine) =>
+    const log = await play(frames, (engine) =>
       Effect.gen(function* () {
         yield* engine.start(null, 1);
         // 1/64 s after attach: one step.
@@ -142,7 +115,7 @@ describe(makeGameEngine, () => {
 
   it("runs no steps or timed samples while paused, keeps drawing, and resumes when unpaused", async () => {
     const frames = manualFrames();
-    const log = await play((engine) =>
+    const log = await play(frames, (engine) =>
       Effect.gen(function* () {
         yield* engine.start(null, 1);
         frames.runFrameAt(15.625);
