@@ -59,3 +59,8 @@ export interface StepInput<Input> {
    */
   readonly endFrame?: () => void;
 }
+
+/** A StepInput that owns resources (listeners, devices): what a browser game's `createInput` returns. */
+export interface InputSource<Input> extends StepInput<Input> {
+  readonly dispose: () => void;
+}

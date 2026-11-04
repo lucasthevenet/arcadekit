@@ -1,5 +1,6 @@
 import { makeGameEngine } from "@gamekit/runtime/browser";
 import type { GameDefinition, GameEngine } from "@gamekit/runtime/browser";
+import { manualFrames } from "@gamekit/runtime/testing";
 import {
   Cause,
   Context,
@@ -18,9 +19,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { engineEntry, gameViewport } from "./index";
 
-// No DOM here. Scene renders the view as VNodes and resolves its Mount; `document` and
-// requestAnimationFrame are stubbed; the engine is a real `makeGameEngine` around a tiny game
-// whose view logs the element it draws into. The host app wires the viewport the way the demos
+// No DOM here. Scene renders the view as VNodes and resolves its Mount; `document` is stubbed;
+// the engine is a real `makeGameEngine` around a tiny game whose view logs the element it draws
+// into, on frames that never run. The host app wires the viewport the way the demos
 // do.
 
 const Message = defineMessageUnion({
@@ -94,7 +95,7 @@ const testEngine = () => {
       };
     },
   };
-  return { engine: makeGameEngine(game), log };
+  return { engine: makeGameEngine(game, { frames: manualFrames() }), log };
 };
 
 const entry = engineEntry({
@@ -180,8 +181,6 @@ describe(engineEntry, () => {
     viewportId = renderedViewportId();
     elements = new Map([[viewportId, element("first")]]);
     lookups = [];
-    vi.stubGlobal("requestAnimationFrame", () => 1);
-    vi.stubGlobal("cancelAnimationFrame", () => {});
     vi.stubGlobal("document", {
       getElementById: (lookedUp: string) => {
         lookups.push(lookedUp);
