@@ -8,6 +8,7 @@ import {
 import type { Pool, Rng } from "@gamekit/core";
 
 import type { HudSample, SurvivorsEvent, UpgradeChoice } from "./events";
+import { cos, hypot2, powInt, sin } from "./math";
 import type { EnemyDef, GameContent, HeroDef, WeaponDef } from "./schema";
 
 // The survivors simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
@@ -230,7 +231,7 @@ export const weaponDamage = (world: World, slot: WeaponSlot): number =>
 
 export const weaponCooldown = (world: World, slot: WeaponSlot): number =>
   slot.def.cooldown *
-  slot.def.cooldownScalePerLevel ** (slot.level - 1) *
+  powInt(slot.def.cooldownScalePerLevel, slot.level - 1) *
   world.stats.cooldownMult;
 
 export const auraRadius = (world: World, slot: WeaponSlot): number =>
@@ -297,7 +298,7 @@ const movePlayer = (world: World, input: SurvivorsInput, dt: number) => {
   const p = world.player;
   let mx = input.moveX;
   let mz = input.moveZ;
-  const len = Math.hypot(mx, mz);
+  const len = hypot2(mx, mz);
   if (len > 1) {
     mx /= len;
     mz /= len;
@@ -331,8 +332,8 @@ const spawnEnemies = (world: World, dt: number) => {
       }
       const angle = world.rng.next() * Math.PI * 2;
       const distance = world.rng.range(SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX);
-      x[i] = clamp(world.player.x + Math.cos(angle) * distance, -limit, limit);
-      z[i] = clamp(world.player.z + Math.sin(angle) * distance, -limit, limit);
+      x[i] = clamp(world.player.x + cos(angle) * distance, -limit, limit);
+      z[i] = clamp(world.player.z + sin(angle) * distance, -limit, limit);
       hp[i] = world.enemyDefs[enemyType]!.hp;
       type[i] = enemyType;
       hitFlash[i] = 0;
@@ -349,7 +350,7 @@ const moveEnemies = (world: World, dt: number) => {
     const def = world.enemyDefs[type[i]!]!;
     const dx = px - x[i]!;
     const dz = pz - z[i]!;
-    const d = Math.hypot(dx, dz) || 1;
+    const d = hypot2(dx, dz) || 1;
     x[i]! += (dx / d) * def.speed * dt;
     z[i]! += (dz / d) * def.speed * dt;
     hitFlash[i] = Math.max(0, hitFlash[i]! - dt);
@@ -367,7 +368,7 @@ const moveEnemies = (world: World, dt: number) => {
       const rj = world.enemyDefs[type[j]!]!.radius;
       const dx = x[j]! - x[i]!;
       const dz = z[j]! - z[i]!;
-      const d = Math.hypot(dx, dz);
+      const d = hypot2(dx, dz);
       const overlap = ri + rj - d;
       if (overlap <= 0 || d === 0) {
         continue;
@@ -388,7 +389,7 @@ const touchPlayer = (world: World, dt: number) => {
   for (let k = 0; k < found; k++) {
     const i = world.neighbors[k]!;
     const def = world.enemyDefs[type[i]!]!;
-    if (Math.hypot(x[i]! - p.x, z[i]! - p.z) < def.radius + PLAYER_RADIUS) {
+    if (hypot2(x[i]! - p.x, z[i]! - p.z) < def.radius + PLAYER_RADIUS) {
       p.hp -= def.damage * dt;
       p.hurtTimer = 0.15;
     }
@@ -437,7 +438,7 @@ const fireBolt = (
     let best = -1;
     let bestD = range;
     for (let i = 0; i < enemyCount; i++) {
-      const d = Math.hypot(e.x[i]! - p.x, e.z[i]! - p.z);
+      const d = hypot2(e.x[i]! - p.x, e.z[i]! - p.z);
       if (d >= bestD) {
         continue;
       }
@@ -472,7 +473,7 @@ const fireBolt = (
     const target = targets[t % targetCount]!;
     const dx = e.x[target]! - p.x;
     const dz = e.z[target]! - p.z;
-    const d = Math.hypot(dx, dz) || 1;
+    const d = hypot2(dx, dz) || 1;
     pr.x[i] = p.x;
     pr.z[i] = p.z;
     pr.vx[i] = (dx / d) * behavior.projectileSpeed;
@@ -495,7 +496,7 @@ const pulseAura = (world: World, slot: WeaponSlot): boolean => {
   for (let k = 0; k < found; k++) {
     const i = world.neighbors[k]!;
     const r = world.enemyDefs[type[i]!]!.radius;
-    if (Math.hypot(x[i]! - p.x, z[i]! - p.z) < radius + r) {
+    if (hypot2(x[i]! - p.x, z[i]! - p.z) < radius + r) {
       hitEnemy(world, i, damage);
     }
   }
@@ -521,7 +522,7 @@ const moveProjectiles = (world: World, dt: number) => {
           continue;
         }
         const r = world.enemyDefs[e.type[j]!]!.radius;
-        if (Math.hypot(e.x[j]! - pr.x[i]!, e.z[j]! - pr.z[i]!) > r + 0.25) {
+        if (hypot2(e.x[j]! - pr.x[i]!, e.z[j]! - pr.z[i]!) > r + 0.25) {
           continue;
         }
         hitEnemy(world, j, pr.damage[i]!);
@@ -580,7 +581,7 @@ const collectGems = (world: World, dt: number) => {
   while (i < pool.count) {
     const dx = p.x - g.x[i]!;
     const dz = p.z - g.z[i]!;
-    const d = Math.hypot(dx, dz);
+    const d = hypot2(dx, dz);
     if (d < world.stats.pickupRadius) {
       g.magnet[i] = 1;
     }
@@ -606,7 +607,7 @@ const gainXp = (world: World, amount: number) => {
     p.level += 1;
     p.xpNext = Math.ceil(
       world.content.rules.xpToLevel2 *
-        world.content.rules.xpGrowth ** (p.level - 1)
+        powInt(world.content.rules.xpGrowth, p.level - 1)
     );
     world.pendingLevelUps += 1;
   }
