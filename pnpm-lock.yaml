@@ -107,6 +107,12 @@ importers:
 
   packages/input: {}
 
+  packages/net:
+    dependencies:
+      '@gamekit/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/push-puzzle:
     dependencies:
       '@gamekit/content':

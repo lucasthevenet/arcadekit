@@ -30,10 +30,11 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | [`@gamekit/foldkit`](packages/foldkit) | `gameViewport` (the element an engine draws into), `engineEntry` (the Subscription that runs the engine there and turns its events into Messages), `keyPresses` | Effect, Foldkit, runtime |
 | [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, view and engine | all of the above except foldkit |
 | [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, view and engine | all of the above except foldkit |
+| [`@gamekit/net`](packages/net) | Lockstep multiplayer (ADR-0012), started: the `Transport` seam a lockstep session will talk through, and `createMemoryNetwork`, its in-memory adapter for tests, with seeded latency, jitter and loss | core |
 | [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content, Foldkit screens and a save of each hero's best run | survivors, content, save, foldkit |
 | [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen and a save of solved levels | push-puzzle, content, save, foldkit |
 
-Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. `content`, `save`, `runtime` and both genre packages check their root entry the same way (`tsconfig.root.json`); only their `./browser` entries may use the DOM. That keeps the simulation runnable in a Web Worker or on a game server.
+Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. `content`, `save`, `runtime`, `net` and both genre packages check their root entry the same way (`tsconfig.root.json`); only their `./browser` entries may use the DOM. That keeps the simulation runnable in a Web Worker or on a game server.
 
 ## Making a new game
 
