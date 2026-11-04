@@ -1,18 +1,31 @@
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 
+import { defaultAudioSettings } from "@gamekit/audio";
 import { PushPuzzleContent } from "@gamekit/push-puzzle";
-import { PUSH_PUZZLE_SPRITE_TAGS } from "@gamekit/push-puzzle/browser";
+import {
+  PUSH_PUZZLE_SPRITE_TAGS,
+  PushPuzzleEngine,
+} from "@gamekit/push-puzzle/browser";
 import { SpriteSheetError, decodeSpriteSheet } from "@gamekit/render-three";
 import type { SpriteSheetData } from "@gamekit/render-three";
 import { Effect } from "effect";
-import { Story } from "foldkit";
+import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { LoadContent } from "./commands";
+import {
+  EndRun,
+  LoadAudioSettings,
+  LoadContent,
+  LoadSave,
+  LoadSounds,
+  StartLevel,
+} from "./commands";
 import { Message } from "./message";
-import { SHEET_URL, Sprites } from "./sprites";
+import { emptyRecords } from "./save";
+import { SHEET_URL } from "./sprites";
 import { init, update } from "./update";
+import { view } from "./view";
 
 // The sheet this game ships, and what a failed sheet load does to startup. Loading and
 // parsing sheets in general is @gamekit/render-three's tests.
@@ -148,18 +161,36 @@ describe("the push-puzzle sheet", () => {
   });
 });
 
+const failed = new SpriteSheetError({
+  file: "sprites/push-puzzle.json",
+  message: "The sprite sheet file sprites/push-puzzle.json can't be loaded",
+});
+
+/** Runs `effect` with an engine whose every load fails, and `levels` as the content's load. */
+const runWithFailedSheet = <A, E>(
+  effect: Effect.Effect<A, E, PushPuzzleContent | PushPuzzleEngine>,
+  levels: PushPuzzleContent["Service"]["load"]
+) =>
+  effect.pipe(
+    Effect.provideService(PushPuzzleEngine, { load: Effect.fail(failed) }),
+    Effect.provideService(PushPuzzleContent, { load: levels }),
+    Effect.runPromise
+  );
+
+/** A Scene step that leaves init's Commands pending, as at startup. */
+const withInitCommands = <M, Msg, Out>(
+  simulation: Scene.SceneSimulation<M, Msg, Out>
+): Scene.SceneSimulation<M, Msg, Out> => ({
+  ...simulation,
+  commands: init().commands ?? [],
+});
+
 describe("a sheet that fails to load", () => {
-  it("stops startup with its error, like content that fails to load", async () => {
-    const failed = new SpriteSheetError({
-      file: "sprites/push-puzzle.json",
-      message: "The sprite sheet file sprites/push-puzzle.json can't be loaded",
-    });
-    const message = await LoadContent().effect.pipe(
-      Effect.provideService(Sprites, { sheet: Effect.fail(failed) }),
-      Effect.provideService(PushPuzzleContent, {
-        load: Effect.die("levels are never read"),
-      }),
-      Effect.runPromise
+  it("stops startup with its error on the loading screen, like content that fails to load", async () => {
+    // The two loads run side by side: the sheet's failure ends LoadContent without the levels.
+    const message = await runWithFailedSheet(
+      LoadContent().effect,
+      Effect.never
     );
     expect(message).toStrictEqual(
       Message.FailedToLoadContent({ error: failed.message })
@@ -175,5 +206,42 @@ describe("a sheet that fails to load", () => {
         })
       )
     );
+    expect(() =>
+      Scene.scene(
+        { update, view },
+        // Startup as init leaves it: its Model, and its Commands pending.
+        Scene.given(init().model),
+        withInitCommands,
+        Scene.expect(Scene.text("Loading…")).toExist(),
+        Scene.Mount.resolve(
+          { name: "GameViewport" },
+          Message.MountedViewport()
+        ),
+        Scene.Command.resolve(LoadContent, message),
+        Scene.expect(Scene.text(failed.message)).toExist(),
+        Scene.Command.resolve(
+          LoadSave,
+          Message.LoadedSave({ records: emptyRecords })
+        ),
+        Scene.Command.resolve(
+          LoadAudioSettings,
+          Message.LoadedAudioSettings({ settings: defaultAudioSettings })
+        ),
+        Scene.Command.resolve(LoadSounds, Message.CompletedAudioCommand())
+      )
+    ).not.toThrow();
+  });
+
+  it("is reported by the engine Commands instead of dying", async () => {
+    // Never read: the engine fails before the run starts.
+    const levels = { levels: [] } as unknown as Effect.Success<
+      PushPuzzleContent["Service"]["load"]
+    >;
+    const messages = await runWithFailedSheet(
+      Effect.all([StartLevel({ levelId: "any" }).effect, EndRun().effect]),
+      Effect.succeed(levels)
+    );
+    const reported = Message.FailedToStartRun({ error: failed.message });
+    expect(messages).toStrictEqual([reported, reported]);
   });
 });

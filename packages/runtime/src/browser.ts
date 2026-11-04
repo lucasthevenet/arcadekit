@@ -2,7 +2,14 @@
 // and the Effect engine.
 
 export { GameDriver } from "./driver";
-export { type GameEngine, makeGameEngine } from "./engine";
+export {
+  type EngineLoader,
+  type GameEngine,
+  type LoadedEngine,
+  engineOf,
+  makeEngineLoader,
+  makeGameEngine,
+} from "./engine";
 export { type FrameSource, animationFrames } from "./frames";
 export {
   combineViews,

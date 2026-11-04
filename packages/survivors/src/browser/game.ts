@@ -1,8 +1,9 @@
 import { Audio } from "@gamekit/audio";
 import type { AudioSystem } from "@gamekit/audio";
 import { InputController, MOVE_AXES } from "@gamekit/input";
-import { combineViews, makeGameEngine } from "@gamekit/runtime/browser";
-import type { GameDefinition, GameEngine } from "@gamekit/runtime/browser";
+import type { SpriteSheet, SpriteSheetError } from "@gamekit/render-three";
+import { combineViews, makeEngineLoader } from "@gamekit/runtime/browser";
+import type { EngineLoader, GameDefinition } from "@gamekit/runtime/browser";
 import { Context, Effect, Layer } from "effect";
 
 import type { SurvivorsEvent } from "../events";
@@ -10,7 +11,6 @@ import { soloInput } from "../input";
 import type { SurvivorsInput } from "../input";
 import { survivorsSimulation } from "../simulation";
 import type { SurvivorsConfig, World } from "../world";
-import { SurvivorsSprites } from "./art";
 import type { SurvivorsArt } from "./art";
 import { SurvivorsSoundView } from "./sound";
 import type { SurvivorsSounds } from "./sound";
@@ -66,56 +66,43 @@ export const makeSurvivorsGame = ({
         ),
 });
 
+/** How the app reaches the survivors engine: through the load of its sheet (ADR-0015). */
+export type SurvivorsEngineLoader = EngineLoader<
+  SurvivorsConfig,
+  World,
+  SurvivorsEvent,
+  SurvivorsArt,
+  SpriteSheetError
+>;
+
 export class SurvivorsEngine extends Context.Service<
   SurvivorsEngine,
-  GameEngine<SurvivorsConfig, World, SurvivorsEvent>
+  SurvivorsEngineLoader
 >()("@gamekit/survivors/Engine") {}
 
 /**
- * Provides `SurvivorsEngine`, drawing with the `SurvivorsSprites` art and playing its sounds from
- * `sounds` through the `Audio` service. Tests provide `SilentAudioLayer`.
- *
- * The engine makes its game when it is first attached, listened to or started, once the art has
- * loaded; it dies if the art can't load. So the app loads the art first (with its content) and
- * shows a failed load itself, attaching the engine only after a success. Before that there is no
- * run, and `modify`, `setPaused` and `stop` do nothing.
+ * Provides `SurvivorsEngine`: the engine, made once from the sheet `sheet` loads, playing its
+ * sounds from `sounds` through `Audio` (tests provide `SilentAudioLayer`). Building the layer
+ * loads nothing. The app's LoadContent runs `load`, and every engine use goes through it
+ * (`engineOf(SurvivorsEngine)`), so there is no engine before its sheet. The layer's scope (the
+ * app) frees the sheet.
  */
-export const makeSurvivorsEngineLayer = (
-  sounds: SurvivorsSounds
-): Layer.Layer<SurvivorsEngine, never, Audio | SurvivorsSprites> =>
+export const makeSurvivorsEngineLayer = (options: {
+  /** The app's sheet load, such as `loadSpriteSheet(url)`. Run on the first `load`. */
+  readonly sheet: Effect.Effect<SpriteSheet, SpriteSheetError>;
+  readonly sounds: SurvivorsSounds;
+}): Layer.Layer<SurvivorsEngine, never, Audio> =>
   Layer.effect(
     SurvivorsEngine,
     Effect.gen(function* () {
       const audio = yield* Audio;
-      const sprites = yield* SurvivorsSprites;
-      type Engine = GameEngine<SurvivorsConfig, World, SurvivorsEvent>;
-      let engine: Engine | undefined;
-      const made: Effect.Effect<Engine> = Effect.suspend(() =>
-        engine === undefined
-          ? sprites.load.pipe(
-              Effect.map((art) => {
-                engine ??= makeGameEngine(
-                  makeSurvivorsGame({ art, sound: { audio, sounds } })
-                );
-                return engine;
-              })
-            )
-          : Effect.succeed(engine)
-      ).pipe(Effect.orDie);
-      const ifMade = (use: (made: Engine) => Effect.Effect<void>) =>
-        Effect.suspend(() =>
-          engine === undefined ? Effect.void : use(engine)
-        );
-      return {
-        attach: (element) =>
-          made.pipe(Effect.flatMap((game) => game.attach(element))),
-        listen: (onEvent) =>
-          made.pipe(Effect.flatMap((game) => game.listen(onEvent))),
-        start: (config, seed) =>
-          made.pipe(Effect.flatMap((game) => game.start(config, seed))),
-        modify: (change) => ifMade((game) => game.modify(change)),
-        setPaused: (paused) => ifMade((game) => game.setPaused(paused)),
-        stop: ifMade((game) => game.stop),
-      };
+      const loadArt: Effect.Effect<SurvivorsArt, SpriteSheetError> =
+        options.sheet.pipe(Effect.map((sheet) => ({ sheet })));
+      return yield* makeEngineLoader({
+        assets: loadArt,
+        game: (art) =>
+          makeSurvivorsGame({ art, sound: { audio, sounds: options.sounds } }),
+        release: (art) => art.sheet.dispose(),
+      });
     })
   );

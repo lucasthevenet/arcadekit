@@ -27,6 +27,13 @@ export const Phase = defineTaggedUnion({
 });
 export type Phase = typeof Phase.Type;
 
+/**
+ * Whether the levels and the sprite sheet have loaded, so the engine exists: every phase but
+ * `Loading` and `LoadFailed`. The engine entry attaches only then.
+ */
+export const isLoaded = (phase: Phase): boolean =>
+  phase._tag !== "Loading" && phase._tag !== "LoadFailed";
+
 export const Model = Schema.Struct({
   phase: Phase,
   levels: Schema.Array(LevelSummary),

@@ -22,15 +22,13 @@ import { Phase, emptyHud } from "./model";
 import type { Model } from "./model";
 import { emptyRecords, isNewBest, mergeRecords, withSolve } from "./save";
 import type { Save } from "./save";
-import type { Sprites } from "./sprites";
 
 export type Services =
   | Audio
   | AudioSettingsStorage
   | PushPuzzleContent
   | PushPuzzleEngine
-  | Save
-  | Sprites;
+  | Save;
 type Return = Update.Return<Model, Message, Services>;
 
 export const init: Runtime.ApplicationInit<

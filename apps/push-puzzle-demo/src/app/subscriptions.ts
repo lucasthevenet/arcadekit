@@ -1,10 +1,12 @@
 import { engineEntry, keyPresses, shortcutPresses } from "@gamekit/foldkit";
 import type { PushPuzzleEvent } from "@gamekit/push-puzzle";
 import { PushPuzzleEngine } from "@gamekit/push-puzzle/browser";
+import { engineOf } from "@gamekit/runtime/browser";
 import { Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
 import { Message } from "./message";
+import { isLoaded } from "./model";
 import type { Model } from "./model";
 
 const toMessage = (event: PushPuzzleEvent): Message => {
@@ -23,11 +25,18 @@ export const subscriptions = Subscription.make<
   Message,
   PushPuzzleEngine
 >()((entry) => ({
-  /** While the viewport exists, the engine renders into it and its events become Messages. */
+  /**
+   * While the viewport exists, the engine renders into it and its events become Messages, once
+   * the levels and sprite sheet have loaded (`isLoaded`): the engine is made from the sheet,
+   * and an entry that reported a failed load wouldn't run again after a retry. A failed load is
+   * shown like LoadContent's.
+   */
   engine: engineEntry({
-    engine: PushPuzzleEngine,
-    isViewportMounted: (model) => model.isViewportMounted,
+    engine: engineOf(PushPuzzleEngine),
+    isViewportMounted: (model) =>
+      model.isViewportMounted && isLoaded(model.phase),
     toMessage,
+    onError: (error) => Message.FailedToLoadContent({ error: error.message }),
   }),
 
   /** M mutes and unmutes, on any screen, but not with a modifier held or in a text field. */

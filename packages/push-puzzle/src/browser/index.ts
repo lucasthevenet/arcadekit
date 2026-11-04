@@ -4,9 +4,9 @@ export {
   type PushPuzzleAssets,
   type PushPuzzleAudio,
   PushPuzzleEngine,
+  type PushPuzzleEngineLoader,
   makePushPuzzleEngineLayer,
   makePushPuzzleGame,
 } from "./game";
-export { PushPuzzleSheet } from "./sheet";
 export { type PushPuzzleSounds, PushPuzzleSoundView } from "./sound";
 export { PushPuzzleView } from "./view";

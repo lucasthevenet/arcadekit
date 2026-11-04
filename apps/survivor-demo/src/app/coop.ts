@@ -1,9 +1,10 @@
 import { Audio } from "@gamekit/audio";
-import type { GameEngine } from "@gamekit/runtime/browser";
+import type { SpriteSheetError } from "@gamekit/render-three";
 import type { GameContent } from "@gamekit/survivors";
-import { SurvivorsSprites } from "@gamekit/survivors/browser";
-import type { SurvivorsArtLoader } from "@gamekit/survivors/browser";
+import { SurvivorsEngine } from "@gamekit/survivors/browser";
+import type { SurvivorsEngineLoader } from "@gamekit/survivors/browser";
 import { Context, Effect, Layer } from "effect";
+import type { Scope } from "effect";
 
 import { CoopClient } from "../coop/client";
 import type { CoopEvent } from "../coop/client";
@@ -15,10 +16,18 @@ import { survivorsSounds } from "./sound";
  * lockstep run of `CoopClient`, behind Effects. `attach` and `listen` are what `engineEntry`
  * uses, as for the single-player engine; the rest are Commands'.
  */
-export interface CoopApi extends Pick<
-  GameEngine<unknown, unknown, CoopEvent>,
-  "attach" | "listen"
-> {
+export interface CoopApi {
+  /**
+   * Draws the co-op run into `element` while the scope is open, with the engine's loaded art.
+   * Fails with the sheet's error if it can't load.
+   */
+  readonly attach: (
+    element: HTMLElement
+  ) => Effect.Effect<void, SpriteSheetError, Scope.Scope>;
+  /** Calls `onEvent` for every co-op event while the scope is open. */
+  readonly listen: (
+    onEvent: (event: CoopEvent) => void
+  ) => Effect.Effect<void, never, Scope.Scope>;
   readonly host: (content: GameContent, heroId: string) => Effect.Effect<void>;
   readonly join: (
     content: GameContent,
@@ -37,19 +46,18 @@ export class Coop extends Context.Service<Coop, CoopApi>()(
 ) {}
 
 /**
- * The co-op API over `client`. `attach` draws with the art from `sprites`, which the app has
- * loaded before any co-op screen; it dies if the art can't load.
+ * The co-op API over `client`. `attach` draws with the engine's loaded art (one sheet, one
+ * load, from `engines`), and fails with `SpriteSheetError` if it can't load.
  */
 export const makeCoop = (
   client: CoopClient,
-  sprites: SurvivorsArtLoader
+  engines: SurvivorsEngineLoader
 ): CoopApi => ({
   attach: (element) =>
-    sprites.load.pipe(
-      Effect.orDie,
-      Effect.flatMap((art) =>
+    engines.load.pipe(
+      Effect.flatMap(({ assets }) =>
         Effect.acquireRelease(
-          Effect.sync(() => client.attach(element, art)),
+          Effect.sync(() => client.attach(element, assets)),
           (detach) => Effect.sync(detach)
         )
       ),
@@ -71,7 +79,10 @@ export const makeCoop = (
   leave: Effect.sync(() => client.leave()),
 });
 
-/** The co-op client, playing its sounds through the `Audio` service and drawing with `SurvivorsSprites`. */
+/**
+ * The co-op client, playing its sounds through the `Audio` service and drawing with the art
+ * `SurvivorsEngine` loads.
+ */
 export const CoopLayer = Layer.effect(
   Coop,
   Effect.gen(function* () {
@@ -85,6 +96,6 @@ export const CoopLayer = Layer.effect(
         gamekitCoop: { debug: () => client.debug() },
       });
     }
-    return makeCoop(client, yield* SurvivorsSprites);
+    return makeCoop(client, yield* SurvivorsEngine);
   })
 );

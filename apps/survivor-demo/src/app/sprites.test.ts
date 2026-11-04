@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 
+import { defaultAudioSettings } from "@gamekit/audio";
 import { ContentError, loadContent } from "@gamekit/content";
 import type { ContentSource } from "@gamekit/content";
 import {
@@ -13,17 +14,32 @@ import {
   SurvivorsContent,
   survivorsContentDefinition,
 } from "@gamekit/survivors";
-import {
-  SurvivorsSprites,
-  missingSpriteTags,
-} from "@gamekit/survivors/browser";
+import { SurvivorsEngine, missingSpriteTags } from "@gamekit/survivors/browser";
+import type { SurvivorsEngineLoader } from "@gamekit/survivors/browser";
 import { Effect, Layer } from "effect";
+import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { LoadContent } from "./commands";
+import type { CoopClient } from "../coop/client";
+import {
+  ChooseUpgrade,
+  EndRun,
+  LoadAudioSettings,
+  LoadContent,
+  LoadSave,
+  LoadSounds,
+  SetPaused,
+  StartRun,
+} from "./commands";
+import { makeCoop } from "./coop";
+import { Message } from "./message";
+import { emptyRecords } from "./save";
+import { init, update } from "./update";
+import { view } from "./view";
 
-// The sprite sheet in public/sprites, checked against the content that names its tags, and the
-// loading screen's handling of a sheet that can't load. No WebGL: the sheet's image is a stand-in.
+// The sprite sheet in public/sprites, checked against the content that names its tags, and what
+// a sheet that can't load does: the loading screen shows it, and nothing that reaches the engine
+// dies. No WebGL: the sheet's image is a stand-in.
 
 const publicDir = new URL("../../public/", import.meta.url);
 const read = (file: string) => readFileSync(new URL(file, publicDir));
@@ -162,42 +178,125 @@ describe("the sprite sheet", () => {
   });
 });
 
-/** Runs LoadContent with the real content and `load` as the sprite sheet's. */
-const loadWith = (load: SurvivorsSprites["Service"]["load"]) =>
+const sheetError = new SpriteSheetError({
+  file: "sprites/survivors.json",
+  message:
+    "The sprite sheet file sprites/survivors.json can't be loaded: HTTP 404",
+});
+
+/** An engine loader whose every load fails, as when the sheet can't be fetched. */
+const failingLoader: SurvivorsEngineLoader = { load: Effect.fail(sheetError) };
+
+/** Runs `effect` with the real content and `loader` as the engine's. */
+const runWith = <A, E>(
+  effect: Effect.Effect<A, E, SurvivorsContent | SurvivorsEngine>,
+  loader: SurvivorsEngineLoader
+) =>
   Effect.runPromise(
-    LoadContent().effect.pipe(
+    effect.pipe(
       Effect.provide(
         Layer.mergeAll(
           Layer.succeed(SurvivorsContent, { load: Effect.succeed(content) }),
-          Layer.succeed(SurvivorsSprites, { load })
+          Layer.succeed(SurvivorsEngine, loader)
         )
       )
     )
   );
 
+/** An engine that would fail the test if anything used it. */
+const unusedEngine = {
+  attach: () => Effect.die("attach is never called"),
+  listen: () => Effect.die("listen is never called"),
+  start: () => Effect.die("start is never called"),
+  modify: () => Effect.die("modify is never called"),
+  setPaused: () => Effect.die("setPaused is never called"),
+  stop: Effect.die("stop is never called"),
+} satisfies SurvivorsEngineLoader["load"] extends Effect.Effect<
+  { readonly engine: infer Engine },
+  unknown
+>
+  ? Engine
+  : never;
+
+/** A Scene step that leaves init's Commands pending, as at startup. */
+const withInitCommands = <M, Msg, Out>(
+  simulation: Scene.SceneSimulation<M, Msg, Out>
+): Scene.SceneSimulation<M, Msg, Out> => ({
+  ...simulation,
+  commands: init().commands ?? [],
+});
+
 describe("loading", () => {
   it("loads the content and the sprite sheet together", async () => {
     const image = { width: 1, height: 1 } as unknown as TexImageSource;
-    const message = await loadWith(
-      Effect.succeed({ sheet: makeSpriteSheet(sheet, image) })
-    );
+    const message = await runWith(LoadContent().effect, {
+      load: Effect.succeed({
+        engine: unusedEngine,
+        assets: { sheet: makeSpriteSheet(sheet, image) },
+      }),
+    });
     expect(message._tag).toBe("LoadedContent");
   });
 
   it("shows a sheet that can't load on the loading screen, like content", async () => {
-    const message = await loadWith(
-      Effect.fail(
-        new SpriteSheetError({
-          file: "sprites/survivors.json",
-          message:
-            "The sprite sheet file sprites/survivors.json can't be loaded: HTTP 404",
-        })
+    const message = await runWith(LoadContent().effect, failingLoader);
+    expect(message).toStrictEqual(
+      Message.FailedToLoadContent({ error: sheetError.message })
+    );
+    expect(() =>
+      Scene.scene(
+        { update, view },
+        // Startup as init leaves it: its Model, and its Commands pending.
+        Scene.given(init().model),
+        withInitCommands,
+        Scene.expect(Scene.text("Loading…")).toExist(),
+        Scene.Mount.resolve(
+          { name: "GameViewport" },
+          Message.MountedViewport()
+        ),
+        Scene.Command.resolve(LoadContent, message),
+        Scene.expect(Scene.text(sheetError.message)).toExist(),
+        Scene.Command.resolve(
+          LoadSave,
+          Message.LoadedSave({ records: emptyRecords })
+        ),
+        Scene.Command.resolve(
+          LoadAudioSettings,
+          Message.LoadedAudioSettings({ settings: defaultAudioSettings })
+        ),
+        Scene.Command.resolve(LoadSounds, Message.CompletedAudioCommand())
+      )
+    ).not.toThrow();
+  });
+
+  it("reports a failed load from the engine Commands instead of dying", async () => {
+    const failed = Message.FailedToStartRun({ error: sheetError.message });
+    const messages = await runWith(
+      Effect.all([
+        StartRun({ heroId: content.heroes[0]!.id }).effect,
+        EndRun().effect,
+        SetPaused({ paused: true }).effect,
+        ChooseUpgrade({ index: 0 }).effect,
+      ]),
+      failingLoader
+    );
+    expect(messages).toStrictEqual([failed, failed, failed, failed]);
+  });
+
+  it("fails co-op's attach with the sheet's error, drawing nothing", async () => {
+    const attached: HTMLElement[] = [];
+    const client = {
+      attach: (element: HTMLElement) => {
+        attached.push(element);
+        return () => {};
+      },
+    } as unknown as CoopClient;
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Effect.flip(makeCoop(client, failingLoader).attach({} as HTMLElement))
       )
     );
-    expect(message).toStrictEqual({
-      _tag: "FailedToLoadContent",
-      error:
-        "The sprite sheet file sprites/survivors.json can't be loaded: HTTP 404",
-    });
+    expect(error._tag).toBe("SpriteSheetError");
+    expect(attached).toStrictEqual([]);
   });
 });

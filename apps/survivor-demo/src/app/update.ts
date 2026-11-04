@@ -1,10 +1,7 @@
 import { defaultAudioSettings } from "@gamekit/audio";
 import type { Audio, AudioSettings } from "@gamekit/audio";
 import type { SurvivorsContent } from "@gamekit/survivors";
-import type {
-  SurvivorsEngine,
-  SurvivorsSprites,
-} from "@gamekit/survivors/browser";
+import type { SurvivorsEngine } from "@gamekit/survivors/browser";
 import type { Runtime, Update } from "foldkit";
 
 import {
@@ -37,7 +34,6 @@ import type { SoundSettings } from "./sound";
 
 export type Services =
   | SurvivorsContent
-  | SurvivorsSprites
   | SurvivorsEngine
   | Save
   | Coop

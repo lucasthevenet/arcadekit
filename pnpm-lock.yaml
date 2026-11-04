@@ -56,6 +56,9 @@ importers:
       '@gamekit/render-three':
         specifier: workspace:*
         version: link:../../packages/render-three
+      '@gamekit/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@gamekit/save':
         specifier: workspace:*
         version: link:../../packages/save
