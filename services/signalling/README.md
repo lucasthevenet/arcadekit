@@ -2,7 +2,15 @@
 
 Introduces the peers of a lockstep run so they can open WebRTC data channels to each other ([#25](https://github.com/lucasthevenet/gamekit/issues/25), [ADR-0012](../../docs/adr/0012-delay-based-lockstep-over-a-host-star.md)). It's a Cloudflare Worker with one Durable Object per join code, defined with [Alchemy](https://alchemy.run) in `alchemy.run.ts`. It never carries game input: once the data channels are open, the peers close their sockets and the worker is out of the loop.
 
-**Not deployed yet.** No URL exists, and nothing in the kit or the demos calls it yet. The WebRTC transport in `@gamekit/net/browser` and the lobby UI will.
+**Not deployed yet.** No public URL exists. `@gamekit/net/browser`'s signalling client (`hostRoom`, `joinRoom`) speaks its protocol, and for development the same rooms run locally in Node (below).
+
+## Running it locally
+
+```bash
+pnpm --filter @gamekit/signalling dev:local   # ws://127.0.0.1:8787
+```
+
+`src/local.ts` serves `/host` and `/join/<code>` over WebSocket from a Node HTTP server (with the `ws` package, a dev dependency), using the same `room.ts` rules and `sockets.ts` adapter as the Durable Object, and a timer in place of its expiry alarm. Co-op then works on one machine, or across a LAN, with no Cloudflare account. `SIGNALLING_PORT` (default 8787) and `SIGNALLING_HOST` (default `127.0.0.1`; `0.0.0.0` to accept other machines on the LAN) choose where it listens. Node runs the TypeScript sources directly by stripping their types (`scripts/dev-local.mjs`), so there's no build step. Tests start it in-process with `startLocalSignalling({ port: 0 })`.
 
 ## The protocol
 
@@ -25,9 +33,10 @@ The worker trusts whoever holds a join code. A code is 6 letters from a 31-lette
 - `src/room.ts`: one room's rules (`createRoom`): who's in it, who may signal whom, the start, expiry. It deals in peer ids and returns what to send and whom to close, so it's tested without Cloudflare.
 - `src/sockets.ts`: the adapter from a room to sockets (`createSocketRoom`), tested with fake sockets.
 - `src/worker.ts`: the Worker's routes and the `SignallingRoom` Durable Object, which only wires Cloudflare's WebSockets and its expiry alarm to `createSocketRoom`. Rooms live in memory: they last minutes, and their open WebSockets keep the object alive.
+- `src/local.ts`: the same routes in Node, for development and tests (`startLocalSignalling`).
 - `alchemy.run.ts`: the infrastructure: the Worker and its `ROOMS` Durable Object namespace binding.
 
-`pnpm test` (from the repo root) runs the room's and the protocol's tests. `pnpm typecheck` checks the worker against Cloudflare's Workers types and `alchemy.run.ts` against Alchemy's API, and checks the protocol, room and socket modules again with no Workers or DOM types. Neither needs credentials.
+`pnpm test` (from the repo root) runs the room's and the protocol's tests, and drives the local server with real sockets. `pnpm typecheck` checks the worker against Cloudflare's Workers types and `alchemy.run.ts` against Alchemy's API, checks the protocol, room and socket modules again with no Workers or DOM types, and checks the local server against Node's types. Neither needs credentials.
 
 ## Deploying
 
@@ -50,7 +59,7 @@ pnpm run destroy --stage prod  # remove them
 
 (`pnpm run deploy`, not `pnpm deploy`, which is a pnpm command of its own.)
 
-The stage defaults to `live_<your user name>`, so a deploy without `--stage` makes a personal copy. Alchemy keeps its state in a small state-store Worker in the same Cloudflare account (`Cloudflare.state()`), which it creates on the first deploy, so a deploy from CI sees the same state as one from your machine. The deploy prints the Worker's `url`; the browser transport will connect to it with `wss://`.
+The stage defaults to `live_<your user name>`, so a deploy without `--stage` makes a personal copy. Alchemy keeps its state in a small state-store Worker in the same Cloudflare account (`Cloudflare.state()`), which it creates on the first deploy, so a deploy from CI sees the same state as one from your machine. The deploy prints the Worker's `url`; the browser's signalling client connects to it with `wss://`.
 
 `pnpm run dev` runs it locally under `alchemy dev`, which needs `workerd`. pnpm skips `workerd`'s install script by default; allow it with `pnpm approve-builds` first.
 

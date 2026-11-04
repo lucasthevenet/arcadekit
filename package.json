@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter @gamekit/survivor-demo dev",
     "dev:puzzle": "pnpm --filter @gamekit/push-puzzle-demo dev",
+    "dev:signalling": "pnpm --filter @gamekit/signalling dev:local",
     "build": "pnpm typecheck && pnpm --filter @gamekit/survivor-demo --filter @gamekit/push-puzzle-demo build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",

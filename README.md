@@ -6,6 +6,7 @@ Reusable packages for building browser games with **Effect 4**, **Foldkit** and 
 pnpm install
 pnpm dev         # play the survivors demo at http://localhost:5173
 pnpm dev:puzzle  # play the push-puzzle demo
+pnpm dev:signalling  # local signalling for co-op, at ws://127.0.0.1:8787
 pnpm test        # all package tests
 pnpm typecheck   # every package, each against its own rules
 pnpm check       # lint + format check (Ultracite: Oxlint + Oxfmt)
@@ -31,7 +32,7 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, view and engine. Co-op for 2 to 4 players ([ADR-0013](docs/adr/0013-survivors-co-op-shares-the-run-and-splits-the-heroes.md)): one hero per player, shared team XP, a level-up that waits for every player's pick; picks, pause and leaving are step input (`HeroInput`), and `combineHeroInputs` feeds it from `@gamekit/net`'s lockstep | all of the above except foldkit |
 | [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, view and engine | all of the above except foldkit |
 | [`@gamekit/net`](packages/net) | Lockstep multiplayer (ADR-0012): `hostLockstep` / `joinLockstep` run one `GameSimulation` on 2 to 4 peers, stepping each step once the host has confirmed every player's input for it, comparing state hashes and removing a player who stalls the run. They talk through a `Transport`; `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `jsonCodec` and `schemaCodec` put input on the wire. In `@gamekit/net/browser`: `hostRoom` / `joinRoom`, the signalling client that turns a join code into WebRTC links (host to each guest), and `linksTransport`, the WebRTC `Transport` over them | Effect, core, runtime, signalling's protocol |
-| [`services/signalling`](services/signalling) | The signalling worker (ADR-0012), not deployed yet: a Cloudflare Worker with a Durable Object per join code that relays WebRTC offers, answers and ICE candidates between a host and up to 3 guests, defined with Alchemy in `alchemy.run.ts`. `@gamekit/signalling/protocol` holds its message types for the browser transport | nothing (Alchemy and Workers types to deploy and check it) |
+| [`services/signalling`](services/signalling) | The signalling worker (ADR-0012), not deployed yet: a Cloudflare Worker with a Durable Object per join code that relays WebRTC offers, answers and ICE candidates between a host and up to 3 guests, defined with Alchemy in `alchemy.run.ts`. `@gamekit/signalling/protocol` holds its message types for the browser transport. `pnpm dev:signalling` runs the same rooms locally in Node, so co-op works with no Cloudflare | nothing (Alchemy and Workers types to deploy and check it, `ws` to run it locally) |
 | [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content, Foldkit screens and a save of each hero's best run | survivors, content, save, foldkit |
 | [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen and a save of solved levels | push-puzzle, content, save, foldkit |
 
