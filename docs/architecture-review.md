@@ -24,7 +24,7 @@ No commit changes either demo's behavior. `packages/survivors/src/replay.test.ts
 | 3d | `MOVE_AXES`'s sign | Fixed now | "Say where the camera helpers and MOVE_AXES work" |
 | 4 | Unused exports and dependencies | Fixed now; genre exports: separate issue | "Remove unused core math exports and app dependencies"; [#30](https://github.com/lucasthevenet/gamekit/issues/30) |
 | 5 | Decisions that live only in prose | Fixed now | "Record the kit decisions the follow-ups build on as ADRs" |
-| 6 | Survivors' `world.ts` is one large module | No action | Recorded for #25 |
+| 6 | Survivors' `world.ts` is one large module | No action; done under #25 | "Give each player a hero in survivors' world" |
 | 7 | Glossary drift | Fixed now | "Bring the kit's docs back to the glossary"; "Rename HudSnapshot to HudSample in both genres" |
 | 8 | The step loop only runs inside `requestAnimationFrame` | Separate issue | [#28](https://github.com/lucasthevenet/gamekit/issues/28) |
 | 9 | Views' unwritten rules about a run | Fixed now | "Write down what views may assume about a run" |
@@ -115,7 +115,7 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 
 - **2. Engine key and layer.** Each genre must declare its own service key for its identity, and the layer is already one expression.
 - **3c. `SpatialGrid` docs.** Accurate, and only survivors uses it.
-- **6. Survivors' `world.ts`.** One genre only. A split by section gives shallow modules on the wrong axis. #25 should restructure it in its first PR, per player against shared state.
+- **6. Survivors' `world.ts`.** One genre only. A split by section gives shallow modules on the wrong axis. #25 should restructure it in its first PR, per player against shared state. (Done under #25: `hero.ts` holds what each player owns, `world.ts` the shared run and the step, and `input.ts` the step input; see [ADR-0013](adr/0013-survivors-co-op-shares-the-run-and-splits-the-heroes.md).)
 - **14. The runtime can't see a run end.** Both genres end or freeze a run with a private flag, so the driver keeps stepping and survivors keeps sending the same HUD sample. Only survivors pays, and the fix changes the runtime contract. Recorded for #24 and #25; the glossary wording was fixed under candidate 7.
 
 ## Deviations

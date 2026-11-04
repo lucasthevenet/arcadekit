@@ -38,7 +38,7 @@ export const StartRun = Command.define("StartRun", {
   execute: ({ heroId }) =>
     Effect.gen(function* () {
       const content = yield* (yield* SurvivorsContent).load;
-      yield* (yield* SurvivorsEngine).start({ content, heroId });
+      yield* (yield* SurvivorsEngine).start({ content, heroIds: [heroId] });
       return Message.StartedRun();
     }).pipe(
       Effect.catchTag("ContentError", (error) =>
@@ -53,7 +53,7 @@ export const ChooseUpgrade = Command.define("ChooseUpgrade", {
   execute: ({ index }) =>
     Effect.gen(function* () {
       yield* (yield* SurvivorsEngine).modify((world) =>
-        chooseUpgrade(world, index)
+        chooseUpgrade(world, 0, index)
       );
       return Message.CompletedEngineCommand();
     }),

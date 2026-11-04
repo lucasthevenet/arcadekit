@@ -42,8 +42,6 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type;
 
 export const emptyHud: HudSample = {
-  hp: 0,
-  maxHp: 1,
   level: 1,
   xp: 0,
   xpNext: 1,
@@ -51,4 +49,5 @@ export const emptyHud: HudSample = {
   runLength: 1,
   kills: 0,
   enemies: 0,
+  heroes: [{ heroId: "", hp: 0, maxHp: 1, status: "playing", paused: false }],
 };

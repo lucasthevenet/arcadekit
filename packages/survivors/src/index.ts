@@ -1,5 +1,5 @@
 // Survivors-like genre: content schema, definition and service, the simulation (rules and
-// GameSimulation) and its event payloads.
+// GameSimulation), its step input and its event payloads.
 // No DOM or Three.js here; those are in "@gamekit/survivors/browser".
 
 export {
@@ -8,11 +8,31 @@ export {
   survivorsContentDefinition,
 } from "./content";
 export {
+  HeroHud,
   HudSample,
   RunSummary,
   type SurvivorsEvent,
   UpgradeChoice,
 } from "./events";
+export {
+  type Hero,
+  type HeroStatus,
+  MAX_HEROES,
+  type Stats,
+  type WeaponSlot,
+  auraRadius,
+  recomputeStats,
+  weaponCooldown,
+  weaponDamage,
+} from "./hero";
+export {
+  HeroInput,
+  type PlayersStep,
+  type SurvivorsInput,
+  UpgradePick,
+  combineHeroInputs,
+  soloInput,
+} from "./input";
 export {
   EnemyDef,
   GameContent,
@@ -27,17 +47,11 @@ export {
 export { survivorsSimulation } from "./simulation";
 export {
   type RunStatus,
-  type Stats,
   type SurvivorsConfig,
-  type SurvivorsInput,
-  type WeaponSlot,
   type World,
-  auraRadius,
   chooseUpgrade,
   createWorld,
   hudSample,
-  recomputeStats,
+  isChoosing,
   step,
-  weaponCooldown,
-  weaponDamage,
 } from "./world";

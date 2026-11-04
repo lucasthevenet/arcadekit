@@ -3,13 +3,12 @@ import { readFileSync } from "node:fs";
 import { ContentError, loadContent } from "@gamekit/content";
 import type { ContentSource } from "@gamekit/content";
 import { GameLoop } from "@gamekit/runtime";
-import type { StepInput } from "@gamekit/runtime";
 import {
   chooseUpgrade,
+  soloInput,
   survivorsContentDefinition,
   survivorsSimulation,
 } from "@gamekit/survivors";
-import type { SurvivorsInput } from "@gamekit/survivors";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -29,19 +28,19 @@ const content = await Effect.runPromise(
 );
 
 /** Walks in a slow circle. */
-const circling: StepInput<SurvivorsInput> = {
+const circling = soloInput({
   read: (step) => ({
     moveX: Math.cos(step / 200),
     moveZ: Math.sin(step / 200),
   }),
-};
+});
 
 describe("demo content", () => {
   it.each(content.heroes.map((hero) => hero.id))(
     "%s survives a minute of play",
     (heroId) => {
       const loop = new GameLoop(survivorsSimulation);
-      loop.start({ content, heroId }, 1, 0);
+      loop.start({ content, heroIds: [heroId] }, 1, 0);
       const world = loop.state!;
       for (
         let frame = 0;
@@ -49,13 +48,13 @@ describe("demo content", () => {
         frame++
       ) {
         const nowMs = (frame * 1000) / 60;
-        if (world.offer) {
-          loop.modify((offered) => chooseUpgrade(offered, 0), nowMs);
+        if (world.heroes[0]!.offer) {
+          loop.modify((offered) => chooseUpgrade(offered, 0, 0), nowMs);
         }
         loop.frame(circling, { steps: 1 }, nowMs);
       }
       expect(world.kills).toBeGreaterThan(0);
-      expect(world.player.level).toBeGreaterThan(1);
+      expect(world.level).toBeGreaterThan(1);
     }
   );
 });

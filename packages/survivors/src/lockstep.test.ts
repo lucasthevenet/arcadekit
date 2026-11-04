@@ -5,8 +5,8 @@ import {
   schemaCodec,
 } from "@gamekit/net";
 import type {
-  ConfirmedStep,
   LockstepOptions,
+  LockstepSession,
   MemoryNetwork,
 } from "@gamekit/net";
 import { GameLoop } from "@gamekit/runtime";
@@ -15,100 +15,154 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { hashWorld } from "./hash-world";
-import { GameContent, survivorsSimulation } from "./index";
-import type { SurvivorsConfig, SurvivorsInput, World } from "./index";
+import {
+  GameContent,
+  HeroInput,
+  combineHeroInputs,
+  survivorsSimulation,
+} from "./index";
+import type {
+  Hero,
+  SurvivorsConfig,
+  SurvivorsEvent,
+  SurvivorsInput,
+  World,
+} from "./index";
 
-// Survivors' real simulation in lockstep. Survivors is single-player until #25's genre work gives
-// its World N players, so for now every peer runs the same one-hero world and the step input is
-// the host's input alone; the other players' inputs still cross the network and are confirmed
-// with it. Level-ups are out of reach (xpToLevel2 is huge): an upgrade pick needs a
-// step-scheduled input, which also comes with the genre work.
+// Survivors' real simulation in lockstep, one hero per player: three peers, each driving its own
+// hero, over a lossy, jittery in-memory network. Every peer must step through the same states as
+// every other, step for step, including level-ups each player answers with its own pick, and a
+// player the host removes.
 
-const content = Schema.decodeUnknownSync(GameContent)({
-  rules: {
-    arenaHalfSize: 30,
-    maxEnemies: 200,
-    xpToLevel2: 1_000_000,
-    xpGrowth: 1.3,
-    baseMoveSpeedScale: 1,
-    basePickupRadius: 2.5,
-    choicesPerLevelUp: 3,
-    runLength: 90,
-  },
-  heroes: [
-    {
-      id: "bolter",
-      name: "Bolter",
-      description: "",
-      color: "#ffffff",
-      maxHp: 400,
-      moveSpeed: 6,
-      startingWeapon: "bolt",
+const decode = Schema.decodeUnknownSync(GameContent);
+
+const content = (xpToLevel2: number) =>
+  decode({
+    rules: {
+      arenaHalfSize: 30,
+      maxEnemies: 200,
+      xpToLevel2,
+      xpGrowth: 1.3,
+      baseMoveSpeedScale: 1,
+      basePickupRadius: 2.5,
+      choicesPerLevelUp: 3,
+      runLength: 90,
     },
-  ],
-  enemies: [
-    {
-      id: "grunt",
-      name: "Grunt",
-      color: "#00ff00",
-      hp: 8,
-      speed: 2.5,
-      damage: 10,
-      radius: 0.45,
-      xp: 1,
-    },
-  ],
-  weapons: [
-    {
-      id: "bolt",
-      name: "Bolt",
-      description: "",
-      color: "#ffff00",
-      damage: 10,
-      damagePerLevel: 3,
-      cooldown: 0.5,
-      cooldownScalePerLevel: 0.9,
-      maxLevel: 5,
-      behavior: {
-        kind: "bolt",
-        projectileSpeed: 20,
-        count: 1,
-        countPerLevel: 0.5,
-        pierce: 1,
-        range: 14,
+    heroes: [
+      {
+        id: "bolter",
+        name: "Bolter",
+        description: "",
+        color: "#ffffff",
+        maxHp: 400,
+        moveSpeed: 6,
+        startingWeapon: "bolt",
       },
-    },
-  ],
-  passives: [],
-  waves: [{ from: 0, to: 90, enemy: "grunt", perSecond: 4 }],
-});
+      {
+        id: "burner",
+        name: "Burner",
+        description: "",
+        color: "#ff0000",
+        maxHp: 400,
+        moveSpeed: 5,
+        startingWeapon: "aura",
+      },
+    ],
+    enemies: [
+      {
+        id: "grunt",
+        name: "Grunt",
+        color: "#00ff00",
+        hp: 8,
+        speed: 2.5,
+        damage: 10,
+        radius: 0.45,
+        xp: 1,
+      },
+    ],
+    weapons: [
+      {
+        id: "bolt",
+        name: "Bolt",
+        description: "",
+        color: "#ffff00",
+        damage: 10,
+        damagePerLevel: 3,
+        cooldown: 0.5,
+        cooldownScalePerLevel: 0.9,
+        maxLevel: 5,
+        behavior: {
+          kind: "bolt",
+          projectileSpeed: 20,
+          count: 1,
+          countPerLevel: 0.5,
+          pierce: 1,
+          range: 14,
+        },
+      },
+      {
+        id: "aura",
+        name: "Aura",
+        description: "",
+        color: "#ff8800",
+        damage: 6,
+        damagePerLevel: 2,
+        cooldown: 0.5,
+        cooldownScalePerLevel: 0.95,
+        maxLevel: 5,
+        behavior: { kind: "aura", radius: 2.6, radiusPerLevel: 0.3 },
+      },
+    ],
+    passives: [
+      {
+        id: "power",
+        name: "Power",
+        description: "",
+        stat: "damage",
+        amountPerLevel: 0.1,
+        maxLevel: 3,
+      },
+    ],
+    waves: [{ from: 0, to: 90, enemy: "grunt", perSecond: 4 }],
+  });
 
-const SurvivorsInputSchema = Schema.Struct({
-  moveX: Schema.Number,
-  moveZ: Schema.Number,
-});
+const SEED = 1234;
+const PLAYERS = ["host", "p1", "p2"] as const;
+const HERO_IDS = ["bolter", "burner", "bolter"];
+const TURNS = [0.3, -0.4, 0.7] as const;
 
-/** Zig-zag movement, a leg every 90 steps; each player turns differently. One object, refilled. */
-const zigZag = (turn: number): StepInput<SurvivorsInput> => {
-  const input = { moveX: 0, moveZ: 0 };
-  return {
-    read: (step) => {
-      const leg = Math.floor(step / 90) % 4;
-      input.moveX = [1, turn, -1, turn][leg]!;
-      input.moveZ = leg % 2;
-      return input;
-    },
-  };
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
+/** Zig-zag movement, a leg every 90 steps; each player turns differently. A pure function of the step. */
+const zigZag = (turn: number, step: number, input: Mutable<HeroInput>) => {
+  const leg = Math.floor(step / 90) % 4;
+  input.moveX = [1, turn, -1, turn][leg]!;
+  input.moveZ = leg % 2;
+  return input;
 };
 
-/** The step input: the host's input alone. One object, refilled each step. */
-const hostOnly = () => {
-  const input = { moveX: 0, moveZ: 0 };
-  return (step: ConfirmedStep<SurvivorsInput>): SurvivorsInput => {
-    const host = step.inputs[0]!.input;
-    input.moveX = host.moveX;
-    input.moveZ = host.moveZ;
-    return input;
+/**
+ * Player `slot`'s script: its zig-zag, and, when `picks`, choice `slot % length` of every offer
+ * its hero has open in the session's current state. One object, refilled.
+ */
+const script = (
+  slot: number,
+  picks: boolean,
+  state: () => World | null
+): StepInput<HeroInput> => {
+  const input: Mutable<HeroInput> = { moveX: 0, moveZ: 0 };
+  return {
+    read: (step) => {
+      zigZag(TURNS[slot]!, step, input);
+      const world = state();
+      const offer = world?.heroes[slot]!.offer;
+      if (picks && world && offer) {
+        input.pick = { offer: world.offerSeq, index: slot % offer.length };
+      } else {
+        delete input.pick;
+      }
+      return input;
+    },
   };
 };
 
@@ -125,93 +179,192 @@ const recorded = () => {
   return { hashes, simulation };
 };
 
+type Session = LockstepSession<World, SurvivorsEvent>;
+
+interface Peer {
+  readonly session: Session;
+  readonly hashes: number[];
+}
+
+interface RunOptions {
+  readonly xpToLevel2: number;
+  /** Which players pick their upgrades. */
+  readonly picking: readonly boolean[];
+  readonly dropAfterMs?: number;
+}
+
+/** Starts a three-player run: the host and two peers, each on its own network connection. */
+const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
+  const config: SurvivorsConfig = {
+    content: content(run.xpToLevel2),
+    heroIds: HERO_IDS,
+  };
+  return PLAYERS.map((id, slot) => {
+    const { hashes, simulation } = recorded();
+    let session: Session | null = null;
+    const options: LockstepOptions<
+      SurvivorsConfig,
+      World,
+      SurvivorsInput,
+      SurvivorsEvent,
+      HeroInput
+    > = {
+      simulation,
+      config,
+      contentHash: "survivors-test-content",
+      transport: network.connect(id),
+      local: script(slot, run.picking[slot]!, () => session?.state ?? null),
+      codec: schemaCodec(HeroInput),
+      combine: combineHeroInputs(PLAYERS),
+      hash: hashWorld,
+      inputDelay: 4,
+      hashEvery: 30,
+      ...(run.dropAfterMs === undefined
+        ? {}
+        : { dropAfterMs: run.dropAfterMs }),
+    };
+    session =
+      slot === 0
+        ? hostLockstep({ ...options, peers: ["p1", "p2"], seed: SEED }, 0)
+        : joinLockstep({ ...options, host: "host" }, 0);
+    return { session, hashes };
+  });
+};
+
 /** Advances the network and ticks each session on its own timer, as @gamekit/net's tests do. */
 const runNetwork = (
   network: MemoryNetwork,
-  peers: readonly {
-    readonly session: { readonly tick: (nowMs: number) => void };
-    readonly everyMs: number;
-  }[],
+  peers: readonly Peer[],
+  fromMs: number,
   toMs: number
 ) => {
-  for (let nowMs = 0; nowMs <= toMs; nowMs++) {
+  for (let nowMs = fromMs; nowMs <= toMs; nowMs++) {
     network.advance(nowMs);
-    for (const { session, everyMs } of peers) {
-      if (nowMs % everyMs === 0) {
-        session.tick(nowMs);
+    for (let i = 0; i < peers.length; i++) {
+      if (nowMs % (4 + i) === 0) {
+        peers[i]!.session.tick(nowMs);
       }
     }
   }
 };
 
-const SEED = 1234;
-const TURNS: Record<string, number> = { host: 0.3, p1: -0.4, p2: 0.7 };
+const lossy = () =>
+  createMemoryNetwork({ seed: 5, latencyMs: 25, jitterMs: 20, loss: 0.1 });
 
-const options = (network: MemoryNetwork, id: string) => {
-  const { hashes, simulation } = recorded();
-  const session: LockstepOptions<
-    SurvivorsConfig,
-    World,
-    SurvivorsInput,
-    unknown,
-    SurvivorsInput
-  > = {
-    simulation,
-    config: { content, heroId: "bolter" },
-    contentHash: "survivors-test-content",
-    transport: network.connect(id),
-    local: zigZag(TURNS[id]!),
-    codec: schemaCodec(SurvivorsInputSchema),
-    combine: hostOnly(),
-    hash: hashWorld,
-    inputDelay: 4,
-    hashEvery: 30,
-  };
-  return { hashes, session };
+/** The hashes each peer recorded, cut to the steps every one of `peers` has run. */
+const commonHashes = (peers: readonly Peer[]) => {
+  const steps = Math.min(...peers.map((peer) => peer.session.stepIndex));
+  return peers.map((peer) => peer.hashes.slice(0, steps));
 };
 
-/** The host's run played alone through GameLoop: what every peer must match. */
+/** How many upgrades a hero has taken: weapon levels past its first weapon's first, and passive levels. */
+const upgrades = (hero: Hero) =>
+  hero.weapons.reduce((sum, slot) => sum + slot.level, -1) +
+  [...hero.passiveLevels.values()].reduce((sum, level) => sum + level, 0);
+
+/** A hero's weapons and passives with their levels, as text. */
+const loadout = (hero: Hero) =>
+  JSON.stringify([
+    hero.weapons.map((slot) => [slot.def.id, slot.level]),
+    [...hero.passiveLevels],
+  ]);
+
+/** The run played alone through GameLoop, every player's zig-zag in one step input: what every peer must match. */
 const soloHashes = (steps: number) => {
   const { hashes, simulation } = recorded();
   const loop = new GameLoop(simulation);
-  loop.start({ content, heroId: "bolter" }, SEED, 0);
-  loop.frame(zigZag(TURNS.host!), { steps }, 0);
+  loop.start({ content: content(1_000_000), heroIds: HERO_IDS }, SEED, 0);
+  const heroes = TURNS.map(() => ({ moveX: 0, moveZ: 0 }));
+  const input: SurvivorsInput = { heroes, leaving: [] };
+  loop.frame(
+    {
+      read: (step) => {
+        for (const [slot, turn] of TURNS.entries()) {
+          zigZag(turn, step, heroes[slot]!);
+        }
+        return input;
+      },
+    },
+    { steps },
+    0
+  );
   return { hashes, world: loop.state! };
 };
 
 describe("survivors in lockstep", () => {
-  it("plays the same run on three peers over a lossy, jittery network", () => {
-    const network = createMemoryNetwork({
-      seed: 5,
-      latencyMs: 25,
-      jitterMs: 20,
-      loss: 0.1,
+  it("plays the same run on three peers, each moving its own hero", () => {
+    const network = lossy();
+    const peers = startRun(network, {
+      xpToLevel2: 1_000_000,
+      picking: [false, false, false],
     });
-    const host = options(network, "host");
-    const p1 = options(network, "p1");
-    const p2 = options(network, "p2");
-    const sessions = [
-      hostLockstep({ ...host.session, peers: ["p1", "p2"], seed: SEED }, 0),
-      joinLockstep({ ...p1.session, host: "host" }, 0),
-      joinLockstep({ ...p2.session, host: "host" }, 0),
-    ];
-    runNetwork(
-      network,
-      sessions.map((session, i) => ({ session, everyMs: [4, 5, 6][i]! })),
-      10_000
-    );
+    runNetwork(network, peers, 0, 10_000);
     const solo = soloHashes(600);
     // The run must get somewhere, or matching hashes prove little.
     expect(solo.world.kills).toBeGreaterThan(5);
-    for (const [session, { hashes }] of [
-      [sessions[0]!, host],
-      [sessions[1]!, p1],
-      [sessions[2]!, p2],
-    ] as const) {
+    for (const { session, hashes } of peers) {
       expect(session.error).toBeNull();
       expect(session.stepIndex).toBeGreaterThan(400);
       const steps = Math.min(session.stepIndex, 600);
       expect(hashes.slice(0, steps)).toStrictEqual(solo.hashes.slice(0, steps));
     }
+  });
+
+  it("levels up together, each player picking its own upgrade", () => {
+    const network = lossy();
+    const peers = startRun(network, {
+      xpToLevel2: 3,
+      picking: [true, true, true],
+    });
+    runNetwork(network, peers, 0, 15_000);
+    const [host, p1, p2] = commonHashes(peers);
+    const world = peers[0]!.session.state!;
+    expect([
+      ...peers.map((peer) => peer.session.error),
+      host!.length > 400,
+      world.level > 2,
+    ]).toStrictEqual([null, null, null, true, true]);
+    expect([p1, p2]).toStrictEqual([host, host]);
+    // Every hero took an upgrade for each finished level-up, and the two bolters chose differently.
+    const done = world.level - 1 - world.pendingLevelUps;
+    expect(world.heroes.map((hero) => upgrades(hero) >= done)).toStrictEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(loadout(world.heroes[0]!)).not.toBe(loadout(world.heroes[2]!));
+  });
+
+  it("drops a silent player's hero at the same step on every peer, and plays on", () => {
+    const network = lossy();
+    // p2 never picks, so the first level-up waits on it until the host removes it.
+    const peers = startRun(network, {
+      xpToLevel2: 3,
+      picking: [true, true, false],
+      dropAfterMs: 2000,
+    });
+    runNetwork(network, peers, 0, 8000);
+    const frozen = peers[0]!.session.state!;
+    expect(frozen.heroes[2]!.offer).not.toBeNull();
+    network.cutOff("p2", true);
+    runNetwork(network, peers, 8001, 20_000);
+    const [host, p1] = peers;
+    expect([host!.session.error, p1!.session.error]).toStrictEqual([
+      null,
+      null,
+    ]);
+    expect(
+      [host!, p1!].map((peer) =>
+        peer.session.state!.heroes.map((hero) => hero.status)
+      )
+    ).toStrictEqual([
+      ["playing", "playing", "left"],
+      ["playing", "playing", "left"],
+    ]);
+    // Hashes cover hero status, so equal hashes mean both removed p2's hero at the same step.
+    const [hostHashes, p1Hashes] = commonHashes([host!, p1!]);
+    expect(p1Hashes).toStrictEqual(hostHashes);
+    // The level-up p2 never answered closed when it left, and the run went on to level again.
+    expect(host!.session.state!.level).toBeGreaterThan(2);
   });
 });

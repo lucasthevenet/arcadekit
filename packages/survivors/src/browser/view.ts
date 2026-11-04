@@ -7,21 +7,40 @@ import {
 import type { GameView } from "@gamekit/runtime/browser";
 import * as THREE from "three";
 
-import { auraRadius } from "../world";
+import { MAX_HEROES, MAX_WEAPONS, auraRadius } from "../hero";
+import type { Hero } from "../hero";
 import type { World } from "../world";
 
 const CAMERA_OFFSET = { x: 0, y: 20, z: 13 };
-const MAX_AURAS = 4;
+const MAX_AURAS = MAX_HEROES * MAX_WEAPONS;
 const WHITE = new THREE.Color("#ffffff");
+const HURT = "#ff4d4d";
+const DOWN = "#5a5f6b";
+
+export interface SurvivorsViewOptions {
+  /** The slot of the hero the camera follows: this browser's player. Defaults to 0. */
+  readonly localHero?: number;
+}
+
+interface HeroFigure {
+  readonly group: THREE.Group;
+  readonly body: THREE.Mesh<THREE.CapsuleGeometry, THREE.MeshStandardMaterial>;
+}
+
+/** A downed hero is greyed only in co-op; a lone hero's death frame looks as it always has. */
+const heroColor = (hero: Hero, coop: boolean): string => {
+  if (coop && hero.status === "down") {
+    return DOWN;
+  }
+  return hero.hurtTimer > 0 ? HURT : hero.def.color;
+};
 
 /** Draws a survivors World with Three.js. Reads the simulation; never changes it. */
 export class SurvivorsView implements GameView<World> {
   private readonly stage: Stage;
-  private readonly player: THREE.Group;
-  private readonly playerBody: THREE.Mesh<
-    THREE.CapsuleGeometry,
-    THREE.MeshStandardMaterial
-  >;
+  private readonly localHero: number;
+  /** One figure per hero slot, made when a run first has that many heroes. */
+  private readonly heroes: HeroFigure[] = [];
   private readonly projectiles: MeshInstances;
   private readonly gems: MeshInstances;
   private readonly auras: THREE.Mesh<
@@ -34,10 +53,12 @@ export class SurvivorsView implements GameView<World> {
   private palette: {
     world: World;
     enemies: THREE.Color[];
-    weapons: THREE.Color[];
+    /** Indexed like the projectiles' `weapon` field: slot * MAX_WEAPONS + weapon index. */
+    weapons: (THREE.Color | undefined)[];
   } | null = null;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, options: SurvivorsViewOptions = {}) {
+    this.localHero = options.localHero ?? 0;
     this.stage = new Stage(container, {
       background: "#1b2130",
       fog: { near: 30, far: 70 },
@@ -49,21 +70,7 @@ export class SurvivorsView implements GameView<World> {
     sun.position.set(8, 20, 6);
     scene.add(sun);
 
-    this.playerBody = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.4, 0.5, 4, 12),
-      new THREE.MeshStandardMaterial({ color: "#ffffff" })
-    );
-    this.playerBody.position.y = 0.65;
-    const nose = new THREE.Mesh(
-      new THREE.ConeGeometry(0.15, 0.35, 10),
-      new THREE.MeshStandardMaterial()
-    );
-    nose.rotation.x = Math.PI / 2;
-    nose.position.set(0, 0.7, 0.5);
-    this.player = new THREE.Group();
-    this.player.add(this.playerBody, nose);
-    this.player.visible = false;
-    scene.add(this.player);
+    this.heroFigure(0);
 
     this.projectiles = new MeshInstances(
       new THREE.SphereGeometry(0.18, 8, 6),
@@ -109,7 +116,9 @@ export class SurvivorsView implements GameView<World> {
 
   private drawMenuBackdrop(t: number) {
     this.ensureGround(60);
-    this.player.visible = false;
+    for (const figure of this.heroes) {
+      figure.group.visible = false;
+    }
     this.enemies?.commit(0);
     this.projectiles.commit(0);
     this.gems.commit(0);
@@ -126,14 +135,24 @@ export class SurvivorsView implements GameView<World> {
   private drawWorld(world: World, t: number) {
     const palette = this.paletteFor(world);
     this.ensureGround(world.content.rules.arenaHalfSize);
-    const p = world.player;
 
-    this.player.visible = true;
-    this.player.position.set(p.x, 0, p.z);
-    this.player.rotation.y = Math.atan2(p.faceX, p.faceZ);
-    this.playerBody.material.color.set(
-      p.hurtTimer > 0 ? "#ff4d4d" : world.hero.color
-    );
+    for (const figure of this.heroes) {
+      figure.group.visible = false;
+    }
+    const coop = world.heroes.length > 1;
+    for (const hero of world.heroes) {
+      const figure = this.heroFigure(hero.slot);
+      // A hero whose player left is gone; in co-op, a downed one lies greyed where it fell.
+      figure.group.visible = hero.status !== "left";
+      figure.group.position.set(hero.x, 0, hero.z);
+      figure.group.rotation.set(
+        coop && hero.status === "down" ? Math.PI / 2 : 0,
+        Math.atan2(hero.faceX, hero.faceZ),
+        0,
+        "YXZ"
+      );
+      figure.body.material.color.set(heroColor(hero, coop));
+    }
 
     const enemies = this.enemyInstances(world.enemies.capacity);
     const e = world.enemies.fields;
@@ -170,25 +189,56 @@ export class SurvivorsView implements GameView<World> {
 
     // Aura rings: flash bright on each damage pulse, then fade.
     let ringIndex = 0;
-    for (let w = 0; w < world.weapons.length && ringIndex < MAX_AURAS; w++) {
-      const slot = world.weapons[w]!;
-      if (slot.def.behavior.kind !== "aura") {
+    for (const hero of world.heroes) {
+      if (hero.status !== "playing") {
         continue;
       }
-      const ring = this.auras[ringIndex]!;
-      ringIndex += 1;
-      const r = auraRadius(world, slot);
-      ring.visible = true;
-      ring.position.set(p.x, 0.05, p.z);
-      ring.scale.set(r, r, 1);
-      ring.material.color.copy(palette.weapons[w] ?? WHITE);
-      ring.material.opacity = 0.25 + Math.max(0, 0.6 - slot.sinceFired * 2);
+      for (let w = 0; w < hero.weapons.length && ringIndex < MAX_AURAS; w++) {
+        const slot = hero.weapons[w]!;
+        if (slot.def.behavior.kind !== "aura") {
+          continue;
+        }
+        const ring = this.auras[ringIndex]!;
+        ringIndex += 1;
+        const r = auraRadius(hero, slot);
+        ring.visible = true;
+        ring.position.set(hero.x, 0.05, hero.z);
+        ring.scale.set(r, r, 1);
+        ring.material.color.copy(
+          palette.weapons[hero.slot * MAX_WEAPONS + w] ?? WHITE
+        );
+        ring.material.opacity = 0.25 + Math.max(0, 0.6 - slot.sinceFired * 2);
+      }
     }
     for (let i = ringIndex; i < MAX_AURAS; i++) {
       this.auras[i]!.visible = false;
     }
 
-    followTarget(this.stage.camera, p, CAMERA_OFFSET);
+    const followed = world.heroes[this.localHero] ?? world.heroes[0]!;
+    followTarget(this.stage.camera, followed, CAMERA_OFFSET);
+  }
+
+  /** The figure for a hero slot, made the first time a run has that slot. */
+  private heroFigure(slot: number): HeroFigure {
+    for (let s = this.heroes.length; s <= slot; s++) {
+      const body = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.4, 0.5, 4, 12),
+        new THREE.MeshStandardMaterial({ color: "#ffffff" })
+      );
+      body.position.y = 0.65;
+      const nose = new THREE.Mesh(
+        new THREE.ConeGeometry(0.15, 0.35, 10),
+        new THREE.MeshStandardMaterial()
+      );
+      nose.rotation.x = Math.PI / 2;
+      nose.position.set(0, 0.7, 0.5);
+      const group = new THREE.Group();
+      group.add(body, nose);
+      group.visible = false;
+      this.stage.scene.add(group);
+      this.heroes.push({ group, body });
+    }
+    return this.heroes[slot]!;
   }
 
   private paletteFor(world: World) {
@@ -199,10 +249,13 @@ export class SurvivorsView implements GameView<World> {
         weapons: [],
       };
     }
-    // Indexed like world.weapons; weapons picked up mid-run get their color here.
+    // Weapons picked up mid-run get their color here.
     const { weapons } = this.palette;
-    for (let w = weapons.length; w < world.weapons.length; w++) {
-      weapons.push(new THREE.Color(world.weapons[w]!.def.color));
+    for (const hero of world.heroes) {
+      for (let w = 0; w < hero.weapons.length; w++) {
+        const index = hero.slot * MAX_WEAPONS + w;
+        weapons[index] ??= new THREE.Color(hero.weapons[w]!.def.color);
+      }
     }
     return this.palette;
   }

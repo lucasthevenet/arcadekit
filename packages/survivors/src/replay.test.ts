@@ -4,8 +4,13 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { hashWorld } from "./hash-world";
-import { GameContent, chooseUpgrade, survivorsSimulation } from "./index";
-import type { SurvivorsInput } from "./index";
+import {
+  GameContent,
+  chooseUpgrade,
+  soloInput,
+  survivorsSimulation,
+} from "./index";
+import type { HeroInput } from "./index";
 
 // Replay check: the same seed and the same input script must give the same run, bit for bit.
 // It runs survivors' simulation through @gamekit/runtime's GameLoop, with the step order and
@@ -96,7 +101,7 @@ const content = Schema.decodeUnknownSync(GameContent)({
 const LEG_MOVE_X = [1, 0.3, -1, 0.3];
 
 /** Zig-zag movement: a leg every 90 steps. One object, refilled each step, as a device source does. */
-const zigZag = (): StepInput<SurvivorsInput> => {
+const zigZag = (): StepInput<HeroInput> => {
   const input = { moveX: 0, moveZ: 0 };
   return {
     read: (step) => {
@@ -114,7 +119,7 @@ const zigZag = (): StepInput<SurvivorsInput> => {
  */
 const replay = (seed: number, steps: number) => {
   const loop = new GameLoop(survivorsSimulation);
-  const script = zigZag();
+  const script = soloInput(zigZag());
   let events = 0;
   let samples = 0;
   loop.subscribe((event) => {
@@ -124,14 +129,14 @@ const replay = (seed: number, steps: number) => {
       events += 1;
     }
   });
-  loop.start({ content, heroId: "bolter" }, seed, 0);
+  loop.start({ content, heroIds: ["bolter"] }, seed, 0);
   const world = loop.state!;
   for (let i = 0; i < steps && world.status === "running"; i++) {
     const nowMs = (i * 1000) / 60;
-    if (world.offer) {
+    const { offer } = world.heroes[0]!;
+    if (offer) {
       loop.modify(
-        (offered) =>
-          chooseUpgrade(offered, Math.min(1, offered.offer!.length - 1)),
+        (offered) => chooseUpgrade(offered, 0, Math.min(1, offer.length - 1)),
         nowMs
       );
     }
@@ -146,7 +151,7 @@ describe("survivors replay", () => {
     const b = replay(1234, 60 * 60);
     // The script must exercise the run, or the hash proves little.
     expect(a.world.kills).toBeGreaterThan(20);
-    expect(a.world.player.level).toBeGreaterThan(2);
+    expect(a.world.level).toBeGreaterThan(2);
     expect([hashWorld(b.world), b.events, b.samples]).toStrictEqual([
       hashWorld(a.world),
       a.events,

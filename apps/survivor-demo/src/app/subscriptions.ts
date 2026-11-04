@@ -7,18 +7,24 @@ import { Subscription } from "foldkit";
 import { Message } from "./message";
 import type { Model } from "./model";
 
-const toMessage = (event: SurvivorsEvent): Message => {
+/** The demo is single-player: its one player's hero is slot 0. */
+const LOCAL_HERO = 0;
+
+const toMessage = (event: SurvivorsEvent): Message | undefined => {
   switch (event.type) {
     case "hud": {
       return Message.GotHud({ hud: event.hud });
     }
     case "levelUp": {
-      return Message.GotLevelUp({
-        choices: event.choices.map((choice) => ({ ...choice })),
-      });
+      return event.hero === LOCAL_HERO
+        ? Message.GotLevelUp({ choices: event.choices })
+        : undefined;
+    }
+    case "heroLeft": {
+      return undefined;
     }
     case "runEnded": {
-      return Message.GotRunEnded({ summary: event.summary });
+      return Message.GotRunEnded({ summary: event.summaries[LOCAL_HERO]! });
     }
   }
 };

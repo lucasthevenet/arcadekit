@@ -111,15 +111,17 @@ const menu = (model: Model, h: H): Html =>
     ),
   ]);
 
-const hud = (data: HudSample, h: H): Html =>
-  h.div(
+const hud = (data: HudSample, h: H): Html => {
+  // The demo is single-player: its hero is the first.
+  const hero = data.heroes[0] ?? { hp: 0, maxHp: 1 };
+  return h.div(
     [h.Class("hud")],
     [
       bar(
         h,
         "hp",
-        data.hp / data.maxHp,
-        `${Math.ceil(data.hp)} / ${Math.round(data.maxHp)}`
+        hero.hp / hero.maxHp,
+        `${Math.ceil(hero.hp)} / ${Math.round(hero.maxHp)}`
       ),
       bar(h, "xp", data.xp / data.xpNext, `Level ${data.level}`),
       h.div(
@@ -138,6 +140,7 @@ const hud = (data: HudSample, h: H): Html =>
       ),
     ]
   );
+};
 
 const bar = (h: H, kind: string, fraction: number, label: string): Html =>
   h.div(
