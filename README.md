@@ -30,7 +30,7 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | [`@gamekit/foldkit`](packages/foldkit) | `gameViewport` (the element an engine draws into), `engineEntry` (the Subscription that runs the engine there and turns its events into Messages), `keyPresses` | Effect, Foldkit, runtime |
 | [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, view and engine | all of the above except foldkit |
 | [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, view and engine | all of the above except foldkit |
-| [`@gamekit/net`](packages/net) | Lockstep multiplayer (ADR-0012), started: the `Transport` seam a lockstep session will talk through, and `createMemoryNetwork`, its in-memory adapter for tests, with seeded latency, jitter and loss | core |
+| [`@gamekit/net`](packages/net) | Lockstep multiplayer (ADR-0012): `hostLockstep` / `joinLockstep` run one `GameSimulation` on 2 to 4 peers, stepping each step once the host has confirmed every player's input for it, comparing state hashes and removing a silent player. They talk through a `Transport`; `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `jsonCodec` and `schemaCodec` put input on the wire | Effect, core, runtime |
 | [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content, Foldkit screens and a save of each hero's best run | survivors, content, save, foldkit |
 | [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen and a save of solved levels | push-puzzle, content, save, foldkit |
 

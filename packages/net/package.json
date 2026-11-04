@@ -2,7 +2,7 @@
   "name": "@gamekit/net",
   "version": "0.0.0",
   "private": true,
-  "description": "Play one run on several peers in lockstep: the Transport seam and its in-memory adapter",
+  "description": "Play one run on several peers in delay-based lockstep, over a transport it doesn't know",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -11,6 +11,8 @@
     "typecheck": "tsc -p . && tsc -p tsconfig.root.json"
   },
   "dependencies": {
-    "@gamekit/core": "workspace:*"
+    "@gamekit/core": "workspace:*",
+    "@gamekit/runtime": "workspace:*",
+    "effect": "~4.1.2"
   }
 }

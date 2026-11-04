@@ -112,6 +112,12 @@ importers:
       '@gamekit/core':
         specifier: workspace:*
         version: link:../core
+      '@gamekit/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      effect:
+        specifier: ~4.1.2
+        version: 4.1.2
 
   packages/push-puzzle:
     dependencies:

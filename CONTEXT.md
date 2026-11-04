@@ -36,7 +36,11 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Input delay**: how many steps ahead a peer schedules its local input: input sampled now is for step `N + inputDelay`, so it usually reaches every peer before that step is due and stepping doesn't wait. A few steps (2 to 6 steps is 33 to 100 ms at 60 Hz), tuned by measurement. Not latency, which is how long a message takes to arrive.
 
-**Transport**: how a lockstep run's messages travel (`Transport`, `@gamekit/net`): text to a peer by id, and a listener for what arrives. It may lose, delay, duplicate and reorder messages; lockstep resends what isn't acknowledged. Its adapters are the in-memory network for tests (`createMemoryNetwork`, with seeded latency, jitter and loss) and, later, a WebRTC data channel in the browser. Not the signalling worker, which only introduces peers.
+**Lockstep session**: one peer's side of a lockstep run (`LockstepSession`, `@gamekit/net`), made with `hostLockstep` or `joinLockstep`. It owns a `GameLoop` and steps it on a timer: the caller calls `tick(nowMs)`, and each tick runs the steps that time says are due and whose inputs are all confirmed. It reads the local player's input `inputDelay` steps ahead and reports `waitingFor` while a step waits. Its seams are a `Transport` and an input codec; a genre supplies `combine` (every player's input to one step's input) and `hash`.
+
+**Confirmed step**: what the host decided for one step (`ConfirmedStep`): every remaining player's input, in player order with the host first, and the players removed at that step. Every peer, the host included, steps on confirmed steps only, decoded from the same wire form, and reads them by step number through `StepInput.read`.
+
+**Transport**: how a lockstep session's messages travel (`Transport`, `@gamekit/net`): text to a peer by id, and a listener for what arrives. It may lose, delay, duplicate and reorder messages; the session resends what isn't acknowledged. Its adapters are the in-memory network for tests (`createMemoryNetwork`, with seeded latency, jitter and loss) and, later, a WebRTC data channel in the browser. Not the signalling worker, which only introduces peers.
 
 **Engine**: the Effect-facing API of a running game (`GameEngine`, `@gamekit/runtime/browser`): attach to an element, listen to events, start, modify, pause, stop. Each genre declares its own engine service.
 
