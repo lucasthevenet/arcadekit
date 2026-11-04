@@ -144,7 +144,7 @@ Then the cross-browser test (#25's decision 8):
 - `long-run.ts` in `packages/survivors/src` now holds the long scenario, its seeds and its recorded hashes; `determinism.test.ts` plays it in Node.
 - `pnpm test:browsers` (`packages/survivors/browser-determinism/`) bundles that module with survivors' simulation and `GameLoop` using Vite, serves it to Chromium, Firefox and WebKit with Playwright's `route` (no server, no network), plays the three seeds for 20,000 steps in each, and compares each run's final hash and its trace after every step with Node's. A mismatch names the first step whose state differs. Playwright 1.63.0 is now a root dev dependency, so CI can install matching browsers.
 - Chromium 153 gives Node's hashes at every step of every seed (about 1.5 s per seed). A browser-only 1-ulp change to `Math.sqrt` after 2M calls is caught and located (first diverging step 240 to 7,920, depending on the seed).
-- `.github/workflows/cross-browser.yml` runs it on pull requests and on `main` with all three browsers installed, and fails if one can't launch. Until it runs, Firefox (SpiderMonkey) and WebKit (JavaScriptCore) are still unmeasured here; Safari on macOS, Windows and ARM still aren't run at all.
+- Once `.github/workflows/cross-browser.yml` is added, CI runs it on pull requests and on `main` with all three browsers installed, and fails if one can't launch. Until it runs, Firefox (SpiderMonkey) and WebKit (JavaScriptCore) are still unmeasured here; Safari on macOS, Windows and ARM still aren't run at all.
 
 ## Sources
 
