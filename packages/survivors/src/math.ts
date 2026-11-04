@@ -69,8 +69,11 @@ const quadrant = (n: number): number => ((n % 4) + 4) % 4;
  * The sine of `x` radians, the same bits in every engine.
  *
  * fdlibm's kernel polynomial after a two-term Cody-Waite reduction by pi/2. Within 1 ulp of a
- * correctly rounded `Math.sin` for |x| <= 1000 (the simulation passes angles in [0, 2pi)), and a
- * few ulp, under 2e-16 absolute, up to |x| ~ 1.6e6, where `n * PIO2_HI` stops being exact. Past
+ * correctly rounded `Math.sin` for |x| <= 1000 (the simulation passes angles in [0, 2pi)), except
+ * next to the zeros (multiples of pi/2): the two-term split of pi/2 leaves about 1e-26 of error,
+ * so there the result is under 1e-25 off absolute but can be many ulp off relative (`sin(Math.PI)`
+ * is ~3e5 ulp from the correctly rounded value). Under 2e-16 absolute up to |x| ~ 1.6e6, where
+ * `n * PIO2_HI` stops being exact. Past
  * that it loses accuracy fast (fdlibm switches to a longer reduction there); it is still the same
  * bits everywhere, just not a good sine. Keeps -0, and gives NaN for NaN and +-Infinity.
  */

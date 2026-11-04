@@ -2,17 +2,31 @@ import { defineConfig } from "oxlint";
 import core from "ultracite/oxlint/core";
 import vitest from "ultracite/oxlint/vitest";
 
-// Math functions ECMA-262 lets each engine approximate. A genre's step must give the same bits in
-// every engine (ADR-0011), so its simulation calls none of them.
+// Every Math function ECMA-262 lets each engine approximate. A genre's step must give the same
+// bits in every engine (ADR-0011), so its simulation calls none of them.
 const APPROXIMATED_MATH = [
-  "hypot",
-  "sin",
-  "cos",
-  "tan",
+  "acos",
+  "acosh",
+  "asin",
+  "asinh",
+  "atan",
+  "atanh",
   "atan2",
-  "pow",
+  "cbrt",
+  "cos",
+  "cosh",
   "exp",
+  "expm1",
+  "hypot",
   "log",
+  "log1p",
+  "log10",
+  "log2",
+  "pow",
+  "sin",
+  "sinh",
+  "tan",
+  "tanh",
 ] as const;
 
 const approximatedMathMessage =
