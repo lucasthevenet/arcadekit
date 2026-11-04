@@ -1,8 +1,10 @@
+import { Audio, AudioSettings, applyAudioSettings } from "@gamekit/audio";
 import { PushPuzzleContent } from "@gamekit/push-puzzle";
 import { PushPuzzleEngine } from "@gamekit/push-puzzle/browser";
 import { Effect, Schema } from "effect";
 import { Command } from "foldkit";
 
+import { AudioSettingsStorage, CLICK, MUSIC, SOUND_LIST } from "./audio";
 import { Message } from "./message";
 import { Save } from "./save";
 
@@ -65,4 +67,59 @@ export const SaveSolve = Command.define("SaveSolve", {
       const records = yield* (yield* Save).recordSolve(levelId, moves);
       return Message.SavedSolve({ records });
     }),
+});
+
+/**
+ * Starts the music and loads the sounds, once, at startup. Nothing waits on it: the music
+ * starts once its file is in and the player's first gesture unlocks audio. A sound that
+ * can't load is left out (the first such file is logged), and the game plays on without it.
+ */
+export const LoadSounds = Command.define("LoadSounds", {
+  messages: [Message.CompletedAudioCommand],
+  execute: Effect.gen(function* () {
+    const audio = yield* Audio;
+    audio.playMusic(MUSIC);
+    yield* audio
+      .load(SOUND_LIST)
+      .pipe(
+        Effect.catchTag("AudioLoadError", (error) =>
+          Effect.logWarning(
+            "A sound can't be loaded. Play goes on without it.",
+            error.message
+          )
+        )
+      );
+    return Message.CompletedAudioCommand();
+  }),
+});
+
+/** Reads the saved audio settings once, at startup, and applies them. Never fails. */
+export const LoadAudioSettings = Command.define("LoadAudioSettings", {
+  messages: [Message.LoadedAudioSettings],
+  execute: Effect.gen(function* () {
+    const settings = yield* (yield* AudioSettingsStorage).load;
+    applyAudioSettings(yield* Audio, settings);
+    return Message.LoadedAudioSettings({ settings });
+  }),
+});
+
+/** Applies changed audio settings and saves them. Never fails: a failed write is logged. */
+export const ChangeAudioSettings = Command.define("ChangeAudioSettings", {
+  args: { settings: AudioSettings },
+  messages: [Message.CompletedAudioCommand],
+  execute: ({ settings }) =>
+    Effect.gen(function* () {
+      applyAudioSettings(yield* Audio, settings);
+      yield* (yield* AudioSettingsStorage).save(settings);
+      return Message.CompletedAudioCommand();
+    }),
+});
+
+/** The click of a menu button. */
+export const PlayClick = Command.define("PlayClick", {
+  messages: [Message.CompletedAudioCommand],
+  execute: Effect.gen(function* () {
+    (yield* Audio).play(CLICK);
+    return Message.CompletedAudioCommand();
+  }),
 });

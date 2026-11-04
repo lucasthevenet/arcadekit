@@ -138,3 +138,32 @@ button.big {
   gap: 4px 14px;
   font-size: 0.9rem;
 }
+
+/* The sound panel under the level list. */
+.sound {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.slider {
+  display: grid;
+  grid-template-columns: 5em 1fr;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+.slider input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.mute {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+.mute input {
+  accent-color: var(--accent);
+}

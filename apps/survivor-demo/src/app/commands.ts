@@ -1,3 +1,4 @@
+import { Audio, AudioSettings } from "@gamekit/audio";
 import {
   RunSummary,
   SurvivorsContent,
@@ -10,6 +11,7 @@ import { Command } from "foldkit";
 import { Coop } from "./coop";
 import { Message } from "./message";
 import { Save } from "./save";
+import { CLICK_SOUND, SoundSettings, soundList } from "./sound";
 
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
 // against the app's services and reports back with a Message.
@@ -176,5 +178,57 @@ export const LeaveCoop = Command.define("LeaveCoop", {
   execute: Effect.gen(function* () {
     yield* (yield* Coop).leave;
     return Message.CompletedEngineCommand();
+  }),
+});
+
+// Sound. None of these fail or hold anything up: without sound, play goes on silently.
+
+/**
+ * Loads every sound at startup. A sound that can't load is left out (the first such file is
+ * logged), and the game plays on without it.
+ */
+export const LoadSounds = Command.define("LoadSounds", {
+  messages: [Message.CompletedAudioCommand],
+  execute: Effect.gen(function* () {
+    yield* (yield* Audio)
+      .load(soundList)
+      .pipe(
+        Effect.catchTag("AudioLoadError", (error) =>
+          Effect.logWarning(
+            "A sound can't be loaded. Play goes on without it.",
+            error.message
+          )
+        )
+      );
+    return Message.CompletedAudioCommand();
+  }),
+});
+
+/** Reads the audio settings once, at startup. Missing or corrupt settings read as the defaults. */
+export const LoadAudioSettings = Command.define("LoadAudioSettings", {
+  messages: [Message.LoadedAudioSettings],
+  execute: Effect.gen(function* () {
+    const settings = yield* (yield* SoundSettings).load;
+    return Message.LoadedAudioSettings({ settings });
+  }),
+});
+
+/** Stores the audio settings, replacing what is there. A failed write is logged. */
+export const SaveAudioSettings = Command.define("SaveAudioSettings", {
+  args: { settings: AudioSettings },
+  messages: [Message.CompletedAudioCommand],
+  execute: ({ settings }) =>
+    Effect.gen(function* () {
+      yield* (yield* SoundSettings).save(settings);
+      return Message.CompletedAudioCommand();
+    }),
+});
+
+/** The click of a menu button or an upgrade pick. */
+export const PlayClick = Command.define("PlayClick", {
+  messages: [Message.CompletedAudioCommand],
+  execute: Effect.gen(function* () {
+    (yield* Audio).play(CLICK_SOUND);
+    return Message.CompletedAudioCommand();
   }),
 });

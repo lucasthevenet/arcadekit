@@ -6,7 +6,7 @@ import type { Puzzle, PushPuzzleConfig, PushPuzzleInput } from "./world";
 
 /**
  * The push-puzzle genre as a @gamekit/runtime simulation: what a GameLoop steps, in a browser,
- * a Worker, on a server or in a test. `./browser`'s `pushPuzzleGame` adds input and the view.
+ * a Worker, on a server or in a test. `./browser`'s `makePushPuzzleGame` adds input, the view and sound.
  */
 export const pushPuzzleSimulation: GameSimulation<
   PushPuzzleConfig,

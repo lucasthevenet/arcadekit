@@ -1,3 +1,4 @@
+import { Audio } from "@gamekit/audio";
 import type { GameEngine } from "@gamekit/runtime/browser";
 import type { GameContent } from "@gamekit/survivors";
 import { Context, Effect, Layer } from "effect";
@@ -5,6 +6,7 @@ import { Context, Effect, Layer } from "effect";
 import { CoopClient } from "../coop/client";
 import type { CoopEvent } from "../coop/client";
 import { iceServers, signallingUrl } from "../coop/config";
+import { survivorsSounds } from "./sound";
 
 /**
  * Co-op survivors (#25) as the app's Commands and Subscriptions use it: the lobby and the
@@ -54,13 +56,20 @@ export const makeCoop = (client: CoopClient): CoopApi => ({
   leave: Effect.sync(() => client.leave()),
 });
 
-export const CoopLayer = Layer.sync(Coop, () => {
-  const client = new CoopClient({
-    signalling: { url: signallingUrl(), rtc: { iceServers: iceServers() } },
-  });
-  if (import.meta.env.DEV) {
-    // For the end-to-end test and debugging: the run's step, error and recent state hashes.
-    Object.assign(globalThis, { gamekitCoop: { debug: () => client.debug() } });
-  }
-  return makeCoop(client);
-});
+/** The co-op client, playing its sounds through the `Audio` service. */
+export const CoopLayer = Layer.effect(
+  Coop,
+  Effect.gen(function* () {
+    const client = new CoopClient({
+      signalling: { url: signallingUrl(), rtc: { iceServers: iceServers() } },
+      sound: { audio: yield* Audio, sounds: survivorsSounds },
+    });
+    if (import.meta.env.DEV) {
+      // For the end-to-end test and debugging: the run's step, error and recent state hashes.
+      Object.assign(globalThis, {
+        gamekitCoop: { debug: () => client.debug() },
+      });
+    }
+    return makeCoop(client);
+  })
+);

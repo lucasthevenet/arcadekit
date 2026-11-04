@@ -1,14 +1,16 @@
-import { engineEntry, keyPresses } from "@gamekit/foldkit";
+import { Audio, applyAudioSettings } from "@gamekit/audio";
+import { engineEntry, keyPresses, shortcutPresses } from "@gamekit/foldkit";
 import type { SurvivorsEvent } from "@gamekit/survivors";
 import { SurvivorsEngine } from "@gamekit/survivors/browser";
-import { Schema, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
 import type { CoopEvent } from "../coop/client";
 import { Coop } from "./coop";
 import { Message } from "./message";
 import { isCoop } from "./model";
-import type { Model } from "./model";
+import type { Model, Phase } from "./model";
+import { MUSIC } from "./sound";
 
 /** A single-player run's one hero is slot 0. */
 const LOCAL_HERO = 0;
@@ -72,10 +74,42 @@ const coopMessage = (event: CoopEvent): Message => {
   }
 };
 
+/** The run's music from the start of a run to its end; the menu's everywhere else. */
+const musicFor = (phase: Phase): keyof typeof MUSIC => {
+  switch (phase._tag) {
+    case "Starting":
+    case "Playing":
+    case "Paused":
+    case "LevelUp":
+    case "CoopPlaying":
+    case "CoopLevelUp": {
+      return "run";
+    }
+    default: {
+      return "menu";
+    }
+  }
+};
+
+/** Whether the run is paused: by this player, or in co-op by anyone. */
+const isPaused = (model: Model): boolean =>
+  model.phase._tag === "Paused" ||
+  (model.phase._tag === "CoopPlaying" &&
+    (model.coop.paused || model.hud.heroes.some((hero) => hero.paused)));
+
+const SoundDependencies = {
+  music: Schema.Literals(["menu", "run"]),
+  ducked: Schema.Boolean,
+  master: Schema.Number,
+  sfx: Schema.Number,
+  musicVolume: Schema.Number,
+  muted: Schema.Boolean,
+};
+
 export const subscriptions = Subscription.make<
   Model,
   Message,
-  SurvivorsEngine | Coop
+  SurvivorsEngine | Coop | Audio
 >()((entry) => ({
   /**
    * While the viewport exists, the engine renders into it and its events become Messages.
@@ -110,6 +144,40 @@ export const subscriptions = Subscription.make<
         canPause
           ? keyPresses(["Escape", "KeyP"], () => Message.PressedEscape())
           : Stream.empty,
+    }
+  ),
+
+  /**
+   * Keeps the audio system in step with the Model: the music for the screen, ducked while
+   * paused, and the player's volumes and mute. Emits nothing.
+   */
+  sound: entry(SoundDependencies, {
+    modelToDependencies: (model) => ({
+      music: musicFor(model.phase),
+      ducked: isPaused(model),
+      master: model.audio.master,
+      sfx: model.audio.sfx,
+      musicVolume: model.audio.music,
+      muted: model.audio.muted,
+    }),
+    dependenciesToStream: ({ music, ducked, musicVolume, ...settings }) =>
+      Stream.fromEffect(
+        Effect.gen(function* () {
+          const audio = yield* Audio;
+          applyAudioSettings(audio, { ...settings, music: musicVolume });
+          audio.playMusic(MUSIC[music]);
+          audio.setDucked(ducked);
+        })
+      ).pipe(Stream.drain),
+  }),
+
+  /** M toggles mute on any screen, except while typing (the join code). */
+  muteKey: entry(
+    {},
+    {
+      modelToDependencies: () => ({}),
+      dependenciesToStream: () =>
+        shortcutPresses(["KeyM"], () => Message.PressedMute()),
     }
   ),
 }));

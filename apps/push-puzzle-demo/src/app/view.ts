@@ -1,7 +1,9 @@
+import type { AudioSettings } from "@gamekit/audio";
 import { gameViewport } from "@gamekit/foldkit";
 import type { HudSample } from "@gamekit/push-puzzle";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
+import type { Bus } from "./audio";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
@@ -56,7 +58,7 @@ const levelSelect = (model: Model, h: H): Html =>
     h.p(
       [h.Class("muted")],
       [
-        "Push every box onto a goal. A box pushed into a hole fills it. Move with arrows, WASD, the d-pad or a swipe; undo with Z, Backspace or B; R restarts.",
+        "Push every box onto a goal. A box pushed into a hole fills it. Move with arrows, WASD, the d-pad or a swipe; undo with Z, Backspace or B; R restarts; M mutes.",
       ]
     ),
     h.div(
@@ -82,7 +84,51 @@ const levelSelect = (model: Model, h: H): Html =>
         );
       })
     ),
+    soundPanel(model.audio, h),
   ]);
+
+const BUS_LABELS: readonly (readonly [Bus, string])[] = [
+  ["master", "Volume"],
+  ["sfx", "Effects"],
+  ["music", "Music"],
+];
+
+/** A slider per bus and a mute switch. Each change is applied and saved at once. */
+const soundPanel = (settings: AudioSettings, h: H): Html =>
+  h.div(
+    [h.Key("sound"), h.Class("sound")],
+    [
+      ...BUS_LABELS.map(([bus, label]) =>
+        h.label(
+          [h.Key(bus), h.Class("slider")],
+          [
+            h.span([], [label]),
+            h.input([
+              h.Type("range"),
+              h.Min("0"),
+              h.Max("1"),
+              h.Step("0.05"),
+              h.Value(String(settings[bus])),
+              h.OnInput((value) =>
+                Message.ChangedVolume({ bus, volume: Number(value) })
+              ),
+            ]),
+          ]
+        )
+      ),
+      h.label(
+        [h.Key("mute"), h.Class("mute")],
+        [
+          h.input([
+            h.Type("checkbox"),
+            h.Checked(settings.muted),
+            h.OnChange(() => Message.ToggledMute()),
+          ]),
+          h.span([], ["Mute (M)"]),
+        ]
+      ),
+    ]
+  );
 
 const hud = (name: string, data: HudSample, h: H): Html =>
   h.div(

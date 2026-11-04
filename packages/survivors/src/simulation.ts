@@ -7,7 +7,7 @@ import type { SurvivorsConfig, World } from "./world";
 
 /**
  * The survivors genre as a @gamekit/runtime simulation: what a GameLoop steps, in a browser,
- * a Worker, on a server or in a test. `./browser`'s `survivorsGame` adds input and the view.
+ * a Worker, on a server or in a test. `./browser`'s `makeSurvivorsGame` adds input, the view and sound.
  */
 export const survivorsSimulation: GameSimulation<
   SurvivorsConfig,

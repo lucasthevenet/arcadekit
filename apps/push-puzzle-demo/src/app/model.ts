@@ -1,3 +1,4 @@
+import { AudioSettings } from "@gamekit/audio";
 import { HudSample } from "@gamekit/push-puzzle";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
@@ -34,6 +35,8 @@ export const Model = Schema.Struct({
   /** The level being played, or last played. Restart and replay start it again. */
   levelId: Schema.String,
   hud: HudSample,
+  /** The player's volume and mute: the defaults until the saved ones are read at startup. */
+  audio: AudioSettings,
   /** True while the viewport is in the document: the engine runs only then (see gameViewport). */
   isViewportMounted: Schema.Boolean,
 });

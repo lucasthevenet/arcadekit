@@ -1,3 +1,4 @@
+import { AudioSettings } from "@gamekit/audio";
 import { HudSample } from "@gamekit/push-puzzle";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
@@ -11,6 +12,7 @@ export const Message = defineMessageUnion({
   LoadedContent: { levels: Schema.Array(LevelSummary) },
   FailedToLoadContent: { error: Schema.String },
   LoadedSave: { records: LevelRecords },
+  LoadedAudioSettings: { settings: AudioSettings },
   MountedViewport: {},
   UnmountedViewport: {},
 
@@ -30,7 +32,16 @@ export const Message = defineMessageUnion({
   ClickedReplay: {},
   ClickedLevelSelect: {},
 
-  // Acknowledgements from fire-and-forget engine commands
+  // Sound panel and the M key, on any screen
+  ChangedVolume: {
+    bus: Schema.Literals(["master", "sfx", "music"]),
+    volume: Schema.Number,
+  },
+  ToggledMute: {},
+  PressedMuteKey: {},
+
+  // Acknowledgements from fire-and-forget engine and audio commands
   CompletedEngineCommand: {},
+  CompletedAudioCommand: {},
 });
 export type Message = typeof Message.Type;

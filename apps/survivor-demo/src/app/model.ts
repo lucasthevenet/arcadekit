@@ -1,3 +1,4 @@
+import { AudioSettings } from "@gamekit/audio";
 import { HudSample, RunSummary, UpgradeChoice } from "@gamekit/survivors";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
@@ -86,6 +87,8 @@ export const Model = Schema.Struct({
   /** True while the viewport is in the document: the engine runs only then (see gameViewport). */
   isViewportMounted: Schema.Boolean,
   coop: CoopRun,
+  /** The player's volumes and mute: read at startup, saved on each change. */
+  audio: AudioSettings,
 });
 export type Model = typeof Model.Type;
 

@@ -78,6 +78,8 @@ export const WeaponDef = Schema.Struct({
   cooldownScalePerLevel: Positive,
   maxLevel: Positive,
   behavior: Schema.Union([BoltWeapon, AuraWeapon]),
+  /** The id of this weapon's shot sound in the app's sound list. Without one, a bolt plays the app's default shot. The aura fires no shots. */
+  sound: Schema.optional(Schema.String),
 });
 export type WeaponDef = typeof WeaponDef.Type;
 

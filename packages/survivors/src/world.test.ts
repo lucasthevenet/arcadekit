@@ -505,3 +505,90 @@ describe("co-op", () => {
     expect(world.time).toBe(time + 3 * DT);
   });
 });
+
+describe("cue counters", () => {
+  it("count shots, hits, kills, pickups, hurts, level-ups, downs and the loss", () => {
+    const sturdy = Schema.decodeUnknownSync(GameContent)({
+      ...content,
+      heroes: content.heroes.map((hero) => ({ ...hero, maxHp: 1e9 })),
+    });
+    const world = createWorld(
+      { content: sturdy, heroIds: ["bolter", "burner"] },
+      11
+    );
+    const { cues } = world;
+    // One tough grunt on hero 1 from the start, so it gets hurt.
+    addEnemy(world, world.heroes[1]!.x, world.heroes[1]!.z);
+    step(world, STILL, DT);
+    expect([...cues.hurt]).toStrictEqual([0, 1]);
+    for (let frame = 0; frame < 30 * 60; frame++) {
+      for (const hero of world.heroes) {
+        if (hero.offer) {
+          chooseUpgrade(world, hero.slot, 0);
+        }
+      }
+      step(world, inputs({ moveX: 0, moveZ: 0 }), DT);
+    }
+    expect({
+      status: world.status,
+      ranMostOfIt: world.time > 29,
+      arcShots: cues.shots[0]! > 0,
+      auraShots: cues.shots[1],
+      hits: cues.hits > 0,
+      kills: cues.kills,
+      pickups: cues.pickups > 0,
+      levelUps: cues.levelUps,
+      hurtAgain: cues.hurt[1]! > 1,
+    }).toStrictEqual({
+      status: "running",
+      ranMostOfIt: true,
+      arcShots: true,
+      auraShots: 0,
+      hits: true,
+      kills: world.kills,
+      pickups: true,
+      levelUps: world.level - 1,
+      hurtAgain: true,
+    });
+    expect([...cues.downed, cues.won, cues.lost]).toStrictEqual([0, 0, 0, 0]);
+
+    world.heroes[1]!.hp = 0;
+    step(world, STILL, DT);
+    expect([...cues.downed, cues.lost]).toStrictEqual([0, 1, 0]);
+    world.heroes[0]!.hp = 0;
+    step(world, STILL, DT);
+    expect([...cues.downed, cues.won, cues.lost]).toStrictEqual([1, 1, 0, 1]);
+  });
+
+  it("counts a win", () => {
+    const world = createWorld({ content, heroIds: ["burner"] }, 5);
+    world.time = content.rules.runLength - DT / 2;
+    step(world, STILL, DT);
+    expect([world.cues.won, world.cues.lost]).toStrictEqual([1, 0]);
+  });
+
+  it("doesn't count aura damage as hits", () => {
+    const world = createWorld({ content, heroIds: ["burner"] }, 5);
+    const i = addEnemy(world, 1.5, 0);
+    for (let k = 0; k < 60; k++) {
+      step(world, STILL, DT);
+    }
+    expect(world.enemies.fields.hp[i]!).toBeLessThan(1000);
+    expect([world.cues.hits, ...world.cues.shots]).toStrictEqual([0, 0, 0]);
+  });
+
+  it("leaves the counters out of the state hash", () => {
+    const a = createWorld({ content, heroIds: ["bolter", "burner"] }, 21);
+    const b = createWorld({ content, heroIds: ["bolter", "burner"] }, 21);
+    play(a, 10);
+    play(b, 10);
+    b.cues.shots[0] = 999;
+    b.cues.hurt[1] = 999;
+    b.cues.hits += 5;
+    b.cues.kills += 5;
+    b.cues.pickups += 5;
+    b.cues.levelUps += 5;
+    expect(b.cues.hits).not.toBe(a.cues.hits);
+    expect(hashWorld(b)).toBe(hashWorld(a));
+  });
+});

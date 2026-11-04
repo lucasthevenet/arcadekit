@@ -49,6 +49,7 @@ export { survivorsSimulation } from "./simulation";
 export {
   type RunStatus,
   type SurvivorsConfig,
+  type SurvivorsCues,
   type World,
   chooseUpgrade,
   createWorld,

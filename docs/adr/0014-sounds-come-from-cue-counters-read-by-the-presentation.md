@@ -35,4 +35,5 @@ A frame that ran several steps, or a co-op tab coming back to the foreground aft
 - A hidden tab is silent. Pausing keeps the music playing but quieter. In co-op a hidden tab keeps stepping but draws nothing, so its sound view plays nothing either.
 - In co-op each peer hears the whole shared fight. Hurt and downed sounds are louder for the local hero than for a teammate's.
 - Volume and mute are app settings, saved under their own key, where the last write wins ([ADR-0009](0009-a-save-package-is-earned.md)).
+- A genre's game definition and engine layer now take the app's audio and cue table, so they are made by functions: `survivorsGame` and `SurvivorsEngineLayer` became `makeSurvivorsGame(sound)` and `makeSurvivorsEngineLayer(sounds)`, and push-puzzle's became `makePushPuzzleGame` and `makePushPuzzleEngineLayer`. This replaces the names [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md) kept.
 - A third genre adds sound the same way: counters in its state, left out of its hash, and a sound view.

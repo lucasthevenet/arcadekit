@@ -13,6 +13,8 @@ import type {
   SignallingRoom,
 } from "@gamekit/net/browser";
 import type { StepInput } from "@gamekit/runtime";
+import { combineViews } from "@gamekit/runtime/browser";
+import type { GameView } from "@gamekit/runtime/browser";
 import {
   HeroInput,
   combineHeroInputs,
@@ -31,7 +33,8 @@ import type {
   UpgradePick,
   World,
 } from "@gamekit/survivors";
-import { SurvivorsView } from "@gamekit/survivors/browser";
+import { SurvivorsSoundView, SurvivorsView } from "@gamekit/survivors/browser";
+import type { SurvivorsGameSound } from "@gamekit/survivors/browser";
 
 import { contentHash } from "./content-hash";
 import { encodeLobbyMessage, parseLobbyMessage, playerName } from "./lobby";
@@ -96,6 +99,11 @@ export interface CoopClientOptions {
   readonly inputDelay?: number;
   /** Steps between state hash comparisons. */
   readonly hashEvery?: number;
+  /**
+   * What the run's sounds play through: every peer hears the whole fight, its own hero's hurt
+   * and down loudest. Without it the run is silent.
+   */
+  readonly sound?: SurvivorsGameSound;
 }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -173,7 +181,7 @@ export class CoopClient {
   private attached: {
     readonly element: HTMLElement;
     readonly controller: InputController<keyof typeof MOVE_AXES>;
-    view: SurvivorsView;
+    view: GameView<World>;
     frame: number;
   } | null = null;
 
@@ -259,7 +267,7 @@ export class CoopClient {
     const attached = {
       element,
       controller,
-      view: new SurvivorsView(element, { localHero: this.slot }),
+      view: this.makeView(element),
       frame: 0,
     };
     const frame = (timeMs: number) => {
@@ -640,9 +648,20 @@ export class CoopClient {
     const { attached } = this;
     if (attached !== null) {
       attached.view.dispose();
-      attached.view = new SurvivorsView(attached.element, {
-        localHero: this.slot,
-      });
+      attached.view = this.makeView(attached.element);
     }
+  }
+
+  /** The drawing view, and the sound view beside it, both for the local hero. */
+  private makeView(element: HTMLElement): GameView<World> {
+    const localHero = this.slot;
+    const view = new SurvivorsView(element, { localHero });
+    const { sound } = this.options;
+    return sound === undefined
+      ? view
+      : combineViews<World>(
+          view,
+          new SurvivorsSoundView({ ...sound, localHero })
+        );
   }
 }

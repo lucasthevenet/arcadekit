@@ -38,3 +38,22 @@ export interface GameView<State> {
   readonly render: (state: State | null, timeSeconds: number) => void;
   readonly dispose: () => void;
 }
+
+/**
+ * One view made of several, such as a game's drawing view and its sound view. `render` renders
+ * each in order; `dispose` disposes them in reverse.
+ */
+export const combineViews = <State>(
+  ...views: readonly GameView<State>[]
+): GameView<State> => ({
+  render: (state, timeSeconds) => {
+    for (const view of views) {
+      view.render(state, timeSeconds);
+    }
+  },
+  dispose: () => {
+    for (let i = views.length - 1; i >= 0; i -= 1) {
+      views[i]?.dispose();
+    }
+  },
+});

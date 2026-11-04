@@ -1,11 +1,13 @@
+import { Audio } from "@gamekit/audio";
+import type { AudioSystem } from "@gamekit/audio";
 import { InputController } from "@gamekit/input";
-import { makeGameEngine } from "@gamekit/runtime/browser";
+import { combineViews, makeGameEngine } from "@gamekit/runtime/browser";
 import type {
   GameDefinition,
   GameEngine,
   InputSource,
 } from "@gamekit/runtime/browser";
-import { Context, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
 
 import type { PushPuzzleEvent } from "../events";
 import { pushPuzzleSimulation } from "../simulation";
@@ -15,6 +17,8 @@ import type {
   PushPuzzleConfig,
   PushPuzzleInput,
 } from "../world";
+import { PushPuzzleSoundView } from "./sound";
+import type { PushPuzzleSounds } from "./sound";
 import { PushPuzzleView } from "./view";
 
 const DIRECTIONS = ["up", "down", "left", "right"] as const;
@@ -61,23 +65,49 @@ const createInput = (surface: HTMLElement): InputSource<PushPuzzleInput> => {
   };
 };
 
-/** The push-puzzle genre as a @gamekit/runtime browser game: its simulation, input and view. */
-export const pushPuzzleGame: GameDefinition<
+/** What the push-puzzle game plays its sounds through. */
+export interface PushPuzzleAudio {
+  /** The app's audio system. `silentAudio` from `@gamekit/audio` plays nothing. */
+  readonly audio: AudioSystem;
+  /** Which of the app's sounds each cue plays. */
+  readonly sounds: PushPuzzleSounds;
+}
+
+/**
+ * The push-puzzle genre as a @gamekit/runtime browser game: its simulation, input, and a view
+ * that draws it and plays its sounds through `audio`.
+ */
+export const makePushPuzzleGame = ({
+  audio,
+  sounds,
+}: PushPuzzleAudio): GameDefinition<
   PushPuzzleConfig,
   Puzzle,
   PushPuzzleInput,
   PushPuzzleEvent
-> = {
+> => ({
   ...pushPuzzleSimulation,
   createInput,
-  createView: (container) => new PushPuzzleView(container),
-};
+  createView: (container) =>
+    combineViews<Puzzle>(
+      new PushPuzzleView(container),
+      new PushPuzzleSoundView(audio, sounds)
+    ),
+});
 
 export class PushPuzzleEngine extends Context.Service<
   PushPuzzleEngine,
   GameEngine<PushPuzzleConfig, Puzzle, PushPuzzleEvent>
 >()("@gamekit/push-puzzle/Engine") {}
 
-export const PushPuzzleEngineLayer = Layer.sync(PushPuzzleEngine, () =>
-  makeGameEngine(pushPuzzleGame)
-);
+/** Provides the engine, playing the cues' `sounds` through the `Audio` service. */
+export const makePushPuzzleEngineLayer = (
+  sounds: PushPuzzleSounds
+): Layer.Layer<PushPuzzleEngine, never, Audio> =>
+  Layer.effect(
+    PushPuzzleEngine,
+    Effect.gen(function* () {
+      const audio = yield* Audio;
+      return makeGameEngine(makePushPuzzleGame({ audio, sounds }));
+    })
+  );

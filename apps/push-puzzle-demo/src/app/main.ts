@@ -1,9 +1,11 @@
+import { BrowserAudioLayer } from "@gamekit/audio/browser";
 import { fetchJsonSource } from "@gamekit/content/browser";
 import { makePushPuzzleContentLayer } from "@gamekit/push-puzzle";
-import { PushPuzzleEngineLayer } from "@gamekit/push-puzzle/browser";
+import { makePushPuzzleEngineLayer } from "@gamekit/push-puzzle/browser";
 import { BrowserSaveStorage } from "@gamekit/save/browser";
 import { Layer } from "effect";
 
+import { AudioSettingsLayer, CUE_SOUNDS } from "./audio";
 import { SaveLayer } from "./save";
 
 export { Model } from "./model";
@@ -13,9 +15,15 @@ export { subscriptions } from "./subscriptions";
 
 /** App-lifetime services, shared by every Command and Subscription. */
 export const resources = Layer.mergeAll(
-  PushPuzzleEngineLayer,
+  // The engine plays its sounds through the app's Audio, which makes no AudioContext
+  // until the player's first gesture.
+  makePushPuzzleEngineLayer(CUE_SOUNDS).pipe(
+    Layer.provideMerge(BrowserAudioLayer)
+  ),
   makePushPuzzleContentLayer(
     fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
   ),
-  SaveLayer.pipe(Layer.provide(BrowserSaveStorage))
+  Layer.mergeAll(SaveLayer, AudioSettingsLayer).pipe(
+    Layer.provide(BrowserSaveStorage)
+  )
 );
