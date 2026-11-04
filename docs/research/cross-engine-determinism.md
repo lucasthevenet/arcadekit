@@ -130,6 +130,17 @@ For the cross-browser test #25 asks for:
 
 **For #28:** the harness already ran survivors' simulation as one DOM-free bundle in Node, Bun and Chromium, which confirms the root entry needs no browser. Once #28 gives a DOM-free step loop, build the cross-engine check on it rather than on a copy of the replay loop, so engines run the same step order the demos do (`endStep`, `endFrame` and samples included). Option 1 doesn't conflict with #28's constraint that the replay keeps `1_294_328_663`: the measured replacements leave it unchanged. Land them in their own PR anyway, so a hash change can be traced to one cause.
 
+## What landed
+
+Option 1, as recommended, in its own change with [ADR-0011](../adr/0011-a-step-uses-only-exact-math.md):
+
+- `packages/survivors/src/math.ts` has `hypot2`, `sin`, `cos` and `powInt`, the measured replacements. One fix: the prototype's cosine coefficient `C2` had a transcription error (`-1.38888888887411252e-3` for fdlibm's `-1.38888888888741095749e-3`), which put `cos` up to ~30 ulp off near π/4. It was just as deterministic, which is why all engines still agreed. With fdlibm's value, `sin` and `cos` are within 2^-52 of `Math` for |x| ≤ 1000. Both versions keep `1_294_328_663`.
+- `world.ts` calls them; the pinned replay hash is unchanged.
+- `oxlint.config.ts` forbids every implementation-approximated `Math` function (`hypot`, `sin`, `cos`, `pow`, `exp`, `log`, `atan2` and the rest) and `**` in both genres' simulation code.
+- `packages/survivors/src/determinism.test.ts` runs this document's long scenario (`runLength` 400, unkillable hero, 6 enemies/s, the `wander` stick) through `GameLoop` for seeds 1, 1234 and 2026, 20,000 steps each (~1 s per seed in Node), and pins each run's final hash and a per-step trace. Its hashes differ from this harness's: it steps through `GameLoop` and uses the corrected `C2`.
+
+Still open for #25: running those long runs in Chromium, Firefox and WebKit through Playwright, and measuring SpiderMonkey and Safari at all.
+
 ## Sources
 
 - ECMA-262 (ES2027 draft): [Math function properties](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-function-properties-of-the-math-object), [implementation-approximated](https://tc39.es/ecma262/multipage/overview.html#implementation-approximated)
