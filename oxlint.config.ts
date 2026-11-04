@@ -2,6 +2,22 @@ import { defineConfig } from "oxlint";
 import core from "ultracite/oxlint/core";
 import vitest from "ultracite/oxlint/vitest";
 
+// Math functions ECMA-262 lets each engine approximate. A genre's step must give the same bits in
+// every engine (ADR-0011), so its simulation calls none of them.
+const APPROXIMATED_MATH = [
+  "hypot",
+  "sin",
+  "cos",
+  "tan",
+  "atan2",
+  "pow",
+  "exp",
+  "log",
+] as const;
+
+const approximatedMathMessage =
+  "is approximated differently by each engine, so a step that calls it can desync lockstep peers. Use exact operations, such as survivors' math.ts (hypot2, sin, cos, powInt). See docs/adr/0011-a-step-uses-only-exact-math.md.";
+
 export default defineConfig({
   env: core.env,
   extends: [core, vitest],
@@ -32,6 +48,26 @@ export default defineConfig({
     "promise/prefer-await-to-callbacks": "off",
   },
   overrides: [
+    {
+      // Genre simulation code: root entries, not the views in ./browser, not tests.
+      files: [
+        "packages/survivors/src/**/*.ts",
+        "packages/push-puzzle/src/**/*.ts",
+      ],
+      excludeFiles: ["**/browser/**", "**/*.test.ts"],
+      jsPlugins: ["./lint/deterministic-math.ts"],
+      rules: {
+        "eslint/no-restricted-properties": [
+          "error",
+          ...APPROXIMATED_MATH.map((property) => ({
+            object: "Math",
+            property,
+            message: `Math.${property} ${approximatedMathMessage}`,
+          })),
+        ],
+        "deterministic-math/no-exponentiation": "error",
+      },
+    },
     {
       files: ["**/*.test.ts"],
       plugins: ["vitest"],
