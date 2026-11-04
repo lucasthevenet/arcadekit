@@ -1,7 +1,7 @@
+import { HOST_ID } from "@gamekit/net/signalling";
+import type { ServerMessage, Signal } from "@gamekit/net/signalling";
 import { describe, expect, it } from "vitest";
 
-import { HOST_ID } from "./protocol";
-import type { ServerMessage, Signal } from "./protocol";
 import { createRoom } from "./room";
 import type { RoomOutput } from "./room";
 

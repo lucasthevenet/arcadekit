@@ -1,8 +1,10 @@
 /**
  * The signalling protocol: the JSON messages a lockstep run's peers and the signalling worker
  * exchange over one WebSocket each, while the peers set up their WebRTC connections (#25,
- * ADR-0012). It is the interface between the worker and the browser transport that will use it,
- * so it has no dependencies and no DOM.
+ * ADR-0012). It is the interface between the worker (the survivors demo's, in
+ * `apps/survivor-demo/worker`) and the browser's signalling client (`hostRoom`, `joinRoom` in
+ * `@gamekit/net/browser`), exported as `@gamekit/net/signalling`, so it has no dependencies and
+ * no DOM.
  *
  * A host opens `wss://<worker>/host` and is told its join code in `welcome`. Each guest opens
  * `wss://<worker>/join/<code>`. In the host star, the host signals every guest and each guest

@@ -4,9 +4,8 @@ Reusable packages for building browser games with **Effect 4**, **Foldkit** and 
 
 ```bash
 pnpm install
-pnpm dev         # play the survivors demo at http://localhost:5173
+pnpm dev         # play the survivors demo, co-op included, under `alchemy dev` (http://localhost:1337)
 pnpm dev:puzzle  # play the push-puzzle demo
-pnpm dev:signalling  # local signalling for co-op, at ws://127.0.0.1:8787
 pnpm test        # all package tests
 pnpm typecheck   # every package, each against its own rules
 pnpm check       # lint + format check (Ultracite: Oxlint + Oxfmt)
@@ -31,9 +30,8 @@ Lower layers have fewer dependencies. Nothing depends on a layer above it.
 | [`@gamekit/foldkit`](packages/foldkit) | `gameViewport` (the element an engine draws into), `engineEntry` (the Subscription that runs the engine there and turns its events into Messages), `keyPresses` | Effect, Foldkit, runtime |
 | [`@gamekit/survivors`](packages/survivors) | The survivors-like genre: content schema, simulation, view and engine. Co-op for 2 to 4 players ([ADR-0013](docs/adr/0013-survivors-co-op-shares-the-run-and-splits-the-heroes.md)): one hero per player, shared team XP, a level-up that waits for every player's pick; picks, pause and leaving are step input (`HeroInput`), and `combineHeroInputs` feeds it from `@gamekit/net`'s lockstep | all of the above except foldkit |
 | [`@gamekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes, view and engine | all of the above except foldkit |
-| [`@gamekit/net`](packages/net) | Lockstep multiplayer (ADR-0012): `hostLockstep` / `joinLockstep` run one `GameSimulation` on 2 to 4 peers, stepping each step once the host has confirmed every player's input for it, comparing state hashes and removing a player who stalls the run. They talk through a `Transport`; `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `jsonCodec` and `schemaCodec` put input on the wire. In `@gamekit/net/browser`: `hostRoom` / `joinRoom`, the signalling client that turns a join code into WebRTC links (host to each guest), and `linksTransport`, the WebRTC `Transport` over them | Effect, core, runtime, signalling's protocol |
-| [`services/signalling`](services/signalling) | The signalling worker (ADR-0012), not deployed yet: a Cloudflare Worker with a Durable Object per join code that relays WebRTC offers, answers and ICE candidates between a host and up to 3 guests, defined with Alchemy in `alchemy.run.ts`. `@gamekit/signalling/protocol` holds its message types for the browser transport. `pnpm dev:signalling` runs the same rooms locally in Node, so co-op works with no Cloudflare | nothing (Alchemy and Workers types to deploy and check it, `ws` to run it locally) |
-| [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content, Foldkit screens, a save of each hero's best run, and co-op for 2 to 4 players: a lobby by join code, then a lockstep run over WebRTC | survivors, content, save, foldkit, net, input (signalling to run it locally) |
+| [`@gamekit/net`](packages/net) | Lockstep multiplayer (ADR-0012): `hostLockstep` / `joinLockstep` run one `GameSimulation` on 2 to 4 peers, stepping each step once the host has confirmed every player's input for it, comparing state hashes and removing a player who stalls the run. They talk through a `Transport`; `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `jsonCodec` and `schemaCodec` put input on the wire. In `@gamekit/net/browser`: `hostRoom` / `joinRoom`, the signalling client that turns a join code into WebRTC links (host to each guest), and `linksTransport`, the WebRTC `Transport` over them. `@gamekit/net/signalling` is the protocol they speak with a signalling worker | Effect, core, runtime |
+| [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content, Foldkit screens, a save of each hero's best run, and co-op for 2 to 4 players: a lobby by join code, then a lockstep run over WebRTC. Deployed with Alchemy as one Cloudflare Worker that serves the site and is the [signalling worker](apps/survivor-demo/worker) (a Durable Object per join code) | survivors, content, save, foldkit, net, input (Alchemy and Workers types to run, deploy and check its Worker) |
 | [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen and a save of solved levels | push-puzzle, content, save, foldkit |
 
 Each package's `tsconfig.json` sets which environment it may use. `core` compiles without DOM types, so browser code there fails the typecheck. `content`, `save`, `runtime`, `net` and both genre packages check their root entry the same way (`tsconfig.root.json`); only their `./browser` entries may use the DOM. That keeps the simulation runnable in a Web Worker or on a game server.
@@ -95,25 +93,11 @@ With about 750 enemies, three maxed weapons and 480 XP gems on screen, one simul
 
 ### Co-op
 
-2 to 4 players, each in their own browser, play one run in lockstep ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md), [ADR-0013](docs/adr/0013-survivors-co-op-shares-the-run-and-splits-the-heroes.md)). For local play, run the signalling server beside the demo:
+2 to 4 players, each in their own browser, play one run in lockstep ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md), [ADR-0013](docs/adr/0013-survivors-co-op-shares-the-run-and-splits-the-heroes.md)). `pnpm dev` runs the demo under `alchemy dev`, which serves the site and the signalling worker together, with no Cloudflare account ([the demo's README](apps/survivor-demo/README.md) has the details, and how to deploy). Pick **Co-op** in two windows. One player hosts and reads out the join code; the others join with it. Everyone picks a hero, and the host starts. The host sends the run's seed and content hash at the start; a player whose content differs refuses to start, with a message naming both hashes, and the host's run goes on without them. The view follows your own hero. A level-up freezes the run until every player has picked; Escape pauses it for everyone until you resume. If a player's input stops arriving, everyone sees "Waiting for …", and the host removes that player after about 10 s. A desync, being removed or losing the host stops the run with a message saying which. Co-op runs aren't saved as records.
 
-```bash
-pnpm dev:signalling   # ws://127.0.0.1:8787
-pnpm dev
-```
+`src/coop/` holds the co-op client: the lobby over `@gamekit/net/browser`'s signalling client, then a lockstep session it ticks on a worker's timer and draws on animation frames. Its lobby messages (heroes, the start) travel on each peer link's reliable channel (`src/coop/lobby.ts`). It finds the signalling worker on the page's own origin, since one Worker serves both (`src/coop/config.ts`); `VITE_STUN_URLS` sets the STUN servers (default `stun:stun.l.google.com:19302`; comma-separated, or empty for none).
 
-Then pick **Co-op** in two windows. One player hosts and reads out the join code; the others join with it. Everyone picks a hero, and the host starts. The host sends the run's seed and content hash at the start; a player whose content differs refuses to start, with a message naming both hashes, and the host's run goes on without them. The view follows your own hero. A level-up freezes the run until every player has picked; Escape pauses it for everyone until you resume. If a player's input stops arriving, everyone sees "Waiting for …", and the host removes that player after about 10 s. A desync, being removed or losing the host stops the run with a message saying which. Co-op runs aren't saved as records.
-
-`src/coop/` holds the co-op client: the lobby over `@gamekit/net/browser`'s signalling client, then a lockstep session it ticks on a timer and draws on animation frames. Its lobby messages (heroes, the start) travel on each peer link's reliable channel (`src/coop/lobby.ts`). Two Vite env variables configure it (`src/coop/config.ts`):
-
-| Variable | Default |
-| --- | --- |
-| `VITE_SIGNALLING_URL` | `ws://<the page's host>:8787`, the local server; a deployed worker's `wss://` URL otherwise |
-| `VITE_STUN_URLS` | `stun:stun.l.google.com:19302`; comma-separated, or empty for none |
-
-For a LAN, start the server with `SIGNALLING_HOST=0.0.0.0 pnpm dev:signalling` and the demo with `pnpm dev --host`.
-
-`pnpm test:e2e` checks co-op end to end: it starts the local signalling server and the demo, opens two Chromium pages that host and join, plays a few seconds with different inputs on each, and checks that both report the same state hashes at the same steps with no error. It isn't part of `pnpm test`, since it needs Chromium, starts two servers and takes about 15 s. It skips itself when Playwright or Chromium is missing.
+`pnpm test:e2e` checks co-op end to end: it starts the demo under `alchemy dev` (in a stage of its own, `e2e`), opens two Chromium pages that host and join, plays a few seconds with different inputs on each, and checks that both report the same state hashes at the same steps with no error. Then it hides the guest's tab for real (a Chromium of its own, with a second tab in front, so its main-thread timers drop to about once a second) and checks that the run keeps stepping at full rate past the host's 10 s drop-out, with no one removed. It isn't part of `pnpm test`, since it needs Chromium and workerd and takes about a minute. It skips itself when Playwright or Chromium is missing, or when `alchemy dev` doesn't start.
 
 ## The push-puzzle demo
 
@@ -127,8 +111,8 @@ Level select marks each solved level with its best move count, and the Solved sc
 
 - **Publishing.** Packages export their TypeScript source directly, which suits a workspace. Publishing to npm needs a build step (e.g. tsdown), `effect`/`three`/`foldkit` moved to `peerDependencies`, and the `@gamekit` scope swapped for one you own.
 - Art and sound (everything is colored shapes).
-- A deployed signalling worker, and TURN. Co-op works through the local signalling server on one machine or a LAN; across the internet it needs the worker deployed, and two peers behind symmetric NATs can't connect without TURN.
+- A public deployment, and TURN. `alchemy deploy` puts the demo and its signalling worker on Cloudflare, but none is public yet (the worker needs rate limits first: see its README), and two peers behind symmetric NATs can't connect without TURN.
 - Cross-browser lockstep: the end-to-end co-op test runs in Chromium only.
 - More in the save. `@gamekit/save` holds records by id only: no settings, no unlocks and no run in progress. Every save is at version 1, so there is no migration API yet ([ADR-0009](docs/adr/0009-a-save-package-is-earned.md)).
 - Foldkit's Vite plugin for keeping UI state across live reloads. It's left out because engine state isn't preserved, so a reload mid-run would show a "Playing" UI with no run.
-- Browsers pause `requestAnimationFrame` in hidden tabs, so a single-player run pauses when you switch tabs. A co-op run steps on a timer instead, which a hidden tab throttles to about once a second: the others wait for that player, and the host removes them after about 10 s ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md)).
+- Browsers pause `requestAnimationFrame` in hidden tabs, so a single-player run pauses when you switch tabs. A co-op run keeps going: it steps on a timer in a Web Worker, which a hidden tab doesn't throttle, and only stops drawing. A player whose game really stalls (closed, or frozen by the browser) holds the others up until the host removes them after about 10 s ([ADR-0012](docs/adr/0012-delay-based-lockstep-over-a-host-star.md)).
