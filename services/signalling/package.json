@@ -1,0 +1,24 @@
+{
+  "name": "@gamekit/signalling",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Introduce the peers of a lockstep run behind a join code: a Cloudflare Worker with a Durable Object per code, defined with Alchemy",
+  "type": "module",
+  "exports": {
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p . && tsc -p tsconfig.protocol.json",
+    "plan": "alchemy plan",
+    "deploy": "alchemy deploy",
+    "destroy": "alchemy destroy",
+    "dev": "alchemy dev"
+  },
+  "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.85",
+    "@cloudflare/workers-types": "^5.20261104.1",
+    "@effect/platform-node": "~4.1.2",
+    "alchemy": "2.0.0-beta.85",
+    "effect": "~4.1.2"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  // The worker runs on Cloudflare's runtime, not in a browser: Workers types, no DOM.
+  // alchemy.run.ts is checked too, so a change to Alchemy's API fails the typecheck.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": ["src", "alchemy.run.ts"]
+}

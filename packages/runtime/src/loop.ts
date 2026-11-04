@@ -73,8 +73,9 @@ export class GameLoop<Config, State, Input, Event> {
   }
 
   /**
-   * Changes the current state between steps (a menu choice, a cheat, a network message), then
-   * reports any events that produced, and a sample if `version` moved. Does nothing with no run.
+   * Changes the current state between steps (a menu choice, a cheat), then reports any events
+   * that produced, and a sample if `version` moved. Does nothing with no run. A lockstep run
+   * schedules its changes as step input instead (ADR-0012).
    */
   modify(change: (state: State) => void, nowMs: number): void {
     if (this.run === null) {

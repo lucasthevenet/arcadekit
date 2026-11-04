@@ -1,0 +1,10 @@
+{
+  // The protocol and the room's rules are shared with the browser transport and tested in Node,
+  // so they are checked with no Workers or DOM types.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "files": ["src/protocol.ts", "src/room.ts", "src/sockets.ts"]
+}

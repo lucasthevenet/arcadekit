@@ -6,6 +6,8 @@ status: accepted
 
 > Amended by [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md) on 2026-11-04: the fixed clock, the 0.25 s clamp and the backlog drop live in `GameLoop`'s `{ seconds }` frames, `{ steps }` frames are the no-drop path lockstep needs, and `alpha` is gone.
 
+> Amended by [ADR-0012](0012-delay-based-lockstep-over-a-host-star.md) on 2026-11-04: a lockstep run steps only on `{ steps }` budgets, a step waits for its inputs and is never dropped, and a hidden tab stalls every player until the host removes it.
+
 The runtime has one time model: `GameDriver` advances a run in fixed steps, 1/60 s by default, using core's `FixedStepClock` in a `requestAnimationFrame` loop. Fixed steps make a run behave the same on any screen and keep it deterministic. Turn-based genres use the same clock and count steps: push-puzzle takes at most one turn per step, ignores `dt`, and times hold-to-repeat in steps, so its replays are exact (finding 10).
 
 ## Considered Options

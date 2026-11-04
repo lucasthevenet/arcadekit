@@ -2,6 +2,8 @@
 status: accepted
 ---
 
+> Confirmed by [ADR-0012](0012-delay-based-lockstep-over-a-host-star.md) on 2026-11-04: #25 chose delay-based lockstep without rollback, and a desync stops the run instead of resyncing, so nothing needs a snapshot.
+
 # The runtime keeps no snapshots of a run
 
 The runtime never looks inside a run's state, and it has no way to snapshot or restore it (finding 11). Push-puzzle builds undo from a record of each turn, and a restart calls `start` again with the same config. Turn records are smaller and exact and keep the step free of allocation, while a snapshot per turn would allocate or need a pool of snapshots.

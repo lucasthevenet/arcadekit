@@ -19,5 +19,8 @@
     "@gamekit/runtime": "workspace:*",
     "effect": "~4.1.2",
     "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@gamekit/net": "workspace:*"
   }
 }
