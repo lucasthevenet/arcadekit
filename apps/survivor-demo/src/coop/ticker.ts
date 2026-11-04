@@ -2,9 +2,9 @@
  * Calls `onTick` about every `everyMs` until the returned function stops it.
  *
  * A co-op run must keep stepping while its tab is hidden (#25, ADR-0012). Browsers throttle a
- * hidden tab's main-thread timers to about once a second (Chrome throttles them harder after
- * minutes) and stop `requestAnimationFrame`, so a lockstep session ticked by them falls behind
- * and stalls everyone. A dedicated worker's timers aren't throttled that way, and the messages
+ * hidden tab's main-thread timers to about once a second (an open data channel spares the page
+ * Chrome's harsher intensive throttling) and stop `requestAnimationFrame`, so a lockstep session
+ * ticked by them falls behind and stalls everyone. A dedicated worker's timers aren't throttled that way, and the messages
  * it posts reach the main thread at its rate, so the default ticker runs its timer in one.
  */
 export type Ticker = (onTick: () => void) => () => void;

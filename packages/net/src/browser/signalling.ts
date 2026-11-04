@@ -107,7 +107,7 @@ export interface SignallingSocketHandlers {
 }
 
 export interface SignallingOptions {
-  /** The worker's base URL, such as `wss://signalling.example.com` or `ws://localhost:8787`. */
+  /** The worker's base URL, normally the page's own origin, such as `wss://game.example.com` or `ws://localhost:1337`. */
   readonly url: string;
   /** WebRTC settings (STUN servers). Ignored when `connectPeer` is given. */
   readonly rtc?: RtcOptions;
