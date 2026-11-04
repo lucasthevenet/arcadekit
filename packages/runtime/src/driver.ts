@@ -66,7 +66,7 @@ export class GameDriver<Config, State, Input, Event> {
           this.emitSampleIfChanged(state, now);
         }
       }
-      view.render(state, now / 1000, this.clock.alpha);
+      view.render(state, now / 1000);
     };
 
     this.attached = { view, input, frame: requestAnimationFrame(frame) };

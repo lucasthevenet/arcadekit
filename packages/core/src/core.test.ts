@@ -126,7 +126,6 @@ describe(FixedStepClock, () => {
       steps += 1;
     };
     expect(clock.advance(0.3125, count)).toBe(2);
-    expect(clock.alpha).toBe(0.5);
     expect(clock.advance(0.0625, count)).toBe(1);
     expect(steps).toBe(3);
   });
@@ -134,7 +133,8 @@ describe(FixedStepClock, () => {
   it("drops the backlog after a very long frame", () => {
     const clock = new FixedStepClock(0.1, 5);
     expect(clock.advance(10, () => {})).toBe(5);
-    expect(clock.alpha).toBe(0);
+    // Nothing carried over: half a step owes none.
+    expect(clock.advance(0.05, () => {})).toBe(0);
   });
 });
 
