@@ -16,6 +16,7 @@
     "@gamekit/content": "workspace:*",
     "@gamekit/foldkit": "workspace:*",
     "@gamekit/push-puzzle": "workspace:*",
+    "@gamekit/render-three": "workspace:*",
     "@gamekit/save": "workspace:*",
     "effect": "~4.1.2",
     "foldkit": "~0.170.0"

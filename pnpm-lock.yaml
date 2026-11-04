@@ -53,6 +53,9 @@ importers:
       '@gamekit/push-puzzle':
         specifier: workspace:*
         version: link:../../packages/push-puzzle
+      '@gamekit/render-three':
+        specifier: workspace:*
+        version: link:../../packages/render-three
       '@gamekit/save':
         specifier: workspace:*
         version: link:../../packages/save
@@ -83,6 +86,9 @@ importers:
       '@gamekit/net':
         specifier: workspace:*
         version: link:../../packages/net
+      '@gamekit/render-three':
+        specifier: workspace:*
+        version: link:../../packages/render-three
       '@gamekit/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -181,6 +187,9 @@ importers:
 
   packages/render-three:
     dependencies:
+      effect:
+        specifier: ~4.1.2
+        version: 4.1.2
       three:
         specifier: ^0.187.0
         version: 0.187.0
