@@ -3,8 +3,12 @@ import {
   MAX_PLAYERS,
   parseClientMessage,
   ROOM_TTL_MS,
-} from "./protocol";
-import type { ErrorReason, PeerId, ServerMessage } from "./protocol";
+} from "@gamekit/net/signalling";
+import type {
+  ErrorReason,
+  PeerId,
+  ServerMessage,
+} from "@gamekit/net/signalling";
 
 /**
  * What the room asks its Durable Object to do with sockets. The room never touches a socket, so

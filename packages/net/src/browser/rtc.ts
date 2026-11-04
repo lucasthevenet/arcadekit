@@ -1,5 +1,4 @@
-import type { Signal } from "@gamekit/signalling/protocol";
-
+import type { Signal } from "../signalling/protocol";
 import type { PeerId } from "../transport";
 import { dataChannelText } from "./channel";
 import type { PeerLink } from "./channel";

@@ -1,6 +1,6 @@
-import type { Signal } from "@gamekit/signalling/protocol";
 import { describe, expect, it } from "vitest";
 
+import type { Signal } from "../signalling/protocol";
 import type { PeerLink, TextChannel } from "./channel";
 import type { ConnectPeerOptions } from "./rtc";
 import { hostRoom, joinRoom } from "./signalling";

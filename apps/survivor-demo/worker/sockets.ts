@@ -1,4 +1,9 @@
-import type { ErrorReason, PeerId, ServerMessage } from "./protocol";
+import type {
+  ErrorReason,
+  PeerId,
+  ServerMessage,
+} from "@gamekit/net/signalling";
+
 import type { Room, RoomOutput } from "./room";
 
 /** The part of a WebSocket the room needs. A Cloudflare `WebSocket` is one; tests pass a fake. */

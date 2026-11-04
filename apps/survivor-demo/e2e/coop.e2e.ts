@@ -6,17 +6,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { startLocalSignalling } from "@gamekit/signalling/local";
-import type { LocalSignalling } from "@gamekit/signalling/local";
-import { createServer } from "vite";
-import type { ViteDevServer } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-// Co-op end to end (#25): the local signalling server, the demo on Vite's dev server, and two
-// Chromium pages, each its own player. The host hosts, the guest joins with the code the host's
+// Co-op end to end (#25): the demo under `alchemy dev` (Vite's dev server, with the Worker that
+// serves the signalling routes and its Durable Objects in workerd), and two Chromium pages, each
+// its own player. The host hosts, the guest joins with the code the host's
 // page shows, each picks a hero, the host starts, and both play a few seconds pressing different
 // keys and taking every upgrade offered. Both pages must then report the same state hash at the
 // same steps, and no error.
@@ -29,8 +27,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // dispatching `visibilitychange` would throttle nothing.) The run must keep stepping at full rate
 // for longer than the host's 10 s drop-out, with no one removed and the hashes agreeing.
 //
-// Run it with `pnpm test:e2e`. It isn't part of `pnpm test`: it needs Chromium, starts two
-// servers and takes about 15 s. It skips itself when Playwright or Chromium is missing.
+// Run it with `pnpm test:e2e`. It isn't part of `pnpm test`: it needs Chromium and workerd, and
+// takes about a minute. It skips itself when Playwright or Chromium is missing, or when
+// `alchemy dev` doesn't come up (workerd not installed: see the demo's README).
 
 /** The part of Playwright this test uses. Playwright isn't a dependency: it's found at run time. */
 interface Locator {
@@ -126,19 +125,12 @@ const startDesktopChromium = async (pw: Playwright) => {
     ],
     { stdio: ["ignore", "ignore", "pipe"] }
   );
-  let output = "";
-  let endpoint: string | undefined;
-  for await (const chunk of child.stderr!) {
-    output += String(chunk);
-    endpoint = /DevTools listening on (?<url>ws:\/\/\S+)/u.exec(output)?.groups
-      ?.url;
-    if (endpoint !== undefined) {
-      break;
-    }
-  }
-  if (endpoint === undefined) {
-    throw new Error(`Chromium didn't start: ${output}`);
-  }
+  const endpoint = await waitForOutput(
+    child,
+    [child.stderr!],
+    /DevTools listening on (?<url>ws:\/\/\S+)/u,
+    30_000
+  );
   const desktop = await pw.chromium.connectOverCDP(endpoint, {
     noDefaults: true,
   });
@@ -164,9 +156,94 @@ const startDesktopChromium = async (pw: Playwright) => {
   };
 };
 
+/**
+ * The demo under `alchemy dev`, in a stage of its own so it doesn't touch a developer's. Resolves
+ * with the site's URL once the Worker is ready; rejects with Alchemy's output if it isn't.
+ */
+const startAlchemyDev = async () => {
+  const child = spawn(
+    "pnpm",
+    ["exec", "alchemy", "dev", "--no-input", "--stage", "e2e"],
+    {
+      cwd: demoRoot,
+      // Vite passes VITE_* variables on to the app. No STUN: both players are on this machine,
+      // and a sandbox may have no route out.
+      env: { ...process.env, VITE_STUN_URLS: "" },
+      // Its own process group, so closing it stops the sidecar, Vite and workerd too.
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    }
+  );
+  const exited = once(child, "exit");
+  const close = async () => {
+    if (
+      child.pid !== undefined &&
+      child.exitCode === null &&
+      child.signalCode === null
+    ) {
+      process.kill(-child.pid!, "SIGTERM");
+      await exited;
+    }
+  };
+  try {
+    const url = await waitForOutput(
+      child,
+      [child.stdout, child.stderr],
+      /\[Website\] ready at (?<url>http:\/\/\S+)/u,
+      90_000,
+      // `alchemy dev` reports a failed run and waits for a file change instead of exiting.
+      /ERROR/u
+    );
+    return { url, close };
+  } catch (error) {
+    await close();
+    throw error;
+  }
+};
+
+/**
+ * Reads a child process's output until `pattern` matches it, and returns the match's `url`
+ * group. Fails with the output if `fails` matches first, the process exits or `timeoutMs`
+ * passes. The streams keep flowing after, so a full pipe never blocks the process.
+ */
+const waitForOutput = async (
+  child: ChildProcess,
+  streams: readonly Readable[],
+  pattern: RegExp,
+  timeoutMs: number,
+  fails?: RegExp
+): Promise<string> => {
+  let output = "";
+  const done = new AbortController();
+  const onData = (chunk: Buffer) => {
+    output += String(chunk);
+    if (pattern.test(output) || fails?.test(output) === true) {
+      done.abort();
+    }
+  };
+  for (const stream of streams) {
+    stream.on("data", onData);
+  }
+  child.once("exit", () => done.abort());
+  child.once("error", (error) => {
+    output += String(error);
+    done.abort();
+  });
+  const signal = AbortSignal.any([done.signal, AbortSignal.timeout(timeoutMs)]);
+  if (!signal.aborted) {
+    await once(signal, "abort");
+  }
+  const url = pattern.exec(output)?.groups?.url;
+  if (url === undefined) {
+    throw new Error(
+      `${child.spawnargs.join(" ")} didn't start:\n${output.slice(-2000)}`
+    );
+  }
+  return url;
+};
+
 let browser: Browser | undefined;
-let signalling: LocalSignalling | undefined;
-let vite: ViteDevServer | undefined;
+let dev: Awaited<ReturnType<typeof startAlchemyDev>> | undefined;
 let skipReason: string | undefined;
 
 describe("co-op in two browsers", () => {
@@ -181,24 +258,16 @@ describe("co-op in two browsers", () => {
       skipReason = `Chromium didn't launch: ${String(error)}`;
       return;
     }
-    signalling = await startLocalSignalling({ port: 0 });
-    // Vite exposes VITE_* variables from the environment to the app (src/coop/config.ts).
-    process.env.VITE_SIGNALLING_URL = signalling.url;
-    // No STUN: both pages are on this machine, and the sandbox may have no route out.
-    process.env.VITE_STUN_URLS = "";
-    vite = await createServer({
-      root: demoRoot,
-      configFile: `${demoRoot}vite.config.ts`,
-      logLevel: "warn",
-      server: { host: "127.0.0.1", port: 5199, strictPort: false },
-    });
-    await vite.listen();
-  });
+    try {
+      dev = await startAlchemyDev();
+    } catch (error) {
+      skipReason = String(error);
+    }
+  }, 120_000);
 
   afterAll(async () => {
     await browser?.close();
-    await vite?.close();
-    await signalling?.close();
+    await dev?.close();
   });
 
   it("still plays single-player on the single-player engine", async ({
@@ -207,7 +276,7 @@ describe("co-op in two browsers", () => {
     if (
       skipReason !== undefined ||
       browser === undefined ||
-      vite === undefined
+      dev === undefined
     ) {
       skip(skipReason);
       return;
@@ -218,7 +287,7 @@ describe("co-op in two browsers", () => {
     const page = await context.newPage();
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto(vite.resolvedUrls!.local[0]!);
+    await page.goto(dev.url);
     await page.click("button:has-text('Start run')");
     await page.waitForSelector("text=Esc to pause", { timeout: 15_000 });
     await page.keyboard.down("Escape");
@@ -234,7 +303,7 @@ describe("co-op in two browsers", () => {
     if (
       skipReason !== undefined ||
       browser === undefined ||
-      vite === undefined
+      dev === undefined
     ) {
       skip(skipReason);
       return;
@@ -242,7 +311,7 @@ describe("co-op in two browsers", () => {
     const errors: string[] = [];
     const host = await openPage(browser, errors);
     const guest = await openPage(browser, errors);
-    await startRun(host, guest, vite.resolvedUrls!.local[0]!);
+    await startRun(host, guest, dev.url);
 
     // Different inputs on each page, for a few seconds, taking every upgrade offered.
     const legs: [string, string][] = [
@@ -276,7 +345,7 @@ describe("co-op in two browsers", () => {
       skipReason !== undefined ||
       playwright === undefined ||
       browser === undefined ||
-      vite === undefined
+      dev === undefined
     ) {
       skip(skipReason);
       return;
@@ -287,7 +356,7 @@ describe("co-op in two browsers", () => {
       const host = await openPage(browser, errors);
       const guest = desktop.page;
       guest.on("pageerror", (error) => errors.push(error.message));
-      await startRun(host, guest, vite.resolvedUrls!.local[0]!);
+      await startRun(host, guest, dev.url);
 
       // A main-thread timer on the guest's page, to see the browser throttle it.
       await guest.evaluate(

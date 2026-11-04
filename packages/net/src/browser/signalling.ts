@@ -2,13 +2,12 @@ import {
   HOST_ID,
   normalizeJoinCode,
   parseServerMessage,
-} from "@gamekit/signalling/protocol";
+} from "../signalling/protocol";
 import type {
   ClientMessage,
   ErrorReason,
   Signal,
-} from "@gamekit/signalling/protocol";
-
+} from "../signalling/protocol";
 import type { PeerId } from "../transport";
 import type { PeerLink } from "./channel";
 import { rtcConnectPeer } from "./rtc";

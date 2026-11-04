@@ -1,7 +1,7 @@
+import { parseServerMessage } from "@gamekit/net/signalling";
+import type { ServerMessage } from "@gamekit/net/signalling";
 import { describe, expect, it } from "vitest";
 
-import { parseServerMessage } from "./protocol";
-import type { ServerMessage } from "./protocol";
 import { createRoom } from "./room";
 import { CLOSE_PROTOCOL_ERROR, createSocketRoom } from "./sockets";
 import type { RoomSocket } from "./sockets";

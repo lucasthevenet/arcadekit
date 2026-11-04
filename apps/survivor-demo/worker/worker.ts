@@ -1,32 +1,40 @@
+import { joinCodeFromBytes, joinCodeFromPath } from "@gamekit/net/signalling";
 import { DurableObject } from "cloudflare:workers";
 
-import { joinCodeFromBytes, joinCodeFromPath } from "./protocol";
 import { createRoom } from "./room";
 import type { Room } from "./room";
 import { createSocketRoom } from "./sockets";
 import type { SocketRoom } from "./sockets";
 
 /**
- * The signalling worker (#25, ADR-0012): introduces the peers of a lockstep run so they can open
- * WebRTC data channels to each other, then gets out of the way. It never sees game input.
+ * The survivors demo's Worker (#25, ADR-0012). It serves the site's files and is the signalling
+ * worker: it introduces the peers of a lockstep run so they can open WebRTC data channels to
+ * each other, then gets out of the way. It never sees game input.
  *
  * - `GET /host` (a WebSocket upgrade) picks a fresh join code and opens its room as the host.
  * - `GET /join/<code>` (a WebSocket upgrade) joins that room as a guest.
+ * - Anything else is the site, from the static assets.
  *
- * Each join code is one `SignallingRoom` Durable Object. `alchemy.run.ts` declares the Worker
- * and the `ROOMS` namespace binding.
+ * Each join code is one `SignallingRoom` Durable Object. `alchemy.run.ts` declares the Worker,
+ * routes only the signalling paths to it ahead of the assets, and binds `ROOMS`; Alchemy
+ * supplies `ASSETS`.
  */
 export interface Env {
   readonly ROOMS: DurableObjectNamespace<SignallingRoom>;
+  readonly ASSETS: Fetcher;
 }
 
 export default {
   fetch: (request: Request, env: Env): Promise<Response> | Response => {
-    const url = new URL(request.url);
+    const { pathname } = new URL(request.url);
+    const isSignalling = pathname === "/host" || pathname.startsWith("/join/");
+    if (!isSignalling) {
+      return env.ASSETS.fetch(request);
+    }
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("Expected a WebSocket upgrade", { status: 426 });
     }
-    if (url.pathname === "/host") {
+    if (pathname === "/host") {
       const code = joinCodeFromBytes(
         crypto.getRandomValues(new Uint8Array(32))
       );
@@ -35,7 +43,7 @@ export default {
       }
       return toRoom(env, request, code, "host");
     }
-    const code = joinCodeFromPath(url.pathname);
+    const code = joinCodeFromPath(pathname);
     if (code === undefined) {
       return new Response("Not found", { status: 404 });
     }
