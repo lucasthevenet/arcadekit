@@ -70,8 +70,7 @@ export const CLICK_SOUND = "click";
 /** The music on the menus and during a run. Starting or ending a run crossfades between them. */
 export const MUSIC = { menu: "music-menu", run: "music-run" } as const;
 
-/** Still under the project's old name, gamekit: a new key would lose existing players' settings. */
-export const AUDIO_SETTINGS_KEY = "gamekit/survivors/settings";
+export const AUDIO_SETTINGS_KEY = "arcadekit/survivors/settings";
 
 /** The player's volume and mute, kept under their own key (ADR-0009). Neither method fails. */
 export class SoundSettings extends Context.Service<

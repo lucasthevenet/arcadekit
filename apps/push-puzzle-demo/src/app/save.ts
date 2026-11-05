@@ -23,8 +23,7 @@ export type LevelRecords = typeof LevelRecords.Type;
 
 export const emptyRecords: LevelRecords = {};
 
-/** Still under the project's old name, gamekit: a new key would lose existing players' saves. */
-export const SAVE_KEY = "gamekit/push-puzzle/save";
+export const SAVE_KEY = "arcadekit/push-puzzle/save";
 
 const mergeRecord = (a: LevelRecord, b: LevelRecord): LevelRecord => {
   if (!a.solved) {

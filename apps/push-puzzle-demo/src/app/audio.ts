@@ -37,9 +37,9 @@ export const CUE_SOUNDS: PushPuzzleSounds = {
 };
 
 /**
- * Audio settings are app settings, kept apart from the save (ADR-0009). Still under the project's old name, gamekit: a new key would lose existing players' settings.
+ * Audio settings are app settings, kept apart from the save (ADR-0009).
  */
-export const AUDIO_SETTINGS_KEY = "gamekit/push-puzzle/settings";
+export const AUDIO_SETTINGS_KEY = "arcadekit/push-puzzle/settings";
 
 export class AudioSettingsStorage extends Context.Service<
   AudioSettingsStorage,

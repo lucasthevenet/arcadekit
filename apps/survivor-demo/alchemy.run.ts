@@ -36,9 +36,8 @@ const state = Layer.unwrap(
   })
 );
 
-// The stack keeps the project's old name, gamekit: renaming it would orphan what is already deployed.
 export default Alchemy.Stack(
-  "gamekit-survivor-demo",
+  "arcadekit-survivor-demo",
   {
     providers: Cloudflare.providers(),
     state,

@@ -2,6 +2,8 @@
 
 Reusable packages for building browser games with **Effect 4**, **Foldkit** and **Three.js**, plus two demo games built on them: a survivors-like and a push-puzzle (Sokoban-like).
 
+**Status: alpha.** Interfaces, stored data and package layout change whenever that improves the code, with no compatibility layers or migrations. Each release's changelog says what broke.
+
 ```bash
 pnpm install
 pnpm dev         # play the survivors demo, co-op included, under `alchemy dev` (http://localhost:1337)
@@ -127,9 +129,9 @@ Rules of thumb for the simulation (see `packages/survivors/src/world.ts` for a r
 
 Content lives in `apps/survivor-demo/public/content/`: rules, heroes, enemies, weapons (`bolt` or `aura`, with an optional `sound`: the id of a bolt's shot sound), passive upgrades and the wave schedule. Heroes, enemies and weapons have an optional `sprite`: an enemy's or bolt's tag in the sprite sheet (`slime/move`, `bolt/arc`), or a hero's tag prefix (`spark` for `spark/walk`, `spark/idle` and `spark/down`); without one, or if the sheet lacks it, a generic sprite is drawn in the content's `color`. It's checked against `packages/survivors/src/schema.ts` at load and by `apps/survivor-demo/src/content.test.ts`.
 
-Hero select shows each hero's best time and most kills. The save keeps them in localStorage under `gamekit/survivors/save`. `src/app/save.ts` says what a hero's record holds and how two merge; `@arcadekit/save` does the rest.
+Hero select shows each hero's best time and most kills. The save keeps them in localStorage under `arcadekit/survivors/save`. `src/app/save.ts` says what a hero's record holds and how two merge; `@arcadekit/save` does the rest.
 
-Sound: `src/app/sound.ts` lists the sounds in `public/sounds/` (each id is its file name) and which one each cue plays; the genre's sound view plays them as its cue counters rise, and the aura hums while a hero carries it and the run is moving. The menus have one music loop and a run another, crossfading as a run starts and ends; pausing turns the music down. The menu and pause screens have volume sliders and a mute button, kept in localStorage under `gamekit/survivors/settings`, apart from the save; M mutes on any screen. Nothing plays until the first click or key press. In co-op every player hears the whole fight, their own hero's hurt and down loudest.
+Sound: `src/app/sound.ts` lists the sounds in `public/sounds/` (each id is its file name) and which one each cue plays; the genre's sound view plays them as its cue counters rise, and the aura hums while a hero carries it and the run is moving. The menus have one music loop and a run another, crossfading as a run starts and ends; pausing turns the music down. The menu and pause screens have volume sliders and a mute button, kept in localStorage under `arcadekit/survivors/settings`, apart from the save; M mutes on any screen. Nothing plays until the first click or key press. In co-op every player hears the whole fight, their own hero's hurt and down loudest.
 
 Art: one sprite sheet, `public/sprites/survivors.png` and `.json` (Aseprite's export format), made by `pnpm sprites`. `src/app/main.ts` hands its load to the engine layer, and `LoadContent` loads it beside the content; if it can't be loaded, the loading screen shows the error and a "Try again" button, which loads again only what failed and goes to the menu. The co-op client draws with the same loaded sheet. The view draws pixel art seen straight down: a 24 px hero standing on a ring in its player slot's colour (how co-op players tell their heroes apart), 16 px enemies, gems by value, bright projectiles with a trail, the aura in whole pixels, and a calm arena with a stone wall. `public/sprites/README.md` lists the tags and how to replace the art; `src/app/sprites.test.ts` checks the sheet has every tag the content names.
 
@@ -151,9 +153,9 @@ Levels live in `apps/push-puzzle-demo/public/content/levels.json`, as rows of st
 
 Arrows, WASD or the d-pad move one cell per press (hold to repeat), and so does a swipe on a touch screen; Z, Backspace or B undo; R restarts; Escape goes back to level select; M mutes on any screen.
 
-Level select marks each solved level with its best move count, and the Solved screen says when a solve is a new best. The save keeps them in localStorage under `gamekit/push-puzzle/save`. `src/app/save.ts` says what a level's record holds and how two merge; `@arcadekit/save` does the rest.
+Level select marks each solved level with its best move count, and the Solved screen says when a solve is a new best. The save keeps them in localStorage under `arcadekit/push-puzzle/save`. `src/app/save.ts` says what a level's record holds and how two merge; `@arcadekit/save` does the rest.
 
-Sound: `src/app/audio.ts` lists the sounds in `public/sounds/` (each id is its file name) and which one each cue plays (`move`, `push`, `hole`, `undo`, `solved`); the genre's sound view plays them as its cue counters rise. One music loop starts with the app and is heard after the first click or key press. Level select has volume sliders and a mute switch, kept in localStorage under `gamekit/push-puzzle/settings`, apart from the save.
+Sound: `src/app/audio.ts` lists the sounds in `public/sounds/` (each id is its file name) and which one each cue plays (`move`, `push`, `hole`, `undo`, `solved`); the genre's sound view plays them as its cue counters rise. One music loop starts with the app and is heard after the first click or key press. Level select has volume sliders and a mute switch, kept in localStorage under `arcadekit/push-puzzle/settings`, apart from the save.
 
 Art: one sprite sheet, `public/sprites/push-puzzle.png` and `.json` (Aseprite's export format), made by `pnpm sprites`. `src/app/main.ts` hands its load (`SHEET_URL` in `src/app/sprites.ts`) to the engine layer, and `LoadContent` loads it beside the levels; if it can't be loaded, the loading screen shows the error, as for levels that can't be loaded, and a "Try again" button, which loads again only what failed and goes to level select. The view draws the board at the largest whole pixel scale that fits, and needs the tags in `PUSH_PUZZLE_SPRITE_TAGS`; `public/sprites/README.md` lists them and how to replace the art.
 

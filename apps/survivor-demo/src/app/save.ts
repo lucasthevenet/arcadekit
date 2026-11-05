@@ -27,8 +27,7 @@ export type HeroRecords = typeof HeroRecords.Type;
 
 export const emptyRecords: HeroRecords = {};
 
-/** Still under the project's old name, gamekit: a new key would lose existing players' saves. */
-export const SAVE_KEY = "gamekit/survivors/save";
+export const SAVE_KEY = "arcadekit/survivors/save";
 
 const mergeRecord = (a: HeroRecord, b: HeroRecord): HeroRecord => ({
   bestTime: Math.max(a.bestTime, b.bestTime),
