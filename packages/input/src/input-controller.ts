@@ -27,16 +27,14 @@ export interface InputBindings<Axis extends string, Button extends string> {
   readonly buttons?: Readonly<Record<Button, ButtonBinding>>;
 }
 
-export interface InputOptions {
-  /** Stick values smaller than this count as zero. */
-  readonly deadzone?: number;
-  /** Pixels of drag for a full-strength pointer axis. */
-  readonly dragRange?: number;
-  /** Shortest stroke, in pixels, that counts as a swipe. Defaults to 30. */
-  readonly swipeDistance?: number;
-  /** Longest stroke, in milliseconds, that counts as a swipe. Defaults to 300. */
-  readonly swipeMs?: number;
-}
+/** Stick values smaller than this count as zero. */
+const DEADZONE = 0.2;
+/** Pixels of drag for a full-strength pointer axis. */
+const DRAG_RANGE = 60;
+/** Shortest stroke, in pixels, that counts as a swipe. */
+const SWIPE_DISTANCE = 30;
+/** Longest stroke, in milliseconds, that counts as a swipe. */
+const SWIPE_MS = 300;
 
 /**
  * Ready-made movement axes: WASD, arrow keys, left stick, and touch drag. Both axes follow
@@ -44,7 +42,10 @@ export interface InputOptions {
  * stick up, drag up). A game on the ground plane reads `moveY` as z, with its camera on the
  * +z side (survivors does).
  */
-export const MOVE_AXES = {
+export const MOVE_AXES: {
+  readonly moveX: AxisBinding;
+  readonly moveY: AxisBinding;
+} = {
   moveX: {
     negativeKeys: ["KeyA", "ArrowLeft"],
     positiveKeys: ["KeyD", "ArrowRight"],
@@ -57,7 +58,7 @@ export const MOVE_AXES = {
     gamepadAxis: 1,
     pointerDrag: "y",
   },
-} as const satisfies Record<string, AxisBinding>;
+};
 
 /**
  * Turns keyboard, gamepad and pointer events on `surface` into named axes and buttons.
@@ -81,24 +82,12 @@ export class InputController<
   } | null = null;
   private readonly swipes = new Set<SwipeDirection>();
   private readonly cleanups: (() => void)[] = [];
-  private readonly deadzone: number;
-  private readonly dragRange: number;
-  private readonly swipeDistance: number;
-  private readonly swipeMs: number;
   private readonly surface: HTMLElement;
   private readonly bindings: InputBindings<Axis, Button>;
 
-  constructor(
-    surface: HTMLElement,
-    bindings: InputBindings<Axis, Button>,
-    options: InputOptions = {}
-  ) {
+  constructor(surface: HTMLElement, bindings: InputBindings<Axis, Button>) {
     this.surface = surface;
     this.bindings = bindings;
-    this.deadzone = options.deadzone ?? 0.2;
-    this.dragRange = options.dragRange ?? 60;
-    this.swipeDistance = options.swipeDistance ?? 30;
-    this.swipeMs = options.swipeMs ?? 300;
     this.listen(window, "keydown", (e) => {
       if (!e.repeat) {
         this.pressedKeys.add(e.code);
@@ -161,7 +150,7 @@ export class InputController<
     if (binding.gamepadAxis !== undefined) {
       for (const pad of connectedGamepads()) {
         const v = pad.axes[binding.gamepadAxis] ?? 0;
-        if (Math.abs(v) > this.deadzone) {
+        if (Math.abs(v) > DEADZONE) {
           value += v;
         }
       }
@@ -171,7 +160,7 @@ export class InputController<
         binding.pointerDrag === "x"
           ? this.drag.x - this.drag.startX
           : this.drag.y - this.drag.startY;
-      value += delta / this.dragRange;
+      value += delta / DRAG_RANGE;
     }
     return Math.min(Math.max(value, -1), 1);
   }
@@ -251,12 +240,12 @@ export class InputController<
   /** Records a swipe if the stroke that just ended was long and quick enough. */
   private endStroke(x: number, y: number, time: number) {
     const { drag } = this;
-    if (!drag || time - drag.startTime > this.swipeMs) {
+    if (!drag || time - drag.startTime > SWIPE_MS) {
       return;
     }
     const dx = x - drag.startX;
     const dy = y - drag.startY;
-    if (Math.hypot(dx, dy) < this.swipeDistance) {
+    if (Math.hypot(dx, dy) < SWIPE_DISTANCE) {
       return;
     }
     if (Math.abs(dx) > Math.abs(dy)) {

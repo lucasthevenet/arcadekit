@@ -1,4 +1,4 @@
-import type { GameContent } from "@gamekit/survivors";
+import type { GameContent } from "@arcadekit/survivors";
 
 /**
  * A digest of the content a run is played with, as 8 hex digits: FNV-1a over its JSON. Every

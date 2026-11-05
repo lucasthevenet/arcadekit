@@ -1,7 +1,7 @@
-import { engineEntry, keyPresses, shortcutPresses } from "@gamekit/foldkit";
-import type { PushPuzzleEvent } from "@gamekit/push-puzzle";
-import { PushPuzzleEngine } from "@gamekit/push-puzzle/browser";
-import { engineOf } from "@gamekit/runtime/browser";
+import { engineEntry, keyPresses, shortcutPresses } from "@arcadekit/foldkit";
+import type { PushPuzzleEvent } from "@arcadekit/push-puzzle";
+import { PushPuzzleEngine } from "@arcadekit/push-puzzle/browser";
+import { engineOf } from "@arcadekit/runtime/browser";
 import { Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 

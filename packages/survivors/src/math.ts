@@ -8,7 +8,7 @@
 // engine returns the same bits. See ADR-0011.
 //
 // Each function trades a little accuracy against Math's for that guarantee. Genre-internal: only
-// survivors uses them, so they stay out of @gamekit/core (ADR-0001).
+// survivors uses them, so they stay out of @arcadekit/core (ADR-0001).
 
 /**
  * The length of the vector (x, y): `Math.sqrt(x * x + y * y)`.

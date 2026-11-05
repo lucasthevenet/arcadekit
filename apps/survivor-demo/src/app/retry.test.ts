@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
 
-import { SilentAudioLayer, defaultAudioSettings } from "@gamekit/audio";
-import { ContentError } from "@gamekit/content";
-import type { ContentSource } from "@gamekit/content";
+import { SilentAudioLayer, defaultAudioSettings } from "@arcadekit/audio";
+import { ContentError } from "@arcadekit/content";
+import type { ContentSource } from "@arcadekit/content";
 import {
   SpriteSheetError,
   decodeSpriteSheet,
   makeSpriteSheet,
-} from "@gamekit/render-three";
-import { makeSurvivorsContentLayer } from "@gamekit/survivors";
-import { makeSurvivorsEngineLayer } from "@gamekit/survivors/browser";
+} from "@arcadekit/render-three";
+import { makeSurvivorsContentLayer } from "@arcadekit/survivors";
+import { makeSurvivorsEngineLayer } from "@arcadekit/survivors/browser";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { Scene } from "foldkit";
 import { afterEach, describe, expect, it } from "vitest";

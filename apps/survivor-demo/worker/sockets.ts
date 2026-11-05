@@ -2,7 +2,7 @@ import type {
   ErrorReason,
   PeerId,
   ServerMessage,
-} from "@gamekit/net/signalling";
+} from "@arcadekit/net/signalling";
 
 import type { Room, RoomOutput } from "./room";
 

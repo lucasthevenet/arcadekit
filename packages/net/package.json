@@ -1,20 +1,68 @@
 {
-  "name": "@gamekit/net",
+  "name": "@arcadekit/net",
   "version": "0.0.0",
-  "private": true,
   "description": "Play one run on several peers in delay-based lockstep, over a transport it doesn't know",
+  "keywords": [
+    "arcadekit",
+    "effect",
+    "game",
+    "gamedev",
+    "lockstep",
+    "multiplayer",
+    "webrtc"
+  ],
+  "homepage": "https://github.com/lucasthevenet/arcadekit/tree/main/packages/net#readme",
+  "bugs": "https://github.com/lucasthevenet/arcadekit/issues",
+  "license": "MIT",
+  "author": "Lucas Thevenet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasthevenet/arcadekit.git",
+    "directory": "packages/net"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/test-harness.ts"
+  ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts",
-    "./browser": "./src/browser/index.ts",
-    "./signalling": "./src/signalling/protocol.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "source": "./src/browser/index.ts",
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./signalling": {
+      "source": "./src/signalling/protocol.ts",
+      "types": "./dist/signalling.d.ts",
+      "default": "./dist/signalling.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
+    "build": "tsdown",
     "typecheck": "tsc -p . && tsc -p tsconfig.root.json"
   },
   "dependencies": {
-    "@gamekit/core": "workspace:*",
-    "@gamekit/runtime": "workspace:*",
+    "@arcadekit/core": "workspace:^",
+    "@arcadekit/runtime": "workspace:^"
+  },
+  "devDependencies": {
     "effect": "~4.1.2"
+  },
+  "peerDependencies": {
+    "effect": "~4.1.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

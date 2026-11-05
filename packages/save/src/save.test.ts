@@ -14,7 +14,7 @@ const ScoreRecord = Schema.Struct({
 });
 type ScoreRecord = typeof ScoreRecord.Type;
 
-const KEY = "gamekit/test-game/save";
+const KEY = "arcadekit/test-game/save";
 const BACKUP_KEY = `${KEY}/corrupt`;
 
 const definition: SaveDefinition<ScoreRecord> = {

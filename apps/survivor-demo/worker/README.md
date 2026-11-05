@@ -1,12 +1,12 @@
 # Signalling worker
 
-Introduces the peers of a co-op run so they can open WebRTC data channels to each other ([#25](https://github.com/lucasthevenet/gamekit/issues/25), [ADR-0012](../../../docs/adr/0012-delay-based-lockstep-over-a-host-star.md)). It's the survivors demo's Worker: the same Cloudflare Worker that serves the demo's files answers `/host` and `/join/<code>`, with one Durable Object per join code, all declared with [Alchemy](https://alchemy.run) in the demo's `alchemy.run.ts`. It never carries game input: once the data channels are open, the peers close their sockets and the worker is out of the loop.
+Introduces the peers of a co-op run so they can open WebRTC data channels to each other ([#25](https://github.com/lucasthevenet/arcadekit/issues/25), [ADR-0012](../../../docs/adr/0012-delay-based-lockstep-over-a-host-star.md)). It's the survivors demo's Worker: the same Cloudflare Worker that serves the demo's files answers `/host` and `/join/<code>`, with one Durable Object per join code, all declared with [Alchemy](https://alchemy.run) in the demo's `alchemy.run.ts`. It never carries game input: once the data channels are open, the peers close their sockets and the worker is out of the loop.
 
 `alchemy dev` runs it locally beside the site, and `alchemy deploy` deploys both; see [the demo's README](../README.md).
 
 ## The protocol
 
-JSON over one WebSocket per peer. `@gamekit/net/signalling` (`packages/net/src/signalling/protocol.ts`) has every message type, the parsers and the join-code helpers. It lives beside the browser's signalling client, which speaks it, and has no dependencies and no DOM, so this worker imports it as is.
+JSON over one WebSocket per peer. `@arcadekit/net/signalling` (`packages/net/src/signalling/protocol.ts`) has every message type, the parsers and the join-code helpers. It lives beside the browser's signalling client, which speaks it, and has no dependencies and no DOM, so this worker imports it as is.
 
 1. The host opens `wss://<worker>/host`. The worker picks a join code and answers `welcome` with it; the host's peer id is `host`.
 2. Each guest opens `wss://<worker>/join/<code>` and gets `welcome` with its own id (`guest-1`, `guest-2`, …, never reused). The host gets `peer-joined`.

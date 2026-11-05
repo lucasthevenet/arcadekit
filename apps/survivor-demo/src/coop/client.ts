@@ -1,27 +1,27 @@
-import { InputController, MOVE_AXES } from "@gamekit/input";
-import { hostLockstep, joinLockstep, schemaCodec } from "@gamekit/net";
+import { InputController, MOVE_AXES } from "@arcadekit/input";
+import { hostLockstep, joinLockstep, schemaCodec } from "@arcadekit/net";
 import type {
   LockstepError,
   LockstepOptions,
   LockstepSession,
-} from "@gamekit/net";
-import { hostRoom, joinRoom, linksTransport } from "@gamekit/net/browser";
+} from "@arcadekit/net";
+import { hostRoom, joinRoom, linksTransport } from "@arcadekit/net/browser";
 import type {
   PeerLink,
   RoomEvent,
   SignallingOptions,
   SignallingRoom,
-} from "@gamekit/net/browser";
-import type { StepInput } from "@gamekit/runtime";
-import { combineViews } from "@gamekit/runtime/browser";
-import type { GameView } from "@gamekit/runtime/browser";
+} from "@arcadekit/net/browser";
+import type { StepInput } from "@arcadekit/runtime";
+import { combineViews } from "@arcadekit/runtime/browser";
+import type { GameView } from "@arcadekit/runtime/browser";
 import {
   HeroInput,
   combineHeroInputs,
   hashWorld,
   isChoosing,
   survivorsSimulation,
-} from "@gamekit/survivors";
+} from "@arcadekit/survivors";
 import type {
   GameContent,
   HudSample,
@@ -32,12 +32,15 @@ import type {
   UpgradeChoice,
   UpgradePick,
   World,
-} from "@gamekit/survivors";
-import { SurvivorsSoundView, SurvivorsView } from "@gamekit/survivors/browser";
+} from "@arcadekit/survivors";
+import {
+  SurvivorsSoundView,
+  SurvivorsView,
+} from "@arcadekit/survivors/browser";
 import type {
   SurvivorsArt,
   SurvivorsGameSound,
-} from "@gamekit/survivors/browser";
+} from "@arcadekit/survivors/browser";
 
 import { contentHash } from "./content-hash";
 import { encodeLobbyMessage, parseLobbyMessage, playerName } from "./lobby";

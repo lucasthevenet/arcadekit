@@ -1,5 +1,5 @@
-import { GameLoop } from "@gamekit/runtime";
-import type { GameSimulation, StepInput } from "@gamekit/runtime";
+import { GameLoop } from "@arcadekit/runtime";
+import type { GameSimulation, StepInput } from "@arcadekit/runtime";
 
 import type { InputCodec } from "./codec";
 import { lockstepError } from "./errors";

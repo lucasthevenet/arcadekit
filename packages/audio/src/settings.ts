@@ -6,10 +6,17 @@ import type { AudioSystem } from "./system";
 // The player's volume and mute, kept between sessions. They are app settings, not part of a
 // save: each app keeps them under their own key, and the last write wins (ADR-0009).
 
-const Level = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
+const Level: Schema.Finite = Schema.Finite.check(
+  Schema.isBetween({ minimum: 0, maximum: 1 })
+);
 
 /** Volume of each bus (0 to 1) and mute. */
-export const AudioSettings = Schema.Struct({
+export const AudioSettings: Schema.Struct<{
+  readonly master: Schema.Finite;
+  readonly sfx: Schema.Finite;
+  readonly music: Schema.Finite;
+  readonly muted: Schema.Boolean;
+}> = Schema.Struct({
   master: Level,
   sfx: Level,
   music: Level,
@@ -33,7 +40,7 @@ export interface AudioSettingsStore {
   readonly save: (settings: AudioSettings) => Effect.Effect<void>;
 }
 
-/** Builds the audio settings store under `key`, such as `gamekit/<game>/settings`, over the `KeyValueStore` in context. */
+/** Builds the audio settings store under `key`, such as `my-studio/<game>/settings`, over the `KeyValueStore` in context. */
 export const makeAudioSettingsStore = (
   key: string
 ): Effect.Effect<AudioSettingsStore, never, KeyValueStore.KeyValueStore> =>

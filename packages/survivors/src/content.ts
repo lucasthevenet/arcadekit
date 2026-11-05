@@ -1,9 +1,9 @@
-import { makeContentLoader } from "@gamekit/content";
+import { makeContentLoader } from "@arcadekit/content";
 import type {
   ContentDefinition,
   ContentLoader,
   ContentSource,
-} from "@gamekit/content";
+} from "@arcadekit/content";
 import { Context, Layer } from "effect";
 
 import { GameContent, findBrokenReferences } from "./schema";
@@ -33,7 +33,7 @@ export const survivorsContentDefinition: ContentDefinition<typeof GameContent> =
 export class SurvivorsContent extends Context.Service<
   SurvivorsContent,
   ContentLoader<GameContent>
->()("@gamekit/survivors/Content") {}
+>()("@arcadekit/survivors/Content") {}
 
 export const makeSurvivorsContentLayer = (source: ContentSource) =>
   Layer.effect(

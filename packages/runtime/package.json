@@ -1,19 +1,66 @@
 {
-  "name": "@gamekit/runtime",
+  "name": "@arcadekit/runtime",
   "version": "0.0.0",
-  "private": true,
   "description": "Steps a game anywhere (root) and runs it in the browser (./browser)",
+  "keywords": [
+    "arcadekit",
+    "deterministic",
+    "effect",
+    "fixed-timestep",
+    "game",
+    "game-loop",
+    "gamedev"
+  ],
+  "homepage": "https://github.com/lucasthevenet/arcadekit/tree/main/packages/runtime#readme",
+  "bugs": "https://github.com/lucasthevenet/arcadekit/issues",
+  "license": "MIT",
+  "author": "Lucas Thevenet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasthevenet/arcadekit.git",
+    "directory": "packages/runtime"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts"
+  ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts",
-    "./browser": "./src/browser.ts",
-    "./testing": "./src/testing.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "source": "./src/browser.ts",
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./testing": {
+      "source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
+    "build": "tsdown",
     "typecheck": "tsc -p . && tsc -p tsconfig.root.json"
   },
   "dependencies": {
-    "@gamekit/core": "workspace:*",
+    "@arcadekit/core": "workspace:^"
+  },
+  "devDependencies": {
     "effect": "~4.1.2"
+  },
+  "peerDependencies": {
+    "effect": "~4.1.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

@@ -1,9 +1,9 @@
-import { Audio } from "@gamekit/audio";
-import type { AudioSystem } from "@gamekit/audio";
-import { InputController, MOVE_AXES } from "@gamekit/input";
-import type { SpriteSheet, SpriteSheetError } from "@gamekit/render-three";
-import { combineViews, makeEngineLoader } from "@gamekit/runtime/browser";
-import type { EngineLoader, GameDefinition } from "@gamekit/runtime/browser";
+import { Audio } from "@arcadekit/audio";
+import type { AudioSystem } from "@arcadekit/audio";
+import { InputController, MOVE_AXES } from "@arcadekit/input";
+import type { SpriteSheet, SpriteSheetError } from "@arcadekit/render-three";
+import { combineViews, makeEngineLoader } from "@arcadekit/runtime/browser";
+import type { EngineLoader, GameDefinition } from "@arcadekit/runtime/browser";
 import { Context, Effect, Layer } from "effect";
 
 import type { SurvivorsEvent } from "../events";
@@ -37,7 +37,7 @@ export interface SurvivorsGameOptions {
 }
 
 /**
- * The survivors genre as a @gamekit/runtime browser game, for a single player: its simulation,
+ * The survivors genre as a @arcadekit/runtime browser game, for a single player: its simulation,
  * input and view. The device drives the first hero. The view draws from `art`; with `sound`, a
  * sound view plays the run beside it.
  */
@@ -78,7 +78,7 @@ export type SurvivorsEngineLoader = EngineLoader<
 export class SurvivorsEngine extends Context.Service<
   SurvivorsEngine,
   SurvivorsEngineLoader
->()("@gamekit/survivors/Engine") {}
+>()("@arcadekit/survivors/Engine") {}
 
 /**
  * Provides `SurvivorsEngine`: the engine, made once from the sheet `sheet` loads, playing its

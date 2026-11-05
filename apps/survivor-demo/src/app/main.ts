@@ -1,9 +1,9 @@
-import { BrowserAudioLayer } from "@gamekit/audio/browser";
-import { fetchJsonSource } from "@gamekit/content/browser";
-import { loadSpriteSheet } from "@gamekit/render-three";
-import { BrowserSaveStorage } from "@gamekit/save/browser";
-import { makeSurvivorsContentLayer } from "@gamekit/survivors";
-import { makeSurvivorsEngineLayer } from "@gamekit/survivors/browser";
+import { BrowserAudioLayer } from "@arcadekit/audio/browser";
+import { fetchJsonSource } from "@arcadekit/content/browser";
+import { loadSpriteSheet } from "@arcadekit/render-three";
+import { BrowserSaveStorage } from "@arcadekit/save/browser";
+import { makeSurvivorsContentLayer } from "@arcadekit/survivors";
+import { makeSurvivorsEngineLayer } from "@arcadekit/survivors/browser";
 import { Layer } from "effect";
 
 import { CoopLayer } from "./coop";

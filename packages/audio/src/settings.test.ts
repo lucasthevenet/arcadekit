@@ -12,7 +12,7 @@ import type { AudioSettings, AudioSettingsStore, AudioSystem } from "./index";
 
 // The settings run against an in-memory KeyValueStore, never real localStorage.
 
-const KEY = "gamekit/test-game/settings";
+const KEY = "arcadekit/test-game/settings";
 
 const failing = (method: "get" | "set") =>
   Layer.effect(

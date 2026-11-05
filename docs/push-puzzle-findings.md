@@ -18,12 +18,12 @@ Survivors replays identically before and after every kit change: `packages/survi
 
 | # | Primitive | Layer | Verdict |
 | --- | --- | --- | --- |
-| 1 | A press reaches every step of a catch-up frame | runtime, input | Fixed: [#15](https://github.com/lucasthevenet/gamekit/issues/15) |
-| 2 | `sample` is wall-clock only | runtime | Fixed: [#16](https://github.com/lucasthevenet/gamekit/issues/16) |
-| 3 | Pools have no stable identity | core | Fixed: [#17](https://github.com/lucasthevenet/gamekit/issues/17) |
-| 4 | No swipe input | input | Fixed: [#18](https://github.com/lucasthevenet/gamekit/issues/18) |
-| 5 | Camera helpers | render-three | Fixed: [#19](https://github.com/lucasthevenet/gamekit/issues/19) |
-| 6 | The DOM-free root entry isn't enforced | content, genre packages | Fixed: [#20](https://github.com/lucasthevenet/gamekit/issues/20) |
+| 1 | A press reaches every step of a catch-up frame | runtime, input | Fixed: [#15](https://github.com/lucasthevenet/arcadekit/issues/15) |
+| 2 | `sample` is wall-clock only | runtime | Fixed: [#16](https://github.com/lucasthevenet/arcadekit/issues/16) |
+| 3 | Pools have no stable identity | core | Fixed: [#17](https://github.com/lucasthevenet/arcadekit/issues/17) |
+| 4 | No swipe input | input | Fixed: [#18](https://github.com/lucasthevenet/arcadekit/issues/18) |
+| 5 | Camera helpers | render-three | Fixed: [#19](https://github.com/lucasthevenet/arcadekit/issues/19) |
+| 6 | The DOM-free root entry isn't enforced | content, genre packages | Fixed: [#20](https://github.com/lucasthevenet/arcadekit/issues/20) |
 | 7 | `InputBindings` requires both halves | input | Fixed now |
 | 8 | "No allocation in a step" vs `InputSource.read` | runtime (docs) | Fixed now |
 | 9 | `MeshInstances` rotates around Y only | render-three (docs) | Fixed now |
@@ -46,42 +46,42 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 - **What happened:** the driver reset "just pressed" state once per frame (`endFrame`), but a slow frame runs several catch-up steps, and every one of them saw the same press. Push-puzzle makes one turn per press, so one press moved the player up to five cells and one undo undid up to five turns. Survivors never noticed: it reads only axes.
 - **What push-puzzle did first:** its input source reported each press to one `read` only, and forgot what it reported in `endFrame`.
 - **Why not the obvious fix:** calling `endFrame` after every step was tried and reverted. It keeps the hook's name and type but changes when it runs, so any input source doing per-frame work in it would silently run it up to five times a frame (`InputController.endFrame` polls the gamepads).
-- **Fix ([#15](https://github.com/lucasthevenet/gamekit/issues/15)):** a new optional `InputSource.endStep`, called after every step, and `InputController.consumePresses()` to call from it. `endFrame` keeps its per-frame meaning. Push-puzzle's workaround is gone; survivors needs neither. `packages/runtime/src/loop.test.ts` checks both behaviors and the call order (moved from `runtime.test.ts` by #28).
+- **Fix ([#15](https://github.com/lucasthevenet/arcadekit/issues/15)):** a new optional `InputSource.endStep`, called after every step, and `InputController.consumePresses()` to call from it. `endFrame` keeps its per-frame meaning. Push-puzzle's workaround is gone; survivors needs neither. `packages/runtime/src/loop.test.ts` checks both behaviors and the call order (moved from `runtime.test.ts` by #28).
 - **Layer:** runtime and input.
 
 ### 2. `sample` is wall-clock only
 
 - **Primitive:** `GameDefinition.sample`.
 - **What happened:** push-puzzle's HUD (moves, boxes left) changes only on a turn, but `sample` reported it every 100 ms of real time. The HUD could lag a move by up to 100 ms, and ten identical HUD events a second reached the UI while nothing happened.
-- **Fix ([#16](https://github.com/lucasthevenet/gamekit/issues/16)):** `sample.everyMs` is optional, and `sample.version` is new: a cheap number the game bumps when what `read` reports may have changed. The driver emits a sample right after any frame or `modify` in which it changed. Push-puzzle's version is a turn counter (`Puzzle.turns`); survivors keeps its 100 ms timer. A game can use both.
+- **Fix ([#16](https://github.com/lucasthevenet/arcadekit/issues/16)):** `sample.everyMs` is optional, and `sample.version` is new: a cheap number the game bumps when what `read` reports may have changed. The driver emits a sample right after any frame or `modify` in which it changed. Push-puzzle's version is a turn counter (`Puzzle.turns`); survivors keeps its 100 ms timer. A game can use both.
 - **Layer:** runtime.
 
 ### 3. Pools have no stable identity
 
 - **Primitive:** `createPool` / `Pool.remove`.
 - **What happened:** filling a hole removes a box, which moves another box to a new index. Undo and the view both need to name a box across turns, so each box carried an `id` field set at creation, found by a linear scan.
-- **Fix ([#17](https://github.com/lucasthevenet/gamekit/issues/17)):** `createIdentifiedPool` in core: a pool that also keeps a stable id per entity (`idOf`, `indexOf`), and can bring a removed entity back under its old id (`addWithId`), all O(1) and allocation-free. Ids are reused after removal; generational handles were left out, since neither genre needs them. `createPool` is unchanged, so survivors is untouched. Push-puzzle's id field and scan are gone.
+- **Fix ([#17](https://github.com/lucasthevenet/arcadekit/issues/17)):** `createIdentifiedPool` in core: a pool that also keeps a stable id per entity (`idOf`, `indexOf`), and can bring a removed entity back under its old id (`addWithId`), all O(1) and allocation-free. Ids are reused after removal; generational handles were left out, since neither genre needs them. `createPool` is unchanged, so survivors is untouched. Push-puzzle's id field and scan are gone.
 - **Layer:** core.
 
 ### 4. No swipe input
 
 - **Primitive:** `InputController`'s pointer support, which was only a drag joystick feeding an axis.
 - **What happened:** push-puzzle had no touch controls. A grid game wants a swipe to count as one direction press.
-- **Fix ([#18](https://github.com/lucasthevenet/gamekit/issues/18)):** `ButtonBinding.swipe` makes a short, fast stroke in that direction count as a press (never as held), with `swipeDistance` and `swipeMs` options. Push-puzzle binds its four directions to swipes, so it plays on a phone. `InputController` has its first tests (`packages/input/src/input-controller.test.ts`).
+- **Fix ([#18](https://github.com/lucasthevenet/arcadekit/issues/18)):** `ButtonBinding.swipe` makes a short, fast stroke in that direction count as a press (never as held), with `swipeDistance` and `swipeMs` options. Push-puzzle binds its four directions to swipes, so it plays on a phone. `InputController` has its first tests (`packages/input/src/input-controller.test.ts`).
 - **Layer:** input.
 
 ### 5. Camera helpers
 
 - **Primitive:** `followTarget`, `orbitAround`, `Stage`'s camera.
 - **What happened:** both helpers chase or circle a point on the ground plane, and `Stage` built only a perspective camera. Push-puzzle worked out a fit-the-map distance itself (`frameCamera`).
-- **Fix ([#19](https://github.com/lucasthevenet/gamekit/issues/19)):** `fitCamera(camera, bounds, { margin, tilt })` frames a ground-plane rectangle with either camera kind, and `StageOptions.camera: "orthographic"` builds an orthographic camera that keeps its view height on resize (`Stage` is typed by the kind). Push-puzzle then used an orthographic stage and `fitCamera`; since [ADR-0015](adr/0015-pixel-art-sprites-loaded-by-the-app.md) it draws sprites on a pixel stage, framed by `PixelCamera.fit`. A side-view genre would want a version for the vertical plane; that waits for one.
+- **Fix ([#19](https://github.com/lucasthevenet/arcadekit/issues/19)):** `fitCamera(camera, bounds, { margin, tilt })` frames a ground-plane rectangle with either camera kind, and `StageOptions.camera: "orthographic"` builds an orthographic camera that keeps its view height on resize (`Stage` is typed by the kind). Push-puzzle then used an orthographic stage and `fitCamera`; since [ADR-0015](adr/0015-pixel-art-sprites-loaded-by-the-app.md) it draws sprites on a pixel stage, framed by `PixelCamera.fit`. A side-view genre would want a version for the vertical plane; that waits for one.
 - **Layer:** render-three.
 
 ### 6. The DOM-free root entry isn't enforced
 
-- **Primitive:** the genre-package boundary ("root entry has no DOM") and `@gamekit/content`'s entry.
-- **What happened:** survivors' tsconfig included DOM types for the whole package, so its rule was a convention only. Push-puzzle checked only some files without DOM, because `@gamekit/content` also exported `fetchJsonSource`, which needs `fetch`.
-- **Fix ([#20](https://github.com/lucasthevenet/gamekit/issues/20)):** `fetchJsonSource` moved to `@gamekit/content/browser`, and the apps import it from there. `content`, `survivors` and `push-puzzle` each have a `tsconfig.root.json` that checks their root entry with no DOM types, run by `pnpm typecheck`.
+- **Primitive:** the genre-package boundary ("root entry has no DOM") and `@arcadekit/content`'s entry.
+- **What happened:** survivors' tsconfig included DOM types for the whole package, so its rule was a convention only. Push-puzzle checked only some files without DOM, because `@arcadekit/content` also exported `fetchJsonSource`, which needs `fetch`.
+- **Fix ([#20](https://github.com/lucasthevenet/arcadekit/issues/20)):** `fetchJsonSource` moved to `@arcadekit/content/browser`, and the apps import it from there. `content`, `survivors` and `push-puzzle` each have a `tsconfig.root.json` that checks their root entry with no DOM types, run by `pnpm typecheck`.
 - **Layer:** content, then each genre package.
 
 ## Fixed now
@@ -102,7 +102,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 
 ### 9. `MeshInstances` rotates around the vertical axis only
 
-- **Primitive:** `MeshInstances.set`. The class was named `InstancedCrowd` until [#27](https://github.com/lucasthevenet/gamekit/issues/27).
+- **Primitive:** `MeshInstances.set`. The class was named `InstancedCrowd` until [#27](https://github.com/lucasthevenet/arcadekit/issues/27).
 - **What happened:** the goal marker is a flat ring lying on the floor, which needs a rotation around X. `set` only takes a Y rotation. Push-puzzle rotates the ring geometry once (`RingGeometry(...).rotateX(...)`), the usual Three.js answer for a tilt every instance shares.
 - **Fix:** `set`'s docs say so. A per-instance free rotation would be a new shape (quaternions) that no genre needs yet.
 - **Layer:** render-three (docs).

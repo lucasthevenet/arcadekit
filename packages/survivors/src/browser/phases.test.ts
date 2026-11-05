@@ -1,4 +1,4 @@
-import { createPool } from "@gamekit/core";
+import { createPool } from "@arcadekit/core";
 import { describe, expect, it } from "vitest";
 
 import { StablePhases } from "./phases";

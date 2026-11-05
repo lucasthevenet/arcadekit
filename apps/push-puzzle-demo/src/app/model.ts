@@ -1,5 +1,5 @@
-import { AudioSettings } from "@gamekit/audio";
-import { HudSample } from "@gamekit/push-puzzle";
+import { AudioSettings } from "@arcadekit/audio";
+import { HudSample } from "@arcadekit/push-puzzle";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 

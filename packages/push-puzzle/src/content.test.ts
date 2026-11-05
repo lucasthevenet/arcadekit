@@ -1,4 +1,4 @@
-import { loadContent, memorySource } from "@gamekit/content";
+import { loadContent, memorySource } from "@arcadekit/content";
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 

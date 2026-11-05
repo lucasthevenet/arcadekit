@@ -4,7 +4,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],
-    "types": []
+    "types": [],
+    "declaration": true,
+    "isolatedDeclarations": true
   },
   "files": ["src/index.ts"]
 }

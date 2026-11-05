@@ -1,13 +1,48 @@
 {
-  "name": "@gamekit/input",
+  "name": "@arcadekit/input",
   "version": "0.0.0",
-  "private": true,
   "description": "Keyboard, gamepad and touch mapped to named axes and buttons",
+  "keywords": [
+    "arcadekit",
+    "effect",
+    "game",
+    "gamedev",
+    "gamepad",
+    "input",
+    "keyboard",
+    "touch"
+  ],
+  "homepage": "https://github.com/lucasthevenet/arcadekit/tree/main/packages/input#readme",
+  "bugs": "https://github.com/lucasthevenet/arcadekit/issues",
+  "license": "MIT",
+  "author": "Lucas Thevenet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasthevenet/arcadekit.git",
+    "directory": "packages/input"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts"
+  ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
+    "build": "tsdown",
     "typecheck": "tsc -p ."
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

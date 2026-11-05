@@ -1,4 +1,4 @@
-import { FixedStepClock } from "@gamekit/core";
+import { FixedStepClock } from "@arcadekit/core";
 
 import type { GameSimulation, StepInput } from "./simulation";
 

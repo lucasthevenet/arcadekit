@@ -1,4 +1,4 @@
-import type { StepInput } from "@gamekit/runtime";
+import type { StepInput } from "@arcadekit/runtime";
 import { Schema } from "effect";
 
 // A survivors step's input: every player's input for that step, plus the players leaving at it.
@@ -14,7 +14,7 @@ export type UpgradePick = typeof UpgradePick.Type;
 
 /**
  * One player's input for one step: what crosses the network in a lockstep run (use it with
- * `@gamekit/net`'s `schemaCodec`).
+ * `@arcadekit/net`'s `schemaCodec`).
  *
  * - `moveX`, `moveZ`: movement direction, each axis in [-1, 1].
  * - `pick`: an upgrade choice. Applied only while this hero has the offer it names open, so a
@@ -56,7 +56,7 @@ export const soloInput = (
   };
 };
 
-/** One lockstep step, as `@gamekit/net`'s `ConfirmedStep<HeroInput>` has it. */
+/** One lockstep step, as `@arcadekit/net`'s `ConfirmedStep<HeroInput>` has it. */
 export interface PlayersStep {
   readonly inputs: readonly {
     readonly player: string;

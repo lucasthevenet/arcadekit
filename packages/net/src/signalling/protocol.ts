@@ -3,7 +3,7 @@
  * exchange over one WebSocket each, while the peers set up their WebRTC connections (#25,
  * ADR-0012). It is the interface between the worker (the survivors demo's, in
  * `apps/survivor-demo/worker`) and the browser's signalling client (`hostRoom`, `joinRoom` in
- * `@gamekit/net/browser`), exported as `@gamekit/net/signalling`, so it has no dependencies and
+ * `@arcadekit/net/browser`), exported as `@arcadekit/net/signalling`, so it has no dependencies and
  * no DOM.
  *
  * A host opens `wss://<worker>/host` and is told its join code in `welcome`. Each guest opens
@@ -23,10 +23,10 @@ export const HOST_ID: PeerId = "host";
 export const MAX_PLAYERS = 4;
 
 /** How long a room lives after its host connects. Signalling takes seconds; this is generous. */
-export const ROOM_TTL_MS = 10 * 60 * 1000;
+export const ROOM_TTL_MS: number = 10 * 60 * 1000;
 
 /** The longest message the worker relays. An SDP offer is a few kilobytes. */
-export const MAX_MESSAGE_LENGTH = 16 * 1024;
+export const MAX_MESSAGE_LENGTH: number = 16 * 1024;
 
 /** One WebRTC signal: what `RTCPeerConnection` produces on one side and consumes on the other. */
 export type Signal =

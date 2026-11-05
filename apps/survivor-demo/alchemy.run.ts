@@ -37,7 +37,7 @@ const state = Layer.unwrap(
 );
 
 export default Alchemy.Stack(
-  "gamekit-survivor-demo",
+  "arcadekit-survivor-demo",
   {
     providers: Cloudflare.providers(),
     state,

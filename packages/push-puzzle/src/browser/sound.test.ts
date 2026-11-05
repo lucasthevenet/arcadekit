@@ -1,5 +1,5 @@
-import { silentAudio } from "@gamekit/audio";
-import type { AudioSystem } from "@gamekit/audio";
+import { silentAudio } from "@arcadekit/audio";
+import type { AudioSystem } from "@arcadekit/audio";
 import { describe, expect, it } from "vitest";
 
 import type { Puzzle, PushPuzzleCues } from "../index";

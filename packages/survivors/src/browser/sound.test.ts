@@ -1,4 +1,4 @@
-import type { AudioSystem } from "@gamekit/audio";
+import type { AudioSystem } from "@arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 

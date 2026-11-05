@@ -1,5 +1,5 @@
-// Test helpers for code that runs a game in the browser. Only tests import this entry: it is not
-// part of the runtime's API.
+// Test helpers for code that runs a game in the browser. Only tests should import this entry;
+// the root and ./browser don't export it.
 
 import type { FrameSource } from "./frames";
 

@@ -1,6 +1,6 @@
-import { makeAudioSettingsStore } from "@gamekit/audio";
-import type { AudioSettingsStore, SoundDef, SoundList } from "@gamekit/audio";
-import type { SurvivorsSounds } from "@gamekit/survivors/browser";
+import { makeAudioSettingsStore } from "@arcadekit/audio";
+import type { AudioSettingsStore, SoundDef, SoundList } from "@arcadekit/audio";
+import type { SurvivorsSounds } from "@arcadekit/survivors/browser";
 import { Context, Layer } from "effect";
 
 // The game's sounds: the files in public/sounds, the table of cue to sound the survivors sound
@@ -70,7 +70,7 @@ export const CLICK_SOUND = "click";
 /** The music on the menus and during a run. Starting or ending a run crossfades between them. */
 export const MUSIC = { menu: "music-menu", run: "music-run" } as const;
 
-export const AUDIO_SETTINGS_KEY = "gamekit/survivors/settings";
+export const AUDIO_SETTINGS_KEY = "arcadekit/survivors/settings";
 
 /** The player's volume and mute, kept under their own key (ADR-0009). Neither method fails. */
 export class SoundSettings extends Context.Service<

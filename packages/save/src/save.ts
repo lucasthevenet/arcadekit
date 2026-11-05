@@ -12,7 +12,7 @@ export type Records<R> = Readonly<Record<string, R>>;
 
 /** What a game passes in: where its save lives, what one record holds, and how two records merge. */
 export interface SaveDefinition<R, E = R> {
-  /** The game's storage key, such as `gamekit/<game>/save`. A save that can't be read is copied to `<key>/corrupt`. */
+  /** The game's storage key, such as `my-studio/<game>/save`. A save that can't be read is copied to `<key>/corrupt`. */
   readonly key: string;
   /** The field of the stored save that holds the records, such as `levels` or `heroes`. */
   readonly field: string;

@@ -1,4 +1,4 @@
-import { GameLoop } from "@gamekit/runtime";
+import { GameLoop } from "@arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -386,7 +386,7 @@ describe("replay", () => {
   const LEVEL = ["########", "#@ $ ^ #", "# $$ . #", "#  ..  #", "########"];
 
   /**
-   * Plays the scripted input through @gamekit/runtime's GameLoop, one step per frame, the step
+   * Plays the scripted input through @arcadekit/runtime's GameLoop, one step per frame, the step
    * order the demo runs. Collects the events and counts the HUD samples the run reported.
    */
   const replay = () => {

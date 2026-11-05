@@ -1,5 +1,5 @@
-import { EventBuffer, createIdentifiedPool } from "@gamekit/core";
-import type { IdentifiedPool } from "@gamekit/core";
+import { EventBuffer, createIdentifiedPool } from "@arcadekit/core";
+import type { IdentifiedPool } from "@arcadekit/core";
 
 import type { HudSample, PushPuzzleEvent } from "./events";
 import { Tile, parseLevel } from "./level";

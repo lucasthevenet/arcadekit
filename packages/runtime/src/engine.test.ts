@@ -90,7 +90,7 @@ describe(makeGameEngine, () => {
     const frames = manualFrames();
     const log = await play(frames, (engine) =>
       Effect.gen(function* () {
-        yield* engine.start(null, 1);
+        yield* engine.start(null);
         // 1/64 s after attach: one step.
         frames.runFrameAt(15.625);
         yield* engine.stop;
@@ -117,7 +117,7 @@ describe(makeGameEngine, () => {
     const frames = manualFrames();
     const log = await play(frames, (engine) =>
       Effect.gen(function* () {
-        yield* engine.start(null, 1);
+        yield* engine.start(null);
         frames.runFrameAt(15.625);
         yield* engine.setPaused(true);
         frames.runFrameAt(31.25);

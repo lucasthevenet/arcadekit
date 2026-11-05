@@ -1,5 +1,5 @@
-import { PixelCamera } from "@gamekit/render-three";
-import type { SpriteSheet } from "@gamekit/render-three";
+import { PixelCamera } from "@arcadekit/render-three";
+import type { SpriteSheet } from "@arcadekit/render-three";
 import { Schema } from "effect";
 import type * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";

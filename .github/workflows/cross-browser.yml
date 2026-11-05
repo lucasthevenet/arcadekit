@@ -16,6 +16,12 @@ jobs:
   browsers:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Playwright's image has the three browsers and their system libraries, so the job installs
+    # nothing from Ubuntu's mirrors. Its tag must match the playwright version in the lockfile.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      # Firefox refuses to run as root under a home it doesn't own.
+      options: --user 1001
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -24,23 +30,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The browsers must match the Playwright in the lockfile, so the cache is keyed on it.
-      - name: Read the Playwright version
-        id: playwright
-        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright's browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-firefox-webkit
-      - name: Install the browsers and their system dependencies
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
-      # The cache holds the browsers, not the system libraries they need.
-      - name: Install the browsers' system dependencies
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium firefox webkit
+      - name: Check the image matches the lockfile's Playwright
+        run: |
+          locked="$(node -p "require('playwright/package.json').version")"
+          test "$locked" = "1.63.0" || { echo "Lockfile has Playwright $locked: update the image tag."; exit 1; }
       - run: pnpm test:browsers
         env:
           CI: true

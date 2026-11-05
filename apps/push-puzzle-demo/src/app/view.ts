@@ -1,6 +1,6 @@
-import type { AudioSettings } from "@gamekit/audio";
-import { gameViewport } from "@gamekit/foldkit";
-import type { HudSample } from "@gamekit/push-puzzle";
+import type { AudioSettings } from "@arcadekit/audio";
+import { gameViewport } from "@arcadekit/foldkit";
+import type { HudSample } from "@arcadekit/push-puzzle";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import type { Bus } from "./audio";

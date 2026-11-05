@@ -1,7 +1,7 @@
 /**
  * Turns variable frame times into a whole number of fixed simulation steps.
  * A fixed step makes a game behave the same on 60 Hz and 144 Hz screens, and makes it deterministic.
- * Core exports it for `@gamekit/runtime`'s `GameLoop`, which steps every genre with it.
+ * Core exports it for `@arcadekit/runtime`'s `GameLoop`, which steps every genre with it.
  */
 export class FixedStepClock {
   readonly stepSeconds: number;
@@ -9,9 +9,11 @@ export class FixedStepClock {
   readonly maxStepsPerFrame: number;
   private accumulator = 0;
 
-  constructor(stepSeconds = 1 / 60, maxStepsPerFrame = 5) {
-    this.stepSeconds = stepSeconds;
-    this.maxStepsPerFrame = maxStepsPerFrame;
+  // Not default parameters: isolatedDeclarations needs their types written, and the linter
+  // rejects a written type on a defaulted parameter.
+  constructor(stepSeconds?: number, maxStepsPerFrame?: number) {
+    this.stepSeconds = stepSeconds ?? 1 / 60;
+    this.maxStepsPerFrame = maxStepsPerFrame ?? 5;
   }
 
   /** Adds `frameSeconds` of real time and calls `step` once per whole step owed. Returns the number of steps run. */

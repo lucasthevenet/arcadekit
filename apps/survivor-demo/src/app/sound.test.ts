@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 
-import { defaultAudioSettings } from "@gamekit/audio";
+import { defaultAudioSettings } from "@arcadekit/audio";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";

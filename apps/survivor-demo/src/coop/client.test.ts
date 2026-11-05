@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
 
-import { ContentError, loadContent } from "@gamekit/content";
-import type { ContentSource } from "@gamekit/content";
+import { ContentError, loadContent } from "@arcadekit/content";
+import type { ContentSource } from "@arcadekit/content";
 import type {
   PeerLink,
   RoomEvent,
   SignallingRoom,
   TextChannel,
-} from "@gamekit/net/browser";
-import { survivorsContentDefinition } from "@gamekit/survivors";
-import type { GameContent } from "@gamekit/survivors";
+} from "@arcadekit/net/browser";
+import { survivorsContentDefinition } from "@arcadekit/survivors";
+import type { GameContent } from "@arcadekit/survivors";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

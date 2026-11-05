@@ -86,7 +86,7 @@ export type EngineEntryConfig<Model, Message, Event, R, E = never> = {
    * itself (`MyEngine`), and give `Subscription.make` that service; `resources` must
    * provide it. Only `attach` and `listen` are used: Commands call the rest.
    *
-   * An engine reached through a load (`engineOf(MyEngine)`, `@gamekit/runtime/browser`) can
+   * An engine reached through a load (`engineOf(MyEngine)`, `@arcadekit/runtime/browser`) can
    * fail: pass `onError`.
    */
   readonly engine: Effect.Effect<AttachableEngine<Event, E>, E, R>;

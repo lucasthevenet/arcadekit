@@ -47,14 +47,14 @@ const collect = (
 
 describe(makeGameEngine, () => {
   it("reports creation events and a first sample when a run starts", async () => {
-    const events = await collect((engine) => engine.start({ start: 5 }, 42));
+    const events = await collect((engine) => engine.start({ start: 5 }));
     expect(events).toStrictEqual(["started at 5", "value 5"]);
   });
 
   it("reports events produced by modify", async () => {
     const events = await collect((engine) =>
       Effect.gen(function* () {
-        yield* engine.start({ start: 0 }, 1);
+        yield* engine.start({ start: 0 });
         yield* engine.modify((state) => {
           state.value = 10;
           state.events.push("jumped to 10");
@@ -81,7 +81,7 @@ describe(makeGameEngine, () => {
     await Effect.runPromise(
       Effect.scoped(engine.listen((event) => events.push(event)))
     );
-    await Effect.runPromise(engine.start({ start: 1 }, 1));
+    await Effect.runPromise(engine.start({ start: 1 }));
     expect(events).toStrictEqual([]);
   });
 });

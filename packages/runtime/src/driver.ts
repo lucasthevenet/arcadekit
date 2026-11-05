@@ -10,7 +10,7 @@ import type { GameDefinition } from "./presentation";
  * `makeGameEngine` wraps it in an Effect API.
  *
  * `frames` is its frame clock (requestAnimationFrame by default); tests pass `manualFrames()`
- * from `@gamekit/runtime/testing`. To step without drawing, use a `GameLoop` instead.
+ * from `@arcadekit/runtime/testing`. To step without drawing, use a `GameLoop` instead.
  */
 export class GameDriver<Config, State, Input, Event> {
   private readonly loop: GameLoop<Config, State, Input, Event>;

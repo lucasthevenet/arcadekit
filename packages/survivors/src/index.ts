@@ -1,6 +1,6 @@
 // Survivors-like genre: content schema, definition and service, the simulation (rules and
 // GameSimulation), its step input and its event payloads.
-// No DOM or Three.js here; those are in "@gamekit/survivors/browser".
+// No DOM or Three.js here; those are in "@arcadekit/survivors/browser".
 
 export {
   SurvivorsContent,
