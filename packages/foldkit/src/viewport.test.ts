@@ -18,6 +18,7 @@ import { defineMessageUnion } from "foldkit/message";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { engineEntry, gameViewport } from "./index";
+import type { AttachableEngine } from "./index";
 
 // No DOM here. Scene renders the view as VNodes and resolves its Mount; `document` is stubbed;
 // the engine is a real `makeGameEngine` around a tiny game whose view logs the element it draws
@@ -29,6 +30,7 @@ const Message = defineMessageUnion({
   UnmountedViewport: {},
   HidViewport: {},
   GotEvent: { name: Schema.String },
+  FailedToLoad: { error: Schema.String },
 });
 type Message = typeof Message.Type;
 
@@ -45,6 +47,7 @@ const update = (model: Model, message: Message): { model: Model } =>
     }),
     HidViewport: () => ({ model: { ...model, showsViewport: false } }),
     GotEvent: () => ({ model }),
+    FailedToLoad: () => ({ model }),
   });
 
 const view = (model: Model, h: HtmlBuilder<Message>) =>
@@ -284,6 +287,112 @@ describe(engineEntry, () => {
   });
 });
 
+interface LoadError {
+  readonly _tag: "LoadError";
+  readonly message: string;
+}
+const loadError = (message: string): LoadError => ({
+  _tag: "LoadError",
+  message,
+});
+
+/** An entry for an engine reached through a load that can fail. */
+const failingEntry = (
+  engine: Effect.Effect<AttachableEngine<GameEvent, LoadError>, LoadError>
+) =>
+  engineEntry({
+    engine,
+    isViewportMounted: (model: Model) => model.isViewportMounted,
+    toMessage: (event: GameEvent): Message =>
+      Message.GotEvent({ name: event.type }),
+    onError: (error) => Message.FailedToLoad({ error: error.message }),
+  });
+
+/** The entry's Stream while mounted, up to its first Message, or every Message in `ms`. */
+const firstMessages = (
+  entryForTest: ReturnType<typeof failingEntry>,
+  ms: number
+) =>
+  Effect.runPromise(
+    Stream.runCollect(
+      entryForTest
+        .dependenciesToStream(entryForTest.modelToDependencies(mounted))
+        .pipe(Stream.interruptWhen(Effect.sleep(ms)))
+    )
+  );
+
+describe("an engine reached through a load", () => {
+  beforeEach(() => {
+    const viewportId = renderedViewportId();
+    vi.stubGlobal("document", {
+      getElementById: (lookedUp: string) =>
+        lookedUp === viewportId ? element("viewport") : null,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends onError's Message once when the load fails, and doesn't fail", async () => {
+    const messages = await firstMessages(
+      failingEntry(Effect.fail(loadError("no sheet"))),
+      30
+    );
+    expect(messages).toStrictEqual([
+      Message.FailedToLoad({ error: "no sheet" }),
+    ]);
+  });
+
+  it("sends onError's Message when attach fails, as a co-op client's can", async () => {
+    const engine: AttachableEngine<GameEvent, LoadError> = {
+      attach: () => Effect.fail(loadError("no art")),
+      listen: () => Effect.void,
+    };
+    const messages = await firstMessages(
+      failingEntry(Effect.succeed(engine)),
+      30
+    );
+    expect(messages).toStrictEqual([Message.FailedToLoad({ error: "no art" })]);
+  });
+
+  it("stops listening when attach fails, so no event follows the error", async () => {
+    const listeners = new Set<(event: GameEvent) => void>();
+    const engine: AttachableEngine<GameEvent, LoadError> = {
+      attach: () => Effect.fail(loadError("no art")),
+      listen: (onEvent) =>
+        Effect.acquireRelease(
+          Effect.sync(() => listeners.add(onEvent)),
+          () => Effect.sync(() => listeners.delete(onEvent))
+        ),
+    };
+    const emitLater = Effect.sleep("10 millis").pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          for (const onEvent of listeners) {
+            onEvent({ type: "noise" });
+          }
+        })
+      )
+    );
+    const [messages] = await Effect.runPromise(
+      Effect.all(
+        [
+          Effect.promise(() =>
+            firstMessages(failingEntry(Effect.succeed(engine)), 30)
+          ),
+          emitLater,
+        ],
+        { concurrency: "unbounded" }
+      )
+    );
+    expect({ messages, listeners: listeners.size }).toStrictEqual({
+      messages: [Message.FailedToLoad({ error: "no art" })],
+      listeners: 0,
+    });
+  });
+});
+
 // Miswired on purpose: each @ts-expect-error must be a real type error, and `pnpm typecheck`
 // checks this file, so a change that loosens the wiring's types fails there.
 const withoutEngineService = Subscription.make<Model, Message>()(() => ({
@@ -306,6 +415,24 @@ const eventToNonMessage = Subscription.make<Model, Message, TestEngine>()(
     }),
   })
 );
+const failingWithoutOnError = engineEntry(
+  // @ts-expect-error An engine whose load can fail needs onError.
+  {
+    engine: Effect.fail(loadError("")) as Effect.Effect<
+      AttachableEngine<GameEvent, LoadError>,
+      LoadError
+    >,
+    isViewportMounted: (model: Model) => model.isViewportMounted,
+    toMessage: (event: GameEvent) => Message.GotEvent({ name: event.type }),
+  }
+);
+const onErrorWithoutFailure = engineEntry({
+  engine: TestEngine,
+  isViewportMounted: (model: Model) => model.isViewportMounted,
+  toMessage: (event: GameEvent) => Message.GotEvent({ name: event.type }),
+  // @ts-expect-error An engine that can't fail takes no onError.
+  onError: () => Message.FailedToLoad({ error: "" }),
+});
 const viewportWithNonMessage = (h: HtmlBuilder<Message>) =>
   gameViewport(h, {
     // @ts-expect-error A string is not one of the app's Messages.
@@ -320,6 +447,8 @@ describe("miswired apps", () => {
       engineWithOtherEvents,
       eventToNonMessage,
       viewportWithNonMessage,
-    ]).toHaveLength(4);
+      failingWithoutOnError,
+      onErrorWithoutFailure,
+    ]).toHaveLength(6);
   });
 });

@@ -2,14 +2,12 @@
 export {
   SPRITE_TAGS,
   type SurvivorsArt,
-  type SurvivorsArtLoader,
-  SurvivorsSprites,
   heroTags,
-  makeSurvivorsSpritesLayer,
   missingSpriteTags,
 } from "./art";
 export {
   SurvivorsEngine,
+  type SurvivorsEngineLoader,
   type SurvivorsGame,
   type SurvivorsGameOptions,
   type SurvivorsGameSound,

@@ -1,11 +1,11 @@
 import { Audio } from "@gamekit/audio";
 import type { AudioSystem } from "@gamekit/audio";
 import { InputController } from "@gamekit/input";
-import type { SpriteSheet } from "@gamekit/render-three";
-import { combineViews, makeGameEngine } from "@gamekit/runtime/browser";
+import type { SpriteSheet, SpriteSheetError } from "@gamekit/render-three";
+import { combineViews, makeEngineLoader } from "@gamekit/runtime/browser";
 import type {
+  EngineLoader,
   GameDefinition,
-  GameEngine,
   InputSource,
 } from "@gamekit/runtime/browser";
 import { Context, Effect, Layer } from "effect";
@@ -18,7 +18,6 @@ import type {
   PushPuzzleConfig,
   PushPuzzleInput,
 } from "../world";
-import { PushPuzzleSheet } from "./sheet";
 import { PushPuzzleSoundView } from "./sound";
 import type { PushPuzzleSounds } from "./sound";
 import { PushPuzzleView } from "./view";
@@ -104,23 +103,41 @@ export const makePushPuzzleGame = ({
     ),
 });
 
+/** How the app reaches the push-puzzle engine: through the load of its sheet (ADR-0015). */
+export type PushPuzzleEngineLoader = EngineLoader<
+  PushPuzzleConfig,
+  Puzzle,
+  PushPuzzleEvent,
+  SpriteSheet,
+  SpriteSheetError
+>;
+
 export class PushPuzzleEngine extends Context.Service<
   PushPuzzleEngine,
-  GameEngine<PushPuzzleConfig, Puzzle, PushPuzzleEvent>
+  PushPuzzleEngineLoader
 >()("@gamekit/push-puzzle/Engine") {}
 
 /**
- * Provides the engine, drawing from the `PushPuzzleSheet` and playing the cues' `sounds`
- * through the `Audio` service.
+ * Provides `PushPuzzleEngine`: the engine, made once from the sheet `sheet` loads, playing the
+ * cues' `sounds` through `Audio` (tests provide `SilentAudioLayer`). Building the layer loads
+ * nothing. The app's LoadContent runs `load`, and every engine use goes through it
+ * (`engineOf(PushPuzzleEngine)`), so there is no engine before its sheet. The layer's scope (the
+ * app) frees the sheet.
  */
-export const makePushPuzzleEngineLayer = (
-  sounds: PushPuzzleSounds
-): Layer.Layer<PushPuzzleEngine, never, Audio | PushPuzzleSheet> =>
+export const makePushPuzzleEngineLayer = (options: {
+  /** The app's sheet load, such as `loadSpriteSheet(url)`. Run on the first `load`. */
+  readonly sheet: Effect.Effect<SpriteSheet, SpriteSheetError>;
+  readonly sounds: PushPuzzleSounds;
+}): Layer.Layer<PushPuzzleEngine, never, Audio> =>
   Layer.effect(
     PushPuzzleEngine,
     Effect.gen(function* () {
       const audio = yield* Audio;
-      const sheet = yield* PushPuzzleSheet;
-      return makeGameEngine(makePushPuzzleGame({ audio, sounds, sheet }));
+      return yield* makeEngineLoader({
+        assets: options.sheet,
+        game: (sheet) =>
+          makePushPuzzleGame({ audio, sounds: options.sounds, sheet }),
+        release: (sheet) => sheet.dispose(),
+      });
     })
   );

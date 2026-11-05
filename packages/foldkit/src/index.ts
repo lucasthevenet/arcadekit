@@ -3,6 +3,7 @@
 // Messages. `keyPresses` is for an app's own keys (pause, restart), and `shortcutPresses` for
 // one that works on any screen (mute).
 export {
+  type AttachableEngine,
   engineEntry,
   gameViewport,
   type EngineEntryConfig,

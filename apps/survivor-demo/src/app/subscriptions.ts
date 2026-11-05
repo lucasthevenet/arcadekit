@@ -1,5 +1,6 @@
 import { Audio, applyAudioSettings } from "@gamekit/audio";
 import { engineEntry, keyPresses, shortcutPresses } from "@gamekit/foldkit";
+import { engineOf } from "@gamekit/runtime/browser";
 import type { SurvivorsEvent } from "@gamekit/survivors";
 import { SurvivorsEngine } from "@gamekit/survivors/browser";
 import { Effect, Schema, Stream } from "effect";
@@ -8,7 +9,7 @@ import { Subscription } from "foldkit";
 import type { CoopEvent } from "../coop/client";
 import { Coop } from "./coop";
 import { Message } from "./message";
-import { isCoop } from "./model";
+import { isCoop, isLoaded } from "./model";
 import type { Model, Phase } from "./model";
 import { MUSIC } from "./sound";
 
@@ -113,25 +114,28 @@ export const subscriptions = Subscription.make<
 >()((entry) => ({
   /**
    * While the viewport exists, the engine renders into it and its events become Messages, once
-   * the content and sprite sheet have loaded: it can't draw before. Co-op's screens hand the
-   * viewport to the co-op client instead.
+   * the content and sprite sheet have loaded (`isLoaded`): the engine is made from the sheet,
+   * and an entry that reported a failed load wouldn't run again after a retry. A failed load is
+   * shown like LoadContent's. Co-op's screens hand the viewport to the co-op client instead.
    */
   engine: engineEntry({
-    engine: SurvivorsEngine,
+    engine: engineOf(SurvivorsEngine),
     isViewportMounted: (model) =>
-      model.isViewportMounted &&
-      model.phase._tag !== "Loading" &&
-      model.phase._tag !== "LoadFailed" &&
-      !isCoop(model.phase),
+      model.isViewportMounted && isLoaded(model.phase) && !isCoop(model.phase),
     toMessage,
+    onError: (error) => Message.FailedToLoadContent({ error: error.message }),
   }),
 
-  /** On co-op's screens, the co-op client draws its run and reports its lobby and run. */
+  /**
+   * On co-op's screens, the co-op client draws its run and reports its lobby and run. Co-op's
+   * screens are reached from the menu, after the sheet has loaded; a failed load ends co-op.
+   */
   coop: engineEntry({
     engine: Coop,
     isViewportMounted: (model) =>
       model.isViewportMounted && isCoop(model.phase),
     toMessage: coopMessage,
+    onError: (error) => Message.GotCoopFailed({ error: error.message }),
   }),
 
   /** Escape (or P) toggles pause, but only during a run. */

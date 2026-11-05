@@ -51,6 +51,13 @@ export const Phase = defineTaggedUnion({
 });
 export type Phase = typeof Phase.Type;
 
+/**
+ * Whether the content and the sprite sheet have loaded, so the engine exists: every phase but
+ * `Loading` and `LoadFailed`. The engine entries attach only then.
+ */
+export const isLoaded = (phase: Phase): boolean =>
+  phase._tag !== "Loading" && phase._tag !== "LoadFailed";
+
 /** Whether `phase` is one of co-op's: the co-op client, not the single-player engine, draws then. */
 export const isCoop = (phase: Phase): boolean => phase._tag.startsWith("Coop");
 

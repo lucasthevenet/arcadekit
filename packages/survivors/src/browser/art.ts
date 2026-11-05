@@ -1,15 +1,10 @@
-import { loadSpriteSheet } from "@gamekit/render-three";
-import type {
-  SpriteSheet,
-  SpriteSheetData,
-  SpriteSheetError,
-} from "@gamekit/render-three";
-import { Context, Duration, Effect, Exit, Layer } from "effect";
+import type { SpriteSheet, SpriteSheetData } from "@gamekit/render-three";
 
 import type { GameContent } from "../schema";
 
-// The art a survivors view draws with (ADR-0015): one Aseprite sprite sheet, loaded by the app at
-// startup and kept for the app's lifetime. A view draws from it and never frees it.
+// The art a survivors view draws with (ADR-0015): one Aseprite sprite sheet, which the app names
+// and the engine loader (`makeSurvivorsEngineLayer`) loads and keeps for the app's lifetime. A
+// view draws from it and never frees it.
 
 /** What a survivors game draws with: the app's loaded sprite sheet. */
 export interface SurvivorsArt {
@@ -95,39 +90,3 @@ export const missingSpriteTags = (
   }
   return [...wanted].filter((tag) => !sheet.tags.has(tag));
 };
-
-/** Loads the survivors art once. A failed load isn't kept, so calling `load` again retries. */
-export interface SurvivorsArtLoader {
-  readonly load: Effect.Effect<SurvivorsArt, SpriteSheetError>;
-}
-
-/** The app's survivors art. `makeSurvivorsEngineLayer` draws with it; the app loads it at startup. */
-export class SurvivorsSprites extends Context.Service<
-  SurvivorsSprites,
-  SurvivorsArtLoader
->()("@gamekit/survivors/Sprites") {}
-
-/**
- * Provides `SurvivorsSprites`, loading the Aseprite sheet at `sheetUrl` (its JSON) on the first
- * `load`. The sheet lives as long as the layer: the app's lifetime.
- */
-export const makeSurvivorsSpritesLayer = (
-  sheetUrl: string
-): Layer.Layer<SurvivorsSprites> =>
-  Layer.effect(
-    SurvivorsSprites,
-    Effect.gen(function* () {
-      let loaded: SpriteSheet | undefined;
-      yield* Effect.addFinalizer(() => Effect.sync(() => loaded?.dispose()));
-      const load = yield* Effect.cachedWithTTL(
-        loadSpriteSheet(sheetUrl).pipe(
-          Effect.map((sheet) => {
-            loaded = sheet;
-            return { sheet };
-          })
-        ),
-        (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero)
-      );
-      return { load };
-    })
-  );

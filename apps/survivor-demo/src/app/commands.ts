@@ -1,10 +1,17 @@
 import { Audio, AudioSettings } from "@gamekit/audio";
+import { engineOf } from "@gamekit/runtime/browser";
+import type { GameEngine } from "@gamekit/runtime/browser";
 import {
   RunSummary,
   SurvivorsContent,
   chooseUpgrade,
 } from "@gamekit/survivors";
-import { SurvivorsEngine, SurvivorsSprites } from "@gamekit/survivors/browser";
+import type {
+  SurvivorsConfig,
+  SurvivorsEvent,
+  World,
+} from "@gamekit/survivors";
+import { SurvivorsEngine } from "@gamekit/survivors/browser";
 import { Effect, Schema } from "effect";
 import { Command } from "foldkit";
 
@@ -16,12 +23,18 @@ import { CLICK_SOUND, SoundSettings, soundList } from "./sound";
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
 // against the app's services and reports back with a Message.
 
-/** Loads the content and the sprite sheet: the game can't be played or drawn without both. */
+/**
+ * Loads the content and the sprite sheet, side by side: the game can't be played or drawn
+ * without both. Loading the sheet makes the engine (ADR-0015). Either failing shows on the
+ * loading screen.
+ */
 export const LoadContent = Command.define("LoadContent", {
   messages: [Message.LoadedContent, Message.FailedToLoadContent],
   execute: Effect.gen(function* () {
-    const content = yield* (yield* SurvivorsContent).load;
-    yield* (yield* SurvivorsSprites).load;
+    const [content] = yield* Effect.all(
+      [(yield* SurvivorsContent).load, (yield* SurvivorsEngine).load],
+      { concurrency: "unbounded" }
+    );
     return Message.LoadedContent({
       heroes: content.heroes.map(({ id, name, description, color }) => ({
         id,
@@ -43,43 +56,51 @@ export const StartRun = Command.define("StartRun", {
   execute: ({ heroId }) =>
     Effect.gen(function* () {
       const content = yield* (yield* SurvivorsContent).load;
-      yield* (yield* SurvivorsEngine).start({ content, heroIds: [heroId] });
+      const engine = yield* engineOf(SurvivorsEngine);
+      yield* engine.start({ content, heroIds: [heroId] });
       return Message.StartedRun();
     }).pipe(
-      Effect.catchTag("ContentError", (error) =>
+      Effect.catchTag(["ContentError", "SpriteSheetError"], (error) =>
         Effect.succeed(Message.FailedToStartRun({ error: error.message }))
       )
     ),
 });
 
+/**
+ * Runs `use` on the engine. The engine comes through the sheet's load, so this can fail only if
+ * no load ever succeeded (then there is no run). That failure is reported, never dropped.
+ */
+const withEngine = (
+  use: (
+    engine: GameEngine<SurvivorsConfig, World, SurvivorsEvent>
+  ) => Effect.Effect<void>
+) =>
+  engineOf(SurvivorsEngine).pipe(
+    Effect.flatMap(use),
+    Effect.as(Message.CompletedEngineCommand()),
+    Effect.catchTag("SpriteSheetError", (error) =>
+      Effect.succeed(Message.FailedToStartRun({ error: error.message }))
+    )
+  );
+
 export const ChooseUpgrade = Command.define("ChooseUpgrade", {
   args: { index: Schema.Number },
-  messages: [Message.CompletedEngineCommand],
+  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
   execute: ({ index }) =>
-    Effect.gen(function* () {
-      yield* (yield* SurvivorsEngine).modify((world) =>
-        chooseUpgrade(world, 0, index)
-      );
-      return Message.CompletedEngineCommand();
-    }),
+    withEngine((engine) =>
+      engine.modify((world) => chooseUpgrade(world, 0, index))
+    ),
 });
 
 export const SetPaused = Command.define("SetPaused", {
   args: { paused: Schema.Boolean },
-  messages: [Message.CompletedEngineCommand],
-  execute: ({ paused }) =>
-    Effect.gen(function* () {
-      yield* (yield* SurvivorsEngine).setPaused(paused);
-      return Message.CompletedEngineCommand();
-    }),
+  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
+  execute: ({ paused }) => withEngine((engine) => engine.setPaused(paused)),
 });
 
 export const EndRun = Command.define("EndRun", {
-  messages: [Message.CompletedEngineCommand],
-  execute: Effect.gen(function* () {
-    yield* (yield* SurvivorsEngine).stop;
-    return Message.CompletedEngineCommand();
-  }),
+  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
+  execute: withEngine((engine) => engine.stop),
 });
 
 /** Reads the save once, at startup. Never fails: a bad save reads as empty. */
