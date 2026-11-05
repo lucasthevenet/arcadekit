@@ -1,6 +1,6 @@
 {
   "name": "@arcadekit/render-three",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Three.js helpers: stage, mesh instances, camera rigs, pixel-art sprites",
   "keywords": [
     "arcadekit",

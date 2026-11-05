@@ -1,6 +1,6 @@
 {
   "name": "@arcadekit/save",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Keep a game's records between sessions in a versioned, merging KeyValueStore save",
   "keywords": [
     "arcadekit",
