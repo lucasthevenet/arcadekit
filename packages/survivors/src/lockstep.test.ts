@@ -14,20 +14,14 @@ import type { StepInput } from "@arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
-import {
-  GameContent,
-  HeroInput,
-  combineHeroInputs,
-  survivorsSimulation,
-} from "./index";
-import type {
-  Hero,
-  SurvivorsConfig,
-  SurvivorsEvent,
-  SurvivorsInput,
-  World,
-} from "./index";
+import type { Hero } from "./hero";
+import { HeroInput, combineHeroInputs } from "./input";
+import type { SurvivorsInput } from "./input";
+import { GameContent } from "./schema";
+import { survivorsSimulation } from "./simulation";
+import type { SurvivorsConfig, World } from "./world";
 
 // Survivors' real simulation in lockstep, one hero per player: three peers, each driving its own
 // hero, over a lossy, jittery in-memory network. Every peer must step through the same states as

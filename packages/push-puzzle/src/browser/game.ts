@@ -67,7 +67,7 @@ const createInput = (surface: HTMLElement): InputSource<PushPuzzleInput> => {
 };
 
 /** What the push-puzzle game plays its sounds through. */
-export interface PushPuzzleAudio {
+interface PushPuzzleAudio {
   /** The app's audio system. `silentAudio` from `@arcadekit/audio` plays nothing. */
   readonly audio: AudioSystem;
   /** Which of the app's sounds each cue plays. */

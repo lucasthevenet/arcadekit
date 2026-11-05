@@ -5,7 +5,7 @@ import type { World } from "./world";
 // is the root entry's `hash` for `@arcadekit/net`.
 
 /** FNV-1a over numbers' float64 bits, so any change in any digit shows. */
-export const hasher = () => {
+const hasher = () => {
   let hash = 0x81_1c_9d_c5;
   const bits = new Float64Array(1);
   const bytes = new Uint8Array(bits.buffer);

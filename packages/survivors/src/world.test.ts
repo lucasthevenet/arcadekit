@@ -3,18 +3,14 @@ import type { StepInput } from "@arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
-import {
-  GameContent,
-  chooseUpgrade,
-  createWorld,
-  findBrokenReferences,
-  hudSample,
-  soloInput,
-  step,
-  survivorsSimulation,
-} from "./index";
-import type { HeroInput, SurvivorsEvent, SurvivorsInput, World } from "./index";
+import { soloInput } from "./input";
+import type { HeroInput, SurvivorsInput } from "./input";
+import { GameContent, findBrokenReferences } from "./schema";
+import { survivorsSimulation } from "./simulation";
+import { chooseUpgrade, createWorld, hudSample, step } from "./world";
+import type { World } from "./world";
 
 // Small, self-contained content so these tests don't depend on any particular game.
 const content = Schema.decodeUnknownSync(GameContent)({

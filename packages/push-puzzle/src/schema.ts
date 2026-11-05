@@ -21,7 +21,7 @@ const unknownCharacter = (level: {
   return undefined;
 };
 
-export const LevelDef = Schema.Struct({
+const LevelDef = Schema.Struct({
   id: Id,
   name: Schema.String,
   rows: Schema.NonEmptyArray(Schema.String),
@@ -29,7 +29,6 @@ export const LevelDef = Schema.Struct({
   // A filter on the whole level, not the row strings, so the message can name the level.
   Schema.makeFilter((level) => unknownCharacter(level) ?? true)
 );
-export type LevelDef = typeof LevelDef.Type;
 
 export const PuzzleContent = Schema.Struct({
   levels: Schema.NonEmptyArray(LevelDef),

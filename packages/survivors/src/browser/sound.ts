@@ -28,7 +28,7 @@ export interface SurvivorsSounds {
   readonly auraHum: string;
 }
 
-export interface SurvivorsSoundViewOptions {
+interface SurvivorsSoundViewOptions {
   readonly audio: AudioSystem;
   readonly sounds: SurvivorsSounds;
   /** This browser's hero: its hurt and down sounds play at full volume. Defaults to 0. */

@@ -33,12 +33,7 @@ export const VOID_COLOR = "#0c0f17";
  * One distinct colour per player slot, for the hero's ground marker: how co-op players tell
  * their heroes apart, even two of the same hero. A single player's is slot 0's.
  */
-export const SLOT_COLORS = [
-  "#3ee0ff",
-  "#ff4f9a",
-  "#9dff5c",
-  "#ffb13b",
-] as const;
+const SLOT_COLORS = ["#3ee0ff", "#ff4f9a", "#9dff5c", "#ffb13b"] as const;
 
 /** Enemy tags drawn floating above their shadow, and how high, in world units. */
 const FLOATING: ReadonlyMap<string, number> = new Map([
@@ -150,7 +145,7 @@ const gemTier = (value: number) => {
   return value <= 3 ? 1 : 2;
 };
 
-export interface SurvivorsSceneOptions {
+interface SurvivorsSceneOptions {
   /** The slot of the hero to centre on. Defaults to 0. */
   readonly localHero?: number;
 }

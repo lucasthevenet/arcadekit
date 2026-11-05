@@ -4,8 +4,9 @@ import { Schema } from "effect";
 import type * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 
-import { PuzzleContent, createPuzzle, step } from "../index";
-import type { Direction, Puzzle } from "../index";
+import { PuzzleContent } from "../schema";
+import { createPuzzle, step } from "../world";
+import type { Direction, Puzzle } from "../world";
 import { PuzzleSprites } from "./board";
 import { testSheet } from "./test-sheet";
 

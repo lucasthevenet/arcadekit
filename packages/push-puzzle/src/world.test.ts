@@ -2,21 +2,16 @@ import { GameLoop } from "@arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import {
-  PuzzleContent,
-  boardText,
-  boxIdAt,
-  createPuzzle,
-  pushPuzzleSimulation,
-  step,
-} from "./index";
+import type { PushPuzzleEvent } from "./events";
+import { PuzzleContent } from "./schema";
+import { pushPuzzleSimulation } from "./simulation";
+import { boardText, boxIdAt, createPuzzle, step } from "./world";
 import type {
   Direction,
   Puzzle,
   PushPuzzleConfig,
-  PushPuzzleEvent,
   PushPuzzleInput,
-} from "./index";
+} from "./world";
 
 // Tests drive a run the way the runtime does: one input per step.
 // Boards are written and read back in level text, so each case reads like a picture.

@@ -57,7 +57,7 @@ export const soloInput = (
 };
 
 /** One lockstep step, as `@arcadekit/net`'s `ConfirmedStep<HeroInput>` has it. */
-export interface PlayersStep {
+interface PlayersStep {
   readonly inputs: readonly {
     readonly player: string;
     readonly input: HeroInput;

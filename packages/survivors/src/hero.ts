@@ -22,7 +22,7 @@ export interface WeaponSlot {
   sinceFired: number;
 }
 
-export interface Stats {
+interface Stats {
   maxHpMult: number;
   moveSpeed: number;
   damageMult: number;
@@ -39,7 +39,7 @@ export interface Stats {
  *
  * The run is lost once no hero is `playing`.
  */
-export type HeroStatus = "playing" | "down" | "left";
+type HeroStatus = "playing" | "down" | "left";
 
 /** One player's hero. Its index in `World.heroes` is its slot, the player's place in player order. */
 export interface Hero {
@@ -111,7 +111,7 @@ const baseStats = (content: GameContent, def: HeroDef): Stats => ({
 });
 
 /** Recomputes a hero's stats from its passive levels. Called after every upgrade, never per frame. */
-export const recomputeStats = (content: GameContent, hero: Hero): void => {
+const recomputeStats = (content: GameContent, hero: Hero): void => {
   const sum = {
     maxHp: 0,
     moveSpeed: 0,
@@ -142,7 +142,7 @@ export const recomputeStats = (content: GameContent, hero: Hero): void => {
 };
 
 // ---------------------------------------------------------------------------
-// Weapon numbers (shared with the view so visuals match the rules)
+// Weapon numbers the rules use. The view draws the aura with `auraRadius`, so it matches the rules.
 
 export const weaponDamage = (hero: Hero, slot: WeaponSlot): number =>
   (slot.def.damage + slot.def.damagePerLevel * (slot.level - 1)) *

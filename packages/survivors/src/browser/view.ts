@@ -8,7 +8,7 @@ import { PIXELS_PER_UNIT, SurvivorsScene, VOID_COLOR } from "./scene";
 /** About how many world units of ground the view shows top to bottom. */
 const VIEW_HEIGHT = 20;
 
-export interface SurvivorsViewOptions {
+interface SurvivorsViewOptions {
   /** The slot of the hero the camera follows: this browser's player. Defaults to 0. */
   readonly localHero?: number;
 }
