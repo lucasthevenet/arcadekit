@@ -1,6 +1,7 @@
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
+import { FocusRetry } from "./commands";
 import { Message } from "./message";
 import type { Model } from "./model";
 import { subscriptions } from "./subscriptions";
@@ -31,6 +32,7 @@ describe("the viewport", () => {
       Story.given(init().model),
       Story.message(Message.MountedViewport()),
       Story.message(Message.FailedToLoadContent({ error: "no sheet" })),
+      Story.Command.resolve(FocusRetry, Message.CompletedFocusCommand()),
       Story.model((model) => expect(runsEngine(model)).toBe(false))
     );
   });

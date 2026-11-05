@@ -24,6 +24,7 @@ import type { CoopClient } from "../coop/client";
 import {
   ChooseUpgrade,
   EndRun,
+  FocusRetry,
   LoadAudioSettings,
   LoadContent,
   LoadSave,
@@ -256,6 +257,7 @@ describe("loading", () => {
         ),
         Scene.Command.resolve(LoadContent, message),
         Scene.expect(Scene.text(sheetError.message)).toExist(),
+        Scene.Command.resolve(FocusRetry, Message.CompletedFocusCommand()),
         Scene.Command.resolve(
           LoadSave,
           Message.LoadedSave({ records: emptyRecords })

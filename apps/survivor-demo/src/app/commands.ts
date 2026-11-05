@@ -13,12 +13,13 @@ import type {
 } from "@gamekit/survivors";
 import { SurvivorsEngine } from "@gamekit/survivors/browser";
 import { Effect, Schema } from "effect";
-import { Command } from "foldkit";
+import { Command, Dom } from "foldkit";
 
 import { Coop } from "./coop";
 import { Message } from "./message";
 import { Save } from "./save";
 import { CLICK_SOUND, SoundSettings, soundList } from "./sound";
+import { RETRY_BUTTON_ID } from "./view";
 
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
 // against the app's services and reports back with a Message.
@@ -26,15 +27,20 @@ import { CLICK_SOUND, SoundSettings, soundList } from "./sound";
 /**
  * Loads the content and the sprite sheet, side by side: the game can't be played or drawn
  * without both. Loading the sheet makes the engine (ADR-0015). Either failing shows on the
- * loading screen.
+ * load-error screen, whose "Try again" runs this again: each loader keeps its first success, so
+ * only what failed is fetched again.
  */
 export const LoadContent = Command.define("LoadContent", {
   messages: [Message.LoadedContent, Message.FailedToLoadContent],
   execute: Effect.gen(function* () {
-    const [content] = yield* Effect.all(
+    // Both loads run to the end, so one failing doesn't cut the other short: what loaded is kept
+    // for a retry.
+    const [loadedContent, loadedEngine] = yield* Effect.all(
       [(yield* SurvivorsContent).load, (yield* SurvivorsEngine).load],
-      { concurrency: "unbounded" }
+      { concurrency: "unbounded", mode: "result" }
     );
+    const content = yield* Effect.fromResult(loadedContent);
+    yield* Effect.fromResult(loadedEngine);
     return Message.LoadedContent({
       heroes: content.heroes.map(({ id, name, description, color }) => ({
         id,
@@ -47,6 +53,18 @@ export const LoadContent = Command.define("LoadContent", {
     Effect.catchTag(["ContentError", "SpriteSheetError"], (error) =>
       Effect.succeed(Message.FailedToLoadContent({ error: error.message }))
     )
+  ),
+});
+
+/**
+ * Focuses the load-error screen's "Try again" button once it is drawn, so Enter retries. Never
+ * fails: if the screen is gone before it runs, nothing is focused.
+ */
+export const FocusRetry = Command.define("FocusRetry", {
+  messages: [Message.CompletedFocusCommand],
+  execute: Dom.focus(`#${RETRY_BUTTON_ID}`).pipe(
+    Effect.catchTag("ElementNotFound", () => Effect.void),
+    Effect.as(Message.CompletedFocusCommand())
   ),
 });
 

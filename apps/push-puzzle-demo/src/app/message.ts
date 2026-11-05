@@ -11,6 +11,7 @@ export const Message = defineMessageUnion({
   // Boot
   LoadedContent: { levels: Schema.Array(LevelSummary) },
   FailedToLoadContent: { error: Schema.String },
+  ClickedRetry: {},
   LoadedSave: { records: LevelRecords },
   LoadedAudioSettings: { settings: AudioSettings },
   MountedViewport: {},
@@ -40,8 +41,9 @@ export const Message = defineMessageUnion({
   ToggledMute: {},
   PressedMuteKey: {},
 
-  // Acknowledgements from fire-and-forget engine and audio commands
+  // Acknowledgements from fire-and-forget engine, audio and focus commands
   CompletedEngineCommand: {},
   CompletedAudioCommand: {},
+  CompletedFocusCommand: {},
 });
 export type Message = typeof Message.Type;

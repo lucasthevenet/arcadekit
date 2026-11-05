@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   EndRun,
+  FocusRetry,
   LoadAudioSettings,
   LoadContent,
   LoadSave,
@@ -187,10 +188,13 @@ const withInitCommands = <M, Msg, Out>(
 
 describe("a sheet that fails to load", () => {
   it("stops startup with its error on the loading screen, like content that fails to load", async () => {
-    // The two loads run side by side: the sheet's failure ends LoadContent without the levels.
+    // The two loads run side by side: the levels load, and the sheet's failure is reported.
+    const levels = { levels: [] } as unknown as Effect.Success<
+      PushPuzzleContent["Service"]["load"]
+    >;
     const message = await runWithFailedSheet(
       LoadContent().effect,
-      Effect.never
+      Effect.succeed(levels)
     );
     expect(message).toStrictEqual(
       Message.FailedToLoadContent({ error: failed.message })
@@ -199,6 +203,7 @@ describe("a sheet that fails to load", () => {
       update,
       Story.given(init().model),
       Story.message(message),
+      Story.Command.resolve(FocusRetry, Message.CompletedFocusCommand()),
       Story.model((model) =>
         expect(model.phase).toStrictEqual({
           _tag: "LoadFailed",
@@ -219,6 +224,7 @@ describe("a sheet that fails to load", () => {
         ),
         Scene.Command.resolve(LoadContent, message),
         Scene.expect(Scene.text(failed.message)).toExist(),
+        Scene.Command.resolve(FocusRetry, Message.CompletedFocusCommand()),
         Scene.Command.resolve(
           LoadSave,
           Message.LoadedSave({ records: emptyRecords })

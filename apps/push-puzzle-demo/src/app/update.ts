@@ -9,6 +9,7 @@ import type { AudioSettingsStorage } from "./audio";
 import {
   ChangeAudioSettings,
   EndRun,
+  FocusRetry,
   LoadAudioSettings,
   LoadContent,
   LoadSave,
@@ -49,6 +50,12 @@ export const init: Runtime.ApplicationInit<
   commands: [LoadContent(), LoadSave(), LoadAudioSettings(), LoadSounds()],
 });
 
+/** The load-error screen, with its "Try again" focused. */
+const loadFailed = (model: Model, error: string): Return => ({
+  model: { ...model, phase: Phase.LoadFailed({ error }) },
+  commands: [FocusRetry()],
+});
+
 const startLevel = (model: Model, levelId: string): Return => ({
   model: { ...model, levelId, hud: emptyHud, phase: Phase.Starting() },
   commands: [StartLevel({ levelId })],
@@ -78,9 +85,16 @@ export const update = (model: Model, message: Message): Return =>
     LoadedContent: ({ levels }) => ({
       model: { ...model, levels, phase: Phase.LevelSelect() },
     }),
-    FailedToLoadContent: ({ error }) => ({
-      model: { ...model, phase: Phase.LoadFailed({ error }) },
-    }),
+    FailedToLoadContent: ({ error }) => loadFailed(model, error),
+    // Loads again, then goes to level select as on a first load. Each loader keeps its first
+    // success, so only what failed is fetched again.
+    ClickedRetry: () =>
+      model.phase._tag === "LoadFailed"
+        ? withClick({
+            model: { ...model, phase: Phase.Loading() },
+            commands: [LoadContent()],
+          })
+        : { model },
     LoadedSave: ({ records }) => ({
       model: { ...model, records: mergeRecords(model.records, records) },
     }),
@@ -97,9 +111,7 @@ export const update = (model: Model, message: Message): Return =>
         ? withClick(startLevel(model, levelId))
         : { model },
     StartedRun: () => ({ model: { ...model, phase: Phase.Playing() } }),
-    FailedToStartRun: ({ error }) => ({
-      model: { ...model, phase: Phase.LoadFailed({ error }) },
-    }),
+    FailedToStartRun: ({ error }) => loadFailed(model, error),
 
     GotHud: ({ hud }) => ({ model: { ...model, hud } }),
     GotLevelSolved: ({ moves }) => ({
@@ -129,4 +141,5 @@ export const update = (model: Model, message: Message): Return =>
 
     CompletedEngineCommand: () => ({ model }),
     CompletedAudioCommand: () => ({ model }),
+    CompletedFocusCommand: () => ({ model }),
   });

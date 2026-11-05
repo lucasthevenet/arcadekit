@@ -11,6 +11,9 @@ import type { HeroRecord } from "./save";
 
 type H = HtmlBuilder<Message>;
 
+/** The load-error screen's "Try again" button, which FocusRetry focuses so Enter retries. */
+export const RETRY_BUTTON_ID = "retry";
+
 export const view = (model: Model, h: H): Document => ({
   title: "Survivor Kit",
   body: h.div(
@@ -33,6 +36,14 @@ const overlay = (model: Model, h: H): Html =>
       panel(h, [
         h.h2([], ["Something went wrong"]),
         h.p([h.Class("error")], [error]),
+        h.button(
+          [
+            h.Id(RETRY_BUTTON_ID),
+            h.Class("primary"),
+            h.OnClick(Message.ClickedRetry()),
+          ],
+          ["Try again"]
+        ),
       ]),
     Menu: () => menu(model, h),
     Starting: () => h.empty,

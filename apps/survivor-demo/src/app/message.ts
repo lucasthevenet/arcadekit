@@ -11,6 +11,7 @@ export const Message = defineMessageUnion({
   // Boot
   LoadedContent: { heroes: Schema.Array(HeroSummary) },
   FailedToLoadContent: { error: Schema.String },
+  ClickedRetry: {},
   LoadedSave: { records: HeroRecords },
   MountedViewport: {},
   UnmountedViewport: {},
@@ -70,8 +71,9 @@ export const Message = defineMessageUnion({
   ClickedMute: {},
   PressedMute: {},
 
-  // Acknowledgements from fire-and-forget engine and audio commands
+  // Acknowledgements from fire-and-forget engine, audio and focus commands
   CompletedEngineCommand: {},
   CompletedAudioCommand: {},
+  CompletedFocusCommand: {},
 });
 export type Message = typeof Message.Type;
