@@ -27,7 +27,7 @@ const PATCH_AREA = 420;
 const PATCH_REACH = 2;
 
 /** A small integer hash to [0, 1), for picking tile variants and patch places. */
-export const hash = (x: number, y: number): number => {
+const hash = (x: number, y: number): number => {
   let h = Math.imul(x, 374_761_393) + Math.imul(y, 668_265_263);
   h = Math.imul(h ^ (h >>> 13), 1_274_126_177);
   return ((h ^ (h >>> 16)) >>> 0) / 4_294_967_296;

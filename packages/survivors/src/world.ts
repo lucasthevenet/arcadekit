@@ -32,7 +32,7 @@ import type { EnemyDef, GameContent } from "./schema";
 // everywhere, so every lockstep peer computes the same step. With one hero, every rule computes
 // exactly what the single-player game always has.
 
-export const PLAYER_RADIUS = 0.5;
+const PLAYER_RADIUS = 0.5;
 const MAX_PROJECTILES = 512;
 const MAX_GEMS = 1024;
 const NEIGHBOR_BUFFER = 256;
@@ -48,7 +48,7 @@ export interface SurvivorsConfig {
   readonly heroIds: readonly string[];
 }
 
-export type RunStatus = "running" | "won" | "dead";
+type RunStatus = "running" | "won" | "dead";
 
 const ENEMY_LAYOUT = {
   x: Float32Array,
@@ -82,7 +82,7 @@ const GEM_LAYOUT = {
  * view compares them with what it saw last frame and plays a sound for each one that rose.
  * All preallocated by `createWorld`, so bumping one never allocates.
  */
-export interface SurvivorsCues {
+interface SurvivorsCues {
   /** Bolt projectiles fired, one per projectile, by weapon def index (`content.weapons`). The aura fires none. */
   readonly shots: Uint32Array;
   /** Bolt projectiles hitting an enemy. Aura damage isn't counted: the aura hums instead. */

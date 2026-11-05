@@ -84,7 +84,7 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Kit**: the shared packages `core`, `input`, `content`, `save`, `render-three`, `runtime`, `net` and `foldkit`. Genre packages and demo apps build on it. A **primitive** is one of the kit's building blocks, such as `createPool` or `InputController`.
 
-**Genre package**: a package that implements one kind of game on the kit (`@arcadekit/survivors`, `@arcadekit/push-puzzle`). Its root entry holds the content schema, the content service, the simulation and its `GameSimulation`, and the event payload Schemas, with no DOM or Three.js (its `tsconfig.root.json` checks it with no DOM types; keeping Three.js out is a convention); its `./browser` entry holds the input source, the view, the `GameDefinition` and the engine.
+**Genre package**: a package that implements one kind of game on the kit (`@arcadekit/survivors`, `@arcadekit/push-puzzle`). Each entry exports what an app uses and nothing else; rules internals stay in their modules. The root entry holds the content definition and service, the `GameSimulation` with the state, config and step input an app names, and the event payload Schemas, with no DOM or Three.js (its `tsconfig.root.json` checks it with no DOM types; keeping Three.js out is a convention); its `./browser` entry holds the engine, the `GameDefinition`, and the cue table, art and view types an app wires.
 
 **Finding**: a place where a genre had to change, work around, copy or bypass a shared primitive, or where a shared primitive's name or docs assume one genre. A primitive a genre simply doesn't use is not a finding. See `docs/push-puzzle-findings.md`.
 

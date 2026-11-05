@@ -10,7 +10,7 @@ const NonNegative = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
 const HexColor = Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/u));
 
 /** Player stats that passive upgrades can raise. */
-export const StatKey = Schema.Literals([
+const StatKey = Schema.Literals([
   "maxHp",
   "moveSpeed",
   "damage",
@@ -19,7 +19,6 @@ export const StatKey = Schema.Literals([
   "pickupRadius",
   "regen",
 ]);
-export type StatKey = typeof StatKey.Type;
 
 export const HeroDef = Schema.Struct({
   id: Id,
@@ -98,7 +97,7 @@ export const WeaponDef = Schema.Struct({
 });
 export type WeaponDef = typeof WeaponDef.Type;
 
-export const PassiveDef = Schema.Struct({
+const PassiveDef = Schema.Struct({
   id: Id,
   name: Schema.String,
   description: Schema.String,
@@ -107,18 +106,16 @@ export const PassiveDef = Schema.Struct({
   amountPerLevel: Schema.Finite,
   maxLevel: Positive,
 });
-export type PassiveDef = typeof PassiveDef.Type;
 
 /** One line of the spawn schedule: while `from <= time < to`, spawn this enemy. */
-export const WaveDef = Schema.Struct({
+const WaveDef = Schema.Struct({
   from: NonNegative,
   to: Positive,
   enemy: Id,
   perSecond: Positive,
 });
-export type WaveDef = typeof WaveDef.Type;
 
-export const Rules = Schema.Struct({
+const Rules = Schema.Struct({
   arenaHalfSize: Positive,
   maxEnemies: Positive,
   xpToLevel2: Positive,
@@ -129,7 +126,6 @@ export const Rules = Schema.Struct({
   /** Seconds to survive to win the run. */
   runLength: Positive,
 });
-export type Rules = typeof Rules.Type;
 
 export const GameContent = Schema.Struct({
   rules: Rules,

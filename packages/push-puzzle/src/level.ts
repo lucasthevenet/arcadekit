@@ -14,7 +14,7 @@ export type Tile = (typeof Tile)[keyof typeof Tile];
 /** The characters a level row may use: standard Sokoban, plus `^` for a hole. */
 export const LEVEL_CHARACTERS = "#@+$*. ^";
 
-export interface ParsedLevel {
+interface ParsedLevel {
   readonly cols: number;
   readonly rows: number;
   /** One Tile per cell, row by row: cell index is `row * cols + col`. */

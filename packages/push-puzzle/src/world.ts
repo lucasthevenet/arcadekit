@@ -32,9 +32,9 @@ export interface PushPuzzleConfig {
 
 const DEFAULT_HISTORY_CAPACITY = 2048;
 /** Steps a held direction waits after its press before moving again. */
-export const REPEAT_DELAY_STEPS = 12;
+const REPEAT_DELAY_STEPS = 12;
 /** Steps between repeated moves after that. */
-export const REPEAT_INTERVAL_STEPS = 6;
+const REPEAT_INTERVAL_STEPS = 6;
 
 const BOX_LAYOUT = {
   /** Cell index, `row * cols + col`. */
@@ -316,7 +316,7 @@ export const boxIdAt = (puzzle: Puzzle, col: number, row: number): number => {
 };
 
 /** Goals that have no box on them yet. */
-export const boxesLeft = (puzzle: Puzzle): number => {
+const boxesLeft = (puzzle: Puzzle): number => {
   let placed = 0;
   const { boxes } = puzzle;
   for (let i = 0; i < boxes.count; i++) {

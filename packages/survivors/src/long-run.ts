@@ -3,13 +3,12 @@ import type { StepInput } from "@arcadekit/runtime";
 import { Schema } from "effect";
 
 import { visitWorld, hashWorld } from "./hash-world";
-import {
-  GameContent,
-  chooseUpgrade,
-  soloInput,
-  survivorsSimulation,
-} from "./index";
-import type { HeroInput, World } from "./index";
+import { soloInput } from "./input";
+import type { HeroInput } from "./input";
+import { GameContent } from "./schema";
+import { survivorsSimulation } from "./simulation";
+import { chooseUpgrade } from "./world";
+import type { World } from "./world";
 
 // The long-run determinism scenario: 20,000 steps (5.5 minutes) of a full horde under analog
 // input, through the GameLoop the demos run. `determinism.test.ts` plays it in Node and pins its

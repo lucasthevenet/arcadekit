@@ -2,8 +2,9 @@ import type { AudioSystem } from "@arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { GameContent, createWorld } from "../index";
-import type { World } from "../index";
+import { GameContent } from "../schema";
+import { createWorld } from "../world";
+import type { World } from "../world";
 import { SurvivorsSoundView } from "./sound";
 import type { SurvivorsSounds } from "./sound";
 

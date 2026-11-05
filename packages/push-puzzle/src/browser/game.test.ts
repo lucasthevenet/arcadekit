@@ -4,9 +4,11 @@ import type { InputSource } from "@arcadekit/runtime";
 import { Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PuzzleContent, boardText } from "../index";
-import type { HudSample, PushPuzzleInput } from "../index";
-import { makePushPuzzleGame } from "./index";
+import type { HudSample } from "../events";
+import { PuzzleContent } from "../schema";
+import { boardText } from "../world";
+import type { PushPuzzleInput } from "../world";
+import { makePushPuzzleGame } from "./game";
 import { testSheet } from "./test-sheet";
 
 // Runs push-puzzle's real browser definition: its input source reads keys through

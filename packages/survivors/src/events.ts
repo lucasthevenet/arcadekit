@@ -5,7 +5,7 @@ import { Schema } from "effect";
 // in its Model and Messages, so a field added here reaches the app's Model.
 
 /** One hero's part of the HUD. */
-export const HeroHud = Schema.Struct({
+const HeroHud = Schema.Struct({
   heroId: Schema.String,
   hp: Schema.Number,
   maxHp: Schema.Number,
@@ -13,7 +13,6 @@ export const HeroHud = Schema.Struct({
   /** True while this hero's player holds a co-op run paused. */
   paused: Schema.Boolean,
 });
-export type HeroHud = typeof HeroHud.Type;
 
 /** What the HUD shows: the team's level and XP, the run, and each hero by slot. The hud event carries it. */
 export const HudSample = Schema.Struct({

@@ -3,8 +3,9 @@ import type { InstancedSprites } from "@arcadekit/render-three";
 import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GameContent, createWorld } from "../index";
-import type { World } from "../index";
+import { GameContent } from "../schema";
+import { createWorld } from "../world";
+import type { World } from "../world";
 import { SPRITE_TAGS, missingSpriteTags } from "./art";
 import { SurvivorsScene } from "./scene";
 

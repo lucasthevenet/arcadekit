@@ -16,7 +16,7 @@ import { SurvivorsSoundView } from "./sound";
 import type { SurvivorsSounds } from "./sound";
 import { SurvivorsView } from "./view";
 
-export type SurvivorsGame = GameDefinition<
+type SurvivorsGame = GameDefinition<
   SurvivorsConfig,
   World,
   SurvivorsInput,
@@ -30,7 +30,7 @@ export interface SurvivorsGameSound {
 }
 
 /** What a survivors game is made with: the art it draws, and the sound it plays, if any. */
-export interface SurvivorsGameOptions {
+interface SurvivorsGameOptions {
   readonly art: SurvivorsArt;
   /** Without it, the game is silent. */
   readonly sound?: SurvivorsGameSound;

@@ -2,7 +2,7 @@ import { loadContent, memorySource } from "@arcadekit/content";
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { pushPuzzleContentDefinition } from "./index";
+import { pushPuzzleContentDefinition } from "./content";
 
 const load = (levels: unknown) =>
   Effect.runPromiseExit(

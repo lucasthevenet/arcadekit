@@ -4,13 +4,11 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { hashWorld } from "./hash-world";
-import {
-  GameContent,
-  chooseUpgrade,
-  soloInput,
-  survivorsSimulation,
-} from "./index";
-import type { HeroInput } from "./index";
+import { soloInput } from "./input";
+import type { HeroInput } from "./input";
+import { GameContent } from "./schema";
+import { survivorsSimulation } from "./simulation";
+import { chooseUpgrade } from "./world";
 
 // Replay check: the same seed and the same input script must give the same run, bit for bit.
 // It runs survivors' simulation through @arcadekit/runtime's GameLoop, with the step order and
