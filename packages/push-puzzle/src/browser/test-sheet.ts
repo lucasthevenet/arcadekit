@@ -1,5 +1,5 @@
-import { decodeSpriteSheet, makeSpriteSheet } from "@gamekit/render-three";
-import type { SpriteSheet } from "@gamekit/render-three";
+import { decodeSpriteSheet, makeSpriteSheet } from "@arcadekit/render-three";
+import type { SpriteSheet } from "@arcadekit/render-three";
 import { Effect } from "effect";
 
 import { PUSH_PUZZLE_SPRITE_TAGS } from "./board";

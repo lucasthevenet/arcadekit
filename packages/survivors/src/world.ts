@@ -4,8 +4,8 @@ import {
   clamp,
   createPool,
   makeRng,
-} from "@gamekit/core";
-import type { Pool, Rng } from "@gamekit/core";
+} from "@arcadekit/core";
+import type { Pool, Rng } from "@arcadekit/core";
 
 import type { HudSample, SurvivorsEvent } from "./events";
 import {
@@ -24,7 +24,7 @@ import { cos, hypot2, powInt, sin } from "./math";
 import type { EnemyDef, GameContent } from "./schema";
 
 // The survivors simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
-// Crowds live in @gamekit/core pools (one typed array per field), so the per-frame loop
+// Crowds live in @arcadekit/core pools (one typed array per field), so the per-frame loop
 // allocates nothing and the garbage collector never causes a stutter.
 //
 // A run has one hero per player (hero.ts); everything else is shared: the clock, the team's XP

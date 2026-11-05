@@ -1,4 +1,4 @@
-import type { RunSummary } from "@gamekit/survivors";
+import type { RunSummary } from "@arcadekit/survivors";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
@@ -12,7 +12,7 @@ import { init, update } from "./update";
 
 // The app's save over an in-memory KeyValueStore, never real localStorage.
 // Missing, corrupt and unknown-version saves, the merge with another tab and
-// failed writes are @gamekit/save's tests; these cover this game's record,
+// failed writes are @arcadekit/save's tests; these cover this game's record,
 // its merge rule and its key.
 
 const run = <A>(

@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 
-import { ContentError, loadContent } from "@gamekit/content";
-import type { ContentSource } from "@gamekit/content";
-import { GameLoop } from "@gamekit/runtime";
+import { ContentError, loadContent } from "@arcadekit/content";
+import type { ContentSource } from "@arcadekit/content";
+import { GameLoop } from "@arcadekit/runtime";
 import {
   chooseUpgrade,
   soloInput,
   survivorsContentDefinition,
   survivorsSimulation,
-} from "@gamekit/survivors";
+} from "@arcadekit/survivors";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 

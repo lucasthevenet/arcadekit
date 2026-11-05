@@ -1,6 +1,6 @@
-import { makeGameEngine } from "@gamekit/runtime/browser";
-import type { GameDefinition, GameEngine } from "@gamekit/runtime/browser";
-import { manualFrames } from "@gamekit/runtime/testing";
+import { makeGameEngine } from "@arcadekit/runtime/browser";
+import type { GameDefinition, GameEngine } from "@arcadekit/runtime/browser";
+import { manualFrames } from "@arcadekit/runtime/testing";
 import {
   Cause,
   Context,
@@ -216,7 +216,7 @@ describe(engineEntry, () => {
           Stream.runCollect(Stream.take(streamFor(mounted), 2))
         );
         yield* waitUntil(() => log.length > 0);
-        yield* engine.start(null, 1);
+        yield* engine.start(null);
         return yield* Fiber.join(fiber);
       }).pipe(Effect.provideService(TestEngine, engine))
     );
@@ -258,7 +258,7 @@ describe(engineEntry, () => {
           elements.set(viewportId, element("second"));
           yield* Queue.offerAll(models, [unmounted, mounted]);
           yield* waitUntil(() => log.length === 3);
-          yield* engine.start(null, 1);
+          yield* engine.start(null);
           expect(yield* Queue.take(messages)).toStrictEqual(
             Message.GotEvent({ name: "started" })
           );

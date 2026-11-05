@@ -101,7 +101,7 @@ interface Debug {
 }
 
 const debug = (page: Page) =>
-  page.evaluate<Debug>("globalThis.gamekitCoop.debug()");
+  page.evaluate<Debug>("globalThis.arcadekitCoop.debug()");
 
 const demoRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -111,7 +111,7 @@ const demoRoot = fileURLToPath(new URL("..", import.meta.url));
  * focus emulation would keep its pages visible). `hide` opens a second tab in front of the page.
  */
 const startDesktopChromium = async (pw: Playwright) => {
-  const profile = mkdtempSync(path.join(tmpdir(), "gamekit-e2e-"));
+  const profile = mkdtempSync(path.join(tmpdir(), "arcadekit-e2e-"));
   const child: ChildProcess = spawn(
     pw.chromium.executablePath(),
     [
@@ -295,7 +295,7 @@ describe("co-op in two browsers", () => {
     await page.waitForSelector("text=Resume");
     expect([
       errors,
-      await page.evaluate("globalThis.gamekitCoop.debug().stepIndex"),
+      await page.evaluate("globalThis.arcadekitCoop.debug().stepIndex"),
     ]).toStrictEqual([[], 0]);
   });
 
@@ -331,7 +331,7 @@ describe("co-op in two browsers", () => {
     }
 
     await host.waitForFunction(
-      "globalThis.gamekitCoop.debug().stepIndex > 300",
+      "globalThis.arcadekitCoop.debug().stepIndex > 300",
       undefined,
       { timeout: 10_000 }
     );
@@ -435,7 +435,7 @@ const startRun = async (host: Page, guest: Page, url: string) => {
   await Promise.all(
     [host, guest].map((page) =>
       page.waitForFunction(
-        "globalThis.gamekitCoop.debug().stepIndex > 60",
+        "globalThis.arcadekitCoop.debug().stepIndex > 60",
         undefined,
         { timeout: 15_000 }
       )

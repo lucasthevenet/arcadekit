@@ -1,8 +1,8 @@
 {
-  "name": "@gamekit/push-puzzle-demo",
+  "name": "@arcadekit/push-puzzle-demo",
   "version": "0.0.0",
   "private": true,
-  "description": "Demo push-puzzle game built on the @gamekit packages",
+  "description": "Demo push-puzzle game built on the @arcadekit packages",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,15 +11,16 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@arcadekit/audio": "workspace:*",
+    "@arcadekit/content": "workspace:*",
+    "@arcadekit/foldkit": "workspace:*",
+    "@arcadekit/push-puzzle": "workspace:*",
+    "@arcadekit/render-three": "workspace:*",
+    "@arcadekit/runtime": "workspace:*",
+    "@arcadekit/save": "workspace:*",
     "@effect/platform-browser": "~4.1.0",
-    "@gamekit/audio": "workspace:*",
-    "@gamekit/content": "workspace:*",
-    "@gamekit/foldkit": "workspace:*",
-    "@gamekit/push-puzzle": "workspace:*",
-    "@gamekit/render-three": "workspace:*",
-    "@gamekit/runtime": "workspace:*",
-    "@gamekit/save": "workspace:*",
     "effect": "~4.1.2",
-    "foldkit": "~0.170.0"
+    "foldkit": "~0.170.0",
+    "three": "^0.187.0"
   }
 }

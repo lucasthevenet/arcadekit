@@ -1,7 +1,7 @@
-import { defaultAudioSettings } from "@gamekit/audio";
-import type { Audio, AudioSettings } from "@gamekit/audio";
-import type { SurvivorsContent } from "@gamekit/survivors";
-import type { SurvivorsEngine } from "@gamekit/survivors/browser";
+import { defaultAudioSettings } from "@arcadekit/audio";
+import type { Audio, AudioSettings } from "@arcadekit/audio";
+import type { SurvivorsContent } from "@arcadekit/survivors";
+import type { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import type { Runtime, Update } from "foldkit";
 
 import {

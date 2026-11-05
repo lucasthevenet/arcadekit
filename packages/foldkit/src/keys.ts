@@ -3,7 +3,7 @@ import { Effect, Queue, Stream } from "effect";
 /**
  * A Stream for a Foldkit Subscription: emits `toMessage(code)` on each keydown whose
  * `KeyboardEvent.code` is in `codes`, ignoring auto-repeat. Codes name physical keys
- * (`"KeyR"`, `"Escape"`), as `@gamekit/input` bindings do, so they don't move with the
+ * (`"KeyR"`, `"Escape"`), as `@arcadekit/input` bindings do, so they don't move with the
  * keyboard layout.
  */
 export const keyPresses = <Message>(

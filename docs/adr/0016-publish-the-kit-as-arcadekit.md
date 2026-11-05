@@ -8,9 +8,9 @@ status: accepted
 
 ## Decision
 
-**Name.** The `@gamekit` npm scope is taken: an organisation exists with no public packages. So is the unscoped `gamekit`. The project becomes **arcadekit** everywhere: the scope (`@arcadekit/runtime`), every import, the README, the docs and these ADRs, and the demo apps. The GitHub repository is renamed to match. The domain words in `CONTEXT.md` ("kit", "genre package") stay. ADRs written before this one keep their wording, so they may say "gamekit".
+**Name.** The `@gamekit` npm scope is taken: an organisation exists with no public packages. So is the unscoped `gamekit`. The project becomes **arcadekit** everywhere: the scope (`@arcadekit/runtime`), every import, the README, the current docs, and the demo apps. The GitHub repository is renamed to match. The domain words in `CONTEXT.md` ("kit", "genre package") stay. ADRs written before this one keep their wording, so they may say "gamekit".
 
-**What publishes.** The nine kit packages: `core`, `input`, `content`, `save`, `audio`, `render-three`, `runtime`, `net` and `foldkit`. The genre packages (`survivors`, `push-puzzle`) and the demo apps stay private examples. Publishing them would make every one of their exports public ([#30](https://github.com/lucasthevenet/gamekit/issues/30)), and would move the kit's version whenever only a game changed.
+**What publishes.** The nine kit packages: `core`, `input`, `content`, `save`, `audio`, `render-three`, `runtime`, `net` and `foldkit`. The genre packages (`survivors`, `push-puzzle`) and the demo apps stay private examples. Publishing them would make every one of their exports public ([#30](https://github.com/lucasthevenet/arcadekit/issues/30)), and would move the kit's version whenever only a game changed.
 
 **Licence.** MIT, "Lucas Thevenet".
 
@@ -21,6 +21,10 @@ status: accepted
 - `Stage`'s camera options;
 - `InputController`'s options;
 - `GameEngine.start`'s seed and `alpha`.
+
+`Stage` lost `fov`, `near`, `far`, `maxPixelRatio`, `antialias` and `fog`: its camera, scene and renderer are public, so a game sets those itself. Its "perspective" and "orthographic" cameras stay, with `fitCamera`, `followTarget` and `orbitAround`, though both genres use the pixel camera: they are how a game that isn't pixel art uses the stage, and dropping them would make `render-three` a pixel-art package. `InputController` lost its options, and `GameEngine.start` its seed (`alpha` was already gone).
+
+`@arcadekit/runtime/testing` publishes, as a test helper: `manualFrames()` lets a game's own tests drive an engine frame by frame. [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md) left this to #26.
 
 **Build.**
 
@@ -37,7 +41,7 @@ status: accepted
 **What users need.**
 
 - ESM.
-- TypeScript 5.4 or later, for `NoInfer` in `gameViewport`.
+- TypeScript 5.4 or later, for `NoInfer` in `gameViewport`. Effect 4.1's own type files need 5.7, so 5.4 to 5.6 work only with `skipLibCheck`.
 - Node 22 or later for tooling.
 
 **Checks.** CI runs `publint` and `@arethetypeswrong/cli` on every package, plus a pack-and-install smoke test. The smoke test packs every package and installs the tarballs into a throwaway project outside the workspace. There it type-checks with TypeScript 5.9 and 7, builds a small game with Vite, and checks that only one copy of `effect` and `three` is installed.
@@ -51,6 +55,6 @@ status: accepted
 ## Consequences
 
 - Each published package has a README (what it is for, install with its peer libraries, a small example) and the metadata `license`, `repository`, `sideEffects`, `files` and `engines`. The root README gains an Install section.
-- [#30](https://github.com/lucasthevenet/gamekit/issues/30) is no longer urgent: the genres don't publish, so trimming their exports is just tidying.
+- [#30](https://github.com/lucasthevenet/arcadekit/issues/30) is no longer urgent: the genres don't publish, so trimming their exports is just tidying.
 - The release and checks workflows live in `.github/workflows/`. A maintainer adds them, since the agent sessions can't push workflow files.
 - Changing a published package's interface needs a changeset that says how it breaks, while below 1.0.

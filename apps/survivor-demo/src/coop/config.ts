@@ -1,4 +1,4 @@
-import { DEFAULT_ICE_SERVERS } from "@gamekit/net/browser";
+import { DEFAULT_ICE_SERVERS } from "@arcadekit/net/browser";
 
 // Where co-op finds the signalling worker and STUN.
 //

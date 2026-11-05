@@ -1,6 +1,6 @@
-import { Stage } from "@gamekit/render-three";
-import type { SpriteSheet } from "@gamekit/render-three";
-import type { GameView } from "@gamekit/runtime/browser";
+import { Stage } from "@arcadekit/render-three";
+import type { SpriteSheet } from "@arcadekit/render-three";
+import type { GameView } from "@arcadekit/runtime/browser";
 
 import type { Puzzle } from "../world";
 import { PIXELS_PER_CELL, PuzzleSprites } from "./board";

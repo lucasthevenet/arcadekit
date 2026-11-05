@@ -28,8 +28,8 @@ export interface GameEngine<Config, State, Event> {
   readonly listen: (
     onEvent: (event: Event) => void
   ) => Effect.Effect<void, never, Scope.Scope>;
-  /** Starts a new run. Without a seed, a random one is used. */
-  readonly start: (config: Config, seed?: number) => Effect.Effect<void>;
+  /** Starts a new run with a random seed. */
+  readonly start: (config: Config) => Effect.Effect<void>;
   /** Changes the current run's state, then reports any events that produced. Does nothing with no run. */
   readonly modify: (change: (state: State) => void) => Effect.Effect<void>;
   readonly setPaused: (paused: boolean) => Effect.Effect<void>;
@@ -39,7 +39,7 @@ export interface GameEngine<Config, State, Event> {
 /**
  * Runs `definition` in the browser behind a GameEngine. `options.frames` replaces the frame
  * clock (requestAnimationFrame by default); tests pass `manualFrames()` from
- * `@gamekit/runtime/testing`.
+ * `@arcadekit/runtime/testing`.
  */
 export const makeGameEngine = <Config, State, Input, Event>(
   definition: GameDefinition<Config, State, Input, Event>,
@@ -57,10 +57,8 @@ export const makeGameEngine = <Config, State, Input, Event>(
         Effect.sync(() => driver.subscribe(onEvent)),
         (unsubscribe) => Effect.sync(unsubscribe)
       ).pipe(Effect.asVoid),
-    start: (config, seed) =>
-      Effect.sync(() =>
-        driver.start(config, seed ?? (Math.random() * 2 ** 32) >>> 0)
-      ),
+    start: (config) =>
+      Effect.sync(() => driver.start(config, (Math.random() * 2 ** 32) >>> 0)),
     modify: (change) => Effect.sync(() => driver.modify(change)),
     setPaused: (paused) => Effect.sync(() => driver.setPaused(paused)),
     stop: Effect.sync(() => driver.stop()),

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
+  "changelog": [
+    "@changesets/changelog-github",
+    { "repo": "lucasthevenet/arcadekit" }
+  ],
+  "commit": false,
+  "fixed": [
+    [
+      "@arcadekit/core",
+      "@arcadekit/input",
+      "@arcadekit/content",
+      "@arcadekit/save",
+      "@arcadekit/audio",
+      "@arcadekit/render-three",
+      "@arcadekit/runtime",
+      "@arcadekit/net",
+      "@arcadekit/foldkit"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "@arcadekit/survivors",
+    "@arcadekit/push-puzzle",
+    "@arcadekit/survivor-demo",
+    "@arcadekit/push-puzzle-demo"
+  ]
+}

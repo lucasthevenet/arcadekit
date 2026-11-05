@@ -1,5 +1,5 @@
-import { AudioSettings } from "@gamekit/audio";
-import { HudSample, RunSummary, UpgradeChoice } from "@gamekit/survivors";
+import { AudioSettings } from "@arcadekit/audio";
+import { HudSample, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 

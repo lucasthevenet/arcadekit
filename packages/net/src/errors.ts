@@ -26,8 +26,12 @@ export type StopReason =
       readonly silentMs: number;
     };
 
+// Named so the type files can be made one file at a time (isolatedDeclarations).
+const LockstepErrorBase: ReturnType<typeof Data.TaggedError<"LockstepError">> =
+  Data.TaggedError("LockstepError");
+
 /** Why a lockstep session stopped for good. Its `reason` holds the details; its message says them. */
-export class LockstepError extends Data.TaggedError("LockstepError")<{
+export class LockstepError extends LockstepErrorBase<{
   readonly message: string;
   readonly reason: StopReason;
 }> {}

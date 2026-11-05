@@ -1,4 +1,4 @@
-import { joinCodeFromBytes, joinCodeFromPath } from "@gamekit/net/signalling";
+import { joinCodeFromBytes, joinCodeFromPath } from "@arcadekit/net/signalling";
 import { DurableObject } from "cloudflare:workers";
 
 import { createRoom } from "./room";

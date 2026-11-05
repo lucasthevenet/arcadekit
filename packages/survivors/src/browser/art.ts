@@ -1,4 +1,4 @@
-import type { SpriteSheet, SpriteSheetData } from "@gamekit/render-three";
+import type { SpriteSheet, SpriteSheetData } from "@arcadekit/render-three";
 
 import type { GameContent } from "../schema";
 

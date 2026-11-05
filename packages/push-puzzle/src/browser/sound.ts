@@ -1,5 +1,5 @@
-import type { AudioSystem } from "@gamekit/audio";
-import type { GameView } from "@gamekit/runtime/browser";
+import type { AudioSystem } from "@arcadekit/audio";
+import type { GameView } from "@arcadekit/runtime/browser";
 
 import type { Puzzle, PushPuzzleCues } from "../world";
 

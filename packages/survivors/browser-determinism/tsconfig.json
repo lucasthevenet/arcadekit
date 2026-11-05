@@ -2,6 +2,8 @@
   // The cross-browser runner runs in Node (Playwright, Vite's build); page.ts runs in the browser.
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
+    // The Vite and Vitest configs import scripts/source-condition.ts with its extension.
+    "allowImportingTsExtensions": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },

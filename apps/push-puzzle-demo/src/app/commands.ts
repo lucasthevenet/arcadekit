@@ -1,13 +1,13 @@
-import { Audio, AudioSettings, applyAudioSettings } from "@gamekit/audio";
-import { PushPuzzleContent } from "@gamekit/push-puzzle";
+import { Audio, AudioSettings, applyAudioSettings } from "@arcadekit/audio";
+import { PushPuzzleContent } from "@arcadekit/push-puzzle";
 import type {
   PushPuzzleConfig,
   PushPuzzleEvent,
   Puzzle,
-} from "@gamekit/push-puzzle";
-import { PushPuzzleEngine } from "@gamekit/push-puzzle/browser";
-import { engineOf } from "@gamekit/runtime/browser";
-import type { GameEngine } from "@gamekit/runtime/browser";
+} from "@arcadekit/push-puzzle";
+import { PushPuzzleEngine } from "@arcadekit/push-puzzle/browser";
+import { engineOf } from "@arcadekit/runtime/browser";
+import type { GameEngine } from "@arcadekit/runtime/browser";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 

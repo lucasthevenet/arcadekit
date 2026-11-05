@@ -1,6 +1,6 @@
 # Architecture review
 
-The survey of gamekit's architecture before the follow-ups #23 to #26, and what came of it (issue [#27](https://github.com/lucasthevenet/gamekit/issues/27)). It started from `main` at `89665dc`.
+The survey of gamekit's architecture before the follow-ups #23 to #26, and what came of it (issue [#27](https://github.com/lucasthevenet/arcadekit/issues/27)). It started from `main` at `89665dc`.
 
 A **finding** (see `CONTEXT.md`) is a place where a genre had to change, work around, copy or bypass a shared primitive, or where a shared primitive's name or docs assume one genre. The survey looked for the same thing in the apps: a seam both demo apps wire by hand. The evidence rule is [ADR 0001](adr/0001-kit-changes-need-two-genres.md): the kit changes only where two genres, or two apps, show the need. A need only one of them shows is recorded, and its code stays where it is.
 
@@ -16,21 +16,21 @@ No commit changes either demo's behavior. `packages/survivors/src/replay.test.ts
 
 | # | Candidate | Verdict | Landed in |
 | --- | --- | --- | --- |
-| 1 | The viewport and engine seam is wired by hand in both apps | Fixed now | "Give the viewport and engine seam one home in @gamekit/foldkit" |
+| 1 | The viewport and engine seam is wired by hand in both apps | Fixed now | "Give the viewport and engine seam one home in @arcadekit/foldkit" |
 | 2 | Each genre's engine key and layer | No action |  |
 | 3a | `InstancedCrowd`'s name | Fixed now | "Rename InstancedCrowd to MeshInstances" |
 | 3b | Camera helper and `Stage` docs | Fixed now | "Say where the camera helpers and MOVE_AXES work" |
 | 3c | `SpatialGrid` docs | No action |  |
 | 3d | `MOVE_AXES`'s sign | Fixed now | "Say where the camera helpers and MOVE_AXES work" |
-| 4 | Unused exports and dependencies | Fixed now; genre exports: separate issue | "Remove unused core math exports and app dependencies"; [#30](https://github.com/lucasthevenet/gamekit/issues/30) |
+| 4 | Unused exports and dependencies | Fixed now; genre exports: separate issue | "Remove unused core math exports and app dependencies"; [#30](https://github.com/lucasthevenet/arcadekit/issues/30) |
 | 5 | Decisions that live only in prose | Fixed now | "Record the kit decisions the follow-ups build on as ADRs" |
 | 6 | Survivors' `world.ts` is one large module | No action; done under #25 | "Give each player a hero in survivors' world" |
 | 7 | Glossary drift | Fixed now | "Bring the kit's docs back to the glossary"; "Rename HudSnapshot to HudSample in both genres" |
-| 8 | The step loop only runs inside `requestAnimationFrame` | Separate issue | [#28](https://github.com/lucasthevenet/gamekit/issues/28) |
+| 8 | The step loop only runs inside `requestAnimationFrame` | Separate issue | [#28](https://github.com/lucasthevenet/arcadekit/issues/28) |
 | 9 | Views' unwritten rules about a run | Fixed now | "Write down what views may assume about a run" |
 | 10 | Event payloads typed twice, in the genre and the app | Fixed now | "Declare event payloads once, as Schemas in each genre" |
 | 11 | Every caller rebuilds a genre's content recipe | Fixed now | "Give each genre one content definition its layer and tests share" |
-| 12 | The content loader caches failures | Separate issue | [#29](https://github.com/lucasthevenet/gamekit/issues/29) |
+| 12 | The content loader caches failures | Separate issue | [#29](https://github.com/lucasthevenet/arcadekit/issues/29) |
 | 13 | Seams both apps use have no tests | Fixed now | "Test engine attach, stop and pause, and the camera helpers"; candidate 1's commit |
 | 14 | The runtime can't see a run end | No action | Recorded for #24 and #25 |
 
@@ -52,7 +52,7 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 ### 1. The viewport and engine seam
 
 - **What it was:** both apps wired the viewport element, its mount Message, a mounted flag and the engine's Subscription entry across five files, almost line for line. The rule holding it together ("the viewport must always render") lived only in comments.
-- **Fix:** `@gamekit/foldkit` has `gameViewport`, which renders the viewport and reports its mount and unmount, and `engineEntry`, a Subscription entry that runs the engine while the app's Boolean is true. Each app passes its engine and its own event to Message map. `engineMessages` left the public API. `keyPresses` moved to `keys.ts` with its first test.
+- **Fix:** `@arcadekit/foldkit` has `gameViewport`, which renders the viewport and reports its mount and unmount, and `engineEntry`, a Subscription entry that runs the engine while the app's Boolean is true. Each app passes its engine and its own event to Message map. `engineMessages` left the public API. `keyPresses` moved to `keys.ts` with its first test.
 
 ### 3a, 3b, 3d. Names and docs in render-three and input
 
@@ -62,9 +62,9 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 
 ### 4. Unused exports and dependencies
 
-- **What it was:** two core exports had no user, both apps declared `@gamekit/runtime` and never imported it, and some exports were kept for tests or kit-internal use with nothing saying so.
-- **Fix:** core dropped `lerp` and `clampLength`; both apps dropped `@gamekit/runtime`. The exports that stay say why in their doc comments.
-- **Left open:** which genre exports stay public is [#30](https://github.com/lucasthevenet/gamekit/issues/30), decided with #26's question on publishing genres. The clock's `alpha` went with [#28](https://github.com/lucasthevenet/gamekit/issues/28). `start`'s seed, `Stage`'s camera options and `InputController`'s options have no user either. #26 settles them before the freeze.
+- **What it was:** two core exports had no user, both apps declared `@arcadekit/runtime` and never imported it, and some exports were kept for tests or kit-internal use with nothing saying so.
+- **Fix:** core dropped `lerp` and `clampLength`; both apps dropped `@arcadekit/runtime`. The exports that stay say why in their doc comments.
+- **Left open:** which genre exports stay public is [#30](https://github.com/lucasthevenet/arcadekit/issues/30), decided with #26's question on publishing genres. The clock's `alpha` went with [#28](https://github.com/lucasthevenet/arcadekit/issues/28). `start`'s seed, `Stage`'s camera options and `InputController`'s options have no user either. #26 settles them before the freeze.
 
 ### 5. Decisions that live only in prose
 
@@ -90,12 +90,12 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 ### 11. Every caller rebuilds the content recipe
 
 - **What it was:** a genre's schema, file list and checks only came together inside its content layer, so three tests rebuilt them by hand.
-- **Fix:** `@gamekit/content` adds `ContentDefinition`, and each genre exports one definition its layer and tests share.
+- **Fix:** `@arcadekit/content` adds `ContentDefinition`, and each genre exports one definition its layer and tests share.
 - **Recorded:** the apps keep their copied Node file source. Sharing it needs a new entry point, which is #26's call.
 
 ### 13. Untested seams
 
-- **What it was:** engine attach, stop and pause, `fitCamera` and all of `@gamekit/foldkit` had no tests, though both apps depend on them.
+- **What it was:** engine attach, stop and pause, `fitCamera` and all of `@arcadekit/foldkit` had no tests, though both apps depend on them.
 - **Fix:** `engine.test.ts` and `camera.test.ts` test them through their current interfaces. Foldkit's tests came with candidate 1, so they test the interface that stayed. `Stage` and the views stay untested until #24 decides how views get their assets.
 
 ## Separate issues
@@ -103,13 +103,13 @@ Candidate 5 wrote these. Each names its source, the follow-ups it constrains and
 ### 8. The step loop only runs inside `requestAnimationFrame`
 
 - **What it was:** the step order lives in the frame callback, and two of `GameDefinition`'s fields take an `HTMLElement`. No test, Worker or server can run a genre's definition, and five tests rewrite the loop.
-- **Why an issue:** splitting the DOM-free half from the browser frame reshapes `GameDefinition` and `GameDriver`. Decide it with #25's timer loop and #24's assets, before #26 freezes the interface: [#28](https://github.com/lucasthevenet/gamekit/issues/28).
+- **Why an issue:** splitting the DOM-free half from the browser frame reshapes `GameDefinition` and `GameDriver`. Decide it with #25's timer loop and #24's assets, before #26 freezes the interface: [#28](https://github.com/lucasthevenet/arcadekit/issues/28).
 - **Landed (#28):** a genre's root exports a `GameSimulation`, and the runtime's DOM-free root steps it with `GameLoop`. `GameDriver` is the `requestAnimationFrame` adapter over it, and both replays and survivor-demo's content test run through it. The clock's `alpha` is gone. See [ADR-0010](adr/0010-a-game-is-a-simulation-and-a-presentation.md).
 
 ### 12. The content loader caches failures
 
 - **What it was:** `makeContentLoader` uses `Effect.cached`, which keeps failures too, so one failed fetch fails every later load.
-- **Why an issue:** caching successes only changes `ContentLoader`'s documented behavior. Neither demo retries, so neither can see it today; #24's loading screen will: [#29](https://github.com/lucasthevenet/gamekit/issues/29).
+- **Why an issue:** caching successes only changes `ContentLoader`'s documented behavior. Neither demo retries, so neither can see it today; #24's loading screen will: [#29](https://github.com/lucasthevenet/arcadekit/issues/29).
 
 ## No action
 

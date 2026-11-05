@@ -1,8 +1,8 @@
-import { Audio } from "@gamekit/audio";
-import type { SpriteSheetError } from "@gamekit/render-three";
-import type { GameContent } from "@gamekit/survivors";
-import { SurvivorsEngine } from "@gamekit/survivors/browser";
-import type { SurvivorsEngineLoader } from "@gamekit/survivors/browser";
+import { Audio } from "@arcadekit/audio";
+import type { SpriteSheetError } from "@arcadekit/render-three";
+import type { GameContent } from "@arcadekit/survivors";
+import { SurvivorsEngine } from "@arcadekit/survivors/browser";
+import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
 import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
 
@@ -93,7 +93,7 @@ export const CoopLayer = Layer.effect(
     if (import.meta.env.DEV) {
       // For the end-to-end test and debugging: the run's step, error and recent state hashes.
       Object.assign(globalThis, {
-        gamekitCoop: { debug: () => client.debug() },
+        arcadekitCoop: { debug: () => client.debug() },
       });
     }
     return makeCoop(client, yield* SurvivorsEngine);

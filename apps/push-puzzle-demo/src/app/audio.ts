@@ -1,10 +1,10 @@
-import { makeAudioSettingsStore } from "@gamekit/audio";
+import { makeAudioSettingsStore } from "@arcadekit/audio";
 import type {
   AudioSettings,
   AudioSettingsStore,
   SoundList,
-} from "@gamekit/audio";
-import type { PushPuzzleSounds } from "@gamekit/push-puzzle/browser";
+} from "@arcadekit/audio";
+import type { PushPuzzleSounds } from "@arcadekit/push-puzzle/browser";
 import { Context, Layer } from "effect";
 
 // This game's sounds: the files it ships, which sound each cue plays, and where the
@@ -36,7 +36,9 @@ export const CUE_SOUNDS: PushPuzzleSounds = {
   solved: "solved",
 };
 
-/** Audio settings are app settings, kept apart from the save (ADR-0009). */
+/**
+ * Audio settings are app settings, kept apart from the save (ADR-0009). Still under the project's old name, gamekit: a new key would lose existing players' settings.
+ */
 export const AUDIO_SETTINGS_KEY = "gamekit/push-puzzle/settings";
 
 export class AudioSettingsStorage extends Context.Service<

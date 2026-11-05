@@ -26,46 +26,45 @@ export interface StageOptions<K extends StageCameraKind = "perspective"> {
   readonly viewHeight?: number;
   /** Pixel camera only: sprite pixels per world unit. Defaults to 16. */
   readonly pixelsPerUnit?: number;
-  /** Multisampling. Defaults to on, or off for a pixel camera, whose edges are already on pixels. */
-  readonly antialias?: boolean;
   readonly background?: THREE.ColorRepresentation;
-  /** Linear fog from `near` to `far`, in the background color. */
-  readonly fog?: { readonly near: number; readonly far: number };
-  /** Perspective camera only. */
-  readonly fov?: number;
-  readonly near?: number;
-  readonly far?: number;
-  /**
-   * Caps devicePixelRatio; 2 keeps phones sharp without rendering 9x the pixels. A pixel stage
-   * ignores it: see `drawingBuffer`.
-   */
-  readonly maxPixelRatio?: number;
 }
+
+/** A perspective camera's field of view, in degrees. Set `stage.camera.fov` to change it. */
+const FOV = 50;
+/** The near and far planes of a perspective or orthographic camera. */
+const NEAR = 0.1;
+const FAR = 400;
+/**
+ * Caps devicePixelRatio for a perspective or orthographic stage; 2 keeps phones sharp without
+ * rendering 9x the pixels. A pixel stage isn't capped: see `drawingBuffer`.
+ */
+const MAX_PIXEL_RATIO = 2;
 
 /**
  * A renderer, scene and camera that fill a container element and resize with it.
  * The camera is perspective unless `camera: "orthographic"` or `"pixel"` is passed; on resize, an
  * orthographic camera keeps its view height and widens or narrows to the new aspect ratio, and a
  * pixel camera picks its pixel scale again. The pixel ratio is read again on every resize, and
- * a pixel stage sizes its drawing buffer to the canvas's exact device pixels, uncapped by
- * `maxPixelRatio` (see `drawingBuffer`).
+ * a pixel stage sizes its drawing buffer to the canvas's exact device pixels, where the others
+ * cap the ratio at 2 (see `drawingBuffer`). The camera is public: change its fields (a
+ * perspective camera's `fov`, `near` and `far`) and call `updateProjectionMatrix()`. So is the
+ * scene: set `stage.scene.fog` for fog.
  * `dispose()` frees every GPU resource in the scene, except kept textures (see `keepTexture`),
  * and removes the canvas.
  */
 export class Stage<K extends StageCameraKind = "perspective"> {
   readonly renderer: THREE.WebGLRenderer;
-  readonly scene = new THREE.Scene();
+  readonly scene: THREE.Scene = new THREE.Scene();
   readonly camera: StageCamera<K>;
   private readonly container: HTMLElement;
   private readonly resizeObserver: ResizeObserver;
-  private readonly maxPixelRatio: number;
 
   constructor(container: HTMLElement, options: StageOptions<K> = {}) {
     this.container = container;
-    this.maxPixelRatio = options.maxPixelRatio ?? 2;
     const pixel = options.camera === "pixel";
     this.renderer = new THREE.WebGLRenderer({
-      antialias: options.antialias ?? !pixel,
+      // A pixel camera's edges are already on pixels, so it needs no multisampling.
+      antialias: !pixel,
       powerPreference: "high-performance",
     });
     const canvas = this.renderer.domElement;
@@ -77,8 +76,6 @@ export class Stage<K extends StageCameraKind = "perspective"> {
     }
     container.append(canvas);
 
-    const near = options.near ?? 0.1;
-    const far = options.far ?? 400;
     if (pixel) {
       this.camera = new PixelCamera({
         ...(options.pixelsPerUnit === undefined
@@ -95,26 +92,19 @@ export class Stage<K extends StageCameraKind = "perspective"> {
         half,
         half,
         -half,
-        near,
-        far
+        NEAR,
+        FAR
       ) as StageCamera<K>;
     } else {
       this.camera = new THREE.PerspectiveCamera(
-        options.fov ?? 50,
+        FOV,
         1,
-        near,
-        far
+        NEAR,
+        FAR
       ) as StageCamera<K>;
     }
     if (options.background !== undefined) {
       this.scene.background = new THREE.Color(options.background);
-      if (options.fog) {
-        this.scene.fog = new THREE.Fog(
-          options.background,
-          options.fog.near,
-          options.fog.far
-        );
-      }
     }
 
     this.resizeObserver = new ResizeObserver((entries) =>
@@ -153,7 +143,7 @@ export class Stage<K extends StageCameraKind = "perspective"> {
       width,
       height,
       window.devicePixelRatio,
-      this.maxPixelRatio,
+      MAX_PIXEL_RATIO,
       entry?.devicePixelContentBoxSize?.[0]
     );
     this.renderer.setPixelRatio(target.pixelRatio);
@@ -208,7 +198,7 @@ export const drawingBuffer = (
   };
 };
 
-const KEEP = "gamekitKeep";
+const KEEP = "arcadekitKeep";
 
 /**
  * Marks a texture that something outside the scene owns, such as a sprite sheet the app

@@ -1,6 +1,10 @@
 import { defineConfig } from "vite";
 
+import { sourceCondition } from "../../scripts/source-condition.ts";
+
 export default defineConfig({
+  // The kit packages from src/, with no build (ADR-0016).
+  plugins: [sourceCondition()],
   build: {
     target: "es2022",
     // Three.js alone is ~550 kB minified (~135 kB gzipped); that's expected.

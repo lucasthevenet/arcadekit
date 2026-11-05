@@ -1,4 +1,4 @@
-import type { GameSimulation, StepInput } from "@gamekit/runtime";
+import type { GameSimulation, StepInput } from "@arcadekit/runtime";
 import { describe, expect, it } from "vitest";
 
 import { jsonCodec } from "./codec";

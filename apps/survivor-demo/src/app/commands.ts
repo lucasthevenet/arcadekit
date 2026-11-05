@@ -1,17 +1,17 @@
-import { Audio, AudioSettings } from "@gamekit/audio";
-import { engineOf } from "@gamekit/runtime/browser";
-import type { GameEngine } from "@gamekit/runtime/browser";
+import { Audio, AudioSettings } from "@arcadekit/audio";
+import { engineOf } from "@arcadekit/runtime/browser";
+import type { GameEngine } from "@arcadekit/runtime/browser";
 import {
   RunSummary,
   SurvivorsContent,
   chooseUpgrade,
-} from "@gamekit/survivors";
+} from "@arcadekit/survivors";
 import type {
   SurvivorsConfig,
   SurvivorsEvent,
   World,
-} from "@gamekit/survivors";
-import { SurvivorsEngine } from "@gamekit/survivors/browser";
+} from "@arcadekit/survivors";
+import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 

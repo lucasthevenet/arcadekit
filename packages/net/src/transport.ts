@@ -5,7 +5,7 @@ export type PeerId = string;
  * Carries text messages between the peers of one lockstep run. It is the seam between the
  * lockstep session and the network. It has two adapters: the in-memory network
  * (`createMemoryNetwork`) for tests, and WebRTC data channels (`linksTransport` in
- * `@gamekit/net/browser`) for the browser.
+ * `@arcadekit/net/browser`) for the browser.
  *
  * A transport may lose, delay, duplicate and reorder messages: the session resends what isn't
  * acknowledged and ignores what it already has, so an unreliable, unordered channel is enough.

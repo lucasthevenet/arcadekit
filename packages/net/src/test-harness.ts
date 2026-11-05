@@ -27,7 +27,10 @@ export const runNetwork = (
 };
 
 /** FNV-1a over numbers' float64 bits, so any change in any digit shows. */
-export const hasher = () => {
+export const hasher = (): {
+  readonly add: (value: number) => void;
+  readonly value: number;
+} => {
   let hash = 0x81_1c_9d_c5;
   const bits = new Float64Array(1);
   const bytes = new Uint8Array(bits.buffer);

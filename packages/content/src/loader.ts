@@ -1,10 +1,14 @@
 import { Data, Duration, Effect, Exit, Schema } from "effect";
 
+// Named so the type files can be made one file at a time (isolatedDeclarations).
+const ContentErrorBase: ReturnType<typeof Data.TaggedError<"ContentError">> =
+  Data.TaggedError("ContentError");
+
 /**
  * The error every content source and loader fails with.
  * Apps catch it by its tag: `Effect.catchTag("ContentError", ...)`.
  */
-export class ContentError extends Data.TaggedError("ContentError")<{
+export class ContentError extends ContentErrorBase<{
   readonly message: string;
 }> {}
 

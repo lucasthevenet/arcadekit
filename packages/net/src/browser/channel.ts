@@ -32,7 +32,7 @@ export interface PeerLink {
 }
 
 /**
- * The WebRTC adapter of `@gamekit/net`'s `Transport` seam: one lockstep run's messages over the
+ * The WebRTC adapter of `@arcadekit/net`'s `Transport` seam: one lockstep run's messages over the
  * `lockstep` channel of each link, by peer id. A host passes a link per guest; a guest, its one
  * link to the host (the host star, ADR-0012). A message to a peer with no open link is lost,
  * as the `Transport` contract allows; so is one the browser refuses (a full send buffer).

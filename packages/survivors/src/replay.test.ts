@@ -1,5 +1,5 @@
-import { GameLoop } from "@gamekit/runtime";
-import type { StepInput } from "@gamekit/runtime";
+import { GameLoop } from "@arcadekit/runtime";
+import type { StepInput } from "@arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -13,7 +13,7 @@ import {
 import type { HeroInput } from "./index";
 
 // Replay check: the same seed and the same input script must give the same run, bit for bit.
-// It runs survivors' simulation through @gamekit/runtime's GameLoop, with the step order and
+// It runs survivors' simulation through @arcadekit/runtime's GameLoop, with the step order and
 // sample timing the demo runs, so it guards the simulation, core's clock and the runtime's step
 // order. Its script has no endStep or endFrame; runtime's loop.test.ts pins their order. It
 // doesn't cover input devices or the view.

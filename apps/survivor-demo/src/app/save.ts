@@ -1,11 +1,14 @@
-import { makeSaveStore, mergeRecords as mergeRecordsWith } from "@gamekit/save";
-import type { RunSummary } from "@gamekit/survivors";
+import {
+  makeSaveStore,
+  mergeRecords as mergeRecordsWith,
+} from "@arcadekit/save";
+import type { RunSummary } from "@arcadekit/survivors";
 import { Context, Effect, Layer, Schema } from "effect";
 
 // The save: what this game remembers between sessions, per hero id. It is UI
 // state, not simulation state. The app reads it once at startup and writes it
 // when a run ends, never per frame and never from a step. Storing, merging and
-// handling broken storage is @gamekit/save; this file says what a hero's
+// handling broken storage is @arcadekit/save; this file says what a hero's
 // record holds and how two of them merge.
 
 /** One hero's record: the best of all its runs. */
@@ -24,6 +27,7 @@ export type HeroRecords = typeof HeroRecords.Type;
 
 export const emptyRecords: HeroRecords = {};
 
+/** Still under the project's old name, gamekit: a new key would lose existing players' saves. */
 export const SAVE_KEY = "gamekit/survivors/save";
 
 const mergeRecord = (a: HeroRecord, b: HeroRecord): HeroRecord => ({

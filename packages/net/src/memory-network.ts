@@ -1,4 +1,4 @@
-import { makeRng } from "@gamekit/core";
+import { makeRng } from "@arcadekit/core";
 
 import type { PeerId, Transport } from "./transport";
 

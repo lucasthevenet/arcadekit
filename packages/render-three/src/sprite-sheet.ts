@@ -3,8 +3,13 @@
 
 import { Data, Effect, Result, Schema } from "effect";
 
+// Named so the type files can be made one file at a time (isolatedDeclarations).
+const SpriteSheetErrorBase: ReturnType<
+  typeof Data.TaggedError<"SpriteSheetError">
+> = Data.TaggedError("SpriteSheetError");
+
 /** A sprite sheet that couldn't be fetched, decoded or checked. `file` is the JSON or image that failed. */
-export class SpriteSheetError extends Data.TaggedError("SpriteSheetError")<{
+export class SpriteSheetError extends SpriteSheetErrorBase<{
   readonly file: string;
   readonly message: string;
   readonly cause?: unknown;

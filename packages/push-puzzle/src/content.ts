@@ -1,9 +1,9 @@
-import { makeContentLoader } from "@gamekit/content";
+import { makeContentLoader } from "@arcadekit/content";
 import type {
   ContentDefinition,
   ContentLoader,
   ContentSource,
-} from "@gamekit/content";
+} from "@arcadekit/content";
 import { Context, Layer } from "effect";
 
 import { PuzzleContent, findLevelProblems } from "./schema";
@@ -27,7 +27,7 @@ export const pushPuzzleContentDefinition: ContentDefinition<
 export class PushPuzzleContent extends Context.Service<
   PushPuzzleContent,
   ContentLoader<PuzzleContent>
->()("@gamekit/push-puzzle/Content") {}
+>()("@arcadekit/push-puzzle/Content") {}
 
 export const makePushPuzzleContentLayer = (source: ContentSource) =>
   Layer.effect(

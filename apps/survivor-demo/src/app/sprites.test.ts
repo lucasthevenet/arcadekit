@@ -1,21 +1,24 @@
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 
-import { defaultAudioSettings } from "@gamekit/audio";
-import { ContentError, loadContent } from "@gamekit/content";
-import type { ContentSource } from "@gamekit/content";
+import { defaultAudioSettings } from "@arcadekit/audio";
+import { ContentError, loadContent } from "@arcadekit/content";
+import type { ContentSource } from "@arcadekit/content";
 import {
   SpriteSheetError,
   decodeSpriteSheet,
   makeSpriteSheet,
-} from "@gamekit/render-three";
-import type { SpriteSheetData } from "@gamekit/render-three";
+} from "@arcadekit/render-three";
+import type { SpriteSheetData } from "@arcadekit/render-three";
 import {
   SurvivorsContent,
   survivorsContentDefinition,
-} from "@gamekit/survivors";
-import { SurvivorsEngine, missingSpriteTags } from "@gamekit/survivors/browser";
-import type { SurvivorsEngineLoader } from "@gamekit/survivors/browser";
+} from "@arcadekit/survivors";
+import {
+  SurvivorsEngine,
+  missingSpriteTags,
+} from "@arcadekit/survivors/browser";
+import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
 import { Effect, Layer } from "effect";
 import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";

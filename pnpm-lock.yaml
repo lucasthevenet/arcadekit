@@ -53,75 +53,81 @@ importers:
 
   apps/push-puzzle-demo:
     dependencies:
+      '@arcadekit/audio':
+        specifier: workspace:*
+        version: link:../../packages/audio
+      '@arcadekit/content':
+        specifier: workspace:*
+        version: link:../../packages/content
+      '@arcadekit/foldkit':
+        specifier: workspace:*
+        version: link:../../packages/foldkit
+      '@arcadekit/push-puzzle':
+        specifier: workspace:*
+        version: link:../../packages/push-puzzle
+      '@arcadekit/render-three':
+        specifier: workspace:*
+        version: link:../../packages/render-three
+      '@arcadekit/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@arcadekit/save':
+        specifier: workspace:*
+        version: link:../../packages/save
       '@effect/platform-browser':
         specifier: ~4.1.0
         version: 4.1.2(effect@4.1.2)
-      '@gamekit/audio':
-        specifier: workspace:*
-        version: link:../../packages/audio
-      '@gamekit/content':
-        specifier: workspace:*
-        version: link:../../packages/content
-      '@gamekit/foldkit':
-        specifier: workspace:*
-        version: link:../../packages/foldkit
-      '@gamekit/push-puzzle':
-        specifier: workspace:*
-        version: link:../../packages/push-puzzle
-      '@gamekit/render-three':
-        specifier: workspace:*
-        version: link:../../packages/render-three
-      '@gamekit/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
-      '@gamekit/save':
-        specifier: workspace:*
-        version: link:../../packages/save
       effect:
         specifier: ~4.1.2
         version: 4.1.2
       foldkit:
         specifier: ~0.170.0
         version: 0.170.0(@effect/platform-browser@4.1.2(effect@4.1.2))(effect@4.1.2)
+      three:
+        specifier: ^0.187.0
+        version: 0.187.0
 
   apps/survivor-demo:
     dependencies:
+      '@arcadekit/audio':
+        specifier: workspace:*
+        version: link:../../packages/audio
+      '@arcadekit/content':
+        specifier: workspace:*
+        version: link:../../packages/content
+      '@arcadekit/foldkit':
+        specifier: workspace:*
+        version: link:../../packages/foldkit
+      '@arcadekit/input':
+        specifier: workspace:*
+        version: link:../../packages/input
+      '@arcadekit/net':
+        specifier: workspace:*
+        version: link:../../packages/net
+      '@arcadekit/render-three':
+        specifier: workspace:*
+        version: link:../../packages/render-three
+      '@arcadekit/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@arcadekit/save':
+        specifier: workspace:*
+        version: link:../../packages/save
+      '@arcadekit/survivors':
+        specifier: workspace:*
+        version: link:../../packages/survivors
       '@effect/platform-browser':
         specifier: ~4.1.0
         version: 4.1.2(effect@4.1.2)
-      '@gamekit/audio':
-        specifier: workspace:*
-        version: link:../../packages/audio
-      '@gamekit/content':
-        specifier: workspace:*
-        version: link:../../packages/content
-      '@gamekit/foldkit':
-        specifier: workspace:*
-        version: link:../../packages/foldkit
-      '@gamekit/input':
-        specifier: workspace:*
-        version: link:../../packages/input
-      '@gamekit/net':
-        specifier: workspace:*
-        version: link:../../packages/net
-      '@gamekit/render-three':
-        specifier: workspace:*
-        version: link:../../packages/render-three
-      '@gamekit/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
-      '@gamekit/save':
-        specifier: workspace:*
-        version: link:../../packages/save
-      '@gamekit/survivors':
-        specifier: workspace:*
-        version: link:../../packages/survivors
       effect:
         specifier: ~4.1.2
         version: 4.1.2
       foldkit:
         specifier: ~0.170.0
         version: 0.170.0(@effect/platform-browser@4.1.2(effect@4.1.2))(effect@4.1.2)
+      three:
+        specifier: ^0.187.0
+        version: 0.187.0
     devDependencies:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.85
@@ -137,13 +143,13 @@ importers:
         version: 2.0.0-beta.85(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.3.1))(effect@4.1.2)(vite@8.3.5(@types/node@26.6.6)(yaml@2.9.1))(ws@8.22.1)
 
   packages/audio:
-    dependencies:
+    devDependencies:
       effect:
         specifier: ~4.1.2
         version: 4.1.2
 
   packages/content:
-    dependencies:
+    devDependencies:
       effect:
         specifier: ~4.1.2
         version: 4.1.2
@@ -152,9 +158,10 @@ importers:
 
   packages/foldkit:
     dependencies:
-      '@gamekit/runtime':
-        specifier: workspace:*
+      '@arcadekit/runtime':
+        specifier: workspace:^
         version: link:../runtime
+    devDependencies:
       effect:
         specifier: ~4.1.2
         version: 4.1.2
@@ -166,34 +173,35 @@ importers:
 
   packages/net:
     dependencies:
-      '@gamekit/core':
-        specifier: workspace:*
+      '@arcadekit/core':
+        specifier: workspace:^
         version: link:../core
-      '@gamekit/runtime':
-        specifier: workspace:*
+      '@arcadekit/runtime':
+        specifier: workspace:^
         version: link:../runtime
+    devDependencies:
       effect:
         specifier: ~4.1.2
         version: 4.1.2
 
   packages/push-puzzle:
     dependencies:
-      '@gamekit/audio':
+      '@arcadekit/audio':
         specifier: workspace:*
         version: link:../audio
-      '@gamekit/content':
+      '@arcadekit/content':
         specifier: workspace:*
         version: link:../content
-      '@gamekit/core':
+      '@arcadekit/core':
         specifier: workspace:*
         version: link:../core
-      '@gamekit/input':
+      '@arcadekit/input':
         specifier: workspace:*
         version: link:../input
-      '@gamekit/render-three':
+      '@arcadekit/render-three':
         specifier: workspace:*
         version: link:../render-three
-      '@gamekit/runtime':
+      '@arcadekit/runtime':
         specifier: workspace:*
         version: link:../runtime
       effect:
@@ -204,7 +212,10 @@ importers:
         version: 0.187.0
 
   packages/render-three:
-    dependencies:
+    devDependencies:
+      '@types/three':
+        specifier: ^0.187.0
+        version: 0.187.0
       effect:
         specifier: ~4.1.2
         version: 4.1.2
@@ -214,15 +225,16 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@gamekit/core':
-        specifier: workspace:*
+      '@arcadekit/core':
+        specifier: workspace:^
         version: link:../core
+    devDependencies:
       effect:
         specifier: ~4.1.2
         version: 4.1.2
 
   packages/save:
-    dependencies:
+    devDependencies:
       '@effect/platform-browser':
         specifier: ~4.1.0
         version: 4.1.2(effect@4.1.2)
@@ -232,22 +244,22 @@ importers:
 
   packages/survivors:
     dependencies:
-      '@gamekit/audio':
+      '@arcadekit/audio':
         specifier: workspace:*
         version: link:../audio
-      '@gamekit/content':
+      '@arcadekit/content':
         specifier: workspace:*
         version: link:../content
-      '@gamekit/core':
+      '@arcadekit/core':
         specifier: workspace:*
         version: link:../core
-      '@gamekit/input':
+      '@arcadekit/input':
         specifier: workspace:*
         version: link:../input
-      '@gamekit/render-three':
+      '@arcadekit/render-three':
         specifier: workspace:*
         version: link:../render-three
-      '@gamekit/runtime':
+      '@arcadekit/runtime':
         specifier: workspace:*
         version: link:../runtime
       effect:
@@ -257,7 +269,7 @@ importers:
         specifier: ^0.187.0
         version: 0.187.0
     devDependencies:
-      '@gamekit/net':
+      '@arcadekit/net':
         specifier: workspace:*
         version: link:../net
 

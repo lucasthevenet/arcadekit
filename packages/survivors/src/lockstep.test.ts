@@ -3,14 +3,14 @@ import {
   hostLockstep,
   joinLockstep,
   schemaCodec,
-} from "@gamekit/net";
+} from "@arcadekit/net";
 import type {
   LockstepOptions,
   LockstepSession,
   MemoryNetwork,
-} from "@gamekit/net";
-import { GameLoop } from "@gamekit/runtime";
-import type { StepInput } from "@gamekit/runtime";
+} from "@arcadekit/net";
+import { GameLoop } from "@arcadekit/runtime";
+import type { StepInput } from "@arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -231,7 +231,7 @@ const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
   });
 };
 
-/** Advances the network and ticks each session on its own timer, as @gamekit/net's tests do. */
+/** Advances the network and ticks each session on its own timer, as @arcadekit/net's tests do. */
 const runNetwork = (
   network: MemoryNetwork,
   peers: readonly Peer[],

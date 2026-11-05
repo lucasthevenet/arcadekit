@@ -1,6 +1,6 @@
 # Cross-engine determinism of the survivors simulation
 
-Research and a prototype for [#25](https://github.com/lucasthevenet/gamekit/issues/25) (lockstep co-op), with notes for [#28](https://github.com/lucasthevenet/gamekit/issues/28) (the step loop without a browser frame). Measured and read on 2026-11-04.
+Research and a prototype for [#25](https://github.com/lucasthevenet/arcadekit/issues/25) (lockstep co-op), with notes for [#28](https://github.com/lucasthevenet/arcadekit/issues/28) (the step loop without a browser frame). Measured and read on 2026-11-04.
 
 ## Question
 
@@ -34,7 +34,7 @@ Every function survivors calls has three different implementations, and some dep
 
 A scratch harness, kept out of the repo because it needs Bun and Playwright, which aren't workspace dependencies. Anyone can rebuild it from this description:
 
-1. **Bundle.** `Bun.build` bundles a runner with `packages/survivors/src/world.ts`, `schema.ts`, `@gamekit/core` and `effect` into one DOM-free ES module (~200 KB). A second bundle rewrites the two `**` in `world.ts` into `globalThis.__pow(a, b)` so they can be logged.
+1. **Bundle.** `Bun.build` bundles a runner with `packages/survivors/src/world.ts`, `schema.ts`, `@arcadekit/core` and `effect` into one DOM-free ES module (~200 KB). A second bundle rewrites the two `**` in `world.ts` into `globalThis.__pow(a, b)` so they can be logged.
 2. **Runner.** Copies `replay.test.ts` verbatim (content, FNV-1a `hashWorld`, zig-zag script, "the second upgrade when offered", 1/60 s steps) and records the hash after every step.
 3. **Long runs** (not repo scenarios): `runLength` 400, hero `maxHp` 1e9, 6 enemies/s for the whole run, 20,000 steps, seeds 1, 1234, 4321, 99 and 2026. Two input scripts: the zig-zag, and `wander`, which sets analog stick values from an integer hash every 30 steps. Each run: ~2,000 kills, level 18, 10–12M `hypot` calls.
 4. **Engines.** The same bundle in Node, in Bun, and in Chromium through Playwright (`page.route` serves the files; no server, no network).

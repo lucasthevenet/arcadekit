@@ -29,8 +29,13 @@ export interface SoundDef {
 /** A game's sounds by id. */
 export type SoundList = Readonly<Record<string, SoundDef>>;
 
+// Named so the type files can be made one file at a time (isolatedDeclarations).
+const AudioLoadErrorBase: ReturnType<
+  typeof Data.TaggedError<"AudioLoadError">
+> = Data.TaggedError("AudioLoadError");
+
 /** A sound file that couldn't be fetched or decoded. */
-export class AudioLoadError extends Data.TaggedError("AudioLoadError")<{
+export class AudioLoadError extends AudioLoadErrorBase<{
   readonly file: string;
   readonly message: string;
   readonly cause?: unknown;

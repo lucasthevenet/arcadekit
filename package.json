@@ -1,20 +1,26 @@
 {
-  "name": "gamekit",
+  "name": "arcadekit",
   "private": true,
   "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @gamekit/survivor-demo dev",
-    "dev:puzzle": "pnpm --filter @gamekit/push-puzzle-demo dev",
-    "build": "pnpm typecheck && pnpm --filter @gamekit/survivor-demo --filter @gamekit/push-puzzle-demo build",
+    "dev": "pnpm --filter @arcadekit/survivor-demo dev",
+    "dev:puzzle": "pnpm --filter @arcadekit/push-puzzle-demo dev",
+    "build": "pnpm typecheck && pnpm --filter @arcadekit/survivor-demo --filter @arcadekit/push-puzzle-demo build",
+    "build:packages": "pnpm --filter \"./packages/*\" --filter \"!@arcadekit/survivors\" --filter \"!@arcadekit/push-puzzle\" run build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "test:e2e": "vitest run --config apps/survivor-demo/vitest.e2e.config.ts",
     "test:browsers": "vitest run --config packages/survivors/browser-determinism/vitest.config.ts",
+    "lint:packages": "bash scripts/lint-packages.sh",
+    "smoke": "node scripts/smoke-test.mjs",
     "check": "ultracite check",
     "fix": "ultracite fix",
     "sounds": "node scripts/generate-placeholder-sounds.mjs",
-    "sprites": "node scripts/generate-sprite-sheets.mjs"
+    "sprites": "node scripts/generate-sprite-sheets.mjs",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build:packages && pnpm lint:packages && changeset publish"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

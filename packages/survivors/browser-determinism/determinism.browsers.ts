@@ -4,6 +4,7 @@ import type { Browser, BrowserType } from "playwright";
 import { build } from "vite";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { sourceCondition } from "../../../scripts/source-condition";
 import { LONG_RUN_RECORDED, LONG_RUN_SEEDS, longRun } from "../src/long-run";
 import type { LongRunResult, LongRunSeed } from "../src/long-run";
 import type { run } from "./page";
@@ -26,15 +27,16 @@ const BROWSERS: Readonly<Record<string, BrowserType>> = {
   webkit,
 };
 
-const ORIGIN = "http://gamekit.test";
-const PAGE = `<!doctype html><meta charset="utf-8"><title>gamekit long run</title><script src="/page.js"></script>`;
+const ORIGIN = "http://arcadekit.test";
+const PAGE = `<!doctype html><meta charset="utf-8"><title>arcadekit long run</title><script src="/page.js"></script>`;
 
-/** page.ts and everything it imports, as one classic script defining `gamekitLongRun`. */
+/** page.ts and everything it imports, as one classic script defining `arcadekitLongRun`. */
 const bundle = async (): Promise<string> => {
   const result = await build({
     root: import.meta.dirname,
     configFile: false,
     logLevel: "warn",
+    plugins: [sourceCondition()],
     build: {
       write: false,
       minify: false,
@@ -42,7 +44,7 @@ const bundle = async (): Promise<string> => {
       lib: {
         entry: "page.ts",
         formats: ["iife"],
-        name: "gamekitLongRun",
+        name: "arcadekitLongRun",
         fileName: "page",
       },
     },
@@ -165,9 +167,9 @@ describe("survivors long-run determinism across browsers", () => {
             (s) =>
               (
                 globalThis as unknown as {
-                  readonly gamekitLongRun: { readonly run: typeof run };
+                  readonly arcadekitLongRun: { readonly run: typeof run };
                 }
-              ).gamekitLongRun.run(s),
+              ).arcadekitLongRun.run(s),
             seed
           );
           console.info(

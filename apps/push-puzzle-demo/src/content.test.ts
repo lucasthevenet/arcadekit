@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 
-import { ContentError, loadContent } from "@gamekit/content";
-import type { ContentSource } from "@gamekit/content";
+import { ContentError, loadContent } from "@arcadekit/content";
+import type { ContentSource } from "@arcadekit/content";
 import {
   createPuzzle,
   pushPuzzleContentDefinition,
   step,
-} from "@gamekit/push-puzzle";
-import type { Direction, PushPuzzleEvent } from "@gamekit/push-puzzle";
+} from "@arcadekit/push-puzzle";
+import type { Direction, PushPuzzleEvent } from "@arcadekit/push-puzzle";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
