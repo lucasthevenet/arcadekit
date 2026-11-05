@@ -9,6 +9,7 @@ import {
   ChooseCoopUpgrade,
   ChooseUpgrade,
   EndRun,
+  FocusRetry,
   HostCoop,
   JoinCoop,
   LeaveCoop,
@@ -62,6 +63,7 @@ export const init: Runtime.ApplicationInit<
 
 /** The messages of the menu buttons and upgrade picks: each plays a click. */
 const CLICKS: ReadonlySet<Message["_tag"]> = new Set([
+  "ClickedRetry",
   "SelectedHero",
   "ClickedStart",
   "ClickedUpgrade",
@@ -82,6 +84,12 @@ const CLICKS: ReadonlySet<Message["_tag"]> = new Set([
 const changeAudio = (model: Model, audio: AudioSettings): Return => ({
   model: { ...model, audio },
   commands: [SaveAudioSettings({ settings: audio })],
+});
+
+/** The load-error screen, with its "Try again" focused. */
+const loadFailed = (model: Model, error: string): Return => ({
+  model: { ...model, phase: Phase.LoadFailed({ error }) },
+  commands: [FocusRetry()],
 });
 
 const startRun = (model: Model): Return => ({
@@ -122,9 +130,16 @@ const handle = (model: Model, message: Message): Return =>
         phase: Phase.Menu(),
       },
     }),
-    FailedToLoadContent: ({ error }) => ({
-      model: { ...model, phase: Phase.LoadFailed({ error }) },
-    }),
+    FailedToLoadContent: ({ error }) => loadFailed(model, error),
+    // Loads again, then goes to the menu as on a first load. Each loader keeps its first
+    // success, so only what failed is fetched again.
+    ClickedRetry: () =>
+      model.phase._tag === "LoadFailed"
+        ? {
+            model: { ...model, phase: Phase.Loading() },
+            commands: [LoadContent()],
+          }
+        : { model },
     LoadedSave: ({ records }) => ({
       model: { ...model, records: mergeRecords(model.records, records) },
     }),
@@ -143,9 +158,7 @@ const handle = (model: Model, message: Message): Return =>
     ClickedStart: () =>
       model.phase._tag === "Menu" ? startRun(model) : { model },
     StartedRun: () => ({ model: { ...model, phase: Phase.Playing() } }),
-    FailedToStartRun: ({ error }) => ({
-      model: { ...model, phase: Phase.LoadFailed({ error }) },
-    }),
+    FailedToStartRun: ({ error }) => loadFailed(model, error),
 
     GotHud: ({ hud }) => ({ model: { ...model, hud } }),
     GotLevelUp: ({ choices }) => ({
@@ -298,4 +311,5 @@ const handle = (model: Model, message: Message): Return =>
 
     CompletedEngineCommand: () => ({ model }),
     CompletedAudioCommand: () => ({ model }),
+    CompletedFocusCommand: () => ({ model }),
   });
