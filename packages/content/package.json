@@ -1,6 +1,6 @@
 {
   "name": "@arcadekit/content",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Load game content files and validate them with Effect Schema",
   "keywords": [
     "arcadekit",

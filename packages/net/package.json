@@ -1,6 +1,6 @@
 {
   "name": "@arcadekit/net",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Play one run on several peers in delay-based lockstep, over a transport it doesn't know",
   "keywords": [
     "arcadekit",
