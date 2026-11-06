@@ -1,15 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ErrorReason,
   JOIN_CODE_ALPHABET,
   JOIN_CODE_LENGTH,
   joinCodeFromBytes,
   joinCodeFromPath,
+  MAX_MESSAGE_LENGTH,
+  MAX_PLAYERS,
   normalizeJoinCode,
   parseClientMessage,
   parseServerMessage,
 } from "./protocol";
-import type { ServerMessage } from "./protocol";
+import type { ClientMessage, ServerMessage, Signal } from "./protocol";
+
+const candidate: Signal = {
+  kind: "candidate",
+  candidate: "candidate:1 1 udp 1 192.0.2.1 9 typ host",
+  sdpMid: "0",
+  sdpMLineIndex: 0,
+  usernameFragment: "abcd",
+};
+
+const signalTo = (to: string, signal: unknown) =>
+  JSON.stringify({ type: "signal", to, signal });
+
+const offerOfLength = (length: number) =>
+  signalTo("host", { kind: "offer", sdp: "s".repeat(length) });
 
 describe(joinCodeFromBytes, () => {
   it("maps bytes to letters of the alphabet", () => {
@@ -66,30 +83,81 @@ describe(joinCodeFromPath, () => {
 });
 
 describe(parseClientMessage, () => {
-  it("reads a start and each kind of signal", () => {
-    expect(parseClientMessage('{"type":"start"}')).toStrictEqual({
-      type: "start",
-    });
-    expect(
-      parseClientMessage(
-        '{"type":"signal","to":"host","signal":{"kind":"answer","sdp":"v=0"}}'
-      )
-    ).toStrictEqual({
+  it.each<ClientMessage>([
+    { type: "start" },
+    { type: "signal", to: "host", signal: { kind: "offer", sdp: "v=0" } },
+    { type: "signal", to: "guest-1", signal: { kind: "answer", sdp: "v=0" } },
+    { type: "signal", to: "host", signal: candidate },
+    {
       type: "signal",
       to: "host",
-      signal: { kind: "answer", sdp: "v=0" },
+      signal: {
+        kind: "candidate",
+        candidate: "",
+        sdpMid: null,
+        sdpMLineIndex: null,
+        usernameFragment: null,
+      },
+    },
+  ])("reads back $type as it was sent", (message) => {
+    expect(parseClientMessage(JSON.stringify(message))).toStrictEqual(message);
+  });
+
+  it("drops fields the protocol doesn't have", () => {
+    expect(parseClientMessage('{"type":"start","to":"host"}')).toStrictEqual({
+      type: "start",
     });
   });
 
+  it("drops a signal's extra fields too, so the worker relays none of them", () => {
+    expect(
+      parseClientMessage(
+        signalTo("host", { ...candidate, note: "x", extra: { a: 1 } })
+      )
+    ).toStrictEqual({ type: "signal", to: "host", signal: candidate });
+  });
+
   it.each([
-    '{"type":"signal","to":"host","signal":{"kind":"candidate","candidate":"c","sdpMid":0,"sdpMLineIndex":0,"usernameFragment":null}}',
-    '{"type":"signal","to":"host","signal":{"kind":"candidate","candidate":"c","sdpMid":"0","sdpMLineIndex":0.5,"usernameFragment":null}}',
+    signalTo("host", { ...candidate, sdpMid: 0 }),
+    signalTo("host", { ...candidate, sdpMLineIndex: 0.5 }),
+    signalTo("host", { ...candidate, sdpMLineIndex: -1 }),
+    signalTo("host", { ...candidate, sdpMLineIndex: 65_536 }),
+    signalTo("host", { ...candidate, sdpMLineIndex: "0" }),
+    signalTo("host", { ...candidate, usernameFragment: undefined }),
+    signalTo("host", { kind: "pranswer", sdp: "v=0" }),
+    signalTo("host", { kind: "offer" }),
+    signalTo("host", "v=0"),
     '{"type":"signal","to":3,"signal":{"kind":"offer","sdp":"v=0"}}',
+    '{"type":"signal","signal":{"kind":"offer","sdp":"v=0"}}',
     '{"type":"hello"}',
+    '{"type":"start"',
+    "",
     "[]",
     "null",
   ])("refuses %s", (text) => {
     expect(parseClientMessage(text)).toBeUndefined();
+  });
+
+  it("refuses a field longer than the protocol allows", () => {
+    expect(
+      [
+        signalTo("x".repeat(33), { kind: "offer", sdp: "v=0" }),
+        signalTo("host", { ...candidate, sdpMid: "m".repeat(257) }),
+        signalTo("host", { ...candidate, usernameFragment: "u".repeat(257) }),
+      ].map(parseClientMessage)
+    ).toStrictEqual([undefined, undefined, undefined]);
+    expect(
+      [
+        signalTo("x".repeat(32), { kind: "offer", sdp: "v=0" }),
+        signalTo("host", { ...candidate, sdpMid: "m".repeat(256) }),
+      ].map((text) => parseClientMessage(text)?.type)
+    ).toStrictEqual(["signal", "signal"]);
+  });
+
+  it("refuses a message longer than MAX_MESSAGE_LENGTH, and reads one that fits", () => {
+    const room = MAX_MESSAGE_LENGTH - offerOfLength(0).length;
+    expect(parseClientMessage(offerOfLength(room))?.type).toBe("signal");
+    expect(parseClientMessage(offerOfLength(room + 1))).toBeUndefined();
   });
 });
 
@@ -121,9 +189,52 @@ describe(parseServerMessage, () => {
     expect(parseServerMessage(JSON.stringify(message))).toStrictEqual(message);
   });
 
-  it("refuses an error with an unknown reason", () => {
-    expect(
-      parseServerMessage('{"type":"error","reason":"bored"}')
-    ).toBeUndefined();
+  it("reads back every error reason", () => {
+    for (const reason of ErrorReason.literals) {
+      const message: ServerMessage = { type: "error", reason };
+      expect(parseServerMessage(JSON.stringify(message))).toStrictEqual(
+        message
+      );
+    }
+  });
+
+  it("reads back a relayed signal as long as the longest client message can carry", () => {
+    const sdp = "s".repeat(MAX_MESSAGE_LENGTH - 64);
+    const message: ServerMessage = {
+      type: "signal",
+      from: "guest-12",
+      signal: { kind: "offer", sdp },
+    };
+    expect(parseServerMessage(JSON.stringify(message))).toStrictEqual(message);
+  });
+
+  const welcome = {
+    type: "welcome",
+    code: "ABC234",
+    self: "guest-1",
+    host: "host",
+    peers: ["host"],
+  };
+
+  it.each([
+    { type: "error", reason: "bored" },
+    { type: "error", reason: 3 },
+    { type: "error" },
+    { ...welcome, code: "abc234" },
+    { ...welcome, code: "ABC23" },
+    { ...welcome, code: "ABC10O" },
+    { ...welcome, peers: "host" },
+    { ...welcome, peers: [3] },
+    {
+      ...welcome,
+      peers: Array.from({ length: MAX_PLAYERS }, (_, i) => `guest-${i}`),
+    },
+    { ...welcome, self: "x".repeat(33) },
+    { type: "peer-joined" },
+    { type: "peer-left", peer: null },
+    { type: "signal", from: "host", signal: { kind: "offer", sdp: 0 } },
+    { type: "goodbye" },
+  ])("refuses %j", (message) => {
+    expect(parseServerMessage(JSON.stringify(message))).toBeUndefined();
   });
 });

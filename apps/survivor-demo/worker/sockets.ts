@@ -12,8 +12,12 @@ export interface RoomSocket {
   readonly close: (code: number, reason: string) => void;
 }
 
-/** WebSocket close codes the worker uses: 1000 normal, 4000+ the protocol's own errors. */
+/**
+ * WebSocket close codes the worker uses: 1000 normal, 1011 the worker couldn't keep the socket,
+ * 4000+ the protocol's own errors.
+ */
 export const CLOSE_NORMAL = 1000;
+export const CLOSE_SERVER_ERROR = 1011;
 export const CLOSE_PROTOCOL_ERROR = 4000;
 
 /**
@@ -22,15 +26,20 @@ export const CLOSE_PROTOCOL_ERROR = 4000;
  * ids only.
  */
 export interface SocketRoom {
-  /** A socket was accepted for `role`. Rejected sockets get an error and are closed. */
+  /**
+   * A socket was accepted for `role`. Returns the peer id the room gave it, or `undefined` if
+   * the room refused it: then it has its error and is closed.
+   */
   readonly open: (
     socket: RoomSocket,
     role: "host" | "guest",
     nowMs: number
-  ) => void;
+  ) => PeerId | undefined;
   readonly message: (socket: RoomSocket, text: string, nowMs: number) => void;
   /** The socket closed or errored. */
   readonly closed: (socket: RoomSocket) => void;
+  /** The worker can't keep the socket: the room hears it leave, and it is closed with 1011. */
+  readonly drop: (socket: RoomSocket) => void;
   /** The expiry alarm fired. */
   readonly alarm: (nowMs: number) => void;
 }
@@ -47,12 +56,9 @@ export const createSocketRoom = (room: Room): SocketRoom => {
     }
   };
 
-  const close = (socket: RoomSocket, reason: ErrorReason | undefined) => {
+  const close = (socket: RoomSocket, code: number, reason: string) => {
     try {
-      socket.close(
-        reason === undefined ? CLOSE_NORMAL : CLOSE_PROTOCOL_ERROR,
-        reason ?? "done"
-      );
+      socket.close(code, reason);
     } catch {
       // Already closed.
     }
@@ -76,9 +82,24 @@ export const createSocketRoom = (room: Room): SocketRoom => {
       } else {
         sockets.delete(output.peer);
         peers.delete(socket);
-        close(socket, reasons.get(output.peer));
+        const reason = reasons.get(output.peer);
+        if (reason === undefined) {
+          close(socket, CLOSE_NORMAL, "done");
+        } else {
+          close(socket, CLOSE_PROTOCOL_ERROR, reason);
+        }
       }
     }
+  };
+
+  const closed = (socket: RoomSocket) => {
+    const peer = peers.get(socket);
+    if (peer === undefined) {
+      return;
+    }
+    sockets.delete(peer);
+    peers.delete(socket);
+    carryOut(room.leave(peer));
   };
 
   return {
@@ -88,12 +109,13 @@ export const createSocketRoom = (room: Room): SocketRoom => {
       const admission = room.admit(role, nowMs);
       if (!admission.ok) {
         send(socket, { type: "error", reason: admission.reason });
-        close(socket, admission.reason);
+        close(socket, CLOSE_PROTOCOL_ERROR, admission.reason);
         return;
       }
       sockets.set(admission.peer, socket);
       peers.set(socket, admission.peer);
       carryOut(admission.outputs);
+      return admission.peer;
     },
     message: (socket, text, nowMs) => {
       const peer = peers.get(socket);
@@ -101,14 +123,10 @@ export const createSocketRoom = (room: Room): SocketRoom => {
         carryOut(room.receive(peer, text, nowMs));
       }
     },
-    closed: (socket) => {
-      const peer = peers.get(socket);
-      if (peer === undefined) {
-        return;
-      }
-      sockets.delete(peer);
-      peers.delete(socket);
-      carryOut(room.leave(peer));
+    closed,
+    drop: (socket) => {
+      closed(socket);
+      close(socket, CLOSE_SERVER_ERROR, "server error");
     },
     alarm: (nowMs) => carryOut(room.expire(nowMs)),
   };

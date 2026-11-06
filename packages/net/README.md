@@ -1,6 +1,6 @@
 # @arcadekit/net
 
-Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `GameSimulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `@arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the signalling client that turns a join code into peer links, and `linksTransport`), and `@arcadekit/net/signalling` the protocol a signalling server speaks.
+Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `GameSimulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `@arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the signalling client that turns a join code into peer links, and `linksTransport`), and `@arcadekit/net/signalling` the protocol a signalling server speaks, each message an Effect Schema with bounded fields.
 
 Part of [arcadekit](https://github.com/lucasthevenet/arcadekit#readme). The root entry is DOM-free.
 

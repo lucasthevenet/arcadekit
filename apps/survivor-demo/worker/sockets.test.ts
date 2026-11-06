@@ -3,7 +3,11 @@ import type { ServerMessage } from "@arcadekit/net/signalling";
 import { describe, expect, it } from "vitest";
 
 import { createRoom } from "./room";
-import { CLOSE_PROTOCOL_ERROR, createSocketRoom } from "./sockets";
+import {
+  CLOSE_PROTOCOL_ERROR,
+  CLOSE_SERVER_ERROR,
+  createSocketRoom,
+} from "./sockets";
 import type { RoomSocket } from "./sockets";
 
 /** A socket that records what the room sends it, as the Durable Object's WebSocket would. */
@@ -51,6 +55,15 @@ describe(createSocketRoom, () => {
       "welcome",
       "peer-joined",
     ]);
+  });
+
+  it("says which peer it admitted each socket as, or that it refused one", () => {
+    const rooms = createSocketRoom(createRoom("ABC234"));
+    expect([
+      rooms.open(fakeSocket().socket, "host", 0),
+      rooms.open(fakeSocket().socket, "guest", 0),
+      rooms.open(fakeSocket().socket, "host", 0),
+    ]).toStrictEqual(["host", "guest-1", undefined]);
   });
 
   it("sends a 5th player an error and closes its socket with the reason", () => {
@@ -128,6 +141,31 @@ describe(createSocketRoom, () => {
       code: CLOSE_PROTOCOL_ERROR,
       reason: "expired",
     });
+    expect(late.received).toStrictEqual([
+      { type: "error", reason: "unknown-code" },
+    ]);
+  });
+
+  it("drops a socket the worker can't keep: the room hears it leave, and it closes with 1011", () => {
+    const rooms = createSocketRoom(createRoom("ABC234"));
+    const host = fakeSocket();
+    const guest = fakeSocket();
+    rooms.open(host.socket, "host", 0);
+    rooms.open(guest.socket, "guest", 0);
+    rooms.drop(guest.socket);
+    expect(guest.closed()).toStrictEqual({
+      code: CLOSE_SERVER_ERROR,
+      reason: "server error",
+    });
+    expect(host.received.at(-1)).toStrictEqual({
+      type: "peer-left",
+      peer: "guest-1",
+    });
+    rooms.drop(host.socket);
+    expect(host.closed()?.code).toBe(CLOSE_SERVER_ERROR);
+    // The host left before the start, so the room is over.
+    const late = fakeSocket();
+    rooms.open(late.socket, "guest", 1);
     expect(late.received).toStrictEqual([
       { type: "error", reason: "unknown-code" },
     ]);
