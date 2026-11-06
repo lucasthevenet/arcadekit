@@ -1,7 +1,7 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Fiber } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { AttachError, makeGameEngine } from "./browser";
+import { AttachError, GameCrashed, makeGameEngine } from "./browser";
 import type { GameDefinition, GameEngine } from "./browser";
 import { manualFrames } from "./testing";
 
@@ -42,6 +42,13 @@ const recordingGame = (
 });
 
 /**
+ * Attaches `engine` to `element` on a fiber of its own, scoped to the caller. It starts at
+ * once, so it has made its view and asked for a frame by the time this returns.
+ */
+const attached = (engine: GameEngine<null, Counter, string>) =>
+  Effect.forkScoped(engine.attach(element), { startImmediately: true });
+
+/**
  * Attaches an engine for the recording game to `element`, logs its events too, runs
  * `scenario`, then closes the scope. The log keeps recording after that. Frames run only when
  * the test runs them on `frames`.
@@ -56,13 +63,25 @@ const play = async (
     Effect.scoped(
       Effect.gen(function* () {
         yield* engine.listen((event) => log.push(event));
-        yield* engine.attach(element);
+        yield* attached(engine);
         yield* scenario(engine);
       })
     )
   );
   return log;
 };
+
+/** Attaches `engine`, detaches it at once, and returns how attaching ended. */
+const attachAndDetach = (engine: GameEngine<null, Counter, string>) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(engine.attach(element), {
+        startImmediately: true,
+      });
+      yield* Fiber.interrupt(fiber);
+      return yield* Fiber.await(fiber);
+    })
+  );
 
 describe(makeGameEngine, () => {
   it("draws into the element until the scope closes, then cancels the frame loop and disposes the view and input source", async () => {
@@ -144,6 +163,51 @@ describe(makeGameEngine, () => {
       "dispose view",
     ]);
   });
+
+  it("counts a first frame timed before attach as no time, so the next frame still steps", async () => {
+    const frames = manualFrames();
+    // Attach at 100 ms. requestAnimationFrame passes the time its frame began, which can be
+    // before then.
+    frames.runFrameAt(100);
+    const log = await play(frames, (engine) =>
+      Effect.gen(function* () {
+        yield* engine.start(null);
+        frames.runFrameAt(50);
+        frames.runFrameAt(65.625);
+      })
+    );
+    expect(log).toStrictEqual([
+      "createView game",
+      "createInput game",
+      "sample 0",
+      "render 0",
+      // 1/64 s after the first frame: one step. No sample is due: these frames are timed
+      // within 10 ms of the start's sample at 100 ms.
+      "step",
+      "render 1",
+      "dispose input",
+      "dispose view",
+    ]);
+  });
+
+  it("dies when attached again while attached, a programming error, and keeps drawing", async () => {
+    const frames = manualFrames();
+    let second: Exit.Exit<never, unknown> | undefined;
+    const log = await play(frames, (engine) =>
+      Effect.gen(function* () {
+        second = yield* Effect.exit(engine.attach(element));
+        frames.runFrameAt(15.625);
+      })
+    );
+    expect(second !== undefined && Exit.hasDies(second)).toBe(true);
+    expect(log).toStrictEqual([
+      "createView game",
+      "createInput game",
+      "render null",
+      "dispose input",
+      "dispose view",
+    ]);
+  });
 });
 
 /** The recording game with some of its parts replaced, such as one that throws. */
@@ -167,9 +231,7 @@ describe("attaching a game that throws", () => {
       }),
       { frames: manualFrames() }
     );
-    const error = await Effect.runPromise(
-      Effect.scoped(Effect.flip(engine.attach(element)))
-    );
+    const error = await Effect.runPromise(Effect.flip(engine.attach(element)));
     expect(error).toBeInstanceOf(AttachError);
     expect(error).toMatchObject({
       _tag: "AttachError",
@@ -195,12 +257,10 @@ describe("attaching a game that throws", () => {
       }),
       { frames }
     );
-    const failed = await Effect.runPromiseExit(
-      Effect.scoped(engine.attach(element))
-    );
+    const failed = await Effect.runPromiseExit(engine.attach(element));
     expect(Exit.isFailure(failed)).toBe(true);
     expect(frames.waiting()).toBe(false);
-    await Effect.runPromise(Effect.scoped(engine.attach(element)));
+    await attachAndDetach(engine);
     expect(log).toStrictEqual([
       "createView game",
       "dispose view",
@@ -234,13 +294,11 @@ describe("attaching a game that throws", () => {
       }),
       { frames }
     );
-    const first = await Effect.runPromiseExit(
-      Effect.scoped(engine.attach(element))
-    );
-    // A throwing dispose is a bug in the game: the scope's close dies with it.
+    const first = await attachAndDetach(engine);
+    // A throwing dispose is a bug in the game: detaching dies with it.
     expect(Exit.hasDies(first)).toBe(true);
     expect(frames.waiting()).toBe(false);
-    await Effect.runPromise(Effect.scoped(engine.attach(element)));
+    await attachAndDetach(engine);
     expect(log).toStrictEqual([
       "createView game",
       "createInput game",
@@ -248,6 +306,138 @@ describe("attaching a game that throws", () => {
       "dispose view",
       "createView game",
       "createInput game",
+      "dispose input",
+      "dispose view",
+    ]);
+  });
+});
+
+/**
+ * Attaches an engine for the recording game with `parts` replaced, starts a run, and runs
+ * frames at 15.625 ms and 31.25 ms. Returns what attaching failed with, whether a frame was
+ * still requested, and the log.
+ */
+const crash = async (
+  parts: (log: string[]) => Partial<GameDefinition<null, Counter, null, string>>
+) => {
+  const log: string[] = [];
+  const frames = manualFrames();
+  const engine = makeGameEngine(withParts(log, parts(log)), { frames });
+  const error = await Effect.runPromise(
+    Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(engine.attach(element), {
+        startImmediately: true,
+      });
+      yield* engine.start(null);
+      frames.runFrameAt(15.625);
+      frames.runFrameAt(31.25);
+      return yield* Effect.flip(Fiber.join(fiber));
+    })
+  );
+  return { error, waiting: frames.waiting(), log };
+};
+
+describe("a game that throws while attached", () => {
+  it("fails attach with GameCrashed when a step throws, asks for no more frames, and detaches", async () => {
+    const bug = new Error("step bug");
+    const { error, waiting, log } = await crash(() => ({
+      step: () => {
+        throw bug;
+      },
+    }));
+    expect(error).toBeInstanceOf(GameCrashed);
+    expect(error).toMatchObject({
+      _tag: "GameCrashed",
+      message: "step bug",
+      cause: bug,
+    });
+    expect(waiting).toBe(false);
+    // The frame that threw is the last: nothing draws, and the view and input are disposed.
+    expect(log).toStrictEqual([
+      "createView game",
+      "createInput game",
+      "dispose input",
+      "dispose view",
+    ]);
+  });
+
+  it("fails attach with GameCrashed when render throws, asks for no more frames, and detaches", async () => {
+    const bug = new Error("render bug");
+    const { error, waiting, log } = await crash((record) => ({
+      createView: (container) => {
+        record.push(`createView ${container.id}`);
+        return {
+          render: () => {
+            throw bug;
+          },
+          dispose: () => record.push("dispose view"),
+        };
+      },
+    }));
+    expect(error).toMatchObject({
+      _tag: "GameCrashed",
+      message: "render bug",
+      cause: bug,
+    });
+    expect(waiting).toBe(false);
+    expect(log).toStrictEqual([
+      "createView game",
+      "createInput game",
+      "step",
+      "dispose input",
+      "dispose view",
+    ]);
+  });
+
+  it("can attach again after a crash", async () => {
+    const log: string[] = [];
+    let renders = 0;
+    const frames = manualFrames();
+    const base = recordingGame(log);
+    const engine = makeGameEngine(
+      withParts(log, {
+        createView: (container) => {
+          const view = base.createView(container);
+          return {
+            render: (state, time) => {
+              renders += 1;
+              if (renders === 1) {
+                throw new Error("first frame only");
+              }
+              view.render(state, time);
+            },
+            dispose: view.dispose,
+          };
+        },
+      }),
+      { frames }
+    );
+    const crashed = await Effect.runPromiseExit(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(engine.attach(element), {
+          startImmediately: true,
+        });
+        frames.runFrameAt(15.625);
+        return yield* Fiber.join(fiber);
+      })
+    );
+    expect(Exit.isFailure(crashed)).toBe(true);
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* attached(engine);
+          frames.runFrameAt(31.25);
+        })
+      )
+    );
+    expect(log).toStrictEqual([
+      "createView game",
+      "createInput game",
+      "dispose input",
+      "dispose view",
+      "createView game",
+      "createInput game",
+      "render null",
       "dispose input",
       "dispose view",
     ]);

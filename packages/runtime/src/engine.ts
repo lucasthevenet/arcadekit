@@ -1,8 +1,11 @@
 import { Data, Duration, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
-import { GameDriver } from "./driver";
+import { frameLoop, messageOf } from "./frame-loop";
+import type { GameCrashed } from "./frame-loop";
+import { animationFrames } from "./frames";
 import type { FrameSource } from "./frames";
+import { GameLoop } from "./loop";
 import type { GameDefinition } from "./presentation";
 
 // Named so the type files can be made one file at a time (isolatedDeclarations).
@@ -20,10 +23,7 @@ export class AttachError extends AttachErrorBase<{
 
 /** An AttachError for what attaching threw. */
 export const attachError = (cause: unknown): AttachError =>
-  new AttachError({
-    message: cause instanceof Error ? cause.message : String(cause),
-    cause,
-  });
+  new AttachError({ message: messageOf(cause), cause });
 
 /**
  * The Effect-facing API of a running game. Scoped methods clean up when their scope closes.
@@ -41,12 +41,18 @@ export const attachError = (cause: unknown): AttachError =>
  */
 export interface GameEngine<Config, State, Event> {
   /**
-   * Renders into `element` and reads input from it while the scope is open. Fails with
-   * `AttachError` if the game's view or input source can't be made, with nothing attached.
+   * Draws into `element` and reads input from it for as long as it runs: each frame steps the
+   * run by the time since the last frame, then draws it. Interrupt it to detach, which
+   * disposes the view and the input source. Fork it to do more while attached.
+   *
+   * It never succeeds. It fails with `AttachError` at once if the game's view or input source
+   * can't be made, with nothing attached, and with `GameCrashed` if a frame throws: that frame
+   * is the last, and it detaches. Attaching an engine that is already attached dies: an
+   * engine draws into one element at a time.
    */
   readonly attach: (
     element: HTMLElement
-  ) => Effect.Effect<void, AttachError, Scope.Scope>;
+  ) => Effect.Effect<never, AttachError | GameCrashed>;
   /** Calls `onEvent` for every game event while the scope is open. */
   readonly listen: (
     onEvent: (event: Event) => void
@@ -60,31 +66,70 @@ export interface GameEngine<Config, State, Event> {
 }
 
 /**
- * Runs `definition` in the browser behind a GameEngine. `options.frames` replaces the frame
- * clock (requestAnimationFrame by default); tests pass `manualFrames()` from
- * `@arcadekit/runtime/testing`.
+ * Runs `definition` in the browser behind a GameEngine: a `GameLoop`, stepped and drawn on
+ * each frame while attached. `options.frames` replaces the frame clock (requestAnimationFrame
+ * by default); tests pass `manualFrames()` from `@arcadekit/runtime/testing`. To step without
+ * drawing, use a `GameLoop` instead.
  */
 export const makeGameEngine = <Config, State, Input, Event>(
   definition: GameDefinition<Config, State, Input, Event>,
   options: { readonly frames?: FrameSource } = {}
 ): GameEngine<Config, State, Event> => {
-  const driver = new GameDriver(definition, options.frames);
+  const frames = options.frames ?? animationFrames;
+  const loop = new GameLoop(definition);
+  let attached = false;
+  // Attaching twice at once is a programming error, so it dies rather than fail.
+  const claim = Effect.acquireRelease(
+    Effect.suspend(() => {
+      if (attached) {
+        return Effect.die(
+          new Error("This engine is already attached to an element")
+        );
+      }
+      attached = true;
+      return Effect.void;
+    }),
+    () =>
+      Effect.sync(() => {
+        attached = false;
+      })
+  );
   return {
+    // Its own scope: a crash disposes the view and input source as detaching does. The scope
+    // runs every release even if one throws, so the engine can always attach again.
     attach: (element) =>
-      Effect.acquireRelease(
-        Effect.try({ try: () => driver.attach(element), catch: attachError }),
-        (detach) => Effect.sync(detach)
-      ).pipe(Effect.asVoid),
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* claim;
+          const view = yield* Effect.acquireRelease(
+            Effect.try({
+              try: () => definition.createView(element),
+              catch: attachError,
+            }),
+            (made) => Effect.sync(() => made.dispose())
+          );
+          const input = yield* Effect.acquireRelease(
+            Effect.try({
+              try: () => definition.createInput(element),
+              catch: attachError,
+            }),
+            (made) => Effect.sync(() => made.dispose())
+          );
+          return yield* frameLoop(loop, frames, input, view);
+        })
+      ),
     listen: (onEvent) =>
       Effect.acquireRelease(
-        Effect.sync(() => driver.subscribe(onEvent)),
+        Effect.sync(() => loop.subscribe(onEvent)),
         (unsubscribe) => Effect.sync(unsubscribe)
       ).pipe(Effect.asVoid),
     start: (config) =>
-      Effect.sync(() => driver.start(config, (Math.random() * 2 ** 32) >>> 0)),
-    modify: (change) => Effect.sync(() => driver.modify(change)),
-    setPaused: (paused) => Effect.sync(() => driver.setPaused(paused)),
-    stop: Effect.sync(() => driver.stop()),
+      Effect.sync(() =>
+        loop.start(config, (Math.random() * 2 ** 32) >>> 0, frames.now())
+      ),
+    modify: (change) => Effect.sync(() => loop.modify(change, frames.now())),
+    setPaused: (paused) => Effect.sync(() => loop.setPaused(paused)),
+    stop: Effect.sync(() => loop.stop()),
   };
 };
 

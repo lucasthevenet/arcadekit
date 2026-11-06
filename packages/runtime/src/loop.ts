@@ -10,7 +10,7 @@ const MAX_FRAME_SECONDS = 0.25;
  *
  * - `{ seconds }`: time passed. The loop counts at most 0.25 s, turns it into whole steps on its
  *   fixed clock, carries the remainder, and drops the backlog after the clock's
- *   `maxStepsPerFrame` (5). The browser's `GameDriver` uses it.
+ *   `maxStepsPerFrame` (5). The browser engine's frames (`makeGameEngine`) use it.
  * - `{ steps }`: exactly this many steps. No clamp, no cap, no drop, and it clears any remainder
  *   carried from `{ seconds }` frames. Tests, replays and lockstep use it. It has no cap, so a
  *   caller that passes a huge count blocks its thread.
@@ -24,9 +24,9 @@ export type FrameBudget =
  * step order and the time policy. Time and input come from the caller, so it needs no DOM and
  * reads no global clock.
  *
- * `frame` is the seam where stepping adapters plug in: the browser's `GameDriver` (one frame per
- * requestAnimationFrame callback), tests and replays (a scripted `StepInput` and `{ steps }`
- * frames), and a timer or lockstep runner.
+ * `frame` is the seam where stepping adapters plug in: the browser engine (`makeGameEngine`, one
+ * frame per requestAnimationFrame callback), tests and replays (a scripted `StepInput` and
+ * `{ steps }` frames), and a timer or lockstep runner.
  *
  * Listeners must not call `frame`, `start` or `modify` synchronously while an event is
  * delivered; schedule that work instead.
