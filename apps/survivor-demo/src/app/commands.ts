@@ -144,34 +144,30 @@ export const SaveRun = Command.define("SaveRun", {
 // Co-op. The co-op client reports what follows (the lobby, the start, errors) as events, which
 // the coop Subscription turns into Messages.
 
+/**
+ * Hosts a co-op room, after leaving any room or run before it. The client loads the content
+ * itself, so a Leave that follows cancels the load and no room opens; a content load that fails
+ * is reported as its `failed` event.
+ */
 export const HostCoop = Command.define("HostCoop", {
   args: { heroId: Schema.String },
-  messages: [Message.CompletedEngineCommand, Message.GotCoopFailed],
+  messages: [Message.CompletedEngineCommand],
   execute: ({ heroId }) =>
     Effect.gen(function* () {
-      const content = yield* (yield* SurvivorsContent).load;
-      yield* (yield* Coop).host(content, heroId);
+      yield* (yield* Coop).host(heroId);
       return Message.CompletedEngineCommand();
-    }).pipe(
-      Effect.catchTag("ContentError", (error) =>
-        Effect.succeed(Message.GotCoopFailed({ error: error.message }))
-      )
-    ),
+    }),
 });
 
+/** Joins the co-op room with `code`, as HostCoop hosts one. */
 export const JoinCoop = Command.define("JoinCoop", {
   args: { code: Schema.String, heroId: Schema.String },
-  messages: [Message.CompletedEngineCommand, Message.GotCoopFailed],
+  messages: [Message.CompletedEngineCommand],
   execute: ({ code, heroId }) =>
     Effect.gen(function* () {
-      const content = yield* (yield* SurvivorsContent).load;
-      yield* (yield* Coop).join(content, code, heroId);
+      yield* (yield* Coop).join(code, heroId);
       return Message.CompletedEngineCommand();
-    }).pipe(
-      Effect.catchTag("ContentError", (error) =>
-        Effect.succeed(Message.GotCoopFailed({ error: error.message }))
-      )
-    ),
+    }),
 });
 
 export const ChooseCoopHero = Command.define("ChooseCoopHero", {
@@ -214,6 +210,7 @@ export const SetCoopPaused = Command.define("SetCoopPaused", {
     }),
 });
 
+/** Leaves the lobby or the run, once its room, links, session and worker have closed. */
 export const LeaveCoop = Command.define("LeaveCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: Effect.gen(function* () {

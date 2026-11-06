@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { encodeLobbyMessage, parseLobbyMessage, playerName } from "./lobby";
+import {
+  canStart,
+  encodeLobbyMessage,
+  parseLobbyMessage,
+  playerName,
+  startPlan,
+  withHero,
+  withPlayer,
+  withoutPlayer,
+} from "./lobby";
 import type { LobbyMessage } from "./lobby";
 
 // The lobby messages as they cross a peer link: what a peer sends reads back the same, and
@@ -105,5 +114,46 @@ describe(playerName, () => {
     expect(playerName("host")).toBe("Host");
     expect(playerName("guest-2")).toBe("Guest 2");
     expect(playerName("someone")).toBe("someone");
+  });
+});
+
+describe("the host's lobby", () => {
+  const host = { id: "host", heroId: "spark" };
+
+  it("adds each guest once, at the end, with no hero, and removes it", () => {
+    const joined = withPlayer(withPlayer([host], "guest-1"), "guest-2");
+    expect([
+      joined,
+      withPlayer(joined, "guest-1"),
+      withoutPlayer(joined, "guest-1"),
+    ]).toStrictEqual([
+      [host, { id: "guest-1", heroId: "" }, { id: "guest-2", heroId: "" }],
+      joined,
+      [host, { id: "guest-2", heroId: "" }],
+    ]);
+  });
+
+  it("can start once two players have each picked a hero", () => {
+    const joined = withPlayer([host], "guest-1");
+    expect([
+      canStart([host]),
+      canStart(joined),
+      canStart(withHero(joined, "guest-1", "ember")),
+    ]).toStrictEqual([false, false, true]);
+  });
+
+  it("starts with the host and the guests still linked, in lobby order", () => {
+    const players = [
+      host,
+      { id: "guest-1", heroId: "ember" },
+      { id: "guest-2", heroId: "" },
+      { id: "guest-3", heroId: "tide" },
+    ];
+    expect(
+      startPlan(players, new Set(["guest-3", "guest-2"]), "host", "spark")
+    ).toStrictEqual({
+      players: ["host", "guest-2", "guest-3"],
+      heroIds: ["spark", "spark", "tide"],
+    });
   });
 });

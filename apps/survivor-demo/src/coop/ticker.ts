@@ -1,13 +1,15 @@
-/**
- * Calls `onTick` about every `everyMs` until the returned function stops it.
- *
- * A co-op run must keep stepping while its tab is hidden (#25, ADR-0012). Browsers throttle a
- * hidden tab's main-thread timers to about once a second (an open data channel spares the page
- * Chrome's harsher intensive throttling) and stop `requestAnimationFrame`, so a lockstep session
- * ticked by them falls behind and stalls everyone. A dedicated worker's timers aren't throttled that way, and the messages
- * it posts reach the main thread at its rate, so the default ticker runs its timer in one.
- */
-export type Ticker = (onTick: () => void) => () => void;
+import type { Ticker } from "@arcadekit/net";
+import { Effect } from "effect";
+import type { Scope } from "effect";
+
+// What ticks a co-op run's lockstep session in the browser.
+//
+// A co-op run must keep stepping while its tab is hidden (#25, ADR-0012). Browsers throttle a
+// hidden tab's main-thread timers to about once a second (an open data channel spares the page
+// Chrome's harsher intensive throttling) and stop `requestAnimationFrame`, so a lockstep session
+// ticked by them falls behind and stalls everyone. A dedicated worker's timers aren't throttled
+// that way, and the messages it posts reach the main thread at its rate, so the run's ticker
+// runs its timer in one.
 
 /** The part of a dedicated `Worker` the ticker uses. */
 export interface TickWorker {
@@ -22,10 +24,11 @@ export interface TickWorker {
 export interface WorkerTickerOptions {
   readonly everyMs: number;
   /**
-   * Makes the worker that times the ticks, or returns undefined where there is none (Node, or a
-   * page that may not start workers). Defaults to a worker from `TICK_WORKER_SOURCE`.
+   * The worker that times the ticks, owned by the scope, or undefined where there is none.
+   * Defaults to `tickWorker`; tests pass a fake (`Effect.succeed(fake)`) or
+   * `Effect.succeed(undefined)`.
    */
-  readonly createWorker?: () => TickWorker | undefined;
+  readonly worker?: Effect.Effect<TickWorker | undefined, never, Scope.Scope>;
 }
 
 /**
@@ -35,63 +38,86 @@ export interface WorkerTickerOptions {
 export const TICK_WORKER_SOURCE =
   "self.onmessage = (event) => { setInterval(() => self.postMessage(0), event.data); };";
 
-const createTickWorker = (): TickWorker | undefined => {
+/** Makes the worker and the Blob URL of its program, or nothing where no worker starts. */
+const startTickWorker = ():
+  | { readonly worker: TickWorker; readonly url: string }
+  | undefined => {
   if (typeof Worker === "undefined" || typeof Blob === "undefined") {
     return undefined;
   }
-  const url = URL.createObjectURL(
-    new Blob([TICK_WORKER_SOURCE], { type: "text/javascript" })
-  );
+  let url: string | undefined;
   try {
-    const worker = new Worker(url);
-    // The worker has its own copy of the script once it runs; the URL can go then.
-    worker.addEventListener("message", () => URL.revokeObjectURL(url), {
-      once: true,
-    });
-    return worker;
+    url = URL.createObjectURL(
+      new Blob([TICK_WORKER_SOURCE], { type: "text/javascript" })
+    );
+    return { worker: new Worker(url), url };
   } catch {
-    URL.revokeObjectURL(url);
+    // The page may not start workers (a content security policy, say).
+    if (url !== undefined) {
+      URL.revokeObjectURL(url);
+    }
     return undefined;
   }
 };
 
 /**
- * A ticker timed by a dedicated worker, falling back to the main thread's `setInterval` where
- * no worker starts, or if it fails. Only the timer is in the worker: `onTick` runs on the main
- * thread, with the session and WebRTC.
+ * A dedicated worker running `TICK_WORKER_SOURCE`, or undefined where none starts (Node, or a
+ * page that may not start workers). The scope terminates it and revokes its Blob URL, whether it
+ * ticked, failed, or never got to tick.
  */
-export const workerTicker =
-  ({ everyMs, createWorker = createTickWorker }: WorkerTickerOptions): Ticker =>
-  (onTick) => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    let stopped = false;
-    const onMainThread = () => {
-      if (!stopped && interval === null) {
-        interval = setInterval(onTick, everyMs);
-      }
-    };
-    const worker = createWorker();
-    if (worker === undefined) {
-      onMainThread();
-    } else {
-      worker.addEventListener("message", () => {
-        if (!stopped) {
-          onTick();
-        }
-      });
-      worker.addEventListener("error", () => {
-        worker.terminate();
-        onMainThread();
-      });
-      // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a Worker's postMessage takes no origin.
-      worker.postMessage(everyMs);
+export const tickWorker: Effect.Effect<
+  TickWorker | undefined,
+  never,
+  Scope.Scope
+> = Effect.acquireRelease(Effect.sync(startTickWorker), (started) =>
+  Effect.sync(() => {
+    if (started !== undefined) {
+      started.worker.terminate();
+      URL.revokeObjectURL(started.url);
     }
-    return () => {
-      stopped = true;
-      worker?.terminate();
-      if (interval !== null) {
-        clearInterval(interval);
-        interval = null;
+  })
+).pipe(Effect.map((started) => started?.worker));
+
+/**
+ * A ticker timed by a worker the scope owns, falling back to the main thread's `setInterval`
+ * where no worker starts, or once it fails. Only the timer is in the worker: `onTick` runs on
+ * the main thread, with the session and WebRTC. It times one run: its stop ends the worker too.
+ */
+export const workerTicker = ({
+  everyMs,
+  worker = tickWorker,
+}: WorkerTickerOptions): Effect.Effect<Ticker, never, Scope.Scope> =>
+  worker.pipe(
+    Effect.map((made): Ticker => (onTick) => {
+      let interval: ReturnType<typeof setInterval> | null = null;
+      let stopped = false;
+      const onMainThread = () => {
+        if (!stopped && interval === null) {
+          interval = setInterval(onTick, everyMs);
+        }
+      };
+      if (made === undefined) {
+        onMainThread();
+      } else {
+        made.addEventListener("message", () => {
+          if (!stopped) {
+            onTick();
+          }
+        });
+        made.addEventListener("error", () => {
+          made.terminate();
+          onMainThread();
+        });
+        // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a Worker's postMessage takes no origin.
+        made.postMessage(everyMs);
       }
-    };
-  };
+      return () => {
+        stopped = true;
+        made?.terminate();
+        if (interval !== null) {
+          clearInterval(interval);
+          interval = null;
+        }
+      };
+    })
+  );

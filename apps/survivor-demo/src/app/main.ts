@@ -25,16 +25,25 @@ const EngineLayer = makeSurvivorsEngineLayer({
 });
 
 /**
+ * The content, loaded once: the Commands and the co-op client, which loads a run's content
+ * itself, share one loader.
+ */
+const ContentLayer = makeSurvivorsContentLayer(
+  fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
+);
+
+/**
  * App-lifetime services, shared by every Command and Subscription. The engine and the co-op
  * client play through the one audio system, which makes no AudioContext before the first
  * gesture, and draw from the one sprite sheet, which LoadContent loads with the content.
- * Building them fetches nothing; the app's end frees the sheet.
+ * Building them fetches nothing; the app's end frees the sheet and leaves co-op.
  */
 export const resources = Layer.mergeAll(
-  makeSurvivorsContentLayer(
-    fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
-  ),
   SaveLayer.pipe(Layer.provide(BrowserSaveStorage)),
   SoundSettingsLayer.pipe(Layer.provide(BrowserSaveStorage)),
   CoopLayer
-).pipe(Layer.provideMerge(EngineLayer), Layer.provideMerge(BrowserAudioLayer));
+).pipe(
+  Layer.provideMerge(ContentLayer),
+  Layer.provideMerge(EngineLayer),
+  Layer.provideMerge(BrowserAudioLayer)
+);

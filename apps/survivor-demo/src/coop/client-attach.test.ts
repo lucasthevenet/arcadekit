@@ -1,13 +1,17 @@
-import type { SignallingRoom } from "@arcadekit/net/browser";
+import { AttachError, GameCrashed } from "@arcadekit/runtime/browser";
 import type { GameView } from "@arcadekit/runtime/browser";
-import type { GameContent, World } from "@arcadekit/survivors";
+import { manualFrames } from "@arcadekit/runtime/testing";
+import type { World } from "@arcadekit/survivors";
 import type { SurvivorsArt } from "@arcadekit/survivors/browser";
+import { Effect, Exit, Fiber, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CoopClient } from "./client";
+import { makeCoopClient } from "./client";
+import type { CoopClient, CoopClientOptions } from "./client";
 
-// Attaching and detaching in Node, with no browser: an EventTarget stands in for the window and
-// for the surface, so the input controller's listeners can be counted, and the view is a fake.
+// Attaching and detaching in Node, with no browser and no room: an EventTarget stands in for
+// the window and for the surface, so the input controller's listeners can be counted, the view
+// is a fake, and the test runs the frames.
 
 /** An EventTarget that counts the listeners on it. */
 const countingTarget = () => {
@@ -28,14 +32,31 @@ const countingTarget = () => {
 
 const art = {} as SurvivorsArt;
 
-const fakeView = (dispose: () => void = () => {}): GameView<World> => ({
+const fakeView = (parts: Partial<GameView<World>> = {}): GameView<World> => ({
   render: () => {},
-  dispose,
+  dispose: () => {},
+  ...parts,
 });
+
+const noRooms = {
+  host: Effect.never,
+  join: () => Effect.never,
+};
 
 let window: ReturnType<typeof countingTarget>;
 let surface: ReturnType<typeof countingTarget>;
 let element: HTMLElement;
+let scope: Scope.Closeable;
+
+const client = (options: Partial<CoopClientOptions>): CoopClient =>
+  Effect.runSync(
+    Scope.provide(
+      makeCoopClient({ rooms: noRooms, content: Effect.never, ...options }),
+      scope
+    )
+  );
+
+const listening = () => [window.listening(), surface.listening()];
 
 describe("attaching a co-op client", () => {
   beforeEach(() => {
@@ -45,87 +66,129 @@ describe("attaching a co-op client", () => {
       style: {},
     }) as unknown as HTMLElement;
     vi.stubGlobal("window", window.target);
-    vi.stubGlobal("requestAnimationFrame", () => 1);
-    vi.stubGlobal("cancelAnimationFrame", () => {});
+    scope = Effect.runSync(Scope.make());
   });
 
   afterEach(() => {
+    Effect.runSync(Scope.close(scope, Exit.void));
     vi.unstubAllGlobals();
   });
 
-  it("leaves no input listening when the view can't be made", () => {
-    const coop = new CoopClient({
-      signalling: { url: "ws://unused" },
+  it("fails with an AttachError, leaving no input listening, when the view can't be made", async () => {
+    const noWebGl = new Error("no WebGL");
+    const coop = client({
+      frames: manualFrames(),
       createView: () => {
-        throw new Error("no WebGL");
+        throw noWebGl;
       },
     });
-    expect(() => coop.attach(element, art)).toThrow("no WebGL");
-    expect([window.listening(), surface.listening()]).toStrictEqual([0, 0]);
+    const error = await Effect.runPromise(
+      Effect.flip(coop.attach(element, art))
+    );
+    expect([error, listening()]).toStrictEqual([
+      new AttachError({ message: "no WebGL", cause: noWebGl }),
+      [0, 0],
+    ]);
   });
 
-  it("releases the input and can attach again when the view's dispose throws", () => {
+  it("draws on each frame until detached, then cancels its frame and releases the input", async () => {
+    const frames = manualFrames();
+    const drawn: number[] = [];
+    const coop = client({
+      frames,
+      createView: () =>
+        fakeView({ render: (_state, seconds) => drawn.push(seconds) }),
+    });
+    const attach = Effect.runFork(coop.attach(element, art));
+    await Effect.runPromise(Effect.yieldNow);
+    const attached = listening();
+    frames.runFrameAt(500);
+    frames.runFrameAt(1000);
+    await Effect.runPromise(Fiber.interrupt(attach));
+    expect([attached, drawn, frames.waiting(), listening()]).toStrictEqual([
+      [3, 4],
+      [0.5, 1],
+      false,
+      [0, 0],
+    ]);
+  });
+
+  it("releases the input and can attach again when the view's dispose throws", async () => {
     const views: GameView<World>[] = [];
-    const coop = new CoopClient({
-      signalling: { url: "ws://unused" },
+    const coop = client({
+      frames: manualFrames(),
       createView: () => {
         const view = fakeView(
           views.length === 0
-            ? () => {
-                throw new Error("lost context");
+            ? {
+                dispose: () => {
+                  throw new Error("lost context");
+                },
               }
-            : undefined
+            : {}
         );
         views.push(view);
         return view;
       },
     });
-    const detach = coop.attach(element, art);
-    expect(detach).toThrow("lost context");
-    expect([window.listening(), surface.listening()]).toStrictEqual([0, 0]);
-    coop.attach(element, art)();
+    const first = Effect.runFork(coop.attach(element, art));
+    await Effect.runPromise(Effect.yieldNow);
+    const detached = await Effect.runPromise(
+      Fiber.interrupt(first).pipe(Effect.andThen(Fiber.await(first)))
+    );
+    const afterFirst = listening();
+    const second = Effect.runFork(coop.attach(element, art));
+    await Effect.runPromise(Effect.yieldNow);
+    await Effect.runPromise(Fiber.interrupt(second));
     expect([
+      Exit.hasDies(detached),
+      afterFirst,
       views.length,
-      window.listening(),
-      surface.listening(),
-    ]).toStrictEqual([2, 0, 0]);
+      listening(),
+    ]).toStrictEqual([true, [0, 0], 2, [0, 0]]);
   });
 
-  it("leaves nothing attached when the view can't be made again for a new run", () => {
-    let disposed = 0;
-    let made = 0;
-    const cancelled: number[] = [];
-    vi.stubGlobal("cancelAnimationFrame", (frame: number) => {
-      cancelled.push(frame);
+  it("crashes with GameCrashed when a frame throws, asking for no other frame, with nothing left attached", async () => {
+    const frames = manualFrames();
+    const bug = new Error("lost context");
+    let renders = 0;
+    const coop = client({
+      frames,
+      createView: () =>
+        fakeView({
+          render: () => {
+            renders += 1;
+            if (renders === 2) {
+              throw bug;
+            }
+          },
+        }),
     });
-    // A room that never says anything: opening one only rebuilds the view.
-    const room = {
-      subscribe: () => () => {},
-      close: () => {},
-    } as unknown as SignallingRoom;
-    const coop = new CoopClient({
-      signalling: { url: "ws://unused" },
-      rooms: { host: () => room, join: () => room },
-      createView: () => {
-        made += 1;
-        if (made === 2) {
-          throw new Error("lost context");
-        }
-        return fakeView(() => {
-          disposed += 1;
-        });
-      },
+    const attach = Effect.runFork(coop.attach(element, art));
+    await Effect.runPromise(Effect.yieldNow);
+    frames.runFrameAt(16);
+    frames.runFrameAt(33);
+    frames.runFrameAt(50);
+    const exit = await Effect.runPromise(Fiber.await(attach));
+    expect([exit, renders, frames.waiting(), listening()]).toStrictEqual([
+      Exit.fail(new GameCrashed({ message: "lost context", cause: bug })),
+      2,
+      false,
+      [0, 0],
+    ]);
+  });
+
+  it("dies when attached twice at once", async () => {
+    const coop = client({
+      frames: manualFrames(),
+      createView: () => fakeView(),
     });
-    const detach = coop.attach(element, art);
-    expect(() => coop.host({} as GameContent, "spark")).toThrow("lost context");
-    detach();
-    expect([
-      cancelled,
-      disposed,
-      window.listening(),
-      surface.listening(),
-    ]).toStrictEqual([[1], 1, 0, 0]);
-    coop.attach(element, art)();
-    expect([made, disposed]).toStrictEqual([3, 2]);
+    const first = Effect.runFork(coop.attach(element, art));
+    await Effect.runPromise(Effect.yieldNow);
+    const second = await Effect.runPromise(
+      Effect.exit(coop.attach(element, art))
+    );
+    await Effect.runPromise(Fiber.interrupt(first));
+    expect([Exit.hasDies(second), listening()]).toStrictEqual([true, [0, 0]]);
   });
 });
