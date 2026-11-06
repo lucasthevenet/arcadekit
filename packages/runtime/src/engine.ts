@@ -43,17 +43,26 @@ export interface GameEngine<Config, State, Event> {
   /**
    * Draws into `element` and reads input from it for as long as it runs: each frame steps the
    * run by the time since the last frame, then draws it. Interrupt it to detach, which
-   * disposes the view and the input source. Fork it to do more while attached.
+   * disposes the view and the input source.
    *
-   * It never succeeds. It fails with `AttachError` at once if the game's view or input source
-   * can't be made, with nothing attached, and with `GameCrashed` if a frame throws: that frame
-   * is the last, and it detaches. Attaching an engine that is already attached dies: an
-   * engine draws into one element at a time.
+   * It never succeeds, so run it last: start the run, then `return yield* engine.attach(el)`.
+   * It fails with `AttachError` at once if the game's view or input source can't be made, with
+   * nothing attached, and with `GameCrashed` if a frame throws: that frame is the last, the run
+   * ends, and it detaches. Attaching an engine that is already attached dies: an engine draws
+   * into one element at a time.
+   *
+   * Its failures reach only what waits on it. A forked `attach` that nothing joins loses them
+   * silently, so join its fiber (`Fiber.join`) or race the rest of the program against it
+   * (`Effect.raceFirst(rest, engine.attach(el))`).
    */
   readonly attach: (
     element: HTMLElement
   ) => Effect.Effect<never, AttachError | GameCrashed>;
-  /** Calls `onEvent` for every game event while the scope is open. */
+  /**
+   * Calls `onEvent` for every game event while the scope is open. A listener that throws on an
+   * event of a frame crashes the attached engine (`attach` fails with `GameCrashed`); on one
+   * that `start` or `modify` reports, it throws on the caller's fiber, and that Effect dies.
+   */
   readonly listen: (
     onEvent: (event: Event) => void
   ) => Effect.Effect<void, never, Scope.Scope>;

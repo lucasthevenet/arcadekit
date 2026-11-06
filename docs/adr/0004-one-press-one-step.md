@@ -8,6 +8,8 @@ status: accepted
 
 > Amended by [ADR-0012](0012-delay-based-lockstep-over-a-host-star.md) on 2026-11-04: on a lockstep peer, the engine samples the local device source on its own schedule and calls its `endStep` and `endFrame`; `GameLoop` reads the buffer of merged inputs.
 
+> Amended on 2026-11-06: `GameDriver` is gone; `makeGameEngine`'s `attach` is the `requestAnimationFrame` adapter, see the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+
 A slow frame runs up to five catch-up steps, and presses used to be reset once per frame, so one press moved push-puzzle's player up to five cells and one undo undid up to five turns (#15, finding 1). `GameDriver` now calls `InputSource.endStep` after every step, and `endFrame` once per frame that ran a step. A source that needs one press to reach one step resets its presses in `endStep`, as push-puzzle does with `InputController.consumePresses()`.
 
 ## Considered Options

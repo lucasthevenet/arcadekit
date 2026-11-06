@@ -314,27 +314,36 @@ describe("attaching a game that throws", () => {
 
 /**
  * Attaches an engine for the recording game with `parts` replaced, starts a run, and runs
- * frames at 15.625 ms and 31.25 ms. Returns what attaching failed with, whether a frame was
- * still requested, and the log.
+ * frames at 15.625 ms and 31.25 ms. `onEvent`, if given, listens to the engine's events from
+ * before the start. Returns what attaching failed with, whether a frame was still requested,
+ * the log, and the engine and its frames.
  */
 const crash = async (
-  parts: (log: string[]) => Partial<GameDefinition<null, Counter, null, string>>
+  parts: (
+    log: string[]
+  ) => Partial<GameDefinition<null, Counter, null, string>>,
+  onEvent?: (event: string) => void
 ) => {
   const log: string[] = [];
   const frames = manualFrames();
   const engine = makeGameEngine(withParts(log, parts(log)), { frames });
   const error = await Effect.runPromise(
-    Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(engine.attach(element), {
-        startImmediately: true,
-      });
-      yield* engine.start(null);
-      frames.runFrameAt(15.625);
-      frames.runFrameAt(31.25);
-      return yield* Effect.flip(Fiber.join(fiber));
-    })
+    Effect.scoped(
+      Effect.gen(function* () {
+        if (onEvent !== undefined) {
+          yield* engine.listen(onEvent);
+        }
+        const fiber = yield* Effect.forkChild(engine.attach(element), {
+          startImmediately: true,
+        });
+        yield* engine.start(null);
+        frames.runFrameAt(15.625);
+        frames.runFrameAt(31.25);
+        return yield* Effect.flip(Fiber.join(fiber));
+      })
+    )
   );
-  return { error, waiting: frames.waiting(), log };
+  return { error, waiting: frames.waiting(), log, engine, frames };
 };
 
 describe("a game that throws while attached", () => {
@@ -384,6 +393,63 @@ describe("a game that throws while attached", () => {
       "createView game",
       "createInput game",
       "step",
+      "dispose input",
+      "dispose view",
+    ]);
+  });
+
+  it("fails attach with GameCrashed when a listener throws on an event of a frame, asks for no more frames, and detaches", async () => {
+    const bug = new Error("listener bug");
+    const { error, waiting, log } = await crash(
+      () => ({}),
+      (event) => {
+        // The first frame's sample, not the one `start` delivers.
+        if (event === "sample 1") {
+          throw bug;
+        }
+      }
+    );
+    expect(error).toMatchObject({
+      _tag: "GameCrashed",
+      message: "listener bug",
+      cause: bug,
+    });
+    expect(waiting).toBe(false);
+    expect(log).toStrictEqual([
+      "createView game",
+      "createInput game",
+      "step",
+      "dispose input",
+      "dispose view",
+    ]);
+  });
+
+  it("ends the run when a frame throws, so attaching again draws no run and runs no step", async () => {
+    // A step that always throws, as a bug that repeats does.
+    const { engine, frames, log } = await crash(() => ({
+      step: () => {
+        throw new Error("step bug");
+      },
+    }));
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* attached(engine);
+          // No time has passed since the crash, and the step that threw was never counted
+          // as run: a run left live would run it again here.
+          frames.runFrameAt(31.25);
+          expect(frames.waiting()).toBe(true);
+        })
+      )
+    );
+    expect(log).toStrictEqual([
+      "createView game",
+      "createInput game",
+      "dispose input",
+      "dispose view",
+      "createView game",
+      "createInput game",
+      "render null",
       "dispose input",
       "dispose view",
     ]);

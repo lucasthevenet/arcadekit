@@ -4,6 +4,7 @@ import { manualFrames } from "@arcadekit/runtime/testing";
 import {
   Cause,
   Context,
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -124,6 +125,22 @@ const entry = engineEntry({
 /** The Stream Foldkit's runtime runs for `model`: the entry's dependencies, then its Stream. */
 const streamFor = (model: Model) =>
   entry.dependenciesToStream(entry.modelToDependencies(model));
+
+/**
+ * `stream` until 30 ms after its first Message, so a second one sent with it shows up. The wait
+ * starts at that Message, so a slow test can't end the Stream before a frame it runs.
+ */
+const throughFirstMessage = <A, E, R>(stream: Stream.Stream<A, E, R>) =>
+  Stream.unwrap(
+    Effect.map(Deferred.make<boolean>(), (first) =>
+      stream.pipe(
+        Stream.tap(() => Deferred.succeed(first, true)),
+        Stream.interruptWhen(
+          Effect.andThen(Deferred.await(first), Effect.sleep(30))
+        )
+      )
+    )
+  );
 
 /** The id `gameViewport` renders, read from the rendered tree rather than assumed. */
 const renderedViewportId = (): string => {
@@ -289,9 +306,9 @@ describe(engineEntry, () => {
   it("sends onError's Message once when the engine can't make its view, and doesn't fail", async () => {
     const { engine } = testEngine({ noWebGl: true });
     const messages = await Effect.runPromise(
-      Stream.runCollect(
-        streamFor(mounted).pipe(Stream.interruptWhen(Effect.sleep(30)))
-      ).pipe(Effect.provideService(TestEngine, engine))
+      Stream.runCollect(throughFirstMessage(streamFor(mounted))).pipe(
+        Effect.provideService(TestEngine, engine)
+      )
     );
     expect(messages).toStrictEqual([
       Message.FailedToLoad({ error: "no WebGL" }),
@@ -303,9 +320,7 @@ describe(engineEntry, () => {
     const messages = await Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
-          Stream.runCollect(
-            streamFor(mounted).pipe(Stream.interruptWhen(Effect.sleep(30)))
-          )
+          Stream.runCollect(throughFirstMessage(streamFor(mounted)))
         );
         yield* waitUntil(() => log.length > 0);
         frames.runFrameAt(16);
