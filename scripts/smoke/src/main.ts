@@ -8,7 +8,7 @@ import type { AttachableEngine } from "@arcadekit/foldkit";
 import { InputController, MOVE_AXES } from "@arcadekit/input";
 import { createMemoryNetwork, hostLockstep, jsonCodec } from "@arcadekit/net";
 import type { LockstepSession } from "@arcadekit/net";
-import type { SignallingOptions } from "@arcadekit/net/browser";
+import type { RoomOptions } from "@arcadekit/net/browser";
 import {
   InstancedSprites,
   Stage,
@@ -156,7 +156,7 @@ const session: LockstepSession<Dots, DotsEvent> = hostLockstep(
 session.tick(16);
 session.dispose();
 
-const signalling: Partial<SignallingOptions> = {};
+const signalling: Partial<RoomOptions> = {};
 console.log(signalling);
 
 Effect.runFork(

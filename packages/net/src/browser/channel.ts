@@ -1,3 +1,6 @@
+import { Data } from "effect";
+import type { Effect } from "effect";
+
 import type { PeerId, Transport } from "../transport";
 
 /**
@@ -12,7 +15,10 @@ export interface TextChannel {
    * first listener also gets, at once, what arrived before anything listened.
    */
   readonly listen: (handler: (text: string) => void) => () => void;
-  /** Calls `handler` once when the channel closes, until the returned function is called. */
+  /**
+   * Calls `handler` once when the channel closes, until the returned function is called: at once,
+   * if it has already closed.
+   */
   readonly onClose: (handler: () => void) => () => void;
   readonly isOpen: () => boolean;
 }
@@ -22,13 +28,50 @@ export interface TextChannel {
  * unreliable and unordered, for a lockstep session's `Transport` (`linksTransport`), which
  * resends what isn't acknowledged on every tick; `messages` is reliable and ordered, for what
  * the app says around a run (a lobby's hero picks and its start).
+ *
+ * The scope `PeerConnector.connect` ran in owns the link: closing that scope closes both
+ * channels and the connection.
  */
 export interface PeerLink {
   readonly peer: PeerId;
   readonly lockstep: TextChannel;
   readonly messages: TextChannel;
-  /** Closes both channels and the connection. */
+  /**
+   * Succeeds once the link has closed: either channel closed, the connection failed, or the scope
+   * that owns the link closed. Never fails.
+   */
+  readonly closed: Effect.Effect<void>;
+}
+
+// Named so the type files can be made one file at a time (isolatedDeclarations).
+const PeerLinkErrorBase: ReturnType<typeof Data.TaggedError<"PeerLinkError">> =
+  Data.TaggedError("PeerLinkError");
+
+/**
+ * A peer link that couldn't be made: setting it up threw (`setup`), ICE failed (`failed`), or its
+ * channels didn't open in time (`timeout`). `message` says why, for a player.
+ */
+export class PeerLinkError extends PeerLinkErrorBase<{
+  readonly peer: PeerId;
+  readonly reason: "setup" | "failed" | "timeout";
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
+/** The part of an `RTCDataChannel` this module uses, so tests can pass a fake. */
+export interface DataChannelLike {
+  readonly readyState: RTCDataChannelState;
+  readonly send: (text: string) => void;
   readonly close: () => void;
+  readonly addEventListener: (
+    type: "open" | "close" | "message",
+    listener: (event: { readonly data?: unknown }) => void,
+    options?: { readonly once?: boolean }
+  ) => void;
+  readonly removeEventListener: (
+    type: "open" | "close" | "message",
+    listener: (event: { readonly data?: unknown }) => void
+  ) => void;
 }
 
 /**
@@ -69,10 +112,10 @@ export const linksTransport = (
  * message the other side sends as soon as its end opens isn't lost before this side's code
  * gets to listen.
  */
-export const dataChannelText = (channel: RTCDataChannel): TextChannel => {
+export const dataChannelText = (channel: DataChannelLike): TextChannel => {
   const handlers = new Set<(text: string) => void>();
   let early: string[] | null = [];
-  channel.addEventListener("message", (event: MessageEvent<unknown>) => {
+  channel.addEventListener("message", (event) => {
     if (typeof event.data !== "string") {
       return;
     }
@@ -108,8 +151,18 @@ export const dataChannelText = (channel: RTCDataChannel): TextChannel => {
       return () => handlers.delete(handler);
     },
     onClose: (handler) => {
-      const onClose = () => handler();
+      // A channel that has closed fires no other close event, but one still queued may follow.
+      let fired = false;
+      const onClose = () => {
+        if (!fired) {
+          fired = true;
+          handler();
+        }
+      };
       channel.addEventListener("close", onClose, { once: true });
+      if (channel.readyState === "closed") {
+        onClose();
+      }
       return () => channel.removeEventListener("close", onClose);
     },
     isOpen: () => channel.readyState === "open",

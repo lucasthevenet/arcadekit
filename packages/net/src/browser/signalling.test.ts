@@ -1,130 +1,242 @@
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Queue,
+  Scope,
+  Stream,
+} from "effect";
+import { Socket } from "effect/socket";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
 import type { Signal } from "../signalling/protocol";
+import { PeerLinkError } from "./channel";
 import type { PeerLink, TextChannel } from "./channel";
-import type { ConnectPeerOptions } from "./rtc";
+import { RoomError } from "./errors";
+import { PeerConnector } from "./rtc";
+import type { PeerConnectorApi, PeerLinkOptions } from "./rtc";
 import { hostRoom, joinRoom } from "./signalling";
-import type {
-  RoomEvent,
-  SignallingRoom,
-  SignallingSocketHandlers,
-} from "./signalling";
+import type { RoomEvent, SignallingRoom } from "./signalling";
 
-// The signalling client's state machine, in Node: a fake socket stands in for the worker and a
-// fake ConnectPeer for WebRTC, so each test says what the worker and the peers do, and checks
-// what the room sends and reports.
+// The room's Effect shell, in Node, on a TestClock: a fake WebSocket stands in for the worker and
+// a fake PeerConnector for WebRTC. The room's rules are tested in room-state.test.ts; these check
+// that the shell carries them out: what it opens, sends and reports, and what it closes when.
 
-const fakeChannel = () => {
-  const handlers = new Set<(text: string) => void>();
-  const closers = new Set<() => void>();
-  let open = true;
-  const channel: TextChannel = {
-    send: () => {},
-    listen: (handler) => {
-      handlers.add(handler);
-      return () => handlers.delete(handler);
-    },
-    onClose: (handler) => {
-      closers.add(handler);
-      return () => closers.delete(handler);
-    },
-    isOpen: () => open,
-  };
-  const close = () => {
-    if (open) {
-      open = false;
-      for (const closer of closers) {
-        closer();
-      }
+type SocketListener = (event: Socket.WebSocketEvent) => void;
+
+const fakeSocket = () => {
+  const listeners = new Map<string, Set<SocketListener>>();
+  const sent: unknown[] = [];
+  let closedWith: number | undefined;
+  const fire = (type: string, event: Socket.WebSocketEvent) => {
+    for (const listener of listeners.get(type) ?? []) {
+      listener(event);
     }
   };
-  return { channel, close };
-};
-
-interface FakePeer {
-  readonly options: ConnectPeerOptions;
-  readonly received: Signal[];
-  closed: boolean;
-  /** The data channels open. */
-  readonly open: () => PeerLink;
-}
-
-const offer: Signal = { kind: "offer", sdp: "v=0 offer" };
-const answer: Signal = { kind: "answer", sdp: "v=0 answer" };
-
-const setup = (
-  role: "host" | "guest",
-  code = "k7mq2x",
-  connectThrows = false
-) => {
-  const sent: unknown[] = [];
-  const peers: FakePeer[] = [];
-  const events: RoomEvent[] = [];
-  const urls: string[] = [];
-  let handlers: SignallingSocketHandlers | undefined;
-  let socketClosed = false;
-  const options = {
-    url: "ws://signal.test/",
-    openSocket: (url: string, socketHandlers: SignallingSocketHandlers) => {
-      urls.push(url);
-      handlers = socketHandlers;
-      return {
-        send: (text: string) => sent.push(JSON.parse(text)),
-        close: () => {
-          socketClosed = true;
-        },
-      };
-    },
-    connectPeer: (peerOptions: ConnectPeerOptions) => {
-      if (connectThrows) {
-        throw new SyntaxError("stun.example is not a valid stun or turn URL");
+  const ws: Socket.WebSocketLike & { readyState: number } = {
+    readyState: 0,
+    addEventListener: (type, listener, options) => {
+      if (!listeners.has(type)) {
+        listeners.set(type, new Set());
       }
-      const lockstep = fakeChannel();
-      const messages = fakeChannel();
-      const peer: FakePeer = {
-        options: peerOptions,
-        received: [],
-        closed: false,
-        open: () => {
-          const link: PeerLink = {
-            peer: peerOptions.peer,
-            lockstep: lockstep.channel,
-            messages: messages.channel,
-            close: () => {
-              lockstep.close();
-              messages.close();
-            },
-          };
-          peerOptions.onOpen(link);
-          return link;
-        },
+      const once: SocketListener = (event) => {
+        listeners.get(type)!.delete(once);
+        listener(event);
       };
-      peers.push(peer);
-      return {
-        receive: (signal: Signal) => peer.received.push(signal),
-        close: () => {
-          peer.closed = true;
-        },
-      };
+      listeners.get(type)!.add(options?.once === true ? once : listener);
     },
-  };
-  const room: SignallingRoom =
-    role === "host" ? hostRoom(options) : joinRoom(options, code);
-  room.subscribe((event) => events.push(event));
-  const server = (message: unknown) => {
-    handlers!.message(JSON.stringify(message));
+    removeEventListener: (type, listener) => {
+      listeners.get(type)?.delete(listener);
+    },
+    close: (code) => {
+      ws.readyState = 3;
+      closedWith ??= code;
+    },
+    send: (data) => {
+      sent.push(JSON.parse(String(data)));
+    },
   };
   return {
-    room,
+    ws,
     sent,
-    peers,
-    events,
-    urls,
-    server,
-    open: () => handlers!.open(),
-    dropSocket: () => handlers!.close(),
-    socketClosed: () => socketClosed,
+    closedWith: () => closedWith,
+    open: () => {
+      ws.readyState = 1;
+      fire("open", {});
+    },
+    server: (message: unknown) =>
+      fire("message", {
+        data: typeof message === "string" ? message : JSON.stringify(message),
+      }),
+    /** The worker or the network closed it. */
+    drop: (code = 1006) => {
+      ws.readyState = 3;
+      fire("close", { code, reason: "" });
+    },
   };
+};
+
+const fakeChannel = (): TextChannel => ({
+  send: () => {},
+  listen: () => () => {},
+  onClose: () => () => {},
+  isOpen: () => true,
+});
+
+interface FakePeer {
+  readonly options: PeerLinkOptions;
+  readonly received: Signal[];
+  /** Whether the scope `connect` ran in has closed. */
+  released: boolean;
+  /** Its channels open. */
+  readonly open: () => PeerLink;
+  /** Its link closes, or its connection fails, after it opened. */
+  readonly close: () => void;
+  /** It can't connect. */
+  readonly fail: (message: string) => void;
+}
+
+const fakeConnector = () => {
+  const peers: FakePeer[] = [];
+  const api: PeerConnectorApi = {
+    connect: (options) =>
+      Effect.gen(function* () {
+        const opened = yield* Deferred.make<PeerLink, PeerLinkError>();
+        const closed = yield* Deferred.make<undefined>();
+        const peer: FakePeer = {
+          options,
+          received: [],
+          released: false,
+          open: () => {
+            const link: PeerLink = {
+              peer: options.peer,
+              lockstep: fakeChannel(),
+              messages: fakeChannel(),
+              closed: Deferred.await(closed),
+            };
+            Deferred.doneUnsafe(opened, Effect.succeed(link));
+            return link;
+          },
+          close: () => Deferred.doneUnsafe(closed, Effect.undefined),
+          fail: (message) =>
+            Deferred.doneUnsafe(
+              opened,
+              Effect.fail(
+                new PeerLinkError({
+                  peer: options.peer,
+                  reason: "failed",
+                  message,
+                })
+              )
+            ),
+        };
+        peers.push(peer);
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            peer.released = true;
+          })
+        );
+        yield* Effect.forkScoped(
+          Effect.forever(
+            Queue.take(options.signals).pipe(
+              Effect.map((signal) => peer.received.push(signal))
+            )
+          )
+        );
+        return yield* Deferred.await(opened);
+      }),
+  };
+  return { api, peers };
+};
+
+const play = <A, E>(effect: Effect.Effect<A, E>) =>
+  Effect.runPromiseExit(effect.pipe(Effect.provide(TestClock.layer())));
+
+/** Lets the room's fibers run. */
+const settle = Effect.gen(function* () {
+  for (let i = 0; i < 10; i++) {
+    yield* Effect.yieldNow;
+  }
+});
+
+/**
+ * A room being opened, in a scope the test closes, with a fake worker and fake peers. `socket()`
+ * is the latest socket the room made.
+ */
+const opening = (
+  role: "host" | "guest",
+  code = "k7mq2x",
+  /** The WebSocket constructor throws, as it does on a malformed URL. */
+  throws = false
+) =>
+  Effect.gen(function* () {
+    const sockets: ReturnType<typeof fakeSocket>[] = [];
+    const urls: string[] = [];
+    const connector = fakeConnector();
+    const layer = Layer.mergeAll(
+      Layer.succeed(Socket.WebSocketConstructor, (url: string) => {
+        urls.push(url);
+        if (throws) {
+          throw new SyntaxError(`${url} is not a valid URL`);
+        }
+        const made = fakeSocket();
+        sockets.push(made);
+        return made.ws;
+      }),
+      Layer.succeed(PeerConnector, connector.api)
+    );
+    const options = { url: "ws://signal.test/" };
+    const scope = yield* Scope.make();
+    const fiber = yield* Effect.forkChild(
+      (role === "host" ? hostRoom(options) : joinRoom(options, code)).pipe(
+        Effect.provide(layer),
+        Scope.provide(scope)
+      )
+    );
+    yield* settle;
+    return {
+      scope,
+      fiber,
+      urls,
+      sockets,
+      socket: () => sockets.at(-1)!,
+      peers: connector.peers,
+    };
+  });
+
+/** Reads the room's events as they come, until the stream ends or fails. */
+const watching = (room: SignallingRoom) =>
+  Effect.gen(function* () {
+    const seen: string[] = [];
+    const reading = yield* Effect.forkChild(
+      Stream.runForEach(room.events, (event) =>
+        Effect.sync(() => seen.push(summary(event)))
+      )
+    );
+    return { seen, reading };
+  });
+
+/** An event as a test compares it: its type, with the peer and the reason where there are ones. */
+const summary = (event: RoomEvent) =>
+  [
+    event.type,
+    "peer" in event ? event.peer : undefined,
+    "reason" in event ? event.reason : undefined,
+  ]
+    .filter((part) => part !== undefined)
+    .join(" ");
+
+const roomFailure = (exit: Exit.Exit<unknown, unknown>) => {
+  if (Exit.isSuccess(exit)) {
+    return "succeeded";
+  }
+  const error = exit.cause.reasons.find((reason) => reason._tag === "Fail");
+  return error?._tag === "Fail" && error.error instanceof RoomError
+    ? { reason: error.error.reason, message: error.error.message }
+    : String(exit);
 };
 
 const welcomeHost = {
@@ -135,265 +247,447 @@ const welcomeHost = {
   peers: [],
 };
 
-/** Event types, with the peer where there is one: what a test compares. */
-const summary = (events: readonly RoomEvent[]) =>
-  events.map((event) =>
-    "peer" in event ? `${event.type} ${event.peer}` : event.type
-  );
+const welcomeGuest = {
+  type: "welcome",
+  code: "K7MQ2X",
+  self: "guest-1",
+  host: "host",
+  peers: ["host"],
+};
+
+const answer: Signal = { kind: "answer", sdp: "v=0 answer" };
+const offer: Signal = { kind: "offer", sdp: "v=0 offer" };
 
 describe("hosting a room", () => {
-  it("opens /host, links to each guest that joins, and starts", () => {
-    const t = setup("host");
-    t.open();
-    t.server(welcomeHost);
-    expect([t.urls, t.room.status, t.room.code, t.room.self]).toStrictEqual([
-      ["ws://signal.test/host"],
-      "open",
-      "K7MQ2X",
-      "host",
-    ]);
+  it("opens /host, succeeds on the welcome, links each guest and starts, keeping the links", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("host");
+        t.socket().open();
+        yield* settle;
+        const beforeWelcome = t.fiber.pollUnsafe();
+        t.socket().server(welcomeHost);
+        const room = yield* Fiber.join(t.fiber);
+        const { seen, reading } = yield* watching(room);
 
-    t.server({ type: "peer-joined", peer: "guest-1" });
-    const [guest] = t.peers;
-    // The host's signals go to that guest through the worker, and the guest's come back to it.
-    guest!.options.sendSignal(offer);
-    t.server({ type: "signal", from: "guest-1", signal: answer });
-    expect([
-      guest!.options.peer,
-      guest!.options.initiator,
-      guest!.received,
-    ]).toStrictEqual(["guest-1", true, [answer]]);
-
-    const link = guest!.open();
-    const linksBefore = t.room.links();
-    t.room.start();
-    t.server({ type: "started" });
-    expect(t.sent).toStrictEqual([
-      { type: "signal", to: "guest-1", signal: offer },
-      { type: "start" },
-    ]);
-    // The run keeps its links once the socket is gone.
-    expect([
-      linksBefore,
-      t.room.status,
-      t.socketClosed(),
-      t.room.links(),
-    ]).toStrictEqual([[link], "started", true, [link]]);
-    expect(summary(t.events)).toStrictEqual([
-      "welcome",
-      "peer-joined guest-1",
-      "peer-connected guest-1",
-      "started",
-    ]);
-  });
-
-  it("drops a guest that leaves, fails to connect, or isn't connected at the start", () => {
-    const t = setup("host");
-    t.open();
-    t.server(welcomeHost);
-    for (const peer of ["guest-1", "guest-2", "guest-3"]) {
-      t.server({ type: "peer-joined", peer });
-    }
-    const [one, two, three] = t.peers;
-    one!.open();
-    t.server({ type: "peer-left", peer: "guest-1" });
-    two!.options.onFail("ICE failed");
-    t.server({ type: "started" });
-    expect(t.room.links()).toStrictEqual([]);
-    expect(three!.closed).toBe(true);
-    expect(t.events.slice(5)).toStrictEqual([
-      { type: "peer-left", peer: "guest-1" },
-      { type: "peer-left", peer: "guest-2", reason: "ICE failed" },
-      {
-        type: "peer-left",
-        peer: "guest-3",
-        reason: "not connected at the start",
-      },
-      { type: "started" },
-    ]);
-  });
-
-  it("treats a link that closes before the start as a guest that left", () => {
-    const t = setup("host");
-    t.open();
-    t.server(welcomeHost);
-    t.server({ type: "peer-joined", peer: "guest-1" });
-    t.peers[0]!.open().close();
-    expect(t.room.links()).toStrictEqual([]);
-    expect(t.events.at(-1)).toStrictEqual({
-      type: "peer-left",
-      peer: "guest-1",
+        t.socket().server({ type: "peer-joined", peer: "guest-1" });
+        yield* settle;
+        const [guest] = t.peers;
+        // The host's signals go to that guest through the worker, and the guest's come back to it.
+        guest!.options.sendSignal(offer);
+        t.socket().server({ type: "signal", from: "guest-1", signal: answer });
+        yield* settle;
+        const link = guest!.open();
+        yield* settle;
+        yield* room.start;
+        yield* settle;
+        t.socket().server({ type: "started" });
+        const ended = yield* Fiber.await(reading);
+        const result = {
+          beforeWelcome,
+          room: [room.role, room.code, room.self, room.host],
+          urls: t.urls,
+          guest: [
+            guest!.options.peer,
+            guest!.options.initiator,
+            guest!.received,
+          ],
+          sent: t.socket().sent,
+          seen,
+          ended: Exit.isSuccess(ended),
+          // The run keeps its links once the socket is gone.
+          closedWith: t.socket().closedWith(),
+          links: room.links(),
+          kept: !guest!.released,
+          link,
+        };
+        yield* Scope.close(t.scope, Exit.void);
+        return { ...result, releasedAfter: guest!.released };
+      })
+    );
+    expect(Exit.isSuccess(exit) && exit.value).toStrictEqual({
+      beforeWelcome: undefined,
+      room: ["host", "K7MQ2X", "host", "host"],
+      urls: ["ws://signal.test/host"],
+      guest: ["guest-1", true, [answer]],
+      sent: [
+        { type: "signal", to: "guest-1", signal: offer },
+        { type: "start" },
+      ],
+      seen: ["peer-joined guest-1", "peer-connected guest-1", "started"],
+      ended: true,
+      closedWith: 1000,
+      links: [Exit.isSuccess(exit) && exit.value.link],
+      kept: true,
+      link: Exit.isSuccess(exit) && exit.value.link,
+      releasedAfter: true,
     });
   });
-});
 
-describe("a peer connection that can't be made at all", () => {
-  it("drops the guest on the host, and fails the room on a guest", () => {
-    const reason =
-      "WebRTC setup with guest-1 failed: stun.example is not a valid stun or turn URL";
-    const host = setup("host", undefined, true);
-    host.open();
-    host.server(welcomeHost);
-    host.server({ type: "peer-joined", peer: "guest-1" });
-    expect(host.events.slice(1)).toStrictEqual([
-      { type: "peer-joined", peer: "guest-1" },
-      { type: "peer-left", peer: "guest-1", reason },
-    ]);
-    expect(host.room.status).toBe("open");
-
-    const guest = setup("guest", "k7mq2x", true);
-    guest.open();
-    guest.server({
-      type: "welcome",
-      code: "K7MQ2X",
-      self: "guest-1",
-      host: "host",
-      peers: ["host"],
+  it("drops a guest that leaves, whose link closes, or that isn't connected at the start", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("host");
+        t.socket().open();
+        t.socket().server(welcomeHost);
+        const room = yield* Fiber.join(t.fiber);
+        const { seen, reading } = yield* watching(room);
+        for (const peer of ["guest-1", "guest-2", "guest-3"]) {
+          t.socket().server({ type: "peer-joined", peer });
+        }
+        yield* settle;
+        const [one, two, three] = t.peers;
+        one!.open();
+        two!.open();
+        yield* settle;
+        t.socket().server({ type: "peer-left", peer: "guest-1" });
+        // guest-2's connection fails after it opened, before the start.
+        two!.close();
+        yield* settle;
+        t.socket().server({ type: "started" });
+        yield* Fiber.await(reading);
+        return {
+          seen,
+          released: t.peers.map((peer) => peer.released),
+          links: room.links(),
+          three: three!.options.peer,
+        };
+      })
+    );
+    expect(Exit.isSuccess(exit) && exit.value).toStrictEqual({
+      seen: [
+        "peer-joined guest-1",
+        "peer-joined guest-2",
+        "peer-joined guest-3",
+        "peer-connected guest-1",
+        "peer-connected guest-2",
+        "peer-left guest-1",
+        "peer-left guest-2",
+        "peer-left guest-3 not connected at the start",
+        "started",
+      ],
+      released: [true, true, true],
+      links: [],
+      three: "guest-3",
     });
-    expect([guest.room.status, guest.events.at(-1)]).toStrictEqual([
-      "failed",
-      {
-        type: "failed",
-        reason: "peer-failed",
-        message:
-          "WebRTC setup with host failed: stun.example is not a valid stun or turn URL",
-      },
-    ]);
-    expect(guest.socketClosed()).toBe(true);
+  });
+
+  it("keeps the events until they are read", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("host");
+        t.socket().open();
+        t.socket().server(welcomeHost);
+        t.socket().server({ type: "peer-joined", peer: "guest-1" });
+        t.socket().server({ type: "started" });
+        const room = yield* Fiber.join(t.fiber);
+        yield* settle;
+        return (yield* Stream.runCollect(room.events)).map(summary);
+      })
+    );
+    expect(exit).toStrictEqual(
+      Exit.succeed([
+        "peer-joined guest-1",
+        "peer-left guest-1 not connected at the start",
+        "started",
+      ])
+    );
+  });
+
+  it("closes the socket and every peer when its scope closes", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("host");
+        t.socket().open();
+        t.socket().server(welcomeHost);
+        yield* Fiber.join(t.fiber);
+        t.socket().server({ type: "peer-joined", peer: "guest-1" });
+        t.socket().server({ type: "peer-joined", peer: "guest-2" });
+        yield* settle;
+        t.peers[0]!.open();
+        yield* settle;
+        yield* Scope.close(t.scope, Exit.void);
+        return [t.socket().closedWith(), t.peers.map((peer) => peer.released)];
+      })
+    );
+    expect(exit).toStrictEqual(Exit.succeed([1000, [true, true]]));
+  });
+
+  it("interrupts a reader of its events outside the scope when the scope closes", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("host");
+        t.socket().open();
+        t.socket().server(welcomeHost);
+        const room = yield* Fiber.join(t.fiber);
+        const reading = yield* Effect.forkDetach(Stream.runDrain(room.events));
+        yield* settle;
+        yield* Scope.close(t.scope, Exit.void);
+        yield* settle;
+        const read = reading.pollUnsafe();
+        return read !== undefined && Exit.hasInterrupts(read);
+      })
+    );
+    expect(exit).toStrictEqual(Exit.succeed(true));
   });
 });
 
 describe("joining a room", () => {
-  it("opens /join/<code>, answers the host and starts with it", () => {
-    const t = setup("guest", " k7mq2x ");
-    t.open();
-    t.server({
-      type: "welcome",
-      code: "K7MQ2X",
-      self: "guest-1",
-      host: "host",
-      peers: ["host"],
-    });
-    const [host] = t.peers;
-    expect([t.urls, host!.options.peer, host!.options.initiator]).toStrictEqual(
-      [["ws://signal.test/join/K7MQ2X"], "host", false]
+  it("opens /join/<code>, answers the host and starts with it", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("guest", " k7mq2x ");
+        t.socket().open();
+        t.socket().server(welcomeGuest);
+        const room = yield* Fiber.join(t.fiber);
+        const { seen, reading } = yield* watching(room);
+        yield* settle;
+        const [host] = t.peers;
+        t.socket().server({ type: "signal", from: "host", signal: offer });
+        host!.options.sendSignal(answer);
+        yield* settle;
+        host!.open();
+        yield* settle;
+        // A guest can't start the run.
+        yield* room.start;
+        yield* settle;
+        t.socket().server({ type: "started" });
+        yield* Fiber.await(reading);
+        return {
+          urls: t.urls,
+          room: [room.role, room.self, room.host],
+          host: [host!.options.peer, host!.options.initiator, host!.received],
+          sent: t.socket().sent,
+          seen,
+          links: room.links().length,
+        };
+      })
     );
-    t.server({ type: "signal", from: "host", signal: offer });
-    host!.options.sendSignal(answer);
-    expect(host!.received).toStrictEqual([offer]);
-    host!.open();
-    // A guest can't start the run.
-    t.room.start();
-    expect(t.sent).toStrictEqual([
-      { type: "signal", to: "host", signal: answer },
-    ]);
-    t.server({ type: "started" });
-    expect(summary(t.events)).toStrictEqual([
-      "welcome",
-      "peer-connected host",
-      "started",
-    ]);
-    expect([t.room.status, t.room.self, t.room.links().length]).toStrictEqual([
-      "started",
-      "guest-1",
-      1,
+    expect(Exit.isSuccess(exit) && exit.value).toStrictEqual({
+      urls: ["ws://signal.test/join/K7MQ2X"],
+      room: ["guest", "guest-1", "host"],
+      host: ["host", false, [offer]],
+      sent: [{ type: "signal", to: "host", signal: answer }],
+      seen: ["peer-connected host", "started"],
+      links: 1,
+    });
+  });
+
+  it("fails without a socket when the code can't be one", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("guest", "K7MQ");
+        return [yield* Fiber.await(t.fiber), t.urls] as const;
+      })
+    );
+    const [opened, urls] = Exit.isSuccess(exit) ? exit.value : [];
+    expect([roomFailure(opened!), urls]).toStrictEqual([
+      { reason: "bad-code", message: "A join code is 6 letters and digits." },
+      [],
     ]);
   });
 
-  it("fails clearly when the worker refuses, can't be reached, drops or the host can't be reached", async () => {
-    const refused = setup("guest");
-    refused.open();
-    refused.server({ type: "error", reason: "unknown-code" });
-
-    const unreachable = setup("guest");
-    unreachable.dropSocket();
-
-    const lost = setup("guest");
-    lost.open();
-    lost.server({
-      type: "welcome",
-      code: "K7MQ2X",
-      self: "guest-1",
-      host: "host",
-      peers: ["host"],
-    });
-    lost.dropSocket();
-
-    const noHost = setup("guest");
-    noHost.open();
-    noHost.server({
-      type: "welcome",
-      code: "K7MQ2X",
-      self: "guest-1",
-      host: "host",
-      peers: ["host"],
-    });
-    noHost.peers[0]!.options.onFail("ICE failed");
-
-    const badCode = setup("guest", "K7MQ");
-    await Promise.resolve();
-
-    const failures = [refused, unreachable, lost, noHost, badCode].map((t) => [
-      t.room.status,
-      t.events.at(-1),
-    ]);
-    expect(failures).toStrictEqual([
+  it("fails clearly when the worker can't be reached, refuses or drops", async () => {
+    const outcomes = await Promise.all(
+      (["throws", "never opens", "refused", "closed"] as const).map((how) =>
+        play(
+          Effect.gen(function* () {
+            const t = yield* opening("guest", "k7mq2x", how === "throws");
+            switch (how) {
+              case "never opens": {
+                yield* TestClock.adjust("10 seconds");
+                break;
+              }
+              case "refused": {
+                t.socket().open();
+                t.socket().server({ type: "error", reason: "unknown-code" });
+                t.socket().drop(1000);
+                break;
+              }
+              case "closed": {
+                t.socket().open();
+                yield* settle;
+                t.socket().drop();
+                break;
+              }
+            }
+            const opened = yield* Fiber.await(t.fiber);
+            return [how, roomFailure(opened), t.sockets[0]?.closedWith()];
+          })
+        )
+      )
+    );
+    const unreachable = {
+      reason: "unreachable",
+      message: "Couldn't reach the signalling server at ws://signal.test.",
+    };
+    expect(
+      outcomes.map((exit) => (Exit.isSuccess(exit) ? exit.value : exit))
+    ).toStrictEqual([
+      ["throws", unreachable, undefined],
+      ["never opens", unreachable, 1000],
       [
-        "failed",
+        "refused",
         {
-          type: "failed",
           reason: "unknown-code",
           message:
             "No room has that code. Check it, or ask the host for a new one.",
         },
+        1000,
       ],
       [
-        "failed",
+        "closed",
         {
-          type: "failed",
-          reason: "unreachable",
-          message: "Couldn't reach the signalling server at ws://signal.test.",
-        },
-      ],
-      [
-        "failed",
-        {
-          type: "failed",
           reason: "lost",
           message: "Lost the connection to the signalling server.",
         },
-      ],
-      [
-        "failed",
-        { type: "failed", reason: "peer-failed", message: "ICE failed" },
-      ],
-      [
-        "failed",
-        {
-          type: "failed",
-          reason: "bad-code",
-          message: "A join code is 6 letters and digits.",
-        },
+        1000,
       ],
     ]);
-    expect(badCode.urls).toStrictEqual([]);
-    expect(noHost.peers[0]!.closed).toBe(true);
   });
 
-  it("refuses to play a run that started before its link to the host opened", () => {
-    const t = setup("guest");
-    t.open();
-    t.server({
-      type: "welcome",
-      code: "K7MQ2X",
-      self: "guest-1",
-      host: "host",
-      peers: ["host"],
-    });
-    t.server({ type: "started" });
-    expect(t.events.at(-1)).toMatchObject({
-      type: "failed",
-      reason: "started",
-    });
+  it("fails the room, closing the socket, when the link to the host can't be made or closes before the start", async () => {
+    const outcomes = await Promise.all(
+      (["can't connect", "closes"] as const).map((how) =>
+        play(
+          Effect.gen(function* () {
+            const t = yield* opening("guest");
+            t.socket().open();
+            t.socket().server(welcomeGuest);
+            const room = yield* Fiber.join(t.fiber);
+            const { seen, reading } = yield* watching(room);
+            yield* settle;
+            const [host] = t.peers;
+            if (how === "can't connect") {
+              host!.fail("ICE failed");
+            } else {
+              host!.open();
+              yield* settle;
+              host!.close();
+            }
+            const ended = yield* Fiber.await(reading);
+            return {
+              seen,
+              failure: roomFailure(ended),
+              closedWith: t.socket().closedWith(),
+              released: host!.released,
+              links: room.links(),
+            };
+          })
+        )
+      )
+    );
+    expect(
+      outcomes.map((exit) => (Exit.isSuccess(exit) ? exit.value : exit))
+    ).toStrictEqual([
+      {
+        seen: [],
+        failure: { reason: "peer-failed", message: "ICE failed" },
+        closedWith: 1000,
+        released: true,
+        links: [],
+      },
+      {
+        seen: ["peer-connected host"],
+        failure: { reason: "peer-failed", message: "The host left." },
+        closedWith: 1000,
+        released: true,
+        links: [],
+      },
+    ]);
+  });
+
+  it("fails the events when the socket drops after the welcome, closing every peer", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("guest");
+        t.socket().open();
+        t.socket().server(welcomeGuest);
+        const room = yield* Fiber.join(t.fiber);
+        yield* settle;
+        t.peers[0]!.open();
+        yield* settle;
+        t.socket().drop();
+        const events = yield* Effect.exit(Stream.runCollect(room.events));
+        return [
+          roomFailure(events),
+          Exit.isFailure(events) ? [] : events.value.map(summary),
+          t.peers[0]!.released,
+        ];
+      })
+    );
+    expect(exit).toStrictEqual(
+      Exit.succeed([
+        {
+          reason: "lost",
+          message: "Lost the connection to the signalling server.",
+        },
+        [],
+        true,
+      ])
+    );
+  });
+});
+
+describe("a worker that doesn't welcome, or speaks another protocol", () => {
+  it("fails with no-welcome when the welcome doesn't come in time after the socket opens", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const slow = yield* opening("host");
+        const silent = yield* opening("host");
+        // The welcome timer starts once the socket is open, not when it is made.
+        yield* TestClock.adjust("6 seconds");
+        slow.socket().open();
+        silent.socket().open();
+        yield* settle;
+        yield* TestClock.adjust("9999 millis");
+        slow.socket().server(welcomeHost);
+        yield* settle;
+        yield* TestClock.adjust("1 millis");
+        return [
+          roomFailure(yield* Fiber.await(slow.fiber)),
+          roomFailure(yield* Fiber.await(silent.fiber)),
+          silent.socket().closedWith(),
+        ];
+      })
+    );
+    expect(exit).toStrictEqual(
+      Exit.succeed([
+        "succeeded",
+        {
+          reason: "no-welcome",
+          message:
+            "The signalling server didn't answer. Try again in a moment.",
+        },
+        1000,
+      ])
+    );
+  });
+
+  it("fails at once with bad-server-message on a welcome it can't read, closing the socket", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("guest");
+        t.socket().open();
+        t.socket().server({ type: "welcome", code: 7, v: 2 });
+        yield* settle;
+        return [
+          roomFailure(yield* Fiber.await(t.fiber)),
+          t.socket().closedWith(),
+          t.peers.length,
+        ];
+      })
+    );
+    expect(exit).toStrictEqual(
+      Exit.succeed([
+        {
+          reason: "bad-server-message",
+          message:
+            "The signalling server speaks another version of the game's protocol. Reload the page.",
+        },
+        1000,
+        0,
+      ])
+    );
   });
 });
