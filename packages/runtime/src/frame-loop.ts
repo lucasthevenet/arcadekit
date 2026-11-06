@@ -13,8 +13,9 @@ const GameCrashedBase: ReturnType<typeof Data.TaggedError<"GameCrashed">> =
 
 /**
  * An attached engine whose frame threw: a step, a render, or a listener of its events. That
- * frame was its last, and the engine detached. `cause` is what was thrown. It is a bug in the
- * game, but the app reports it like an `AttachError` instead of leaving a frozen viewport.
+ * frame was its last: the run ended, and the engine detached. `cause` is what was thrown. It is
+ * a bug in the game, but the app reports it like an `AttachError` instead of leaving a frozen
+ * viewport.
  */
 export class GameCrashed extends GameCrashedBase<{
   readonly message: string;
@@ -27,8 +28,8 @@ export const messageOf = (cause: unknown): string =>
 
 /**
  * An attached engine's frames, until one throws: wait for the next frame from `frames`, then
- * step `loop` by the time since the last one and draw. Interrupted while it waits, it cancels
- * the frame it asked for.
+ * step `loop` by the time since the last one and draw. A frame that throws also ends `loop`'s
+ * run. Interrupted while it waits, it cancels the frame it asked for.
  *
  * Its Effects are made once per attach, not per frame: the frame's time and budget are kept in
  * place, every frame shares one frame callback, and the wait has no canceller of its own (the
@@ -64,7 +65,12 @@ export const frameLoop = <Config, State, Input, Event>(
       loop.frame(input, budget, nowMs);
       view.render(loop.state, nowMs / 1000);
     },
-    catch: (cause) => new GameCrashed({ message: messageOf(cause), cause }),
+    catch: (cause) => {
+      // A crash ends the run: a step that threw left its state half-changed and is still owed
+      // on the clock, so attaching again would run it again on its first frame.
+      loop.stop();
+      return new GameCrashed({ message: messageOf(cause), cause });
+    },
   });
   // Waiting for the frame is the loop's only yield, so `forever` needn't add one.
   return Effect.forever(Effect.andThen(nextFrame, frame), {

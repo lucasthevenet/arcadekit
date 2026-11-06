@@ -4,6 +4,8 @@ status: accepted
 
 # Co-op runs in delay-based lockstep over a host star
 
+> Amended on 2026-11-06: `GameDriver` is gone; `makeGameEngine`'s `attach` is the `requestAnimationFrame` adapter, see the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+
 #25 makes survivors a co-op game for 2 to 4 players in different browsers. The kit already has what lockstep needs: a deterministic step with all randomness from the run's `Rng`, step arithmetic that agrees across JavaScript engines ([ADR-0011](0011-a-step-uses-only-exact-math.md)), one plain input value per step, and a DOM-free `GameLoop` whose `frame(input, { steps }, nowMs)` runs exactly the steps it is given ([ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md)). What was missing is the decision on how peers agree on each step's input, and what happens when they can't.
 
 **Delay-based lockstep.** Each peer sends only its input, never positions or state. Every peer runs step N once it has every player's input for step N, so all runs stay identical. A peer samples its local input for step `N + inputDelay`, a fixed **input delay** of a few steps, so the input usually arrives before step N is due and stepping doesn't stall. The delay is a setting, tuned by measurement; 2 to 6 steps is 33 to 100 ms at 60 Hz. There is no prediction and no rollback: a step whose inputs haven't all arrived waits.

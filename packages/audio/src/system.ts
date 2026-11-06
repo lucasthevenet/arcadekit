@@ -70,7 +70,8 @@ export interface AudioSystem {
    * Fetches and decodes sounds and adds them by id. A file shared by several ids, or asked for
    * by two loads at once, is loaded once, and a file loaded before isn't loaded again.
    * Every sound whose file loads is added; if any file fails, it then fails with the first error.
-   * A file that failed is tried again by the next load that asks for it.
+   * A file that failed, or whose every load was interrupted, is tried again by the next load
+   * that asks for it.
    */
   readonly load: (sounds: SoundList) => Effect.Effect<void, AudioLoadError>;
 }
@@ -113,7 +114,10 @@ export interface AudioOutput {
 
 /** What the mixer needs besides an output. */
 export interface AudioMixerOptions {
-  /** Fetches and decodes one file. The mixer asks for each file once, and again only after it fails. */
+  /**
+   * Fetches and decodes one file. The mixer asks for each file once, and again only after that
+   * fails or after every load waiting on it was interrupted.
+   */
   readonly decode: (file: string) => Effect.Effect<AudioClip, AudioLoadError>;
   /** A number in [0, 1), for jitter. Presentation only, so `Math.random` is fine. */
   readonly random: () => number;

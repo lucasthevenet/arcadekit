@@ -19,6 +19,12 @@ export type Ticker = (onTick: () => void) => () => void;
 const TICK_MS = 4;
 
 /**
+ * How long `run` goes on ticking a session a desync stopped before it fails: each of those ticks
+ * resends the desync, which the transport may lose, and the other peers stop only on hearing it.
+ */
+const DESYNC_RESEND_MS = 1000;
+
+/**
  * A lockstep session its scope owns, made with `hostLockstepScoped` or `joinLockstepScoped`.
  * Closing the scope stops it listening to the transport. Its time is the Effect `Clock` it was
  * made on (a `TestClock` in tests): the start and every tick read it, so they always agree.
@@ -30,12 +36,17 @@ export interface ScopedLockstepSession<State, Event> extends Pick<
   /**
    * Ticks the session on every tick of `ticker`, or every 4 ms of the Clock without one, until it
    * stops: then fails with its `LockstepError` (a desync, a lost host, removal…), and at once if it
-   * has already stopped. Interrupting the run, or its failing, stops the ticker. Run it in the
-   * session's scope: once that closes, the session hears nothing.
+   * has already stopped. After a desync it fails a second after the stop (its `status` and
+   * `error` show the stop at once): until then its ticks resend the desync, which the transport
+   * may lose, so that every peer stops with it. Interrupting the run, or its failing, stops the
+   * ticker. Run it in the session's scope: a run still going once that closes dies on its next
+   * tick, and one started after dies at once.
    *
    * A tick is plain: `onTick` ticks the session before it returns, so a ticker can read the
-   * session right after, or tick before drawing. Dies with what a tick throws (a bug in the
-   * simulation, `combine`, `hash` or the input source).
+   * session right after, or tick before drawing. The run ends after the tick it stops in, once
+   * `onTick` has returned, so the ticker's own code for that tick runs before the program's
+   * handlers and finalizers. Dies with what a tick throws (a bug in the simulation, `combine`,
+   * `hash` or the input source).
    *
    * In the browser, pass a ticker timed by a dedicated worker: a hidden tab throttles the main
    * thread's timers, the Clock's too. The Clock's ticks are for tests and servers.
@@ -67,24 +78,57 @@ export const joinLockstepScoped = <Config, State, Input, Event, PlayerInput>(
 const millis = (clock: Clock.Clock): number =>
   Number(clock.monotonicTimeNanosUnsafe()) / 1_000_000;
 
+/** A session, and whether the scope that owns it has closed. */
+interface Owned<State, Event> {
+  readonly session: LockstepSession<State, Event>;
+  closed: boolean;
+}
+
+/** A run going on after its session's scope closed: a bug in the program that forked it. */
+const ranAfterClose = () =>
+  new Error("A lockstep session ran after its scope closed");
+
 const scoped = <State, Event>(
   open: (nowMs: number) => LockstepSession<State, Event>
 ): Effect.Effect<ScopedLockstepSession<State, Event>, never, Scope.Scope> =>
   Effect.clockWith((clock) =>
     Effect.acquireRelease(
-      Effect.sync(() => open(millis(clock))),
-      (session) => Effect.sync(() => session.dispose())
-    ).pipe(Effect.map((session) => shell(session, clock)))
+      Effect.sync((): Owned<State, Event> => ({
+        session: open(millis(clock)),
+        closed: false,
+      })),
+      (owned) =>
+        Effect.sync(() => {
+          owned.closed = true;
+          owned.session.dispose();
+        })
+    ).pipe(Effect.map((owned) => shell(owned, clock)))
   );
 
 const shell = <State, Event>(
-  session: LockstepSession<State, Event>,
+  owned: Owned<State, Event>,
   clock: Clock.Clock
 ): ScopedLockstepSession<State, Event> => {
-  /** Ticks now on the Clock; the session's error once it has stopped, or null. */
+  const { session } = owned;
+  /** When a desync stopped the session, on the Clock, or null. */
+  let desyncAtMs: number | null = null;
+
+  /**
+   * Ticks now on the Clock; the error the run fails with, or null to go on. A tick of a stopped
+   * session only resends its desync, if it has one. Throws once the session's scope has closed.
+   */
   const tickNow = (): LockstepError | null => {
-    session.tick(millis(clock));
-    return session.error;
+    if (owned.closed) {
+      throw ranAfterClose();
+    }
+    const nowMs = millis(clock);
+    session.tick(nowMs);
+    const { error } = session;
+    if (error === null || error.reason.kind !== "desync") {
+      return error;
+    }
+    desyncAtMs ??= nowMs;
+    return nowMs - desyncAtMs >= DESYNC_RESEND_MS ? error : null;
   };
 
   // Sleeps on the Clock between ticks, so a TestClock drives it.
@@ -111,7 +155,9 @@ const shell = <State, Event>(
         try {
           stop?.();
         } finally {
-          resume(result);
+          // On the scheduler: resumed here, the rest of the program (its handlers, its scopes'
+          // finalizers) would run inside `onTick`, before the ticker's own code for this tick.
+          resume(Effect.andThen(Effect.yieldNow, result));
         }
       };
       const stopTicker = ticker(() => {
@@ -164,6 +210,9 @@ const shell = <State, Event>(
     },
     run: (ticker) =>
       Effect.suspend(() => {
+        if (owned.closed) {
+          return Effect.die(ranAfterClose());
+        }
         if (session.error !== null) {
           return Effect.fail(session.error);
         }
@@ -171,7 +220,9 @@ const shell = <State, Event>(
       }),
     listen: (onEvent) =>
       Effect.acquireRelease(
-        Effect.sync(() => session.subscribe(onEvent)),
+        // A listener of its own: the session's listeners are a set, so another `listen` with the
+        // same callback would otherwise share it, and leaving would remove both.
+        Effect.sync(() => session.subscribe((event) => onEvent(event))),
         (unsubscribe) => Effect.sync(unsubscribe)
       ).pipe(Effect.asVoid),
   };
