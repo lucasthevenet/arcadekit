@@ -1,6 +1,6 @@
 # @arcadekit/net
 
-Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `GameSimulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `@arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the signalling client that turns a join code into peer links, and `linksTransport`), and `@arcadekit/net/signalling` the protocol a signalling server speaks.
+Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `GameSimulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. In an Effect program, `hostLockstepScoped` and `joinLockstepScoped` make the same session, owned by a scope and run on Effect's `Clock` until it fails with its `LockstepError`. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `@arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the signalling client that turns a join code into peer links, and `linksTransport`), and `@arcadekit/net/signalling` the protocol a signalling server speaks.
 
 Part of [arcadekit](https://github.com/lucasthevenet/arcadekit#readme). The root entry is DOM-free.
 
@@ -80,6 +80,88 @@ for (let now = 0; now < 10_000; now += 4) {
 // Every step got both players' input: 1 + 2.
 console.log(host.state?.total === 3 * host.stepIndex); // true
 ```
+
+## In an Effect program
+
+`hostLockstepScoped(options)` and `joinLockstepScoped(options)` take the same options and return `Effect<ScopedLockstepSession, never, Scope>`. Closing the scope stops the session listening to its transport, and so does starting when it throws (the Effect dies with what was thrown). The session's time is Effect's `Clock` (its monotonic time; a `TestClock` in tests): the start and every tick read it.
+
+`session.run(ticker?)` ticks the session until it stops, then fails with its `LockstepError`; interrupting it stops the ticking. After a desync it fails a second after the stop, which `status` and `error` show at once: until then its ticks resend the desync, which the transport may lose, so that every peer stops with it. Run it in the session's scope: a run still going once that closes dies on its next tick. Without a ticker it ticks every 4 ms of the Clock, for tests and servers. A `Ticker` is `(onTick) => stop`: a timer, a dedicated worker's timer (a hidden tab throttles the main thread's to about once a second, which stalls the others), animation frames, or all of those. `onTick` ticks the session before it returns, so the ticker can read the session right after, or tick before drawing, and no Effect runs per tick: the run ends once the `onTick` it stops in has returned, so the rest of that tick runs before the program's handlers and finalizers. `session.listen(onEvent)` hears the run's events and samples until its scope closes, each call on its own, even with the same `onEvent`. Its `status`, `error`, `waitingFor`, `players`, `state` and `stepIndex` are plain reads, as on the plain session.
+
+The example's two peers again, as one Effect program:
+
+```ts
+import {
+  createMemoryNetwork,
+  hostLockstepScoped,
+  joinLockstepScoped,
+  jsonCodec,
+} from "@arcadekit/net";
+import type { ConfirmedStep, Ticker } from "@arcadekit/net";
+import type { GameSimulation } from "@arcadekit/runtime";
+import { Effect } from "effect";
+
+interface State {
+  total: number;
+}
+
+const simulation: GameSimulation<null, State, number, never> = {
+  create: () => ({ total: 0 }),
+  step: (state, input) => {
+    state.total += input;
+  },
+  drainEvents: () => [],
+};
+
+const network = createMemoryNetwork({ seed: 1, latencyMs: 30, jitterMs: 10 });
+const shared = {
+  simulation,
+  config: null,
+  contentHash: "content-v1",
+  codec: jsonCodec<number>(),
+  combine: (step: ConfirmedStep<number>) =>
+    step.inputs.reduce((sum, { input }) => sum + input, 0),
+  hash: (state: State) => state.total,
+  inputDelay: 3,
+  hashEvery: 30,
+};
+
+// A main-thread timer; in the browser, time it in a dedicated worker. The in-memory network
+// delivers what is due when advanced; a WebRTC transport needs nothing of the kind.
+const every4ms: Ticker = (onTick) => {
+  const timer = setInterval(() => {
+    network.advance(performance.now());
+    onTick();
+  }, 4);
+  return () => clearInterval(timer);
+};
+
+const play = Effect.gen(function* () {
+  const host = yield* hostLockstepScoped({
+    ...shared,
+    transport: network.connect("host"),
+    local: { read: () => 1 },
+    peers: ["guest"],
+    seed: 7,
+  });
+  const guest = yield* joinLockstepScoped({
+    ...shared,
+    transport: network.connect("guest"),
+    local: { read: () => 2 },
+    host: "host",
+  });
+  // Neither run succeeds: each ticks until its session stops.
+  yield* Effect.all([host.run(every4ms), guest.run(every4ms)], {
+    concurrency: "unbounded",
+  });
+}).pipe(
+  Effect.catchTag("LockstepError", (error) => Effect.logError(error.message)),
+  Effect.scoped
+);
+
+Effect.runFork(play);
+```
+
+The plain session is the protocol, and the scoped one a shell around it. Test the protocol on plain sessions ticked by hand, as in the example above, and an Effect program's sessions on a `TestClock`.
 
 ## Input codecs
 

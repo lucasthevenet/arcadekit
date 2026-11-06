@@ -93,7 +93,8 @@ export type LockstepStatus = "joining" | "running" | "waiting" | "stopped";
 /**
  * One peer's side of a lockstep run. Drive it with `tick(nowMs)` from a timer, often (every few
  * milliseconds is fine): each tick reads what arrived, steps every due step whose inputs are all
- * confirmed, schedules local input and sends. Time comes only from `nowMs`.
+ * confirmed, schedules local input and sends. Time comes only from `nowMs`. In an Effect
+ * program, `hostLockstepScoped` and `joinLockstepScoped` make one owned by a scope and run it.
  */
 export interface LockstepSession<State, Event> {
   readonly status: LockstepStatus;
@@ -116,7 +117,8 @@ export interface LockstepSession<State, Event> {
 
 /**
  * Starts a run as its host, now: the host is the first player, and `peers` the others. Throws a
- * RangeError for more players than a run holds.
+ * RangeError for more players than a run holds, and what starting throws (the simulation's
+ * `create`, the input source), with nothing left listening.
  */
 export const hostLockstep = <Config, State, Input, Event, PlayerInput>(
   options: HostOptions<Config, State, Input, Event, PlayerInput>,
@@ -128,7 +130,12 @@ export const hostLockstep = <Config, State, Input, Event, PlayerInput>(
     );
   }
   const session = new Session(options, options.transport.self, nowMs);
-  session.startAsHost(options.peers, options.seed, nowMs);
+  try {
+    session.startAsHost(options.peers, options.seed, nowMs);
+  } catch (error) {
+    session.dispose();
+    throw error;
+  }
   return session;
 };
 
