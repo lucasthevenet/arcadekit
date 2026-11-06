@@ -4,6 +4,8 @@ status: accepted
 
 > Amended by [ADR-0012](0012-delay-based-lockstep-over-a-host-star.md) on 2026-11-04: its open questions for #25 are settled. Pause and upgrade picks become step-scheduled inputs, and a lockstep peer's engine drives its device source's `endStep` and `endFrame` when it samples local input.
 
+> Amended on 2026-11-06: `GameDriver` is gone. `makeGameEngine`'s `attach` is the `requestAnimationFrame` adapter now: an Effect that runs the frame loop until interrupted, with `FrameSource` as its frame clock. Each frame steps by `max(0, now - last)` and then draws, and a frame that throws ends the loop and the run with `GameCrashed`.
+
 # A game is a DOM-free simulation and a browser presentation, stepped by one loop
 
 The runtime's step order used to run only inside `GameDriver.attach`'s `requestAnimationFrame` closure: advance the clock, then `read` → `step` → `endStep` per step, `endFrame` once per frame that stepped, flush events, sample, render. And two of `GameDefinition`'s seven fields took the viewport element, so each genre's whole definition lived in `./browser`. No test, Worker or server could run a game the way the demo does. Five test files re-wrote the loop by hand without `endStep`, `endFrame` or samples, and neither genre's definition ran in any test (#28).

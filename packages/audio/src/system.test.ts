@@ -1,8 +1,15 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Fiber } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { AudioLoadError, makeAudioMixer, silentAudio } from "./index";
-import type { AudioClip, AudioGain, AudioOutput, SoundList } from "./index";
+import type {
+  AudioClip,
+  AudioGain,
+  AudioMixer,
+  AudioMixerOptions,
+  AudioOutput,
+  SoundList,
+} from "./index";
 
 // The mixer runs against a fake output: gains keep the value they ramp to, voices remember
 // when they were told to stop, and the clock moves only when a test moves it.
@@ -84,6 +91,13 @@ const clipOf = (file: string): AudioClip => ({
   duration: file.includes("long") ? 10 : 0.5,
 });
 
+/** A decode that records each file it decodes and takes a millisecond. */
+const slowDecode = (decoded: string[]) => (file: string) =>
+  Effect.sync(() => decoded.push(file)).pipe(
+    Effect.andThen(Effect.sleep("1 millis")),
+    Effect.as(clipOf(file))
+  );
+
 const SOUNDS: SoundList = {
   shot: { file: "shot.wav", maxVoices: 2, minGapMs: 0 },
   hit: { file: "hit.wav", minGapMs: 50 },
@@ -93,8 +107,12 @@ const SOUNDS: SoundList = {
   run: { file: "long-run.wav", bus: "music" },
 };
 
+/** Makes a mixer outside Effect, for the tests that only play. */
+const makeMixer = (options: AudioMixerOptions): AudioMixer =>
+  Effect.runSync(makeAudioMixer(options));
+
 const setup = (options: { unlocked?: boolean } = {}) => {
-  const mixer = makeAudioMixer({
+  const mixer = makeMixer({
     decode: (file) => Effect.succeed(clipOf(file)),
     random: () => 0.5,
   });
@@ -148,7 +166,7 @@ describe("one-shots", () => {
   });
 
   it("apply jitter from the random source and the play's volume", () => {
-    const mixer = makeAudioMixer({
+    const mixer = makeMixer({
       decode: (file) => Effect.succeed(clipOf(file)),
       random: () => 1,
     });
@@ -280,7 +298,7 @@ describe("music", () => {
   });
 
   it("asked for before its file loads starts once it loads", () => {
-    const mixer = makeAudioMixer({
+    const mixer = makeMixer({
       decode: (file) => Effect.succeed(clipOf(file)),
       random: () => 0.5,
     });
@@ -339,36 +357,59 @@ describe("loops", () => {
 describe("loading", () => {
   it("decodes a file shared by several ids once", () => {
     const decoded: string[] = [];
-    const mixer = makeAudioMixer({
-      decode: (file) =>
-        Effect.sync(() => {
-          decoded.push(file);
-          return clipOf(file);
-        }),
-      random: () => 0.5,
-    });
     Effect.runSync(
-      mixer.load({ a: { file: "same.wav" }, b: { file: "same.wav" } })
+      Effect.gen(function* () {
+        const mixer = yield* makeAudioMixer({
+          decode: (file) =>
+            Effect.sync(() => {
+              decoded.push(file);
+              return clipOf(file);
+            }),
+          random: () => 0.5,
+        });
+        yield* mixer.load({ a: { file: "same.wav" }, b: { file: "same.wav" } });
+        yield* mixer.load({ c: { file: "same.wav" } });
+      })
     );
-    Effect.runSync(mixer.load({ c: { file: "same.wav" } }));
     expect(decoded).toStrictEqual(["same.wav"]);
+  });
+
+  it("never decodes a loaded file again, however many files the game has", () => {
+    const decoded: string[] = [];
+    const list: Record<string, { file: string }> = {};
+    for (let i = 0; i < 100; i += 1) {
+      list[`sound${i}`] = { file: `sound${i}.wav` };
+    }
+    Effect.runSync(
+      Effect.gen(function* () {
+        const mixer = yield* makeAudioMixer({
+          decode: (file) =>
+            Effect.sync(() => {
+              decoded.push(file);
+              return clipOf(file);
+            }),
+          random: () => 0.5,
+        });
+        yield* mixer.load(list);
+        yield* mixer.load(list);
+      })
+    );
+    expect(decoded).toHaveLength(100);
   });
 
   it("decodes a shared file once even when decoding takes time", async () => {
     const decoded: string[] = [];
-    const mixer = makeAudioMixer({
-      decode: (file) =>
-        Effect.sync(() => decoded.push(file)).pipe(
-          Effect.andThen(Effect.sleep("1 millis")),
-          Effect.as(clipOf(file))
-        ),
-      random: () => 0.5,
-    });
     await Effect.runPromise(
-      mixer.load({
-        a: { file: "same.wav" },
-        b: { file: "same.wav" },
-        c: { file: "other.wav" },
+      Effect.gen(function* () {
+        const mixer = yield* makeAudioMixer({
+          decode: slowDecode(decoded),
+          random: () => 0.5,
+        });
+        yield* mixer.load({
+          a: { file: "same.wav" },
+          b: { file: "same.wav" },
+          c: { file: "other.wav" },
+        });
       })
     );
     expect(decoded).toStrictEqual(["same.wav", "other.wav"]);
@@ -376,85 +417,156 @@ describe("loading", () => {
 
   it("decodes a file once when two loads of it overlap, and both add its sounds", async () => {
     const decoded: string[] = [];
-    const mixer = makeAudioMixer({
-      decode: (file) =>
-        Effect.sync(() => decoded.push(file)).pipe(
-          Effect.andThen(Effect.sleep("1 millis")),
-          Effect.as(clipOf(file))
-        ),
-      random: () => 0.5,
-    });
     const { fake, output } = makeOutput();
-    mixer.unlock(output);
     await Effect.runPromise(
-      Effect.all(
-        [
-          mixer.load({ a: { file: "same.wav" } }),
-          mixer.load({ b: { file: "same.wav" } }),
-        ],
-        { concurrency: "unbounded" }
-      )
+      Effect.gen(function* () {
+        const mixer = yield* makeAudioMixer({
+          decode: slowDecode(decoded),
+          random: () => 0.5,
+        });
+        mixer.unlock(output);
+        yield* Effect.all(
+          [
+            mixer.load({ a: { file: "same.wav" } }),
+            mixer.load({ b: { file: "same.wav" } }),
+          ],
+          { concurrency: "unbounded" }
+        );
+        mixer.play("a");
+        mixer.play("b");
+      })
     );
-    mixer.play("a");
-    mixer.play("b");
     expect(decoded).toStrictEqual(["same.wav"]);
     expect(fake.voices).toHaveLength(2);
   });
 
   it("decodes a failed file again on the next load", () => {
     const decoded: string[] = [];
-    const mixer = makeAudioMixer({
-      decode: (file) =>
-        Effect.suspend(() => {
-          decoded.push(file);
-          return decoded.length === 1
-            ? Effect.fail(new AudioLoadError({ file, message: "offline" }))
-            : Effect.succeed(clipOf(file));
-        }),
-      random: () => 0.5,
-    });
-    const first = Effect.runSyncExit(mixer.load({ a: { file: "a.wav" } }));
-    Effect.runSync(mixer.load({ a: { file: "a.wav" } }));
+    const first = Effect.runSync(
+      Effect.gen(function* () {
+        const mixer = yield* makeAudioMixer({
+          decode: (file) =>
+            Effect.suspend(() => {
+              decoded.push(file);
+              return decoded.length === 1
+                ? Effect.fail(new AudioLoadError({ file, message: "offline" }))
+                : Effect.succeed(clipOf(file));
+            }),
+          random: () => 0.5,
+        });
+        const exit = yield* Effect.exit(mixer.load({ a: { file: "a.wav" } }));
+        yield* mixer.load({ a: { file: "a.wav" } });
+        return exit;
+      })
+    );
     expect(Exit.isFailure(first)).toBe(true);
     expect(decoded).toStrictEqual(["a.wav", "a.wav"]);
   });
 
-  it("adds every sound that loads when another file fails", () => {
-    const mixer = makeAudioMixer({
-      decode: (file) =>
-        file === "missing.wav"
-          ? Effect.fail(
-              new AudioLoadError({ file, message: `can't load ${file}` })
-            )
-          : Effect.succeed(clipOf(file)),
-      random: () => 0.5,
-    });
-    const { fake, output } = makeOutput();
-    mixer.unlock(output);
-    const exit = Effect.runSyncExit(
-      mixer.load({
-        broken: { file: "missing.wav" },
-        shot: { file: "shot.wav" },
+  it("fails both overlapping loads of a file from one decode, then decodes it again on the next load", async () => {
+    const decoded: string[] = [];
+    const exits = await Effect.runPromise(
+      Effect.gen(function* () {
+        const mixer = yield* makeAudioMixer({
+          decode: (file) =>
+            Effect.sync(() => decoded.push(file)).pipe(
+              Effect.andThen(Effect.sleep("1 millis")),
+              Effect.andThen(
+                Effect.fail(new AudioLoadError({ file, message: "offline" }))
+              )
+            ),
+          random: () => 0.5,
+        });
+        const overlapping = yield* Effect.all(
+          [
+            Effect.exit(mixer.load({ a: { file: "a.wav" } })),
+            Effect.exit(mixer.load({ b: { file: "a.wav" } })),
+          ],
+          { concurrency: "unbounded" }
+        );
+        const later = yield* Effect.exit(mixer.load({ c: { file: "a.wav" } }));
+        return [...overlapping, later];
       })
     );
-    mixer.play("shot");
-    mixer.play("broken");
+    expect(exits.map(Exit.isFailure)).toStrictEqual([true, true, true]);
+    expect(decoded).toStrictEqual(["a.wav", "a.wav"]);
+  });
+
+  it("drops a decode whose load is interrupted, so the next load decodes the file again", async () => {
+    const decoded: string[] = [];
+    const { fake, output } = makeOutput();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const mixer = yield* makeAudioMixer({
+          // The first decode never ends; the next one does.
+          decode: (file) =>
+            Effect.suspend(() => {
+              decoded.push(file);
+              return decoded.length === 1
+                ? Effect.never
+                : Effect.succeed(clipOf(file));
+            }),
+          random: () => 0.5,
+        });
+        mixer.unlock(output);
+        const first = yield* Effect.forkChild(
+          mixer.load({ a: { file: "a.wav" } })
+        );
+        yield* Effect.yieldNow;
+        yield* Fiber.interrupt(first);
+        yield* mixer
+          .load({ a: { file: "a.wav" } })
+          .pipe(Effect.timeout("1 second"));
+        mixer.play("a");
+      })
+    );
+    expect(decoded).toStrictEqual(["a.wav", "a.wav"]);
+    expect(fake.voices).toHaveLength(1);
+  });
+
+  it("adds every sound that loads when another file fails", () => {
+    const { fake, output } = makeOutput();
+    const exit = Effect.runSync(
+      Effect.gen(function* () {
+        const mixer = yield* makeAudioMixer({
+          decode: (file) =>
+            file === "missing.wav"
+              ? Effect.fail(
+                  new AudioLoadError({ file, message: `can't load ${file}` })
+                )
+              : Effect.succeed(clipOf(file)),
+          random: () => 0.5,
+        });
+        mixer.unlock(output);
+        const loaded = yield* Effect.exit(
+          mixer.load({
+            broken: { file: "missing.wav" },
+            shot: { file: "shot.wav" },
+          })
+        );
+        mixer.play("shot");
+        mixer.play("broken");
+        return loaded;
+      })
+    );
     expect(Exit.isFailure(exit)).toBe(true);
     expect(fake.voices.map(({ clip }) => clip.duration)).toStrictEqual([0.5]);
   });
 
   it("fails with an AudioLoadError naming the file", () => {
-    const mixer = makeAudioMixer({
-      decode: (file) =>
-        Effect.fail(
-          new AudioLoadError({ file, message: `can't load ${file}` })
-        ),
-      random: () => 0.5,
-    });
-    const exit = Effect.runSyncExit(
-      mixer.load({ a: { file: "missing.wav" } }).pipe(Effect.flip)
+    const error = Effect.runSync(
+      Effect.gen(function* () {
+        const mixer = yield* makeAudioMixer({
+          decode: (file) =>
+            Effect.fail(
+              new AudioLoadError({ file, message: `can't load ${file}` })
+            ),
+          random: () => 0.5,
+        });
+        return yield* Effect.flip(mixer.load({ a: { file: "missing.wav" } }));
+      })
     );
-    expect(Exit.isSuccess(exit) && exit.value).toMatchObject({
+    expect(error).toMatchObject({
       _tag: "AudioLoadError",
       file: "missing.wav",
     });

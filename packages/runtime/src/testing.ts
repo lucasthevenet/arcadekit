@@ -5,7 +5,7 @@ import type { FrameSource } from "./frames";
 
 /**
  * A FrameSource a test drives: no frame runs until the test runs it, at a time it chooses.
- * `now` starts at 0. Pass it to `makeGameEngine(definition, { frames })` or `new GameDriver`.
+ * `now` starts at 0. Pass it to `makeGameEngine(definition, { frames })`.
  */
 export const manualFrames = (): FrameSource & {
   /** Whether a frame was requested and has not run or been cancelled. */

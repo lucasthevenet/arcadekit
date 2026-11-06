@@ -22,6 +22,7 @@ import type {
 import { combineViews, makeGameEngine } from "@arcadekit/runtime/browser";
 import type {
   AttachError,
+  GameCrashed,
   GameDefinition,
   GameEngine,
   GameView,
@@ -121,15 +122,16 @@ const program = Effect.gen(function* () {
   const engine: GameEngine<DotsConfig, Dots, DotsEvent> = makeGameEngine(
     makeDotsGame(sheet, audio)
   );
-  const attachable: AttachableEngine<DotsEvent, AttachError> = engine;
+  const attachable: AttachableEngine<DotsEvent, AttachError | GameCrashed> =
+    engine;
   const element = document.querySelector<HTMLElement>("#game");
   if (element === null) {
     return;
   }
   yield* attachable.listen((event) => console.log(event));
-  yield* attachable.attach(element);
   yield* engine.start(settings.settings);
-  yield* Effect.never;
+  // Draws until the page closes. Fails if the view can't be made or the game crashes.
+  return yield* attachable.attach(element);
 });
 
 // Lockstep over the in-memory network: one player, a few steps.

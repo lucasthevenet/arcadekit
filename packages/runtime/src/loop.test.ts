@@ -4,7 +4,7 @@ import { GameLoop } from "./index";
 import type { GameSimulation, StepInput } from "./index";
 
 // GameLoop needs no DOM and reads no clock: these tests pass time and input in, as the
-// browser's GameDriver does each frame.
+// browser engine does each frame.
 
 // A game that counts steps and how many of them saw a "just pressed" button.
 interface PressState {
