@@ -151,6 +151,61 @@ const junkFirst = (transport: Transport, junk: string): Transport => ({
   },
 });
 
+/**
+ * A transport that, with each `inputs` message carrying hashes, also sends a desync claim for
+ * the first hash's step: its own hash, honestly, and a made-up one for the host.
+ */
+const claimsDesync = (transport: Transport): Transport => ({
+  self: transport.self,
+  listen: transport.listen,
+  send: (to, message) => {
+    transport.send(to, message);
+    const sent = JSON.parse(message) as {
+      kind: string;
+      hashes?: [number, number][];
+    };
+    const [first] = sent.hashes ?? [];
+    if (sent.kind === "inputs" && first !== undefined) {
+      const [step, hash] = first;
+      transport.send(
+        to,
+        JSON.stringify({
+          kind: "desync",
+          step,
+          hashes: { [to]: (hash + 1) >>> 0, [transport.self]: hash },
+        })
+      );
+    }
+  },
+});
+
+/** A three-player run on a fair network, with p1's transport wrapped by `wrap`. */
+const runWithP1 = (wrap: (transport: Transport) => Transport) => {
+  const network = createMemoryNetwork({
+    seed: 3,
+    latencyMs: 20,
+    jitterMs: 5,
+  });
+  const host = hostLockstep(
+    { ...options(network, "host"), peers: ["p1", "p2"], seed: SEED },
+    0
+  );
+  const p1Options = options(network, "p1");
+  const p1 = joinLockstep(
+    { ...p1Options, transport: wrap(p1Options.transport), host: "host" },
+    0
+  );
+  const p2 = joinLockstep({ ...options(network, "p2"), host: "host" }, 0);
+  const sessions = [host, p1, p2];
+  runNetwork(
+    network,
+    sessions.map((session, i) => ({ session, everyMs: [4, 5, 7][i]! })),
+    0,
+    2000
+  );
+  return { host, p1, p2, sessions };
+};
+
 describe("lockstep session", () => {
   it.each([
     { players: 2, peers: ["p1"] },
@@ -361,6 +416,65 @@ describe("lockstep session", () => {
     });
     expect(error?.message).toContain("content-1");
     expect(run.host.waitingFor).toStrictEqual(["p1"]);
+  });
+
+  describe("when a peer claims a desync", () => {
+    it.each([
+      {
+        what: "names no hash of its own",
+        junk: '{"kind":"desync","step":0,"hashes":{}}',
+      },
+      {
+        what: "is about a step it can't have reached",
+        junk: '{"kind":"desync","step":1000000,"hashes":{"p1":1}}',
+      },
+      {
+        what: "is about a step no hash is kept for",
+        junk: '{"kind":"desync","step":3,"hashes":{"p1":1}}',
+      },
+    ])("runs on when the claim $what", ({ junk }) => {
+      const { sessions } = runWithP1((transport) => junkFirst(transport, junk));
+      const expected = expectedHistory(["host", "p1", "p2"], SEED, 100);
+      for (const session of sessions) {
+        expect(session.error).toBeNull();
+        expect(session.players).toStrictEqual(["host", "p1", "p2"]);
+        expect(history(session).slice(0, 100)).toStrictEqual(expected);
+      }
+    });
+
+    it("runs on when the claim says the host's hash differs, but the peer's matches it", () => {
+      const { sessions } = runWithP1(claimsDesync);
+      for (const session of sessions) {
+        expect(session.error).toBeNull();
+        expect(session.stepIndex).toBeGreaterThan(100);
+      }
+    });
+
+    it("keeps no hashes for steps no peer can have reached", () => {
+      const { host } = runWithP1((transport) => ({
+        ...transport,
+        send: (to, message) => {
+          transport.send(to, message);
+          for (let step = 1; step <= 20; step++) {
+            transport.send(
+              to,
+              JSON.stringify({
+                kind: "desync",
+                step: 1_000_000 + step * HASH_EVERY,
+                hashes: { p1: step },
+              })
+            );
+          }
+        },
+      }));
+      const { peerHashes } = (
+        internals(host) as { host: { peerHashes: Map<number, unknown> } }
+      ).host;
+      expect(host.error).toBeNull();
+      expect(
+        [...peerHashes.keys()].every((step) => step <= host.stepIndex + 1)
+      ).toBe(true);
+    });
   });
 
   describe("when what arrives doesn't decode", () => {

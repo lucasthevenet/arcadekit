@@ -482,13 +482,25 @@ class Session<
       return;
     }
     if (message.kind === "desync") {
-      this.stop(
-        lockstepError({
-          kind: "desync",
-          step: message.step,
-          hashes: message.hashes,
-        })
-      );
+      // Not trusted: a peer vouches only for its own hash, so the claim counts as that and no
+      // more. The host's own hash decides, so a forged claim can't end the run.
+      const hash = message.hashes[from];
+      const own = this.ownHashes.get(message.step);
+      if (hash === undefined) {
+        return;
+      }
+      if (own !== undefined && hash !== own) {
+        // The same hashes the peer stopped with, so every peer names the same desync.
+        this.stop(
+          lockstepError({
+            kind: "desync",
+            step: message.step,
+            hashes: { [this.self]: own, [from]: hash },
+          })
+        );
+        return;
+      }
+      this.receivePeerHash(host, from, message.step, hash);
       return;
     }
     if (message.kind !== "inputs") {
@@ -520,15 +532,32 @@ class Session<
       Math.max(host.hostHashAck.get(from)!, message.hashAck)
     );
     for (const [step, hash] of message.hashes) {
-      host.peerHashAck.set(from, Math.max(host.peerHashAck.get(from)!, step));
-      let hashes = host.peerHashes.get(step);
-      if (!hashes) {
-        hashes = new Map();
-        host.peerHashes.set(step, hashes);
-      }
-      hashes.set(from, hash);
-      this.compareHashes(step);
+      this.receivePeerHash(host, from, step, hash);
     }
+  }
+
+  /** Keeps a peer's hash for `step` and compares it, if the peer can have hashed that step. */
+  private receivePeerHash(
+    host: HostSide<PlayerInput>,
+    from: PeerId,
+    step: number,
+    hash: number
+  ) {
+    // A peer steps only on confirmed steps, so it can't have hashed one past them.
+    if (
+      step % this.options.hashEvery !== 0 ||
+      step > this.confirmedThrough + 1
+    ) {
+      return;
+    }
+    host.peerHashAck.set(from, Math.max(host.peerHashAck.get(from)!, step));
+    let hashes = host.peerHashes.get(step);
+    if (!hashes) {
+      hashes = new Map();
+      host.peerHashes.set(step, hashes);
+    }
+    hashes.set(from, hash);
+    this.compareHashes(step);
   }
 
   private receiveAsPeer(
