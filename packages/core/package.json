@@ -1,6 +1,6 @@
 {
   "name": "@arcadekit/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Renderer- and DOM-free primitives: fixed-step clock, seeded RNG, struct-of-arrays pools, spatial grid, event buffer",
   "keywords": [
     "arcadekit",

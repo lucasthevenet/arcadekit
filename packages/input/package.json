@@ -1,6 +1,6 @@
 {
   "name": "@arcadekit/input",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Keyboard, gamepad and touch mapped to named axes and buttons",
   "keywords": [
     "arcadekit",
