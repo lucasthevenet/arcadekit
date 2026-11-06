@@ -110,6 +110,12 @@ export interface CoopClientOptions {
    * and down loudest. Without it the run is silent.
    */
   readonly sound?: SurvivorsGameSound;
+  /** Makes the drawing view for hero `localHero`. Defaults to a `SurvivorsView`; tests pass fakes. */
+  readonly createView?: (
+    element: HTMLElement,
+    art: SurvivorsArt,
+    localHero: number
+  ) => GameView<World>;
 }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -274,18 +280,19 @@ export class CoopClient {
 
   /**
    * Draws the run into `element` with `art` (the app's sprite sheet) on every animation frame,
-   * and reads input from it.
+   * and reads input from it. Throws what making the view throws, with nothing left attached.
    */
   attach(element: HTMLElement, art: SurvivorsArt): () => void {
     this.detach();
     const controller = new InputController(element, { axes: MOVE_AXES });
-    const attached = {
-      element,
-      art,
-      controller,
-      view: this.makeView(element, art),
-      frame: 0,
-    };
+    let view: GameView<World>;
+    try {
+      view = this.makeView(element, art);
+    } catch (error) {
+      controller.dispose();
+      throw error;
+    }
+    const attached = { element, art, controller, view, frame: 0 };
     const frame = (timeMs: number) => {
       attached.frame = requestAnimationFrame(frame);
       // Tick here too: when drawing keeps the main thread busy, the timer's messages wait, and a
@@ -321,10 +328,15 @@ export class CoopClient {
     if (attached === null) {
       return;
     }
-    cancelAnimationFrame(attached.frame);
-    attached.controller.dispose();
-    attached.view.dispose();
+    // Detached first, and the view disposed even when the input's dispose throws, so a
+    // throwing dispose still leaves the client free to attach again.
     this.attached = null;
+    cancelAnimationFrame(attached.frame);
+    try {
+      attached.controller.dispose();
+    } finally {
+      attached.view.dispose();
+    }
   }
 
   private emit(event: CoopEvent) {
@@ -659,19 +671,33 @@ export class CoopClient {
     };
   }
 
-  /** Draws from the local hero's point of view: a new view when the slot is known. */
+  /**
+   * Draws from the local hero's point of view: a new view when the slot is known. Throws what
+   * making the view throws, with nothing left attached.
+   */
   private rebuildView() {
     const { attached } = this;
-    if (attached !== null) {
+    if (attached === null) {
+      return;
+    }
+    try {
       attached.view.dispose();
       attached.view = this.makeView(attached.element, attached.art);
+    } catch (error) {
+      // The old view is gone and there's no new one, so nothing is left to draw with.
+      this.attached = null;
+      cancelAnimationFrame(attached.frame);
+      attached.controller.dispose();
+      throw error;
     }
   }
 
   /** The drawing view, and the sound view beside it, both for the local hero. */
   private makeView(element: HTMLElement, art: SurvivorsArt): GameView<World> {
     const localHero = this.slot;
-    const view = new SurvivorsView(element, art, { localHero });
+    const view =
+      this.options.createView?.(element, art, localHero) ??
+      new SurvivorsView(element, art, { localHero });
     const { sound } = this.options;
     return sound === undefined
       ? view
