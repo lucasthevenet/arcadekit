@@ -81,6 +81,28 @@ const counted = (transport: Transport) => {
   };
 };
 
+/** `transport`, losing the first desync message it sends, as a lossy network can. */
+const losingFirstDesync = (transport: Transport, clock: Clock.Clock) => {
+  let firstAtMs: number | null = null;
+  return {
+    transport: {
+      ...transport,
+      send: (to, message) => {
+        if (firstAtMs === null && JSON.parse(message).kind === "desync") {
+          firstAtMs = clock.currentTimeMillisUnsafe();
+          return;
+        }
+        transport.send(to, message);
+      },
+    } satisfies Transport,
+    /** When it lost that message, or null. */
+    firstDesyncAtMs: () => firstAtMs,
+  };
+};
+
+/** A state hash that drifts after 25 steps, as an engine that rounds differently would make. */
+const drifting = (state: Count) => state.total + (state.steps > 25 ? 1 : 0);
+
 /** A ticker the test fires by hand. */
 const manualTicker = () => {
   let onTick: (() => void) | null = null;
@@ -337,38 +359,104 @@ describe("scoped lockstep session", () => {
       expect(stops).toBe(1);
     });
 
-    it("fails every peer with the same desync", async () => {
-      const network = createMemoryNetwork({ seed: 1, latencyMs: 20 });
+    it("fails every peer with the same desync, on a lossy network", async () => {
+      // The plain sessions' bad network, on a seed where a desync sent once reaches no other peer.
+      const network = createMemoryNetwork({
+        seed: 2,
+        latencyMs: 30,
+        jitterMs: 25,
+        loss: 0.15,
+      });
       const exit = await play(
         Effect.gen(function* () {
           const host = yield* hostLockstepScoped({
             ...options(network.connect("host"), { inputDelay: 3 }),
-            peers: ["p1"],
+            peers: ["p1", "p2"],
             seed: 1,
           });
           const p1 = yield* joinLockstepScoped({
-            ...options(network.connect("p1"), {
+            ...options(network.connect("p1"), { inputDelay: 3 }),
+            host: "host",
+          });
+          const p2 = yield* joinLockstepScoped({
+            ...options(network.connect("p2"), {
               inputDelay: 3,
-              // p1's state drifts after 25 steps, as an engine that rounds differently would.
-              hash: (state) => state.total + (state.steps > 25 ? 1 : 0),
+              hash: drifting,
             }),
             host: "host",
           });
           yield* Effect.forkScoped(deliver(network));
-          const runs = [
-            yield* Effect.forkScoped(host.run()),
-            yield* Effect.forkScoped(p1.run()),
-          ];
-          yield* TestClock.adjust("3 seconds");
-          return yield* Effect.all(runs.map((fiber) => Fiber.await(fiber)));
+          const runs = yield* Effect.forEach([host, p1, p2], (session) =>
+            Effect.forkScoped(session.run())
+          );
+          yield* TestClock.adjust("5 seconds");
+          // Polled, not awaited: a peer that never hears of the desync runs on.
+          return runs.map((fiber) => fiber.pollUnsafe());
         })
       );
       if (!Exit.isSuccess(exit)) {
         throw new Error(String(exit));
       }
-      const reasons = exit.value.map((run) => lockstepFailure(run).reason);
+      const reasons = exit.value.map(
+        (run) => run && lockstepFailure(run).reason
+      );
+      expect(reasons[0]).toMatchObject({ kind: "desync", step: 30 });
+      expect(reasons).toStrictEqual([reasons[0], reasons[0], reasons[0]]);
+    });
+
+    it("resends a desync for a second after it stops, then fails", async () => {
+      const network = createMemoryNetwork({ seed: 1, latencyMs: 20 });
+      const exit = await play(
+        Effect.gen(function* () {
+          const clock = yield* Clock.Clock;
+          // Each side loses the first desync it sends: only a resend tells the other.
+          const links = [
+            losingFirstDesync(network.connect("host"), clock),
+            losingFirstDesync(network.connect("p1"), clock),
+          ] as const;
+          const host = yield* hostLockstepScoped({
+            ...options(links[0].transport, { inputDelay: 3 }),
+            peers: ["p1"],
+            seed: 1,
+          });
+          const p1 = yield* joinLockstepScoped({
+            ...options(links[1].transport, { inputDelay: 3, hash: drifting }),
+            host: "host",
+          });
+          yield* Effect.forkScoped(deliver(network));
+          const runs = yield* Effect.forEach([host, p1], (session) =>
+            Effect.forkScoped(
+              Effect.exit(session.run()).pipe(
+                Effect.flatMap((run) =>
+                  Clock.currentTimeMillis.pipe(
+                    Effect.map((endedAtMs) => ({ run, endedAtMs }))
+                  )
+                )
+              )
+            )
+          );
+          yield* TestClock.adjust("3 seconds");
+          // Polled, not awaited: a peer that never hears of the desync runs on.
+          return {
+            ended: runs.map((fiber) => fiber.pollUnsafe()),
+            lostAtMs: links.map((link) => link.firstDesyncAtMs()),
+          };
+        })
+      );
+      if (!Exit.isSuccess(exit)) {
+        throw new Error(String(exit));
+      }
+      const { ended, lostAtMs } = exit.value;
+      const runs = ended.map((run) =>
+        run && Exit.isSuccess(run) ? run.value : undefined
+      );
+      const reasons = runs.map((run) => run && lockstepFailure(run.run).reason);
       expect(reasons[0]).toMatchObject({ kind: "desync", step: 30 });
       expect(reasons[1]).toStrictEqual(reasons[0]);
+      // Each run fails a second after its session stopped, which is when it lost its first desync.
+      expect(
+        runs.map((run, i) => run && run.endedAtMs - (lostAtMs[i] ?? Number.NaN))
+      ).toStrictEqual([1000, 1000]);
     });
 
     it("stops ticking and stops its ticker when interrupted", async () => {
@@ -491,15 +579,123 @@ describe("scoped lockstep session", () => {
           yield* TestClock.adjust(1000);
           // The stop's throw goes back to the ticker that ticked.
           const fired = Result.try(() => onTick?.());
-          return { fired, run: fiber.pollUnsafe() };
+          return { fired, run: yield* Fiber.await(fiber) };
         })
       );
       if (!Exit.isSuccess(exit)) {
         throw new Error(String(exit));
       }
       expect(exit.value.fired).toStrictEqual(Result.fail(thrown));
-      expect(exit.value.run).toBeDefined();
-      expect(lockstepFailure(exit.value.run!).reason.kind).toBe("hostLost");
+      expect(lockstepFailure(exit.value.run).reason.kind).toBe("hostLost");
+    });
+
+    it("ends the run after onTick returns, so the ticker's tick is done before the run's scope closes", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const log: string[] = [];
+      let disposed = false;
+      let fire: (() => void) | null = null;
+      // Ticks, then draws with what the run's scope holds.
+      const drawing: Ticker = (onTick) => {
+        fire = () => {
+          onTick();
+          log.push(disposed ? "drew disposed" : "drew");
+        };
+        return () => {
+          log.push("stopped");
+        };
+      };
+      const exit = await play(
+        Effect.gen(function* () {
+          const fiber = yield* Effect.forkScoped(
+            Effect.gen(function* () {
+              yield* Effect.acquireRelease(Effect.void, () =>
+                Effect.sync(() => {
+                  disposed = true;
+                  log.push("disposed");
+                })
+              );
+              const session = yield* joinLockstepScoped({
+                ...options(network.connect("p1"), { dropAfterMs: 1000 }),
+                host: "host",
+              });
+              return yield* session.run(drawing);
+            }).pipe(Effect.scoped),
+            { startImmediately: true }
+          );
+          yield* TestClock.adjust(1000);
+          // The session stops in this tick.
+          fire?.();
+          return yield* Fiber.await(fiber);
+        })
+      );
+      if (!Exit.isSuccess(exit)) {
+        throw new Error(String(exit));
+      }
+      expect(lockstepFailure(exit.value).reason.kind).toBe("hostLost");
+      expect(log).toStrictEqual(["stopped", "drew", "disposed"]);
+    });
+
+    it("dies on its next tick when it runs on after its scope closes, and sends nothing more", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const transport = network.connect("host");
+      const ticks = manualTicker();
+      let sent = 0;
+      const exit = await play(
+        Effect.gen(function* () {
+          // The runs are the program fiber's children, not the session scope's: they outlive it.
+          const { session, runs } = yield* Effect.scoped(
+            Effect.gen(function* () {
+              const opened = yield* hostLockstepScoped({
+                ...options({
+                  ...transport,
+                  send: (to, message) => {
+                    sent += 1;
+                    transport.send(to, message);
+                  },
+                }),
+                peers: ["p1"],
+                seed: 1,
+              });
+              const forked = [
+                yield* Effect.forkChild(opened.run()),
+                yield* Effect.forkChild(opened.run(ticks.ticker), {
+                  startImmediately: true,
+                }),
+              ];
+              yield* TestClock.adjust(100);
+              return { session: opened, runs: forked };
+            })
+          );
+          const { stepIndex } = session;
+          const sentAtClose = sent;
+          yield* TestClock.adjust("1 second");
+          ticks.fire();
+          const ended = yield* Effect.all(
+            runs.map((fiber) => Fiber.await(fiber))
+          );
+          // Run again, it dies at once.
+          ended.push(yield* Effect.exit(session.run()));
+          return {
+            defects: ended.map((run) =>
+              Result.map(Exit.findDefect(run), String)
+            ),
+            stepped: session.stepIndex - stepIndex,
+            sent: sent - sentAtClose,
+            stops: ticks.stops(),
+          };
+        })
+      );
+      const died = Result.succeed(
+        "Error: A lockstep session ran after its scope closed"
+      );
+      expect(exit).toStrictEqual(
+        Exit.succeed({
+          defects: [died, died, died],
+          stepped: 0,
+          sent: 0,
+          stops: 1,
+        })
+      );
     });
   });
 
@@ -526,6 +722,30 @@ describe("scoped lockstep session", () => {
     );
     expect(Exit.isSuccess(exit)).toBe(true);
     // The sample at the 100 ms tick: 6 steps. The one at 200 ms came after the listener left.
+    expect(events).toStrictEqual([6]);
+  });
+
+  it("keeps a listener while its scope is open, when another scope listens with the same callback", async () => {
+    const network = createMemoryNetwork({ seed: 1 });
+    const ticks = manualTicker();
+    const events: number[] = [];
+    const onEvent = (event: number) => {
+      events.push(event);
+    };
+    const exit = await play(
+      Effect.gen(function* () {
+        const session = yield* hostAlone(network);
+        yield* Effect.forkScoped(session.run(ticks.ticker), {
+          startImmediately: true,
+        });
+        yield* session.listen(onEvent);
+        // A screen listens with the same callback, then leaves.
+        yield* Effect.scoped(session.listen(onEvent));
+        yield* TestClock.adjust(100);
+        ticks.fire();
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
     expect(events).toStrictEqual([6]);
   });
 });
