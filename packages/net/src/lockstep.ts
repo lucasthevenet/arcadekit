@@ -1,9 +1,10 @@
 import { GameLoop } from "@arcadekit/runtime";
 import type { GameSimulation, StepInput } from "@arcadekit/runtime";
+import { Option, Result, Schema } from "effect";
 
 import type { InputCodec } from "./codec";
 import { lockstepError } from "./errors";
-import type { LockstepError } from "./errors";
+import type { LockstepError, RemovedWhy } from "./errors";
 import type { PeerId, Transport } from "./transport";
 
 /** One player's input for one step, as every peer steps on it. */
@@ -63,7 +64,10 @@ export interface HostOptions<
   Event,
   PlayerInput,
 > extends LockstepOptions<Config, State, Input, Event, PlayerInput> {
-  /** The other players' peer ids, in player order. The host is always the first player. */
+  /**
+   * The other players' peer ids, in player order. The host is always the first player. A run
+   * holds at most 16 players, the host included.
+   */
   readonly peers: readonly PeerId[];
   readonly seed: number;
 }
@@ -110,11 +114,19 @@ export interface LockstepSession<State, Event> {
   readonly dispose: () => void;
 }
 
-/** Starts a run as its host, now: the host is the first player, and `peers` the others. */
+/**
+ * Starts a run as its host, now: the host is the first player, and `peers` the others. Throws a
+ * RangeError for more players than a run holds.
+ */
 export const hostLockstep = <Config, State, Input, Event, PlayerInput>(
   options: HostOptions<Config, State, Input, Event, PlayerInput>,
   nowMs: number
 ): LockstepSession<State, Event> => {
+  if (options.peers.length + 1 > MAX_PLAYERS) {
+    throw new RangeError(
+      `A lockstep run holds at most ${MAX_PLAYERS} players, not ${options.peers.length + 1}`
+    );
+  }
   const session = new Session(options, options.transport.self, nowMs);
   session.startAsHost(options.peers, options.seed, nowMs);
   return session;
@@ -127,61 +139,90 @@ export const joinLockstep = <Config, State, Input, Event, PlayerInput>(
 ): LockstepSession<State, Event> => new Session(options, options.host, nowMs);
 
 // The wire format. Every message is JSON. Each side resends what the other hasn't acknowledged
-// on every tick, so a lost, duplicated or reordered message does no harm.
+// on every tick, so a lost, duplicated or reordered message does no harm. A message that doesn't
+// decode to one below is dropped, so a peer on other code, or a forged one, can't stop a tick.
+
+/** Most inputs, steps or hashes one message carries. */
+const MAX_BATCH = 64;
+/** Most players in a run, the host included. */
+const MAX_PLAYERS = 16;
+/** The host keeps a peer's inputs for at most this many steps past the last confirmed one. */
+const MAX_INPUTS_AHEAD = MAX_BATCH;
+
+/** A step number. */
+const Step = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+/** The last step acknowledged, or -1 for none yet. */
+const Ack = Schema.Int.check(Schema.isGreaterThanOrEqualTo(-1));
+const Players = Schema.Array(Schema.String).check(
+  Schema.isMaxLength(MAX_PLAYERS)
+);
 
 /** One confirmed step: [player, encoded input] pairs, then the removed players. */
-type WireStep = readonly [
-  inputs: readonly (readonly [PeerId, unknown])[],
-  removed: readonly PeerId[],
-];
+const WireStep = Schema.Tuple([
+  Schema.Array(Schema.Tuple([Schema.String, Schema.Unknown])).check(
+    Schema.isMaxLength(MAX_PLAYERS)
+  ),
+  Players,
+]);
+type WireStep = typeof WireStep.Type;
 
-type WireHashes = readonly (readonly [step: number, hash: number])[];
+/** [step, hash] pairs, oldest first. */
+const WireHashes = Schema.Array(Schema.Tuple([Step, Schema.Finite])).check(
+  Schema.isMaxLength(MAX_BATCH)
+);
 
-type Message =
-  | {
-      readonly kind: "start";
-      readonly seed: number;
-      readonly contentHash: string;
-      readonly players: readonly PeerId[];
-    }
-  | {
-      // Peer to host.
-      readonly kind: "inputs";
-      /** The step of `inputs[0]`. */
-      readonly from: number;
-      readonly inputs: readonly unknown[];
-      /** Every step through this one is confirmed on the peer. */
-      readonly stepsAck: number;
-      readonly hashes: WireHashes;
-      /** The highest step of the host's hashes the peer has. */
-      readonly hashAck: number;
-    }
-  | {
-      // Host to peer.
-      readonly kind: "steps";
-      /** The step of `steps[0]`. */
-      readonly from: number;
-      readonly steps: readonly WireStep[];
-      /** The host has every input of this peer's through this step. */
-      readonly inputsAck: number;
-      /** The highest step of this peer's hashes the host has. */
-      readonly hashAck: number;
-      readonly hashes: WireHashes;
-      readonly waiting: readonly PeerId[];
-    }
-  | {
-      readonly kind: "desync";
-      readonly step: number;
-      readonly hashes: Readonly<Record<PeerId, number>>;
-    }
-  | {
-      // Host to a removed peer.
-      readonly kind: "removed";
-      readonly step: number;
-    };
+const Message = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("start"),
+    seed: Schema.Finite,
+    contentHash: Schema.String,
+    players: Players,
+  }),
+  // Peer to host.
+  Schema.Struct({
+    kind: Schema.Literal("inputs"),
+    /** The step of `inputs[0]`. */
+    from: Step,
+    inputs: Schema.Array(Schema.Unknown).check(Schema.isMaxLength(MAX_BATCH)),
+    /** Every step through this one is confirmed on the peer. */
+    stepsAck: Ack,
+    hashes: WireHashes,
+    /** The highest step of the host's hashes the peer has. */
+    hashAck: Ack,
+  }),
+  // Host to peer.
+  Schema.Struct({
+    kind: Schema.Literal("steps"),
+    /** The step of `steps[0]`. */
+    from: Step,
+    steps: Schema.Array(WireStep).check(Schema.isMaxLength(MAX_BATCH)),
+    /** The host has every input of this peer's through this step. */
+    inputsAck: Ack,
+    /** The highest step of this peer's hashes the host has. */
+    hashAck: Ack,
+    hashes: WireHashes,
+    waiting: Players,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("desync"),
+    step: Step,
+    hashes: Schema.Record(Schema.String, Schema.Finite).check(
+      Schema.isMaxProperties(MAX_PLAYERS)
+    ),
+  }),
+  // Host to a removed peer.
+  Schema.Struct({
+    kind: Schema.Literal("removed"),
+    step: Step,
+    why: Schema.Literals(["stalled", "badInput"]),
+  }),
+]);
+type Message = typeof Message.Type;
 
-/** Most inputs or steps one message carries. */
-const MAX_BATCH = 64;
+const decodeMessage = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Message)
+);
+
 /** Most steps one tick runs to catch up after a wait: 0.25 s at 60 Hz. */
 const MAX_CATCH_UP_SECONDS = 0.25;
 /** A wait on one player this long is a stall: longer than the network's hiccups. */
@@ -207,19 +248,28 @@ const NO_STALL: Stall = {
   lastStalledMs: 0,
 };
 
-interface HostSide {
+/** One player's input for a step, as it came on the wire and as it decoded. */
+interface PendingInput<PlayerInput> {
+  readonly encoded: unknown;
+  readonly input: PlayerInput;
+}
+
+interface HostSide<PlayerInput> {
   /** The other players still in the run, in player order. */
   readonly peers: PeerId[];
-  /** Each player's inputs not yet in a confirmed step, by step, encoded. The host's own included. */
-  readonly pending: Map<PeerId, Map<number, unknown>>;
+  /** Each player's inputs not yet in a confirmed step, by step. The host's own included. */
+  readonly pending: Map<PeerId, Map<number, PendingInput<PlayerInput>>>;
   /** Each player's inputs are all known through this step. */
   readonly inputsKnown: Map<PeerId, number>;
   /** Peers the host has heard from since the start; the others get the start message again. */
   readonly started: Set<PeerId>;
   /** How long stepping has waited, and stalled, on each peer (see `dropAfterMs`). */
   readonly stalls: Map<PeerId, Stall>;
-  /** Removed players, with the step they were removed at, to tell them again if they speak. */
-  readonly removed: Map<PeerId, number>;
+  /** Removed players, with the step they were removed at and why, to tell them again if they speak. */
+  readonly removed: Map<
+    PeerId,
+    { readonly step: number; readonly why: RemovedWhy }
+  >;
   /** Confirmed steps some peer may not have yet. */
   readonly wire: Map<number, WireStep>;
   readonly stepsAck: Map<PeerId, number>;
@@ -269,7 +319,7 @@ class Session<
   private readonly dropAfterMs: number;
   private readonly inbox: [PeerId, string][] = [];
   private readonly unlisten: () => void;
-  private host: HostSide | null = null;
+  private host: HostSide<PlayerInput> | null = null;
   private peer: PeerSide | null = null;
   /** Confirmed steps not yet run, decoded. */
   private readonly confirmed = new Map<number, ConfirmedStep<PlayerInput>>();
@@ -362,9 +412,9 @@ class Session<
   tick(nowMs: number): void {
     const inbox = this.inbox.splice(0);
     for (const [from, text] of inbox) {
-      const message = parse(text);
-      if (message !== null && this.status !== "stopped") {
-        this.receive(from, message, nowMs);
+      const message = decodeMessage(text);
+      if (Option.isSome(message) && this.status !== "stopped") {
+        this.receive(from, message.value, nowMs);
       }
     }
     if (this.status === "stopped") {
@@ -393,6 +443,9 @@ class Session<
       return;
     }
     this.scheduleLocalInput();
+    if (this.error !== null) {
+      return;
+    }
     if (this.host) {
       this.confirm();
     }
@@ -416,11 +469,15 @@ class Session<
     }
   }
 
-  private receiveAsHost(host: HostSide, from: PeerId, message: Message) {
+  private receiveAsHost(
+    host: HostSide<PlayerInput>,
+    from: PeerId,
+    message: Message
+  ) {
     if (!host.peers.includes(from)) {
-      const step = host.removed.get(from);
-      if (step !== undefined) {
-        this.sendRemoved(from, step);
+      const removed = host.removed.get(from);
+      if (removed !== undefined) {
+        this.sendRemoved(from, removed.step, removed.why);
       }
       return;
     }
@@ -439,10 +496,18 @@ class Session<
     }
     host.started.add(from);
     const pending = host.pending.get(from)!;
+    const last = this.confirmedThrough + MAX_INPUTS_AHEAD;
     for (let i = 0; i < message.inputs.length; i++) {
       const step = message.from + i;
-      if (step > this.confirmedThrough && !pending.has(step)) {
-        pending.set(step, message.inputs[i]);
+      if (step > this.confirmedThrough && step <= last && !pending.has(step)) {
+        const encoded = message.inputs[i];
+        const decoded = this.options.codec.decode(encoded);
+        if (Result.isFailure(decoded)) {
+          // Its peer plays other code, or forged it; the others run on without it.
+          this.removePeer(host, from, "badInput");
+          return;
+        }
+        pending.set(step, { encoded, input: decoded.success });
       }
     }
     advanceKnown(host.inputsKnown, from, pending);
@@ -501,7 +566,11 @@ class Session<
         for (let i = 0; i < message.steps.length; i++) {
           const step = message.from + i;
           if (step > this.confirmedThrough && !this.confirmed.has(step)) {
-            this.confirmed.set(step, this.decode(message.steps[i]!));
+            const confirmed = this.decodeStep(step, message.steps[i]!);
+            if (confirmed === null) {
+              return;
+            }
+            this.confirmed.set(step, confirmed);
           }
         }
         while (this.confirmed.has(this.confirmedThrough + 1)) {
@@ -541,6 +610,7 @@ class Session<
             kind: "removed",
             peer: this.self,
             step: message.step,
+            why: message.why,
           })
         );
         break;
@@ -583,24 +653,33 @@ class Session<
       return since !== undefined && nowMs - since >= this.dropAfterMs;
     });
     for (const peer of stalled) {
-      const step = this.confirmedThrough + 1;
-      host.peers.splice(host.peers.indexOf(peer), 1);
-      host.removing.push(peer);
-      host.removed.set(peer, step);
-      host.pending.delete(peer);
-      host.stalls.delete(peer);
-      host.peerHashAck.delete(peer);
-      host.hostHashAck.delete(peer);
-      host.stepsAck.delete(peer);
-      // A silent peer rarely hears it, and stops on its own timeout; one that speaks again is told again.
-      this.sendRemoved(peer, step);
+      this.removePeer(host, peer, "stalled");
     }
   }
 
-  private sendRemoved(peer: PeerId, step: number) {
+  /** Host: removes `peer`'s player at the next step it confirms. */
+  private removePeer(
+    host: HostSide<PlayerInput>,
+    peer: PeerId,
+    why: RemovedWhy
+  ) {
+    const step = this.confirmedThrough + 1;
+    host.peers.splice(host.peers.indexOf(peer), 1);
+    host.removing.push(peer);
+    host.removed.set(peer, { step, why });
+    host.pending.delete(peer);
+    host.stalls.delete(peer);
+    host.peerHashAck.delete(peer);
+    host.hostHashAck.delete(peer);
+    host.stepsAck.delete(peer);
+    // A silent peer rarely hears it, and stops on its own timeout; one that speaks again is told again.
+    this.sendRemoved(peer, step, why);
+  }
+
+  private sendRemoved(peer: PeerId, step: number, why: RemovedWhy) {
     this.options.transport.send(
       peer,
-      JSON.stringify({ kind: "removed", step } satisfies Message)
+      JSON.stringify({ kind: "removed", step, why } satisfies Message)
     );
   }
 
@@ -613,35 +692,49 @@ class Session<
       if (players.some((p) => !host.pending.get(p)!.has(step))) {
         return;
       }
-      const wire: WireStep = [
-        players.map((p) => {
-          const pending = host.pending.get(p)!;
-          const input = pending.get(step);
-          pending.delete(step);
-          return [p, input] as const;
-        }),
-        host.removing,
-      ];
+      // Every input decoded when it came, so confirming can't fail.
+      const inputs = players.map((player) => {
+        const pending = host.pending.get(player)!;
+        const input = pending.get(step)!;
+        pending.delete(step);
+        return { player, ...input };
+      });
+      const removed = host.removing;
       host.removing = [];
-      host.wire.set(step, wire);
-      // The host decodes its own copy of what it sends, as the peers do.
-      this.confirmed.set(
-        step,
-        // oxlint-disable-next-line unicorn/prefer-structured-clone -- JSON is the wire: it turns -0 into 0, and the host must step on what peers decode.
-        this.decode(JSON.parse(JSON.stringify(wire)) as WireStep)
-      );
+      host.wire.set(step, [
+        inputs.map(({ player, encoded }) => [player, encoded] as const),
+        removed,
+      ]);
+      this.confirmed.set(step, {
+        inputs: inputs.map(({ player, input }) => ({ player, input })),
+        removed,
+      });
       this.confirmedThrough = step;
     }
   }
 
-  private decode(wire: WireStep): ConfirmedStep<PlayerInput> {
-    return {
-      inputs: wire[0].map(([player, input]) => ({
-        player,
-        input: this.options.codec.decode(input),
-      })),
-      removed: wire[1],
-    };
+  /** Peer: decodes a step from the host, or stops if an input in it doesn't decode. */
+  private decodeStep(
+    step: number,
+    wire: WireStep
+  ): ConfirmedStep<PlayerInput> | null {
+    const inputs: PlayerStepInput<PlayerInput>[] = [];
+    for (const [player, encoded] of wire[0]) {
+      const decoded = this.options.codec.decode(encoded);
+      if (Result.isFailure(decoded)) {
+        this.stop(
+          lockstepError({
+            kind: "badInput",
+            player,
+            step,
+            issue: decoded.failure,
+          })
+        );
+        return null;
+      }
+      inputs.push({ player, input: decoded.success });
+    }
+    return { inputs, removed: wire[1] };
   }
 
   /**
@@ -704,7 +797,24 @@ class Session<
       const encoded = codec.encode(local.read(this.nextLocal));
       local.endStep?.();
       if (this.host) {
-        this.host.pending.get(this.self)!.set(this.nextLocal, encoded);
+        // The host steps on its own input as the peers decode it: through JSON, then the codec.
+        // oxlint-disable-next-line unicorn/prefer-structured-clone -- JSON is the wire: it turns -0 into 0.
+        const wire = JSON.parse(JSON.stringify(encoded)) as unknown;
+        const decoded = codec.decode(wire);
+        if (Result.isFailure(decoded)) {
+          this.stop(
+            lockstepError({
+              kind: "badInput",
+              player: this.self,
+              step: this.nextLocal,
+              issue: decoded.failure,
+            })
+          );
+          return;
+        }
+        this.host.pending
+          .get(this.self)!
+          .set(this.nextLocal, { encoded: wire, input: decoded.success });
       } else {
         this.peer!.unsent.set(this.nextLocal, encoded);
       }
@@ -793,7 +903,7 @@ class Session<
           from,
           inputs,
           stepsAck: this.confirmedThrough,
-          hashes: [...this.ownHashes],
+          hashes: oldestHashes(this.ownHashes, -1),
           hashAck: peer.hashAck,
         } satisfies Message)
       );
@@ -831,7 +941,7 @@ class Session<
           steps,
           inputsAck: host.inputsKnown.get(peer)!,
           hashAck: host.peerHashAck.get(peer)!,
-          hashes: [...this.ownHashes].filter(([step]) => step > hashAck),
+          hashes: oldestHashes(this.ownHashes, hashAck),
           waiting: this.waitingFor,
         } satisfies Message)
       );
@@ -840,7 +950,7 @@ class Session<
   }
 
   /** Host: forgets confirmed steps and hashes every peer still in the run has. */
-  private forgetAcknowledged(host: HostSide) {
+  private forgetAcknowledged(host: HostSide<PlayerInput>) {
     const { peers } = host;
     const stepsAck = Math.min(
       this.confirmedThrough,
@@ -884,13 +994,19 @@ const advanceKnown = (
   known.set(player, through);
 };
 
-const parse = (text: string): Message | null => {
-  try {
-    const message = JSON.parse(text) as Message | null;
-    return typeof message === "object" && message !== null && "kind" in message
-      ? message
-      : null;
-  } catch {
-    return null;
+/** The oldest hashes after step `after`, as many as one message carries; the rest follow as they're acknowledged. */
+const oldestHashes = (
+  hashes: Map<number, number>,
+  after: number
+): [step: number, hash: number][] => {
+  const oldest: [number, number][] = [];
+  for (const [step, hash] of hashes) {
+    if (oldest.length === MAX_BATCH) {
+      break;
+    }
+    if (step > after) {
+      oldest.push([step, hash]);
+    }
   }
+  return oldest;
 };

@@ -2,6 +2,9 @@ import { Data } from "effect";
 
 import type { PeerId } from "./transport";
 
+/** Why the host removed a player: stepping stalled on it, or its input didn't decode. */
+export type RemovedWhy = "stalled" | "badInput";
+
 /** Why a lockstep session stopped. */
 export type StopReason =
   /** Two peers' states differ: their hashes of the state after `step` steps don't match. */
@@ -17,8 +20,27 @@ export type StopReason =
       readonly hostContentHash: string;
       readonly localContentHash: string;
     }
-  /** The host removed this peer's player at `step`, after stepping stalled on its input for `dropAfterMs`. */
-  | { readonly kind: "removed"; readonly peer: PeerId; readonly step: number }
+  /**
+   * The host removed this peer's player at `step`: after stepping stalled on its input for
+   * `dropAfterMs` (`stalled`), or because an input it sent didn't decode (`badInput`).
+   */
+  | {
+      readonly kind: "removed";
+      readonly peer: PeerId;
+      readonly step: number;
+      readonly why: RemovedWhy;
+    }
+  /**
+   * `player`'s input for `step` didn't decode on this peer: in a step from the host, or, on the
+   * host, its own. The peers' codecs differ, or the host's encodes what it can't decode.
+   */
+  | {
+      readonly kind: "badInput";
+      readonly player: PeerId;
+      readonly step: number;
+      /** What the codec said is wrong with it. */
+      readonly issue: string;
+    }
   /** Nothing came from the host for `silentMs`. With no host, no step can be decided. */
   | {
       readonly kind: "hostLost";
@@ -50,7 +72,14 @@ const describe = (reason: StopReason): string => {
       return `Content differs from the host's: host ${reason.hostContentHash}, this peer ${reason.localContentHash}`;
     }
     case "removed": {
-      return `The host removed ${reason.peer} from the run at step ${reason.step}`;
+      const why =
+        reason.why === "stalled"
+          ? "stepping stalled on its input"
+          : "its input didn't decode";
+      return `The host removed ${reason.peer} from the run at step ${reason.step}: ${why}`;
+    }
+    case "badInput": {
+      return `The input of ${reason.player} for step ${reason.step} didn't decode: ${reason.issue}`;
     }
     case "hostLost": {
       return `Lost the host ${reason.host}: nothing heard for ${Math.round(reason.silentMs)} ms`;

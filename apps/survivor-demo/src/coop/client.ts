@@ -144,7 +144,12 @@ const stopMessage = (error: LockstepError): string => {
       return `Your game content differs from the host's, so you can't play this run together (host ${reason.hostContentHash}, yours ${reason.localContentHash}).`;
     }
     case "removed": {
-      return `The host removed you from the run at step ${reason.step}: it waited on you too long.`;
+      return reason.why === "stalled"
+        ? `The host removed you from the run at step ${reason.step}: it waited on you too long.`
+        : `The host removed you from the run at step ${reason.step}: your game sent input it couldn't read. Are you both on the same version?`;
+    }
+    case "badInput": {
+      return `The run stopped: input from ${reason.player} for step ${reason.step} couldn't be read. Are you both on the same version?`;
     }
     case "hostLost": {
       return `Lost the host: nothing heard for ${Math.round(reason.silentMs / 1000)} s. The run is over.`;

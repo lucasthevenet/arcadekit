@@ -3,7 +3,7 @@
 // No DOM here; the WebRTC transport and the signalling client are in "@arcadekit/net/browser".
 
 export { type InputCodec, jsonCodec, schemaCodec } from "./codec";
-export { LockstepError, type StopReason } from "./errors";
+export { LockstepError, type RemovedWhy, type StopReason } from "./errors";
 export {
   type ConfirmedStep,
   type HostOptions,
