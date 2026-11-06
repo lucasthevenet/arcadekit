@@ -25,6 +25,7 @@ export interface PushPuzzleInput {
 /** A run is one attempt at one level. */
 export interface PushPuzzleConfig {
   readonly content: PuzzleContent;
+  /** The level to play. Must be one of `content`'s levels: `createPuzzle` throws otherwise. */
   readonly levelId: string;
   /** How many turns undo can go back. Defaults to 2048; the oldest are dropped first. */
   readonly historyCapacity?: number;
@@ -143,9 +144,14 @@ export const createPuzzle = (
   // Push-puzzle has no randomness. The seed is part of the runtime's contract, so it's accepted.
   _seed: number
 ): Puzzle => {
-  const level =
-    content.levels.find((l) => l.id === levelId) ?? content.levels[0];
+  const level = content.levels.find((l) => l.id === levelId);
+  if (level === undefined) {
+    // Decoded content only holds levels that can be played, so this is the caller's mistake.
+    throw new Error(`push-puzzle content has no level "${levelId}"`);
+  }
   const parsed = parseLevel(level.rows);
+  // The schema rejects a level without exactly one player.
+  const player = parsed.players[0]!;
   // Boxes get ids 0, 1, 2… in level reading order. None is ever added after this, so an id
   // freed by filling a hole stays free until undo brings that box back.
   const boxes = createIdentifiedPool(parsed.boxes.length, BOX_LAYOUT);
@@ -160,7 +166,7 @@ export const createPuzzle = (
     goals: parsed.goals,
     goalCount: parsed.goalCount,
     boxes,
-    player: parsed.players[0] ?? 0,
+    player,
     moves: 0,
     turns: 0,
     solved: false,

@@ -1,8 +1,9 @@
 import { loadContent, memorySource } from "@arcadekit/content";
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { pushPuzzleContentDefinition } from "./content";
+import { PuzzleContent } from "./schema";
 
 const load = (levels: unknown) =>
   Effect.runPromiseExit(
@@ -19,6 +20,10 @@ const level = (id: string, rows: readonly string[]) => ({
 });
 
 const GOOD = level("first", ["#####", "#@$.#", "#####"]);
+
+/** Decodes `levels` with the schema alone, as code that skips the loader does. */
+const decodeLevels = (levels: unknown) => () =>
+  Schema.decodeUnknownSync(PuzzleContent)({ levels });
 
 /** The failure message, or "" if loading succeeded. */
 const failure = async (levels: unknown) => {
@@ -56,5 +61,21 @@ describe("push-puzzle content", () => {
       "Invalid content"
     );
     await expect(failure([])).resolves.toContain("Invalid content");
+  });
+
+  it.each([
+    ["no player", ["#####", "# $.#", "#####"], "no player"],
+    ["no goal", ["#####", "#@$ #", "#####"], "no goal"],
+  ])(
+    "rejects a level with %s when decoded with the schema alone",
+    (_, rows, problem) => {
+      expect(decodeLevels([level("broken", rows)])).toThrow(problem);
+    }
+  );
+
+  it("rejects duplicate level ids when decoded with the schema alone", () => {
+    expect(decodeLevels([GOOD, GOOD])).toThrow(
+      'level "first" appears more than once'
+    );
   });
 });

@@ -6,6 +6,7 @@ import { Schema } from "effect";
 
 const Id = Schema.String.check(Schema.isNonEmpty());
 const Positive = Schema.Finite.check(Schema.isGreaterThan(0));
+const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 const NonNegative = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
 const HexColor = Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/u));
 
@@ -117,7 +118,8 @@ const WaveDef = Schema.Struct({
 
 const Rules = Schema.Struct({
   arenaHalfSize: Positive,
-  maxEnemies: Positive,
+  /** The enemy pool's size. A whole number: the pool's typed arrays are allocated from it. */
+  maxEnemies: PositiveInt,
   xpToLevel2: Positive,
   xpGrowth: Positive,
   baseMoveSpeedScale: Positive,
@@ -127,20 +129,13 @@ const Rules = Schema.Struct({
   runLength: Positive,
 });
 
-export const GameContent = Schema.Struct({
-  rules: Rules,
-  heroes: Schema.NonEmptyArray(HeroDef),
-  enemies: Schema.NonEmptyArray(EnemyDef),
-  weapons: Schema.NonEmptyArray(WeaponDef),
-  passives: Schema.Array(PassiveDef),
-  waves: Schema.NonEmptyArray(WaveDef),
-});
-export type GameContent = typeof GameContent.Type;
-
 /** Finds ids that point at nothing (a hero's starting weapon, a wave's enemy). */
-export const findBrokenReferences = (
-  content: GameContent
-): readonly string[] => {
+const brokenReferences = (content: {
+  readonly heroes: readonly HeroDef[];
+  readonly enemies: readonly EnemyDef[];
+  readonly weapons: readonly WeaponDef[];
+  readonly waves: readonly (typeof WaveDef.Type)[];
+}): readonly string[] => {
   const weaponIds = new Set(content.weapons.map((w) => w.id));
   const enemyIds = new Set(content.enemies.map((e) => e.id));
   return [
@@ -154,3 +149,16 @@ export const findBrokenReferences = (
       .map((w) => `wave ${w.from}-${w.to}s spawns unknown enemy "${w.enemy}"`),
   ];
 };
+
+export const GameContent = Schema.Struct({
+  rules: Rules,
+  heroes: Schema.NonEmptyArray(HeroDef),
+  enemies: Schema.NonEmptyArray(EnemyDef),
+  weapons: Schema.NonEmptyArray(WeaponDef),
+  passives: Schema.Array(PassiveDef),
+  waves: Schema.NonEmptyArray(WaveDef),
+}).check(
+  // Ids are checked here, not left to a loader, so the world can trust content however it was decoded.
+  Schema.makeFilter(brokenReferences)
+);
+export type GameContent = typeof GameContent.Type;

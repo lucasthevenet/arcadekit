@@ -434,3 +434,26 @@ describe("replay", () => {
     expect(replay()).toStrictEqual(a);
   });
 });
+
+describe("starting a run", () => {
+  it("starts on the level named by levelId", () => {
+    const content = Schema.decodeUnknownSync(PuzzleContent)({
+      levels: [
+        { id: "a", name: "A", rows: ["#####", "#@$.#", "#####"] },
+        { id: "b", name: "B", rows: ["######", "# @$.#", "######"] },
+      ],
+    });
+    expect(boardText(createPuzzle({ content, levelId: "b" }, 0))).toStrictEqual(
+      ["######", "# @$.#", "######"]
+    );
+  });
+
+  it("throws, naming the level, when levelId isn't in the content", () => {
+    const config = configFor(["#####", "#@$.#", "#####"], {
+      levelId: "missing",
+    });
+    expect(() => createPuzzle(config, 0)).toThrow(
+      'push-puzzle content has no level "missing"'
+    );
+  });
+});
