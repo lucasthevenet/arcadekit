@@ -6,7 +6,7 @@ Introduces the peers of a co-op run so they can open WebRTC data channels to eac
 
 ## The protocol
 
-JSON over one WebSocket per peer. `@arcadekit/net/signalling` (`packages/net/src/signalling/protocol.ts`) has every message as an Effect Schema, whose types are the messages' types, the parsers and the join-code helpers. It lives beside the browser's signalling client, which speaks it, and needs nothing but `effect` and no DOM, so this worker imports it as is. A message that doesn't decode is `bad-message`: a client message is at most 16 KB, a peer id at most 32 characters, an `sdpMid` or ICE username fragment at most 256, and `sdpMLineIndex` is 0 to 65535.
+JSON over one WebSocket per peer. `@arcadekit/net/signalling` (`packages/net/src/signalling/protocol.ts`) has every message as an Effect Schema, whose types are the messages' types, the parsers and the join-code helpers. It lives beside the browser's signalling client, which speaks it, and needs nothing but `effect` and no DOM, so this worker imports it as is. A message that doesn't decode is `bad-message`: a client message is at most 16 KB (`MAX_MESSAGE_LENGTH`), a peer id at most 32 characters (`MAX_PEER_ID_LENGTH`), an `sdpMid` or ICE username fragment at most 256 (`MAX_TOKEN_LENGTH`), and `sdpMLineIndex` is 0 to 65535.
 
 1. The host opens `wss://<worker>/host`. The worker picks a join code and answers `welcome` with it; the host's peer id is `host`.
 2. Each guest opens `wss://<worker>/join/<code>` and gets `welcome` with its own id (`guest-1`, `guest-2`, …, never reused). The host gets `peer-joined`.
@@ -26,7 +26,7 @@ The worker trusts whoever holds a join code. A code is 6 letters from a 31-lette
 - `room.ts`: one room's rules (`createRoom`): who's in it, who may signal whom, the start, expiry. It deals in peer ids and returns what to send and whom to close, so it's tested without Cloudflare.
 - `sockets.ts`: the adapter from a room to sockets (`createSocketRoom`): which socket is which peer, and carrying out the room's sends and closes. Plain code, tested with fake sockets.
 - `connections.ts`: the Durable Object's work as Effects. Each socket's connection is one fiber: the room admits it, a host's expiry alarm is set (and if that fails, the room forgets the host and the request gets 503), then the room gets its messages until the socket closes. `roomLayer` is what the object's runtime holds, on Effect's synchronous scheduler: Cloudflare can drop the timers a request leaves behind, and a connection outlives the request that opened it. Tested with fake sockets, a fake storage and a test clock.
-- `routes.ts`: the Worker's routes as an Effect (`handleRequest`). Any path but the signalling routes goes to the site's files (`ASSETS`); a binding that fails is answered 503. Tested with fake bindings.
+- `routes.ts`: the Worker's routes as an Effect (`handleRequest`). Any path but the signalling routes goes to the site's files (`ASSETS`); a binding that fails is logged by name and answered 503. Tested with fake bindings.
 - `worker.ts`: Cloudflare's entry points only. The Worker's `fetch` runs `handleRequest` with `Effect.runPromise`, since nothing outlives a request. The `SignallingRoom` Durable Object builds one `ManagedRuntime` from `roomLayer` and runs its `fetch` and `alarm` on it, since its connections outlive the request that opened them. Rooms live in memory: they last minutes, and their open WebSockets keep the object alive.
 
 The worker bundles Effect: about 135 KB minified and 40 KB gzipped, 28 KB of it the protocol's Schemas (5 KB and 2 KB before).

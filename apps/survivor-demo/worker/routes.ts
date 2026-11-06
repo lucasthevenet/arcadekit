@@ -30,8 +30,12 @@ export interface Bindings {
   };
 }
 
-/** A binding the Worker handed a request to failed: the site's files or a room's Durable Object. */
+/**
+ * A binding the Worker handed a request to failed: the site's files (`ASSETS`) or a room's
+ * Durable Object (`ROOMS`).
+ */
 export class BindingError extends Data.TaggedError("BindingError")<{
+  readonly binding: keyof Bindings;
   readonly cause: unknown;
 }> {}
 
@@ -64,11 +68,12 @@ export const readRoomRequest = (request: Request): RoomSearch | undefined =>
 const text = (status: number, body: string) => new Response(body, { status });
 
 const forward = (
+  binding: keyof Bindings,
   fetch: () => Promise<Response>
 ): Effect.Effect<Response, BindingError> =>
   Effect.tryPromise({
     try: fetch,
-    catch: (cause) => new BindingError({ cause }),
+    catch: (cause) => new BindingError({ binding, cause }),
   });
 
 /** A fresh join code from random bytes; `undefined` in the unlikely case they run out. */
@@ -88,7 +93,7 @@ export const handleRequest: (
     const { pathname } = new URL(request.url);
     const isHost = pathname === "/host";
     if (!isHost && !pathname.startsWith("/join/")) {
-      return yield* forward(() => env.ASSETS.fetch(request));
+      return yield* forward("ASSETS", () => env.ASSETS.fetch(request));
     }
     if (request.headers.get("Upgrade") !== "websocket") {
       return text(426, "Expected a WebSocket upgrade");
@@ -98,11 +103,14 @@ export const handleRequest: (
       return isHost ? text(503, "Try again") : text(404, "Not found");
     }
     const room = roomRequest(request, code, isHost ? "host" : "guest");
-    return yield* forward(() => env.ROOMS.getByName(code).fetch(room));
+    return yield* forward("ROOMS", () => env.ROOMS.getByName(code).fetch(room));
   },
   Effect.catchTag("BindingError", (error) =>
     Effect.as(
-      Effect.logError("A signalling request's binding failed", error.cause),
+      Effect.logError(
+        `The Worker's ${error.binding} binding failed`,
+        error.cause
+      ),
       text(503, "Try again")
     )
   )

@@ -7,7 +7,9 @@ import {
   joinCodeFromBytes,
   joinCodeFromPath,
   MAX_MESSAGE_LENGTH,
+  MAX_PEER_ID_LENGTH,
   MAX_PLAYERS,
+  MAX_TOKEN_LENGTH,
   normalizeJoinCode,
   parseClientMessage,
   parseServerMessage,
@@ -141,15 +143,27 @@ describe(parseClientMessage, () => {
   it("refuses a field longer than the protocol allows", () => {
     expect(
       [
-        signalTo("x".repeat(33), { kind: "offer", sdp: "v=0" }),
-        signalTo("host", { ...candidate, sdpMid: "m".repeat(257) }),
-        signalTo("host", { ...candidate, usernameFragment: "u".repeat(257) }),
+        signalTo("x".repeat(MAX_PEER_ID_LENGTH + 1), {
+          kind: "offer",
+          sdp: "v=0",
+        }),
+        signalTo("host", {
+          ...candidate,
+          sdpMid: "m".repeat(MAX_TOKEN_LENGTH + 1),
+        }),
+        signalTo("host", {
+          ...candidate,
+          usernameFragment: "u".repeat(MAX_TOKEN_LENGTH + 1),
+        }),
       ].map(parseClientMessage)
     ).toStrictEqual([undefined, undefined, undefined]);
     expect(
       [
-        signalTo("x".repeat(32), { kind: "offer", sdp: "v=0" }),
-        signalTo("host", { ...candidate, sdpMid: "m".repeat(256) }),
+        signalTo("x".repeat(MAX_PEER_ID_LENGTH), { kind: "offer", sdp: "v=0" }),
+        signalTo("host", {
+          ...candidate,
+          sdpMid: "m".repeat(MAX_TOKEN_LENGTH),
+        }),
       ].map((text) => parseClientMessage(text)?.type)
     ).toStrictEqual(["signal", "signal"]);
   });
@@ -229,7 +243,7 @@ describe(parseServerMessage, () => {
       ...welcome,
       peers: Array.from({ length: MAX_PLAYERS }, (_, i) => `guest-${i}`),
     },
-    { ...welcome, self: "x".repeat(33) },
+    { ...welcome, self: "x".repeat(MAX_PEER_ID_LENGTH + 1) },
     { type: "peer-joined" },
     { type: "peer-left", peer: null },
     { type: "signal", from: "host", signal: { kind: "offer", sdp: 0 } },

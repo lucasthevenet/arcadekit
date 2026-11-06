@@ -35,10 +35,10 @@ export const JOIN_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export const JOIN_CODE_LENGTH = 6;
 
 /** The longest peer id. The worker's are `host` and `guest-<n>`. */
-const MAX_PEER_ID_LENGTH = 32;
+export const MAX_PEER_ID_LENGTH = 32;
 
 /** The longest `sdpMid` or ICE username fragment: ICE allows 256 characters. */
-const MAX_TOKEN_LENGTH = 256;
+export const MAX_TOKEN_LENGTH = 256;
 
 /** A peer's id within one room: `host`, or `guest-1`, `guest-2`, … in join order, never reused. */
 export const PeerId: Schema.String = Schema.String.check(

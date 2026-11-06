@@ -5,10 +5,15 @@ import { describe, expect, it } from "vitest";
 import { handleRequest, readRoomRequest, roomRequest } from "./routes";
 import type { Bindings } from "./routes";
 
-/** The Worker's bindings, recording what reaches them. `room` answers for every join code. */
+/**
+ * The Worker's bindings, recording what reaches them. `room` answers for every join code, and
+ * `site` for the site's files.
+ */
 const fakeBindings = (
   room: (request: Request) => Promise<Response> = () =>
-    Promise.resolve(new Response("room"))
+    Promise.resolve(new Response("room")),
+  site: (request: Request) => Promise<Response> = () =>
+    Promise.resolve(new Response("site"))
 ) => {
   const assets: Request[] = [];
   const rooms: { code: string; request: Request }[] = [];
@@ -16,7 +21,7 @@ const fakeBindings = (
     ASSETS: {
       fetch: (request) => {
         assets.push(request);
-        return Promise.resolve(new Response("site"));
+        return site(request);
       },
     },
     ROOMS: {
@@ -103,15 +108,25 @@ describe(handleRequest, () => {
   });
 
   it("answers 503 and logs it when the room's Durable Object can't be reached", async () => {
-    const { bindings } = fakeBindings(() =>
-      Promise.reject(new Error("Durable Object is overloaded"))
-    );
+    const error = new Error("Durable Object is overloaded");
+    const { bindings } = fakeBindings(() => Promise.reject(error));
     const { response, logs } = await answer(
       new Request("https://game.test/join/K7MQ2X", upgrade),
       bindings
     );
     expect(response.status).toBe(503);
-    expect(logs).toHaveLength(1);
+    expect(logs).toStrictEqual([["The Worker's ROOMS binding failed", error]]);
+  });
+
+  it("answers 503 and logs it when the site's files can't be fetched", async () => {
+    const error = new Error("assets down");
+    const { bindings } = fakeBindings(undefined, () => Promise.reject(error));
+    const { response, logs } = await answer(
+      new Request("https://game.test/hostel"),
+      bindings
+    );
+    expect(response.status).toBe(503);
+    expect(logs).toStrictEqual([["The Worker's ASSETS binding failed", error]]);
   });
 });
 
