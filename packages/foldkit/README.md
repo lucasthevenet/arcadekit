@@ -110,7 +110,7 @@ const subscriptions = Subscription.make<Model, Message, Engine>()(() => ({
   engine: engineEntry({
     engine: Engine,
     isViewportMounted: (model) => model.isViewportMounted,
-    toMessage: (event) => Message.GotScore({ score: event.score }),
+    toMessage: (event): Message => Message.GotScore({ score: event.score }),
     onError: (error) => Message.FailedToAttach({ error: error.message }),
   }),
 }));
