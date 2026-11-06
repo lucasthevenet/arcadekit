@@ -67,7 +67,8 @@ export const gameViewport = <Message>(
 /**
  * What `engineEntry` uses of an engine: `attach` and `listen`. A `GameEngine` is one; so is any
  * client that draws into the viewport and reports events, such as a co-op client. `attach` may
- * fail with `E` when what it draws with comes through a load.
+ * fail with `E`: a `GameEngine`'s fails with `AttachError` when its view can't be made (no
+ * WebGL), and a client's may also fail when what it draws with comes through a load.
  */
 export interface AttachableEngine<Event, E = never> {
   /** Draws into `element` and reads input from it while the scope is open. */
@@ -80,16 +81,27 @@ export interface AttachableEngine<Event, E = never> {
   ) => Effect.Effect<void, never, Scope.Scope>;
 }
 
-export type EngineEntryConfig<Model, Message, Event, R, E = never> = {
+/**
+ * `engineEntry`'s config. `E` is what reaching the engine can fail with (its load), and `A` what
+ * its `attach` can fail with.
+ */
+export type EngineEntryConfig<
+  Model,
+  Message,
+  Event,
+  R,
+  E = never,
+  A = never,
+> = {
   /**
    * The genre's engine. A service key is an Effect that yields its service, so pass the key
    * itself (`MyEngine`), and give `Subscription.make` that service; `resources` must
    * provide it. Only `attach` and `listen` are used: Commands call the rest.
    *
-   * An engine reached through a load (`engineOf(MyEngine)`, `@arcadekit/runtime/browser`) can
-   * fail: pass `onError`.
+   * A `GameEngine`'s attach can fail (`AttachError`, `@arcadekit/runtime/browser`), and so can
+   * an engine reached through a load (`engineOf(MyEngine)`): pass `onError`.
    */
-  readonly engine: Effect.Effect<AttachableEngine<Event, E>, E, R>;
+  readonly engine: Effect.Effect<AttachableEngine<Event, A>, E, R>;
   /** Reads the Boolean that `gameViewport`'s `mounted` and `unmounted` Messages set. */
   readonly isViewportMounted: (model: Model) => boolean;
   /**
@@ -98,7 +110,7 @@ export type EngineEntryConfig<Model, Message, Event, R, E = never> = {
    * using before putting it in the Message.
    */
   readonly toMessage: (event: Event) => Message | undefined;
-} & ([E] extends [never]
+} & ([E | A] extends [never]
   ? { readonly onError?: never }
   : {
       /**
@@ -106,7 +118,7 @@ export type EngineEntryConfig<Model, Message, Event, R, E = never> = {
        * listened to after it, and the entry runs again only when its Boolean changes, so it
        * doesn't retry by itself.
        */
-      readonly onError: (error: E) => Message;
+      readonly onError: (error: E | A) => Message;
     });
 
 /**
@@ -120,12 +132,13 @@ export type EngineEntryConfig<Model, Message, Event, R, E = never> = {
  * but no `gameViewport` is in the document, the Subscription dies and Foldkit shows its crash
  * view: that is a programming error.
  *
- * An engine reached through a load (`engineOf(loader)`) can fail. Pass `onError`, and still
- * keep `isViewportMounted` false until the app's own load has succeeded. The entry runs again
- * only when its Boolean changes, so it won't retry by itself.
+ * A `GameEngine` can fail to attach (`AttachError`: no WebGL, say), and an engine reached
+ * through a load (`engineOf(loader)`) can fail to load. Pass `onError`, which turns either into
+ * a Message, and keep `isViewportMounted` false until the app's own load has succeeded. The
+ * entry runs again only when its Boolean changes, so it won't retry by itself.
  */
-export const engineEntry = <Model, Message, Event, R, E = never>(
-  config: EngineEntryConfig<Model, Message, Event, R, E>
+export const engineEntry = <Model, Message, Event, R, E = never, A = never>(
+  config: EngineEntryConfig<Model, Message, Event, R, E, A>
 ): Subscription.EntryWithoutKeepAlive<
   Model,
   Message,
@@ -145,8 +158,8 @@ export const engineEntry = <Model, Message, Event, R, E = never>(
 });
 
 /** Attaches the engine to the viewport and emits a Message per engine event, until it ends. */
-const engineMessages = <Model, Message, Event, R, E>(
-  config: EngineEntryConfig<Model, Message, Event, R, E>
+const engineMessages = <Model, Message, Event, R, E, A>(
+  config: EngineEntryConfig<Model, Message, Event, R, E, A>
 ): Stream.Stream<Message, never, R> =>
   Stream.callback<Message, never, R>((queue) =>
     Effect.gen(function* () {
@@ -172,11 +185,13 @@ const engineMessages = <Model, Message, Event, R, E>(
     }).pipe(
       // Its own scope: a failed attach also ends the listening, so no event follows the error.
       Effect.scoped,
-      // A failed load becomes the app's Message, sent once. It can only happen with `onError`:
-      // without it, `E` is never.
-      Effect.catch((error: E) =>
+      // A failed load or attach becomes the app's Message, sent once. It can only happen with
+      // `onError`: without it, `E` and `A` are never.
+      Effect.catch((error: E | A) =>
         Effect.sync(() => {
-          const { onError } = config as { onError?: (error: E) => Message };
+          const { onError } = config as {
+            onError?: (error: E | A) => Message;
+          };
           if (onError !== undefined) {
             Queue.offerUnsafe(queue, onError(error));
           }

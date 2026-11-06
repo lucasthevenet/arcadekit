@@ -79,8 +79,11 @@ class TestEngine extends Context.Service<
   GameEngine<null, GameState, GameEvent>
 >()("test/Engine") {}
 
-/** A game whose run reports "started", "noise" and a sample, and whose view logs its element. */
-const testEngine = () => {
+/**
+ * A game whose run reports "started", "noise" and a sample, and whose view logs its element.
+ * With `noWebGl`, making its view throws, as Three.js does without WebGL.
+ */
+const testEngine = ({ noWebGl = false } = {}) => {
   const log: string[] = [];
   const game: GameDefinition<null, GameState, null, GameEvent> = {
     create: () => ({ events: [{ type: "started" }, { type: "noise" }] }),
@@ -89,6 +92,9 @@ const testEngine = () => {
     sample: { everyMs: 1000, read: () => ({ type: "sample" }) },
     createInput: () => ({ read: () => null, dispose: () => {} }),
     createView: (container) => {
+      if (noWebGl) {
+        throw new Error("no WebGL");
+      }
       log.push(`attach ${container.title}`);
       return {
         render: () => {},
@@ -104,8 +110,9 @@ const testEngine = () => {
 const entry = engineEntry({
   engine: TestEngine,
   isViewportMounted: (model: Model) => model.isViewportMounted,
-  toMessage: (event: GameEvent) =>
+  toMessage: (event: GameEvent): Message | undefined =>
     event.type === "noise" ? undefined : Message.GotEvent({ name: event.type }),
+  onError: (error) => Message.FailedToLoad({ error: error.message }),
 });
 
 /** The Stream Foldkit's runtime runs for `model`: the entry's dependencies, then its Stream. */
@@ -273,6 +280,18 @@ describe(engineEntry, () => {
     ]);
   });
 
+  it("sends onError's Message once when the engine can't make its view, and doesn't fail", async () => {
+    const { engine } = testEngine({ noWebGl: true });
+    const messages = await Effect.runPromise(
+      Stream.runCollect(
+        streamFor(mounted).pipe(Stream.interruptWhen(Effect.sleep(30)))
+      ).pipe(Effect.provideService(TestEngine, engine))
+    );
+    expect(messages).toStrictEqual([
+      Message.FailedToLoad({ error: "no WebGL" }),
+    ]);
+  });
+
   it("fails loudly when the viewport isn't in the document", async () => {
     elements.clear();
     const { engine } = testEngine();
@@ -415,6 +434,14 @@ const eventToNonMessage = Subscription.make<Model, Message, TestEngine>()(
     }),
   })
 );
+const attachFailingWithoutOnError = engineEntry(
+  // @ts-expect-error A GameEngine's attach can fail, so it needs onError.
+  {
+    engine: TestEngine,
+    isViewportMounted: (model: Model) => model.isViewportMounted,
+    toMessage: (event: GameEvent) => Message.GotEvent({ name: event.type }),
+  }
+);
 const failingWithoutOnError = engineEntry(
   // @ts-expect-error An engine whose load can fail needs onError.
   {
@@ -427,7 +454,10 @@ const failingWithoutOnError = engineEntry(
   }
 );
 const onErrorWithoutFailure = engineEntry({
-  engine: TestEngine,
+  engine: Effect.succeed<AttachableEngine<GameEvent>>({
+    attach: () => Effect.void,
+    listen: () => Effect.void,
+  }),
   isViewportMounted: (model: Model) => model.isViewportMounted,
   toMessage: (event: GameEvent) => Message.GotEvent({ name: event.type }),
   // @ts-expect-error An engine that can't fail takes no onError.
@@ -448,7 +478,8 @@ describe("miswired apps", () => {
       eventToNonMessage,
       viewportWithNonMessage,
       failingWithoutOnError,
+      attachFailingWithoutOnError,
       onErrorWithoutFailure,
-    ]).toHaveLength(6);
+    ]).toHaveLength(7);
   });
 });

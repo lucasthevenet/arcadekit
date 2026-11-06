@@ -95,11 +95,14 @@ const EngineLayer = Layer.sync(Engine, () => makeGameEngine(game));
 export const play = (element: HTMLElement) =>
   Effect.gen(function* () {
     const engine = yield* Engine;
-    yield* engine.attach(element); // detaches when the scope closes
+    // Detaches when the scope closes. Fails with AttachError if the view can't be made (no WebGL).
+    yield* engine.attach(element);
     yield* engine.start(null);
     yield* Effect.never;
   }).pipe(Effect.scoped, Effect.provide(EngineLayer));
 ```
+
+`attach` fails with `AttachError` (its `cause` is what was thrown) when `createView` or `createInput` throws, with nothing left attached, so the app can show the player why instead of a blank viewport.
 
 For tests, `@arcadekit/runtime/testing` has `manualFrames()`: pass it as `makeGameEngine(game, { frames })` and run each frame yourself with `runFrameAt(ms)`, with no `requestAnimationFrame`.
 

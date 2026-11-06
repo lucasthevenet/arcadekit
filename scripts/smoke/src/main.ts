@@ -21,6 +21,7 @@ import type {
 } from "@arcadekit/render-three";
 import { combineViews, makeGameEngine } from "@arcadekit/runtime/browser";
 import type {
+  AttachError,
   GameDefinition,
   GameEngine,
   GameView,
@@ -120,7 +121,7 @@ const program = Effect.gen(function* () {
   const engine: GameEngine<DotsConfig, Dots, DotsEvent> = makeGameEngine(
     makeDotsGame(sheet, audio)
   );
-  const attachable: AttachableEngine<DotsEvent> = engine;
+  const attachable: AttachableEngine<DotsEvent, AttachError> = engine;
   const element = document.querySelector<HTMLElement>("#game");
   if (element === null) {
     return;

@@ -1,7 +1,9 @@
 import type { GameSimulation, StepInput } from "@arcadekit/runtime";
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { jsonCodec } from "./codec";
+import { jsonCodec, schemaCodec } from "./codec";
+import type { InputCodec } from "./codec";
 import { hostLockstep, joinLockstep } from "./lockstep";
 import type {
   ConfirmedStep,
@@ -11,6 +13,7 @@ import type {
 import { createMemoryNetwork } from "./memory-network";
 import type { MemoryNetwork, MemoryNetworkOptions } from "./memory-network";
 import { hasher, runNetwork } from "./test-harness";
+import type { Transport } from "./transport";
 
 // A tiny deterministic game: its state is a running digest of every input it has stepped on, and
 // it keeps that digest after each step so tests can compare runs step by step.
@@ -136,6 +139,71 @@ const silenced = () => {
   runNetwork(run.network, run.ticked, 0, 1000);
   run.network.cutOff("p2", true);
   return run;
+};
+
+/** `transport`, sending `junk` before each of its messages. */
+const junkFirst = (transport: Transport, junk: string): Transport => ({
+  self: transport.self,
+  listen: transport.listen,
+  send: (to, message) => {
+    transport.send(to, junk);
+    transport.send(to, message);
+  },
+});
+
+/**
+ * A transport that, with each `inputs` message carrying hashes, also sends a desync claim for
+ * the first hash's step: its own hash, honestly, and a made-up one for the host.
+ */
+const claimsDesync = (transport: Transport): Transport => ({
+  self: transport.self,
+  listen: transport.listen,
+  send: (to, message) => {
+    transport.send(to, message);
+    const sent = JSON.parse(message) as {
+      kind: string;
+      hashes?: [number, number][];
+    };
+    const [first] = sent.hashes ?? [];
+    if (sent.kind === "inputs" && first !== undefined) {
+      const [step, hash] = first;
+      transport.send(
+        to,
+        JSON.stringify({
+          kind: "desync",
+          step,
+          hashes: { [to]: (hash + 1) >>> 0, [transport.self]: hash },
+        })
+      );
+    }
+  },
+});
+
+/** A three-player run on a fair network, with p1's transport wrapped by `wrap`. */
+const runWithP1 = (wrap: (transport: Transport) => Transport) => {
+  const network = createMemoryNetwork({
+    seed: 3,
+    latencyMs: 20,
+    jitterMs: 5,
+  });
+  const host = hostLockstep(
+    { ...options(network, "host"), peers: ["p1", "p2"], seed: SEED },
+    0
+  );
+  const p1Options = options(network, "p1");
+  const p1 = joinLockstep(
+    { ...p1Options, transport: wrap(p1Options.transport), host: "host" },
+    0
+  );
+  const p2 = joinLockstep({ ...options(network, "p2"), host: "host" }, 0);
+  const sessions = [host, p1, p2];
+  runNetwork(
+    network,
+    sessions.map((session, i) => ({ session, everyMs: [4, 5, 7][i]! })),
+    0,
+    2000
+  );
+  return { host, p1, p2, sessions };
 };
 
 describe("lockstep session", () => {
@@ -349,4 +417,294 @@ describe("lockstep session", () => {
     expect(error?.message).toContain("content-1");
     expect(run.host.waitingFor).toStrictEqual(["p1"]);
   });
+
+  describe("when a peer claims a desync", () => {
+    it.each([
+      {
+        what: "names no hash of its own",
+        junk: '{"kind":"desync","step":0,"hashes":{}}',
+      },
+      {
+        what: "is about a step it can't have reached",
+        junk: '{"kind":"desync","step":1000000,"hashes":{"p1":1}}',
+      },
+      {
+        what: "is about a step no hash is kept for",
+        junk: '{"kind":"desync","step":3,"hashes":{"p1":1}}',
+      },
+    ])("runs on when the claim $what", ({ junk }) => {
+      const { sessions } = runWithP1((transport) => junkFirst(transport, junk));
+      const expected = expectedHistory(["host", "p1", "p2"], SEED, 100);
+      for (const session of sessions) {
+        expect(session.error).toBeNull();
+        expect(session.players).toStrictEqual(["host", "p1", "p2"]);
+        expect(history(session).slice(0, 100)).toStrictEqual(expected);
+      }
+    });
+
+    it("runs on when the claim says the host's hash differs, but the peer's matches it", () => {
+      const { sessions } = runWithP1(claimsDesync);
+      for (const session of sessions) {
+        expect(session.error).toBeNull();
+        expect(session.stepIndex).toBeGreaterThan(100);
+      }
+    });
+
+    it("keeps no hashes for steps no peer can have reached", () => {
+      const { host } = runWithP1((transport) => ({
+        ...transport,
+        send: (to, message) => {
+          transport.send(to, message);
+          for (let step = 1; step <= 20; step++) {
+            transport.send(
+              to,
+              JSON.stringify({
+                kind: "desync",
+                step: 1_000_000 + step * HASH_EVERY,
+                hashes: { p1: step },
+              })
+            );
+          }
+        },
+      }));
+      const { peerHashes } = (
+        internals(host) as { host: { peerHashes: Map<number, unknown> } }
+      ).host;
+      expect(host.error).toBeNull();
+      expect(
+        [...peerHashes.keys()].every((step) => step <= host.stepIndex + 1)
+      ).toBe(true);
+    });
+  });
+
+  describe("when what arrives doesn't decode", () => {
+    const moveCodec: InputCodec<Move> = schemaCodec(
+      Schema.Struct({ n: Schema.Finite })
+    );
+    const BAD_AT = 40;
+    /** Scripted input, but at step BAD_AT a value that isn't a Move. */
+    const badAt = (player: string): StepInput<Move> => ({
+      read: (step) =>
+        step === BAD_AT
+          ? ({ n: "x" } as unknown as Move)
+          : script(player, step),
+    });
+
+    it("has the host remove a peer whose input doesn't decode, and the others run on", () => {
+      // p1 sends its bad input as is (jsonCodec); the host and p2 check every input.
+      const run = startRun(BAD_NETWORK, ["p1", "p2"], (id) =>
+        id === "p1" ? { local: badAt(id) } : { codec: moveCodec }
+      );
+      runNetwork(run.network, run.ticked, 0, 5000);
+      const [p1, p2] = run.joined;
+      expect([run.host.error, p2!.error]).toStrictEqual([null, null]);
+      expect([run.host.players, p2!.players]).toStrictEqual([
+        ["host", "p2"],
+        ["host", "p2"],
+      ]);
+      expect(run.host.stepIndex).toBeGreaterThan(BAD_AT + 100);
+      expect(p1!.error?.reason).toStrictEqual({
+        kind: "removed",
+        peer: "p1",
+        step: expect.any(Number),
+        why: "badInput",
+      });
+      const steps = Math.min(run.host.stepIndex, p2!.stepIndex);
+      expect(history(p2!).slice(0, steps)).toStrictEqual(
+        history(run.host).slice(0, steps)
+      );
+    });
+
+    it("never throws out of the host's tick for a forged input", () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const host = hostLockstep(
+        {
+          ...options(network, "host", { codec: moveCodec }),
+          peers: ["evil"],
+          seed: SEED,
+        },
+        0
+      );
+      const evil = network.connect("evil");
+      const inputs = Array.from({ length: 64 }, (_, i) =>
+        i === 20 ? { n: "x" } : { n: 1 }
+      );
+      const ticked = [{ session: host, everyMs: 4 }];
+      for (let now = 0; now <= 1000; now += 5) {
+        evil.send(
+          "host",
+          JSON.stringify({
+            kind: "inputs",
+            from: 0,
+            inputs,
+            stepsAck: -1,
+            hashes: [],
+            hashAck: -1,
+          })
+        );
+        runNetwork(network, ticked, now, now + 4);
+      }
+      expect(host.error).toBeNull();
+      expect(host.players).toStrictEqual(["host"]);
+      expect(host.stepIndex).toBeGreaterThan(30);
+    });
+
+    it("stops a peer with badInput when the host's steps don't decode on it", () => {
+      // The host passes its own bad input (jsonCodec); p1 checks every input.
+      const run = startRun(
+        { seed: 1, latencyMs: 20, jitterMs: 5 },
+        ["p1"],
+        (id) => (id === "host" ? { local: badAt(id) } : { codec: moveCodec })
+      );
+      runNetwork(run.network, run.ticked, 0, 2000);
+      const p1 = run.joined[0]!;
+      expect(p1.status).toBe("stopped");
+      const reason = p1.error?.reason;
+      expect(reason).toMatchObject({
+        kind: "badInput",
+        player: "host",
+        step: BAD_AT,
+      });
+      expect(p1.stepIndex).toBeLessThanOrEqual(BAD_AT);
+      expect(p1.error?.message).toContain(`step ${BAD_AT}`);
+    });
+
+    it("stops the host with badInput when its own input doesn't decode", () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const host = hostLockstep(
+        {
+          ...options(network, "host", {
+            local: badAt("host"),
+            // Encodes without checking, so only the decode catches it.
+            codec: {
+              encode: jsonCodec<Move>().encode,
+              decode: moveCodec.decode,
+            },
+          }),
+          peers: [],
+          seed: SEED,
+        },
+        0
+      );
+      runNetwork(network, [{ session: host, everyMs: 4 }], 0, 2000);
+      expect(host.status).toBe("stopped");
+      expect(host.error?.reason).toMatchObject({
+        kind: "badInput",
+        player: "host",
+        step: BAD_AT,
+      });
+      expect(host.stepIndex).toBeLessThanOrEqual(BAD_AT);
+    });
+  });
+
+  describe("when a message isn't one the protocol knows", () => {
+    it.each([
+      { what: "a kind and nothing else", junk: '{"kind":"inputs"}' },
+      { what: "not JSON", junk: "{kind" },
+      { what: "null", junk: "null" },
+      {
+        what: "a step that isn't an integer",
+        junk: '{"kind":"inputs","from":0.5,"inputs":[],"stepsAck":-1,"hashes":[],"hashAck":-1}',
+      },
+      {
+        what: "a string for the inputs",
+        junk: '{"kind":"inputs","from":0,"inputs":"abc","stepsAck":-1,"hashes":[],"hashAck":-1}',
+      },
+      {
+        what: "a hash that isn't a pair",
+        junk: '{"kind":"inputs","from":0,"inputs":[],"stepsAck":-1,"hashes":[[10]],"hashAck":-1}',
+      },
+      {
+        what: "a desync without hashes",
+        junk: '{"kind":"desync","step":10}',
+      },
+      {
+        what: "too many inputs",
+        junk: JSON.stringify({
+          kind: "inputs",
+          from: 0,
+          inputs: Array.from({ length: 10_000 }, () => ({ n: 1 })),
+          stepsAck: -1,
+          hashes: [],
+          hashAck: -1,
+        }),
+      },
+    ])(
+      "drops one with $what, and handles the rest of what arrived",
+      ({ junk }) => {
+        const network = createMemoryNetwork({
+          seed: 1,
+          latencyMs: 20,
+          jitterMs: 5,
+        });
+        const host = hostLockstep(
+          { ...options(network, "host"), peers: ["p1"], seed: SEED },
+          0
+        );
+        const p1Options = options(network, "p1");
+        const p1 = joinLockstep(
+          {
+            ...p1Options,
+            transport: junkFirst(p1Options.transport, junk),
+            host: "host",
+          },
+          0
+        );
+        runNetwork(
+          network,
+          [
+            { session: host, everyMs: 4 },
+            { session: p1, everyMs: 5 },
+          ],
+          0,
+          2000
+        );
+        for (const session of [host, p1]) {
+          expect(session.error).toBeNull();
+          expect(session.players).toStrictEqual(["host", "p1"]);
+          expect(session.stepIndex).toBeGreaterThan(100);
+        }
+      }
+    );
+
+    it("keeps the inputs it holds for a peer bounded, whatever steps it claims", () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const host = hostLockstep(
+        { ...options(network, "host"), peers: ["evil"], seed: SEED },
+        0
+      );
+      const evil = network.connect("evil");
+      for (let i = 0; i < 200; i++) {
+        evil.send(
+          "host",
+          JSON.stringify({
+            kind: "inputs",
+            from: 1000 + i * 64,
+            inputs: Array.from({ length: 64 }, () => ({ n: 1 })),
+            stepsAck: -1,
+            hashes: [],
+            hashAck: -1,
+          })
+        );
+      }
+      runNetwork(network, [{ session: host, everyMs: 4 }], 0, 100);
+      // White-box: the host's store of each player's inputs not yet confirmed.
+      const { pending } = (
+        internals(host) as {
+          host: { pending: Map<string, Map<number, unknown>> };
+        }
+      ).host;
+      expect(pending.get("evil")!.size).toBe(0);
+    });
+  });
+
+  it("refuses to host more players than the wire carries", () => {
+    const network = createMemoryNetwork({ seed: 1 });
+    const peers = Array.from({ length: 16 }, (_, i) => `p${i}`);
+    expect(() =>
+      hostLockstep({ ...options(network, "host"), peers, seed: SEED }, 0)
+    ).toThrow(RangeError);
+  });
 });
+
+const internals = (session: LockstepSession<Tiny, never>) => session as unknown;

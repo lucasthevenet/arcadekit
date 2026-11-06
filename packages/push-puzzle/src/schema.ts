@@ -21,48 +21,56 @@ const unknownCharacter = (level: {
   return undefined;
 };
 
+const plural = (count: number, one: string, many: string) =>
+  `${count} ${count === 1 ? one : many}`;
+
+/** What makes a level unplayable: not exactly one player, no goal, or too few boxes. */
+const playProblems = (level: {
+  readonly id: string;
+  readonly rows: readonly string[];
+}): readonly string[] => {
+  const name = `level "${level.id}"`;
+  const parsed = parseLevel(level.rows);
+  const problems: string[] = [];
+  if (parsed.players.length === 0) {
+    problems.push(`${name} has no player`);
+  } else if (parsed.players.length > 1) {
+    problems.push(`${name} has ${parsed.players.length} players`);
+  }
+  if (parsed.goalCount === 0) {
+    problems.push(`${name} has no goal`);
+  } else if (parsed.boxes.length < parsed.goalCount) {
+    problems.push(
+      `${name} has ${plural(parsed.boxes.length, "box", "boxes")} for ${plural(parsed.goalCount, "goal", "goals")}`
+    );
+  }
+  return problems;
+};
+
 const LevelDef = Schema.Struct({
   id: Id,
   name: Schema.String,
   rows: Schema.NonEmptyArray(Schema.String),
 }).check(
-  // A filter on the whole level, not the row strings, so the message can name the level.
-  Schema.makeFilter((level) => unknownCharacter(level) ?? true)
+  // Filters on the whole level, not the row strings, so the messages can name the level.
+  // A run can trust a decoded level: it has one player, and boxes for every goal.
+  Schema.makeFilter((level) => unknownCharacter(level) ?? playProblems(level))
 );
 
-export const PuzzleContent = Schema.Struct({
-  levels: Schema.NonEmptyArray(LevelDef),
-});
-export type PuzzleContent = typeof PuzzleContent.Type;
-
-const plural = (count: number, one: string, many: string) =>
-  `${count} ${count === 1 ? one : many}`;
-
-/** Finds what the schema can't express: duplicate ids, and levels that can't be played. */
-export const findLevelProblems = (
-  content: PuzzleContent
-): readonly string[] => {
-  const problems: string[] = [];
+/** Level ids seen more than once. */
+const duplicateIds = (levels: readonly { readonly id: string }[]) => {
   const seen = new Set<string>();
-  for (const level of content.levels) {
-    const name = `level "${level.id}"`;
-    if (seen.has(level.id)) {
-      problems.push(`${name} appears more than once`);
+  const problems: string[] = [];
+  for (const { id } of levels) {
+    if (seen.has(id)) {
+      problems.push(`level "${id}" appears more than once`);
     }
-    seen.add(level.id);
-    const parsed = parseLevel(level.rows);
-    if (parsed.players.length === 0) {
-      problems.push(`${name} has no player`);
-    } else if (parsed.players.length > 1) {
-      problems.push(`${name} has ${parsed.players.length} players`);
-    }
-    if (parsed.goalCount === 0) {
-      problems.push(`${name} has no goal`);
-    } else if (parsed.boxes.length < parsed.goalCount) {
-      problems.push(
-        `${name} has ${plural(parsed.boxes.length, "box", "boxes")} for ${plural(parsed.goalCount, "goal", "goals")}`
-      );
-    }
+    seen.add(id);
   }
   return problems;
 };
+
+export const PuzzleContent = Schema.Struct({
+  levels: Schema.NonEmptyArray(LevelDef),
+}).check(Schema.makeFilter((content) => duplicateIds(content.levels)));
+export type PuzzleContent = typeof PuzzleContent.Type;

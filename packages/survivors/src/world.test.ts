@@ -7,7 +7,7 @@ import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
 import { soloInput } from "./input";
 import type { HeroInput, SurvivorsInput } from "./input";
-import { GameContent, findBrokenReferences } from "./schema";
+import { GameContent } from "./schema";
 import { survivorsSimulation } from "./simulation";
 import { chooseUpgrade, createWorld, hudSample, step } from "./world";
 import type { World } from "./world";
@@ -179,16 +179,56 @@ const levelUpForTwo = () => {
   return world;
 };
 
+/** Why `input` fails to decode as content, or "" if it decodes. */
+const decodeFailure = (input: unknown): string => {
+  try {
+    Schema.decodeUnknownSync(GameContent)(input);
+    return "";
+  } catch (error) {
+    return String(error);
+  }
+};
+
 describe("content", () => {
-  it("reports ids that point at nothing", () => {
-    expect(findBrokenReferences(content)).toStrictEqual([]);
+  it("decodes the test content", () => {
+    expect(decodeFailure(content)).toBe("");
+  });
+
+  it("rejects a wave that spawns an unknown enemy", () => {
     const broken = {
       ...content,
-      waves: [{ from: 0, to: 1, enemy: "ghost", perSecond: 1 }] as const,
+      waves: [{ from: 0, to: 1, enemy: "ghost", perSecond: 1 }],
     };
-    expect(findBrokenReferences(broken)).toStrictEqual([
-      'wave 0-1s spawns unknown enemy "ghost"',
-    ]);
+    expect(decodeFailure(broken)).toContain(
+      'wave 0-1s spawns unknown enemy "ghost"'
+    );
+  });
+
+  it("rejects a hero that starts with an unknown weapon", () => {
+    const [bolter] = content.heroes;
+    const broken = {
+      ...content,
+      heroes: [{ ...bolter, startingWeapon: "wand" }],
+    };
+    expect(decodeFailure(broken)).toContain(
+      'hero "bolter" starts with unknown weapon "wand"'
+    );
+  });
+
+  it("reports every broken reference at once", () => {
+    const [bolter] = content.heroes;
+    const message = decodeFailure({
+      ...content,
+      heroes: [{ ...bolter, startingWeapon: "wand" }],
+      waves: [{ from: 0, to: 1, enemy: "ghost", perSecond: 1 }],
+    });
+    expect(message).toContain('unknown weapon "wand"');
+    expect(message).toContain('unknown enemy "ghost"');
+  });
+
+  it("rejects a fractional enemy cap", () => {
+    const broken = { ...content, rules: { ...content.rules, maxEnemies: 2.5 } };
+    expect(decodeFailure(broken)).toContain("maxEnemies");
   });
 });
 

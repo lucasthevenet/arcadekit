@@ -158,7 +158,7 @@ describe("the push-puzzle sprites", () => {
 
   it("slides the player to its new cell, on whole screen pixels, walking", () => {
     const { sheet, camera, sprites } = setup();
-    const puzzle = start(["#####", "#@  #", "#####"]);
+    const puzzle = start(["#####", "#@  #", "#$. #", "#####"]);
     sprites.draw(puzzle, 1);
     const before = player(sprites, sheet);
     tap(puzzle, "right");
@@ -238,7 +238,7 @@ describe("the push-puzzle sprites", () => {
 
   it("starts a new run at rest, and shows a dim floor with no run", () => {
     const { sheet, sprites } = setup();
-    const first = start(["#####", "#@  #", "#####"]);
+    const first = start(["#####", "#@  #", "#$. #", "#####"]);
     sprites.draw(first, 0);
     tap(first, "right");
     sprites.draw(first, 1);
@@ -247,7 +247,7 @@ describe("the push-puzzle sprites", () => {
     const menuTiles = shown(sprites, sheet, 0);
     const menuActors = shown(sprites, sheet, 1);
 
-    const second = start(["#####", "#@  #", "#####"]);
+    const second = start(["#####", "#@  #", "#$. #", "#####"]);
     sprites.draw(second, 1.02);
     expect({
       menuTiles:
@@ -257,7 +257,7 @@ describe("the push-puzzle sprites", () => {
     }).toStrictEqual({
       menuTiles: true,
       menuActors: true,
-      second: ["#===#", "#@,,#", "#####"],
+      second: ["#===#", "#@,,#", "#$.,#", "#####"],
     });
   });
 

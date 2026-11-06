@@ -1,7 +1,7 @@
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { makeGameEngine } from "./browser";
+import { AttachError, makeGameEngine } from "./browser";
 import type { GameDefinition, GameEngine } from "./browser";
 import { manualFrames } from "./testing";
 
@@ -140,6 +140,114 @@ describe(makeGameEngine, () => {
       "step",
       "sample 2",
       "render 2",
+      "dispose input",
+      "dispose view",
+    ]);
+  });
+});
+
+/** The recording game with some of its parts replaced, such as one that throws. */
+const withParts = (
+  log: string[],
+  parts: Partial<GameDefinition<null, Counter, null, string>>
+): GameDefinition<null, Counter, null, string> => ({
+  ...recordingGame(log),
+  ...parts,
+});
+
+describe("attaching a game that throws", () => {
+  it("fails with an AttachError carrying the cause when createView throws, as Three.js does without WebGL", async () => {
+    const log: string[] = [];
+    const noWebGl = new Error("no WebGL");
+    const engine = makeGameEngine(
+      withParts(log, {
+        createView: () => {
+          throw noWebGl;
+        },
+      }),
+      { frames: manualFrames() }
+    );
+    const error = await Effect.runPromise(
+      Effect.scoped(Effect.flip(engine.attach(element)))
+    );
+    expect(error).toBeInstanceOf(AttachError);
+    expect(error).toMatchObject({
+      _tag: "AttachError",
+      message: "no WebGL",
+      cause: noWebGl,
+    });
+  });
+
+  it("disposes the view it made when createInput throws, and can attach again", async () => {
+    const log: string[] = [];
+    let inputs = 0;
+    const base = recordingGame(log);
+    const frames = manualFrames();
+    const engine = makeGameEngine(
+      withParts(log, {
+        createInput: (surface) => {
+          inputs += 1;
+          if (inputs === 1) {
+            throw new Error("no input");
+          }
+          return base.createInput(surface);
+        },
+      }),
+      { frames }
+    );
+    const failed = await Effect.runPromiseExit(
+      Effect.scoped(engine.attach(element))
+    );
+    expect(Exit.isFailure(failed)).toBe(true);
+    expect(frames.waiting()).toBe(false);
+    await Effect.runPromise(Effect.scoped(engine.attach(element)));
+    expect(log).toStrictEqual([
+      "createView game",
+      "dispose view",
+      "createView game",
+      "createInput game",
+      "dispose input",
+      "dispose view",
+    ]);
+  });
+
+  it("disposes the view and detaches when the input's dispose throws, so it can attach again", async () => {
+    const log: string[] = [];
+    let inputs = 0;
+    const base = recordingGame(log);
+    const frames = manualFrames();
+    const engine = makeGameEngine(
+      withParts(log, {
+        createInput: (surface) => {
+          inputs += 1;
+          const input = base.createInput(surface);
+          return inputs === 1
+            ? {
+                read: input.read,
+                dispose: () => {
+                  input.dispose();
+                  throw new Error("can't dispose");
+                },
+              }
+            : input;
+        },
+      }),
+      { frames }
+    );
+    const first = await Effect.runPromiseExit(
+      Effect.scoped(engine.attach(element))
+    );
+    // A throwing dispose is a bug in the game: the scope's close dies with it.
+    expect(Exit.hasDies(first)).toBe(true);
+    expect(frames.waiting()).toBe(false);
+    await Effect.runPromise(Effect.scoped(engine.attach(element)));
+    expect(log).toStrictEqual([
+      "createView game",
+      "createInput game",
+      "dispose input",
+      "dispose view",
+      "createView game",
+      "createInput game",
       "dispose input",
       "dispose view",
     ]);
