@@ -68,13 +68,16 @@ export const gameViewport = <Message>(
  * What `engineEntry` uses of an engine: `attach` and `listen`. A `GameEngine` is one; so is any
  * client that draws into the viewport and reports events, such as a co-op client. `attach` may
  * fail with `E`: a `GameEngine`'s fails with `AttachError` when its view can't be made (no
- * WebGL), and a client's may also fail when what it draws with comes through a load.
+ * WebGL) and `GameCrashed` when a frame throws, and a client's may also fail when what it draws
+ * with comes through a load.
  */
 export interface AttachableEngine<Event, E = never> {
-  /** Draws into `element` and reads input from it while the scope is open. */
-  readonly attach: (
-    element: HTMLElement
-  ) => Effect.Effect<void, E, Scope.Scope>;
+  /**
+   * Draws into `element` and reads input from it for as long as it runs, and detaches when
+   * interrupted. It never succeeds: it fails with `E` if it can't attach, or if it stops
+   * drawing on its own (a crash).
+   */
+  readonly attach: (element: HTMLElement) => Effect.Effect<never, E>;
   /** Calls `onEvent` for every event while the scope is open. */
   readonly listen: (
     onEvent: (event: Event) => void
@@ -83,7 +86,7 @@ export interface AttachableEngine<Event, E = never> {
 
 /**
  * `engineEntry`'s config. `E` is what reaching the engine can fail with (its load), and `A` what
- * its `attach` can fail with.
+ * its `attach` can fail with, at once or while attached.
  */
 export type EngineEntryConfig<
   Model,
@@ -98,8 +101,9 @@ export type EngineEntryConfig<
    * itself (`MyEngine`), and give `Subscription.make` that service; `resources` must
    * provide it. Only `attach` and `listen` are used: Commands call the rest.
    *
-   * A `GameEngine`'s attach can fail (`AttachError`, `@arcadekit/runtime/browser`), and so can
-   * an engine reached through a load (`engineOf(MyEngine)`): pass `onError`.
+   * A `GameEngine`'s attach can fail (`AttachError` or `GameCrashed`,
+   * `@arcadekit/runtime/browser`), and so can an engine reached through a load
+   * (`engineOf(MyEngine)`): pass `onError`.
    */
   readonly engine: Effect.Effect<AttachableEngine<Event, A>, E, R>;
   /** Reads the Boolean that `gameViewport`'s `mounted` and `unmounted` Messages set. */
@@ -114,9 +118,9 @@ export type EngineEntryConfig<
   ? { readonly onError?: never }
   : {
       /**
-       * The Message sent, once, if `engine` (or its `attach`) fails. Nothing is attached or
-       * listened to after it, and the entry runs again only when its Boolean changes, so it
-       * doesn't retry by itself.
+       * The Message sent, once, if `engine` (or its `attach`) fails: it can't load or attach,
+       * or its game crashed. Nothing is attached or listened to after it, and the entry runs
+       * again only when its Boolean changes, so it doesn't retry by itself.
        */
       readonly onError: (error: E | A) => Message;
     });
@@ -132,9 +136,10 @@ export type EngineEntryConfig<
  * but no `gameViewport` is in the document, the Subscription dies and Foldkit shows its crash
  * view: that is a programming error.
  *
- * A `GameEngine` can fail to attach (`AttachError`: no WebGL, say), and an engine reached
- * through a load (`engineOf(loader)`) can fail to load. Pass `onError`, which turns either into
- * a Message, and keep `isViewportMounted` false until the app's own load has succeeded. The
+ * A `GameEngine` can fail to attach (`AttachError`: no WebGL, say) or crash while attached
+ * (`GameCrashed`: a step or a render threw), and an engine reached through a load
+ * (`engineOf(loader)`) can fail to load. Pass `onError`, which turns any of these into a
+ * Message, and keep `isViewportMounted` false until the app's own load has succeeded. The
  * entry runs again only when its Boolean changes, so it won't retry by itself.
  */
 export const engineEntry = <Model, Message, Event, R, E = never, A = never>(
@@ -147,8 +152,8 @@ export const engineEntry = <Model, Message, Event, R, E = never, A = never>(
 > => ({
   // Keep the dependency a single Boolean. Foldkit restarts the Stream with `Stream.switchMap`,
   // which starts the next Stream before it stops the previous one, and an engine attaches to
-  // one element at a time (`GameDriver.attach` throws otherwise). A Boolean passes through
-  // false, whose Stream is empty, between two attachments.
+  // one element at a time (a second `attach` dies). A Boolean passes through false, whose
+  // Stream is empty, between two attachments.
   dependenciesSchema: Schema.Struct({ isViewportMounted: Schema.Boolean }),
   modelToDependencies: (model) => ({
     isViewportMounted: config.isViewportMounted(model),
@@ -157,7 +162,10 @@ export const engineEntry = <Model, Message, Event, R, E = never, A = never>(
     isViewportMounted ? engineMessages(config) : Stream.empty,
 });
 
-/** Attaches the engine to the viewport and emits a Message per engine event, until it ends. */
+/**
+ * Attaches the engine to the viewport and emits a Message per engine event, until the Stream
+ * is stopped or the engine fails.
+ */
 const engineMessages = <Model, Message, Event, R, E, A>(
   config: EngineEntryConfig<Model, Message, Event, R, E, A>
 ): Stream.Stream<Message, never, R> =>
@@ -180,13 +188,13 @@ const engineMessages = <Model, Message, Event, R, E, A>(
           Queue.offerUnsafe(queue, message);
         }
       });
-      yield* engine.attach(element);
-      return yield* Effect.never;
+      // Runs until the Stream is stopped, or fails if the engine can't attach or crashes.
+      return yield* engine.attach(element);
     }).pipe(
       // Its own scope: a failed attach also ends the listening, so no event follows the error.
       Effect.scoped,
-      // A failed load or attach becomes the app's Message, sent once. It can only happen with
-      // `onError`: without it, `E` and `A` are never.
+      // A failed load, a failed attach or a crash becomes the app's Message, sent once. It can
+      // only happen with `onError`: without it, `E` and `A` are never.
       Effect.catch((error: E | A) =>
         Effect.sync(() => {
           const { onError } = config as {

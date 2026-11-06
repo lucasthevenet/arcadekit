@@ -6,6 +6,8 @@ status: accepted
 
 > Amended by [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md) on 2026-11-04: a genre's root entry also holds its `GameSimulation`, the runtime has a DOM-free root of its own, and a Worker or server steps a run with `GameLoop`, so the #25 consequence below is resolved.
 
+> Amended on 2026-11-06: `GameDriver` is gone; `makeGameEngine`'s `attach` is the `requestAnimationFrame` adapter, see the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+
 A genre's simulation must run where there is no DOM: in a Web Worker, on a game server, in a test. So a genre package's root entry (content schema, content service, simulation) uses no DOM and no Three.js, and only its `./browser` entry (the `GameDefinition`, view, input and engine) may use them. `@gamekit/content` follows the same rule: `fetchJsonSource` needs `fetch`, so it lives in `@gamekit/content/browser` (#20, finding 6).
 
 ## Consequences

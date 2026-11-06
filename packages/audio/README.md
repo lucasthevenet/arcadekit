@@ -45,4 +45,8 @@ export const loadSounds = Effect.gen(function* () {
 }).pipe(Effect.provide(BrowserAudioLayer));
 ```
 
+`load` decodes each file once, even when two loads of it overlap, and tries a file that failed (or whose every load was interrupted) again on the next load, so an app can retry after an `AudioLoadError`. Playing never waits on it: a sound not yet loaded is dropped.
+
+`makeAudioMixer` makes the mixer behind `Audio`. It plays into whatever `AudioOutput` it is unlocked with, such as a fake one in a test. Making it is an Effect; after that, every call but `load` is plain. `makeBrowserAudio` in `@arcadekit/audio/browser` makes it over Web Audio for the life of a scope, and `BrowserAudioLayer` is built on it.
+
 A game's view plays its sounds from cue counters in the state, as [ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md) describes.

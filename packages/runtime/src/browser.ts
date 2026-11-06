@@ -1,7 +1,6 @@
-// Runs a game in the browser: its presentation, the requestAnimationFrame driver over GameLoop,
-// and the Effect engine.
+// Runs a game in the browser: its presentation, and the Effect engine that steps and draws it
+// on requestAnimationFrame.
 
-export { GameDriver } from "./driver";
 export {
   AttachError,
   attachError,
@@ -12,6 +11,7 @@ export {
   makeEngineLoader,
   makeGameEngine,
 } from "./engine";
+export { GameCrashed } from "./frame-loop";
 export { type FrameSource, animationFrames } from "./frames";
 export {
   combineViews,
