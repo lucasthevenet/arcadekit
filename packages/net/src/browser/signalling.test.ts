@@ -1,4 +1,5 @@
 import {
+  Cause,
   Deferred,
   Effect,
   Exit,
@@ -97,6 +98,8 @@ interface FakePeer {
   readonly close: () => void;
   /** It can't connect. */
   readonly fail: (message: string) => void;
+  /** It dies: a bug in the connector. */
+  readonly crash: (defect: Error) => void;
 }
 
 const fakeConnector = () => {
@@ -132,6 +135,7 @@ const fakeConnector = () => {
                 })
               )
             ),
+          crash: (defect) => Deferred.doneUnsafe(opened, Effect.die(defect)),
         };
         peers.push(peer);
         yield* Effect.addFinalizer(() =>
@@ -169,8 +173,11 @@ const settle = Effect.gen(function* () {
 const opening = (
   role: "host" | "guest",
   code = "k7mq2x",
-  /** The WebSocket constructor throws, as it does on a malformed URL. */
-  throws = false
+  /**
+   * The WebSocket constructor throws, as it does on a malformed URL, or the socket it makes has a
+   * bug: listening to it throws `socketBug`.
+   */
+  broken?: "throws" | "buggy"
 ) =>
   Effect.gen(function* () {
     const sockets: ReturnType<typeof fakeSocket>[] = [];
@@ -179,12 +186,19 @@ const opening = (
     const layer = Layer.mergeAll(
       Layer.succeed(Socket.WebSocketConstructor, (url: string) => {
         urls.push(url);
-        if (throws) {
+        if (broken === "throws") {
           throw new SyntaxError(`${url} is not a valid URL`);
         }
         const made = fakeSocket();
         sockets.push(made);
-        return made.ws;
+        return broken === "buggy"
+          ? {
+              ...made.ws,
+              addEventListener: () => {
+                throw socketBug;
+              },
+            }
+          : made.ws;
       }),
       Layer.succeed(PeerConnector, connector.api)
     );
@@ -228,6 +242,18 @@ const summary = (event: RoomEvent) =>
   ]
     .filter((part) => part !== undefined)
     .join(" ");
+
+const socketBug = new Error("socket bug");
+
+/** What a fiber that has ended died of; how else it ended, or that it hasn't. */
+const defect = (exit: Exit.Exit<unknown, unknown> | undefined) => {
+  if (exit === undefined) {
+    return "still running";
+  }
+  return Exit.isFailure(exit) && Cause.hasDies(exit.cause)
+    ? Cause.squash(exit.cause)
+    : String(exit);
+};
 
 const roomFailure = (exit: Exit.Exit<unknown, unknown>) => {
   if (Exit.isSuccess(exit)) {
@@ -492,7 +518,11 @@ describe("joining a room", () => {
       (["throws", "never opens", "refused", "closed"] as const).map((how) =>
         play(
           Effect.gen(function* () {
-            const t = yield* opening("guest", "k7mq2x", how === "throws");
+            const t = yield* opening(
+              "guest",
+              "k7mq2x",
+              how === "throws" ? "throws" : undefined
+            );
             switch (how) {
               case "never opens": {
                 yield* TestClock.adjust("10 seconds");
@@ -689,5 +719,36 @@ describe("a worker that doesn't welcome, or speaks another protocol", () => {
         0,
       ])
     );
+  });
+});
+
+describe("a bug in the room's socket or a peer's connector", () => {
+  it("dies of a socket's bug before the welcome, rather than wait for the welcome", async () => {
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("host", "k7mq2x", "buggy");
+        yield* settle;
+        return defect(t.fiber.pollUnsafe());
+      })
+    );
+    expect(exit).toStrictEqual(Exit.succeed(socketBug));
+  });
+
+  it("fails the events with a connector's bug, rather than wait for the link", async () => {
+    const bug = new Error("connector bug");
+    const exit = await play(
+      Effect.gen(function* () {
+        const t = yield* opening("guest");
+        t.socket().open();
+        t.socket().server(welcomeGuest);
+        const room = yield* Fiber.join(t.fiber);
+        const { reading } = yield* watching(room);
+        yield* settle;
+        t.peers[0]!.crash(bug);
+        yield* settle;
+        return defect(reading.pollUnsafe());
+      })
+    );
+    expect(exit).toStrictEqual(Exit.succeed(bug));
   });
 });

@@ -543,6 +543,73 @@ describe("hosting, joining and leaving", () => {
     logged.mockRestore();
   });
 
+  it("reports a bug in its room as its failure, and logs it", async () => {
+    const hub = fakeHub();
+    const logged = vi.spyOn(console, "log").mockImplementation(() => {});
+    const buggy: SignallingRoom = {
+      role: "host",
+      code: "K7MQ2X",
+      self: "host",
+      host: "host",
+      events: Stream.die(new Error("room bug")),
+      links: () => [],
+      start: Effect.void,
+    };
+    const { coop, events } = await client(hub, {
+      rooms: { ...hub.rooms, host: Effect.succeed(buggy) },
+    });
+    await run(coop.host("spark"));
+    await settle();
+    expect([
+      events.map((event) => event.type),
+      events.at(-1),
+      logged.mock.calls.length > 0,
+    ]).toStrictEqual([
+      ["lobby", "failed"],
+      { type: "failed", message: "Co-op stopped on a bug: room bug" },
+      true,
+    ]);
+    logged.mockRestore();
+  });
+
+  it("fails a guest whose link to the host closes after the start, before the host's start message", async () => {
+    const hub = fakeHub();
+    // The host dropped this guest at the start: its room started, then its link closed.
+    const hostLeft = Effect.runSync(Deferred.make<undefined>());
+    const [, lockstep] = pipe();
+    const [, messages] = pipe();
+    const link: PeerLink = {
+      peer: "host",
+      lockstep,
+      messages,
+      closed: Deferred.await(hostLeft),
+    };
+    const dropped: SignallingRoom = {
+      role: "guest",
+      code: "K7MQ2X",
+      self: "guest-1",
+      host: "host",
+      events: Stream.make(
+        { type: "peer-connected", peer: "host", link },
+        { type: "started" }
+      ),
+      links: () => [link],
+      start: Effect.void,
+    };
+    const { coop, events } = await client(hub, {
+      rooms: { ...hub.rooms, join: () => Effect.succeed(dropped) },
+    });
+    await run(coop.join("K7MQ2X", "ember"));
+    await settle();
+    const beforeClose = events.map((event) => event.type);
+    Effect.runSync(Deferred.succeed(hostLeft, undefined));
+    await settle();
+    expect([beforeClose, events.at(-1)]).toStrictEqual([
+      ["lobby"],
+      { type: "failed", message: "Lost the host before the run started." },
+    ]);
+  });
+
   it("refuses to start a lobby of one, or a guest's start", async () => {
     const hub = fakeHub();
     const host = await client(hub);

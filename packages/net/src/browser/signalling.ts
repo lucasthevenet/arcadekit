@@ -130,8 +130,8 @@ const openRoom = (
       { readonly code: string; readonly self: PeerId },
       RoomError
     >();
-    const socket = yield* FiberHandle.make();
-    const peers = yield* FiberMap.make<PeerId>();
+    const socket = yield* FiberHandle.make<unknown, never>();
+    const peers = yield* FiberMap.make<PeerId, unknown, never>();
     // Each peer being connected's signals, in the order the worker relayed them.
     const signals = new Map<PeerId, Queue.Queue<Signal>>();
 
@@ -294,6 +294,10 @@ const openRoom = (
         }
       }
     }).pipe(
+      // The socket's fiber and the peers' fail only of a bug, such as a PeerConnector's, which
+      // ends the room as a bug in it does. Their joins ignore the interrupts that close them.
+      Effect.raceFirst(FiberMap.join(peers)),
+      Effect.raceFirst(FiberHandle.join(socket)),
       // A bug in the room is a defect for whoever waits on it, not a room that hangs.
       Effect.onError((cause) =>
         Cause.hasInterruptsOnly(cause)

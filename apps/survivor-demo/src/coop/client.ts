@@ -57,7 +57,7 @@ import type {
   SurvivorsArt,
   SurvivorsGameSound,
 } from "@arcadekit/survivors/browser";
-import { Data, Effect, FiberHandle, Queue, Stream } from "effect";
+import { Cause, Data, Effect, FiberHandle, Queue, Stream } from "effect";
 import type { Clock, Scope } from "effect";
 
 import { contentHash } from "./content-hash";
@@ -368,7 +368,10 @@ export const makeCoopClient = (
       content: GameContent
     ): Effect.Effect<RunPlan, RoomError | CoopError, Scope.Scope> =>
       Effect.gen(function* () {
-        const inputs = yield* Queue.unbounded<LobbyInput, RoomError>();
+        const inputs = yield* Queue.unbounded<
+          LobbyInput,
+          RoomError | CoopError
+        >();
         yield* Effect.acquireRelease(
           Effect.sync(() => {
             seat.lobby = inputs;
@@ -378,13 +381,18 @@ export const makeCoopClient = (
               seat.lobby = null;
             })
         );
-        // The room's events, until its start, then the room's failure if it fails first.
+        // The room's events, until its start, then the room's failure if it fails first, a bug
+        // in it included.
         yield* Effect.forkScoped(
           room.events.pipe(
             Stream.runForEach((event) =>
               Queue.offer(inputs, { type: "room", event })
             ),
-            Effect.catch((error) => Queue.fail(inputs, error))
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.void
+                : Queue.failCause(inputs, cause)
+            )
           )
         );
         const { role, code, self } = room;
@@ -486,8 +494,28 @@ export const makeCoopClient = (
                 } else if (event.type === "peer-left") {
                   roster = withoutPlayer(roster, event.peer);
                   shareLobby();
-                } else if (event.type === "started" && role === "host") {
-                  return startAsHost();
+                } else if (event.type === "started") {
+                  if (role === "host") {
+                    return startAsHost();
+                  }
+                  // A guest waits for the host's start message. The host drops a guest it
+                  // hadn't linked yet at the start, and sends it none: its link closes instead.
+                  const hostLink = room
+                    .links()
+                    .find(({ peer }) => peer === room.host);
+                  if (hostLink !== undefined) {
+                    yield* Effect.forkScoped(
+                      Effect.andThen(
+                        hostLink.closed,
+                        Queue.fail(
+                          inputs,
+                          new CoopError({
+                            message: "Lost the host before the run started.",
+                          })
+                        )
+                      )
+                    );
+                  }
                 }
                 break;
               }

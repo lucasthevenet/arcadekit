@@ -21,9 +21,10 @@ export interface PeerLinkOptions {
 export interface PeerConnectorApi {
   /**
    * Connects to one peer and succeeds with its link once both channels are open. The scope owns
-   * the connection and both data channels from the moment each is made: closing it, failing or
-   * being interrupted closes them all. Fails with PeerLinkError if setting up throws, ICE fails,
-   * or the channels don't open in time.
+   * the connection and both data channels from the moment each is made, and closing it closes
+   * them all, however `connect` ended. Run each attempt in its own scope (`Effect.scoped`) to
+   * release a failed one at once. Fails with PeerLinkError if setting up throws, ICE fails, or
+   * the channels don't open in time.
    */
   readonly connect: (
     options: PeerLinkOptions
