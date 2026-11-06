@@ -1,114 +1,74 @@
-import { joinCodeFromBytes, joinCodeFromPath } from "@arcadekit/net/signalling";
 import { DurableObject } from "cloudflare:workers";
+import { Effect, ManagedRuntime } from "effect";
 
-import { createRoom } from "./room";
-import type { Room } from "./room";
-import { createSocketRoom } from "./sockets";
-import type { SocketRoom } from "./sockets";
+import { acceptSocket, expireRoom, roomLayer } from "./connections";
+import type { RoomConnections } from "./connections";
+import { handleRequest, readRoomRequest } from "./routes";
+import type { Bindings } from "./routes";
 
 /**
  * The survivors demo's Worker (#25, ADR-0012). It serves the site's files and is the signalling
  * worker: it introduces the peers of a lockstep run so they can open WebRTC data channels to
- * each other, then gets out of the way. It never sees game input.
- *
- * - `GET /host` (a WebSocket upgrade) picks a fresh join code and opens its room as the host.
- * - `GET /join/<code>` (a WebSocket upgrade) joins that room as a guest.
- * - Anything else is the site, from the static assets.
+ * each other, then gets out of the way. It never sees game input. Its routes are in `routes.ts`.
  *
  * Each join code is one `SignallingRoom` Durable Object. `alchemy.run.ts` declares the Worker,
  * routes only the signalling paths to it ahead of the assets, and binds `ROOMS`; Alchemy
  * supplies `ASSETS`.
+ *
+ * This file is only Cloudflare's entry points: each runs an Effect, and Cloudflare's own
+ * objects (`WebSocketPair`, the 101 response, the object's storage) are made here.
  */
-export interface Env {
+export interface Env extends Bindings {
   readonly ROOMS: DurableObjectNamespace<SignallingRoom>;
   readonly ASSETS: Fetcher;
 }
 
 export default {
-  fetch: (request: Request, env: Env): Promise<Response> | Response => {
-    const { pathname } = new URL(request.url);
-    const isSignalling = pathname === "/host" || pathname.startsWith("/join/");
-    if (!isSignalling) {
-      return env.ASSETS.fetch(request);
-    }
-    if (request.headers.get("Upgrade") !== "websocket") {
-      return new Response("Expected a WebSocket upgrade", { status: 426 });
-    }
-    if (pathname === "/host") {
-      const code = joinCodeFromBytes(
-        crypto.getRandomValues(new Uint8Array(32))
-      );
-      if (code === undefined) {
-        return new Response("Try again", { status: 503 });
-      }
-      return toRoom(env, request, code, "host");
-    }
-    const code = joinCodeFromPath(pathname);
-    if (code === undefined) {
-      return new Response("Not found", { status: 404 });
-    }
-    return toRoom(env, request, code, "guest");
-  },
-};
-
-const toRoom = (
-  env: Env,
-  request: Request,
-  code: string,
-  role: "host" | "guest"
-): Promise<Response> => {
-  const url = new URL(request.url);
-  url.pathname = "/";
-  url.search = new URLSearchParams({ code, role }).toString();
-  return env.ROOMS.getByName(code).fetch(new Request(url, request));
+  // Nothing in the Worker outlives a request, and its bindings come with it, so each request
+  // runs its own Effect.
+  fetch: (request: Request, env: Env): Promise<Response> =>
+    Effect.runPromise(handleRequest(request, env)),
 };
 
 /**
  * One join code's room. It keeps the room in memory only: rooms live for minutes, and the
- * accepted (not hibernated) WebSockets keep the object alive while anyone is connected. The
- * room's rules are in `room.ts` and the socket bookkeeping in `sockets.ts`; this class only
- * wires Cloudflare's WebSockets and alarm to them.
+ * accepted (not hibernated) WebSockets keep the object alive while anyone is connected.
  */
 export class SignallingRoom extends DurableObject<Env> {
-  private open:
-    | { readonly room: Room; readonly sockets: SocketRoom }
-    | undefined;
+  // Cloudflare owns this object's entry points, so they run their Effects on one runtime, made
+  // with the object. The room's connections are fibers in it, past the request that opened
+  // each. It lives as long as the object, which Cloudflare drops without telling it.
+  private readonly runtime: ManagedRuntime.ManagedRuntime<
+    RoomConnections,
+    never
+  >;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.runtime = ManagedRuntime.make(roomLayer(ctx.storage));
+  }
 
   override async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    const code = url.searchParams.get("code");
-    const role = url.searchParams.get("role");
-    if (code === null || (role !== "host" && role !== "guest")) {
+    const peer = readRoomRequest(request);
+    if (peer === undefined) {
       return new Response("Bad request", { status: 400 });
     }
-    if (this.open === undefined) {
-      const room = createRoom(code);
-      this.open = { room, sockets: createSocketRoom(room) };
-    }
-    const { room, sockets } = this.open;
-
     const [client, server] = Object.values(new WebSocketPair()) as [
       WebSocket,
       WebSocket,
     ];
     server.accept();
-    server.addEventListener("message", (event) => {
-      // The protocol is text; a binary message is read as an empty, invalid one.
-      const text = typeof event.data === "string" ? event.data : "";
-      sockets.message(server, text, Date.now());
-    });
-    server.addEventListener("close", () => sockets.closed(server));
-    server.addEventListener("error", () => sockets.closed(server));
-    sockets.open(server, role, Date.now());
-
-    const expiresAt = room.expiresAtMs();
-    if (role === "host" && expiresAt !== undefined) {
-      await this.ctx.storage.setAlarm(expiresAt);
-    }
-    return new Response(null, { status: 101, webSocket: client });
+    return await this.runtime.runPromise(
+      acceptSocket(
+        server,
+        peer.code,
+        peer.role,
+        new Response(null, { status: 101, webSocket: client })
+      )
+    );
   }
 
-  override alarm(): void {
-    this.open?.sockets.alarm(Date.now());
+  override async alarm(): Promise<void> {
+    await this.runtime.runPromise(expireRoom);
   }
 }
