@@ -1,9 +1,9 @@
-import { Data, Duration, Effect, Exit, Result } from "effect";
+import { Cache, Data, Duration, Effect, Exit, Result } from "effect";
 
-// The audio system: what apps and sound views call, and the plain-TypeScript mixer behind
-// it. The mixer never touches Web Audio itself. It drives an `AudioOutput` (the browser
-// entry wraps an AudioContext; tests pass a fake) and decodes through an injected function,
-// so all of its rules (unlock, voice limits, buses, crossfades) run in a plain test.
+// The audio system: what apps and sound views call, and the mixer behind it. The mixer never
+// touches Web Audio itself. It drives an `AudioOutput` (the browser entry wraps an
+// AudioContext; tests pass a fake) and decodes through an injected function, so all of its
+// rules (unlock, voice limits, buses, crossfades) run in a plain test.
 
 /** A bus a sound plays through. Every bus feeds `master`. */
 export type AudioBus = "master" | "sfx" | "music";
@@ -68,8 +68,9 @@ export interface AudioSystem {
   readonly setDucked: (ducked: boolean) => void;
   /**
    * Fetches and decodes sounds and adds them by id. A file shared by several ids, or asked for
-   * by two loads at once, is loaded once.
+   * by two loads at once, is loaded once, and a file loaded before isn't loaded again.
    * Every sound whose file loads is added; if any file fails, it then fails with the first error.
+   * A file that failed is tried again by the next load that asks for it.
    */
   readonly load: (sounds: SoundList) => Effect.Effect<void, AudioLoadError>;
 }
@@ -112,7 +113,7 @@ export interface AudioOutput {
 
 /** What the mixer needs besides an output. */
 export interface AudioMixerOptions {
-  /** Fetches and decodes one file. */
+  /** Fetches and decodes one file. The mixer asks for each file once, and again only after it fails. */
   readonly decode: (file: string) => Effect.Effect<AudioClip, AudioLoadError>;
   /** A number in [0, 1), for jitter. Presentation only, so `Math.random` is fine. */
   readonly random: () => number;
@@ -165,33 +166,31 @@ interface Graph {
   readonly music: AudioGain;
 }
 
-/** Builds the audio system's mixer. It is silent until `unlock`. */
-export const makeAudioMixer = (options: AudioMixerOptions): AudioMixer => {
+/**
+ * Makes the audio system's mixer. It is silent until `unlock`. Making it is an Effect, since
+ * it owns the cache of decoded files; after that, every call on it but `load` is plain.
+ */
+export const makeAudioMixer = (
+  options: AudioMixerOptions
+): Effect.Effect<AudioMixer> =>
+  // Each file's decode, shared by every load that asks for the file while it runs. A clip is
+  // kept for good; a failed decode isn't, so a later load tries the file again. There is no
+  // limit: the cache holds one clip per file the game has loaded, the same clips its sounds
+  // play, so a limit could only evict a clip in use (the next load of it would decode it
+  // again) or a decode still running (an overlapping load would start a second one).
+  Cache.makeWith(options.decode, {
+    capacity: Number.POSITIVE_INFINITY,
+    timeToLive: (exit) =>
+      Exit.isSuccess(exit) ? Duration.infinity : Duration.zero,
+  }).pipe(Effect.map((clips) => mixerOver(clips, options)));
+
+/** The mixer, loading through `clips`. */
+const mixerOver = (
+  clips: Cache.Cache<string, AudioClip, AudioLoadError>,
+  options: AudioMixerOptions
+): AudioMixer => {
   const duckedMusic = options.duckedMusic ?? DEFAULT_DUCKED_MUSIC;
   const sounds = new Map<string, Sound>();
-  const clips = new Map<string, AudioClip>();
-  // Each file's decode, shared by every load that asks for the file while it runs. A failed
-  // decode isn't kept, so a later load tries the file again.
-  const decodes = new Map<string, Effect.Effect<void, AudioLoadError>>();
-  const decodeOnce = (file: string): Effect.Effect<void, AudioLoadError> => {
-    let decode = decodes.get(file);
-    if (decode === undefined) {
-      decode = Effect.runSync(
-        Effect.cachedWithTTL(
-          options.decode(file).pipe(
-            Effect.flatMap((clip) =>
-              Effect.sync(() => {
-                clips.set(file, clip);
-              })
-            )
-          ),
-          (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero)
-        )
-      );
-      decodes.set(file, decode);
-    }
-    return decode;
-  };
   const volumes = { master: 1, sfx: 1, music: 1 };
   let muted = false;
   let ducked = false;
@@ -397,19 +396,25 @@ export const makeAudioMixer = (options: AudioMixerOptions): AudioMixer => {
     load: (list) =>
       Effect.suspend(() => {
         const entries = Object.entries(list);
-        // Each file once, even when several ids share it or two loads overlap.
-        const files = [...new Set(entries.map(([, def]) => def.file))].filter(
-          (file) => !clips.has(file)
-        );
+        // Each file once, even when several ids share it. The cache shares one decode between
+        // loads that overlap and keeps every clip, so a file loaded before costs nothing.
+        const files = new Set(entries.map(([, def]) => def.file));
         return Effect.forEach(
           files,
-          (file) => decodeOnce(file).pipe(Effect.result),
+          (file) =>
+            Cache.get(clips, file).pipe(
+              Effect.map((clip) => [file, clip] as const),
+              Effect.result
+            ),
           { concurrency: 8 }
         ).pipe(
           Effect.flatMap((results) => {
+            const loaded = new Map(
+              results.filter(Result.isSuccess).map(({ success }) => success)
+            );
             // Every sound whose file loaded is added, even when another file failed.
             for (const [id, def] of entries) {
-              const clip = clips.get(def.file);
+              const clip = loaded.get(def.file);
               if (clip !== undefined) {
                 sounds.set(id, { def, clip });
               }

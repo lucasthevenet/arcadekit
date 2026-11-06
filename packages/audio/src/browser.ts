@@ -1,4 +1,5 @@
 import { Effect, Function, Layer } from "effect";
+import type { Scope } from "effect";
 
 import { Audio, silentAudio } from "./service";
 import { AudioLoadError, makeAudioMixer } from "./system";
@@ -7,6 +8,7 @@ import type {
   AudioGain,
   AudioMixer,
   AudioOutput,
+  AudioSystem,
   AudioVoice,
 } from "./system";
 
@@ -111,70 +113,70 @@ const hasWebAudio = (): boolean =>
  * Makes the browser's audio system. It stays silent until the first pointer, key or touch
  * gesture on the page that lets audio start, then makes its AudioContext; it keeps listening
  * until the context runs. It is silent while the tab is hidden.
- * Returns the mixer and a function that removes its listeners and closes the context.
+ * Closing its scope removes its listeners, stops its sounds and closes the context.
  */
-export const makeBrowserAudio = (): {
-  readonly audio: AudioMixer;
-  readonly dispose: () => void;
-} => {
-  const audio = makeAudioMixer({
-    decode: makeDecoder(),
-    random: Math.random,
-  });
-  let context: AudioContext | null = null;
+export const makeBrowserAudio: Effect.Effect<AudioMixer, never, Scope.Scope> =
+  Effect.gen(function* () {
+    const audio = yield* makeAudioMixer({
+      decode: makeDecoder(),
+      random: Math.random,
+    });
+    let context: AudioContext | null = null;
 
-  const unlock = () => {
-    // Wait for an event that lets audio start, where the browser says which those are.
-    if (navigator.userActivation?.isActive === false) {
-      return;
-    }
-    if (context === null) {
-      try {
-        context = new AudioContext();
-      } catch {
-        // No sound for this page.
-        removeGestures();
+    const unlock = () => {
+      // Wait for an event that lets audio start, where the browser says which those are.
+      if (navigator.userActivation?.isActive === false) {
         return;
       }
-      audio.unlock(webOutput(context));
-    }
-    const started = context;
-    started
-      .resume()
-      .then(() => started.state === "running" && removeGestures())
-      .catch(Function.constVoid);
-  };
-  const removeGestures = () => {
-    for (const type of GESTURES) {
-      document.removeEventListener(type, unlock, { capture: true });
-    }
-  };
-  for (const type of GESTURES) {
-    document.addEventListener(type, unlock, { capture: true });
-  }
+      if (context === null) {
+        try {
+          context = new AudioContext();
+        } catch {
+          // No sound for this page.
+          removeGestures();
+          return;
+        }
+        audio.unlock(webOutput(context));
+      }
+      const started = context;
+      started
+        .resume()
+        .then(() => started.state === "running" && removeGestures())
+        .catch(Function.constVoid);
+    };
+    const removeGestures = () => {
+      for (const type of GESTURES) {
+        document.removeEventListener(type, unlock, { capture: true });
+      }
+    };
+    const onVisibility = () => {
+      audio.setHidden(document.hidden);
+      if (context !== null) {
+        (document.hidden ? context.suspend() : context.resume()).catch(
+          Function.constVoid
+        );
+      }
+    };
 
-  const onVisibility = () => {
-    audio.setHidden(document.hidden);
-    if (context !== null) {
-      (document.hidden ? context.suspend() : context.resume()).catch(
-        Function.constVoid
-      );
-    }
-  };
-  document.addEventListener("visibilitychange", onVisibility);
-  audio.setHidden(document.hidden);
-
-  return {
-    audio,
-    dispose: () => {
-      removeGestures();
-      document.removeEventListener("visibilitychange", onVisibility);
-      audio.dispose();
-      context?.close().catch(Function.constVoid);
-      context = null;
-    },
-  };
-};
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        for (const type of GESTURES) {
+          document.addEventListener(type, unlock, { capture: true });
+        }
+        document.addEventListener("visibilitychange", onVisibility);
+        audio.setHidden(document.hidden);
+      }),
+      () =>
+        Effect.sync(() => {
+          removeGestures();
+          document.removeEventListener("visibilitychange", onVisibility);
+          audio.dispose();
+          context?.close().catch(Function.constVoid);
+          context = null;
+        })
+    );
+    return audio;
+  });
 
 /**
  * Provides `Audio` with the browser's audio system, torn down when the layer's scope closes.
@@ -182,11 +184,7 @@ export const makeBrowserAudio = (): {
  */
 export const BrowserAudioLayer: Layer.Layer<Audio> = Layer.effect(
   Audio,
-  Effect.suspend(() =>
-    hasWebAudio()
-      ? Effect.acquireRelease(Effect.sync(makeBrowserAudio), ({ dispose }) =>
-          Effect.sync(dispose)
-        ).pipe(Effect.map(({ audio }) => audio))
-      : Effect.succeed(silentAudio)
+  Effect.suspend((): Effect.Effect<AudioSystem, never, Scope.Scope> =>
+    hasWebAudio() ? makeBrowserAudio : Effect.succeed(silentAudio)
   )
 );
