@@ -134,6 +134,42 @@ describe(makeEngineLoader, () => {
     expect(counts.released).toStrictEqual([1]);
   });
 
+  it("releases the assets of a load whose game throws, and keeps only the retry's", async () => {
+    const counts = { games: 0, released: [] as number[] };
+    let next = 0;
+    const loader = makeEngineLoader({
+      assets: Effect.sync((): Assets => {
+        next += 1;
+        return { id: next };
+      }),
+      game: () => {
+        counts.games += 1;
+        if (counts.games === 1) {
+          throw new Error("no game");
+        }
+        return game();
+      },
+      release: (assets) => {
+        counts.released.push(assets.id);
+      },
+      frames: manualFrames(),
+    });
+    const [releasedAfterThrow, retried] = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { load } = yield* loader;
+          const first = yield* Effect.exit(load);
+          expect(Exit.hasDies(first)).toBe(true);
+          const released = [...counts.released];
+          return [released, yield* load] as const;
+        })
+      )
+    );
+    expect(releasedAfterThrow).toStrictEqual([1]);
+    expect(retried.assets).toStrictEqual({ id: 2 });
+    expect(counts.released).toStrictEqual([1, 2]);
+  });
+
   it("releases nothing when every load failed", async () => {
     const { counts, loader } = counted((n) =>
       Effect.fail(new AssetsError({ attempt: n }))

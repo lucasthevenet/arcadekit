@@ -1,5 +1,7 @@
 import { Audio } from "@arcadekit/audio";
 import type { SpriteSheetError } from "@arcadekit/render-three";
+import { attachError } from "@arcadekit/runtime/browser";
+import type { AttachError } from "@arcadekit/runtime/browser";
 import type { GameContent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
@@ -19,11 +21,12 @@ import { survivorsSounds } from "./sound";
 export interface CoopApi {
   /**
    * Draws the co-op run into `element` while the scope is open, with the engine's loaded art.
-   * Fails with the sheet's error if it can't load.
+   * Fails with the sheet's error if it can't load, and with `AttachError` if the client can't
+   * draw (no WebGL).
    */
   readonly attach: (
     element: HTMLElement
-  ) => Effect.Effect<void, SpriteSheetError, Scope.Scope>;
+  ) => Effect.Effect<void, SpriteSheetError | AttachError, Scope.Scope>;
   /** Calls `onEvent` for every co-op event while the scope is open. */
   readonly listen: (
     onEvent: (event: CoopEvent) => void
@@ -47,7 +50,8 @@ export class Coop extends Context.Service<Coop, CoopApi>()(
 
 /**
  * The co-op API over `client`. `attach` draws with the engine's loaded art (one sheet, one
- * load, from `engines`), and fails with `SpriteSheetError` if it can't load.
+ * load, from `engines`), and fails with `SpriteSheetError` if it can't load, or `AttachError`
+ * if the client's view can't be made.
  */
 export const makeCoop = (
   client: CoopClient,
@@ -57,7 +61,10 @@ export const makeCoop = (
     engines.load.pipe(
       Effect.flatMap(({ assets }) =>
         Effect.acquireRelease(
-          Effect.sync(() => client.attach(element, assets)),
+          Effect.try({
+            try: () => client.attach(element, assets),
+            catch: attachError,
+          }),
           (detach) => Effect.sync(detach)
         )
       ),
@@ -81,20 +88,37 @@ export const makeCoop = (
 
 /**
  * The co-op client, playing its sounds through the `Audio` service and drawing with the art
- * `SurvivorsEngine` loads.
+ * `SurvivorsEngine` loads. When the layer's scope (the app) closes, the client leaves: its
+ * signalling socket, peer links and tick worker close.
  */
 export const CoopLayer = Layer.effect(
   Coop,
   Effect.gen(function* () {
-    const client = new CoopClient({
-      signalling: { url: signallingUrl(), rtc: { iceServers: iceServers() } },
-      sound: { audio: yield* Audio, sounds: survivorsSounds },
-    });
+    const audio = yield* Audio;
+    const client = yield* Effect.acquireRelease(
+      Effect.sync(
+        () =>
+          new CoopClient({
+            signalling: {
+              url: signallingUrl(),
+              rtc: { iceServers: iceServers() },
+            },
+            sound: { audio, sounds: survivorsSounds },
+          })
+      ),
+      // Safe when idle: with no room or run, leaving closes nothing.
+      (coop) => Effect.sync(() => coop.leave())
+    );
     if (import.meta.env.DEV) {
       // For the end-to-end test and debugging: the run's step, error and recent state hashes.
       Object.assign(globalThis, {
         arcadekitCoop: { debug: () => client.debug() },
       });
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          Reflect.deleteProperty(globalThis, "arcadekitCoop");
+        })
+      );
     }
     return makeCoop(client, yield* SurvivorsEngine);
   })

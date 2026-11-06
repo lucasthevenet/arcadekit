@@ -3,6 +3,8 @@
 
 export { GameDriver } from "./driver";
 export {
+  AttachError,
+  attachError,
   type EngineLoader,
   type GameEngine,
   type LoadedEngine,

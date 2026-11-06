@@ -2,6 +2,7 @@ import { animationFrames } from "./frames";
 import type { FrameSource } from "./frames";
 import { GameLoop } from "./loop";
 import type { GameDefinition } from "./presentation";
+import type { InputSource } from "./simulation";
 
 /**
  * Runs a GameDefinition in the browser: the requestAnimationFrame adapter over `GameLoop`.
@@ -27,14 +28,23 @@ export class GameDriver<Config, State, Input, Event> {
     this.loop = new GameLoop(definition);
   }
 
-  /** Starts rendering into `element` and reading input from it. Returns a function that stops and cleans up. */
+  /**
+   * Starts rendering into `element` and reading input from it. Returns a function that stops and
+   * cleans up. Throws what `createView` or `createInput` throws, with nothing left attached.
+   */
   attach(element: HTMLElement): () => void {
     if (this.detachCurrent) {
       throw new Error("GameDriver is already attached to an element");
     }
     const { frames, loop } = this;
     const view = this.definition.createView(element);
-    const input = this.definition.createInput(element);
+    let input: InputSource<Input>;
+    try {
+      input = this.definition.createInput(element);
+    } catch (error) {
+      view.dispose();
+      throw error;
+    }
     let last = frames.now();
     let cancel: (() => void) | null = null;
 
@@ -52,10 +62,15 @@ export class GameDriver<Config, State, Input, Event> {
       if (this.detachCurrent !== detach) {
         return;
       }
-      cancel?.();
-      input.dispose();
-      view.dispose();
+      // Detached first, and the view disposed even when the input's dispose throws, so a
+      // throwing dispose still leaves the driver free to attach again.
       this.detachCurrent = null;
+      cancel?.();
+      try {
+        input.dispose();
+      } finally {
+        view.dispose();
+      }
     };
     this.detachCurrent = detach;
     cancel = frames.request(frame);

@@ -1,9 +1,29 @@
-import { Duration, Effect, Exit } from "effect";
+import { Data, Duration, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
 import { GameDriver } from "./driver";
 import type { FrameSource } from "./frames";
 import type { GameDefinition } from "./presentation";
+
+// Named so the type files can be made one file at a time (isolatedDeclarations).
+const AttachErrorBase: ReturnType<typeof Data.TaggedError<"AttachError">> =
+  Data.TaggedError("AttachError");
+
+/**
+ * An engine that couldn't attach: making its view or input source threw, such as Three.js
+ * finding no WebGL. `cause` is what was thrown.
+ */
+export class AttachError extends AttachErrorBase<{
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
+
+/** An AttachError for what attaching threw. */
+export const attachError = (cause: unknown): AttachError =>
+  new AttachError({
+    message: cause instanceof Error ? cause.message : String(cause),
+    cause,
+  });
 
 /**
  * The Effect-facing API of a running game. Scoped methods clean up when their scope closes.
@@ -20,10 +40,13 @@ import type { GameDefinition } from "./presentation";
  * `EngineLoader` instead, made with `makeEngineLoader`: there is no engine before its assets.
  */
 export interface GameEngine<Config, State, Event> {
-  /** Renders into `element` and reads input from it while the scope is open. */
+  /**
+   * Renders into `element` and reads input from it while the scope is open. Fails with
+   * `AttachError` if the game's view or input source can't be made, with nothing attached.
+   */
   readonly attach: (
     element: HTMLElement
-  ) => Effect.Effect<void, never, Scope.Scope>;
+  ) => Effect.Effect<void, AttachError, Scope.Scope>;
   /** Calls `onEvent` for every game event while the scope is open. */
   readonly listen: (
     onEvent: (event: Event) => void
@@ -49,7 +72,7 @@ export const makeGameEngine = <Config, State, Input, Event>(
   return {
     attach: (element) =>
       Effect.acquireRelease(
-        Effect.sync(() => driver.attach(element)),
+        Effect.try({ try: () => driver.attach(element), catch: attachError }),
         (detach) => Effect.sync(detach)
       ).pipe(Effect.asVoid),
     listen: (onEvent) =>
@@ -90,7 +113,8 @@ export interface EngineLoader<Config, State, Event, Assets, E> {
 /**
  * Makes an `EngineLoader`: `load` runs `assets`, then makes the engine from `game(assets)`.
  * Making the loader loads nothing. The kept assets are freed with `release` when the loader's
- * scope (the app) closes; a view never frees them.
+ * scope (the app) closes; a view never frees them. If `game` throws, its assets are freed at
+ * once and the load dies; the next load retries.
  */
 export const makeEngineLoader = <
   Assets,
@@ -129,6 +153,14 @@ export const makeEngineLoader = <
     const load = yield* Effect.cachedWithTTL(
       options.assets.pipe(
         Effect.map((assets) => {
+          // Make the game first: assets whose game throws are freed, not kept, and the load dies.
+          let definition: GameDefinition<Config, State, Input, Event>;
+          try {
+            definition = options.game(assets);
+          } catch (error) {
+            options.release(assets);
+            throw error;
+          }
           if (closed) {
             options.release(assets);
           } else {
@@ -137,7 +169,7 @@ export const makeEngineLoader = <
           return {
             assets,
             engine: makeGameEngine(
-              options.game(assets),
+              definition,
               options.frames === undefined ? {} : { frames: options.frames }
             ),
           };

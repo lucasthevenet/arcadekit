@@ -56,6 +56,7 @@ const Message = defineMessageUnion({
   MountedViewport: {},
   UnmountedViewport: {},
   GotScore: { score: Schema.Number },
+  FailedToAttach: { error: Schema.String },
   StartedRun: {},
 });
 type Message = typeof Message.Type;
@@ -86,6 +87,8 @@ const update = (model: Model, message: Message): Return =>
       model: { ...model, isViewportMounted: false },
     }),
     GotScore: ({ score }) => ({ model: { ...model, score } }),
+    // The engine couldn't draw, such as with no WebGL: tell the player.
+    FailedToAttach: () => ({ model }),
     StartedRun: () => ({ model }),
   });
 
@@ -108,6 +111,7 @@ const subscriptions = Subscription.make<Model, Message, Engine>()(() => ({
     engine: Engine,
     isViewportMounted: (model) => model.isViewportMounted,
     toMessage: (event) => Message.GotScore({ score: event.score }),
+    onError: (error) => Message.FailedToAttach({ error: error.message }),
   }),
 }));
 
@@ -124,4 +128,4 @@ Runtime.run(
 );
 ```
 
-Style `.viewport` in the app: it needs a size. An engine reached through a load (`engineOf(MyEngine)`) takes `onError` too. The survivors and push-puzzle demos in the [repository](https://github.com/lucasthevenet/arcadekit#readme) are complete apps.
+Style `.viewport` in the app: it needs a size. `onError` turns a failed attach (`AttachError`, such as no WebGL) into a Message, sent once; for an engine reached through a load (`engineOf(MyEngine)`) it also gets the load's error. The survivors and push-puzzle demos in the [repository](https://github.com/lucasthevenet/arcadekit#readme) are complete apps.

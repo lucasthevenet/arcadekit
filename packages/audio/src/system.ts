@@ -1,4 +1,4 @@
-import { Data, Effect, Result } from "effect";
+import { Data, Duration, Effect, Exit, Result } from "effect";
 
 // The audio system: what apps and sound views call, and the plain-TypeScript mixer behind
 // it. The mixer never touches Web Audio itself. It drives an `AudioOutput` (the browser
@@ -67,7 +67,8 @@ export interface AudioSystem {
   /** Lowers the music, such as while the game is paused. */
   readonly setDucked: (ducked: boolean) => void;
   /**
-   * Fetches and decodes sounds and adds them by id. A file shared by several ids is loaded once.
+   * Fetches and decodes sounds and adds them by id. A file shared by several ids, or asked for
+   * by two loads at once, is loaded once.
    * Every sound whose file loads is added; if any file fails, it then fails with the first error.
    */
   readonly load: (sounds: SoundList) => Effect.Effect<void, AudioLoadError>;
@@ -169,6 +170,28 @@ export const makeAudioMixer = (options: AudioMixerOptions): AudioMixer => {
   const duckedMusic = options.duckedMusic ?? DEFAULT_DUCKED_MUSIC;
   const sounds = new Map<string, Sound>();
   const clips = new Map<string, AudioClip>();
+  // Each file's decode, shared by every load that asks for the file while it runs. A failed
+  // decode isn't kept, so a later load tries the file again.
+  const decodes = new Map<string, Effect.Effect<void, AudioLoadError>>();
+  const decodeOnce = (file: string): Effect.Effect<void, AudioLoadError> => {
+    let decode = decodes.get(file);
+    if (decode === undefined) {
+      decode = Effect.runSync(
+        Effect.cachedWithTTL(
+          options.decode(file).pipe(
+            Effect.flatMap((clip) =>
+              Effect.sync(() => {
+                clips.set(file, clip);
+              })
+            )
+          ),
+          (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero)
+        )
+      );
+      decodes.set(file, decode);
+    }
+    return decode;
+  };
   const volumes = { master: 1, sfx: 1, music: 1 };
   let muted = false;
   let ducked = false;
@@ -374,17 +397,13 @@ export const makeAudioMixer = (options: AudioMixerOptions): AudioMixer => {
     load: (list) =>
       Effect.suspend(() => {
         const entries = Object.entries(list);
-        // Each file once, even when several ids share it and decodes run at the same time.
+        // Each file once, even when several ids share it or two loads overlap.
         const files = [...new Set(entries.map(([, def]) => def.file))].filter(
           (file) => !clips.has(file)
         );
         return Effect.forEach(
           files,
-          (file) =>
-            options.decode(file).pipe(
-              Effect.tap((clip) => Effect.sync(() => clips.set(file, clip))),
-              Effect.result
-            ),
+          (file) => decodeOnce(file).pipe(Effect.result),
           { concurrency: 8 }
         ).pipe(
           Effect.flatMap((results) => {
