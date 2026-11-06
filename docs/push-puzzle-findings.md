@@ -147,7 +147,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 ### 15. Content errors name entries by index
 
 - **Primitive:** `loadContent`'s decoding errors.
-- **What happened:** a schema error points at `levels[2].rows[1]`, not at the level's id. Push-puzzle checks level characters with a filter on the whole level, not on each row string, so the message can say `level "broken" row 2 has unknown character "x"`. Its `validate` names levels the same way.
+- **What happened:** a schema error points at `levels[2].rows[1]`, not at the level's id. Push-puzzle checks level characters with a filter on the whole level, not on each row string, so the message can say `level "broken" row 2 has unknown character "x"`. Its other level checks, also Schema filters, name levels the same way.
 - **Proposed layer:** content (docs at most).
 - **Verdict:** no action. The schema already allows it; survivors' content is small enough that indices are fine.
 
