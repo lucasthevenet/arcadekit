@@ -1,432 +1,323 @@
 import {
-  HOST_ID,
-  normalizeJoinCode,
-  parseServerMessage,
-} from "../signalling/protocol";
-import type {
-  ClientMessage,
-  ErrorReason,
-  Signal,
-} from "../signalling/protocol";
+  Cause,
+  Deferred,
+  Duration,
+  Effect,
+  FiberHandle,
+  FiberMap,
+  Layer,
+  Queue,
+  Stream,
+} from "effect";
+import type { Scope } from "effect";
+import { Socket } from "effect/socket";
+
+import { HOST_ID, normalizeJoinCode } from "../signalling/protocol";
+import type { ClientMessage, Signal } from "../signalling/protocol";
 import type { PeerId } from "../transport";
 import type { PeerLink } from "./channel";
-import { rtcConnectPeer } from "./rtc";
-import type { ConnectPeer, PeerConnecting, RtcOptions } from "./rtc";
+import { roomError } from "./errors";
+import type { RoomError } from "./errors";
+import { createRoomState } from "./room-state";
+import type { RoomEvent, RoomInput, RoomOutput } from "./room-state";
+import { PeerConnector, rtcPeerConnector } from "./rtc";
+import type { RtcOptions } from "./rtc";
 
-/** Why a room failed: the worker's reasons, and the client's own. */
-export type RoomFailure =
-  | ErrorReason
-  /** The signalling server couldn't be reached. */
-  | "unreachable"
-  /** The connection to the signalling server dropped before the start. */
-  | "lost"
-  /** The typed join code can't be one. */
-  | "bad-code"
-  /** A guest couldn't open its WebRTC connection to the host. */
-  | "peer-failed";
+export type { RoomEvent } from "./room-state";
 
-/**
- * What a room reports, in order. A host hears `peer-joined` when a guest's socket joins, then
- * `peer-connected` once its data channels are open, or `peer-left` if it leaves or can't connect
- * before the start. A guest hears `peer-connected` once for the host.
- */
-export type RoomEvent =
-  | { readonly type: "welcome"; readonly code: string; readonly self: PeerId }
-  | { readonly type: "peer-joined"; readonly peer: PeerId }
-  | {
-      readonly type: "peer-connected";
-      readonly peer: PeerId;
-      readonly link: PeerLink;
-    }
-  | {
-      readonly type: "peer-left";
-      readonly peer: PeerId;
-      /** Why, when its connection failed rather than it leaving. */
-      readonly reason?: string;
-    }
-  | { readonly type: "started" }
-  | {
-      readonly type: "failed";
-      readonly reason: RoomFailure;
-      readonly message: string;
-    };
+// The signalling client's Effect shell (#25, ADR-0012). Its rules are room-state.ts; here, one
+// fiber owns the socket to the worker, one per peer makes its link, and the room fiber carries
+// out the rules, one input at a time. Only the room fiber removes a peer or closes the socket:
+// FiberMap.remove waits for the fiber it interrupts, so a fiber that removed itself would never
+// finish.
+
+export interface RoomOptions {
+  /** The worker's base URL, normally the page's own origin, such as `wss://game.example.com` or `ws://localhost:1337`. */
+  readonly url: string;
+  /** How long the socket may take to open. Defaults to 10 seconds. */
+  readonly openTimeout?: Duration.Input;
+  /** How long the worker may take to welcome, once the socket is open. Defaults to 10 seconds. */
+  readonly welcomeTimeout?: Duration.Input;
+}
 
 /**
- * - `connecting`: waiting for the worker's welcome.
- * - `open`: in the lobby; guests come and go.
- * - `started`: the host started; the room admits no one, the socket is closed and the links
- *   carry the run.
- * - `failed`: see the `failed` event. Every link is closed.
- * - `closed`: `close` was called.
- */
-export type RoomStatus =
-  | "connecting"
-  | "open"
-  | "started"
-  | "failed"
-  | "closed";
-
-/**
- * One peer's side of a signalling room (#25, ADR-0012): its socket to the signalling worker and
- * the WebRTC links it makes through it. A host links to every guest; a guest only to the host.
- * Once the host starts, the links are the run's: `linksTransport(room.self, room.links())`
- * carries a lockstep session's messages.
+ * One peer's side of a signalling room, once the worker has welcomed it: its socket to the
+ * worker and the WebRTC links it makes through it. A host links to every guest; a guest only to
+ * the host. Once the host starts, the links are the run's: `linksTransport(room.self,
+ * room.links())` carries a lockstep session's messages.
  */
 export interface SignallingRoom {
   readonly role: "host" | "guest";
-  readonly status: RoomStatus;
-  /** The join code, once welcomed. */
-  readonly code: string | undefined;
-  /** This peer's id in the room (`host`, `guest-1`, …), once welcomed. */
-  readonly self: PeerId | undefined;
+  /** The join code. */
+  readonly code: string;
+  /** This peer's id in the room (`host`, `guest-1`, …). */
+  readonly self: PeerId;
   /** The host's id. */
   readonly host: PeerId;
-  /** Every open link, in the order they opened. */
-  readonly links: () => readonly PeerLink[];
-  readonly subscribe: (listener: (event: RoomEvent) => void) => () => void;
   /**
-   * Host only: starts the run, so the room admits no one else. Guests still connecting are
-   * dropped (`peer-left`) when the worker confirms with `started`.
+   * What happens in the room after the welcome, for one consumer. Ends after `started`, and
+   * fails with the room's RoomError if it fails before the start. Closing the room's scope first
+   * interrupts whoever still reads it. Events wait in the room until taken, so none is lost
+   * before the consumer starts.
    */
-  readonly start: () => void;
-  /** Leaves: closes the socket and every link, the run's too. */
-  readonly close: () => void;
+  readonly events: Stream.Stream<RoomEvent, RoomError>;
+  /** The open links, in the order they opened. Read it at the start for `linksTransport`. */
+  readonly links: () => readonly PeerLink[];
+  /**
+   * Host: asks the worker to start, so the room admits no one else; `started` confirms it, and
+   * guests still connecting are dropped (`peer-left`). A guest's does nothing.
+   */
+  readonly start: Effect.Effect<void>;
 }
 
-/** The socket to the signalling worker, as the room uses it. */
-export interface SignallingSocket {
-  readonly send: (text: string) => void;
-  readonly close: () => void;
-}
+/** What `hostRoom` and `joinRoom` need: a way to make peer links, and WebSockets. */
+export type RoomServices = PeerConnector | Socket.WebSocketConstructor;
 
-export interface SignallingSocketHandlers {
-  readonly open: () => void;
-  readonly message: (text: string) => void;
-  /** Called once, when the socket closes or fails to open. */
-  readonly close: () => void;
-}
+/**
+ * Opens a room as its host. Succeeds once the worker welcomes it, with its join code. The scope
+ * owns the socket (until the start), every peer connection and every link, the run's too:
+ * closing it is leaving. If it fails, everything it opened is already closed.
+ */
+export const hostRoom = (
+  options: RoomOptions
+): Effect.Effect<SignallingRoom, RoomError, Scope.Scope | RoomServices> =>
+  openRoom(options, "host", "/host");
 
-export interface SignallingOptions {
-  /** The worker's base URL, normally the page's own origin, such as `wss://game.example.com` or `ws://localhost:1337`. */
-  readonly url: string;
-  /** WebRTC settings (STUN servers). Ignored when `connectPeer` is given. */
-  readonly rtc?: RtcOptions;
-  /** Makes each peer link. Defaults to `rtcConnectPeer(rtc)`; tests pass a fake. */
-  readonly connectPeer?: ConnectPeer;
-  /** Opens the socket. Defaults to a browser `WebSocket`; tests pass a fake. */
-  readonly openSocket?: (
-    url: string,
-    handlers: SignallingSocketHandlers
-  ) => SignallingSocket;
-}
-
-/** Opens a new room as its host. Its join code arrives in the `welcome` event. */
-export const hostRoom = (options: SignallingOptions): SignallingRoom =>
-  createRoom(options, "host", undefined);
-
-/** Joins the room with join code `code`, as typed (any case). */
+/**
+ * Joins the room with join code `code`, as typed (any case), as `hostRoom` opens one. A code
+ * that can't be one fails with `bad-code`, and no socket is opened.
+ */
 export const joinRoom = (
-  options: SignallingOptions,
+  options: RoomOptions,
   code: string
-): SignallingRoom => createRoom(options, "guest", code);
-
-const failureMessage = (reason: RoomFailure, url: string): string => {
-  switch (reason) {
-    case "unknown-code": {
-      return "No room has that code. Check it, or ask the host for a new one.";
-    }
-    case "code-taken": {
-      return "That join code is already in use. Try hosting again.";
-    }
-    case "full": {
-      return "That room is full.";
-    }
-    case "started": {
-      return "That run has already started.";
-    }
-    case "expired": {
-      return "The room expired. Host a new one.";
-    }
-    case "host-left": {
-      return "The host left.";
-    }
-    case "bad-message":
-    case "not-allowed": {
-      return `The signalling server refused a message (${reason}).`;
-    }
-    case "unreachable": {
-      return `Couldn't reach the signalling server at ${url}.`;
-    }
-    case "lost": {
-      return "Lost the connection to the signalling server.";
-    }
-    case "bad-code": {
-      return "A join code is 6 letters and digits.";
-    }
-    case "peer-failed": {
-      return "Couldn't connect to the host.";
-    }
-  }
-};
-
-const browserSocket = (
-  url: string,
-  handlers: SignallingSocketHandlers
-): SignallingSocket => {
-  let socket: WebSocket;
-  try {
-    socket = new WebSocket(url);
-  } catch {
-    // A malformed URL throws at once; report it as the socket closing.
-    queueMicrotask(handlers.close);
-    // oxlint-disable-next-line eslint/no-empty-function -- a socket that never opened sends and closes nothing.
-    return { send: () => {}, close: () => {} };
-  }
-  socket.addEventListener("open", handlers.open);
-  socket.addEventListener("message", (event: MessageEvent<unknown>) => {
-    if (typeof event.data === "string") {
-      handlers.message(event.data);
-    }
+): Effect.Effect<SignallingRoom, RoomError, Scope.Scope | RoomServices> =>
+  Effect.suspend(() => {
+    const normalized = normalizeJoinCode(code);
+    return normalized === undefined
+      ? Effect.fail(roomError("bad-code", baseUrl(options.url)))
+      : openRoom(options, "guest", `/join/${normalized}`);
   });
-  // An error is always followed by close.
-  socket.addEventListener("close", handlers.close, { once: true });
-  return {
-    send: (text) => {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(text);
-      }
-    },
-    close: () => socket.close(1000, "done"),
-  };
-};
 
-const createRoom = (
-  options: SignallingOptions,
+/** What `hostRoom` and `joinRoom` need in a browser: WebRTC links, and the global WebSocket. */
+export const browserRoomLayer = (rtc?: RtcOptions): Layer.Layer<RoomServices> =>
+  Layer.merge(
+    Layer.succeed(PeerConnector, rtcPeerConnector(rtc)),
+    Socket.layerWebSocketConstructorGlobal
+  );
+
+/** Long enough for a cold worker under `alchemy dev`, which takes seconds. */
+const DEFAULT_TIMEOUT = Duration.seconds(10);
+
+const baseUrl = (url: string) => url.replace(/\/+$/u, "");
+
+const openRoom = (
+  options: RoomOptions,
   role: "host" | "guest",
-  typedCode: string | undefined
-): SignallingRoom => {
-  const base = options.url.replace(/\/+$/u, "");
-  const connectPeer = options.connectPeer ?? rtcConnectPeer(options.rtc);
-  const openSocket = options.openSocket ?? browserSocket;
-  const listeners = new Set<(event: RoomEvent) => void>();
-  // Peers being connected, and peers whose links are open, by id.
-  const connecting = new Map<PeerId, PeerConnecting>();
-  const links = new Map<PeerId, PeerLink>();
-  let status: RoomStatus = "connecting";
-  let code: string | undefined;
-  let self: PeerId | undefined;
-  let socket: SignallingSocket | undefined;
+  path: string
+): Effect.Effect<SignallingRoom, RoomError, Scope.Scope | RoomServices> =>
+  Effect.gen(function* () {
+    const url = baseUrl(options.url);
+    const connector = yield* PeerConnector;
+    const makeWebSocket = yield* Socket.WebSocketConstructor;
+    const state = createRoomState(role, url);
+    const inbox = yield* Queue.unbounded<RoomInput>();
+    // What goes to the worker, as JSON: signals and the start.
+    const outbox = yield* Queue.unbounded<string>();
+    const events = yield* Queue.unbounded<RoomEvent, RoomError | Cause.Done>();
+    // Leaving interrupts whoever still reads the events, rather than leaving them waiting.
+    yield* Effect.addFinalizer(() => Queue.interrupt(events));
+    const welcomed = yield* Deferred.make<
+      { readonly code: string; readonly self: PeerId },
+      RoomError
+    >();
+    const socket = yield* FiberHandle.make<unknown, never>();
+    const peers = yield* FiberMap.make<PeerId, unknown, never>();
+    // Each peer being connected's signals, in the order the worker relayed them.
+    const signals = new Map<PeerId, Queue.Queue<Signal>>();
 
-  const emit = (event: RoomEvent) => {
-    for (const listener of listeners) {
-      listener(event);
-    }
-  };
+    const tell = (input: RoomInput) => Queue.offer(inbox, input);
+    const send = (message: ClientMessage) => {
+      Queue.offerUnsafe(outbox, JSON.stringify(message));
+    };
 
-  const send = (message: ClientMessage) =>
-    socket?.send(JSON.stringify(message));
-
-  const closeLinks = () => {
-    for (const peer of connecting.values()) {
-      peer.close();
-    }
-    for (const link of links.values()) {
-      link.close();
-    }
-    connecting.clear();
-    links.clear();
-  };
-
-  const fail = (
-    reason: RoomFailure,
-    message = failureMessage(reason, base)
-  ) => {
-    if (status === "failed" || status === "closed") {
-      return;
-    }
-    status = "failed";
-    socket?.close();
-    closeLinks();
-    emit({ type: "failed", reason, message });
-  };
-
-  /** A peer leaves before the start: its socket closed, its connection failed or its link closed. */
-  const peerLeft = (peer: PeerId, reason?: string) => {
-    const pending = connecting.get(peer);
-    const link = links.get(peer);
-    if (pending === undefined && link === undefined) {
-      return;
-    }
-    connecting.delete(peer);
-    links.delete(peer);
-    pending?.close();
-    link?.close();
-    if (role === "guest") {
-      fail("peer-failed", reason ?? failureMessage("host-left", base));
-      return;
-    }
-    emit(
-      reason === undefined
-        ? { type: "peer-left", peer }
-        : { type: "peer-left", peer, reason }
-    );
-  };
-
-  const connect = (peer: PeerId) => {
-    let connection: PeerConnecting;
-    try {
-      connection = connectPeer({
-        peer,
-        initiator: role === "host",
-        sendSignal: (signal: Signal) =>
-          send({ type: "signal", to: peer, signal }),
-        onOpen: (link) => {
-          if (connecting.get(peer) !== connection) {
-            link.close();
-            return;
+    // Owns the socket: opens it, writes the outbox, and tells the room what the worker says and
+    // when the socket closes. The welcome timer starts once the socket is open.
+    const dial = Effect.gen(function* () {
+      const websocket = yield* Socket.fromWebSocket(
+        Effect.acquireRelease(
+          Effect.try({
+            try: () => makeWebSocket(`${url}${path}`),
+            // Such as a malformed URL.
+            catch: (cause) =>
+              new Socket.SocketError({
+                reason: new Socket.SocketOpenError({ kind: "Unknown", cause }),
+              }),
+          }),
+          (opened) => Effect.sync(() => opened.close(1000))
+        ),
+        { openTimeout: options.openTimeout ?? DEFAULT_TIMEOUT }
+      );
+      let opened = false;
+      yield* Effect.gen(function* () {
+        const reader = yield* websocket.reader;
+        opened = true;
+        yield* Effect.forkScoped(
+          Effect.sleep(options.welcomeTimeout ?? DEFAULT_TIMEOUT).pipe(
+            Effect.andThen(tell({ kind: "welcome-timeout" }))
+          )
+        );
+        const writer = yield* websocket.writer;
+        // A write that fails is a socket that closed, which the reader hears.
+        yield* Effect.forkScoped(
+          Effect.forever(
+            Effect.flatMap(Queue.take(outbox), (text) =>
+              Effect.ignore(writer.write(text))
+            )
+          )
+        );
+        for (;;) {
+          for (const frame of yield* reader.pull) {
+            // A binary frame is no message of this protocol.
+            Queue.offerUnsafe(inbox, {
+              kind: "server",
+              text: typeof frame === "string" ? frame : "",
+            });
           }
-          connecting.delete(peer);
-          links.set(peer, link);
-          // Before the start, a link that closes is a peer that left. After, it's the run's business.
-          const leftEarly = () => {
-            if (status === "open") {
-              peerLeft(peer);
-            }
-          };
-          link.messages.onClose(leftEarly);
-          link.lockstep.onClose(leftEarly);
-          emit({ type: "peer-connected", peer, link });
-        },
-        onFail: (reason) => {
-          if (connecting.get(peer) === connection) {
-            peerLeft(peer, reason);
-          }
-        },
-      });
-    } catch (error) {
-      // Such as `RTCPeerConnection` refusing a malformed STUN URL.
-      const reason = `WebRTC setup with ${peer} failed: ${error instanceof Error ? error.message : String(error)}`;
-      if (role === "guest") {
-        fail("peer-failed", reason);
-      } else {
-        emit({ type: "peer-left", peer, reason });
-      }
-      return;
-    }
-    connecting.set(peer, connection);
-  };
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.catchTag("SocketError", (error) =>
+          tell({ kind: "socket-closed", opened, cause: error })
+        ),
+        Effect.asVoid
+      );
+    });
 
-  const receive = (text: string) => {
-    if (status !== "connecting" && status !== "open") {
-      return;
-    }
-    const message = parseServerMessage(text);
-    if (message === undefined) {
-      return;
-    }
-    switch (message.type) {
-      case "welcome": {
-        if (status !== "connecting") {
-          return;
-        }
-        status = "open";
-        ({ code, self } = message);
-        emit({ type: "welcome", code: message.code, self: message.self });
-        if (role === "guest") {
-          connect(message.host);
-        }
-        return;
-      }
-      case "peer-joined": {
-        if (role === "host" && !connecting.has(message.peer)) {
-          emit({ type: "peer-joined", peer: message.peer });
-          connect(message.peer);
-        }
-        return;
-      }
-      case "peer-left": {
-        peerLeft(message.peer);
-        return;
-      }
-      case "signal": {
-        connecting.get(message.from)?.receive(message.signal);
-        return;
-      }
-      case "started": {
-        if (role === "guest" && !links.has(HOST_ID)) {
-          fail("started");
-          return;
-        }
-        status = "started";
-        socket?.close();
-        // Whoever isn't linked yet can't play: no late join.
-        for (const [peer, pending] of connecting) {
-          pending.close();
-          emit({
-            type: "peer-left",
-            peer,
-            reason: "not connected at the start",
+    // Makes one peer's link, and tells the room when it opens, fails or closes. Its scope owns
+    // the link, so the room closes it by interrupting this fiber.
+    const linkPeer = (
+      peer: PeerId,
+      initiator: boolean,
+      peerSignals: Queue.Queue<Signal>
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const link = yield* connector.connect({
+          peer,
+          initiator,
+          signals: peerSignals,
+          sendSignal: (signal) => send({ type: "signal", to: peer, signal }),
+        });
+        yield* tell({ kind: "linked", peer, link });
+        yield* link.closed;
+        yield* tell({ kind: "link-closed", peer });
+      }).pipe(
+        Effect.scoped,
+        Effect.catchTag("PeerLinkError", (error) =>
+          tell({ kind: "link-failed", peer, message: error.message })
+        ),
+        Effect.asVoid
+      );
+
+    /** Carries out one output; false once the room has failed. */
+    const perform = (output: RoomOutput): Effect.Effect<boolean> => {
+      switch (output.kind) {
+        case "send": {
+          return Effect.sync(() => {
+            send(output.message);
+            return true;
           });
         }
-        connecting.clear();
-        emit({ type: "started" });
-        return;
-      }
-      case "error": {
-        fail(message.reason);
-      }
-    }
-  };
-
-  const path =
-    role === "host" ? "/host" : `/join/${normalizeJoinCode(typedCode ?? "")}`;
-  if (role === "guest" && normalizeJoinCode(typedCode ?? "") === undefined) {
-    // Report it after the caller has had the chance to subscribe.
-    queueMicrotask(() => fail("bad-code"));
-  } else {
-    let opened = false;
-    socket = openSocket(`${base}${path}`, {
-      open: () => {
-        opened = true;
-      },
-      message: receive,
-      close: () => {
-        if (status === "connecting" || status === "open") {
-          fail(opened ? "lost" : "unreachable");
+        case "connect": {
+          return Effect.gen(function* () {
+            const peerSignals = yield* Queue.unbounded<Signal>();
+            signals.set(output.peer, peerSignals);
+            yield* FiberMap.run(
+              peers,
+              output.peer,
+              linkPeer(output.peer, output.initiator, peerSignals)
+            );
+            return true;
+          });
         }
-      },
-    });
-  }
+        case "signal": {
+          return Effect.sync(() => {
+            const peerSignals = signals.get(output.peer);
+            if (peerSignals !== undefined) {
+              Queue.offerUnsafe(peerSignals, output.signal);
+            }
+            return true;
+          });
+        }
+        case "drop": {
+          return FiberMap.remove(peers, output.peer).pipe(
+            Effect.andThen(Effect.sync(() => signals.delete(output.peer))),
+            Effect.as(true)
+          );
+        }
+        case "welcomed": {
+          return Deferred.succeed(welcomed, {
+            code: output.code,
+            self: output.self,
+          }).pipe(Effect.as(true));
+        }
+        case "event": {
+          return Queue.offer(events, output.event).pipe(Effect.as(true));
+        }
+        case "close-socket": {
+          // After `started`: the events end, and the peers keep their links.
+          return FiberHandle.clear(socket).pipe(
+            Effect.andThen(Queue.end(events)),
+            Effect.as(true)
+          );
+        }
+        case "fail": {
+          // Close everything first, so whoever hears of the failure finds nothing left open.
+          return Effect.gen(function* () {
+            yield* FiberHandle.clear(socket);
+            yield* FiberMap.clear(peers);
+            signals.clear();
+            yield* Deferred.fail(welcomed, output.error);
+            yield* Queue.fail(events, output.error);
+            return false;
+          });
+        }
+      }
+    };
 
-  return {
-    role,
-    get status() {
-      return status;
-    },
-    get code() {
-      return code;
-    },
-    get self() {
-      return self;
-    },
-    host: HOST_ID,
-    links: () => [...links.values()],
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    start: () => {
-      if (role === "host" && status === "open") {
-        send({ type: "start" });
+    const room = Effect.gen(function* () {
+      for (;;) {
+        const input = yield* Queue.take(inbox);
+        for (const output of state.handle(input)) {
+          if (!(yield* perform(output))) {
+            return;
+          }
+        }
       }
-    },
-    close: () => {
-      if (status === "closed") {
-        return;
-      }
-      status = "closed";
-      socket?.close();
-      closeLinks();
-    },
-  };
-};
+    }).pipe(
+      // The socket's fiber and the peers' fail only of a bug, such as a PeerConnector's, which
+      // ends the room as a bug in it does. Their joins ignore the interrupts that close them.
+      Effect.raceFirst(FiberMap.join(peers)),
+      Effect.raceFirst(FiberHandle.join(socket)),
+      // A bug in the room is a defect for whoever waits on it, not a room that hangs.
+      Effect.onError((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : Deferred.failCause(welcomed, cause).pipe(
+              Effect.andThen(Queue.failCause(events, cause))
+            )
+      )
+    );
+
+    yield* Effect.forkScoped(room);
+    yield* FiberHandle.run(socket, dial);
+    const { code, self } = yield* Deferred.await(welcomed);
+    return {
+      role,
+      code,
+      self,
+      host: HOST_ID,
+      events: Stream.fromQueue(events),
+      links: state.links,
+      start: Effect.asVoid(tell({ kind: "start" })),
+    };
+  });

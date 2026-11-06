@@ -73,3 +73,54 @@ export const playerName = (id: string): string => {
   const guest = /^guest-(?<n>\d+)$/u.exec(id);
   return guest ? `Guest ${guest.groups!.n}` : id;
 };
+
+// The host's lobby, as plain values: who is in it and their heroes, host first, in join order.
+
+/** The lobby with `id` added at its end, with no hero yet. A player already in it stays where it is. */
+export const withPlayer = (
+  players: readonly LobbyPlayer[],
+  id: string
+): readonly LobbyPlayer[] =>
+  players.some((player) => player.id === id)
+    ? players
+    : [...players, { id, heroId: "" }];
+
+/** The lobby without `id`. */
+export const withoutPlayer = (
+  players: readonly LobbyPlayer[],
+  id: string
+): readonly LobbyPlayer[] => players.filter((player) => player.id !== id);
+
+/** The lobby with `id` playing `heroId`. */
+export const withHero = (
+  players: readonly LobbyPlayer[],
+  id: string,
+  heroId: string
+): readonly LobbyPlayer[] =>
+  players.map((player) => (player.id === id ? { id, heroId } : player));
+
+/** Whether the host may start: at least two players, and each has picked a hero. */
+export const canStart = (
+  players: readonly { readonly heroId: string }[]
+): boolean =>
+  players.length >= 2 && players.every((player) => player.heroId !== "");
+
+/**
+ * Who plays when the host starts, and their heroes: the host (`self`) and every guest still
+ * linked, in lobby order. A player who picked no hero plays `fallbackHeroId`. The result is the
+ * host's `StartMessage`, and the run's player order.
+ */
+export const startPlan = (
+  players: readonly LobbyPlayer[],
+  linked: ReadonlySet<string>,
+  self: string,
+  fallbackHeroId: string
+): { readonly players: string[]; readonly heroIds: string[] } => {
+  const playing = players.filter(
+    (player) => player.id === self || linked.has(player.id)
+  );
+  return {
+    players: playing.map((player) => player.id),
+    heroIds: playing.map((player) => player.heroId || fallbackHeroId),
+  };
+};

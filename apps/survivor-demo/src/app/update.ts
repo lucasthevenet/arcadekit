@@ -272,17 +272,24 @@ const handle = (model: Model, message: Message): Return =>
             },
           }
         : { model },
-    GotCoopStarted: ({ slot, players }) => ({
-      model: {
-        ...model,
-        phase: Phase.CoopPlaying(),
-        hud: emptyHud,
-        coop: { ...emptyCoopRun, slot, players },
-      },
-    }),
-    GotCoopWaiting: ({ waitingFor, choosing }) => ({
-      model: { ...model, coop: { ...model.coop, waitingFor, choosing } },
-    }),
+    // Co-op events can be queued behind a Leave: each counts only in the phase it belongs to.
+    GotCoopStarted: ({ slot, players }) =>
+      model.phase._tag === "CoopLobby"
+        ? {
+            model: {
+              ...model,
+              phase: Phase.CoopPlaying(),
+              hud: emptyHud,
+              coop: { ...emptyCoopRun, slot, players },
+            },
+          }
+        : { model },
+    GotCoopWaiting: ({ waitingFor, choosing }) =>
+      model.phase._tag === "CoopPlaying" || model.phase._tag === "CoopLevelUp"
+        ? {
+            model: { ...model, coop: { ...model.coop, waitingFor, choosing } },
+          }
+        : { model },
     GotCoopLevelUp: ({ offer, choices }) =>
       model.phase._tag === "CoopPlaying"
         ? { model: { ...model, phase: Phase.CoopLevelUp({ offer, choices }) } }

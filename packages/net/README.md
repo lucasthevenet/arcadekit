@@ -1,6 +1,6 @@
 # @arcadekit/net
 
-Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `GameSimulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. In an Effect program, `hostLockstepScoped` and `joinLockstepScoped` make the same session, owned by a scope and run on Effect's `Clock` until it fails with its `LockstepError`. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `@arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the signalling client that turns a join code into peer links, and `linksTransport`), and `@arcadekit/net/signalling` the protocol a signalling server speaks, each message an Effect Schema with bounded fields.
+Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `GameSimulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. In an Effect program, `hostLockstepScoped` and `joinLockstepScoped` make the same session, owned by a scope and run on Effect's `Clock` until it fails with its `LockstepError`. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `@arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the scoped signalling client that turns a join code into peer links, and `linksTransport`), and `@arcadekit/net/signalling` the protocol a signalling server speaks, each message an Effect Schema with bounded fields.
 
 Part of [arcadekit](https://github.com/lucasthevenet/arcadekit#readme). The root entry is DOM-free.
 
@@ -167,4 +167,76 @@ The plain session is the protocol, and the scoped one a shell around it. Test th
 
 A session sends each player's input through its `InputCodec`: `encode` turns it into JSON data, and `decode` checks it on the way in and returns a `Result` (from `effect`), never throwing. `jsonCodec` checks nothing; `schemaCodec(schema)` decodes with an Effect Schema and fails with the schema's message. The host decodes each peer's input as it arrives and removes a peer whose input fails (its session stops with a `removed` error whose `why` is `badInput`); a peer that can't decode a step from the host stops with a `badInput` error. A message that isn't one the protocol knows is dropped. A run holds at most 16 players.
 
-In the browser, `hostRoom` and `joinRoom` connect peers by join code through a signalling server, and `linksTransport` carries the session over the WebRTC links they open. See [ADR-0012](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0012-delay-based-lockstep-over-a-host-star.md) (delay-based lockstep over a host star) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math, so every browser computes the same run).
+## In the browser
+
+`hostRoom` and `joinRoom` connect peers by join code through a signalling server, and `linksTransport` carries the session over the WebRTC links they open. Each is a scoped Effect that succeeds once the server welcomes the peer, with its join `code` and its own id (`self`). Its scope owns the socket until the start and every peer link after it, so closing the scope is leaving, and a room that fails has already closed what it opened.
+
+- `room.events` is a `Stream` of who joins, links and leaves. It ends with `started`. A room that fails before the start fails the stream, or the acquire, with a `RoomError` whose `reason` says why: `no-welcome` when the server doesn't answer in time, `bad-server-message` when it speaks another version of the protocol, and so on. Events wait until they are read, and leaving interrupts a reader that is still reading.
+- `room.start` asks the server to start the run (host only). At the start, `linksTransport(room.self, room.links())` is the session's `Transport`.
+- A `PeerLink` has two channels: `lockstep`, unordered and unreliable, for the session, and `messages`, reliable and ordered, for what the app says around a run. Its `closed` succeeds once either channel closes, the connection fails or the link's scope closes.
+- `browserRoomLayer(rtc)` provides what a room needs: WebRTC links (`PeerConnector`, from `rtcPeerConnector`) and the global WebSocket (`Socket.WebSocketConstructor` from `effect/socket`). Tests provide fakes of both.
+
+```ts
+import { hostLockstepScoped, jsonCodec } from "@arcadekit/net";
+import type { ConfirmedStep, Ticker } from "@arcadekit/net";
+import {
+  browserRoomLayer,
+  hostRoom,
+  linksTransport,
+} from "@arcadekit/net/browser";
+import type { GameSimulation } from "@arcadekit/runtime";
+import { Effect, Stream } from "effect";
+
+interface State {
+  total: number;
+}
+
+const simulation: GameSimulation<null, State, number, never> = {
+  create: () => ({ total: 0 }),
+  step: (state, input) => {
+    state.total += input;
+  },
+  drainEvents: () => [],
+};
+
+// Time it in a dedicated worker in a real game: a hidden tab throttles the main thread's timers.
+const every4ms: Ticker = (onTick) => {
+  const timer = setInterval(onTick, 4);
+  return () => clearInterval(timer);
+};
+
+const host = Effect.gen(function* () {
+  // Succeeds once the signalling server welcomes this peer. The scope owns the room and its links.
+  const room = yield* hostRoom({ url: "wss://game.example.com" });
+  console.log(`Join code: ${room.code}`);
+  // Start once a guest's link is open. The events end with `started`.
+  yield* Stream.runForEach(room.events, (event) =>
+    event.type === "peer-connected" ? room.start : Effect.void
+  );
+  const session = yield* hostLockstepScoped({
+    simulation,
+    config: null,
+    contentHash: "content-v1",
+    codec: jsonCodec<number>(),
+    combine: (step: ConfirmedStep<number>) =>
+      step.inputs.reduce((sum, { input }) => sum + input, 0),
+    hash: (state: State) => state.total,
+    inputDelay: 3,
+    hashEvery: 30,
+    transport: linksTransport(room.self, room.links()),
+    local: { read: () => 1 },
+    peers: room.links().map((link) => link.peer),
+    seed: 7,
+  });
+  yield* session.run(every4ms);
+}).pipe(
+  Effect.catchTag("RoomError", (error) => Effect.logError(error.message)),
+  Effect.catchTag("LockstepError", (error) => Effect.logError(error.message)),
+  Effect.scoped,
+  Effect.provide(browserRoomLayer())
+);
+
+Effect.runFork(host);
+```
+
+See [ADR-0012](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0012-delay-based-lockstep-over-a-host-star.md) (delay-based lockstep over a host star) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math, so every browser computes the same run).

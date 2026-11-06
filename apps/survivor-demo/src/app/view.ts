@@ -7,7 +7,7 @@ import type {
 } from "@arcadekit/survivors";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
-import { playerName } from "../coop/lobby";
+import { canStart, playerName } from "../coop/lobby";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { CoopPlayer, Model } from "./model";
@@ -364,9 +364,7 @@ const coopLobby = (
   },
   h: H
 ): Html => {
-  const canStart =
-    lobby.players.length >= 2 &&
-    lobby.players.every((player) => player.heroId !== "");
+  const startable = canStart(lobby.players);
   return panel(h, [
     lobby.role === "host"
       ? h.div(
@@ -397,10 +395,10 @@ const coopLobby = (
       ? h.button(
           [
             h.Class("primary big"),
-            h.Disabled(!canStart),
+            h.Disabled(!startable),
             h.OnClick(Message.ClickedStartCoop()),
           ],
-          [canStart ? "Start run" : "Waiting for players…"]
+          [startable ? "Start run" : "Waiting for players…"]
         )
       : h.p([h.Class("muted")], ["Waiting for the host to start…"]),
     h.div(

@@ -1,46 +1,39 @@
 import { Audio } from "@arcadekit/audio";
+import type { AttachableEngine } from "@arcadekit/foldkit";
 import type { SpriteSheetError } from "@arcadekit/render-three";
-import { attachError } from "@arcadekit/runtime/browser";
-import type { AttachError } from "@arcadekit/runtime/browser";
-import type { GameContent } from "@arcadekit/survivors";
+import type { AttachError, GameCrashed } from "@arcadekit/runtime/browser";
+import { SurvivorsContent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
 import { Context, Effect, Layer } from "effect";
-import type { Scope } from "effect";
 
-import { CoopClient } from "../coop/client";
-import type { CoopEvent } from "../coop/client";
-import { iceServers, signallingUrl } from "../coop/config";
+import { makeCoopClient } from "../coop/client";
+import type { CoopClient, CoopEvent, CoopRooms } from "../coop/client";
+import { browserRooms } from "../coop/config";
 import { survivorsSounds } from "./sound";
 
 /**
- * Co-op survivors (#25) as the app's Commands and Subscriptions use it: the lobby and the
- * lockstep run of `CoopClient`, behind Effects. `attach` and `listen` are what `engineEntry`
- * uses, as for the single-player engine; the rest are Commands'.
+ * Co-op survivors (#25) as the app's Commands and Subscriptions use it: the co-op client's
+ * lobby and lockstep run. `attach` and `listen` are what `engineEntry` uses, as for the
+ * single-player engine; the rest are Commands'.
+ *
+ * `attach` draws the co-op run with the engine's loaded art for as long as it runs, and
+ * detaches when interrupted. It fails with the sheet's error if the sheet can't load,
+ * `AttachError` if the client can't draw (no WebGL), and `GameCrashed` if a frame throws,
+ * after leaving the lobby or run.
  */
-export interface CoopApi {
-  /**
-   * Draws the co-op run into `element` with the engine's loaded art for as long as it runs,
-   * and detaches when interrupted. Fails with the sheet's error if it can't load, and with
-   * `AttachError` if the client can't draw (no WebGL).
-   */
-  readonly attach: (
-    element: HTMLElement
-  ) => Effect.Effect<never, SpriteSheetError | AttachError>;
-  /** Calls `onEvent` for every co-op event while the scope is open. */
-  readonly listen: (
-    onEvent: (event: CoopEvent) => void
-  ) => Effect.Effect<void, never, Scope.Scope>;
-  readonly host: (content: GameContent, heroId: string) => Effect.Effect<void>;
-  readonly join: (
-    content: GameContent,
-    code: string,
-    heroId: string
-  ) => Effect.Effect<void>;
+export interface CoopApi extends AttachableEngine<
+  CoopEvent,
+  SpriteSheetError | AttachError | GameCrashed
+> {
+  /** Hosts a room, after leaving any before it. The lobby and the run report through `listen`. */
+  readonly host: (heroId: string) => Effect.Effect<void>;
+  readonly join: (code: string, heroId: string) => Effect.Effect<void>;
   readonly chooseHero: (heroId: string) => Effect.Effect<void>;
   readonly start: Effect.Effect<void>;
   readonly pickUpgrade: (offer: number, index: number) => Effect.Effect<void>;
   readonly setPaused: (paused: boolean) => Effect.Effect<void>;
+  /** Leaves the lobby or the run, once its room, links, session and worker have closed. */
   readonly leave: Effect.Effect<void>;
 }
 
@@ -48,80 +41,65 @@ export class Coop extends Context.Service<Coop, CoopApi>()(
   "survivor-demo/Coop"
 ) {}
 
-/**
- * The co-op API over `client`. `attach` draws with the engine's loaded art (one sheet, one
- * load, from `engines`), and fails with `SpriteSheetError` if it can't load, or `AttachError`
- * if the client's view can't be made.
- */
+/** `client`'s API, drawing with the art `engines` loads: one sheet, one load. */
 export const makeCoop = (
   client: CoopClient,
   engines: SurvivorsEngineLoader
 ): CoopApi => ({
+  host: client.host,
+  join: client.join,
+  chooseHero: client.chooseHero,
+  start: client.start,
+  pickUpgrade: client.pickUpgrade,
+  setPaused: client.setPaused,
+  leave: client.leave,
+  listen: client.listen,
   attach: (element) =>
     engines.load.pipe(
-      Effect.flatMap(({ assets }) =>
-        Effect.acquireRelease(
-          Effect.try({
-            try: () => client.attach(element, assets),
-            catch: attachError,
-          }),
-          (detach) => Effect.sync(detach)
-        )
-      ),
-      // The client draws on its own animation frames until it is detached.
-      Effect.andThen(Effect.never),
-      Effect.scoped
+      Effect.flatMap(({ assets }) => client.attach(element, assets)),
+      // The app then shows co-op as stopped, so this player leaves: a seat left running would
+      // freeze the others' run at its hero's next upgrade offer, or while it holds the pause.
+      Effect.tapError(() => client.leave)
     ),
-  listen: (onEvent) =>
-    Effect.acquireRelease(
-      Effect.sync(() => client.subscribe(onEvent)),
-      (unsubscribe) => Effect.sync(unsubscribe)
-    ).pipe(Effect.asVoid),
-  host: (content, heroId) => Effect.sync(() => client.host(content, heroId)),
-  join: (content, code, heroId) =>
-    Effect.sync(() => client.join(content, code, heroId)),
-  chooseHero: (heroId) => Effect.sync(() => client.chooseHero(heroId)),
-  start: Effect.sync(() => client.start()),
-  pickUpgrade: (offer, index) =>
-    Effect.sync(() => client.pickUpgrade(offer, index)),
-  setPaused: (paused) => Effect.sync(() => client.setPaused(paused)),
-  leave: Effect.sync(() => client.leave()),
 });
 
 /**
- * The co-op client, playing its sounds through the `Audio` service and drawing with the art
- * `SurvivorsEngine` loads. When the layer's scope (the app) closes, the client leaves: its
- * signalling socket, peer links and tick worker close.
+ * The co-op client over `rooms()`, playing its sounds through the `Audio` service, loading the
+ * run's content from `SurvivorsContent` and drawing with the art `SurvivorsEngine` loads. The
+ * layer's scope (the app) owns the client: when it closes, the client leaves, and its socket,
+ * peer links, session and tick worker close.
  */
-export const CoopLayer = Layer.effect(
-  Coop,
-  Effect.gen(function* () {
-    const audio = yield* Audio;
-    const client = yield* Effect.acquireRelease(
-      Effect.sync(
-        () =>
-          new CoopClient({
-            signalling: {
-              url: signallingUrl(),
-              rtc: { iceServers: iceServers() },
-            },
-            sound: { audio, sounds: survivorsSounds },
-          })
-      ),
-      // Safe when idle: with no room or run, leaving closes nothing.
-      (coop) => Effect.sync(() => coop.leave())
-    );
-    if (import.meta.env.DEV) {
-      // For the end-to-end test and debugging: the run's step, error and recent state hashes.
-      Object.assign(globalThis, {
-        arcadekitCoop: { debug: () => client.debug() },
+export const makeCoopLayer = (
+  rooms: () => CoopRooms
+): Layer.Layer<Coop, never, Audio | SurvivorsEngine | SurvivorsContent> =>
+  Layer.effect(
+    Coop,
+    Effect.gen(function* () {
+      const audio = yield* Audio;
+      const contentLoader = yield* SurvivorsContent;
+      const client = yield* makeCoopClient({
+        rooms: rooms(),
+        content: contentLoader.load,
+        sound: { audio, sounds: survivorsSounds },
       });
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          Reflect.deleteProperty(globalThis, "arcadekitCoop");
-        })
-      );
-    }
-    return makeCoop(client, yield* SurvivorsEngine);
-  })
-);
+      if (import.meta.env.DEV) {
+        // For the end-to-end test and debugging: the run's step, error and recent state hashes.
+        Object.assign(globalThis, {
+          arcadekitCoop: { debug: () => client.debug() },
+        });
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            Reflect.deleteProperty(globalThis, "arcadekitCoop");
+          })
+        );
+      }
+      return makeCoop(client, yield* SurvivorsEngine);
+    })
+  );
+
+/** The app's co-op: rooms on the signalling worker that serves the page. */
+export const CoopLayer: Layer.Layer<
+  Coop,
+  never,
+  Audio | SurvivorsEngine | SurvivorsContent
+> = makeCoopLayer(browserRooms);

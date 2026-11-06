@@ -291,15 +291,16 @@ describe("loading", () => {
   it("fails co-op's attach with the sheet's error, drawing nothing", async () => {
     const attached: HTMLElement[] = [];
     const client = {
-      attach: (element: HTMLElement) => {
-        attached.push(element);
-        return () => {};
-      },
+      attach: (element: HTMLElement) =>
+        Effect.suspend(() => {
+          attached.push(element);
+          return Effect.never;
+        }),
+      // A failed attach leaves co-op too.
+      leave: Effect.void,
     } as unknown as CoopClient;
     const error = await Effect.runPromise(
-      Effect.scoped(
-        Effect.flip(makeCoop(client, failingLoader).attach({} as HTMLElement))
-      )
+      Effect.flip(makeCoop(client, failingLoader).attach({} as HTMLElement))
     );
     expect(error._tag).toBe("SpriteSheetError");
     expect(attached).toStrictEqual([]);
