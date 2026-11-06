@@ -81,10 +81,12 @@ class TestEngine extends Context.Service<
 
 /**
  * A game whose run reports "started", "noise" and a sample, and whose view logs its element.
- * With `noWebGl`, making its view throws, as Three.js does without WebGL.
+ * With `noWebGl`, making its view throws, as Three.js does without WebGL; with `renderBug`,
+ * drawing a frame throws. Its frames run only when the test runs them on `frames`.
  */
-const testEngine = ({ noWebGl = false } = {}) => {
+const testEngine = ({ noWebGl = false, renderBug = false } = {}) => {
   const log: string[] = [];
+  const frames = manualFrames();
   const game: GameDefinition<null, GameState, null, GameEvent> = {
     create: () => ({ events: [{ type: "started" }, { type: "noise" }] }),
     step: () => {},
@@ -97,14 +99,18 @@ const testEngine = ({ noWebGl = false } = {}) => {
       }
       log.push(`attach ${container.title}`);
       return {
-        render: () => {},
+        render: () => {
+          if (renderBug) {
+            throw new Error("render bug");
+          }
+        },
         dispose: () => {
           log.push("detach");
         },
       };
     },
   };
-  return { engine: makeGameEngine(game, { frames: manualFrames() }), log };
+  return { engine: makeGameEngine(game, { frames }), frames, log };
 };
 
 const entry = engineEntry({
@@ -238,8 +244,8 @@ describe(engineEntry, () => {
   it("keeps the engine on one element at a time as the viewport unmounts and remounts", async () => {
     // Models go through the operators Foldkit's runtime applies to an entry
     // (foldkit/dist/runtime/subscriptionFibers.js): changesWith, then switchMap. switchMap
-    // starts the next Stream before it stops the previous one, and GameDriver throws on a
-    // second attach, so an overlap fails this test.
+    // starts the next Stream before it stops the previous one, and a second attach of one
+    // engine dies, so an overlap fails this test.
     const { engine, log } = testEngine();
     await Effect.runPromise(
       Effect.scoped(
@@ -290,6 +296,29 @@ describe(engineEntry, () => {
     expect(messages).toStrictEqual([
       Message.FailedToLoad({ error: "no WebGL" }),
     ]);
+  });
+
+  it("sends onError's Message once when the game crashes, and detaches", async () => {
+    const { engine, frames, log } = testEngine({ renderBug: true });
+    const messages = await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          Stream.runCollect(
+            streamFor(mounted).pipe(Stream.interruptWhen(Effect.sleep(30)))
+          )
+        );
+        yield* waitUntil(() => log.length > 0);
+        frames.runFrameAt(16);
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provideService(TestEngine, engine))
+    );
+    expect(messages).toStrictEqual([
+      Message.FailedToLoad({ error: "render bug" }),
+    ]);
+    expect({ log, waiting: frames.waiting() }).toStrictEqual({
+      log: ["attach first", "detach"],
+      waiting: false,
+    });
   });
 
   it("fails loudly when the viewport isn't in the document", async () => {
@@ -455,7 +484,7 @@ const failingWithoutOnError = engineEntry(
 );
 const onErrorWithoutFailure = engineEntry({
   engine: Effect.succeed<AttachableEngine<GameEvent>>({
-    attach: () => Effect.void,
+    attach: () => Effect.never,
     listen: () => Effect.void,
   }),
   isViewportMounted: (model: Model) => model.isViewportMounted,

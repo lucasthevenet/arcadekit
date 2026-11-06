@@ -20,13 +20,13 @@ import { survivorsSounds } from "./sound";
  */
 export interface CoopApi {
   /**
-   * Draws the co-op run into `element` while the scope is open, with the engine's loaded art.
-   * Fails with the sheet's error if it can't load, and with `AttachError` if the client can't
-   * draw (no WebGL).
+   * Draws the co-op run into `element` with the engine's loaded art for as long as it runs,
+   * and detaches when interrupted. Fails with the sheet's error if it can't load, and with
+   * `AttachError` if the client can't draw (no WebGL).
    */
   readonly attach: (
     element: HTMLElement
-  ) => Effect.Effect<void, SpriteSheetError | AttachError, Scope.Scope>;
+  ) => Effect.Effect<never, SpriteSheetError | AttachError>;
   /** Calls `onEvent` for every co-op event while the scope is open. */
   readonly listen: (
     onEvent: (event: CoopEvent) => void
@@ -68,7 +68,9 @@ export const makeCoop = (
           (detach) => Effect.sync(detach)
         )
       ),
-      Effect.asVoid
+      // The client draws on its own animation frames until it is detached.
+      Effect.andThen(Effect.never),
+      Effect.scoped
     ),
   listen: (onEvent) =>
     Effect.acquireRelease(

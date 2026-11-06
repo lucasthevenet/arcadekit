@@ -1,6 +1,6 @@
 # @arcadekit/runtime
 
-Runs a game. A game is a `GameSimulation` (the DOM-free half: create, step, events) plus, in the browser, its input and view. `GameLoop` steps a simulation anywhere: a browser, a Web Worker, a server or a test. `@arcadekit/runtime/browser` adds `GameDefinition` (simulation plus input and view), the `requestAnimationFrame` driver, and `makeGameEngine`, the Effect API an app calls (`attach`, `listen`, `start`, `modify`, `setPaused`, `stop`). `makeEngineLoader` and `engineOf` make an engine from assets the app loads, such as a sprite sheet.
+Runs a game. A game is a `GameSimulation` (the DOM-free half: create, step, events) plus, in the browser, its input and view. `GameLoop` steps a simulation anywhere: a browser, a Web Worker, a server or a test. `@arcadekit/runtime/browser` adds `GameDefinition` (simulation plus input and view) and `makeGameEngine`, the Effect API an app calls (`attach`, `listen`, `start`, `modify`, `setPaused`, `stop`), whose `attach` steps and draws the game on `requestAnimationFrame`. `makeEngineLoader` and `engineOf` make an engine from assets the app loads, such as a sprite sheet.
 
 Part of [arcadekit](https://github.com/lucasthevenet/arcadekit#readme). The root entry is DOM-free.
 
@@ -95,14 +95,14 @@ const EngineLayer = Layer.sync(Engine, () => makeGameEngine(game));
 export const play = (element: HTMLElement) =>
   Effect.gen(function* () {
     const engine = yield* Engine;
-    // Detaches when the scope closes. Fails with AttachError if the view can't be made (no WebGL).
-    yield* engine.attach(element);
     yield* engine.start(null);
-    yield* Effect.never;
-  }).pipe(Effect.scoped, Effect.provide(EngineLayer));
+    // Draws until interrupted, then detaches. Fails with AttachError if the view can't be made
+    // (no WebGL), or with GameCrashed if a frame throws.
+    return yield* engine.attach(element);
+  }).pipe(Effect.provide(EngineLayer));
 ```
 
-`attach` fails with `AttachError` (its `cause` is what was thrown) when `createView` or `createInput` throws, with nothing left attached, so the app can show the player why instead of a blank viewport.
+`attach` runs for as long as the engine stays attached: each animation frame steps the run by the time since the last frame, then draws it. Interrupt it to detach (fork it with `Effect.forkScoped` to do more while it runs). It never succeeds. It fails with `AttachError` (its `cause` is what was thrown) when `createView` or `createInput` throws, with nothing left attached, and with `GameCrashed` when a step, a render or an event listener throws: that frame is the last, and the view and input source are disposed. Either way the app can show the player why instead of a blank or frozen viewport. Attaching an engine that is already attached dies: an engine draws into one element at a time.
 
 For tests, `@arcadekit/runtime/testing` has `manualFrames()`: pass it as `makeGameEngine(game, { frames })` and run each frame yourself with `runFrameAt(ms)`, with no `requestAnimationFrame`.
 
