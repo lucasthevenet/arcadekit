@@ -1,6 +1,6 @@
 {
   "name": "@arcadekit/audio",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Play a game's sounds and music with Web Audio: unlock, voice limits, buses and crossfades",
   "keywords": [
     "arcadekit",
