@@ -1,4 +1,5 @@
 import { defineConfig } from "oxlint";
+import type { DummyRuleMap } from "oxlint";
 import core from "ultracite/oxlint/core";
 import vitest from "ultracite/oxlint/vitest";
 
@@ -31,6 +32,62 @@ const APPROXIMATED_MATH = [
 
 const approximatedMathMessage =
   "is approximated differently by each engine, so a step that calls it can desync lockstep peers. Use exact operations, such as survivors' math.ts (hypot2, sin, cos, powInt). See docs/adr/0011-a-step-uses-only-exact-math.md.";
+
+// The simulation reads no clock or random source of its own: its time comes in as an argument
+// and its randomness from the run's seeded Rng, so every peer and every replay computes the same
+// step (ADR-0017).
+const ownTimeOrRandomness =
+  "The simulation reads no clock or random source of its own: take the time as an argument and draw from the run's seeded Rng, so every peer and replay computes the same step. See docs/adr/0017-effect-at-the-edges-plain-code-inside.md.";
+
+// The globals that read the time or a random source.
+const CLOCK_AND_RANDOM_GLOBALS = [
+  "Date",
+  "Temporal",
+  "performance",
+  "crypto",
+] as const;
+
+const noOwnTimeOrRandomness: DummyRuleMap = {
+  "eslint/no-restricted-globals": [
+    "error",
+    ...CLOCK_AND_RANDOM_GLOBALS.map((name) => ({
+      name,
+      message: ownTimeOrRandomness,
+    })),
+  ],
+  "eslint/no-restricted-imports": [
+    "error",
+    {
+      paths: [
+        {
+          name: "effect",
+          importNames: ["Clock", "Random", "DateTime"],
+          message: ownTimeOrRandomness,
+        },
+        { name: "effect/Clock", message: ownTimeOrRandomness },
+        { name: "effect/Random", message: ownTimeOrRandomness },
+        { name: "effect/DateTime", message: ownTimeOrRandomness },
+      ],
+    },
+  ],
+};
+
+// Math.random, and those globals reached through globalThis, window or self, which
+// no-restricted-globals doesn't see.
+const ownTimeOrRandomnessProperties = [
+  {
+    object: "Math",
+    property: "random",
+    message: `Math.random: ${ownTimeOrRandomness}`,
+  },
+  ...["globalThis", "window", "self"].flatMap((object) =>
+    CLOCK_AND_RANDOM_GLOBALS.map((property) => ({
+      object,
+      property,
+      message: `${object}.${property}: ${ownTimeOrRandomness}`,
+    }))
+  ),
+];
 
 export default defineConfig({
   env: core.env,
@@ -78,8 +135,51 @@ export default defineConfig({
             property,
             message: `Math.${property} ${approximatedMathMessage}`,
           })),
+          ...ownTimeOrRandomnessProperties,
         ],
         "deterministic-math/no-exponentiation": "error",
+        ...noOwnTimeOrRandomness,
+      },
+    },
+    {
+      // The rest of the simulation: core's primitives, the loop that steps a genre, and the
+      // lockstep protocol that steps it on every peer, with the input codecs whose decoded
+      // value every peer steps on (ADR-0017).
+      files: [
+        "packages/core/src/**/*.ts",
+        "packages/runtime/src/loop.ts",
+        "packages/runtime/src/simulation.ts",
+        "packages/net/src/lockstep.ts",
+        "packages/net/src/codec.ts",
+      ],
+      excludeFiles: ["**/*.test.ts"],
+      rules: {
+        "eslint/no-restricted-properties": [
+          "error",
+          ...ownTimeOrRandomnessProperties,
+        ],
+        ...noOwnTimeOrRandomness,
+      },
+    },
+    {
+      // Core and input don't depend on Effect, so a game can use them without it (ADR-0017).
+      // When several overrides set a rule, the last one's options replace the others', so core
+      // gets this import rule instead of the one above. It bans all of `effect`, so it covers it.
+      files: ["packages/core/src/**/*.ts", "packages/input/src/**/*.ts"],
+      excludeFiles: ["**/*.test.ts"],
+      rules: {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: ["effect", "effect/*", "@effect/*"],
+                message:
+                  "@arcadekit/core and @arcadekit/input don't depend on Effect, so a game can use them without it. See docs/adr/0017-effect-at-the-edges-plain-code-inside.md.",
+              },
+            ],
+          },
+        ],
       },
     },
     {

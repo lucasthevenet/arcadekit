@@ -120,6 +120,7 @@ Then connect it to a Foldkit app with `@arcadekit/foldkit`, as `apps/survivor-de
 Rules of thumb for the simulation (see `packages/survivors/src/world.ts` for a real-time genre and `packages/push-puzzle/src/world.ts` for a turn-based one):
 
 - Keep large collections in `createPool`, and don't allocate inside `step`.
+- Write the step as plain code: it runs no Effect and reads no clock of its own, so its time comes in as an argument. Effect is for what has a lifecycle: loading, the engine, connections. `AGENTS.md` ("Effect and plain code") and [ADR-0017](docs/adr/0017-effect-at-the-edges-plain-code-inside.md) say where the line is.
 - Use the run's `Rng` for every random choice, so the same seed and inputs give the same run.
 - Report rare, meaningful facts through an `EventBuffer`. Never send per-entity data to the UI.
 
