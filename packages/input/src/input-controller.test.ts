@@ -13,6 +13,9 @@ const BUTTONS = {
 
 let window: EventTarget;
 let surface: HTMLElement;
+let ownerDocument: { pointerLockElement: unknown };
+/** Pointer ids the surface was asked to capture. */
+let captures: number[];
 let padButtons: { pressed: boolean }[];
 
 const fire = (
@@ -54,9 +57,18 @@ const controller = () => new InputController(surface, { buttons: BUTTONS });
 describe(InputController, () => {
   beforeEach(() => {
     window = new EventTarget();
+    ownerDocument = { pointerLockElement: null };
+    captures = [];
     surface = Object.assign(new EventTarget(), {
       style: {},
-      setPointerCapture: () => {},
+      ownerDocument,
+      // As in a browser: capturing throws while the document has a pointer lock.
+      setPointerCapture: (pointerId: number) => {
+        captures.push(pointerId);
+        if (ownerDocument.pointerLockElement !== null) {
+          throw new DOMException("Pointer is locked", "InvalidStateError");
+        }
+      },
     }) as unknown as HTMLElement;
     padButtons = Array.from({ length: 16 }, () => ({ pressed: false }));
     vi.stubGlobal("window", window);
@@ -119,6 +131,53 @@ describe(InputController, () => {
       stroke({ x: 100, y: 100, t: 0 }, { x: 120, y: 100, t: 50 });
       stroke({ x: 100, y: 100, t: 1000 }, { x: 200, y: 100, t: 1500 });
       expect(input.wasPressed("right")).toBe(false);
+    });
+  });
+  describe("pointer lock", () => {
+    it("ignores presses while the pointer is locked, so mouse look neither captures nor drags", () => {
+      const input = new InputController(surface, {
+        axes: { moveX: { pointerDrag: "x" } },
+      });
+      ownerDocument.pointerLockElement = surface;
+      fire(surface, "pointerdown", {
+        pointerId: 1,
+        clientX: 100,
+        clientY: 100,
+        timeStamp: 0,
+      });
+      fire(surface, "pointermove", {
+        pointerId: 1,
+        clientX: 160,
+        clientY: 100,
+      });
+      expect(captures).toStrictEqual([]);
+      expect(input.axis("moveX")).toBe(0);
+    });
+
+    it("drags again once the lock is released", () => {
+      const input = new InputController(surface, {
+        axes: { moveX: { pointerDrag: "x" } },
+      });
+      ownerDocument.pointerLockElement = surface;
+      fire(surface, "pointerdown", {
+        pointerId: 1,
+        clientX: 0,
+        clientY: 0,
+        timeStamp: 0,
+      });
+      ownerDocument.pointerLockElement = null;
+      fire(surface, "pointerdown", {
+        pointerId: 2,
+        clientX: 100,
+        clientY: 100,
+        timeStamp: 0,
+      });
+      fire(surface, "pointermove", {
+        pointerId: 2,
+        clientX: 130,
+        clientY: 100,
+      });
+      expect(input.axis("moveX")).toBe(0.5);
     });
   });
 });

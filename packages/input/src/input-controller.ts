@@ -97,7 +97,9 @@ export class InputController<
     this.listen(window, "keyup", (e) => this.heldKeys.delete(e.code));
     this.listen(window, "blur", () => this.heldKeys.clear());
     this.listen(surface, "pointerdown", (e) => {
-      if (this.drag) {
+      // A locked pointer (a game's mouse look) stays put on screen, so it can't drag or swipe,
+      // and setPointerCapture throws InvalidStateError while the document has a pointer lock.
+      if (this.drag || surface.ownerDocument.pointerLockElement !== null) {
         return;
       }
       surface.setPointerCapture(e.pointerId);

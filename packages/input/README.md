@@ -41,3 +41,5 @@ export const createInput = (surface: HTMLElement) => {
 ```
 
 Key names are `KeyboardEvent.code` values, so they don't move with the keyboard layout. See [ADR-0004](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0004-one-press-one-step.md) (one press, one step).
+
+A game with mouse look can lock the pointer to the same surface (`requestPointerLock`) and read `movementX`/`movementY` itself: while the document has a pointer lock, `InputController` ignores pointer presses, since a locked pointer can't drag or swipe.
