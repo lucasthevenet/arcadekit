@@ -65,7 +65,7 @@ describe(InputController, () => {
       // As in a browser: capturing throws while the document has a pointer lock.
       setPointerCapture: (pointerId: number) => {
         captures.push(pointerId);
-        if (ownerDocument.pointerLockElement !== null) {
+        if ((ownerDocument.pointerLockElement ?? null) !== null) {
           throw new DOMException("Pointer is locked", "InvalidStateError");
         }
       },
@@ -174,6 +174,25 @@ describe(InputController, () => {
       });
       fire(surface, "pointermove", {
         pointerId: 2,
+        clientX: 130,
+        clientY: 100,
+      });
+      expect(input.axis("moveX")).toBe(0.5);
+    });
+
+    it("drags where the browser has no pointer lock (iPhone Safari leaves it undefined)", () => {
+      const input = new InputController(surface, {
+        axes: { moveX: { pointerDrag: "x" } },
+      });
+      ownerDocument.pointerLockElement = undefined;
+      fire(surface, "pointerdown", {
+        pointerId: 1,
+        clientX: 100,
+        clientY: 100,
+        timeStamp: 0,
+      });
+      fire(surface, "pointermove", {
+        pointerId: 1,
         clientX: 130,
         clientY: 100,
       });
