@@ -1,5 +1,11 @@
 # @arcadekit/input
 
+## 0.2.2
+
+### Patch Changes
+
+- [#60](https://github.com/lucasthevenet/arcadekit/pull/60) [`5558bd9`](https://github.com/lucasthevenet/arcadekit/commit/5558bd93cfc12f3e4ebbb76d33e224b6b6b6035e) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `InputController` drags and swipes again on iPhone Safari. It has no pointer lock and leaves `document.pointerLockElement` undefined, which the check for a locked pointer read as locked, so every press was ignored.
+
 ## 0.2.1
 
 ### Patch Changes
