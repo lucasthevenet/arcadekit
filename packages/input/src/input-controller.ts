@@ -99,7 +99,11 @@ export class InputController<
     this.listen(surface, "pointerdown", (e) => {
       // A locked pointer (a game's mouse look) stays put on screen, so it can't drag or swipe,
       // and setPointerCapture throws InvalidStateError while the document has a pointer lock.
-      if (this.drag || surface.ownerDocument.pointerLockElement !== null) {
+      // A browser without pointer lock (iPhone Safari) leaves `pointerLockElement` undefined.
+      if (
+        this.drag ||
+        (surface.ownerDocument.pointerLockElement ?? null) !== null
+      ) {
         return;
       }
       surface.setPointerCapture(e.pointerId);
