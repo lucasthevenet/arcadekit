@@ -50,7 +50,7 @@ const MAX_PIXEL_RATIO = 2;
  * perspective camera's `fov`, `near` and `far`) and call `updateProjectionMatrix()`. So is the
  * scene: set `stage.scene.fog` for fog.
  * `dispose()` frees every GPU resource in the scene, except kept textures (see `keepTexture`),
- * and removes the canvas.
+ * releases the WebGL context and removes the canvas.
  */
 export class Stage<K extends StageCameraKind = "perspective"> {
   readonly renderer: THREE.WebGLRenderer;
@@ -129,6 +129,10 @@ export class Stage<K extends StageCameraKind = "perspective"> {
     this.resizeObserver.disconnect();
     disposeObject(this.scene);
     this.renderer.dispose();
+    // `dispose` leaves the WebGL context alive until the canvas is collected. A browser keeps
+    // only so many (Chrome, 16 a page): past that it kills the oldest, which can be a live
+    // stage's, and a page that keeps losing them can be refused new ones. Release it now.
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
 
