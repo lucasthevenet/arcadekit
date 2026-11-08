@@ -1,5 +1,13 @@
 # @arcadekit/net
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @arcadekit/core@0.2.2
+  - @arcadekit/runtime@0.2.2
+
 ## 0.2.1
 
 ### Patch Changes

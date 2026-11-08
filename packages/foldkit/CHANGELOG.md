@@ -1,5 +1,12 @@
 # @arcadekit/foldkit
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @arcadekit/runtime@0.2.2
+
 ## 0.2.1
 
 ### Patch Changes

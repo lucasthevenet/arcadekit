@@ -1,6 +1,6 @@
 {
   "name": "@arcadekit/foldkit",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Connects a @arcadekit/runtime engine to a Foldkit app",
   "keywords": [
     "arcadekit",
