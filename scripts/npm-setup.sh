@@ -204,17 +204,30 @@ cd "$(dirname "$0")/.."
 on_npm() { npm view "$1" version >/dev/null 2>&1; }
 # version_ge A B succeeds when version A >= version B.
 version_ge() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]; }
-# next_version prints the version the pending changesets give the package: a minor
-# bump of package.json's version, or that version if none is pending.
+# released_version prints the package's latest version on npm, once that is a real
+# release and not the placeholder; it fails until then.
+released_version() {
+  local latest
+  latest=$(npm view "$PACKAGE" version 2>/dev/null) || return 1
+  [[ -n "$latest" && "$latest" != "$PLACEHOLDER" ]] && printf '%s\n' "$latest"
+}
+# next_version prints the version the pending changesets give the package: the largest
+# bump they name applied to package.json's version, or that version if none is pending.
 next_version() {
   node -e '
     const fs = require("node:fs");
     const { version } = require("./packages/arcadekit/package.json");
-    const pending = fs.readdirSync(".changeset")
+    const bumps = fs.readdirSync(".changeset")
       .filter((file) => file.endsWith(".md") && file !== "README.md")
-      .some((file) => /^"arcadekit":/mu.test(fs.readFileSync(`.changeset/${file}`, "utf8")));
-    const [major, minor] = version.split(".").map(Number);
-    console.log(pending ? `${major}.${minor + 1}.0` : version);
+      .map((file) => /^"arcadekit":\s*(major|minor|patch)\s*$/mu.exec(fs.readFileSync(`.changeset/${file}`, "utf8"))?.[1])
+      .filter((bump) => bump !== undefined);
+    const [major, minor, patch] = version.split(".").map(Number);
+    console.log(
+      bumps.includes("major") ? `${major + 1}.0.0`
+      : bumps.includes("minor") ? `${major}.${minor + 1}.0`
+      : bumps.includes("patch") ? `${major}.${minor}.${patch + 1}`
+      : version
+    );
   '
 }
 
@@ -323,13 +336,13 @@ step "Workflow permissions: \"Allow GitHub Actions to create and approve pull re
 pause
 
 # ── 5 ─────────────────────────────────────────────────────────────────────
-target=$(next_version)
-stage "Release $target from CI"
+stage "Release from CI"
 say "Nothing is published from this machine. On main, $WORKFLOW opens a \"Version packages\" PR"
-say "from the pending changesets; merging that PR publishes $PACKAGE@$target with provenance."
-if on_npm "$PACKAGE@$target"; then
-  printf '  %s✓%s %s@%s is on npm.\n' "$GREEN" "$RESET" "$PACKAGE" "$target"
+say "from the pending changesets; merging that PR publishes $PACKAGE with provenance."
+if released=$(released_version); then
+  printf '  %s✓%s %s@%s is on npm.\n' "$GREEN" "$RESET" "$PACKAGE" "$released"
 else
+  target=$(next_version)
   step "Merge the one-package change into main, if it isn't there yet."
   step "Wait for the release workflow to open the \"Version packages\" PR, and check it bumps $PACKAGE to $target."
   step "Merge it. The workflow then packs and publishes."
@@ -338,31 +351,33 @@ else
   fi
   open_url "https://github.com/$OWNER/$REPO/actions/workflows/$WORKFLOW"
   pause "Press Enter once the publish job has finished."
-  if on_npm "$PACKAGE@$target"; then
-    printf '  %s✓%s %s@%s is on npm.\n' "$GREEN" "$RESET" "$PACKAGE" "$target"
+  if released=$(released_version); then
+    printf '  %s✓%s %s@%s is on npm.\n' "$GREEN" "$RESET" "$PACKAGE" "$released"
   else
-    warn "$PACKAGE@$target is not on npm yet. Check the workflow run, then re-run this wizard."
-    SKIPPED+=("release $PACKAGE@$target from CI (merge the \"Version packages\" PR)")
+    released=""
+    warn "No release of $PACKAGE is on npm yet. Check the workflow run, then re-run this wizard."
+    SKIPPED+=("release $PACKAGE from CI (merge the \"Version packages\" PR)")
   fi
 fi
-if on_npm "$PACKAGE@$target" && on_npm "$PACKAGE@$PLACEHOLDER" &&
+if [[ -n "$released" ]] && on_npm "$PACKAGE@$PLACEHOLDER" &&
   [[ -z "$(npm view "$PACKAGE@$PLACEHOLDER" deprecated 2>/dev/null)" ]]; then
   if confirm "Mark the $PLACEHOLDER placeholder as deprecated, so nobody installs it?"; then
-    npm deprecate "$PACKAGE@$PLACEHOLDER" "Placeholder that reserved the name. Install $PACKAGE@$target or later."
+    npm deprecate "$PACKAGE@$PLACEHOLDER" "Placeholder that reserved the name. Install $PACKAGE@$released or later."
   fi
 fi
 pause
 
 # ── 6 ─────────────────────────────────────────────────────────────────────
 # Separate from the release, and optional: skip it now and re-run the wizard later.
+# It needs a real release on npm, whichever one: by a later run, newer changesets may be pending.
 stage "Optional, later: deprecate the nine $OLD_SCOPE/* packages"
 say "This marks ${OLD_SCOPE}/core, ${OLD_SCOPE}/net and the other seven as deprecated, pointing at"
 say "$PACKAGE. Their versions stay installable; npm prints the message on install."
 warn "Do this only once every game that used them (grimbonk) has moved to $PACKAGE."
 note "To undo it, deprecate a package again with an empty message."
-if ! on_npm "$PACKAGE@$target"; then
-  warn "$PACKAGE@$target is not on npm yet, so there is nothing to point at. Skipping."
-  SKIPPED+=("deprecate the nine $OLD_SCOPE/* packages (after $PACKAGE@$target is on npm)")
+if [[ -z "$released" ]]; then
+  warn "No release of $PACKAGE is on npm yet, so there is nothing to point at. Skipping."
+  SKIPPED+=("deprecate the nine $OLD_SCOPE/* packages (after $PACKAGE is released)")
 elif ! confirm "Has grimbonk moved to $PACKAGE, and do you want to deprecate the nine packages now?"; then
   SKIPPED+=("deprecate the nine $OLD_SCOPE/* packages (re-run this wizard when grimbonk has moved)")
   note "Skipped. Nothing was changed."
