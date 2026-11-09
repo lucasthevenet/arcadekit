@@ -1,13 +1,14 @@
-// The pack-and-install smoke test (ADR-0016). Builds the nine kit packages, packs each one,
-// installs the tarballs with their peer libraries into a throwaway project outside the
-// workspace, and there:
-// - typechecks a tiny game (scripts/smoke/) and every `ts` example in the packages' READMEs,
-//   with TypeScript 5.9 and with the workspace's TypeScript 7;
+// The pack-and-install smoke test (ADR-0018). Builds the arcadekit package, packs it, installs
+// the tarball with its peer libraries into a throwaway project outside the workspace, and
+// there:
+// - typechecks a tiny game (scripts/smoke/) and every `ts` example in the entries' READMEs
+//   (packages/arcadekit/src/<entry>/README.md), with TypeScript 5.9 and with the workspace's
+//   TypeScript 7;
 // - builds the game with Vite;
 // - checks that exactly one copy of effect and of three is installed.
 //
 //   pnpm smoke            build, then test
-//   pnpm smoke --no-build test the packages already built
+//   pnpm smoke --no-build test the package already built
 //   pnpm smoke --keep     leave the throwaway project in place, and print where it is
 import { execFileSync } from "node:child_process";
 import {
@@ -22,7 +23,8 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-const PACKAGES = [
+// The folders of src/ that have a README: one for each entry and its subpaths.
+const ENTRIES = [
   "core",
   "input",
   "content",
@@ -35,6 +37,7 @@ const PACKAGES = [
 ];
 
 const root = path.resolve(import.meta.dirname, "..");
+const packageDir = path.join(root, "packages", "arcadekit");
 const args = new Set(process.argv.slice(2));
 
 const run = (command, commandArgs, cwd) => {
@@ -51,16 +54,14 @@ const output = (command, commandArgs, cwd) =>
 
 const readJson = (file) => JSON.parse(readFileSync(file, "utf-8"));
 
-/** The version range a kit package asks for, from its peerDependencies. */
+/** The version range arcadekit asks for, from its peerDependencies. */
 const peerRange = (name) => {
-  for (const dir of PACKAGES) {
-    const range = readJson(path.join(root, "packages", dir, "package.json"))
-      .peerDependencies?.[name];
-    if (range !== undefined) {
-      return range;
-    }
+  const range = readJson(path.join(packageDir, "package.json"))
+    .peerDependencies?.[name];
+  if (range === undefined) {
+    throw new Error(`arcadekit has no ${name} peer dependency`);
   }
-  throw new Error(`No kit package has ${name} as a peer dependency`);
+  return range;
 };
 
 /** The version installed in the workspace, such as the root's TypeScript. */
@@ -85,19 +86,14 @@ try {
   mkdirSync(tarballs);
   mkdirSync(project);
 
-  const dependencies = {};
-  for (const dir of PACKAGES) {
-    const packageDir = path.join(root, "packages", dir);
-    const { name } = readJson(path.join(packageDir, "package.json"));
-    const lines = output(
-      "pnpm",
-      ["pack", "--pack-destination", tarballs],
-      packageDir
-    )
-      .trim()
-      .split("\n");
-    dependencies[name] = `file:${lines.at(-1).trim()}`;
-  }
+  const packed = output(
+    "pnpm",
+    ["pack", "--pack-destination", tarballs],
+    packageDir
+  )
+    .trim()
+    .split("\n");
+  const tarball = packed.at(-1).trim();
 
   writeFileSync(
     path.join(project, "package.json"),
@@ -107,14 +103,14 @@ try {
         private: true,
         type: "module",
         dependencies: {
-          ...dependencies,
+          arcadekit: `file:${tarball}`,
           "@effect/platform-browser": peerRange("@effect/platform-browser"),
           effect: peerRange("effect"),
           foldkit: peerRange("foldkit"),
           three: peerRange("three"),
         },
         devDependencies: {
-          "@types/three": peerRange("three"),
+          "@types/three": peerRange("@types/three"),
           typescript5: "npm:typescript@~5.9.0",
           typescript7: `npm:typescript@${workspaceVersion("typescript")}`,
           vite: readJson(path.join(root, "package.json")).devDependencies.vite,
@@ -129,10 +125,10 @@ try {
   const readmes = path.join(project, "src", "readme");
   mkdirSync(readmes);
   let exampleCount = 0;
-  for (const dir of PACKAGES) {
-    const readme = path.join(root, "packages", dir, "README.md");
+  for (const dir of ENTRIES) {
+    const readme = path.join(packageDir, "src", dir, "README.md");
     if (!existsSync(readme)) {
-      throw new Error(`packages/${dir} has no README.md`);
+      throw new Error(`packages/arcadekit/src/${dir} has no README.md`);
     }
     for (const [index, code] of examples(
       readFileSync(readme, "utf-8")
@@ -194,12 +190,10 @@ try {
   }
 
   const kitCopies = JSON.parse(
-    output("npm", ["query", "[name^=@arcadekit/]"], project)
+    output("npm", ["query", "#arcadekit"], project)
   ).length;
-  if (kitCopies !== PACKAGES.length) {
-    throw new Error(
-      `Expected ${PACKAGES.length} @arcadekit packages installed once each, found ${kitCopies}`
-    );
+  if (kitCopies !== 1) {
+    throw new Error(`Expected arcadekit installed once, found ${kitCopies}`);
   }
   passed = true;
 } finally {
@@ -212,6 +206,6 @@ try {
 
 if (passed) {
   console.log(
-    `\nSmoke test passed: ${PACKAGES.length} packages packed, installed, typechecked with TypeScript 5.9 and 7, built with Vite.`
+    "\nSmoke test passed: arcadekit packed, installed, typechecked with TypeScript 5.9 and 7, built with Vite."
   );
 }

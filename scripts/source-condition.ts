@@ -1,5 +1,5 @@
-// Makes Vite and Vitest resolve the kit packages to their src/ files (ADR-0016), so the
-// workspace needs no build. Each kit package's `exports` lists a "source" condition first;
+// Makes Vite and Vitest resolve the arcadekit package to its src/ files (ADR-0016), so the
+// workspace needs no build. Each of its `exports` lists a "source" condition first;
 // this puts "source" first in every environment's resolve.conditions: the browser client,
 // Vitest's Node tests and the demo's Cloudflare worker.
 import { defaultClientConditions, defaultServerConditions } from "vite";

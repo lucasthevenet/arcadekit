@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { defineConfig } from "oxlint";
 import type { DummyRuleMap } from "oxlint";
 import core from "ultracite/oxlint/core";
@@ -89,6 +91,35 @@ const ownTimeOrRandomnessProperties = [
   ),
 ];
 
+// Which entry of the arcadekit package may import which (ADR-0018). This is the graph the nine
+// packages had when they were separate: core and input stand alone, runtime steps with core's
+// clock, net steps a GameLoop and seeds its test network with core's Rng, and foldkit's tests
+// drive a real engine from runtime (its own code only names the engine's shape). Adding an
+// arrow here is a design decision: say why in the PR.
+const KIT_SRC = "packages/arcadekit/src";
+const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
+  core: [],
+  input: [],
+  content: [],
+  save: [],
+  audio: [],
+  "render-three": [],
+  runtime: ["core"],
+  net: ["core", "runtime"],
+  foldkit: ["runtime"],
+};
+
+// Each entry's public file: the `source` of each of the package's exports, from src/, without
+// its extension. An import from another entry must name one of them.
+const kitExports = (
+  JSON.parse(readFileSync("packages/arcadekit/package.json", "utf-8")) as {
+    readonly exports: Readonly<Record<string, { readonly source: string }>>;
+  }
+).exports;
+const ENTRY_FILES = Object.values(kitExports).map(({ source }) =>
+  source.replace(/^\.\/src\//u, "").replace(/\.ts$/u, "")
+);
+
 export default defineConfig({
   env: core.env,
   extends: [core, vitest],
@@ -146,11 +177,11 @@ export default defineConfig({
       // lockstep protocol that steps it on every peer, with the input codecs whose decoded
       // value every peer steps on (ADR-0017).
       files: [
-        "packages/core/src/**/*.ts",
-        "packages/runtime/src/loop.ts",
-        "packages/runtime/src/simulation.ts",
-        "packages/net/src/lockstep.ts",
-        "packages/net/src/codec.ts",
+        "packages/arcadekit/src/core/**/*.ts",
+        "packages/arcadekit/src/runtime/loop.ts",
+        "packages/arcadekit/src/runtime/simulation.ts",
+        "packages/arcadekit/src/net/lockstep.ts",
+        "packages/arcadekit/src/net/codec.ts",
       ],
       excludeFiles: ["**/*.test.ts"],
       rules: {
@@ -165,7 +196,10 @@ export default defineConfig({
       // Core and input don't depend on Effect, so a game can use them without it (ADR-0017).
       // When several overrides set a rule, the last one's options replace the others', so core
       // gets this import rule instead of the one above. It bans all of `effect`, so it covers it.
-      files: ["packages/core/src/**/*.ts", "packages/input/src/**/*.ts"],
+      files: [
+        "packages/arcadekit/src/core/**/*.ts",
+        "packages/arcadekit/src/input/**/*.ts",
+      ],
       excludeFiles: ["**/*.test.ts"],
       rules: {
         "eslint/no-restricted-imports": [
@@ -175,9 +209,25 @@ export default defineConfig({
               {
                 group: ["effect", "effect/*", "@effect/*"],
                 message:
-                  "@arcadekit/core and @arcadekit/input don't depend on Effect, so a game can use them without it. See docs/adr/0017-effect-at-the-edges-plain-code-inside.md.",
+                  "arcadekit/core and arcadekit/input don't depend on Effect, so a game can use them without it. See docs/adr/0017-effect-at-the-edges-plain-code-inside.md.",
               },
             ],
+          },
+        ],
+      },
+    },
+    {
+      // The entries of the one package keep the direction the nine packages had (ADR-0018).
+      files: ["packages/arcadekit/src/**/*.ts"],
+      jsPlugins: ["./lint/entry-direction.ts"],
+      rules: {
+        "entry-direction/allowed": [
+          "error",
+          {
+            packageName: "arcadekit",
+            root: KIT_SRC,
+            allowed: ENTRY_IMPORTS,
+            entryFiles: ENTRY_FILES,
           },
         ],
       },
