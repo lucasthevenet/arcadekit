@@ -81,7 +81,7 @@ export interface PushPuzzleAssets extends PushPuzzleAudio {
 }
 
 /**
- * The push-puzzle genre as a arcadekit/runtime browser game: its simulation, input, and a view
+ * The push-puzzle genre as an arcadekit/runtime browser game: its simulation, input, and a view
  * that draws it from `sheet` and plays its sounds through `audio`.
  */
 export const makePushPuzzleGame = ({

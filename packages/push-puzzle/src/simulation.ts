@@ -5,7 +5,7 @@ import { createPuzzle, hudSample, step } from "./world";
 import type { Puzzle, PushPuzzleConfig, PushPuzzleInput } from "./world";
 
 /**
- * The push-puzzle genre as a arcadekit/runtime simulation: what a GameLoop steps, in a browser,
+ * The push-puzzle genre as an arcadekit/runtime simulation: what a GameLoop steps, in a browser,
  * a Worker, on a server or in a test. `./browser`'s `makePushPuzzleGame` adds input, the view and sound.
  */
 export const pushPuzzleSimulation: GameSimulation<

@@ -37,7 +37,7 @@ interface SurvivorsGameOptions {
 }
 
 /**
- * The survivors genre as a arcadekit/runtime browser game, for a single player: its simulation,
+ * The survivors genre as an arcadekit/runtime browser game, for a single player: its simulation,
  * input and view. The device drives the first hero. The view draws from `art`; with `sound`, a
  * sound view plays the run beside it.
  */

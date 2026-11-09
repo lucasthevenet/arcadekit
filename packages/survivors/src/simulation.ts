@@ -6,7 +6,7 @@ import { createWorld, hudSample, step } from "./world";
 import type { SurvivorsConfig, World } from "./world";
 
 /**
- * The survivors genre as a arcadekit/runtime simulation: what a GameLoop steps, in a browser,
+ * The survivors genre as an arcadekit/runtime simulation: what a GameLoop steps, in a browser,
  * a Worker, on a server or in a test. `./browser`'s `makeSurvivorsGame` adds input, the view and sound.
  */
 export const survivorsSimulation: GameSimulation<
