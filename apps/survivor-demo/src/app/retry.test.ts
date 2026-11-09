@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
 
-import { SilentAudioLayer, defaultAudioSettings } from "@arcadekit/audio";
-import { ContentError } from "@arcadekit/content";
-import type { ContentSource } from "@arcadekit/content";
+import { makeSurvivorsContentLayer } from "@arcadekit/survivors";
+import { makeSurvivorsEngineLayer } from "@arcadekit/survivors/browser";
+import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
+import { ContentError } from "arcadekit/content";
+import type { ContentSource } from "arcadekit/content";
 import {
   SpriteSheetError,
   decodeSpriteSheet,
   makeSpriteSheet,
-} from "@arcadekit/render-three";
-import { makeSurvivorsContentLayer } from "@arcadekit/survivors";
-import { makeSurvivorsEngineLayer } from "@arcadekit/survivors/browser";
+} from "arcadekit/render-three";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { Scene } from "foldkit";
 import { afterEach, describe, expect, it } from "vitest";

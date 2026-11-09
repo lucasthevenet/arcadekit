@@ -2,7 +2,7 @@ import {
   JoinCode,
   joinCodeFromBytes,
   joinCodeFromPath,
-} from "@arcadekit/net/signalling";
+} from "arcadekit/net/signalling";
 import { Data, Effect, Option, Schema } from "effect";
 
 /**

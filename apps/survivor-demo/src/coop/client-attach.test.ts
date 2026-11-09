@@ -1,8 +1,8 @@
-import { AttachError, GameCrashed } from "@arcadekit/runtime/browser";
-import type { GameView } from "@arcadekit/runtime/browser";
-import { manualFrames } from "@arcadekit/runtime/testing";
 import type { World } from "@arcadekit/survivors";
 import type { SurvivorsArt } from "@arcadekit/survivors/browser";
+import { AttachError, GameCrashed } from "arcadekit/runtime/browser";
+import type { GameView } from "arcadekit/runtime/browser";
+import { manualFrames } from "arcadekit/runtime/testing";
 import { Effect, Exit, Fiber, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

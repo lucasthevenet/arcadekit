@@ -1,5 +1,5 @@
-import type { AudioSystem } from "@arcadekit/audio";
-import type { GameView } from "@arcadekit/runtime/browser";
+import type { AudioSystem } from "arcadekit/audio";
+import type { GameView } from "arcadekit/runtime/browser";
 
 import { isChoosing } from "../world";
 import type { World } from "../world";

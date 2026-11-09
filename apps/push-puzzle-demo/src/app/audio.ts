@@ -1,10 +1,10 @@
-import { makeAudioSettingsStore } from "@arcadekit/audio";
+import type { PushPuzzleSounds } from "@arcadekit/push-puzzle/browser";
+import { makeAudioSettingsStore } from "arcadekit/audio";
 import type {
   AudioSettings,
   AudioSettingsStore,
   SoundList,
-} from "@arcadekit/audio";
-import type { PushPuzzleSounds } from "@arcadekit/push-puzzle/browser";
+} from "arcadekit/audio";
 import { Context, Layer } from "effect";
 
 // This game's sounds: the files it ships, which sound each cue plays, and where the

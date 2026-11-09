@@ -1,10 +1,10 @@
-import { Audio } from "@arcadekit/audio";
-import type { AttachableEngine } from "@arcadekit/foldkit";
-import type { SpriteSheetError } from "@arcadekit/render-three";
-import type { AttachError, GameCrashed } from "@arcadekit/runtime/browser";
 import { SurvivorsContent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
+import { Audio } from "arcadekit/audio";
+import type { AttachableEngine } from "arcadekit/foldkit";
+import type { SpriteSheetError } from "arcadekit/render-three";
+import type { AttachError, GameCrashed } from "arcadekit/runtime/browser";
 import { Context, Effect, Layer } from "effect";
 
 import { makeCoopClient } from "../coop/client";

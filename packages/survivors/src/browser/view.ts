@@ -1,5 +1,5 @@
-import { Stage } from "@arcadekit/render-three";
-import type { GameView } from "@arcadekit/runtime/browser";
+import { Stage } from "arcadekit/render-three";
+import type { GameView } from "arcadekit/runtime/browser";
 
 import type { World } from "../world";
 import type { SurvivorsArt } from "./art";

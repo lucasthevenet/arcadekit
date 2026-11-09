@@ -12,12 +12,7 @@
     "typecheck": "tsc -p . && tsc -p tsconfig.root.json"
   },
   "dependencies": {
-    "@arcadekit/audio": "workspace:*",
-    "@arcadekit/content": "workspace:*",
-    "@arcadekit/core": "workspace:*",
-    "@arcadekit/input": "workspace:*",
-    "@arcadekit/render-three": "workspace:*",
-    "@arcadekit/runtime": "workspace:*",
+    "arcadekit": "workspace:*",
     "effect": "~4.1.2",
     "three": "^0.187.0"
   }

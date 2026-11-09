@@ -1,9 +1,9 @@
-import { Audio } from "@arcadekit/audio";
-import type { AudioSystem } from "@arcadekit/audio";
-import { InputController, MOVE_AXES } from "@arcadekit/input";
-import type { SpriteSheet, SpriteSheetError } from "@arcadekit/render-three";
-import { combineViews, makeEngineLoader } from "@arcadekit/runtime/browser";
-import type { EngineLoader, GameDefinition } from "@arcadekit/runtime/browser";
+import { Audio } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
+import { InputController, MOVE_AXES } from "arcadekit/input";
+import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
+import { combineViews, makeEngineLoader } from "arcadekit/runtime/browser";
+import type { EngineLoader, GameDefinition } from "arcadekit/runtime/browser";
 import { Context, Effect, Layer } from "effect";
 
 import type { SurvivorsEvent } from "../events";
@@ -37,7 +37,7 @@ interface SurvivorsGameOptions {
 }
 
 /**
- * The survivors genre as a @arcadekit/runtime browser game, for a single player: its simulation,
+ * The survivors genre as a arcadekit/runtime browser game, for a single player: its simulation,
  * input and view. The device drives the first hero. The view draws from `art`; with `sound`, a
  * sound view plays the run beside it.
  */

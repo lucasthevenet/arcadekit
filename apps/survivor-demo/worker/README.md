@@ -6,7 +6,7 @@ Introduces the peers of a co-op run so they can open WebRTC data channels to eac
 
 ## The protocol
 
-JSON over one WebSocket per peer. `@arcadekit/net/signalling` (`packages/net/src/signalling/protocol.ts`) has every message as an Effect Schema, whose types are the messages' types, the parsers and the join-code helpers. It lives beside the browser's signalling client, which speaks it, and needs nothing but `effect` and no DOM, so this worker imports it as is. A message that doesn't decode is `bad-message`: a client message is at most 16 KB (`MAX_MESSAGE_LENGTH`), a peer id at most 32 characters (`MAX_PEER_ID_LENGTH`), an `sdpMid` or ICE username fragment at most 256 (`MAX_TOKEN_LENGTH`), and `sdpMLineIndex` is 0 to 65535.
+JSON over one WebSocket per peer. `arcadekit/net/signalling` (`packages/arcadekit/src/net/signalling/protocol.ts`) has every message as an Effect Schema, whose types are the messages' types, the parsers and the join-code helpers. It lives beside the browser's signalling client, which speaks it, and needs nothing but `effect` and no DOM, so this worker imports it as is. A message that doesn't decode is `bad-message`: a client message is at most 16 KB (`MAX_MESSAGE_LENGTH`), a peer id at most 32 characters (`MAX_PEER_ID_LENGTH`), an `sdpMid` or ICE username fragment at most 256 (`MAX_TOKEN_LENGTH`), and `sdpMLineIndex` is 0 to 65535.
 
 1. The host opens `wss://<worker>/host`. The worker picks a join code and answers `welcome` with it; the host's peer id is `host`.
 2. Each guest opens `wss://<worker>/join/<code>` and gets `welcome` with its own id (`guest-1`, `guest-2`, …, never reused). The host gets `peer-joined`.

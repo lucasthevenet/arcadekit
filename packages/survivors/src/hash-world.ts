@@ -2,7 +2,7 @@ import type { World } from "./world";
 
 // A digest of a run's whole simulation state, so the replay, determinism and lockstep tests
 // notice a change in any bit of it, and a lockstep session's desync check does too: `hashWorld`
-// is the root entry's `hash` for `@arcadekit/net`.
+// is the root entry's `hash` for `arcadekit/net`.
 
 /** FNV-1a over numbers' float64 bits, so any change in any digit shows. */
 const hasher = () => {

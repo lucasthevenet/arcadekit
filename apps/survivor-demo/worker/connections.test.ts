@@ -1,5 +1,5 @@
-import { parseServerMessage, ROOM_TTL_MS } from "@arcadekit/net/signalling";
-import type { ServerMessage } from "@arcadekit/net/signalling";
+import { parseServerMessage, ROOM_TTL_MS } from "arcadekit/net/signalling";
+import type { ServerMessage } from "arcadekit/net/signalling";
 import { Effect, Fiber, Layer, Logger, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";

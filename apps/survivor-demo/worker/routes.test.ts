@@ -1,4 +1,4 @@
-import { normalizeJoinCode } from "@arcadekit/net/signalling";
+import { normalizeJoinCode } from "arcadekit/net/signalling";
 import { Effect, Logger } from "effect";
 import { describe, expect, it } from "vitest";
 

@@ -1,36 +1,3 @@
-import type { ContentError } from "@arcadekit/content";
-import { InputController, MOVE_AXES } from "@arcadekit/input";
-import {
-  hostLockstepScoped,
-  joinLockstepScoped,
-  schemaCodec,
-} from "@arcadekit/net";
-import type {
-  LockstepError,
-  LockstepOptions,
-  PeerId,
-  ScopedLockstepSession,
-  Ticker,
-} from "@arcadekit/net";
-import { linksTransport } from "@arcadekit/net/browser";
-import type {
-  PeerLink,
-  RoomError,
-  RoomEvent,
-  SignallingRoom,
-} from "@arcadekit/net/browser";
-import type { StepInput } from "@arcadekit/runtime";
-import {
-  animationFrames,
-  attachError,
-  combineViews,
-} from "@arcadekit/runtime/browser";
-import type {
-  AttachError,
-  FrameSource,
-  GameCrashed,
-  GameView,
-} from "@arcadekit/runtime/browser";
 import {
   HeroInput,
   combineHeroInputs,
@@ -57,6 +24,39 @@ import type {
   SurvivorsArt,
   SurvivorsGameSound,
 } from "@arcadekit/survivors/browser";
+import type { ContentError } from "arcadekit/content";
+import { InputController, MOVE_AXES } from "arcadekit/input";
+import {
+  hostLockstepScoped,
+  joinLockstepScoped,
+  schemaCodec,
+} from "arcadekit/net";
+import type {
+  LockstepError,
+  LockstepOptions,
+  PeerId,
+  ScopedLockstepSession,
+  Ticker,
+} from "arcadekit/net";
+import { linksTransport } from "arcadekit/net/browser";
+import type {
+  PeerLink,
+  RoomError,
+  RoomEvent,
+  SignallingRoom,
+} from "arcadekit/net/browser";
+import type { StepInput } from "arcadekit/runtime";
+import {
+  animationFrames,
+  attachError,
+  combineViews,
+} from "arcadekit/runtime/browser";
+import type {
+  AttachError,
+  FrameSource,
+  GameCrashed,
+  GameView,
+} from "arcadekit/runtime/browser";
 import { Cause, Data, Effect, FiberHandle, Queue, Stream } from "effect";
 import type { Clock, Scope } from "effect";
 

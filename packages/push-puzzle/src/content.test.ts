@@ -1,4 +1,4 @@
-import { loadContent, memorySource } from "@arcadekit/content";
+import { loadContent, memorySource } from "arcadekit/content";
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 

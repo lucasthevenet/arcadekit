@@ -1,15 +1,6 @@
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 
-import { defaultAudioSettings } from "@arcadekit/audio";
-import { ContentError, loadContent } from "@arcadekit/content";
-import type { ContentSource } from "@arcadekit/content";
-import {
-  SpriteSheetError,
-  decodeSpriteSheet,
-  makeSpriteSheet,
-} from "@arcadekit/render-three";
-import type { SpriteSheetData } from "@arcadekit/render-three";
 import {
   SurvivorsContent,
   survivorsContentDefinition,
@@ -19,6 +10,15 @@ import {
   missingSpriteTags,
 } from "@arcadekit/survivors/browser";
 import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
+import { defaultAudioSettings } from "arcadekit/audio";
+import { ContentError, loadContent } from "arcadekit/content";
+import type { ContentSource } from "arcadekit/content";
+import {
+  SpriteSheetError,
+  decodeSpriteSheet,
+  makeSpriteSheet,
+} from "arcadekit/render-three";
+import type { SpriteSheetData } from "arcadekit/render-three";
 import { Effect, Layer } from "effect";
 import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";

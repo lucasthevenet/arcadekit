@@ -1,9 +1,9 @@
-import { BrowserAudioLayer } from "@arcadekit/audio/browser";
-import { fetchJsonSource } from "@arcadekit/content/browser";
 import { makePushPuzzleContentLayer } from "@arcadekit/push-puzzle";
 import { makePushPuzzleEngineLayer } from "@arcadekit/push-puzzle/browser";
-import { loadSpriteSheet } from "@arcadekit/render-three";
-import { BrowserSaveStorage } from "@arcadekit/save/browser";
+import { BrowserAudioLayer } from "arcadekit/audio/browser";
+import { fetchJsonSource } from "arcadekit/content/browser";
+import { loadSpriteSheet } from "arcadekit/render-three";
+import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
 import { AudioSettingsLayer, CUE_SOUNDS } from "./audio";

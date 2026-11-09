@@ -1,4 +1,4 @@
-import type { Ticker } from "@arcadekit/net";
+import type { Ticker } from "arcadekit/net";
 import { Effect } from "effect";
 import type { Scope } from "effect";
 

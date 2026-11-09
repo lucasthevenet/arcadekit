@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 
-import { defaultAudioSettings } from "@arcadekit/audio";
 import { PushPuzzleContent } from "@arcadekit/push-puzzle";
 import {
   PUSH_PUZZLE_SPRITE_TAGS,
   PushPuzzleEngine,
 } from "@arcadekit/push-puzzle/browser";
-import { SpriteSheetError, decodeSpriteSheet } from "@arcadekit/render-three";
-import type { SpriteSheetData } from "@arcadekit/render-three";
+import { defaultAudioSettings } from "arcadekit/audio";
+import { SpriteSheetError, decodeSpriteSheet } from "arcadekit/render-three";
+import type { SpriteSheetData } from "arcadekit/render-three";
 import { Effect } from "effect";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
@@ -29,7 +29,7 @@ import { init, update } from "./update";
 import { view } from "./view";
 
 // The sheet this game ships, and what a failed sheet load does to startup. Loading and
-// parsing sheets in general is @arcadekit/render-three's tests.
+// parsing sheets in general is arcadekit/render-three's tests.
 
 const spritesDir = new URL("../../public/sprites/", import.meta.url);
 

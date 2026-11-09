@@ -1,6 +1,3 @@
-import { Audio, AudioSettings } from "@arcadekit/audio";
-import { engineOf } from "@arcadekit/runtime/browser";
-import type { GameEngine } from "@arcadekit/runtime/browser";
 import {
   RunSummary,
   SurvivorsContent,
@@ -12,6 +9,9 @@ import type {
   World,
 } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
+import { Audio, AudioSettings } from "arcadekit/audio";
+import { engineOf } from "arcadekit/runtime/browser";
+import type { GameEngine } from "arcadekit/runtime/browser";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 

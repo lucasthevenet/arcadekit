@@ -1,4 +1,4 @@
-import type { SpriteSheet, SpriteTag } from "@arcadekit/render-three";
+import type { SpriteSheet, SpriteTag } from "arcadekit/render-three";
 import * as THREE from "three";
 
 // Aura rings, drawn from the sheet's aura art (`aura/ring`) at any radius. A sprite scaled by a

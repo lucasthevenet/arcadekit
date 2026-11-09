@@ -1,25 +1,25 @@
 // The smoke test's tiny game in the browser: input, a pixel stage drawing sprites from a sheet,
 // sound, a save and content, run by the Effect engine. Vite builds it from the packed packages.
-import { Audio, makeAudioSettingsStore } from "@arcadekit/audio";
-import type { AudioSystem } from "@arcadekit/audio";
-import { BrowserAudioLayer } from "@arcadekit/audio/browser";
-import { loadContent, memorySource } from "@arcadekit/content";
-import type { AttachableEngine } from "@arcadekit/foldkit";
-import { InputController, MOVE_AXES } from "@arcadekit/input";
-import { createMemoryNetwork, hostLockstep, jsonCodec } from "@arcadekit/net";
-import type { LockstepSession } from "@arcadekit/net";
-import type { RoomOptions } from "@arcadekit/net/browser";
+import { Audio, makeAudioSettingsStore } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
+import { BrowserAudioLayer } from "arcadekit/audio/browser";
+import { loadContent, memorySource } from "arcadekit/content";
+import type { AttachableEngine } from "arcadekit/foldkit";
+import { InputController, MOVE_AXES } from "arcadekit/input";
+import { createMemoryNetwork, hostLockstep, jsonCodec } from "arcadekit/net";
+import type { LockstepSession } from "arcadekit/net";
+import type { RoomOptions } from "arcadekit/net/browser";
 import {
   InstancedSprites,
   Stage,
   frameAt,
   loadSpriteSheet,
-} from "@arcadekit/render-three";
+} from "arcadekit/render-three";
 import type {
   InstancedSpritesOptions,
   SpriteSheet,
-} from "@arcadekit/render-three";
-import { combineViews, makeGameEngine } from "@arcadekit/runtime/browser";
+} from "arcadekit/render-three";
+import { combineViews, makeGameEngine } from "arcadekit/runtime/browser";
 import type {
   AttachError,
   GameCrashed,
@@ -27,9 +27,9 @@ import type {
   GameEngine,
   GameView,
   InputSource,
-} from "@arcadekit/runtime/browser";
-import { makeSaveStore } from "@arcadekit/save";
-import { BrowserSaveStorage } from "@arcadekit/save/browser";
+} from "arcadekit/runtime/browser";
+import { makeSaveStore } from "arcadekit/save";
+import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Effect, Layer, Schema } from "effect";
 
 import { dotsSimulation, replay } from "./simulation";

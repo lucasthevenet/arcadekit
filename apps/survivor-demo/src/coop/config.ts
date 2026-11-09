@@ -3,7 +3,7 @@ import {
   browserRoomLayer,
   hostRoom,
   joinRoom,
-} from "@arcadekit/net/browser";
+} from "arcadekit/net/browser";
 import { Effect } from "effect";
 
 import type { CoopRooms } from "./client";

@@ -1,9 +1,5 @@
-import {
-  InstancedSprites,
-  frameAt,
-  snapToPixel,
-} from "@arcadekit/render-three";
-import type { SpriteTag } from "@arcadekit/render-three";
+import { InstancedSprites, frameAt, snapToPixel } from "arcadekit/render-three";
+import type { SpriteTag } from "arcadekit/render-three";
 import * as THREE from "three";
 
 import { MAX_HEROES, MAX_WEAPONS, auraRadius } from "../hero";

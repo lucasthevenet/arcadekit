@@ -1,0 +1,168 @@
+{
+  "name": "arcadekit",
+  "version": "0.2.3",
+  "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
+  "keywords": [
+    "arcadekit",
+    "audio",
+    "deterministic",
+    "effect",
+    "elm-architecture",
+    "fixed-timestep",
+    "foldkit",
+    "game",
+    "game-loop",
+    "gamedev",
+    "gamepad",
+    "input",
+    "lockstep",
+    "multiplayer",
+    "object-pool",
+    "pixel-art",
+    "rng",
+    "save-game",
+    "spatial-grid",
+    "sprites",
+    "three",
+    "threejs",
+    "web-audio",
+    "webrtc"
+  ],
+  "homepage": "https://github.com/lucasthevenet/arcadekit/tree/main/packages/arcadekit#readme",
+  "bugs": "https://github.com/lucasthevenet/arcadekit/issues",
+  "license": "MIT",
+  "author": "Lucas Thevenet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasthevenet/arcadekit.git",
+    "directory": "packages/arcadekit"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/net/test-harness.ts"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./core": {
+      "source": "./src/core/index.ts",
+      "types": "./dist/core.d.ts",
+      "default": "./dist/core.js"
+    },
+    "./input": {
+      "source": "./src/input/index.ts",
+      "types": "./dist/input.d.ts",
+      "default": "./dist/input.js"
+    },
+    "./content": {
+      "source": "./src/content/index.ts",
+      "types": "./dist/content.d.ts",
+      "default": "./dist/content.js"
+    },
+    "./content/browser": {
+      "source": "./src/content/browser.ts",
+      "types": "./dist/content/browser.d.ts",
+      "default": "./dist/content/browser.js"
+    },
+    "./save": {
+      "source": "./src/save/index.ts",
+      "types": "./dist/save.d.ts",
+      "default": "./dist/save.js"
+    },
+    "./save/browser": {
+      "source": "./src/save/browser.ts",
+      "types": "./dist/save/browser.d.ts",
+      "default": "./dist/save/browser.js"
+    },
+    "./audio": {
+      "source": "./src/audio/index.ts",
+      "types": "./dist/audio.d.ts",
+      "default": "./dist/audio.js"
+    },
+    "./audio/browser": {
+      "source": "./src/audio/browser.ts",
+      "types": "./dist/audio/browser.d.ts",
+      "default": "./dist/audio/browser.js"
+    },
+    "./render-three": {
+      "source": "./src/render-three/index.ts",
+      "types": "./dist/render-three.d.ts",
+      "default": "./dist/render-three.js"
+    },
+    "./runtime": {
+      "source": "./src/runtime/index.ts",
+      "types": "./dist/runtime.d.ts",
+      "default": "./dist/runtime.js"
+    },
+    "./runtime/browser": {
+      "source": "./src/runtime/browser.ts",
+      "types": "./dist/runtime/browser.d.ts",
+      "default": "./dist/runtime/browser.js"
+    },
+    "./runtime/testing": {
+      "source": "./src/runtime/testing.ts",
+      "types": "./dist/runtime/testing.d.ts",
+      "default": "./dist/runtime/testing.js"
+    },
+    "./net": {
+      "source": "./src/net/index.ts",
+      "types": "./dist/net.d.ts",
+      "default": "./dist/net.js"
+    },
+    "./net/browser": {
+      "source": "./src/net/browser/index.ts",
+      "types": "./dist/net/browser.d.ts",
+      "default": "./dist/net/browser.js"
+    },
+    "./net/signalling": {
+      "source": "./src/net/signalling/protocol.ts",
+      "types": "./dist/net/signalling.d.ts",
+      "default": "./dist/net/signalling.js"
+    },
+    "./foldkit": {
+      "source": "./src/foldkit/index.ts",
+      "types": "./dist/foldkit.d.ts",
+      "default": "./dist/foldkit.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p . && tsc -p tsconfig.root.json && tsc -p tsconfig.test.json"
+  },
+  "devDependencies": {
+    "@effect/platform-browser": "~4.1.0",
+    "@types/three": "^0.187.0",
+    "effect": "~4.1.2",
+    "foldkit": "~0.170.0",
+    "three": "^0.187.0"
+  },
+  "peerDependencies": {
+    "@effect/platform-browser": "~4.1.0",
+    "@types/three": "^0.187.0",
+    "effect": "~4.1.2",
+    "foldkit": "~0.170.0",
+    "three": "^0.187.0"
+  },
+  "peerDependenciesMeta": {
+    "@effect/platform-browser": {
+      "optional": true
+    },
+    "@types/three": {
+      "optional": true
+    },
+    "foldkit": {
+      "optional": true
+    },
+    "three": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

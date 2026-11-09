@@ -1,5 +1,5 @@
-import { GameLoop } from "@arcadekit/runtime";
-import type { StepInput } from "@arcadekit/runtime";
+import { GameLoop } from "arcadekit/runtime";
+import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 
 import { visitWorld, hashWorld } from "./hash-world";

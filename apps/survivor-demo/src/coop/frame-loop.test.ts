@@ -1,5 +1,5 @@
-import { GameCrashed } from "@arcadekit/runtime/browser";
-import { manualFrames } from "@arcadekit/runtime/testing";
+import { GameCrashed } from "arcadekit/runtime/browser";
+import { manualFrames } from "arcadekit/runtime/testing";
 import { Effect, Exit, Fiber } from "effect";
 import { describe, expect, it } from "vitest";
 

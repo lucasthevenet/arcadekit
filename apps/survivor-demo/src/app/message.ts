@@ -1,5 +1,5 @@
-import { AudioSettings } from "@arcadekit/audio";
 import { HudSample, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
+import { AudioSettings } from "arcadekit/audio";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { defaultAudioSettings } from "@arcadekit/audio";
+import { defaultAudioSettings } from "arcadekit/audio";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
@@ -21,7 +21,7 @@ import { init, update } from "./update";
 
 // The app's sound table, its audio settings under their own key (over an in-memory
 // KeyValueStore), and the UI that changes them. Mixing and storage problems are
-// @arcadekit/audio's tests.
+// arcadekit/audio's tests.
 
 describe("the sound table", () => {
   it("plays every cue with a sound from the list, each a file in public/sounds", () => {

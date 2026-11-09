@@ -1,8 +1,8 @@
-import { Audio, applyAudioSettings } from "@arcadekit/audio";
-import { engineEntry, keyPresses, shortcutPresses } from "@arcadekit/foldkit";
-import { engineOf } from "@arcadekit/runtime/browser";
 import type { SurvivorsEvent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
+import { Audio, applyAudioSettings } from "arcadekit/audio";
+import { engineEntry, keyPresses, shortcutPresses } from "arcadekit/foldkit";
+import { engineOf } from "arcadekit/runtime/browser";
 import { Effect, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 

@@ -1,13 +1,13 @@
 import {
   makeSaveStore,
   mergeRecords as mergeRecordsWith,
-} from "@arcadekit/save";
+} from "arcadekit/save";
 import { Context, Effect, Layer, Schema } from "effect";
 
 // The save: what this game remembers between sessions, per level id. It is UI
 // state, not simulation state. The app reads it once at startup and writes it
 // when a level is solved, never per frame and never from a step. Storing,
-// merging and handling broken storage is @arcadekit/save; this file says what a
+// merging and handling broken storage is arcadekit/save; this file says what a
 // level's record holds and how two of them merge.
 
 /** One level's record. `bestMoves` only means something once `solved` is true. */

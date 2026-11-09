@@ -1,8 +1,8 @@
-import { GameCrashed } from "@arcadekit/runtime/browser";
-import type { FrameSource } from "@arcadekit/runtime/browser";
+import { GameCrashed } from "arcadekit/runtime/browser";
+import type { FrameSource } from "arcadekit/runtime/browser";
 import { Effect } from "effect";
 
-// The co-op client's frames while it is attached: what `frameLoop` in @arcadekit/runtime is to
+// The co-op client's frames while it is attached: what `frameLoop` in arcadekit/runtime is to
 // an attached engine, for a client that steps on its own ticker and only ticks and draws here.
 
 const messageOf = (cause: unknown): string =>

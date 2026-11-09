@@ -1,13 +1,13 @@
-import { Audio } from "@arcadekit/audio";
-import type { AudioSystem } from "@arcadekit/audio";
-import { InputController } from "@arcadekit/input";
-import type { SpriteSheet, SpriteSheetError } from "@arcadekit/render-three";
-import { combineViews, makeEngineLoader } from "@arcadekit/runtime/browser";
+import { Audio } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
+import { InputController } from "arcadekit/input";
+import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
+import { combineViews, makeEngineLoader } from "arcadekit/runtime/browser";
 import type {
   EngineLoader,
   GameDefinition,
   InputSource,
-} from "@arcadekit/runtime/browser";
+} from "arcadekit/runtime/browser";
 import { Context, Effect, Layer } from "effect";
 
 import type { PushPuzzleEvent } from "../events";
@@ -68,7 +68,7 @@ const createInput = (surface: HTMLElement): InputSource<PushPuzzleInput> => {
 
 /** What the push-puzzle game plays its sounds through. */
 interface PushPuzzleAudio {
-  /** The app's audio system. `silentAudio` from `@arcadekit/audio` plays nothing. */
+  /** The app's audio system. `silentAudio` from `arcadekit/audio` plays nothing. */
   readonly audio: AudioSystem;
   /** Which of the app's sounds each cue plays. */
   readonly sounds: PushPuzzleSounds;
@@ -81,7 +81,7 @@ export interface PushPuzzleAssets extends PushPuzzleAudio {
 }
 
 /**
- * The push-puzzle genre as a @arcadekit/runtime browser game: its simulation, input, and a view
+ * The push-puzzle genre as a arcadekit/runtime browser game: its simulation, input, and a view
  * that draws it from `sheet` and plays its sounds through `audio`.
  */
 export const makePushPuzzleGame = ({

@@ -1,13 +1,9 @@
-import {
-  InstancedSprites,
-  frameAt,
-  snapToPixel,
-} from "@arcadekit/render-three";
+import { InstancedSprites, frameAt, snapToPixel } from "arcadekit/render-three";
 import type {
   PixelCamera,
   SpriteSheet,
   SpriteTag,
-} from "@arcadekit/render-three";
+} from "arcadekit/render-three";
 import * as THREE from "three";
 
 import { Tile } from "../level";

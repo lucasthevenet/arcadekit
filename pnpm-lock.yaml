@@ -53,30 +53,15 @@ importers:
 
   apps/push-puzzle-demo:
     dependencies:
-      '@arcadekit/audio':
-        specifier: workspace:*
-        version: link:../../packages/audio
-      '@arcadekit/content':
-        specifier: workspace:*
-        version: link:../../packages/content
-      '@arcadekit/foldkit':
-        specifier: workspace:*
-        version: link:../../packages/foldkit
       '@arcadekit/push-puzzle':
         specifier: workspace:*
         version: link:../../packages/push-puzzle
-      '@arcadekit/render-three':
-        specifier: workspace:*
-        version: link:../../packages/render-three
-      '@arcadekit/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
-      '@arcadekit/save':
-        specifier: workspace:*
-        version: link:../../packages/save
       '@effect/platform-browser':
         specifier: ~4.1.0
         version: 4.1.2(effect@4.1.2)
+      arcadekit:
+        specifier: workspace:*
+        version: link:../../packages/arcadekit
       effect:
         specifier: ~4.1.2
         version: 4.1.2
@@ -89,36 +74,15 @@ importers:
 
   apps/survivor-demo:
     dependencies:
-      '@arcadekit/audio':
-        specifier: workspace:*
-        version: link:../../packages/audio
-      '@arcadekit/content':
-        specifier: workspace:*
-        version: link:../../packages/content
-      '@arcadekit/foldkit':
-        specifier: workspace:*
-        version: link:../../packages/foldkit
-      '@arcadekit/input':
-        specifier: workspace:*
-        version: link:../../packages/input
-      '@arcadekit/net':
-        specifier: workspace:*
-        version: link:../../packages/net
-      '@arcadekit/render-three':
-        specifier: workspace:*
-        version: link:../../packages/render-three
-      '@arcadekit/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
-      '@arcadekit/save':
-        specifier: workspace:*
-        version: link:../../packages/save
       '@arcadekit/survivors':
         specifier: workspace:*
         version: link:../../packages/survivors
       '@effect/platform-browser':
         specifier: ~4.1.0
         version: 4.1.2(effect@4.1.2)
+      arcadekit:
+        specifier: workspace:*
+        version: link:../../packages/arcadekit
       effect:
         specifier: ~4.1.2
         version: 4.1.2
@@ -142,136 +106,47 @@ importers:
         specifier: 2.0.0-beta.85
         version: 2.0.0-beta.85(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.3.1))(effect@4.1.2)(vite@8.3.5(@types/node@26.6.6)(yaml@2.9.1))(ws@8.22.1)
 
-  packages/audio:
+  packages/arcadekit:
     devDependencies:
-      effect:
-        specifier: ~4.1.2
-        version: 4.1.2
-
-  packages/content:
-    devDependencies:
-      effect:
-        specifier: ~4.1.2
-        version: 4.1.2
-
-  packages/core: {}
-
-  packages/foldkit:
-    dependencies:
-      '@arcadekit/runtime':
-        specifier: workspace:^
-        version: link:../runtime
-    devDependencies:
-      effect:
-        specifier: ~4.1.2
-        version: 4.1.2
-      foldkit:
-        specifier: ~0.170.0
-        version: 0.170.0(@effect/platform-browser@4.1.2(effect@4.1.2))(effect@4.1.2)
-
-  packages/input: {}
-
-  packages/net:
-    dependencies:
-      '@arcadekit/core':
-        specifier: workspace:^
-        version: link:../core
-      '@arcadekit/runtime':
-        specifier: workspace:^
-        version: link:../runtime
-    devDependencies:
-      effect:
-        specifier: ~4.1.2
-        version: 4.1.2
-
-  packages/push-puzzle:
-    dependencies:
-      '@arcadekit/audio':
-        specifier: workspace:*
-        version: link:../audio
-      '@arcadekit/content':
-        specifier: workspace:*
-        version: link:../content
-      '@arcadekit/core':
-        specifier: workspace:*
-        version: link:../core
-      '@arcadekit/input':
-        specifier: workspace:*
-        version: link:../input
-      '@arcadekit/render-three':
-        specifier: workspace:*
-        version: link:../render-three
-      '@arcadekit/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      effect:
-        specifier: ~4.1.2
-        version: 4.1.2
-      three:
-        specifier: ^0.187.0
-        version: 0.187.0
-
-  packages/render-three:
-    devDependencies:
+      '@effect/platform-browser':
+        specifier: ~4.1.0
+        version: 4.1.2(effect@4.1.2)
       '@types/three':
         specifier: ^0.187.0
         version: 0.187.0
       effect:
         specifier: ~4.1.2
         version: 4.1.2
+      foldkit:
+        specifier: ~0.170.0
+        version: 0.170.0(@effect/platform-browser@4.1.2(effect@4.1.2))(effect@4.1.2)
       three:
         specifier: ^0.187.0
         version: 0.187.0
 
-  packages/runtime:
+  packages/push-puzzle:
     dependencies:
-      '@arcadekit/core':
-        specifier: workspace:^
-        version: link:../core
-    devDependencies:
+      arcadekit:
+        specifier: workspace:*
+        version: link:../arcadekit
       effect:
         specifier: ~4.1.2
         version: 4.1.2
-
-  packages/save:
-    devDependencies:
-      '@effect/platform-browser':
-        specifier: ~4.1.0
-        version: 4.1.2(effect@4.1.2)
-      effect:
-        specifier: ~4.1.2
-        version: 4.1.2
+      three:
+        specifier: ^0.187.0
+        version: 0.187.0
 
   packages/survivors:
     dependencies:
-      '@arcadekit/audio':
+      arcadekit:
         specifier: workspace:*
-        version: link:../audio
-      '@arcadekit/content':
-        specifier: workspace:*
-        version: link:../content
-      '@arcadekit/core':
-        specifier: workspace:*
-        version: link:../core
-      '@arcadekit/input':
-        specifier: workspace:*
-        version: link:../input
-      '@arcadekit/render-three':
-        specifier: workspace:*
-        version: link:../render-three
-      '@arcadekit/runtime':
-        specifier: workspace:*
-        version: link:../runtime
+        version: link:../arcadekit
       effect:
         specifier: ~4.1.2
         version: 4.1.2
       three:
         specifier: ^0.187.0
         version: 0.187.0
-    devDependencies:
-      '@arcadekit/net':
-        specifier: workspace:*
-        version: link:../net
 
 packages:
 
