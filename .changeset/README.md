@@ -1,15 +1,15 @@
 # Changesets
 
-A changeset says which packages a change releases, how far it bumps them, and the line that goes in their changelogs. Add one to any PR that changes a published package:
+A changeset says that a change releases `arcadekit`, how far it bumps it, and the line that goes in its changelog. Add one to any PR that changes the published package (`packages/arcadekit`):
 
 ```sh
 pnpm changeset
 ```
 
-- The nine kit packages share one version (the `fixed` group in `config.json`), so bumping one bumps them all.
+- `arcadekit` is the one published package; every entry (`arcadekit/core`, `arcadekit/net`, ...) releases with it.
 - The genre packages and the demo apps never release (`ignore`).
 - While below 1.0, a minor bump may break the interface. Say how in the changeset.
 
-On `main`, the release workflow opens a "Version packages" PR that applies the pending changesets. Merging it publishes to npm. See [ADR-0016](../docs/adr/0016-publish-the-kit-as-arcadekit.md).
+On `main`, the release workflow opens a "Version packages" PR that applies the pending changesets. Merging it publishes to npm. See [ADR-0018](../docs/adr/0018-one-package-with-entries.md).
 
-`first-release.md` takes the packages from `0.0.0` to `0.1.0`. The maintainer runs `pnpm version-packages` and `pnpm release` for that one from their machine (`scripts/npm-setup.sh`).
+The first `arcadekit` on npm is a `0.0.0` placeholder the maintainer publishes from their machine (`scripts/npm-setup.sh`), so the package exists and can name the release workflow as its trusted publisher. Every real version comes from the workflow.
