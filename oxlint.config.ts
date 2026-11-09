@@ -207,7 +207,7 @@ export default defineConfig({
           {
             patterns: [
               {
-                group: ["effect", "effect/*", "@effect/*"],
+                group: ["effect", "effect/**", "@effect/**"],
                 message:
                   "arcadekit/core and arcadekit/input don't depend on Effect, so a game can use them without it. See docs/adr/0017-effect-at-the-edges-plain-code-inside.md.",
               },

@@ -4,7 +4,8 @@
 //
 // Inside the package's src/, an import must be relative, and it must either stay in its own
 // entry's folder or name another entry's public file (the `source` of one of the package's
-// `exports`), and only an entry its own is allowed to import.
+// `exports`), and only an entry its own is allowed to import. A dynamic import must name its
+// module in a plain string, since neither this rule nor the import bans can read anything else.
 import path from "node:path";
 
 interface Node {
@@ -117,11 +118,26 @@ const allowed = {
       }
     };
 
+    // import(`x`) and import(name) would pass this rule, and no-restricted-imports too.
+    const checkDynamic = (node: Node) => {
+      if (
+        node.source?.type !== "Literal" ||
+        typeof node.source.value !== "string"
+      ) {
+        context.report({
+          node,
+          message: `A dynamic import inside the package names its module in a plain string ("..."), so the rules on what an entry may import can read it. ${adr}`,
+        });
+        return;
+      }
+      check(node);
+    };
+
     return {
       ExportAllDeclaration: check,
       ExportNamedDeclaration: check,
       ImportDeclaration: check,
-      ImportExpression: check,
+      ImportExpression: checkDynamic,
     };
   },
 };
