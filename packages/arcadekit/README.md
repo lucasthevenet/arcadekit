@@ -2,7 +2,7 @@
 
 Reusable primitives for building browser games with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org): a deterministic simulation core, a game loop and engine, input, content loading, saves, audio, pixel-art rendering, lockstep multiplayer and the Foldkit bindings.
 
-**Status: alpha.** Interfaces and stored data change whenever that improves the code, with no compatibility layers. Each release's [changelog](CHANGELOG.md) says what broke.
+**Status: alpha.** Interfaces and stored data change whenever that improves the code, with no compatibility layers. Each release's [changelog](https://github.com/lucasthevenet/arcadekit/blob/main/packages/arcadekit/CHANGELOG.md) says what broke.
 
 ## Install
 
@@ -46,6 +46,6 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | [`arcadekit/net`](src/net/README.md) | Lockstep multiplayer for 2 to 4 peers over a `Transport`, with an in-memory network for tests | Effect, core, runtime |
 | [`arcadekit/net/browser`](src/net/README.md) | `hostRoom` and `joinRoom` (join code to WebRTC links) and `linksTransport` | Effect, core, runtime, DOM |
 | [`arcadekit/net/signalling`](src/net/README.md) | The protocol a signalling server speaks, as Effect Schemas | Effect |
-| [`arcadekit/foldkit`](src/foldkit/README.md) | `gameViewport`, `engineEntry`, `keyPresses`, `shortcutPresses` | Effect, Foldkit, DOM |
+| [`arcadekit/foldkit`](src/foldkit/README.md) | `gameViewport`, `engineEntry`, `keyPresses`, `shortcutPresses` | Effect, Foldkit, runtime, DOM |
 
 The source is in [the arcadekit repository](https://github.com/lucasthevenet/arcadekit), with two genre packages and two demo games built on these entries. [ADR-0018](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0018-one-package-with-entries.md) records why the kit is one package.
