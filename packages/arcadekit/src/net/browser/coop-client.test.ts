@@ -39,6 +39,7 @@ import type {
   CoopClientOptions,
   CoopEvent,
   CoopGame,
+  CoopRooms,
 } from "./coop";
 import { makeCoopClient } from "./coop-client";
 import { RoomError } from "./errors";
@@ -249,6 +250,59 @@ const scriptedRoom = (
     links: () => [link],
     start: Effect.void,
   };
+};
+
+/**
+ * Rooms with no one to link to, numbered as they open, whose release takes `releaseMs(room)`:
+ * a socket and links that close slowly. No room has a join code.
+ */
+const numberedRooms = (
+  log: string[],
+  releaseMs: (room: number) => number
+): CoopRooms => {
+  let opened = 0;
+  return {
+    host: Effect.suspend(() => {
+      opened += 1;
+      const room = opened;
+      return Effect.acquireRelease(
+        Effect.sync((): SignallingRoom => {
+          log.push(`open ${room}`);
+          return {
+            role: "host",
+            code: `ROOM${room}`,
+            self: "host",
+            host: "host",
+            events: Stream.never,
+            links: () => [],
+            start: Effect.void,
+          };
+        }),
+        () =>
+          Effect.sleep(Duration.millis(releaseMs(room))).pipe(
+            Effect.andThen(Effect.sync(() => log.push(`release ${room}`)))
+          )
+      );
+    }),
+    join: () =>
+      Effect.fail(
+        new RoomError({
+          reason: "unknown-code",
+          message: "No room has that code.",
+        })
+      ),
+  };
+};
+
+/** A client on `rooms` that logs each event beside the rooms' own lines. */
+const loggedClient = async (rooms: CoopRooms, log: string[]) => {
+  const { coop } = await client(fakeCoopRooms(), testCoopGame(), { rooms });
+  await run(
+    coop.listen((event) =>
+      log.push(event.type === "lobby" ? `lobby ${event.code}` : event.type)
+    )
+  );
+  return coop;
 };
 
 const fakeTimers = () => {
@@ -464,6 +518,72 @@ describe("hosting, joining and leaving", () => {
     expect([types(events), lastLobby(events)]).toMatchObject([
       ["lobby", "lobby"],
       { players: [{ id: "host", name: "Host", pick: "green" }] },
+    ]);
+  });
+
+  it("lets a new seat speak only once every seat before it has closed", async () => {
+    const log: string[] = [];
+    // The first room is slow to close; the others close fast.
+    const coop = await loggedClient(
+      numberedRooms(log, (room) => (room === 1 ? 200 : 10)),
+      log
+    );
+    await run(coop.host("red"));
+    await settle();
+    // The second seat is replaced while it waits for the first to close.
+    await run(coop.host("green"));
+    await run(coop.host("blue"));
+    await vi.advanceTimersByTimeAsync(100);
+    const early = [...log];
+    await vi.advanceTimersByTimeAsync(200);
+    const leaving = run(coop.leave);
+    await vi.advanceTimersByTimeAsync(100);
+    await leaving;
+    expect([early, log.slice(early.length)]).toStrictEqual([
+      ["open 1", "lobby ROOM1", "open 2", "open 3", "release 2"],
+      ["release 1", "lobby ROOM3", "release 3"],
+    ]);
+  });
+
+  it("reports a new seat's failure only once the seat before it has closed", async () => {
+    const log: string[] = [];
+    const coop = await loggedClient(
+      numberedRooms(log, () => 50),
+      log
+    );
+    await run(coop.host("red"));
+    await settle();
+    // No room has that code: the new seat fails at once.
+    await run(coop.join("NOPE42", "green"));
+    await settle();
+    const early = [...log];
+    await vi.advanceTimersByTimeAsync(100);
+    expect([early, log.slice(early.length)]).toStrictEqual([
+      ["open 1", "lobby ROOM1"],
+      ["release 1", "failed"],
+    ]);
+  });
+
+  it("returns from leave only once every seat still closing has closed", async () => {
+    const log: string[] = [];
+    const coop = await loggedClient(
+      numberedRooms(log, (room) => (room === 1 ? 200 : 10)),
+      log
+    );
+    await run(coop.host("red"));
+    await settle();
+    await run(coop.host("green"));
+    // The first seat is still closing, and the second waits for it.
+    const leaving = run(coop.leave).then(() => log.push("left"));
+    await vi.advanceTimersByTimeAsync(300);
+    await leaving;
+    expect(log).toStrictEqual([
+      "open 1",
+      "lobby ROOM1",
+      "open 2",
+      "release 2",
+      "release 1",
+      "left",
     ]);
   });
 

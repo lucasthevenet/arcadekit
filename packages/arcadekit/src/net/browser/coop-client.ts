@@ -200,9 +200,10 @@ const makeSeat = <G extends CoopTypes>(pick: string): Seat<G> => ({
  *
  * Each host or join is one fiber, a seat, in a `FiberHandle`: it loads the content, opens the
  * room, runs the lobby, then the run, and its scope owns all of them. A new host or join
- * interrupts the seat before it, and leave interrupts it and waits for it to close. Only host,
- * join and leave choose the current seat, and a seat reports only while it is current, so a
- * seat being closed can't speak over the next.
+ * interrupts the seat before it, and leave interrupts it and waits for it to close. A seat's
+ * fiber ends no sooner than the one before it, so waiting for the last seat waits for them all.
+ * Only host, join and leave choose the current seat, and a seat reports only while it is
+ * current, so a seat being closed can't speak over the next.
  */
 export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
   game: CoopGame<G, LoadError>,
@@ -644,22 +645,24 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
 
     /**
      * One host or join, from the content load to the run's end. It opens its room at once, then
-     * waits for `previous`, the seat before it, to close before its lobby speaks.
+     * waits for `previous`, the seat before it, to close before it speaks: its lobby, or its
+     * failure. Its fiber ends no sooner than `previous`, so the wait covers every earlier seat.
      */
     const playSeat = (
       seat: Seat<G>,
       open: Effect.Effect<SignallingRoom, RoomError, Scope.Scope>,
       previous: Fiber.Fiber<unknown, unknown> | null
-    ): Effect.Effect<void> =>
-      Effect.gen(function* () {
+    ): Effect.Effect<void> => {
+      /** The seat before this one has closed: its room, links, session and ticker are gone. */
+      const closed: Effect.Effect<void> =
+        previous === null ? Effect.void : Effect.asVoid(Fiber.await(previous));
+      return Effect.gen(function* () {
         const content = yield* Effect.mapError(
           game.content,
           ({ message }) => new SeatError({ reason: "content", message })
         );
         const room = yield* open;
-        if (previous !== null) {
-          yield* Fiber.await(previous);
-        }
+        yield* closed;
         // The lobby's listeners end at the start; the room stays open for the run's links.
         const plan = yield* Effect.scoped(lobby(seat, room, content));
         yield* play(seat, room, content, plan);
@@ -667,15 +670,19 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
         // Closed before the failure is reported: the room, links, session and ticker are gone.
         Effect.scoped,
         Effect.catch((error) =>
-          Effect.sync(() => {
-            const { reason, message } = failureOf(error);
-            fail(seat, reason, message);
-          })
+          Effect.andThen(
+            closed,
+            Effect.sync(() => {
+              const { reason, message } = failureOf(error);
+              fail(seat, reason, message);
+            })
+          )
         ),
         // A bug: it ends the seat like a failure, and is logged. An interrupt (leave, or a new
         // seat) reports nothing.
         Effect.catchDefect((defect) =>
           Effect.logError("The co-op client failed", defect).pipe(
+            Effect.andThen(closed),
             Effect.andThen(
               Effect.sync(() =>
                 fail(
@@ -686,8 +693,12 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
               )
             )
           )
-        )
+        ),
+        // Also when interrupted while the seat before it still closes: the next seat, and
+        // leave, wait for this fiber alone.
+        Effect.ensuring(closed)
       );
+    };
 
     /** Makes a new seat this player's, then runs it, interrupting the seat before it. */
     const take = (

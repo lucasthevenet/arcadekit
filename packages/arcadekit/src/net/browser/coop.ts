@@ -191,7 +191,8 @@ export interface CoopDebug<State> {
 export interface CoopClient<G extends CoopTypes, LoadError = never> {
   /**
    * Hosts a room with lobby pick `pick`, after interrupting the seat before it. Returns at once:
-   * the lobby, the run and any failure are reported through `listen`.
+   * the lobby, the run and any failure are reported through `listen`, and none of them before
+   * every earlier seat has closed.
    */
   readonly host: (pick: string) => Effect.Effect<void>;
   /** Joins the room with join code `code`, with lobby pick `pick`, as `host` opens one. */
@@ -214,8 +215,8 @@ export interface CoopClient<G extends CoopTypes, LoadError = never> {
   readonly setPaused: (paused: boolean) => Effect.Effect<void>;
   /**
    * Leaves the lobby or the run, and returns once its room, links, session and ticker have
-   * closed. No event of that seat follows. The others see this player stop sending (ADR-0012's
-   * drop-out).
+   * closed, with those of any earlier seat still closing. No event of that seat follows. The
+   * others see this player stop sending (ADR-0012's drop-out).
    */
   readonly leave: Effect.Effect<void>;
   /**
