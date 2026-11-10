@@ -3,7 +3,6 @@ import type { AudioSystem } from "arcadekit/audio";
 import { Asset } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
 import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
-import { soloInput } from "arcadekit/runtime";
 import { Context } from "effect";
 
 import type { SurvivorsInput } from "../input";
@@ -49,7 +48,7 @@ export const survivorsInput = (
   surface: HTMLElement
 ): Game.InputSource<SurvivorsInput> => {
   const device = heroDevice(surface);
-  return { ...soloInput(device), dispose: device.dispose };
+  return { ...Game.soloInput(device), dispose: device.dispose };
 };
 
 /**

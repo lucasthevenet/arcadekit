@@ -1,12 +1,13 @@
-import { Effect, Exit, Fiber, Scope } from "effect";
+import { Effect, Exit, Fiber, Schema, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import * as Game from "../../game/index";
 import { AttachError, GameCrashed } from "../../runtime/browser";
 import type { GameView } from "../../runtime/browser";
 import { manualFrames } from "../../runtime/testing";
 import { testCoopGame, testPresentation } from "../testing/index";
 import type { TestCoop, TestState } from "../testing/index";
-import type { CoopClient, CoopPresentation } from "./coop";
+import type { CoopClient, CoopGame, CoopPresentation } from "./coop";
 import { makeCoopClient } from "./coop-client";
 
 // Attaching and detaching in Node, with no browser, no room and no seat: the input and the view
@@ -228,5 +229,31 @@ describe("attaching a co-op client", () => {
     const second = await Effect.runPromise(Effect.exit(coop.attach(element)));
     await Effect.runPromise(Fiber.interrupt(first));
     expect([Exit.hasDies(second), inputs]).toStrictEqual([true, 0]);
+  });
+});
+
+describe("making a co-op client", () => {
+  it("refuses a game whose simulation's step input is not a Game.PlayerInputs, where the client is made", () => {
+    class ByHand extends Game.Simulation("ByHand", {
+      input: Schema.Struct({
+        players: Schema.Array(
+          Schema.NullOr(Schema.Struct({ add: Schema.Number }))
+        ),
+        leaving: Schema.Array(Schema.Int),
+      }),
+      create: () => ({ total: 0 }),
+      step: (state, input) => {
+        state.total += input.players.length;
+      },
+    }) {}
+    // `CoopRules` names its types in a bag, so its types can't tell this simulation's step input
+    // from a players' input: making the client refuses it. (A lockstep session's options can.)
+    const game: CoopGame<TestCoop> = {
+      ...testCoopGame(),
+      simulation: ByHand as unknown as CoopGame<TestCoop>["simulation"],
+    };
+    expect(() => makeCoopClient(game, { rooms: noRooms })).toThrow(
+      'Simulation "ByHand" can\'t seat several players: its `input` was not declared with Game.PlayerInputs.'
+    );
   });
 });

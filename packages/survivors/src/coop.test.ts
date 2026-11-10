@@ -1,13 +1,15 @@
+import * as Game from "arcadekit/game";
 import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { survivorsCoopRules as rules } from "./coop";
-import { HeroLeft, LeveledUp, RunEnded } from "./events";
+import { HeroLeft, Hud, LeveledUp, RunEnded } from "./events";
 import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
-import type { HeroInput } from "./input";
+import { HeroInput } from "./input";
 import { GameContent } from "./schema";
-import type { World } from "./world";
+import { Survivors } from "./simulation";
+import { hudSample } from "./world";
 
 // Survivors' Co-op rules, each as a plain function, in Node: what the Co-op client asks of the
 // genre between steps. The client's own behaviour is tested in arcadekit/net/browser.
@@ -89,28 +91,45 @@ const content = Schema.decodeUnknownSync(GameContent)({
   waves: [{ from: 0, to: 90, enemy: "grunt", perSecond: 1 }],
 });
 
-const DT = 1 / 60;
 const still: HeroInput = { moveX: 0, moveZ: 0 };
 
-/** A two-player run of the rules' own simulation and config. */
-const run = (): World =>
-  rules.simulation.create(rules.config(content, ["burner", "bolter"]), 7);
-
-const step = (world: World, players: readonly (HeroInput | null)[]) => {
-  rules.simulation.step(world, { players, leaving: [] }, DT);
+/**
+ * A two-player run of the rules' own simulation and config, on a loop as a lockstep session
+ * steps it: its world, what it reported but its HUD samples, and a step with every player's
+ * input.
+ */
+const run = () => {
+  const loop = new Game.Loop(rules.simulation);
+  const reported: SurvivorsEvent[] = [];
+  loop.subscribe((event) => {
+    if (event._tag !== "Hud") {
+      reported.push(event);
+    }
+  });
+  loop.start(rules.config(content, ["burner", "bolter"]), 7, 0);
+  return {
+    world: loop.state!,
+    reported,
+    step: (
+      players: readonly (HeroInput | null)[],
+      leaving: readonly number[] = []
+    ) => {
+      loop.frame({ read: () => ({ players, leaving }) }, { steps: 1 }, 0);
+    },
+  };
 };
 
 /** A run whose team just leveled up: both heroes have offer 1 open. */
-const offering = (): World => {
-  const world = run();
-  world.pendingLevelUps = 1;
-  step(world, [still, still]);
-  return world;
+const offering = () => {
+  const played = run();
+  played.world.pendingLevelUps = 1;
+  played.step([still, still]);
+  return played;
 };
 
 describe("survivors' Co-op rules", () => {
   it("offers the content's hero ids as lobby picks, in order, and plays them by slot", () => {
-    const world = run();
+    const { world } = run();
     expect({
       picks: rules.picks(content),
       config: rules.config(content, ["burner", "bolter"]),
@@ -124,30 +143,37 @@ describe("survivors' Co-op rules", () => {
     });
   });
 
-  it("hashes with the world's hash and sends a HeroInput through the codec unchanged", () => {
-    const world = run();
+  it("runs the declared simulation, hashes with the world's hash, and sends a HeroInput unchanged", () => {
+    const { world } = run();
     const input: HeroInput = {
       moveX: 0.5,
       moveZ: -1,
       pick: { offer: 2, index: 1 },
       paused: true,
     };
+    // What a lockstep session sends for one player: the one-player Schema of the step input.
+    const player = Game.playerInputSchema(rules.simulation);
+    const sent = Schema.encodeSync(player)(input);
     expect({
+      simulation: rules.simulation === Survivors,
+      player: player === HeroInput,
       hash: rules.hash(world),
-      decoded: rules.codec.decode(rules.codec.encode(input)),
+      decoded: Schema.decodeUnknownResult(player)(sent),
     }).toStrictEqual({
+      simulation: true,
+      player: true,
       hash: hashWorld(world),
       decoded: Result.succeed(input),
     });
   });
 
   it("says a slot is choosing while its hero has an offer open, and no other", () => {
-    const world = offering();
+    const { world, step } = offering();
     const open = [0, 1, 2].map((slot) => rules.choosing(world, slot));
-    step(world, [{ ...still, pick: { offer: 1, index: 0 } }, still]);
+    step([{ ...still, pick: { offer: 1, index: 0 } }, still]);
     const afterOnePick = [0, 1, 2].map((slot) => rules.choosing(world, slot));
     expect({
-      before: [0, 1].map((slot) => rules.choosing(run(), slot)),
+      before: [0, 1].map((slot) => rules.choosing(run().world, slot)),
       open,
       afterOnePick,
     }).toStrictEqual({
@@ -158,10 +184,10 @@ describe("survivors' Co-op rules", () => {
   });
 
   it("holds a pick while its offer is open and settles it once applied", () => {
-    const world = offering();
+    const { world, step } = offering();
     const pick = { offer: 1, index: 0 };
     const held = rules.settled(pick, world, 0);
-    step(world, [{ ...still, pick }, still]);
+    step([{ ...still, pick }, still]);
     expect({
       held,
       applied: rules.settled(pick, world, 0),
@@ -171,7 +197,7 @@ describe("survivors' Co-op rules", () => {
   });
 
   it("settles a pick for another offer, and holds one for a slot with no hero", () => {
-    const world = offering();
+    const { world } = offering();
     expect({
       stale: rules.settled({ offer: 0, index: 0 }, world, 0),
       early: rules.settled({ offer: 2, index: 0 }, world, 0),
@@ -181,9 +207,9 @@ describe("survivors' Co-op rules", () => {
   });
 
   it("settles a pick whose hero's offer closed without it, when its player left", () => {
-    const world = offering();
+    const { world, step } = offering();
     const pick = { offer: 1, index: 0 };
-    rules.simulation.step(world, { players: [still, null], leaving: [1] }, DT);
+    step([still, null], [1]);
     expect([
       rules.settled(pick, world, 1),
       rules.choosing(world, 1),
@@ -215,18 +241,14 @@ describe("survivors' Co-op rules", () => {
   });
 
   it("tells the local player the HUD, its own hero's offer and its own summary", () => {
-    const world = offering();
-    const offers = rules.simulation
-      .drainEvents(world)
-      .filter((event) => event._tag === "LeveledUp");
-    const hud: SurvivorsEvent = rules.simulation.sample!.read(world);
+    const { world, reported, step } = offering();
+    const offers = reported.filter((event) => event._tag === "LeveledUp");
+    const hud = new Hud(hudSample(world));
     for (const hero of world.heroes) {
       hero.status = "down";
     }
-    step(world, [still, still]);
-    const ended = rules.simulation
-      .drainEvents(world)
-      .find((event) => event._tag === "RunEnded")!;
+    step([still, still]);
+    const ended = reported.find((event) => event._tag === "RunEnded")!;
     const names = ["Host", "Guest 2"];
     expect({
       hud: rules.localEvent(hud, 1, names),
@@ -246,25 +268,21 @@ describe("survivors' Co-op rules", () => {
     });
   });
 
-  it("keeps each run's events its own, though every run steps through the one simulation", () => {
-    // Lockstep peers in one process share the rules' simulation object, each with its own run.
+  it("keeps each run's events its own, though every run steps the one declared simulation", () => {
+    // Lockstep peers in one process share the rules' simulation class, each with its own run.
     const [a, b] = [run(), run()];
-    rules.simulation.step(a, { players: [], leaving: [1] }, DT);
-    expect({
-      other: rules.simulation.drainEvents(b),
-      own: rules.simulation.drainEvents(a),
-      drained: rules.simulation.drainEvents(a),
-    }).toStrictEqual({
+    a.step([], [1]);
+    b.step([still, still]);
+    expect({ other: b.reported, own: a.reported }).toStrictEqual({
       other: [],
       own: [new HeroLeft({ hero: 1 })],
-      drained: [],
     });
   });
 
   it("says the run ended on RunEnded and on no other event", () => {
-    const world = run();
+    const { world } = run();
     const events: SurvivorsEvent[] = [
-      rules.simulation.sample!.read(world),
+      new Hud(hudSample(world)),
       new LeveledUp({ hero: 0, offer: 1, choices: [] }),
       new HeroLeft({ hero: 1 }),
       new RunEnded({ summaries: [] }),

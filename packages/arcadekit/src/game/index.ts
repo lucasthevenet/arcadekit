@@ -28,6 +28,14 @@ export type {
   Payload,
 } from "./event";
 export { Loop } from "./loop";
+export {
+  type PlayerInputOf,
+  PlayerInputs,
+  type PlayerInputsSchema,
+  type PlayersSimulation,
+  playerInputSchema,
+  soloInput,
+} from "./player-inputs";
 export type {
   AnyRejection,
   RejectionClass,

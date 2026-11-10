@@ -4,6 +4,8 @@ status: accepted
 
 # The kit owns co-op from the signalling worker to the client; the screens stay in the app
 
+> Since [ADR-0020](0020-a-game-is-declared.md): a Co-op game's `simulation` is its declared `Game.Simulation` class, which the lockstep run steps through `Game.Loop`. The players' step input is `arcadekit/game`'s `PlayerInputs`, which the simulation declares with `Game.PlayerInputs(OnePlayersInput)`; `soloInput` is there too. The lockstep session takes the one-player Schema and the combining from that declaration, so `CoopRules` has no `codec` and no game passes `combinePlayerInputs`. The rest of this decision stands until the Co-op client has its own declaration.
+
 [ADR-0012](0012-delay-based-lockstep-over-a-host-star.md) put the lockstep session, its transports and the signalling protocol in the kit. Everything around them stayed in the survivors demo: the signalling worker, the lobby and its messages, the content hash, the worker-timed ticker, the frame loop that draws a run, and the client that ties them together (917 lines, with about as many of tests). A second game on the kit, grimbonk, needed all of it and copied it. The two copies then drifted: grimbonk's client validates lobby picks, takes its input from the game and sends four kinds of answer; the demo's did none of that. ADR-0012 already called the demo's `CoopClient` the home of this code "for now".
 
 Two games use the same code, which is what [ADR-0001](0001-kit-changes-need-two-genres.md) asks for before the kit takes something in.

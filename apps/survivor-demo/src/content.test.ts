@@ -8,7 +8,6 @@ import {
 import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
 import * as Game from "arcadekit/game";
-import { soloInput } from "arcadekit/runtime";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -26,7 +25,7 @@ const fileSource: ContentSource = (file) =>
 const content = await Effect.runPromise(SurvivorsContent.read(fileSource));
 
 /** Walks in a slow circle. */
-const circling = soloInput({
+const circling = Game.soloInput({
   read: (step) => ({
     moveX: Math.cos(step / 200),
     moveZ: Math.sin(step / 200),

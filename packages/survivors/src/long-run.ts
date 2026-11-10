@@ -1,5 +1,4 @@
 import * as Game from "arcadekit/game";
-import { soloInput } from "arcadekit/runtime";
 import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 
@@ -192,7 +191,7 @@ export interface LongRunResult {
  */
 export const longRun = (seed: number): LongRunResult => {
   const loop = new Game.Loop(Survivors);
-  const input = soloInput(wander());
+  const input = Game.soloInput(wander());
   loop.start({ content, heroIds: ["bolter"] }, seed, 0);
   const world = loop.state!;
   const traces = new Uint32Array(LONG_RUN_STEPS);

@@ -96,6 +96,11 @@ const tagOf = (command: unknown): string =>
  * - then the events those steps reported;
  * - then a sample, if one is due.
  *
+ * The source's `read(step)` may call `send`: a command sent there is applied in that same step,
+ * before `step`, after the commands that were already waiting. That is how a host that knows
+ * which step a command belongs to gives it to the rules at exactly that step: a script that
+ * replays a run, or a lockstep session, whose source reads a step every peer has agreed on.
+ *
  * It needs no DOM and reads no clock: the caller passes the time, and decides when a frame runs
  * and how much it steps. A listener must not call `frame`, `start`, `stop` or `send` while it is
  * being called: it runs in the middle of one of them.
@@ -179,8 +184,8 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
 
   /**
    * Sends a command to the current run. The rules get it at the start of the next step, after
-   * the commands sent before it. `player` is the sender's slot: 0 unless several players share
-   * the run.
+   * the commands sent before it: sent from the input source's `read(step)`, that is the step
+   * being read. `player` is the sender's slot: 0 unless several players share the run.
    *
    * `settled` is called once with how it ended: `undefined` when its `apply` handler took it,
    * the rejection the handler refused it with, or a `CommandDropped` if the rules gave no

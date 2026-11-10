@@ -125,10 +125,12 @@ const ownRunnerProperties = [
 const TEST_HELPERS = ["**/*.test.ts", "**/testing/**", "**/test-*.ts"];
 
 // Which entry of the arcadekit package may import which (ADR-0018). This is the graph the nine
-// packages had when they were separate: core and input stand alone, runtime steps with core's
-// clock, net steps a GameLoop and seeds its test network with core's Rng, and foldkit's tests
-// drive a real engine from runtime (its own code only names the engine's shape). Adding an
-// arrow here is a design decision: say why in the PR.
+// packages had when they were separate, plus one arrow: core and input stand alone, runtime steps
+// with core's clock, net seeds its test network with core's Rng, and foldkit's tests drive a real
+// engine from runtime (its own code only names the engine's shape). The arrow added since is net
+// to game: a lockstep session is a host of a declared simulation, so it steps a `Game.Loop` and
+// reads one player's input Schema from the simulation's `Game.PlayerInputs` (ADR-0020). Adding
+// an arrow here is a design decision: say why in the PR.
 const KIT_SRC = "packages/arcadekit/src";
 const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   core: [],
@@ -139,7 +141,7 @@ const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   "render-three": [],
   runtime: ["core"],
   game: ["core", "runtime"],
-  net: ["core", "runtime"],
+  net: ["core", "runtime", "game"],
   foldkit: ["runtime"],
 };
 
@@ -207,13 +209,6 @@ export default defineConfig({
       },
     },
     {
-      // What is still on the older contract (ADR-0020): survivors' Co-op rules, whose lockstep
-      // run steps a `GameSimulation`. This list only gets shorter.
-      files: ["packages/survivors/src/coop.ts"],
-      jsPlugins: ["./tools/lint/declaration.ts"],
-      rules: { "declaration/older-contract": "off" },
-    },
-    {
       // The kit's own builders. The one other function of the kit that returns a class makes
       // the Durable Object that Cloudflare runs.
       files: ["packages/arcadekit/src/**/*.ts"],
@@ -269,7 +264,6 @@ export default defineConfig({
         "packages/arcadekit/src/core/**/*.ts",
         "packages/arcadekit/src/runtime/loop.ts",
         "packages/arcadekit/src/runtime/simulation.ts",
-        "packages/arcadekit/src/runtime/player-inputs.ts",
         "packages/arcadekit/src/game/**/*.ts",
         "packages/arcadekit/src/net/lockstep.ts",
         "packages/arcadekit/src/net/codec.ts",

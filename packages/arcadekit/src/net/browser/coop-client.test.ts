@@ -5,7 +5,6 @@ import {
   Effect,
   Exit,
   Fiber,
-  Result,
   Scheduler,
   Scope,
   Stream,
@@ -211,6 +210,61 @@ const watched = (content: Partial<TestContent>) => {
     },
   };
   return { game: watching, sent };
+};
+
+/** One player's input in a lockstep message, as a peer on other code would encode it. */
+const NOT_AN_INPUT = "not an input";
+
+/** A lockstep message of a run, as far as these tests forge one. */
+interface ForgedMessage {
+  readonly kind: string;
+  /** A peer's own inputs, by step. */
+  inputs?: unknown[];
+  /** The host's confirmed steps: each a list of [player, input] pairs, then the removed players. */
+  steps?: [[string, unknown][], string[]][];
+}
+
+/** A lockstep message's text after `change` has had its way with the message. */
+const forged =
+  (change: ((message: ForgedMessage) => void) | undefined) =>
+  (text: string): string => {
+    const message = JSON.parse(text) as ForgedMessage;
+    change?.(message);
+    return JSON.stringify(message);
+  };
+
+/**
+ * `rooms`, where a guest's lockstep channel passes what it sends through `sent`, and what it
+ * hears through `heard`: the raw messages, forged as they cross.
+ */
+const forging = (
+  rooms: CoopRooms,
+  forge: {
+    readonly sent?: (message: ForgedMessage) => void;
+    readonly heard?: (message: ForgedMessage) => void;
+  }
+): CoopRooms => {
+  const outgoing = forged(forge.sent);
+  const incoming = forged(forge.heard);
+  return {
+    host: rooms.host,
+    join: (code) =>
+      rooms.join(code).pipe(
+        Effect.map((room) => ({
+          ...room,
+          links: () =>
+            room.links().map((link) => ({
+              ...link,
+              lockstep: {
+                ...link.lockstep,
+                send: (text) => link.lockstep.send(outgoing(text)),
+                listen: (handler) =>
+                  link.lockstep.listen((text) => handler(incoming(text))),
+              },
+            })),
+        }))
+      ),
+  };
 };
 
 /** A guest's room whose host says `said` on its link, then starts. */
@@ -1199,23 +1253,38 @@ describe("why a seat failed", () => {
   });
 
   it("fails a guest whose input the host can't read, and one that can't read the host's", async () => {
-    const base = testCoopGame();
+    // Every input the guest sends is forged on its way to the host.
     const hubA = fakeCoopRooms();
-    const garbled = await lobbyOfTwo(hubA, {
-      guest: {
-        ...base,
-        codec: { ...base.codec, encode: () => "not an input" },
-      },
-    });
+    const garbled = await lobbyOfTwo(
+      hubA,
+      {},
+      {
+        rooms: forging(hubA.rooms, {
+          sent: (message) => {
+            message.inputs?.fill(NOT_AN_INPUT);
+          },
+        }),
+      }
+    );
     await run(garbled.host.coop.start);
     await vi.advanceTimersByTimeAsync(1000);
+    // Every input in the steps the host confirms is forged on its way to the guest.
     const hubB = fakeCoopRooms();
-    const deaf = await lobbyOfTwo(hubB, {
-      guest: {
-        ...base,
-        codec: { ...base.codec, decode: () => Result.fail("not an input") },
-      },
-    });
+    const deaf = await lobbyOfTwo(
+      hubB,
+      {},
+      {
+        rooms: forging(hubB.rooms, {
+          heard: (message) => {
+            for (const [inputs] of message.steps ?? []) {
+              for (const input of inputs) {
+                input[1] = NOT_AN_INPUT;
+              }
+            }
+          },
+        }),
+      }
+    );
     await run(deaf.host.coop.start);
     await vi.advanceTimersByTimeAsync(1000);
     expect([

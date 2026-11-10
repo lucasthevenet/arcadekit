@@ -5,7 +5,6 @@ import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
-import { soloInput } from "arcadekit/runtime";
 import { manualFrames } from "arcadekit/runtime/testing";
 import { Effect, Fiber, Layer, Schema } from "effect";
 import type { Scope } from "effect";
@@ -43,7 +42,7 @@ class HeadlessEngine extends Game.Engine("HeadlessEngine", {
   simulation: Survivors,
   view: () => ({ render: () => {}, dispose: () => {} }),
   input: () => ({
-    ...soloInput({
+    ...Game.soloInput({
       read: (step) => ({
         moveX: Math.cos(step / 200),
         moveZ: Math.sin(step / 200),

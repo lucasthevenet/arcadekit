@@ -78,7 +78,7 @@ export class RunEnded extends Game.Event("RunEnded", {
 
 /**
  * Everything a survivors run reports to the outside: its events and its sample. It is
- * `Game.EventOf<typeof Survivors>` spelled out for the Co-op rules, which are still on the older
- * contract, and goes when they move: a declared host reads the type from the class.
+ * `Game.EventOf<typeof Survivors>` spelled out for the Co-op rules' bag of types (`CoopTypes`),
+ * and goes with it: a declared host reads the type from the class.
  */
 export type SurvivorsEvent = Hud | LeveledUp | HeroLeft | RunEnded;

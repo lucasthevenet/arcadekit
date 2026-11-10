@@ -1,15 +1,10 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { GameSimulation, StepInput } from "../runtime/index";
-import { jsonCodec, schemaCodec } from "./codec";
-import type { InputCodec } from "./codec";
+import * as Game from "../game/index";
+import type { StepInput } from "../runtime/index";
 import { hostLockstep, joinLockstep } from "./lockstep";
-import type {
-  ConfirmedStep,
-  LockstepOptions,
-  LockstepSession,
-} from "./lockstep";
+import type { LockstepOptions, LockstepSession } from "./lockstep";
 import { createMemoryNetwork } from "./memory-network";
 import type { MemoryNetwork, MemoryNetworkOptions } from "./memory-network";
 import { hasher, runNetwork } from "./test-harness";
@@ -24,30 +19,66 @@ interface Tiny {
   readonly history: number[];
 }
 
-interface Move {
-  readonly n: number;
-}
+/** One player's input. Any number: a NaN passes it and is lost on the wire, as a broken device's would be. */
+const Move = Schema.Struct({ n: Schema.Number });
+type Move = typeof Move.Type;
 
-type TinyInput = ConfirmedStep<Move>;
+const TinyInput = Game.PlayerInputs(Move);
+type TinyInput = typeof TinyInput.Type;
 
 const tinyStep = (state: Tiny, input: TinyInput) => {
   const h = hasher();
   h.add(state.digest);
-  for (const { player, input: move } of input.inputs) {
-    h.add(player.length);
-    h.add(player.codePointAt(player.length - 1)!);
-    h.add(move.n);
+  for (let slot = 0; slot < input.players.length; slot++) {
+    const move = input.players[slot];
+    // A removed player has no input from the step it leaves at.
+    if (move !== null && move !== undefined) {
+      h.add(slot);
+      h.add(move.n);
+    }
   }
-  h.add(input.removed.length);
+  h.add(input.leaving.length);
   state.digest = h.value;
   state.history.push(state.digest);
 };
 
-const tinySimulation: GameSimulation<null, Tiny, TinyInput, never> = {
-  create: (_config, seed) => ({ digest: seed, history: [] }),
+const createTiny = (
+  _config: null,
+  { seed }: { readonly seed: number }
+): Tiny => ({
+  digest: seed,
+  history: [],
+});
+
+class TinyGame extends Game.Simulation("TinyGame", {
+  input: TinyInput,
+  create: createTiny,
   step: tinyStep,
-  drainEvents: () => [],
-};
+}) {}
+
+const DIVERGE_AT = 50;
+
+/** The same game where a last bit differs after step DIVERGE_AT, as on an engine that rounds differently. */
+class DivergingGame extends Game.Simulation("DivergingGame", {
+  input: TinyInput,
+  create: createTiny,
+  step: (state, input) => {
+    tinyStep(state, input);
+    if (state.history.length === DIVERGE_AT) {
+      state.digest += 1;
+    }
+  },
+}) {}
+
+/** The game with its step input as a struct written by hand: no one-player Schema to send. */
+class ByHandGame extends Game.Simulation("ByHandGame", {
+  input: Schema.Struct({
+    players: Schema.Array(Schema.NullOr(Move)),
+    leaving: Schema.Array(Schema.Int),
+  }),
+  create: createTiny,
+  step: tinyStep,
+}) {}
 
 /** Each player's scripted input for a step: different per player, the same on every run. */
 const script = (player: string, step: number): Move => ({
@@ -64,14 +95,11 @@ const expectedHistory = (
   seed: number,
   steps: number
 ) => {
-  const state = tinySimulation.create(null, seed);
+  const state = createTiny(null, { seed });
   for (let step = 0; step < steps; step++) {
     tinyStep(state, {
-      inputs: players.map((player) => ({
-        player,
-        input: script(player, step),
-      })),
-      removed: [],
+      players: players.map((player) => script(player, step)),
+      leaving: [],
     });
   }
   return state.history;
@@ -79,23 +107,36 @@ const expectedHistory = (
 
 const HASH_EVERY = 10;
 
+type TinyOptions = LockstepOptions<
+  null,
+  Tiny,
+  TinyInput,
+  never,
+  never,
+  unknown
+>;
+
+/** What a peer's options differ by. Given its transport on the network, to wrap it. */
+type Overrides = (id: string, transport: Transport) => Partial<TinyOptions>;
+
 const options = (
   network: MemoryNetwork,
   id: string,
-  overrides: Partial<LockstepOptions<null, Tiny, TinyInput, never, Move>> = {}
-): LockstepOptions<null, Tiny, TinyInput, never, Move> => ({
-  simulation: tinySimulation,
-  config: null,
-  contentHash: "content-1",
-  transport: network.connect(id),
-  local: scripted(id),
-  codec: jsonCodec<Move>(),
-  combine: (step) => step,
-  hash: (state) => state.digest,
-  inputDelay: 3,
-  hashEvery: HASH_EVERY,
-  ...overrides,
-});
+  overrides: Overrides = () => ({})
+): TinyOptions => {
+  const transport = network.connect(id);
+  return {
+    simulation: TinyGame,
+    config: null,
+    contentHash: "content-1",
+    transport,
+    local: scripted(id),
+    hash: (state) => state.digest,
+    inputDelay: 3,
+    hashEvery: HASH_EVERY,
+    ...overrides(id, transport),
+  };
+};
 
 const SEED = 42;
 
@@ -103,17 +144,22 @@ const SEED = 42;
 const startRun = (
   networkOptions: MemoryNetworkOptions,
   peers: readonly string[],
-  overrides: (
-    id: string
-  ) => Partial<LockstepOptions<null, Tiny, TinyInput, never, Move>> = () => ({})
+  overrides: Overrides = () => ({})
 ) => {
   const network = createMemoryNetwork(networkOptions);
   const host = hostLockstep(
-    { ...options(network, "host", overrides("host")), peers, seed: SEED },
+    { ...options(network, "host", overrides), peers, seed: SEED },
     0
   );
   const joined = peers.map((id) =>
-    joinLockstep({ ...options(network, id, overrides(id)), host: "host" }, 0)
+    joinLockstep(
+      {
+        ...options(network, id, overrides),
+        host: "host",
+        players: ["host", ...peers],
+      },
+      0
+    )
   );
   const sessions = [host, ...joined];
   const ticked = sessions.map((session, i) => ({
@@ -133,12 +179,38 @@ const BAD_NETWORK: MemoryNetworkOptions = {
   loss: 0.15,
 };
 
+/** Five seconds of a three-player run in which p2 plays the game that diverges. */
+const diverged = () => {
+  const run = startRun(BAD_NETWORK, ["p1", "p2"], (id) =>
+    id === "p2" ? { simulation: DivergingGame } : {}
+  );
+  runNetwork(run.network, run.ticked, 0, 5000);
+  return run;
+};
+
 /** A three-player run in which p2 goes silent after 1 s. */
 const silenced = () => {
   const run = startRun(BAD_NETWORK, ["p1", "p2"]);
   runNetwork(run.network, run.ticked, 0, 1000);
   run.network.cutOff("p2", true);
   return run;
+};
+
+/** `transport`, counting who listens to it. */
+const counted = (transport: Transport) => {
+  let listening = 0;
+  const counting: Transport = {
+    ...transport,
+    listen: (handler) => {
+      listening += 1;
+      const unlisten = transport.listen(handler);
+      return () => {
+        listening -= 1;
+        unlisten();
+      };
+    },
+  };
+  return { transport: counting, listening: () => listening };
 };
 
 /** `transport`, sending `junk` before each of its messages. */
@@ -191,11 +263,20 @@ const runWithP1 = (wrap: (transport: Transport) => Transport) => {
     0
   );
   const p1Options = options(network, "p1");
+  const players = ["host", "p1", "p2"];
   const p1 = joinLockstep(
-    { ...p1Options, transport: wrap(p1Options.transport), host: "host" },
+    {
+      ...p1Options,
+      transport: wrap(p1Options.transport),
+      host: "host",
+      players,
+    },
     0
   );
-  const p2 = joinLockstep({ ...options(network, "p2"), host: "host" }, 0);
+  const p2 = joinLockstep(
+    { ...options(network, "p2"), host: "host", players },
+    0
+  );
   const sessions = [host, p1, p2];
   runNetwork(
     network,
@@ -244,14 +325,14 @@ describe("lockstep session", () => {
     let host: LockstepSession<Tiny, never> | null = null;
     host = hostLockstep(
       {
-        ...options(network, "host", {
+        ...options(network, "host", () => ({
           local: {
             read: (step) => {
               reads.push([step, host?.stepIndex ?? 0]);
               return script("host", step);
             },
           },
-        }),
+        })),
         peers: [],
         seed: SEED,
       },
@@ -266,28 +347,6 @@ describe("lockstep session", () => {
   });
 
   describe("when one peer's state diverges", () => {
-    const DIVERGE_AT = 50;
-    const diverged = () => {
-      const run = startRun(BAD_NETWORK, ["p1", "p2"], (id) =>
-        id === "p2"
-          ? {
-              simulation: {
-                ...tinySimulation,
-                step: (state, input) => {
-                  tinyStep(state, input);
-                  // A last-bit difference, as an engine that rounds differently would make.
-                  if (state.history.length === DIVERGE_AT) {
-                    state.digest += 1;
-                  }
-                },
-              },
-            }
-          : {}
-      );
-      runNetwork(run.network, run.ticked, 0, 5000);
-      return run;
-    };
-
     it("stops every peer with the same desync, within hashEvery steps", () => {
       const run = diverged();
       const reasons = run.sessions.map((session) => session.error?.reason);
@@ -478,22 +537,59 @@ describe("lockstep session", () => {
   });
 
   describe("when what arrives doesn't decode", () => {
-    const moveCodec: InputCodec<Move> = schemaCodec(
-      Schema.Struct({ n: Schema.Finite })
-    );
     const BAD_AT = 40;
-    /** Scripted input, but at step BAD_AT a value that isn't a Move. */
-    const badAt = (player: string): StepInput<Move> => ({
-      read: (step) =>
-        step === BAD_AT
-          ? ({ n: "x" } as unknown as Move)
-          : script(player, step),
+    /** What a peer on other code would send for a Move. */
+    const NOT_A_MOVE = { n: "x" };
+
+    /** `transport`, sending step `badAt`'s input as a value that isn't a Move, in every `inputs` message that carries it. */
+    const garblesItsInput = (
+      transport: Transport,
+      badAt: number = BAD_AT
+    ): Transport => ({
+      self: transport.self,
+      listen: transport.listen,
+      send: (to, text) => {
+        const message = JSON.parse(text) as {
+          kind: string;
+          from: number;
+          inputs?: unknown[];
+        };
+        if (message.kind === "inputs" && message.inputs !== undefined) {
+          const at = badAt - message.from;
+          if (at >= 0 && at < message.inputs.length) {
+            message.inputs[at] = NOT_A_MOVE;
+          }
+        }
+        transport.send(to, JSON.stringify(message));
+      },
+    });
+
+    /** A host's `transport`, sending its own input of step BAD_AT as a value that isn't a Move, in every `steps` message that carries it. */
+    const garblesItsSteps = (transport: Transport): Transport => ({
+      self: transport.self,
+      listen: transport.listen,
+      send: (to, text) => {
+        const message = JSON.parse(text) as {
+          kind: string;
+          from: number;
+          steps?: [[string, unknown][], string[]][];
+        };
+        if (message.kind === "steps" && message.steps !== undefined) {
+          const own = message.steps[BAD_AT - message.from]?.[0].find(
+            ([player]) => player === transport.self
+          );
+          if (own !== undefined) {
+            own[1] = NOT_A_MOVE;
+          }
+        }
+        transport.send(to, JSON.stringify(message));
+      },
     });
 
     it("has the host remove a peer whose input doesn't decode, and the others run on", () => {
-      // p1 sends its bad input as is (jsonCodec); the host and p2 check every input.
-      const run = startRun(BAD_NETWORK, ["p1", "p2"], (id) =>
-        id === "p1" ? { local: badAt(id) } : { codec: moveCodec }
+      // What p1 sends for step BAD_AT is forged on its way out; the host checks every input.
+      const run = startRun(BAD_NETWORK, ["p1", "p2"], (id, transport) =>
+        id === "p1" ? { transport: garblesItsInput(transport) } : {}
       );
       runNetwork(run.network, run.ticked, 0, 5000);
       const [p1, p2] = run.joined;
@@ -515,19 +611,58 @@ describe("lockstep session", () => {
       );
     });
 
+    it("keeps a guest that first hears the start after a player was removed at its slot", () => {
+      // p1's first input is forged, so the host removes it at step 0. p2 hears nothing until
+      // then: the first start message that reaches it lists the host and itself, no p1.
+      const run = startRun(
+        { seed: 3, latencyMs: 20 },
+        ["p1", "p2"],
+        (id, transport) =>
+          id === "p1" ? { transport: garblesItsInput(transport, 0) } : {}
+      );
+      const [p1, p2] = run.joined;
+      run.network.cutOff("p2", true);
+      runNetwork(run.network, run.ticked, 0, 299);
+      expect([p1!.error?.reason.kind, p2!.status]).toStrictEqual([
+        "removed",
+        "joining",
+      ]);
+      run.network.cutOff("p2", false);
+      runNetwork(run.network, run.ticked, 300, 3000);
+      expect([run.host.error, p2!.error]).toStrictEqual([null, null]);
+      expect([run.host.players, p2!.players]).toStrictEqual([
+        ["host", "p2"],
+        ["host", "p2"],
+      ]);
+      expect(p1!.error?.reason).toStrictEqual({
+        kind: "removed",
+        peer: "p1",
+        step: 0,
+        why: "badInput",
+      });
+      // The run both play: p2 is the third player for the whole run, and p1 leaves at step 0.
+      const expected = createTiny(null, { seed: SEED });
+      for (let step = 0; step < 100; step++) {
+        tinyStep(expected, {
+          players: [script("host", step), null, script("p2", step)],
+          leaving: step === 0 ? [1] : [],
+        });
+      }
+      for (const session of [run.host, p2!]) {
+        expect(session.stepIndex).toBeGreaterThan(100);
+        expect(history(session).slice(0, 100)).toStrictEqual(expected.history);
+      }
+    });
+
     it("never throws out of the host's tick for a forged input", () => {
       const network = createMemoryNetwork({ seed: 1 });
       const host = hostLockstep(
-        {
-          ...options(network, "host", { codec: moveCodec }),
-          peers: ["evil"],
-          seed: SEED,
-        },
+        { ...options(network, "host"), peers: ["evil"], seed: SEED },
         0
       );
       const evil = network.connect("evil");
       const inputs = Array.from({ length: 64 }, (_, i) =>
-        i === 20 ? { n: "x" } : { n: 1 }
+        i === 20 ? NOT_A_MOVE : { n: 1 }
       );
       const ticked = [{ session: host, everyMs: 4 }];
       for (let now = 0; now <= 1000; now += 5) {
@@ -550,11 +685,12 @@ describe("lockstep session", () => {
     });
 
     it("stops a peer with badInput when the host's steps don't decode on it", () => {
-      // The host passes its own bad input (jsonCodec); p1 checks every input.
+      // The host's own input for step BAD_AT is forged on its way out; p1 checks every input.
       const run = startRun(
         { seed: 1, latencyMs: 20, jitterMs: 5 },
         ["p1"],
-        (id) => (id === "host" ? { local: badAt(id) } : { codec: moveCodec })
+        (id, transport) =>
+          id === "host" ? { transport: garblesItsSteps(transport) } : {}
       );
       runNetwork(run.network, run.ticked, 0, 2000);
       const p1 = run.joined[0]!;
@@ -573,14 +709,14 @@ describe("lockstep session", () => {
       const network = createMemoryNetwork({ seed: 1 });
       const host = hostLockstep(
         {
-          ...options(network, "host", {
-            local: badAt("host"),
-            // Encodes without checking, so only the decode catches it.
-            codec: {
-              encode: jsonCodec<Move>().encode,
-              decode: moveCodec.decode,
+          ...options(network, "host", (id) => ({
+            // A NaN is a number, so it encodes; JSON carries it as null, which is no Move. The
+            // host steps on its own input as the peers would decode it, so only it can tell.
+            local: {
+              read: (step) =>
+                step === BAD_AT ? { n: Number.NaN } : script(id, step),
             },
-          }),
+          })),
           peers: [],
           seed: SEED,
         },
@@ -647,6 +783,7 @@ describe("lockstep session", () => {
             ...p1Options,
             transport: junkFirst(p1Options.transport, junk),
             host: "host",
+            players: ["host", "p1"],
           },
           0
         );
@@ -695,6 +832,51 @@ describe("lockstep session", () => {
         }
       ).host;
       expect(pending.get("evil")!.size).toBe(0);
+    });
+  });
+
+  describe("when the simulation's step input is not a Game.PlayerInputs", () => {
+    const NOT_PLAYER_INPUTS =
+      'Simulation "ByHandGame" can\'t seat several players: its `input` was not declared with Game.PlayerInputs.';
+
+    it("refuses to host it, by type and by throwing, with nothing left listening", () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const { transport, listening } = counted(network.connect("host"));
+      const { simulation: _, ...rest } = options(network, "other");
+      expect(() =>
+        hostLockstep(
+          {
+            ...rest,
+            transport,
+            // @ts-expect-error -- The error says to declare the simulation's `input` with Game.PlayerInputs(OnePlayersInput).
+            simulation: ByHandGame,
+            peers: ["p1"],
+            seed: SEED,
+          },
+          0
+        )
+      ).toThrow(NOT_PLAYER_INPUTS);
+      expect(listening()).toBe(0);
+    });
+
+    it("refuses to join with it, by type and by throwing, with nothing left listening", () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const { transport, listening } = counted(network.connect("p1"));
+      const { simulation: _, ...rest } = options(network, "other");
+      expect(() =>
+        joinLockstep(
+          {
+            ...rest,
+            transport,
+            // @ts-expect-error -- The error says to declare the simulation's `input` with Game.PlayerInputs(OnePlayersInput).
+            simulation: ByHandGame,
+            host: "host",
+            players: ["host", "p1"],
+          },
+          0
+        )
+      ).toThrow(NOT_PLAYER_INPUTS);
+      expect(listening()).toBe(0);
     });
   });
 

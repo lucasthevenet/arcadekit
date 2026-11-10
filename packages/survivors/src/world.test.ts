@@ -1,12 +1,10 @@
 import * as Game from "arcadekit/game";
 import * as Scenario from "arcadekit/game/scenario";
-import { GameLoop, soloInput } from "arcadekit/runtime";
 import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { ChooseUpgrade, NoSuchChoice, OfferClosed } from "./commands";
-import { survivorsCoopRules } from "./coop";
 import { HeroLeft, Hud, LeveledUp, RunEnded } from "./events";
 import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
@@ -14,7 +12,7 @@ import type { HeroInput, SurvivorsInput } from "./input";
 import { GameContent } from "./schema";
 import { Survivors } from "./simulation";
 import { choose, createWorld, hudSample, step } from "./world";
-import type { SurvivorsConfig, World } from "./world";
+import type { World } from "./world";
 
 // Small, self-contained content so these tests don't depend on any particular game.
 const content = Schema.decodeUnknownSync(GameContent)({
@@ -201,41 +199,19 @@ const levelUpForTwo = (context: Game.StepContext<SurvivorsEvent> = STEP) => {
   return world;
 };
 
-/** What `Game.Loop` and the older `GameLoop` both have, so one script plays on either. */
-interface PlayingLoop {
-  readonly state: World | null;
-  readonly start: (
-    config: SurvivorsConfig,
-    seed: number,
-    nowMs: number
-  ) => void;
-  readonly subscribe: (listener: (event: SurvivorsEvent) => void) => () => void;
-  readonly frame: (
-    input: StepInput<SurvivorsInput>,
-    budget: { readonly steps: number },
-    nowMs: number
-  ) => number;
-}
-
 /**
- * Plays a minute of one sturdy hero's run on `loop`, a step a frame: it walks a slow circle and
- * takes the second upgrade of every offer. `pick` makes that pick before the frame whose step
- * applies it; without one the pick rides the step input, as a lockstep player's does. Returns
- * the state's hash after every step, and what the run reported, in order.
+ * Plays a minute of one sturdy hero's run on a `Game.Loop`, a step a frame: it walks a slow
+ * circle and takes the second upgrade of every offer. Its pick is the `ChooseUpgrade` command,
+ * sent before the frame whose step applies it, or rides the step input, as a lockstep player's
+ * still does. Returns the state's hash after every step, and the level reached.
  */
-const pickingRun = (
-  loop: PlayingLoop,
-  pick?: (world: World, index: number) => void
-) => {
+const pickingRun = (pick: "command" | "input") => {
   const sturdy = Schema.decodeUnknownSync(GameContent)({
     ...content,
     heroes: [{ ...content.heroes[0], maxHp: 1e9 }],
   });
+  const loop = new Game.Loop(Survivors);
   const hashes: number[] = [];
-  const events: SurvivorsEvent[] = [];
-  loop.subscribe((event) => {
-    events.push(event);
-  });
   loop.start({ content: sturdy, heroIds: ["bolter"] }, 77, 0);
   const world = loop.state!;
   const move: { -readonly [K in keyof HeroInput]: HeroInput[K] } = {
@@ -247,7 +223,7 @@ const pickingRun = (
       move.moveX = Math.cos(i / 150);
       move.moveZ = Math.sin(i / 150);
       const { offer } = world.heroes[0]!;
-      if (pick === undefined && offer) {
+      if (pick === "input" && offer) {
         move.pick = {
           offer: world.offerSeq,
           index: Math.min(1, offer.length - 1),
@@ -258,25 +234,22 @@ const pickingRun = (
       return move;
     },
   };
-  const input = soloInput(script);
+  const input = Game.soloInput(script);
   for (let i = 0; i < 3600; i++) {
     const nowMs = (i * 1000) / 60;
     const { offer } = world.heroes[0]!;
-    if (pick !== undefined && offer) {
-      pick(world, Math.min(1, offer.length - 1));
+    if (pick === "command" && offer) {
+      loop.send(
+        new ChooseUpgrade({
+          offer: world.offerSeq,
+          index: Math.min(1, offer.length - 1),
+        })
+      );
     }
     loop.frame(input, { steps: 1 }, nowMs);
     hashes.push(hashWorld(world));
   }
-  return { hashes, events, level: world.level };
-};
-
-/** The picking run on the declared loop, each pick a `ChooseUpgrade`. */
-const commandedRun = () => {
-  const loop = new Game.Loop(Survivors);
-  return pickingRun(loop, (world, index) => {
-    loop.send(new ChooseUpgrade({ offer: world.offerSeq, index }));
-  });
+  return { hashes, level: world.level };
 };
 
 /** Why `input` fails to decode as content, or "" if it decodes. */
@@ -390,8 +363,8 @@ describe("simulation", () => {
   it("plays the same run whether a pick is a command or rides the step input", () => {
     // One player picks with `ChooseUpgrade`; a lockstep player's pick still rides its input.
     // Either way it is applied before the rules of the same step, so the run is the same.
-    const commanded = commandedRun();
-    const riding = pickingRun(new Game.Loop(Survivors));
+    const commanded = pickingRun("command");
+    const riding = pickingRun("input");
     expect(commanded.level).toBeGreaterThan(3);
     expect(riding.hashes).toStrictEqual(commanded.hashes);
   });
@@ -705,51 +678,6 @@ describe("an upgrade pick", () => {
         expect(hashWorld(world)).toBe(before);
       })
     );
-  });
-});
-
-// The Co-op rules' simulation is what a lockstep run steps: co-op is still on the older contract,
-// and a lockstep player's pick rides its step input. Every recorded hash is of `Survivors`, so
-// these hold the one to the other. They go when co-op has moved (ADR-0020).
-describe("the Co-op rules' simulation", () => {
-  it("plays the declared simulation's run, step for step, a pick riding the step input", () => {
-    const commanded = commandedRun();
-    const riding = pickingRun(new GameLoop(survivorsCoopRules.simulation));
-    expect(riding.hashes).toStrictEqual(commanded.hashes);
-    expect(riding.events).toStrictEqual(commanded.events);
-  });
-
-  it("reports RunEnded and then the last HUD in the frame that ends a run", () => {
-    const loop = new GameLoop(survivorsCoopRules.simulation);
-    let heard: SurvivorsEvent[] = [];
-    loop.subscribe((event) => {
-      heard.push(event);
-    });
-    loop.start({ content: brief, heroIds: ["burner"] }, 1, 0);
-    const world = loop.state!;
-    // Four frames in 30 ms: the HUD's 100 ms have not passed, so only the run's end has it read.
-    for (let frame = 0; frame < 4; frame++) {
-      heard = [];
-      loop.frame({ read: () => STILL }, { steps: 1 }, frame * 10);
-    }
-    const time = clockAfter(4);
-    expect([world.status, world.time]).toStrictEqual(["won", time]);
-    expect(heard).toStrictEqual([
-      new RunEnded({
-        summaries: [
-          {
-            won: true,
-            heroId: "burner",
-            heroName: "Burner",
-            time,
-            kills: 0,
-            level: 1,
-          },
-        ],
-      }),
-      // Nothing changes a run that is over, so this is the HUD as its last step left it.
-      new Hud(hudSample(world)),
-    ]);
   });
 });
 

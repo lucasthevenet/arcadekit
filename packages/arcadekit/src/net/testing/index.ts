@@ -10,12 +10,16 @@ export {
 } from "./fake-rooms";
 export { manualTicker } from "./manual-ticker";
 export {
+  OfferOpened,
+  RunEnded,
+  Score,
   type TestAnswer,
   type TestConfig,
   type TestContent,
   type TestCoop,
   type TestCoopGameOptions,
   type TestEvent,
+  TestGame,
   type TestInput,
   type TestLocalEvent,
   type TestState,
@@ -24,5 +28,4 @@ export {
   testCoopGame,
   testCoopRules,
   testPresentation,
-  testSimulation,
 } from "./test-game";

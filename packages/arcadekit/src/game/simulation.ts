@@ -111,8 +111,9 @@ export interface Definition<
   /** Step length in seconds. Defaults to 1/60. */
   readonly stepSeconds?: number;
   /**
-   * One step's worth of input, as a Schema: what a device holds for the step, what a replay
-   * records and what crosses the network in lockstep.
+   * One step's worth of input, as a Schema: what a device holds for the step and what a replay
+   * records. A simulation several players can play declares it with `Game.PlayerInputs`, from
+   * the Schema of one player's input, which is what crosses the network in lockstep.
    */
   readonly input: In;
   /** The events a step may report. */

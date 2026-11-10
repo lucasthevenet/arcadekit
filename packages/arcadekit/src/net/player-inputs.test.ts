@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { combinePlayerInputs } from "./index";
-import type { ConfirmedStep } from "./index";
+import type { ConfirmedStep } from "./lockstep";
+import { combinePlayerInputs } from "./player-inputs";
 
 const PLAYERS = ["host", "p1", "p2"];
 

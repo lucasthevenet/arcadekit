@@ -24,6 +24,7 @@ If it needs one of them, change the builder, not the example.
 | One thing of the app's that has several implementations | a **service** | a `Context.Service` class, and a named Layer for each implementation | [`audio/service.ts`](../packages/arcadekit/src/audio/service.ts) |
 | A setting with a default that suits most apps | a **reference** | a `Context.Reference` | `Frames` in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts) |
 | Data work, or a data structure, that no game names | a **primitive** | a plain function or class | [`core/pool.ts`](../packages/arcadekit/src/core/pool.ts), [`core/rng.ts`](../packages/arcadekit/src/core/rng.ts) |
+| A Schema that a declaration takes as a field and a host must recognise | a **Schema builder** | a plain function that returns a Schema, marked in its annotations, with a type-only mark for the hosts that ask for it | `Game.PlayerInputs` in [`game/player-inputs.ts`](../packages/arcadekit/src/game/player-inputs.ts) |
 | A failure a caller should handle | a **typed error** | a tagged error class with a `reason` | `CommandDropped` in [`game/command.ts`](../packages/arcadekit/src/game/command.ts) |
 | The words a test is written in | a **vocabulary** | a module of plain functions, imported as a namespace | [`game/scenario.ts`](../packages/arcadekit/src/game/scenario.ts) |
 
@@ -125,7 +126,7 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 | A builder is given no type argument, apart from types given first | lint: `declaration/inferred` |
 | A function in a definition is not async and not a generator | lint: `declaration/plain-handler` |
 | A step or an `apply` returns nothing | the `Nothing` type, and `Game.Loop` at run time |
-| New code is written with the declarations | lint: `declaration/older-contract`, off only for survivors' Co-op rules (`packages/survivors/src/coop.ts`) |
+| New code is written with the declarations | lint: `declaration/older-contract` |
 | A builder's shape: the name first, typed by a type parameter, `kind` and the name as statics, `<Noun>Class` written out and exported with the statics the class sets, the base named, one builder for each kind | lint: `declaration/builder`, on the kit's source |
 | Every builder is listed, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |
 | No new factory without a reason | the style test's `FACTORIES` |

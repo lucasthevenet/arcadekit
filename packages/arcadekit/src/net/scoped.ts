@@ -45,8 +45,8 @@ export interface ScopedLockstepSession<State, Event> extends Pick<
    * A tick is plain: `onTick` ticks the session before it returns, so a ticker can read the
    * session right after, or tick before drawing. The run ends after the tick it stops in, once
    * `onTick` has returned, so the ticker's own code for that tick runs before the program's
-   * handlers and finalizers. Dies with what a tick throws (a bug in the simulation, `combine`,
-   * `hash` or the input source).
+   * handlers and finalizers. Dies with what a tick throws (a bug in the simulation, `hash` or
+   * the input source).
    *
    * In the browser, pass a ticker timed by a dedicated worker: a hidden tab throttles the main
    * thread's timers, the Clock's too. The Clock's ticks are for tests and servers.
@@ -60,17 +60,31 @@ export interface ScopedLockstepSession<State, Event> extends Pick<
 
 /**
  * Starts a run as its host, now on the Clock, as `hostLockstep` does. Dies with what starting
- * throws (more players than a run holds, a simulation that can't start), with nothing left
- * listening.
+ * throws (more players than a run holds, a simulation whose step input is not a
+ * `Game.PlayerInputs`, a simulation that can't start), with nothing left listening.
  */
-export const hostLockstepScoped = <Config, State, Input, Event, PlayerInput>(
-  options: HostOptions<Config, State, Input, Event, PlayerInput>
+export const hostLockstepScoped = <
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals,
+>(
+  options: HostOptions<Config, State, Input, Event, Command, Refusals>
 ): Effect.Effect<ScopedLockstepSession<State, Event>, never, Scope.Scope> =>
   scoped((nowMs) => hostLockstep(options, nowMs));
 
 /** Joins the run `host` starts, as `joinLockstep` does. The session is `joining` until the host's start message arrives. */
-export const joinLockstepScoped = <Config, State, Input, Event, PlayerInput>(
-  options: JoinOptions<Config, State, Input, Event, PlayerInput>
+export const joinLockstepScoped = <
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals,
+>(
+  options: JoinOptions<Config, State, Input, Event, Command, Refusals>
 ): Effect.Effect<ScopedLockstepSession<State, Event>, never, Scope.Scope> =>
   scoped((nowMs) => joinLockstep(options, nowMs));
 

@@ -2,5 +2,4 @@
 // No DOM here; the browser's view and Effect engine are in "arcadekit/runtime/browser".
 
 export { type FrameBudget, GameLoop } from "./loop";
-export { type PlayerInputs, soloInput } from "./player-inputs";
 export type { GameSimulation, InputSource, StepInput } from "./simulation";

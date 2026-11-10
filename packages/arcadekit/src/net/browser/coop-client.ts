@@ -1,8 +1,10 @@
 import { Cause, Data, Effect, Fiber, FiberHandle, Queue, Stream } from "effect";
 import type { Clock, Scope } from "effect";
 
+import { playerInputSchema } from "../../game/index";
+import type { PlayerInputs } from "../../game/index";
 import { animationFrames, attachError, frameLoop } from "../../runtime/browser";
-import type { InputSource, PlayerInputs, StepInput } from "../../runtime/index";
+import type { InputSource, StepInput } from "../../runtime/index";
 import { contentHash } from "../content-hash";
 import type { CoopTypes } from "../coop";
 import type { LockstepError } from "../errors";
@@ -19,7 +21,6 @@ import {
 } from "../lobby";
 import type { LobbyMessage, LobbyPick } from "../lobby";
 import type { LockstepOptions } from "../lockstep";
-import { combinePlayerInputs } from "../player-inputs";
 import { hostLockstepScoped, joinLockstepScoped } from "../scoped";
 import type { ScopedLockstepSession, Ticker } from "../scoped";
 import { DEFAULT_ROOM_SIZE } from "../signalling/protocol";
@@ -196,6 +197,8 @@ const makeSeat = <G extends CoopTypes>(pick: string): Seat<G> => ({
 
 /**
  * The Co-op client for `game`. Its scope (the app) owns the current seat: closing it leaves.
+ * Throws where it is called for a game whose simulation's step input was not declared with
+ * `Game.PlayerInputs`: no lockstep run could send one player's input.
  *
  * Each host or join is one fiber, a seat, in a `FiberHandle`: it loads the content, opens the
  * room, runs the lobby, then the run, and its scope owns all of them. A new host or join
@@ -207,8 +210,10 @@ const makeSeat = <G extends CoopTypes>(pick: string): Seat<G> => ({
 export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
   game: CoopGame<G, LoadError>,
   options: CoopClientOptions
-): Effect.Effect<CoopClient<G, LoadError>, never, Scope.Scope> =>
-  Effect.gen(function* () {
+): Effect.Effect<CoopClient<G, LoadError>, never, Scope.Scope> => {
+  // Refused here, where the app makes its client, not after a lobby, when a run would start.
+  playerInputSchema(game.simulation);
+  return Effect.gen(function* () {
     type State = G["State"];
     type PlayerInput = G["PlayerInput"];
     type Content = G["Content"];
@@ -595,15 +600,14 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
           State,
           PlayerInputs<PlayerInput>,
           G["Event"],
-          PlayerInput
+          unknown,
+          unknown
         > = {
           simulation: game.simulation,
           config: game.config(content, plan.picks),
           contentHash: contentHash(content),
           transport: linksTransport(room.self, room.links()),
           local: localInput(seat),
-          codec: game.codec,
-          combine: combinePlayerInputs<PlayerInput>(plan.players),
           hash: (state) => recordHash(seat, state),
           inputDelay: game.lockstep?.inputDelay ?? INPUT_DELAY,
           hashEvery: game.lockstep?.hashEvery ?? HASH_EVERY,
@@ -615,7 +619,11 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
                 peers: plan.players.slice(1),
                 seed: plan.seed ?? 0,
               })
-            : yield* joinLockstepScoped({ ...shared, host: room.host });
+            : yield* joinLockstepScoped({
+                ...shared,
+                host: room.host,
+                players: plan.players,
+              });
         seat.run = session;
         emit(seat, { type: "started", slot: seat.slot, names: seat.names });
         yield* session.listen((event) => onGameEvent(seat, event));
@@ -851,3 +859,4 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
       },
     };
   });
+};

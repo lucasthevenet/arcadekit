@@ -25,6 +25,14 @@ export type {
 } from "./event";
 export { Command, Event, Rejection, Simulation } from "./index";
 export { Loop } from "./loop";
+export {
+  type PlayerInputOf,
+  PlayerInputs,
+  type PlayerInputsSchema,
+  type PlayersSimulation,
+  playerInputSchema,
+  soloInput,
+} from "./player-inputs";
 export type {
   AnyRejection,
   RejectionClass,

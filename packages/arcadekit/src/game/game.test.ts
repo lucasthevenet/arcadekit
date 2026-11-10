@@ -250,6 +250,46 @@ describe("Game.Loop", () => {
     ]);
   });
 
+  it("applies a command its input source sends from read at that same step, before the step", () => {
+    const { loop } = startCounter(100);
+    const told: string[] = [];
+    // A command sent before the frame waits for its first step; the source's own are sent as it
+    // reads steps 1 and 2, as a lockstep session hands over what a confirmed step carries.
+    loop.send(new AddBonus({ amount: 1 }));
+    const source = {
+      read: (step: number) => {
+        if (step === 0) {
+          // After the one that was already waiting.
+          loop.send(new AddBonus({ amount: 3 }), 1);
+        }
+        if (step === 1) {
+          loop.send(new AddBonus({ amount: 5 }), 2, () =>
+            told.push(`told after ${loop.stepIndex} steps`)
+          );
+          loop.send(new AddBonus({ amount: 7 }), 1);
+        }
+        if (step === 2) {
+          loop.send(new AddBonus({ amount: 9 }), 3);
+        }
+        return { add: 1 };
+      },
+    };
+    expect(loop.frame(source, { steps: 4 }, 0)).toBe(4);
+    expect(loop.state?.log).toStrictEqual([
+      "bonus 1 from 0 at 0",
+      "bonus 3 from 1 at 0",
+      "step 0 dt 0.015625",
+      "bonus 5 from 2 at 1",
+      "bonus 7 from 1 at 1",
+      "step 1 dt 0.015625",
+      "bonus 9 from 3 at 2",
+      "step 2 dt 0.015625",
+      "step 3 dt 0.015625",
+    ]);
+    // The sender hears once the frame's steps are over, as for any other command.
+    expect(told).toStrictEqual(["told after 4 steps"]);
+  });
+
   it("holds commands while paused, and applies them when it steps again", () => {
     const { loop } = startCounter(100);
     loop.setPaused(true);

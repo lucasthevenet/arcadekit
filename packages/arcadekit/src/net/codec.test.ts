@@ -1,7 +1,7 @@
 import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { jsonCodec, schemaCodec } from "./codec";
+import { schemaCodec } from "./codec";
 
 const Move = Schema.Struct({ n: Schema.Finite });
 
@@ -27,13 +27,24 @@ describe(schemaCodec, () => {
     input.n = 2;
     expect(encoded).toStrictEqual({ n: 1 });
   });
-});
 
-describe(jsonCodec, () => {
-  it("decodes any JSON value as is", () => {
-    const codec = jsonCodec<{ readonly n: number }>();
-    expect(codec.decode(codec.encode({ n: -0 }))).toStrictEqual(
+  it("encodes what the wire carries: JSON turns -0 into 0, and a NaN into no number at all", () => {
+    const anyNumber = schemaCodec(Schema.Struct({ n: Schema.Number }));
+    expect(anyNumber.decode(anyNumber.encode({ n: -0 }))).toStrictEqual(
       Result.succeed({ n: 0 })
     );
+    expect(anyNumber.encode({ n: Number.NaN })).toStrictEqual({ n: null });
+    expect(
+      Result.isFailure(anyNumber.decode(anyNumber.encode({ n: Number.NaN })))
+    ).toBe(true);
+  });
+
+  it("is one codec for each Schema, so every session of a simulation shares it", () => {
+    expect(schemaCodec(Move)).toBe(codec);
+    expect(schemaCodec(Schema.Struct({ n: Schema.Finite }))).not.toBe(codec);
+  });
+
+  it("throws on encoding a value its Schema refuses", () => {
+    expect(() => codec.encode({ n: "x" } as never)).toThrow("n");
   });
 });

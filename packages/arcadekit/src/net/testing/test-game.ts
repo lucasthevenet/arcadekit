@@ -1,19 +1,17 @@
 import { Effect, Schema } from "effect";
 
+import * as Game from "../../game/index";
 import type { GameView } from "../../runtime/browser";
-import type {
-  GameSimulation,
-  InputSource,
-  PlayerInputs,
-} from "../../runtime/index";
+import type { InputSource } from "../../runtime/index";
 import type { CoopGame, CoopPresentation } from "../browser/index";
-import { schemaCodec } from "../codec";
-import type { InputCodec } from "../codec";
 import type { CoopRules, CoopTypes } from "../coop";
 
 // A small Co-op game for tests: every player adds a number each step, and now and then the run
 // stops on an offer that each player answers. It is enough to drive every part of the Co-op
 // client: lobby picks, an answer held until it settles, players choosing, pause, and a run's end.
+// Its rules are declared as a genre's are: events, then the simulation that reports them. Each
+// declaration's base is named first, with its type, since the kit's type files are made one file
+// at a time (isolatedDeclarations).
 
 /** The test game's content, as JSON data. */
 export interface TestContent {
@@ -68,20 +66,40 @@ export interface TestState {
   /** Whether each player has left the run, by slot. */
   readonly gone: boolean[];
   ended: boolean;
-  events: TestEvent[];
 }
 
-export type TestEvent =
-  /** The run's sample, every 100 ms. */
-  | {
-      readonly type: "score";
-      readonly steps: number;
-      readonly totals: readonly number[];
-    }
-  /** Offer `offer` opened for `slot`'s player. */
-  | { readonly type: "offer"; readonly offer: number; readonly slot: number }
-  /** The run ended. `totals` is each player's total plus bonus, by slot. */
-  | { readonly type: "ended"; readonly totals: readonly number[] };
+const ScoreBase: Game.EventClass<
+  "Score",
+  {
+    readonly steps: Schema.Int;
+    readonly totals: Schema.$Array<Schema.Number>;
+  }
+> = Game.Event("Score", {
+  steps: Schema.Int,
+  totals: Schema.Array(Schema.Number),
+});
+
+/** The run's sample, every 100 ms: the steps played, and each player's total by slot. */
+export class Score extends ScoreBase {}
+
+const OfferOpenedBase: Game.EventClass<
+  "OfferOpened",
+  { readonly offer: Schema.Int; readonly slot: Schema.Int }
+> = Game.Event("OfferOpened", { offer: Schema.Int, slot: Schema.Int });
+
+/** Offer `offer` opened for `slot`'s player. */
+export class OfferOpened extends OfferOpenedBase {}
+
+const RunEndedBase: Game.EventClass<
+  "RunEnded",
+  { readonly totals: Schema.$Array<Schema.Number> }
+> = Game.Event("RunEnded", { totals: Schema.Array(Schema.Number) });
+
+/** The run ended. `totals` is each player's total plus bonus, by slot. */
+export class RunEnded extends RunEndedBase {}
+
+/** Everything a run of the test game reports: its two events and its sample. */
+export type TestEvent = Score | OfferOpened | RunEnded;
 
 /** What the local player hears of the run. */
 export type TestLocalEvent =
@@ -148,7 +166,8 @@ const pausedAny = (
 /** One step of play: every player's `add`, then the end, or the next offer. */
 const advance = (
   state: TestState,
-  players: readonly (TestInput | null)[]
+  players: readonly (TestInput | null)[],
+  report: (event: OfferOpened | RunEnded) => void
 ): void => {
   state.steps += 1;
   for (let slot = 0; slot < players.length; slot++) {
@@ -159,29 +178,34 @@ const advance = (
   const { length, offerEvery } = state.content;
   if (state.steps >= length) {
     state.ended = true;
-    state.events.push({
-      type: "ended",
-      totals: state.totals.map((total, slot) => total + state.bonus[slot]!),
-    });
+    report(
+      new RunEnded({
+        totals: state.totals.map((total, slot) => total + state.bonus[slot]!),
+      })
+    );
   } else if (offerEvery > 0 && state.steps % offerEvery === 0) {
     state.offer += 1;
     for (let slot = 0; slot < state.owes.length; slot++) {
       if (state.gone[slot] !== true) {
         state.owes[slot] = true;
-        state.events.push({ type: "offer", offer: state.offer, slot });
+        report(new OfferOpened({ offer: state.offer, slot }));
       }
     }
   }
 };
 
-/** The test game's simulation: plain and deterministic, as a genre's is. */
-export const testSimulation: GameSimulation<
+const TestGameBase: Game.SimulationClass<
+  "TestGame",
   TestConfig,
   TestState,
-  PlayerInputs<TestInput>,
-  TestEvent
-> = {
-  create: ({ content, picks }) => ({
+  Game.PlayerInputs<TestInput>,
+  TestEvent,
+  never,
+  Game.RefusalsOf<readonly []>
+> = Game.Simulation("TestGame", {
+  input: Game.PlayerInputs(TestInputSchema),
+  events: [OfferOpened, RunEnded],
+  create: ({ content, picks }: TestConfig): TestState => ({
     content,
     picks,
     steps: 0,
@@ -191,9 +215,8 @@ export const testSimulation: GameSimulation<
     owes: picks.map(() => false),
     gone: picks.map(() => false),
     ended: false,
-    events: [],
   }),
-  step: (state, input) => {
+  step: (state, input, { report }) => {
     if (state.ended) {
       return;
     }
@@ -204,23 +227,21 @@ export const testSimulation: GameSimulation<
     if (state.owes.includes(true)) {
       answerOffer(state, input.players);
     } else if (!pausedAny(state, input.players)) {
-      advance(state, input.players);
+      advance(state, input.players, report);
     }
   },
-  drainEvents: (state) => {
-    const drained = state.events;
-    state.events = [];
-    return drained;
-  },
   sample: {
-    everyMs: 100,
-    read: (state) => ({
-      type: "score",
-      steps: state.steps,
-      totals: [...state.totals],
-    }),
+    event: Score,
+    every: "100 millis",
+    read: (state) => ({ steps: state.steps, totals: [...state.totals] }),
   },
-};
+});
+
+/**
+ * The test game's rules: plain and deterministic, as a genre's are. Several players play it, so
+ * its step input is a `Game.PlayerInputs`; an answer and a pause ride each player's input.
+ */
+export class TestGame extends TestGameBase {}
 
 const mix = (hash: number, value: number): number =>
   Math.imul(hash ^ value, 0x01_00_01_93) >>> 0;
@@ -237,12 +258,9 @@ export const hashTestState = (state: TestState): number => {
   return mix(hash, state.ended ? 1 : 0);
 };
 
-const testCodec: InputCodec<TestInput> = schemaCodec(TestInputSchema);
-
 /** The test game's lockstep parts. */
 export const testCoopRules: CoopRules<TestCoop> = {
-  simulation: testSimulation,
-  codec: testCodec,
+  simulation: TestGame,
   hash: hashTestState,
   picks: (content) => content.picks,
   config: (content, picks) => ({ content, picks }),
@@ -269,25 +287,25 @@ export const testCoopRules: CoopRules<TestCoop> = {
     state.offer !== answer.offer || state.owes[slot] !== true,
   choosing: (state, slot) => state.owes[slot] === true,
   localEvent: (event, slot, names) => {
-    switch (event.type) {
-      case "score": {
+    switch (event._tag) {
+      case "Score": {
         return {
           type: "score",
           steps: event.steps,
           total: event.totals[slot] ?? 0,
         };
       }
-      case "offer": {
+      case "OfferOpened": {
         return event.slot === slot
           ? { type: "offer", offer: event.offer }
           : null;
       }
-      case "ended": {
+      case "RunEnded": {
         return { type: "ended", total: event.totals[slot] ?? 0, names };
       }
     }
   },
-  runEnded: (event) => event.type === "ended",
+  runEnded: (event) => event._tag === "RunEnded",
 };
 
 const ADD_ONE: TestInput = { add: 1 };

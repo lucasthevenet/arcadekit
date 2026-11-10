@@ -5,8 +5,9 @@ import type { AudioSystem } from "arcadekit/audio";
 import { BrowserAudioLayer } from "arcadekit/audio/browser";
 import { loadContent, memorySource } from "arcadekit/content";
 import type { AttachableEngine } from "arcadekit/foldkit";
+import type * as Game from "arcadekit/game";
 import { InputController, MOVE_AXES } from "arcadekit/input";
-import { createMemoryNetwork, hostLockstep, jsonCodec } from "arcadekit/net";
+import { createMemoryNetwork, hostLockstep } from "arcadekit/net";
 import type { LockstepSession } from "arcadekit/net";
 import type { RoomOptions } from "arcadekit/net/browser";
 import {
@@ -32,7 +33,7 @@ import { makeSaveStore } from "arcadekit/save";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Effect, Layer, Schema } from "effect";
 
-import { dotsSimulation, replay } from "./simulation";
+import { DotsTogether, dotsSimulation, replay } from "./simulation";
 import type { Dots, DotsConfig, DotsEvent, DotsInput } from "./simulation";
 
 const createInput = (surface: HTMLElement): InputSource<DotsInput> => {
@@ -136,15 +137,16 @@ const program = Effect.gen(function* () {
 
 // Lockstep over the in-memory network: one player, a few steps.
 const network = createMemoryNetwork({ seed: 1 });
-const session: LockstepSession<Dots, DotsEvent> = hostLockstep(
+const session: LockstepSession<
+  Dots,
+  Game.EventOf<typeof DotsTogether>
+> = hostLockstep(
   {
-    simulation: dotsSimulation,
+    simulation: DotsTogether,
     config: { dots: 8, speed: 4 },
     contentHash: "smoke",
     transport: network.connect("host"),
     local: { read: () => ({ moveX: 0, moveY: 0 }) },
-    codec: jsonCodec<DotsInput>(),
-    combine: (step) => step.inputs[0]?.input ?? { moveX: 0, moveY: 0 },
     hash: (state) => state.playerX,
     inputDelay: 2,
     hashEvery: 30,

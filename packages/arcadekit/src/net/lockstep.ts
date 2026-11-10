@@ -1,10 +1,13 @@
 import { Option, Result, Schema } from "effect";
 
-import { GameLoop } from "../runtime/index";
-import type { GameSimulation, StepInput } from "../runtime/index";
+import { Loop, playerInputSchema } from "../game/index";
+import type { PlayerInputOf, PlayersSimulation } from "../game/index";
+import type { StepInput } from "../runtime/index";
+import { schemaCodec } from "./codec";
 import type { InputCodec } from "./codec";
 import { lockstepError } from "./errors";
 import type { LockstepError, RemovedWhy } from "./errors";
+import { combinePlayerInputs } from "./player-inputs";
 import type { PeerId, Transport } from "./transport";
 
 /** One player's input for one step, as every peer steps on it. */
@@ -22,25 +25,42 @@ export interface ConfirmedStep<PlayerInput> {
   readonly removed: readonly PeerId[];
 }
 
-export interface LockstepOptions<Config, State, Input, Event, PlayerInput> {
-  /** What every peer runs. The session makes its own `GameLoop` for it. */
-  readonly simulation: GameSimulation<Config, State, Input, Event>;
+export interface LockstepOptions<
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals,
+> {
+  /**
+   * What every peer runs: a simulation several players can play, whose step input was declared
+   * with `Game.PlayerInputs`. The session steps it through a `Game.Loop` of its own. From that
+   * declared input it takes the Schema of one player's input, which is what crosses the network
+   * for each player, and it makes each step's input itself: every player's input at its slot
+   * (its place in the run's player order, host first) and the players removed at that step in
+   * `leaving`.
+   */
+  readonly simulation: PlayersSimulation<
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    Refusals
+  >;
   /** This peer's config. Every peer must pass the same (the lobby agrees on it); only `contentHash` is checked at the start. */
   readonly config: Config;
   /** A digest of the content the run is played with. A peer whose hash differs from the host's refuses to start. */
   readonly contentHash: string;
   readonly transport: Transport;
   /**
-   * This player's device or script. The session reads it once per step it schedules, `inputDelay`
-   * steps ahead, calling `endStep` after each read and `endFrame` once per tick that read any.
+   * This player's device or script: one player's input for each step. The session reads it once
+   * per step it schedules, `inputDelay` steps ahead, calling `endStep` after each read and
+   * `endFrame` once per tick that read any. What it reads must be what the one-player Schema
+   * encodes: a tick throws on a value it refuses.
    */
-  readonly local: StepInput<PlayerInput>;
-  readonly codec: InputCodec<PlayerInput>;
-  /**
-   * Makes the simulation's input for one step from every player's. Called once per step, inside
-   * the step loop, so it may return the same object each time, refilled.
-   */
-  readonly combine: (step: ConfirmedStep<PlayerInput>) => Input;
+  readonly local: StepInput<PlayerInputOf<Input>>;
   /** A digest of the whole state, the same on every peer for the same run. Compared every `hashEvery` steps. */
   readonly hash: (state: State) => number;
   /** How many steps ahead local input is scheduled (ADR-0012). 2 to 6 at 60 Hz. */
@@ -62,10 +82,12 @@ export interface HostOptions<
   State,
   Input,
   Event,
-  PlayerInput,
-> extends LockstepOptions<Config, State, Input, Event, PlayerInput> {
+  Command,
+  Refusals,
+> extends LockstepOptions<Config, State, Input, Event, Command, Refusals> {
   /**
-   * The other players' peer ids, in player order. The host is always the first player. A run
+   * The other players' peer ids, in player order. The host is always the first player, so the
+   * run's player order is the host, then these: what every guest passes as `players`. A run
    * holds at most 16 players, the host included.
    */
   readonly peers: readonly PeerId[];
@@ -77,9 +99,18 @@ export interface JoinOptions<
   State,
   Input,
   Event,
-  PlayerInput,
-> extends LockstepOptions<Config, State, Input, Event, PlayerInput> {
+  Command,
+  Refusals,
+> extends LockstepOptions<Config, State, Input, Event, Command, Refusals> {
   readonly host: PeerId;
+  /**
+   * The run's player order, as the lobby agreed it: the host, then the `peers` the host passes,
+   * this peer among them. A player's slot is its index here for the whole run. The host's start
+   * message doesn't say it: it lists who is still in the run when it is sent, and a guest that
+   * first hears it after a player was removed must still put every input at the slot the others
+   * do.
+   */
+  readonly players: readonly PeerId[];
 }
 
 /**
@@ -102,26 +133,50 @@ export interface LockstepSession<State, Event> {
   readonly error: LockstepError | null;
   /** The players whose input the next step waits on, while `status` is `waiting`. Show them ("waiting for X"). */
   readonly waitingFor: readonly PeerId[];
-  /** The run's players still in it, in player order. Empty until the run starts. */
+  /**
+   * The run's players still in it, in player order. Empty until the run starts. Not where a
+   * slot comes from: a player keeps its slot when another leaves.
+   */
   readonly players: readonly PeerId[];
   /** The run's state, to draw. Read it; never change it. Null before the run starts. */
   readonly state: State | null;
   /** Steps run since the start. */
   readonly stepIndex: number;
   readonly tick: (nowMs: number) => void;
-  /** Hears the run's events and samples, as `GameLoop.subscribe`. */
+  /** Hears the run's events and samples, as `Game.Loop`'s `subscribe`. */
   readonly subscribe: (listener: (event: Event) => void) => () => void;
   /** Stops listening to the transport. */
   readonly dispose: () => void;
 }
 
 /**
- * Starts a run as its host, now: the host is the first player, and `peers` the others. Throws a
- * RangeError for more players than a run holds, and what starting throws (the simulation's
- * `create`, the input source), with nothing left listening.
+ * Starts a run as its host, now: the host is the first player, and `peers` the others.
+ *
+ * ```ts
+ * const session = hostLockstep(
+ *   {
+ *     simulation: Survivors,
+ *     config: { content, heroIds: ["bolter", "burner"] },
+ *     contentHash: "content-v1",
+ *     transport,
+ *     local: { read: () => ({ moveX: 1, moveZ: 0 }) },
+ *     hash: hashWorld,
+ *     inputDelay: 4,
+ *     hashEvery: 60,
+ *     peers: ["guest"],
+ *     seed: 1234,
+ *   },
+ *   0
+ * );
+ * session.tick(16);
+ * ```
+ *
+ * Throws a RangeError for more players than a run holds, an Error for a simulation whose step
+ * input was not declared with `Game.PlayerInputs` (a type error first), and what starting throws
+ * (the simulation's `create`, the input source), each with nothing left listening.
  */
-export const hostLockstep = <Config, State, Input, Event, PlayerInput>(
-  options: HostOptions<Config, State, Input, Event, PlayerInput>,
+export const hostLockstep = <Config, State, Input, Event, Command, Refusals>(
+  options: HostOptions<Config, State, Input, Event, Command, Refusals>,
   nowMs: number
 ): LockstepSession<State, Event> => {
   if (options.peers.length + 1 > MAX_PLAYERS) {
@@ -129,7 +184,8 @@ export const hostLockstep = <Config, State, Input, Event, PlayerInput>(
       `A lockstep run holds at most ${MAX_PLAYERS} players, not ${options.peers.length + 1}`
     );
   }
-  const session = new Session(options, options.transport.self, nowMs);
+  const { self } = options.transport;
+  const session = new Session(options, self, [self, ...options.peers], nowMs);
   try {
     session.startAsHost(options.peers, options.seed, nowMs);
   } catch (error) {
@@ -139,11 +195,17 @@ export const hostLockstep = <Config, State, Input, Event, PlayerInput>(
   return session;
 };
 
-/** Joins the run `host` starts. The session is `joining` until the host's start message arrives. */
-export const joinLockstep = <Config, State, Input, Event, PlayerInput>(
-  options: JoinOptions<Config, State, Input, Event, PlayerInput>,
+/**
+ * Joins the run `host` starts, with the options the host passed but `peers` and `seed`, and
+ * with the run's player order as `players`. The session is `joining` until the host's start
+ * message arrives. Throws for a simulation whose step input was not declared with
+ * `Game.PlayerInputs`, as `hostLockstep` does.
+ */
+export const joinLockstep = <Config, State, Input, Event, Command, Refusals>(
+  options: JoinOptions<Config, State, Input, Event, Command, Refusals>,
   nowMs: number
-): LockstepSession<State, Event> => new Session(options, options.host, nowMs);
+): LockstepSession<State, Event> =>
+  new Session(options, options.host, options.players, nowMs);
 
 // The wire format. Every message is JSON. Each side resends what the other hasn't acknowledged
 // on every tick, so a lost, duplicated or reordered message does no harm. A message that doesn't
@@ -306,7 +368,8 @@ class Session<
   State,
   Input,
   Event,
-  PlayerInput,
+  Command,
+  Refusals,
 > implements LockstepSession<State, Event> {
   status: LockstepStatus = "joining";
   error: LockstepError | null = null;
@@ -318,18 +381,28 @@ class Session<
     State,
     Input,
     Event,
-    PlayerInput
+    Command,
+    Refusals
   >;
-  private readonly loop: GameLoop<Config, State, Input, Event>;
+  private readonly loop: Loop<Config, State, Input, Event, Command, Refusals>;
+  /** One player's input to its wire form and back, from the simulation's `Game.PlayerInputs`. */
+  private readonly codec: InputCodec<PlayerInputOf<Input>>;
+  /** Makes a step's input from every player's, by slot in the run's player order. */
+  private readonly combine: (
+    step: ConfirmedStep<PlayerInputOf<Input>>
+  ) => Input;
   private readonly self: PeerId;
   private readonly stepMs: number;
   private readonly dropAfterMs: number;
   private readonly inbox: [PeerId, string][] = [];
   private readonly unlisten: () => void;
-  private host: HostSide<PlayerInput> | null = null;
+  private host: HostSide<PlayerInputOf<Input>> | null = null;
   private peer: PeerSide | null = null;
   /** Confirmed steps not yet run, decoded. */
-  private readonly confirmed = new Map<number, ConfirmedStep<PlayerInput>>();
+  private readonly confirmed = new Map<
+    number,
+    ConfirmedStep<PlayerInputOf<Input>>
+  >();
   /** Every step through this one is confirmed. */
   private confirmedThrough = -1;
   /** The next step to read local input for. */
@@ -342,15 +415,29 @@ class Session<
   private stopMessage: Message | null = null;
   private readonly buffer: StepInput<Input>;
 
+  /**
+   * `order` is the run's player order, host first, as its lobby agreed it. The slots come from
+   * it and from nothing the host says later: a start message lists who is still in the run.
+   */
   constructor(
-    options: LockstepOptions<Config, State, Input, Event, PlayerInput>,
+    options: LockstepOptions<Config, State, Input, Event, Command, Refusals>,
     host: PeerId,
+    order: readonly PeerId[],
     nowMs: number
   ) {
     this.options = options;
     this.self = options.transport.self;
-    this.loop = new GameLoop(options.simulation);
-    this.stepMs = (options.simulation.stepSeconds ?? 1 / 60) * 1000;
+    // Before anything listens: a simulation with no players' input is refused here.
+    this.codec = schemaCodec(playerInputSchema(options.simulation));
+    // The simulation's step input is the players' input of its own one-player input, which the
+    // types can't see through `PlayerInputOf`.
+    this.combine = combinePlayerInputs<PlayerInputOf<Input>>(order) as (
+      step: ConfirmedStep<PlayerInputOf<Input>>
+    ) => Input;
+    this.loop = new Loop<Config, State, Input, Event, Command, Refusals>(
+      options.simulation
+    );
+    this.stepMs = options.simulation.definition.stepSeconds * 1000;
     this.dropAfterMs = options.dropAfterMs ?? 10_000;
     this.lastTickMs = nowMs;
     if (host !== this.self) {
@@ -375,7 +462,7 @@ class Session<
             (player) => !confirmed.removed.includes(player)
           );
         }
-        return this.options.combine(confirmed);
+        return this.combine(confirmed);
       },
     };
   }
@@ -459,7 +546,10 @@ class Session<
     this.send();
   }
 
-  /** Starts the run on this peer: same seed, same config, everywhere. */
+  /**
+   * Starts the run on this peer: same seed, same config, everywhere. `players` are those in the
+   * run now: on a guest, who the host's start message lists.
+   */
   private begin(players: readonly PeerId[], seed: number, nowMs: number) {
     this.players = players;
     this.loop.start(this.options.config, seed, nowMs);
@@ -477,7 +567,7 @@ class Session<
   }
 
   private receiveAsHost(
-    host: HostSide<PlayerInput>,
+    host: HostSide<PlayerInputOf<Input>>,
     from: PeerId,
     message: Message
   ) {
@@ -520,7 +610,7 @@ class Session<
       const step = message.from + i;
       if (step > this.confirmedThrough && step <= last && !pending.has(step)) {
         const encoded = message.inputs[i];
-        const decoded = this.options.codec.decode(encoded);
+        const decoded = this.codec.decode(encoded);
         if (Result.isFailure(decoded)) {
           // Its peer plays other code, or forged it; the others run on without it.
           this.removePeer(host, from, "badInput");
@@ -545,7 +635,7 @@ class Session<
 
   /** Keeps a peer's hash for `step` and compares it, if the peer can have hashed that step. */
   private receivePeerHash(
-    host: HostSide<PlayerInput>,
+    host: HostSide<PlayerInputOf<Input>>,
     from: PeerId,
     step: number,
     hash: number
@@ -695,7 +785,7 @@ class Session<
 
   /** Host: removes `peer`'s player at the next step it confirms. */
   private removePeer(
-    host: HostSide<PlayerInput>,
+    host: HostSide<PlayerInputOf<Input>>,
     peer: PeerId,
     why: RemovedWhy
   ) {
@@ -753,10 +843,10 @@ class Session<
   private decodeStep(
     step: number,
     wire: WireStep
-  ): ConfirmedStep<PlayerInput> | null {
-    const inputs: PlayerStepInput<PlayerInput>[] = [];
+  ): ConfirmedStep<PlayerInputOf<Input>> | null {
+    const inputs: PlayerStepInput<PlayerInputOf<Input>>[] = [];
     for (const [player, encoded] of wire[0]) {
-      const decoded = this.options.codec.decode(encoded);
+      const decoded = this.codec.decode(encoded);
       if (Result.isFailure(decoded)) {
         this.stop(
           lockstepError({
@@ -824,7 +914,8 @@ class Session<
 
   /** Reads local input for every step through `stepIndex + inputDelay` not read yet. */
   private scheduleLocalInput() {
-    const { local, codec, inputDelay } = this.options;
+    const { codec } = this;
+    const { local, inputDelay } = this.options;
     const through = this.loop.stepIndex + inputDelay;
     if (this.nextLocal > through) {
       return;
@@ -986,7 +1077,7 @@ class Session<
   }
 
   /** Host: forgets confirmed steps and hashes every peer still in the run has. */
-  private forgetAcknowledged(host: HostSide<PlayerInput>) {
+  private forgetAcknowledged(host: HostSide<PlayerInputOf<Input>>) {
     const { peers } = host;
     const stepsAck = Math.min(
       this.confirmedThrough,

@@ -9,7 +9,9 @@ import {
   makeRng,
 } from "arcadekit/core";
 import type { Pool, Rng } from "arcadekit/core";
+import * as Game from "arcadekit/game";
 import type { GameSimulation } from "arcadekit/runtime";
+import { Schema } from "effect";
 
 export interface DotsConfig {
   readonly dots: number;
@@ -115,6 +117,23 @@ const wrap = (value: number): number => {
   }
   return value;
 };
+
+const STILL: DotsInput = { moveX: 0, moveY: 0 };
+
+/**
+ * The same rules as a declared simulation several players can play, which is what a lockstep
+ * run steps: its step input is every player's `DotsInput`, by slot. The first player moves the
+ * dot.
+ */
+export class DotsTogether extends Game.Simulation("DotsTogether", {
+  input: Game.PlayerInputs(
+    Schema.Struct({ moveX: Schema.Number, moveY: Schema.Number })
+  ),
+  create: (config: DotsConfig, { seed }) => dotsSimulation.create(config, seed),
+  step: (state, input, { dt }) => {
+    dotsSimulation.step(state, input.players[0] ?? STILL, dt);
+  },
+}) {}
 
 /** Steps a run without a browser, as tests and replays do. */
 export const replay = (seed: number, steps: number): number => {

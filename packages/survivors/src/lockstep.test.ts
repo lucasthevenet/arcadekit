@@ -1,33 +1,27 @@
-import {
-  combinePlayerInputs,
-  createMemoryNetwork,
-  hostLockstep,
-  joinLockstep,
-  schemaCodec,
-} from "arcadekit/net";
+import * as Game from "arcadekit/game";
+import { createMemoryNetwork, hostLockstep, joinLockstep } from "arcadekit/net";
 import type {
   LockstepOptions,
   LockstepSession,
   MemoryNetwork,
 } from "arcadekit/net";
-import { GameLoop } from "arcadekit/runtime";
 import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { survivorsCoopRules } from "./coop";
 import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
 import type { Hero } from "./hero";
-import { HeroInput } from "./input";
-import type { SurvivorsInput } from "./input";
+import type { HeroInput, SurvivorsInput } from "./input";
 import { GameContent } from "./schema";
+import { Survivors } from "./simulation";
 import type { SurvivorsConfig, World } from "./world";
 
-// Survivors' real simulation in lockstep, one hero per player: three peers, each driving its own
-// hero, over a lossy, jittery in-memory network. Every peer must step through the same states as
-// every other, step for step, including level-ups each player answers with its own pick, and a
-// player the host removes.
+// Survivors' declared simulation in lockstep, one hero per player: three peers, each driving its
+// own hero, over a lossy, jittery in-memory network. Every peer must step through the same
+// states as every other, step for step, including level-ups each player answers with its own
+// pick, and a player the host removes. The peers compare their hashes after every step
+// (`hashEvery: 1`), and the test keeps each peer's to compare them itself.
 
 const decode = Schema.decodeUnknownSync(GameContent);
 
@@ -161,17 +155,15 @@ const script = (
   };
 };
 
-/** The simulation the Co-op rules run in lockstep, with the world's hash recorded after every step. */
+/** A session's `hash` that also keeps each hash: with `hashEvery: 1`, the world's after every step. */
 const recorded = () => {
   const hashes: number[] = [];
-  const simulation = {
-    ...survivorsCoopRules.simulation,
-    step: (world: World, input: SurvivorsInput, dt: number) => {
-      survivorsCoopRules.simulation.step(world, input, dt);
-      hashes.push(hashWorld(world));
-    },
+  const hash = (world: World) => {
+    const hashed = hashWorld(world);
+    hashes.push(hashed);
+    return hashed;
   };
-  return { hashes, simulation };
+  return { hashes, hash };
 };
 
 type Session = LockstepSession<World, SurvivorsEvent>;
@@ -195,25 +187,24 @@ const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
     heroIds: HERO_IDS,
   };
   return PLAYERS.map((id, slot) => {
-    const { hashes, simulation } = recorded();
+    const { hashes, hash } = recorded();
     let session: Session | null = null;
     const options: LockstepOptions<
       SurvivorsConfig,
       World,
       SurvivorsInput,
       SurvivorsEvent,
-      HeroInput
+      Game.CommandOf<typeof Survivors>,
+      unknown
     > = {
-      simulation,
+      simulation: Survivors,
       config,
       contentHash: "survivors-test-content",
       transport: network.connect(id),
       local: script(slot, run.picking[slot]!, () => session?.state ?? null),
-      codec: schemaCodec(HeroInput),
-      combine: combinePlayerInputs(PLAYERS),
-      hash: hashWorld,
+      hash,
       inputDelay: 4,
-      hashEvery: 30,
+      hashEvery: 1,
       ...(run.dropAfterMs === undefined
         ? {}
         : { dropAfterMs: run.dropAfterMs }),
@@ -221,7 +212,7 @@ const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
     session =
       slot === 0
         ? hostLockstep({ ...options, peers: ["p1", "p2"], seed: SEED }, 0)
-        : joinLockstep({ ...options, host: "host" }, 0);
+        : joinLockstep({ ...options, host: "host", players: PLAYERS }, 0);
     return { session, hashes };
   });
 };
@@ -264,26 +255,27 @@ const loadout = (hero: Hero) =>
     [...hero.passiveLevels],
   ]);
 
-/** The run played alone through GameLoop, every player's zig-zag in one step input: what every peer must match. */
+/** The run played alone through `Game.Loop`, every player's zig-zag in one step input: what every peer must match. */
 const soloHashes = (steps: number) => {
-  const { hashes, simulation } = recorded();
-  const loop = new GameLoop(simulation);
+  const hashes: number[] = [];
+  const loop = new Game.Loop(Survivors);
   loop.start({ content: content(1_000_000), heroIds: HERO_IDS }, SEED, 0);
+  const world = loop.state!;
   const players = TURNS.map(() => ({ moveX: 0, moveZ: 0 }));
   const input: SurvivorsInput = { players, leaving: [] };
-  loop.frame(
-    {
-      read: (step) => {
-        for (const [slot, turn] of TURNS.entries()) {
-          zigZag(turn, step, players[slot]!);
-        }
-        return input;
-      },
+  const source: StepInput<SurvivorsInput> = {
+    read: (step) => {
+      for (const [slot, turn] of TURNS.entries()) {
+        zigZag(turn, step, players[slot]!);
+      }
+      return input;
     },
-    { steps },
-    0
-  );
-  return { hashes, world: loop.state! };
+  };
+  for (let step = 0; step < steps; step++) {
+    loop.frame(source, { steps: 1 }, 0);
+    hashes.push(hashWorld(world));
+  }
+  return { hashes, world };
 };
 
 describe("survivors in lockstep", () => {

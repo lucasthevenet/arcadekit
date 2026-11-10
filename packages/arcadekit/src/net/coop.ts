@@ -1,5 +1,4 @@
-import type { GameSimulation, PlayerInputs } from "../runtime/index";
-import type { InputCodec } from "./codec";
+import type { PlayerInputs, PlayersSimulation } from "../game/index";
 
 // A Co-op game's lockstep parts, DOM-free: a genre keeps them beside its simulation and tests
 // them in Node. The Co-op client (`arcadekit/net/browser`) runs them. Everything here that runs
@@ -8,9 +7,9 @@ import type { InputCodec } from "./codec";
 /**
  * The types of one Co-op game, as one bag. A game declares it once and names it everywhere:
  *
- * - `Config`, `State`, `Event`: its `GameSimulation`'s.
+ * - `Config`, `State`, `Event`: its simulation's.
  * - `PlayerInput`: one player's input for one step. The simulation's step input is
- *   `PlayerInputs<PlayerInput>`: the kit combines the players' inputs by slot.
+ *   `Game.PlayerInputs` of it: the kit combines the players' inputs by slot.
  * - `Answer`: what the local player answers the run with (an upgrade pick, say), held on their
  *   input until the game says it's settled.
  * - `LocalEvent`: what the local player's app hears of the run's events.
@@ -29,14 +28,24 @@ export interface CoopTypes {
 
 /** A Co-op game's lockstep parts: what every peer must agree on, and what only the local player's seat needs. */
 export interface CoopRules<G extends CoopTypes> {
-  /** The run. Its step input is every player's input by slot, host first, and the slots leaving. */
-  readonly simulation: GameSimulation<
+  /**
+   * The run's rules: a `Game.Simulation` class whose step input was declared with
+   * `Game.PlayerInputs`, every player's input by slot, host first, and the slots leaving. Each
+   * player's own input crosses the network as that declaration's one-player Schema encodes it.
+   * A pick and a pause still ride that input here, not a command: the client sends none yet.
+   *
+   * These types don't refuse a struct written by hand with `players` and `leaving`: they name
+   * the step input's type, which such a struct has too. `makeCoopClient`'s throw is the only
+   * refusal here.
+   */
+  readonly simulation: PlayersSimulation<
     G["Config"],
     G["State"],
     PlayerInputs<G["PlayerInput"]>,
-    G["Event"]
+    G["Event"],
+    unknown,
+    unknown
   >;
-  readonly codec: InputCodec<G["PlayerInput"]>;
   /** A digest of the whole state, the same on every peer for the same run. */
   readonly hash: (state: G["State"]) => number;
   /**

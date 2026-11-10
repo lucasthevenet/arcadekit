@@ -1,5 +1,4 @@
 import * as Game from "arcadekit/game";
-import { soloInput } from "arcadekit/runtime";
 import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -14,9 +13,9 @@ import { Survivors } from "./simulation";
 // run, bit for bit. It steps the declared simulation, `Survivors`, with arcadekit/game's Loop, in
 // the step order and sample timing of any declared host, so it guards the simulation, core's
 // clock and the loop's step order. Its script has no endStep or endFrame; runtime's loop.test.ts
-// pins their order. It doesn't cover input devices or the view, nor the `GameSimulation` the
-// Co-op rules hold for a lockstep run (`survivorsCoopRules.simulation`): world.test.ts holds that
-// one to this one.
+// pins their order. It doesn't cover input devices or the view. A lockstep run steps this same
+// `Survivors` through the same loop (`survivorsCoopRules.simulation`): lockstep.test.ts holds its
+// peers to one another, and to a run played alone, step for step.
 
 const content = Schema.decodeUnknownSync(GameContent)({
   rules: {
@@ -120,7 +119,7 @@ const zigZag = (): StepInput<HeroInput> => {
  */
 const replay = (seed: number, steps: number) => {
   const loop = new Game.Loop(Survivors);
-  const script = soloInput(zigZag());
+  const script = Game.soloInput(zigZag());
   let events = 0;
   let samples = 0;
   loop.subscribe((event) => {

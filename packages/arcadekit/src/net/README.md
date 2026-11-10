@@ -1,6 +1,6 @@
 # arcadekit/net
 
-Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `GameSimulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. `combinePlayerInputs` turns each confirmed step into `arcadekit/runtime`'s `PlayerInputs`, by slot. In an Effect program, `hostLockstepScoped` and `joinLockstepScoped` make the same session, owned by a scope and run on Effect's `Clock` until it fails with its `LockstepError`. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the scoped signalling client that turns a join code into peer links, and `linksTransport`), and `arcadekit/net/signalling` the protocol a signalling server speaks, each message an Effect Schema with bounded fields. [`arcadekit/net/worker`](worker/README.md) is that server for Cloudflare, with a README of its own. For a whole co-op game, `makeCoopClient` in `arcadekit/net/browser` runs all of this for one player from the game's `CoopRules`, and `arcadekit/net/testing` has its test helpers: see [Co-op](#co-op).
+Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `Game.Simulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. A session is a host of the declared simulation, as `Game.Engine` is: it steps it through a `Game.Loop`, and takes from its `Game.PlayerInputs` step input ([`arcadekit/game`](../game/README.md#several-players)) what one player sends and how the players' inputs make a step's. In an Effect program, `hostLockstepScoped` and `joinLockstepScoped` make the same session, owned by a scope and run on Effect's `Clock` until it fails with its `LockstepError`. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the scoped signalling client that turns a join code into peer links, and `linksTransport`), and `arcadekit/net/signalling` the protocol a signalling server speaks, each message an Effect Schema with bounded fields. [`arcadekit/net/worker`](worker/README.md) is that server for Cloudflare, with a README of its own. For a whole co-op game, `makeCoopClient` in `arcadekit/net/browser` runs all of this for one player from the game's `CoopRules`, and `arcadekit/net/testing` has its test helpers: see [Co-op](#co-op).
 
 An entry of the [`arcadekit`](../../README.md) package. The root entry is DOM-free.
 
@@ -17,36 +17,27 @@ Peer dependency: `effect` (~4.1).
 Two peers on the in-memory network play one run. Each player's input is a number, and the simulation adds them all:
 
 ```ts
-import {
-  createMemoryNetwork,
-  hostLockstep,
-  joinLockstep,
-  jsonCodec,
-} from "arcadekit/net";
-import type { ConfirmedStep } from "arcadekit/net";
-import type { GameSimulation } from "arcadekit/runtime";
+import * as Game from "arcadekit/game";
+import { createMemoryNetwork, hostLockstep, joinLockstep } from "arcadekit/net";
+import { Schema } from "effect";
 
-interface State {
-  total: number;
-}
-
-const simulation: GameSimulation<null, State, number, never> = {
+// The step input is every player's number, by slot: a session sends each player's own.
+class Sum extends Game.Simulation("Sum", {
+  input: Game.PlayerInputs(Schema.Number),
   create: () => ({ total: 0 }),
   step: (state, input) => {
-    state.total += input;
+    for (const add of input.players) {
+      state.total += add ?? 0;
+    }
   },
-  drainEvents: () => [],
-};
+}) {}
 
 const network = createMemoryNetwork({ seed: 1, latencyMs: 30, jitterMs: 10 });
 const shared = {
-  simulation,
+  simulation: Sum,
   config: null,
   contentHash: "content-v1",
-  codec: jsonCodec<number>(),
-  combine: (step: ConfirmedStep<number>) =>
-    step.inputs.reduce((sum, { input }) => sum + input, 0),
-  hash: (state: State) => state.total,
+  hash: (state: Game.StateOf<typeof Sum>) => state.total,
   inputDelay: 3,
   hashEvery: 30,
 };
@@ -67,6 +58,8 @@ const guest = joinLockstep(
     transport: network.connect("guest"),
     local: { read: () => 2 },
     host: "host",
+    // The run's player order, host first: the host, then its `peers`.
+    players: ["host", "guest"],
   },
   0
 );
@@ -81,17 +74,14 @@ for (let now = 0; now < 10_000; now += 4) {
 console.log(host.state?.total === 3 * host.stepIndex); // true
 ```
 
-## Combining the players' inputs
+## The players' inputs
 
-`combine` makes the simulation's input for one step from the confirmed step. A game whose step input is `arcadekit/runtime`'s `PlayerInputs<PlayerInput>` passes `combinePlayerInputs(players)`: each player's input goes to `players[slot]`, and each player removed at a step is in `leaving`, in ascending order. `players` is the run's player order, host first (the lobby's, which is `session.players` at the start), and a player's slot is its index there for the whole run, whoever leaves. It is plain code and refills one object, so a step allocates nothing.
+The simulation declares its step input with `Game.PlayerInputs(OnePlayersInput)`, and the session does the rest: no game passes a codec or a way to combine inputs.
 
-```ts
-import { combinePlayerInputs } from "arcadekit/net";
-
-const combine = combinePlayerInputs<number>(["host", "guest"]);
-combine({ inputs: [{ player: "guest", input: 2 }], removed: ["host"] });
-// { players: [null, 2], leaving: [0] }
-```
+- **What crosses the network** is one player's input, as the one-player Schema encodes it: JSON data. Every peer, the host included, steps on what that Schema decodes, so a step sees the same input everywhere even where JSON loses detail (-0 becomes 0).
+- **A step's input** is made from the step the host confirmed: each player's input goes to `players[slot]`, and each player removed at that step is in `leaving`, in ascending order. The player order is the run's, host first, as the lobby agreed it: the host, then the `peers` the host passes, which is the list a guest passes as `players`. A player's slot is its index there for the whole run, whoever leaves. It is not `session.players`, which lists who is still in the run: the host's start message says only that, so a guest that first hears it after a player was removed still needs the whole order. So the run's config lists what each player plays in the same order. One object is refilled each step, so combining allocates nothing.
+- **An input that doesn't decode** is handled where it arrives, never in a step. The host removes a peer whose input fails (its session stops with a `removed` error whose `why` is `badInput`), and a peer that can't decode a step from the host stops with a `badInput` error. So does a host whose own input doesn't survive the wire, such as a NaN, which JSON carries as null. A message that isn't one the protocol knows is dropped. A run holds at most 16 players.
+- **A simulation whose step input is not a `Game.PlayerInputs`** has nothing to send for one player. `hostLockstep` and `joinLockstep` refuse it, a struct with `players` and `leaving` written by hand included: they throw, with nothing left listening. Before that it is a type error on `simulation` that names `Game.PlayerInputs`, when the call infers its types from the simulation. Options typed ahead with the step input's type named get the throw alone, and so does `CoopRules`, where `makeCoopClient` throws.
 
 ## In an Effect program
 
@@ -102,37 +92,31 @@ combine({ inputs: [{ player: "guest", input: 2 }], removed: ["host"] });
 The example's two peers again, as one Effect program:
 
 ```ts
+import * as Game from "arcadekit/game";
 import {
   createMemoryNetwork,
   hostLockstepScoped,
   joinLockstepScoped,
-  jsonCodec,
 } from "arcadekit/net";
-import type { ConfirmedStep, Ticker } from "arcadekit/net";
-import type { GameSimulation } from "arcadekit/runtime";
-import { Effect } from "effect";
+import type { Ticker } from "arcadekit/net";
+import { Effect, Schema } from "effect";
 
-interface State {
-  total: number;
-}
-
-const simulation: GameSimulation<null, State, number, never> = {
+class Sum extends Game.Simulation("Sum", {
+  input: Game.PlayerInputs(Schema.Number),
   create: () => ({ total: 0 }),
   step: (state, input) => {
-    state.total += input;
+    for (const add of input.players) {
+      state.total += add ?? 0;
+    }
   },
-  drainEvents: () => [],
-};
+}) {}
 
 const network = createMemoryNetwork({ seed: 1, latencyMs: 30, jitterMs: 10 });
 const shared = {
-  simulation,
+  simulation: Sum,
   config: null,
   contentHash: "content-v1",
-  codec: jsonCodec<number>(),
-  combine: (step: ConfirmedStep<number>) =>
-    step.inputs.reduce((sum, { input }) => sum + input, 0),
-  hash: (state: State) => state.total,
+  hash: (state: Game.StateOf<typeof Sum>) => state.total,
   inputDelay: 3,
   hashEvery: 30,
 };
@@ -160,6 +144,7 @@ const play = Effect.gen(function* () {
     transport: network.connect("guest"),
     local: { read: () => 2 },
     host: "host",
+    players: ["host", "guest"],
   });
   // Neither run succeeds: each ticks until its session stops.
   yield* Effect.all([host.run(every4ms), guest.run(every4ms)], {
@@ -175,10 +160,6 @@ Effect.runFork(play);
 
 The plain session is the protocol, and the scoped one a shell around it. Test the protocol on plain sessions ticked by hand, as in the example above, and an Effect program's sessions on a `TestClock`.
 
-## Input codecs
-
-A session sends each player's input through its `InputCodec`: `encode` turns it into JSON data, and `decode` checks it on the way in and returns a `Result` (from `effect`), never throwing. `jsonCodec` checks nothing; `schemaCodec(schema)` decodes with an Effect Schema and fails with the schema's message. The host decodes each peer's input as it arrives and removes a peer whose input fails (its session stops with a `removed` error whose `why` is `badInput`); a peer that can't decode a step from the host stops with a `badInput` error. A message that isn't one the protocol knows is dropped. A run holds at most 16 players.
-
 ## In the browser
 
 `hostRoom` and `joinRoom` connect peers by join code through a signalling server, and `linksTransport` carries the session over the WebRTC links they open. Each is a scoped Effect that succeeds once the server welcomes the peer, with its join `code` and its own id (`self`). Its scope owns the socket until the start and every peer link after it, so closing the scope is leaving, and a room that fails has already closed what it opened.
@@ -189,27 +170,25 @@ A session sends each player's input through its `InputCodec`: `encode` turns it 
 - `browserRoomLayer(rtc)` provides what a room needs: WebRTC links (`PeerConnector`, from `rtcPeerConnector`) and the global WebSocket (`Socket.WebSocketConstructor` from `effect/socket`). Tests provide fakes of both.
 
 ```ts
-import { hostLockstepScoped, jsonCodec } from "arcadekit/net";
-import type { ConfirmedStep, Ticker } from "arcadekit/net";
+import * as Game from "arcadekit/game";
+import { hostLockstepScoped } from "arcadekit/net";
+import type { Ticker } from "arcadekit/net";
 import {
   browserRoomLayer,
   hostRoom,
   linksTransport,
 } from "arcadekit/net/browser";
-import type { GameSimulation } from "arcadekit/runtime";
-import { Effect, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 
-interface State {
-  total: number;
-}
-
-const simulation: GameSimulation<null, State, number, never> = {
+class Sum extends Game.Simulation("Sum", {
+  input: Game.PlayerInputs(Schema.Number),
   create: () => ({ total: 0 }),
   step: (state, input) => {
-    state.total += input;
+    for (const add of input.players) {
+      state.total += add ?? 0;
+    }
   },
-  drainEvents: () => [],
-};
+}) {}
 
 // Time it in a dedicated worker in a real game: a hidden tab throttles the main thread's timers.
 const every4ms: Ticker = (onTick) => {
@@ -226,13 +205,10 @@ const host = Effect.gen(function* () {
     event.type === "peer-connected" ? room.start : Effect.void
   );
   const session = yield* hostLockstepScoped({
-    simulation,
+    simulation: Sum,
     config: null,
     contentHash: "content-v1",
-    codec: jsonCodec<number>(),
-    combine: (step: ConfirmedStep<number>) =>
-      step.inputs.reduce((sum, { input }) => sum + input, 0),
-    hash: (state: State) => state.total,
+    hash: (state) => state.total,
     inputDelay: 3,
     hashEvery: 30,
     transport: linksTransport(room.self, room.links()),
@@ -255,7 +231,7 @@ Effect.runFork(host);
 
 A **Co-op game** is a game plus its lockstep parts, and the **Co-op client** runs one for one player: the lobby over the signalling worker and WebRTC, then a lockstep run stepped on a worker's timer (so a hidden tab keeps up), drawn on animation frames while attached. The game supplies its genre half; the lobby screens stay in the app.
 
-- `CoopRules<G>` (`arcadekit/net`) is the DOM-free half, kept beside the simulation and tested in Node. `G` is a `CoopTypes` bag the game declares once: `Config`, `State`, `Event`, `PlayerInput`, `Answer`, `LocalEvent` and `Content`. The simulation's step input is `PlayerInputs<PlayerInput>`: the client combines the players' inputs by slot.
+- `CoopRules<G>` (`arcadekit/net`) is the DOM-free half, kept beside the simulation and tested in Node. `G` is a `CoopTypes` bag the game declares once: `Config`, `State`, `Event`, `PlayerInput`, `Answer`, `LocalEvent` and `Content`. Its `simulation` is the game's declared `Game.Simulation` class, whose step input is a `Game.PlayerInputs` of `PlayerInput`: the client's lockstep run steps it as an engine would, sends each player's own input and combines them by slot. A player's decision does not reach it as a `Game.Command` yet: an answer and a pause ride the step input.
 - `CoopGame<G, LoadError>` (`arcadekit/net/browser`) adds `content`, an Effect run once per seat, and `presentation`, an Effect run once per attach that gives `createInput` and `createView`. The view gets a live `LocalPlayer`, and reads `local.slot` when it renders: the client never makes a view again.
 - `makeCoopClient(game, { rooms })` is a scoped Effect. `browserCoopRooms({ url, iceServers })` opens its rooms; the kit reads no environment, so the app passes the worker's URL and its STUN servers.
 
@@ -267,40 +243,46 @@ The client's commands return at once, except `leave`, which returns once the sea
 - `attach(element)` draws and reads input until interrupted, as an engine's does, and `attach` and `listen` have `arcadekit/foldkit`'s `AttachableEngine` shapes. A failed attach leaves the seat; a detach doesn't.
 
 ```ts
-import { jsonCodec } from "arcadekit/net";
+import * as Game from "arcadekit/game";
 import type { CoopRules, CoopTypes } from "arcadekit/net";
 import { browserCoopRooms, makeCoopClient } from "arcadekit/net/browser";
 import type { CoopGame } from "arcadekit/net/browser";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
+
+interface Palette {
+  readonly colours: readonly string[];
+}
 
 interface Tally {
   readonly colours: readonly string[];
   total: number;
 }
 
-// Every player adds a number each step. No answers, and no events.
-interface Sum extends CoopTypes {
-  readonly Config: { readonly colours: readonly string[] };
+// The rules: every player adds a number each step.
+class Sum extends Game.Simulation("Sum", {
+  input: Game.PlayerInputs(Schema.Number),
+  create: ({ colours }: Palette): Tally => ({ colours, total: 0 }),
+  step: (state, input) => {
+    for (const add of input.players) {
+      state.total += add ?? 0;
+    }
+  },
+}) {}
+
+// No answers, and no events.
+interface SumCoop extends CoopTypes {
+  readonly Config: Palette;
   readonly State: Tally;
   readonly Event: never;
   readonly PlayerInput: number;
   readonly Answer: never;
   readonly LocalEvent: never;
-  readonly Content: { readonly colours: readonly string[] };
+  readonly Content: Palette;
 }
 
 // The DOM-free half: beside the simulation, tested in Node.
-const sumRules: CoopRules<Sum> = {
-  simulation: {
-    create: ({ colours }) => ({ colours, total: 0 }),
-    step: (state, input) => {
-      for (const add of input.players) {
-        state.total += add ?? 0;
-      }
-    },
-    drainEvents: () => [],
-  },
-  codec: jsonCodec<number>(),
+const sumRules: CoopRules<SumCoop> = {
+  simulation: Sum,
   hash: (state) => state.total,
   picks: (content) => content.colours,
   config: (_content, picks) => ({ colours: picks }),
@@ -312,7 +294,7 @@ const sumRules: CoopRules<Sum> = {
 };
 
 // The browser half: the content to load, and how to read input and draw.
-const sumGame: CoopGame<Sum> = {
+const sumGame: CoopGame<SumCoop> = {
   ...sumRules,
   content: Effect.succeed({ colours: ["red", "blue"] }),
   presentation: Effect.sync(() => ({
@@ -353,7 +335,7 @@ Effect.runFork(play);
 
 ### Testing a Co-op game
 
-`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links), `manualTicker()` a ticker the test drives, and `testCoopGame()` a small game with lobby picks, an offer to answer, a pause and an end. Frames come from `manualFrames()` in `arcadekit/runtime/testing`.
+`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links), `manualTicker()` a ticker the test drives, and `testCoopGame()` a small game with lobby picks, an offer to answer, a pause and an end, whose rules are the declared `TestGame`. Frames come from `manualFrames()` in `arcadekit/runtime/testing`.
 
 ```ts
 import { makeCoopClient } from "arcadekit/net/browser";
