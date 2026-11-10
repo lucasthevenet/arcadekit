@@ -64,7 +64,7 @@ The class is the service's key, as in [`content/asset.ts`](../packages/arcadekit
 
 ### Register it
 
-Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](../packages/arcadekit/test/style.test.ts) and to `DECLARATION_BUILDERS` in [`tools/lint/declaration.ts`](../tools/lint/declaration.ts). Lint and the test then say what the declaration still lacks.
+Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](../packages/arcadekit/test/style.test.ts) and to `DECLARATION_BUILDERS` in [`tools/lint/declaration.ts`](../tools/lint/declaration.ts), with its entry in `BUILDER_ENTRIES` there if no builder came from that entry before. Lint and the test then say what the declaration still lacks.
 
 ## The definition a game writes
 
@@ -121,21 +121,21 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 
 | Rule | Checked by |
 | --- | --- |
-| A game's declaration is a class with the name it is declared with | lint: `declaration/named`, `declaration/class` |
+| A declaration is a class with the name it is declared with, and no second class extends it | lint: `declaration/named`, `declaration/class`. They find a builder by what the file imports, under any local name |
 | A builder is given no type argument, apart from types given first | lint: `declaration/inferred` |
 | A function in a definition is not async and not a generator | lint: `declaration/plain-handler` |
 | A step or an `apply` returns nothing | the `Nothing` type, and `Game.Loop` at run time |
 | New code is written with the declarations | lint: `declaration/older-contract`, off only for survivors and its demo |
-| A builder's shape: the name first as a literal type, `kind` and the name as statics, `<Noun>Class` written out and exported, the base named | lint: `declaration/builder`, on the kit's source |
+| A builder's shape: the name first as a literal type, `kind` and the name as statics, `<Noun>Class` written out and exported with the statics the class sets, the base named, one builder for each kind | lint: `declaration/builder`, on the kit's source |
 | Every builder is listed, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |
 | No new factory without a reason | the style test's `FACTORIES` |
-| Library code runs no Effect itself | lint: `Effect.run…` is refused in `packages/*/src` |
+| Library code runs no Effect itself | lint: `Effect.run…` and `ManagedRuntime.make` are refused in `packages/*/src`, outside what a test imports |
 | The simulation reads no clock or random source, and uses only exact math | lint, on the root entry of every genre package and on `arcadekit/game` but its engine. `oxlint.config.ts` lists the other plain files of the kit: add a new one there |
 | A module exports no `then` | lint: `unicorn/no-thenable` |
 | Which entry may import which, and which packages | lint's `ENTRY_IMPORTS`, [`packages/arcadekit/test/entry-packages.test.ts`](../packages/arcadekit/test/entry-packages.test.ts) |
 | A README's examples compile | `pnpm smoke` |
 | Every export of the kit has a written type | the build (`isolatedDeclarations`) |
 
-[`tools/lint/declaration.test.ts`](../tools/lint/declaration.test.ts) runs the linter on a case for each `declaration/…` rule: a new rule gets its cases there.
+[`tools/lint/declaration.test.ts`](../tools/lint/declaration.test.ts) runs the linter on a case for each `declaration/…` rule: a new rule gets its cases there. The rules are on in tests too, since a test's small game is what the next one copies. A test that has to declare what a builder refuses says so on the line: `// oxlint-disable-next-line declaration/class -- <why>`.
 
 The rest of this page is checked by review.

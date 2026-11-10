@@ -106,11 +106,23 @@ const EFFECT_RUNNERS = [
 const ownRunner =
   'Library code runs no Effect itself: return the Effect, and the app\'s runtime runs it. Plain code that a host calls captures a runner once (FiberHandle.runtime, or Effect.context with Effect.runForkWith). See "Where plain code and Effect meet" in AGENTS.md.';
 
-const ownRunnerProperties = EFFECT_RUNNERS.map((property) => ({
-  object: "Effect",
-  property,
-  message: `Effect.${property}: ${ownRunner}`,
-}));
+const ownRunnerProperties = [
+  ...EFFECT_RUNNERS.map((property) => ({
+    object: "Effect",
+    property,
+    message: `Effect.${property}: ${ownRunner}`,
+  })),
+  // A runtime of its own is the other way to run one.
+  {
+    object: "ManagedRuntime",
+    property: "make",
+    message: `ManagedRuntime.make: ${ownRunner}`,
+  },
+];
+
+// What a test imports, in the folders of library code: a helper may run an Effect to build its
+// fixture.
+const TEST_HELPERS = ["**/*.test.ts", "**/testing/**", "**/test-*.ts"];
 
 // Which entry of the arcadekit package may import which (ADR-0018). This is the graph the nine
 // packages had when they were separate: core and input stand alone, runtime steps with core's
@@ -188,16 +200,6 @@ export default defineConfig({
       },
     },
     {
-      // A test may call a builder outside a class and hand it a wrong handler, to check what
-      // the builder and its host refuse.
-      files: ["**/*.test.ts"],
-      jsPlugins: ["./tools/lint/declaration.ts"],
-      rules: {
-        "declaration/class": "off",
-        "declaration/plain-handler": "off",
-      },
-    },
-    {
       // The games still on the older contract (ADR-0020). This list only gets shorter.
       files: ["packages/survivors/**/*.ts", "apps/survivor-demo/**/*.ts"],
       jsPlugins: ["./tools/lint/declaration.ts"],
@@ -220,9 +222,7 @@ export default defineConfig({
       // and the last one's options replace the others', so they repeat this list.
       files: ["packages/*/src/**/*.ts"],
       excludeFiles: [
-        "**/*.test.ts",
-        "**/testing/**",
-        "**/test-*.ts",
+        ...TEST_HELPERS,
         "packages/arcadekit/src/net/worker/index.ts",
       ],
       rules: {
@@ -231,9 +231,9 @@ export default defineConfig({
     },
     {
       // Genre simulation code: the root entry of every package but the kit, so a new genre is
-      // held to it from its first file. Not the views in ./browser, not tests.
+      // held to it from its first file. Not the views in ./browser, not tests or their helpers.
       files: ["packages/*/src/**/*.ts"],
-      excludeFiles: ["packages/arcadekit/**", "**/browser/**", "**/*.test.ts"],
+      excludeFiles: ["packages/arcadekit/**", "**/browser/**", ...TEST_HELPERS],
       jsPlugins: ["./tools/lint/deterministic-math.ts"],
       rules: {
         "eslint/no-restricted-properties": [

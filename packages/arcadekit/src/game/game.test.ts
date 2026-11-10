@@ -68,6 +68,7 @@ class Counter extends Game.Simulation("Counter", {
 const holding = (add: number) => ({ read: () => ({ add }) });
 
 /** Simulations whose handlers return what a handler can't: each is a type error. */
+/* oxlint-disable declaration/class, declaration/plain-handler -- A test declares what a builder or its host must refuse. */
 const declareMistyped = () => [
   Game.Simulation("Late", {
     input: Schema.Null,
@@ -99,6 +100,7 @@ const declareMistyped = () => [
     },
   }),
 ];
+/* oxlint-enable declaration/class, declaration/plain-handler */
 
 /** A handler with its return type cast away, as a cast or plain JavaScript would pass it. */
 const unchecked = <Args extends readonly unknown[]>(
@@ -125,6 +127,7 @@ const runOneStep = <Input>(
 
 /** Declares a simulation whose command has no handler. */
 const declareWithoutHandler = () =>
+  // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
   Game.Simulation("Broken", {
     input: Schema.Null,
     commands: [AddBonus],
@@ -379,6 +382,7 @@ describe("Game.Loop", () => {
   it("refuses a create that returns a promise or an Effect in place of the state", () => {
     class Loading extends Game.Simulation("Loading", {
       input: Schema.Null,
+      // oxlint-disable-next-line declaration/plain-handler -- A test declares what a builder or its host must refuse.
       create: async () => {
         await Promise.resolve();
         return { n: 0 };
@@ -624,6 +628,7 @@ describe("a command the rules may refuse", () => {
     // oxlint-disable-next-line declaration/named -- A second command under one tag is the case.
     class Twin extends Game.Command("Deposit") {}
     expect(() =>
+      // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
       Game.Simulation("Twins", {
         input: Schema.Null,
         commands: [Deposit, Twin],
@@ -789,6 +794,7 @@ describe("a command the rules may refuse", () => {
       expectTypeOf(outcome).toBeUnknown();
     });
     const lookAlike = () =>
+      // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
       Game.Simulation("LookAlike", {
         input: Schema.Null,
         commands: [Deposit],
@@ -801,6 +807,7 @@ describe("a command the rules may refuse", () => {
       });
     expect(lookAlike).not.toThrow();
     const declare = () =>
+      // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
       Game.Simulation("Wrong", {
         input: Schema.Null,
         commands: [Empty],

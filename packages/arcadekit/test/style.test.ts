@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  BUILDER_ENTRIES,
   DECLARATION_BUILDERS,
   OLDER_CONTRACT,
 } from "../../../tools/lint/declaration";
@@ -28,19 +29,28 @@ const srcDir = path.join(packageDir, "src");
 const repoDir = path.resolve(packageDir, "../..");
 const guide = "docs/code-style.md";
 
-// Every declaration builder of the kit, by the way a game writes it, with its file from src/.
-// The file's first folder is the entry whose README shows it. Adding one is adding a word to the
-// kit's vocabulary: it also goes in DECLARATION_BUILDERS (tools/lint/declaration.ts), in the
-// glossary and on its entry's page, and this file checks that it did.
-const DECLARATIONS: Readonly<Record<string, string>> = {
-  "Game.Event": "game/event.ts",
-  "Game.Command": "game/command.ts",
-  "Game.Rejection": "game/rejection.ts",
-  "Game.Simulation": "game/simulation.ts",
-  "Game.Engine": "game/engine.ts",
-  Content: "content/content.ts",
-  Asset: "content/asset.ts",
+interface Declared {
+  /** The builder's file, from src/. Its first folder is the entry whose README shows it. */
+  readonly file: string;
+  /** Whether its class is a service's key, which an app provides with its `layer`. */
+  readonly service: boolean;
+}
+
+// Every declaration builder of the kit, by the way a game writes it. Adding one is adding a word
+// to the kit's vocabulary: it also goes in DECLARATION_BUILDERS (tools/lint/declaration.ts), in
+// the glossary and on its entry's page, and this file checks that it did.
+const DECLARATIONS: Readonly<Record<string, Declared>> = {
+  "Game.Event": { file: "game/event.ts", service: false },
+  "Game.Command": { file: "game/command.ts", service: false },
+  "Game.Rejection": { file: "game/rejection.ts", service: false },
+  "Game.Simulation": { file: "game/simulation.ts", service: false },
+  "Game.Engine": { file: "game/engine.ts", service: true },
+  Content: { file: "content/content.ts", service: true },
+  Asset: { file: "content/asset.ts", service: true },
 };
+
+const nounOf = (builder: string): string =>
+  builder.split(".").at(-1) ?? builder;
 
 // The files that return a class and build no declaration.
 const OTHER_CLASS_FACTORIES: readonly string[] = [
@@ -87,7 +97,18 @@ const NOT_YET_DECLARED: readonly string[] = [
   "makeSaveStore",
 ];
 
-const read = (file: string): string => readFileSync(file, "utf-8");
+const read = (file: string): string => {
+  if (!existsSync(file)) {
+    throw new Error(
+      `${path.relative(repoDir, file)} is not a file: a table of this test names it`
+    );
+  }
+  return readFileSync(file, "utf-8");
+};
+
+/** A source text without its comments, so prose about code is not read as code. */
+const code = (source: string): string =>
+  source.replaceAll(/\/\*[\s\S]*?\*\/|\/\/.*$/gmu, "");
 
 /** Every source file under `dir` that is not a test, from `dir`. */
 const sourceFiles = (dir: string): readonly string[] =>
@@ -105,7 +126,7 @@ const escaped = (text: string): string =>
  */
 const declares = (builder: string): RegExp =>
   new RegExp(
-    String.raw`\bextends\s+${escaped(builder)}(?:<[^()]*>\(\))?\(`,
+    String.raw`\bextends\s+${escaped(builder)}(?:<[\s\S]*?>\(\))?\(`,
     "u"
   );
 
@@ -115,7 +136,7 @@ const docComments = (source: string): readonly string[] =>
 
 /** The `ts` examples of a markdown text or a doc comment, joined. */
 const examples = (text: string): string =>
-  [...text.matchAll(/```ts\n(?<code>[\s\S]*?)```/gu)]
+  [...text.matchAll(/^```ts\n(?<code>[\s\S]*?)^```/gmu)]
     .map((match) => match.groups?.code ?? "")
     .join("\n");
 
@@ -127,27 +148,97 @@ const interfaceBody = (source: string, name: string): string =>
   ).exec(source)?.groups?.body ?? "";
 
 describe("the table of declarations", () => {
-  it("names every builder in the kit's source", () => {
-    // A builder is a function that returns a class, and its class says what it is with a `kind`
-    // static. Either one finds it, so a builder that left the other out is found, and fails below.
-    const builders = sourceFiles(srcDir).filter((file) =>
-      /(?:\breturn|=>)\s+class\b|\bstatic readonly kind = "/u.test(
-        read(path.join(srcDir, file))
-      )
-    );
+  it("names every builder in the kit's source, each with its kind", () => {
+    // A builder's class says what it is with a `kind` static, and a builder returns a class.
+    // Each `kind` under src/ is one builder; a file that returns a class and gives no kind is
+    // one too, and fails here.
+    const found = sourceFiles(srcDir).flatMap((file) => {
+      const text = code(read(path.join(srcDir, file)));
+      const kinds = [
+        ...text.matchAll(
+          /\bstatic (?:readonly )?kind\b[^=;]*=\s*"(?<kind>\w+)"/gu
+        ),
+      ].map((match) => `${file}: ${match.groups?.kind}`);
+      return kinds.length === 0 && /(?:\breturn|=>)\s+class\b/u.test(text)
+        ? [`${file}: no kind`]
+        : kinds;
+    });
     expect(
-      builders,
-      `A file under src/ builds a declaration (it returns a class, or has a \`kind\` static) that DECLARATIONS doesn't list. See ${guide}.`
+      found.toSorted(),
+      `The kit's builders are not the ones DECLARATIONS lists. A \`kind\` static is how a builder's class says what it is: one builder for each kind, in the file the table names. See ${guide}.`
     ).toStrictEqual(
-      [...Object.values(DECLARATIONS), ...OTHER_CLASS_FACTORIES].toSorted()
+      [
+        ...Object.entries(DECLARATIONS).map(
+          ([builder, { file }]) => `${file}: ${nounOf(builder)}`
+        ),
+        ...OTHER_CLASS_FACTORIES.map((file) => `${file}: no kind`),
+      ].toSorted()
     );
   });
 
   it("is the list lint holds a game's declarations to", () => {
     expect(
-      DECLARATION_BUILDERS,
+      DECLARATION_BUILDERS.toSorted(),
       "tools/lint/declaration.ts and DECLARATIONS list different builders"
-    ).toStrictEqual(Object.keys(DECLARATIONS));
+    ).toStrictEqual(Object.keys(DECLARATIONS).toSorted());
+  });
+
+  it("names every noun an entry gives a builder", () => {
+    // `export const Event: typeof makeEvent = makeEvent;` is how an entry imported as a namespace
+    // names a builder. A second such line for one builder is a second word for the same part.
+    const nouns = sourceFiles(srcDir).flatMap((file) =>
+      [
+        ...code(read(path.join(srcDir, file))).matchAll(
+          /^export const (?<noun>\w+): typeof make\w* = make\w*;/gmu
+        ),
+      ].map((match) => `Game.${match.groups?.noun}`)
+    );
+    expect(nouns.toSorted()).toStrictEqual(
+      Object.keys(DECLARATIONS)
+        .filter((builder) => builder.startsWith("Game."))
+        .toSorted()
+    );
+  });
+
+  it("is exported by the entries lint reads a file's builders from", () => {
+    const exportsMap = (
+      JSON.parse(read(path.join(packageDir, "package.json"))) as {
+        readonly exports: Readonly<Record<string, { readonly source: string }>>;
+      }
+    ).exports;
+    const exportedBy = (written: "namespace" | "bare"): string =>
+      Object.entries(BUILDER_ENTRIES)
+        .filter(([, how]) => how === written)
+        .map(([entry]) => {
+          const source = exportsMap[entry.replace("arcadekit", ".")]?.source;
+          return code(read(path.join(packageDir, source ?? entry)));
+        })
+        .join("\n");
+    const missing = Object.keys(DECLARATIONS).filter(
+      (builder) =>
+        !new RegExp(String.raw`\b${nounOf(builder)}\b`, "u").test(
+          exportedBy(builder.includes(".") ? "namespace" : "bare")
+        )
+    );
+    expect(missing).toStrictEqual([]);
+  });
+
+  it("is in the lists a reader starts from", () => {
+    const glossary =
+      /^\*\*Declaration\*\*:.*$/mu.exec(
+        read(path.join(repoDir, "CONTEXT.md"))
+      )?.[0] ?? "";
+    const agents = read(path.join(repoDir, "AGENTS.md"));
+    const unlisted = Object.keys(DECLARATIONS).flatMap((builder) => [
+      ...(glossary.includes(`\`${builder}\``)
+        ? []
+        : [`CONTEXT.md: ${builder}`]),
+      ...(agents.includes(`\`${builder}\``) ? [] : [`AGENTS.md: ${builder}`]),
+    ]);
+    expect(
+      unlisted,
+      "The glossary's Declaration entry and AGENTS.md each list the kit's declarations"
+    ).toStrictEqual([]);
   });
 });
 
@@ -180,65 +271,84 @@ describe("the older contract lint keeps new code off", () => {
   });
 });
 
-describe.each(Object.entries(DECLARATIONS))("%s", (builder, file) => {
-  const noun = builder.split(".").at(-1) ?? builder;
-  const entry = file.split("/", 1)[0] ?? "";
-  const source = read(path.join(srcDir, file));
+describe.each(Object.entries(DECLARATIONS))(
+  "%s",
+  (builder, { file, service }) => {
+    const noun = nounOf(builder);
+    const entry = file.split("/", 1)[0] ?? "";
+    // Read when a test runs, so a file that moved fails a test and not the whole file.
+    const source = (): string => read(path.join(srcDir, file));
 
-  it("shows itself declared in its own doc comment", () => {
-    const shown = docComments(source).some((comment) =>
-      declares(builder).test(examples(comment.replaceAll(/^\s*\* ?/gmu, "")))
-    );
-    expect(
-      shown,
-      `${file} has no doc comment with a \`ts\` example of \`class X extends ${builder}(...)\``
-    ).toBe(true);
-  });
-
-  it("is shown on its entry's page", () => {
-    const readme = `${entry}/README.md`;
-    expect(
-      declares(builder).test(examples(read(path.join(srcDir, readme)))),
-      `src/${readme} has no \`ts\` example of \`class X extends ${builder}(...)\``
-    ).toBe(true);
-  });
-
-  it("is a term of the glossary", () => {
-    expect(
-      read(path.join(repoDir, "CONTEXT.md")),
-      `CONTEXT.md has no entry that starts with **${noun}**:`
-    ).toMatch(new RegExp(String.raw`^\*\*${noun}\*\*:`, "mu"));
-  });
-
-  it("is declared by a test of its entry", () => {
-    const tests = readdirSync(path.join(srcDir, entry), {
-      recursive: true,
-      encoding: "utf-8",
-    }).filter((test) => test.endsWith(".test.ts"));
-    const declared = tests.some((test) =>
-      declares(builder).test(read(path.join(srcDir, entry, test)))
-    );
-    expect(
-      declared,
-      `no test under src/${entry}/ declares a \`class X extends ${builder}(...)\``
-    ).toBe(true);
-  });
-
-  // A declaration that is a service's key: its class is what an app provides and requires.
-  it.skipIf(!source.includes("Context.Service<"))(
-    "names its service after itself, and provides it with a layer",
-    () => {
-      // The key says where the service is from, and holds the declared name.
-      expect(source).toContain(`\`arcadekit/${entry}/${noun}/\${name}\``);
-      // The service's identity is the type of the class's own values, so the class names it:
-      // Layer.Layer<MyEngine>.
-      expect(source).toContain("Context.ServiceClass.Shape<");
-      expect(interfaceBody(source, `${noun}Class`)).toMatch(
-        /^\s*readonly layer: /mu
+    it("shows itself declared in its own doc comment", () => {
+      const shown = docComments(source()).some((comment) =>
+        declares(builder).test(examples(comment.replaceAll(/^\s*\* ?/gmu, "")))
       );
-    }
-  );
-});
+      expect(
+        shown,
+        `${file} has no doc comment with a \`ts\` example of \`class X extends ${builder}(...)\``
+      ).toBe(true);
+    });
+
+    it("is shown on its entry's page", () => {
+      const readme = `${entry}/README.md`;
+      expect(
+        declares(builder).test(examples(read(path.join(srcDir, readme)))),
+        `src/${readme} has no \`ts\` example of \`class X extends ${builder}(...)\``
+      ).toBe(true);
+    });
+
+    it("is a term of the glossary", () => {
+      expect(
+        read(path.join(repoDir, "CONTEXT.md")),
+        `CONTEXT.md has no entry that starts with **${noun}**:`
+      ).toMatch(new RegExp(String.raw`^\*\*${noun}\*\*:`, "mu"));
+    });
+
+    it("is declared by a test of its entry", () => {
+      const tests = readdirSync(path.join(srcDir, entry), {
+        recursive: true,
+        encoding: "utf-8",
+      }).filter((test) => test.endsWith(".test.ts"));
+      const declared = tests.some((test) =>
+        declares(builder).test(code(read(path.join(srcDir, entry, test))))
+      );
+      expect(
+        declared,
+        `no test under src/${entry}/ declares a \`class X extends ${builder}(...)\``
+      ).toBe(true);
+    });
+
+    it(`${service ? "is" : "is not"} a service's key, as the table says`, () => {
+      expect(source().includes("Context.Service<")).toBe(service);
+    });
+
+    // A declaration that is a service's key: its class is what an app provides and requires.
+    it.skipIf(!service)(
+      "names its service after itself, and provides it with a layer",
+      () => {
+        // The key says where the service is from, and holds the declared name: the value the
+        // service is made with, not only the type that names it.
+        expect(source()).toMatch(
+          new RegExp(
+            `\`arcadekit/${entry}/${noun}/${String.raw`\$\{\w+\}`}\` as ${noun}Id<`,
+            "u"
+          )
+        );
+        // The service's identity is the type of the class's own values, so the class names it:
+        // Layer.Layer<MyEngine>.
+        expect(source()).toMatch(
+          new RegExp(
+            String.raw`type ${noun}Service<[\s\S]*?> = Context\.ServiceClass\.Shape<`,
+            "u"
+          )
+        );
+        expect(interfaceBody(source(), `${noun}Class`)).toMatch(
+          /^\s*readonly layer: /mu
+        );
+      }
+    );
+  }
+);
 
 describe("the exported factories", () => {
   it("are the ones listed", () => {
@@ -251,7 +361,7 @@ describe("the exported factories", () => {
     );
     expect(
       exported.toSorted(),
-      `The kit's exported make… and create… functions changed. A part each game supplies is a declaration, not a factory: see "What kind of module is it" in ${guide}.`
+      `The kit's exported make… and create… functions changed. An export named that way is read as a factory, and a part each game supplies is a declaration, not a factory: see "What kind of module is it" in ${guide}. If it makes nothing a game supplies, name it for what it returns.`
     ).toStrictEqual([...FACTORIES, ...OLDER_FACTORIES].toSorted());
   });
 });
@@ -260,14 +370,21 @@ describe("the guide", () => {
   const text = read(path.join(repoDir, guide));
 
   it("links only to files that exist", () => {
-    const dead = [...text.matchAll(/\]\((?<target>[^)#\s]+)(?:#[^)]*)?\)/gu)]
+    // Code is not prose: `cases[tag](event)` is no link.
+    const prose = text.replaceAll(/```[\s\S]*?```|`[^`\n]*`(?!\])/gu, "");
+    const targets = [
+      ...prose.matchAll(/\]\((?<target>[^)#\s]+)(?:#[^)]*)?\)/gu),
+    ]
       .map((match) => match.groups?.target ?? "")
-      .filter((target) => !/^[a-z]+:/u.test(target))
-      .filter(
+      .filter((target) => !/^[a-z]+:/u.test(target));
+    // The guide names the files to copy: finding few links means this stopped reading them.
+    expect(targets.length).toBeGreaterThan(10);
+    expect(
+      targets.filter(
         (target) =>
           !existsSync(path.resolve(repoDir, path.dirname(guide), target))
-      );
-    expect(dead).toStrictEqual([]);
+      )
+    ).toStrictEqual([]);
   });
 
   it("is where AGENTS.md sends whoever adds a module", () => {
