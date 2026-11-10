@@ -4,16 +4,20 @@
 
 **Status: alpha.** Interfaces, stored data and the package's entries change whenever that improves the code, with no compatibility layers or migrations. Each release's changelog says what broke.
 
+**Docs:** [arcadekit.dev](https://arcadekit.dev) has a page for each entry of the package, the glossary and the decisions behind the kit.
+
 ```bash
 pnpm install
 pnpm dev         # play the survivors demo, co-op included, under `alchemy dev` (http://localhost:1337)
 pnpm dev:puzzle  # play the push-puzzle demo
+pnpm dev:docs    # read the docs site as you write it (VitePress's dev server)
 pnpm test        # all tests
 pnpm test:browsers  # the long-run determinism scenario in Chromium, Firefox and WebKit
 pnpm typecheck   # every package, each against its own rules
 pnpm check       # lint + format check (Ultracite: Oxlint + Oxfmt)
 pnpm fix         # apply lint fixes and formatting
-pnpm build       # typecheck + production build of both demos
+pnpm build       # typecheck + production build of both demos and the docs site
+pnpm build:docs  # build the docs site alone; it fails on a dead link in a README
 pnpm build:packages  # build the arcadekit package to dist/ (dev, test and typecheck don't need it)
 pnpm lint:packages   # publint and arethetypeswrong on the packed arcadekit package
 pnpm smoke       # build, pack and install the kit outside the workspace, then typecheck and build a game with it
@@ -58,6 +62,7 @@ The first nine rows are the entries of the `arcadekit` package ([`packages/arcad
 | [`@arcadekit/push-puzzle`](packages/push-puzzle) | The push-puzzle genre: level schema, turn-based simulation with undo and holes and cue counters, a pixel-art sprite view, sound view and engine. `makePushPuzzleGame` takes the app's sheet, cue table and audio, and `makePushPuzzleEngineLayer({ sheet, sounds })` takes the app's sheet load, cue table and audio. Its `PushPuzzleEngine` is an engine loader ([ADR-0015](docs/adr/0015-pixel-art-sprites-loaded-by-the-app.md)) | all of the above except foldkit |
 | [`apps/survivor-demo`](apps/survivor-demo) | The survivors demo: JSON content, Foldkit screens, a save of each hero's best run, sound and music with a volume panel, and co-op for 2 to 4 players: a lobby by join code, then a lockstep run over WebRTC. Deployed with Alchemy as one Cloudflare Worker that serves the site and is the kit's [signalling worker](packages/arcadekit/src/net/worker) (a Durable Object per join code) | survivors, audio, content, save, foldkit, runtime, net (Alchemy and Workers types to run, deploy and check its Worker) |
 | [`apps/push-puzzle-demo`](apps/push-puzzle-demo) | The push-puzzle demo: three levels, level select, HUD, solved screen, a save of solved levels, sound with a volume panel, and pixel art from a sprite sheet it loads at startup | push-puzzle, audio, content, save, foldkit, runtime, render-three |
+| [`apps/docs`](apps/docs) | The docs site, [arcadekit.dev](https://arcadekit.dev): each entry's README, the glossary and the decisions as pages, read where they are, so nothing is copied. A new entry's README is a page as soon as it exists, and a dead link in one fails `pnpm build`. Deployed with Alchemy as static files on Cloudflare | VitePress (Alchemy to deploy) |
 
 The typecheck sets which environment each entry may use. `packages/arcadekit/tsconfig.root.json` compiles `core` and the root entries of `content`, `save`, `audio`, `runtime` and `net` (and `net/signalling`) without DOM types, so browser code there fails the typecheck; only their `./browser` entries may use the DOM. `tsconfig.worker.json` compiles `net/worker` with Cloudflare's Workers types and no DOM, and `tsconfig.json` leaves it out, so Workers globals reach no other entry. Both genre packages check their root entry the same way. That keeps the simulation runnable in a Web Worker or on a game server.
 
@@ -175,6 +180,7 @@ The `arcadekit` package releases with [Changesets](https://github.com/changesets
 ## Not done yet
 
 - **The one-package release.** `arcadekit` 0.3.0 isn't on npm until `scripts/npm-setup.sh` has been walked through: see [Releasing](#releasing). Until then npm has the nine `@arcadekit/*` packages at 0.2.3.
+- **The docs site's deployment.** `pnpm build` builds arcadekit.dev, but nothing deploys it until the workflow in `apps/docs/deploy.workflow.example.yml` is moved to `.github/workflows/`: see [its README](apps/docs/README.md#deploying).
 - Real art and sounds: the demos draw generated pixel art and play generated placeholders.
 - A public deployment, and TURN. `alchemy deploy` puts the demo and its signalling worker on Cloudflare, but none is public yet (the worker needs rate limits first: see its README), and two peers behind symmetric NATs can't connect without TURN.
 - Cross-browser lockstep: the end-to-end co-op test runs in Chromium only. `pnpm test:browsers` checks the simulation itself in Chromium, Firefox and WebKit, but Linux WebKit isn't Safari (whose JavaScriptCore uses Apple's libm), and nothing runs on Windows or macOS yet.

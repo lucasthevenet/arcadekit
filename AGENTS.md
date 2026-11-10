@@ -34,6 +34,10 @@ Where plain code and Effect meet:
 
 The kit is one published package, `arcadekit` (`packages/arcadekit`), whose entries live in `src/<entry>/` ([ADR-0018](docs/adr/0018-one-package-with-entries.md)). Inside it, import another entry by relative path to its public file (`../core/index`), never as `arcadekit/core`. `ENTRY_IMPORTS` in `oxlint.config.ts` lists which entry may import which, and lint enforces it: adding an arrow is a design decision, so say why in the PR. The genre packages and the apps import `arcadekit/<entry>`. `arcadekit/net/worker` is the one entry that runs on Cloudflare: `tsconfig.worker.json` checks it with Workers types and no DOM, and no other entry may import `cloudflare:workers` (`test/entry-packages.test.ts`). `arcadekit/net/testing` holds a Co-op game's test helpers (fake rooms, a manual ticker, a test game); only tests import it.
 
+## The docs site
+
+Each entry's `README.md` is also a page of [arcadekit.dev](https://arcadekit.dev) (`apps/docs`, VitePress), read where it is. So is `CONTEXT.md` (the glossary) and every ADR. `pnpm build` builds the site and fails on a dead link in any of them. A new entry's README starts with its import path as the heading (`# arcadekit/net/testing`), then a paragraph; [`apps/docs/README.md`](apps/docs/README.md) has the rest.
+
 ## Agent skills
 
 ### Issue tracker

@@ -1,0 +1,64 @@
+name: Deploy docs
+
+# An example: GitHub runs a workflow only from .github/workflows/. To turn it on, move it there
+# as deploy-docs.yml and delete this paragraph (apps/docs/README.md, "From CI").
+#
+# Deploys the docs site, arcadekit.dev, to Cloudflare with Alchemy (apps/docs/alchemy.run.ts):
+# the VitePress build as the static assets of a Worker, with arcadekit.dev as its custom domain.
+# It runs after CI passes on main, or by hand (Actions → Deploy docs → Run workflow), to the
+# "prod" stage. So the site follows main, and its top bar says "unreleased" while a change to
+# the package waits for a release (apps/docs/README.md, "Which version it describes").
+#
+# Needs two repository (or "production" environment) secrets:
+# - CLOUDFLARE_ACCOUNT_ID: the account to deploy into, which must hold the arcadekit.dev zone;
+# - CLOUDFLARE_API_TOKEN: an API token that can, on the account, edit Workers scripts, read the
+#   account's settings and edit the Secrets Store, and, on the arcadekit.dev zone, read the zone
+#   and edit its DNS and its Workers routes.
+# The two that deploy GRIMBONK should work unchanged: it is the same account and zone.
+# Alchemy keeps its state in a state-store Worker in that account (Cloudflare.state()), with its
+# token and key in the account's Secrets Store, so this and a deploy from a laptop see the same
+# state. Before the first deploy, the zone's apex must have no A, AAAA or CNAME record.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time, and never cancel one halfway.
+concurrency:
+  group: deploy-docs-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # From CI: only a successful run for a push to main (not a pull request's run).
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://arcadekit.dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # The commit CI checked, not whatever main is now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Alchemy runs the site's build itself (`pnpm run build` in apps/docs), then uploads it.
+      - name: alchemy deploy --stage prod
+        working-directory: apps/docs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec alchemy deploy --stage prod --yes --no-input
