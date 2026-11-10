@@ -266,7 +266,7 @@ const makeEngine = <Config, State, Input, Event, Command, E>(
  * ```
  *
  * An app's Foldkit Subscription attaches it to the viewport (`arcadekit/foldkit`'s
- * `engineEntry`). To step a simulation with nothing drawn, use `Game.Loop` or a story.
+ * `engineEntry`). To step a simulation with nothing drawn, use `Game.Loop` or a scenario.
  */
 export const make = <
   const Name extends string,

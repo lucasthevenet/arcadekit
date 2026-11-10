@@ -50,12 +50,12 @@ const attached = (engine: GameEngine<null, Counter, string>) =>
 
 /**
  * Attaches an engine for the recording game to `element`, logs its events too, runs
- * `scenario`, then closes the scope. The log keeps recording after that. Frames run only when
+ * `drive`, then closes the scope. The log keeps recording after that. Frames run only when
  * the test runs them on `frames`.
  */
 const play = async (
   frames: ReturnType<typeof manualFrames>,
-  scenario: (engine: GameEngine<null, Counter, string>) => Effect.Effect<void>
+  drive: (engine: GameEngine<null, Counter, string>) => Effect.Effect<void>
 ) => {
   const log: string[] = [];
   const engine = makeGameEngine(recordingGame(log), { frames });
@@ -64,7 +64,7 @@ const play = async (
       Effect.gen(function* () {
         yield* engine.listen((event) => log.push(event));
         yield* attached(engine);
-        yield* scenario(engine);
+        yield* drive(engine);
       })
     )
   );

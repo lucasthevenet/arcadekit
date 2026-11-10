@@ -6,7 +6,7 @@
 export { PushPuzzleContent } from "./content";
 export { Hud, LevelSolved } from "./events";
 export { PuzzleContent } from "./schema";
-// The genre's rules, for headless or replay use: a `Game.Loop` or a story steps them.
+// The genre's rules, for headless or replay use: a `Game.Loop` or a scenario steps them.
 export { PushPuzzle } from "./simulation";
 export {
   Direction,

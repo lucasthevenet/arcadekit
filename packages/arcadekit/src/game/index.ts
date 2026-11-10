@@ -4,8 +4,8 @@
 //
 //   export class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}
 //
-// `Game.Engine`, which runs a simulation in the browser, is in the ./browser entry, and stories,
-// which check one in a test, in the ./story entry.
+// `Game.Engine`, which runs a simulation in the browser, is in the ./browser entry, and scenarios,
+// which check one in a test, in the ./scenario entry.
 
 import { make as makeCommand } from "./command";
 import { make as makeEvent } from "./event";

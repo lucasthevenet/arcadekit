@@ -92,11 +92,11 @@ const element = { id: "game" } as HTMLElement;
 type CounterService = Context.Service.Shape<typeof CounterEngine>;
 
 /**
- * Runs `scenario` with the engine, the frames it draws on and its log, then closes everything.
+ * Runs `drive` with the engine, the frames it draws on and its log, then closes everything.
  * Returns the log.
  */
 const play = async (
-  scenario: (
+  drive: (
     engine: CounterService,
     frames: ReturnType<typeof manualFrames>,
     log: string[]
@@ -118,7 +118,7 @@ const play = async (
     Effect.scoped(
       Effect.gen(function* () {
         const engine = yield* CounterEngine;
-        yield* scenario(engine, frames, log);
+        yield* drive(engine, frames, log);
       })
     ).pipe(Effect.provide(layer))
   );

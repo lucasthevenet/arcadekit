@@ -1,8 +1,8 @@
 # arcadekit/game
 
-A game's building blocks. Each part of a game is one named declaration: `Game.Event` for what a run reports, `Game.Command` for what a player decides, `Game.Simulation` for the rules, and, in `arcadekit/game/browser`, `Game.Engine` for the browser half that draws a run and reads its input. A declaration runs nothing by itself: `Game.Loop` steps a simulation anywhere, an engine's `layer` provides it to an app, and a story (`arcadekit/game/story`) checks the rules in a test.
+A game's building blocks. Each part of a game is one named declaration: `Game.Event` for what a run reports, `Game.Command` for what a player decides, `Game.Simulation` for the rules, and, in `arcadekit/game/browser`, `Game.Engine` for the browser half that draws a run and reads its input. A declaration runs nothing by itself: `Game.Loop` steps a simulation anywhere, an engine's `layer` provides it to an app, and a scenario (`arcadekit/game/scenario`) checks the rules in a test.
 
-An entry of the [`arcadekit`](../../README.md) package. The root entry and `./story` are DOM-free. Import each as a namespace: `import * as Game from "arcadekit/game"`.
+An entry of the [`arcadekit`](../../README.md) package. The root entry and `./scenario` are DOM-free. Import each as a namespace: `import * as Game from "arcadekit/game"`.
 
 ## Install
 
@@ -81,13 +81,13 @@ console.log(loop.state?.x); // about 8: one second at speed 8
 
 `Game.StateOf<typeof Race>`, `ConfigOf`, `InputOf`, `EventOf` and `CommandOf` name a simulation's types. `Race.match({ Finished: ..., Hud: ... })` makes a function that handles each event by its tag, checked to cover them all.
 
-## A story
+## A scenario
 
-A story is a specification you can run: given a run, after these steps and commands, it reported these events. It steps the real simulation through `Game.Loop`, so what it describes is what the game does. Each step is checked against the simulation's types where it is written.
+A scenario is a specification you can run: given a run, after these steps and commands, it reported these events. It steps the real simulation through `Game.Loop`, so what it describes is what the game does. Each step is checked against the simulation's types where it is written.
 
 ```ts
 import * as Game from "arcadekit/game";
-import * as Story from "arcadekit/game/story";
+import * as Scenario from "arcadekit/game/scenario";
 import { Schema } from "effect";
 
 class DoorOpened extends Game.Event("DoorOpened", { atStep: Schema.Int }) {}
@@ -117,22 +117,22 @@ class Door extends Game.Simulation("Door", {
   },
 }) {}
 
-const story = Story.make(Door);
+const scenario = Scenario.make(Door);
 
-// In a test: it("opens once the lever has been held long enough", () => story(...)).
-story(
-  Story.given({ needed: 3 }),
-  Story.step({ lever: true }, 2),
-  Story.reported(),
-  Story.step({ lever: true }),
-  Story.reported(new DoorOpened({ atStep: 2 }))
+// In a test: it("opens once the lever has been held long enough", () => scenario(...)).
+scenario(
+  Scenario.given({ needed: 3 }),
+  Scenario.step({ lever: true }, 2),
+  Scenario.reported(),
+  Scenario.step({ lever: true }),
+  Scenario.reported(new DoorOpened({ atStep: 2 }))
 );
 
-story(
-  Story.given({ needed: 3 }),
-  Story.send(new Lock()),
-  Story.step({ lever: true }, 5),
-  Story.state((door) => {
+scenario(
+  Scenario.given({ needed: 3 }),
+  Scenario.send(new Lock()),
+  Scenario.step({ lever: true }, 5),
+  Scenario.state((door) => {
     if (door.open) {
       throw new Error("A locked door stays shut");
     }
@@ -142,14 +142,14 @@ story(
 
 | Step | What it does |
 | --- | --- |
-| `Story.given(config, { seed })` | Starts the run the story is about. The seed is 0 unless given. |
-| `Story.step(input, count)` | Runs `count` steps (1 unless given) with `input` held for each. |
-| `Story.send(command, player)` | Sends a command; the next step applies it. |
-| `Story.reported(...events)` | Checks what the run reported since the last check: exactly these events, in order. With none, that nothing was reported. |
-| `Story.sampled(sample)` | Checks the run's latest sample. |
-| `Story.state(check)` | Reads the state, for the test's own assertions. |
+| `Scenario.given(config, { seed })` | Starts the run the scenario is about. The seed is 0 unless given. |
+| `Scenario.step(input, count)` | Runs `count` steps (1 unless given) with `input` held for each. |
+| `Scenario.send(command, player)` | Sends a command; the next step applies it. |
+| `Scenario.reported(...events)` | Checks what the run reported since the last check: exactly these events, in order. With none, that nothing was reported. |
+| `Scenario.sampled(sample)` | Checks the run's latest sample. |
+| `Scenario.state(check)` | Reads the state, for the test's own assertions. |
 
-A list of steps is a step, so a game names its own (`const tap = (direction) => [Story.step(...), Story.step(...)]`). A passing story accounts for everything: it fails with a `StoryError` if the run reported an event no `Story.reported` checked. Samples are the exception, since a real-time game reports one every few steps. If your linter asks every test for an `expect`, tell it a story asserts (`assertFunctionNames: ["expect", "story"]`).
+A list of steps is a step, so a game names its own (`const tap = (direction) => [Scenario.step(...), Scenario.step(...)]`). A passing scenario accounts for everything: it fails with a `ScenarioError` if the run reported an event no `Scenario.reported` checked. Samples are the exception, since a real-time game reports one every few steps. If your linter asks every test for an `expect`, tell it a scenario asserts (`assertFunctionNames: ["expect", "scenario"]`).
 
 ## In the browser
 

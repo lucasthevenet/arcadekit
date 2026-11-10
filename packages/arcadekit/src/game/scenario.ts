@@ -2,14 +2,14 @@ import { Loop } from "./loop";
 import { resolve } from "./simulation";
 import type { SimulationClass } from "./simulation";
 
-// A story is a specification you can run: given a run, after these steps and commands, it
+// A scenario is a specification you can run: given a run, after these steps and commands, it
 // reported these events. It steps the real simulation through `Game.Loop`, the loop the browser engine
-// runs, so what a story describes is what the game does. Plain code, like the loop: a story is
-// synchronous and needs no Effect. Import the entry as a namespace named `Story`, so a step reads
-// `Story.given(...)`.
+// runs, so what a scenario describes is what the game does. Plain code, like the loop: a scenario is
+// synchronous and needs no Effect. Import the entry as a namespace named `Scenario`, so a step reads
+// `Scenario.given(...)`.
 
-/** What a story's steps drive: one run of the simulation, and what it has reported. */
-export interface StoryRunner<Config, State, Input, Event, Command> {
+/** What a scenario's steps drive: one run of the simulation, and what it has reported. */
+export interface ScenarioRunner<Config, State, Input, Event, Command> {
   readonly given: (config: Config, seed: number) => void;
   readonly step: (input: Input, count: number) => void;
   readonly send: (command: Command, player: number) => void;
@@ -19,19 +19,19 @@ export interface StoryRunner<Config, State, Input, Event, Command> {
 }
 
 /**
- * One line of a story: a function of the part of the runner it uses, so a story's steps are
- * checked against its simulation's types where the story is written.
+ * One line of a scenario: a function of the part of the runner it uses, so a scenario's steps are
+ * checked against its simulation's types where the scenario is written.
  */
-export type StoryStep<Runner> = (runner: Runner) => void;
+export type ScenarioStep<Runner> = (runner: Runner) => void;
 
 /** A step, or a list of them: a game's own helper, such as one tap, is a list. */
-export type StorySteps<Runner> =
-  | StoryStep<Runner>
-  | readonly StorySteps<Runner>[];
+export type ScenarioSteps<Runner> =
+  | ScenarioStep<Runner>
+  | readonly ScenarioSteps<Runner>[];
 
-/** A story that failed: an expectation that didn't hold, or a step out of place. */
-export class StoryError extends Error {
-  override readonly name = "StoryError";
+/** A scenario that failed: an expectation that didn't hold, or a step out of place. */
+export class ScenarioError extends Error {
+  override readonly name = "ScenarioError";
 }
 
 const show = (value: unknown): string => JSON.stringify(value);
@@ -73,13 +73,13 @@ const sameData = (a: unknown, b: unknown): boolean => {
 
 const makeRunner = <Config, State, Input, Event, Command>(
   simulation: SimulationClass<string, Config, State, Input, Event, Command>
-): StoryRunner<Config, State, Input, Event, Command> & {
+): ScenarioRunner<Config, State, Input, Event, Command> & {
   readonly end: () => void;
 } => {
   const { sample, stepSeconds } = resolve(simulation);
   const loop = new Loop(simulation);
   // Events reported since the last check, and the latest sample: a sample is a read of the
-  // state, not something that happened, so `Story.reported` never has to list one.
+  // state, not something that happened, so `Scenario.reported` never has to list one.
   let unchecked: Event[] = [];
   let lastSample: Event | undefined;
   loop.subscribe((event) => {
@@ -92,8 +92,8 @@ const makeRunner = <Config, State, Input, Event, Command>(
   const running = (step: string): State => {
     const { state } = loop;
     if (state === null) {
-      throw new StoryError(
-        `Story.${step} needs a run: start the story with Story.given(config)`
+      throw new ScenarioError(
+        `Scenario.${step} needs a run: start the scenario with Scenario.given(config)`
       );
     }
     return state;
@@ -124,23 +124,23 @@ const makeRunner = <Config, State, Input, Event, Command>(
         actual.length !== expected.length ||
         !actual.every((event, i) => sameData(event, expected[i]))
       ) {
-        throw new StoryError(
-          `The run reported other events than the story's.\nExpected:\n${showAll(expected)}\nReported:\n${showAll(actual)}`
+        throw new ScenarioError(
+          `The run reported other events than the scenario's.\nExpected:\n${showAll(expected)}\nReported:\n${showAll(actual)}`
         );
       }
     },
     sampled: (expected) => {
       if (!sameData(lastSample, expected)) {
-        throw new StoryError(
-          `The run's latest sample is not the story's.\nExpected:\n  ${show(expected)}\nSampled:\n  ${lastSample === undefined ? "(no sample)" : show(lastSample)}`
+        throw new ScenarioError(
+          `The run's latest sample is not the scenario's.\nExpected:\n  ${show(expected)}\nSampled:\n  ${lastSample === undefined ? "(no sample)" : show(lastSample)}`
         );
       }
     },
     state: (check) => check(running("state")),
     end: () => {
       if (unchecked.length > 0) {
-        throw new StoryError(
-          `The story ended with events no Story.reported checked:\n${showAll(unchecked)}`
+        throw new ScenarioError(
+          `The scenario ended with events no Scenario.reported checked:\n${showAll(unchecked)}`
         );
       }
     },
@@ -148,37 +148,37 @@ const makeRunner = <Config, State, Input, Event, Command>(
 };
 
 /**
- * A story runner for `simulation`. Each call runs one story, from a `Story.given` to the last
- * step, and throws a `StoryError` at the first expectation that doesn't hold.
+ * A scenario runner for `simulation`. Each call runs one scenario, from a `Scenario.given` to the last
+ * step, and throws a `ScenarioError` at the first expectation that doesn't hold.
  *
  * ```ts
- * const story = Story.make(PushPuzzle);
+ * const scenario = Scenario.make(PushPuzzle);
  *
  * it("reports the solve on the move that fills the last goal", () =>
- *   story(
- *     Story.given({ content, levelId: "one-push" }),
- *     Story.step({ held: "right", pressed: "right", undo: false }),
- *     Story.reported(new LevelSolved({ moves: 1 })),
- *     Story.sampled(new Hud({ moves: 1, boxesLeft: 0 }))
+ *   scenario(
+ *     Scenario.given({ content, levelId: "one-push" }),
+ *     Scenario.step({ held: "right", pressed: "right", undo: false }),
+ *     Scenario.reported(new LevelSolved({ moves: 1 })),
+ *     Scenario.sampled(new Hud({ moves: 1, boxesLeft: 0 }))
  *   ));
  * ```
  *
- * A passing story accounts for everything: it fails if the run reported an event no
- * `Story.reported` checked. Samples are the exception, since a real-time game reports one every few
- * steps: check the latest with `Story.sampled`.
+ * A passing scenario accounts for everything: it fails if the run reported an event no
+ * `Scenario.reported` checked. Samples are the exception, since a real-time game reports one every few
+ * steps: check the latest with `Scenario.sampled`.
  */
 export const make =
   <Config, State, Input, Event, Command>(
     simulation: SimulationClass<string, Config, State, Input, Event, Command>
   ): ((
-    ...steps: readonly StorySteps<
-      StoryRunner<Config, State, Input, Event, Command>
+    ...steps: readonly ScenarioSteps<
+      ScenarioRunner<Config, State, Input, Event, Command>
     >[]
   ) => void) =>
   (...steps) => {
     const runner = makeRunner(simulation);
     const run = (
-      step: StorySteps<StoryRunner<Config, State, Input, Event, Command>>
+      step: ScenarioSteps<ScenarioRunner<Config, State, Input, Event, Command>>
     ): void => {
       if (typeof step === "function") {
         step(runner);
@@ -193,14 +193,14 @@ export const make =
   };
 
 /**
- * Starts the run the story is about, with `config`. The seed is 0 unless the story says
+ * Starts the run the scenario is about, with `config`. The seed is 0 unless the scenario says
  * otherwise: the same seed, steps and commands always give the same run.
  */
 export const given =
   <Config>(
     config: Config,
     options?: { readonly seed?: number }
-  ): StoryStep<{ readonly given: (config: Config, seed: number) => void }> =>
+  ): ScenarioStep<{ readonly given: (config: Config, seed: number) => void }> =>
   (runner) =>
     runner.given(config, options?.seed ?? 0);
 
@@ -209,7 +209,7 @@ export const step =
   <Input>(
     input: Input,
     count?: number
-  ): StoryStep<{ readonly step: (input: Input, count: number) => void }> =>
+  ): ScenarioStep<{ readonly step: (input: Input, count: number) => void }> =>
   (runner) =>
     runner.step(input, count ?? 1);
 
@@ -218,7 +218,7 @@ export const send =
   <Command>(
     command: Command,
     player?: number
-  ): StoryStep<{
+  ): ScenarioStep<{
     readonly send: (command: Command, player: number) => void;
   }> =>
   (runner) =>
@@ -232,7 +232,7 @@ export const send =
 export const reported =
   <const Events extends readonly unknown[]>(
     ...events: Events
-  ): StoryStep<{
+  ): ScenarioStep<{
     readonly reported: (expected: readonly Events[number][]) => void;
   }> =>
   (runner) =>
@@ -242,7 +242,7 @@ export const reported =
 export const sampled =
   <Event>(
     sample: Event
-  ): StoryStep<{ readonly sampled: (expected: Event) => void }> =>
+  ): ScenarioStep<{ readonly sampled: (expected: Event) => void }> =>
   (runner) =>
     runner.sampled(sample);
 
@@ -250,7 +250,7 @@ export const sampled =
 export const state =
   <State>(
     check: (state: State) => void
-  ): StoryStep<{
+  ): ScenarioStep<{
     readonly state: (check: (state: State) => void) => void;
   }> =>
   (runner) =>

@@ -8,7 +8,7 @@ import {
 import type { Direction } from "@arcadekit/push-puzzle";
 import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
-import * as Story from "arcadekit/game/story";
+import * as Scenario from "arcadekit/game/scenario";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -40,12 +40,12 @@ const DIRECTIONS: Record<string, Direction> = {
   R: "right",
 };
 
-const story = Story.make(PushPuzzle);
+const scenario = Scenario.make(PushPuzzle);
 
 /** One tap: a step with the direction pressed, then a step with nothing held. */
 const tap = (direction: Direction) => [
-  Story.step({ held: direction, pressed: direction, undo: false }),
-  Story.step({ held: null, pressed: null, undo: false }),
+  Scenario.step({ held: direction, pressed: direction, undo: false }),
+  Scenario.step({ held: null, pressed: null, undo: false }),
 ];
 
 describe("demo levels", () => {
@@ -56,10 +56,10 @@ describe("demo levels", () => {
   });
 
   it.each(Object.entries(SOLUTIONS))("%s can be solved", (levelId, moves) => {
-    story(
-      Story.given({ content, levelId }),
+    scenario(
+      Scenario.given({ content, levelId }),
       [...moves].map((char) => tap(DIRECTIONS[char]!)),
-      Story.reported(new LevelSolved({ moves: moves.length }))
+      Scenario.reported(new LevelSolved({ moves: moves.length }))
     );
   });
 });

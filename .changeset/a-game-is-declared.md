@@ -8,7 +8,7 @@ A game is declared: one named class per part, hosted by a Layer or a loop ([ADR-
 
 - `arcadekit/game`: `Game.Event` and `Game.Command` (Schema classes for what a run reports and what a player decides), `Game.Simulation` (the DOM-free rules: `input`, `events`, `commands`, `create`, `step`, `apply`, `sample`) and `Game.Loop`, which steps one anywhere. A command sent to a run is applied at the start of its next step, so a run changes only at a step.
 - `arcadekit/game/browser`: the same, plus `Game.Engine`: a simulation with the `view` and `input` that draw it and read its input, and what they are made from (`uses`, Effects run on each attach). The class is the engine service's key and its `layer` provides it. `Game.Frames` replaces the frame clock in a test.
-- `arcadekit/game/story`: stories that check a simulation: `Story.given`, `step`, `send`, `reported`, `sampled`, `state`.
+- `arcadekit/game/scenario`: scenarios that check a simulation: `Scenario.given`, `step`, `send`, `reported`, `sampled`, `state`.
 
 **New in `arcadekit/content`**
 

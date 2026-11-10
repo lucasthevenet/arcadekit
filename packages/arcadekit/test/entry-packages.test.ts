@@ -38,7 +38,7 @@ const ENTRY_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   "runtime/testing": ["effect"],
   game: ["effect"],
   "game/browser": ["effect"],
-  "game/story": ["effect"],
+  "game/scenario": ["effect"],
   net: ["effect"],
   "net/browser": ["effect"],
   "net/testing": ["effect"],

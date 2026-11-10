@@ -190,7 +190,7 @@ export default defineConfig({
         "packages/arcadekit/src/game/event.ts",
         "packages/arcadekit/src/game/loop.ts",
         "packages/arcadekit/src/game/simulation.ts",
-        "packages/arcadekit/src/game/story.ts",
+        "packages/arcadekit/src/game/scenario.ts",
         "packages/arcadekit/src/net/lockstep.ts",
         "packages/arcadekit/src/net/codec.ts",
         "packages/arcadekit/src/net/player-inputs.ts",
@@ -252,11 +252,11 @@ export default defineConfig({
         // `toBe(true)` is stricter than `toBeTruthy()`.
         "vitest/prefer-to-be-truthy": "off",
         "vitest/prefer-to-be-falsy": "off",
-        // A story asserts: it throws at the first expectation that doesn't hold
-        // (`arcadekit/game/story`).
+        // A scenario asserts: it throws at the first expectation that doesn't hold
+        // (`arcadekit/game/scenario`).
         "vitest/expect-expect": [
           "error",
-          { assertFunctionNames: ["expect", "expectTypeOf", "story"] },
+          { assertFunctionNames: ["expect", "expectTypeOf", "scenario"] },
         ],
       },
     },

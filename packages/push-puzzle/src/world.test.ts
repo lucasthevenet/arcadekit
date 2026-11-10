@@ -1,5 +1,5 @@
 import * as Game from "arcadekit/game";
-import * as Story from "arcadekit/game/story";
+import * as Scenario from "arcadekit/game/scenario";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -269,34 +269,34 @@ describe("holding a direction", () => {
   });
 });
 
-// What the run reports is told as stories: given a level, after these presses, it reported this.
-const story = Story.make(PushPuzzle);
+// What the run reports is told as scenarios: given a level, after these presses, it reported this.
+const scenario = Scenario.make(PushPuzzle);
 
-/** One tap, as a story's steps. */
+/** One tap, as a scenario's steps. */
 const press = (direction: Direction) => [
-  Story.step({ held: direction, pressed: direction, undo: false }),
-  Story.step(NOTHING),
+  Scenario.step({ held: direction, pressed: direction, undo: false }),
+  Scenario.step(NOTHING),
 ];
 const UNDO = [
-  Story.step({ held: null, pressed: null, undo: true }),
-  Story.step(NOTHING),
+  Scenario.step({ held: null, pressed: null, undo: true }),
+  Scenario.step(NOTHING),
 ];
 
 describe("solving", () => {
   const LEVEL = ["#######", "#@$  .#", "#######"];
 
   it("reports LevelSolved once, with the move count, when every goal has a box", () => {
-    story(
-      Story.given(configFor(LEVEL)),
+    scenario(
+      Scenario.given(configFor(LEVEL)),
       press("right"),
       UNDO,
       press("right"),
       press("right"),
-      Story.reported(),
+      Scenario.reported(),
       press("right"),
-      Story.reported(new LevelSolved({ moves: 3 })),
-      Story.sampled(new Hud({ moves: 3, boxesLeft: 0 })),
-      Story.state((puzzle) => {
+      Scenario.reported(new LevelSolved({ moves: 3 })),
+      Scenario.sampled(new Hud({ moves: 3, boxesLeft: 0 })),
+      Scenario.state((puzzle) => {
         expect(boardText(puzzle)[1]).toBe("#   @*#");
         expect(puzzle.solved).toBe(true);
       })
@@ -304,17 +304,17 @@ describe("solving", () => {
   });
 
   it("ignores moves and undo once solved", () => {
-    story(
-      Story.given(configFor(LEVEL)),
+    scenario(
+      Scenario.given(configFor(LEVEL)),
       press("right"),
       press("right"),
       press("right"),
-      Story.reported(new LevelSolved({ moves: 3 })),
+      Scenario.reported(new LevelSolved({ moves: 3 })),
       press("left"),
       press("left"),
       UNDO,
-      Story.reported(),
-      Story.state((puzzle) => {
+      Scenario.reported(),
+      Scenario.state((puzzle) => {
         expect(boardText(puzzle)[1]).toBe("#   @*#");
         expect(puzzle.moves).toBe(3);
       })

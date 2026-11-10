@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 import { sourceCondition } from "../../../scripts/source-condition.ts";
 
-// `pnpm test:browsers`: the long-run determinism scenario in Chromium, Firefox and WebKit. Not
+// `pnpm test:browsers`: the long determinism run in Chromium, Firefox and WebKit. Not
 // part of `pnpm test`, since it needs Playwright's browsers installed.
 export default defineConfig({
   root: import.meta.dirname,

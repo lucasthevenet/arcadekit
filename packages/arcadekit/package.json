@@ -101,10 +101,10 @@
       "types": "./dist/game/browser.d.ts",
       "default": "./dist/game/browser.js"
     },
-    "./game/story": {
-      "source": "./src/game/story.ts",
-      "types": "./dist/game/story.d.ts",
-      "default": "./dist/game/story.js"
+    "./game/scenario": {
+      "source": "./src/game/scenario.ts",
+      "types": "./dist/game/scenario.d.ts",
+      "default": "./dist/game/scenario.js"
     },
     "./runtime": {
       "source": "./src/runtime/index.ts",

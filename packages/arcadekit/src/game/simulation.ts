@@ -243,7 +243,7 @@ export const resolve = <Config, State, Input, Event, Command>(
  * The DOM-free half of a game: its rules. It says what a run's state is made from, how one step
  * advances it, which events it reports and which commands it takes. It runs in a browser, a Web
  * Worker, on a server or in a test: `Game.Loop` steps it, `Game.Engine` runs it in the browser,
- * and a story checks it.
+ * and a scenario checks it.
  *
  * ```ts
  * export class PushPuzzle extends Game.Simulation("PushPuzzle", {
