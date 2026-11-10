@@ -116,6 +116,11 @@
       "types": "./dist/net/browser.d.ts",
       "default": "./dist/net/browser.js"
     },
+    "./net/testing": {
+      "source": "./src/net/testing/index.ts",
+      "types": "./dist/net/testing.d.ts",
+      "default": "./dist/net/testing.js"
+    },
     "./net/signalling": {
       "source": "./src/net/signalling/protocol.ts",
       "types": "./dist/net/signalling.d.ts",
