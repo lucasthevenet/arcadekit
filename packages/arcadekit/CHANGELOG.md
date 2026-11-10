@@ -2,6 +2,18 @@
 
 Versions up to 0.2.3 were published as the nine `@arcadekit/*` packages (core, input, content, save, audio, render-three, runtime, net and foldkit); their entries are merged here.
 
+## 0.3.0
+
+### Minor Changes
+
+- [#64](https://github.com/lucasthevenet/arcadekit/pull/64) [`f426e1a`](https://github.com/lucasthevenet/arcadekit/commit/f426e1ae6c295cb71df49953fa168b6e88deba32) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - The kit is one package. `arcadekit` replaces the nine `@arcadekit/*` packages (`core`, `input`, `content`, `save`, `audio`, `render-three`, `runtime`, `net`, `foldkit`), which get no further release (ADR-0018).
+
+  **Breaking:**
+
+  - Replace the `@arcadekit/*` dependencies with `arcadekit`, and change each import from `@arcadekit/<entry>` to `arcadekit/<entry>`: `@arcadekit/runtime/browser` is `arcadekit/runtime/browser`. The sixteen entries and what each exports are unchanged. The package has no root export.
+  - `effect` is the one required peer dependency. `three`, `@types/three`, `foldkit` and `@effect/platform-browser` are optional peers: install the ones the entries you import need.
+  - The Effect service keys follow the name: `@arcadekit/audio/Audio` is `arcadekit/audio/Audio`, and `@arcadekit/net/PeerConnector` is `arcadekit/net/PeerConnector`.
+
 ## 0.2.3
 
 ### Patch Changes

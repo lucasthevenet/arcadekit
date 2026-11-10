@@ -1,6 +1,6 @@
 {
   "name": "arcadekit",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
   "keywords": [
     "arcadekit",
