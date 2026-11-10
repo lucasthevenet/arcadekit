@@ -11,7 +11,7 @@ import path from "node:path";
 import { defineConfig } from "vitepress";
 import type { HeadConfig } from "vitepress";
 
-import { createLinkRewriter } from "./links.ts";
+import { createLinkRewriter, whereIs } from "./links.ts";
 import {
   discoverPages,
   markdownThatIsNotAPage,
@@ -47,9 +47,9 @@ const links = createLinkRewriter({
     [PACKAGE_README, pages.home.link],
   ]),
   // The landing page includes the package's README, whose links start from its own folder.
-  linkBases: new Map([[pages.home.file, path.posix.dirname(PACKAGE_README)]]),
-  onDeadLink: ({ file, href }) => {
-    console.warn(`(!) Found dead link ${href} in file ${file}`);
+  includes: new Map([[pages.home.file, PACKAGE_README]]),
+  onDeadLink: (link) => {
+    console.warn(`(!) Found dead link ${link.href} in file ${whereIs(link)}`);
   },
 });
 
@@ -154,7 +154,7 @@ export default defineConfig({
             throw new Error(
               [
                 `${dead.length} dead link(s) to files of the repository:`,
-                ...dead.map(({ file, href }) => `  ${href} in ${file}`),
+                ...dead.map((link) => `  ${link.href} in ${whereIs(link)}`),
               ].join("\n")
             );
           }

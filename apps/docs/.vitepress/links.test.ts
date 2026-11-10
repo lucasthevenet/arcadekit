@@ -1,6 +1,9 @@
+import path from "node:path";
+
+import { createMarkdownRenderer } from "vitepress";
 import { describe, expect, it } from "vitest";
 
-import { createLinkRewriter } from "./links.ts";
+import { createLinkRewriter, whereIs } from "./links.ts";
 import type { DeadLink } from "./links.ts";
 import { REPO_ROOT } from "./pages.ts";
 
@@ -28,10 +31,21 @@ const makeRewriter = () => {
         "/adr/0012-delay-based-lockstep-over-a-host-star",
       ],
     ]),
-    linkBases: new Map([[HOME, "packages/arcadekit"]]),
+    includes: new Map([[HOME, "packages/arcadekit/README.md"]]),
     onDeadLink: (link) => reported.push(link),
   });
   return { ...links, reported };
+};
+
+/** Renders markdown as the page of a README, with the rewriter's plugin. */
+const renderPage = async (markdown: string) => {
+  const { plugin } = makeRewriter();
+  const md = await createMarkdownRenderer(REPO_ROOT, {
+    config: (renderer) => {
+      renderer.use(plugin);
+    },
+  });
+  return md.render(markdown, { path: path.join(REPO_ROOT, CORE) });
 };
 
 describe("a relative link in a README", () => {
@@ -99,6 +113,21 @@ describe("a relative link in a README", () => {
     expect(deadLinks()).toStrictEqual(dead);
     expect(reported).toStrictEqual(dead);
   });
+
+  it("is reported with the included file on a page that includes one", () => {
+    const { rewrite, deadLinks } = makeRewriter();
+    rewrite("src/nope/README.md", HOME);
+    const [dead] = deadLinks();
+    expect(dead).toStrictEqual({
+      file: HOME,
+      includes: "packages/arcadekit/README.md",
+      href: "src/nope/README.md",
+    });
+    expect(whereIs(dead as DeadLink)).toBe(
+      "apps/docs/index.md or packages/arcadekit/README.md, which it includes"
+    );
+    expect(whereIs({ file: CORE, href: "../nope" })).toBe(CORE);
+  });
 });
 
 describe("a full link", () => {
@@ -115,10 +144,26 @@ describe("a full link", () => {
     ).toBe("/net/worker");
   });
 
+  it("is dead when it names a file the repository doesn't have", () => {
+    const { rewrite, deadLinks } = makeRewriter();
+    const renamed = `${REPO_URL}/blob/main/docs/adr/0012-this-was-renamed.md`;
+    const missing = `${REPO_URL}/tree/main/packages/arcadekit/src/nope`;
+    const outside = `${REPO_URL}/blob/main/../other/README.md`;
+    for (const href of [renamed, missing, outside]) {
+      expect(rewrite(href, CORE)).toBe(href);
+    }
+    expect(deadLinks()).toStrictEqual(
+      [renamed, missing, outside].map((href) => ({ file: CORE, href }))
+    );
+  });
+
   it("is left alone otherwise", () => {
     const { rewrite, deadLinks } = makeRewriter();
     for (const href of [
       `${REPO_URL}/blob/main/packages/arcadekit/CHANGELOG.md`,
+      `${REPO_URL}/tree/main/.changeset`,
+      // Another branch, which this checkout can't check.
+      `${REPO_URL}/blob/next/docs/adr/0099-not-written-yet.md`,
       `${REPO_URL}/issues/25`,
       `${REPO_URL}#readme`,
       "https://effect.website",
@@ -130,5 +175,50 @@ describe("a full link", () => {
       expect(rewrite(href, CORE)).toBe(href);
     }
     expect(deadLinks()).toStrictEqual([]);
+  });
+});
+
+describe("a bare issue number", () => {
+  it("gets the issue's address on GitHub", () => {
+    const { issueLinks } = makeRewriter();
+    expect(issueLinks("as #25 asked (#52-#55).")).toStrictEqual([
+      { text: "as " },
+      { text: "#25", href: `${REPO_URL}/issues/25` },
+      { text: " asked (" },
+      { text: "#52", href: `${REPO_URL}/issues/52` },
+      { text: "-" },
+      { text: "#55", href: `${REPO_URL}/issues/55` },
+      { text: ")." },
+    ]);
+  });
+
+  it("is not part of a colour, a word, an address or an entity", () => {
+    const { issueLinks } = makeRewriter();
+    for (const text of [
+      "the colour #17151f",
+      "the colour #000000ff",
+      "item#3",
+      "see /page#2",
+      "a &#39; mark",
+      "no number # 4",
+    ]) {
+      expect(issueLinks(text)).toStrictEqual([{ text }]);
+    }
+  });
+
+  it("is linked in a page's text", async () => {
+    const html = await renderPage("#25 makes co-op, as #24 did.\n");
+    expect(html).toContain(
+      `<p><a href="${REPO_URL}/issues/25" target="_blank" rel="noreferrer">#25</a> makes co-op, as <a href="${REPO_URL}/issues/24"`
+    );
+  });
+
+  it("is left as it is in code, in a link and in a heading", async () => {
+    const html = await renderPage(
+      "# What #26 asked\n\nSee [#30](https://example.com/30) and `#7`.\n"
+    );
+    expect(html).toContain('<a href="https://example.com/30"');
+    expect(html).toContain("<code>#7</code>");
+    expect(html).not.toContain("/issues/");
   });
 });
