@@ -44,11 +44,11 @@ export class Race extends Game.Simulation("Race", {
     goal: config.goal,
     finished: false,
   }),
-  step: (runner, input, { dt, step, emit }) => {
+  step: (runner, input, { dt, step, report }) => {
     runner.x += input.moveX * runner.speed * dt;
     if (!runner.finished && runner.x >= runner.goal) {
       runner.finished = true;
-      emit(new Finished({ steps: step + 1 }));
+      report(new Finished({ steps: step + 1 }));
     }
   },
   apply: {
@@ -75,7 +75,7 @@ console.log(loop.state?.x); // about 8: one second at speed 8
 
 - **`create`**, **`step`** and each `apply` handler are plain functions. `step` and `apply` change the state in place and return nothing, and the loop refuses one that returns a value: a step can't be `async` or return an Effect, so when a frame returns, its steps are over. A step may allocate what it reports, and keeps what it holds per entity in typed arrays ([`arcadekit/core`](../core/README.md)'s pools).
 - **`input`** is one step's input as a Schema: what a device holds for the step, what a replay records and what crosses the network in lockstep.
-- **`events`** lists what a step may report with `emit`. Keep them rare: they cross into the UI.
+- **`events`** lists what a step may report with `report`. Keep them rare: they cross into the UI.
 - **`commands`** lists what a player may send, and **`apply`** handles each by its tag. A command is applied at the start of the next step, before `step`, in the order sent. A run changes in no other way, so a simulation that declares a command without its handler is refused when its module loads. A handler can't yet refuse a command to whoever sent it.
 - **`sample`** is a read of the state for the UI, such as a HUD, delivered as an event: when a run starts and then every `every`, and/or right after any frame in which `version` (a cheap number, such as a turn counter) changed.
 
@@ -103,11 +103,11 @@ class Door extends Game.Simulation("Door", {
     open: false,
     locked: false,
   }),
-  step: (door, input, { emit, step }) => {
+  step: (door, input, { report, step }) => {
     door.held = input.lever && !door.locked ? door.held + 1 : 0;
     if (!door.open && door.held === door.needed) {
       door.open = true;
-      emit(new DoorOpened({ atStep: step }));
+      report(new DoorOpened({ atStep: step }));
     }
   },
   apply: {

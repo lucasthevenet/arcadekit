@@ -37,7 +37,7 @@ export interface EventClass<
 
 /**
  * A rare, meaningful fact a run reports to the outside, named in the past tense: "level solved",
- * "leveled up". Never per-entity data. A step reports one with `emit`, and the app hears it as a
+ * "leveled up". Never per-entity data. A step reports one with `report`, and the app hears it as a
  * value of this class, which is also its Schema, so it goes straight into a Foldkit Message.
  *
  * ```ts
@@ -45,7 +45,7 @@ export interface EventClass<
  *   moves: Schema.Int,
  * }) {}
  *
- * emit(new LevelSolved({ moves: puzzle.moves }));
+ * report(new LevelSolved({ moves: puzzle.moves }));
  * ```
  *
  * A sample is declared the same way: it is an event the loop reads from the state, instead of

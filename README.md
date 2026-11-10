@@ -88,7 +88,7 @@ export class MyGame extends Game.Simulation("MyGame", {
   input: MyInput,                                  // one step's input, as a Schema
   events: [LevelSolved],
   create: (config: MyConfig, { seed }) => /* new State */,
-  step: (state, input, { dt, emit }) => /* advance; deterministic */,
+  step: (state, input, { dt, report }) => /* advance; deterministic */,
   sample: { event: Hud, every: "100 millis", read: (state) => /* the HUD */ },   // or `version: (state) => state.turns` for a turn-based HUD
 }) {}
 
@@ -140,7 +140,7 @@ Rules of thumb for the simulation (see `packages/push-puzzle/src/world.ts` for a
 - Keep large collections in `createPool`, and don't allocate per entity inside `step`.
 - Write the step as plain code: it runs no Effect and reads no clock of its own, so its time comes in as an argument. Effect is for what has a lifecycle: loading, the engine, connections. `AGENTS.md` ("Effect and plain code") and [ADR-0017](docs/adr/0017-effect-at-the-edges-plain-code-inside.md) say where the line is.
 - Use the run's `Rng` (`makeRng(seed)`) for every random choice, so the same seed and inputs give the same run.
-- Report rare, meaningful facts with `emit`. Never send per-entity data to the UI.
+- Report rare, meaningful facts with `report`. Never send per-entity data to the UI.
 
 `docs/push-puzzle-findings.md` lists what building the second genre showed about the kit: which primitives are known to fit one genre, and the issues filed for them. `docs/co-op-findings.md` lists what moving co-op into the kit left in the apps. `docs/architecture-review.md` records the #27 survey of the kit and the demo apps, and where each verdict landed. `docs/adr/` holds the kit's decisions the follow-ups build on. `CONTEXT.md` is the glossary (step vs turn, SpatialGrid vs tile map).
 

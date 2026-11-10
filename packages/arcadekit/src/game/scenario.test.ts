@@ -22,17 +22,17 @@ class Door extends Game.Simulation("Door", {
     open: false,
     locked: false,
   }),
-  step: (door, input, { emit, step }) => {
+  step: (door, input, { report, step }) => {
     door.held = input.lever && !door.locked ? door.held + 1 : 0;
     if (!door.open && door.held === door.needed) {
       door.open = true;
-      emit(new DoorOpened({ atStep: step }));
+      report(new DoorOpened({ atStep: step }));
     }
   },
   apply: {
-    Lock: (door, _command, { emit }) => {
+    Lock: (door, _command, { report }) => {
       door.locked = true;
-      emit(new DoorLocked());
+      report(new DoorLocked());
     },
   },
   sample: {

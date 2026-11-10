@@ -27,7 +27,7 @@ const start = (rows: readonly string[]): Puzzle =>
 
 const NOTHING = { held: null, pressed: null, undo: false } as const;
 /** A step's context for a test that calls `step` itself: its events go nowhere. */
-const STEP = { dt: 1 / 60, step: 0, emit: () => {} };
+const STEP = { dt: 1 / 60, step: 0, report: () => {} };
 
 const tap = (puzzle: Puzzle, direction: Direction) => {
   step(puzzle, { held: direction, pressed: direction, undo: false }, STEP);

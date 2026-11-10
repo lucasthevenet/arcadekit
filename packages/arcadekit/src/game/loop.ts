@@ -40,7 +40,7 @@ const describeResult = (result: unknown): string => {
 const refuseResult = (result: unknown, simulation: string, handler: string) => {
   if (result !== undefined) {
     throw new Error(
-      `Simulation "${simulation}": ${handler} returned ${describeResult(result)}. A handler changes the state in place and returns nothing: it can't be async, the loop runs no Effect, and an event is reported with emit.`
+      `Simulation "${simulation}": ${handler} returned ${describeResult(result)}. A handler changes the state in place and returns nothing: it can't be async, the loop runs no Effect, and an event is reported with report().`
     );
   }
 };
@@ -76,7 +76,7 @@ export class Loop<Config, State, Input, Event, Command> {
   private readonly loop: GameLoop<Config, State, Input, Event>;
   private readonly events = new EventBuffer<Event>();
   private pending: Pending<Command>[] = [];
-  private readonly emit = (event: Event): void => {
+  private readonly report = (event: Event): void => {
     this.events.push(event);
   };
 
@@ -145,19 +145,19 @@ export class Loop<Config, State, Input, Event, Command> {
 
   /** The definition as the kernel loop steps it, with this loop's commands and events. */
   private compile(): GameSimulation<Config, State, Input, Event> {
-    const { definition, emit, events, name } = this;
+    const { definition, report, events, name } = this;
     // One context for the run's steps and one for its commands, refilled in place.
-    const stepContext: Mutable<StepContext<Event>> = { dt: 0, step: 0, emit };
+    const stepContext: Mutable<StepContext<Event>> = { dt: 0, step: 0, report };
     const commandContext: Mutable<CommandContext<Event>> = {
       player: 0,
       step: 0,
-      emit,
+      report,
     };
     const { sample } = definition;
     return {
       stepSeconds: definition.stepSeconds,
       create: (config, seed) => {
-        const state = definition.create(config, { seed, emit });
+        const state = definition.create(config, { seed, report });
         const made = describeResult(state);
         if (made === "an Effect" || made === "a promise") {
           throw new Error(

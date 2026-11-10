@@ -18,7 +18,7 @@ import type {
 // Boards are written and read back in level text, so each case reads like a picture.
 
 /** A step's context for a test that calls `step` itself: its events go nowhere. */
-const STEP = { dt: 1 / 60, step: 0, emit: () => {} };
+const STEP = { dt: 1 / 60, step: 0, report: () => {} };
 const NOTHING = { held: null, pressed: null, undo: false } as const;
 
 /** A config for a one-level game whose level is `rows`. */

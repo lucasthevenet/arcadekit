@@ -8,7 +8,7 @@ export interface RunContext<Event> {
   /** The run's seed. The same seed, config, input and commands give the same run. */
   readonly seed: number;
   /** Reports an event the run starts with. */
-  readonly emit: (event: Event) => void;
+  readonly report: (event: Event) => void;
 }
 
 /** What `step` is given besides the state and the step's input. */
@@ -18,7 +18,7 @@ export interface StepContext<Event> {
   /** This step's number in its run, from 0. */
   readonly step: number;
   /** Reports an event. The loop delivers it after the frame's steps. */
-  readonly emit: (event: Event) => void;
+  readonly report: (event: Event) => void;
 }
 
 /** What a command's `apply` handler is given besides the state and the command. */
@@ -28,7 +28,7 @@ export interface CommandContext<Event> {
   /** The number of the step the command arrives at. */
   readonly step: number;
   /** Reports an event, as a step does. */
-  readonly emit: (event: Event) => void;
+  readonly report: (event: Event) => void;
 }
 
 /**
@@ -104,7 +104,7 @@ export interface Definition<
   /**
    * Applies each command, by its tag. The loop calls it at the start of the next step, before
    * `step`, in the order the commands were sent. As deterministic as `step`, and like it a
-   * handler changes the state and returns nothing: it reports with `emit`, and can't yet refuse
+   * handler changes the state and returns nothing: it reports with `report`, and can't yet refuse
    * a command to whoever sent it.
    */
   readonly apply?: CommandHandlers<State, Commands, Events[number]["Type"]>;

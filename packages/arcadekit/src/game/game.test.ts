@@ -32,8 +32,8 @@ class Counter extends Game.Simulation("Counter", {
   input: CounterInput,
   events: [Started, Reached],
   commands: [AddBonus],
-  create: (config: { readonly target: number }, { seed, emit }) => {
-    emit(new Started());
+  create: (config: { readonly target: number }, { seed, report }) => {
+    report(new Started());
     const state: CounterState = {
       target: config.target,
       seed,
@@ -44,12 +44,12 @@ class Counter extends Game.Simulation("Counter", {
     };
     return state;
   },
-  step: (state, input, { dt, emit, step }) => {
+  step: (state, input, { dt, report, step }) => {
     state.count += input.add;
     state.log.push(`step ${step} dt ${dt}`);
     if (!state.reached && state.count + state.bonus >= state.target) {
       state.reached = true;
-      emit(new Reached({ count: state.count + state.bonus }));
+      report(new Reached({ count: state.count + state.bonus }));
     }
   },
   apply: {

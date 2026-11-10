@@ -183,7 +183,7 @@ export const createPuzzle = ({
 export const step = (
   puzzle: Puzzle,
   input: PushPuzzleInput,
-  { emit }: Game.StepContext<LevelSolved>
+  { report }: Game.StepContext<LevelSolved>
 ): void => {
   if (puzzle.solved) {
     return;
@@ -198,7 +198,7 @@ export const step = (
   if (input.pressed !== null) {
     repeat.direction = input.pressed;
     repeat.stepsLeft = REPEAT_DELAY_STEPS;
-    takeMove(puzzle, input.pressed, emit);
+    takeMove(puzzle, input.pressed, report);
     return;
   }
   if (input.held === null || input.held !== repeat.direction) {
@@ -209,7 +209,7 @@ export const step = (
   repeat.stepsLeft -= 1;
   if (repeat.stepsLeft === 0) {
     repeat.stepsLeft = REPEAT_INTERVAL_STEPS;
-    takeMove(puzzle, input.held, emit);
+    takeMove(puzzle, input.held, report);
   }
 };
 
@@ -217,12 +217,12 @@ export const step = (
 const takeMove = (
   puzzle: Puzzle,
   direction: Direction,
-  emit: (event: LevelSolved) => void
+  report: (event: LevelSolved) => void
 ) => {
   if (tryMove(puzzle, direction) && boxesLeft(puzzle) === 0) {
     puzzle.solved = true;
     puzzle.cues.solved += 1;
-    emit(new LevelSolved({ moves: puzzle.moves }));
+    report(new LevelSolved({ moves: puzzle.moves }));
   }
 };
 
