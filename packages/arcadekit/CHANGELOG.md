@@ -2,6 +2,12 @@
 
 Versions up to 0.2.3 were published as the nine `@arcadekit/*` packages (core, input, content, save, audio, render-three, runtime, net and foldkit); their entries are merged here.
 
+## 0.4.1
+
+### Patch Changes
+
+- [#71](https://github.com/lucasthevenet/arcadekit/pull/71) [`214b8c6`](https://github.com/lucasthevenet/arcadekit/commit/214b8c6d1f2660ada68a91a4f38a3ae35f0db621) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - The package's `homepage` is [arcadekit.dev](https://arcadekit.dev), the docs site, which has a page for each entry. The README links to it. No code changed.
+
 ## 0.4.0
 
 ### Minor Changes
