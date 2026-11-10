@@ -2,8 +2,9 @@
 //
 // Its pages are the repository's own markdown, read in place: `srcDir` is the repository's root,
 // `rewrites` gives each page its address, and `srcExclude` leaves every other markdown file out.
-// pages.ts finds the pages, sidebar.ts groups them, and links.ts makes the links the READMEs
-// already have work here.
+// pages.ts finds the pages, sidebar.ts groups them, links.ts makes the links the READMEs
+// already have work here, and reference.ts gives the glossary and the decisions what a page
+// needs.
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -19,6 +20,7 @@ import {
   PACKAGE_README,
   REPO_ROOT,
 } from "./pages.ts";
+import { createReferencePlugin } from "./reference.ts";
 import { entriesNav, sidebar } from "./sidebar.ts";
 
 /** Where the site is served: its canonical address, with no trailing slash. */
@@ -54,6 +56,12 @@ const links = createLinkRewriter({
   },
 });
 
+const reference = createReferencePlugin({
+  repoRoot: REPO_ROOT,
+  glossary: pages.glossary.file,
+  adrs: adrByFile,
+});
+
 const { version } = JSON.parse(
   readFileSync(path.join(REPO_ROOT, "packages/arcadekit/package.json"), "utf-8")
 ) as { readonly version: string };
@@ -82,6 +90,7 @@ export default defineConfig({
 
   markdown: {
     config: (md) => {
+      md.use(reference);
       md.use(links.plugin);
     },
   },
