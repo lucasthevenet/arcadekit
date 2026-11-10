@@ -1,0 +1,19 @@
+{
+  // The smoke project's Worker: Cloudflare's Workers types and no DOM. It skips the check of
+  // library type files, as a Worker's typecheck must: Effect's own name DOM types (`Storage`).
+  // worker/worker.ts shows that arcadekit/net/worker's types still arrive whole.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["worker"]
+}
