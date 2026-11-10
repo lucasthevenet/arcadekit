@@ -1,4 +1,13 @@
-import { Data, Effect, Exit, Fiber, Layer, Schema } from "effect";
+import {
+  Data,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Schema,
+  Scope,
+} from "effect";
 import { describe, expect, it } from "vitest";
 
 import { Asset, Content, ContentError, memorySource } from "./index";
@@ -90,6 +99,69 @@ describe(Asset, () => {
       }).pipe(Effect.provide(GameSheet.layer(slow)))
     );
     expect(state.attempts).toBe(1);
+  });
+
+  it("doesn't keep a load its only caller abandoned: the next load starts afresh", async () => {
+    const { loads, state } = countedLoad();
+    const sheet: Sheet = { url: "second.json", freed: false };
+    const loaded = await Effect.runPromise(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<boolean>();
+        // The first load never finishes; the one after it does.
+        const load = Effect.suspend(() => {
+          state.attempts += 1;
+          return state.attempts === 1
+            ? Effect.andThen(Deferred.succeed(started, true), Effect.never)
+            : Effect.succeed(sheet);
+        });
+        return yield* Effect.gen(function* () {
+          const caller = yield* Effect.forkChild(GameSheet.load);
+          yield* Deferred.await(started);
+          yield* Fiber.interrupt(caller);
+          return yield* GameSheet.load;
+        }).pipe(Effect.provide(GameSheet.layer(load)));
+      })
+    );
+    expect(loaded).toBe(sheet);
+    expect({ attempts: state.attempts, kept: loads.length }).toStrictEqual({
+      attempts: 2,
+      kept: 0,
+    });
+    // The layer's scope closed with the asset the second load gave: that one is freed.
+    expect(sheet.freed).toBe(true);
+  });
+
+  it("frees an asset whose load finishes after the layer's scope closed", async () => {
+    const sheet: Sheet = { url: "late.json", freed: false };
+    const freedAtClose = await Effect.runPromise(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<boolean>();
+        const finish = yield* Deferred.make<boolean>();
+        const load = Deferred.succeed(started, true).pipe(
+          Effect.andThen(Deferred.await(finish)),
+          Effect.as(sheet)
+        );
+        const scope = yield* Scope.make();
+        const context = yield* Layer.buildWithScope(
+          GameSheet.layer(load),
+          scope
+        );
+        // The caller isn't in the layer's scope, so closing the scope doesn't end its load.
+        const caller = yield* Effect.forkChild(
+          Effect.provide(GameSheet.load, context)
+        );
+        yield* Deferred.await(started);
+        yield* Scope.close(scope, Exit.void);
+        const atClose = sheet.freed;
+        yield* Deferred.succeed(finish, true);
+        yield* Fiber.join(caller);
+        return atClose;
+      })
+    );
+    expect({ freedAtClose, freed: sheet.freed }).toStrictEqual({
+      freedAtClose: false,
+      freed: true,
+    });
   });
 
   it("is reached through its key as well", async () => {

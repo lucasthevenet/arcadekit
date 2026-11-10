@@ -102,8 +102,8 @@ export type EngineEntryConfig<
    * provide it. Only `attach` and `listen` are used: Commands call the rest.
    *
    * A `GameEngine`'s attach can fail (`AttachError` or `GameCrashed`,
-   * `arcadekit/runtime/browser`), and so can an engine reached through a load
-   * (`engineOf(MyEngine)`): pass `onError`.
+   * `arcadekit/runtime/browser`), and so can this Effect, when it reaches the engine through
+   * a load: pass `onError`.
    */
   readonly engine: Effect.Effect<AttachableEngine<Event, A>, E, R>;
   /** Reads the Boolean that `gameViewport`'s `mounted` and `unmounted` Messages set. */
@@ -139,8 +139,8 @@ export type EngineEntryConfig<
  * view: that is a programming error.
  *
  * A `GameEngine` can fail to attach (`AttachError`: no WebGL, say) or crash while attached
- * (`GameCrashed`: a step or a render threw), and an engine reached through a load
- * (`engineOf(loader)`) can fail to load. Pass `onError`, which turns any of these into a
+ * (`GameCrashed`: a step or a render threw), and an engine reached through a load (an `engine`
+ * Effect that can fail) can fail to load. Pass `onError`, which turns any of these into a
  * Message, and keep `isViewportMounted` false until the app's own load has succeeded. The
  * entry runs again only when its Boolean changes, so it won't retry by itself.
  */

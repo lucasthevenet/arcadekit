@@ -4,11 +4,7 @@
 export {
   AttachError,
   attachError,
-  type EngineLoader,
   type GameEngine,
-  type LoadedEngine,
-  engineOf,
-  makeEngineLoader,
   makeGameEngine,
 } from "./engine";
 export {

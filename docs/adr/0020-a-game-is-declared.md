@@ -31,7 +31,7 @@ The kit was meant to be a framework that makes a game easy to write, read and le
 
 **A scenario checks the rules.** `arcadekit/game/scenario` runs given/step/send/reported/refused scenarios through `Game.Loop`, so a rule is stated as an example, and a passing scenario accounts for every event the run reported, every command the rules refused and every command sent.
 
-**It lands one game at a time.** The declarations are built on `GameLoop`, which is unchanged, so the step order is one. Push-puzzle and its demo are on them, and so is survivors' single-player path. Co-op (the Co-op client and survivors' Co-op rules) still uses `GameSimulation` and `CoopRules`, which stay until it has moved. None of the older contract, `makeGameEngine` and `makeEngineLoader` included, is kept as a compatibility layer after that.
+**It lands one game at a time.** The declarations are built on `GameLoop`, which is unchanged, so the step order is one. Push-puzzle and its demo are on them, and so is survivors' single-player path. Co-op (the Co-op client and survivors' Co-op rules) still uses `GameSimulation` and `CoopRules`, which stay until it has moved. None of the older contract, `makeGameEngine` included, is kept as a compatibility layer after that, and the engine loader and the content loader (`makeEngineLoader`, `engineOf`, `makeContentLoader`) are already gone.
 
 ## Considered Options
 

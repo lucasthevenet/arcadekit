@@ -76,12 +76,6 @@ export const OLDER_CONTRACT: Readonly<Record<string, string>> = {
   GamePresentation: "Game.Engine",
   GameEngine: "Game.Engine",
   makeGameEngine: "Game.Engine",
-  EngineLoader: "Game.Engine",
-  LoadedEngine: "Game.Engine",
-  makeEngineLoader: "Game.Engine",
-  engineOf: "Game.Engine",
-  ContentLoader: "Content",
-  makeContentLoader: "Content",
 };
 
 /** The package whose entries export the older contract. */

@@ -137,22 +137,22 @@ export class Sub extends Base {}`,
     of: "game",
     code: `import { makeGameEngine, combineViews } from "arcadekit/runtime/browser";
 import type { GameSimulation, StepInput } from "arcadekit/runtime";
-export { makeEngineLoader } from "arcadekit/runtime/browser";
+export type { GameDefinition } from "arcadekit/runtime/browser";
 export const made = [makeGameEngine, combineViews];
 export type Old = [GameSimulation<1, 2, 3, 4>, StepInput<1>];`,
     reports: [
       ["older-contract", "makeGameEngine is the older contract"],
       ["older-contract", "Declare a Game.Simulation in its place"],
-      ["older-contract", "makeEngineLoader is the older contract"],
+      ["older-contract", "GameDefinition is the older contract"],
     ],
   },
   "the older contract, through an entry's namespace": {
     of: "game",
     code: `import * as Runtime from "arcadekit/runtime/browser";
-export const made = [Runtime.engineOf, Runtime.combineViews];
+export const made = [Runtime.makeGameEngine, Runtime.combineViews];
 export type Old = Runtime.GameEngine<1, 2, 3>;`,
     reports: [
-      ["older-contract", "engineOf is the older contract"],
+      ["older-contract", "makeGameEngine is the older contract"],
       ["older-contract", "GameEngine is the older contract"],
     ],
   },
@@ -160,7 +160,7 @@ export type Old = Runtime.GameEngine<1, 2, 3>;`,
     of: "game",
     code: `import { makeGameEngine } from "./engine";
 import * as Other from "other-kit";
-export const made = [makeGameEngine, Other.engineOf];`,
+export const made = [makeGameEngine, Other.makeGameEngine];`,
     reports: [],
   },
   "a builder imported by name, or under another name": {

@@ -1,11 +1,11 @@
-import { Data, Duration, Effect, Exit, Schema } from "effect";
+import { Data, Effect, Schema } from "effect";
 
 // Named so the type files can be made one file at a time (isolatedDeclarations).
 const ContentErrorBase: ReturnType<typeof Data.TaggedError<"ContentError">> =
   Data.TaggedError("ContentError");
 
 /**
- * The error every content source and loader fails with.
+ * The error every content source and every load of content fails with.
  * Apps catch it by its tag: `Effect.catchTag("ContentError", ...)`.
  */
 export class ContentError extends ContentErrorBase<{
@@ -53,7 +53,8 @@ export interface LoadContentOptions<
  * Loads every file in parallel, decodes the result with the schema, then runs `validate`.
  * Call it to load and check content directly, for example in a test of a game's real
  * content files: `loadContent({ ...definition, source })` runs the genre's own checks.
- * A game's content service uses `makeContentLoader`, which keeps the first successful result.
+ * A `Content` declaration loads with it: its `read` is this call, and its service keeps the
+ * first successful result.
  */
 export const loadContent = <S extends Schema.Top>(
   options: LoadContentOptions<S>
@@ -82,34 +83,3 @@ export const loadContent = <S extends Schema.Top>(
     }
     return content;
   });
-
-/**
- * A content service shape. After a successful `load`, later calls return the same content
- * without reading the files again. A failed `load` isn't kept, so calling it again retries.
- */
-export interface ContentLoader<A> {
-  readonly load: Effect.Effect<A, ContentError>;
-}
-
-/**
- * Builds a ContentLoader whose `load` keeps its first success. A failure isn't kept, so a
- * caller (a "Try again" button) can call `load` again.
- * Use it to implement a game's own content service from its content definition:
- *
- * ```ts
- * const myContentDefinition: ContentDefinition<typeof MyGameContent> = { schema: MyGameContent, files, validate }
- * class MyContent extends Context.Service<MyContent, ContentLoader<MyGameContent>>()('my-game/Content') {}
- * const MyContentLayer = Layer.effect(MyContent, makeContentLoader({ ...myContentDefinition, source }))
- * ```
- */
-export const makeContentLoader = <S extends Schema.Top>(
-  options: LoadContentOptions<S> & {
-    readonly schema: S & { readonly DecodingServices: never };
-  }
-): Effect.Effect<ContentLoader<S["Type"]>> =>
-  Effect.map(
-    Effect.cachedWithTTL(loadContent(options), (exit) =>
-      Exit.isSuccess(exit) ? Duration.infinity : Duration.zero
-    ),
-    (load) => ({ load })
-  );

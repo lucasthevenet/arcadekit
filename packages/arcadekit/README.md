@@ -34,7 +34,7 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | --- | --- | --- |
 | [`arcadekit/core`](src/core/README.md) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays pools, `SpatialGrid`, `EventBuffer`. No DOM and no Effect |  |
 | [`arcadekit/input`](src/input/README.md) | `InputController`: keyboard, gamepad, touch-drag and swipes mapped to named axes and buttons. No Effect | DOM |
-| [`arcadekit/content`](src/content/README.md) | `loadContent` and `makeContentLoader`: load files, validate them with an Effect Schema, cache the first success | Effect |
+| [`arcadekit/content`](src/content/README.md) | `Content` and `Asset`: a game's content files, validated with an Effect Schema, and what the app loads once for it, such as a sprite sheet. Each is a class that keys its own service and keeps the first success | Effect |
 | [`arcadekit/content/browser`](src/content/README.md) | `fetchJsonSource` | Effect, DOM |
 | [`arcadekit/save`](src/save/README.md) | `makeSaveStore`: a game's records by id under one versioned key | Effect |
 | [`arcadekit/save/browser`](src/save/README.md) | `BrowserSaveStorage`: localStorage, or memory if the browser refuses | Effect, `@effect/platform-browser`, DOM |
@@ -45,7 +45,7 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | [`arcadekit/game/browser`](src/game/README.md) | The same, plus `Game.Engine`: a simulation with the view and input that draw it and read its input, as a service an app drives. `Game.Frames`, `Game.frameLoop`, `Game.combineViews` | Effect, core, runtime, DOM |
 | [`arcadekit/game/scenario`](src/game/README.md) | Scenarios: given a run, after these steps and commands, it reported these events. Checks a simulation in a test, with no browser | Effect, core, runtime |
 | [`arcadekit/runtime`](src/runtime/README.md) | `GameSimulation`, the DOM-free half a game implements, and `GameLoop`, which steps one anywhere. `PlayerInputs`, the step input of a game with several players, and `soloInput` | Effect, core |
-| [`arcadekit/runtime/browser`](src/runtime/README.md) | `GameDefinition`, `makeGameEngine`, `makeEngineLoader`, `combineViews` | Effect, core, DOM |
+| [`arcadekit/runtime/browser`](src/runtime/README.md) | `GameDefinition`, `makeGameEngine`, `combineViews` | Effect, core, DOM |
 | [`arcadekit/runtime/testing`](src/runtime/README.md) | `manualFrames`: a frame source a test drives, to run an engine without a browser's frames |  |
 | [`arcadekit/net`](src/net/README.md) | Lockstep multiplayer for 2 to 4 peers over a `Transport`, with an in-memory network for tests. `combinePlayerInputs` makes `PlayerInputs` from its confirmed steps. `CoopRules`, a Co-op game's lockstep parts | Effect, core, runtime |
 | [`arcadekit/net/browser`](src/net/README.md) | `makeCoopClient`, the Co-op client: one player's lobby, run and drawing for a `CoopGame`, over `browserCoopRooms`. Under it, `hostRoom` and `joinRoom` (join code to WebRTC links) and `linksTransport` | Effect, core, runtime, DOM |

@@ -22,4 +22,4 @@ A game is declared: one named class per part, hosted by a Layer or a loop ([ADR-
 
 - `arcadekit/foldkit`'s `engineEntry` no longer infers the app's Message type from `toMessage` and `onError`: it comes from `Subscription.make`. A call outside one names its type parameters. A `toMessage` that returns something that isn't a Message is now reported on `toMessage`.
 
-`GameSimulation`, `makeGameEngine`, `makeEngineLoader`, `engineOf` and `CoopRules` are unchanged for now. They go once survivors and the Co-op client have moved to the declarations.
+`GameSimulation`, `makeGameEngine` and `CoopRules` are unchanged for now. They go once survivors and the Co-op client have moved to the declarations.

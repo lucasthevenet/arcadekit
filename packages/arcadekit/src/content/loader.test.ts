@@ -1,7 +1,7 @@
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { loadContent, makeContentLoader, memorySource } from "./index";
+import { loadContent, memorySource } from "./index";
 
 const Content = Schema.Struct({
   items: Schema.Array(
@@ -57,43 +57,5 @@ describe(loadContent, () => {
       loadContent({ schema: Content, files, source: memorySource({}) })
     );
     expect(JSON.stringify(exit)).toContain("No content file named");
-  });
-});
-
-describe(makeContentLoader, () => {
-  it("reads the files only once", async () => {
-    let reads = 0;
-    const inner = memorySource({ "items.json": [], "title.json": "Demo" });
-    const source = (file: string) =>
-      Effect.suspend(() => {
-        reads += 1;
-        return inner(file);
-      });
-    const loader = await Effect.runPromise(
-      makeContentLoader({ schema: Content, files, source })
-    );
-    await Effect.runPromise(loader.load);
-    await Effect.runPromise(loader.load);
-    // Two files, read once each.
-    expect(reads).toBe(2);
-  });
-
-  it("reads the files again after a failed load, then keeps the success", async () => {
-    let reads = 0;
-    const inner = memorySource({ "items.json": [], "title.json": "Demo" });
-    // The first read fails, like a network blip; every later read succeeds.
-    const source = (file: string) =>
-      Effect.suspend(() => {
-        reads += 1;
-        return reads === 1 ? memorySource({})(file) : inner(file);
-      });
-    const loader = await Effect.runPromise(
-      makeContentLoader({ schema: Content, files, source })
-    );
-    expect(Exit.isFailure(await run(loader.load))).toBe(true);
-    expect(Exit.isSuccess(await run(loader.load))).toBe(true);
-    const readsAfterSuccess = reads;
-    expect(Exit.isSuccess(await run(loader.load))).toBe(true);
-    expect(reads).toBe(readsAfterSuccess);
   });
 });

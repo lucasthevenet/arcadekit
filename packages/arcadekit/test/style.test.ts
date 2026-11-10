@@ -80,9 +80,7 @@ const FACTORIES: readonly string[] = [
 // shorter.
 const OLDER_FACTORIES: readonly string[] = [
   "makeAudioSettingsStore",
-  "makeContentLoader",
   "makeCoopClient",
-  "makeEngineLoader",
   "makeGameEngine",
   "makeSaveStore",
 ];
