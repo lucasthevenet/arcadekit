@@ -105,6 +105,7 @@ const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   audio: [],
   "render-three": [],
   runtime: ["core"],
+  game: ["core", "runtime"],
   net: ["core", "runtime"],
   foldkit: ["runtime"],
 };
@@ -148,6 +149,9 @@ export default defineConfig({
     "eslint/func-names": "off",
     // Effect and Foldkit APIs take callbacks by design.
     "promise/prefer-await-to-callbacks": "off",
+    // A declaration is a class (`class LevelSolved extends Game.Event(...) {}`), and one file
+    // declares what belongs together: a game's events, or a command with what it reports.
+    "eslint/max-classes-per-file": "off",
   },
   overrides: [
     {
@@ -182,6 +186,11 @@ export default defineConfig({
         "packages/arcadekit/src/runtime/loop.ts",
         "packages/arcadekit/src/runtime/simulation.ts",
         "packages/arcadekit/src/runtime/player-inputs.ts",
+        "packages/arcadekit/src/game/command.ts",
+        "packages/arcadekit/src/game/event.ts",
+        "packages/arcadekit/src/game/loop.ts",
+        "packages/arcadekit/src/game/simulation.ts",
+        "packages/arcadekit/src/game/story.ts",
         "packages/arcadekit/src/net/lockstep.ts",
         "packages/arcadekit/src/net/codec.ts",
         "packages/arcadekit/src/net/player-inputs.ts",
@@ -243,6 +252,12 @@ export default defineConfig({
         // `toBe(true)` is stricter than `toBeTruthy()`.
         "vitest/prefer-to-be-truthy": "off",
         "vitest/prefer-to-be-falsy": "off",
+        // A story asserts: it throws at the first expectation that doesn't hold
+        // (`arcadekit/game/story`).
+        "vitest/expect-expect": [
+          "error",
+          { assertFunctionNames: ["expect", "expectTypeOf", "story"] },
+        ],
       },
     },
   ],

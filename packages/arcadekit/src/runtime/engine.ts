@@ -1,7 +1,7 @@
 import { Data, Duration, Effect, Exit } from "effect";
 import type { Scope } from "effect";
 
-import { frameLoop, messageOf } from "./frame-loop";
+import { messageOf, steppedFrames } from "./frame-loop";
 import type { GameCrashed } from "./frame-loop";
 import { animationFrames } from "./frames";
 import type { FrameSource } from "./frames";
@@ -124,7 +124,7 @@ export const makeGameEngine = <Config, State, Input, Event>(
             }),
             (made) => Effect.sync(() => made.dispose())
           );
-          return yield* frameLoop(loop, frames, input, view);
+          return yield* steppedFrames(loop, frames, input, view);
         })
       ),
     listen: (onEvent) =>
