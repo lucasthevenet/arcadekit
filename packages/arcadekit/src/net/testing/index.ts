@@ -10,10 +10,13 @@ export {
 } from "./fake-rooms";
 export { manualTicker } from "./manual-ticker";
 export {
+  AnswerOffer,
+  HoldPause,
+  NothingOwed,
   OfferOpened,
   RunEnded,
   Score,
-  type TestAnswer,
+  type TestCommand,
   type TestConfig,
   type TestContent,
   type TestCoop,

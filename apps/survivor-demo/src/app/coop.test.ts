@@ -25,7 +25,12 @@ import {
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HostCoop, LeaveCoop } from "./commands";
+import {
+  ChooseCoopUpgrade,
+  HostCoop,
+  LeaveCoop,
+  SetCoopPaused,
+} from "./commands";
 import { Coop, makeCoopLayer } from "./coop";
 import type { CoopApi, CoopDebugSample } from "./coop";
 import { Message } from "./message";
@@ -305,6 +310,95 @@ describe("the app's co-op", () => {
       await settle();
       await Effect.runPromise(Scope.close(scope, Exit.void));
       expect(hub.log).toStrictEqual([]);
+    });
+
+    it("hold the run paused on every page with the genre's command, and say when the run holds no pause", async () => {
+      const hub = fakeCoopRooms();
+      const host = await seat(hub);
+      const guest = await seat(hub);
+      const command = <A>(
+        player: Seat,
+        effect: Effect.Effect<A, never, Coop>
+      ) => run(Effect.provideContext(effect, player.context));
+      const pause = (player: Seat, paused: boolean) =>
+        command(player, SetCoopPaused({ paused }).effect);
+      const clocks = () =>
+        [host, guest].map(({ coop }) => coop.debug().state?.time);
+      // With no run, there is nothing to hold: the app's toggle is told so.
+      const early = await pause(host, true);
+      await run(host.coop.host("spark"));
+      await settle();
+      await run(guest.coop.join(FAKE_JOIN_CODE, "ember"));
+      await settle();
+      await run(host.coop.start);
+      await vi.advanceTimersByTimeAsync(1000);
+      const held = pause(guest, true);
+      await vi.advanceTimersByTimeAsync(1000);
+      const [stopped, steps] = [clocks(), host.coop.debug().stepIndex];
+      const heldBy = [host, guest].map(({ coop }) =>
+        coop.debug().state?.heroes.map((hero) => hero.paused)
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      const [stillStopped, stepsLater] = [
+        clocks(),
+        host.coop.debug().stepIndex,
+      ];
+      const released = pause(guest, false);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect({
+        early,
+        held: await held,
+        // The guest's hero holds it, on both pages, and the run's clock stands on both.
+        heldBy,
+        stopped: [stopped[0] === stopped[1], stillStopped],
+        // A paused run still steps, so the pages stay in touch.
+        stepping: stepsLater > steps,
+        released: await released,
+        resumed: clocks().map((time) => (time ?? 0) > (stopped[0] ?? 0)),
+      }).toStrictEqual({
+        early: Message.FailedToHoldCoopPause(),
+        held: Message.CompletedEngineCommand(),
+        heldBy: [
+          [false, true],
+          [false, true],
+        ],
+        stopped: [true, stopped],
+        stepping: true,
+        released: Message.CompletedEngineCommand(),
+        resumed: [true, true],
+      });
+    });
+
+    it("end a pick the same way however the run answers it: with no run, and for an offer that isn't open", async () => {
+      const hub = fakeCoopRooms();
+      const host = await seat(hub);
+      const guest = await seat(hub);
+      const pick = (player: Seat) =>
+        run(
+          Effect.provideContext(
+            ChooseCoopUpgrade({ offer: 1, index: 0 }).effect,
+            player.context
+          )
+        );
+      const noRun = await pick(host);
+      await run(host.coop.host("spark"));
+      await settle();
+      await run(guest.coop.join(FAKE_JOIN_CODE, "ember"));
+      await settle();
+      await run(host.coop.start);
+      await vi.advanceTimersByTimeAsync(1000);
+      // No offer is open a second into a run: the rules refuse the pick, on both pages alike.
+      const refused = pick(guest);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect([
+        noRun,
+        await refused,
+        [host.coop.debug().error, guest.coop.debug().error],
+      ]).toStrictEqual([
+        Message.CompletedEngineCommand(),
+        Message.CompletedEngineCommand(),
+        [null, null],
+      ]);
     });
   });
 

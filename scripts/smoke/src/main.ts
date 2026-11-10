@@ -33,7 +33,7 @@ import { makeSaveStore } from "arcadekit/save";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Effect, Layer, Schema } from "effect";
 
-import { DotsTogether, dotsSimulation, replay } from "./simulation";
+import { DotsTogether, Nudge, dotsSimulation, replay } from "./simulation";
 import type { Dots, DotsConfig, DotsEvent, DotsInput } from "./simulation";
 
 const createInput = (surface: HTMLElement): InputSource<DotsInput> => {
@@ -135,11 +135,13 @@ const program = Effect.gen(function* () {
   return yield* attachable.attach(element);
 });
 
-// Lockstep over the in-memory network: one player, a few steps.
+// Lockstep over the in-memory network: one player, a few steps, and a command the rules answer.
 const network = createMemoryNetwork({ seed: 1 });
 const session: LockstepSession<
   Dots,
-  Game.EventOf<typeof DotsTogether>
+  Game.EventOf<typeof DotsTogether>,
+  Game.CommandOf<typeof DotsTogether>,
+  Game.RefusalsOf<readonly [typeof Nudge]>
 > = hostLockstep(
   {
     simulation: DotsTogether,
@@ -155,6 +157,9 @@ const session: LockstepSession<
   },
   0
 );
+session.send(new Nudge({ by: 1 }), (outcome) => {
+  console.log(outcome?._tag ?? "nudged");
+});
 session.tick(16);
 session.dispose();
 

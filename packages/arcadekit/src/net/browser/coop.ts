@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import type { Scope } from "effect";
 
+import type { CommandDropped, RefusalFor } from "../../game/index";
 import type {
   AttachError,
   FrameSource,
@@ -152,7 +153,8 @@ export type CoopEvent<LocalEvent> =
     }
   /**
    * Who stepping waits on (lockstep's "waiting for X"), once it has waited 300 ms, and which
-   * other players owe the run an answer. Names, in slot order. Reported when either changes.
+   * other players the run waits on to decide something (the game's `choosing`). Names, in slot
+   * order. Reported when either changes.
    */
   | {
       readonly type: "waiting";
@@ -185,8 +187,9 @@ export interface CoopDebug<State> {
  * One player's side of a Co-op game in the browser: the lobby over the signalling worker and
  * WebRTC, then a lockstep session stepped on a worker's timer, and a view drawn on animation
  * frames while attached. A hidden tab keeps stepping at full rate, so it holds no one up, and
- * draws nothing, since the browser runs no animation frames for it (ADR-0012). Answers and pause
- * reach the run as this player's step input, never as a `modify`.
+ * draws nothing, since the browser runs no animation frames for it (ADR-0012). What a player
+ * decides reaches the run as a command, through `send`: it rides the player's next step, so
+ * every peer applies it at that step.
  *
  * `attach` and `listen` have `arcadekit/foldkit`'s `AttachableEngine` shapes, so an app mounts
  * the client as it mounts an engine.
@@ -210,12 +213,28 @@ export interface CoopClient<G extends CoopTypes, LoadError = never> {
    */
   readonly start: Effect.Effect<void>;
   /**
-   * Answers the run: `answer` goes with every step's input until the game says it's settled. A
-   * new answer replaces the held one. Does nothing with no run.
+   * Sends a command to the run as the local player and waits for the rules' answer, as
+   * `Game.Engine`'s `send` does. The command rides the player's next step, and every peer's
+   * rules take or refuse it alike at that step. It succeeds when this player's own took it. It
+   * fails with the rejection they refused it with, one of those the command declares, and with
+   * `CommandDropped` when they gave no answer: there is no run (`noRun`: no seat, or still its
+   * lobby), or the run stopped, or this player left, first (`runEnded`).
+   *
+   * ```ts
+   * yield* coop
+   *   .send(new ChooseUpgrade({ offer, index }))
+   *   .pipe(Effect.catchTag(["OfferClosed", "CommandDropped"], () => Effect.void));
+   * ```
+   *
+   * It completes a few steps after it is sent (the run's `inputDelay`, and the network), never
+   * inside a step, and waits for as long as the run waits on a player. Interrupt it to take the
+   * command back while it has no step yet, which is about one step's time; after that every
+   * peer applies it. A player the host removes after its command's step was confirmed is told
+   * `runEnded`, though the others applied the command.
    */
-  readonly answer: (answer: G["Answer"]) => Effect.Effect<void>;
-  /** Holds the pause on this player's step input, or lets it go. Does nothing with no run. */
-  readonly setPaused: (paused: boolean) => Effect.Effect<void>;
+  readonly send: <C extends G["Command"]>(
+    command: C
+  ) => Effect.Effect<void, RefusalFor<G["Refusals"], C> | CommandDropped>;
   /**
    * Leaves the lobby or the run, and returns once its room, links, session and ticker have
    * closed, with those of any earlier seat still closing. No event of that seat follows. The

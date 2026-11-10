@@ -4,7 +4,7 @@
 
 A lockstep run hosts a declared simulation: `hostLockstep`, `joinLockstep`, their scoped forms and the Co-op client step a `Game.Simulation` class through `Game.Loop`, as `Game.Engine` does ([ADR-0020](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0020-a-game-is-declared.md)). A simulation several players can play declares its step input with `Game.PlayerInputs`, and the session takes from it what a game used to pass as `codec` and `combine`.
 
-Nothing on the wire changed: the messages, what one player's payload is (that player's encoded input), the bounds, the hashes and the referee are the same, so a peer on this release and a peer on the one before play one run together, given the same rules and the same one-player input Schema. A pick and a pause still ride the step input in co-op: no command crosses the network yet.
+The messages, their bounds, the hashes and the referee are the same. What one player's payload is changed with commands, in the same release: see the changeset on a command riding a lockstep step.
 
 **New in `arcadekit/game`** (and `arcadekit/game/browser`)
 
@@ -69,8 +69,8 @@ Nothing on the wire changed: the messages, what one player's payload is (that pl
   );
   ```
 
-- `CoopRules.simulation` is that declared class, and `CoopRules.codec` is gone. The rest of `CoopRules`, `CoopGame` and `makeCoopClient` is unchanged: `settled`, `choosing`, `localInput`, `localEvent`, `runEnded`, the client's events and its verbs. `makeCoopClient` now throws where it is called for a game whose simulation's step input is not a `Game.PlayerInputs`. That throw is the only refusal there: `CoopRules` names the step input's type, so a struct written by hand with `players` and `leaving` compiles.
+- `CoopRules.simulation` is that declared class, and `CoopRules.codec` is gone. `choosing`, `localEvent`, `runEnded`, `CoopGame` and the client's events are unchanged; `settled`, `localInput` and the client's `answer` and `setPaused` go with commands, in the same release. `makeCoopClient` now throws where it is called for a game whose simulation's step input is not a `Game.PlayerInputs`. That throw is the only refusal there: `CoopRules` names the step input's type, so a struct written by hand with `players` and `leaving` compiles.
 - `arcadekit/net` no longer exports `InputCodec`, `jsonCodec`, `schemaCodec`, `combinePlayerInputs`, `ConfirmedStep` or `PlayerStepInput`: no option takes them any more.
 - `arcadekit/runtime` no longer exports `PlayerInputs` or `soloInput`: import `arcadekit/game`, as `Game.PlayerInputs` and `Game.soloInput`.
 - A host's own input that doesn't survive the wire still stops it with `badInput`, and a local input source that returns a value the one-player Schema refuses to encode still makes the tick throw, as it did with `schemaCodec`. A game that passed `jsonCodec` got neither check.
-- `arcadekit/net/testing`: the test game is declared. `testSimulation` is replaced by the class `TestGame`, its events are the classes `Score`, `OfferOpened` and `RunEnded` (they were `{ type: "score" | "offer" | "ended" }` objects), `TestEvent` is their union, and `TestState` has no `events`. `testCoopRules` has no `codec`. What the Co-op client reports of a run (`TestLocalEvent`) is unchanged.
+- `arcadekit/net/testing`: the test game is declared. `testSimulation` is replaced by the class `TestGame`, its events are the classes `Score`, `OfferOpened` and `RunEnded` (they were `{ type: "score" | "offer" | "ended" }` objects), `TestEvent` is their union, and `TestState` has no `events`. `testCoopRules` has no `codec`. What the Co-op client reports of a run (`TestLocalEvent`) is unchanged. Its answer and its pause are commands: see the changeset on a command riding a lockstep step.

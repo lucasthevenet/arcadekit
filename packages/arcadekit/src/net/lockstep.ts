@@ -1,27 +1,33 @@
 import { Option, Result, Schema } from "effect";
 
-import { Loop, playerInputSchema } from "../game/index";
-import type { PlayerInputOf, PlayersSimulation } from "../game/index";
+import { CommandDropped, Loop } from "../game/index";
+import type {
+  PlayerInputOf,
+  PlayersSimulation,
+  RefusalFor,
+  Settled,
+} from "../game/index";
 import type { StepInput } from "../runtime/index";
-import { schemaCodec } from "./codec";
-import type { InputCodec } from "./codec";
+import { MAX_STEP_COMMANDS, payloadCodec } from "./codec";
+import type { PayloadCodec, StepPayload } from "./codec";
 import { lockstepError } from "./errors";
 import type { LockstepError, RemovedWhy } from "./errors";
 import { combinePlayerInputs } from "./player-inputs";
 import type { PeerId, Transport } from "./transport";
 
-/** One player's input for one step, as every peer steps on it. */
-export interface PlayerStepInput<PlayerInput> {
+/** One player's part of one step, as every peer steps on it. */
+export interface PlayerStepInput<PlayerInput, Command> extends Readonly<
+  StepPayload<PlayerInput, Command>
+> {
   readonly player: PeerId;
-  readonly input: PlayerInput;
 }
 
 /**
- * Everything the host decided for one step: each player's input, in player order (host first),
- * and the players removed at this step, whose inputs are absent from it on.
+ * Everything the host decided for one step: each player's input and commands, in player order
+ * (host first), and the players removed at this step, who are absent from it on.
  */
-export interface ConfirmedStep<PlayerInput> {
-  readonly inputs: readonly PlayerStepInput<PlayerInput>[];
+export interface ConfirmedStep<PlayerInput, Command> {
+  readonly inputs: readonly PlayerStepInput<PlayerInput, Command>[];
   readonly removed: readonly PeerId[];
 }
 
@@ -55,12 +61,13 @@ export interface LockstepOptions<
   readonly contentHash: string;
   readonly transport: Transport;
   /**
-   * This player's device or script: one player's input for each step. The session reads it once
-   * per step it schedules, `inputDelay` steps ahead, calling `endStep` after each read and
-   * `endFrame` once per tick that read any. What it reads must be what the one-player Schema
-   * encodes: a tick throws on a value it refuses.
+   * This player's device or script: one player's input for each step, or null for a step with
+   * none (nothing is attached), which every peer's rules then see at this player's slot. The
+   * session reads it once per step it schedules, `inputDelay` steps ahead, calling `endStep`
+   * after each read and `endFrame` once per tick that read any. What it reads must be what the
+   * one-player Schema encodes: a tick throws on a value it refuses.
    */
-  readonly local: StepInput<PlayerInputOf<Input>>;
+  readonly local: StepInput<PlayerInputOf<Input> | null>;
   /** A digest of the whole state, the same on every peer for the same run. Compared every `hashEvery` steps. */
   readonly hash: (state: State) => number;
   /** How many steps ahead local input is scheduled (ADR-0012). 2 to 6 at 60 Hz. */
@@ -114,7 +121,8 @@ export interface JoinOptions<
 }
 
 /**
- * - `joining`: a peer that hasn't had the host's start message yet.
+ * - `joining`: a peer that hasn't had the host's start message yet. A command sent now waits
+ *   for the run's first steps.
  * - `running`: stepping.
  * - `waiting`: a step is due but some player's input for it hasn't arrived (`waitingFor`).
  * - `stopped`: for good, with `error` saying why.
@@ -127,7 +135,7 @@ export type LockstepStatus = "joining" | "running" | "waiting" | "stopped";
  * confirmed, schedules local input and sends. Time comes only from `nowMs`. In an Effect
  * program, `hostLockstepScoped` and `joinLockstepScoped` make one owned by a scope and run it.
  */
-export interface LockstepSession<State, Event> {
+export interface LockstepSession<State, Event, Command, Refusals> {
   readonly status: LockstepStatus;
   /** Why the session stopped, or null. */
   readonly error: LockstepError | null;
@@ -145,7 +153,48 @@ export interface LockstepSession<State, Event> {
   readonly tick: (nowMs: number) => void;
   /** Hears the run's events and samples, as `Game.Loop`'s `subscribe`. */
   readonly subscribe: (listener: (event: Event) => void) => () => void;
-  /** Stops listening to the transport. */
+  /**
+   * Sends a command to the run as this peer's player: `Game.Loop`'s `send`, without the slot.
+   * The command rides this player's payload for the next step the session schedules (`inputDelay`
+   * steps ahead, as its input does), so every peer's rules get it at the start of that same step,
+   * after the commands of the players before this one in player order, and take or refuse it
+   * alike. At most four commands ride one step: a fifth rides the next, in the order sent. A
+   * command sent while the session is `joining` waits for the first steps the run schedules.
+   *
+   * ```ts
+   * session.send(new ChooseUpgrade({ offer, index }), (outcome) => {
+   *   if (outcome?._tag === "OfferClosed") {
+   *     // This peer's rules refused it, and so did every other peer's.
+   *   }
+   * });
+   * ```
+   *
+   * `settled` is called once, on this peer only, with how the command ended here: `undefined`
+   * when this peer's rules took it, the rejection they refused it with, or a `CommandDropped`
+   * (`runEnded`) when they gave no answer: the session stopped, was disposed or threw out of a
+   * tick first, or the step came back from the host without the command. After a stop or a
+   * dispose it is called at once. Otherwise it is called once the session is out of the tick that
+   * ended the command, so it may send again.
+   *
+   * It speaks for this peer's rules alone. A player the host removes after it confirmed the
+   * step of that player's command is told `runEnded`, though the peers still in the run applied
+   * the command: no peer can tell from where it stands.
+   *
+   * Returns a function that takes the command back while it waits for a step: until the session
+   * next schedules one, which is about a step in a run that steps, and longer in a stall. Once it
+   * rides a step it is every peer's, and taking it back only keeps `settled` from being called.
+   *
+   * Throws for a command the simulation doesn't declare, and for one that can't cross the
+   * network: a value JSON doesn't carry (a NaN), which no peer could decode.
+   */
+  readonly send: <C extends Command>(
+    command: C,
+    settled?: (outcome: Settled<RefusalFor<Refusals, C>>) => void
+  ) => () => void;
+  /**
+   * Stops listening to the transport, and drops the commands the rules haven't answered: their
+   * senders hear `CommandDropped` before it returns.
+   */
   readonly dispose: () => void;
 }
 
@@ -178,7 +227,7 @@ export interface LockstepSession<State, Event> {
 export const hostLockstep = <Config, State, Input, Event, Command, Refusals>(
   options: HostOptions<Config, State, Input, Event, Command, Refusals>,
   nowMs: number
-): LockstepSession<State, Event> => {
+): LockstepSession<State, Event, Command, Refusals> => {
   if (options.peers.length + 1 > MAX_PLAYERS) {
     throw new RangeError(
       `A lockstep run holds at most ${MAX_PLAYERS} players, not ${options.peers.length + 1}`
@@ -204,7 +253,7 @@ export const hostLockstep = <Config, State, Input, Event, Command, Refusals>(
 export const joinLockstep = <Config, State, Input, Event, Command, Refusals>(
   options: JoinOptions<Config, State, Input, Event, Command, Refusals>,
   nowMs: number
-): LockstepSession<State, Event> =>
+): LockstepSession<State, Event, Command, Refusals> =>
   new Session(options, options.host, options.players, nowMs);
 
 // The wire format. Every message is JSON. Each side resends what the other hasn't acknowledged
@@ -226,7 +275,7 @@ const Players = Schema.Array(Schema.String).check(
   Schema.isMaxLength(MAX_PLAYERS)
 );
 
-/** One confirmed step: [player, encoded input] pairs, then the removed players. */
+/** One confirmed step: [player, encoded payload] pairs, then the removed players. */
 const WireStep = Schema.Tuple([
   Schema.Array(Schema.Tuple([Schema.String, Schema.Unknown])).check(
     Schema.isMaxLength(MAX_PLAYERS)
@@ -317,17 +366,47 @@ const NO_STALL: Stall = {
   lastStalledMs: 0,
 };
 
-/** One player's input for a step, as it came on the wire and as it decoded. */
-interface PendingInput<PlayerInput> {
+/** One player's payload for a step: as it came on the wire, and as the codec decoded it. */
+interface PendingInput<PlayerInput, Command> extends StepPayload<
+  PlayerInput,
+  Command
+> {
   readonly encoded: unknown;
-  readonly input: PlayerInput;
 }
 
-interface HostSide<PlayerInput> {
+/** A command this peer's player sent, until its sender has been told how it ended. */
+interface LocalSend {
+  readonly tag: string;
+  /** The command as it crosses the network: what rides a step's payload. */
+  readonly wire: unknown;
+  readonly settled: ((outcome: Settled<unknown>) => void) | undefined;
+  /** Set when the sender takes the command back: `settled` is then not called. */
+  withdrawn: boolean;
+  /** Set once this peer's loop has the command: its answer is then the rules'. */
+  handed: boolean;
+}
+
+/** How a local command ended, kept until the session is out of its tick. */
+interface Answer {
+  readonly sent: LocalSend;
+  readonly outcome: Settled<unknown>;
+}
+
+const NO_COMMANDS: readonly never[] = [];
+
+const noop = (): void => undefined;
+
+const tagOf = (command: unknown): string =>
+  (command as { readonly _tag: string })._tag;
+
+interface HostSide<PlayerInput, Command> {
   /** The other players still in the run, in player order. */
   readonly peers: PeerId[];
-  /** Each player's inputs not yet in a confirmed step, by step. The host's own included. */
-  readonly pending: Map<PeerId, Map<number, PendingInput<PlayerInput>>>;
+  /** Each player's payloads not yet in a confirmed step, by step. The host's own included. */
+  readonly pending: Map<
+    PeerId,
+    Map<number, PendingInput<PlayerInput, Command>>
+  >;
   /** Each player's inputs are all known through this step. */
   readonly inputsKnown: Map<PeerId, number>;
   /** Peers the host has heard from since the start; the others get the start message again. */
@@ -354,7 +433,7 @@ interface HostSide<PlayerInput> {
 
 interface PeerSide {
   readonly host: PeerId;
-  /** This peer's inputs the host may not have yet, by step, encoded. */
+  /** This peer's payloads the host may not have yet, by step, encoded. */
   readonly unsent: Map<number, unknown>;
   /** Hashes from the host, by step. */
   readonly hostHashes: Map<number, number>;
@@ -370,7 +449,7 @@ class Session<
   Event,
   Command,
   Refusals,
-> implements LockstepSession<State, Event> {
+> implements LockstepSession<State, Event, Command, Refusals> {
   status: LockstepStatus = "joining";
   error: LockstepError | null = null;
   waitingFor: readonly PeerId[] = [];
@@ -385,23 +464,40 @@ class Session<
     Refusals
   >;
   private readonly loop: Loop<Config, State, Input, Event, Command, Refusals>;
-  /** One player's input to its wire form and back, from the simulation's `Game.PlayerInputs`. */
-  private readonly codec: InputCodec<PlayerInputOf<Input>>;
+  /** One player's part of a step to its wire form and back, from the simulation's declaration. */
+  private readonly codec: PayloadCodec<PlayerInputOf<Input>, Command>;
+  /** The tags of the simulation's commands. */
+  private readonly commandTags: ReadonlySet<string>;
+  /** The run's player order, host first: a player's slot is its index here for the whole run. */
+  private readonly order: readonly PeerId[];
   /** Makes a step's input from every player's, by slot in the run's player order. */
   private readonly combine: (
-    step: ConfirmedStep<PlayerInputOf<Input>>
+    step: ConfirmedStep<PlayerInputOf<Input>, unknown>
   ) => Input;
+  /** The local player's commands that have no step yet, in the order sent. */
+  private outbox: LocalSend[] = [];
+  /** The local player's commands riding a scheduled step this peer hasn't run, by step. */
+  private readonly riding = new Map<number, LocalSend[]>();
+  /** Every local command whose sender hasn't been answered, wherever it waits. */
+  private readonly unanswered = new Set<LocalSend>();
+  /** How local commands ended, until the tick is over and their senders can be told. */
+  private answers: Answer[] = [];
+  /**
+   * Disposed, or a tick threw: this peer's rules will answer nothing more, so a send is answered
+   * at once.
+   */
+  private ended = false;
   private readonly self: PeerId;
   private readonly stepMs: number;
   private readonly dropAfterMs: number;
   private readonly inbox: [PeerId, string][] = [];
   private readonly unlisten: () => void;
-  private host: HostSide<PlayerInputOf<Input>> | null = null;
+  private host: HostSide<PlayerInputOf<Input>, Command> | null = null;
   private peer: PeerSide | null = null;
   /** Confirmed steps not yet run, decoded. */
   private readonly confirmed = new Map<
     number,
-    ConfirmedStep<PlayerInputOf<Input>>
+    ConfirmedStep<PlayerInputOf<Input>, Command>
   >();
   /** Every step through this one is confirmed. */
   private confirmedThrough = -1;
@@ -428,11 +524,15 @@ class Session<
     this.options = options;
     this.self = options.transport.self;
     // Before anything listens: a simulation with no players' input is refused here.
-    this.codec = schemaCodec(playerInputSchema(options.simulation));
+    this.codec = payloadCodec(options.simulation);
+    this.commandTags = new Set(
+      options.simulation.definition.commands.map(({ tag }) => tag)
+    );
+    this.order = order;
     // The simulation's step input is the players' input of its own one-player input, which the
     // types can't see through `PlayerInputOf`.
     this.combine = combinePlayerInputs<PlayerInputOf<Input>>(order) as (
-      step: ConfirmedStep<PlayerInputOf<Input>>
+      step: ConfirmedStep<PlayerInputOf<Input>, unknown>
     ) => Input;
     this.loop = new Loop<Config, State, Input, Event, Command, Refusals>(
       options.simulation
@@ -462,6 +562,7 @@ class Session<
             (player) => !confirmed.removed.includes(player)
           );
         }
+        this.handCommands(step, confirmed);
         return this.combine(confirmed);
       },
     };
@@ -479,8 +580,149 @@ class Session<
     return this.loop.subscribe(listener);
   }
 
+  send<C extends Command>(
+    command: C,
+    settled?: (outcome: Settled<RefusalFor<Refusals, C>>) => void
+  ): () => void {
+    const tag = tagOf(command);
+    const name = this.options.simulation.simulationName;
+    if (!this.commandTags.has(tag)) {
+      throw new Error(
+        `Simulation "${name}" has no command "${tag}": list it in \`commands\` and handle it in \`apply\``
+      );
+    }
+    // Checked here, where the mistake is: on the wire it would show as this player's bad input,
+    // and remove it from the run or, on the host, stop the run for everyone.
+    const wire = this.codec.encodeCommand(command);
+    if (Result.isFailure(wire)) {
+      throw new Error(
+        `Simulation "${name}": the command "${tag}" can't cross the network, so no peer could apply it: ${wire.failure}. A lockstep run sends a command as JSON, and every peer applies what it decodes: keep to values JSON carries (no NaN, no Infinity).`
+      );
+    }
+    if (this.status === "stopped" || this.ended) {
+      settled?.(new CommandDropped({ command: tag, reason: "runEnded" }));
+      // Nothing is waiting, so there is nothing to take back.
+      return noop;
+    }
+    const sent: LocalSend = {
+      tag,
+      wire: wire.success,
+      settled: settled as LocalSend["settled"],
+      withdrawn: false,
+      handed: false,
+    };
+    this.outbox.push(sent);
+    this.unanswered.add(sent);
+    return () => {
+      sent.withdrawn = true;
+      const at = this.outbox.indexOf(sent);
+      if (at !== -1) {
+        // It has no step yet, so it never gets one.
+        this.outbox.splice(at, 1);
+        this.unanswered.delete(sent);
+      }
+    };
+  }
+
   dispose(): void {
     this.unlisten();
+    this.ended = true;
+    this.dropSends();
+    const thrown = this.tell();
+    if (thrown !== undefined) {
+      throw thrown.error;
+    }
+  }
+
+  /**
+   * Hands a confirmed step's commands to the loop, which applies them before the step: in player
+   * order, and each player's in the order sent. Every peer does the same, so every peer's rules
+   * take or refuse each alike. Only this peer's own have a sender to answer: they are matched
+   * with what it sent for the step by place and by tag, and what the step doesn't carry of
+   * them (only a host on other code leaves one out) is answered as dropped, since this peer's
+   * rules never get it.
+   */
+  private handCommands(
+    step: number,
+    confirmed: ConfirmedStep<PlayerInputOf<Input>, Command>
+  ): void {
+    const mine = this.riding.get(step);
+    for (const { player, commands } of confirmed.inputs) {
+      if (commands.length === 0) {
+        continue;
+      }
+      const slot = this.order.indexOf(player);
+      if (slot === -1) {
+        continue;
+      }
+      for (let i = 0; i < commands.length; i++) {
+        const command = commands[i]!;
+        const sent = player === this.self ? mine?.[i] : undefined;
+        if (sent === undefined || sent.tag !== tagOf(command)) {
+          this.loop.send(command, slot);
+        } else {
+          sent.handed = true;
+          this.loop.send(command, slot, (outcome) =>
+            this.answer(sent, outcome)
+          );
+        }
+      }
+    }
+    if (mine !== undefined) {
+      this.riding.delete(step);
+      for (const sent of mine) {
+        if (!sent.handed) {
+          this.answer(sent, runEnded(sent));
+        }
+      }
+    }
+  }
+
+  /** Keeps how a local command ended, once, until its sender can be told. */
+  private answer(sent: LocalSend, outcome: Settled<unknown>): void {
+    if (!this.unanswered.delete(sent)) {
+      return;
+    }
+    if (sent.settled !== undefined && !sent.withdrawn) {
+      this.answers.push({ sent, outcome });
+    }
+  }
+
+  /**
+   * Drops every local command this peer's rules haven't answered, to be told `runEnded`: those
+   * with no step yet, those riding a step that won't run here, and those the loop had when a
+   * step threw.
+   */
+  private dropSends(): void {
+    for (const sent of this.unanswered) {
+      this.answer(sent, runEnded(sent));
+    }
+    this.outbox = [];
+    this.riding.clear();
+  }
+
+  /**
+   * Tells each local sender how its command ended, in the order they ended. The session is out
+   * of its own work by now, so a sender may send again from here. One that throws doesn't keep
+   * the others from hearing: the first throw is returned once all were told.
+   */
+  private tell(): { readonly error: unknown } | undefined {
+    const { answers } = this;
+    if (answers.length === 0) {
+      return undefined;
+    }
+    this.answers = [];
+    let thrown: { readonly error: unknown } | undefined;
+    for (const { sent, outcome } of answers) {
+      if (!sent.withdrawn) {
+        try {
+          sent.settled?.(outcome);
+        } catch (error) {
+          thrown ??= { error };
+        }
+      }
+    }
+    return thrown;
   }
 
   startAsHost(peers: readonly PeerId[], seed: number, nowMs: number): void {
@@ -504,6 +746,26 @@ class Session<
   }
 
   tick(nowMs: number): void {
+    try {
+      this.work(nowMs);
+    } catch (error) {
+      // A step, the hash or the input source threw: a bug, and this peer's run is over where
+      // the throw left it. No sender is left waiting on rules that won't answer.
+      this.ended = true;
+      this.dropSends();
+      this.tell();
+      throw error;
+    }
+    if (this.answers.length > 0) {
+      const thrown = this.tell();
+      if (thrown !== undefined) {
+        throw thrown.error;
+      }
+    }
+  }
+
+  /** One tick's work. Senders hear how their commands ended after it, never inside it. */
+  private work(nowMs: number): void {
     const inbox = this.inbox.splice(0);
     for (const [from, text] of inbox) {
       const message = decodeMessage(text);
@@ -543,7 +805,7 @@ class Session<
     if (this.host) {
       this.confirm();
     }
-    this.send();
+    this.transmit();
   }
 
   /**
@@ -567,7 +829,7 @@ class Session<
   }
 
   private receiveAsHost(
-    host: HostSide<PlayerInputOf<Input>>,
+    host: HostSide<PlayerInputOf<Input>, Command>,
     from: PeerId,
     message: Message
   ) {
@@ -609,14 +871,17 @@ class Session<
     for (let i = 0; i < message.inputs.length; i++) {
       const step = message.from + i;
       if (step > this.confirmedThrough && step <= last && !pending.has(step)) {
-        const encoded = message.inputs[i];
-        const decoded = this.codec.decode(encoded);
-        if (Result.isFailure(decoded)) {
+        const payload: PendingInput<PlayerInputOf<Input>, Command> = {
+          encoded: message.inputs[i],
+          input: null,
+          commands: NO_COMMANDS,
+        };
+        if (this.codec.decode(payload.encoded, payload) !== null) {
           // Its peer plays other code, or forged it; the others run on without it.
           this.removePeer(host, from, "badInput");
           return;
         }
-        pending.set(step, { encoded, input: decoded.success });
+        pending.set(step, payload);
       }
     }
     advanceKnown(host.inputsKnown, from, pending);
@@ -635,7 +900,7 @@ class Session<
 
   /** Keeps a peer's hash for `step` and compares it, if the peer can have hashed that step. */
   private receivePeerHash(
-    host: HostSide<PlayerInputOf<Input>>,
+    host: HostSide<PlayerInputOf<Input>, Command>,
     from: PeerId,
     step: number,
     hash: number
@@ -785,7 +1050,7 @@ class Session<
 
   /** Host: removes `peer`'s player at the next step it confirms. */
   private removePeer(
-    host: HostSide<PlayerInputOf<Input>>,
+    host: HostSide<PlayerInputOf<Input>, Command>,
     peer: PeerId,
     why: RemovedWhy
   ) {
@@ -818,7 +1083,7 @@ class Session<
       if (players.some((p) => !host.pending.get(p)!.has(step))) {
         return;
       }
-      // Every input decoded when it came, so confirming can't fail.
+      // Every payload decoded when it came, so confirming can't fail.
       const inputs = players.map((player) => {
         const pending = host.pending.get(player)!;
         const input = pending.get(step)!;
@@ -832,33 +1097,33 @@ class Session<
         removed,
       ]);
       this.confirmed.set(step, {
-        inputs: inputs.map(({ player, input }) => ({ player, input })),
+        inputs: inputs.map(({ player, input, commands }) => ({
+          player,
+          input,
+          commands,
+        })),
         removed,
       });
       this.confirmedThrough = step;
     }
   }
 
-  /** Peer: decodes a step from the host, or stops if an input in it doesn't decode. */
+  /** Peer: decodes a step from the host, or stops if a payload in it doesn't decode. */
   private decodeStep(
     step: number,
     wire: WireStep
-  ): ConfirmedStep<PlayerInputOf<Input>> | null {
-    const inputs: PlayerStepInput<PlayerInputOf<Input>>[] = [];
+  ): ConfirmedStep<PlayerInputOf<Input>, Command> | null {
+    const inputs: PlayerStepInput<PlayerInputOf<Input>, Command>[] = [];
     for (const [player, encoded] of wire[0]) {
-      const decoded = this.codec.decode(encoded);
-      if (Result.isFailure(decoded)) {
-        this.stop(
-          lockstepError({
-            kind: "badInput",
-            player,
-            step,
-            issue: decoded.failure,
-          })
-        );
+      const input: StepPayload<PlayerInputOf<Input>, Command> & {
+        readonly player: PeerId;
+      } = { player, input: null, commands: NO_COMMANDS };
+      const issue = this.codec.decode(encoded, input);
+      if (issue !== null) {
+        this.stop(lockstepError({ kind: "badInput", player, step, issue }));
         return null;
       }
-      inputs.push({ player, input: decoded.success });
+      inputs.push(input);
     }
     return { inputs, removed: wire[1] };
   }
@@ -912,7 +1177,11 @@ class Session<
     return peer.hostWaiting.length > 0 ? peer.hostWaiting : [peer.host];
   }
 
-  /** Reads local input for every step through `stepIndex + inputDelay` not read yet. */
+  /**
+   * Reads local input for every step through `stepIndex + inputDelay` not read yet. The local
+   * player's commands that wait for a step ride the first of them, `MAX_STEP_COMMANDS` to a
+   * step, in the order sent.
+   */
   private scheduleLocalInput() {
     const { codec } = this;
     const { local, inputDelay } = this.options;
@@ -921,27 +1190,35 @@ class Session<
       return;
     }
     for (; this.nextLocal <= through; this.nextLocal++) {
-      const encoded = codec.encode(local.read(this.nextLocal));
+      let commands: readonly unknown[] = NO_COMMANDS;
+      if (this.outbox.length > 0) {
+        const riding = this.outbox.splice(0, MAX_STEP_COMMANDS);
+        this.riding.set(this.nextLocal, riding);
+        commands = riding.map((sent) => sent.wire);
+      }
+      const encoded = codec.encode(local.read(this.nextLocal), commands);
       local.endStep?.();
       if (this.host) {
-        // The host steps on its own input as the peers decode it: through JSON, then the codec.
-        // oxlint-disable-next-line unicorn/prefer-structured-clone -- JSON is the wire: it turns -0 into 0.
-        const wire = JSON.parse(JSON.stringify(encoded)) as unknown;
-        const decoded = codec.decode(wire);
-        if (Result.isFailure(decoded)) {
+        // The host steps on its own payload as the peers decode it: `encode` took it through
+        // JSON, which is the wire (it turns -0 into 0), and the codec decodes it.
+        const payload: PendingInput<PlayerInputOf<Input>, Command> = {
+          encoded,
+          input: null,
+          commands: NO_COMMANDS,
+        };
+        const issue = codec.decode(encoded, payload);
+        if (issue !== null) {
           this.stop(
             lockstepError({
               kind: "badInput",
               player: this.self,
               step: this.nextLocal,
-              issue: decoded.failure,
+              issue,
             })
           );
           return;
         }
-        this.host.pending
-          .get(this.self)!
-          .set(this.nextLocal, { encoded: wire, input: decoded.success });
+        this.host.pending.get(this.self)!.set(this.nextLocal, payload);
       } else {
         this.peer!.unsent.set(this.nextLocal, encoded);
       }
@@ -987,6 +1264,8 @@ class Session<
     this.status = "stopped";
     this.error = error;
     this.waitingFor = [];
+    // This peer's rules will answer nothing more: the senders still waiting hear after this tick.
+    this.dropSends();
     if (error.reason.kind === "desync") {
       this.stopMessage = {
         kind: "desync",
@@ -1009,7 +1288,8 @@ class Session<
     }
   }
 
-  private send() {
+  /** Sends what the other side hasn't acknowledged. */
+  private transmit() {
     const { transport } = this.options;
     if (this.peer) {
       const { peer } = this;
@@ -1077,7 +1357,7 @@ class Session<
   }
 
   /** Host: forgets confirmed steps and hashes every peer still in the run has. */
-  private forgetAcknowledged(host: HostSide<PlayerInputOf<Input>>) {
+  private forgetAcknowledged(host: HostSide<PlayerInputOf<Input>, Command>) {
     const { peers } = host;
     const stepsAck = Math.min(
       this.confirmedThrough,
@@ -1107,6 +1387,9 @@ class Session<
     }
   }
 }
+
+const runEnded = (sent: LocalSend): CommandDropped =>
+  new CommandDropped({ command: sent.tag, reason: "runEnded" });
 
 /** Advances `known` for `player` past every step `pending` holds or already confirmed. */
 const advanceKnown = (

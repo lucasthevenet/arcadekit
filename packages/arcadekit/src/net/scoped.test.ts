@@ -1,5 +1,4 @@
-import { Clock, Effect, Exit, Fiber, Result, Schema } from "effect";
-import type { Scope } from "effect";
+import { Clock, Effect, Exit, Fiber, Result, Schema, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
@@ -57,6 +56,33 @@ class CountingEveryEightMs extends Game.Simulation("CountingEveryEightMs", {
   input: Adds,
   create: createCount,
   step: count,
+  sample: SAMPLE,
+}) {}
+
+/** More than a player may add at once. */
+class TooMuch extends Game.Rejection("TooMuch", { most: Schema.Int }) {}
+
+/** The sender adds `n` to the total, 10 at most. */
+class Add extends Game.Command(
+  "Add",
+  { n: Schema.Int },
+  { rejects: [TooMuch] }
+) {}
+
+/** The counting game with a command a player may send. */
+class Adding extends Game.Simulation("Adding", {
+  input: Adds,
+  commands: [Add],
+  create: createCount,
+  step: count,
+  apply: {
+    Add: (state, { n }) => {
+      if (n > 10) {
+        return new TooMuch({ most: 10 });
+      }
+      state.total += n;
+    },
+  },
   sample: SAMPLE,
 }) {}
 
@@ -153,9 +179,23 @@ const lockstepFailure = <A, E>(exit: Exit.Exit<A, E>) => {
 const hostAlone = (
   network: MemoryNetwork,
   overrides: Partial<Options> = {}
-): Effect.Effect<ScopedLockstepSession<Count, Stepped>, never, Scope.Scope> =>
+): Effect.Effect<
+  ScopedLockstepSession<Count, Stepped, never, unknown>,
+  never,
+  Scope.Scope
+> =>
   hostLockstepScoped({
     ...options(network.connect("host"), overrides),
+    peers: [],
+    seed: 1,
+  });
+
+/** A lone host of the game with a command, its input scheduled 2 steps ahead. */
+const adding = (network: MemoryNetwork) =>
+  hostLockstepScoped({
+    ...options(network.connect("host")),
+    simulation: Adding,
+    inputDelay: 2,
     peers: [],
     seed: 1,
   });
@@ -729,6 +769,165 @@ describe("scoped lockstep session", () => {
           sent: 0,
           stops: 1,
         })
+      );
+    });
+  });
+
+  describe("send", () => {
+    it("succeeds once this peer's rules took the command, at the step it rode", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          yield* Effect.forkScoped(session.run());
+          yield* TestClock.adjust(100);
+          const before = session.state?.total;
+          const sent = yield* Effect.forkChild(
+            session.send(new Add({ n: 7 })),
+            { startImmediately: true }
+          );
+          // It waits for a step: scheduled at the next tick, 2 steps ahead of the run.
+          const waiting = sent.pollUnsafe() === undefined;
+          yield* TestClock.adjust(100);
+          const after = session.state?.total;
+          return [
+            waiting,
+            yield* Fiber.await(sent),
+            // Seven more than the input alone adds: one a step.
+            (after ?? 0) - (before ?? 0) - 6,
+          ];
+        })
+      );
+      expect(exit).toStrictEqual(Exit.succeed([true, Exit.void, 7]));
+    });
+
+    it("fails with the rejection this peer's rules refused the command with", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          yield* Effect.forkScoped(session.run());
+          const sent = yield* Effect.forkChild(
+            session.send(new Add({ n: 11 })).pipe(Effect.flip),
+            { startImmediately: true }
+          );
+          yield* TestClock.adjust(100);
+          return [
+            yield* Fiber.join(sent),
+            session.stepIndex > 0,
+            // The input alone, one a step: the refused command changed nothing.
+            session.state?.total === session.stepIndex,
+          ];
+        })
+      );
+      expect(exit).toStrictEqual(
+        Exit.succeed([new TooMuch({ most: 10 }), true, true])
+      );
+    });
+
+    it("completes after the tick that ran the command's step, not inside it", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const ticks = manualTicker();
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          yield* Effect.forkScoped(session.run(ticks.ticker), {
+            startImmediately: true,
+          });
+          const seen: string[] = [];
+          yield* Effect.forkChild(
+            session
+              .send(new Add({ n: 1 }))
+              .pipe(
+                Effect.andThen(
+                  Effect.sync(() =>
+                    seen.push(`answered at ${session.stepIndex}`)
+                  )
+                )
+              ),
+            { startImmediately: true }
+          );
+          // The first tick gives the command its step; the second runs it.
+          for (const ms of [50, 50]) {
+            yield* TestClock.adjust(ms);
+            ticks.fire();
+            seen.push(`ticked to ${session.stepIndex}`);
+          }
+          yield* Effect.yieldNow;
+          return seen;
+        })
+      );
+      expect(exit).toStrictEqual(
+        Exit.succeed(["ticked to 3", "ticked to 6", "answered at 6"])
+      );
+    });
+
+    it("fails with CommandDropped when the session's scope closes first", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const exit = await play(
+        Effect.gen(function* () {
+          const scope = yield* Scope.make();
+          const session = yield* adding(network).pipe(Scope.provide(scope));
+          const sent = yield* Effect.forkChild(
+            session.send(new Add({ n: 1 })).pipe(Effect.flip),
+            { startImmediately: true }
+          );
+          yield* Scope.close(scope, Exit.void);
+          const late = yield* Effect.flip(session.send(new Add({ n: 2 })));
+          return [yield* Fiber.join(sent), late];
+        })
+      );
+      const dropped = new Game.CommandDropped({
+        command: "Add",
+        reason: "runEnded",
+      });
+      expect(exit).toStrictEqual(Exit.succeed([dropped, dropped]));
+    });
+
+    it("takes the command back when interrupted before it rides a step", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const ticks = manualTicker();
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          yield* Effect.forkScoped(session.run(ticks.ticker), {
+            startImmediately: true,
+          });
+          const sent = yield* Effect.forkChild(
+            session.send(new Add({ n: 5 })),
+            { startImmediately: true }
+          );
+          yield* Fiber.interrupt(sent);
+          yield* TestClock.adjust(100);
+          ticks.fire();
+          yield* TestClock.adjust(100);
+          ticks.fire();
+          // The input alone, one a step.
+          return [
+            session.stepIndex > 3,
+            session.state?.total === session.stepIndex,
+          ];
+        })
+      );
+      expect(exit).toStrictEqual(Exit.succeed([true, true]));
+    });
+
+    it("dies for a command the simulation doesn't declare", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      class Other extends Game.Command("Other") {}
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          // What a cast gets past the types.
+          return yield* session.send(new Other() as never);
+        })
+      );
+      expect(
+        Result.map(Exit.findDefect(exit), (defect) => (defect as Error).message)
+      ).toStrictEqual(
+        Result.succeed(
+          'Simulation "Adding" has no command "Other": list it in `commands` and handle it in `apply`'
+        )
       );
     });
   });

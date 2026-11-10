@@ -1,4 +1,5 @@
 import {
+  HoldPause,
   RunSummary,
   // The genre's command. `ChooseUpgrade` here is the Foldkit Command that sends it.
   ChooseUpgrade as SurvivorsChooseUpgrade,
@@ -192,28 +193,50 @@ export const StartCoop = Command.define("StartCoop", {
 });
 
 /**
- * The local hero's pick, as the Co-op client's answer: it rides the hero's step input until its
- * offer closes, so every peer applies it at the same step.
+ * The local hero's pick, sent to the co-op run as the genre's `ChooseUpgrade` command, the one
+ * the single-player game sends its engine: it rides the hero's next step, and every peer's rules
+ * take it at that step. Every answer ends the same way here: the screen offers only the open
+ * offer's choices, so the rules don't refuse a pick it makes, and a pick is dropped when the
+ * player leaves or the run stops first, which the co-op screens already show.
  */
 export const ChooseCoopUpgrade = Command.define("ChooseCoopUpgrade", {
-  args: { offer: Schema.Number, index: Schema.Number },
+  args: { offer: Schema.Int, index: Schema.Int },
   messages: [Message.CompletedEngineCommand],
   execute: ({ offer, index }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).answer({ offer, index });
+      const coop = yield* Coop;
+      yield* coop.send(new SurvivorsChooseUpgrade({ offer, index }));
       return Message.CompletedEngineCommand();
-    }),
+    }).pipe(
+      Effect.catchTag(["OfferClosed", "NoSuchChoice"], () =>
+        Effect.succeed(Message.CompletedEngineCommand())
+      ),
+      Effect.catchTag("CommandDropped", () =>
+        Effect.succeed(Message.CompletedEngineCommand())
+      )
+    ),
 });
 
-/** Holds the run paused for everyone, through the local hero's pause flag in its step input. */
+/**
+ * Holds the run paused for everyone, or lets it go: the genre's `HoldPause` command, sent once.
+ * The rules refuse it when the local hero isn't playing (it is down) or the run is over, and it
+ * is dropped when there is no run to pause or the run stops first. Either way the pause the
+ * player asked for isn't held, and the answer says so, so the app's own pause flag can follow
+ * the rules. The run's menu, which asked for it, stays up.
+ */
 export const SetCoopPaused = Command.define("SetCoopPaused", {
   args: { paused: Schema.Boolean },
-  messages: [Message.CompletedEngineCommand],
+  messages: [Message.CompletedEngineCommand, Message.FailedToHoldCoopPause],
   execute: ({ paused }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).setPaused(paused);
+      const coop = yield* Coop;
+      yield* coop.send(new HoldPause({ held: paused }));
       return Message.CompletedEngineCommand();
-    }),
+    }).pipe(
+      Effect.catchTag(["NotPlaying", "CommandDropped"], () =>
+        Effect.succeed(Message.FailedToHoldCoopPause())
+      )
+    ),
 });
 
 /** Leaves the lobby or the run, once its room, links, session and worker have closed. */

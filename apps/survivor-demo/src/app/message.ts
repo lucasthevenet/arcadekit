@@ -41,9 +41,11 @@ export const Message = defineMessageUnion({
   ChangedJoinCode: { code: Schema.String },
   ClickedJoinCoop: {},
   ClickedStartCoop: {},
-  ClickedCoopUpgrade: { index: Schema.Number },
+  ClickedCoopUpgrade: { index: Schema.Int },
   ClickedCoopResume: {},
   ClickedLeaveCoop: {},
+  /** The run didn't take the local player's pause, or its letting go: it holds none. */
+  FailedToHoldCoopPause: {},
   GotCoopLobby: {
     role: Schema.Literals(["host", "guest"]),
     code: Schema.String,
@@ -58,7 +60,7 @@ export const Message = defineMessageUnion({
     choosing: Schema.Array(Schema.String),
   },
   GotCoopLevelUp: {
-    offer: Schema.Number,
+    offer: Schema.Int,
     choices: Schema.Array(UpgradeChoice),
   },
   GotCoopRunEnded: { summary: RunSummary },

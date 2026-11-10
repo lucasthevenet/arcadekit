@@ -146,7 +146,10 @@ export const subscriptions = Subscription.make<
     onError: (error) => Message.GotCoopFailed({ error: error.message }),
   }),
 
-  /** Escape (or P) toggles pause, but only during a run. */
+  /**
+   * Escape (or P) toggles pause, but only during a run. In co-op it opens and closes the run's
+   * menu, which holds the co-op pause while it is up.
+   */
   pauseKey: entry(
     { canPause: Schema.Boolean },
     {

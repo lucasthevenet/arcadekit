@@ -232,10 +232,10 @@ const anyPlaying = (world: World): boolean => {
 // The step function
 
 /**
- * Advances the run by one step of `dt` seconds. First the heroes in `input.leaving` leave and
- * the picks in `input.players` apply; then the run stays frozen while any hero has an upgrade
- * offer open, or while any playing hero's player holds it paused. Does nothing once the run is
- * over.
+ * Advances the run by one step of `dt` seconds. First the heroes in `input.leaving` leave; then
+ * the run stays frozen while any hero has an upgrade offer open, or while any playing hero holds
+ * it paused (`HoldPause`). The step's commands (a pick, a pause) were applied before it. Does
+ * nothing once the run is over.
  */
 export const step = (
   world: World,
@@ -252,8 +252,7 @@ export const step = (
     endRun(world, "dead", report);
     return;
   }
-  applyPicks(world, input);
-  if (isChoosing(world) || holdPause(world, input)) {
+  if (isChoosing(world) || isPauseHeld(world)) {
     return;
   }
   world.time += dt;
@@ -280,6 +279,10 @@ export const step = (
     if (hero.hp <= 0) {
       hero.hp = 0;
       hero.status = "down";
+      // A hero that is down holds no pause. No run reaches this line with one held, since a
+      // held pause freezes the step before it; the line keeps the rule true whatever a later
+      // one does.
+      hero.paused = false;
       world.cues.downed[hero.slot]! += 1;
     }
   }
@@ -311,25 +314,18 @@ const leave = (
   report(new HeroLeft({ hero: slot }));
 };
 
-/** Applies each hero's pick, in slot order, if it answers the offer the hero has open. */
-const applyPicks = (world: World, input: SurvivorsInput) => {
+/**
+ * True while a playing hero holds the run paused (`HoldPause`). The handler takes a hold only
+ * from a playing hero, and going down or leaving lets go of it; asking for `playing` here as
+ * well means no path that forgets to let go can freeze every peer for good.
+ */
+const isPauseHeld = (world: World): boolean => {
   for (const hero of world.heroes) {
-    const pick = heroInput(input, hero)?.pick;
-    if (pick !== undefined && pick.offer === world.offerSeq) {
-      choose(world, hero, pick.index);
+    if (hero.paused && hero.status === "playing") {
+      return true;
     }
   }
-};
-
-/** Records which playing heroes' players hold the run paused. True if any does. */
-const holdPause = (world: World, input: SurvivorsInput): boolean => {
-  let paused = false;
-  for (const hero of world.heroes) {
-    hero.paused =
-      hero.status === "playing" && heroInput(input, hero)?.paused === true;
-    paused ||= hero.paused;
-  }
-  return paused;
+  return false;
 };
 
 /** Ends the run, and reports it. The HUD's version moves with the status, so the loop samples it next. */
@@ -786,7 +782,8 @@ const closeOffer = (world: World, hero: Hero) => {
 /**
  * The hero takes the choice at `index` of its open offer, and the offer closes. Returns false,
  * having changed nothing, if it has no open offer or the offer has no such choice. Every pick
- * ends here: the `ChooseUpgrade` command's, and a lockstep run's, which rides the step input.
+ * ends here: the `ChooseUpgrade` command's handler calls it, in a single-player run and in a
+ * lockstep run alike.
  */
 export const choose = (world: World, hero: Hero, index: number): boolean => {
   const choice = hero.offer?.[index];

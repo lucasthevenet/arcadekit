@@ -120,18 +120,37 @@ const wrap = (value: number): number => {
 
 const STILL: DotsInput = { moveX: 0, moveY: 0 };
 
+/** The player dot is at the edge already. */
+export class AtTheEdge extends Game.Rejection("AtTheEdge") {}
+
+/** A player's decision: the player dot jumps `by` to the right. */
+export class Nudge extends Game.Command(
+  "Nudge",
+  { by: Schema.Number },
+  { rejects: [AtTheEdge] }
+) {}
+
 /**
  * The same rules as a declared simulation several players can play, which is what a lockstep
  * run steps: its step input is every player's `DotsInput`, by slot. The first player moves the
- * dot.
+ * dot, and any player may nudge it with a command.
  */
 export class DotsTogether extends Game.Simulation("DotsTogether", {
   input: Game.PlayerInputs(
     Schema.Struct({ moveX: Schema.Number, moveY: Schema.Number })
   ),
+  commands: [Nudge],
   create: (config: DotsConfig, { seed }) => dotsSimulation.create(config, seed),
   step: (state, input, { dt }) => {
     dotsSimulation.step(state, input.players[0] ?? STILL, dt);
+  },
+  apply: {
+    Nudge: (state, { by }) => {
+      if (state.playerX >= SIZE / 2) {
+        return new AtTheEdge();
+      }
+      state.playerX = clamp(state.playerX + by, -SIZE / 2, SIZE / 2);
+    },
   },
 }) {}
 

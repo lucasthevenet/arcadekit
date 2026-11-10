@@ -4,7 +4,7 @@ import { gameViewport } from "arcadekit/foldkit";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "./message";
-import { Phase } from "./model";
+import { Phase, isLocalHeroDown } from "./model";
 import type { CoopPlayer, Model } from "./model";
 import type { HeroRecord } from "./save";
 
@@ -426,7 +426,11 @@ const coopHud = (model: Model, h: H): Html => {
             [`${formatTime(data.time)} / ${formatTime(data.runLength)}`]
           ),
           h.span([], [`${data.kills} defeated`]),
-          h.span([h.Class("muted")], ["Esc to pause"]),
+          // A hero that is down holds no pause: Escape is then the menu alone.
+          h.span(
+            [h.Class("muted")],
+            [isLocalHeroDown(model) ? "Esc for the menu" : "Esc to pause"]
+          ),
         ]
       ),
       h.div(
@@ -466,8 +470,39 @@ const coopBanner = (
   return undefined;
 };
 
+/**
+ * A co-op run's menu, which Escape opens: the way to leave the run, and the sound controls.
+ * While it is up the local player holds the run paused for everyone, if the run took the pause
+ * (`paused`). It takes none from a hero that is down, and then the menu says the run plays on.
+ */
+const coopMenuPanel = (model: Model, h: H): Html => {
+  const { paused } = model.coop;
+  return panel(h, [
+    h.h2([], [paused ? "Paused" : "Menu"]),
+    h.p(
+      [h.Class("muted")],
+      [
+        paused
+          ? "The run is paused for everyone until you resume."
+          : "The run plays on: a hero that is down can't pause it.",
+      ]
+    ),
+    h.div(
+      [h.Class("row")],
+      [
+        h.button(
+          [h.Class("primary"), h.OnClick(Message.ClickedCoopResume())],
+          [paused ? "Resume" : "Back to the run"]
+        ),
+        h.button([h.OnClick(Message.ClickedLeaveCoop())], ["Leave run"]),
+      ]
+    ),
+    soundPanel(model.audio, h),
+  ]);
+};
+
 const coopPlaying = (model: Model, h: H): Html => {
-  const { waitingFor, choosing, paused, slot, names } = model.coop;
+  const { waitingFor, choosing, slot, names } = model.coop;
   const pausedBy = model.hud.heroes
     .map((hero, index) =>
       hero.paused && index !== slot ? names[index] : undefined
@@ -479,29 +514,7 @@ const coopPlaying = (model: Model, h: H): Html => {
     [
       coopHud(model, h),
       banner === undefined ? h.empty : h.div([h.Class("banner")], [banner]),
-      paused
-        ? panel(h, [
-            h.h2([], ["Paused"]),
-            h.p(
-              [h.Class("muted")],
-              ["The run is paused for everyone until you resume."]
-            ),
-            h.div(
-              [h.Class("row")],
-              [
-                h.button(
-                  [h.Class("primary"), h.OnClick(Message.ClickedCoopResume())],
-                  ["Resume"]
-                ),
-                h.button(
-                  [h.OnClick(Message.ClickedLeaveCoop())],
-                  ["Leave run"]
-                ),
-              ]
-            ),
-            soundPanel(model.audio, h),
-          ])
-        : h.empty,
+      model.coop.menu ? coopMenuPanel(model, h) : h.empty,
     ]
   );
 };

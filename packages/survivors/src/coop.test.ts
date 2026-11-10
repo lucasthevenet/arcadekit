@@ -2,6 +2,7 @@ import * as Game from "arcadekit/game";
 import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { ChooseUpgrade } from "./commands";
 import { survivorsCoopRules as rules } from "./coop";
 import { HeroLeft, Hud, LeveledUp, RunEnded } from "./events";
 import type { SurvivorsEvent } from "./events";
@@ -95,8 +96,8 @@ const still: HeroInput = { moveX: 0, moveZ: 0 };
 
 /**
  * A two-player run of the rules' own simulation and config, on a loop as a lockstep session
- * steps it: its world, what it reported but its HUD samples, and a step with every player's
- * input.
+ * steps it: its world, what it reported but its HUD samples, a step with every player's input,
+ * and a player's pick, which the next step applies.
  */
 const run = () => {
   const loop = new Game.Loop(rules.simulation);
@@ -115,6 +116,12 @@ const run = () => {
       leaving: readonly number[] = []
     ) => {
       loop.frame({ read: () => ({ players, leaving }) }, { steps: 1 }, 0);
+    },
+    pick: (slot: number) => {
+      loop.send(
+        new ChooseUpgrade({ offer: loop.state!.offerSeq, index: 0 }),
+        slot
+      );
     },
   };
 };
@@ -145,12 +152,7 @@ describe("survivors' Co-op rules", () => {
 
   it("runs the declared simulation, hashes with the world's hash, and sends a HeroInput unchanged", () => {
     const { world } = run();
-    const input: HeroInput = {
-      moveX: 0.5,
-      moveZ: -1,
-      pick: { offer: 2, index: 1 },
-      paused: true,
-    };
+    const input: HeroInput = { moveX: 0.5, moveZ: -1 };
     // What a lockstep session sends for one player: the one-player Schema of the step input.
     const player = Game.playerInputSchema(rules.simulation);
     const sent = Schema.encodeSync(player)(input);
@@ -168,75 +170,23 @@ describe("survivors' Co-op rules", () => {
   });
 
   it("says a slot is choosing while its hero has an offer open, and no other", () => {
-    const { world, step } = offering();
+    const { world, step, pick } = offering();
     const open = [0, 1, 2].map((slot) => rules.choosing(world, slot));
-    step([{ ...still, pick: { offer: 1, index: 0 } }, still]);
+    pick(0);
+    step([still, still]);
     const afterOnePick = [0, 1, 2].map((slot) => rules.choosing(world, slot));
+    // The other hero's offer closes without a pick when its player leaves.
+    step([still, null], [1]);
     expect({
       before: [0, 1].map((slot) => rules.choosing(run().world, slot)),
       open,
       afterOnePick,
+      afterLeaving: [0, 1].map((slot) => rules.choosing(world, slot)),
     }).toStrictEqual({
       before: [false, false],
       open: [true, true, false],
       afterOnePick: [false, true, false],
-    });
-  });
-
-  it("holds a pick while its offer is open and settles it once applied", () => {
-    const { world, step } = offering();
-    const pick = { offer: 1, index: 0 };
-    const held = rules.settled(pick, world, 0);
-    step([{ ...still, pick }, still]);
-    expect({
-      held,
-      applied: rules.settled(pick, world, 0),
-      // The other hero's offer is still open, so its own pick is still held.
-      other: rules.settled(pick, world, 1),
-    }).toStrictEqual({ held: false, applied: true, other: false });
-  });
-
-  it("settles a pick for another offer, and holds one for a slot with no hero", () => {
-    const { world } = offering();
-    expect({
-      stale: rules.settled({ offer: 0, index: 0 }, world, 0),
-      early: rules.settled({ offer: 2, index: 0 }, world, 0),
-      // As the client always did: a slot with no hero has no offer to close.
-      noHero: rules.settled({ offer: 1, index: 0 }, world, 5),
-    }).toStrictEqual({ stale: true, early: true, noHero: false });
-  });
-
-  it("settles a pick whose hero's offer closed without it, when its player left", () => {
-    const { world, step } = offering();
-    const pick = { offer: 1, index: 0 };
-    step([still, null], [1]);
-    expect([
-      rules.settled(pick, world, 1),
-      rules.choosing(world, 1),
-    ]).toStrictEqual([true, false]);
-  });
-
-  it("fills one input object per run from the device, the held pick and the pause", () => {
-    const fill = rules.localInput();
-    const pick = { offer: 3, index: 2 };
-    const first = fill({ moveX: 1, moveZ: -0.5 }, pick, true);
-    const full = { ...first };
-    const second = fill({ moveX: 0.25, moveZ: 0 }, null, false);
-    const plain = { ...second };
-    const third = fill(null, null, false);
-    expect({
-      full,
-      plain,
-      detached: { ...third },
-      same: first === second && second === third,
-      perRun: rules.localInput()(null, null, false) === first,
-    }).toStrictEqual({
-      full: { moveX: 1, moveZ: -0.5, pick, paused: true },
-      // No `pick` or `paused` key once they are let go: the codec's optional keys.
-      plain: { moveX: 0.25, moveZ: 0 },
-      detached: { moveX: 0, moveZ: 0 },
-      same: true,
-      perRun: false,
+      afterLeaving: [false, false],
     });
   });
 

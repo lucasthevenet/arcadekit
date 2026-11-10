@@ -46,6 +46,10 @@ const CommandDroppedBase: ReturnType<
  * After a crash, the command whose handler threw is dropped too, though that handler may have
  * changed the state before it threw: the run is over either way. A command sent again after
  * `runEnded` goes to whichever run is current.
+ *
+ * In a lockstep run it speaks for the sender's own peer, whose rules gave no answer because
+ * its session stopped first. The other peers may still have applied the command: a player the
+ * host removes after confirming the step of that player's command is told `runEnded`.
  */
 export class CommandDropped extends CommandDroppedBase<{
   readonly command: string;

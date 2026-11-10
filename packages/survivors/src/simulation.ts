@@ -1,6 +1,12 @@
 import * as Game from "arcadekit/game";
 
-import { ChooseUpgrade, NoSuchChoice, OfferClosed } from "./commands";
+import {
+  ChooseUpgrade,
+  HoldPause,
+  NoSuchChoice,
+  NotPlaying,
+  OfferClosed,
+} from "./commands";
 import { HeroLeft, Hud, LeveledUp, RunEnded } from "./events";
 import { SurvivorsInput } from "./input";
 import { choose, createWorld, hudSample, hudVersion, step } from "./world";
@@ -14,7 +20,7 @@ export class Survivors extends Game.Simulation("Survivors", {
   stepSeconds: 1 / 60,
   input: SurvivorsInput,
   events: [LeveledUp, HeroLeft, RunEnded],
-  commands: [ChooseUpgrade],
+  commands: [ChooseUpgrade, HoldPause],
   create: createWorld,
   step,
   apply: {
@@ -32,6 +38,20 @@ export class Survivors extends Game.Simulation("Survivors", {
         return new NoSuchChoice({ offer, index });
       }
       choose(world, hero, index);
+    },
+    HoldPause: (world, { held }, { player }) => {
+      // Decide first, then change: a refused pause leaves the world as it was. A run that is
+      // over takes none, though the heroes of a run that was won are still "playing": it stays
+      // as it ended.
+      const hero = world.heroes[player];
+      if (
+        world.status !== "running" ||
+        hero === undefined ||
+        hero.status !== "playing"
+      ) {
+        return new NotPlaying();
+      }
+      hero.paused = held;
     },
   },
   // The HUD changes all the time, so it is read every 100 ms; its version moves when the run

@@ -116,6 +116,8 @@ type TinyOptions = LockstepOptions<
   unknown
 >;
 
+type TinySession = LockstepSession<Tiny, never, never, unknown>;
+
 /** What a peer's options differ by. Given its transport on the network, to wrap it. */
 type Overrides = (id: string, transport: Transport) => Partial<TinyOptions>;
 
@@ -169,8 +171,7 @@ const startRun = (
   return { network, host, joined, sessions, ticked };
 };
 
-const history = (session: LockstepSession<Tiny, never>) =>
-  session.state!.history;
+const history = (session: TinySession) => session.state!.history;
 
 const BAD_NETWORK: MemoryNetworkOptions = {
   seed: 9,
@@ -322,7 +323,7 @@ describe("lockstep session", () => {
   it("reads local input inputDelay steps ahead, once per step", () => {
     const network = createMemoryNetwork({ seed: 1 });
     const reads: [number, number][] = [];
-    let host: LockstepSession<Tiny, never> | null = null;
+    let host: TinySession | null = null;
     host = hostLockstep(
       {
         ...options(network, "host", () => ({
@@ -538,10 +539,10 @@ describe("lockstep session", () => {
 
   describe("when what arrives doesn't decode", () => {
     const BAD_AT = 40;
-    /** What a peer on other code would send for a Move. */
-    const NOT_A_MOVE = { n: "x" };
+    /** What a peer on other code would send for a step: a payload whose input is no Move. */
+    const NOT_A_MOVE = [{ n: "x" }];
 
-    /** `transport`, sending step `badAt`'s input as a value that isn't a Move, in every `inputs` message that carries it. */
+    /** `transport`, sending step `badAt`'s payload with a value that isn't a Move, in every `inputs` message that carries it. */
     const garblesItsInput = (
       transport: Transport,
       badAt: number = BAD_AT
@@ -564,7 +565,7 @@ describe("lockstep session", () => {
       },
     });
 
-    /** A host's `transport`, sending its own input of step BAD_AT as a value that isn't a Move, in every `steps` message that carries it. */
+    /** A host's `transport`, sending its own payload of step BAD_AT with a value that isn't a Move, in every `steps` message that carries it. */
     const garblesItsSteps = (transport: Transport): Transport => ({
       self: transport.self,
       listen: transport.listen,
@@ -662,7 +663,7 @@ describe("lockstep session", () => {
       );
       const evil = network.connect("evil");
       const inputs = Array.from({ length: 64 }, (_, i) =>
-        i === 20 ? NOT_A_MOVE : { n: 1 }
+        i === 20 ? NOT_A_MOVE : [{ n: 1 }]
       );
       const ticked = [{ session: host, everyMs: 4 }];
       for (let now = 0; now <= 1000; now += 5) {
@@ -759,7 +760,7 @@ describe("lockstep session", () => {
         junk: JSON.stringify({
           kind: "inputs",
           from: 0,
-          inputs: Array.from({ length: 10_000 }, () => ({ n: 1 })),
+          inputs: Array.from({ length: 10_000 }, () => [{ n: 1 }]),
           stepsAck: -1,
           hashes: [],
           hashAck: -1,
@@ -817,7 +818,7 @@ describe("lockstep session", () => {
           JSON.stringify({
             kind: "inputs",
             from: 1000 + i * 64,
-            inputs: Array.from({ length: 64 }, () => ({ n: 1 })),
+            inputs: Array.from({ length: 64 }, () => [{ n: 1 }]),
             stepsAck: -1,
             hashes: [],
             hashAck: -1,
@@ -889,4 +890,4 @@ describe("lockstep session", () => {
   });
 });
 
-const internals = (session: LockstepSession<Tiny, never>) => session as unknown;
+const internals = (session: TinySession) => session as unknown;

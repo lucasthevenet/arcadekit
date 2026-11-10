@@ -1,7 +1,8 @@
 // Lockstep multiplayer: every peer steps the same `Game.Simulation` on the inputs the host
 // confirms for each step (ADR-0012). A session is a host of the simulation, as `Game.Engine` is:
-// it steps it through a `Game.Loop`, and reads from its declared `Game.PlayerInputs` what one
-// player sends. It knows no network; it talks through a Transport. It comes plain
+// it steps it through a `Game.Loop`, reads from its declared `Game.PlayerInputs` what one player
+// sends, and carries a player's commands to every peer's rules at one step (`send`). It knows no
+// network; it talks through a Transport. It comes plain
 // (`hostLockstep`, ticked by hand) and in an Effect shell (`hostLockstepScoped`, owned by a
 // scope, run on Effect's Clock or a ticker, failing with its LockstepError).
 // It also has a Co-op game's DOM-free half: its lockstep parts (`CoopRules`). The Co-op client

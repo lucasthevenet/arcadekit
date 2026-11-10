@@ -8,10 +8,10 @@ import type { CoopRules, CoopTypes } from "../coop";
 
 // A small Co-op game for tests: every player adds a number each step, and now and then the run
 // stops on an offer that each player answers. It is enough to drive every part of the Co-op
-// client: lobby picks, an answer held until it settles, players choosing, pause, and a run's end.
-// Its rules are declared as a genre's are: events, then the simulation that reports them. Each
-// declaration's base is named first, with its type, since the kit's type files are made one file
-// at a time (isolatedDeclarations).
+// client: lobby picks, a command the rules take or refuse, players choosing, pause, and a run's
+// end. Its rules are declared as a genre's are: events, commands with their rejections, then the
+// simulation. Each declaration's base is named first, with its type, since the kit's type files
+// are made one file at a time (isolatedDeclarations).
 
 /** The test game's content, as JSON data. */
 export interface TestContent {
@@ -36,18 +36,10 @@ export interface TestConfig {
   readonly picks: readonly string[];
 }
 
-/** A player's answer to offer `offer`: `value` is added to its bonus. */
-export interface TestAnswer {
-  readonly offer: number;
-  readonly value: number;
-}
-
-/** One player's input for one step. */
+/** One player's input for one step: what its device holds. */
 export interface TestInput {
   /** Added to the player's total this step. */
   readonly add: number;
-  readonly answer?: TestAnswer;
-  readonly paused?: boolean;
 }
 
 export interface TestState {
@@ -65,6 +57,8 @@ export interface TestState {
   readonly owes: boolean[];
   /** Whether each player has left the run, by slot. */
   readonly gone: boolean[];
+  /** Whether each player holds the run paused (`HoldPause`), by slot. */
+  readonly held: boolean[];
   ended: boolean;
 }
 
@@ -101,6 +95,41 @@ export class RunEnded extends RunEndedBase {}
 /** Everything a run of the test game reports: its two events and its sample. */
 export type TestEvent = Score | OfferOpened | RunEnded;
 
+const NothingOwedBase: Game.RejectionClass<
+  "NothingOwed",
+  { readonly offer: Schema.Int }
+> = Game.Rejection("NothingOwed", { offer: Schema.Int });
+
+/**
+ * The sender owes offer `offer` no answer: another offer is the open one, none is, or the
+ * sender has answered it already.
+ */
+export class NothingOwed extends NothingOwedBase {}
+
+const AnswerOfferBase: Game.CommandClass<
+  "AnswerOffer",
+  { readonly offer: Schema.Int; readonly value: Schema.Number },
+  readonly [typeof NothingOwed]
+> = Game.Command(
+  "AnswerOffer",
+  { offer: Schema.Int, value: Schema.Number },
+  { rejects: [NothingOwed] }
+);
+
+/** The sender answers offer `offer`: `value` is added to its bonus, and it owes nothing more. */
+export class AnswerOffer extends AnswerOfferBase {}
+
+const HoldPauseBase: Game.CommandClass<
+  "HoldPause",
+  { readonly held: Schema.Boolean }
+> = Game.Command("HoldPause", { held: Schema.Boolean });
+
+/** The sender holds the run paused for everyone (`held: true`), or lets it go. Leaving lets go. */
+export class HoldPause extends HoldPauseBase {}
+
+/** Every command a run of the test game takes. */
+export type TestCommand = AnswerOffer | HoldPause;
+
 /** What the local player hears of the run. */
 export type TestLocalEvent =
   | { readonly type: "score"; readonly steps: number; readonly total: number }
@@ -117,51 +146,17 @@ export interface TestCoop extends CoopTypes {
   readonly State: TestState;
   readonly Event: TestEvent;
   readonly PlayerInput: TestInput;
-  readonly Answer: TestAnswer;
+  readonly Command: TestCommand;
+  readonly Refusals: Game.RefusalsOf<
+    readonly [typeof AnswerOffer, typeof HoldPause]
+  >;
   readonly LocalEvent: TestLocalEvent;
   readonly Content: TestContent;
 }
 
-const TestInputSchema = Schema.Struct({
-  add: Schema.Number,
-  answer: Schema.optionalKey(
-    Schema.Struct({ offer: Schema.Number, value: Schema.Number })
-  ),
-  paused: Schema.optionalKey(Schema.Boolean),
-});
+const TestInputSchema = Schema.Struct({ add: Schema.Number });
 
 const nothing = (): void => undefined;
-
-/** The run waits on an offer: only its answers count. */
-const answerOffer = (
-  state: TestState,
-  players: readonly (TestInput | null)[]
-): void => {
-  for (let slot = 0; slot < players.length; slot++) {
-    const answer = players[slot]?.answer;
-    if (
-      state.owes[slot] === true &&
-      answer !== undefined &&
-      answer.offer === state.offer
-    ) {
-      state.bonus[slot]! += answer.value;
-      state.owes[slot] = false;
-    }
-  }
-};
-
-/** Whether a player still in the run holds the pause. */
-const pausedAny = (
-  state: TestState,
-  players: readonly (TestInput | null)[]
-): boolean => {
-  for (let slot = 0; slot < players.length; slot++) {
-    if (state.gone[slot] !== true && players[slot]?.paused === true) {
-      return true;
-    }
-  }
-  return false;
-};
 
 /** One step of play: every player's `add`, then the end, or the next offer. */
 const advance = (
@@ -200,11 +195,12 @@ const TestGameBase: Game.SimulationClass<
   TestState,
   Game.PlayerInputs<TestInput>,
   TestEvent,
-  never,
-  Game.RefusalsOf<readonly []>
+  TestCommand,
+  Game.RefusalsOf<readonly [typeof AnswerOffer, typeof HoldPause]>
 > = Game.Simulation("TestGame", {
   input: Game.PlayerInputs(TestInputSchema),
   events: [OfferOpened, RunEnded],
+  commands: [AnswerOffer, HoldPause],
   create: ({ content, picks }: TestConfig): TestState => ({
     content,
     picks,
@@ -214,6 +210,7 @@ const TestGameBase: Game.SimulationClass<
     offer: 0,
     owes: picks.map(() => false),
     gone: picks.map(() => false),
+    held: picks.map(() => false),
     ended: false,
   }),
   step: (state, input, { report }) => {
@@ -223,12 +220,27 @@ const TestGameBase: Game.SimulationClass<
     for (const slot of input.leaving) {
       state.gone[slot] = true;
       state.owes[slot] = false;
+      state.held[slot] = false;
     }
-    if (state.owes.includes(true)) {
-      answerOffer(state, input.players);
-    } else if (!pausedAny(state, input.players)) {
+    // The run waits while a player owes the open offer an answer, or holds the pause.
+    if (!state.owes.includes(true) && !state.held.includes(true)) {
       advance(state, input.players, report);
     }
+  },
+  apply: {
+    // Decide first, then change: a refused answer leaves the state as it was.
+    AnswerOffer: (state, { offer, value }, { player }) => {
+      if (state.offer !== offer || state.owes[player] !== true) {
+        return new NothingOwed({ offer });
+      }
+      state.bonus[player]! += value;
+      state.owes[player] = false;
+    },
+    HoldPause: (state, { held }, { player }) => {
+      if (state.gone[player] === false) {
+        state.held[player] = held;
+      }
+    },
   },
   sample: {
     event: Score,
@@ -239,7 +251,8 @@ const TestGameBase: Game.SimulationClass<
 
 /**
  * The test game's rules: plain and deterministic, as a genre's are. Several players play it, so
- * its step input is a `Game.PlayerInputs`; an answer and a pause ride each player's input.
+ * its step input is a `Game.PlayerInputs`. A player answers an offer with `AnswerOffer` and
+ * holds the pause with `HoldPause`.
  */
 export class TestGame extends TestGameBase {}
 
@@ -254,6 +267,7 @@ export const hashTestState = (state: TestState): number => {
     hash = mix(hash, state.bonus[slot]!);
     hash = mix(hash, state.owes[slot] === true ? 1 : 0);
     hash = mix(hash, state.gone[slot] === true ? 1 : 0);
+    hash = mix(hash, state.held[slot] === true ? 1 : 0);
   }
   return mix(hash, state.ended ? 1 : 0);
 };
@@ -264,27 +278,6 @@ export const testCoopRules: CoopRules<TestCoop> = {
   hash: hashTestState,
   picks: (content) => content.picks,
   config: (content, picks) => ({ content, picks }),
-  localInput: () => {
-    const input: { add: number; answer?: TestAnswer; paused?: boolean } = {
-      add: 0,
-    };
-    return (device, answer, paused) => {
-      input.add = device === null ? 0 : device.add;
-      if (answer === null) {
-        delete input.answer;
-      } else {
-        input.answer = answer;
-      }
-      if (paused) {
-        input.paused = true;
-      } else {
-        delete input.paused;
-      }
-      return input;
-    };
-  },
-  settled: (answer, state, slot) =>
-    state.offer !== answer.offer || state.owes[slot] !== true,
   choosing: (state, slot) => state.owes[slot] === true,
   localEvent: (event, slot, names) => {
     switch (event._tag) {

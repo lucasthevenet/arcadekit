@@ -1,8 +1,8 @@
 import type { PlayerInputs, PlayersSimulation } from "../game/index";
 
 // A Co-op game's lockstep parts, DOM-free: a genre keeps them beside its simulation and tests
-// them in Node. The Co-op client (`arcadekit/net/browser`) runs them. Everything here that runs
-// between steps is plain code (ADR-0017).
+// them in Node. The Co-op client (`arcadekit/net/browser`) runs them. What it calls between
+// steps, `choosing`, is plain code (ADR-0017).
 
 /**
  * The types of one Co-op game, as one bag. A game declares it once and names it everywhere:
@@ -10,8 +10,10 @@ import type { PlayerInputs, PlayersSimulation } from "../game/index";
  * - `Config`, `State`, `Event`: its simulation's.
  * - `PlayerInput`: one player's input for one step. The simulation's step input is
  *   `Game.PlayerInputs` of it: the kit combines the players' inputs by slot.
- * - `Answer`: what the local player answers the run with (an upgrade pick, say), held on their
- *   input until the game says it's settled.
+ * - `Command`: the commands its simulation takes, which a player sends through the client's
+ *   `send`: `Game.CommandOf<typeof MySimulation>`.
+ * - `Refusals`: the rejections each of those commands can be refused with, by the command's
+ *   tag: `Game.RefusalsOf` of the simulation's `commands`. `send` fails with them.
  * - `LocalEvent`: what the local player's app hears of the run's events.
  * - `Content`: what the run is played with, as JSON data. Every peer loads its own, and the kit
  *   compares their hashes.
@@ -21,7 +23,8 @@ export interface CoopTypes {
   readonly State: unknown;
   readonly Event: unknown;
   readonly PlayerInput: unknown;
-  readonly Answer: unknown;
+  readonly Command: unknown;
+  readonly Refusals: unknown;
   readonly LocalEvent: unknown;
   readonly Content: unknown;
 }
@@ -31,8 +34,9 @@ export interface CoopRules<G extends CoopTypes> {
   /**
    * The run's rules: a `Game.Simulation` class whose step input was declared with
    * `Game.PlayerInputs`, every player's input by slot, host first, and the slots leaving. Each
-   * player's own input crosses the network as that declaration's one-player Schema encodes it.
-   * A pick and a pause still ride that input here, not a command: the client sends none yet.
+   * player's own input crosses the network as that declaration's one-player Schema encodes it,
+   * and what a player decides (a pick, a pause) is one of its commands, sent through the
+   * client's `send`.
    *
    * These types don't refuse a struct written by hand with `players` and `leaving`: they name
    * the step input's type, which such a struct has too. `makeCoopClient`'s throw is the only
@@ -43,8 +47,8 @@ export interface CoopRules<G extends CoopTypes> {
     G["State"],
     PlayerInputs<G["PlayerInput"]>,
     G["Event"],
-    unknown,
-    unknown
+    G["Command"],
+    G["Refusals"]
   >;
   /** A digest of the whole state, the same on every peer for the same run. */
   readonly hash: (state: G["State"]) => number;
@@ -73,27 +77,9 @@ export interface CoopRules<G extends CoopTypes> {
     readonly hashEvery?: number;
   };
   /**
-   * Called once per run. The returned function is called once per scheduled step with the
-   * device's input (null while nothing is attached), the held answer (null with none) and the
-   * held pause. It refills and returns one object: it must not allocate.
-   */
-  readonly localInput: () => (
-    device: G["PlayerInput"] | null,
-    answer: G["Answer"] | null,
-    paused: boolean
-  ) => G["PlayerInput"];
-  /**
-   * True once `answer` can no longer apply for `slot`: the kit then stops sending it. Called
-   * between steps: it must not allocate or change the state.
-   */
-  readonly settled: (
-    answer: G["Answer"],
-    state: G["State"],
-    slot: number
-  ) => boolean;
-  /**
-   * True while `slot`'s player owes the run an answer. Called between steps for every slot: it
-   * must not allocate or change the state.
+   * True while the run waits on `slot`'s player to decide something, such as an upgrade to pick:
+   * the others are shown who. Called between steps for every slot: it must not allocate or
+   * change the state.
    */
   readonly choosing: (state: G["State"], slot: number) => boolean;
   /** What the local player hears of `event`, or null. `names` is every player's name, by slot. */

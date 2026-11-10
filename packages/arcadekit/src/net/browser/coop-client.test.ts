@@ -5,17 +5,22 @@ import {
   Effect,
   Exit,
   Fiber,
+  Result,
   Scheduler,
   Scope,
   Stream,
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CommandDropped } from "../../game/index";
 import { AttachError, GameCrashed } from "../../runtime/browser";
 import { manualFrames } from "../../runtime/testing";
 import { encodeLobbyMessage } from "../lobby";
 import type { Ticker } from "../scoped";
 import {
+  AnswerOffer,
+  HoldPause,
+  NothingOwed,
   fakeCoopRooms,
   hashTestState,
   manualTicker,
@@ -25,7 +30,6 @@ import {
 } from "../testing/index";
 import type {
   FakeCoopRooms,
-  TestAnswer,
   TestContent,
   TestCoop,
   TestCoopGameOptions,
@@ -195,32 +199,17 @@ const loggedTicker =
 
 const duo = () => testCoopGame({ maxPlayers: 2 });
 
-/** A game that records the answer each scheduled step's input was filled with. */
-const watched = (content: Partial<TestContent>) => {
-  const sent: (TestAnswer | null)[] = [];
-  const base = game(content);
-  const watching: Game = {
-    ...base,
-    localInput: () => {
-      const fill = base.localInput();
-      return (device, answer, paused) => {
-        sent.push(answer);
-        return fill(device, answer, paused);
-      };
-    },
-  };
-  return { game: watching, sent };
-};
-
-/** One player's input in a lockstep message, as a peer on other code would encode it. */
+/** One player's payload in a lockstep message, as a peer on other code would encode it. */
 const NOT_AN_INPUT = "not an input";
 
-/** A lockstep message of a run, as far as these tests forge one. */
+/** A lockstep message of a run, as far as these tests read and forge one. */
 interface ForgedMessage {
   readonly kind: string;
-  /** A peer's own inputs, by step. */
+  /** The step of the first of `inputs` or `steps`. */
+  readonly from?: number;
+  /** A peer's own payloads, by step. */
   inputs?: unknown[];
-  /** The host's confirmed steps: each a list of [player, input] pairs, then the removed players. */
+  /** The host's confirmed steps: each a list of [player, payload] pairs, then the removed players. */
   steps?: [[string, unknown][], string[]][];
 }
 
@@ -986,14 +975,19 @@ describe("lobby picks at the start", () => {
   });
 });
 
-describe("answers and pause", () => {
+/** Sends `command` as `player` does, without waiting: how it ended, once the timers have run. */
+const send = <LoadError>(
+  player: Player<LoadError>,
+  command: AnswerOffer | HoldPause
+) => run(Effect.result(player.coop.send(command)));
+
+describe("sending a command", () => {
   fakeTimers();
 
-  it("holds an answer on the input until it settles, and says who else is choosing", async () => {
+  it("has every peer's rules take it once, at one step, and tells its sender alone", async () => {
     const hub = fakeCoopRooms();
-    const { game: hostGame, sent } = watched({ offerEvery: 30 });
     const { host, guest } = await lobbyOfTwo(hub, {
-      host: hostGame,
+      host: game({ offerEvery: 30 }),
       guest: game({ offerEvery: 30 }),
     });
     await run(host.coop.start);
@@ -1002,90 +996,179 @@ describe("answers and pause", () => {
     const frozen = host.coop.debug().state?.steps;
     const offered = [heard(host.events), heard(guest.events)];
     const choosing = host.events.findLast((event) => event.type === "waiting");
-    await run(host.coop.answer({ offer: 1, value: 5 }));
+    const taken = send(host, new AnswerOffer({ offer: 1, value: 5 }));
     await vi.advanceTimersByTimeAsync(500);
-    const answered = sent.filter((answer) => answer !== null);
-    const hostState = structuredClone(host.coop.debug().state);
+    const states = [host, guest].map(({ coop }) => {
+      // A copy: the state is the run's own, and goes on changing.
+      const state = structuredClone(coop.debug().state);
+      return [state?.bonus, state?.owes, state?.steps];
+    });
     const guestSees = guest.events.findLast(
       (event) => event.type === "waiting"
     );
-    await run(guest.coop.answer({ offer: 1, value: 7 }));
+    const guestTaken = send(guest, new AnswerOffer({ offer: 1, value: 7 }));
     await vi.advanceTimersByTimeAsync(300);
     const after = guest.coop.debug().state;
     expect([
       frozen,
       offered,
       choosing,
-      // Sent with several steps' input, then dropped: the last steps went without it.
-      answered.length > 1,
-      answered.every((answer) => answer.offer === 1 && answer.value === 5),
-      sent.at(-1),
-      [hostState?.bonus, hostState?.owes, hostState?.steps],
+      await taken,
+      states,
       guestSees,
+      await guestTaken,
       [after?.bonus, (after?.steps ?? 0) > 30],
       host.events.findLast((event) => event.type === "waiting"),
     ]).toStrictEqual([
       30,
       [[{ type: "offer", offer: 1 }], [{ type: "offer", offer: 1 }]],
       { type: "waiting", waitingFor: [], choosing: ["Guest 1"] },
-      true,
-      true,
-      null,
-      [[5, 0], [false, true], 30],
+      Result.succeed(undefined),
+      // Applied once on both: a command rides one step.
+      [
+        [[5, 0], [false, true], 30],
+        [[5, 0], [false, true], 30],
+      ],
       { type: "waiting", waitingFor: [], choosing: [] },
+      Result.succeed(undefined),
       [[5, 7], true],
       { type: "waiting", waitingFor: [], choosing: [] },
     ]);
   });
 
-  it("drops an answer that is already settled, and replaces a held answer with a new one", async () => {
+  it("fails with the rejection the rules refused it with, having changed nothing on any peer", async () => {
     const hub = fakeCoopRooms();
-    const { game: hostGame, sent } = watched({ offerEvery: 30 });
-    const { host } = await lobbyOfTwo(hub, {
-      host: hostGame,
+    const { host, guest } = await lobbyOfTwo(hub, {
+      host: game({ offerEvery: 30 }),
       guest: game({ offerEvery: 30 }),
     });
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(1500);
-    // No offer 9 is open: its answer never reaches a step's input.
-    await run(host.coop.answer({ offer: 9, value: 1 }));
-    await vi.advanceTimersByTimeAsync(200);
-    const stale = sent.filter((answer) => answer !== null);
-    await run(host.coop.answer({ offer: 1, value: 2 }));
-    await run(host.coop.answer({ offer: 1, value: 3 }));
-    await vi.advanceTimersByTimeAsync(200);
+    // No offer 9 is open.
+    const stale = send(host, new AnswerOffer({ offer: 9, value: 1 }));
+    await vi.advanceTimersByTimeAsync(300);
+    const first = send(host, new AnswerOffer({ offer: 1, value: 2 }));
+    const second = send(host, new AnswerOffer({ offer: 1, value: 3 }));
+    await vi.advanceTimersByTimeAsync(300);
     expect([
-      stale,
-      sent.some((answer) => answer?.value === 2),
+      await stale,
+      await first,
+      // The host owed offer 1 nothing more by the time its second answer came.
+      await second,
       host.coop.debug().state?.bonus,
-    ]).toStrictEqual([[], false, [3, 0]]);
+      guest.coop.debug().state?.bonus,
+      [host.coop.debug().error, guest.coop.debug().error],
+    ]).toStrictEqual([
+      Result.fail(new NothingOwed({ offer: 9 })),
+      Result.succeed(undefined),
+      Result.fail(new NothingOwed({ offer: 1 })),
+      [2, 0],
+      [2, 0],
+      [null, null],
+    ]);
   });
 
-  it("takes no answer or pause before the run, and holds the run while a player pauses", async () => {
+  it("holds the run for everyone while a player holds the pause, and lets it go", async () => {
     const hub = fakeCoopRooms();
-    const { game: hostGame, sent } = watched({});
-    const { host, guest } = await lobbyOfTwo(hub, { host: hostGame });
-    await run(host.coop.setPaused(true));
-    await run(host.coop.answer({ offer: 0, value: 1 }));
+    const { host, guest } = await lobbyOfTwo(hub);
     await run(host.coop.start);
-    // Once the run has started, a lobby pick changes nothing.
     await vi.advanceTimersByTimeAsync(1000);
-    await run(guest.coop.choose("blue"));
     const running = host.coop.debug().state?.steps ?? 0;
-    await run(guest.coop.setPaused(true));
+    const held = send(guest, new HoldPause({ held: true }));
     await vi.advanceTimersByTimeAsync(500);
-    const held = host.coop.debug().state?.steps ?? 0;
+    const paused = host.coop.debug().state?.steps ?? 0;
     await vi.advanceTimersByTimeAsync(500);
-    const stillHeld = host.coop.debug().state?.steps ?? 0;
-    await run(guest.coop.setPaused(false));
+    const stillPaused = host.coop.debug().state?.steps ?? 0;
+    const released = send(guest, new HoldPause({ held: false }));
     await vi.advanceTimersByTimeAsync(500);
     expect([
       running > 30,
-      sent.every((answer) => answer === null),
-      held === stillHeld,
-      (host.coop.debug().state?.steps ?? 0) > held,
-      host.coop.debug().state?.picks,
-    ]).toStrictEqual([true, true, true, true, ["red", "green"]]);
+      await held,
+      paused === stillPaused,
+      await released,
+      (host.coop.debug().state?.steps ?? 0) > paused,
+    ]).toStrictEqual([
+      true,
+      Result.succeed(undefined),
+      true,
+      Result.succeed(undefined),
+      true,
+    ]);
+  });
+
+  it("fails with CommandDropped while there is no run: with no seat, and in the lobby", async () => {
+    const hub = fakeCoopRooms();
+    const alone = await client(hub);
+    const noSeat = await send(alone, new HoldPause({ held: true }));
+    const { host } = await lobbyOfTwo(hub);
+    const inLobby = await send(host, new AnswerOffer({ offer: 0, value: 1 }));
+    await run(host.coop.start);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect([
+      noSeat,
+      inLobby,
+      // Neither reached a run that started later.
+      host.coop.debug().state?.bonus,
+      (host.coop.debug().state?.steps ?? 0) > 30,
+    ]).toStrictEqual([
+      Result.fail(
+        new CommandDropped({ command: "HoldPause", reason: "noRun" })
+      ),
+      Result.fail(
+        new CommandDropped({ command: "AnswerOffer", reason: "noRun" })
+      ),
+      [0, 0],
+      true,
+    ]);
+  });
+
+  it("fails with CommandDropped when the player leaves before the rules answer", async () => {
+    const hub = fakeCoopRooms();
+    const { host, guest } = await lobbyOfTwo(hub);
+    await run(host.coop.start);
+    await vi.advanceTimersByTimeAsync(1000);
+    // Sent and left in one go: no tick comes between to give the command a step.
+    const leaving = send(guest, new HoldPause({ held: true }));
+    await run(guest.coop.leave);
+    const afterLeaving = await send(guest, new HoldPause({ held: true }));
+    await vi.advanceTimersByTimeAsync(500);
+    expect([
+      await leaving,
+      afterLeaving,
+      // The others' run never got it.
+      host.coop.debug().state?.held,
+    ]).toStrictEqual([
+      Result.fail(
+        new CommandDropped({ command: "HoldPause", reason: "runEnded" })
+      ),
+      // No seat any more: there is no run to ask.
+      Result.fail(
+        new CommandDropped({ command: "HoldPause", reason: "noRun" })
+      ),
+      [false, false],
+    ]);
+  });
+
+  it("fails with CommandDropped when the run stops before the rules answer, and at once after", async () => {
+    const hub = fakeCoopRooms();
+    const { host, guest } = await lobbyOfTwo(hub);
+    await run(host.coop.start);
+    await vi.advanceTimersByTimeAsync(1000);
+    await run(host.coop.leave);
+    await vi.advanceTimersByTimeAsync(500);
+    // The guest's run waits on a host that is gone: its command waits with it.
+    const waiting = send(guest, new HoldPause({ held: true }));
+    await vi.advanceTimersByTimeAsync(11_000);
+    const runEnded = new CommandDropped({
+      command: "HoldPause",
+      reason: "runEnded",
+    });
+    expect([
+      guest.events.at(-1)?.type,
+      await waiting,
+      // The seat is still this player's, with its run stopped: the same answer, at once.
+      await send(guest, new HoldPause({ held: false })),
+    ]).toStrictEqual(["failed", Result.fail(runEnded), Result.fail(runEnded)]);
   });
 });
 
@@ -1372,6 +1455,45 @@ describe("drawing a co-op run", () => {
       [0, true, 0],
       null,
       true,
+    ]);
+  });
+
+  it("sends null for its player while nothing is attached, and what its devices hold once something is", async () => {
+    const frames = manualFrames();
+    const hub = fakeCoopRooms();
+    /** Each payload the guest sent, by step, as it was on the wire. */
+    const sent = new Map<number, string>();
+    const rooms = forging(hub.rooms, {
+      sent: (message) => {
+        for (const [i, payload] of (message.inputs ?? []).entries()) {
+          sent.set((message.from ?? 0) + i, JSON.stringify(payload));
+        }
+      },
+    });
+    const { host, guest } = await lobbyOfTwo(hub, {}, { frames, rooms });
+    await run(host.coop.start);
+    await vi.advanceTimersByTimeAsync(500);
+    const detached = new Set(sent.values());
+    const attach = fork(guest.coop.attach(element));
+    await settle();
+    await vi.advanceTimersByTimeAsync(500);
+    const attached = [...sent.values()].at(-1);
+    await Effect.runPromise(Fiber.interrupt(attach));
+    await vi.advanceTimersByTimeAsync(500);
+    const totals = host.coop.debug().state?.totals ?? [];
+    expect([
+      detached,
+      attached,
+      [...sent.values()].at(-1),
+      // The rules saw a player with no input, then one that adds 1 a step, then none again.
+      [totals[0], (totals[1] ?? 0) > 20],
+      [host.coop.debug().error, guest.coop.debug().error],
+    ]).toStrictEqual([
+      new Set(["[null]"]),
+      '[{"add":1}]',
+      "[null]",
+      [0, true],
+      [null, null],
     ]);
   });
 

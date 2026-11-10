@@ -2,37 +2,20 @@ import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 
 // A survivors step's input: every player's input for that step, plus the players leaving at it.
-// In a lockstep run, anything that changes it (an upgrade pick, a co-op pause, a player leaving)
-// arrives here, scheduled for a step, so every peer applies it at the same step (ADR-0012). A
-// single-player run's pick is the `ChooseUpgrade` command (commands.ts), which the loop applies
-// at a step.
-//
-// A lockstep run's pick still rides the input (`HeroInput.pick`, which the step's `applyPicks`
-// applies), as its pause does (`HeroInput.paused`). When co-op moves to the declarations the pick
-// becomes the same `ChooseUpgrade`, and `UpgradePick`, the two keys and `applyPicks` go
-// (ADR-0020).
-
-/** An upgrade pick: the index of a choice in the offer numbered `offer` (`World.offerSeq`). */
-export const UpgradePick = Schema.Struct({
-  offer: Schema.Number,
-  index: Schema.Number,
-});
-export type UpgradePick = typeof UpgradePick.Type;
+// It holds what a player's devices hold and nothing else. What a player decides outside them
+// (an upgrade pick, the co-op pause) is a command (commands.ts), which every host applies at a
+// step: the single-player engine at its next one, and a lockstep run at the step the command
+// rides, on every peer (ADR-0012, ADR-0020).
 
 /**
- * One player's input for one step: what crosses the network in a lockstep run, which reads this
- * Schema from `SurvivorsInput`.
+ * One player's input for one step: what its devices hold, and what crosses the network for that
+ * player in a lockstep run, which reads this Schema from `SurvivorsInput`.
  *
  * - `moveX`, `moveZ`: movement direction, each axis in [-1, 1].
- * - `pick`: an upgrade choice. Applied only while this hero has the offer it names open, so a
- *   repeated or late pick does nothing.
- * - `paused`: true holds the run paused for everyone while this player's hero is playing.
  */
 export const HeroInput = Schema.Struct({
   moveX: Schema.Number,
   moveZ: Schema.Number,
-  pick: Schema.optionalKey(UpgradePick),
-  paused: Schema.optionalKey(Schema.Boolean),
 });
 export type HeroInput = typeof HeroInput.Type;
 

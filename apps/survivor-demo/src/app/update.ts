@@ -30,7 +30,13 @@ import {
 } from "./commands";
 import type { Coop } from "./coop";
 import { Message } from "./message";
-import { Phase, emptyCoopRun, emptyHud, isCoop } from "./model";
+import {
+  Phase,
+  emptyCoopRun,
+  emptyHud,
+  isCoop,
+  isLocalHeroDown,
+} from "./model";
 import type { Model } from "./model";
 import { emptyRecords, mergeRecords, withRun } from "./save";
 import type { Save } from "./save";
@@ -106,11 +112,22 @@ const leaveCoop = (model: Model): Return => ({
   commands: [LeaveCoop()],
 });
 
-/** Toggles the local player's pause flag in a co-op run: its hero holds the run for everyone. */
-const toggleCoopPause = (model: Model, paused: boolean): Return => ({
-  model: { ...model, coop: { ...model.coop, paused } },
-  commands: [SetCoopPaused({ paused })],
-});
+/**
+ * Opens the co-op run's menu, or closes it. While it is up the local player holds the run
+ * paused for everyone: opening it asks the run for the pause and closing it lets go. The app's
+ * own pause flag changes at once, so the screen answers the key; the run takes the command a
+ * few steps later, or refuses it. The menu doesn't wait on that answer, nor close on it: it is
+ * the only way to leave the run. A hero that is down holds no pause, so its player's menu opens
+ * over a run that plays on, and asks for nothing.
+ */
+const setCoopMenu = (model: Model, open: boolean): Return => {
+  const paused = open && !isLocalHeroDown(model);
+  return {
+    model: { ...model, coop: { ...model.coop, menu: open, paused } },
+    // Nothing to send when the pause stays as it is: none was asked for, or the run took none.
+    commands: paused === model.coop.paused ? [] : [SetCoopPaused({ paused })],
+  };
+};
 
 const backToMenu = (model: Model): Return => ({
   model: { ...model, phase: Phase.Menu() },
@@ -189,7 +206,7 @@ const handle = (model: Model, message: Message): Return =>
         : { model },
     PressedEscape: () => {
       if (model.phase._tag === "CoopPlaying") {
-        return toggleCoopPause(model, !model.coop.paused);
+        return setCoopMenu(model, !model.coop.menu);
       }
       if (model.phase._tag === "Playing") {
         return {
@@ -263,7 +280,7 @@ const handle = (model: Model, message: Message): Return =>
         : { model },
     ClickedCoopResume: () =>
       model.phase._tag === "CoopPlaying"
-        ? toggleCoopPause(model, false)
+        ? setCoopMenu(model, false)
         : { model },
     ClickedLeaveCoop: () =>
       isCoop(model.phase) ? leaveCoop(model) : { model },
@@ -312,6 +329,13 @@ const handle = (model: Model, message: Message): Return =>
     GotCoopFailed: ({ error }) =>
       isCoop(model.phase)
         ? { model: { ...model, phase: Phase.CoopFailed({ error }) } }
+        : { model },
+    // The rules hold no pause for this player: its hero is down, or the run is over. The
+    // app's pause flag follows them, so the screen doesn't say "paused" over a run that plays
+    // on. The menu stays up: a player whose hero is down still needs its "Leave run".
+    FailedToHoldCoopPause: () =>
+      model.coop.paused
+        ? { model: { ...model, coop: { ...model.coop, paused: false } } }
         : { model },
 
     LoadedAudioSettings: ({ settings }) => ({

@@ -5,8 +5,8 @@ import type { HeroInput } from "../input";
 
 /**
  * One player's devices on `surface` (keys, touch, gamepad) as its hero's movement: what the
- * single-player game and the Co-op game both read. Returns one object, refilled each step;
- * a co-op run adds its pick and pause to its own copy. `dispose` removes its listeners.
+ * single-player game and the Co-op game both read. Returns one object, refilled each step.
+ * `dispose` removes its listeners.
  */
 export const heroDevice = (
   surface: HTMLElement

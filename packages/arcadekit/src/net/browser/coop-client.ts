@@ -1,7 +1,7 @@
 import { Cause, Data, Effect, Fiber, FiberHandle, Queue, Stream } from "effect";
 import type { Clock, Scope } from "effect";
 
-import { playerInputSchema } from "../../game/index";
+import { CommandDropped, playerInputSchema } from "../../game/index";
 import type { PlayerInputs } from "../../game/index";
 import { animationFrames, attachError, frameLoop } from "../../runtime/browser";
 import type { InputSource, StepInput } from "../../runtime/index";
@@ -86,7 +86,12 @@ interface Seat<G extends CoopTypes> {
   players: readonly PeerId[];
   /** Every player's name, by slot. */
   names: readonly string[];
-  run: ScopedLockstepSession<G["State"], G["Event"]> | null;
+  run: ScopedLockstepSession<
+    G["State"],
+    G["Event"],
+    G["Command"],
+    G["Refusals"]
+  > | null;
   /** Ticks the run, while it runs: a frame ticks it before drawing. */
   frameTick: (() => void) | null;
   /** The run ended: what the session reports after that (the others leaving) is no failure. */
@@ -98,9 +103,6 @@ interface Seat<G extends CoopTypes> {
   choosingMask: number;
   /** Since when stepping has waited without a break, or null. */
   waitingSinceMs: number | null;
-  /** The local player's answer, sent with every step's input until the game says it's settled. */
-  answer: G["Answer"] | null;
-  paused: boolean;
   readonly hashes: Map<number, number>;
 }
 
@@ -190,8 +192,6 @@ const makeSeat = <G extends CoopTypes>(pick: string): Seat<G> => ({
   waitingMask: 0,
   choosingMask: 0,
   waitingSinceMs: null,
-  answer: null,
-  paused: false,
   hashes: new Map(),
 });
 
@@ -492,28 +492,14 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
       });
 
     /**
-     * The local player's input for one scheduled step: the attached devices (null while
-     * detached), the held answer unless the game says it's settled, and the held pause.
+     * The local player's input for each scheduled step: what the attached devices hold, or null
+     * while nothing is attached, which the rules see as a player with no input. One source for
+     * every run: it reads whatever is attached when a step is scheduled.
      */
-    const localInput = (seat: Seat<G>): StepInput<PlayerInput> => {
-      const fill = game.localInput();
-      return {
-        read: (step) => {
-          const read = device === null ? null : device.read(step);
-          const state = seat.run?.state ?? null;
-          if (
-            seat.answer !== null &&
-            state !== null &&
-            game.settled(seat.answer, state, seat.slot)
-          ) {
-            // It was applied, or what it answered ended without it.
-            seat.answer = null;
-          }
-          return fill(read, seat.answer, seat.paused);
-        },
-        endStep: () => device?.endStep?.(),
-        endFrame: () => device?.endFrame?.(),
-      };
+    const localInput: StepInput<PlayerInput | null> = {
+      read: (step) => (device === null ? null : device.read(step)),
+      endStep: () => device?.endStep?.(),
+      endFrame: () => device?.endFrame?.(),
     };
 
     const recordHash = (seat: Seat<G>, state: State): number => {
@@ -536,8 +522,8 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
     };
 
     /**
-     * After each tick: who stepping waits on, and who else owes the run an answer, when either
-     * changes. Both are kept as a bit per slot; the names are built only on a change.
+     * After each tick: who stepping waits on, and who else the run waits on to decide, when
+     * either changes. Both are kept as a bit per slot; the names are built only on a change.
      */
     const afterTick = (seat: Seat<G>, clock: Clock.Clock) => {
       const { run } = seat;
@@ -600,14 +586,14 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
           State,
           PlayerInputs<PlayerInput>,
           G["Event"],
-          unknown,
-          unknown
+          G["Command"],
+          G["Refusals"]
         > = {
           simulation: game.simulation,
           config: game.config(content, plan.picks),
           contentHash: contentHash(content),
           transport: linksTransport(room.self, room.links()),
-          local: localInput(seat),
+          local: localInput,
           hash: (state) => recordHash(seat, state),
           inputDelay: game.lockstep?.inputDelay ?? INPUT_DELAY,
           hashEvery: game.lockstep?.hashEvery ?? HASH_EVERY,
@@ -775,17 +761,18 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
           Queue.offerUnsafe(current.lobby, { type: "start" });
         }
       }),
-      answer: (answer) =>
-        Effect.sync(() => {
-          if (current !== null && current.run !== null) {
-            current.answer = answer;
-          }
-        }),
-      setPaused: (paused) =>
-        Effect.sync(() => {
-          if (current !== null && current.run !== null) {
-            current.paused = paused;
-          }
+      // The current seat's session answers it. Before a run there are no rules to ask.
+      send: (command) =>
+        Effect.suspend(() => {
+          const run = current?.run ?? null;
+          return run === null
+            ? Effect.fail(
+                new CommandDropped({
+                  command: (command as { readonly _tag: string })._tag,
+                  reason: "noRun",
+                })
+              )
+            : run.send(command);
         }),
       leave,
       // Its own scope: a crash releases the view and input as detaching does. The scope runs
@@ -830,8 +817,8 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
           })
         ).pipe(
           // The app then shows co-op as stopped, so this player leaves: a seat left running
-          // would freeze the others' run when it next owes an answer, or while it holds the
-          // pause. An interrupt (an unmount) is no failure, and doesn't leave.
+          // would freeze the others' run when it next waits on this player, or while it holds
+          // a pause. An interrupt (an unmount) is no failure, and doesn't leave.
           Effect.tapError(() => leave)
         ),
       listen: (onEvent) => {

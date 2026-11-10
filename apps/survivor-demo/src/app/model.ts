@@ -51,7 +51,8 @@ export const Phase = defineTaggedUnion({
     canStart: Schema.Boolean,
   },
   CoopPlaying: {},
-  CoopLevelUp: { offer: Schema.Number, choices: Schema.Array(UpgradeChoice) },
+  /** `offer` is the number of the offer the choices are from: the pick names it. */
+  CoopLevelUp: { offer: Schema.Int, choices: Schema.Array(UpgradeChoice) },
   CoopGameOver: { summary: RunSummary },
   CoopFailed: { error: Schema.String },
 });
@@ -77,7 +78,17 @@ export const CoopRun = Schema.Struct({
   waitingFor: Schema.Array(Schema.String),
   /** The other players with an upgrade to pick while the run is frozen. */
   choosing: Schema.Array(Schema.String),
-  /** True while the local player holds the run paused. */
+  /**
+   * True while the local player has the run's menu up (Escape): the way to leave the run, and
+   * the sound controls. It is the app's own, so it stays up whatever the run answers the pause
+   * it asks for.
+   */
+  menu: Schema.Boolean,
+  /**
+   * True while the local player holds the run paused, as far as the app knows: set when the
+   * menu opens for a hero that is playing, and cleared when the run doesn't take it (the hero
+   * is down, or the run is over).
+   */
   paused: Schema.Boolean,
 });
 export type CoopRun = typeof CoopRun.Type;
@@ -87,6 +98,7 @@ export const emptyCoopRun: CoopRun = {
   names: [],
   waitingFor: [],
   choosing: [],
+  menu: false,
   paused: false,
 };
 
@@ -104,6 +116,16 @@ export const Model = Schema.Struct({
   audio: AudioSettings,
 });
 export type Model = typeof Model.Type;
+
+/**
+ * Whether the local player's hero is out of a co-op run's play, by the HUD's last sample: it is
+ * down. The rules take no pause from such a hero (`NotPlaying`), so the app asks for none. False
+ * until the HUD has a sample of the hero.
+ */
+export const isLocalHeroDown = (model: Model): boolean => {
+  const hero = model.hud.heroes[model.coop.slot];
+  return hero !== undefined && hero.status !== "playing";
+};
 
 export const emptyHud = new Hud({
   level: 1,
