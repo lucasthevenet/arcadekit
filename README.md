@@ -180,7 +180,7 @@ The `arcadekit` package releases with [Changesets](https://github.com/changesets
 ## Not done yet
 
 - **The one-package release.** `arcadekit` 0.3.0 isn't on npm until `scripts/npm-setup.sh` has been walked through: see [Releasing](#releasing). Until then npm has the nine `@arcadekit/*` packages at 0.2.3.
-- **The docs site's deployment.** `pnpm build` builds arcadekit.dev, but nothing deploys it until the workflow in `apps/docs/deploy.workflow.example.yml` is added to `.github/workflows/`: see [its README](apps/docs/README.md#deploying).
+- **The docs site's deployment.** `pnpm build` builds arcadekit.dev, but nothing deploys it until the workflow in `apps/docs/deploy.workflow.example.yml` is moved to `.github/workflows/`: see [its README](apps/docs/README.md#deploying).
 - Real art and sounds: the demos draw generated pixel art and play generated placeholders.
 - A public deployment, and TURN. `alchemy deploy` puts the demo and its signalling worker on Cloudflare, but none is public yet (the worker needs rate limits first: see its README), and two peers behind symmetric NATs can't connect without TURN.
 - Cross-browser lockstep: the end-to-end co-op test runs in Chromium only. `pnpm test:browsers` checks the simulation itself in Chromium, Firefox and WebKit, but Linux WebKit isn't Safari (whose JavaScriptCore uses Apple's libm), and nothing runs on Windows or macOS yet.
