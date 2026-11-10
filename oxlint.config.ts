@@ -157,7 +157,7 @@ export default defineConfig({
         "packages/push-puzzle/src/**/*.ts",
       ],
       excludeFiles: ["**/browser/**", "**/*.test.ts"],
-      jsPlugins: ["./lint/deterministic-math.ts"],
+      jsPlugins: ["./tools/lint/deterministic-math.ts"],
       rules: {
         "eslint/no-restricted-properties": [
           "error",
@@ -223,7 +223,7 @@ export default defineConfig({
     {
       // The entries of the one package keep the direction the nine packages had (ADR-0018).
       files: ["packages/arcadekit/src/**/*.ts"],
-      jsPlugins: ["./lint/entry-direction.ts"],
+      jsPlugins: ["./tools/lint/entry-direction.ts"],
       rules: {
         "entry-direction/allowed": [
           "error",
