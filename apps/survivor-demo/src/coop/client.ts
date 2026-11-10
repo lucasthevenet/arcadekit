@@ -26,20 +26,32 @@ import type {
 import type { ContentError } from "arcadekit/content";
 import { InputController, MOVE_AXES } from "arcadekit/input";
 import {
+  canStart,
   combinePlayerInputs,
+  contentHash,
+  encodeLobbyMessage,
   hostLockstepScoped,
   joinLockstepScoped,
+  parseLobbyMessage,
+  playerName,
   schemaCodec,
+  startPlan,
+  withPick,
+  withPlayer,
+  withoutPlayer,
 } from "arcadekit/net";
 import type {
+  LobbyMessage,
+  LobbyPick,
   LockstepError,
   LockstepOptions,
   PeerId,
   ScopedLockstepSession,
   Ticker,
 } from "arcadekit/net";
-import { linksTransport } from "arcadekit/net/browser";
+import { linksTransport, workerTicker } from "arcadekit/net/browser";
 import type {
+  CoopRooms,
   PeerLink,
   RoomError,
   RoomEvent,
@@ -47,6 +59,7 @@ import type {
 } from "arcadekit/net/browser";
 import type { StepInput } from "arcadekit/runtime";
 import {
+  GameCrashed,
   animationFrames,
   attachError,
   combineViews,
@@ -54,26 +67,25 @@ import {
 import type {
   AttachError,
   FrameSource,
-  GameCrashed,
   GameView,
 } from "arcadekit/runtime/browser";
 import { Cause, Data, Effect, FiberHandle, Queue, Stream } from "effect";
 import type { Clock, Scope } from "effect";
 
-import { contentHash } from "./content-hash";
-import { coopFrameLoop } from "./frame-loop";
-import {
-  canStart,
-  encodeLobbyMessage,
-  parseLobbyMessage,
-  playerName,
-  startPlan,
-  withHero,
-  withPlayer,
-  withoutPlayer,
-} from "./lobby";
-import type { LobbyMessage, LobbyPlayer } from "./lobby";
-import { workerTicker } from "./ticker";
+// The demo's own co-op client, until it moves onto the kit's (`makeCoopClient` in
+// arcadekit/net/browser). It already speaks the kit's lobby messages and uses the kit's ticker.
+
+export type { CoopRooms } from "arcadekit/net/browser";
+
+/** One player in the lobby: its peer id and the hero it picked ("" until it says). */
+export interface LobbyPlayer {
+  readonly id: string;
+  readonly heroId: string;
+}
+
+/** Whether the host may start: at least two players, and each has picked a hero. */
+export const canStartLobby = (players: readonly LobbyPlayer[]): boolean =>
+  canStart(players.map(({ heroId }) => ({ pick: heroId })));
 
 /**
  * What the co-op client reports to the app. Player names are for display ("Guest 2"); the
@@ -114,14 +126,6 @@ export type CoopEvent =
       readonly choices: readonly UpgradeChoice[];
     }
   | { readonly type: "runEnded"; readonly summary: RunSummary };
-
-/** How the client opens rooms: `browserRooms()` in the app (config.ts); a fake hub in tests. */
-export interface CoopRooms {
-  readonly host: Effect.Effect<SignallingRoom, RoomError, Scope.Scope>;
-  readonly join: (
-    code: string
-  ) => Effect.Effect<SignallingRoom, RoomError, Scope.Scope>;
-}
 
 export interface CoopClientOptions {
   readonly rooms: CoopRooms;
@@ -309,6 +313,36 @@ const failureMessage = (error: SeatError): string =>
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
+/**
+ * The client's frames while attached: `frame(nowMs)` on every frame of `frames` until one
+ * throws. The kit's Co-op client has the same loop, which is not public: this copy goes when the
+ * demo moves onto that client.
+ */
+const coopFrameLoop = (
+  frames: FrameSource,
+  frame: (nowMs: number) => void
+): Effect.Effect<never, GameCrashed> => {
+  let resume: ((effect: Effect.Effect<void>) => void) | undefined;
+  let cancel: (() => void) | undefined;
+  let nowMs = 0;
+  const onFrame = (timeMs: number) => {
+    nowMs = timeMs;
+    cancel = undefined;
+    resume?.(Effect.void);
+  };
+  const nextFrame: Effect.Effect<void> = Effect.callback((resumeLoop) => {
+    resume = resumeLoop;
+    cancel = frames.request(onFrame);
+  });
+  const drawn = Effect.try({
+    try: () => frame(nowMs),
+    catch: (cause) => new GameCrashed({ message: messageOf(cause), cause }),
+  });
+  return Effect.forever(Effect.andThen(nextFrame, drawn), {
+    disableYield: true,
+  }).pipe(Effect.ensuring(Effect.sync(() => cancel?.())));
+};
+
 /** The Clock's monotonic time in milliseconds, as the session reads it. */
 const millis = (clock: Clock.Clock): number =>
   Number(clock.monotonicTimeNanosUnsafe()) / 1_000_000;
@@ -397,10 +431,16 @@ export const makeCoopClient = (
         );
         const { role, code, self } = room;
         /** The host keeps the lobby; a guest has the host's last word on it. */
-        let roster: readonly LobbyPlayer[] =
-          role === "host" ? [{ id: self, heroId: seat.heroId }] : [];
+        let roster: readonly LobbyPick[] =
+          role === "host" ? [{ id: self, pick: seat.heroId }] : [];
         const emitLobby = () =>
-          emit(seat, { type: "lobby", role, code, self, players: roster });
+          emit(seat, {
+            type: "lobby",
+            role,
+            code,
+            self,
+            players: roster.map(({ id, pick }) => ({ id, heroId: pick })),
+          });
         /** Host: tells every guest the lobby, and the app. */
         const shareLobby = () => {
           if (role === "host") {
@@ -440,14 +480,15 @@ export const makeCoopClient = (
             roster,
             linked,
             self,
-            content.heroes[0]?.id ?? ""
+            content.heroes.map((hero) => hero.id)
           );
           const text = encodeLobbyMessage({ type: "start", ...plan });
           for (const link of room.links()) {
             link.messages.send(text);
           }
           return {
-            ...plan,
+            players: plan.players,
+            heroIds: plan.picks,
             seed: crypto.getRandomValues(new Uint32Array(1))[0]!,
           };
         };
@@ -464,13 +505,13 @@ export const makeCoopClient = (
               return message.players.includes(self)
                 ? Effect.succeed<RunPlan>({
                     players: message.players,
-                    heroIds: message.heroIds,
+                    heroIds: message.picks,
                   })
                 : Effect.fail(
                     new CoopError({ message: "The run started without you." })
                   );
             }
-            case "hero": {
+            case "pick": {
               return Effect.succeed(undefined);
             }
           }
@@ -489,7 +530,7 @@ export const makeCoopClient = (
                     roster = withPlayer(roster, event.peer);
                     shareLobby();
                   } else {
-                    sendToHost({ type: "hero", heroId: seat.heroId });
+                    sendToHost({ type: "pick", pick: seat.heroId });
                   }
                 } else if (event.type === "peer-left") {
                   roster = withoutPlayer(roster, event.peer);
@@ -523,18 +564,18 @@ export const makeCoopClient = (
                 if (role === "guest") {
                   return yield* hearHost(input.message);
                 }
-                if (input.message.type === "hero") {
-                  roster = withHero(roster, input.from, input.message.heroId);
+                if (input.message.type === "pick") {
+                  roster = withPick(roster, input.from, input.message.pick);
                   shareLobby();
                 }
                 break;
               }
               case "hero": {
                 if (role === "host") {
-                  roster = withHero(roster, self, input.heroId);
+                  roster = withPick(roster, self, input.heroId);
                   shareLobby();
                 } else {
-                  sendToHost({ type: "hero", heroId: input.heroId });
+                  sendToHost({ type: "pick", pick: input.heroId });
                 }
                 break;
               }

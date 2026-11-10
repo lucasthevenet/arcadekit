@@ -5,9 +5,10 @@ import type {
 } from "@arcadekit/survivors";
 import type { AudioSettings } from "arcadekit/audio";
 import { gameViewport } from "arcadekit/foldkit";
+import { playerName } from "arcadekit/net";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
-import { canStart, playerName } from "../coop/lobby";
+import { canStartLobby } from "../coop/client";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { CoopPlayer, Model } from "./model";
@@ -364,7 +365,7 @@ const coopLobby = (
   },
   h: H
 ): Html => {
-  const startable = canStart(lobby.players);
+  const startable = canStartLobby(lobby.players);
   return panel(h, [
     lobby.role === "host"
       ? h.div(

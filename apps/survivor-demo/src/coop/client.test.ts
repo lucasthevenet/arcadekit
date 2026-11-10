@@ -5,7 +5,7 @@ import type { GameContent, World } from "@arcadekit/survivors";
 import type { SurvivorsArt } from "@arcadekit/survivors/browser";
 import { ContentError, loadContent } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
-import { RoomError } from "arcadekit/net/browser";
+import { RoomError, workerTicker } from "arcadekit/net/browser";
 import type {
   PeerLink,
   RoomEvent,
@@ -30,10 +30,8 @@ import {
 import type { Cause } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeCoopClient } from "./client";
+import { canStartLobby, makeCoopClient } from "./client";
 import type { CoopClientOptions, CoopEvent, CoopRooms } from "./client";
-import { canStart } from "./lobby";
-import { workerTicker } from "./ticker";
 
 // The co-op client in Node, with no browser: a fake signalling hub links the host to each guest
 // with in-memory channels that keep what arrives until something listens, as the WebRTC ones
@@ -315,7 +313,7 @@ describe("a co-op run", () => {
     };
     const hostLobby = lastLobby(host.events);
     expect([
-      hostLobby?.type === "lobby" && canStart(hostLobby.players),
+      hostLobby?.type === "lobby" && canStartLobby(hostLobby.players),
       hostLobby,
       lastLobby(guest.events),
     ]).toMatchObject([
