@@ -14,7 +14,7 @@ So a genre's simulation (its root entry, not `./browser`) calls no implementatio
   - `powInt(base, n)`: square-and-multiply for an integer exponent. Exact where every product is representable; it throws for a non-integer exponent.
 - `world.ts` calls them in place of `Math.hypot`, `Math.sin`, `Math.cos` and `**`.
 - They live in the genre, not in `@gamekit/core`: only survivors needs them ([ADR-0001](0001-kit-changes-need-two-genres.md)). Push-puzzle's step calls none of the approximated functions.
-- `oxlint.config.ts` forbids every implementation-approximated `Math` function (`hypot`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, the hyperbolic ones, `cbrt`, `pow`, `exp`, `expm1`, `log`, `log1p`, `log2`, `log10`; `eslint/no-restricted-properties`) and `**`/`**=` (a local JS plugin, `lint/deterministic-math.ts`, since oxlint has no `no-restricted-syntax`) in `packages/survivors/src` and `packages/push-puzzle/src`, excluding `browser/**` and tests. Views may keep using them: what they draw doesn't feed back into a step.
+- `oxlint.config.ts` forbids every implementation-approximated `Math` function (`hypot`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, the hyperbolic ones, `cbrt`, `pow`, `exp`, `expm1`, `log`, `log1p`, `log2`, `log10`; `eslint/no-restricted-properties`) and `**`/`**=` (a local JS plugin, `tools/lint/deterministic-math.ts`, since oxlint has no `no-restricted-syntax`) in `packages/survivors/src` and `packages/push-puzzle/src`, excluding `browser/**` and tests. Views may keep using them: what they draw doesn't feed back into a step.
 
 ## Considered Options
 
