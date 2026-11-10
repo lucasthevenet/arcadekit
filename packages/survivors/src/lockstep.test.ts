@@ -15,13 +15,13 @@ import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { survivorsCoopRules } from "./coop";
 import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
 import type { Hero } from "./hero";
 import { HeroInput } from "./input";
 import type { SurvivorsInput } from "./input";
 import { GameContent } from "./schema";
-import { survivorsSimulation } from "./simulation";
 import type { SurvivorsConfig, World } from "./world";
 
 // Survivors' real simulation in lockstep, one hero per player: three peers, each driving its own
@@ -161,13 +161,13 @@ const script = (
   };
 };
 
-/** Survivors' simulation, with the world's hash recorded after every step. */
+/** The simulation the Co-op rules run in lockstep, with the world's hash recorded after every step. */
 const recorded = () => {
   const hashes: number[] = [];
   const simulation = {
-    ...survivorsSimulation,
+    ...survivorsCoopRules.simulation,
     step: (world: World, input: SurvivorsInput, dt: number) => {
-      survivorsSimulation.step(world, input, dt);
+      survivorsCoopRules.simulation.step(world, input, dt);
       hashes.push(hashWorld(world));
     },
   };

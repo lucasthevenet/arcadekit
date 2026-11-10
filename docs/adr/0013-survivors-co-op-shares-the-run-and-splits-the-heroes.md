@@ -5,6 +5,8 @@ status: accepted
 # Survivors co-op shares the run and gives each player a hero
 
 > Since [ADR-0019](0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md): `SurvivorsInput` is the kit's `PlayerInputs<HeroInput>`, so `heroes` reads `players` there. `combineHeroInputs` is `combinePlayerInputs` (`arcadekit/net`) and survivors' `soloInput` is `arcadekit/runtime`'s. The demo's co-op lobby and client are the kit's Co-op client, which runs `survivorsCoopRules`; the views read `localHero` as a function, on every frame.
+>
+> Since [ADR-0020](0020-a-game-is-declared.md): a single-player pick is the command `ChooseUpgrade`, sent with `engine.send` and applied at the start of the next step. `chooseUpgrade` and the engine's `modify` are gone from survivors; a lockstep run's pick still rides the input until co-op moves.
 
 [ADR-0012](0012-delay-based-lockstep-over-a-host-star.md) left survivors' co-op rules to the genre. #25's grilling settled them: one shared team XP pool fed by any gem, a level-up that pauses everyone while each player picks their own upgrade, enemies that chase the nearest player, 2 to 4 players, and a removed player's hero leaving the run. This records how `@gamekit/survivors` implements them, and the rules the issue didn't settle.
 

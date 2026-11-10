@@ -3,11 +3,12 @@ import { inflateSync } from "node:zlib";
 
 import { SurvivorsContent } from "@arcadekit/survivors";
 import {
+  SurvivorsCueSounds,
   SurvivorsEngine,
+  SurvivorsSheet,
   missingSpriteTags,
 } from "@arcadekit/survivors/browser";
-import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
-import { defaultAudioSettings } from "arcadekit/audio";
+import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
 import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
 import {
@@ -15,7 +16,7 @@ import {
   decodeSpriteSheet,
   makeSpriteSheet,
 } from "arcadekit/render-three";
-import type { SpriteSheetData } from "arcadekit/render-three";
+import type { SpriteSheet, SpriteSheetData } from "arcadekit/render-three";
 import { Effect, Layer } from "effect";
 import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";
@@ -33,12 +34,13 @@ import {
 } from "./commands";
 import { Message } from "./message";
 import { emptyRecords } from "./save";
+import { survivorsSounds } from "./sound";
 import { init, update } from "./update";
 import { view } from "./view";
 
 // The sprite sheet in public/sprites, checked against the content that names its tags, and what
-// a sheet that can't load does: the loading screen shows it, and nothing that reaches the engine
-// dies. No WebGL: the sheet's image is a stand-in.
+// a sheet that can't load does: the loading screen shows it, and the engine's Commands go on
+// working. No WebGL: the sheet's image is a stand-in.
 
 const publicDir = new URL("../../public/", import.meta.url);
 const read = (file: string) => readFileSync(new URL(file, publicDir));
@@ -181,39 +183,16 @@ const sheetError = new SpriteSheetError({
     "The sprite sheet file sprites/survivors.json can't be loaded: HTTP 404",
 });
 
-/** An engine loader whose every load fails, as when the sheet can't be fetched. */
-const failingLoader: SurvivorsEngineLoader = { load: Effect.fail(sheetError) };
-
-/** Runs `effect` with the real content and `loader` as the engine's. */
-const runWith = <A, E>(
-  effect: Effect.Effect<A, E, SurvivorsContent | SurvivorsEngine>,
-  loader: SurvivorsEngineLoader
+/** Runs `effect` with the real content and `load` as the sheet's. */
+const runWithSheet = <A, E>(
+  effect: Effect.Effect<A, E, SurvivorsContent | SurvivorsSheet>,
+  load: Effect.Effect<SpriteSheet, SpriteSheetError>
 ) =>
-  Effect.runPromise(
-    effect.pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          Layer.succeed(SurvivorsContent, { load: Effect.succeed(content) }),
-          Layer.succeed(SurvivorsEngine, loader)
-        )
-      )
-    )
+  effect.pipe(
+    Effect.provideService(SurvivorsSheet, { load }),
+    Effect.provideService(SurvivorsContent, { load: Effect.succeed(content) }),
+    Effect.runPromise
   );
-
-/** An engine that would fail the test if anything used it. */
-const unusedEngine = {
-  attach: () => Effect.die("attach is never called"),
-  listen: () => Effect.die("listen is never called"),
-  start: () => Effect.die("start is never called"),
-  modify: () => Effect.die("modify is never called"),
-  setPaused: () => Effect.die("setPaused is never called"),
-  stop: Effect.die("stop is never called"),
-} satisfies SurvivorsEngineLoader["load"] extends Effect.Effect<
-  { readonly engine: infer Engine },
-  unknown
->
-  ? Engine
-  : never;
 
 /** A Scene step that leaves init's Commands pending, as at startup. */
 const withInitCommands = <M, Msg, Out>(
@@ -226,17 +205,18 @@ const withInitCommands = <M, Msg, Out>(
 describe("loading", () => {
   it("loads the content and the sprite sheet together", async () => {
     const image = { width: 1, height: 1 } as unknown as TexImageSource;
-    const message = await runWith(LoadContent().effect, {
-      load: Effect.succeed({
-        engine: unusedEngine,
-        assets: { sheet: makeSpriteSheet(sheet, image) },
-      }),
-    });
+    const message = await runWithSheet(
+      LoadContent().effect,
+      Effect.succeed(makeSpriteSheet(sheet, image))
+    );
     expect(message._tag).toBe("LoadedContent");
   });
 
   it("shows a sheet that can't load on the loading screen, like content", async () => {
-    const message = await runWith(LoadContent().effect, failingLoader);
+    const message = await runWithSheet(
+      LoadContent().effect,
+      Effect.fail(sheetError)
+    );
     expect(message).toStrictEqual(
       Message.FailedToLoadContent({ error: sheetError.message })
     );
@@ -267,17 +247,40 @@ describe("loading", () => {
     ).not.toThrow();
   });
 
-  it("reports a failed load from the engine Commands instead of dying", async () => {
-    const failed = Message.FailedToStartRun({ error: sheetError.message });
-    const messages = await runWith(
-      Effect.all([
-        StartRun({ heroId: content.heroes[0]!.id }).effect,
-        EndRun().effect,
-        SetPaused({ paused: true }).effect,
-        ChooseUpgrade({ index: 0 }).effect,
-      ]),
-      failingLoader
+  it("leaves the engine's Commands working: the engine needs the sheet only to draw", async () => {
+    const done = Message.CompletedEngineCommand();
+    const messages = await Effect.all([
+      StartRun({ heroId: content.heroes[0]!.id }).effect,
+      SetPaused({ paused: true }).effect,
+      SetPaused({ paused: false }).effect,
+      EndRun().effect,
+      // With no run, the pick is dropped at once.
+      ChooseUpgrade({ offer: 1, index: 0 }).effect,
+    ]).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          SurvivorsEngine.layer,
+          Layer.succeed(SurvivorsContent, { load: Effect.succeed(content) })
+        ).pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              SurvivorsSheet.layer(Effect.fail(sheetError)),
+              Layer.succeed(SurvivorsCueSounds, survivorsSounds),
+              SilentAudioLayer
+            )
+          )
+        )
+      ),
+      Effect.runPromise
     );
-    expect(messages).toStrictEqual([failed, failed, failed, failed]);
+    // The run starts, pauses, resumes and ends. The viewport's attach is what fails, and
+    // `engineEntry`'s onError reports it.
+    expect(messages).toStrictEqual([
+      Message.StartedRun(),
+      done,
+      done,
+      done,
+      done,
+    ]);
   });
 });

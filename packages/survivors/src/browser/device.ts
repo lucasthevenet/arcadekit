@@ -1,5 +1,5 @@
+import type * as Game from "arcadekit/game/browser";
 import { InputController, MOVE_AXES } from "arcadekit/input";
-import type { InputSource } from "arcadekit/runtime";
 
 import type { HeroInput } from "../input";
 
@@ -8,7 +8,9 @@ import type { HeroInput } from "../input";
  * single-player game and the Co-op game both read. Returns one object, refilled each step;
  * a co-op run adds its pick and pause to its own copy. `dispose` removes its listeners.
  */
-export const heroDevice = (surface: HTMLElement): InputSource<HeroInput> => {
+export const heroDevice = (
+  surface: HTMLElement
+): Game.InputSource<HeroInput> => {
   const controller = new InputController(surface, { axes: MOVE_AXES });
   const input = { moveX: 0, moveZ: 0 };
   return {

@@ -2,8 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { SurvivorsContent } from "@arcadekit/survivors";
 import type { GameContent, SurvivorsCoopEvent } from "@arcadekit/survivors";
-import { SurvivorsEngine } from "@arcadekit/survivors/browser";
-import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
+import { SurvivorsSheet } from "@arcadekit/survivors/browser";
 import { SilentAudioLayer } from "arcadekit/audio";
 import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
@@ -11,6 +10,7 @@ import type { CoopEvent } from "arcadekit/net/browser";
 import { FAKE_JOIN_CODE, fakeCoopRooms } from "arcadekit/net/testing";
 import type { FakeCoopRooms } from "arcadekit/net/testing";
 import { SpriteSheetError } from "arcadekit/render-three";
+import type { SpriteSheet } from "arcadekit/render-three";
 import { manualFrames } from "arcadekit/runtime/testing";
 import {
   Clock,
@@ -29,6 +29,7 @@ import { HostCoop, LeaveCoop } from "./commands";
 import { Coop, makeCoopLayer } from "./coop";
 import type { CoopApi, CoopDebugSample } from "./coop";
 import { Message } from "./message";
+import { emptyHud } from "./model";
 import { coopMessage } from "./subscriptions";
 
 // The app's co-op glue with nothing real behind it: the kit's fake rooms stand in for the
@@ -47,13 +48,13 @@ const content: GameContent = await Effect.runPromise(
   SurvivorsContent.read(fileSource)
 );
 
-/** A loader whose load never finishes: building the layer loads nothing. */
-const idleLoader = { load: Effect.never } as unknown as SurvivorsEngineLoader;
+type SheetLoad = Effect.Effect<SpriteSheet, SpriteSheetError>;
 
-/** A loader that has loaded, with art nothing reads. */
-const loadedLoader = {
-  load: Effect.succeed({ assets: {}, engine: {} }),
-} as unknown as SurvivorsEngineLoader;
+/** A sheet whose load never finishes: building the layer loads nothing. */
+const idleSheet: SheetLoad = Effect.never;
+
+/** A sheet that has loaded, which nothing reads. */
+const loadedSheet: SheetLoad = Effect.succeed({} as SpriteSheet);
 
 const nanos = (ms: number) => BigInt(Math.round(ms * 1_000_000));
 
@@ -108,7 +109,7 @@ interface Seat {
 const seat = async (
   hub: FakeCoopRooms,
   parts: {
-    readonly engine?: SurvivorsEngineLoader;
+    readonly sheet?: SheetLoad;
     readonly load?: Effect.Effect<GameContent, ContentError>;
   } = {}
 ): Promise<Seat> => {
@@ -116,7 +117,9 @@ const seat = async (
     frames: manualFrames(),
   }).pipe(
     Layer.provide(SilentAudioLayer),
-    Layer.provide(Layer.succeed(SurvivorsEngine, parts.engine ?? idleLoader)),
+    Layer.provide(
+      Layer.succeed(SurvivorsSheet, { load: parts.sheet ?? idleSheet })
+    ),
     Layer.provide(
       Layer.succeed(SurvivorsContent, {
         load: parts.load ?? Effect.succeed(content),
@@ -316,7 +319,7 @@ describe("the app's co-op", () => {
 
     it("fails with an AttachError where it can't draw, as here with no WebGL, after leaving its room", async () => {
       const hub = fakeCoopRooms();
-      const { coop } = await seat(hub, { engine: loadedLoader });
+      const { coop } = await seat(hub, { sheet: loadedSheet });
       await run(coop.host("spark"));
       await settle();
       const error = await run(Effect.flip(coop.attach(element)));
@@ -332,9 +335,7 @@ describe("the app's co-op", () => {
         message: "The sheet can't be loaded",
       });
       const { coop } = await seat(fakeCoopRooms(), {
-        engine: {
-          load: Effect.fail(missing),
-        } as unknown as SurvivorsEngineLoader,
+        sheet: Effect.fail(missing),
       });
       const error = await run(Effect.flip(coop.attach(element)));
       expect(error).toBe(missing);
@@ -364,6 +365,7 @@ describe("the app's co-op", () => {
         { type: "lobby", ...lobby },
         { type: "started", slot: 1, names: ["Host", "Guest 1"] },
         { type: "waiting", waitingFor: ["Host"], choosing: ["Guest 2"] },
+        { type: "run", event: { type: "hud", hud: emptyHud } },
         { type: "run", event: { type: "levelUp", offer: 2, choices: [] } },
         { type: "run", event: { type: "runEnded", summary } },
         { type: "failed", reason: "hostLost", message: "Lost the host." },
@@ -372,6 +374,7 @@ describe("the app's co-op", () => {
         Message.GotCoopLobby(lobby),
         Message.GotCoopStarted({ slot: 1, names: ["Host", "Guest 1"] }),
         Message.GotCoopWaiting({ waitingFor: ["Host"], choosing: ["Guest 2"] }),
+        Message.GotHud({ hud: emptyHud }),
         Message.GotCoopLevelUp({ offer: 2, choices: [] }),
         Message.GotCoopRunEnded({ summary }),
         Message.GotCoopFailed({ error: "Lost the host." }),

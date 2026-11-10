@@ -1,43 +1,24 @@
 import { Audio } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
+import { Asset } from "arcadekit/content";
+import * as Game from "arcadekit/game/browser";
 import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
 import { soloInput } from "arcadekit/runtime";
-import { combineViews, makeEngineLoader } from "arcadekit/runtime/browser";
-import type {
-  EngineLoader,
-  GameDefinition,
-  GameView,
-} from "arcadekit/runtime/browser";
-import { Context, Effect, Layer } from "effect";
+import { Context } from "effect";
 
-import type { SurvivorsEvent } from "../events";
 import type { SurvivorsInput } from "../input";
-import { survivorsSimulation } from "../simulation";
-import type { SurvivorsConfig, World } from "../world";
+import { Survivors } from "../simulation";
+import type { World } from "../world";
 import type { SurvivorsArt } from "./art";
 import { heroDevice } from "./device";
 import { SurvivorsSoundView } from "./sound";
 import type { SurvivorsSounds } from "./sound";
 import { SurvivorsView } from "./view";
 
-type SurvivorsGame = GameDefinition<
-  SurvivorsConfig,
-  World,
-  SurvivorsInput,
-  SurvivorsEvent
->;
-
 /** What a survivors game plays its sounds through: the app's audio system and its cue table. */
 export interface SurvivorsGameSound {
   readonly audio: AudioSystem;
   readonly sounds: SurvivorsSounds;
-}
-
-/** What a survivors game is made with: the art it draws, and the sound it plays, if any. */
-interface SurvivorsGameOptions {
-  readonly art: SurvivorsArt;
-  /** Without it, the game is silent. */
-  readonly sound?: SurvivorsGameSound;
 }
 
 /**
@@ -49,71 +30,59 @@ export const survivorsViews = (
   art: SurvivorsArt,
   sound?: SurvivorsGameSound,
   localHero?: () => number
-): GameView<World> => {
+): Game.View<World> => {
   const options = localHero === undefined ? {} : { localHero };
   const view = new SurvivorsView(container, art, options);
   return sound === undefined
     ? view
-    : combineViews<World>(
+    : Game.combineViews<World>(
         view,
         new SurvivorsSoundView({ ...sound, ...options })
       );
 };
 
 /**
- * The survivors genre as an arcadekit/runtime browser game, for a single player: its simulation,
- * input and view. The device drives the first hero. The view draws from `art`; with `sound`, a
- * sound view plays the run beside it.
+ * Reads a single-player run's step input from the player's devices on `surface` (keys, touch,
+ * gamepad): they drive the first hero, and nobody leaves.
  */
-export const makeSurvivorsGame = ({
-  art,
-  sound,
-}: SurvivorsGameOptions): SurvivorsGame => ({
-  ...survivorsSimulation,
-  createInput: (surface) => {
-    const device = heroDevice(surface);
-    return { ...soloInput(device), dispose: device.dispose };
-  },
-  createView: (container) => survivorsViews(container, art, sound),
-});
-
-/** How the app reaches the survivors engine: through the load of its sheet (ADR-0015). */
-export type SurvivorsEngineLoader = EngineLoader<
-  SurvivorsConfig,
-  World,
-  SurvivorsEvent,
-  SurvivorsArt,
-  SpriteSheetError
->;
-
-export class SurvivorsEngine extends Context.Service<
-  SurvivorsEngine,
-  SurvivorsEngineLoader
->()("@arcadekit/survivors/Engine") {}
+export const survivorsInput = (
+  surface: HTMLElement
+): Game.InputSource<SurvivorsInput> => {
+  const device = heroDevice(surface);
+  return { ...soloInput(device), dispose: device.dispose };
+};
 
 /**
- * Provides `SurvivorsEngine`: the engine, made once from the sheet `sheet` loads, playing its
- * sounds from `sounds` through `Audio` (tests provide `SilentAudioLayer`). Building the layer
- * loads nothing. The app's LoadContent runs `load`, and every engine use goes through it
- * (`engineOf(SurvivorsEngine)`), so there is no engine before its sheet. The layer's scope (the
- * app) frees the sheet.
+ * The app's survivors sheet, with every tag the view draws for its content (`missingSpriteTags`
+ * checks one; ADR-0015). The app says where it comes from,
+ * `SurvivorsSheet.layer(loadSpriteSheet(url))`, and loads it on its loading screen; the engine
+ * and the Co-op game draw from it and never free it. The app's end does.
  */
-export const makeSurvivorsEngineLayer = (options: {
-  /** The app's sheet load, such as `loadSpriteSheet(url)`. Run on the first `load`. */
-  readonly sheet: Effect.Effect<SpriteSheet, SpriteSheetError>;
-  readonly sounds: SurvivorsSounds;
-}): Layer.Layer<SurvivorsEngine, never, Audio> =>
-  Layer.effect(
-    SurvivorsEngine,
-    Effect.gen(function* () {
-      const audio = yield* Audio;
-      const loadArt: Effect.Effect<SurvivorsArt, SpriteSheetError> =
-        options.sheet.pipe(Effect.map((sheet) => ({ sheet })));
-      return yield* makeEngineLoader({
-        assets: loadArt,
-        game: (art) =>
-          makeSurvivorsGame({ art, sound: { audio, sounds: options.sounds } }),
-        release: (art) => art.sheet.dispose(),
-      });
-    })
-  );
+export class SurvivorsSheet extends Asset<SpriteSheet, SpriteSheetError>()(
+  "SurvivorsSheet",
+  { release: (sheet) => sheet.dispose() }
+) {}
+
+/** Which of the app's sounds each cue plays. The app provides its table: it owns the sounds. */
+export class SurvivorsCueSounds extends Context.Service<
+  SurvivorsCueSounds,
+  SurvivorsSounds
+>()("@arcadekit/survivors/CueSounds") {}
+
+/**
+ * The survivors genre in the browser, for one player: its rules, a view that draws them from
+ * the app's sheet and plays their cues through the app's `Audio` (tests provide
+ * `SilentAudioLayer`), and its input. `SurvivorsEngine.layer` provides the engine; building it
+ * loads nothing, and each attach loads the sheet, or takes the one already loaded.
+ */
+export class SurvivorsEngine extends Game.Engine("SurvivorsEngine", {
+  simulation: Survivors,
+  uses: {
+    audio: Audio,
+    sounds: SurvivorsCueSounds,
+    sheet: SurvivorsSheet.load,
+  },
+  view: (container, { audio, sounds, sheet }) =>
+    survivorsViews(container, { sheet }, { audio, sounds }),
+  input: survivorsInput,
+}) {}

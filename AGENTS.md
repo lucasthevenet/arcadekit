@@ -17,7 +17,7 @@ A game is written as **declarations**: one named class per part, hosted by a Lay
 - **A run changes only at a step**: by its input, and by a `Game.Command` the loop applies at the start of the next step. An `apply` handler takes its command or refuses it by returning one of the `Game.Rejection`s the command declares, and the sender's `engine.send` fails with it.
 - **Rules are checked with scenarios** (`arcadekit/game/scenario`).
 - **Kit source names a declaration's base first**, as `audio/service.ts` does, since it is checked with `isolatedDeclarations`. Genre packages and apps write `class X extends Game.Event(...) {}`.
-- **Survivors and the Co-op client are on the older contract** (`GameSimulation`, `makeGameEngine`, `makeEngineLoader`, `CoopRules`) until they move. New work goes on the declarations.
+- **Co-op is on the older contract** until it moves: the Co-op client and survivors' Co-op rules (`CoopRules`, whose lockstep run steps a `GameSimulation`). Survivors' single-player path is declared, as push-puzzle is, and no game uses `makeGameEngine` or `makeEngineLoader` any more. New work goes on the declarations.
 
 ## Adding to the kit
 

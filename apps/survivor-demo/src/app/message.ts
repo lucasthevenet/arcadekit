@@ -1,4 +1,4 @@
-import { HudSample, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
+import { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import { AudioSettings } from "arcadekit/audio";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
@@ -23,13 +23,13 @@ export const Message = defineMessageUnion({
   FailedToStartRun: { error: Schema.String },
 
   // From the engine
-  GotHud: { hud: HudSample },
-  GotLevelUp: { choices: Schema.Array(UpgradeChoice) },
+  GotHud: { hud: Hud },
+  GotLevelUp: { offer: Schema.Int, choices: Schema.Array(UpgradeChoice) },
   GotRunEnded: { summary: RunSummary },
   SavedRun: { records: HeroRecords },
 
   // In-run UI
-  ClickedUpgrade: { index: Schema.Number },
+  ClickedUpgrade: { index: Schema.Int },
   PressedEscape: {},
   ClickedResume: {},
   ClickedQuit: {},

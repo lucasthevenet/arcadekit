@@ -17,19 +17,6 @@ const HeroHud = Schema.Struct({
   paused: Schema.Boolean,
 });
 
-/** What the HUD shows: the team's level and XP, the run, and each hero by slot. `Hud` carries it. */
-export const HudSample = Schema.Struct({
-  level: Schema.Int,
-  xp: Schema.Number,
-  xpNext: Schema.Number,
-  time: Schema.Number,
-  runLength: Schema.Number,
-  kills: Schema.Int,
-  enemies: Schema.Int,
-  heroes: Schema.Array(HeroHud),
-});
-export type HudSample = typeof HudSample.Type;
-
 /** One upgrade the player can pick. `LeveledUp` carries the choices on offer. */
 export const UpgradeChoice = Schema.Struct({
   kind: Schema.Literals(["weapon", "passive", "heal"]),
@@ -54,14 +41,19 @@ export const RunSummary = Schema.Struct({
 export type RunSummary = typeof RunSummary.Type;
 
 /**
- * The run's sample: what the HUD shows, read when a run starts, every 100 ms, and right after
- * the frame that ends the run.
- *
- * Its fields are `HudSample`'s for now, because the app's Model and Messages and co-op's local
- * event still hold a `HudSample`. When they hold a `Hud`, the fields are written here and
- * `HudSample` goes.
+ * The run's sample, which is what the HUD shows: the team's level and XP, the run, and each hero
+ * by slot. Read when a run starts, every 100 ms, and right after the frame that ends the run.
  */
-export class Hud extends Game.Event("Hud", HudSample.fields) {}
+export class Hud extends Game.Event("Hud", {
+  level: Schema.Int,
+  xp: Schema.Number,
+  xpNext: Schema.Number,
+  time: Schema.Number,
+  runLength: Schema.Number,
+  kills: Schema.Int,
+  enemies: Schema.Int,
+  heroes: Schema.Array(HeroHud),
+}) {}
 
 /**
  * The team leveled up, and the hero in slot `hero` is offered `choices`, in the offer numbered
@@ -86,8 +78,7 @@ export class RunEnded extends Game.Event("RunEnded", {
 
 /**
  * Everything a survivors run reports to the outside: its events and its sample. It is
- * `Game.EventOf<typeof Survivors>` spelled out, for the hosts still on the older contract
- * (`survivorsSimulation`, `./browser`'s engine, the Co-op rules), and goes with them: a declared
- * host reads the type from the class.
+ * `Game.EventOf<typeof Survivors>` spelled out for the Co-op rules, which are still on the older
+ * contract, and goes when they move: a declared host reads the type from the class.
  */
 export type SurvivorsEvent = Hud | LeveledUp | HeroLeft | RunEnded;

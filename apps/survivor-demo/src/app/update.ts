@@ -1,5 +1,8 @@
 import type { SurvivorsContent } from "@arcadekit/survivors";
-import type { SurvivorsEngine } from "@arcadekit/survivors/browser";
+import type {
+  SurvivorsEngine,
+  SurvivorsSheet,
+} from "@arcadekit/survivors/browser";
 import { defaultAudioSettings } from "arcadekit/audio";
 import type { Audio, AudioSettings } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
@@ -36,6 +39,7 @@ import type { SoundSettings } from "./sound";
 export type Services =
   | SurvivorsContent
   | SurvivorsEngine
+  | SurvivorsSheet
   | Save
   | Coop
   | Audio
@@ -131,8 +135,8 @@ const handle = (model: Model, message: Message): Return =>
       },
     }),
     FailedToLoadContent: ({ error }) => loadFailed(model, error),
-    // Loads again, then goes to the menu as on a first load. Each loader keeps its first
-    // success, so only what failed is fetched again.
+    // Loads again, then goes to the menu as on a first load. The content and the sheet each
+    // keep their first success, so only what failed is fetched again.
     ClickedRetry: () =>
       model.phase._tag === "LoadFailed"
         ? {
@@ -161,8 +165,8 @@ const handle = (model: Model, message: Message): Return =>
     FailedToStartRun: ({ error }) => loadFailed(model, error),
 
     GotHud: ({ hud }) => ({ model: { ...model, hud } }),
-    GotLevelUp: ({ choices }) => ({
-      model: { ...model, phase: Phase.LevelUp({ choices }) },
+    GotLevelUp: ({ offer, choices }) => ({
+      model: { ...model, phase: Phase.LevelUp({ offer, choices }) },
     }),
     GotRunEnded: ({ summary }) => ({
       model: {
@@ -180,7 +184,7 @@ const handle = (model: Model, message: Message): Return =>
       model.phase._tag === "LevelUp"
         ? {
             model: { ...model, phase: Phase.Playing() },
-            commands: [ChooseUpgrade({ index })],
+            commands: [ChooseUpgrade({ offer: model.phase.offer, index })],
           }
         : { model },
     PressedEscape: () => {

@@ -14,8 +14,9 @@ import { Survivors } from "./simulation";
 // run, bit for bit. It steps the declared simulation, `Survivors`, with arcadekit/game's Loop, in
 // the step order and sample timing of any declared host, so it guards the simulation, core's
 // clock and the loop's step order. Its script has no endStep or endFrame; runtime's loop.test.ts
-// pins their order. It doesn't cover input devices or the view, nor `survivorsSimulation`, which
-// the hosts still on the older contract step: world.test.ts holds that one to this one.
+// pins their order. It doesn't cover input devices or the view, nor the `GameSimulation` the
+// Co-op rules hold for a lockstep run (`survivorsCoopRules.simulation`): world.test.ts holds that
+// one to this one.
 
 const content = Schema.decodeUnknownSync(GameContent)({
   rules: {

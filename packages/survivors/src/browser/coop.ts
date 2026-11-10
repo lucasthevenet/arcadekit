@@ -16,8 +16,9 @@ interface SurvivorsCoopGameOptions {
   /** The run's content: the app's content load. Run once per seat. */
   readonly content: Effect.Effect<GameContent, ContentError>;
   /**
-   * The art the run is drawn with: the app's load of its sheet, such as the engine loader's
-   * (`SurvivorsEngine`), so one sheet serves both. Run once per attach; the view never frees it.
+   * The art the run is drawn with: the app's sheet as `{ sheet }`, from the load of its
+   * `SurvivorsSheet` asset, so the one sheet serves co-op and the single-player engine. Run once per attach; the view never
+   * frees it.
    */
   readonly art: Effect.Effect<SurvivorsArt, SpriteSheetError>;
   /**

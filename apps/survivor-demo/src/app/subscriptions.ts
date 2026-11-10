@@ -1,9 +1,9 @@
-import type { SurvivorsCoopEvent, SurvivorsEvent } from "@arcadekit/survivors";
+import { Survivors } from "@arcadekit/survivors";
+import type { SurvivorsCoopEvent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { Audio, applyAudioSettings } from "arcadekit/audio";
 import { engineEntry, keyPresses, shortcutPresses } from "arcadekit/foldkit";
 import type { CoopEvent } from "arcadekit/net/browser";
-import { engineOf } from "arcadekit/runtime/browser";
 import { Effect, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
@@ -15,25 +15,6 @@ import { MUSIC } from "./sound";
 
 /** A single-player run's one hero is slot 0. */
 const LOCAL_HERO = 0;
-
-const toMessage = (event: SurvivorsEvent): Message | undefined => {
-  switch (event._tag) {
-    case "Hud": {
-      return Message.GotHud({ hud: event });
-    }
-    case "LeveledUp": {
-      return event.hero === LOCAL_HERO
-        ? Message.GotLevelUp({ choices: event.choices })
-        : undefined;
-    }
-    case "HeroLeft": {
-      return undefined;
-    }
-    case "RunEnded": {
-      return Message.GotRunEnded({ summary: event.summaries[LOCAL_HERO]! });
-    }
-  }
-};
 
 /** What the co-op run tells the local player: the genre's own events for its hero. */
 const coopRunMessage = (event: SurvivorsCoopEvent): Message => {
@@ -129,16 +110,26 @@ export const subscriptions = Subscription.make<
   SurvivorsEngine | Coop | Audio
 >()((entry) => ({
   /**
-   * While the viewport exists, the engine renders into it and its events become Messages, once
-   * the content and sprite sheet have loaded (`isLoaded`): the engine is made from the sheet,
-   * and an entry that reported a failed load wouldn't run again after a retry. A failed load is
-   * shown like LoadContent's. Co-op's screens hand the viewport to the co-op client instead.
+   * While the viewport exists, the engine renders into it and the run's events become Messages,
+   * once the content and sprite sheet have loaded (`isLoaded`): attaching loads the sheet, and an
+   * entry that reported a failed load wouldn't run again after a retry. A sheet that can't be
+   * loaded, a view that can't be made and a crash are shown like LoadContent's failure. Co-op's
+   * screens hand the viewport to the co-op client instead.
    */
   engine: engineEntry({
-    engine: engineOf(SurvivorsEngine),
+    engine: SurvivorsEngine,
     isViewportMounted: (model) =>
       model.isViewportMounted && isLoaded(model.phase) && !isCoop(model.phase),
-    toMessage,
+    toMessage: Survivors.match({
+      Hud: (hud) => Message.GotHud({ hud }),
+      LeveledUp: ({ hero, offer, choices }) =>
+        hero === LOCAL_HERO
+          ? Message.GotLevelUp({ offer, choices })
+          : undefined,
+      HeroLeft: () => undefined,
+      RunEnded: ({ summaries }) =>
+        Message.GotRunEnded({ summary: summaries[LOCAL_HERO]! }),
+    }),
     onError: (error) => Message.FailedToLoadContent({ error: error.message }),
   }),
 

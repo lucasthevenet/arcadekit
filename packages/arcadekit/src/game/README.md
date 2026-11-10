@@ -290,4 +290,4 @@ In a Foldkit app, [`arcadekit/foldkit`](../foldkit/README.md)'s `engineEntry` at
 
 ## What is still on the older contract
 
-`GameSimulation`, `makeGameEngine` and `makeEngineLoader` in [`arcadekit/runtime`](../runtime/README.md) stay until every game that uses them has moved: survivors, and the Co-op client in [`arcadekit/net`](../net/README.md), still do. `Game.Loop` steps a declared simulation on the same `GameLoop`, so the step order is one.
+Co-op is. The Co-op client in [`arcadekit/net`](../net/README.md) steps a `GameSimulation` ([`arcadekit/runtime`](../runtime/README.md)) in lockstep, and survivors' Co-op rules give it one, built from the rules its `Survivors` declares; a player's decision rides the step input there. `GameSimulation` stays until co-op has moved. Both games' single-player paths are declared, so no game uses `makeGameEngine` or `makeEngineLoader` any more. `Game.Loop` steps a declared simulation on the same `GameLoop`, so the step order is one.

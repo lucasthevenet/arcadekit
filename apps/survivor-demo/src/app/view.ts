@@ -1,8 +1,4 @@
-import type {
-  HudSample,
-  RunSummary,
-  UpgradeChoice,
-} from "@arcadekit/survivors";
+import type { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import type { AudioSettings } from "arcadekit/audio";
 import { gameViewport } from "arcadekit/foldkit";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
@@ -218,7 +214,7 @@ const soundPanel = (audio: AudioSettings, h: H): Html =>
     ]
   );
 
-const hud = (data: HudSample, h: H): Html => {
+const hud = (data: Hud, h: H): Html => {
   // A single-player run's hero is the first.
   const hero = data.heroes[0] ?? { hp: 0, maxHp: 1 };
   return h.div(

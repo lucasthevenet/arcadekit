@@ -69,7 +69,7 @@ describe("music and ducking", () => {
       at(Phase.Menu()),
       at(Phase.Playing()),
       at(Phase.Paused()),
-      at(Phase.LevelUp({ choices: [] })),
+      at(Phase.LevelUp({ offer: 1, choices: [] })),
       at(
         Phase.GameOver({
           summary: {
@@ -190,9 +190,13 @@ describe("clicks", () => {
   it("play on menu buttons and upgrade picks", () => {
     Story.story(
       update,
-      Story.given({ ...menu, phase: Phase.LevelUp({ choices: [] }) }),
+      Story.given({ ...menu, phase: Phase.LevelUp({ offer: 1, choices: [] }) }),
       Story.message(Message.ClickedUpgrade({ index: 0 })),
-      Story.Command.expectExact(ChooseUpgrade({ index: 0 }), PlayClick()),
+      // The pick names the offer on screen.
+      Story.Command.expectExact(
+        ChooseUpgrade({ offer: 1, index: 0 }),
+        PlayClick()
+      ),
       Story.Command.resolve(PlayClick, Message.CompletedAudioCommand()),
       Story.Command.resolve(ChooseUpgrade, Message.CompletedEngineCommand()),
       Story.model((model) => expect(model.phase._tag).toBe("Playing"))

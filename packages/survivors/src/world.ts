@@ -3,7 +3,7 @@ import type { Pool, Rng } from "arcadekit/core";
 import type * as Game from "arcadekit/game";
 
 import { HeroLeft, LeveledUp, RunEnded } from "./events";
-import type { HudSample } from "./events";
+import type { Hud } from "./events";
 import {
   MAX_HEROES,
   MAX_WEAPONS,
@@ -184,7 +184,8 @@ export const createWorld = (
   };
 };
 
-export const hudSample = (world: World): HudSample => ({
+/** What the `Hud` sample carries. */
+export const hudSample = (world: World): Omit<Hud, "_tag"> => ({
   level: world.level,
   xp: world.xp,
   xpNext: world.xpNext,
@@ -785,7 +786,7 @@ const closeOffer = (world: World, hero: Hero) => {
 /**
  * The hero takes the choice at `index` of its open offer, and the offer closes. Returns false,
  * having changed nothing, if it has no open offer or the offer has no such choice. Every pick
- * ends here: the `ChooseUpgrade` command's, a step input's `pick`, and `chooseUpgrade`'s.
+ * ends here: the `ChooseUpgrade` command's, and a lockstep run's, which rides the step input.
  */
 export const choose = (world: World, hero: Hero, index: number): boolean => {
   const choice = hero.offer?.[index];
@@ -795,20 +796,4 @@ export const choose = (world: World, hero: Hero, index: number): boolean => {
   applyChoice(world.content, hero, choice);
   closeOffer(world, hero);
   return true;
-};
-
-/**
- * Applies the upgrade the hero in `slot` chose and closes its offer, now. Returns false if that
- * hero has no open offer or the index is wrong. For the single-player engine that is still on
- * the older contract, called through `GameLoop.modify`: a declared host sends `ChooseUpgrade`,
- * and a lockstep run picks through step input (`HeroInput.pick`). It goes when `./browser`'s
- * engine sends the command (ADR-0020).
- */
-export const chooseUpgrade = (
-  world: World,
-  slot: number,
-  index: number
-): boolean => {
-  const hero = world.heroes[slot];
-  return hero !== undefined && choose(world, hero, index);
 };

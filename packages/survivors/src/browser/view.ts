@@ -1,5 +1,5 @@
+import type * as Game from "arcadekit/game/browser";
 import { Stage } from "arcadekit/render-three";
-import type { GameView } from "arcadekit/runtime/browser";
 
 import type { World } from "../world";
 import type { SurvivorsArt } from "./art";
@@ -21,7 +21,7 @@ interface SurvivorsViewOptions {
  * pixel camera that follows the local hero; with no run, a slow pan over the arena. Reads the
  * simulation; never changes it. `dispose` frees what the view made, never the sheet.
  */
-export class SurvivorsView implements GameView<World> {
+export class SurvivorsView implements Game.View<World> {
   private readonly stage: Stage<"pixel">;
   private readonly scene: SurvivorsScene;
 

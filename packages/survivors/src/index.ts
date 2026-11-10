@@ -14,22 +14,14 @@ export {
 export {
   HeroLeft,
   Hud,
-  HudSample,
   LeveledUp,
   RunEnded,
   RunSummary,
-  type SurvivorsEvent,
   UpgradeChoice,
 } from "./events";
 export { hashWorld } from "./hash-world";
 export { HeroInput, SurvivorsInput, UpgradePick } from "./input";
 export { GameContent } from "./schema";
-// The genre's rules, for headless or replay use: a `Game.Loop` or a scenario steps `Survivors`.
-// `survivorsSimulation` is the same rules for the hosts still on the older contract.
-export { Survivors, survivorsSimulation } from "./simulation";
-export {
-  type SurvivorsConfig,
-  type World,
-  chooseUpgrade,
-  isChoosing,
-} from "./world";
+// The genre's rules, for headless or replay use: a `Game.Loop` or a scenario steps them.
+export { Survivors } from "./simulation";
+export type { SurvivorsConfig, World } from "./world";

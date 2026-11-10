@@ -1,7 +1,7 @@
 import { SurvivorsContent } from "@arcadekit/survivors";
 import type { SurvivorsCoop } from "@arcadekit/survivors";
 import {
-  SurvivorsEngine,
+  SurvivorsSheet,
   makeSurvivorsCoopGame,
 } from "@arcadekit/survivors/browser";
 import { Audio } from "arcadekit/audio";
@@ -53,25 +53,25 @@ export const debugSample = ({
 
 /**
  * The Co-op client over `rooms()`, playing its sounds through the `Audio` service, loading the
- * run's content from `SurvivorsContent` and drawing with the art `SurvivorsEngine` loads: one
- * sheet, one load. The layer's scope (the app) owns the client: when it closes, the client
- * leaves, and its socket, peer links, session and tick worker close. Tests pass a ticker and a
- * frame clock in `options`.
+ * run's content from `SurvivorsContent` and drawing from the app's `SurvivorsSheet`, as the
+ * single-player engine does: one sheet, one load. The layer's scope (the app) owns the client:
+ * when it closes, the client leaves, and its socket, peer links, session and tick worker close.
+ * Tests pass a ticker and a frame clock in `options`.
  */
 export const makeCoopLayer = (
   rooms: () => CoopRooms,
   options: Omit<CoopClientOptions, "rooms"> = {}
-): Layer.Layer<Coop, never, Audio | SurvivorsEngine | SurvivorsContent> =>
+): Layer.Layer<Coop, never, Audio | SurvivorsSheet | SurvivorsContent> =>
   Layer.effect(
     Coop,
     Effect.gen(function* () {
       const audio = yield* Audio;
       const contentLoader = yield* SurvivorsContent;
-      const engines = yield* SurvivorsEngine;
+      const sheet = yield* SurvivorsSheet;
       const client = yield* makeCoopClient(
         makeSurvivorsCoopGame({
           content: contentLoader.load,
-          art: engines.load.pipe(Effect.map(({ assets }) => assets)),
+          art: sheet.load.pipe(Effect.map((loaded) => ({ sheet: loaded }))),
           sound: { audio, sounds: survivorsSounds },
         }),
         { ...options, rooms: rooms() }
@@ -95,5 +95,5 @@ export const makeCoopLayer = (
 export const CoopLayer: Layer.Layer<
   Coop,
   never,
-  Audio | SurvivorsEngine | SurvivorsContent
+  Audio | SurvivorsSheet | SurvivorsContent
 > = makeCoopLayer(browserRooms);

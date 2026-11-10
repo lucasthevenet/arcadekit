@@ -1,5 +1,9 @@
 import { SurvivorsContent } from "@arcadekit/survivors";
-import { makeSurvivorsEngineLayer } from "@arcadekit/survivors/browser";
+import {
+  SurvivorsCueSounds,
+  SurvivorsEngine,
+  SurvivorsSheet,
+} from "@arcadekit/survivors/browser";
 import { BrowserAudioLayer } from "arcadekit/audio/browser";
 import { fetchJsonSource } from "arcadekit/content/browser";
 import { loadSpriteSheet } from "arcadekit/render-three";
@@ -16,34 +20,35 @@ export { view } from "./view";
 export { subscriptions } from "./subscriptions";
 
 /**
- * The engine, through the load of the app's sprite sheet (ADR-0015). One Layer value, so the
- * Commands, the engine entry and the co-op client share one loader, and so one sheet.
+ * What the genre's engine is made from, which this app owns: its sprite sheet, its cue table and
+ * its audio, which makes no AudioContext until the player's first gesture (ADR-0015). The co-op
+ * client takes the sheet and the audio from here too: one Layer value, so both draw from one
+ * sheet, loaded once.
  */
-const EngineLayer = makeSurvivorsEngineLayer({
-  sheet: loadSpriteSheet(`${import.meta.env.BASE_URL}sprites/survivors.json`),
-  sounds: survivorsSounds,
-});
+const assets = Layer.mergeAll(
+  SurvivorsSheet.layer(
+    loadSpriteSheet(`${import.meta.env.BASE_URL}sprites/survivors.json`)
+  ),
+  Layer.succeed(SurvivorsCueSounds, survivorsSounds),
+  BrowserAudioLayer
+);
 
 /**
  * The content, loaded once: the Commands and the co-op client, which loads a run's content
- * itself, share one loader.
+ * itself, share one load.
  */
 const ContentLayer = SurvivorsContent.layer(
   fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
 );
 
 /**
- * App-lifetime services, shared by every Command and Subscription. The engine and the co-op
- * client play through the one audio system, which makes no AudioContext before the first
- * gesture, and draw from the one sprite sheet, which LoadContent loads with the content.
- * Building them fetches nothing; the app's end frees the sheet and leaves co-op.
+ * App-lifetime services, shared by every Command and Subscription. Building them fetches
+ * nothing: LoadContent loads the content and the sheet, and the app's end frees the sheet and
+ * leaves co-op.
  */
 export const resources = Layer.mergeAll(
+  SurvivorsEngine.layer,
   SaveLayer.pipe(Layer.provide(BrowserSaveStorage)),
   SoundSettingsLayer.pipe(Layer.provide(BrowserSaveStorage)),
   CoopLayer
-).pipe(
-  Layer.provideMerge(ContentLayer),
-  Layer.provideMerge(EngineLayer),
-  Layer.provideMerge(BrowserAudioLayer)
-);
+).pipe(Layer.provideMerge(ContentLayer), Layer.provideMerge(assets));

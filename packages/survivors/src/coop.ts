@@ -1,23 +1,26 @@
+import { EventBuffer } from "arcadekit/core";
+import type * as Game from "arcadekit/game";
 import { schemaCodec } from "arcadekit/net";
 import type { CoopRules, CoopTypes } from "arcadekit/net";
+import type { GameSimulation } from "arcadekit/runtime";
 
-import type {
-  HudSample,
-  RunSummary,
-  SurvivorsEvent,
-  UpgradeChoice,
-} from "./events";
+import { Hud } from "./events";
+import type { RunSummary, SurvivorsEvent, UpgradeChoice } from "./events";
 import { hashWorld } from "./hash-world";
 import { MAX_HEROES } from "./hero";
 import { HeroInput } from "./input";
-import type { UpgradePick } from "./input";
+import type { SurvivorsInput, UpgradePick } from "./input";
 import type { GameContent } from "./schema";
-import { survivorsSimulation } from "./simulation";
+import { createWorld, hudSample, hudVersion, step } from "./world";
 import type { SurvivorsConfig, World } from "./world";
 
 // Survivors as a Co-op game's lockstep parts (ADR-0013): what `arcadekit/net/browser`'s Co-op
 // client runs. DOM-free, so it is tested in Node. `./browser`'s `makeSurvivorsCoopGame` adds the
 // content, the input and the views. Everything here that runs between steps is plain code.
+//
+// Co-op is still on the older contract (ADR-0020): its lockstep run steps a `GameSimulation`,
+// which this file builds from the rules `Survivors` declares, and a pick and a pause ride the
+// step input.
 
 /**
  * What the local player's app hears of a co-op run: the team's HUD, the local hero's own
@@ -25,7 +28,7 @@ import type { SurvivorsConfig, World } from "./world";
  * when the run ends.
  */
 export type SurvivorsCoopEvent =
-  | { readonly type: "hud"; readonly hud: HudSample }
+  | { readonly type: "hud"; readonly hud: Hud }
   | {
       readonly type: "levelUp";
       readonly offer: number;
@@ -45,6 +48,58 @@ export interface SurvivorsCoop extends CoopTypes {
 }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
+/** What the older simulation keeps for one run: the events its steps reported, and their context. */
+interface Run {
+  readonly events: EventBuffer<SurvivorsEvent>;
+  /** One context for all of the run's steps, refilled in place, so a step allocates nothing for it. */
+  readonly context: Mutable<Game.StepContext<SurvivorsEvent>>;
+}
+
+// Kept by World, never one for the module: every lockstep peer of a process steps its own run
+// through this one object, and each run's events are its own.
+const runs = new WeakMap<World, Run>();
+
+const runOf = (world: World): Run => {
+  const known = runs.get(world);
+  if (known !== undefined) {
+    return known;
+  }
+  const events = new EventBuffer<SurvivorsEvent>();
+  const run: Run = {
+    events,
+    context: { dt: 0, step: 0, report: (event) => events.push(event) },
+  };
+  runs.set(world, run);
+  return run;
+};
+
+/**
+ * The survivors rules as an arcadekit/runtime `GameSimulation`: the `createWorld`, `step` and
+ * HUD sample that `Survivors` declares, for the lockstep run, which doesn't host a declared
+ * simulation yet. It goes when co-op has moved (ADR-0020).
+ */
+const survivorsSimulation: GameSimulation<
+  SurvivorsConfig,
+  World,
+  SurvivorsInput,
+  SurvivorsEvent
+> = {
+  stepSeconds: 1 / 60,
+  create: (config, seed) => createWorld(config, { seed }),
+  step: (world, input, dt) => {
+    const { context } = runOf(world);
+    context.dt = dt;
+    step(world, input, context);
+    context.step += 1;
+  },
+  drainEvents: (world) => runOf(world).events.drain(),
+  sample: {
+    everyMs: 100,
+    version: hudVersion,
+    read: (world) => new Hud(hudSample(world)),
+  },
+};
 
 /**
  * Survivors' lockstep parts: one hero per player, by slot.

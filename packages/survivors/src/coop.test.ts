@@ -7,7 +7,6 @@ import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
 import type { HeroInput } from "./input";
 import { GameContent } from "./schema";
-import { survivorsSimulation } from "./simulation";
 import type { World } from "./world";
 
 // Survivors' Co-op rules, each as a plain function, in Node: what the Co-op client asks of the
@@ -220,7 +219,7 @@ describe("survivors' Co-op rules", () => {
     const offers = rules.simulation
       .drainEvents(world)
       .filter((event) => event._tag === "LeveledUp");
-    const hud: SurvivorsEvent = survivorsSimulation.sample!.read(world);
+    const hud: SurvivorsEvent = rules.simulation.sample!.read(world);
     for (const hero of world.heroes) {
       hero.status = "down";
     }
@@ -265,7 +264,7 @@ describe("survivors' Co-op rules", () => {
   it("says the run ended on RunEnded and on no other event", () => {
     const world = run();
     const events: SurvivorsEvent[] = [
-      survivorsSimulation.sample!.read(world),
+      rules.simulation.sample!.read(world),
       new LeveledUp({ hero: 0, offer: 1, choices: [] }),
       new HeroLeft({ hero: 1 }),
       new RunEnded({ summaries: [] }),

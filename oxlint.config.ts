@@ -182,6 +182,13 @@ export default defineConfig({
     "eslint/func-names": "off",
     // Effect and Foldkit APIs take callbacks by design.
     "promise/prefer-await-to-callbacks": "off",
+    // A `match` case that drops an event says so: `HeroLeft: () => undefined`. An empty body
+    // would be a type error, since a case returns a Message or `undefined`. `checkArguments`
+    // stays off, as ultracite has it: an explicit `undefined` argument is a choice.
+    "unicorn/no-useless-undefined": [
+      "error",
+      { checkArguments: false, checkArrowFunctionBody: false },
+    ],
     // A declaration is a class (`class LevelSolved extends Game.Event(...) {}`), and one file
     // declares what belongs together: a game's events, or a command with what it reports.
     "eslint/max-classes-per-file": "off",
@@ -200,8 +207,9 @@ export default defineConfig({
       },
     },
     {
-      // The games still on the older contract (ADR-0020). This list only gets shorter.
-      files: ["packages/survivors/**/*.ts", "apps/survivor-demo/**/*.ts"],
+      // What is still on the older contract (ADR-0020): survivors' Co-op rules, whose lockstep
+      // run steps a `GameSimulation`. This list only gets shorter.
+      files: ["packages/survivors/src/coop.ts"],
       jsPlugins: ["./tools/lint/declaration.ts"],
       rules: { "declaration/older-contract": "off" },
     },

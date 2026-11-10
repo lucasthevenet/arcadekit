@@ -1,17 +1,11 @@
 import {
   RunSummary,
+  // The genre's command. `ChooseUpgrade` here is the Foldkit Command that sends it.
+  ChooseUpgrade as SurvivorsChooseUpgrade,
   SurvivorsContent,
-  chooseUpgrade,
 } from "@arcadekit/survivors";
-import type {
-  SurvivorsConfig,
-  SurvivorsEvent,
-  World,
-} from "@arcadekit/survivors";
-import { SurvivorsEngine } from "@arcadekit/survivors/browser";
+import { SurvivorsEngine, SurvivorsSheet } from "@arcadekit/survivors/browser";
 import { Audio, AudioSettings } from "arcadekit/audio";
-import { engineOf } from "arcadekit/runtime/browser";
-import type { GameEngine } from "arcadekit/runtime/browser";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
@@ -26,21 +20,20 @@ import { RETRY_BUTTON_ID } from "./view";
 
 /**
  * Loads the content and the sprite sheet, side by side: the game can't be played or drawn
- * without both. Loading the sheet makes the engine (ADR-0015). Either failing shows on the
- * load-error screen, whose "Try again" runs this again: each loader keeps its first success, so
- * only what failed is fetched again.
+ * without both. Either failing shows on the load-error screen, whose "Try again" runs this
+ * again: each keeps its first success, so only what failed is fetched again.
  */
 export const LoadContent = Command.define("LoadContent", {
   messages: [Message.LoadedContent, Message.FailedToLoadContent],
   execute: Effect.gen(function* () {
     // Both loads run to the end, so one failing doesn't cut the other short: what loaded is kept
     // for a retry.
-    const [loadedContent, loadedEngine] = yield* Effect.all(
-      [SurvivorsContent.load, (yield* SurvivorsEngine).load],
+    const [loadedContent, loadedSheet] = yield* Effect.all(
+      [SurvivorsContent.load, SurvivorsSheet.load],
       { concurrency: "unbounded", mode: "result" }
     );
     const content = yield* Effect.fromResult(loadedContent);
-    yield* Effect.fromResult(loadedEngine);
+    yield* Effect.fromResult(loadedSheet);
     return Message.LoadedContent({
       heroes: content.heroes.map(({ id, name, description, color }) => ({
         id,
@@ -68,57 +61,66 @@ export const FocusRetry = Command.define("FocusRetry", {
   ),
 });
 
+/** Starts a run with one hero. Playing again is the same: a new run. */
 export const StartRun = Command.define("StartRun", {
   args: { heroId: Schema.String },
   messages: [Message.StartedRun, Message.FailedToStartRun],
   execute: ({ heroId }) =>
     Effect.gen(function* () {
       const content = yield* SurvivorsContent.load;
-      const engine = yield* engineOf(SurvivorsEngine);
+      const engine = yield* SurvivorsEngine;
       yield* engine.start({ content, heroIds: [heroId] });
       return Message.StartedRun();
     }).pipe(
-      Effect.catchTag(["ContentError", "SpriteSheetError"], (error) =>
+      Effect.catchTag("ContentError", (error) =>
         Effect.succeed(Message.FailedToStartRun({ error: error.message }))
       )
     ),
 });
 
 /**
- * Runs `use` on the engine. The engine comes through the sheet's load, so this can fail only if
- * no load ever succeeded (then there is no run). That failure is reported, never dropped.
+ * The player's pick, sent to the run as the genre's `ChooseUpgrade` command: the rules take it
+ * at the start of the next step. The send waits for their answer, and every answer ends the
+ * same way. The screen offers only the open offer's choices, so the rules don't refuse a pick
+ * it makes; and a pick is dropped when the player quits or starts again before a step takes it.
  */
-const withEngine = (
-  use: (
-    engine: GameEngine<SurvivorsConfig, World, SurvivorsEvent>
-  ) => Effect.Effect<void>
-) =>
-  engineOf(SurvivorsEngine).pipe(
-    Effect.flatMap(use),
-    Effect.as(Message.CompletedEngineCommand()),
-    Effect.catchTag("SpriteSheetError", (error) =>
-      Effect.succeed(Message.FailedToStartRun({ error: error.message }))
-    )
-  );
-
 export const ChooseUpgrade = Command.define("ChooseUpgrade", {
-  args: { index: Schema.Number },
-  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
-  execute: ({ index }) =>
-    withEngine((engine) =>
-      engine.modify((world) => chooseUpgrade(world, 0, index))
+  args: { offer: Schema.Int, index: Schema.Int },
+  messages: [Message.CompletedEngineCommand],
+  execute: ({ offer, index }) =>
+    Effect.gen(function* () {
+      const engine = yield* SurvivorsEngine;
+      yield* engine.send(new SurvivorsChooseUpgrade({ offer, index }));
+      return Message.CompletedEngineCommand();
+    }).pipe(
+      Effect.catchTag(["OfferClosed", "NoSuchChoice"], () =>
+        Effect.succeed(Message.CompletedEngineCommand())
+      ),
+      Effect.catchTag("CommandDropped", () =>
+        Effect.succeed(Message.CompletedEngineCommand())
+      )
     ),
 });
 
+/** Pauses or resumes the run: while paused, the engine draws without stepping. */
 export const SetPaused = Command.define("SetPaused", {
   args: { paused: Schema.Boolean },
-  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
-  execute: ({ paused }) => withEngine((engine) => engine.setPaused(paused)),
+  messages: [Message.CompletedEngineCommand],
+  execute: ({ paused }) =>
+    Effect.gen(function* () {
+      const engine = yield* SurvivorsEngine;
+      yield* engine.setPaused(paused);
+      return Message.CompletedEngineCommand();
+    }),
 });
 
 export const EndRun = Command.define("EndRun", {
-  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
-  execute: withEngine((engine) => engine.stop),
+  messages: [Message.CompletedEngineCommand],
+  execute: Effect.gen(function* () {
+    const engine = yield* SurvivorsEngine;
+    yield* engine.stop;
+    return Message.CompletedEngineCommand();
+  }),
 });
 
 /** Reads the save once, at startup. Never fails: a bad save reads as empty. */

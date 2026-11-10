@@ -1,5 +1,5 @@
 import type { AudioSystem } from "arcadekit/audio";
-import type { GameView } from "arcadekit/runtime/browser";
+import type * as Game from "arcadekit/game/browser";
 
 import { isChoosing } from "../world";
 import type { World } from "../world";
@@ -104,7 +104,7 @@ const auraPlaying = (world: World): boolean =>
  * frozen (paused, or waiting on an upgrade pick). Reads the run; never changes
  * it. Every peer hears the whole fight; a teammate's hurt and down are quieter.
  */
-export class SurvivorsSoundView implements GameView<World> {
+export class SurvivorsSoundView implements Game.View<World> {
   private readonly audio: AudioSystem;
   private readonly sounds: SurvivorsSounds;
   private readonly localHero: () => number;

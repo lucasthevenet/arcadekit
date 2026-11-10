@@ -125,7 +125,7 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 | A builder is given no type argument, apart from types given first | lint: `declaration/inferred` |
 | A function in a definition is not async and not a generator | lint: `declaration/plain-handler` |
 | A step or an `apply` returns nothing | the `Nothing` type, and `Game.Loop` at run time |
-| New code is written with the declarations | lint: `declaration/older-contract`, off only for survivors and its demo |
+| New code is written with the declarations | lint: `declaration/older-contract`, off only for survivors' Co-op rules (`packages/survivors/src/coop.ts`) |
 | A builder's shape: the name first, typed by a type parameter, `kind` and the name as statics, `<Noun>Class` written out and exported with the statics the class sets, the base named, one builder for each kind | lint: `declaration/builder`, on the kit's source |
 | Every builder is listed, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |
 | No new factory without a reason | the style test's `FACTORIES` |

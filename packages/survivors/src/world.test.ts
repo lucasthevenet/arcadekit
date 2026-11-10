@@ -6,13 +6,14 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { ChooseUpgrade, NoSuchChoice, OfferClosed } from "./commands";
+import { survivorsCoopRules } from "./coop";
 import { HeroLeft, Hud, LeveledUp, RunEnded } from "./events";
 import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
 import type { HeroInput, SurvivorsInput } from "./input";
 import { GameContent } from "./schema";
-import { Survivors, survivorsSimulation } from "./simulation";
-import { chooseUpgrade, createWorld, hudSample, step } from "./world";
+import { Survivors } from "./simulation";
+import { choose, createWorld, hudSample, step } from "./world";
 import type { SurvivorsConfig, World } from "./world";
 
 // Small, self-contained content so these tests don't depend on any particular game.
@@ -140,8 +141,9 @@ const play = (world: World, seconds: number): SurvivorsEvent[] => {
     frame < seconds * 60 && world.status === "running";
     frame++
   ) {
-    if (world.heroes[0]!.offer) {
-      chooseUpgrade(world, 0, 0);
+    const hero = world.heroes[0]!;
+    if (hero.offer) {
+      choose(world, hero, 0);
     }
     const angle = frame / 200;
     step(world, solo(Math.cos(angle), Math.sin(angle)), context);
@@ -223,7 +225,7 @@ interface PlayingLoop {
  */
 const pickingRun = (
   loop: PlayingLoop,
-  pick?: (world: World, index: number, nowMs: number) => void
+  pick?: (world: World, index: number) => void
 ) => {
   const sturdy = Schema.decodeUnknownSync(GameContent)({
     ...content,
@@ -261,7 +263,7 @@ const pickingRun = (
     const nowMs = (i * 1000) / 60;
     const { offer } = world.heroes[0]!;
     if (pick !== undefined && offer) {
-      pick(world, Math.min(1, offer.length - 1), nowMs);
+      pick(world, Math.min(1, offer.length - 1));
     }
     loop.frame(input, { steps: 1 }, nowMs);
     hashes.push(hashWorld(world));
@@ -362,17 +364,18 @@ describe("simulation", () => {
     const { time } = world;
     step(world, solo(1, 0), STEP);
     expect(world.time).toBe(time);
-    expect(chooseUpgrade(world, 0, 0)).toBe(true);
+    expect(choose(world, world.heroes[0]!, 0)).toBe(true);
     expect(world.heroes[0]!.offer).toBeNull();
   });
 
   it("reports RunEnded once when the player dies", () => {
     const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 1 });
-    world.heroes[0]!.hp = 0.0001;
+    const hero = world.heroes[0]!;
+    hero.hp = 0.0001;
     const { events, context } = collecting();
     for (let i = 0; i < 60 * 60 && world.status === "running"; i++) {
-      if (world.heroes[0]!.offer) {
-        chooseUpgrade(world, 0, 0);
+      if (hero.offer) {
+        choose(world, hero, 0);
       }
       step(world, solo(0, 0), context);
     }
@@ -705,23 +708,19 @@ describe("an upgrade pick", () => {
   });
 });
 
-// `survivorsSimulation` is what the hosts still on the older contract step: `./browser`'s
-// single-player engine, which picks through `modify`, and the lockstep run of the Co-op rules.
-// Every recorded hash is of `Survivors`, so these hold the one to the other. They go with it,
-// when those hosts have moved (ADR-0020).
-describe("the older simulation", () => {
-  it("plays the declared simulation's run, step for step, picking through modify", () => {
+// The Co-op rules' simulation is what a lockstep run steps: co-op is still on the older contract,
+// and a lockstep player's pick rides its step input. Every recorded hash is of `Survivors`, so
+// these hold the one to the other. They go when co-op has moved (ADR-0020).
+describe("the Co-op rules' simulation", () => {
+  it("plays the declared simulation's run, step for step, a pick riding the step input", () => {
     const commanded = commandedRun();
-    const loop = new GameLoop(survivorsSimulation);
-    const modified = pickingRun(loop, (_, index, nowMs) => {
-      loop.modify((world) => chooseUpgrade(world, 0, index), nowMs);
-    });
-    expect(modified.hashes).toStrictEqual(commanded.hashes);
-    expect(modified.events).toStrictEqual(commanded.events);
+    const riding = pickingRun(new GameLoop(survivorsCoopRules.simulation));
+    expect(riding.hashes).toStrictEqual(commanded.hashes);
+    expect(riding.events).toStrictEqual(commanded.events);
   });
 
   it("reports RunEnded and then the last HUD in the frame that ends a run", () => {
-    const loop = new GameLoop(survivorsSimulation);
+    const loop = new GameLoop(survivorsCoopRules.simulation);
     let heard: SurvivorsEvent[] = [];
     loop.subscribe((event) => {
       heard.push(event);
@@ -822,8 +821,8 @@ describe("co-op", () => {
       STEP
     );
     expect(a.offer).not.toBeNull();
-    expect(chooseUpgrade(world, 0, 9)).toBe(false);
-    expect(chooseUpgrade(world, 0, 0)).toBe(true);
+    expect(choose(world, a, 9)).toBe(false);
+    expect(choose(world, a, 0)).toBe(true);
     // A pick repeated after the offer closed does nothing more.
     const weapons = a.weapons.map((slot) => slot.level);
     const passives = [...a.passiveLevels];
@@ -838,7 +837,7 @@ describe("co-op", () => {
 
   it("lets a leaving player's open offer go, and no longer chases its hero", () => {
     const world = levelUpForTwo();
-    chooseUpgrade(world, 0, 0);
+    choose(world, world.heroes[0]!, 0);
     const { time } = world;
     const b = world.heroes[1]!;
     const i = addEnemy(world, b.x, b.z + 3);
@@ -899,7 +898,7 @@ describe("co-op", () => {
     dropGem(world, a!.x, a!.z, 3);
     step(world, STILL, STEP);
     expect(offersOpen(world)).toStrictEqual([true, false]);
-    chooseUpgrade(world, 0, 0);
+    choose(world, a!, 0);
     a!.hp = 0;
     const { events, context } = collecting();
     step(world, STILL, context);
@@ -954,7 +953,7 @@ describe("cue counters", () => {
     for (let frame = 0; frame < 30 * 60; frame++) {
       for (const hero of world.heroes) {
         if (hero.offer) {
-          chooseUpgrade(world, hero.slot, 0);
+          choose(world, hero, 0);
         }
       }
       step(world, inputs({ moveX: 0, moveZ: 0 }), STEP);
