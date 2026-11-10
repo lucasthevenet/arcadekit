@@ -16,7 +16,7 @@ import type { Scope } from "effect";
 
 import { HOST_ID } from "../signalling/protocol";
 import type { PeerId } from "../signalling/protocol";
-import { createRoom } from "./room";
+import { checkRoomSize, createRoom } from "./room";
 import type { Room, RoomOptions } from "./room";
 import { createSocketRoom } from "./sockets";
 import type { RoomSocket, SocketRoom } from "./sockets";
@@ -211,20 +211,26 @@ const makeRoomConnections = (storage: AlarmStorage, options: RoomOptions) =>
 
 /**
  * Everything a `SignallingRoom` Durable Object's runtime holds, over the object's storage.
- * `options` are its room's. Its
- * scheduler is the synchronous one: Cloudflare can drop the timers a request leaves behind, and
+ * `options` are its room's, and a room size no room can have throws here. Its scheduler is the
+ * synchronous one: Cloudflare can drop the timers a request leaves behind, and
  * a room's connections outlive the request that opened them, so each message is handled in the
  * event that brought it, not on a timer.
  */
 export const roomLayer = (
   storage: AlarmStorage,
   options: RoomOptions = {}
-): Layer.Layer<RoomConnections> =>
-  Layer.effect(RoomConnections, makeRoomConnections(storage, options)).pipe(
+): Layer.Layer<RoomConnections> => {
+  // A size no room can have fails here, when the object is set up, not on its first connection.
+  checkRoomSize(options.roomSize);
+  return Layer.effect(
+    RoomConnections,
+    makeRoomConnections(storage, options)
+  ).pipe(
     Layer.provideMerge(
       Layer.succeed(Scheduler.Scheduler, new Scheduler.MixedScheduler("sync"))
     )
   );
+};
 
 /**
  * Connects `socket` to the room and answers the request that brought it: with `accepted`, the
