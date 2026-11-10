@@ -6,6 +6,7 @@
 
 import { make as makeEngine } from "./engine";
 import type { Engine as RunningEngine } from "./engine";
+import type { AnySimulation, CommandOf, ConfigOf, EventOf } from "./simulation";
 
 export {
   type AnyCommand,
@@ -41,6 +42,7 @@ export type {
   InputOf,
   Nothing,
   RefusalFor,
+  RefusalOf,
   RefusalsOf,
   RejectionOf,
   RunContext,
@@ -72,11 +74,30 @@ export type { InputSource, StepInput } from "../runtime/index";
 
 /** A game as the browser runs it for one player. See {@link makeEngine}. */
 export const Engine: typeof makeEngine = makeEngine;
-/** A running game, as an app drives it: what `yield* MyEngine` gives. */
-export type Engine<
+/**
+ * A running game, as an app drives it: what `yield* MyEngine` gives. To name one, use
+ * {@link EngineOf} with its simulation, which fills these in.
+ */
+export type Engine<Config, Event, Command, E, Refusals> = RunningEngine<
   Config,
   Event,
   Command,
-  E = never,
-  Refusals = unknown,
-> = RunningEngine<Config, Event, Command, E, Refusals>;
+  E,
+  Refusals
+>;
+
+/**
+ * The running engine of the simulation `S`: what `yield* MyEngine` gives, for a function that
+ * takes one. `E` is what the engine's `uses` can fail with.
+ *
+ * ```ts
+ * const restart = (engine: Game.EngineOf<typeof PushPuzzle>) => engine.start(config);
+ * ```
+ */
+export type EngineOf<S extends AnySimulation, E = never> = RunningEngine<
+  ConfigOf<S>,
+  EventOf<S>,
+  CommandOf<S>,
+  E,
+  S["~types"]["Refusals"]
+>;

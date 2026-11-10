@@ -57,6 +57,7 @@ interface Faults {
   load?: SheetMissing;
   view?: Error;
   render?: Error;
+  read?: Error;
 }
 
 class Trouble extends Context.Service<Trouble, Faults>()("test/Trouble") {}
@@ -91,9 +92,17 @@ class CounterEngine extends Game.Engine("CounterEngine", {
       dispose: () => log.push("dispose view"),
     };
   },
-  input: (surface, { log }) => {
+  input: (surface, { log, faults }) => {
     log.push(`input ${surface.id}`);
-    return { read: () => null, dispose: () => log.push("dispose input") };
+    return {
+      read: () => {
+        if (faults.read !== undefined) {
+          throw faults.read;
+        }
+        return null;
+      },
+      dispose: () => log.push("dispose input"),
+    };
   },
 }) {}
 
@@ -231,6 +240,65 @@ describe("Game.Engine", () => {
     );
     expect(done).toStrictEqual([false, true]);
     expect(log).toContain("render 101");
+  });
+
+  it("goes on after a send once its frame has drawn, so a run started there begins at its first step", async () => {
+    const log = await play((engine, frames, lines) =>
+      Effect.gen(function* () {
+        yield* engine.start({ from: 0 }, { seed: 1 });
+        yield* attached(engine);
+        const sender = yield* Effect.forkChild(
+          Effect.gen(function* () {
+            yield* engine.send(new Jump({ by: 100 }));
+            lines.push("after the send");
+            yield* engine.start({ from: 500 }, { seed: 2 });
+          }),
+          { startImmediately: true }
+        );
+        frames.runFrameAt(15.625);
+        yield* Fiber.await(sender);
+        frames.runFrameAt(31.25);
+      })
+    );
+    // The new run steps once in the frame after it started: its clock is its own.
+    expect(log.slice(3, 6)).toStrictEqual([
+      "render 101",
+      "after the send",
+      "render 501",
+    ]);
+  });
+
+  it("ends the run of a frame that threw before a dropped sender goes on, so a run it starts then stays", async () => {
+    const faults: Faults = {};
+    const log = await play(
+      (engine, frames) =>
+        Effect.gen(function* () {
+          yield* engine.start({ from: 0 }, { seed: 1 });
+          const crashing = yield* attached(engine);
+          const sender = yield* Effect.forkChild(
+            engine
+              .send(new Jump({ by: 100 }))
+              .pipe(
+                Effect.catchTag("CommandDropped", () =>
+                  engine.start({ from: 700 }, { seed: 2 })
+                )
+              ),
+            { startImmediately: true }
+          );
+          // The input throws before the step applies the command.
+          faults.read = new Error("no gamepad");
+          frames.runFrameAt(15.625);
+          yield* Fiber.await(crashing);
+          yield* Fiber.await(sender);
+          delete faults.read;
+          yield* attached(engine);
+          frames.runFrameAt(31.25);
+        }),
+      faults
+    );
+    expect(log.filter((line) => line.startsWith("render"))).toStrictEqual([
+      "render 701",
+    ]);
   });
 
   it("fails a send with the rejection the rules refused it with, and leaves the run as it was", async () => {

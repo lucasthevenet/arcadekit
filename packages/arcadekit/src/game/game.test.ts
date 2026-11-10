@@ -113,6 +113,7 @@ const runOneStep = <Input>(
     unknown,
     Input,
     unknown,
+    unknown,
     unknown
   >,
   input: { readonly read: () => Input }
@@ -529,7 +530,7 @@ describe("a command the rules may refuse", () => {
     expect(loop.state?.coins).toBe(1);
   });
 
-  it("refuses a rejection the command doesn't declare, and drops the commands still waiting", () => {
+  it("refuses a rejection the command doesn't declare: its command is dropped, and those after it wait", () => {
     class Undeclared extends Game.Simulation("Undeclared", {
       input: Schema.Null,
       commands: [Empty, Deposit],
@@ -538,23 +539,220 @@ describe("a command the rules may refuse", () => {
       apply: {
         // Empty declares no rejection, so this is one it can't return.
         Empty: unchecked(() => new JarFull({ room: 0 })),
-        Deposit: () => {},
+        Deposit: (jar, command) => {
+          jar.coins += command.coins;
+        },
       },
     }) {}
-    const loop = new Game.Loop(Undeclared);
-    loop.start(undefined, 1, 0);
-    const outcomes: unknown[] = [];
-    loop.send(new Empty(), 0, (outcome) => outcomes.push(outcome));
-    loop.send(new Deposit({ coins: 1 }), 0, (outcome) =>
-      outcomes.push(outcome)
-    );
-    expect(() => loop.frame(IDLE, { steps: 1 }, 0)).toThrow(
-      'Simulation "Undeclared": apply.Empty returned the rejection "JarFull", which the command "Empty" doesn\'t declare. List it in the command\'s `rejects`.'
-    );
-    expect(outcomes).toStrictEqual([
-      new Game.CommandDropped({ command: "Empty", reason: "runEnded" }),
+    const start = () => {
+      const loop = new Game.Loop(Undeclared);
+      loop.start(undefined, 1, 0);
+      const outcomes: unknown[] = [];
+      loop.send(new Empty(), 0, (outcome) => outcomes.push(outcome));
+      loop.send(new Deposit({ coins: 1 }), 0, (outcome) =>
+        outcomes.push(outcome)
+      );
+      expect(() => loop.frame(IDLE, { steps: 1 }, 0)).toThrow(
+        'Simulation "Undeclared": apply.Empty returned the rejection "JarFull", which the command "Empty" doesn\'t declare. List it in the command\'s `rejects`.'
+      );
+      // A frame that throws tells nobody.
+      expect(outcomes).toStrictEqual([]);
+      return { loop, outcomes };
+    };
+    const emptyDropped = new Game.CommandDropped({
+      command: "Empty",
+      reason: "runEnded",
+    });
+
+    // Whoever catches the throw ends the run, and the senders hear then.
+    const stopped = start();
+    stopped.loop.stop();
+    expect(stopped.outcomes).toStrictEqual([
+      emptyDropped,
       new Game.CommandDropped({ command: "Deposit", reason: "runEnded" }),
     ]);
+
+    // Or goes on stepping: the command behind the one that threw is applied by the next step.
+    const steppedOn = start();
+    steppedOn.loop.frame(IDLE, { steps: 1 }, 0);
+    expect(steppedOn.outcomes).toStrictEqual([emptyDropped, undefined]);
+    expect(steppedOn.loop.state).toStrictEqual({ coins: 1 });
+  });
+
+  it("refuses a rejection made by another class than the one the command declares", () => {
+    // oxlint-disable-next-line declaration/named -- Another class under the declared tag is the case.
+    class Impostor extends Game.Rejection("JarFull", { room: Schema.Int }) {}
+    class Mixed extends Game.Simulation("Mixed", {
+      input: Schema.Null,
+      commands: [Deposit],
+      create: () => ({ coins: 0 }),
+      step: () => {},
+      apply: { Deposit: unchecked(() => new Impostor({ room: 0 })) },
+    }) {}
+    const loop = new Game.Loop(Mixed);
+    loop.start(undefined, 1, 0);
+    loop.send(new Deposit({ coins: 1 }));
+    expect(() => loop.frame(IDLE, { steps: 1 }, 0)).toThrow(
+      'Simulation "Mixed": apply.Deposit returned a rejection "JarFull" made by another class than the one the command "Deposit" declares under that tag. Return a value of the class in the command\'s `rejects`.'
+    );
+  });
+
+  it("refuses a handler that reports an event and then refuses its command", () => {
+    class Noted extends Game.Event("Noted") {}
+    class Telling extends Game.Simulation("Telling", {
+      input: Schema.Null,
+      events: [Noted],
+      commands: [Deposit],
+      create: () => ({ coins: 0 }),
+      step: () => {},
+      apply: {
+        Deposit: (_jar, _command, { report }) => {
+          report(new Noted());
+          return new JarFull({ room: 0 });
+        },
+      },
+    }) {}
+    const loop = new Game.Loop(Telling);
+    loop.start(undefined, 1, 0);
+    loop.send(new Deposit({ coins: 1 }));
+    expect(() => loop.frame(IDLE, { steps: 1 }, 0)).toThrow(
+      'Simulation "Telling": apply.Deposit reported an event and then refused its command. A handler decides before it changes anything: a refused command changed nothing in the run, so it has nothing to report.'
+    );
+  });
+
+  it("refuses two commands with one tag, when the simulation is declared", () => {
+    // oxlint-disable-next-line declaration/named -- A second command under one tag is the case.
+    class Twin extends Game.Command("Deposit") {}
+    expect(() =>
+      Game.Simulation("Twins", {
+        input: Schema.Null,
+        commands: [Deposit, Twin],
+        create: () => ({ coins: 0 }),
+        step: () => {},
+        apply: { Deposit: () => {} },
+      })
+    ).toThrow(
+      'Simulation "Twins" lists two commands with the tag "Deposit". A command is told from another by its tag: give each its own.'
+    );
+  });
+
+  it("tells a sender after the step, so it may start a new run: that run begins at step 0", () => {
+    const { loop, outcomes, send, step } = startJar();
+    const applied: number[] = [];
+    loop.send(new Deposit({ coins: 1 }), 0, () => {
+      // Both commands of the step were applied to the run that was current, before this.
+      applied.push((loop.state as { coins: number }).coins);
+      loop.start(undefined, 2, 0);
+    });
+    send(new Deposit({ coins: 2 }));
+    step();
+    expect(applied).toStrictEqual([3]);
+    expect(outcomes).toStrictEqual([undefined]);
+    expect(loop.state).toStrictEqual({ coins: 0, emptied: 0 });
+    expect(loop.stepIndex).toBe(0);
+  });
+
+  it("lets a sender send again when it is told, and applies that at the next step", () => {
+    const { loop, outcomes, send, step } = startJar();
+    loop.send(new Deposit({ coins: 20 }), 0, () => {
+      send(new Deposit({ coins: 2 }));
+    });
+    step();
+    expect(loop.state).toStrictEqual({ coins: 0, emptied: 0 });
+    step();
+    expect(outcomes).toStrictEqual([undefined]);
+    expect(loop.state).toStrictEqual({ coins: 2, emptied: 0 });
+  });
+
+  it("doesn't tell a sender that took its command back before it was told", () => {
+    const { loop, outcomes, send, step } = startJar();
+    // The first sender, when told, takes back the second's command: it was applied in the same
+    // step, so that stands, and its sender hears nothing.
+    const second: { takeBack?: () => void } = {};
+    loop.send(new Deposit({ coins: 1 }), 0, () => second.takeBack?.());
+    second.takeBack = send(new Deposit({ coins: 2 }));
+    step();
+    expect(loop.state).toStrictEqual({ coins: 3, emptied: 0 });
+    expect(outcomes).toStrictEqual([]);
+  });
+
+  it("tells every sender when one of them throws, then throws that", () => {
+    const { loop, outcomes, send } = startJar();
+    loop.send(new Deposit({ coins: 1 }), 0, () => {
+      throw new Error("a sender threw");
+    });
+    send(new Deposit({ coins: 2 }));
+    expect(() => loop.frame(IDLE, { steps: 1 }, 0)).toThrow("a sender threw");
+    expect(outcomes).toStrictEqual([undefined]);
+    expect(loop.state).toStrictEqual({ coins: 3, emptied: 0 });
+  });
+
+  it("keeps the run and its waiting commands when a new run's create throws", () => {
+    class Opened extends Game.Event("Opened", { name: Schema.String }) {}
+    class Fragile extends Game.Simulation("Fragile", {
+      input: Schema.Null,
+      events: [Opened],
+      commands: [Empty],
+      create: (name: string, { report }) => {
+        report(new Opened({ name }));
+        if (name === "broken") {
+          throw new Error("create threw");
+        }
+        return { name, emptied: 0, steps: 0 };
+      },
+      step: (jar) => {
+        jar.steps += 1;
+      },
+      apply: {
+        Empty: (jar) => {
+          jar.emptied += 1;
+        },
+      },
+    }) {}
+    const loop = new Game.Loop(Fragile);
+    const heard: string[] = [];
+    loop.subscribe((event) => heard.push(event.name));
+    loop.start("first", 1, 0);
+    const outcomes: unknown[] = [];
+    loop.send(new Empty(), 0, (outcome) => outcomes.push(outcome));
+    expect(() => loop.start("broken", 2, 0)).toThrow("create threw");
+    // The first run goes on: its command still waits, and it hears nothing of the other.
+    expect(outcomes).toStrictEqual([]);
+    loop.frame(IDLE, { steps: 1 }, 0);
+    expect(outcomes).toStrictEqual([undefined]);
+    expect(loop.state).toStrictEqual({ name: "first", emptied: 1, steps: 1 });
+    expect(heard).toStrictEqual(["first"]);
+  });
+
+  it("discards the events a frame that threw had not reported", () => {
+    class Noted extends Game.Event("Noted", { coins: Schema.Int }) {}
+    class Crashing extends Game.Simulation("Crashing", {
+      input: Schema.Null,
+      events: [Noted],
+      commands: [Deposit, Empty],
+      create: () => ({ coins: 0 }),
+      step: () => {},
+      apply: {
+        Deposit: (jar, command, { report }) => {
+          jar.coins += command.coins;
+          report(new Noted({ coins: jar.coins }));
+        },
+        Empty: () => {
+          throw new Error("a handler threw");
+        },
+      },
+    }) {}
+    const loop = new Game.Loop(Crashing);
+    const heard: number[] = [];
+    loop.subscribe((event) => heard.push(event.coins));
+    loop.start(undefined, 1, 0);
+    loop.send(new Deposit({ coins: 4 }));
+    loop.send(new Empty());
+    expect(() => loop.frame(IDLE, { steps: 1 }, 0)).toThrow("a handler threw");
+    loop.stop();
+    loop.start(undefined, 2, 0);
+    loop.frame(IDLE, { steps: 1 }, 0);
+    expect(heard).toStrictEqual([]);
   });
 
   it("refuses a command the simulation doesn't declare, where it is sent", () => {
@@ -568,20 +766,40 @@ describe("a command the rules may refuse", () => {
 
   it("types what each command can be refused with", () => {
     const loop = new Game.Loop(Jar);
-    // A rejection's type is its tag and payload, as an event's is.
-    interface Full {
-      readonly _tag: "JarFull";
-      readonly room: number;
-    }
+    // A rejection's type is its class, so what a sender gets is the error it is.
     loop.send(new Deposit({ coins: 1 }), 0, (outcome) => {
-      expectTypeOf(outcome).toExtend<Full | Game.CommandDropped | undefined>();
-      expectTypeOf<Full>().toExtend<typeof outcome>();
+      expectTypeOf(outcome).toEqualTypeOf<
+        JarFull | Game.CommandDropped | undefined
+      >();
     });
     loop.send(new Empty(), 0, (outcome) => {
       expectTypeOf(outcome).toEqualTypeOf<Game.CommandDropped | undefined>();
     });
-    expectTypeOf<Game.RejectionOf<typeof Jar>>().toExtend<Full>();
-    expectTypeOf<JarFull>().toExtend<Game.RejectionOf<typeof Jar>>();
+    expectTypeOf<Game.RejectionOf<typeof Jar>>().toEqualTypeOf<JarFull>();
+    // A loop of a simulation whose rejections aren't known can't say what a send ends with.
+    const anyLoop = loop as unknown as Game.Loop<
+      undefined,
+      unknown,
+      null,
+      never,
+      Deposit,
+      unknown
+    >;
+    anyLoop.send(new Deposit({ coins: 1 }), 0, (outcome) => {
+      expectTypeOf(outcome).toBeUnknown();
+    });
+    const lookAlike = () =>
+      Game.Simulation("LookAlike", {
+        input: Schema.Null,
+        commands: [Deposit],
+        create: () => ({ coins: 0 }),
+        step: () => {},
+        apply: {
+          // @ts-expect-error -- An object shaped like the rejection is not a value of its class.
+          Deposit: () => ({ _tag: "JarFull" as const, room: 0 }),
+        },
+      });
+    expect(lookAlike).not.toThrow();
     const declare = () =>
       Game.Simulation("Wrong", {
         input: Schema.Null,

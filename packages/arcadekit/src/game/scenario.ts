@@ -1,6 +1,7 @@
+import { CommandDropped } from "./command";
 import { Loop } from "./loop";
 import { resolve } from "./simulation";
-import type { SimulationClass } from "./simulation";
+import type { RefusalOf, SimulationClass } from "./simulation";
 
 // A scenario is a specification you can run: given a run, after these steps and commands, it
 // reported these events. It steps the real simulation through `Game.Loop`, the loop the browser engine
@@ -49,6 +50,23 @@ const showAll = (values: readonly unknown[]): string =>
     ? "  (nothing)"
     : values.map((value) => `  ${show(value)}`).join("\n");
 
+/** A command the rules refused: what they refused it with, the command's tag and its sender's slot. */
+interface Refusal {
+  readonly rejection: unknown;
+  readonly command: string;
+  readonly player: number;
+}
+
+const showRefusals = (refusals: readonly Refusal[]): string =>
+  refusals.length === 0
+    ? "  (nothing)"
+    : refusals
+        .map(
+          ({ rejection, command, player }) =>
+            `  ${show(rejection)}, refusing ${command} from player ${player}`
+        )
+        .join("\n");
+
 /** Whether two events carry the same data: the same tag and payload, compared by value. */
 const sameData = (a: unknown, b: unknown): boolean => {
   if (Object.is(a, b)) {
@@ -89,14 +107,7 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
     Command,
     Refusals
   >
-): ScenarioRunner<
-  Config,
-  State,
-  Input,
-  Event,
-  Command,
-  Refusals[keyof Refusals]
-> & {
+): ScenarioRunner<Config, State, Input, Event, Command, RefusalOf<Refusals>> & {
   readonly end: () => void;
 } => {
   const { sample, stepSeconds } = resolve(simulation);
@@ -105,8 +116,18 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
   // state, not something that happened, so `Scenario.reported` never has to list one.
   let unchecked: Event[] = [];
   let lastSample: Event | undefined;
-  // What the rules refused since the last check, in the order they refused it.
-  let refusals: unknown[] = [];
+  // What the rules refused since the last check, in the order they refused it, each with the
+  // command it refused and who sent it.
+  let refusals: Refusal[] = [];
+  // The commands sent that no step has applied yet, by tag.
+  const waiting: string[] = [];
+  const neverApplied = (when: string): void => {
+    if (waiting.length > 0) {
+      throw new ScenarioError(
+        `${when} with ${waiting.map((tag) => `Scenario.send(${tag})`).join(", ")} never applied. A command is applied by the step after it is sent: add a Scenario.step after the send.`
+      );
+    }
+  };
   loop.subscribe((event) => {
     if ((event as { readonly _tag: string })._tag === sample?.tag) {
       lastSample = event;
@@ -125,6 +146,7 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
   };
   return {
     given: (config, seed) => {
+      neverApplied("Scenario.given started a new run");
       unchecked = [];
       refusals = [];
       lastSample = undefined;
@@ -141,9 +163,13 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
     },
     send: (command, player) => {
       running("send");
+      const { _tag: tag } = command as { readonly _tag: string };
+      waiting.push(tag);
       loop.send(command, player, (outcome) => {
-        if (outcome !== undefined) {
-          refusals.push(outcome);
+        waiting.splice(waiting.indexOf(tag), 1);
+        // A command that was dropped never reached the rules: they didn't refuse it.
+        if (outcome !== undefined && !(outcome instanceof CommandDropped)) {
+          refusals.push({ rejection: outcome, command: tag, player });
         }
       });
     },
@@ -152,10 +178,10 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
       refusals = [];
       if (
         actual.length !== expected.length ||
-        !actual.every((rejection, i) => sameData(rejection, expected[i]))
+        !actual.every(({ rejection }, i) => sameData(rejection, expected[i]))
       ) {
         throw new ScenarioError(
-          `The rules refused other commands than the scenario says.\nExpected:\n${showAll(expected)}\nRefused:\n${showAll(actual)}`
+          `The rules refused other commands than the scenario says.\nExpected:\n${showAll(expected)}\nRefused:\n${showRefusals(actual)}`
         );
       }
     },
@@ -180,9 +206,10 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
     },
     state: (check) => check(running("state")),
     end: () => {
+      neverApplied("The scenario ended");
       if (refusals.length > 0) {
         throw new ScenarioError(
-          `The scenario ended with a refused command no Scenario.refused checked:\n${showAll(refusals)}`
+          `The scenario ended with a refused command no Scenario.refused checked:\n${showRefusals(refusals)}`
         );
       }
       if (unchecked.length > 0) {
@@ -228,14 +255,7 @@ export const make =
     >
   ): ((
     ...steps: readonly ScenarioSteps<
-      ScenarioRunner<
-        Config,
-        State,
-        Input,
-        Event,
-        Command,
-        Refusals[keyof Refusals]
-      >
+      ScenarioRunner<Config, State, Input, Event, Command, RefusalOf<Refusals>>
     >[]
   ) => void) =>
   (...steps) => {
@@ -248,7 +268,7 @@ export const make =
           Input,
           Event,
           Command,
-          Refusals[keyof Refusals]
+          RefusalOf<Refusals>
         >
       >
     ): void => {

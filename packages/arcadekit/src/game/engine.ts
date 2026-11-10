@@ -33,7 +33,7 @@ export type Used<U extends Uses> = {
  * A running game, as an app drives it. Each `Game.Engine` class is the service key of one:
  * `yield* MyEngine`.
  */
-export interface Engine<Config, Event, Command, E = never, Refusals = unknown> {
+export interface Engine<Config, Event, Command, E, Refusals> {
   /**
    * Draws into `element` and reads input from it for as long as it runs: each frame steps the
    * run by the time since the last frame, then draws it. Interrupt it to detach, which disposes
@@ -59,13 +59,18 @@ export interface Engine<Config, Event, Command, E = never, Refusals = unknown> {
   ) => Effect.Effect<void>;
   /**
    * Sends a command to the run and waits for the rules' answer: they get it at the start of the
-   * next step. It succeeds once its `apply` handler has taken it. It fails with the rejection
-   * the handler refused it with, one of those the command declares, and with `CommandDropped`
-   * if it never reached the rules: there is no run, or the run ended first.
+   * next step. It succeeds if its `apply` handler took it. It fails with the rejection the
+   * handler refused it with, one of those the command declares, and with `CommandDropped` if
+   * the rules gave no answer: there is no run, or the run ended first.
    *
-   * A step needs a frame, so it waits while the engine is paused or not attached. Interrupt it
-   * to take the command back, if it hasn't been applied yet. An app that doesn't care how a
-   * command ends still handles `CommandDropped`: `Effect.ignore`.
+   * It completes after the frame of the command's step has drawn, never inside the step, so
+   * the line after it may start or stop a run. Its answer and the events of that step arrive in
+   * no fixed order.
+   *
+   * A step needs a frame, so it waits while the engine is paused or not attached, and ends when
+   * the run next steps or ends. Interrupt it to take the command back, if it hasn't been applied
+   * yet. An app that only cares what the rules said handles the drop alone,
+   * `Effect.catchTag("CommandDropped", () => Effect.void)`; `Effect.ignore` hides a refusal too.
    */
   readonly send: <C extends Command>(
     command: C
@@ -102,7 +107,7 @@ export type EngineService<
   Event,
   Command,
   E,
-  Refusals = unknown,
+  Refusals,
 > = Context.ServiceClass.Shape<
   EngineId<Name>,
   Engine<Config, Event, Command, E, Refusals>
@@ -118,7 +123,7 @@ export interface EngineClass<
   Command,
   E,
   R,
-  Refusals = unknown,
+  Refusals,
 > extends Context.ServiceClass<
   EngineService<Name, Config, Event, Command, E, Refusals>,
   EngineId<Name>,
@@ -155,7 +160,7 @@ export interface EngineDefinition<
   Event,
   Command,
   U extends Uses,
-  Refusals = unknown,
+  Refusals,
 > {
   /** The rules the engine runs. */
   readonly simulation: SimulationClass<
@@ -262,12 +267,18 @@ const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
         // A seed is 32 bits, as core's `makeRng` reads it.
         loop.start(config, seed >>> 0, frames.now());
       }),
-    // The loop tells the sender how the command ended, at its step: that is this Effect's
-    // result. Interrupted while it waits, it takes the command back.
+    // The loop tells the sender how the command ended: that is this Effect's result.
+    // Interrupted while it waits, it takes the command back. It resumes after a yield, so the
+    // sender's next line never runs on the frame's stack: the frame has drawn by then, and a
+    // frame that threw has ended its run.
     send: (command) =>
       Effect.callback((resume) => {
         const unsend = loop.send(command, 0, (outcome) =>
-          resume(outcome === undefined ? Effect.void : Effect.fail(outcome))
+          resume(
+            outcome === undefined
+              ? Effect.yieldNow
+              : Effect.andThen(Effect.yieldNow, Effect.fail(outcome))
+          )
         );
         return Effect.sync(unsend);
       }),
@@ -308,8 +319,8 @@ export const make = <
   Input,
   Event,
   Command,
+  Refusals,
   const U extends Uses = Record<never, never>,
-  Refusals = unknown,
 >(
   name: Name,
   definition: EngineDefinition<

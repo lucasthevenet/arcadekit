@@ -45,6 +45,7 @@ export type {
   InputOf,
   Nothing,
   RefusalFor,
+  RefusalOf,
   RefusalsOf,
   RejectionOf,
   RunContext,

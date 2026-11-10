@@ -39,9 +39,13 @@ const CommandDroppedBase: ReturnType<
 > = Data.TaggedError("CommandDropped");
 
 /**
- * A command that was never applied, so the rules neither took nor refused it: it was sent with
- * no run (`noRun`), or its run ended before its next step (`runEnded`: a stop, a new run or a
- * crash). `command` is the command's tag.
+ * A command the rules gave no answer to, neither taking nor refusing it: it was sent with no
+ * run (`noRun`), or its run ended first (`runEnded`: a stop, a new run or a crash). `command` is
+ * the command's tag.
+ *
+ * After a crash, the command whose handler threw is dropped too, though that handler may have
+ * changed the state before it threw: the run is over either way. A command sent again after
+ * `runEnded` goes to whichever run is current.
  */
 export class CommandDropped extends CommandDroppedBase<{
   readonly command: string;
@@ -50,7 +54,7 @@ export class CommandDropped extends CommandDroppedBase<{
 
 /**
  * How a sent command ended: `undefined` once the rules applied it, the rejection they refused it
- * with, or `CommandDropped` if it never reached them.
+ * with, or `CommandDropped` if they gave no answer.
  */
 export type Settled<Refusal> = Refusal | CommandDropped | undefined;
 

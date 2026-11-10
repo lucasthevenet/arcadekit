@@ -110,6 +110,46 @@ describe("a scenario", () => {
     );
   });
 
+  it("says which command was refused, and whose", () => {
+    expect(() =>
+      scenario(
+        Scenario.given({ needed: 3 }),
+        Scenario.send(new Lock()),
+        Scenario.send(new Lock(), 1),
+        Scenario.step(RELEASED),
+        Scenario.reported(new DoorLocked())
+      )
+    ).toThrow(
+      'a refused command no Scenario.refused checked:\n  {"_tag":"AlreadyLocked"}, refusing Lock from player 1'
+    );
+  });
+
+  it("fails when it ends with a command no step applied, whatever the rules would say of it", () => {
+    expect(() =>
+      scenario(
+        Scenario.given({ needed: 3 }),
+        Scenario.send(new Lock()),
+        Scenario.refused(),
+        Scenario.reported()
+      )
+    ).toThrow(
+      "The scenario ended with Scenario.send(Lock) never applied. A command is applied by the step after it is sent: add a Scenario.step after the send."
+    );
+  });
+
+  it("fails when a new run is given while a command still waits, and counts no drop as a refusal", () => {
+    expect(() =>
+      scenario(
+        Scenario.given({ needed: 3 }),
+        Scenario.send(new Lock()),
+        Scenario.given({ needed: 3 }),
+        Scenario.step(RELEASED)
+      )
+    ).toThrow(
+      "Scenario.given started a new run with Scenario.send(Lock) never applied."
+    );
+  });
+
   it("fails when the rules refused something else than the scenario says", () => {
     expect(() =>
       scenario(

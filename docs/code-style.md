@@ -82,7 +82,8 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 - **It owns what every game would otherwise write**: the event buffer, the command queue, the sample, what an attach acquires and releases. Lines a second game would copy from the first belong in the host.
 - **One way to do each thing.** A run changes only at a step; an asset loads only through `load`. Replace the path that exists; a second path, or an option that switches between two behaviours, is two things to learn.
 - **Its time comes from its caller**: `nowMs` in `Game.Loop`, `Frames` in the engine. A test then drives it with no timer and no browser.
-- **An Effect that waits always ends, and interrupting it takes back what hasn't happened.** `engine.send` fails with `CommandDropped` when the run ends first, and an interrupted send removes its command from the queue.
+- **An Effect that waits ends when what it waits on ends, and interrupting it takes back what hasn't happened.** `engine.send` fails with `CommandDropped` when its run ends first, and an interrupted send removes its command from the queue.
+- **App code never runs in the middle of the host's work.** `Game.Loop` tells a sender how its command ended once it is out of the frame, and the engine resumes the sender after a yield, so the line after `yield* engine.send(...)` may start or stop a run.
 
 ## Names
 

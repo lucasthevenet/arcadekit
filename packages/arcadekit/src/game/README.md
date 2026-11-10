@@ -133,11 +133,13 @@ scenario(
 );
 ```
 
-- **A handler returns nothing, or one of its command's rejections.** Returning a rejection the command doesn't declare is a type error, and the loop refuses it at run time too.
-- **The app gets it from `engine.send`**, which waits for the rules' answer: `yield* engine.send(new ChooseUpgrade({ offer, index }))` succeeds once the handler has taken the command, at the start of the run's next step, and fails with `OfferClosed` if the handler refused it. An app handles it by its tag, `Effect.catchTag("OfferClosed", ...)`.
-- **`Game.CommandDropped`** is the other way a send fails: the command never reached the rules, because there is no run (`reason: "noRun"`) or the run ended first (`"runEnded"`). Every send can fail with it; an app that doesn't care how a command ends writes `Effect.ignore`.
-- **A step needs a frame**, so a send waits while the engine is paused or not attached. Interrupting it takes the command back, if it hasn't been applied yet.
-- **With `Game.Loop`**, `loop.send(command, player, settled)` calls `settled` once with `undefined`, the rejection or a `CommandDropped`, and returns a function that takes the command back.
+- **A handler returns nothing, or one of its command's rejections**: a value of the rejection's class, `new OfferClosed(...)`. Anything else is a type error, and the loop refuses at run time what a cast gets past the types. Under `noImplicitReturns`, a handler that refuses on one path ends its other path with `return undefined;`.
+- **A handler decides before it changes anything.** A refused command changed nothing in the run. The loop holds a handler to the part it can see: one that reports an event and then refuses is thrown out. It can't see a quiet change to the state, so a scenario checks that.
+- **The app gets it from `engine.send`**, which waits for the rules' answer: `yield* engine.send(new ChooseUpgrade({ offer, index }))` succeeds if the handler took the command and fails with `OfferClosed`, the class's own value, if it refused. An app handles it by its tag, `Effect.catchTag("OfferClosed", ...)`. The handler runs at the start of the run's next step, and the send completes after that step's frame has drawn: the line after it never runs inside a step, so it may start or stop a run. A send's answer and the events of its step reach an app in no fixed order.
+- **`Game.CommandDropped`** is the other way a send fails: the rules gave no answer, because there is no run (`reason: "noRun"`) or the run ended first (`"runEnded"`: a stop, a new run or a crash). Every send can fail with it. An app that only cares what the rules said writes `Effect.catchTag("CommandDropped", () => Effect.void)`, and one that doesn't care how a command ends writes `Effect.ignore`, which hides a refusal too. A command sent again after `runEnded` goes to whichever run is current.
+- **A step needs a frame**, so a send waits while the engine is paused or not attached, and ends when its run next steps or ends: bound it with `Effect.timeout` if a screen can't wait. A screen that sends a command leaves the run stepping, and freezes the game in its rules if it must. Interrupting a send takes the command back, if it hasn't been applied yet.
+- **With `Game.Loop`**, `loop.send(command, player, settled)` calls `settled` with `undefined`, the rejection or a `CommandDropped`, once the loop is out of the frame, the `start` or the `stop` that ended the command, so `settled` may send, start or stop. It returns a function that takes the command back: `settled` is not called after it. A frame that throws tells nobody: the `stop` that follows does.
+- **To name the types**: `Game.RejectionOf<typeof Survivors>` is every rejection of a simulation, and `Game.EngineOf<typeof Survivors>` the running engine, for a function that takes one.
 
 ## A scenario
 
@@ -208,7 +210,7 @@ scenario(
 | `Scenario.sampled(sample)` | Checks the run's latest sample. |
 | `Scenario.state(check)` | Reads the state, for the test's own assertions. |
 
-A list of steps is a step, so a game names its own (`const tap = (direction) => [Scenario.step(...), Scenario.step(...)]`). A passing scenario accounts for everything: it fails with a `ScenarioError` if the run reported an event no `Scenario.reported` checked, or the rules refused a command no `Scenario.refused` checked. Samples are the exception, since a real-time game reports one every few steps. If your linter asks every test for an `expect`, tell it a scenario asserts (`assertFunctionNames: ["expect", "scenario"]`).
+A list of steps is a step, so a game names its own (`const tap = (direction) => [Scenario.step(...), Scenario.step(...)]`). A passing scenario accounts for everything: it fails with a `ScenarioError` if the run reported an event no `Scenario.reported` checked, if the rules refused a command no `Scenario.refused` checked, or if a command was sent and no step applied it. A refusal's message names the command and the player who sent it. Samples are the exception, since a real-time game reports one every few steps. If your linter asks every test for an `expect`, tell it a scenario asserts (`assertFunctionNames: ["expect", "scenario"]`).
 
 ## In the browser
 

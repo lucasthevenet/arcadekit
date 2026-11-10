@@ -63,17 +63,24 @@ export type Nothing = void | { readonly [unreturnable]: never };
 
 /** The rejections each command can be refused with, by the command's tag. */
 export type RefusalsOf<Commands extends readonly AnyCommand[]> = {
-  readonly [C in Commands[number] as C["tag"]]: C["rejects"][number]["Type"];
+  readonly [C in Commands[number] as C["tag"]]: InstanceType<
+    C["rejects"][number]
+  >;
 };
 
 /** What the rules may refuse `Command` with, given a simulation's `Refusals`. Never, if nothing. */
-export type RefusalFor<Refusals, Command> = Command extends {
-  readonly _tag: infer Tag;
-}
-  ? Tag extends keyof Refusals
-    ? Refusals[Tag]
-    : never
-  : never;
+export type RefusalFor<Refusals, Command> = unknown extends Refusals
+  ? unknown
+  : Command extends { readonly _tag: infer Tag }
+    ? Tag extends keyof Refusals
+      ? Refusals[Tag]
+      : never
+    : never;
+
+/** Every rejection in a simulation's `Refusals`. Unknown, when they aren't known. */
+export type RefusalOf<Refusals> = unknown extends Refusals
+  ? unknown
+  : Refusals[keyof Refusals];
 
 /**
  * One `apply` handler per command, by the command's tag. A handler takes the command, changing
@@ -89,7 +96,7 @@ export type CommandHandlers<
     state: State,
     command: C["Type"],
     context: CommandContext<Event>
-  ) => Nothing | C["rejects"][number]["Type"];
+  ) => Nothing | InstanceType<C["rejects"][number]>;
 };
 
 /** What `Game.Simulation` takes: the rules of a game, with no DOM. */
@@ -220,7 +227,7 @@ export interface SimulationClass<
   Input,
   Event,
   Command,
-  Refusals = unknown,
+  Refusals,
 > {
   new (_: never): { readonly "~arcadekit/game/Simulation": Name };
   readonly kind: "Simulation";
@@ -280,8 +287,9 @@ export type EventOf<S extends AnySimulation> = S["~types"]["Event"];
 /** Every command a run of `S` takes. */
 export type CommandOf<S extends AnySimulation> = S["~types"]["Command"];
 /** Every rejection a command of `S` can be refused with. */
-export type RejectionOf<S extends AnySimulation> =
-  S["~types"]["Refusals"][keyof S["~types"]["Refusals"]];
+export type RejectionOf<S extends AnySimulation> = RefusalOf<
+  S["~types"]["Refusals"]
+>;
 
 /** `simulation`'s definition, typed for the loop that runs it. */
 export const resolve = <Config, State, Input, Event, Command, Refusals>(
@@ -349,7 +357,15 @@ export const make = <
   const apply = (definition.apply ?? {}) as Readonly<
     Record<string, (state: State, command: never, context: never) => unknown>
   >;
+  const tags = new Set<string>();
   for (const command of commands) {
+    // The loop finds a command's handler and its rejections by its tag.
+    if (tags.has(command.tag)) {
+      throw new Error(
+        `Simulation "${name}" lists two commands with the tag "${command.tag}". A command is told from another by its tag: give each its own.`
+      );
+    }
+    tags.add(command.tag);
     if (apply[command.tag] === undefined) {
       throw new Error(
         `Simulation "${name}" declares the command "${command.tag}" but has no apply.${command.tag} to handle it`

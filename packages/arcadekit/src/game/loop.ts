@@ -65,13 +65,21 @@ const refuseResult = (result: unknown, simulation: string, handler: string) => {
   }
 };
 
-/** A command waiting for the next step. */
-interface Pending<Command> {
+/** A command a sender handed to the loop. */
+interface Sent<Command> {
   readonly command: Command;
   /** The slot of the player who sent it. */
   readonly player: number;
   /** Told once how the command ended, if the sender asked. */
   readonly settled: ((outcome: Settled<unknown>) => void) | undefined;
+  /** Set when the sender takes the command back: it is then not applied, and not told. */
+  withdrawn: boolean;
+}
+
+/** How a command ended, kept until its sender can be told. */
+interface Answer<Command> {
+  readonly sent: Sent<Command>;
+  readonly outcome: Settled<unknown>;
 }
 
 const tagOf = (command: unknown): string =>
@@ -89,22 +97,33 @@ const tagOf = (command: unknown): string =>
  * - then a sample, if one is due.
  *
  * It needs no DOM and reads no clock: the caller passes the time, and decides when a frame runs
- * and how much it steps. Listeners, and the `settled` callback of a sent command, must not call
- * `frame`, `start`, `stop` or `send` while they are being called.
+ * and how much it steps. A listener must not call `frame`, `start`, `stop` or `send` while it is
+ * being called: it runs in the middle of one of them.
+ *
+ * A sender is told how its command ended once the loop is out of the call that ended it: after
+ * the frame's steps, events and sample, or after `start` or `stop` has done its work. So a
+ * `settled` callback may send, start or stop. A call that throws tells nobody: the answers it
+ * owes are kept, and the next `stop`, `start` or `frame` that returns gives them.
  *
  * When `frame` returns, its steps are over: a step is one plain call. The loop holds a game to
  * that by refusing a `step` or an `apply` handler that returns anything it shouldn't (a promise,
  * an Effect, the next state, a list of events), which a cast would otherwise let through and the
  * loop would drop.
  */
-export class Loop<Config, State, Input, Event, Command, Refusals = unknown> {
+export class Loop<Config, State, Input, Event, Command, Refusals> {
   private readonly name: string;
   private readonly definition: Resolved<Config, State, Input, Event, Command>;
   private readonly commands: ReadonlyMap<string, AnyCommand>;
   private readonly loop: GameLoop<Config, State, Input, Event>;
   private readonly events = new EventBuffer<Event>();
-  private pending: Pending<Command>[] = [];
+  /** The commands waiting for the next step, in the order sent. */
+  private pending: Sent<Command>[] = [];
+  /** The answers owed to senders, in the order the commands ended. */
+  private answers: Answer<Command>[] = [];
+  /** How many events have been reported: it tells a handler that reported from one that didn't. */
+  private reports = 0;
   private readonly report = (event: Event): void => {
+    this.reports += 1;
     this.events.push(event);
   };
 
@@ -138,13 +157,24 @@ export class Loop<Config, State, Input, Event, Command, Refusals = unknown> {
   }
 
   /**
-   * Starts a new run, replacing any current one: drops the commands the run before hadn't
-   * applied, makes the new state, unpauses, reports the events `create` produced, then the first
-   * sample.
+   * Starts a new run, replacing any current one: makes the new state, unpauses, reports the
+   * events `create` produced, then the first sample, and then drops the commands the run before
+   * hadn't applied and tells their senders.
+   *
+   * If `create` throws there is no new run: the run before goes on with its commands, and what
+   * `create` had reported is discarded.
    */
   start(config: Config, seed: number, nowMs: number): void {
+    // What a frame that threw left unreported is not the new run's to report.
+    this.events.drain();
+    try {
+      this.loop.start(config, seed, nowMs);
+    } catch (error) {
+      this.events.drain();
+      throw error;
+    }
     this.drop("runEnded");
-    this.loop.start(config, seed, nowMs);
+    this.tell();
   }
 
   /**
@@ -153,12 +183,13 @@ export class Loop<Config, State, Input, Event, Command, Refusals = unknown> {
    * the run.
    *
    * `settled` is called once with how it ended: `undefined` when its `apply` handler took it,
-   * the rejection the handler refused it with, or a `CommandDropped` if it never reached the
-   * rules. That is at once with no run, and otherwise when the run ends first (`stop`, a new
-   * `start`, a frame that throws).
+   * the rejection the handler refused it with, or a `CommandDropped` if the rules gave no
+   * answer. That is at once with no run, and otherwise when the run ends first (`stop`, a new
+   * `start`) or its handler threw. It is called once the loop is out of the call that ended the
+   * command, never between two handlers, so it may send, start or stop.
    *
-   * Returns a function that takes the command back if it hasn't been applied yet. `settled` is
-   * then never called.
+   * Returns a function that takes the command back: if it hasn't been applied yet it never is,
+   * and `settled` is not called after it.
    */
   send<C extends Command>(
     command: C,
@@ -176,13 +207,15 @@ export class Loop<Config, State, Input, Event, Command, Refusals = unknown> {
       // Nothing is waiting, so there is nothing to take back.
       return Function.constVoid;
     }
-    const sent: Pending<Command> = {
+    const sent: Sent<Command> = {
       command,
       player,
-      settled: settled as Pending<Command>["settled"],
+      settled: settled as Sent<Command>["settled"],
+      withdrawn: false,
     };
     this.pending.push(sent);
     return () => {
+      sent.withdrawn = true;
       const at = this.pending.indexOf(sent);
       if (at !== -1) {
         this.pending.splice(at, 1);
@@ -195,10 +228,15 @@ export class Loop<Config, State, Input, Event, Command, Refusals = unknown> {
     this.loop.setPaused(paused);
   }
 
-  /** Ends the current run. Commands it hadn't applied are dropped, and their senders told. */
+  /**
+   * Ends the current run. Commands it hadn't applied are dropped, and their senders told. What a
+   * frame that threw had left unreported is discarded.
+   */
   stop(): void {
     this.loop.stop();
+    this.events.drain();
     this.drop("runEnded");
+    this.tell();
   }
 
   /** Calls `listener` for every event and sample, in order. Returns a function that stops it. */
@@ -212,16 +250,17 @@ export class Loop<Config, State, Input, Event, Command, Refusals = unknown> {
    * paused, or while a `{ seconds }` frame's time is still short of a step.
    *
    * A frame that throws (a bug in a step, or a handler that returns what it shouldn't) leaves
-   * the run where the throw left it. The commands waiting then are dropped: whoever catches the
-   * throw ends the run, as the engine does.
+   * the run where the throw left it, and tells nobody. Whoever catches the throw ends the run
+   * with `stop`, as the engine does, and the senders hear then. A command whose handler threw is
+   * told it was dropped, though the handler may have changed the state first; those sent after
+   * it still wait.
    */
   frame(input: StepInput<Input>, budget: FrameBudget, nowMs: number): number {
-    try {
-      return this.loop.frame(input, budget, nowMs);
-    } catch (error) {
-      this.drop("runEnded");
-      throw error;
+    const steps = this.loop.frame(input, budget, nowMs);
+    if (this.answers.length > 0) {
+      this.tell();
     }
+    return steps;
   }
 
   /** The definition as the kernel loop steps it, with this loop's commands and events. */
@@ -279,38 +318,62 @@ export class Loop<Config, State, Input, Event, Command, Refusals = unknown> {
   }
 
   /**
-   * Gives each waiting command to its `apply` handler, in the order sent, and tells its sender
-   * how it ended. A handler that throws, or returns what it shouldn't, stops the frame: the
-   * commands after it go back to waiting, so `frame` drops them with the rest.
+   * Gives each waiting command to its `apply` handler, in the order sent, and keeps how it ended
+   * for its sender. A handler that throws, or returns what it shouldn't, stops the frame: its
+   * command is dropped, and the commands after it go back to waiting.
    */
   private applyPending(
     state: State,
     context: Mutable<CommandContext<Event>>
   ): void {
-    const sent = this.pending;
+    const batch = this.pending;
     this.pending = [];
-    for (let i = 0; i < sent.length; i++) {
-      const { command, player, settled } = sent[i]!;
-      const tag = tagOf(command);
-      context.player = player;
+    for (let i = 0; i < batch.length; i++) {
+      const sent = batch[i]!;
+      const tag = tagOf(sent.command);
+      context.player = sent.player;
+      const reported = this.reports;
       let result: unknown;
       try {
-        result = this.definition.apply[tag]!(state, command, context);
-        if (result !== undefined && !this.isRejectionOf(tag, result)) {
-          const undeclared = rejectionTag(result);
-          if (undeclared !== undefined) {
-            throw new Error(
-              `Simulation "${this.name}": apply.${tag} returned the rejection "${undeclared}", which the command "${tag}" doesn't declare. List it in the command's \`rejects\`.`
-            );
-          }
-          refuseResult(result, this.name, `apply.${tag}`);
+        result = this.definition.apply[tag]!(state, sent.command, context);
+        if (result !== undefined) {
+          this.checkRefusal(tag, result, this.reports !== reported);
         }
       } catch (error) {
-        // This one and those after it never reached the rules.
-        this.pending = [...sent.slice(i), ...this.pending];
+        this.answer(
+          sent,
+          new CommandDropped({ command: tag, reason: "runEnded" })
+        );
+        this.pending = [...batch.slice(i + 1), ...this.pending];
         throw error;
       }
-      settled?.(result);
+      this.answer(sent, result);
+    }
+  }
+
+  /**
+   * Throws unless what an `apply` handler returned is a refusal it may make: a value of one of
+   * the rejections its command declares, from a handler that reported nothing.
+   */
+  private checkRefusal(tag: string, result: unknown, reported: boolean): void {
+    if (!this.isRejectionOf(tag, result)) {
+      const returned = rejectionTag(result);
+      if (returned === undefined) {
+        refuseResult(result, this.name, `apply.${tag}`);
+      }
+      const declared = this.commands
+        .get(tag)!
+        .rejects.some((rejection) => rejection.tag === returned);
+      throw new Error(
+        declared
+          ? `Simulation "${this.name}": apply.${tag} returned a rejection "${returned}" made by another class than the one the command "${tag}" declares under that tag. Return a value of the class in the command's \`rejects\`.`
+          : `Simulation "${this.name}": apply.${tag} returned the rejection "${returned}", which the command "${tag}" doesn't declare. List it in the command's \`rejects\`.`
+      );
+    }
+    if (reported) {
+      throw new Error(
+        `Simulation "${this.name}": apply.${tag} reported an event and then refused its command. A handler decides before it changes anything: a refused command changed nothing in the run, so it has nothing to report.`
+      );
     }
   }
 
@@ -325,12 +388,51 @@ export class Loop<Config, State, Input, Event, Command, Refusals = unknown> {
       );
   }
 
-  /** Drops every waiting command and tells its sender. */
+  /** Drops every waiting command, to be told with the reason. */
   private drop(reason: CommandDropped["reason"]): void {
     const dropped = this.pending;
+    if (dropped.length === 0) {
+      return;
+    }
     this.pending = [];
-    for (const { command, settled } of dropped) {
-      settled?.(new CommandDropped({ command: tagOf(command), reason }));
+    for (const sent of dropped) {
+      this.answer(
+        sent,
+        new CommandDropped({ command: tagOf(sent.command), reason })
+      );
+    }
+  }
+
+  /** Keeps how a command ended, for a sender that asked. */
+  private answer(sent: Sent<Command>, outcome: Settled<unknown>): void {
+    if (sent.settled !== undefined) {
+      this.answers.push({ sent, outcome });
+    }
+  }
+
+  /**
+   * Tells each sender how its command ended, in the order they ended. The loop is out of its
+   * own work by now, so a sender may send, start or stop from here. One that throws doesn't keep
+   * the others from hearing: the first throw is rethrown once all were told.
+   */
+  private tell(): void {
+    const { answers } = this;
+    if (answers.length === 0) {
+      return;
+    }
+    this.answers = [];
+    let thrown: { readonly error: unknown } | undefined;
+    for (const { sent, outcome } of answers) {
+      if (!sent.withdrawn) {
+        try {
+          sent.settled?.(outcome);
+        } catch (error) {
+          thrown ??= { error };
+        }
+      }
+    }
+    if (thrown !== undefined) {
+      throw thrown.error;
     }
   }
 }
