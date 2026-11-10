@@ -1,0 +1,12 @@
+{
+  // The site's config and its tests run in Node: no DOM. The theme runs in the browser, but only
+  // names VitePress's own theme, so it is checked with them.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The config's files import each other with their extension, as VitePress loads them.
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": [".vitepress/**/*.ts"]
+}

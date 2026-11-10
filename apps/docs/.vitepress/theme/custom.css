@@ -1,0 +1,34 @@
+/* The site's colours over VitePress's default theme: the mark's violet and yellow. */
+:root {
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #6d4aff 30%, #f59e0b);
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    #6d4aff 50%,
+    #ffd23f 50%
+  );
+  --vp-home-hero-image-filter: blur(44px);
+}
+
+@media (min-width: 640px) {
+  :root {
+    --vp-home-hero-image-filter: blur(56px);
+  }
+}
+
+@media (min-width: 960px) {
+  :root {
+    --vp-home-hero-image-filter: blur(68px);
+  }
+}
+
+/* The mark is pixel art: keep its pixels whole at any size. */
+.VPHero .image-src,
+.VPNavBarTitle .logo {
+  image-rendering: pixelated;
+}
+
+/* The landing page's text starts a little below its cards. */
+.VPHome .vp-doc.container {
+  margin-top: 32px;
+}

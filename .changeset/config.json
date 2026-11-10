@@ -14,6 +14,7 @@
     "@arcadekit/survivors",
     "@arcadekit/push-puzzle",
     "@arcadekit/survivor-demo",
-    "@arcadekit/push-puzzle-demo"
+    "@arcadekit/push-puzzle-demo",
+    "@arcadekit/docs"
   ]
 }
