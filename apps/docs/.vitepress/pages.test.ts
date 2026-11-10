@@ -5,12 +5,22 @@ import { describe, expect, it } from "vitest";
 
 import {
   discoverPages,
+  entryRedirects,
   firstParagraph,
   markdownThatIsNotAPage,
   REPO_ROOT,
 } from "./pages.ts";
 import type { EntryPage } from "./pages.ts";
 import { sidebar } from "./sidebar.ts";
+
+const entry = (name: string): EntryPage => ({
+  file: `packages/arcadekit/src/${name}/README.md`,
+  servedAs: `${name}.md`,
+  link: `/${name}`,
+  description: "",
+  entry: name,
+  title: `arcadekit/${name}`,
+});
 
 describe("the site's pages", () => {
   const pages = discoverPages();
@@ -23,9 +33,54 @@ describe("the site's pages", () => {
     for (const page of pages.entries) {
       expect(page.file).toBe(`packages/arcadekit/src/${page.entry}/README.md`);
       expect(page.link).toBe(`/${page.entry}`);
-      expect(page.title).toBe(`arcadekit/${page.entry}`);
-      expect(page.description).not.toBe("");
     }
+  });
+
+  // The site would build without these two, but the sidebar lists a page by its heading and a
+  // shared link shows its first paragraph (apps/docs/README.md, "A new entry's README").
+  it("has READMEs that start with their import path as the heading, then a paragraph", () => {
+    for (const page of pages.entries) {
+      expect(
+        page.title,
+        `${page.file} must start with the heading "# arcadekit/${page.entry}", its import path: the sidebar lists the page by it`
+      ).toBe(`arcadekit/${page.entry}`);
+      expect(
+        page.description,
+        `${page.file} must have a paragraph after its heading: it is the page's description`
+      ).not.toBe("");
+    }
+  });
+
+  it("sends the address of an entry with no README to the page that documents it", () => {
+    const redirects = entryRedirects(pages);
+    expect(redirects).toContainEqual({
+      from: "/runtime/testing",
+      to: "/runtime",
+    });
+    expect(redirects).toContainEqual({ from: "/net/signalling", to: "/net" });
+    const links = new Set(pages.all.map((page) => page.link));
+    for (const { from, to } of redirects) {
+      expect(links.has(from)).toBe(false);
+      expect(links.has(to)).toBe(true);
+    }
+    // An entry with a README of its own keeps its address.
+    expect(redirects.map(({ from }) => from)).not.toContain("/net/worker");
+  });
+
+  it("stops redirecting an entry once it has a README", () => {
+    const withBrowser = {
+      ...pages,
+      entries: [...pages.entries, entry("net/browser")],
+    };
+    const from = entryRedirects(withBrowser).map((redirect) => redirect.from);
+    expect(from).not.toContain("/net/browser");
+    expect(from).toContain("/net/signalling");
+  });
+
+  it("sends an entry with no page above it to the landing page", () => {
+    const redirects = entryRedirects({ ...pages, entries: [] });
+    expect(redirects).toContainEqual({ from: "/core", to: "/" });
+    expect(redirects).toContainEqual({ from: "/net/browser", to: "/" });
   });
 
   it("has the glossary and every decision", () => {
@@ -61,15 +116,6 @@ describe("the site's pages", () => {
       expect(left).not.toContain(page.file);
     }
   });
-});
-
-const entry = (name: string): EntryPage => ({
-  file: `packages/arcadekit/src/${name}/README.md`,
-  servedAs: `${name}.md`,
-  link: `/${name}`,
-  description: "",
-  entry: name,
-  title: `arcadekit/${name}`,
 });
 
 describe("the sidebar", () => {
@@ -110,6 +156,27 @@ describe("a page's description", () => {
         "# arcadekit/thing\n\nLoads a [thing](https://example.com) with `loadThing`, **fast**.\n\n## Install\n"
       )
     ).toBe("Loads a thing with loadThing, fast.");
+  });
+
+  it("starts at a paragraph that opens with an issue number, not at a heading", () => {
+    expect(
+      firstParagraph(
+        "# A decision\n\n## Context\n\n#24 asked what a sound is.\n\n**The look.** Pixel art.\n"
+      )
+    ).toBe("#24 asked what a sound is.");
+  });
+
+  it("is the decision's first paragraph for the records that open with an issue number", () => {
+    const starts = new Map(
+      discoverPages().adrs.map((adr) => [
+        adr.number,
+        adr.description.split(" ").slice(0, 2).join(" "),
+      ])
+    );
+    expect(starts.get("0009")).toBe("#23 gave");
+    expect(starts.get("0012")).toBe("#25 makes");
+    expect(starts.get("0014")).toBe("#24 adds");
+    expect(starts.get("0015")).toBe("#24 asked");
   });
 
   it("skips frontmatter, and stops at a sentence when the paragraph is long", () => {

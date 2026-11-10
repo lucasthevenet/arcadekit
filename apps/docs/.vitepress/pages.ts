@@ -7,12 +7,15 @@
 // - the glossary, `CONTEXT.md`, at `/glossary`;
 // - each decision, `docs/adr/<name>.md`, at `/adr/<name>`.
 // READMEs are found by walking `src/`, so a new entry's README is a page without a change here.
+// An entry with no README has no page: its address goes to the page of the folder above it
+// (`/net/browser` to `/net`), until it gets a README.
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 /** The repository's root: VitePress's `srcDir`, so pages are read in place. */
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
 
+const KIT_MANIFEST = "packages/arcadekit/package.json";
 const KIT_SRC = "packages/arcadekit/src";
 const ADR_DIR = "docs/adr";
 const GLOSSARY = "CONTEXT.md";
@@ -30,6 +33,9 @@ export const PACKAGE_README = "packages/arcadekit/README.md";
  * one after its title and its first paragraph, which the landing page's own top replaces.
  */
 const PACKAGE_README_INCLUDED_FROM = 5;
+
+/** The heading of the package's README that the landing page's "Get started" button goes to. */
+const PACKAGE_README_INSTALL = "## Install";
 
 /** A file of the repository served as a page. Paths are relative to the repository's root. */
 export interface SitePage {
@@ -83,12 +89,19 @@ const plainText = (markdown: string) =>
 
 const DESCRIPTION_LENGTH = 200;
 
+/**
+ * How a block of prose starts: with a letter, with inline markdown, or with an issue number
+ * (`#24 asked`). A heading starts with `# `, and a table, a list and a code block with their own
+ * marks.
+ */
+const STARTS_PROSE = /^(?:[\p{L}`*[]|#\d)/u;
+
 /** The first paragraph after the title, cut at the end of a sentence if it is long. */
 export const firstParagraph = (markdown: string): string => {
   const afterTitle = markdown.slice(markdown.search(/^# /mu));
   const [, ...blocks] = afterTitle.split(/\n{2,}/u);
   const paragraph = plainText(
-    blocks.find((block) => /^[\p{L}`*[]/u.test(block)) ?? ""
+    blocks.find((block) => STARTS_PROSE.test(block)) ?? ""
   );
   if (paragraph.length <= DESCRIPTION_LENGTH) {
     return paragraph;
@@ -148,15 +161,17 @@ const adrPages = (): AdrPage[] =>
     });
 
 /**
- * Fails if the top of the package's README is no longer a title, a blank line, one paragraph and
- * a blank line: the landing page includes the README by line number, after those four.
+ * Fails if the package's README no longer has what the landing page takes from it:
+ * - its top is a title, a blank line, one paragraph and a blank line, since the landing page
+ *   includes the README by line number, after those four;
+ * - it has an "Install" heading, where the landing page's "Get started" button goes (`#install`).
  */
-const checkPackageReadmeTop = () => {
-  const [title = "", afterTitle, paragraph = "", afterParagraph] = read(
-    PACKAGE_README
-  )
-    .split("\n")
-    .slice(0, PACKAGE_README_INCLUDED_FROM - 1);
+const checkPackageReadme = () => {
+  const lines = read(PACKAGE_README).split("\n");
+  const [title = "", afterTitle, paragraph = "", afterParagraph] = lines.slice(
+    0,
+    PACKAGE_README_INCLUDED_FROM - 1
+  );
   if (
     !title.startsWith("# ") ||
     afterTitle !== "" ||
@@ -168,11 +183,16 @@ const checkPackageReadmeTop = () => {
       `${HOME} includes ${PACKAGE_README} from line ${PACKAGE_README_INCLUDED_FROM} on, after its title and its first paragraph. The README no longer starts that way: change the range in ${HOME} and PACKAGE_README_INCLUDED_FROM in apps/docs/.vitepress/pages.ts.`
     );
   }
+  if (!lines.includes(PACKAGE_README_INSTALL)) {
+    throw new Error(
+      `The "Get started" button of ${HOME} goes to #install, the "${PACKAGE_README_INSTALL}" heading of ${PACKAGE_README}. The README no longer has that heading: change the button's link in ${HOME} and PACKAGE_README_INSTALL in apps/docs/.vitepress/pages.ts.`
+    );
+  }
 };
 
 /** Every page of the site, found on disk. */
 export const discoverPages = () => {
-  checkPackageReadmeTop();
+  checkPackageReadme();
   const entries = entryPages();
   const adrs = adrPages();
   const home: SitePage = {
@@ -216,6 +236,40 @@ export const discoverPages = () => {
 };
 
 export type SitePages = ReturnType<typeof discoverPages>;
+
+/** An address with no page of its own, and the page that answers for it. */
+export interface Redirect {
+  readonly from: string;
+  readonly to: string;
+}
+
+/**
+ * Where the address of each entry with no README goes. A page's address is its import path, so
+ * a reader may type `/net/browser` for `arcadekit/net/browser`, which `src/net/README.md`
+ * documents: it goes to `/net`, the page of the nearest folder above that has one, or to the
+ * landing page, which lists every entry. The entries are the package's `exports`, so an entry
+ * that gets a README of its own stops being redirected.
+ */
+export const entryRedirects = (pages: SitePages): Redirect[] => {
+  const { exports } = JSON.parse(read(KIT_MANIFEST)) as {
+    readonly exports: Readonly<Record<string, unknown>>;
+  };
+  const links = new Set(pages.entries.map((page) => page.link));
+  const redirects: Redirect[] = [];
+  for (const subpath of Object.keys(exports)) {
+    // An entry is `./net/browser`. `.`, `./package.json` and a pattern are not.
+    const from = subpath.slice(1);
+    if (!/^(?:\/[\w-]+)+$/u.test(from) || links.has(from)) {
+      continue;
+    }
+    let to = path.posix.dirname(from);
+    while (to !== "/" && !links.has(to)) {
+      to = path.posix.dirname(to);
+    }
+    redirects.push({ from, to });
+  }
+  return redirects;
+};
 
 // VitePress finds its pages with the same walk: every `.md` under `srcDir`, skipping
 // `node_modules`, `dist` and anything whose name starts with a dot.

@@ -4,7 +4,7 @@
 // `rewrites` gives each page its address, and `srcExclude` leaves every other markdown file out.
 // pages.ts finds the pages, sidebar.ts groups them, and links.ts makes the links the READMEs
 // already have work here.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -14,6 +14,7 @@ import type { HeadConfig } from "vitepress";
 import { createLinkRewriter, whereIs } from "./links.ts";
 import {
   discoverPages,
+  entryRedirects,
   markdownThatIsNotAPage,
   PACKAGE_README,
   REPO_ROOT,
@@ -83,6 +84,19 @@ export default defineConfig({
     config: (md) => {
       md.use(links.plugin);
     },
+  },
+
+  // An entry with no README has no page: Cloudflare sends its address to the page that
+  // documents it (pages.ts), with or without a slash at its end, as it serves a page. A 302, not
+  // a 301 a browser would remember, since the entry's own README would take the address over.
+  // Neither VitePress's dev server nor its preview reads `_redirects`: `alchemy dev` does.
+  buildEnd: (siteConfig) => {
+    writeFileSync(
+      path.join(siteConfig.outDir, "_redirects"),
+      entryRedirects(pages)
+        .map(({ from, to }) => `${from} ${to} 302\n${from}/ ${to} 302\n`)
+        .join("")
+    );
   },
 
   // Each page's address and description: the canonical link and the tags a shared link shows.
