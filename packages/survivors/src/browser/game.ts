@@ -1,10 +1,13 @@
 import { Audio } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
-import { InputController, MOVE_AXES } from "arcadekit/input";
 import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
 import { soloInput } from "arcadekit/runtime";
 import { combineViews, makeEngineLoader } from "arcadekit/runtime/browser";
-import type { EngineLoader, GameDefinition } from "arcadekit/runtime/browser";
+import type {
+  EngineLoader,
+  GameDefinition,
+  GameView,
+} from "arcadekit/runtime/browser";
 import { Context, Effect, Layer } from "effect";
 
 import type { SurvivorsEvent } from "../events";
@@ -12,6 +15,7 @@ import type { SurvivorsInput } from "../input";
 import { survivorsSimulation } from "../simulation";
 import type { SurvivorsConfig, World } from "../world";
 import type { SurvivorsArt } from "./art";
+import { heroDevice } from "./device";
 import { SurvivorsSoundView } from "./sound";
 import type { SurvivorsSounds } from "./sound";
 import { SurvivorsView } from "./view";
@@ -37,6 +41,26 @@ interface SurvivorsGameOptions {
 }
 
 /**
+ * A survivors run's views: the sprite view and, with `sound`, a sound view beside it. Both read
+ * `localHero`, the local player's slot, on every frame; without it they follow slot 0.
+ */
+export const survivorsViews = (
+  container: HTMLElement,
+  art: SurvivorsArt,
+  sound?: SurvivorsGameSound,
+  localHero?: () => number
+): GameView<World> => {
+  const options = localHero === undefined ? {} : { localHero };
+  const view = new SurvivorsView(container, art, options);
+  return sound === undefined
+    ? view
+    : combineViews<World>(
+        view,
+        new SurvivorsSoundView({ ...sound, ...options })
+      );
+};
+
+/**
  * The survivors genre as an arcadekit/runtime browser game, for a single player: its simulation,
  * input and view. The device drives the first hero. The view draws from `art`; with `sound`, a
  * sound view plays the run beside it.
@@ -47,23 +71,10 @@ export const makeSurvivorsGame = ({
 }: SurvivorsGameOptions): SurvivorsGame => ({
   ...survivorsSimulation,
   createInput: (surface) => {
-    const controller = new InputController(surface, { axes: MOVE_AXES });
-    const source = soloInput({
-      read: () => ({
-        moveX: controller.axis("moveX"),
-        moveZ: controller.axis("moveY"),
-      }),
-      endFrame: () => controller.endFrame(),
-    });
-    return { ...source, dispose: () => controller.dispose() };
+    const device = heroDevice(surface);
+    return { ...soloInput(device), dispose: device.dispose };
   },
-  createView: (container) =>
-    sound === undefined
-      ? new SurvivorsView(container, art)
-      : combineViews<World>(
-          new SurvivorsView(container, art),
-          new SurvivorsSoundView(sound)
-        ),
+  createView: (container) => survivorsViews(container, art, sound),
 });
 
 /** How the app reaches the survivors engine: through the load of its sheet (ADR-0015). */
