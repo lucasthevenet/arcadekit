@@ -2,7 +2,7 @@ import type {
   ErrorReason,
   PeerId,
   ServerMessage,
-} from "@arcadekit/net/signalling";
+} from "arcadekit/net/signalling";
 
 import type { Room, RoomOutput } from "./room";
 

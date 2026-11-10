@@ -1,9 +1,9 @@
-import { makeContentLoader } from "@arcadekit/content";
+import { makeContentLoader } from "arcadekit/content";
 import type {
   ContentDefinition,
   ContentLoader,
   ContentSource,
-} from "@arcadekit/content";
+} from "arcadekit/content";
 import { Context, Layer } from "effect";
 
 import { GameContent } from "./schema";

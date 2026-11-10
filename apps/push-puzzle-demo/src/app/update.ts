@@ -1,7 +1,7 @@
-import { defaultAudioSettings } from "@arcadekit/audio";
-import type { Audio, AudioSettings } from "@arcadekit/audio";
 import type { PushPuzzleContent } from "@arcadekit/push-puzzle";
 import type { PushPuzzleEngine } from "@arcadekit/push-puzzle/browser";
+import { defaultAudioSettings } from "arcadekit/audio";
+import type { Audio, AudioSettings } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
 
 import { withVolume } from "./audio";

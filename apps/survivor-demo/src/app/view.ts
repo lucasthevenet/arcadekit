@@ -1,10 +1,10 @@
-import type { AudioSettings } from "@arcadekit/audio";
-import { gameViewport } from "@arcadekit/foldkit";
 import type {
   HudSample,
   RunSummary,
   UpgradeChoice,
 } from "@arcadekit/survivors";
+import type { AudioSettings } from "arcadekit/audio";
+import { gameViewport } from "arcadekit/foldkit";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import { canStart, playerName } from "../coop/lobby";

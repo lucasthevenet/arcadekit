@@ -1,6 +1,6 @@
-import { silentAudio } from "@arcadekit/audio";
-import { GameLoop } from "@arcadekit/runtime";
-import type { InputSource } from "@arcadekit/runtime";
+import { silentAudio } from "arcadekit/audio";
+import { GameLoop } from "arcadekit/runtime";
+import type { InputSource } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

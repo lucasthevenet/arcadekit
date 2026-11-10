@@ -11,7 +11,7 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 ## File structure
 
-**Layout: single-context.** arcadekit is a pnpm workspace, but all packages share one vocabulary, so there is one glossary and one ADR folder at the root:
+**Layout: single-context.** This repository is a pnpm workspace, but all packages share one vocabulary, so there is one glossary and one ADR folder at the root:
 
 ```
 /

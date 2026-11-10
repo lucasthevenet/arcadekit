@@ -1,5 +1,5 @@
-import { HOST_ID } from "@arcadekit/net/signalling";
-import type { PeerId } from "@arcadekit/net/signalling";
+import { HOST_ID } from "arcadekit/net/signalling";
+import type { PeerId } from "arcadekit/net/signalling";
 import {
   Cause,
   Clock,

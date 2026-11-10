@@ -1,4 +1,3 @@
-import { Audio, AudioSettings, applyAudioSettings } from "@arcadekit/audio";
 import { PushPuzzleContent } from "@arcadekit/push-puzzle";
 import type {
   PushPuzzleConfig,
@@ -6,8 +5,9 @@ import type {
   Puzzle,
 } from "@arcadekit/push-puzzle";
 import { PushPuzzleEngine } from "@arcadekit/push-puzzle/browser";
-import { engineOf } from "@arcadekit/runtime/browser";
-import type { GameEngine } from "@arcadekit/runtime/browser";
+import { Audio, AudioSettings, applyAudioSettings } from "arcadekit/audio";
+import { engineOf } from "arcadekit/runtime/browser";
+import type { GameEngine } from "arcadekit/runtime/browser";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 

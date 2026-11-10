@@ -1,5 +1,5 @@
-import { decodeSpriteSheet, makeSpriteSheet } from "@arcadekit/render-three";
-import type { InstancedSprites } from "@arcadekit/render-three";
+import { decodeSpriteSheet, makeSpriteSheet } from "arcadekit/render-three";
+import type { InstancedSprites } from "arcadekit/render-three";
 import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

@@ -3,12 +3,12 @@ import {
   MAX_PLAYERS,
   parseClientMessage,
   ROOM_TTL_MS,
-} from "@arcadekit/net/signalling";
+} from "arcadekit/net/signalling";
 import type {
   ErrorReason,
   PeerId,
   ServerMessage,
-} from "@arcadekit/net/signalling";
+} from "arcadekit/net/signalling";
 
 /**
  * What the room asks its Durable Object to do with sockets. The room never touches a socket, so

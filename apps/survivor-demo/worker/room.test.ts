@@ -1,5 +1,5 @@
-import { HOST_ID } from "@arcadekit/net/signalling";
-import type { ServerMessage, Signal } from "@arcadekit/net/signalling";
+import { HOST_ID } from "arcadekit/net/signalling";
+import type { ServerMessage, Signal } from "arcadekit/net/signalling";
 import { describe, expect, it } from "vitest";
 
 import { createRoom } from "./room";

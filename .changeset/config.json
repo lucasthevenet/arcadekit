@@ -5,19 +5,7 @@
     { "repo": "lucasthevenet/arcadekit" }
   ],
   "commit": false,
-  "fixed": [
-    [
-      "@arcadekit/core",
-      "@arcadekit/input",
-      "@arcadekit/content",
-      "@arcadekit/save",
-      "@arcadekit/audio",
-      "@arcadekit/render-three",
-      "@arcadekit/runtime",
-      "@arcadekit/net",
-      "@arcadekit/foldkit"
-    ]
-  ],
+  "fixed": [],
   "linked": [],
   "access": "public",
   "baseBranch": "main",

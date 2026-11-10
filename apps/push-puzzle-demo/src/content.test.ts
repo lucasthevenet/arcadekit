@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 
-import { ContentError, loadContent } from "@arcadekit/content";
-import type { ContentSource } from "@arcadekit/content";
 import {
   createPuzzle,
   pushPuzzleContentDefinition,
   step,
 } from "@arcadekit/push-puzzle";
 import type { Direction, PushPuzzleEvent } from "@arcadekit/push-puzzle";
+import { ContentError, loadContent } from "arcadekit/content";
+import type { ContentSource } from "arcadekit/content";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 

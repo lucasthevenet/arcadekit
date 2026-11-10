@@ -1,6 +1,6 @@
-import { makeAudioSettingsStore } from "@arcadekit/audio";
-import type { AudioSettingsStore, SoundDef, SoundList } from "@arcadekit/audio";
 import type { SurvivorsSounds } from "@arcadekit/survivors/browser";
+import { makeAudioSettingsStore } from "arcadekit/audio";
+import type { AudioSettingsStore, SoundDef, SoundList } from "arcadekit/audio";
 import { Context, Layer } from "effect";
 
 // The game's sounds: the files in public/sounds, the table of cue to sound the survivors sound

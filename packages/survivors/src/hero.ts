@@ -1,4 +1,4 @@
-import type { Rng } from "@arcadekit/core";
+import type { Rng } from "arcadekit/core";
 
 import type { UpgradeChoice } from "./events";
 import { powInt } from "./math";

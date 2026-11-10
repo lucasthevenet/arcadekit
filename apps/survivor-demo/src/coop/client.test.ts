@@ -1,20 +1,20 @@
 import { readFileSync } from "node:fs";
 
-import { ContentError, loadContent } from "@arcadekit/content";
-import type { ContentSource } from "@arcadekit/content";
-import { RoomError } from "@arcadekit/net/browser";
+import { survivorsContentDefinition } from "@arcadekit/survivors";
+import type { GameContent, World } from "@arcadekit/survivors";
+import type { SurvivorsArt } from "@arcadekit/survivors/browser";
+import { ContentError, loadContent } from "arcadekit/content";
+import type { ContentSource } from "arcadekit/content";
+import { RoomError } from "arcadekit/net/browser";
 import type {
   PeerLink,
   RoomEvent,
   SignallingRoom,
   TextChannel,
-} from "@arcadekit/net/browser";
-import { GameCrashed } from "@arcadekit/runtime/browser";
-import type { GameView } from "@arcadekit/runtime/browser";
-import { manualFrames } from "@arcadekit/runtime/testing";
-import { survivorsContentDefinition } from "@arcadekit/survivors";
-import type { GameContent, World } from "@arcadekit/survivors";
-import type { SurvivorsArt } from "@arcadekit/survivors/browser";
+} from "arcadekit/net/browser";
+import { GameCrashed } from "arcadekit/runtime/browser";
+import type { GameView } from "arcadekit/runtime/browser";
+import { manualFrames } from "arcadekit/runtime/testing";
 import {
   Clock,
   Deferred,

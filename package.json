@@ -1,5 +1,5 @@
 {
-  "name": "arcadekit",
+  "name": "arcadekit-workspace",
   "private": true,
   "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
   "type": "module",
@@ -7,7 +7,7 @@
     "dev": "pnpm --filter @arcadekit/survivor-demo dev",
     "dev:puzzle": "pnpm --filter @arcadekit/push-puzzle-demo dev",
     "build": "pnpm typecheck && pnpm --filter @arcadekit/survivor-demo --filter @arcadekit/push-puzzle-demo build",
-    "build:packages": "pnpm --filter \"./packages/*\" --filter \"!@arcadekit/survivors\" --filter \"!@arcadekit/push-puzzle\" run build",
+    "build:packages": "pnpm --filter arcadekit run build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "test:e2e": "vitest run --config apps/survivor-demo/vitest.e2e.config.ts",

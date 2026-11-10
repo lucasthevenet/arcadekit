@@ -1,13 +1,13 @@
-import { SilentAudioLayer } from "@arcadekit/audio";
-import type { ContentError } from "@arcadekit/content";
-import type { SignallingRoom } from "@arcadekit/net/browser";
-import { SpriteSheetError } from "@arcadekit/render-three";
-import { AttachError } from "@arcadekit/runtime/browser";
-import { manualFrames } from "@arcadekit/runtime/testing";
 import { SurvivorsContent } from "@arcadekit/survivors";
 import type { GameContent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
+import { SilentAudioLayer } from "arcadekit/audio";
+import type { ContentError } from "arcadekit/content";
+import type { SignallingRoom } from "arcadekit/net/browser";
+import { SpriteSheetError } from "arcadekit/render-three";
+import { AttachError } from "arcadekit/runtime/browser";
+import { manualFrames } from "arcadekit/runtime/testing";
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

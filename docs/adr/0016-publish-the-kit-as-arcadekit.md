@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded by ADR-0018
 ---
 
 # Publish the kit to npm as @arcadekit
+
+Superseded by [ADR-0018](0018-one-package-with-entries.md): the nine packages are now one package, `arcadekit`, with the same entries. The name, the build, the peer ranges, the checks and the release process below carry over.
 
 #26 asked how the kit becomes usable from outside this workspace. Until now every package was `"private": true` and exported its TypeScript source directly. The decisions below came from a grilling session.
 

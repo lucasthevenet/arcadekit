@@ -1,5 +1,5 @@
-import { InstancedSprites } from "@arcadekit/render-three";
-import type { SpriteSheet, SpriteTag } from "@arcadekit/render-three";
+import { InstancedSprites } from "arcadekit/render-three";
+import type { SpriteSheet, SpriteTag } from "arcadekit/render-three";
 import type * as THREE from "three";
 
 // The arena floor as one-unit tiles from the sheet: calm grass inside, a few dirt patches, the

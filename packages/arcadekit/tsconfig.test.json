@@ -1,0 +1,9 @@
+{
+  // The package's own checks in test/ run in Node, so they get Node's types. src/ does not.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": ["test"]
+}

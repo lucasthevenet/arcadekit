@@ -7,9 +7,9 @@ import {
   clamp,
   createPool,
   makeRng,
-} from "@arcadekit/core";
-import type { Pool, Rng } from "@arcadekit/core";
-import type { GameSimulation } from "@arcadekit/runtime";
+} from "arcadekit/core";
+import type { Pool, Rng } from "arcadekit/core";
+import type { GameSimulation } from "arcadekit/runtime";
 
 export interface DotsConfig {
   readonly dots: number;

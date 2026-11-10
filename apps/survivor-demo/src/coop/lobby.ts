@@ -1,4 +1,4 @@
-import { MAX_PLAYERS } from "@arcadekit/net/signalling";
+import { MAX_PLAYERS } from "arcadekit/net/signalling";
 import { Option, Schema } from "effect";
 
 // What a co-op lobby's peers say over each peer link's reliable `messages` channel, before the

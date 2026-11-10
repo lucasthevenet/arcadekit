@@ -180,31 +180,58 @@ finish() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────
-# STAGES: the maintainer's one-time npm steps for arcadekit (ADR-0016).
+# STAGES: the maintainer's one-time npm steps for the one-package arcadekit (ADR-0018).
 # Run from the repository root: bash scripts/npm-setup.sh
 # Safe to re-run: each stage checks what is already done and offers to skip it.
-# No npm token is created: the local publish uses `npm login`, and CI uses
+# No npm token is created: the placeholder publish uses `npm login`, and CI uses
 # trusted publishing (OIDC), so there is nothing secret to delete afterwards.
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=10
+TOTAL_STAGES=6
 
 OWNER="lucasthevenet"
-OLD_REPO="gamekit"
 REPO="arcadekit"
-SCOPE="@arcadekit"
-KIT=(core input content save audio render-three runtime net foldkit)
+PACKAGE="arcadekit"
+PLACEHOLDER="0.0.0"
+WORKFLOW="release.yml"
+# The nine packages this one replaces (stage 6 deprecates them).
+OLD_SCOPE="@arcadekit"
+OLD_KIT=(core input content save audio render-three runtime net foldkit)
 
 cd "$(dirname "$0")/.."
 
-# version_of NAME prints the version in packages/NAME/package.json.
-version_of() { node -p "require('./packages/$1/package.json').version"; }
-# on_npm NAME VERSION succeeds when that version is already published.
-on_npm() { npm view "$SCOPE/$1@$2" version >/dev/null 2>&1; }
+# on_npm SPEC succeeds when that package (or package@version) is on npm.
+on_npm() { npm view "$1" version >/dev/null 2>&1; }
 # version_ge A B succeeds when version A >= version B.
 version_ge() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]; }
+# released_version prints the package's latest version on npm, once that is a real
+# release and not the placeholder; it fails until then.
+released_version() {
+  local latest
+  latest=$(npm view "$PACKAGE" version 2>/dev/null) || return 1
+  [[ -n "$latest" && "$latest" != "$PLACEHOLDER" ]] && printf '%s\n' "$latest"
+}
+# next_version prints the version the pending changesets give the package: the largest
+# bump they name applied to package.json's version, or that version if none is pending.
+next_version() {
+  node -e '
+    const fs = require("node:fs");
+    const { version } = require("./packages/arcadekit/package.json");
+    const bumps = fs.readdirSync(".changeset")
+      .filter((file) => file.endsWith(".md") && file !== "README.md")
+      .map((file) => /^"arcadekit":\s*(major|minor|patch)\s*$/mu.exec(fs.readFileSync(`.changeset/${file}`, "utf8"))?.[1])
+      .filter((bump) => bump !== undefined);
+    const [major, minor, patch] = version.split(".").map(Number);
+    console.log(
+      bumps.includes("major") ? `${major + 1}.0.0`
+      : bumps.includes("minor") ? `${major}.${minor + 1}.0`
+      : bumps.includes("patch") ? `${major}.${minor}.${patch + 1}`
+      : version
+    );
+  '
+}
 
-banner "Publish arcadekit to npm (one-time setup)"
+banner "Publish arcadekit to npm as one package (one-time setup)"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 stage "Check the tools"
@@ -218,17 +245,23 @@ for tool in git node pnpm npm; do
 done
 node_version=$(node -p 'process.versions.node' 2>/dev/null || echo 0)
 version_ge "$node_version" "22.0.0" || { warn "Node $node_version found; Node 22 or later is needed."; ok=0; }
-npm_version=$(npm --version 2>/dev/null || echo 0)
-version_ge "$npm_version" "11.5.1" ||
-  note "npm $npm_version: fine for this local publish (CI installs npm 11.5.1+ for trusted publishing)."
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   printf '  %s✓%s gh (signed in)\n' "$GREEN" "$RESET"
 else
-  warn "gh is missing or signed out. Stages 3 and 6 use it (gh auth login)."
+  note "gh is missing or signed out. Stage 5 uses it to find the release PR; without it you look on GitHub."
 fi
-for name in "${KIT[@]}"; do
-  if [[ "$(node -p "require('./packages/$name/package.json').private === true")" == "true" ]]; then
-    warn "packages/$name is still \"private\": true, so it would not publish."; ok=0
+if [[ ! -f "packages/$PACKAGE/package.json" ]]; then
+  warn "packages/$PACKAGE/package.json is missing: check out a commit that has the one package."; ok=0
+elif [[ "$(node -p "require('./packages/$PACKAGE/package.json').name")" != "$PACKAGE" ]]; then
+  warn "packages/$PACKAGE/package.json is not named $PACKAGE."; ok=0
+elif [[ "$(node -p "require('./packages/$PACKAGE/package.json').private === true")" == "true" ]]; then
+  warn "packages/$PACKAGE is \"private\": true, so it would not publish."; ok=0
+fi
+for file in "$WORKFLOW" package-checks.yml; do
+  if [[ -f ".github/workflows/$file" ]]; then
+    printf '  %s✓%s .github/workflows/%s\n' "$GREEN" "$RESET" "$file"
+  else
+    warn ".github/workflows/$file is missing."; ok=0
   fi
 done
 if [[ "$ok" == 0 ]]; then
@@ -237,68 +270,6 @@ fi
 pause
 
 # ── 2 ─────────────────────────────────────────────────────────────────────
-stage "Create the $SCOPE npm organisation"
-say "Every package publishes under the $SCOPE scope, which belongs to an npm organisation."
-if confirm "Do you already own the $REPO organisation on npm?"; then
-  note "Nothing to do."
-else
-  open_url "https://www.npmjs.com/org/create"
-  step "Sign in to npm (create an account first if needed)."
-  step "Organization name: $REPO"
-  step "Pick the free plan (\"Unlimited public packages\"), then Create."
-  step "Skip inviting members."
-fi
-pause "Press Enter once the $REPO organisation exists and you own it."
-
-# ── 3 ─────────────────────────────────────────────────────────────────────
-stage "Rename the GitHub repository to $OWNER/$REPO"
-say "package.json repository fields and the changelog links point at github.com/$OWNER/$REPO."
-if command -v gh >/dev/null 2>&1 && gh repo view "$OWNER/$REPO" --json name >/dev/null 2>&1 &&
-  [[ "$(gh repo view "$OWNER/$REPO" --json name -q .name)" == "$REPO" ]]; then
-  printf '  %s✓%s github.com/%s/%s exists.\n' "$GREEN" "$RESET" "$OWNER" "$REPO"
-elif command -v gh >/dev/null 2>&1 && confirm "Rename $OWNER/$OLD_REPO to $OWNER/$REPO with gh now?"; then
-  gh repo rename "$REPO" --repo "$OWNER/$OLD_REPO" --yes
-  printf '  %s✓%s renamed. GitHub redirects the old URL.\n' "$GREEN" "$RESET"
-else
-  open_url "https://github.com/$OWNER/$OLD_REPO/settings"
-  step "General → Repository name: $REPO → Rename."
-  pause "Press Enter once renamed."
-fi
-remote=$(git remote get-url origin 2>/dev/null || echo "")
-if [[ "$remote" == *"/$OLD_REPO"* || "$remote" == *":$OWNER/$OLD_REPO"* ]]; then
-  new_remote=${remote/\/$OLD_REPO/\/$REPO}
-  if confirm "Point origin at $new_remote?"; then
-    git remote set-url origin "$new_remote"
-    printf '  %s✓%s origin → %s\n' "$GREEN" "$RESET" "$new_remote"
-  fi
-else
-  note "origin is $remote. Nothing to change."
-fi
-pause
-
-# ── 4 ─────────────────────────────────────────────────────────────────────
-stage "Push main"
-say "The changelog links each entry to its commit on GitHub, so the commit with"
-say ".changeset/first-release.md must be on GitHub before versioning."
-branch=$(git rev-parse --abbrev-ref HEAD)
-if [[ "$branch" != "main" ]]; then
-  warn "You are on $branch. Release from main: merge this work into main, check it out, and re-run."
-  confirm "Continue on $branch anyway?" || exit 1
-fi
-if [[ -n "$(git status --porcelain)" ]]; then
-  warn "The working tree has uncommitted changes. Commit or stash them first."
-  git status --short | head -n 20
-  confirm "Continue anyway?" || exit 1
-fi
-git fetch origin "$branch" >/dev/null 2>&1 || true
-if [[ "$(git rev-parse HEAD)" == "$(git rev-parse "origin/$branch" 2>/dev/null || echo none)" ]]; then
-  printf '  %s✓%s %s is pushed.\n' "$GREEN" "$RESET" "$branch"
-elif confirm "Push $branch to origin now?"; then
-  git push origin "$branch"
-fi
-pause
-
-# ── 5 ─────────────────────────────────────────────────────────────────────
 stage "Sign in to npm"
 if user=$(npm whoami 2>/dev/null); then
   printf '  %s✓%s signed in as %s\n' "$GREEN" "$RESET" "$user"
@@ -310,90 +281,122 @@ else
 fi
 pause
 
-# ── 6 ─────────────────────────────────────────────────────────────────────
-stage "Version the packages to 0.1.0"
-current=$(version_of core)
-if [[ "$current" != "0.0.0" ]]; then
-  printf '  %s✓%s packages are at %s already.\n' "$GREEN" "$RESET" "$current"
+# ── 3 ─────────────────────────────────────────────────────────────────────
+stage "Claim the name: publish a $PLACEHOLDER placeholder"
+say "npm can only trust a workflow for a package that exists. So the name is claimed"
+say "with an empty $PACKAGE@$PLACEHOLDER, published from a temporary directory, not from"
+say "the workspace. Every real version comes from the release workflow."
+if on_npm "$PACKAGE"; then
+  printf '  %s✓%s %s is on npm (latest: %s).\n' "$GREEN" "$RESET" "$PACKAGE" "$(npm view "$PACKAGE" version)"
+  note "Maintainers: $(npm view "$PACKAGE" maintainers 2>/dev/null | tr '\n' ' ')"
+  note "If you are not one of them, stop here: the name belongs to someone else."
 else
-  say "changeset version applies .changeset/first-release.md: every kit package goes"
-  say "0.0.0 → 0.1.0 and gets a CHANGELOG.md. The changelog needs a GitHub token (gh auth token)."
-  pnpm changeset status --verbose
-  if confirm "Run pnpm version-packages and commit the result as \"Version packages\"?"; then
-    token=$(gh auth token 2>/dev/null) || { warn "gh auth token failed: run gh auth login, then re-run."; exit 1; }
-    GITHUB_TOKEN="$token" pnpm version-packages
-    git add -A
-    git commit -m "Version packages"
-    printf '  %s✓%s packages at %s\n' "$GREEN" "$RESET" "$(version_of core)"
-  else
-    warn "Not versioned. The next stages need 0.1.0, so re-run when ready."; exit 1
-  fi
-fi
-pause
-
-# ── 7 ─────────────────────────────────────────────────────────────────────
-stage "Build and dry-run the publish"
-say "Builds the kit packages, runs publint and attw, the pack-and-install smoke test,"
-say "then asks npm what it would publish, without publishing anything."
-pnpm build:packages
-pnpm lint:packages
-pnpm smoke --no-build
-for name in "${KIT[@]}"; do
-  (cd "packages/$name" && pnpm publish --dry-run --no-git-checks --access public)
-done
-pause "Read the file lists above. Press Enter when they look right."
-
-# ── 8 ─────────────────────────────────────────────────────────────────────
-stage "Publish 0.1.0"
-version=$(version_of core)
-missing=()
-for name in "${KIT[@]}"; do on_npm "$name" "$version" || missing+=("$name"); done
-if (( ${#missing[@]} == 0 )); then
-  printf '  %s✓%s all %s packages are on npm at %s.\n' "$GREEN" "$RESET" "${#KIT[@]}" "$version"
-else
-  say "Not on npm yet at $version: ${missing[*]}"
+  placeholder_dir=$(mktemp -d)
+  cat > "$placeholder_dir/package.json" <<JSON
+{
+  "name": "$PACKAGE",
+  "version": "$PLACEHOLDER",
+  "description": "Placeholder that reserves the name. The first real release is published from github.com/$OWNER/$REPO.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/$OWNER/$REPO.git"
+  }
+}
+JSON
+  printf '# %s\n\nPlaceholder that reserves the name. The first real release is published from https://github.com/%s/%s.\n' \
+    "$PACKAGE" "$OWNER" "$REPO" > "$placeholder_dir/README.md"
+  say "This is all that would be published, from $placeholder_dir:"
+  (cd "$placeholder_dir" && npm publish --dry-run --access public)
   warn "Publishing is permanent: a published version can't be reused, even after unpublishing."
-  if confirm "Publish them now with pnpm release (npm may ask for a one-time password)?"; then
-    pnpm release
-    say "Pushing the version commit and the release tags."
-    git push --follow-tags origin "$(git rev-parse --abbrev-ref HEAD)"
+  if confirm "Publish $PACKAGE@$PLACEHOLDER now (npm may ask for a one-time password)?"; then
+    (cd "$placeholder_dir" && npm publish --access public)
+    printf '  %s✓%s published %s@%s\n' "$GREEN" "$RESET" "$PACKAGE" "$PLACEHOLDER"
   else
-    SKIPPED+=("publish $version: run pnpm release, then git push --follow-tags")
+    SKIPPED+=("publish the $PACKAGE@$PLACEHOLDER placeholder (re-run this wizard)")
+    warn "Not published. The next stages need the package to exist."
   fi
+  rm -rf "$placeholder_dir"
 fi
 pause
 
-# ── 9 ─────────────────────────────────────────────────────────────────────
-stage "Add the release workflow as each package's trusted publisher"
+# ── 4 ─────────────────────────────────────────────────────────────────────
+stage "Add the release workflow as the package's trusted publisher"
 say "From now on GitHub Actions publishes, through OIDC: no token is stored."
-say "Do this on each package's Settings page (${#KIT[@]} packages):"
-for name in "${KIT[@]}"; do
-  printf '\n  %s%s/%s%s\n' "$BOLD" "$SCOPE" "$name" "$RESET"
-  if ! confirm "Configure $SCOPE/$name now? (No if it is done already)"; then continue; fi
-  open_url "https://www.npmjs.com/package/$SCOPE/$name/access"
+if confirm "Configure $PACKAGE's trusted publisher now? (No if it is done already)"; then
+  open_url "https://www.npmjs.com/package/$PACKAGE/access"
   step "Trusted Publisher → GitHub Actions."
-  step "Organization or user: $OWNER · Repository: $REPO · Workflow filename: release.yml · Environment: leave empty."
+  step "Organization or user: $OWNER · Repository: $REPO · Workflow filename: $WORKFLOW · Environment: leave empty."
   step "Save (npm asks for two-factor confirmation)."
   step "Recommended, same page: Publishing access → \"Require two-factor authentication and disallow tokens\" → Update."
   pause "Press Enter once saved."
-done
+fi
+open_url "https://github.com/$OWNER/$REPO/settings/actions"
+step "Workflow permissions: \"Allow GitHub Actions to create and approve pull requests\" must be ticked."
 pause
 
-# ── 10 ────────────────────────────────────────────────────────────────────
-stage "Add the workflows"
-say "The release and package-check workflows go in .github/workflows/ (agent sessions can't push them)."
-for file in release.yml package-checks.yml; do
-  if [[ -f ".github/workflows/$file" ]]; then
-    printf '  %s✓%s .github/workflows/%s\n' "$GREEN" "$RESET" "$file"
-  else
-    warn ".github/workflows/$file is missing: add it from the files the agent handed you, commit and push."
-    SKIPPED+=("add .github/workflows/$file")
+# ── 5 ─────────────────────────────────────────────────────────────────────
+stage "Release from CI"
+say "Nothing is published from this machine. On main, $WORKFLOW opens a \"Version packages\" PR"
+say "from the pending changesets; merging that PR publishes $PACKAGE with provenance."
+if released=$(released_version); then
+  printf '  %s✓%s %s@%s is on npm.\n' "$GREEN" "$RESET" "$PACKAGE" "$released"
+else
+  target=$(next_version)
+  step "Merge the one-package change into main, if it isn't there yet."
+  step "Wait for the release workflow to open the \"Version packages\" PR, and check it bumps $PACKAGE to $target."
+  step "Merge it. The workflow then packs and publishes."
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    gh pr list --repo "$OWNER/$REPO" --search "Version packages in:title" --state open || true
   fi
-done
-open_url "https://github.com/$OWNER/$REPO/settings/actions"
-step "Workflow permissions: tick \"Allow GitHub Actions to create and approve pull requests\" → Save."
-say "From now on: add a changeset to a PR (pnpm changeset); merging to main opens a"
-say "\"Version packages\" PR, and merging that one publishes."
+  open_url "https://github.com/$OWNER/$REPO/actions/workflows/$WORKFLOW"
+  pause "Press Enter once the publish job has finished."
+  if released=$(released_version); then
+    printf '  %s✓%s %s@%s is on npm.\n' "$GREEN" "$RESET" "$PACKAGE" "$released"
+  else
+    released=""
+    warn "No release of $PACKAGE is on npm yet. Check the workflow run, then re-run this wizard."
+    SKIPPED+=("release $PACKAGE from CI (merge the \"Version packages\" PR)")
+  fi
+fi
+if [[ -n "$released" ]] && on_npm "$PACKAGE@$PLACEHOLDER" &&
+  [[ -z "$(npm view "$PACKAGE@$PLACEHOLDER" deprecated 2>/dev/null)" ]]; then
+  if confirm "Mark the $PLACEHOLDER placeholder as deprecated, so nobody installs it?"; then
+    npm deprecate "$PACKAGE@$PLACEHOLDER" "Placeholder that reserved the name. Install $PACKAGE@$released or later."
+  fi
+fi
+pause
+
+# ── 6 ─────────────────────────────────────────────────────────────────────
+# Separate from the release, and optional: skip it now and re-run the wizard later.
+# It needs a real release on npm, whichever one: by a later run, newer changesets may be pending.
+stage "Optional, later: deprecate the nine $OLD_SCOPE/* packages"
+say "This marks ${OLD_SCOPE}/core, ${OLD_SCOPE}/net and the other seven as deprecated, pointing at"
+say "$PACKAGE. Their versions stay installable; npm prints the message on install."
+warn "Do this only once every game that used them (grimbonk) has moved to $PACKAGE."
+note "To undo it, deprecate a package again with an empty message."
+if [[ -z "$released" ]]; then
+  warn "No release of $PACKAGE is on npm yet, so there is nothing to point at. Skipping."
+  SKIPPED+=("deprecate the nine $OLD_SCOPE/* packages (after $PACKAGE is released)")
+elif ! confirm "Has grimbonk moved to $PACKAGE, and do you want to deprecate the nine packages now?"; then
+  SKIPPED+=("deprecate the nine $OLD_SCOPE/* packages (re-run this wizard when grimbonk has moved)")
+  note "Skipped. Nothing was changed."
+else
+  for name in "${OLD_KIT[@]}"; do
+    old="$OLD_SCOPE/$name"
+    if [[ -n "$(npm view "$old" deprecated 2>/dev/null)" ]]; then
+      printf '  %s✓%s %s is deprecated already.\n' "$GREEN" "$RESET" "$old"
+      continue
+    fi
+    message="Moved into the $PACKAGE package: install $PACKAGE and import $PACKAGE/$name."
+    if npm deprecate "$old" "$message"; then
+      printf '  %s✓%s deprecated %s\n' "$GREEN" "$RESET" "$old"
+    else
+      warn "couldn't deprecate $old"
+      SKIPPED+=("npm deprecate $old \"$message\"")
+    fi
+  done
+fi
 pause
 
 finish
