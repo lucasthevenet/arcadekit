@@ -1,6 +1,6 @@
 # arcadekit/runtime
 
-Runs a game. A game is a `GameSimulation` (the DOM-free half: create, step, events) plus, in the browser, its input and view. `GameLoop` steps a simulation anywhere: a browser, a Web Worker, a server or a test. `arcadekit/runtime/browser` adds `GameDefinition` (simulation plus input and view) and `makeGameEngine`, the Effect API an app calls (`attach`, `listen`, `start`, `modify`, `setPaused`, `stop`), whose `attach` steps and draws the game on `requestAnimationFrame`. `makeEngineLoader` and `engineOf` make an engine from assets the app loads, such as a sprite sheet.
+Runs a game. A game is a `GameSimulation` (the DOM-free half: create, step, events) plus, in the browser, its input and view. `GameLoop` steps a simulation anywhere: a browser, a Web Worker, a server or a test. `PlayerInputs` is the step input of a game with several players, and `soloInput` fills it for one. `arcadekit/runtime/browser` adds `GameDefinition` (simulation plus input and view) and `makeGameEngine`, the Effect API an app calls (`attach`, `listen`, `start`, `modify`, `setPaused`, `stop`), whose `attach` steps and draws the game on `requestAnimationFrame`. `makeEngineLoader` and `engineOf` make an engine from assets the app loads, such as a sprite sheet.
 
 An entry of the [`arcadekit`](../../README.md) package. The root entry is DOM-free.
 
@@ -54,7 +54,34 @@ loop.frame(
 console.log(loop.state?.x); // about 2: half a second at speed 4
 ```
 
-In the browser, the simulation plus input and a view make a `GameDefinition`, and `makeGameEngine` runs it behind an Effect service:
+## Several players
+
+A game that several players can play takes `PlayerInputs<PlayerInput>` as its step input: `players[slot]` is one player's input, or null when that player has none this step, and `leaving` lists the slots that leave the run at this step, in ascending order. A slot is a player's place in the run's player order, fixed for the whole run. `soloInput(source)` makes that input from one player's source, at slot 0, for a single-player run; [`arcadekit/net`](../net/README.md)'s `combinePlayerInputs` makes it from lockstep's confirmed steps. Both are plain code and refill one object, so a step allocates nothing.
+
+```ts
+import { GameLoop, soloInput } from "arcadekit/runtime";
+import type { GameSimulation, PlayerInputs } from "arcadekit/runtime";
+
+type Move = { readonly moveX: number };
+
+const race: GameSimulation<number, number[], PlayerInputs<Move>, never> = {
+  create: (players) => Array.from({ length: players }, () => 0),
+  step: (xs, input, dt) => {
+    for (let slot = 0; slot < xs.length; slot++) {
+      xs[slot]! += (input.players[slot]?.moveX ?? 0) * dt;
+    }
+  },
+  drainEvents: () => [],
+};
+
+const solo = new GameLoop(race);
+solo.start(1, 1234, 0);
+solo.frame(soloInput({ read: () => ({ moveX: 1 }) }), { steps: 60 }, 1000);
+```
+
+## In the browser
+
+The simulation plus input and a view make a `GameDefinition`, and `makeGameEngine` runs it behind an Effect service:
 
 ```ts
 import type { GameSimulation } from "arcadekit/runtime";
