@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # A game is declared, one named block per part, and Layers host it
