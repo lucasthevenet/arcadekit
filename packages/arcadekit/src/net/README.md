@@ -367,18 +367,30 @@ import { Effect } from "effect";
 const hub = fakeCoopRooms();
 const timer = manualTicker();
 
+// The scope owns both clients, and closing it leaves: the whole test runs inside it.
 const twoPlayers = Effect.gen(function* () {
   const options = { rooms: hub.rooms, ticker: timer.ticker };
   const host = yield* makeCoopClient(testCoopGame(), options);
   const guest = yield* makeCoopClient(testCoopGame(), options);
   yield* host.listen((event) => console.log("host", event.type));
+  // `host` and `join` return at once: give each a moment to do its work.
   yield* host.host("red");
+  yield* Effect.sleep("10 millis");
   yield* guest.join(hub.code, "green");
-  // Once both are in the lobby: `host.start`, then `timer.tick()` as time passes.
-  return { host, guest };
+  yield* Effect.sleep("10 millis");
+  yield* host.start;
+  // A tick runs the steps the Clock says are due, so let time pass between ticks.
+  for (let tick = 0; tick < 50; tick++) {
+    yield* Effect.sleep("4 millis");
+    timer.tick();
+  }
+  // About 12 steps in those 200 ms, and both players' lobby picks: [ 'red', 'green' ].
+  console.log(host.debug().stepIndex, guest.debug().state?.picks);
 }).pipe(Effect.scoped);
 
 Effect.runFork(twoPlayers);
 ```
+
+A test on fake timers also gives the clients a `Clock` that reads the faked time and a Scheduler that runs fibers on microtasks, as the kit's own client tests do ([co-op-findings.md](https://github.com/lucasthevenet/arcadekit/blob/main/docs/co-op-findings.md), finding 2).
 
 See [ADR-0012](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0012-delay-based-lockstep-over-a-host-star.md) (delay-based lockstep over a host star), [ADR-0019](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md) (the kit owns co-op from the signalling worker to the client; the screens stay in the app) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math, so every browser computes the same run).
