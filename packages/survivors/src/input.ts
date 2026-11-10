@@ -1,4 +1,4 @@
-import type { StepInput } from "arcadekit/runtime";
+import type { PlayerInputs } from "arcadekit/runtime";
 import { Schema } from "effect";
 
 // A survivors step's input: every player's input for that step, plus the players leaving at it.
@@ -29,73 +29,14 @@ export const HeroInput = Schema.Struct({
 });
 export type HeroInput = typeof HeroInput.Type;
 
-/** A survivors step's input. */
-export interface SurvivorsInput {
-  /** Each hero's input, by slot. Null for a hero with no input this step (it stands still). */
-  readonly heroes: readonly (HeroInput | null)[];
-  /** The slots of the heroes whose players leave the run at this step, in ascending order. */
-  readonly leaving: readonly number[];
-}
-
 /**
- * A single player's step input from one player's source: hero 0's input, nobody leaving.
- * Returns one object, refilled each step. `endStep` and `endFrame` reach `source`.
+ * A survivors step's input: `arcadekit/runtime`'s `PlayerInputs` of `HeroInput`. `players[slot]`
+ * is the input of the player whose hero is at that slot, or null for a hero with no input this
+ * step (it stands still). `leaving` lists the slots of the heroes whose players leave the run at
+ * this step, in ascending order.
+ *
+ * `arcadekit/runtime`'s `soloInput` makes it from one player's source, and `arcadekit/net`'s
+ * `combinePlayerInputs` from lockstep's confirmed steps, given the run's player order, which
+ * must be the order of the run's `heroIds`.
  */
-export const soloInput = (
-  source: StepInput<HeroInput>
-): StepInput<SurvivorsInput> => {
-  const heroes: (HeroInput | null)[] = [null];
-  const input: SurvivorsInput = { heroes, leaving: [] };
-  return {
-    read: (step) => {
-      heroes[0] = source.read(step);
-      return input;
-    },
-    endStep: () => source.endStep?.(),
-    endFrame: () => source.endFrame?.(),
-  };
-};
-
-/** One lockstep step, as `arcadekit/net`'s `ConfirmedStep<HeroInput>` has it. */
-interface PlayersStep {
-  readonly inputs: readonly {
-    readonly player: string;
-    readonly input: HeroInput;
-  }[];
-  readonly removed: readonly string[];
-}
-
-const ascending = (a: number, b: number) => a - b;
-
-/**
- * A lockstep session's `combine` for survivors: each player's input goes to its hero, and each
- * player removed at a step leaves the run at it. `players` is the run's player order, host first
- * (the lobby's, which is `LockstepSession.players` at the start); a player's slot, and its hero's,
- * is its index there, so the run's `heroIds` must be in the same order. Returns one object,
- * refilled each step.
- */
-export const combineHeroInputs = (
-  players: readonly string[]
-): ((step: PlayersStep) => SurvivorsInput) => {
-  const heroes: (HeroInput | null)[] = players.map(() => null);
-  const leaving: number[] = [];
-  const input: SurvivorsInput = { heroes, leaving };
-  return (step) => {
-    heroes.fill(null);
-    leaving.length = 0;
-    for (const { player, input: heroInput } of step.inputs) {
-      const slot = players.indexOf(player);
-      if (slot !== -1) {
-        heroes[slot] = heroInput;
-      }
-    }
-    for (const player of step.removed) {
-      const slot = players.indexOf(player);
-      if (slot !== -1) {
-        leaving.push(slot);
-      }
-    }
-    leaving.sort(ascending);
-    return input;
-  };
-};
+export type SurvivorsInput = PlayerInputs<HeroInput>;

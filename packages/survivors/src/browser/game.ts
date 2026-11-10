@@ -2,12 +2,12 @@ import { Audio } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
 import { InputController, MOVE_AXES } from "arcadekit/input";
 import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
+import { soloInput } from "arcadekit/runtime";
 import { combineViews, makeEngineLoader } from "arcadekit/runtime/browser";
 import type { EngineLoader, GameDefinition } from "arcadekit/runtime/browser";
 import { Context, Effect, Layer } from "effect";
 
 import type { SurvivorsEvent } from "../events";
-import { soloInput } from "../input";
 import type { SurvivorsInput } from "../input";
 import { survivorsSimulation } from "../simulation";
 import type { SurvivorsConfig, World } from "../world";

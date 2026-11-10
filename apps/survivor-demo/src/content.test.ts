@@ -2,13 +2,12 @@ import { readFileSync } from "node:fs";
 
 import {
   chooseUpgrade,
-  soloInput,
   survivorsContentDefinition,
   survivorsSimulation,
 } from "@arcadekit/survivors";
 import { ContentError, loadContent } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
-import { GameLoop } from "arcadekit/runtime";
+import { GameLoop, soloInput } from "arcadekit/runtime";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 

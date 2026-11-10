@@ -1,4 +1,5 @@
 import {
+  combinePlayerInputs,
   createMemoryNetwork,
   hostLockstep,
   joinLockstep,
@@ -17,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
 import type { Hero } from "./hero";
-import { HeroInput, combineHeroInputs } from "./input";
+import { HeroInput } from "./input";
 import type { SurvivorsInput } from "./input";
 import { GameContent } from "./schema";
 import { survivorsSimulation } from "./simulation";
@@ -209,7 +210,7 @@ const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
       transport: network.connect(id),
       local: script(slot, run.picking[slot]!, () => session?.state ?? null),
       codec: schemaCodec(HeroInput),
-      combine: combineHeroInputs(PLAYERS),
+      combine: combinePlayerInputs(PLAYERS),
       hash: hashWorld,
       inputDelay: 4,
       hashEvery: 30,
@@ -268,13 +269,13 @@ const soloHashes = (steps: number) => {
   const { hashes, simulation } = recorded();
   const loop = new GameLoop(simulation);
   loop.start({ content: content(1_000_000), heroIds: HERO_IDS }, SEED, 0);
-  const heroes = TURNS.map(() => ({ moveX: 0, moveZ: 0 }));
-  const input: SurvivorsInput = { heroes, leaving: [] };
+  const players = TURNS.map(() => ({ moveX: 0, moveZ: 0 }));
+  const input: SurvivorsInput = { players, leaving: [] };
   loop.frame(
     {
       read: (step) => {
         for (const [slot, turn] of TURNS.entries()) {
-          zigZag(turn, step, heroes[slot]!);
+          zigZag(turn, step, players[slot]!);
         }
         return input;
       },
