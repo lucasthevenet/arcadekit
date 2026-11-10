@@ -26,7 +26,7 @@
 // For the kit's own source:
 //
 // - `declaration/builder`: a function that returns a class is a builder, and has a builder's
-//   shape: the name first, as a literal type; `kind` and the name as statics; its return type
+//   shape: the name first, typed by a type parameter; `kind` and the name as statics; its return type
 //   written out as `<Noun>Class`, an interface of the same file with the statics the class has.
 //
 // packages/arcadekit/test/style.test.ts checks what takes more than one file: that every
@@ -830,7 +830,7 @@ const builder = {
       return kind;
     };
 
-    /** The declared name: the builder's first parameter, a literal type, kept in a static. */
+    /** The declared name: the builder's first parameter, typed by a type parameter, kept in a static. */
     const checkName = (
       node: Node,
       statics: ReadonlyMap<string, Node>,
@@ -863,10 +863,10 @@ const builder = {
       const literal = made.typeParameters?.params.find(
         (typeParameter) => typeParameterName(typeParameter) === nameType
       );
-      if (literal?.const !== true) {
+      if (literal === undefined) {
         context.report({
           node: first ?? made,
-          message: `A builder takes the declared name first, as a literal type: \`<const Name extends string>(name: Name, definition)\`. Without \`const\` the name widens to string, and two declarations share one type. ${guide}`,
+          message: `A builder takes the declared name first, typed by a type parameter: \`<Name extends string>(name: Name, definition)\`. Typed \`string\`, every declaration of the builder has one type, and every service one identity. ${guide}`,
         });
       }
     };

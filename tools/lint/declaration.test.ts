@@ -304,27 +304,31 @@ export const make = <const Name extends string>(name: Name): SaveClass<Name> =>
   } as unknown as SaveClass<Name>;`,
     reports: [["builder", '"Save" is not one of the kit\'s declarations']],
   },
-  "a builder that keeps the name in `name`, widens it and extends a call": {
-    of: "kit",
-    code: `export interface EventClass {
+  "a builder that keeps the name in `name`, types it `string` and extends a call":
+    {
+      of: "kit",
+      code: `export interface EventClass {
   readonly kind: "Event";
   readonly tag: string;
 }
-export const make = <Tag extends string>(tag: Tag) =>
+export const make = (tag: string) =>
   class extends base(tag) {
     static readonly kind = "Event" as const;
     static readonly name = tag;
   };`,
-    reports: [
-      ["builder", "as a literal type"],
-      ["builder", "return type is written out: `EventClass<...>`"],
-      ["builder", "keeps the name it was declared with"],
-      ["builder", "Name the base before the class extends it"],
-      ["builder", "A class already has a `name`"],
-      ["builder", "EventClass has `tag`, which the builder's class never sets"],
-      ["builder", "sets `name`, which EventClass doesn't have"],
-    ],
-  },
+      reports: [
+        ["builder", "typed by a type parameter"],
+        ["builder", "return type is written out: `EventClass<...>`"],
+        ["builder", "keeps the name it was declared with"],
+        ["builder", "Name the base before the class extends it"],
+        ["builder", "A class already has a `name`"],
+        [
+          "builder",
+          "EventClass has `tag`, which the builder's class never sets",
+        ],
+        ["builder", "sets `name`, which EventClass doesn't have"],
+      ],
+    },
   "a builder with no interface, or one that says another kind": {
     of: "kit",
     code: `interface EventClass<Tag extends string> {

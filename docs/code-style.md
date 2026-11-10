@@ -47,7 +47,7 @@ Top to bottom:
 ### The builder
 
 - **`(name, definition)`**, and it is exported as `make`. The entry's `index.ts` gives it its noun (`export const Event: typeof makeEvent = makeEvent`), so a game that imports the entry as `Game` writes `Game.Event`. An entry with one or two declarations exports the builder under its noun (`Content`, `Asset`).
-- **The name is a literal type**: `const Name extends string`, or `Tag` when it is the `_tag` of the class's values. Without `const` it widens to `string`, and two declarations share one type.
+- **The name is typed by a type parameter**: `<Name extends string>(name: Name, ...)`, or `Tag` when it is the `_tag` of the class's values, so each declaration's type carries its own name. Typed `string`, two declarations share one type, and two services one identity.
 - **Types given first.** A type that nothing in the definition carries comes first, in an empty call, as `Context.Service` takes it: `Asset<SpriteSheet, SpriteSheetError>()("PushPuzzleSheet", { ... })`. Every other type is inferred.
 - **It returns a class** with `static readonly kind = "<Noun>" as const`, the name, and what a host reads from the definition (`definition`, `simulation`, `rejects`). The name's static is `tag` for a `_tag`, and `<noun>Name` otherwise (`simulationName`). `name` is taken: a class has one already, and a minifier changes it.
 - **Its result is cast to its written type**: `return class ... as unknown as <Noun>Class<...>`. The base is named before the class extends it (`const Key = ...; return class extends Key { ... }`), so the class reads as its statics alone.
@@ -59,7 +59,7 @@ The class is the service's key, as in [`content/asset.ts`](../packages/arcadekit
 
 - The key is `` `arcadekit/<entry>/<Noun>/${name}` ``.
 - The service's identity is `Context.ServiceClass.Shape<Id, Service>`: the type of the class's own values. So the class names the requirement, and `Layer.Layer<PushPuzzleEngine>` reads as it does for a hand-written service.
-- `layer` provides it. Building the layer does no work; the first use does.
+- `layer` provides it. Building the layer loads nothing; the first use does.
 - An Effect every caller would otherwise write is a static of the class: `PushPuzzleSheet.load` for `(yield* PushPuzzleSheet).load`.
 
 ### Register it
@@ -126,7 +126,7 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 | A function in a definition is not async and not a generator | lint: `declaration/plain-handler` |
 | A step or an `apply` returns nothing | the `Nothing` type, and `Game.Loop` at run time |
 | New code is written with the declarations | lint: `declaration/older-contract`, off only for survivors and its demo |
-| A builder's shape: the name first as a literal type, `kind` and the name as statics, `<Noun>Class` written out and exported with the statics the class sets, the base named, one builder for each kind | lint: `declaration/builder`, on the kit's source |
+| A builder's shape: the name first, typed by a type parameter, `kind` and the name as statics, `<Noun>Class` written out and exported with the statics the class sets, the base named, one builder for each kind | lint: `declaration/builder`, on the kit's source |
 | Every builder is listed, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |
 | No new factory without a reason | the style test's `FACTORIES` |
 | Library code runs no Effect itself | lint: `Effect.run…` and `ManagedRuntime.make` are refused in `packages/*/src`, outside what a test imports |
