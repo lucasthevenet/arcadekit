@@ -13,7 +13,7 @@ arcadekit is alpha. Nothing depends on it in production yet: no players, deploym
 A game is written as **declarations**: one named class per part, hosted by a Layer or a loop ([ADR-0020](docs/adr/0020-a-game-is-declared.md)). They are `Game.Event`, `Game.Command` and `Game.Simulation` (`arcadekit/game`), `Game.Engine` (`arcadekit/game/browser`), `Content` and `Asset` (`arcadekit/content`). Push-puzzle and its demo are the example to copy, and [the entry's README](packages/arcadekit/src/game/README.md) shows each block.
 
 - **A new part a game supplies is a declaration**: a builder `make(name, definition)` that returns a class with the definition as statics, typed by an explicit `XClass` interface. If it has a service, the class is its key and a `layer` provides it.
-- **Handlers inside a declaration are plain functions** (`create`, `step`, `apply`, `view`, `input`). What hosts it is Effect.
+- **Handlers inside a declaration are plain functions** (`create`, `step`, `apply`, `view`, `input`). What hosts it is Effect. `step` and `apply` change the state in place and return nothing: `Game.Loop` throws on one that returns a value.
 - **A run changes only at a step**: by its input, and by a `Game.Command` the loop applies at the start of the next step.
 - **Rules are checked with stories** (`arcadekit/game/story`).
 - **Kit source names a declaration's base first**, as `audio/service.ts` does, since it is checked with `isolatedDeclarations`. Genre packages and apps write `class X extends Game.Event(...) {}`.

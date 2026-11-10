@@ -89,9 +89,12 @@ export interface Definition<
     run: RunContext<Events[number]["Type"]>
   ) => State;
   /**
-   * Advances the state by one step. Must be deterministic: the same state and input give the
-   * same result in every JavaScript engine, so it reads no clock and no random source of its
-   * own. A turn-based game may ignore `dt`.
+   * Advances the state by one step, in place, and returns nothing: the loop refuses a step that
+   * returns a value, so it can't be `async` or return an Effect. Must be deterministic: the same
+   * state and input give the same result in every JavaScript engine, so it reads no clock and
+   * no random source of its own. It may allocate what it reports (an event is rare), and keeps
+   * what it holds per entity in typed arrays, so a step over many entities allocates nothing
+   * for them. A turn-based game may ignore `dt`.
    */
   readonly step: (
     state: State,
@@ -100,7 +103,9 @@ export interface Definition<
   ) => void;
   /**
    * Applies each command, by its tag. The loop calls it at the start of the next step, before
-   * `step`, in the order the commands were sent. As deterministic as `step`.
+   * `step`, in the order the commands were sent. As deterministic as `step`, and like it a
+   * handler changes the state and returns nothing: it reports with `emit`, and can't yet refuse
+   * a command to whoever sent it.
    */
   readonly apply?: CommandHandlers<State, Commands, Events[number]["Type"]>;
   readonly sample?: Sample<State, S>;

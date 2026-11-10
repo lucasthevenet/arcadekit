@@ -73,9 +73,10 @@ loop.frame({ read: () => ({ moveX: 1 }) }, { steps: 60 }, 1000);
 console.log(loop.state?.x); // about 8: one second at speed 8
 ```
 
+- **`create`**, **`step`** and each `apply` handler are plain functions. `step` and `apply` change the state in place and return nothing, and the loop refuses one that returns a value: a step can't be `async` or return an Effect, so when a frame returns, its steps are over. A step may allocate what it reports, and keeps what it holds per entity in typed arrays ([`arcadekit/core`](../core/README.md)'s pools).
 - **`input`** is one step's input as a Schema: what a device holds for the step, what a replay records and what crosses the network in lockstep.
 - **`events`** lists what a step may report with `emit`. Keep them rare: they cross into the UI.
-- **`commands`** lists what a player may send, and **`apply`** handles each by its tag. A command is applied at the start of the next step, before `step`, in the order sent. A run changes in no other way, so a simulation that declares a command without its handler is refused when its module loads.
+- **`commands`** lists what a player may send, and **`apply`** handles each by its tag. A command is applied at the start of the next step, before `step`, in the order sent. A run changes in no other way, so a simulation that declares a command without its handler is refused when its module loads. A handler can't yet refuse a command to whoever sent it.
 - **`sample`** is a read of the state for the UI, such as a HUD, delivered as an event: when a run starts and then every `every`, and/or right after any frame in which `version` (a cheap number, such as a turn counter) changed.
 
 `Game.StateOf<typeof Race>`, `ConfigOf`, `InputOf`, `EventOf` and `CommandOf` name a simulation's types. `Race.match({ Finished: ..., Hud: ... })` makes a function that handles each event by its tag, checked to cover them all.

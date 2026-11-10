@@ -13,7 +13,7 @@ export interface GameSimulation<Config, State, Input, Event> {
   readonly create: (config: Config, seed: number) => State;
   /**
    * Advances the state by one step of `dt` seconds. Must be deterministic: the same state, input
-   * and `dt` give the same result. Must not allocate. A turn-based genre may ignore `dt`
+   * and `dt` give the same result. Must not allocate per entity. A turn-based genre may ignore `dt`
    * (push-puzzle does).
    */
   readonly step: (state: State, input: Input, dt: number) => void;

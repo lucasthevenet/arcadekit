@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Game from "./index";
@@ -66,6 +66,23 @@ class Counter extends Game.Simulation("Counter", {
 }) {}
 
 const holding = (add: number) => ({ read: () => ({ add }) });
+
+/** Starts a run of `simulation` and runs one step of it. */
+const runOneStep = <Input>(
+  simulation: Game.SimulationClass<
+    string,
+    unknown,
+    unknown,
+    Input,
+    unknown,
+    unknown
+  >,
+  input: { readonly read: () => Input }
+) => {
+  const loop = new Game.Loop(simulation);
+  loop.start(undefined, 1, 0);
+  loop.frame(input, { steps: 1 }, 0);
+};
 
 /** Declares a simulation whose command has no handler. */
 const declareWithoutHandler = () =>
@@ -249,6 +266,83 @@ describe("Game.Loop", () => {
       new Ticked({ steps: 0 }),
       new Ticked({ steps: 2 }),
     ]);
+  });
+
+  it("refuses a step that returns anything: an async step, an Effect, the next state", async () => {
+    const steps = { waited: 0, effects: 0 };
+    class Late extends Game.Simulation("Late", {
+      input: Schema.Null,
+      create: () => ({ n: 0 }),
+      // Compiles: a handler typed `=> void` accepts any return.
+      step: async (state) => {
+        await Promise.resolve();
+        state.n += 1;
+        steps.waited += 1;
+      },
+    }) {}
+    class Lazy extends Game.Simulation("Lazy", {
+      input: Schema.Null,
+      create: () => ({ n: 0 }),
+      step: (state) =>
+        Effect.sync(() => {
+          state.n += 1;
+          steps.effects += 1;
+        }),
+    }) {}
+    class Folded extends Game.Simulation("Folded", {
+      input: Schema.Null,
+      create: () => ({ n: 0 }),
+      step: (state) => ({ n: state.n + 1 }),
+    }) {}
+    const input = { read: () => null };
+    const stepOnce = (simulation: Parameters<typeof runOneStep>[0]) => () =>
+      runOneStep(simulation, input);
+    expect(stepOnce(Late)).toThrow(
+      'Simulation "Late": step returned a promise. A handler changes the state in place and returns nothing'
+    );
+    expect(stepOnce(Lazy)).toThrow(
+      'Simulation "Lazy": step returned an Effect.'
+    );
+    expect(stepOnce(Folded)).toThrow(
+      'Simulation "Folded": step returned a value.'
+    );
+    // The Effect was never run. The async step had already started; it finishes on its own.
+    await Promise.resolve();
+    expect(steps).toStrictEqual({ waited: 1, effects: 0 });
+  });
+
+  it("refuses an apply handler that returns the events to report, as a reference `decide` does", () => {
+    class Decided extends Game.Simulation("Decided", {
+      input: Schema.Null,
+      events: [Reached],
+      commands: [AddBonus],
+      create: () => ({ bonus: 0 }),
+      step: () => {},
+      apply: {
+        AddBonus: (_state, command) => [new Reached({ count: command.amount })],
+      },
+    }) {}
+    const loop = new Game.Loop(Decided);
+    loop.start(undefined, 1, 0);
+    loop.send(new AddBonus({ amount: 2 }));
+    expect(() => loop.frame({ read: () => null }, { steps: 1 }, 0)).toThrow(
+      'Simulation "Decided": apply.AddBonus returned an array.'
+    );
+  });
+
+  it("refuses a create that returns a promise or an Effect in place of the state", () => {
+    class Loading extends Game.Simulation("Loading", {
+      input: Schema.Null,
+      create: async () => {
+        await Promise.resolve();
+        return { n: 0 };
+      },
+      step: () => {},
+    }) {}
+    const loop = new Game.Loop(Loading);
+    expect(() => loop.start(undefined, 1, 0)).toThrow(
+      'Simulation "Loading": create returned a promise.'
+    );
   });
 
   it("turns frame time into whole steps on the simulation's fixed clock", () => {
