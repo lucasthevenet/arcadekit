@@ -1,4 +1,6 @@
 {
+  // Every entry but arcadekit/net/worker, which tsconfig.worker.json checks with Cloudflare's
+  // Workers types in place of the DOM's.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
@@ -6,5 +8,6 @@
     "declaration": true,
     "isolatedDeclarations": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/net/worker"]
 }

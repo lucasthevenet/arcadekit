@@ -1,9 +1,10 @@
+import { Data, Effect, Option, Schema } from "effect";
+
 import {
   JoinCode,
   joinCodeFromBytes,
   joinCodeFromPath,
-} from "arcadekit/net/signalling";
-import { Data, Effect, Option, Schema } from "effect";
+} from "../signalling/protocol";
 
 /**
  * The Worker's routes (#25, ADR-0012):
@@ -16,7 +17,7 @@ import { Data, Effect, Option, Schema } from "effect";
  * `roomRequest`.
  */
 
-/** What the Worker's fetch uses of its bindings. `worker.ts`'s `Env` is one; tests pass fakes. */
+/** What the Worker's fetch uses of its bindings. `index.ts` hands it the app's; tests pass fakes. */
 export interface Bindings {
   /** The site's files, which Alchemy binds. */
   readonly ASSETS: {
@@ -30,11 +31,15 @@ export interface Bindings {
   };
 }
 
+// Named so the type files can be made one file at a time (isolatedDeclarations).
+const BindingErrorBase: ReturnType<typeof Data.TaggedError<"BindingError">> =
+  Data.TaggedError("BindingError");
+
 /**
  * A binding the Worker handed a request to failed: the site's files (`ASSETS`) or a room's
  * Durable Object (`ROOMS`).
  */
-export class BindingError extends Data.TaggedError("BindingError")<{
+export class BindingError extends BindingErrorBase<{
   readonly binding: keyof Bindings;
   readonly cause: unknown;
 }> {}
@@ -43,7 +48,12 @@ const RoomSearch = Schema.Struct({
   code: JoinCode,
   role: Schema.Literals(["host", "guest"]),
 });
-type RoomSearch = typeof RoomSearch.Type;
+
+/** A peer's join code and role, as the request to its room carries them. */
+export interface RoomSearch {
+  readonly code: string;
+  readonly role: "host" | "guest";
+}
 
 const decodeRoomSearch = Schema.decodeUnknownOption(RoomSearch);
 

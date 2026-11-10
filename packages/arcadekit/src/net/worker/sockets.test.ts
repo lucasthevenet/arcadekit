@@ -1,7 +1,7 @@
-import { parseServerMessage } from "arcadekit/net/signalling";
-import type { ServerMessage } from "arcadekit/net/signalling";
 import { describe, expect, it } from "vitest";
 
+import { parseServerMessage } from "../signalling/protocol";
+import type { ServerMessage } from "../signalling/protocol";
 import { createRoom } from "./room";
 import {
   CLOSE_PROTOCOL_ERROR,

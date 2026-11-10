@@ -1,8 +1,12 @@
-import { HOST_ID } from "arcadekit/net/signalling";
-import type { ServerMessage, Signal } from "arcadekit/net/signalling";
 import { describe, expect, it } from "vitest";
 
-import { createRoom } from "./room";
+import {
+  DEFAULT_ROOM_SIZE,
+  HOST_ID,
+  MAX_ROOM_SIZE,
+} from "../signalling/protocol";
+import type { ServerMessage, Signal } from "../signalling/protocol";
+import { checkRoomSize, createRoom } from "./room";
 import type { RoomOutput } from "./room";
 
 const offer: Signal = { kind: "offer", sdp: "v=0 offer" };
@@ -91,6 +95,33 @@ describe(createRoom, () => {
       "guest-2",
       "guest-3",
     ]);
+  });
+
+  it("holds as many players as its room size, when it is given one", () => {
+    const small = createRoom("ABC234", { roomSize: 2 });
+    admitted(small, "host");
+    admitted(small, "guest");
+    expect(small.admit("guest", 0)).toStrictEqual({
+      ok: false,
+      reason: "full",
+    });
+
+    const large = createRoom("ABC234", { roomSize: MAX_ROOM_SIZE });
+    admitted(large, "host");
+    for (let i = 0; i < MAX_ROOM_SIZE - 1; i++) {
+      admitted(large, "guest");
+    }
+    expect(large.admit("guest", 0)).toStrictEqual({
+      ok: false,
+      reason: "full",
+    });
+    expect(large.peers()).toHaveLength(MAX_ROOM_SIZE);
+  });
+
+  it("refuses a room size no room can have", () => {
+    expect(() => createRoom("ABC234", { roomSize: MAX_ROOM_SIZE + 1 })).toThrow(
+      RangeError
+    );
   });
 
   it("frees a seat when a guest leaves, without reusing its id", () => {
@@ -306,5 +337,31 @@ describe(createRoom, () => {
     expect(
       closes(room.receive(HOST_ID, signal("guest-1"), 1000))
     ).toStrictEqual([HOST_ID, "guest-1"]);
+  });
+});
+
+describe(checkRoomSize, () => {
+  it("is the default room size, 4, when none is given", () => {
+    expect(checkRoomSize()).toBe(DEFAULT_ROOM_SIZE);
+    expect(DEFAULT_ROOM_SIZE).toBe(4);
+  });
+
+  it("accepts every size from 2 to the most a room can hold, 16", () => {
+    expect(MAX_ROOM_SIZE).toBe(16);
+    for (let size = 2; size <= MAX_ROOM_SIZE; size++) {
+      expect(checkRoomSize(size)).toBe(size);
+    }
+  });
+
+  it("throws for a larger size instead of lowering it", () => {
+    expect(() => checkRoomSize(MAX_ROOM_SIZE + 1)).toThrow(
+      new RangeError("A signalling room holds 2 to 16 players, not 17")
+    );
+  });
+
+  it("throws for a size under 2, a fraction or a non-number", () => {
+    for (const size of [1, 0, -4, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => checkRoomSize(size)).toThrow(RangeError);
+    }
   });
 });

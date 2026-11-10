@@ -2,7 +2,7 @@
   // What must run without a DOM (a Web Worker, a server, a test) is checked with no DOM types:
   // all of core, and the root entries of content, save, audio, runtime (GameSimulation,
   // GameLoop) and net, with net's signalling protocol (./net/signalling), which the signalling
-  // worker shares. Only the ./browser entries, input, render-three and foldkit may use the DOM.
+  // worker shares. The worker itself (./net/worker) is checked by tsconfig.worker.json. Only the ./browser entries, input, render-three and foldkit may use the DOM.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],

@@ -1,14 +1,15 @@
 import {
+  DEFAULT_ROOM_SIZE,
   HOST_ID,
-  MAX_PLAYERS,
+  MAX_ROOM_SIZE,
   parseClientMessage,
   ROOM_TTL_MS,
-} from "arcadekit/net/signalling";
+} from "../signalling/protocol";
 import type {
   ErrorReason,
   PeerId,
   ServerMessage,
-} from "arcadekit/net/signalling";
+} from "../signalling/protocol";
 
 /**
  * What the room asks its Durable Object to do with sockets. The room never touches a socket, so
@@ -36,7 +37,7 @@ export type Admission =
 
 /**
  * One join code's room: who is in it, whether the run has started, and when it expires. A host
- * opens it; up to `MAX_PLAYERS - 1` guests join; it ends when the host leaves or it expires,
+ * opens it; guests join until it holds its room size; it ends when the host leaves or it expires,
  * and an ended room admits no one again.
  */
 export interface Room {
@@ -62,14 +63,32 @@ export interface Room {
 }
 
 export interface RoomOptions {
-  readonly maxPlayers?: number;
+  /**
+   * The most players the room holds, host included: a whole number from 2 to `MAX_ROOM_SIZE`.
+   * `DEFAULT_ROOM_SIZE` if left out.
+   */
+  readonly roomSize?: number;
   readonly ttlMs?: number;
 }
+
+/**
+ * `roomSize` if a room can have that size, or `DEFAULT_ROOM_SIZE` if it is left out. Any other
+ * size throws: it is a mistake in the worker's setup, so it is refused there, not changed to a
+ * size the app didn't ask for.
+ */
+export const checkRoomSize = (roomSize: number = DEFAULT_ROOM_SIZE): number => {
+  if (!Number.isInteger(roomSize) || roomSize < 2 || roomSize > MAX_ROOM_SIZE) {
+    throw new RangeError(
+      `A signalling room holds 2 to ${MAX_ROOM_SIZE} players, not ${roomSize}`
+    );
+  }
+  return roomSize;
+};
 
 type Phase = "empty" | "open" | "started" | "ended";
 
 export const createRoom = (code: string, options: RoomOptions = {}): Room => {
-  const maxPlayers = options.maxPlayers ?? MAX_PLAYERS;
+  const roomSize = checkRoomSize(options.roomSize);
   const ttlMs = options.ttlMs ?? ROOM_TTL_MS;
   let phase: Phase = "empty";
   let expiresAt: number | undefined;
@@ -155,7 +174,7 @@ export const createRoom = (code: string, options: RoomOptions = {}): Room => {
       if (phase === "started") {
         return { ok: false, reason: "started" };
       }
-      if (members.length >= maxPlayers) {
+      if (members.length >= roomSize) {
         return { ok: false, reason: "full" };
       }
       guestsSoFar += 1;

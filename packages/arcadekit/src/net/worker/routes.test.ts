@@ -1,7 +1,7 @@
-import { normalizeJoinCode } from "arcadekit/net/signalling";
 import { Effect, Logger } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { normalizeJoinCode } from "../signalling/protocol";
 import { handleRequest, readRoomRequest, roomRequest } from "./routes";
 import type { Bindings } from "./routes";
 

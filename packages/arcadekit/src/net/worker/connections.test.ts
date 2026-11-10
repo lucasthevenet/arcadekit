@@ -1,11 +1,12 @@
-import { parseServerMessage, ROOM_TTL_MS } from "arcadekit/net/signalling";
-import type { ServerMessage } from "arcadekit/net/signalling";
 import { Effect, Fiber, Layer, Logger, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
+import { parseServerMessage, ROOM_TTL_MS } from "../signalling/protocol";
+import type { ServerMessage } from "../signalling/protocol";
 import { acceptSocket, expireRoom, roomLayer } from "./connections";
 import type { PeerSocket, RoomConnections } from "./connections";
+import type { RoomOptions } from "./room";
 import { CLOSE_PROTOCOL_ERROR, CLOSE_SERVER_ERROR } from "./sockets";
 
 const CODE = "ABC234";
@@ -69,19 +70,25 @@ const fakeSocket = (onSend: () => void = () => {}) => {
 };
 
 /**
- * One `SignallingRoom` Durable Object's runtime, as `worker.ts` makes it, over a fake storage
- * whose `setAlarm` the test controls. Its clock is a test clock from 0, which runs on the
+ * One `SignallingRoom` Durable Object's runtime, as `index.ts` makes it, over a fake storage
+ * whose `setAlarm` the test controls, with the room `options` it was set up with. Its clock is a test clock from 0, which runs on the
  * room's own scheduler.
  */
-const setup = (setAlarm: (atMs: number) => Promise<void> = async () => {}) => {
+const setup = (
+  setAlarm: (atMs: number) => Promise<void> = async () => {},
+  options: RoomOptions = {}
+) => {
   const alarms: number[] = [];
   const logs: unknown[] = [];
-  const room = roomLayer({
-    setAlarm: (atMs) => {
-      alarms.push(atMs);
-      return setAlarm(atMs);
+  const room = roomLayer(
+    {
+      setAlarm: (atMs) => {
+        alarms.push(atMs);
+        return setAlarm(atMs);
+      },
     },
-  });
+    options
+  );
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       TestClock.layer().pipe(Layer.provideMerge(room)),
@@ -148,6 +155,27 @@ describe(acceptSocket, () => {
       "welcome",
       "peer-joined",
     ]);
+  });
+
+  it("holds 4 players unless the object was set up with another room size", async () => {
+    const byDefault = setup();
+    await byDefault.connect("host");
+    for (let i = 0; i < 3; i++) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the guests join one after another.
+      await byDefault.connect("guest");
+    }
+    const fifth = await byDefault.connect("guest");
+    expect(fifth.received).toStrictEqual([{ type: "error", reason: "full" }]);
+
+    const pair = setup(undefined, { roomSize: 2 });
+    await pair.connect("host");
+    await pair.connect("guest");
+    const third = await pair.connect("guest");
+    expect(third.received).toStrictEqual([{ type: "error", reason: "full" }]);
+    expect(third.closed()).toStrictEqual({
+      code: CLOSE_PROTOCOL_ERROR,
+      reason: "full",
+    });
   });
 
   it("sets the room's expiry alarm when its host connects, and only then", async () => {

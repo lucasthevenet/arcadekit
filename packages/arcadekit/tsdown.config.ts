@@ -64,8 +64,9 @@ const config: UserConfig = defineConfig({
   // so every export has the explicit type it needs.
   dts: { generator: "oxc", sourcemap: true },
   // peerDependencies stay imports (tsdown's default). Bundling anything else from node_modules
-  // fails the build.
-  deps: { onlyBundle: [] },
+  // fails the build. `cloudflare:workers` is Cloudflare's runtime's own module, which only a
+  // Worker has, so arcadekit/net/worker's import of it stays an import too.
+  deps: { onlyBundle: [], neverBundle: [/^cloudflare:/u] },
 });
 
 export default config;

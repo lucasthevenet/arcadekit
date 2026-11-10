@@ -1,4 +1,4 @@
-import { MAX_PLAYERS } from "arcadekit/net/signalling";
+import { DEFAULT_ROOM_SIZE } from "arcadekit/net/signalling";
 import { Option, Schema } from "effect";
 
 // What a co-op lobby's peers say over each peer link's reliable `messages` channel, before the
@@ -25,10 +25,10 @@ export const LobbyListMessage = Schema.Struct({
   players: Schema.Array(LobbyPlayer),
 });
 
-/** 1 to `MAX_PLAYERS` of something, one per player: a run's world takes no more. */
+/** 1 to `DEFAULT_ROOM_SIZE` of something, one per player: the demo's rooms hold no more. */
 const PerPlayer = Schema.Array(Schema.String).check(
   Schema.isMinLength(1),
-  Schema.isMaxLength(MAX_PLAYERS)
+  Schema.isMaxLength(DEFAULT_ROOM_SIZE)
 );
 
 /**
