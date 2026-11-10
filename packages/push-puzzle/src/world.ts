@@ -1,7 +1,9 @@
-import { EventBuffer, createIdentifiedPool } from "arcadekit/core";
+import { createIdentifiedPool } from "arcadekit/core";
 import type { IdentifiedPool } from "arcadekit/core";
+import type * as Game from "arcadekit/game";
+import { Schema } from "effect";
 
-import type { HudSample, PushPuzzleEvent } from "./events";
+import { LevelSolved } from "./events";
 import { Tile, parseLevel } from "./level";
 import type { PuzzleContent } from "./schema";
 
@@ -10,17 +12,19 @@ import type { PuzzleContent } from "./schema";
 // at most one turn (a move or an undo), and most steps hold none.
 // Nothing is allocated per step or per turn.
 
-export type Direction = "up" | "down" | "left" | "right";
+export const Direction = Schema.Literals(["up", "down", "left", "right"]);
+export type Direction = typeof Direction.Type;
 
 /** One step's worth of input. */
-export interface PushPuzzleInput {
+export const PushPuzzleInput = Schema.Struct({
   /** The direction held down now, if any. Holding it repeats the move. */
-  readonly held: Direction | null;
+  held: Schema.NullOr(Direction),
   /** The direction pressed during this step, if any. Starts a move right away. */
-  readonly pressed: Direction | null;
+  pressed: Schema.NullOr(Direction),
   /** Whether undo was pressed during this step. Fires once per press, never repeats. */
-  readonly undo: boolean;
-}
+  undo: Schema.Boolean,
+});
+export type PushPuzzleInput = typeof PushPuzzleInput.Type;
 
 /** A run is one attempt at one level. */
 export interface PushPuzzleConfig {
@@ -110,7 +114,6 @@ export interface PushPuzzleCues {
 }
 
 export interface Puzzle {
-  readonly events: EventBuffer<PushPuzzleEvent>;
   /** The tile map. Cells are indexed `row * cols + col`. */
   readonly cols: number;
   readonly rows: number;
@@ -139,11 +142,12 @@ export interface Puzzle {
   readonly cues: PushPuzzleCues;
 }
 
-export const createPuzzle = (
-  { content, levelId, historyCapacity }: PushPuzzleConfig,
-  // Push-puzzle has no randomness. The seed is part of the runtime's contract, so it's accepted.
-  _seed: number
-): Puzzle => {
+// Push-puzzle has no randomness, so a run needs no seed.
+export const createPuzzle = ({
+  content,
+  levelId,
+  historyCapacity,
+}: PushPuzzleConfig): Puzzle => {
   const level = content.levels.find((l) => l.id === levelId);
   if (level === undefined) {
     // Decoded content only holds levels that can be played, so this is the caller's mistake.
@@ -159,7 +163,6 @@ export const createPuzzle = (
     boxes.fields.cell[boxes.add()] = cell;
   }
   return {
-    events: new EventBuffer(),
     cols: parsed.cols,
     rows: parsed.rows,
     tiles: parsed.tiles,
@@ -176,11 +179,11 @@ export const createPuzzle = (
   };
 };
 
-/** Advances the run by one step: takes at most one turn. `dt` is unused; turns are counted in steps. */
+/** Advances the run by one step: takes at most one turn. The step's `dt` is unused; turns are counted in steps. */
 export const step = (
   puzzle: Puzzle,
   input: PushPuzzleInput,
-  _dt: number
+  { emit }: Game.StepContext<LevelSolved>
 ): void => {
   if (puzzle.solved) {
     return;
@@ -195,7 +198,7 @@ export const step = (
   if (input.pressed !== null) {
     repeat.direction = input.pressed;
     repeat.stepsLeft = REPEAT_DELAY_STEPS;
-    takeMove(puzzle, input.pressed);
+    takeMove(puzzle, input.pressed, emit);
     return;
   }
   if (input.held === null || input.held !== repeat.direction) {
@@ -206,16 +209,20 @@ export const step = (
   repeat.stepsLeft -= 1;
   if (repeat.stepsLeft === 0) {
     repeat.stepsLeft = REPEAT_INTERVAL_STEPS;
-    takeMove(puzzle, input.held);
+    takeMove(puzzle, input.held, emit);
   }
 };
 
 /** A move turn: moves if it can, and reports the solve on the move that completes the level. */
-const takeMove = (puzzle: Puzzle, direction: Direction) => {
+const takeMove = (
+  puzzle: Puzzle,
+  direction: Direction,
+  emit: (event: LevelSolved) => void
+) => {
   if (tryMove(puzzle, direction) && boxesLeft(puzzle) === 0) {
     puzzle.solved = true;
     puzzle.cues.solved += 1;
-    puzzle.events.push({ type: "levelSolved", moves: puzzle.moves });
+    emit(new LevelSolved({ moves: puzzle.moves }));
   }
 };
 
@@ -331,7 +338,10 @@ const boxesLeft = (puzzle: Puzzle): number => {
   return puzzle.goalCount - placed;
 };
 
-export const hudSample = (puzzle: Puzzle): HudSample => ({
+/** What the `Hud` sample carries. */
+export const hudSample = (
+  puzzle: Puzzle
+): { readonly moves: number; readonly boxesLeft: number } => ({
   moves: puzzle.moves,
   boxesLeft: boxesLeft(puzzle),
 });

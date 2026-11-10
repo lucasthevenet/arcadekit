@@ -1,23 +1,12 @@
 import { Audio } from "arcadekit/audio";
-import type { AudioSystem } from "arcadekit/audio";
+import { Asset } from "arcadekit/content";
+import * as Game from "arcadekit/game/browser";
 import { InputController } from "arcadekit/input";
 import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
-import { combineViews, makeEngineLoader } from "arcadekit/runtime/browser";
-import type {
-  EngineLoader,
-  GameDefinition,
-  InputSource,
-} from "arcadekit/runtime/browser";
-import { Context, Effect, Layer } from "effect";
+import { Context } from "effect";
 
-import type { PushPuzzleEvent } from "../events";
-import { pushPuzzleSimulation } from "../simulation";
-import type {
-  Direction,
-  Puzzle,
-  PushPuzzleConfig,
-  PushPuzzleInput,
-} from "../world";
+import { PushPuzzle } from "../simulation";
+import type { Direction, Puzzle, PushPuzzleInput } from "../world";
 import { PushPuzzleSoundView } from "./sound";
 import type { PushPuzzleSounds } from "./sound";
 import { PushPuzzleView } from "./view";
@@ -36,7 +25,10 @@ const BUTTONS = {
   undo: { keys: ["KeyZ", "Backspace"], gamepadButtons: [1] },
 } as const;
 
-const createInput = (surface: HTMLElement): InputSource<PushPuzzleInput> => {
+/** Reads push-puzzle's step input from the keyboard, a gamepad or a swipe on `surface`. */
+export const pushPuzzleInput = (
+  surface: HTMLElement
+): Game.InputSource<PushPuzzleInput> => {
   const controller = new InputController(surface, { buttons: BUTTONS });
   // One object, refilled each step: reading input allocates nothing.
   const input: {
@@ -66,78 +58,39 @@ const createInput = (surface: HTMLElement): InputSource<PushPuzzleInput> => {
   };
 };
 
-/** What the push-puzzle game plays its sounds through. */
-interface PushPuzzleAudio {
-  /** The app's audio system. `silentAudio` from `arcadekit/audio` plays nothing. */
-  readonly audio: AudioSystem;
-  /** Which of the app's sounds each cue plays. */
-  readonly sounds: PushPuzzleSounds;
-}
+/**
+ * The app's push-puzzle sheet, with every tag in `PUSH_PUZZLE_SPRITE_TAGS` (ADR-0015). The app
+ * says where it comes from, `PushPuzzleSheet.layer(loadSpriteSheet(url))`, and loads it on its
+ * loading screen; the engine draws from it and never frees it. The app's end does.
+ */
+export class PushPuzzleSheet extends Asset<SpriteSheet, SpriteSheetError>()(
+  "PushPuzzleSheet",
+  { release: (sheet) => sheet.dispose() }
+) {}
 
-/** What the push-puzzle game draws and plays: the app's sheet and sounds, which the app owns. */
-export interface PushPuzzleAssets extends PushPuzzleAudio {
-  /** The app's push-puzzle sheet, with every tag in `PUSH_PUZZLE_SPRITE_TAGS`. Never freed by the game. */
-  readonly sheet: SpriteSheet;
-}
+/** Which of the app's sounds each cue plays. The app provides its table: it owns the sounds. */
+export class PushPuzzleCueSounds extends Context.Service<
+  PushPuzzleCueSounds,
+  PushPuzzleSounds
+>()("@arcadekit/push-puzzle/CueSounds") {}
 
 /**
- * The push-puzzle genre as an arcadekit/runtime browser game: its simulation, input, and a view
- * that draws it from `sheet` and plays its sounds through `audio`.
+ * The push-puzzle genre in the browser: its rules, a view that draws them from the app's sheet
+ * and plays their cues through the app's `Audio` (tests provide `SilentAudioLayer`), and its
+ * input. `PushPuzzleEngine.layer` provides the engine; building it loads nothing, and each
+ * attach loads the sheet, or takes the one already loaded.
  */
-export const makePushPuzzleGame = ({
-  audio,
-  sounds,
-  sheet,
-}: PushPuzzleAssets): GameDefinition<
-  PushPuzzleConfig,
-  Puzzle,
-  PushPuzzleInput,
-  PushPuzzleEvent
-> => ({
-  ...pushPuzzleSimulation,
-  createInput,
-  createView: (container) =>
-    combineViews<Puzzle>(
+export class PushPuzzleEngine extends Game.Engine("PushPuzzleEngine", {
+  simulation: PushPuzzle,
+  uses: {
+    audio: Audio,
+    sounds: PushPuzzleCueSounds,
+    sheet: PushPuzzleSheet.load,
+  },
+  view: (container, { audio, sounds, sheet }) =>
+    Game.combineViews<Puzzle>(
       new PushPuzzleView(container, sheet),
       new PushPuzzleSoundView(audio, sounds)
     ),
-});
-
-/** How the app reaches the push-puzzle engine: through the load of its sheet (ADR-0015). */
-export type PushPuzzleEngineLoader = EngineLoader<
-  PushPuzzleConfig,
-  Puzzle,
-  PushPuzzleEvent,
-  SpriteSheet,
-  SpriteSheetError
->;
-
-export class PushPuzzleEngine extends Context.Service<
-  PushPuzzleEngine,
-  PushPuzzleEngineLoader
->()("@arcadekit/push-puzzle/Engine") {}
-
-/**
- * Provides `PushPuzzleEngine`: the engine, made once from the sheet `sheet` loads, playing the
- * cues' `sounds` through `Audio` (tests provide `SilentAudioLayer`). Building the layer loads
- * nothing. The app's LoadContent runs `load`, and every engine use goes through it
- * (`engineOf(PushPuzzleEngine)`), so there is no engine before its sheet. The layer's scope (the
- * app) frees the sheet.
- */
-export const makePushPuzzleEngineLayer = (options: {
-  /** The app's sheet load, such as `loadSpriteSheet(url)`. Run on the first `load`. */
-  readonly sheet: Effect.Effect<SpriteSheet, SpriteSheetError>;
-  readonly sounds: PushPuzzleSounds;
-}): Layer.Layer<PushPuzzleEngine, never, Audio> =>
-  Layer.effect(
-    PushPuzzleEngine,
-    Effect.gen(function* () {
-      const audio = yield* Audio;
-      return yield* makeEngineLoader({
-        assets: options.sheet,
-        game: (sheet) =>
-          makePushPuzzleGame({ audio, sounds: options.sounds, sheet }),
-        release: (sheet) => sheet.dispose(),
-      });
-    })
-  );
+  input: pushPuzzleInput,
+}) {}

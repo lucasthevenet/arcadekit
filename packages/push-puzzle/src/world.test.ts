@@ -1,10 +1,11 @@
-import { GameLoop } from "arcadekit/runtime";
+import * as Game from "arcadekit/game";
+import * as Story from "arcadekit/game/story";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { PushPuzzleEvent } from "./events";
+import { Hud, LevelSolved } from "./events";
 import { PuzzleContent } from "./schema";
-import { pushPuzzleSimulation } from "./simulation";
+import { PushPuzzle } from "./simulation";
 import { boardText, boxIdAt, createPuzzle, step } from "./world";
 import type {
   Direction,
@@ -13,10 +14,11 @@ import type {
   PushPuzzleInput,
 } from "./world";
 
-// Tests drive a run the way the runtime does: one input per step.
+// Tests drive a run the way the loop does: one input per step.
 // Boards are written and read back in level text, so each case reads like a picture.
 
-const DT = 1 / 60;
+/** A step's context for a test that calls `step` itself: its events go nowhere. */
+const STEP = { dt: 1 / 60, step: 0, emit: () => {} };
 const NOTHING = { held: null, pressed: null, undo: false } as const;
 
 /** A config for a one-level game whose level is `rows`. */
@@ -34,12 +36,12 @@ const configFor = (
 const start = (
   rows: readonly string[],
   options: Partial<PushPuzzleConfig> = {}
-): Puzzle => createPuzzle(configFor(rows, options), 0);
+): Puzzle => createPuzzle(configFor(rows, options));
 
 /** One tap: a step with the direction pressed, then a step with nothing held. */
 const tap = (puzzle: Puzzle, direction: Direction) => {
-  step(puzzle, { held: direction, pressed: direction, undo: false }, DT);
-  step(puzzle, NOTHING, DT);
+  step(puzzle, { held: direction, pressed: direction, undo: false }, STEP);
+  step(puzzle, NOTHING, STEP);
 };
 
 const taps = (puzzle: Puzzle, directions: string) => {
@@ -56,8 +58,8 @@ const DIRECTION_BY_CHAR = {
 } as const satisfies Record<string, Direction>;
 
 const undo = (puzzle: Puzzle) => {
-  step(puzzle, { held: null, pressed: null, undo: true }, DT);
-  step(puzzle, NOTHING, DT);
+  step(puzzle, { held: null, pressed: null, undo: true }, STEP);
+  step(puzzle, NOTHING, STEP);
 };
 
 describe("moving", () => {
@@ -216,7 +218,7 @@ describe("undo", () => {
     const puzzle = start(LEVEL);
     taps(puzzle, "DR");
     for (let i = 0; i < 40; i++) {
-      step(puzzle, { held: null, pressed: null, undo: i === 0 }, DT);
+      step(puzzle, { held: null, pressed: null, undo: i === 0 }, STEP);
     }
     expect(puzzle.moves).toBe(1);
   });
@@ -230,7 +232,7 @@ const holdRight = (puzzle: Puzzle, steps: number) => {
     step(
       puzzle,
       { held: "right", pressed: i === 0 ? "right" : null, undo: false },
-      DT
+      STEP
     );
     if (puzzle.moves > before) {
       movedAt.push(i);
@@ -253,7 +255,7 @@ describe("holding a direction", () => {
   it("starts the delay over after a release", () => {
     const puzzle = start(CORRIDOR);
     holdRight(puzzle, 15);
-    step(puzzle, NOTHING, DT);
+    step(puzzle, NOTHING, STEP);
     expect(holdRight(puzzle, 13)).toStrictEqual([0, 12]);
     expect(puzzle.moves).toBe(4);
   });
@@ -261,38 +263,62 @@ describe("holding a direction", () => {
   it("doesn't repeat a direction that was never pressed in this run", () => {
     const puzzle = start(CORRIDOR);
     for (let i = 0; i < 40; i++) {
-      step(puzzle, { held: "right", pressed: null, undo: false }, DT);
+      step(puzzle, { held: "right", pressed: null, undo: false }, STEP);
     }
     expect(puzzle.moves).toBe(0);
   });
 });
 
-const drain = (puzzle: Puzzle): PushPuzzleEvent[] => [...puzzle.events.drain()];
+// What the run reports is told as stories: given a level, after these presses, it reported this.
+const story = Story.make(PushPuzzle);
+
+/** One tap, as a story's steps. */
+const press = (direction: Direction) => [
+  Story.step({ held: direction, pressed: direction, undo: false }),
+  Story.step(NOTHING),
+];
+const UNDO = [
+  Story.step({ held: null, pressed: null, undo: true }),
+  Story.step(NOTHING),
+];
 
 describe("solving", () => {
   const LEVEL = ["#######", "#@$  .#", "#######"];
 
-  it("reports levelSolved once, with the move count, when every goal has a box", () => {
-    const puzzle = start(LEVEL);
-    taps(puzzle, "R");
-    undo(puzzle);
-    taps(puzzle, "RR");
-    expect(drain(puzzle)).toStrictEqual([]);
-    taps(puzzle, "R");
-    expect(boardText(puzzle)[1]).toBe("#   @*#");
-    expect(puzzle.solved).toBe(true);
-    expect(drain(puzzle)).toStrictEqual([{ type: "levelSolved", moves: 3 }]);
+  it("reports LevelSolved once, with the move count, when every goal has a box", () => {
+    story(
+      Story.given(configFor(LEVEL)),
+      press("right"),
+      UNDO,
+      press("right"),
+      press("right"),
+      Story.reported(),
+      press("right"),
+      Story.reported(new LevelSolved({ moves: 3 })),
+      Story.sampled(new Hud({ moves: 3, boxesLeft: 0 })),
+      Story.state((puzzle) => {
+        expect(boardText(puzzle)[1]).toBe("#   @*#");
+        expect(puzzle.solved).toBe(true);
+      })
+    );
   });
 
   it("ignores moves and undo once solved", () => {
-    const puzzle = start(LEVEL);
-    taps(puzzle, "RRR");
-    drain(puzzle);
-    taps(puzzle, "LL");
-    undo(puzzle);
-    expect(boardText(puzzle)[1]).toBe("#   @*#");
-    expect(puzzle.moves).toBe(3);
-    expect(drain(puzzle)).toStrictEqual([]);
+    story(
+      Story.given(configFor(LEVEL)),
+      press("right"),
+      press("right"),
+      press("right"),
+      Story.reported(new LevelSolved({ moves: 3 })),
+      press("left"),
+      press("left"),
+      UNDO,
+      Story.reported(),
+      Story.state((puzzle) => {
+        expect(boardText(puzzle)[1]).toBe("#   @*#");
+        expect(puzzle.moves).toBe(3);
+      })
+    );
   });
 });
 
@@ -381,15 +407,15 @@ describe("replay", () => {
   const LEVEL = ["########", "#@ $ ^ #", "# $$ . #", "#  ..  #", "########"];
 
   /**
-   * Plays the scripted input through arcadekit/runtime's GameLoop, one step per frame, the step
-   * order the demo runs. Collects the events and counts the HUD samples the run reported.
+   * Plays the scripted input through arcadekit/game's Loop, one step per frame, the step order
+   * the demo runs. Collects the events and counts the HUD samples the run reported.
    */
   const replay = () => {
-    const loop = new GameLoop(pushPuzzleSimulation);
-    const events: PushPuzzleEvent[] = [];
+    const loop = new Game.Loop(PushPuzzle);
+    const events: LevelSolved[] = [];
     let samples = 0;
     loop.subscribe((event) => {
-      if (event.type === "hud") {
+      if (event._tag === "Hud") {
         samples += 1;
       } else {
         events.push(event);
@@ -415,7 +441,7 @@ describe("replay", () => {
   };
 
   it("ends in the recorded state", () => {
-    // Recorded from this script before the replay ran through GameLoop. A change here changes
+    // Recorded from this script before the replay ran through a loop. A change here changes
     // how a run plays.
     expect(replay()).toStrictEqual({
       board: ["########", "#      #", "# $$ . #", "#  ..@ #", "########"],
@@ -443,16 +469,18 @@ describe("starting a run", () => {
         { id: "b", name: "B", rows: ["######", "# @$.#", "######"] },
       ],
     });
-    expect(boardText(createPuzzle({ content, levelId: "b" }, 0))).toStrictEqual(
-      ["######", "# @$.#", "######"]
-    );
+    expect(boardText(createPuzzle({ content, levelId: "b" }))).toStrictEqual([
+      "######",
+      "# @$.#",
+      "######",
+    ]);
   });
 
   it("throws, naming the level, when levelId isn't in the content", () => {
     const config = configFor(["#####", "#@$.#", "#####"], {
       levelId: "missing",
     });
-    expect(() => createPuzzle(config, 0)).toThrow(
+    expect(() => createPuzzle(config)).toThrow(
       'push-puzzle content has no level "missing"'
     );
   });

@@ -1,16 +1,13 @@
-import { loadContent, memorySource } from "arcadekit/content";
+import { memorySource } from "arcadekit/content";
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { pushPuzzleContentDefinition } from "./content";
+import { PushPuzzleContent } from "./content";
 import { PuzzleContent } from "./schema";
 
 const load = (levels: unknown) =>
   Effect.runPromiseExit(
-    loadContent({
-      ...pushPuzzleContentDefinition,
-      source: memorySource({ "levels.json": levels }),
-    })
+    PushPuzzleContent.read(memorySource({ "levels.json": levels }))
   );
 
 const level = (id: string, rows: readonly string[]) => ({

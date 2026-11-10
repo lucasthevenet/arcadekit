@@ -1,4 +1,4 @@
-import type { HudSample } from "@arcadekit/push-puzzle";
+import type { Hud } from "@arcadekit/push-puzzle";
 import type { AudioSettings } from "arcadekit/audio";
 import { gameViewport } from "arcadekit/foldkit";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
@@ -141,7 +141,7 @@ const soundPanel = (settings: AudioSettings, h: H): Html =>
     ]
   );
 
-const hud = (name: string, data: HudSample, h: H): Html =>
+const hud = (name: string, data: Hud, h: H): Html =>
   h.div(
     [h.Class("hud")],
     [

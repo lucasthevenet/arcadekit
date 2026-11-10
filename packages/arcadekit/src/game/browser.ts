@@ -38,7 +38,8 @@ export type {
 export {
   type EngineClass,
   type EngineDefinition,
-  type EngineKey,
+  type EngineId,
+  type EngineService,
   Frames,
   type Used,
   type Uses,

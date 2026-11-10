@@ -1,18 +1,14 @@
-import { silentAudio } from "arcadekit/audio";
-import { GameLoop } from "arcadekit/runtime";
-import type { InputSource } from "arcadekit/runtime";
+import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { HudSample } from "../events";
 import { PuzzleContent } from "../schema";
+import { PushPuzzle } from "../simulation";
 import { boardText } from "../world";
-import type { PushPuzzleInput } from "../world";
-import { makePushPuzzleGame } from "./game";
-import { testSheet } from "./test-sheet";
+import { pushPuzzleInput } from "./game";
 
-// Runs push-puzzle's real browser definition: its input source reads keys through
-// InputController, and a GameLoop steps it the way the demo's driver does. No view is created.
+// Runs push-puzzle's real input source: it reads keys through InputController, and a Game.Loop
+// steps the simulation with it the way the demo's engine does. No view is created.
 // No DOM either: Node's EventTarget stands in for the window and the surface, and
 // navigator.getGamepads reports no pads.
 
@@ -27,18 +23,6 @@ const ROOM = [
 
 const content = Schema.decodeUnknownSync(PuzzleContent)({
   levels: [{ id: "room", name: "Room", rows: ROOM }],
-});
-
-const pushPuzzleGame = makePushPuzzleGame({
-  audio: silentAudio,
-  sounds: {
-    move: "move",
-    push: "push",
-    hole: "hole",
-    undo: "undo",
-    solved: "solved",
-  },
-  sheet: testSheet(),
 });
 
 let window: EventTarget;
@@ -56,19 +40,18 @@ const tap = (code: string) => {
   key("keyup", code);
 };
 
-/** A started run of the real definition, its input source, and the HUD samples it reported. */
+/** A started run of the simulation, the real input source, and the HUD samples it reported. */
 const play = () => {
   const surface = Object.assign(new EventTarget(), {
     style: {},
     setPointerCapture: () => {},
   }) as unknown as HTMLElement;
-  const input: InputSource<PushPuzzleInput> =
-    pushPuzzleGame.createInput(surface);
-  const loop = new GameLoop(pushPuzzleGame);
-  const samples: HudSample[] = [];
+  const input = pushPuzzleInput(surface);
+  const loop = new Game.Loop(PushPuzzle);
+  const samples: number[] = [];
   loop.subscribe((event) => {
-    if (event.type === "hud") {
-      samples.push(event.hud);
+    if (event._tag === "Hud") {
+      samples.push(event.moves);
     }
   });
   loop.start({ content, levelId: "room" }, 0, 0);
@@ -87,7 +70,7 @@ const play = () => {
   };
 };
 
-describe("push-puzzle in the browser, stepped by GameLoop", () => {
+describe("push-puzzle's input source, stepped by Game.Loop", () => {
   beforeEach(() => {
     window = new EventTarget();
     vi.stubGlobal("window", window);
@@ -104,7 +87,7 @@ describe("push-puzzle in the browser, stepped by GameLoop", () => {
     run(4);
     input.dispose();
     expect(player()).toStrictEqual([2, 1]);
-    expect(samples.map((sample) => sample.moves)).toStrictEqual([0, 1]);
+    expect(samples).toStrictEqual([0, 1]);
   });
 
   it("moves on the press of a held key, again after 12 steps, then every 6 steps", () => {

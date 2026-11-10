@@ -77,10 +77,23 @@ export const Frames: Context.Reference<FrameSource> = Context.Reference(
   { defaultValue: () => animationFrames }
 );
 
-/** The type-level identity of an engine's service: what `yield* MyEngine` requires. */
-export interface EngineKey<Name extends string> {
-  readonly "~arcadekit/game/Engine": Name;
-}
+/** The key string of the engine named `Name`. */
+export type EngineId<Name extends string> = `arcadekit/game/Engine/${Name}`;
+
+/**
+ * The type-level identity of an engine's service: what `yield* MyEngine` requires. It is the
+ * type of the class's own values, so the class names it: `Layer.Layer<MyEngine>`.
+ */
+export type EngineService<
+  Name extends string,
+  Config,
+  Event,
+  Command,
+  E,
+> = Context.ServiceClass.Shape<
+  EngineId<Name>,
+  Engine<Config, Event, Command, E>
+>;
 
 /** The class `Game.Engine` returns: the key of its engine service, and the Layer that provides it. */
 export interface EngineClass<
@@ -93,8 +106,8 @@ export interface EngineClass<
   E,
   R,
 > extends Context.ServiceClass<
-  EngineKey<Name>,
-  string,
+  EngineService<Name, Config, Event, Command, E>,
+  EngineId<Name>,
   Engine<Config, Event, Command, E>
 > {
   readonly kind: "Engine";
@@ -112,7 +125,11 @@ export interface EngineClass<
    * source are made on each attach. It needs the services of what the engine `uses`, such as
    * the app's audio and assets.
    */
-  readonly layer: Layer.Layer<EngineKey<Name>, never, Exclude<R, Scope.Scope>>;
+  readonly layer: Layer.Layer<
+    EngineService<Name, Config, Event, Command, E>,
+    never,
+    Exclude<R, Scope.Scope>
+  >;
 }
 
 /** What `Game.Engine` takes: a simulation, and the browser half that draws it and reads its input. */
@@ -275,9 +292,9 @@ export const make = <
   type E = Effect.Error<U[keyof U]>;
   type R = Effect.Services<U[keyof U]>;
   const Key = Context.Service<
-    EngineKey<Name>,
+    EngineService<Name, Config, Event, Command, E>,
     Engine<Config, Event, Command, E>
-  >()(`arcadekit/game/Engine/${name}`);
+  >()(`arcadekit/game/Engine/${name}` as EngineId<Name>);
   const uses = Effect.all(definition.uses ?? {}) as unknown as Effect.Effect<
     Used<U>,
     E,

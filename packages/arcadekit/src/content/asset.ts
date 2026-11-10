@@ -50,28 +50,40 @@ export const loadOnce = <A, E, R>(
     return { load: cached };
   });
 
-/** The type-level identity of an asset's service: what `MyAsset.load` requires. */
-export interface AssetKey<Name extends string> {
-  readonly "~arcadekit/content/Asset": Name;
-}
+/** The key string of the asset named `Name`. */
+export type AssetId<Name extends string> = `arcadekit/content/Asset/${Name}`;
+
+/**
+ * The type-level identity of an asset's service: what `MyAsset.load` requires. It is the type of
+ * the class's own values, so the class names it: `Layer.Layer<MyAsset>`.
+ */
+export type AssetService<
+  Name extends string,
+  A,
+  E,
+> = Context.ServiceClass.Shape<AssetId<Name>, Loaded<A, E>>;
 
 /** The class `Asset` returns: the key of the asset's service, its load and the Layer that provides it. */
 export interface AssetClass<
   Name extends string,
   A,
   E,
-> extends Context.ServiceClass<AssetKey<Name>, string, Loaded<A, E>> {
+> extends Context.ServiceClass<
+  AssetService<Name, A, E>,
+  AssetId<Name>,
+  Loaded<A, E>
+> {
   readonly kind: "Asset";
   readonly assetName: Name;
   /** Loads the asset, or gives the one already loaded: `(yield* MyAsset).load` as one Effect. */
-  readonly load: Effect.Effect<A, E, AssetKey<Name>>;
+  readonly load: Effect.Effect<A, E, AssetService<Name, A, E>>;
   /**
    * Provides the asset from `load`, which runs on the first `MyAsset.load` and again after each
    * failure. Building the layer loads nothing. The layer's scope (the app) frees the asset.
    */
   readonly layer: <R>(
     load: Effect.Effect<A, E, R>
-  ) => Layer.Layer<AssetKey<Name>, never, R>;
+  ) => Layer.Layer<AssetService<Name, A, E>, never, R>;
 }
 
 /**
@@ -105,8 +117,8 @@ export const Asset =
       readonly release?: (asset: A) => void;
     }
   ): AssetClass<Name, A, E> => {
-    const Key = Context.Service<AssetKey<Name>, Loaded<A, E>>()(
-      `arcadekit/content/Asset/${name}`
+    const Key = Context.Service<AssetService<Name, A, E>, Loaded<A, E>>()(
+      `arcadekit/content/Asset/${name}` as AssetId<Name>
     );
     return class extends Key {
       static readonly kind = "Asset" as const;

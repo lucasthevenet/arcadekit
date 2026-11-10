@@ -1,6 +1,6 @@
+import type * as Game from "arcadekit/game/browser";
 import { Stage } from "arcadekit/render-three";
 import type { SpriteSheet } from "arcadekit/render-three";
-import type { GameView } from "arcadekit/runtime/browser";
 
 import type { Puzzle } from "../world";
 import { PIXELS_PER_CELL, PuzzleSprites } from "./board";
@@ -13,7 +13,7 @@ const BACKGROUND = "#17151f";
  * simulation; never changes it. Two draw calls: the tiles, then the boxes and the player.
  * `dispose` frees what the view made and never the sheet, which the app owns.
  */
-export class PushPuzzleView implements GameView<Puzzle> {
+export class PushPuzzleView implements Game.View<Puzzle> {
   private readonly stage: Stage<"pixel">;
   private readonly sprites: PuzzleSprites;
 

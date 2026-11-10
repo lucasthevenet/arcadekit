@@ -1,4 +1,4 @@
-import { HudSample } from "@arcadekit/push-puzzle";
+import { Hud } from "@arcadekit/push-puzzle";
 import { AudioSettings } from "arcadekit/audio";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
@@ -7,8 +7,8 @@ import { LevelRecords } from "./save";
 
 // The UI's whole state. The board isn't here: it lives in the simulation.
 // The UI only holds what it shows.
-// HudSample is the genre's Schema for its hud event's payload, so a field the
-// genre adds reaches the Model.
+// Hud is the genre's own sample, which is also its Schema, so a field the genre
+// adds reaches the Model.
 
 export const LevelSummary = Schema.Struct({
   id: Schema.String,
@@ -41,7 +41,7 @@ export const Model = Schema.Struct({
   records: LevelRecords,
   /** The level being played, or last played. Restart and replay start it again. */
   levelId: Schema.String,
-  hud: HudSample,
+  hud: Hud,
   /** The player's volume and mute: the defaults until the saved ones are read at startup. */
   audio: AudioSettings,
   /** True while the viewport is in the document: the engine runs only then (see gameViewport). */
@@ -49,4 +49,4 @@ export const Model = Schema.Struct({
 });
 export type Model = typeof Model.Type;
 
-export const emptyHud: HudSample = { moves: 0, boxesLeft: 0 };
+export const emptyHud = new Hud({ moves: 0, boxesLeft: 0 });

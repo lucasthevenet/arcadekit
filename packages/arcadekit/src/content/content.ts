@@ -6,30 +6,47 @@ import type { Loaded } from "./asset";
 import { loadContent } from "./loader";
 import type { ContentDefinition, ContentError, ContentSource } from "./loader";
 
-/** The type-level identity of a content service: what `MyContent.load` requires. */
-export interface ContentKey<Name extends string> {
-  readonly "~arcadekit/content/Content": Name;
-}
+/** The key string of the content named `Name`. */
+export type ContentId<Name extends string> =
+  `arcadekit/content/Content/${Name}`;
+
+/**
+ * The type-level identity of a content service: what `MyContent.load` requires. It is the type
+ * of the class's own values, so the class names it: `Layer.Layer<MyContent>`.
+ */
+export type ContentService<
+  Name extends string,
+  S extends Schema.Top,
+> = Context.ServiceClass.Shape<
+  ContentId<Name>,
+  Loaded<S["Type"], ContentError>
+>;
 
 /** The class `Content` returns: the key of the content's service, its load and the Layer that provides it. */
 export interface ContentClass<
   Name extends string,
   S extends Schema.Top,
 > extends Context.ServiceClass<
-  ContentKey<Name>,
-  string,
+  ContentService<Name, S>,
+  ContentId<Name>,
   Loaded<S["Type"], ContentError>
 > {
   readonly kind: "Content";
   readonly contentName: Name;
   readonly definition: ContentDefinition<S>;
   /** Loads and checks the content, or gives what is already loaded: `(yield* MyContent).load` as one Effect. */
-  readonly load: Effect.Effect<S["Type"], ContentError, ContentKey<Name>>;
+  readonly load: Effect.Effect<
+    S["Type"],
+    ContentError,
+    ContentService<Name, S>
+  >;
   /**
    * Provides the content from `source`: `fetchJsonSource(url)` in an app. Building the layer
    * reads nothing. The first `load` reads every file, and a failed one can be run again.
    */
-  readonly layer: (source: ContentSource) => Layer.Layer<ContentKey<Name>>;
+  readonly layer: (
+    source: ContentSource
+  ) => Layer.Layer<ContentService<Name, S>>;
   /**
    * Loads and checks the content from `source` and keeps nothing: for a test of a game's real
    * content files, which then runs the same checks as the game.
@@ -65,9 +82,9 @@ export const Content = <
   definition: ContentDefinition<S>
 ): ContentClass<Name, S> => {
   const Key = Context.Service<
-    ContentKey<Name>,
+    ContentService<Name, S>,
     Loaded<S["Type"], ContentError>
-  >()(`arcadekit/content/Content/${name}`);
+  >()(`arcadekit/content/Content/${name}` as ContentId<Name>);
   const read = (source: ContentSource) =>
     loadContent({ ...definition, source });
   return class extends Key {

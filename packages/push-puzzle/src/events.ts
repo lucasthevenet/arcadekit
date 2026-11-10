@@ -1,18 +1,17 @@
+import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 
-// The events a push-puzzle run reports, and their payloads.
-// HudSample is an Effect Schema, declared once here. An app uses it in its Model
-// and Messages, so a field added here reaches the app's Model.
+// What a push-puzzle run reports. Each is a class and its own Schema, so an app uses it in its
+// Model and Messages, and a field added here reaches the app.
 
-/** What the HUD shows. The hud event carries it. */
-export const HudSample = Schema.Struct({
+/** What the HUD shows: the run's sample, reported at the start and after every turn. */
+export class Hud extends Game.Event("Hud", {
   moves: Schema.Number,
   /** Goals that have no box on them yet. */
   boxesLeft: Schema.Number,
-});
-export type HudSample = typeof HudSample.Type;
+}) {}
 
-/** What a push-puzzle run reports to the outside. */
-export type PushPuzzleEvent =
-  | { readonly type: "hud"; readonly hud: HudSample }
-  | { readonly type: "levelSolved"; readonly moves: number };
+/** The level is solved: every goal has a box, after this many moves. */
+export class LevelSolved extends Game.Event("LevelSolved", {
+  moves: Schema.Number,
+}) {}

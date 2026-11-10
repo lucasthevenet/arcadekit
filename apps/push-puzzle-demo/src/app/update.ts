@@ -1,5 +1,8 @@
 import type { PushPuzzleContent } from "@arcadekit/push-puzzle";
-import type { PushPuzzleEngine } from "@arcadekit/push-puzzle/browser";
+import type {
+  PushPuzzleEngine,
+  PushPuzzleSheet,
+} from "@arcadekit/push-puzzle/browser";
 import { defaultAudioSettings } from "arcadekit/audio";
 import type { Audio, AudioSettings } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
@@ -29,6 +32,7 @@ export type Services =
   | AudioSettingsStorage
   | PushPuzzleContent
   | PushPuzzleEngine
+  | PushPuzzleSheet
   | Save;
 type Return = Update.Return<Model, Message, Services>;
 

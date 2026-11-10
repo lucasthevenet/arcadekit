@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 
 import {
-  createPuzzle,
-  pushPuzzleContentDefinition,
-  step,
+  LevelSolved,
+  PushPuzzle,
+  PushPuzzleContent,
 } from "@arcadekit/push-puzzle";
-import type { Direction, PushPuzzleEvent } from "@arcadekit/push-puzzle";
-import { ContentError, loadContent } from "arcadekit/content";
+import type { Direction } from "@arcadekit/push-puzzle";
+import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
+import * as Story from "arcadekit/game/story";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -22,9 +23,7 @@ const fileSource: ContentSource = (file) =>
     catch: (cause) => new ContentError({ message: String(cause) }),
   });
 
-const content = await Effect.runPromise(
-  loadContent({ ...pushPuzzleContentDefinition, source: fileSource })
-);
+const content = await Effect.runPromise(PushPuzzleContent.read(fileSource));
 
 const SOLUTIONS: Record<string, string> = {
   "first-push": "DRLURR",
@@ -41,6 +40,14 @@ const DIRECTIONS: Record<string, Direction> = {
   R: "right",
 };
 
+const story = Story.make(PushPuzzle);
+
+/** One tap: a step with the direction pressed, then a step with nothing held. */
+const tap = (direction: Direction) => [
+  Story.step({ held: direction, pressed: direction, undo: false }),
+  Story.step({ held: null, pressed: null, undo: false }),
+];
+
 describe("demo levels", () => {
   it("ships three levels, each with a known solution", () => {
     expect(content.levels.map((level) => level.id)).toStrictEqual(
@@ -49,20 +56,10 @@ describe("demo levels", () => {
   });
 
   it.each(Object.entries(SOLUTIONS))("%s can be solved", (levelId, moves) => {
-    const puzzle = createPuzzle({ content, levelId }, 0);
-    const events: PushPuzzleEvent[] = [];
-    for (const char of moves) {
-      const direction = DIRECTIONS[char]!;
-      step(
-        puzzle,
-        { held: direction, pressed: direction, undo: false },
-        1 / 60
-      );
-      step(puzzle, { held: null, pressed: null, undo: false }, 1 / 60);
-      events.push(...puzzle.events.drain());
-    }
-    expect(events).toStrictEqual([
-      { type: "levelSolved", moves: moves.length },
-    ]);
+    story(
+      Story.given({ content, levelId }),
+      [...moves].map((char) => tap(DIRECTIONS[char]!)),
+      Story.reported(new LevelSolved({ moves: moves.length }))
+    );
   });
 });

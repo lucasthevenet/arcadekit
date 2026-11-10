@@ -1,18 +1,22 @@
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 
-import { PushPuzzleContent } from "@arcadekit/push-puzzle";
+import { PushPuzzleContent, PuzzleContent } from "@arcadekit/push-puzzle";
 import {
   PUSH_PUZZLE_SPRITE_TAGS,
+  PushPuzzleCueSounds,
   PushPuzzleEngine,
+  PushPuzzleSheet,
 } from "@arcadekit/push-puzzle/browser";
-import { defaultAudioSettings } from "arcadekit/audio";
+import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
+import { memorySource } from "arcadekit/content";
 import { SpriteSheetError, decodeSpriteSheet } from "arcadekit/render-three";
 import type { SpriteSheetData } from "arcadekit/render-three";
-import { Effect } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
+import { CUE_SOUNDS } from "./audio";
 import {
   EndRun,
   FocusRetry,
@@ -167,13 +171,13 @@ const failed = new SpriteSheetError({
   message: "The sprite sheet file sprites/push-puzzle.json can't be loaded",
 });
 
-/** Runs `effect` with an engine whose every load fails, and `levels` as the content's load. */
+/** Runs `effect` with a sheet whose every load fails, and `levels` as the content's load. */
 const runWithFailedSheet = <A, E>(
-  effect: Effect.Effect<A, E, PushPuzzleContent | PushPuzzleEngine>,
+  effect: Effect.Effect<A, E, PushPuzzleContent | PushPuzzleSheet>,
   levels: PushPuzzleContent["Service"]["load"]
 ) =>
   effect.pipe(
-    Effect.provideService(PushPuzzleEngine, { load: Effect.fail(failed) }),
+    Effect.provideService(PushPuzzleSheet, { load: Effect.fail(failed) }),
     Effect.provideService(PushPuzzleContent, { load: levels }),
     Effect.runPromise
   );
@@ -238,16 +242,36 @@ describe("a sheet that fails to load", () => {
     ).not.toThrow();
   });
 
-  it("is reported by the engine Commands instead of dying", async () => {
-    // Never read: the engine fails before the run starts.
-    const levels = { levels: [] } as unknown as Effect.Success<
-      PushPuzzleContent["Service"]["load"]
-    >;
-    const messages = await runWithFailedSheet(
-      Effect.all([StartLevel({ levelId: "any" }).effect, EndRun().effect]),
-      Effect.succeed(levels)
+  it("leaves the engine's Commands working: the engine needs the sheet only to draw", async () => {
+    const levels = [
+      { id: "one", name: "One", rows: ["#####", "#@$.#", "#####"] },
+    ];
+    expect(Schema.is(PuzzleContent)({ levels })).toBe(true);
+    const messages = await Effect.all([
+      StartLevel({ levelId: "one" }).effect,
+      EndRun().effect,
+    ]).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          PushPuzzleEngine.layer,
+          PushPuzzleContent.layer(memorySource({ "levels.json": levels }))
+        ).pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              PushPuzzleSheet.layer(Effect.fail(failed)),
+              Layer.succeed(PushPuzzleCueSounds, CUE_SOUNDS),
+              SilentAudioLayer
+            )
+          )
+        )
+      ),
+      Effect.runPromise
     );
-    const reported = Message.FailedToStartRun({ error: failed.message });
-    expect(messages).toStrictEqual([reported, reported]);
+    // The run starts and ends. The viewport's attach is what fails, and `engineEntry`'s onError
+    // reports it.
+    expect(messages).toStrictEqual([
+      Message.StartedRun(),
+      Message.CompletedEngineCommand(),
+    ]);
   });
 });

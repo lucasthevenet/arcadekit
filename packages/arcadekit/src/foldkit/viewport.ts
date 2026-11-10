@@ -109,11 +109,13 @@ export type EngineEntryConfig<
   /** Reads the Boolean that `gameViewport`'s `mounted` and `unmounted` Messages set. */
   readonly isViewportMounted: (model: Model) => boolean;
   /**
-   * Turns an engine event into a Message, or into undefined to drop it. Foldkit freezes the
-   * Model in development, so copy any array or object in the event that the simulation keeps
-   * using before putting it in the Message.
+   * Turns an engine event into a Message, or into undefined to drop it: for a `Game.Engine`,
+   * its simulation's `match`, which handles every event by its tag. Foldkit freezes the Model in
+   * development, so copy any array or object in the event that the simulation keeps using
+   * before putting it in the Message. The app's Message type comes from `Subscription.make`, not
+   * from what this returns.
    */
-  readonly toMessage: (event: Event) => Message | undefined;
+  readonly toMessage: (event: Event) => NoInfer<Message> | undefined;
 } & ([E | A] extends [never]
   ? { readonly onError?: never }
   : {
@@ -122,7 +124,7 @@ export type EngineEntryConfig<
        * or its game crashed. Nothing is attached or listened to after it, and the entry runs
        * again only when its Boolean changes, so it doesn't retry by itself.
        */
-      readonly onError: (error: E | A) => Message;
+      readonly onError: (error: E | A) => NoInfer<Message>;
     });
 
 /**
