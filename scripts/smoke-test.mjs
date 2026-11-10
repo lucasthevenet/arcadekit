@@ -33,6 +33,7 @@ const ENTRIES = [
   "audio",
   "render-three",
   "runtime",
+  "game",
   "net",
   "foldkit",
 ];

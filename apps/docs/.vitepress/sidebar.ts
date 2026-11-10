@@ -10,6 +10,7 @@ import type { EntryPage, SitePages } from "./pages.ts";
 /** The sidebar's groups, each with its entries' top folders under `src/`, in order. */
 const GROUPS: readonly { readonly text: string; readonly entries: string[] }[] =
   [
+    { text: "Game", entries: ["game"] },
     { text: "Simulation", entries: ["core", "input", "runtime"] },
     { text: "Presentation", entries: ["render-three", "audio"] },
     { text: "Data", entries: ["content", "save"] },
