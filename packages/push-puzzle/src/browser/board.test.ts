@@ -18,26 +18,25 @@ import { testSheet } from "./test-sheet";
 const SLIDE = 0.09;
 
 const start = (rows: readonly string[]): Puzzle =>
-  createPuzzle(
-    {
-      content: Schema.decodeUnknownSync(PuzzleContent)({
-        levels: [{ id: "test", name: "Test", rows }],
-      }),
-      levelId: "test",
-    },
-    0
-  );
+  createPuzzle({
+    content: Schema.decodeUnknownSync(PuzzleContent)({
+      levels: [{ id: "test", name: "Test", rows }],
+    }),
+    levelId: "test",
+  });
 
 const NOTHING = { held: null, pressed: null, undo: false } as const;
+/** A step's context for a test that calls `step` itself: its events go nowhere. */
+const STEP = { dt: 1 / 60, step: 0, report: () => {} };
 
 const tap = (puzzle: Puzzle, direction: Direction) => {
-  step(puzzle, { held: direction, pressed: direction, undo: false }, 1 / 60);
-  step(puzzle, NOTHING, 1 / 60);
+  step(puzzle, { held: direction, pressed: direction, undo: false }, STEP);
+  step(puzzle, NOTHING, STEP);
 };
 
 const undo = (puzzle: Puzzle) => {
-  step(puzzle, { held: null, pressed: null, undo: true }, 1 / 60);
-  step(puzzle, NOTHING, 1 / 60);
+  step(puzzle, { held: null, pressed: null, undo: true }, STEP);
+  step(puzzle, NOTHING, STEP);
 };
 
 const setup = (sheet: SpriteSheet = testSheet()) => {

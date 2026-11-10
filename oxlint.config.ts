@@ -91,6 +91,39 @@ const ownTimeOrRandomnessProperties = [
   ),
 ];
 
+// Library code runs no Effect of its own: it returns the Effect, and the app's runtime runs it
+// (ADR-0017). The `...With` forms are left alone: they are how plain code a host calls runs an
+// Effect on a context captured once.
+const EFFECT_RUNNERS = [
+  "runSync",
+  "runSyncExit",
+  "runPromise",
+  "runPromiseExit",
+  "runFork",
+  "runCallback",
+] as const;
+
+const ownRunner =
+  'Library code runs no Effect itself: return the Effect, and the app\'s runtime runs it. Plain code that a host calls captures a runner once (FiberHandle.runtime, or Effect.context with Effect.runForkWith). See "Where plain code and Effect meet" in AGENTS.md.';
+
+const ownRunnerProperties = [
+  ...EFFECT_RUNNERS.map((property) => ({
+    object: "Effect",
+    property,
+    message: `Effect.${property}: ${ownRunner}`,
+  })),
+  // A runtime of its own is the other way to run one.
+  {
+    object: "ManagedRuntime",
+    property: "make",
+    message: `ManagedRuntime.make: ${ownRunner}`,
+  },
+];
+
+// What a test imports, in the folders of library code: a helper may run an Effect to build its
+// fixture.
+const TEST_HELPERS = ["**/*.test.ts", "**/testing/**", "**/test-*.ts"];
+
 // Which entry of the arcadekit package may import which (ADR-0018). This is the graph the nine
 // packages had when they were separate: core and input stand alone, runtime steps with core's
 // clock, net steps a GameLoop and seeds its test network with core's Rng, and foldkit's tests
@@ -105,6 +138,7 @@ const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   audio: [],
   "render-three": [],
   runtime: ["core"],
+  game: ["core", "runtime"],
   net: ["core", "runtime"],
   foldkit: ["runtime"],
 };
@@ -148,15 +182,58 @@ export default defineConfig({
     "eslint/func-names": "off",
     // Effect and Foldkit APIs take callbacks by design.
     "promise/prefer-await-to-callbacks": "off",
+    // A declaration is a class (`class LevelSolved extends Game.Event(...) {}`), and one file
+    // declares what belongs together: a game's events, or a command with what it reports.
+    "eslint/max-classes-per-file": "off",
   },
   overrides: [
     {
-      // Genre simulation code: root entries, not the views in ./browser, not tests.
-      files: [
-        "packages/survivors/src/**/*.ts",
-        "packages/push-puzzle/src/**/*.ts",
+      // How a game writes a declaration (ADR-0020, docs/code-style.md).
+      files: ["packages/**/*.ts", "apps/**/*.ts"],
+      jsPlugins: ["./tools/lint/declaration.ts"],
+      rules: {
+        "declaration/named": "error",
+        "declaration/class": "error",
+        "declaration/inferred": "error",
+        "declaration/plain-handler": "error",
+        "declaration/older-contract": "error",
+      },
+    },
+    {
+      // The games still on the older contract (ADR-0020). This list only gets shorter.
+      files: ["packages/survivors/**/*.ts", "apps/survivor-demo/**/*.ts"],
+      jsPlugins: ["./tools/lint/declaration.ts"],
+      rules: { "declaration/older-contract": "off" },
+    },
+    {
+      // The kit's own builders. The one other function of the kit that returns a class makes
+      // the Durable Object that Cloudflare runs.
+      files: ["packages/arcadekit/src/**/*.ts"],
+      excludeFiles: [
+        "**/*.test.ts",
+        "packages/arcadekit/src/net/worker/index.ts",
       ],
-      excludeFiles: ["**/browser/**", "**/*.test.ts"],
+      jsPlugins: ["./tools/lint/declaration.ts"],
+      rules: { "declaration/builder": "error" },
+    },
+    {
+      // Library code, but for what a test imports and the one file whose entry points
+      // Cloudflare owns. The two overrides below set the same rule for the simulation's files,
+      // and the last one's options replace the others', so they repeat this list.
+      files: ["packages/*/src/**/*.ts"],
+      excludeFiles: [
+        ...TEST_HELPERS,
+        "packages/arcadekit/src/net/worker/index.ts",
+      ],
+      rules: {
+        "eslint/no-restricted-properties": ["error", ...ownRunnerProperties],
+      },
+    },
+    {
+      // Genre simulation code: the root entry of every package but the kit, so a new genre is
+      // held to it from its first file. Not the views in ./browser, not tests or their helpers.
+      files: ["packages/*/src/**/*.ts"],
+      excludeFiles: ["packages/arcadekit/**", "**/browser/**", ...TEST_HELPERS],
       jsPlugins: ["./tools/lint/deterministic-math.ts"],
       rules: {
         "eslint/no-restricted-properties": [
@@ -167,6 +244,7 @@ export default defineConfig({
             message: `Math.${property} ${approximatedMathMessage}`,
           })),
           ...ownTimeOrRandomnessProperties,
+          ...ownRunnerProperties,
         ],
         "deterministic-math/no-exponentiation": "error",
         ...noOwnTimeOrRandomness,
@@ -176,22 +254,26 @@ export default defineConfig({
       // The rest of the simulation: core's primitives, the loop that steps a genre, and the
       // lockstep protocol that steps it on every peer, with the input codecs whose decoded
       // value every peer steps on and the step input built from the players' inputs (ADR-0017).
-      // The test game too: its simulation is the one a Co-op game's tests copy.
+      // The test game too: its simulation is the one a Co-op game's tests copy. All of
+      // arcadekit/game but its engine, so a new file of it is held to this from the start:
+      // the engine is the Effect host, and takes its time from `Frames`.
       files: [
         "packages/arcadekit/src/core/**/*.ts",
         "packages/arcadekit/src/runtime/loop.ts",
         "packages/arcadekit/src/runtime/simulation.ts",
         "packages/arcadekit/src/runtime/player-inputs.ts",
+        "packages/arcadekit/src/game/**/*.ts",
         "packages/arcadekit/src/net/lockstep.ts",
         "packages/arcadekit/src/net/codec.ts",
         "packages/arcadekit/src/net/player-inputs.ts",
         "packages/arcadekit/src/net/testing/test-game.ts",
       ],
-      excludeFiles: ["**/*.test.ts"],
+      excludeFiles: ["**/*.test.ts", "packages/arcadekit/src/game/engine.ts"],
       rules: {
         "eslint/no-restricted-properties": [
           "error",
           ...ownTimeOrRandomnessProperties,
+          ...ownRunnerProperties,
         ],
         ...noOwnTimeOrRandomness,
       },
@@ -243,6 +325,12 @@ export default defineConfig({
         // `toBe(true)` is stricter than `toBeTruthy()`.
         "vitest/prefer-to-be-truthy": "off",
         "vitest/prefer-to-be-falsy": "off",
+        // A scenario asserts: it throws at the first expectation that doesn't hold
+        // (`arcadekit/game/scenario`).
+        "vitest/expect-expect": [
+          "error",
+          { assertFunctionNames: ["expect", "expectTypeOf", "scenario"] },
+        ],
       },
     },
   ],

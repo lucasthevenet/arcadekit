@@ -2,6 +2,8 @@
 status: accepted
 ---
 
+> Amended by [ADR-0020](0020-a-game-is-declared.md): a game's parts are declarations that Layers host, and the rule below is what keeps their handlers plain. `Game.Loop` and a declared simulation's `create`, `step` and `apply` are simulation code, and a `Game.Engine`'s `view` and `input` are per-frame code. "Must not allocate" now means per entity: a step may allocate an event it reports.
+
 # Effect at the edges, plain code inside
 
 The kit is built on Effect 4, and #52-#55 moved its coordination code to Effect: the engine's frame loop, the lockstep session's shell, the signalling client and worker, the WebRTC links and the co-op client. Some code stays plain on purpose. Without a written rule, an agent or contributor following a stricter guide (the contributor rules of effect-smol, Effect 4's beta repository, ban `try`/`catch`; Alchemy's require even `Buffer` and `TextEncoder` to be wrapped in `Effect.sync`) would wrap exactly the code where wrapping hurts, and one following no guide would drift the other way.

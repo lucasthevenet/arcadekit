@@ -1,5 +1,5 @@
 import type { AudioSystem } from "arcadekit/audio";
-import type { GameView } from "arcadekit/runtime/browser";
+import type * as Game from "arcadekit/game/browser";
 
 import type { Puzzle, PushPuzzleCues } from "../world";
 
@@ -33,7 +33,7 @@ const CUES: readonly (readonly [
  * frame of a run only takes the counts, so mounting mid-run plays nothing. Reads the
  * simulation; never changes it.
  */
-export class PushPuzzleSoundView implements GameView<Puzzle> {
+export class PushPuzzleSoundView implements Game.View<Puzzle> {
   private readonly audio: AudioSystem;
   private readonly sounds: PushPuzzleSounds;
   /** The run heard last frame. A new run (a restart, another level) takes fresh counts. */

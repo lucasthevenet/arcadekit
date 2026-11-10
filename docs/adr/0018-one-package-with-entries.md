@@ -4,6 +4,8 @@ status: accepted
 
 # The kit is one package with entries
 
+> Since [ADR-0020](0020-a-game-is-declared.md): the package has twenty-one entries. `game`, `game/browser` and `game/scenario` (a game's declarations, its engine and its scenarios) are a tenth group, which may import `core` and `runtime`.
+
 > Since [ADR-0019](0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md): the package has eighteen entries. `net/worker` (the signalling worker, for Cloudflare) and `net/testing` (test helpers for a Co-op game) joined the sixteen below. Both are in the `net` group, so the graph has no new arrow. `net/worker` may import `cloudflare:workers`, with `@cloudflare/workers-types` as an optional peer for its types; `tsconfig.worker.json` checks it with Workers types and no DOM.
 
 [ADR-0016](0016-publish-the-kit-as-arcadekit.md) published the kit as nine packages under `@arcadekit`, on one shared version. This replaces that layout with one package. ADR-0016's other decisions stand: the name, the licence, the build, the `source` condition, what users need, the checks, and releasing with Changesets and trusted publishing.

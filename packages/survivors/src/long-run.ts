@@ -9,7 +9,7 @@ import { survivorsSimulation } from "./simulation";
 import { chooseUpgrade } from "./world";
 import type { World } from "./world";
 
-// The long-run determinism scenario: 20,000 steps (5.5 minutes) of a full horde under analog
+// The long run the determinism tests pin: 20,000 steps (5.5 minutes) of a full horde under analog
 // input, through the GameLoop the demos run. `determinism.test.ts` plays it in Node and pins its
 // hashes; `browser-determinism/` bundles this same module and plays it in Chromium, Firefox and
 // WebKit, which must give the same hashes (#25). It isn't part of the package's exports: only

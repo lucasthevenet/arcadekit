@@ -470,10 +470,10 @@ const engineWithOtherEvents = engineEntry({
 });
 const eventToNonMessage = Subscription.make<Model, Message, TestEngine>()(
   () => ({
-    // @ts-expect-error A string is not one of the app's Messages.
     engine: engineEntry({
       engine: TestEngine,
       isViewportMounted: (model) => model.isViewportMounted,
+      // @ts-expect-error A string is not one of the app's Messages.
       toMessage: (event: GameEvent) => event.type,
     }),
   })

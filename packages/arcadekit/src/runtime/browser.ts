@@ -11,7 +11,12 @@ export {
   makeEngineLoader,
   makeGameEngine,
 } from "./engine";
-export { GameCrashed } from "./frame-loop";
+export {
+  GameCrashed,
+  type SteppedLoop,
+  frameLoop,
+  steppedFrames,
+} from "./frame-loop";
 export { type FrameSource, animationFrames } from "./frames";
 export {
   combineViews,

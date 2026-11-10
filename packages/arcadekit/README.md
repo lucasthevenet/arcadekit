@@ -41,6 +41,9 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | [`arcadekit/audio`](src/audio/README.md) | `AudioSystem`, the `Audio` service with `SilentAudioLayer`, and `makeAudioSettingsStore` | Effect |
 | [`arcadekit/audio/browser`](src/audio/README.md) | `BrowserAudioLayer` (Web Audio) | Effect, DOM |
 | [`arcadekit/render-three`](src/render-three/README.md) | `Stage`, `MeshInstances`, camera helpers, and pixel-art sprites: `loadSpriteSheet`, `InstancedSprites`, `PixelCamera` | Effect, Three.js, DOM |
+| [`arcadekit/game`](src/game/README.md) | A game's declarations: `Game.Event`, `Game.Command`, `Game.Rejection` and `Game.Simulation` (the DOM-free rules), and `Game.Loop`, which steps one anywhere | Effect, core, runtime |
+| [`arcadekit/game/browser`](src/game/README.md) | The same, plus `Game.Engine`: a simulation with the view and input that draw it and read its input, as a service an app drives. `Game.Frames`, `Game.frameLoop`, `Game.combineViews` | Effect, core, runtime, DOM |
+| [`arcadekit/game/scenario`](src/game/README.md) | Scenarios: given a run, after these steps and commands, it reported these events. Checks a simulation in a test, with no browser | Effect, core, runtime |
 | [`arcadekit/runtime`](src/runtime/README.md) | `GameSimulation`, the DOM-free half a game implements, and `GameLoop`, which steps one anywhere. `PlayerInputs`, the step input of a game with several players, and `soloInput` | Effect, core |
 | [`arcadekit/runtime/browser`](src/runtime/README.md) | `GameDefinition`, `makeGameEngine`, `makeEngineLoader`, `combineViews` | Effect, core, DOM |
 | [`arcadekit/runtime/testing`](src/runtime/README.md) | `manualFrames`: a frame source a test drives, to run an engine without a browser's frames |  |

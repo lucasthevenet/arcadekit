@@ -91,6 +91,21 @@
       "types": "./dist/render-three.d.ts",
       "default": "./dist/render-three.js"
     },
+    "./game": {
+      "source": "./src/game/index.ts",
+      "types": "./dist/game.d.ts",
+      "default": "./dist/game.js"
+    },
+    "./game/browser": {
+      "source": "./src/game/browser.ts",
+      "types": "./dist/game/browser.d.ts",
+      "default": "./dist/game/browser.js"
+    },
+    "./game/scenario": {
+      "source": "./src/game/scenario.ts",
+      "types": "./dist/game/scenario.d.ts",
+      "default": "./dist/game/scenario.js"
+    },
     "./runtime": {
       "source": "./src/runtime/index.ts",
       "types": "./dist/runtime.d.ts",

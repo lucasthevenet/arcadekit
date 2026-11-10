@@ -1,4 +1,4 @@
-import { HudSample } from "@arcadekit/push-puzzle";
+import { Hud } from "@arcadekit/push-puzzle";
 import { AudioSettings } from "arcadekit/audio";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
@@ -23,7 +23,7 @@ export const Message = defineMessageUnion({
   FailedToStartRun: { error: Schema.String },
 
   // From the engine
-  GotHud: { hud: HudSample },
+  GotHud: { hud: Hud },
   GotLevelSolved: { moves: Schema.Number },
   SavedSolve: { records: LevelRecords },
 

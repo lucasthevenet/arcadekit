@@ -1,7 +1,7 @@
 import { Cause, Data, Effect, Fiber, FiberHandle, Queue, Stream } from "effect";
 import type { Clock, Scope } from "effect";
 
-import { animationFrames, attachError } from "../../runtime/browser";
+import { animationFrames, attachError, frameLoop } from "../../runtime/browser";
 import type { InputSource, PlayerInputs, StepInput } from "../../runtime/index";
 import { contentHash } from "../content-hash";
 import type { CoopTypes } from "../coop";
@@ -35,7 +35,6 @@ import type {
   LocalPlayer,
 } from "./coop";
 import type { RoomError } from "./errors";
-import { coopFrameLoop } from "./frame-loop";
 import type { RoomEvent, SignallingRoom } from "./signalling";
 import { workerTicker } from "./ticker";
 
@@ -814,7 +813,7 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
               }),
               (made) => Effect.sync(() => made.dispose())
             );
-            return yield* coopFrameLoop(frames, (nowMs) => {
+            return yield* frameLoop(frames, (nowMs) => {
               const seat = current;
               // The frame's tick, before drawing (ADR-0012).
               seat?.frameTick?.();

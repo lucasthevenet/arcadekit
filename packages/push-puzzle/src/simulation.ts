@@ -1,26 +1,17 @@
-import type { GameSimulation } from "arcadekit/runtime";
+import * as Game from "arcadekit/game";
 
-import type { PushPuzzleEvent } from "./events";
-import { createPuzzle, hudSample, step } from "./world";
-import type { Puzzle, PushPuzzleConfig, PushPuzzleInput } from "./world";
+import { Hud, LevelSolved } from "./events";
+import { PushPuzzleInput, createPuzzle, hudSample, step } from "./world";
 
 /**
- * The push-puzzle genre as an arcadekit/runtime simulation: what a GameLoop steps, in a browser,
- * a Worker, on a server or in a test. `./browser`'s `makePushPuzzleGame` adds input, the view and sound.
+ * The push-puzzle genre's rules: what `Game.Loop` steps in a browser, a Worker, on a server or
+ * in a test. `./browser`'s `PushPuzzleEngine` adds the input, the view and the sound.
  */
-export const pushPuzzleSimulation: GameSimulation<
-  PushPuzzleConfig,
-  Puzzle,
-  PushPuzzleInput,
-  PushPuzzleEvent
-> = {
-  stepSeconds: 1 / 60,
+export class PushPuzzle extends Game.Simulation("PushPuzzle", {
+  input: PushPuzzleInput,
+  events: [LevelSolved],
   create: createPuzzle,
   step,
-  drainEvents: (puzzle) => puzzle.events.drain(),
   // The HUD changes only on a turn, so it's sent right after a turn, and never in between.
-  sample: {
-    version: (puzzle) => puzzle.turns,
-    read: (puzzle) => ({ type: "hud", hud: hudSample(puzzle) }),
-  },
-};
+  sample: { event: Hud, version: (puzzle) => puzzle.turns, read: hudSample },
+}) {}

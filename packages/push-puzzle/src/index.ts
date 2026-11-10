@@ -1,20 +1,16 @@
-// Push-puzzle genre: what an app uses from the DOM-free side. The content definition and service,
-// the GameSimulation, the Puzzle state it runs with its config, step and direction, and the event
-// payloads. Level parsing and the content schema stay in their modules.
+// Push-puzzle genre: what an app uses from the DOM-free side. The content, the simulation with
+// the Puzzle state it runs, its config and step input, and the events it reports. Level parsing
+// and the content schema stay in their modules.
 // No DOM or Three.js here; those are in "@arcadekit/push-puzzle/browser".
 
+export { PushPuzzleContent } from "./content";
+export { Hud, LevelSolved } from "./events";
+export { PuzzleContent } from "./schema";
+// The genre's rules, for headless or replay use: a `Game.Loop` or a scenario steps them.
+export { PushPuzzle } from "./simulation";
 export {
-  PushPuzzleContent,
-  makePushPuzzleContentLayer,
-  pushPuzzleContentDefinition,
-} from "./content";
-export { HudSample, type PushPuzzleEvent } from "./events";
-// The genre's GameSimulation, the DOM-free half the docs name, for headless or replay use.
-export { pushPuzzleSimulation } from "./simulation";
-export {
-  type Direction,
+  Direction,
   type Puzzle,
   type PushPuzzleConfig,
-  createPuzzle,
-  step,
+  PushPuzzleInput,
 } from "./world";

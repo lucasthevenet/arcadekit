@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 
-import { makePushPuzzleContentLayer } from "@arcadekit/push-puzzle";
-import { makePushPuzzleEngineLayer } from "@arcadekit/push-puzzle/browser";
-import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
+import { PushPuzzleContent } from "@arcadekit/push-puzzle";
+import { PushPuzzleSheet } from "@arcadekit/push-puzzle/browser";
+import { defaultAudioSettings } from "arcadekit/audio";
 import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
 import {
@@ -14,7 +14,6 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 import { Scene } from "foldkit";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { CUE_SOUNDS } from "./audio";
 import {
   FocusRetry,
   LoadAudioSettings,
@@ -48,7 +47,7 @@ const image = { width: 1, height: 1 } as unknown as TexImageSource;
 /** The runtimes the tests opened, disposed after each test. */
 const opened: { readonly dispose: () => Promise<void> }[] = [];
 /**
- * The app's resources as main.ts makes them, but with a sheet load and a content source that
+ * The sheet and the content as main.ts provides them, but with a sheet load and a content source that
  * fail their first `failures.sheet` and `failures.content` loads, each with its own error, and
  * count every load. A load that succeeds takes a moment and a failure doesn't, as a 404 beside a
  * file that loads: the failure comes while the other load is still running.
@@ -91,9 +90,9 @@ const flakyResources = (failures: {
     });
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
-      makePushPuzzleEngineLayer({ sheet, sounds: CUE_SOUNDS }),
-      makePushPuzzleContentLayer(source)
-    ).pipe(Layer.provide(SilentAudioLayer))
+      PushPuzzleSheet.layer(sheet),
+      PushPuzzleContent.layer(source)
+    )
   );
   opened.push(runtime);
   return {

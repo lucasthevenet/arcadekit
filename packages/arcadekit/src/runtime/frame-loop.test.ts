@@ -1,20 +1,19 @@
 import { Effect, Exit, Fiber } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { GameCrashed } from "../../runtime/browser";
-import { manualFrames } from "../../runtime/testing";
-import { coopFrameLoop } from "./frame-loop";
+import { GameCrashed, frameLoop } from "./browser";
+import { manualFrames } from "./testing";
 
-// The co-op client's frame loop on frames the test runs by hand.
+// The frame loop on frames the test runs by hand.
 
-describe(coopFrameLoop, () => {
+describe(frameLoop, () => {
   it("draws each frame at its time, asking for the next only after it has drawn", async () => {
     const frames = manualFrames();
     const drawn: [number, boolean][] = [];
     const waiting = await Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
-          coopFrameLoop(frames, (nowMs) => {
+          frameLoop(frames, (nowMs) => {
             drawn.push([nowMs, frames.waiting()]);
           }),
           { startImmediately: true }
@@ -43,7 +42,7 @@ describe(coopFrameLoop, () => {
     const exit = await Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
-          coopFrameLoop(frames, () => {
+          frameLoop(frames, () => {
             runs += 1;
             if (runs === 2) {
               throw bug;

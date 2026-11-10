@@ -1,7 +1,6 @@
-import type { PushPuzzleEvent } from "@arcadekit/push-puzzle";
+import { PushPuzzle } from "@arcadekit/push-puzzle";
 import { PushPuzzleEngine } from "@arcadekit/push-puzzle/browser";
 import { engineEntry, keyPresses, shortcutPresses } from "arcadekit/foldkit";
-import { engineOf } from "arcadekit/runtime/browser";
 import { Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
@@ -9,33 +8,25 @@ import { Message } from "./message";
 import { isLoaded } from "./model";
 import type { Model } from "./model";
 
-const toMessage = (event: PushPuzzleEvent): Message => {
-  switch (event.type) {
-    case "hud": {
-      return Message.GotHud({ hud: event.hud });
-    }
-    case "levelSolved": {
-      return Message.GotLevelSolved({ moves: event.moves });
-    }
-  }
-};
-
 export const subscriptions = Subscription.make<
   Model,
   Message,
   PushPuzzleEngine
 >()((entry) => ({
   /**
-   * While the viewport exists, the engine renders into it and its events become Messages, once
-   * the levels and sprite sheet have loaded (`isLoaded`): the engine is made from the sheet,
-   * and an entry that reported a failed load wouldn't run again after a retry. A failed load is
-   * shown like LoadContent's.
+   * While the viewport exists, the engine renders into it and the run's events become Messages,
+   * once the levels and sprite sheet have loaded (`isLoaded`): attaching loads the sheet, and an
+   * entry that reported a failed load wouldn't run again after a retry. A sheet that can't be
+   * loaded, a view that can't be made and a crash are shown like LoadContent's failure.
    */
   engine: engineEntry({
-    engine: engineOf(PushPuzzleEngine),
+    engine: PushPuzzleEngine,
     isViewportMounted: (model) =>
       model.isViewportMounted && isLoaded(model.phase),
-    toMessage,
+    toMessage: PushPuzzle.match({
+      Hud: (hud) => Message.GotHud({ hud }),
+      LevelSolved: ({ moves }) => Message.GotLevelSolved({ moves }),
+    }),
     onError: (error) => Message.FailedToLoadContent({ error: error.message }),
   }),
 

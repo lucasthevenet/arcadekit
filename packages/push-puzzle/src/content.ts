@@ -1,35 +1,16 @@
-import { makeContentLoader } from "arcadekit/content";
-import type {
-  ContentDefinition,
-  ContentLoader,
-  ContentSource,
-} from "arcadekit/content";
-import { Context, Layer } from "effect";
+import { Content } from "arcadekit/content";
 
 import { PuzzleContent } from "./schema";
 
-/** The file that fills each part of the content. Paths are relative to the content source. */
-const CONTENT_FILES = { levels: "levels.json" } as const;
-
 /**
- * The push-puzzle content definition: the level schema, which also checks that every level can
- * be played, and the file it comes from. The content layer and the tests load it, each with its own source.
+ * A push-puzzle game's levels: the level Schema, which also checks that every level can be
+ * played, and the file they come from. The app provides it from its content source
+ * (`PushPuzzleContent.layer(source)`), and anything loads it with `PushPuzzleContent.load`: the
+ * first success is kept, and a failed load can be retried. A test reads a game's real files with
+ * `PushPuzzleContent.read(source)`, which runs the same checks.
  */
-export const pushPuzzleContentDefinition: ContentDefinition<
-  typeof PuzzleContent
-> = {
+export class PushPuzzleContent extends Content("PushPuzzleContent", {
   schema: PuzzleContent,
-  files: CONTENT_FILES,
-};
-
-/** Loads and validates a push-puzzle game's levels. Keeps the first successful load; a failed one can be retried. */
-export class PushPuzzleContent extends Context.Service<
-  PushPuzzleContent,
-  ContentLoader<PuzzleContent>
->()("@arcadekit/push-puzzle/Content") {}
-
-export const makePushPuzzleContentLayer = (source: ContentSource) =>
-  Layer.effect(
-    PushPuzzleContent,
-    makeContentLoader({ ...pushPuzzleContentDefinition, source })
-  );
+  // Paths are relative to the content source.
+  files: { levels: "levels.json" },
+}) {}

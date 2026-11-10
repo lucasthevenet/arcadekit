@@ -21,8 +21,8 @@ export default Alchemy.Stack(
         htmlHandling: "drop-trailing-slash",
         notFoundHandling: "404-page",
       },
-      ...(stage === "prod" ? { domain: "arcadekit.dev"} : {}),
-    })
+      ...(stage === "prod" ? { domain: "arcadekit.dev" } : {}),
+    });
 
     return { url: site.url };
   })

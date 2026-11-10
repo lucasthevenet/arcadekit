@@ -1,13 +1,9 @@
 import { PushPuzzleContent } from "@arcadekit/push-puzzle";
-import type {
-  PushPuzzleConfig,
-  PushPuzzleEvent,
-  Puzzle,
-} from "@arcadekit/push-puzzle";
-import { PushPuzzleEngine } from "@arcadekit/push-puzzle/browser";
+import {
+  PushPuzzleEngine,
+  PushPuzzleSheet,
+} from "@arcadekit/push-puzzle/browser";
 import { Audio, AudioSettings, applyAudioSettings } from "arcadekit/audio";
-import { engineOf } from "arcadekit/runtime/browser";
-import type { GameEngine } from "arcadekit/runtime/browser";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
@@ -21,21 +17,20 @@ import { RETRY_BUTTON_ID } from "./view";
 
 /**
  * Loads the levels and the sprite sheet, side by side: the game can't be played or drawn
- * without both. Loading the sheet makes the engine (ADR-0015). Either failing shows on the
- * load-error screen, whose "Try again" runs this again: each loader keeps its first success, so
- * only what failed is fetched again.
+ * without both. Either failing shows on the load-error screen, whose "Try again" runs this
+ * again: each keeps its first success, so only what failed is fetched again.
  */
 export const LoadContent = Command.define("LoadContent", {
   messages: [Message.LoadedContent, Message.FailedToLoadContent],
   execute: Effect.gen(function* () {
     // Both loads run to the end, so one failing doesn't cut the other short: what loaded is kept
     // for a retry.
-    const [loadedContent, loadedEngine] = yield* Effect.all(
-      [(yield* PushPuzzleContent).load, (yield* PushPuzzleEngine).load],
+    const [loadedContent, loadedSheet] = yield* Effect.all(
+      [PushPuzzleContent.load, PushPuzzleSheet.load],
       { concurrency: "unbounded", mode: "result" }
     );
     const content = yield* Effect.fromResult(loadedContent);
-    yield* Effect.fromResult(loadedEngine);
+    yield* Effect.fromResult(loadedSheet);
     return Message.LoadedContent({
       levels: content.levels.map(({ id, name }) => ({ id, name })),
     });
@@ -64,37 +59,24 @@ export const StartLevel = Command.define("StartLevel", {
   messages: [Message.StartedRun, Message.FailedToStartRun],
   execute: ({ levelId }) =>
     Effect.gen(function* () {
-      const content = yield* (yield* PushPuzzleContent).load;
-      const engine = yield* engineOf(PushPuzzleEngine);
+      const content = yield* PushPuzzleContent.load;
+      const engine = yield* PushPuzzleEngine;
       yield* engine.start({ content, levelId });
       return Message.StartedRun();
     }).pipe(
-      Effect.catchTag(["ContentError", "SpriteSheetError"], (error) =>
+      Effect.catchTag("ContentError", (error) =>
         Effect.succeed(Message.FailedToStartRun({ error: error.message }))
       )
     ),
 });
 
-/**
- * Runs `use` on the engine. The engine comes through the sheet's load, so this can fail only if
- * no load ever succeeded (then there is no run). That failure is reported, never dropped.
- */
-const withEngine = (
-  use: (
-    engine: GameEngine<PushPuzzleConfig, Puzzle, PushPuzzleEvent>
-  ) => Effect.Effect<void>
-) =>
-  engineOf(PushPuzzleEngine).pipe(
-    Effect.flatMap(use),
-    Effect.as(Message.CompletedEngineCommand()),
-    Effect.catchTag("SpriteSheetError", (error) =>
-      Effect.succeed(Message.FailedToStartRun({ error: error.message }))
-    )
-  );
-
 export const EndRun = Command.define("EndRun", {
-  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
-  execute: withEngine((engine) => engine.stop),
+  messages: [Message.CompletedEngineCommand],
+  execute: Effect.gen(function* () {
+    const engine = yield* PushPuzzleEngine;
+    yield* engine.stop;
+    return Message.CompletedEngineCommand();
+  }),
 });
 
 /** Reads the save once, at startup. Never fails: a bad save reads as empty. */
