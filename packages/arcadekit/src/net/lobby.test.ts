@@ -164,15 +164,41 @@ describe("the host's lobby", () => {
       { id: "guest-3", pick: "tide" },
     ];
     expect(
-      startPlan(players, new Set(["guest-3", "guest-2"]), "host", [
-        "spark",
-        "ember",
-        "tide",
-      ])
+      startPlan(
+        players,
+        new Set(["guest-3", "guest-2"]),
+        "host",
+        ["spark", "ember", "tide"],
+        4
+      )
     ).toStrictEqual({
       players: ["host", "guest-2", "guest-3"],
       picks: ["spark", "spark", "tide"],
     });
+  });
+
+  it("starts with no more players than the game takes, leaving out the last to join", () => {
+    const players = [
+      host,
+      { id: "guest-1", pick: "ember" },
+      { id: "guest-2", pick: "tide" },
+      { id: "guest-3", pick: "tide" },
+    ];
+    const valid = ["spark", "ember", "tide"];
+    expect([
+      startPlan(
+        players,
+        new Set(["guest-1", "guest-2", "guest-3"]),
+        "host",
+        valid,
+        2
+      ),
+      // A guest no longer linked doesn't count towards the number.
+      startPlan(players, new Set(["guest-2", "guest-3"]), "host", valid, 2),
+    ]).toStrictEqual([
+      { players: ["host", "guest-1"], picks: ["spark", "ember"] },
+      { players: ["host", "guest-2"], picks: ["spark", "tide"] },
+    ]);
   });
 
   it("starts a player whose pick is empty or unknown with the game's first pick", () => {
@@ -182,11 +208,14 @@ describe("the host's lobby", () => {
       { id: "guest-2", pick: "ember" },
     ];
     expect([
-      startPlan(players, new Set(["guest-1", "guest-2"]), "host", [
-        "spark",
-        "ember",
-      ]),
-      startPlan(players, new Set(["guest-1"]), "host", []),
+      startPlan(
+        players,
+        new Set(["guest-1", "guest-2"]),
+        "host",
+        ["spark", "ember"],
+        4
+      ),
+      startPlan(players, new Set(["guest-1"]), "host", [], 4),
     ]).toStrictEqual([
       {
         players: ["host", "guest-1", "guest-2"],

@@ -330,11 +330,12 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
 
         /**
          * Host: the worker confirmed the start. Everyone linked plays, in lobby order, and a
-         * pick the game doesn't have becomes its first.
+         * pick the game doesn't have becomes its first. A guest that linked since the host asked
+         * can make one too many for the game: the last to join get a start without them.
          */
         const startAsHost = (): RunPlan => {
           const linked = new Set(room.links().map(({ peer }) => peer));
-          const plan = startPlan(roster, linked, self, valid);
+          const plan = startPlan(roster, linked, self, valid, maxPlayers);
           const text = encodeLobbyMessage({ type: "start", ...plan });
           for (const link of room.links()) {
             link.messages.send(text);
@@ -347,8 +348,9 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
 
         /**
          * A guest: what the host says. The start ends the lobby, unless it leaves this player
-         * out or names a pick this player's game doesn't have, which would stop the run on
-         * every peer at its start.
+         * out, or this player's game can't play it: more players than it takes, or a pick it
+         * doesn't have, which would stop the run on every peer at its start. Only a host on
+         * another build starts either.
          */
         const hearHost = (
           message: LobbyMessage
@@ -365,6 +367,15 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
                   new SeatError({
                     reason: "leftOut",
                     message: "The run started without you.",
+                  })
+                );
+              }
+              if (message.players.length > maxPlayers) {
+                return Effect.fail(
+                  new SeatError({
+                    reason: "unknownPick",
+                    message:
+                      "The host started with more players than your game takes. Are you both on the same version?",
                   })
                 );
               }

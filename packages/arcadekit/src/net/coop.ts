@@ -47,8 +47,9 @@ export interface CoopRules<G extends CoopTypes> {
     picks: readonly string[]
   ) => G["Config"];
   /**
-   * The most players a run of this game takes: the lobby refuses a start above it. A signalling
-   * room's default size (4) if left out; state a smaller number, or the app's own room size.
+   * The most players a run of this game takes: the lobby refuses a start above it, on the host
+   * and on a guest. A signalling room's default size (4) if left out; state a smaller number, or
+   * the app's own room size. The same on every peer, since it is part of the game.
    */
   readonly maxPlayers?: number;
   /**

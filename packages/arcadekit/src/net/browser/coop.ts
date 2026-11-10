@@ -105,7 +105,8 @@ export interface LobbyPlayer {
  * - `content`: the content didn't load.
  * - `room`: the room couldn't be opened, or failed before the start.
  * - `leftOut`: the host started without this player.
- * - `unknownPick`: the host started with a lobby pick this player's game doesn't have.
+ * - `unknownPick`: the host started a run this player's game can't play: a lobby pick it doesn't
+ *   have, or more players than it takes. The two are on different builds.
  * - `hostLost`: nothing came from the host, before the run or in it.
  * - `desync`, `contentMismatch`, `removed`, `badInput`: the lockstep session's stops.
  * - `bug`: the client or the game threw.
@@ -200,7 +201,8 @@ export interface CoopClient<G extends CoopTypes, LoadError = never> {
   /**
    * Host: starts the run with everyone linked, if the lobby's `canStart` is true. Does nothing
    * otherwise, or for a guest. The worker confirms, then each guest is told the players and
-   * their picks.
+   * their picks. A guest that links in between can't make the run larger than the game's
+   * `maxPlayers`: the last to join fail with `leftOut`.
    */
   readonly start: Effect.Effect<void>;
   /**

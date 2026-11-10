@@ -131,19 +131,21 @@ export const canStart = (
 
 /**
  * Who plays when the host starts, and their lobby picks: the host (`self`) and every guest still
- * linked, in lobby order. `valid` is the game's list of picks: a player whose pick is empty or
- * not in it plays the first. The result is the host's `StartMessage`, and the run's player
- * order.
+ * linked, in lobby order, up to `maxPlayers`. A guest that linked after the host asked to start
+ * can make the lobby one too many: the last to join are left out. `valid` is the game's list of
+ * picks: a player whose pick is empty or not in it plays the first. The result is the host's
+ * `StartMessage`, and the run's player order.
  */
 export const startPlan = (
   players: readonly LobbyPick[],
   linked: ReadonlySet<PeerId>,
   self: PeerId,
-  valid: readonly string[]
+  valid: readonly string[],
+  maxPlayers: number
 ): { readonly players: PeerId[]; readonly picks: string[] } => {
-  const playing = players.filter(
-    (player) => player.id === self || linked.has(player.id)
-  );
+  const playing = players
+    .filter((player) => player.id === self || linked.has(player.id))
+    .slice(0, maxPlayers);
   const fallback = valid[0] ?? "";
   return {
     players: playing.map((player) => player.id),

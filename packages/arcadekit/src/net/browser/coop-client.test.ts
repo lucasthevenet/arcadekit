@@ -631,6 +631,42 @@ describe("hosting, joining and leaving", () => {
     ]);
   });
 
+  it("starts no more players than the game takes when a guest links as the host starts", async () => {
+    const hub = fakeCoopRooms();
+    const { host, guest } = await lobbyOfTwo(hub, {
+      host: duo(),
+      guest: duo(),
+    });
+    const third = await client(hub, duo());
+    // The host asks to start a lobby of two, and a third player links before the worker's word.
+    const starting = run(host.coop.start);
+    const joining = run(third.coop.join(hub.code, "blue"));
+    await starting;
+    await joining;
+    await vi.advanceTimersByTimeAsync(1000);
+    const hostRun = host.coop.debug();
+    expect([
+      lastLobby(host.events),
+      started(host.events),
+      started(guest.events),
+      hostRun.state?.picks,
+      [hostRun.error, hostRun.stepIndex > 30],
+      third.events.at(-1),
+    ]).toMatchObject([
+      // The third was in the lobby at the start: one too many.
+      { canStart: false, players: [{}, {}, { id: "guest-2" }] },
+      { type: "started", slot: 0, names: ["Host", "Guest 1"] },
+      { type: "started", slot: 1, names: ["Host", "Guest 1"] },
+      ["red", "green"],
+      [null, true],
+      {
+        type: "failed",
+        reason: "leftOut",
+        message: "The run started without you.",
+      },
+    ]);
+  });
+
   it("can't start while a player has no pick, and takes a pick made while the room opens", async () => {
     const hub = fakeCoopRooms();
     const host = await client(hub);
@@ -855,6 +891,32 @@ describe("why a seat failed", () => {
       reason: "leftOut",
       message: "The run started without you.",
     });
+  });
+
+  it("fails a guest the host started with more players than its game takes", async () => {
+    const hub = fakeCoopRooms();
+    // A host on another build, whose game takes three.
+    const tooMany = scriptedRoom([
+      encodeLobbyMessage({
+        type: "start",
+        players: ["host", "guest-1", "guest-2"],
+        picks: ["red", "green", "blue"],
+      }),
+    ]);
+    const { coop, events } = await client(hub, duo(), {
+      rooms: { ...hub.rooms, join: () => Effect.succeed(tooMany) },
+    });
+    await run(coop.join("K7MQ2X", "green"));
+    await settle();
+    expect([types(events), events.at(-1)]).toStrictEqual([
+      ["lobby", "failed"],
+      {
+        type: "failed",
+        reason: "unknownPick",
+        message:
+          "The host started with more players than your game takes. Are you both on the same version?",
+      },
+    ]);
   });
 
   it("fails a guest whose room fails in the lobby", async () => {
