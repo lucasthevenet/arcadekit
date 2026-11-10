@@ -47,6 +47,12 @@ const DECLARATIONS: Readonly<Record<string, Declared>> = {
   Asset: { file: "content/asset.ts", name: "assetName" },
 };
 
+// The files that return a class and build no declaration.
+const OTHER_CLASS_FACTORIES: readonly string[] = [
+  // The Durable Object class Cloudflare makes, sized by the Worker's module.
+  "net/worker/index.ts",
+];
+
 // The exported factories that stay: a primitive of the simulation, a plain module of rules
 // behind an Effect shell, or what one implementation of a service is built from. None is a part
 // each game supplies. Adding a name here is a design decision: say in the PR why the new thing
@@ -117,17 +123,21 @@ const interfaceBody = (source: string, name: string): string =>
 
 describe("the table of declarations", () => {
   it("names every builder in the kit's source", () => {
-    // A builder's class says what it is with a `kind` static, so that is what finds one.
+    // A builder is a function that returns a class, and its class says what it is with a `kind`
+    // static. Either one finds it, so a builder that left the other out is found, and fails below.
     const builders = sourceFiles(srcDir).filter((file) =>
-      /\bstatic readonly kind = "/u.test(read(path.join(srcDir, file)))
+      /(?:\breturn|=>)\s+class\b|\bstatic readonly kind = "/u.test(
+        read(path.join(srcDir, file))
+      )
     );
     expect(
       builders,
-      `A file under src/ builds a declaration that DECLARATIONS doesn't list. See ${guide}.`
+      `A file under src/ builds a declaration (it returns a class, or has a \`kind\` static) that DECLARATIONS doesn't list. See ${guide}.`
     ).toStrictEqual(
-      Object.values(DECLARATIONS)
-        .map(({ file }) => file)
-        .toSorted()
+      [
+        ...Object.values(DECLARATIONS).map(({ file }) => file),
+        ...OTHER_CLASS_FACTORIES,
+      ].toSorted()
     );
   });
 
