@@ -1,6 +1,6 @@
 # arcadekit/net
 
-Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `GameSimulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. `combinePlayerInputs` turns each confirmed step into `arcadekit/runtime`'s `PlayerInputs`, by slot. In an Effect program, `hostLockstepScoped` and `joinLockstepScoped` make the same session, owned by a scope and run on Effect's `Clock` until it fails with its `LockstepError`. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the scoped signalling client that turns a join code into peer links, and `linksTransport`), and `arcadekit/net/signalling` the protocol a signalling server speaks, each message an Effect Schema with bounded fields. [`arcadekit/net/worker`](worker/README.md) is that server for Cloudflare, with a README of its own.
+Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `GameSimulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. `combinePlayerInputs` turns each confirmed step into `arcadekit/runtime`'s `PlayerInputs`, by slot. In an Effect program, `hostLockstepScoped` and `joinLockstepScoped` make the same session, owned by a scope and run on Effect's `Clock` until it fails with its `LockstepError`. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the scoped signalling client that turns a join code into peer links, and `linksTransport`), and `arcadekit/net/signalling` the protocol a signalling server speaks, each message an Effect Schema with bounded fields. [`arcadekit/net/worker`](worker/README.md) is that server for Cloudflare, with a README of its own. For a whole co-op game, `makeCoopClient` in `arcadekit/net/browser` runs all of this for one player from the game's `CoopRules`, and `arcadekit/net/testing` has its test helpers: see [Co-op](#co-op).
 
 An entry of the [`arcadekit`](../../README.md) package. The root entry is DOM-free.
 
@@ -249,6 +249,138 @@ const host = Effect.gen(function* () {
 );
 
 Effect.runFork(host);
+```
+
+## Co-op
+
+A **Co-op game** is a game plus its lockstep parts, and the **Co-op client** runs one for one player: the lobby over the signalling worker and WebRTC, then a lockstep run stepped on a worker's timer (so a hidden tab keeps up), drawn on animation frames while attached. The game supplies its genre half; the lobby screens stay in the app.
+
+- `CoopRules<G>` (`arcadekit/net`) is the DOM-free half, kept beside the simulation and tested in Node. `G` is a `CoopTypes` bag the game declares once: `Config`, `State`, `Event`, `PlayerInput`, `Answer`, `LocalEvent` and `Content`. The simulation's step input is `PlayerInputs<PlayerInput>`: the client combines the players' inputs by slot.
+- `CoopGame<G, LoadError>` (`arcadekit/net/browser`) adds `content`, an Effect run once per seat, and `presentation`, an Effect run once per attach that gives `createInput` and `createView`. The view gets a live `LocalPlayer`, and reads `local.slot` when it renders: the client never makes a view again.
+- `makeCoopClient(game, { rooms })` is a scoped Effect. `browserCoopRooms({ url, iceServers })` opens its rooms; the kit reads no environment, so the app passes the worker's URL and its STUN servers.
+
+The client's commands return at once, and one stream of events says what happened:
+
+- `host(pick)`, `join(code, pick)` and `leave` choose the seat. A **lobby pick** is a string id the game lists in `picks(content)`, such as a hero. `choose(pick)` changes it, and `start` starts the run if the `lobby` event's `canStart` is true: at least two players, at most the game's `maxPlayers`, each with a pick. At the start the host replaces a pick its game doesn't have with the first, and a guest whose game doesn't have one of the picks fails with `unknownPick`.
+- `answer(answer)` is the one thing a player tells the run besides its device's input: it goes with every step's input until the game's `settled` says it can no longer apply. `setPaused` holds the pause the same way.
+- `listen` reports a seat in order: `lobby` events, one `started`, then `run` events (what the game's `localEvent` makes of the run's) and `waiting` events (who stepping waits on, and who else owes an answer), then at most one `failed`, which is its last. `failed` has the kit's `message` and a `reason` tag an app can re-word.
+- `attach(element)` draws and reads input until interrupted, as an engine's does, and `attach` and `listen` have `arcadekit/foldkit`'s `AttachableEngine` shapes. A failed attach leaves the seat; a detach doesn't.
+
+```ts
+import { jsonCodec } from "arcadekit/net";
+import type { CoopRules, CoopTypes } from "arcadekit/net";
+import { browserCoopRooms, makeCoopClient } from "arcadekit/net/browser";
+import type { CoopGame } from "arcadekit/net/browser";
+import { Effect } from "effect";
+
+interface Tally {
+  readonly colours: readonly string[];
+  total: number;
+}
+
+// Every player adds a number each step. No answers, and no events.
+interface Sum extends CoopTypes {
+  readonly Config: { readonly colours: readonly string[] };
+  readonly State: Tally;
+  readonly Event: never;
+  readonly PlayerInput: number;
+  readonly Answer: never;
+  readonly LocalEvent: never;
+  readonly Content: { readonly colours: readonly string[] };
+}
+
+// The DOM-free half: beside the simulation, tested in Node.
+const sumRules: CoopRules<Sum> = {
+  simulation: {
+    create: ({ colours }) => ({ colours, total: 0 }),
+    step: (state, input) => {
+      for (const add of input.players) {
+        state.total += add ?? 0;
+      }
+    },
+    drainEvents: () => [],
+  },
+  codec: jsonCodec<number>(),
+  hash: (state) => state.total,
+  picks: (content) => content.colours,
+  config: (_content, picks) => ({ colours: picks }),
+  localInput: () => (device) => device ?? 0,
+  settled: () => true,
+  choosing: () => false,
+  localEvent: () => null,
+  runEnded: () => false,
+};
+
+// The browser half: the content to load, and how to read input and draw.
+const sumGame: CoopGame<Sum> = {
+  ...sumRules,
+  content: Effect.succeed({ colours: ["red", "blue"] }),
+  presentation: Effect.sync(() => ({
+    createInput: () => ({ read: () => 1, dispose: () => {} }),
+    createView: (container, local) => ({
+      render: (state) => {
+        container.textContent =
+          state === null
+            ? "No run"
+            : `${state.colours[local.slot]}: ${state.total}`;
+      },
+      dispose: () => {},
+    }),
+  })),
+};
+
+const play = Effect.gen(function* () {
+  const coop = yield* makeCoopClient(sumGame, {
+    rooms: browserCoopRooms({
+      url: "wss://signalling.example.com",
+      iceServers: [{ urls: "stun:stun.example.com:3478" }],
+    }),
+  });
+  yield* coop.listen((event) => {
+    if (event.type === "lobby") {
+      console.log(event.code, event.players, event.canStart);
+    } else if (event.type === "failed") {
+      console.error(event.reason, event.message);
+    }
+  });
+  yield* coop.host("red");
+  // The app calls `coop.start` once the lobby's `canStart` is true.
+  return yield* coop.attach(document.body);
+}).pipe(Effect.scoped);
+
+Effect.runFork(play);
+```
+
+The same lobby without the client, for a game that wants its own: `encodeLobbyMessage` and `parseLobbyMessage` (the `pick`, `lobby` and `start` messages, decoded with Schema), the host's lobby as plain values (`withPlayer`, `withoutPlayer`, `withPick`, `canStart`, `startPlan`, `knownPicks`), `playerName` and `contentHash` are all in `arcadekit/net`.
+
+### Testing a Co-op game
+
+`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links), `manualTicker()` a ticker the test drives, and `testCoopGame()` a small game with lobby picks, an offer to answer, a pause and an end. Frames come from `manualFrames()` in `arcadekit/runtime/testing`.
+
+```ts
+import { makeCoopClient } from "arcadekit/net/browser";
+import {
+  fakeCoopRooms,
+  manualTicker,
+  testCoopGame,
+} from "arcadekit/net/testing";
+import { Effect } from "effect";
+
+const hub = fakeCoopRooms();
+const timer = manualTicker();
+
+const twoPlayers = Effect.gen(function* () {
+  const options = { rooms: hub.rooms, ticker: timer.ticker };
+  const host = yield* makeCoopClient(testCoopGame(), options);
+  const guest = yield* makeCoopClient(testCoopGame(), options);
+  yield* host.listen((event) => console.log("host", event.type));
+  yield* host.host("red");
+  yield* guest.join(hub.code, "green");
+  // Once both are in the lobby: `host.start`, then `timer.tick()` as time passes.
+  return { host, guest };
+}).pipe(Effect.scoped);
+
+Effect.runFork(twoPlayers);
 ```
 
 See [ADR-0012](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0012-delay-based-lockstep-over-a-host-star.md) (delay-based lockstep over a host star) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math, so every browser computes the same run).
