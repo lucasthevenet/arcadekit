@@ -105,8 +105,10 @@ export interface LobbyPlayer {
  * - `content`: the content didn't load.
  * - `room`: the room couldn't be opened, or failed before the start.
  * - `leftOut`: the host started without this player.
- * - `unknownPick`: the host started a run this player's game can't play: a lobby pick it doesn't
- *   have, or more players than it takes. The two are on different builds.
+ * - `unknownPick`: the host started with a lobby pick this player's game doesn't have. The two
+ *   are on different builds.
+ * - `tooManyPlayers`: the host started with more players than this player's game takes. Only a
+ *   host on another build sends such a start.
  * - `hostLost`: nothing came from the host, before the run or in it.
  * - `desync`, `contentMismatch`, `removed`, `badInput`: the lockstep session's stops.
  * - `bug`: the client or the game threw.
@@ -116,6 +118,7 @@ export type CoopFailure =
   | "room"
   | "leftOut"
   | "unknownPick"
+  | "tooManyPlayers"
   | "hostLost"
   | "desync"
   | "contentMismatch"

@@ -380,7 +380,7 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
               if (message.players.length > maxPlayers) {
                 return Effect.fail(
                   new SeatError({
-                    reason: "unknownPick",
+                    reason: "tooManyPlayers",
                     message:
                       "The host started with more players than your game takes. Are you both on the same version?",
                   })

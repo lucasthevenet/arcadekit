@@ -1101,7 +1101,7 @@ describe("why a seat failed", () => {
       ["lobby", "failed"],
       {
         type: "failed",
-        reason: "unknownPick",
+        reason: "tooManyPlayers",
         message:
           "The host started with more players than your game takes. Are you both on the same version?",
       },
