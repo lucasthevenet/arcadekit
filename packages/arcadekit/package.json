@@ -28,7 +28,7 @@
     "web-audio",
     "webrtc"
   ],
-  "homepage": "https://github.com/lucasthevenet/arcadekit/tree/main/packages/arcadekit#readme",
+  "homepage": "https://arcadekit.dev",
   "bugs": "https://github.com/lucasthevenet/arcadekit/issues",
   "license": "MIT",
   "author": "Lucas Thevenet",
