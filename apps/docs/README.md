@@ -111,6 +111,7 @@ On `prod` the Worker also keeps its `workers.dev` URL, as GRIMBONK's does, and `
 2. Delete the first paragraph of its header comment, which says it is an example.
 3. In this section, link the workflow where it now is, and delete this list and the sentence before it.
 4. Delete "The docs site's deployment" from "Not done yet" in [the root README](../../README.md#not-done-yet).
+5. In `.github/workflows/ci.yml`, widen the comment above `pnpm build`: the build also builds this site, and fails on a dead link in a README.
 
 It needs:
 
