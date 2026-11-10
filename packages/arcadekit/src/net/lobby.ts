@@ -1,64 +1,81 @@
-import { DEFAULT_ROOM_SIZE } from "arcadekit/net/signalling";
 import { Option, Schema } from "effect";
 
+import { DEFAULT_ROOM_SIZE, MAX_ROOM_SIZE } from "./signalling/protocol";
+import type { PeerId } from "./transport";
+
 // What a co-op lobby's peers say over each peer link's reliable `messages` channel, before the
-// run. The lockstep session's own messages travel on the `lockstep` channel; these are the
-// demo's. In the host star, a guest talks only to the host, and the host tells each guest the
-// whole lobby.
+// run, and the host's lobby as plain values. The lockstep session's own messages travel on the
+// `lockstep` channel. In the host star, a guest talks only to the host, and the host tells each
+// guest the whole lobby. The Co-op client (`arcadekit/net/browser`) is the shell that sends and
+// hears these.
 
-/** One player in the lobby: its peer id and the hero it picked ("" until it says). */
-export const LobbyPlayer = Schema.Struct({
+/** One player in the lobby: its peer id and its lobby pick ("" until it says). */
+export interface LobbyPick {
+  readonly id: PeerId;
+  readonly pick: string;
+}
+
+/** What a lobby's peers say to each other. */
+export type LobbyMessage =
+  /** Guest to host: this guest's lobby pick. Sent when its link opens and on each change. */
+  | { readonly type: "pick"; readonly pick: string }
+  /** Host to guests: everyone in the lobby, host first, in join order. */
+  | { readonly type: "lobby"; readonly players: readonly LobbyPick[] }
+  /**
+   * Host to guests: the run starts. `players` is the player order, host first, and `picks` each
+   * one's lobby pick, in that order: what the game's `config` is made from. The seed and the
+   * content hash come in the lockstep session's own start message, which checks the hash.
+   */
+  | {
+      readonly type: "start";
+      readonly players: readonly PeerId[];
+      readonly picks: readonly string[];
+    };
+
+// The messages as Schemas: what arrives is untrusted, so it is decoded where it arrives.
+
+const LobbyPickSchema = Schema.Struct({
   id: Schema.String,
-  heroId: Schema.String,
-});
-export type LobbyPlayer = typeof LobbyPlayer.Type;
-
-/** Guest to host: the hero this guest plays. Sent when its link opens and on each change. */
-export const HeroMessage = Schema.Struct({
-  type: Schema.Literal("hero"),
-  heroId: Schema.String,
+  pick: Schema.String,
 });
 
-/** Host to guests: everyone in the lobby, host first, in join order. */
-export const LobbyListMessage = Schema.Struct({
+const PickMessage = Schema.Struct({
+  type: Schema.Literal("pick"),
+  pick: Schema.String,
+});
+
+const LobbyListMessage = Schema.Struct({
   type: Schema.Literal("lobby"),
-  players: Schema.Array(LobbyPlayer),
+  players: Schema.Array(LobbyPickSchema),
 });
 
-/** 1 to `DEFAULT_ROOM_SIZE` of something, one per player: the demo's rooms hold no more. */
+/** 1 to `MAX_ROOM_SIZE` of something, one per player: no room holds more. */
 const PerPlayer = Schema.Array(Schema.String).check(
   Schema.isMinLength(1),
-  Schema.isMaxLength(DEFAULT_ROOM_SIZE)
+  Schema.isMaxLength(MAX_ROOM_SIZE)
 );
 
-/**
- * Host to guests: the run starts. `players` is the player order, host first, and `heroIds`
- * each one's hero, in that order: the run's `SurvivorsConfig.heroIds`. The seed and the
- * content hash come in the lockstep session's own start message, which checks the hash.
- */
-export const StartMessage = Schema.Struct({
+const StartMessage = Schema.Struct({
   type: Schema.Literal("start"),
   players: PerPlayer,
-  heroIds: PerPlayer,
+  picks: PerPlayer,
 }).check(
-  Schema.makeFilter(
-    ({ players, heroIds }) => players.length === heroIds.length,
-    { expected: "one hero per player" }
-  )
+  Schema.makeFilter(({ players, picks }) => players.length === picks.length, {
+    expected: "one pick per player",
+  })
 );
 
-export const LobbyMessage = Schema.Union([
-  HeroMessage,
+const LobbyMessageSchema = Schema.Union([
+  PickMessage,
   LobbyListMessage,
   StartMessage,
 ]);
-export type LobbyMessage = typeof LobbyMessage.Type;
 
 export const encodeLobbyMessage = (message: LobbyMessage): string =>
   JSON.stringify(message);
 
 const decodeLobbyMessage = Schema.decodeUnknownOption(
-  Schema.fromJsonString(LobbyMessage)
+  Schema.fromJsonString(LobbyMessageSchema)
 );
 
 /** Reads one lobby message; `undefined` when it isn't one. */
@@ -66,7 +83,7 @@ export const parseLobbyMessage = (text: string): LobbyMessage | undefined =>
   Option.getOrUndefined(decodeLobbyMessage(text));
 
 /** A peer id as players read it: `host` is "Host", `guest-2` is "Guest 2". */
-export const playerName = (id: string): string => {
+export const playerName = (id: PeerId): string => {
   if (id === "host") {
     return "Host";
   }
@@ -74,53 +91,70 @@ export const playerName = (id: string): string => {
   return guest ? `Guest ${guest.groups!.n}` : id;
 };
 
-// The host's lobby, as plain values: who is in it and their heroes, host first, in join order.
+// The host's lobby, as plain values: who is in it and their lobby picks, host first, in join
+// order.
 
-/** The lobby with `id` added at its end, with no hero yet. A player already in it stays where it is. */
+/** The lobby with `id` added at its end, with no pick yet. A player already in it stays where it is. */
 export const withPlayer = (
-  players: readonly LobbyPlayer[],
-  id: string
-): readonly LobbyPlayer[] =>
+  players: readonly LobbyPick[],
+  id: PeerId
+): readonly LobbyPick[] =>
   players.some((player) => player.id === id)
     ? players
-    : [...players, { id, heroId: "" }];
+    : [...players, { id, pick: "" }];
 
 /** The lobby without `id`. */
 export const withoutPlayer = (
-  players: readonly LobbyPlayer[],
-  id: string
-): readonly LobbyPlayer[] => players.filter((player) => player.id !== id);
+  players: readonly LobbyPick[],
+  id: PeerId
+): readonly LobbyPick[] => players.filter((player) => player.id !== id);
 
-/** The lobby with `id` playing `heroId`. */
-export const withHero = (
-  players: readonly LobbyPlayer[],
-  id: string,
-  heroId: string
-): readonly LobbyPlayer[] =>
-  players.map((player) => (player.id === id ? { id, heroId } : player));
-
-/** Whether the host may start: at least two players, and each has picked a hero. */
-export const canStart = (
-  players: readonly { readonly heroId: string }[]
-): boolean =>
-  players.length >= 2 && players.every((player) => player.heroId !== "");
+/** The lobby with `id` having picked `pick`. */
+export const withPick = (
+  players: readonly LobbyPick[],
+  id: PeerId,
+  pick: string
+): readonly LobbyPick[] =>
+  players.map((player) => (player.id === id ? { id, pick } : player));
 
 /**
- * Who plays when the host starts, and their heroes: the host (`self`) and every guest still
- * linked, in lobby order. A player who picked no hero plays `fallbackHeroId`. The result is the
- * host's `StartMessage`, and the run's player order.
+ * Whether the host may start: at least two players, at most `maxPlayers`, and each has a lobby
+ * pick. `maxPlayers` is the game's number, or a room's default size without one.
+ */
+export const canStart = (
+  players: readonly { readonly pick: string }[],
+  maxPlayers: number = DEFAULT_ROOM_SIZE
+): boolean =>
+  players.length >= 2 &&
+  players.length <= maxPlayers &&
+  players.every((player) => player.pick !== "");
+
+/**
+ * Who plays when the host starts, and their lobby picks: the host (`self`) and every guest still
+ * linked, in lobby order. `valid` is the game's list of picks: a player whose pick is empty or
+ * not in it plays the first. The result is the host's `StartMessage`, and the run's player
+ * order.
  */
 export const startPlan = (
-  players: readonly LobbyPlayer[],
-  linked: ReadonlySet<string>,
-  self: string,
-  fallbackHeroId: string
-): { readonly players: string[]; readonly heroIds: string[] } => {
+  players: readonly LobbyPick[],
+  linked: ReadonlySet<PeerId>,
+  self: PeerId,
+  valid: readonly string[]
+): { readonly players: PeerId[]; readonly picks: string[] } => {
   const playing = players.filter(
     (player) => player.id === self || linked.has(player.id)
   );
+  const fallback = valid[0] ?? "";
   return {
     players: playing.map((player) => player.id),
-    heroIds: playing.map((player) => player.heroId || fallbackHeroId),
+    picks: playing.map((player) =>
+      valid.includes(player.pick) ? player.pick : fallback
+    ),
   };
 };
+
+/** Whether every pick of a start is one this peer's game has: a guest refuses a start with another. */
+export const knownPicks = (
+  picks: readonly string[],
+  valid: readonly string[]
+): boolean => picks.every((pick) => valid.includes(pick));

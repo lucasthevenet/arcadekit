@@ -1,7 +1,7 @@
-import type { Ticker } from "arcadekit/net";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Ticker } from "../scoped";
 import { TICK_WORKER_SOURCE, tickWorker, workerTicker } from "./ticker";
 import type { TickWorker, WorkerTickerOptions } from "./ticker";
 

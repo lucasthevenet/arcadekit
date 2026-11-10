@@ -1,6 +1,7 @@
-import type { Ticker } from "arcadekit/net";
 import { Effect } from "effect";
 import type { Scope } from "effect";
+
+import type { Ticker } from "../scoped";
 
 // What ticks a co-op run's lockstep session in the browser.
 //
