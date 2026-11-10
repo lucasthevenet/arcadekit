@@ -395,6 +395,54 @@ describe("a co-op run", () => {
     ]);
   });
 
+  it("names who it waits on only once stepping has waited 300 ms", async () => {
+    const hub = fakeCoopRooms();
+    const stalled = manualTicker();
+    const host = await client(hub);
+    const guest = await client(hub, testCoopGame(), {
+      ticker: stalled.ticker,
+    });
+    await run(host.coop.host("red"));
+    await settle();
+    await run(guest.coop.join(hub.code, "green"));
+    await settle();
+    await run(host.coop.start);
+    // The guest's ticker stands still, so the host's run waits on it from its first step.
+    const named = () =>
+      host.events.some(
+        (event) => event.type === "waiting" && event.waitingFor.length > 0
+      );
+    await vi.advanceTimersByTimeAsync(296);
+    const early = named();
+    await vi.advanceTimersByTimeAsync(104);
+    expect([
+      early,
+      host.events.findLast((event) => event.type === "waiting"),
+    ]).toStrictEqual([
+      false,
+      { type: "waiting", waitingFor: ["Guest 1"], choosing: [] },
+    ]);
+  });
+
+  it("keeps the last 32 state hashes for debug", async () => {
+    const hub = fakeCoopRooms();
+    const often = testCoopGame({ lockstep: { hashEvery: 2 } });
+    const { host, guest } = await lobbyOfTwo(hub, {
+      host: often,
+      guest: often,
+    });
+    await run(host.coop.start);
+    await vi.advanceTimersByTimeAsync(5000);
+    const steps = Object.keys(host.coop.debug().hashes).map(Number);
+    expect([
+      steps.length,
+      Object.keys(guest.coop.debug().hashes).length,
+      // One hash every 2 steps: the 32 kept are the last 32 taken.
+      Math.max(...steps) - Math.min(...steps),
+      host.coop.debug().stepIndex - Math.max(...steps) < 2,
+    ]).toStrictEqual([32, 32, 62, true]);
+  });
+
   it("reports a seat in order: its lobby, one start, the run, then its failure last", async () => {
     const hub = fakeCoopRooms();
     const { host, guest } = await lobbyOfTwo(hub);
