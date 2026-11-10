@@ -226,7 +226,26 @@ export default defineConfig({
     ],
     sidebar: sidebar(pages),
     outline: { level: [2, 3] },
-    search: { provider: "local" },
+    search: {
+      provider: "local",
+      options: {
+        miniSearch: {
+          searchOptions: {
+            // An entry's page says how to use an export. A decision says why it is so, and the
+            // glossary what a word means. A search for an export's name matches all three, and
+            // the reader most often wants the first: rank the other two lower. A term's own
+            // line of the glossary still comes first for the term. VitePress sends this
+            // function to the browser as text, so it names nothing outside itself.
+            boostDocument: (id: string) => {
+              if (id.startsWith("/adr/")) {
+                return 0.3;
+              }
+              return id.startsWith("/glossary") ? 0.5 : 1;
+            },
+          },
+        },
+      },
+    },
     socialLinks: [{ icon: "github", link: REPO_URL }],
     editLink: {
       pattern: `${REPO_URL}/edit/${BRANCH}/:path`,
