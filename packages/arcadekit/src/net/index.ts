@@ -22,6 +22,7 @@ export {
   type MemoryNetworkOptions,
   createMemoryNetwork,
 } from "./memory-network";
+export { combinePlayerInputs } from "./player-inputs";
 export {
   type ScopedLockstepSession,
   type Ticker,

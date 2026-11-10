@@ -1,6 +1,5 @@
 import {
   HeroInput,
-  combineHeroInputs,
   hashWorld,
   isChoosing,
   survivorsSimulation,
@@ -27,6 +26,7 @@ import type {
 import type { ContentError } from "arcadekit/content";
 import { InputController, MOVE_AXES } from "arcadekit/input";
 import {
+  combinePlayerInputs,
   hostLockstepScoped,
   joinLockstepScoped,
   schemaCodec,
@@ -672,7 +672,7 @@ export const makeCoopClient = (
           transport: linksTransport(room.self, room.links()),
           local: localInput(seat),
           codec: schemaCodec(HeroInput),
-          combine: combineHeroInputs(plan.players),
+          combine: combinePlayerInputs(plan.players),
           hash: (world) => recordHash(seat, world),
           inputDelay: options.inputDelay ?? 4,
           hashEvery: options.hashEvery ?? 60,

@@ -226,7 +226,7 @@ const anyPlaying = (world: World): boolean => {
 
 /**
  * Advances the run by `dt` seconds. First the heroes in `input.leaving` leave and the picks in
- * `input.heroes` apply; then the run stays frozen while any hero has an upgrade offer open, or
+ * `input.players` apply; then the run stays frozen while any hero has an upgrade offer open, or
  * while any playing hero's player holds it paused. Does nothing once the run is over.
  */
 export const step = (world: World, input: SurvivorsInput, dt: number): void => {
@@ -281,7 +281,7 @@ export const step = (world: World, input: SurvivorsInput, dt: number): void => {
 };
 
 const heroInput = (input: SurvivorsInput, hero: Hero): HeroInput | null =>
-  input.heroes[hero.slot] ?? null;
+  input.players[hero.slot] ?? null;
 
 /** The hero in `slot` leaves the run: it is no longer drawn or chased, and its open offer closes. */
 const leave = (world: World, slot: number) => {

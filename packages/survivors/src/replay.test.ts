@@ -1,10 +1,9 @@
-import { GameLoop } from "arcadekit/runtime";
+import { GameLoop, soloInput } from "arcadekit/runtime";
 import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { hashWorld } from "./hash-world";
-import { soloInput } from "./input";
 import type { HeroInput } from "./input";
 import { GameContent } from "./schema";
 import { survivorsSimulation } from "./simulation";

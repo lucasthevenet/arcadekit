@@ -15,13 +15,7 @@ export {
   UpgradeChoice,
 } from "./events";
 export { hashWorld } from "./hash-world";
-export {
-  HeroInput,
-  type SurvivorsInput,
-  UpgradePick,
-  combineHeroInputs,
-  soloInput,
-} from "./input";
+export { HeroInput, type SurvivorsInput, UpgradePick } from "./input";
 export { GameContent } from "./schema";
 export { survivorsSimulation } from "./simulation";
 export {

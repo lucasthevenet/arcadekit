@@ -1,11 +1,10 @@
-import { GameLoop } from "arcadekit/runtime";
+import { GameLoop, soloInput } from "arcadekit/runtime";
 import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
-import { soloInput } from "./input";
 import type { HeroInput, SurvivorsInput } from "./input";
 import { GameContent } from "./schema";
 import { survivorsSimulation } from "./simulation";
@@ -104,13 +103,13 @@ const content = Schema.decodeUnknownSync(GameContent)({
 
 const DT = 1 / 60;
 
-const STILL: SurvivorsInput = { heroes: [], leaving: [] };
+const STILL: SurvivorsInput = { players: [], leaving: [] };
 
-/** One step's input: each hero's, by slot. */
+/** One step's input: each player's, by its hero's slot. */
 const inputs = (
-  ...heroes: (HeroInput | null)[]
-): { heroes: (HeroInput | null)[]; leaving: number[] } => ({
-  heroes,
+  ...players: (HeroInput | null)[]
+): { players: (HeroInput | null)[]; leaving: number[] } => ({
+  players,
   leaving: [],
 });
 
@@ -456,7 +455,7 @@ describe("co-op", () => {
     const b = world.heroes[1]!;
     const i = addEnemy(world, b.x, b.z + 3);
     const x = world.enemies.fields.x[i]!;
-    step(world, { heroes: [], leaving: [1] }, DT);
+    step(world, { players: [], leaving: [1] }, DT);
     expect([
       hudSample(world).heroes[1]!.status,
       offersOpen(world),
@@ -494,7 +493,7 @@ describe("co-op", () => {
     expect(first).toStrictEqual(first.map((_, k) => (k % 2 === 0 ? -1 : 1)));
     // Once hero 1 has left, every enemy spawns around hero 0.
     const before = world.enemies.count;
-    step(world, { heroes: [], leaving: [1] }, DT);
+    step(world, { players: [], leaving: [1] }, DT);
     expect(new Set(sides(before))).toStrictEqual(new Set([-1]));
   });
 
