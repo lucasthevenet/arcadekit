@@ -40,6 +40,8 @@ features:
     linkText: ADR-0017
 ---
 
+arcadekit is one package of primitives for browser games made with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org). Each of its entries has a page here.
+
 <!-- The package's README, after its title and first paragraph (.vitepress/pages.ts checks the range). -->
 <!--@include: ../../packages/arcadekit/README.md{5,}-->
 
