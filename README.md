@@ -142,7 +142,7 @@ Rules of thumb for the simulation (see `packages/push-puzzle/src/world.ts` for a
 - Use the run's `Rng` (`makeRng(seed)`) for every random choice, so the same seed and inputs give the same run.
 - Report rare, meaningful facts with `report`. Never send per-entity data to the UI.
 
-`docs/push-puzzle-findings.md` lists what building the second genre showed about the kit: which primitives are known to fit one genre, and the issues filed for them. `docs/co-op-findings.md` lists what moving co-op into the kit left in the apps. `docs/architecture-review.md` records the #27 survey of the kit and the demo apps, and where each verdict landed. `docs/adr/` holds the kit's decisions the follow-ups build on. `CONTEXT.md` is the glossary (step vs turn, SpatialGrid vs tile map).
+`docs/push-puzzle-findings.md` lists what building the second genre showed about the kit: which primitives are known to fit one genre, and the issues filed for them. `docs/co-op-findings.md` lists what moving co-op into the kit left in the apps. `docs/architecture-review.md` records the #27 survey of the kit and the demo apps, and where each verdict landed. `docs/adr/` holds the kit's decisions the follow-ups build on. `docs/code-style.md` is how a module of the kit is written, and what checks it. `CONTEXT.md` is the glossary (step vs turn, SpatialGrid vs tile map).
 
 ## The survivors demo
 

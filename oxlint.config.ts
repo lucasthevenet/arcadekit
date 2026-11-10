@@ -91,6 +91,27 @@ const ownTimeOrRandomnessProperties = [
   ),
 ];
 
+// Library code runs no Effect of its own: it returns the Effect, and the app's runtime runs it
+// (ADR-0017). The `...With` forms are left alone: they are how plain code a host calls runs an
+// Effect on a context captured once.
+const EFFECT_RUNNERS = [
+  "runSync",
+  "runSyncExit",
+  "runPromise",
+  "runPromiseExit",
+  "runFork",
+  "runCallback",
+] as const;
+
+const ownRunner =
+  'Library code runs no Effect itself: return the Effect, and the app\'s runtime runs it. Plain code that a host calls captures a runner once (FiberHandle.runtime, or Effect.context with Effect.runForkWith). See "Where plain code and Effect meet" in AGENTS.md.';
+
+const ownRunnerProperties = EFFECT_RUNNERS.map((property) => ({
+  object: "Effect",
+  property,
+  message: `Effect.${property}: ${ownRunner}`,
+}));
+
 // Which entry of the arcadekit package may import which (ADR-0018). This is the graph the nine
 // packages had when they were separate: core and input stand alone, runtime steps with core's
 // clock, net steps a GameLoop and seeds its test network with core's Rng, and foldkit's tests
@@ -155,6 +176,36 @@ export default defineConfig({
   },
   overrides: [
     {
+      // How a game writes a declaration (ADR-0020, docs/code-style.md).
+      files: ["packages/**/*.ts", "apps/**/*.ts"],
+      jsPlugins: ["./tools/lint/declaration.ts"],
+      rules: {
+        "declaration/named": "error",
+        "declaration/class": "error",
+      },
+    },
+    {
+      // A test may call a builder outside a class, to check what it refuses.
+      files: ["**/*.test.ts"],
+      jsPlugins: ["./tools/lint/declaration.ts"],
+      rules: { "declaration/class": "off" },
+    },
+    {
+      // Library code, but for what a test imports and the one file whose entry points
+      // Cloudflare owns. The two overrides below set the same rule for the simulation's files,
+      // and the last one's options replace the others', so they repeat this list.
+      files: ["packages/*/src/**/*.ts"],
+      excludeFiles: [
+        "**/*.test.ts",
+        "**/testing/**",
+        "**/test-*.ts",
+        "packages/arcadekit/src/net/worker/index.ts",
+      ],
+      rules: {
+        "eslint/no-restricted-properties": ["error", ...ownRunnerProperties],
+      },
+    },
+    {
       // Genre simulation code: root entries, not the views in ./browser, not tests.
       files: [
         "packages/survivors/src/**/*.ts",
@@ -171,6 +222,7 @@ export default defineConfig({
             message: `Math.${property} ${approximatedMathMessage}`,
           })),
           ...ownTimeOrRandomnessProperties,
+          ...ownRunnerProperties,
         ],
         "deterministic-math/no-exponentiation": "error",
         ...noOwnTimeOrRandomness,
@@ -202,6 +254,7 @@ export default defineConfig({
         "eslint/no-restricted-properties": [
           "error",
           ...ownTimeOrRandomnessProperties,
+          ...ownRunnerProperties,
         ],
         ...noOwnTimeOrRandomness,
       },

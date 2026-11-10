@@ -19,6 +19,10 @@ A game is written as **declarations**: one named class per part, hosted by a Lay
 - **Kit source names a declaration's base first**, as `audio/service.ts` does, since it is checked with `isolatedDeclarations`. Genre packages and apps write `class X extends Game.Event(...) {}`.
 - **Survivors and the Co-op client are on the older contract** (`GameSimulation`, `makeGameEngine`, `makeEngineLoader`, `CoopRules`) until they move. New work goes on the declarations.
 
+## Adding to the kit
+
+Before adding or reshaping a module of the kit (a declaration, what hosts one, a service, an entry's exports), read [`docs/code-style.md`](docs/code-style.md): what kind of module it is, the shape of a declaration, its names and types, and when it is done. Lint and `packages/arcadekit/test/style.test.ts` check part of it, and the page says which part.
+
 ## Effect and plain code
 
 Match the style to the subsystem and to what it models; don't homogenize the repository around one abstraction. Use pure functions for deterministic data work; plain imperative code where allocation, frame timing or the order of a host API's calls matters; and Effect where interruption, resources, services, typed failure or composition justify it. Preserve deliberate non-Effect code, and don't add or remove Effect only for consistency. When styles mix, keep the boundary explicit and follow the surrounding module. This follows Foldkit's own rule; [ADR-0017](docs/adr/0017-effect-at-the-edges-plain-code-inside.md) records why.
