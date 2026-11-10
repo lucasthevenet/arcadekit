@@ -9,6 +9,15 @@
     "build": "vitepress build",
     "preview": "vitepress preview",
     "typecheck": "tsc -p .",
-    "images": "node scripts/generate-images.mjs"
+    "images": "node scripts/generate-images.mjs",
+    "plan": "alchemy plan",
+    "deploy": "alchemy deploy",
+    "destroy": "alchemy destroy"
+  },
+  "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.85",
+    "@effect/platform-node": "~4.1.2",
+    "alchemy": "2.0.0-beta.85",
+    "effect": "~4.1.2"
   }
 }
