@@ -4,6 +4,8 @@ status: accepted
 
 # The kit is one package with entries
 
+> Since [ADR-0019](0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md): the package has eighteen entries. `net/worker` (the signalling worker, for Cloudflare) and `net/testing` (test helpers for a Co-op game) joined the sixteen below. Both are in the `net` group, so the graph has no new arrow. `net/worker` may import `cloudflare:workers`, with `@cloudflare/workers-types` as an optional peer for its types; `tsconfig.worker.json` checks it with Workers types and no DOM.
+
 [ADR-0016](0016-publish-the-kit-as-arcadekit.md) published the kit as nine packages under `@arcadekit`, on one shared version. This replaces that layout with one package. ADR-0016's other decisions stand: the name, the licence, the build, the `source` condition, what users need, the checks, and releasing with Changesets and trusted publishing.
 
 ## Why
@@ -31,7 +33,7 @@ Nine packages cost more than they gave.
 - `core` and `input` stay free of Effect ([ADR-0017](0017-effect-at-the-edges-plain-code-inside.md)), and each optional peer stays in the entry it is for. Lint bans `effect` in the files of `core` and `input`, and `packages/arcadekit/test/entry-packages.test.ts` lists the packages each entry may import: none for `core` and `input`; `effect` for the rest, with `three` for `render-three`, `foldkit` for `foldkit` and `@effect/platform-browser` for `save/browser`. It follows every import from each entry, in `src/` and in the built `dist/` (the JavaScript and the type files), and fails if any reaches another package. The built check matters because the build shares chunks between entries. Inside the package a dynamic import names its module in a plain string, so lint and the test can read it.
 - `packages/arcadekit/tsconfig.root.json` compiles `core` and the root entries of `content`, `save`, `audio`, `runtime` and `net`, with `net/signalling`, without DOM types, as each package's own config did.
 
-**One build.** tsdown builds all sixteen entries in one pass, sharing chunks, so a module two entries use exists once: `arcadekit/runtime` and `arcadekit/net` step the same `GameLoop`.
+**One build.** tsdown builds every entry in one pass, sharing chunks, so a module two entries use exists once: `arcadekit/runtime` and `arcadekit/net` step the same `GameLoop`.
 
 ## When to split again
 
