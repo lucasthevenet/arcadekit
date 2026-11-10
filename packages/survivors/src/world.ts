@@ -1,13 +1,9 @@
-import {
-  EventBuffer,
-  SpatialGrid,
-  clamp,
-  createPool,
-  makeRng,
-} from "arcadekit/core";
+import { SpatialGrid, clamp, createPool, makeRng } from "arcadekit/core";
 import type { Pool, Rng } from "arcadekit/core";
+import type * as Game from "arcadekit/game";
 
-import type { HudSample, SurvivorsEvent } from "./events";
+import { HeroLeft, LeveledUp, RunEnded } from "./events";
+import type { HudSample } from "./events";
 import {
   MAX_HEROES,
   MAX_WEAPONS,
@@ -25,7 +21,8 @@ import type { EnemyDef, GameContent } from "./schema";
 
 // The survivors simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
 // Crowds live in arcadekit/core pools (one typed array per field), so the per-frame loop
-// allocates nothing and the garbage collector never causes a stutter.
+// allocates nothing and the garbage collector never causes a stutter. Only what a step reports
+// is allocated: an event is rare.
 //
 // A run has one hero per player (hero.ts); everything else is shared: the clock, the team's XP
 // and level, the horde, projectiles, gems and the Rng. Heroes are visited in slot order
@@ -106,7 +103,6 @@ interface SurvivorsCues {
 export interface World {
   readonly content: GameContent;
   readonly rng: Rng;
-  readonly events: EventBuffer<SurvivorsEvent>;
   time: number;
   kills: number;
   status: RunStatus;
@@ -134,10 +130,14 @@ export interface World {
   readonly cues: SurvivorsCues;
 }
 
-/** Starts a run with one hero per id in `heroIds`. Throws a RangeError for no heroes or more than 4. */
+/**
+ * Starts a run with one hero per id in `heroIds`, drawing from the run's `seed`. Throws a
+ * RangeError for no heroes or more than 4. A run starts with nothing to report, so of the run's
+ * context it takes only the seed.
+ */
 export const createWorld = (
   { content, heroIds }: SurvivorsConfig,
-  seed: number
+  { seed }: Pick<Game.RunContext<never>, "seed">
 ): World => {
   if (heroIds.length === 0 || heroIds.length > MAX_HEROES) {
     throw new RangeError(
@@ -148,7 +148,6 @@ export const createWorld = (
   return {
     content,
     rng: makeRng(seed),
-    events: new EventBuffer(),
     time: 0,
     kills: 0,
     status: "running",
@@ -202,6 +201,13 @@ export const hudSample = (world: World): HudSample => ({
   })),
 });
 
+/**
+ * The HUD sample's version: it moves when the run ends, so the loop reads the HUD right after the
+ * frame that ended the run and the UI shows the run's last numbers.
+ */
+export const hudVersion = (world: World): number =>
+  world.status === "running" ? 0 : 1;
+
 /** True while some hero has an upgrade offer open: the run is frozen until every one is closed. */
 export const isChoosing = (world: World): boolean => {
   for (const hero of world.heroes) {
@@ -225,19 +231,24 @@ const anyPlaying = (world: World): boolean => {
 // The step function
 
 /**
- * Advances the run by `dt` seconds. First the heroes in `input.leaving` leave and the picks in
- * `input.players` apply; then the run stays frozen while any hero has an upgrade offer open, or
- * while any playing hero's player holds it paused. Does nothing once the run is over.
+ * Advances the run by one step of `dt` seconds. First the heroes in `input.leaving` leave and
+ * the picks in `input.players` apply; then the run stays frozen while any hero has an upgrade
+ * offer open, or while any playing hero's player holds it paused. Does nothing once the run is
+ * over.
  */
-export const step = (world: World, input: SurvivorsInput, dt: number): void => {
+export const step = (
+  world: World,
+  input: SurvivorsInput,
+  { dt, report }: Game.StepContext<HeroLeft | LeveledUp | RunEnded>
+): void => {
   if (world.status !== "running") {
     return;
   }
   for (const slot of input.leaving) {
-    leave(world, slot);
+    leave(world, slot, report);
   }
   if (!anyPlaying(world)) {
-    endRun(world, "dead");
+    endRun(world, "dead", report);
     return;
   }
   applyPicks(world, input);
@@ -272,11 +283,11 @@ export const step = (world: World, input: SurvivorsInput, dt: number): void => {
     }
   }
   if (!anyPlaying(world)) {
-    endRun(world, "dead");
+    endRun(world, "dead", report);
   } else if (world.time >= world.content.rules.runLength) {
-    endRun(world, "won");
+    endRun(world, "won", report);
   } else if (world.pendingLevelUps > 0) {
-    offerUpgrades(world);
+    offerUpgrades(world, report);
   }
 };
 
@@ -284,7 +295,11 @@ const heroInput = (input: SurvivorsInput, hero: Hero): HeroInput | null =>
   input.players[hero.slot] ?? null;
 
 /** The hero in `slot` leaves the run: it is no longer drawn or chased, and its open offer closes. */
-const leave = (world: World, slot: number) => {
+const leave = (
+  world: World,
+  slot: number,
+  report: (event: HeroLeft) => void
+) => {
   const hero = world.heroes[slot];
   if (!hero || hero.status === "left") {
     return;
@@ -292,7 +307,7 @@ const leave = (world: World, slot: number) => {
   hero.status = "left";
   hero.paused = false;
   closeOffer(world, hero);
-  world.events.push({ type: "heroLeft", hero: slot });
+  report(new HeroLeft({ hero: slot }));
 };
 
 /** Applies each hero's pick, in slot order, if it answers the offer the hero has open. */
@@ -316,25 +331,30 @@ const holdPause = (world: World, input: SurvivorsInput): boolean => {
   return paused;
 };
 
-const endRun = (world: World, status: "won" | "dead") => {
+/** Ends the run, and reports it. The HUD's version moves with the status, so the loop samples it next. */
+const endRun = (
+  world: World,
+  status: "won" | "dead",
+  report: (event: RunEnded) => void
+) => {
   world.status = status;
   if (status === "won") {
     world.cues.won += 1;
   } else {
     world.cues.lost += 1;
   }
-  world.events.push({ type: "hud", hud: hudSample(world) });
-  world.events.push({
-    type: "runEnded",
-    summaries: world.heroes.map((hero) => ({
-      won: status === "won",
-      heroId: hero.def.id,
-      heroName: hero.def.name,
-      time: world.time,
-      kills: world.kills,
-      level: world.level,
-    })),
-  });
+  report(
+    new RunEnded({
+      summaries: world.heroes.map((hero) => ({
+        won: status === "won",
+        heroId: hero.def.id,
+        heroName: hero.def.name,
+        time: world.time,
+        kills: world.kills,
+        level: world.level,
+      })),
+    })
+  );
 };
 
 const moveHeroes = (world: World, input: SurvivorsInput, dt: number) => {
@@ -733,20 +753,21 @@ const gainXp = (world: World, amount: number) => {
 // Upgrades
 
 /** Opens a new offer: every playing hero, in slot order, gets its own choices. */
-const offerUpgrades = (world: World) => {
+const offerUpgrades = (world: World, report: (event: LeveledUp) => void) => {
   world.offerSeq += 1;
   for (const hero of world.heroes) {
     if (hero.status !== "playing") {
       continue;
     }
     hero.offer = rollUpgrades(world.content, world.rng, hero);
-    world.events.push({
-      type: "levelUp",
-      hero: hero.slot,
-      offer: world.offerSeq,
-      // A copy, so the event is plain data that shares nothing with the state.
-      choices: hero.offer.map((choice) => ({ ...choice })),
-    });
+    report(
+      new LeveledUp({
+        hero: hero.slot,
+        offer: world.offerSeq,
+        // A copy, so the event shares nothing with the state.
+        choices: hero.offer.map((choice) => ({ ...choice })),
+      })
+    );
   }
 };
 
@@ -761,7 +782,12 @@ const closeOffer = (world: World, hero: Hero) => {
   }
 };
 
-const choose = (world: World, hero: Hero, index: number): boolean => {
+/**
+ * The hero takes the choice at `index` of its open offer, and the offer closes. Returns false,
+ * having changed nothing, if it has no open offer or the offer has no such choice. Every pick
+ * ends here: the `ChooseUpgrade` command's, a step input's `pick`, and `chooseUpgrade`'s.
+ */
+export const choose = (world: World, hero: Hero, index: number): boolean => {
   const choice = hero.offer?.[index];
   if (!choice) {
     return false;
@@ -773,8 +799,10 @@ const choose = (world: World, hero: Hero, index: number): boolean => {
 
 /**
  * Applies the upgrade the hero in `slot` chose and closes its offer, now. Returns false if that
- * hero has no open offer or the index is wrong. For a single-player run, called through
- * `GameLoop.modify`; a lockstep run picks through step input instead (`HeroInput.pick`).
+ * hero has no open offer or the index is wrong. For the single-player engine that is still on
+ * the older contract, called through `GameLoop.modify`: a declared host sends `ChooseUpgrade`,
+ * and a lockstep run picks through step input (`HeroInput.pick`). It goes when `./browser`'s
+ * engine sends the command (ADR-0020).
  */
 export const chooseUpgrade = (
   world: World,

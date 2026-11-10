@@ -1,17 +1,14 @@
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 
-import {
-  SurvivorsContent,
-  survivorsContentDefinition,
-} from "@arcadekit/survivors";
+import { SurvivorsContent } from "@arcadekit/survivors";
 import {
   SurvivorsEngine,
   missingSpriteTags,
 } from "@arcadekit/survivors/browser";
 import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
 import { defaultAudioSettings } from "arcadekit/audio";
-import { ContentError, loadContent } from "arcadekit/content";
+import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
 import {
   SpriteSheetError,
@@ -52,9 +49,7 @@ const fileSource: ContentSource = (file) =>
     catch: (cause) => new ContentError({ message: String(cause) }),
   });
 
-const content = await Effect.runPromise(
-  loadContent({ ...survivorsContentDefinition, source: fileSource })
-);
+const content = await Effect.runPromise(SurvivorsContent.read(fileSource));
 const sheet = await Effect.runPromise(
   decodeSpriteSheet(
     "survivors.json",

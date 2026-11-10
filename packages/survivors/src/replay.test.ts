@@ -1,19 +1,21 @@
-import { GameLoop, soloInput } from "arcadekit/runtime";
+import * as Game from "arcadekit/game";
+import { soloInput } from "arcadekit/runtime";
 import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { ChooseUpgrade } from "./commands";
 import { hashWorld } from "./hash-world";
 import type { HeroInput } from "./input";
 import { GameContent } from "./schema";
-import { survivorsSimulation } from "./simulation";
-import { chooseUpgrade } from "./world";
+import { Survivors } from "./simulation";
 
-// Replay check: the same seed and the same input script must give the same run, bit for bit.
-// It runs survivors' simulation through arcadekit/runtime's GameLoop, with the step order and
-// sample timing the demo runs, so it guards the simulation, core's clock and the runtime's step
-// order. Its script has no endStep or endFrame; runtime's loop.test.ts pins their order. It
-// doesn't cover input devices or the view.
+// Replay check: the same seed, the same input script and the same commands must give the same
+// run, bit for bit. It steps the declared simulation, `Survivors`, with arcadekit/game's Loop, in
+// the step order and sample timing of any declared host, so it guards the simulation, core's
+// clock and the loop's step order. Its script has no endStep or endFrame; runtime's loop.test.ts
+// pins their order. It doesn't cover input devices or the view, nor `survivorsSimulation`, which
+// the hosts still on the older contract step: world.test.ts holds that one to this one.
 
 const content = Schema.decodeUnknownSync(GameContent)({
   rules: {
@@ -111,16 +113,17 @@ const zigZag = (): StepInput<HeroInput> => {
 };
 
 /**
- * Plays a fixed input script, one step per frame at 60 frames a second: zig-zag movement, the
- * second upgrade when offered. Counts the events and the HUD samples the run reported.
+ * Plays a fixed input script, one step per frame at 60 frames a second: zig-zag movement, and
+ * the second upgrade when offered, sent before the frame whose step applies it. Counts the
+ * events and the HUD samples the run reported.
  */
 const replay = (seed: number, steps: number) => {
-  const loop = new GameLoop(survivorsSimulation);
+  const loop = new Game.Loop(Survivors);
   const script = soloInput(zigZag());
   let events = 0;
   let samples = 0;
   loop.subscribe((event) => {
-    if (event.type === "hud") {
+    if (event._tag === "Hud") {
       samples += 1;
     } else {
       events += 1;
@@ -132,9 +135,11 @@ const replay = (seed: number, steps: number) => {
     const nowMs = (i * 1000) / 60;
     const { offer } = world.heroes[0]!;
     if (offer) {
-      loop.modify(
-        (offered) => chooseUpgrade(offered, 0, Math.min(1, offer.length - 1)),
-        nowMs
+      loop.send(
+        new ChooseUpgrade({
+          offer: world.offerSeq,
+          index: Math.min(1, offer.length - 1),
+        })
       );
     }
     loop.frame(script, { steps: 1 }, nowMs);

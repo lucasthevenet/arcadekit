@@ -17,19 +17,19 @@ import { MUSIC } from "./sound";
 const LOCAL_HERO = 0;
 
 const toMessage = (event: SurvivorsEvent): Message | undefined => {
-  switch (event.type) {
-    case "hud": {
-      return Message.GotHud({ hud: event.hud });
+  switch (event._tag) {
+    case "Hud": {
+      return Message.GotHud({ hud: event });
     }
-    case "levelUp": {
+    case "LeveledUp": {
       return event.hero === LOCAL_HERO
         ? Message.GotLevelUp({ choices: event.choices })
         : undefined;
     }
-    case "heroLeft": {
+    case "HeroLeft": {
       return undefined;
     }
-    case "runEnded": {
+    case "RunEnded": {
       return Message.GotRunEnded({ summary: event.summaries[LOCAL_HERO]! });
     }
   }

@@ -2,6 +2,7 @@ import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { survivorsCoopRules as rules } from "./coop";
+import { HeroLeft, LeveledUp, RunEnded } from "./events";
 import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
 import type { HeroInput } from "./input";
@@ -216,45 +217,58 @@ describe("survivors' Co-op rules", () => {
 
   it("tells the local player the HUD, its own hero's offer and its own summary", () => {
     const world = offering();
-    const events: SurvivorsEvent[] = [...world.events.drain()];
-    const offers = events.filter((event) => event.type === "levelUp");
+    const offers = rules.simulation
+      .drainEvents(world)
+      .filter((event) => event._tag === "LeveledUp");
     const hud: SurvivorsEvent = survivorsSimulation.sample!.read(world);
     for (const hero of world.heroes) {
       hero.status = "down";
     }
     step(world, [still, still]);
-    const ended = [...world.events.drain()].find(
-      (event) => event.type === "runEnded"
-    )!;
+    const ended = rules.simulation
+      .drainEvents(world)
+      .find((event) => event._tag === "RunEnded")!;
     const names = ["Host", "Guest 2"];
     expect({
-      hud: rules.localEvent(hud, 1, names) === hud,
+      hud: rules.localEvent(hud, 1, names),
       offers: offers.map((event) => rules.localEvent(event, 1, names)),
-      left: rules.localEvent({ type: "heroLeft", hero: 0 }, 1, names),
+      left: rules.localEvent(new HeroLeft({ hero: 0 }), 1, names),
       ended: rules.localEvent(ended, 1, names),
       noHero: rules.localEvent(ended, 2, names),
     }).toStrictEqual({
-      hud: true,
+      hud: { type: "hud", hud },
       offers: [
         null,
         { type: "levelUp", offer: 1, choices: world.heroes[1]!.offer },
       ],
       left: null,
-      ended: {
-        type: "runEnded",
-        summary: ended.type === "runEnded" ? ended.summaries[1] : null,
-      },
+      ended: { type: "runEnded", summary: ended.summaries[1] },
       noHero: null,
     });
   });
 
-  it("says the run ended on runEnded and on no other event", () => {
+  it("keeps each run's events its own, though every run steps through the one simulation", () => {
+    // Lockstep peers in one process share the rules' simulation object, each with its own run.
+    const [a, b] = [run(), run()];
+    rules.simulation.step(a, { players: [], leaving: [1] }, DT);
+    expect({
+      other: rules.simulation.drainEvents(b),
+      own: rules.simulation.drainEvents(a),
+      drained: rules.simulation.drainEvents(a),
+    }).toStrictEqual({
+      other: [],
+      own: [new HeroLeft({ hero: 1 })],
+      drained: [],
+    });
+  });
+
+  it("says the run ended on RunEnded and on no other event", () => {
     const world = run();
     const events: SurvivorsEvent[] = [
       survivorsSimulation.sample!.read(world),
-      { type: "levelUp", hero: 0, offer: 1, choices: [] },
-      { type: "heroLeft", hero: 1 },
-      { type: "runEnded", summaries: [] },
+      new LeveledUp({ hero: 0, offer: 1, choices: [] }),
+      new HeroLeft({ hero: 1 }),
+      new RunEnded({ summaries: [] }),
     ];
     expect(events.map((event) => rules.runEnded(event))).toStrictEqual([
       false,

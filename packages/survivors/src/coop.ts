@@ -88,23 +88,23 @@ export const survivorsCoopRules: CoopRules<SurvivorsCoop> = {
     return hero !== undefined && hero.offer !== null;
   },
   localEvent: (event, slot) => {
-    switch (event.type) {
-      case "hud": {
-        return event;
+    switch (event._tag) {
+      case "Hud": {
+        return { type: "hud", hud: event };
       }
-      case "levelUp": {
+      case "LeveledUp": {
         return event.hero === slot
           ? { type: "levelUp", offer: event.offer, choices: event.choices }
           : null;
       }
-      case "runEnded": {
+      case "RunEnded": {
         const summary = event.summaries[slot];
         return summary === undefined ? null : { type: "runEnded", summary };
       }
-      case "heroLeft": {
+      case "HeroLeft": {
         return null;
       }
     }
   },
-  runEnded: (event) => event.type === "runEnded",
+  runEnded: (event) => event._tag === "RunEnded",
 };

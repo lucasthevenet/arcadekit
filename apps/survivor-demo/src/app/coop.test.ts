@@ -1,14 +1,11 @@
 import { readFileSync } from "node:fs";
 
-import {
-  SurvivorsContent,
-  survivorsContentDefinition,
-} from "@arcadekit/survivors";
+import { SurvivorsContent } from "@arcadekit/survivors";
 import type { GameContent, SurvivorsCoopEvent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
 import { SilentAudioLayer } from "arcadekit/audio";
-import { ContentError, loadContent } from "arcadekit/content";
+import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
 import type { CoopEvent } from "arcadekit/net/browser";
 import { FAKE_JOIN_CODE, fakeCoopRooms } from "arcadekit/net/testing";
@@ -47,7 +44,7 @@ const fileSource: ContentSource = (file) =>
   });
 
 const content: GameContent = await Effect.runPromise(
-  loadContent({ ...survivorsContentDefinition, source: fileSource })
+  SurvivorsContent.read(fileSource)
 );
 
 /** A loader whose load never finishes: building the layer loads nothing. */

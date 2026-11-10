@@ -132,7 +132,7 @@ const fakeAudio = () => {
 const ids = (plays: readonly { id: string }[]) => plays.map(({ id }) => id);
 
 const world = (heroIds: readonly string[] = ["bolter"]): World =>
-  createWorld({ content, heroIds }, 1);
+  createWorld({ content, heroIds }, { seed: 1 });
 
 describe(SurvivorsSoundView, () => {
   it("only takes note of the counters on a run's first frame", () => {

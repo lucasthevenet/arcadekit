@@ -36,7 +36,7 @@ export const LoadContent = Command.define("LoadContent", {
     // Both loads run to the end, so one failing doesn't cut the other short: what loaded is kept
     // for a retry.
     const [loadedContent, loadedEngine] = yield* Effect.all(
-      [(yield* SurvivorsContent).load, (yield* SurvivorsEngine).load],
+      [SurvivorsContent.load, (yield* SurvivorsEngine).load],
       { concurrency: "unbounded", mode: "result" }
     );
     const content = yield* Effect.fromResult(loadedContent);
@@ -73,7 +73,7 @@ export const StartRun = Command.define("StartRun", {
   messages: [Message.StartedRun, Message.FailedToStartRun],
   execute: ({ heroId }) =>
     Effect.gen(function* () {
-      const content = yield* (yield* SurvivorsContent).load;
+      const content = yield* SurvivorsContent.load;
       const engine = yield* engineOf(SurvivorsEngine);
       yield* engine.start({ content, heroIds: [heroId] });
       return Message.StartedRun();

@@ -1,9 +1,15 @@
-import type { PlayerInputs } from "arcadekit/runtime";
 import { Schema } from "effect";
 
 // A survivors step's input: every player's input for that step, plus the players leaving at it.
-// Anything that changes a run (an upgrade pick, a co-op pause, a player leaving) arrives here,
-// scheduled for a step, so every lockstep peer applies it at the same step (ADR-0012).
+// In a lockstep run, anything that changes it (an upgrade pick, a co-op pause, a player leaving)
+// arrives here, scheduled for a step, so every peer applies it at the same step (ADR-0012). A
+// single-player run's pick is the `ChooseUpgrade` command (commands.ts), which the loop applies
+// at a step.
+//
+// A lockstep run's pick still rides the input (`HeroInput.pick`, which the step's `applyPicks`
+// applies), as its pause does (`HeroInput.paused`). When co-op moves to the declarations the pick
+// becomes the same `ChooseUpgrade`, and `UpgradePick`, the two keys and `applyPicks` go
+// (ADR-0020).
 
 /** An upgrade pick: the index of a choice in the offer numbered `offer` (`World.offerSeq`). */
 export const UpgradePick = Schema.Struct({
@@ -30,13 +36,17 @@ export const HeroInput = Schema.Struct({
 export type HeroInput = typeof HeroInput.Type;
 
 /**
- * A survivors step's input: `arcadekit/runtime`'s `PlayerInputs` of `HeroInput`. `players[slot]`
- * is the input of the player whose hero is at that slot, or null for a hero with no input this
- * step (it stands still). `leaving` lists the slots of the heroes whose players leave the run at
- * this step, in ascending order.
+ * A survivors step's input, in the shape of `arcadekit/runtime`'s `PlayerInputs` of `HeroInput`.
+ * `players[slot]` is the input of the player whose hero is at that slot, or null for a hero with
+ * no input this step (it stands still). `leaving` lists the slots of the heroes whose players
+ * leave the run at this step, in ascending order.
  *
  * `arcadekit/runtime`'s `soloInput` makes it from one player's source, and `arcadekit/net`'s
  * `combinePlayerInputs` from lockstep's confirmed steps, given the run's player order, which
  * must be the order of the run's `heroIds`.
  */
-export type SurvivorsInput = PlayerInputs<HeroInput>;
+export const SurvivorsInput = Schema.Struct({
+  players: Schema.Array(Schema.NullOr(HeroInput)),
+  leaving: Schema.Array(Schema.Int),
+});
+export type SurvivorsInput = typeof SurvivorsInput.Type;

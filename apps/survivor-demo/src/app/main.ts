@@ -1,4 +1,4 @@
-import { makeSurvivorsContentLayer } from "@arcadekit/survivors";
+import { SurvivorsContent } from "@arcadekit/survivors";
 import { makeSurvivorsEngineLayer } from "@arcadekit/survivors/browser";
 import { BrowserAudioLayer } from "arcadekit/audio/browser";
 import { fetchJsonSource } from "arcadekit/content/browser";
@@ -28,7 +28,7 @@ const EngineLayer = makeSurvivorsEngineLayer({
  * The content, loaded once: the Commands and the co-op client, which loads a run's content
  * itself, share one loader.
  */
-const ContentLayer = makeSurvivorsContentLayer(
+const ContentLayer = SurvivorsContent.layer(
   fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
 );
 

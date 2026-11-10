@@ -201,7 +201,10 @@ describe(SurvivorsScene, () => {
 
   it("draws every hero, marker, enemy, gem, projectile and trail in one batch", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const world = createWorld({ content, heroIds: ["knight", "plain"] }, 1);
+    const world = createWorld(
+      { content, heroIds: ["knight", "plain"] },
+      { seed: 1 }
+    );
     addEnemy(world, 0, 3, 0);
     addEnemy(world, 1, -3, 0);
     for (const value of [1, 3, 5]) {
@@ -245,7 +248,10 @@ describe(SurvivorsScene, () => {
   });
 
   it("draws a hero's own sprite, or the generic one in its colour, and its slot's marker", () => {
-    const world = createWorld({ content, heroIds: ["knight", "plain"] }, 1);
+    const world = createWorld(
+      { content, heroIds: ["knight", "plain"] },
+      { seed: 1 }
+    );
     const scene = new SurvivorsScene(art);
     scene.draw(world, 0);
     const actors = scene.actorSprites!;
@@ -267,7 +273,7 @@ describe(SurvivorsScene, () => {
   });
 
   it("walks a moving hero, flips it facing left, and flashes it when hurt", () => {
-    const world = createWorld({ content, heroIds: ["knight"] }, 1);
+    const world = createWorld({ content, heroIds: ["knight"] }, { seed: 1 });
     const scene = new SurvivorsScene(art);
     scene.draw(world, 0);
     const hero = world.heroes[0]!;
@@ -288,7 +294,10 @@ describe(SurvivorsScene, () => {
   });
 
   it("greys a downed co-op hero lying down, and leaves out a hero whose player left", () => {
-    const world = createWorld({ content, heroIds: ["knight", "plain"] }, 1);
+    const world = createWorld(
+      { content, heroIds: ["knight", "plain"] },
+      { seed: 1 }
+    );
     world.heroes[0]!.status = "down";
     (world.heroes[1] as { status: string }).status = "left";
     const scene = new SurvivorsScene(art);
@@ -303,7 +312,7 @@ describe(SurvivorsScene, () => {
 
   it("draws enemies by type, the generic one for a missing tag (logged once), flashing when hit", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const world = createWorld({ content, heroIds: ["knight"] }, 1);
+    const world = createWorld({ content, heroIds: ["knight"] }, { seed: 1 });
     const grunt = addEnemy(world, 0, 2, 0);
     const ghost = addEnemy(world, 1, -2, 0);
     world.enemies.fields.hitFlash[grunt] = 0.1;
@@ -337,7 +346,7 @@ describe(SurvivorsScene, () => {
   });
 
   it("draws gems by value and the projectile its weapon names", () => {
-    const world = createWorld({ content, heroIds: ["knight"] }, 1);
+    const world = createWorld({ content, heroIds: ["knight"] }, { seed: 1 });
     for (const value of [1, 3, 5]) {
       world.gems.fields.value[world.gems.add()] = value;
     }
@@ -365,7 +374,10 @@ describe(SurvivorsScene, () => {
   });
 
   it("follows the local hero, and pans slowly over the ground with no run", () => {
-    const world = createWorld({ content, heroIds: ["knight", "plain"] }, 1);
+    const world = createWorld(
+      { content, heroIds: ["knight", "plain"] },
+      { seed: 1 }
+    );
     let slot = 0;
     const scene = new SurvivorsScene(art, { localHero: () => slot });
     world.heroes[1]!.x = 2.53;
@@ -395,7 +407,7 @@ describe(SurvivorsScene, () => {
   });
 
   it("frees what it made on dispose, never the sheet", () => {
-    const world = createWorld({ content, heroIds: ["knight"] }, 1);
+    const world = createWorld({ content, heroIds: ["knight"] }, { seed: 1 });
     const scene = new SurvivorsScene(art);
     scene.draw(world, 0);
     let sheetFreed = false;

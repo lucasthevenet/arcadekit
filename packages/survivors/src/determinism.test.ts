@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { LONG_RUN_RECORDED, LONG_RUN_SEEDS, longRun } from "./long-run";
 
 // Long-run determinism in Node: the long run in long-run.ts (20,000 steps of a full horde under
-// analog input, through GameLoop) must give the recorded hashes. `pnpm test:browsers` plays the
-// same long run in Chromium, Firefox and WebKit against the same recorded hashes.
+// analog input, stepped by `Game.Loop`) must give the recorded hashes. `pnpm test:browsers` plays
+// the same long run in Chromium, Firefox and WebKit against the same recorded hashes.
 
 describe("survivors long-run determinism", () => {
   it.each(LONG_RUN_SEEDS)("gives the recorded hashes for seed %i", (seed) => {

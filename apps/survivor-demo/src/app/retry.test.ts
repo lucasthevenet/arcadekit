@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { makeSurvivorsContentLayer } from "@arcadekit/survivors";
+import { SurvivorsContent } from "@arcadekit/survivors";
 import { makeSurvivorsEngineLayer } from "@arcadekit/survivors/browser";
 import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
 import { ContentError } from "arcadekit/content";
@@ -100,7 +100,7 @@ const flakyResources = (failures: {
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       makeSurvivorsEngineLayer({ sheet, sounds: survivorsSounds }),
-      makeSurvivorsContentLayer(source)
+      SurvivorsContent.layer(source)
     ).pipe(Layer.provide(SilentAudioLayer))
   );
   opened.push(runtime);

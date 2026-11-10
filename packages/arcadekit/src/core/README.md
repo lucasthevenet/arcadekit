@@ -14,7 +14,7 @@ pnpm add arcadekit effect
 
 ## Example
 
-Enemies in a pool, spawned with the run's seeded `Rng`, and an event reported through an `EventBuffer` (as `@arcadekit/survivors` does):
+Enemies in a pool, spawned with the run's seeded `Rng` (as `@arcadekit/survivors` does), and an event collected in an `EventBuffer`, which is what `Game.Loop` holds for a declared simulation's `report`:
 
 ```ts
 import { EventBuffer, createPool, makeRng } from "arcadekit/core";

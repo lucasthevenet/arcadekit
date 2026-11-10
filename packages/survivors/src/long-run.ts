@@ -1,19 +1,20 @@
-import { GameLoop, soloInput } from "arcadekit/runtime";
+import * as Game from "arcadekit/game";
+import { soloInput } from "arcadekit/runtime";
 import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 
+import { ChooseUpgrade } from "./commands";
 import { visitWorld, hashWorld } from "./hash-world";
 import type { HeroInput } from "./input";
 import { GameContent } from "./schema";
-import { survivorsSimulation } from "./simulation";
-import { chooseUpgrade } from "./world";
+import { Survivors } from "./simulation";
 import type { World } from "./world";
 
 // The long run the determinism tests pin: 20,000 steps (5.5 minutes) of a full horde under analog
-// input, through the GameLoop the demos run. `determinism.test.ts` plays it in Node and pins its
-// hashes; `browser-determinism/` bundles this same module and plays it in Chromium, Firefox and
-// WebKit, which must give the same hashes (#25). It isn't part of the package's exports: only
-// those two import it, by path.
+// input, as `Game.Loop` steps it for any declared host. `determinism.test.ts` plays it in Node
+// and pins its hashes; `browser-determinism/` bundles this same module and plays it in Chromium,
+// Firefox and WebKit, which must give the same hashes (#25). It isn't part of the package's
+// exports: only those two import it, by path.
 //
 // The pinned replay is too short to catch a change in the last bits of the simulation's
 // arithmetic: on the engines measured in docs/research/cross-engine-determinism.md, approximated
@@ -187,10 +188,10 @@ export interface LongRunResult {
 
 /**
  * Plays LONG_RUN_STEPS steps, one per frame at 60 frames a second, taking the second upgrade
- * when offered.
+ * when offered: the pick is sent before the frame whose step applies it.
  */
 export const longRun = (seed: number): LongRunResult => {
-  const loop = new GameLoop(survivorsSimulation);
+  const loop = new Game.Loop(Survivors);
   const input = soloInput(wander());
   loop.start({ content, heroIds: ["bolter"] }, seed, 0);
   const world = loop.state!;
@@ -200,9 +201,11 @@ export const longRun = (seed: number): LongRunResult => {
     const nowMs = (i * 1000) / 60;
     const { offer } = world.heroes[0]!;
     if (offer) {
-      loop.modify(
-        (offered) => chooseUpgrade(offered, 0, Math.min(1, offer.length - 1)),
-        nowMs
+      loop.send(
+        new ChooseUpgrade({
+          offer: world.offerSeq,
+          index: Math.min(1, offer.length - 1),
+        })
       );
     }
     loop.frame(input, { steps: 1 }, nowMs);
