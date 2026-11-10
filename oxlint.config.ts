@@ -189,6 +189,7 @@ export default defineConfig({
         "packages/arcadekit/src/game/command.ts",
         "packages/arcadekit/src/game/event.ts",
         "packages/arcadekit/src/game/loop.ts",
+        "packages/arcadekit/src/game/rejection.ts",
         "packages/arcadekit/src/game/simulation.ts",
         "packages/arcadekit/src/game/scenario.ts",
         "packages/arcadekit/src/net/lockstep.ts",

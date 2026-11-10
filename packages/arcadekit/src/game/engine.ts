@@ -12,8 +12,9 @@ import type {
   GameView,
 } from "../runtime/browser";
 import type { InputSource } from "../runtime/index";
+import type { CommandDropped } from "./command";
 import { Loop } from "./loop";
-import type { SimulationClass } from "./simulation";
+import type { RefusalFor, SimulationClass } from "./simulation";
 
 /**
  * What an engine's view and input source are made from, by name: Effects the engine runs on each
@@ -32,7 +33,7 @@ export type Used<U extends Uses> = {
  * A running game, as an app drives it. Each `Game.Engine` class is the service key of one:
  * `yield* MyEngine`.
  */
-export interface Engine<Config, Event, Command, E = never> {
+export interface Engine<Config, Event, Command, E = never, Refusals = unknown> {
   /**
    * Draws into `element` and reads input from it for as long as it runs: each frame steps the
    * run by the time since the last frame, then draws it. Interrupt it to detach, which disposes
@@ -56,8 +57,19 @@ export interface Engine<Config, Event, Command, E = never> {
     config: Config,
     options?: { readonly seed?: number }
   ) => Effect.Effect<void>;
-  /** Sends a command to the run: it is applied at the start of the next step. Does nothing with no run. */
-  readonly send: (command: Command) => Effect.Effect<void>;
+  /**
+   * Sends a command to the run and waits for the rules' answer: they get it at the start of the
+   * next step. It succeeds once its `apply` handler has taken it. It fails with the rejection
+   * the handler refused it with, one of those the command declares, and with `CommandDropped`
+   * if it never reached the rules: there is no run, or the run ended first.
+   *
+   * A step needs a frame, so it waits while the engine is paused or not attached. Interrupt it
+   * to take the command back, if it hasn't been applied yet. An app that doesn't care how a
+   * command ends still handles `CommandDropped`: `Effect.ignore`.
+   */
+  readonly send: <C extends Command>(
+    command: C
+  ) => Effect.Effect<void, RefusalFor<Refusals, C> | CommandDropped>;
   /** While paused, frames draw but don't step. */
   readonly setPaused: (paused: boolean) => Effect.Effect<void>;
   /** Ends the run: the view then draws no state. */
@@ -90,9 +102,10 @@ export type EngineService<
   Event,
   Command,
   E,
+  Refusals = unknown,
 > = Context.ServiceClass.Shape<
   EngineId<Name>,
-  Engine<Config, Event, Command, E>
+  Engine<Config, Event, Command, E, Refusals>
 >;
 
 /** The class `Game.Engine` returns: the key of its engine service, and the Layer that provides it. */
@@ -105,10 +118,11 @@ export interface EngineClass<
   Command,
   E,
   R,
+  Refusals = unknown,
 > extends Context.ServiceClass<
-  EngineService<Name, Config, Event, Command, E>,
+  EngineService<Name, Config, Event, Command, E, Refusals>,
   EngineId<Name>,
-  Engine<Config, Event, Command, E>
+  Engine<Config, Event, Command, E, Refusals>
 > {
   readonly kind: "Engine";
   readonly engineName: Name;
@@ -118,7 +132,8 @@ export interface EngineClass<
     State,
     Input,
     Event,
-    Command
+    Command,
+    Refusals
   >;
   /**
    * Provides the engine. Building it makes nothing and loads nothing: the view and the input
@@ -126,7 +141,7 @@ export interface EngineClass<
    * the app's audio and assets.
    */
   readonly layer: Layer.Layer<
-    EngineService<Name, Config, Event, Command, E>,
+    EngineService<Name, Config, Event, Command, E, Refusals>,
     never,
     Exclude<R, Scope.Scope>
   >;
@@ -140,6 +155,7 @@ export interface EngineDefinition<
   Event,
   Command,
   U extends Uses,
+  Refusals = unknown,
 > {
   /** The rules the engine runs. */
   readonly simulation: SimulationClass<
@@ -148,7 +164,8 @@ export interface EngineDefinition<
     State,
     Input,
     Event,
-    Command
+    Command,
+    Refusals
   >;
   /**
    * What the view and the input source are made from. Each Effect runs once per attach, in the
@@ -179,11 +196,19 @@ interface Presentation<State, Input> {
   readonly input: (surface: HTMLElement) => InputSource<Input>;
 }
 
-const makeEngine = <Config, State, Input, Event, Command, E>(
-  simulation: SimulationClass<string, Config, State, Input, Event, Command>,
+const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
+  simulation: SimulationClass<
+    string,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    Refusals
+  >,
   presentation: Effect.Effect<Presentation<State, Input>, E, Scope.Scope>,
   frames: FrameSource
-): Engine<Config, Event, Command, E> => {
+): Engine<Config, Event, Command, E, Refusals> => {
   const loop = new Loop(simulation);
   let attached = false;
   // Attaching twice at once is a programming error, so it dies rather than fail.
@@ -237,7 +262,15 @@ const makeEngine = <Config, State, Input, Event, Command, E>(
         // A seed is 32 bits, as core's `makeRng` reads it.
         loop.start(config, seed >>> 0, frames.now());
       }),
-    send: (command) => Effect.sync(() => loop.send(command)),
+    // The loop tells the sender how the command ended, at its step: that is this Effect's
+    // result. Interrupted while it waits, it takes the command back.
+    send: (command) =>
+      Effect.callback((resume) => {
+        const unsend = loop.send(command, 0, (outcome) =>
+          resume(outcome === undefined ? Effect.void : Effect.fail(outcome))
+        );
+        return Effect.sync(unsend);
+      }),
     setPaused: (paused) => Effect.sync(() => loop.setPaused(paused)),
     stop: Effect.sync(() => loop.stop()),
   };
@@ -276,9 +309,18 @@ export const make = <
   Event,
   Command,
   const U extends Uses = Record<never, never>,
+  Refusals = unknown,
 >(
   name: Name,
-  definition: EngineDefinition<Config, State, Input, Event, Command, U>
+  definition: EngineDefinition<
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    U,
+    Refusals
+  >
 ): EngineClass<
   Name,
   Config,
@@ -287,13 +329,14 @@ export const make = <
   Event,
   Command,
   Effect.Error<U[keyof U]>,
-  Effect.Services<U[keyof U]>
+  Effect.Services<U[keyof U]>,
+  Refusals
 > => {
   type E = Effect.Error<U[keyof U]>;
   type R = Effect.Services<U[keyof U]>;
   const Key = Context.Service<
-    EngineService<Name, Config, Event, Command, E>,
-    Engine<Config, Event, Command, E>
+    EngineService<Name, Config, Event, Command, E, Refusals>,
+    Engine<Config, Event, Command, E, Refusals>
   >()(`arcadekit/game/Engine/${name}` as EngineId<Name>);
   const uses = Effect.all(definition.uses ?? {}) as unknown as Effect.Effect<
     Used<U>,
@@ -324,5 +367,15 @@ export const make = <
     static readonly engineName: Name = name;
     static readonly simulation = definition.simulation;
     static readonly layer = layer;
-  } as unknown as EngineClass<Name, Config, State, Input, Event, Command, E, R>;
+  } as unknown as EngineClass<
+    Name,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    E,
+    R,
+    Refusals
+  >;
 };

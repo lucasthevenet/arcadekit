@@ -1,6 +1,6 @@
 # arcadekit/game
 
-A game's building blocks. Each part of a game is one named declaration: `Game.Event` for what a run reports, `Game.Command` for what a player decides, `Game.Simulation` for the rules, and, in `arcadekit/game/browser`, `Game.Engine` for the browser half that draws a run and reads its input. A declaration runs nothing by itself: `Game.Loop` steps a simulation anywhere, an engine's `layer` provides it to an app, and a scenario (`arcadekit/game/scenario`) checks the rules in a test.
+A game's building blocks. Each part of a game is one named declaration: `Game.Event` for what a run reports, `Game.Command` for what a player decides, `Game.Rejection` for why the rules may refuse it, `Game.Simulation` for the rules, and, in `arcadekit/game/browser`, `Game.Engine` for the browser half that draws a run and reads its input. A declaration runs nothing by itself: `Game.Loop` steps a simulation anywhere, an engine's `layer` provides it to an app, and a scenario (`arcadekit/game/scenario`) checks the rules in a test.
 
 An entry of the [`arcadekit`](../../README.md) package. The root entry and `./scenario` are DOM-free. Import each as a namespace: `import * as Game from "arcadekit/game"`.
 
@@ -73,13 +73,71 @@ loop.frame({ read: () => ({ moveX: 1 }) }, { steps: 60 }, 1000);
 console.log(loop.state?.x); // about 8: one second at speed 8
 ```
 
-- **`create`**, **`step`** and each `apply` handler are plain functions. `step` and `apply` change the state in place and return nothing, and the loop refuses one that returns a value: a step can't be `async` or return an Effect, so when a frame returns, its steps are over. A step may allocate what it reports, and keeps what it holds per entity in typed arrays ([`arcadekit/core`](../core/README.md)'s pools).
+- **`create`**, **`step`** and each `apply` handler are plain functions. `step` and `apply` change the state in place and return nothing. One that returns anything else is a type error, and the loop refuses it too: a step can't be `async` or return an Effect, so when a frame returns, its steps are over. A step may allocate what it reports, and keeps what it holds per entity in typed arrays ([`arcadekit/core`](../core/README.md)'s pools).
 - **`input`** is one step's input as a Schema: what a device holds for the step, what a replay records and what crosses the network in lockstep.
 - **`events`** lists what a step may report with `report`. Keep them rare: they cross into the UI.
-- **`commands`** lists what a player may send, and **`apply`** handles each by its tag. A command is applied at the start of the next step, before `step`, in the order sent. A run changes in no other way, so a simulation that declares a command without its handler is refused when its module loads. A handler can't yet refuse a command to whoever sent it.
+- **`commands`** lists what a player may send, and **`apply`** handles each by its tag. A command is applied at the start of the next step, before `step`, in the order sent. A run changes in no other way, so a simulation that declares a command without its handler is refused when its module loads. A handler may refuse its command: see [Refusing a command](#refusing-a-command).
 - **`sample`** is a read of the state for the UI, such as a HUD, delivered as an event: when a run starts and then every `every`, and/or right after any frame in which `version` (a cheap number, such as a turn counter) changed.
 
 `Game.StateOf<typeof Race>`, `ConfigOf`, `InputOf`, `EventOf` and `CommandOf` name a simulation's types. `Race.match({ Finished: ..., Hud: ... })` makes a function that handles each event by its tag, checked to cover them all.
+
+## Refusing a command
+
+A command the rules may turn down says how. Each way is a `Game.Rejection`, listed in the command's `rejects`. Its `apply` handler returns one in place of changing the state, and whoever sent the command gets it back as a typed failure. A refusal is not a bug and not an event: nothing happened in the run, and only the sender hears of it.
+
+```ts
+import * as Game from "arcadekit/game";
+import * as Scenario from "arcadekit/game/scenario";
+import { Schema } from "effect";
+
+// Why the rules refuse it, and the command that says it may be refused that way.
+class OfferClosed extends Game.Rejection("OfferClosed", {
+  offer: Schema.Int,
+}) {}
+class ChooseUpgrade extends Game.Command(
+  "ChooseUpgrade",
+  { offer: Schema.Int, index: Schema.Int },
+  { rejects: [OfferClosed] }
+) {}
+class Upgraded extends Game.Event("Upgraded", { level: Schema.Int }) {}
+
+class Run extends Game.Simulation("Run", {
+  input: Schema.Null,
+  events: [Upgraded],
+  commands: [ChooseUpgrade],
+  create: () => ({ offer: 1, level: 0 }),
+  step: () => {},
+  apply: {
+    ChooseUpgrade: (run, command, { report }) => {
+      // Decide first, then change: a refused command leaves the state as it was.
+      if (command.offer !== run.offer) {
+        return new OfferClosed({ offer: command.offer });
+      }
+      run.level += 1;
+      run.offer += 1;
+      report(new Upgraded({ level: run.level }));
+    },
+  },
+}) {}
+
+const scenario = Scenario.make(Run);
+
+// The same offer picked twice: the first pick is taken, the second refused.
+scenario(
+  Scenario.given(null),
+  Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 })),
+  Scenario.send(new ChooseUpgrade({ offer: 1, index: 2 })),
+  Scenario.step(null),
+  Scenario.reported(new Upgraded({ level: 1 })),
+  Scenario.refused(new OfferClosed({ offer: 1 }))
+);
+```
+
+- **A handler returns nothing, or one of its command's rejections.** Returning a rejection the command doesn't declare is a type error, and the loop refuses it at run time too.
+- **The app gets it from `engine.send`**, which waits for the rules' answer: `yield* engine.send(new ChooseUpgrade({ offer, index }))` succeeds once the handler has taken the command, at the start of the run's next step, and fails with `OfferClosed` if the handler refused it. An app handles it by its tag, `Effect.catchTag("OfferClosed", ...)`.
+- **`Game.CommandDropped`** is the other way a send fails: the command never reached the rules, because there is no run (`reason: "noRun"`) or the run ended first (`"runEnded"`). Every send can fail with it; an app that doesn't care how a command ends writes `Effect.ignore`.
+- **A step needs a frame**, so a send waits while the engine is paused or not attached. Interrupting it takes the command back, if it hasn't been applied yet.
+- **With `Game.Loop`**, `loop.send(command, player, settled)` calls `settled` once with `undefined`, the rejection or a `CommandDropped`, and returns a function that takes the command back.
 
 ## A scenario
 
@@ -146,10 +204,11 @@ scenario(
 | `Scenario.step(input, count)` | Runs `count` steps (1 unless given) with `input` held for each. |
 | `Scenario.send(command, player)` | Sends a command; the next step applies it. |
 | `Scenario.reported(...events)` | Checks what the run reported since the last check: exactly these events, in order. With none, that nothing was reported. |
+| `Scenario.refused(...rejections)` | Checks what the rules refused since the last check: exactly these rejections, in order. |
 | `Scenario.sampled(sample)` | Checks the run's latest sample. |
 | `Scenario.state(check)` | Reads the state, for the test's own assertions. |
 
-A list of steps is a step, so a game names its own (`const tap = (direction) => [Scenario.step(...), Scenario.step(...)]`). A passing scenario accounts for everything: it fails with a `ScenarioError` if the run reported an event no `Scenario.reported` checked. Samples are the exception, since a real-time game reports one every few steps. If your linter asks every test for an `expect`, tell it a scenario asserts (`assertFunctionNames: ["expect", "scenario"]`).
+A list of steps is a step, so a game names its own (`const tap = (direction) => [Scenario.step(...), Scenario.step(...)]`). A passing scenario accounts for everything: it fails with a `ScenarioError` if the run reported an event no `Scenario.reported` checked, or the rules refused a command no `Scenario.refused` checked. Samples are the exception, since a real-time game reports one every few steps. If your linter asks every test for an `expect`, tell it a scenario asserts (`assertFunctionNames: ["expect", "scenario"]`).
 
 ## In the browser
 
@@ -221,7 +280,7 @@ export const play = Effect.gen(function* () {
 
 - **`uses`** names what the view and the input source are made from. Each Effect runs once per attach, in the attach's scope, before anything is made: the app's audio, a sprite sheet's load ([`arcadekit/content`](../content/README.md)'s `Asset`), or something the view and the input share for that attach. The engine's `layer` needs their services, and a failure of one is `attach`'s.
 - **`view`** and **`input`** are called once per attach, the view first, and disposed when the engine detaches. Several views are one with `Game.combineViews`, such as a drawing view and a sound view.
-- **`engine.attach(element)`** steps the run by the time since the last frame, then draws it, on every animation frame. It never succeeds: it fails with what a `uses` Effect fails with, with `AttachError` if the view or the input source can't be made (no WebGL), and with `GameCrashed` if a frame throws. `engine.start`, `send`, `setPaused` and `stop` drive the run, and `engine.listen` hears its events.
+- **`engine.attach(element)`** steps the run by the time since the last frame, then draws it, on every animation frame. It never succeeds: it fails with what a `uses` Effect fails with, with `AttachError` if the view or the input source can't be made (no WebGL), and with `GameCrashed` if a frame throws. `engine.start`, `setPaused` and `stop` drive the run, `engine.send` sends it a command and waits for the rules' answer ([Refusing a command](#refusing-a-command)), and `engine.listen` hears its events.
 - **`Game.Frames`** is where an attached engine gets its frames: `requestAnimationFrame`, unless a test provides `manualFrames()` from `arcadekit/runtime/testing` (`Layer.succeed(Game.Frames, frames)`).
 - **`Game.frameLoop(frames, frame)`** is the loop an engine draws on, for anything else an app draws on animation frames.
 

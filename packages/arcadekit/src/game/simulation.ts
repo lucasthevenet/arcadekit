@@ -50,7 +50,36 @@ export interface Sample<State, S extends AnyEvent> {
   readonly read: (state: State) => Omit<S["Type"], "_tag">;
 }
 
-/** One `apply` handler per command, by the command's tag. */
+declare const unreturnable: unique symbol;
+
+/**
+ * What a `step` returns, and what an `apply` handler returns when it takes its command: nothing.
+ * A plain `void` would let a handler return anything (a promise, an Effect, the next state), so
+ * the type is `void` or a value nobody can make. A handler that returns anything else is a type
+ * error, and `Game.Loop` refuses it too.
+ */
+// oxlint-disable-next-line typescript/no-invalid-void-type -- Only ever a handler's return type: the union is what stops a handler returning anything else.
+export type Nothing = void | { readonly [unreturnable]: never };
+
+/** The rejections each command can be refused with, by the command's tag. */
+export type RefusalsOf<Commands extends readonly AnyCommand[]> = {
+  readonly [C in Commands[number] as C["tag"]]: C["rejects"][number]["Type"];
+};
+
+/** What the rules may refuse `Command` with, given a simulation's `Refusals`. Never, if nothing. */
+export type RefusalFor<Refusals, Command> = Command extends {
+  readonly _tag: infer Tag;
+}
+  ? Tag extends keyof Refusals
+    ? Refusals[Tag]
+    : never
+  : never;
+
+/**
+ * One `apply` handler per command, by the command's tag. A handler takes the command, changing
+ * the state and returning nothing, or refuses it by returning one of the rejections the command
+ * declares, having changed nothing.
+ */
 export type CommandHandlers<
   State,
   Commands extends readonly AnyCommand[],
@@ -60,7 +89,7 @@ export type CommandHandlers<
     state: State,
     command: C["Type"],
     context: CommandContext<Event>
-  ) => void;
+  ) => Nothing | C["rejects"][number]["Type"];
 };
 
 /** What `Game.Simulation` takes: the rules of a game, with no DOM. */
@@ -89,8 +118,8 @@ export interface Definition<
     run: RunContext<Events[number]["Type"]>
   ) => State;
   /**
-   * Advances the state by one step, in place, and returns nothing: the loop refuses a step that
-   * returns a value, so it can't be `async` or return an Effect. Must be deterministic: the same
+   * Advances the state by one step, in place, and returns nothing: a step that returns a value
+   * is a type error and the loop refuses it, so it can't be `async` or return an Effect. Must be deterministic: the same
    * state and input give the same result in every JavaScript engine, so it reads no clock and
    * no random source of its own. It may allocate what it reports (an event is rare), and keeps
    * what it holds per entity in typed arrays, so a step over many entities allocates nothing
@@ -100,12 +129,13 @@ export interface Definition<
     state: State,
     input: In["Type"],
     context: StepContext<Events[number]["Type"]>
-  ) => void;
+  ) => Nothing;
   /**
    * Applies each command, by its tag. The loop calls it at the start of the next step, before
-   * `step`, in the order the commands were sent. As deterministic as `step`, and like it a
-   * handler changes the state and returns nothing: it reports with `report`, and can't yet refuse
-   * a command to whoever sent it.
+   * `step`, in the order the commands were sent. As deterministic as `step`. A handler takes the
+   * command, changing the state in place and returning nothing, or refuses it by returning one
+   * of the rejections the command declares (`rejects`), having changed nothing: it decides
+   * before it changes anything. The sender hears which.
    */
   readonly apply?: CommandHandlers<State, Commands, Events[number]["Type"]>;
   readonly sample?: Sample<State, S>;
@@ -128,15 +158,20 @@ export interface Resolved<Config, State, Input, Event, Command> {
   readonly events: readonly AnyEvent[];
   readonly commands: readonly AnyCommand[];
   readonly create: (config: Config, run: RunContext<Event>) => State;
+  // What a handler returned is the loop's to judge, whatever its type said.
   readonly step: (
     state: State,
     input: Input,
     context: StepContext<Event>
-  ) => void;
+  ) => unknown;
   readonly apply: Readonly<
     Record<
       string,
-      (state: State, command: Command, context: CommandContext<Event>) => void
+      (
+        state: State,
+        command: Command,
+        context: CommandContext<Event>
+      ) => unknown
     >
   >;
   readonly sample:
@@ -151,12 +186,21 @@ export interface Resolved<Config, State, Input, Event, Command> {
 }
 
 /** The types of one simulation, as one bag: `Game.StateOf<typeof MySimulation>` reads it. */
-export interface SimulationTypes<Config, State, Input, Event, Command> {
+export interface SimulationTypes<
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals,
+> {
   readonly Config: Config;
   readonly State: State;
   readonly Input: Input;
   readonly Event: Event;
   readonly Command: Command;
+  /** The rejections each command can be refused with, by the command's tag. */
+  readonly Refusals: Refusals;
 }
 
 /** One handler per event, by its tag: what `match` takes. */
@@ -176,6 +220,7 @@ export interface SimulationClass<
   Input,
   Event,
   Command,
+  Refusals = unknown,
 > {
   new (_: never): { readonly "~arcadekit/game/Simulation": Name };
   readonly kind: "Simulation";
@@ -183,7 +228,14 @@ export interface SimulationClass<
   /** The definition as the loop runs it. Read it through `resolve`. */
   readonly definition: Resolved<never, unknown, never, unknown, never>;
   /** Types only: never read at run time. */
-  readonly "~types": SimulationTypes<Config, State, Input, Event, Command>;
+  readonly "~types": SimulationTypes<
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    Refusals
+  >;
   /**
    * A function that handles each of the simulation's events by its tag, checked to cover them
    * all: what turns a run's events into an app's Messages.
@@ -213,6 +265,7 @@ export type AnySimulation = SimulationClass<
   unknown,
   unknown,
   unknown,
+  unknown,
   unknown
 >;
 
@@ -226,10 +279,21 @@ export type InputOf<S extends AnySimulation> = S["~types"]["Input"];
 export type EventOf<S extends AnySimulation> = S["~types"]["Event"];
 /** Every command a run of `S` takes. */
 export type CommandOf<S extends AnySimulation> = S["~types"]["Command"];
+/** Every rejection a command of `S` can be refused with. */
+export type RejectionOf<S extends AnySimulation> =
+  S["~types"]["Refusals"][keyof S["~types"]["Refusals"]];
 
 /** `simulation`'s definition, typed for the loop that runs it. */
-export const resolve = <Config, State, Input, Event, Command>(
-  simulation: SimulationClass<string, Config, State, Input, Event, Command>
+export const resolve = <Config, State, Input, Event, Command, Refusals>(
+  simulation: SimulationClass<
+    string,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    Refusals
+  >
 ): Resolved<Config, State, Input, Event, Command> =>
   simulation.definition as unknown as Resolved<
     Config,
@@ -257,7 +321,8 @@ export const resolve = <Config, State, Input, Event, Command>(
  *
  * `create` and `step` are plain functions, and so is each `apply` handler: a step runs no Effect
  * and reads no clock or random source of its own (ADR-0017). A simulation that declares a
- * command without its handler is refused when its module loads.
+ * command without its handler is refused when its module loads. An `apply` handler may refuse
+ * its command by returning one of the rejections the command declares (`Game.Rejection`).
  */
 export const make = <
   const Name extends string,
@@ -277,11 +342,12 @@ export const make = <
   State,
   In["Type"],
   Events[number]["Type"] | S["Type"],
-  Commands[number]["Type"]
+  Commands[number]["Type"],
+  RefusalsOf<Commands>
 > => {
   const commands = definition.commands ?? [];
   const apply = (definition.apply ?? {}) as Readonly<
-    Record<string, (state: State, command: never, context: never) => void>
+    Record<string, (state: State, command: never, context: never) => unknown>
   >;
   for (const command of commands) {
     if (apply[command.tag] === undefined) {
@@ -335,6 +401,7 @@ export const make = <
     State,
     In["Type"],
     Events[number]["Type"] | S["Type"],
-    Commands[number]["Type"]
+    Commands[number]["Type"],
+    RefusalsOf<Commands>
   >;
 };

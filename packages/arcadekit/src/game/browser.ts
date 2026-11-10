@@ -7,7 +7,13 @@
 import { make as makeEngine } from "./engine";
 import type { Engine as RunningEngine } from "./engine";
 
-export type { AnyCommand, CommandClass, CommandInstance } from "./command";
+export {
+  type AnyCommand,
+  type CommandClass,
+  CommandDropped,
+  type CommandInstance,
+  type Settled,
+} from "./command";
 export type {
   AnyEvent,
   EventClass,
@@ -16,8 +22,13 @@ export type {
   NoFields,
   Payload,
 } from "./event";
-export { Command, Event, Simulation } from "./index";
+export { Command, Event, Rejection, Simulation } from "./index";
 export { Loop } from "./loop";
+export type {
+  AnyRejection,
+  RejectionClass,
+  RejectionInstance,
+} from "./rejection";
 export type {
   AnySimulation,
   CommandContext,
@@ -28,6 +39,10 @@ export type {
   EventCases,
   EventOf,
   InputOf,
+  Nothing,
+  RefusalFor,
+  RefusalsOf,
+  RejectionOf,
   RunContext,
   Sample,
   SimulationClass,
@@ -58,9 +73,10 @@ export type { InputSource, StepInput } from "../runtime/index";
 /** A game as the browser runs it for one player. See {@link makeEngine}. */
 export const Engine: typeof makeEngine = makeEngine;
 /** A running game, as an app drives it: what `yield* MyEngine` gives. */
-export type Engine<Config, Event, Command, E = never> = RunningEngine<
+export type Engine<
   Config,
   Event,
   Command,
-  E
->;
+  E = never,
+  Refusals = unknown,
+> = RunningEngine<Config, Event, Command, E, Refusals>;

@@ -1,6 +1,6 @@
 import { Context, Data, Effect, Exit, Fiber, Layer, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { manualFrames } from "../runtime/testing";
 import * as Game from "./browser";
@@ -9,7 +9,14 @@ import * as Game from "./browser";
 // whose view and input log what the engine does with them. Frames run only when a test runs them.
 
 class Counted extends Game.Event("Counted", { steps: Schema.Int }) {}
-class Jump extends Game.Command("Jump", { by: Schema.Int }) {}
+class TooFar extends Game.Rejection("TooFar", { limit: Schema.Int }) {}
+class Jump extends Game.Command(
+  "Jump",
+  { by: Schema.Int },
+  { rejects: [TooFar] }
+) {}
+
+const JUMP_LIMIT = 1000;
 
 class Counter extends Game.Simulation("Counter", {
   // 1/64 s steps: frame times below are exact in floating point.
@@ -25,6 +32,9 @@ class Counter extends Game.Simulation("Counter", {
   },
   apply: {
     Jump: (state, command) => {
+      if (command.by > JUMP_LIMIT) {
+        return new TooFar({ limit: JUMP_LIMIT });
+      }
       state.steps += command.by;
     },
   },
@@ -203,16 +213,98 @@ describe("Game.Engine", () => {
     ]);
   });
 
-  it("sends a command, which the next step applies", async () => {
+  it("sends a command, which the next step applies; the send completes then", async () => {
+    const done: boolean[] = [];
     const log = await play((engine, frames) =>
       Effect.gen(function* () {
         yield* engine.start({ from: 0 }, { seed: 1 });
         yield* attached(engine);
-        yield* engine.send(new Jump({ by: 100 }));
+        const sent = yield* Effect.forkChild(
+          engine.send(new Jump({ by: 100 })),
+          { startImmediately: true }
+        );
+        // Nothing has stepped yet, so the rules haven't seen it.
+        done.push(sent.pollUnsafe() !== undefined);
+        frames.runFrameAt(15.625);
+        done.push(Exit.isSuccess(yield* Fiber.await(sent)));
+      })
+    );
+    expect(done).toStrictEqual([false, true]);
+    expect(log).toContain("render 101");
+  });
+
+  it("fails a send with the rejection the rules refused it with, and leaves the run as it was", async () => {
+    let exit: Exit.Exit<void, unknown> | undefined;
+    const log = await play((engine, frames) =>
+      Effect.gen(function* () {
+        yield* engine.start({ from: 0 }, { seed: 1 });
+        yield* attached(engine);
+        const sent = yield* Effect.forkChild(
+          engine.send(new Jump({ by: 5000 })),
+          { startImmediately: true }
+        );
+        frames.runFrameAt(15.625);
+        exit = yield* Fiber.await(sent);
+      })
+    );
+    expect(exit).toStrictEqual(Exit.fail(new TooFar({ limit: JUMP_LIMIT })));
+    // The step ran; the jump did not.
+    expect(log).toContain("render 1");
+  });
+
+  it("fails a send with CommandDropped when there is no run, or the run stops first", async () => {
+    const exits: Exit.Exit<void, unknown>[] = [];
+    await play((engine) =>
+      Effect.gen(function* () {
+        exits.push(yield* Effect.exit(engine.send(new Jump({ by: 1 }))));
+        yield* engine.start({ from: 0 }, { seed: 1 });
+        const sent = yield* Effect.forkChild(engine.send(new Jump({ by: 1 })), {
+          startImmediately: true,
+        });
+        yield* engine.stop;
+        exits.push(yield* Fiber.await(sent));
+      })
+    );
+    expect(exits).toStrictEqual([
+      Exit.fail(new Game.CommandDropped({ command: "Jump", reason: "noRun" })),
+      Exit.fail(
+        new Game.CommandDropped({ command: "Jump", reason: "runEnded" })
+      ),
+    ]);
+  });
+
+  it("takes a command back when its send is interrupted before the step", async () => {
+    const log = await play((engine, frames) =>
+      Effect.gen(function* () {
+        yield* engine.start({ from: 0 }, { seed: 1 });
+        yield* attached(engine);
+        const sent = yield* Effect.forkChild(
+          engine.send(new Jump({ by: 100 })),
+          { startImmediately: true }
+        );
+        yield* Fiber.interrupt(sent);
         frames.runFrameAt(15.625);
       })
     );
-    expect(log).toContain("render 101");
+    expect(log).toContain("render 1");
+    expect(log).not.toContain("render 101");
+  });
+
+  it("types a send's failure as the command's rejections and CommandDropped", async () => {
+    await play((engine) =>
+      Effect.sync(() => {
+        // Made, never run: an Effect does nothing until it is.
+        const sent = engine.send(new Jump({ by: 1 }));
+        type Failure = Effect.Error<typeof sent>;
+        expectTypeOf<Failure>().toExtend<
+          | { readonly _tag: "TooFar"; readonly limit: number }
+          | Game.CommandDropped
+        >();
+        expectTypeOf<TooFar>().toExtend<Failure>();
+        expectTypeOf<Game.CommandDropped>().toExtend<Failure>();
+      })
+    );
+    expect(TooFar.tag).toBe("TooFar");
   });
 
   it("draws without stepping while paused, and no state after stop", async () => {

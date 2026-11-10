@@ -9,9 +9,16 @@
 
 import { make as makeCommand } from "./command";
 import { make as makeEvent } from "./event";
+import { make as makeRejection } from "./rejection";
 import { make as makeSimulation } from "./simulation";
 
-export type { AnyCommand, CommandClass, CommandInstance } from "./command";
+export {
+  type AnyCommand,
+  type CommandClass,
+  CommandDropped,
+  type CommandInstance,
+  type Settled,
+} from "./command";
 export type {
   AnyEvent,
   EventClass,
@@ -22,6 +29,11 @@ export type {
 } from "./event";
 export { Loop } from "./loop";
 export type {
+  AnyRejection,
+  RejectionClass,
+  RejectionInstance,
+} from "./rejection";
+export type {
   AnySimulation,
   CommandContext,
   CommandHandlers,
@@ -31,6 +43,10 @@ export type {
   EventCases,
   EventOf,
   InputOf,
+  Nothing,
+  RefusalFor,
+  RefusalsOf,
+  RejectionOf,
   RunContext,
   Sample,
   SimulationClass,
@@ -43,5 +59,7 @@ export type {
 export const Event: typeof makeEvent = makeEvent;
 /** A decision a player sends to a run. See {@link makeCommand}. */
 export const Command: typeof makeCommand = makeCommand;
+/** A reason the rules refuse a command. See {@link makeRejection}. */
+export const Rejection: typeof makeRejection = makeRejection;
 /** A game's rules, with no DOM. See {@link makeSimulation}. */
 export const Simulation: typeof makeSimulation = makeSimulation;

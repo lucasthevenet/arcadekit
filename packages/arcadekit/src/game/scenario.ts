@@ -9,11 +9,19 @@ import type { SimulationClass } from "./simulation";
 // `Scenario.given(...)`.
 
 /** What a scenario's steps drive: one run of the simulation, and what it has reported. */
-export interface ScenarioRunner<Config, State, Input, Event, Command> {
+export interface ScenarioRunner<
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Rejection = never,
+> {
   readonly given: (config: Config, seed: number) => void;
   readonly step: (input: Input, count: number) => void;
   readonly send: (command: Command, player: number) => void;
   readonly reported: (expected: readonly Event[]) => void;
+  readonly refused: (expected: readonly Rejection[]) => void;
   readonly sampled: (expected: Event) => void;
   readonly state: (check: (state: State) => void) => void;
 }
@@ -71,9 +79,24 @@ const sameData = (a: unknown, b: unknown): boolean => {
   );
 };
 
-const makeRunner = <Config, State, Input, Event, Command>(
-  simulation: SimulationClass<string, Config, State, Input, Event, Command>
-): ScenarioRunner<Config, State, Input, Event, Command> & {
+const makeRunner = <Config, State, Input, Event, Command, Refusals>(
+  simulation: SimulationClass<
+    string,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    Refusals
+  >
+): ScenarioRunner<
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals[keyof Refusals]
+> & {
   readonly end: () => void;
 } => {
   const { sample, stepSeconds } = resolve(simulation);
@@ -82,6 +105,8 @@ const makeRunner = <Config, State, Input, Event, Command>(
   // state, not something that happened, so `Scenario.reported` never has to list one.
   let unchecked: Event[] = [];
   let lastSample: Event | undefined;
+  // What the rules refused since the last check, in the order they refused it.
+  let refusals: unknown[] = [];
   loop.subscribe((event) => {
     if ((event as { readonly _tag: string })._tag === sample?.tag) {
       lastSample = event;
@@ -101,6 +126,7 @@ const makeRunner = <Config, State, Input, Event, Command>(
   return {
     given: (config, seed) => {
       unchecked = [];
+      refusals = [];
       lastSample = undefined;
       loop.start(config, seed, 0);
     },
@@ -115,7 +141,23 @@ const makeRunner = <Config, State, Input, Event, Command>(
     },
     send: (command, player) => {
       running("send");
-      loop.send(command, player);
+      loop.send(command, player, (outcome) => {
+        if (outcome !== undefined) {
+          refusals.push(outcome);
+        }
+      });
+    },
+    refused: (expected) => {
+      const actual = refusals;
+      refusals = [];
+      if (
+        actual.length !== expected.length ||
+        !actual.every((rejection, i) => sameData(rejection, expected[i]))
+      ) {
+        throw new ScenarioError(
+          `The rules refused other commands than the scenario says.\nExpected:\n${showAll(expected)}\nRefused:\n${showAll(actual)}`
+        );
+      }
     },
     reported: (expected) => {
       const actual = unchecked;
@@ -138,6 +180,11 @@ const makeRunner = <Config, State, Input, Event, Command>(
     },
     state: (check) => check(running("state")),
     end: () => {
+      if (refusals.length > 0) {
+        throw new ScenarioError(
+          `The scenario ended with a refused command no Scenario.refused checked:\n${showAll(refusals)}`
+        );
+      }
       if (unchecked.length > 0) {
         throw new ScenarioError(
           `The scenario ended with events no Scenario.reported checked:\n${showAll(unchecked)}`
@@ -164,21 +211,46 @@ const makeRunner = <Config, State, Input, Event, Command>(
  * ```
  *
  * A passing scenario accounts for everything: it fails if the run reported an event no
- * `Scenario.reported` checked. Samples are the exception, since a real-time game reports one every few
- * steps: check the latest with `Scenario.sampled`.
+ * `Scenario.reported` checked, or the rules refused a command no `Scenario.refused` checked.
+ * Samples are the exception, since a real-time game reports one every few steps: check the
+ * latest with `Scenario.sampled`.
  */
 export const make =
-  <Config, State, Input, Event, Command>(
-    simulation: SimulationClass<string, Config, State, Input, Event, Command>
+  <Config, State, Input, Event, Command, Refusals>(
+    simulation: SimulationClass<
+      string,
+      Config,
+      State,
+      Input,
+      Event,
+      Command,
+      Refusals
+    >
   ): ((
     ...steps: readonly ScenarioSteps<
-      ScenarioRunner<Config, State, Input, Event, Command>
+      ScenarioRunner<
+        Config,
+        State,
+        Input,
+        Event,
+        Command,
+        Refusals[keyof Refusals]
+      >
     >[]
   ) => void) =>
   (...steps) => {
     const runner = makeRunner(simulation);
     const run = (
-      step: ScenarioSteps<ScenarioRunner<Config, State, Input, Event, Command>>
+      step: ScenarioSteps<
+        ScenarioRunner<
+          Config,
+          State,
+          Input,
+          Event,
+          Command,
+          Refusals[keyof Refusals]
+        >
+      >
     ): void => {
       if (typeof step === "function") {
         step(runner);
@@ -237,6 +309,19 @@ export const reported =
   }> =>
   (runner) =>
     runner.reported(events);
+
+/**
+ * Checks what the rules refused since the last `refused` (or since `given`): exactly these
+ * rejections, in this order. A command is refused at the step after it is sent, so step first.
+ */
+export const refused =
+  <const Rejections extends readonly unknown[]>(
+    ...rejections: Rejections
+  ): ScenarioStep<{
+    readonly refused: (expected: readonly Rejections[number][]) => void;
+  }> =>
+  (runner) =>
+    runner.refused(rejections);
 
 /** Checks the run's latest sample. */
 export const sampled =

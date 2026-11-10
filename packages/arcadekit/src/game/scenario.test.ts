@@ -5,12 +5,13 @@ import * as Game from "./index";
 import * as Scenario from "./scenario";
 
 // A small game: a door that opens when the lever has been held for three steps in a row, and a
-// command that locks it for good.
+// command that locks it for good, which the rules refuse once it is locked.
 
 class DoorOpened extends Game.Event("DoorOpened", { atStep: Schema.Int }) {}
 class DoorLocked extends Game.Event("DoorLocked") {}
 class Gauge extends Game.Event("Gauge", { held: Schema.Int }) {}
-class Lock extends Game.Command("Lock") {}
+class AlreadyLocked extends Game.Rejection("AlreadyLocked") {}
+class Lock extends Game.Command("Lock", {}, { rejects: [AlreadyLocked] }) {}
 
 class Door extends Game.Simulation("Door", {
   input: Schema.Struct({ lever: Schema.Boolean }),
@@ -31,6 +32,9 @@ class Door extends Game.Simulation("Door", {
   },
   apply: {
     Lock: (door, _command, { report }) => {
+      if (door.locked) {
+        return new AlreadyLocked();
+      }
       door.locked = true;
       report(new DoorLocked());
     },
@@ -76,6 +80,45 @@ describe("a scenario", () => {
         expect(door.open).toBe(false);
       })
     );
+  });
+
+  it("checks what the rules refused, at the step after the command was sent", () => {
+    scenario(
+      Scenario.given({ needed: 3 }),
+      Scenario.send(new Lock()),
+      Scenario.step(RELEASED),
+      Scenario.reported(new DoorLocked()),
+      Scenario.refused(),
+      Scenario.send(new Lock()),
+      Scenario.step(RELEASED),
+      Scenario.refused(new AlreadyLocked()),
+      Scenario.reported()
+    );
+  });
+
+  it("fails when it ends with a refused command nothing checked", () => {
+    expect(() =>
+      scenario(
+        Scenario.given({ needed: 3 }),
+        Scenario.send(new Lock()),
+        Scenario.send(new Lock()),
+        Scenario.step(RELEASED),
+        Scenario.reported(new DoorLocked())
+      )
+    ).toThrow(
+      'a refused command no Scenario.refused checked:\n  {"_tag":"AlreadyLocked"}'
+    );
+  });
+
+  it("fails when the rules refused something else than the scenario says", () => {
+    expect(() =>
+      scenario(
+        Scenario.given({ needed: 3 }),
+        Scenario.send(new Lock()),
+        Scenario.step(RELEASED),
+        Scenario.refused(new AlreadyLocked())
+      )
+    ).toThrow('Expected:\n  {"_tag":"AlreadyLocked"}\nRefused:\n  (nothing)');
   });
 
   it("takes a list of steps as one, so a game can name its own", () => {
@@ -158,8 +201,14 @@ describe("a scenario", () => {
           Scenario.send(new DoorOpened({ atStep: 0 })),
           Scenario.step(HELD)
         ),
+      () =>
+        scenario(
+          Scenario.given(run),
+          // @ts-expect-error -- DoorLocked is an event, not a rejection of Door's commands.
+          Scenario.refused(new DoorLocked())
+        ),
     ];
     // Each is refused where it is written; none is run.
-    expect(mistyped).toHaveLength(4);
+    expect(mistyped).toHaveLength(5);
   });
 });
