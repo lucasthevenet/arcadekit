@@ -241,8 +241,8 @@ export interface CoopClientOptions {
   readonly rooms: CoopRooms;
   /**
    * What ticks the session, every few milliseconds. Defaults to a timer in a dedicated worker,
-   * which a hidden tab doesn't throttle (`workerTicker`), made and stopped with each run. Tests
-   * pass `manualTicker()` from `arcadekit/net/testing`.
+   * which a hidden tab doesn't throttle, made and stopped with each run. Tests pass
+   * `manualTicker()` from `arcadekit/net/testing`.
    */
   readonly ticker?: Ticker;
   /** The frame clock while attached. Defaults to `animationFrames`; tests pass `manualFrames()`. */

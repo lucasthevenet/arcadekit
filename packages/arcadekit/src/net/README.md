@@ -351,8 +351,6 @@ const play = Effect.gen(function* () {
 Effect.runFork(play);
 ```
 
-The same lobby without the client, for a game that wants its own: `encodeLobbyMessage` and `parseLobbyMessage` (the `pick`, `lobby` and `start` messages, decoded with Schema), the host's lobby as plain values (`withPlayer`, `withoutPlayer`, `withPick`, `canStart`, `startPlan`, `knownPicks`), `playerName` and `contentHash` are all in `arcadekit/net`.
-
 ### Testing a Co-op game
 
 `arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links), `manualTicker()` a ticker the test drives, and `testCoopGame()` a small game with lobby picks, an offer to answer, a pause and an end. Frames come from `manualFrames()` in `arcadekit/runtime/testing`.

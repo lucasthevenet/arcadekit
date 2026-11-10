@@ -22,8 +22,8 @@ const play = Effect.gen(function* () {
 **`arcadekit/net`** (DOM-free) gains a Co-op game's lockstep parts:
 
 - `CoopRules<G>` and the `CoopTypes` bag `G` a game declares once (`Config`, `State`, `Event`, `PlayerInput`, `Answer`, `LocalEvent`, `Content`). The rules hold the `simulation`, whose step input is `PlayerInputs<PlayerInput>`, with `codec`, `hash`, `picks`, `config`, the optional `maxPlayers` and `lockstep: { inputDelay, hashEvery }` (defaults `DEFAULT_ROOM_SIZE`, 4 and 60), and what the local player's seat needs: `localInput`, `settled`, `choosing`, `localEvent` and `runEnded`. The client combines the players' inputs with `combinePlayerInputs`, so the rules have no `combine`.
-- The lobby as plain values: the `LobbyMessage` and `LobbyPick` types, `encodeLobbyMessage`, `parseLobbyMessage` (decoded with Schema), `withPlayer`, `withoutPlayer`, `withPick`, `canStart`, `startPlan`, `knownPicks` and `playerName`.
-- `contentHash(content)`: the hash peers compare at the start. Content must be JSON data, and the hash is sensitive to key order.
+
+The lobby's messages and state, and the content hash peers compare at the start, are behind the client, not exports. Content must be JSON data, and its hash is sensitive to key order.
 
 **`arcadekit/net/browser`** gains the client:
 
@@ -31,8 +31,7 @@ const play = Effect.gen(function* () {
 - `CoopGame<G, LoadError>`: the rules plus `content`, an Effect run once per host or join, and `presentation`, an Effect run once per attach that gives a `CoopPresentation` (`createInput`, `createView`). The view gets a live `LocalPlayer` (`slot`, `names`) and reads it when it renders.
 - `CoopEvent`: `lobby` (role, code, self, `LobbyPlayer`s, `maxPlayers`, `canStart`), `started` (slot, names), `run` (what the game's `localEvent` makes of a run's event), `waiting` (who stepping waits on, who is choosing) and `failed`, with the kit's English `message` and a `CoopFailure` reason an app can re-word: `content`, `room`, `leftOut`, `unknownPick`, `hostLost`, `desync`, `contentMismatch`, `removed`, `badInput` or `bug`. Player names ("Host", "Guest 2") are the kit's too.
 - `CoopRooms` and `browserCoopRooms({ url, iceServers })`. The kit reads no environment: the app passes the signalling worker's URL and its STUN servers.
-- `workerTicker({ everyMs })`, with `tickWorker`, `TickWorker` and `WorkerTickerOptions`: a scoped Effect that gives a `Ticker` timed in a dedicated Web Worker, which a hidden tab doesn't throttle. The client makes one for each run unless given a `ticker`.
-- `CoopClientOptions` and `CoopDebug` are the types of the client's options and of `debug()`.
+- `CoopClientOptions` and `CoopDebug` are the types of the client's options and of `debug()`. Unless given a `ticker`, the client times each run in a dedicated Web Worker, which a hidden tab doesn't throttle.
 
 **New entry `arcadekit/net/testing`**, for tests only: `fakeCoopRooms()` (the signalling worker and WebRTC in memory, with `drop(peer)`, `closeHost()`, its `code` and a `log`; `FAKE_JOIN_CODE` is the code), `manualTicker()` (a ticker the test drives) and `testCoopGame(options?)`, a small Co-op game with lobby picks, an offer to answer, a pause and an end. Its parts are exported too, so a test can vary the game: `testCoopRules`, `testSimulation`, `testPresentation`, `testContent`, `hashTestState` and the `Test*` types. It needs only `effect`. Frames come from `manualFrames()` in `arcadekit/runtime/testing`.
 

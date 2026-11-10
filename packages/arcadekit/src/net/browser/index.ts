@@ -47,9 +47,3 @@ export {
   hostRoom,
   joinRoom,
 } from "./signalling";
-export {
-  type TickWorker,
-  type WorkerTickerOptions,
-  tickWorker,
-  workerTicker,
-} from "./ticker";
