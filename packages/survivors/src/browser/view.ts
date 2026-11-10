@@ -9,8 +9,11 @@ import { PIXELS_PER_UNIT, SurvivorsScene, VOID_COLOR } from "./scene";
 const VIEW_HEIGHT = 20;
 
 interface SurvivorsViewOptions {
-  /** The slot of the hero the camera follows: this browser's player. Defaults to 0. */
-  readonly localHero?: number;
+  /**
+   * The slot of the hero the camera follows: this browser's player. Read on every render.
+   * Defaults to slot 0.
+   */
+  readonly localHero?: () => number;
 }
 
 /**

@@ -141,9 +141,14 @@ const gemTier = (value: number) => {
   return value <= 3 ? 1 : 2;
 };
 
+const firstHero = () => 0;
+
 interface SurvivorsSceneOptions {
-  /** The slot of the hero to centre on. Defaults to 0. */
-  readonly localHero?: number;
+  /**
+   * The slot of the hero to centre on, read on every draw, so a co-op view follows the local
+   * player's seat without being made again. Defaults to slot 0.
+   */
+  readonly localHero?: () => number;
 }
 
 /**
@@ -160,7 +165,7 @@ export class SurvivorsScene {
    */
   readonly focus = { x: 0, z: 0 };
   private readonly art: SurvivorsArt;
-  private readonly localHero: number;
+  private readonly localHero: () => number;
   private readonly ground: GroundTiles;
   private readonly auras: AuraRings;
   private readonly common: CommonTags;
@@ -188,7 +193,7 @@ export class SurvivorsScene {
 
   constructor(art: SurvivorsArt, options: SurvivorsSceneOptions = {}) {
     this.art = art;
-    this.localHero = options.localHero ?? 0;
+    this.localHero = options.localHero ?? firstHero;
     const { edges } = SPRITE_TAGS;
     const groundTags: GroundTags = {
       grass: this.tag(SPRITE_TAGS.grass),
@@ -296,7 +301,7 @@ export class SurvivorsScene {
     this.auras.commit(auras);
     // On the sprite-pixel grid the hero is drawn on, so the camera moves in the same steps as
     // the hero and it stays still on screen.
-    const followed = world.heroes[this.localHero] ?? world.heroes[0]!;
+    const followed = world.heroes[this.localHero()] ?? world.heroes[0]!;
     this.focus.x = snapToPixel(followed.x, PIXELS_PER_UNIT);
     this.focus.z = snapToPixel(followed.z, PIXELS_PER_UNIT);
   }

@@ -366,9 +366,14 @@ describe(SurvivorsScene, () => {
 
   it("follows the local hero, and pans slowly over the ground with no run", () => {
     const world = createWorld({ content, heroIds: ["knight", "plain"] }, 1);
-    const scene = new SurvivorsScene(art, { localHero: 1 });
+    let slot = 0;
+    const scene = new SurvivorsScene(art, { localHero: () => slot });
     world.heroes[1]!.x = 2.53;
     world.heroes[1]!.z = -1.01;
+    scene.draw(world, 0);
+    expect(scene.focus).toStrictEqual({ x: 0, z: 0 });
+    // The slot is read on every draw: the view follows a seat that changes.
+    slot = 1;
     scene.draw(world, 0);
     // Snapped to sprite pixels, as the hero's sprite is, so the hero doesn't wobble on screen.
     expect(scene.focus).toStrictEqual({ x: 40 / 16, z: -16 / 16 });

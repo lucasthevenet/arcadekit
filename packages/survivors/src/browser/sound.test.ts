@@ -181,7 +181,7 @@ describe(SurvivorsSoundView, () => {
 
   it("plays the local hero's hurt and down louder than a teammate's", () => {
     const { audio, plays } = fakeAudio();
-    const view = new SurvivorsSoundView({ audio, sounds, localHero: 1 });
+    const view = new SurvivorsSoundView({ audio, sounds, localHero: () => 1 });
     const run = world(["bolter", "bolter"]);
     view.render(run);
 
@@ -196,6 +196,29 @@ describe(SurvivorsSoundView, () => {
       { id: "hurt", volume: 0.45 },
       { id: "down", volume: 0.45 },
       { id: "lost", volume: undefined },
+    ]);
+  });
+
+  it("reads the local hero's slot on every render, so it follows a seat that changes", () => {
+    const { audio, plays } = fakeAudio();
+    let slot = 0;
+    const view = new SurvivorsSoundView({
+      audio,
+      sounds,
+      localHero: () => slot,
+    });
+    const run = world(["bolter", "bolter"]);
+    view.render(run);
+
+    run.cues.hurt[0] = 1;
+    view.render(run);
+    slot = 1;
+    run.cues.hurt[0] = 2;
+    view.render(run);
+
+    expect(plays).toStrictEqual([
+      { id: "hurt", volume: undefined },
+      { id: "hurt", volume: 0.45 },
     ]);
   });
 
