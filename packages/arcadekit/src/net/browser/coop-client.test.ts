@@ -587,6 +587,27 @@ describe("hosting, joining and leaving", () => {
     ]);
   });
 
+  it("has no seat once its scope has closed", async () => {
+    const hub = fakeCoopRooms();
+    const own = Effect.runSync(Scope.make());
+    const coop = await Effect.runPromise(
+      makeCoopClient(testCoopGame(), { rooms: hub.rooms }).pipe(
+        Scope.provide(own),
+        Effect.provideService(Clock.Clock, performanceClock),
+        Effect.provideService(Scheduler.Scheduler, microtasks)
+      )
+    );
+    await run(coop.host("red"));
+    await settle();
+    const seated = coop.debug().slot;
+    await Effect.runPromise(Scope.close(own, Exit.void));
+    expect([seated, coop.debug().slot, hub.log]).toStrictEqual([
+      0,
+      -1,
+      ["open host", "release host"],
+    ]);
+  });
+
   it("closes the room, the session and the ticker when the player leaves the run", async () => {
     const hub = fakeCoopRooms();
     const tickers: string[] = [];

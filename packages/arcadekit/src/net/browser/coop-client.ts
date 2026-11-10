@@ -226,6 +226,12 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
     /** The attached devices, while attached. */
     let device: InputSource<PlayerInput> | null = null;
     let attached = false;
+    // Closing the client's scope leaves: no seat is this player's while the handle closes it.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        current = null;
+      })
+    );
 
     /** Reports `event` if `seat` is still this player's: a seat being replaced says nothing. */
     const emit = (seat: Seat<G>, event: CoopEvent<G["LocalEvent"]>) => {
