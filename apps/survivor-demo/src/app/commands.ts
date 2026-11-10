@@ -170,12 +170,13 @@ export const JoinCoop = Command.define("JoinCoop", {
     }),
 });
 
+/** Changes the local player's lobby pick: its hero. */
 export const ChooseCoopHero = Command.define("ChooseCoopHero", {
   args: { heroId: Schema.String },
   messages: [Message.CompletedEngineCommand],
   execute: ({ heroId }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).chooseHero(heroId);
+      yield* (yield* Coop).choose(heroId);
       return Message.CompletedEngineCommand();
     }),
 });
@@ -188,13 +189,16 @@ export const StartCoop = Command.define("StartCoop", {
   }),
 });
 
-/** The local hero's pick, as its step input: every peer applies it at the same step. */
+/**
+ * The local hero's pick, as the Co-op client's answer: it rides the hero's step input until its
+ * offer closes, so every peer applies it at the same step.
+ */
 export const ChooseCoopUpgrade = Command.define("ChooseCoopUpgrade", {
   args: { offer: Schema.Number, index: Schema.Number },
   messages: [Message.CompletedEngineCommand],
   execute: ({ offer, index }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).pickUpgrade(offer, index);
+      yield* (yield* Coop).answer({ offer, index });
       return Message.CompletedEngineCommand();
     }),
 });

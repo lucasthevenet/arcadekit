@@ -49,8 +49,10 @@ export const Message = defineMessageUnion({
     code: Schema.String,
     self: Schema.String,
     players: Schema.Array(CoopPlayer),
+    maxPlayers: Schema.Number,
+    canStart: Schema.Boolean,
   },
-  GotCoopStarted: { slot: Schema.Number, players: Schema.Array(Schema.String) },
+  GotCoopStarted: { slot: Schema.Number, names: Schema.Array(Schema.String) },
   GotCoopWaiting: {
     waitingFor: Schema.Array(Schema.String),
     choosing: Schema.Array(Schema.String),

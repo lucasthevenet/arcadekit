@@ -1,12 +1,12 @@
-import type { SurvivorsEvent } from "@arcadekit/survivors";
+import type { SurvivorsCoopEvent, SurvivorsEvent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { Audio, applyAudioSettings } from "arcadekit/audio";
 import { engineEntry, keyPresses, shortcutPresses } from "arcadekit/foldkit";
+import type { CoopEvent } from "arcadekit/net/browser";
 import { engineOf } from "arcadekit/runtime/browser";
 import { Effect, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
-import type { CoopEvent } from "../coop/client";
 import { Coop } from "./coop";
 import { Message } from "./message";
 import { isCoop, isLoaded } from "./model";
@@ -35,31 +35,9 @@ const toMessage = (event: SurvivorsEvent): Message | undefined => {
   }
 };
 
-const coopMessage = (event: CoopEvent): Message => {
+/** What the co-op run tells the local player: the genre's own events for its hero. */
+const coopRunMessage = (event: SurvivorsCoopEvent): Message => {
   switch (event.type) {
-    case "lobby": {
-      return Message.GotCoopLobby({
-        role: event.role,
-        code: event.code,
-        self: event.self,
-        players: event.players.map(({ id, heroId }) => ({ id, heroId })),
-      });
-    }
-    case "started": {
-      return Message.GotCoopStarted({
-        slot: event.slot,
-        players: [...event.players],
-      });
-    }
-    case "waiting": {
-      return Message.GotCoopWaiting({
-        waitingFor: [...event.waitingFor],
-        choosing: [...event.choosing],
-      });
-    }
-    case "failed": {
-      return Message.GotCoopFailed({ error: event.message });
-    }
     case "hud": {
       return Message.GotHud({ hud: event.hud });
     }
@@ -71,6 +49,44 @@ const coopMessage = (event: CoopEvent): Message => {
     }
     case "runEnded": {
       return Message.GotCoopRunEnded({ summary: event.summary });
+    }
+  }
+};
+
+export const coopMessage = (event: CoopEvent<SurvivorsCoopEvent>): Message => {
+  switch (event.type) {
+    case "lobby": {
+      return Message.GotCoopLobby({
+        role: event.role,
+        code: event.code,
+        self: event.self,
+        players: event.players.map(({ id, name, pick }) => ({
+          id,
+          name,
+          pick,
+        })),
+        maxPlayers: event.maxPlayers,
+        canStart: event.canStart,
+      });
+    }
+    case "started": {
+      return Message.GotCoopStarted({
+        slot: event.slot,
+        names: [...event.names],
+      });
+    }
+    case "waiting": {
+      return Message.GotCoopWaiting({
+        waitingFor: [...event.waitingFor],
+        choosing: [...event.choosing],
+      });
+    }
+    case "failed": {
+      // The kit's text, as it is. `event.reason` is there for an app that words its own.
+      return Message.GotCoopFailed({ error: event.message });
+    }
+    case "run": {
+      return coopRunMessage(event.event);
     }
   }
 };
@@ -127,8 +143,9 @@ export const subscriptions = Subscription.make<
   }),
 
   /**
-   * On co-op's screens, the co-op client draws its run and reports its lobby and run. Co-op's
-   * screens are reached from the menu, after the sheet has loaded; a failed load ends co-op.
+   * On co-op's screens, the Co-op client draws its run and reports its lobby and run. Co-op's
+   * screens are reached from the menu, after the sheet has loaded. An attach that fails (the
+   * sheet, no WebGL, a frame that throws) ends co-op: the client has left by then.
    */
   coop: engineEntry({
     engine: Coop,

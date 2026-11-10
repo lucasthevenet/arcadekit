@@ -5,10 +5,8 @@ import type {
 } from "@arcadekit/survivors";
 import type { AudioSettings } from "arcadekit/audio";
 import { gameViewport } from "arcadekit/foldkit";
-import { playerName } from "arcadekit/net";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
-import { canStartLobby } from "../coop/client";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { CoopPlayer, Model } from "./model";
@@ -362,10 +360,11 @@ const coopLobby = (
     readonly code: string;
     readonly self: string;
     readonly players: readonly CoopPlayer[];
+    readonly canStart: boolean;
   },
   h: H
 ): Html => {
-  const startable = canStartLobby(lobby.players);
+  const startable = lobby.canStart;
   return panel(h, [
     lobby.role === "host"
       ? h.div(
@@ -386,7 +385,7 @@ const coopLobby = (
         h.li(
           [h.Key(player.id)],
           [
-            `${playerName(player.id)}${player.id === lobby.self ? " (you)" : ""} · ${heroName(model, player.heroId)}`,
+            `${player.name}${player.id === lobby.self ? " (you)" : ""} · ${heroName(model, player.pick)}`,
           ]
         )
       )
@@ -411,7 +410,7 @@ const coopLobby = (
 
 const coopHud = (model: Model, h: H): Html => {
   const data = model.hud;
-  const { slot, players } = model.coop;
+  const { slot, names } = model.coop;
   const hero = data.heroes[slot] ?? { hp: 0, maxHp: 1 };
   return h.div(
     [h.Class("hud")],
@@ -440,7 +439,7 @@ const coopHud = (model: Model, h: H): Html => {
           h.span(
             [h.Key(`player-${index}`)],
             [
-              `${players[index] ?? "?"}${index === slot ? " (you)" : ""}: ${
+              `${names[index] ?? "?"}${index === slot ? " (you)" : ""}: ${
                 other.status === "playing"
                   ? `${Math.ceil(other.hp)} HP${other.paused ? ", paused" : ""}`
                   : other.status
@@ -472,10 +471,10 @@ const coopBanner = (
 };
 
 const coopPlaying = (model: Model, h: H): Html => {
-  const { waitingFor, choosing, paused, slot, players } = model.coop;
+  const { waitingFor, choosing, paused, slot, names } = model.coop;
   const pausedBy = model.hud.heroes
     .map((hero, index) =>
-      hero.paused && index !== slot ? players[index] : undefined
+      hero.paused && index !== slot ? names[index] : undefined
     )
     .filter((name) => name !== undefined);
   const banner = coopBanner(waitingFor, choosing, pausedBy);

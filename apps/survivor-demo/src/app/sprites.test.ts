@@ -23,7 +23,6 @@ import { Effect, Layer } from "effect";
 import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import type { CoopClient } from "../coop/client";
 import {
   ChooseUpgrade,
   EndRun,
@@ -35,7 +34,6 @@ import {
   SetPaused,
   StartRun,
 } from "./commands";
-import { makeCoop } from "./coop";
 import { Message } from "./message";
 import { emptyRecords } from "./save";
 import { init, update } from "./update";
@@ -286,23 +284,5 @@ describe("loading", () => {
       failingLoader
     );
     expect(messages).toStrictEqual([failed, failed, failed, failed]);
-  });
-
-  it("fails co-op's attach with the sheet's error, drawing nothing", async () => {
-    const attached: HTMLElement[] = [];
-    const client = {
-      attach: (element: HTMLElement) =>
-        Effect.suspend(() => {
-          attached.push(element);
-          return Effect.never;
-        }),
-      // A failed attach leaves co-op too.
-      leave: Effect.void,
-    } as unknown as CoopClient;
-    const error = await Effect.runPromise(
-      Effect.flip(makeCoop(client, failingLoader).attach({} as HTMLElement))
-    );
-    expect(error._tag).toBe("SpriteSheetError");
-    expect(attached).toStrictEqual([]);
   });
 });

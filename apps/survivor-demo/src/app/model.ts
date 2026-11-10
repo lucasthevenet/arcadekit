@@ -18,10 +18,11 @@ export const HeroSummary = Schema.Struct({
 });
 export type HeroSummary = typeof HeroSummary.Type;
 
-/** One player in a co-op lobby: its peer id and its hero ("" until it picks). */
+/** One player in a co-op lobby: its peer id, its name, and its lobby pick, a hero id ("" until it picks). */
 export const CoopPlayer = Schema.Struct({
   id: Schema.String,
-  heroId: Schema.String,
+  name: Schema.String,
+  pick: Schema.String,
 });
 export type CoopPlayer = typeof CoopPlayer.Type;
 
@@ -43,6 +44,9 @@ export const Phase = defineTaggedUnion({
     code: Schema.String,
     self: Schema.String,
     players: Schema.Array(CoopPlayer),
+    /** The most players a run takes, and whether the host can start: the Co-op client's word. */
+    maxPlayers: Schema.Number,
+    canStart: Schema.Boolean,
   },
   CoopPlaying: {},
   CoopLevelUp: { offer: Schema.Number, choices: Schema.Array(UpgradeChoice) },
@@ -66,7 +70,7 @@ export const CoopRun = Schema.Struct({
   /** The local player's hero. */
   slot: Schema.Number,
   /** Every player's name, by slot. */
-  players: Schema.Array(Schema.String),
+  names: Schema.Array(Schema.String),
   /** The players stepping waits on ("waiting for X"). */
   waitingFor: Schema.Array(Schema.String),
   /** The other players with an upgrade to pick while the run is frozen. */
@@ -78,7 +82,7 @@ export type CoopRun = typeof CoopRun.Type;
 
 export const emptyCoopRun: CoopRun = {
   slot: 0,
-  players: [],
+  names: [],
   waitingFor: [],
   choosing: [],
   paused: false,
