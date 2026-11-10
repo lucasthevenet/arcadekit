@@ -2,7 +2,7 @@
 
 How a module of the kit is written, so the next one reads like the ones beside it. The kit is meant to be learned from: a game written with it shows its parts by name, and the kit's own source shows how each part works.
 
-[`AGENTS.md`](../AGENTS.md) has the two rules the rest follows from, "A game is declared" and "Effect and plain code". This page is the detail for whoever adds a module or reshapes one. [What checks it](#what-checks-it) lists the rules that lint and a test enforce.
+[`AGENTS.md`](../AGENTS.md) has the two rules the rest follows from, "A game is declared" and "Effect and plain code". This page is the detail for whoever adds a module or reshapes one. [What checks it](#what-checks-it) lists the rules that lint and a test enforce: prefer a new rule there to a new sentence here.
 
 ## Start from the game's side
 
@@ -50,7 +50,7 @@ Top to bottom:
 - **The name is a literal type**: `const Name extends string`, or `Tag` when it is the `_tag` of the class's values. Without `const` it widens to `string`, and two declarations share one type.
 - **Types given first.** A type that nothing in the definition carries comes first, in an empty call, as `Context.Service` takes it: `Asset<SpriteSheet, SpriteSheetError>()("PushPuzzleSheet", { ... })`. Every other type is inferred.
 - **It returns a class** with `static readonly kind = "<Noun>" as const`, the name, and what a host reads from the definition (`definition`, `simulation`, `rejects`). The name's static is `tag` for a `_tag`, and `<noun>Name` otherwise (`simulationName`). `name` is taken: a class has one already, and a minifier changes it.
-- **One cast**, at the end: `as unknown as <Noun>Class<...>`. Inside, the base is named before it is extended (`const Key = ...; return class extends Key { ... }`).
+- **Its result is cast to its written type**: `return class ... as unknown as <Noun>Class<...>`. The base is named before the class extends it (`const Key = ...; return class extends Key { ... }`), so the class reads as its statics alone.
 - **It checks, when declared, what the types can't**, and throws: [refusing a mistake](#refusing-a-mistake).
 
 ### A declaration with a service
@@ -64,7 +64,7 @@ The class is the service's key, as in [`content/asset.ts`](../packages/arcadekit
 
 ### Register it
 
-Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](../packages/arcadekit/test/style.test.ts) and to `DECLARATION_BUILDERS` in [`tools/lint/declaration.ts`](../tools/lint/declaration.ts). The test then says what the declaration still lacks.
+Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](../packages/arcadekit/test/style.test.ts) and to `DECLARATION_BUILDERS` in [`tools/lint/declaration.ts`](../tools/lint/declaration.ts). Lint and the test then say what the declaration still lacks.
 
 ## The definition a game writes
 
@@ -116,16 +116,25 @@ A failure the caller should handle is a different thing: a typed error, in the E
 
 ## What checks it
 
+What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/lint/declaration.ts) or [`oxlint.config.ts`](../oxlint.config.ts). What takes several files is a test, [`packages/arcadekit/test/style.test.ts`](../packages/arcadekit/test/style.test.ts). A rule of this page that can be checked gets a check, and each check's message says what to write.
+
 | Rule | Checked by |
 | --- | --- |
-| A game's declaration is a class with the name it is declared with | lint: `declaration/named`, `declaration/class` ([`tools/lint/declaration.ts`](../tools/lint/declaration.ts)) |
-| A builder's shape, its doc comment, its README block, its glossary term, a test that declares one | [`packages/arcadekit/test/style.test.ts`](../packages/arcadekit/test/style.test.ts) |
-| No new factory without a reason | the same test's `FACTORIES` |
+| A game's declaration is a class with the name it is declared with | lint: `declaration/named`, `declaration/class` |
+| A builder is given no type argument, apart from types given first | lint: `declaration/inferred` |
+| A function in a definition is not async and not a generator | lint: `declaration/plain-handler` |
 | A step or an `apply` returns nothing | the `Nothing` type, and `Game.Loop` at run time |
+| New code is written with the declarations | lint: `declaration/older-contract`, off only for survivors and its demo |
+| A builder's shape: the name first as a literal type, `kind` and the name as statics, `<Noun>Class` written out and exported, the base named | lint: `declaration/builder`, on the kit's source |
+| Every builder is listed, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |
+| No new factory without a reason | the style test's `FACTORIES` |
 | Library code runs no Effect itself | lint: `Effect.run…` is refused in `packages/*/src` |
-| The simulation reads no clock or random source | lint, on the files `oxlint.config.ts` lists: a new plain file of the simulation is added there |
+| The simulation reads no clock or random source, and uses only exact math | lint, on the root entry of every genre package and on `arcadekit/game` but its engine. `oxlint.config.ts` lists the other plain files of the kit: add a new one there |
+| A module exports no `then` | lint: `unicorn/no-thenable` |
 | Which entry may import which, and which packages | lint's `ENTRY_IMPORTS`, [`packages/arcadekit/test/entry-packages.test.ts`](../packages/arcadekit/test/entry-packages.test.ts) |
 | A README's examples compile | `pnpm smoke` |
 | Every export of the kit has a written type | the build (`isolatedDeclarations`) |
+
+[`tools/lint/declaration.test.ts`](../tools/lint/declaration.test.ts) runs the linter on a case for each `declaration/…` rule: a new rule gets its cases there.
 
 The rest of this page is checked by review.

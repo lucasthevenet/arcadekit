@@ -182,13 +182,37 @@ export default defineConfig({
       rules: {
         "declaration/named": "error",
         "declaration/class": "error",
+        "declaration/inferred": "error",
+        "declaration/plain-handler": "error",
+        "declaration/older-contract": "error",
       },
     },
     {
-      // A test may call a builder outside a class, to check what it refuses.
+      // A test may call a builder outside a class and hand it a wrong handler, to check what
+      // the builder and its host refuse.
       files: ["**/*.test.ts"],
       jsPlugins: ["./tools/lint/declaration.ts"],
-      rules: { "declaration/class": "off" },
+      rules: {
+        "declaration/class": "off",
+        "declaration/plain-handler": "off",
+      },
+    },
+    {
+      // The games still on the older contract (ADR-0020). This list only gets shorter.
+      files: ["packages/survivors/**/*.ts", "apps/survivor-demo/**/*.ts"],
+      jsPlugins: ["./tools/lint/declaration.ts"],
+      rules: { "declaration/older-contract": "off" },
+    },
+    {
+      // The kit's own builders. The one other function of the kit that returns a class makes
+      // the Durable Object that Cloudflare runs.
+      files: ["packages/arcadekit/src/**/*.ts"],
+      excludeFiles: [
+        "**/*.test.ts",
+        "packages/arcadekit/src/net/worker/index.ts",
+      ],
+      jsPlugins: ["./tools/lint/declaration.ts"],
+      rules: { "declaration/builder": "error" },
     },
     {
       // Library code, but for what a test imports and the one file whose entry points
@@ -206,12 +230,10 @@ export default defineConfig({
       },
     },
     {
-      // Genre simulation code: root entries, not the views in ./browser, not tests.
-      files: [
-        "packages/survivors/src/**/*.ts",
-        "packages/push-puzzle/src/**/*.ts",
-      ],
-      excludeFiles: ["**/browser/**", "**/*.test.ts"],
+      // Genre simulation code: the root entry of every package but the kit, so a new genre is
+      // held to it from its first file. Not the views in ./browser, not tests.
+      files: ["packages/*/src/**/*.ts"],
+      excludeFiles: ["packages/arcadekit/**", "**/browser/**", "**/*.test.ts"],
       jsPlugins: ["./tools/lint/deterministic-math.ts"],
       rules: {
         "eslint/no-restricted-properties": [
@@ -232,24 +254,21 @@ export default defineConfig({
       // The rest of the simulation: core's primitives, the loop that steps a genre, and the
       // lockstep protocol that steps it on every peer, with the input codecs whose decoded
       // value every peer steps on and the step input built from the players' inputs (ADR-0017).
-      // The test game too: its simulation is the one a Co-op game's tests copy.
+      // The test game too: its simulation is the one a Co-op game's tests copy. All of
+      // arcadekit/game but its engine, so a new file of it is held to this from the start:
+      // the engine is the Effect host, and takes its time from `Frames`.
       files: [
         "packages/arcadekit/src/core/**/*.ts",
         "packages/arcadekit/src/runtime/loop.ts",
         "packages/arcadekit/src/runtime/simulation.ts",
         "packages/arcadekit/src/runtime/player-inputs.ts",
-        "packages/arcadekit/src/game/command.ts",
-        "packages/arcadekit/src/game/event.ts",
-        "packages/arcadekit/src/game/loop.ts",
-        "packages/arcadekit/src/game/rejection.ts",
-        "packages/arcadekit/src/game/simulation.ts",
-        "packages/arcadekit/src/game/scenario.ts",
+        "packages/arcadekit/src/game/**/*.ts",
         "packages/arcadekit/src/net/lockstep.ts",
         "packages/arcadekit/src/net/codec.ts",
         "packages/arcadekit/src/net/player-inputs.ts",
         "packages/arcadekit/src/net/testing/test-game.ts",
       ],
-      excludeFiles: ["**/*.test.ts"],
+      excludeFiles: ["**/*.test.ts", "packages/arcadekit/src/game/engine.ts"],
       rules: {
         "eslint/no-restricted-properties": [
           "error",

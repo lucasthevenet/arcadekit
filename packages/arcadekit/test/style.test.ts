@@ -3,17 +3,22 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { DECLARATION_BUILDERS } from "../../../tools/lint/declaration";
+import {
+  DECLARATION_BUILDERS,
+  OLDER_CONTRACT,
+} from "../../../tools/lint/declaration";
 
-// The part of the kit's style that can be checked by reading its source (docs/code-style.md has
-// all of it, with the reasons). Three tables, each a list a change to the kit's shape has to
-// touch, so that the change is made on purpose:
+// The part of the kit's style that takes more than one file to check (docs/code-style.md has all
+// of it, with the reasons). What one file shows, such as the shape of a builder, is lint's:
+// tools/lint/declaration.ts. This file has the lists a change to the kit's shape has to touch,
+// so that the change is made on purpose:
 //
-// - DECLARATIONS: every declaration builder, checked for the shape a declaration has, for its
-//   docs and for a test that declares one.
+// - DECLARATIONS: every declaration builder, checked for its docs and for a test that declares
+//   one.
 // - FACTORIES and OLDER_FACTORIES: every exported `make…` and `create…` function. A new part a
 //   game supplies is a declaration, so a new factory needs a reason.
-// - The guide's own links, so it keeps naming files that exist.
+// - Lint's own lists, DECLARATION_BUILDERS and OLDER_CONTRACT, checked against the source.
+// - The guide's links, so it keeps naming files that exist.
 //
 // It reads text and runs nothing, as test/entry-packages.test.ts does: a builder's behaviour is
 // tested beside it, in src/.
@@ -23,28 +28,18 @@ const srcDir = path.join(packageDir, "src");
 const repoDir = path.resolve(packageDir, "../..");
 const guide = "docs/code-style.md";
 
-interface Declared {
-  /** The builder's file, from src/. Its first folder is the entry whose README shows it. */
-  readonly file: string;
-  /**
-   * The static that holds the name a game declares it with: `tag` when that name is the `_tag`
-   * of the class's values, `<noun>Name` otherwise. Never `name`, which a class already has and
-   * a minifier changes.
-   */
-  readonly name: string;
-}
-
-// Every declaration builder of the kit, by the way a game writes it. Adding one is adding a word
-// to the kit's vocabulary: it also goes in DECLARATION_BUILDERS (tools/lint/declaration.ts), in
-// the glossary and on its entry's page, and this file checks that it did.
-const DECLARATIONS: Readonly<Record<string, Declared>> = {
-  "Game.Event": { file: "game/event.ts", name: "tag" },
-  "Game.Command": { file: "game/command.ts", name: "tag" },
-  "Game.Rejection": { file: "game/rejection.ts", name: "tag" },
-  "Game.Simulation": { file: "game/simulation.ts", name: "simulationName" },
-  "Game.Engine": { file: "game/engine.ts", name: "engineName" },
-  Content: { file: "content/content.ts", name: "contentName" },
-  Asset: { file: "content/asset.ts", name: "assetName" },
+// Every declaration builder of the kit, by the way a game writes it, with its file from src/.
+// The file's first folder is the entry whose README shows it. Adding one is adding a word to the
+// kit's vocabulary: it also goes in DECLARATION_BUILDERS (tools/lint/declaration.ts), in the
+// glossary and on its entry's page, and this file checks that it did.
+const DECLARATIONS: Readonly<Record<string, string>> = {
+  "Game.Event": "game/event.ts",
+  "Game.Command": "game/command.ts",
+  "Game.Rejection": "game/rejection.ts",
+  "Game.Simulation": "game/simulation.ts",
+  "Game.Engine": "game/engine.ts",
+  Content: "content/content.ts",
+  Asset: "content/asset.ts",
 };
 
 // The files that return a class and build no declaration.
@@ -79,6 +74,16 @@ const OLDER_FACTORIES: readonly string[] = [
   "makeCoopClient",
   "makeEngineLoader",
   "makeGameEngine",
+  "makeSaveStore",
+];
+
+// Those of them with no declaration to use in their place yet, so lint can't refuse them
+// (OLDER_CONTRACT in tools/lint/declaration.ts): a save, the audio settings and the Co-op client
+// are still to move (ADR-0020). A name leaves this list for OLDER_CONTRACT with the change that
+// adds its declaration.
+const NOT_YET_DECLARED: readonly string[] = [
+  "makeAudioSettingsStore",
+  "makeCoopClient",
   "makeSaveStore",
 ];
 
@@ -134,10 +139,7 @@ describe("the table of declarations", () => {
       builders,
       `A file under src/ builds a declaration (it returns a class, or has a \`kind\` static) that DECLARATIONS doesn't list. See ${guide}.`
     ).toStrictEqual(
-      [
-        ...Object.values(DECLARATIONS).map(({ file }) => file),
-        ...OTHER_CLASS_FACTORIES,
-      ].toSorted()
+      [...Object.values(DECLARATIONS), ...OTHER_CLASS_FACTORIES].toSorted()
     );
   });
 
@@ -149,29 +151,39 @@ describe("the table of declarations", () => {
   });
 });
 
-describe.each(Object.entries(DECLARATIONS))("%s", (builder, { file, name }) => {
+describe("the older contract lint keeps new code off", () => {
+  // Each entry's public file, where a game's import of a name resolves.
+  const entryFiles = Object.values(
+    (
+      JSON.parse(read(path.join(packageDir, "package.json"))) as {
+        readonly exports: Readonly<Record<string, { readonly source: string }>>;
+      }
+    ).exports
+  ).map(({ source }) => read(path.join(packageDir, source)));
+
+  it("names only what the kit still exports", () => {
+    // A name whose export has gone is a line to delete from OLDER_CONTRACT.
+    const gone = Object.keys(OLDER_CONTRACT).filter(
+      (name) =>
+        !entryFiles.some((text) =>
+          new RegExp(String.raw`\b${name}\b`, "u").test(text)
+        )
+    );
+    expect(gone).toStrictEqual([]);
+  });
+
+  it("names every factory of the older contract that has a declaration", () => {
+    // The older factories lint doesn't name are the ones with no declaration to use yet.
+    expect(
+      OLDER_FACTORIES.filter((name) => !Object.hasOwn(OLDER_CONTRACT, name))
+    ).toStrictEqual(NOT_YET_DECLARED);
+  });
+});
+
+describe.each(Object.entries(DECLARATIONS))("%s", (builder, file) => {
   const noun = builder.split(".").at(-1) ?? builder;
   const entry = file.split("/", 1)[0] ?? "";
   const source = read(path.join(srcDir, file));
-
-  it("takes its name as a literal, so two declarations never share a type", () => {
-    expect(source).toMatch(/<\s*const (?:Name|Tag) extends string\b/u);
-  });
-
-  it("returns a class that says its kind and its name", () => {
-    expect(source).toContain(`static readonly kind = "${noun}" as const;`);
-    expect(source).toMatch(
-      new RegExp(String.raw`static readonly ${name}: (?:Name|Tag) = \w+;`, "u")
-    );
-  });
-
-  it(`has its public type written out, as ${noun}Class`, () => {
-    const body = interfaceBody(source, `${noun}Class`);
-    expect(body).toContain(`readonly kind: "${noun}";`);
-    expect(body).toMatch(
-      new RegExp(String.raw`readonly ${name}: (?:Name|Tag);`, "u")
-    );
-  });
 
   it("shows itself declared in its own doc comment", () => {
     const shown = docComments(source).some((comment) =>
