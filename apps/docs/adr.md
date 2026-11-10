@@ -18,14 +18,12 @@ The kit's architecture decision records. Each one says what was decided and why,
     <tr>
       <th>Record</th>
       <th>Decision</th>
-      <th>Status</th>
     </tr>
   </thead>
   <tbody>
     <tr v-for="adr of adrs" :key="adr.number">
       <td class="adr-number"><a :href="withBase(adr.link)">ADR-{{ adr.number }}</a></td>
-      <td>{{ adr.title }}</td>
-      <td>{{ adr.status }}</td>
+      <td>{{ adr.title }} <Badge :type="adr.status === 'accepted' ? 'info' : 'warning'" :text="adr.status" /></td>
     </tr>
   </tbody>
 </table>

@@ -64,3 +64,21 @@
   line-height: 20px;
   color: var(--vp-c-text-2);
 }
+
+/*
+ * On a phone a table was wider than the page and scrolled inside itself. There its cells are
+ * closer and their text a step smaller, and a name in a cell wraps: after a slash
+ * (.vitepress/tables.ts), and anywhere when even that doesn't fit its line. Not anywhere in the
+ * first column: a column of names that may break anywhere is given almost no width.
+ */
+@media (max-width: 639px) {
+  .vp-doc th,
+  .vp-doc td {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .vp-doc td:not(:first-child) code {
+    overflow-wrap: anywhere;
+  }
+}

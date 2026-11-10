@@ -4,7 +4,7 @@
 // `rewrites` gives each page its address, and `srcExclude` leaves every other markdown file out.
 // pages.ts finds the pages, sidebar.ts groups them, links.ts makes the links the READMEs
 // already have work here, reference.ts gives the glossary and the decisions what a page needs,
-// and version.ts says which version the pages describe.
+// tables.ts lets a table fit a phone, and version.ts says which version the pages describe.
 import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -22,6 +22,7 @@ import {
 } from "./pages.ts";
 import { createReferencePlugin } from "./reference.ts";
 import { entriesNav, sidebar } from "./sidebar.ts";
+import { tableNames } from "./tables.ts";
 import { packageVersion, versionLabel } from "./version.ts";
 
 /** Where the site is served: its canonical address, with no trailing slash. */
@@ -91,6 +92,7 @@ export default defineConfig({
     config: (md) => {
       md.use(reference);
       md.use(links.plugin);
+      md.use(tableNames);
     },
   },
 
