@@ -121,6 +121,11 @@
       "types": "./dist/net/signalling.d.ts",
       "default": "./dist/net/signalling.js"
     },
+    "./net/worker": {
+      "source": "./src/net/worker/index.ts",
+      "types": "./dist/net/worker.d.ts",
+      "default": "./dist/net/worker.js"
+    },
     "./foldkit": {
       "source": "./src/foldkit/index.ts",
       "types": "./dist/foldkit.d.ts",
@@ -132,9 +137,10 @@
   },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p . && tsc -p tsconfig.root.json && tsc -p tsconfig.test.json"
+    "typecheck": "tsc -p . && tsc -p tsconfig.root.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.test.json"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261104.1",
     "@effect/platform-browser": "~4.1.0",
     "@types/three": "^0.187.0",
     "effect": "~4.1.2",
@@ -142,6 +148,7 @@
     "three": "^0.187.0"
   },
   "peerDependencies": {
+    "@cloudflare/workers-types": "^5",
     "@effect/platform-browser": "~4.1.0",
     "@types/three": "^0.187.0",
     "effect": "~4.1.2",
@@ -149,6 +156,9 @@
     "three": "^0.187.0"
   },
   "peerDependenciesMeta": {
+    "@cloudflare/workers-types": {
+      "optional": true
+    },
     "@effect/platform-browser": {
       "optional": true
     },

@@ -3,7 +3,8 @@
 // there:
 // - typechecks a tiny game (scripts/smoke/) and every `ts` example in the entries' READMEs
 //   (packages/arcadekit/src/<entry>/README.md), with TypeScript 5.9 and with the workspace's
-//   TypeScript 7;
+//   TypeScript 7. arcadekit/net/worker's examples are a project of their own
+//   (tsconfig.worker.json), checked with Cloudflare's Workers types and no DOM;
 // - builds the game with Vite;
 // - checks that exactly one copy of effect and of three is installed.
 //
@@ -35,6 +36,9 @@ const ENTRIES = [
   "net",
   "foldkit",
 ];
+
+// The entry that runs on Cloudflare, with a README of its own: its examples are a Worker's.
+const WORKER_ENTRY = "net/worker";
 
 const root = path.resolve(import.meta.dirname, "..");
 const packageDir = path.join(root, "packages", "arcadekit");
@@ -110,6 +114,7 @@ try {
           three: peerRange("three"),
         },
         devDependencies: {
+          "@cloudflare/workers-types": peerRange("@cloudflare/workers-types"),
           "@types/three": peerRange("@types/three"),
           typescript5: "npm:typescript@~5.9.0",
           typescript7: `npm:typescript@${workspaceVersion("typescript")}`,
@@ -123,9 +128,11 @@ try {
   cpSync(path.join(root, "scripts", "smoke"), project, { recursive: true });
 
   const readmes = path.join(project, "src", "readme");
+  const workerReadmes = path.join(project, "worker", "readme");
   mkdirSync(readmes);
+  mkdirSync(workerReadmes, { recursive: true });
   let exampleCount = 0;
-  for (const dir of ENTRIES) {
+  for (const dir of [...ENTRIES, WORKER_ENTRY]) {
     const readme = path.join(packageDir, "src", dir, "README.md");
     if (!existsSync(readme)) {
       throw new Error(`packages/arcadekit/src/${dir} has no README.md`);
@@ -135,7 +142,10 @@ try {
     ).entries()) {
       // `export {}` makes each example a module, so their names don't clash.
       writeFileSync(
-        path.join(readmes, `${dir}-${index + 1}.ts`),
+        path.join(
+          dir === WORKER_ENTRY ? workerReadmes : readmes,
+          `${dir.replaceAll("/", "-")}-${index + 1}.ts`
+        ),
         `${code}\nexport {};\n`
       );
       exampleCount += 1;
@@ -154,11 +164,13 @@ try {
       path.join(project, "node_modules", ts, "package.json")
     );
     console.log(`\nTypeScript ${version}`);
-    run(
-      process.execPath,
-      [path.join("node_modules", ts, "bin", "tsc"), "-p", "."],
-      project
-    );
+    for (const tsconfig of [".", "tsconfig.worker.json"]) {
+      run(
+        process.execPath,
+        [path.join("node_modules", ts, "bin", "tsc"), "-p", tsconfig],
+        project
+      );
+    }
   }
 
   run(

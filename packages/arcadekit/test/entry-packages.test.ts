@@ -13,6 +13,9 @@ import { describe, expect, it } from "vitest";
 // arcadekit/core and arcadekit/input are allowed none, so a game can use them without Effect
 // (ADR-0017). `three`, `foldkit` and `@effect/platform-browser` are optional peers, each allowed
 // only in the entry it is for, so a game that skips one still gets every other entry whole.
+// arcadekit/net/worker runs on Cloudflare, so it alone may import the runtime's own
+// `cloudflare:workers` module, which is not a package: the optional `@cloudflare/workers-types`
+// peer has its types.
 //
 // `pnpm test` checks src/, and dist/ too when it has been built. `pnpm lint:packages` runs this
 // file after a build with ARCADEKIT_REQUIRE_DIST set, so a missing dist/ fails there.
@@ -36,6 +39,7 @@ const ENTRY_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   net: ["effect"],
   "net/browser": ["effect"],
   "net/signalling": ["effect"],
+  "net/worker": ["effect", "cloudflare:workers"],
   foldkit: ["effect", "foldkit"],
 };
 
@@ -102,6 +106,8 @@ const packagesReachedFrom = (entryFile: string): readonly string[] => {
   return [...packages].toSorted();
 };
 
+const peers = (): readonly string[] => Object.keys(peerDependencies);
+
 const distBuilt = existsSync(path.join(packageDir, "dist"));
 const distRequired = process.env.ARCADEKIT_REQUIRE_DIST !== undefined;
 
@@ -114,12 +120,23 @@ describe("the table of entries", () => {
     );
   });
 
-  it("allows only the package's peers", () => {
-    const peers = Object.keys(peerDependencies);
+  it("allows only the package's peers, and Cloudflare's runtime modules", () => {
     const others = Object.values(ENTRY_PACKAGES)
       .flat()
-      .filter((name) => !peers.includes(name));
+      .filter(
+        (name) => !peers().includes(name) && !name.startsWith("cloudflare:")
+      );
     expect(others).toStrictEqual([]);
+  });
+
+  it("allows Cloudflare's runtime modules only in arcadekit/net/worker", () => {
+    const entries = Object.entries(ENTRY_PACKAGES)
+      .filter(([, names]) =>
+        names.some((name) => name.startsWith("cloudflare:"))
+      )
+      .map(([entry]) => entry);
+    expect(entries).toStrictEqual(["net/worker"]);
+    expect(peers()).toContain("@cloudflare/workers-types");
   });
 });
 

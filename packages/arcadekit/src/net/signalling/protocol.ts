@@ -3,10 +3,9 @@ import { Option, Schema } from "effect";
 /**
  * The signalling protocol: the JSON messages a lockstep run's peers and the signalling worker
  * exchange over one WebSocket each, while the peers set up their WebRTC connections (#25,
- * ADR-0012). It is the interface between the worker (the survivors demo's, in
- * `apps/survivor-demo/worker`) and the browser's signalling client (`hostRoom`, `joinRoom` in
- * `arcadekit/net/browser`), exported as `arcadekit/net/signalling`, so it has no DOM and needs
- * nothing but `effect`.
+ * ADR-0012). It is the interface between the worker (`arcadekit/net/worker`) and the browser's
+ * signalling client (`hostRoom`, `joinRoom` in `arcadekit/net/browser`), exported as
+ * `arcadekit/net/signalling`, so it has no DOM and needs nothing but `effect`.
  *
  * A host opens `wss://<worker>/host` and is told its join code in `welcome`. Each guest opens
  * `wss://<worker>/join/<code>`. In the host star, the host signals every guest and each guest
@@ -19,8 +18,14 @@ import { Option, Schema } from "effect";
  * `parseServerMessage` read one back.
  */
 
-/** The most players a room holds, host included (ADR-0012: 2 to 4 players). */
-export const MAX_PLAYERS = 4;
+/**
+ * The players a room holds, host included, unless the worker is set up with another room size
+ * (ADR-0012: 2 to 4 players).
+ */
+export const DEFAULT_ROOM_SIZE = 4;
+
+/** The largest room size a worker can be set up with, host included. */
+export const MAX_ROOM_SIZE = 16;
 
 /** How long a room lives after its host connects. Signalling takes seconds; this is generous. */
 export const ROOM_TTL_MS: number = 10 * 60 * 1000;
@@ -136,7 +141,7 @@ const ERROR_REASONS = [
  *
  * - `unknown-code`: no room has this code: it was never opened, its host left, or it expired.
  * - `code-taken`: a host asked for a code that is already in use. Ask again for a new one.
- * - `full`: the room already holds `MAX_PLAYERS` players.
+ * - `full`: the room already holds as many players as the worker's room size.
  * - `started`: the host has started the run; there is no late join.
  * - `expired`: the room outlived `ROOM_TTL_MS`.
  * - `host-left`: the host left before the start, so the room is gone. After the start, the
@@ -164,7 +169,7 @@ const Welcome: Schema.Struct<{
   code: JoinCode,
   self: PeerId,
   host: PeerId,
-  peers: Schema.Array(PeerId).check(Schema.isMaxLength(MAX_PLAYERS - 1)),
+  peers: Schema.Array(PeerId).check(Schema.isMaxLength(MAX_ROOM_SIZE - 1)),
 });
 
 /** To the host: a guest joined. The host makes the offer. */

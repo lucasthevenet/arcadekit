@@ -8,7 +8,7 @@ import {
   joinCodeFromPath,
   MAX_MESSAGE_LENGTH,
   MAX_PEER_ID_LENGTH,
-  MAX_PLAYERS,
+  MAX_ROOM_SIZE,
   MAX_TOKEN_LENGTH,
   normalizeJoinCode,
   parseClientMessage,
@@ -241,7 +241,7 @@ describe(parseServerMessage, () => {
     { ...welcome, peers: [3] },
     {
       ...welcome,
-      peers: Array.from({ length: MAX_PLAYERS }, (_, i) => `guest-${i}`),
+      peers: Array.from({ length: MAX_ROOM_SIZE }, (_, i) => `guest-${i}`),
     },
     { ...welcome, self: "x".repeat(MAX_PEER_ID_LENGTH + 1) },
     { type: "peer-joined" },

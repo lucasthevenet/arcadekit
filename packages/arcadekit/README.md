@@ -18,6 +18,7 @@ pnpm add arcadekit effect
 | `@types/three` | ^0.187 | `arcadekit/render-three`, for its types (a dev dependency) |
 | `foldkit` | ~0.170 | `arcadekit/foldkit` |
 | `@effect/platform-browser` | ~4.1 | `arcadekit/save/browser`, and Foldkit itself |
+| `@cloudflare/workers-types` | ^5 | `arcadekit/net/worker`, for the types of Cloudflare's runtime (a dev dependency) |
 
 They are peers so your app has one copy of each: Effect services and Three.js `instanceof` checks need that.
 
@@ -46,6 +47,7 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | [`arcadekit/net`](src/net/README.md) | Lockstep multiplayer for 2 to 4 peers over a `Transport`, with an in-memory network for tests | Effect, core, runtime |
 | [`arcadekit/net/browser`](src/net/README.md) | `hostRoom` and `joinRoom` (join code to WebRTC links) and `linksTransport` | Effect, core, runtime, DOM |
 | [`arcadekit/net/signalling`](src/net/README.md) | The protocol a signalling server speaks, as Effect Schemas | Effect |
+| [`arcadekit/net/worker`](src/net/worker/README.md) | The signalling worker, for Cloudflare: `signallingRoom` (a room's Durable Object class) and `signallingWorker` (the Worker's `fetch`) | Effect, Cloudflare Workers |
 | [`arcadekit/foldkit`](src/foldkit/README.md) | `gameViewport`, `engineEntry`, `keyPresses`, `shortcutPresses` | Effect, Foldkit, runtime, DOM |
 
 The source is in [the arcadekit repository](https://github.com/lucasthevenet/arcadekit), with two genre packages and two demo games built on these entries. [ADR-0018](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0018-one-package-with-entries.md) records why the kit is one package.

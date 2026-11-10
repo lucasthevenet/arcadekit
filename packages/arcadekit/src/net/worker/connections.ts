@@ -1,5 +1,3 @@
-import { HOST_ID } from "arcadekit/net/signalling";
-import type { PeerId } from "arcadekit/net/signalling";
 import {
   Cause,
   Clock,
@@ -16,14 +14,16 @@ import {
 } from "effect";
 import type { Scope } from "effect";
 
-import { createRoom } from "./room";
-import type { Room } from "./room";
+import { HOST_ID } from "../signalling/protocol";
+import type { PeerId } from "../signalling/protocol";
+import { checkRoomSize, createRoom } from "./room";
+import type { Room, RoomOptions } from "./room";
 import { createSocketRoom } from "./sockets";
 import type { RoomSocket, SocketRoom } from "./sockets";
 
 /**
  * A `SignallingRoom` Durable Object's work, as Effects: each socket's connection to the room,
- * and the room's expiry alarm. `worker.ts` runs them on the object's runtime. The room's rules
+ * and the room's expiry alarm. `index.ts` runs them on the object's runtime. The room's rules
  * (`room.ts`) and the socket bookkeeping (`sockets.ts`) stay plain, called from inside them.
  */
 
@@ -42,8 +42,12 @@ export interface AlarmStorage {
   readonly setAlarm: (atMs: number) => Promise<void>;
 }
 
+// Named so the type files can be made one file at a time (isolatedDeclarations).
+const AlarmErrorBase: ReturnType<typeof Data.TaggedError<"AlarmError">> =
+  Data.TaggedError("AlarmError");
+
 /** The room's expiry alarm couldn't be set, so its host couldn't open it. */
-export class AlarmError extends Data.TaggedError("AlarmError")<{
+export class AlarmError extends AlarmErrorBase<{
   readonly cause: unknown;
 }> {}
 
@@ -67,7 +71,7 @@ export interface RoomConnections {
 export const RoomConnections: Context.Service<
   RoomConnections,
   RoomConnections
-> = Context.Service<RoomConnections>("survivor-demo/worker/RoomConnections");
+> = Context.Service<RoomConnections>("arcadekit/net/worker/RoomConnections");
 
 /** `socket`'s text messages until it closes or fails. It is listened to until the scope closes. */
 const listen = Effect.fnUntraced(function* (
@@ -179,7 +183,7 @@ const connection = (
     Effect.ignoreCause
   );
 
-const makeRoomConnections = (storage: AlarmStorage) =>
+const makeRoomConnections = (storage: AlarmStorage, options: RoomOptions) =>
   Effect.gen(function* () {
     // Every connection is a fiber in this set, so they all end with the object's runtime.
     const connections = yield* FiberSet.make();
@@ -189,7 +193,7 @@ const makeRoomConnections = (storage: AlarmStorage) =>
     return RoomConnections.of({
       connect: Effect.fnUntraced(function* (socket, code, role) {
         open ??= (() => {
-          const room = createRoom(code);
+          const room = createRoom(code, options);
           return { room, sockets: createSocketRoom(room) };
         })();
         const admitted = yield* Deferred.make<PeerId | undefined, AlarmError>();
@@ -206,19 +210,27 @@ const makeRoomConnections = (storage: AlarmStorage) =>
   });
 
 /**
- * Everything a `SignallingRoom` Durable Object's runtime holds, over the object's storage. Its
- * scheduler is the synchronous one: Cloudflare can drop the timers a request leaves behind, and
+ * Everything a `SignallingRoom` Durable Object's runtime holds, over the object's storage.
+ * `options` are its room's, and a room size no room can have throws here. Its scheduler is the
+ * synchronous one: Cloudflare can drop the timers a request leaves behind, and
  * a room's connections outlive the request that opened them, so each message is handled in the
  * event that brought it, not on a timer.
  */
 export const roomLayer = (
-  storage: AlarmStorage
-): Layer.Layer<RoomConnections> =>
-  Layer.effect(RoomConnections, makeRoomConnections(storage)).pipe(
+  storage: AlarmStorage,
+  options: RoomOptions = {}
+): Layer.Layer<RoomConnections> => {
+  // A size no room can have fails here, when the object is set up, not on its first connection.
+  checkRoomSize(options.roomSize);
+  return Layer.effect(
+    RoomConnections,
+    makeRoomConnections(storage, options)
+  ).pipe(
     Layer.provideMerge(
       Layer.succeed(Scheduler.Scheduler, new Scheduler.MixedScheduler("sync"))
     )
   );
+};
 
 /**
  * Connects `socket` to the room and answers the request that brought it: with `accepted`, the

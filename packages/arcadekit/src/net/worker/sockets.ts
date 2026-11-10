@@ -2,8 +2,7 @@ import type {
   ErrorReason,
   PeerId,
   ServerMessage,
-} from "arcadekit/net/signalling";
-
+} from "../signalling/protocol";
 import type { Room, RoomOutput } from "./room";
 
 /** The part of a WebSocket the room needs. A Cloudflare `WebSocket` is one; tests pass a fake. */

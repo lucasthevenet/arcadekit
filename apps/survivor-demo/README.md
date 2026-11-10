@@ -1,6 +1,6 @@
 # Survivors demo
 
-The survivors-like demo game, and its Cloudflare deployment: one Worker that serves the site and is co-op's [signalling worker](worker/README.md), declared with [Alchemy](https://alchemy.run) in `alchemy.run.ts`. The game itself is described in the [root README](../../README.md#the-survivors-demo).
+The survivors-like demo game, and its Cloudflare deployment: one Worker that serves the site and is co-op's signalling worker, which is the kit's ([`arcadekit/net/worker`](../../packages/arcadekit/src/net/worker/README.md)), declared with [Alchemy](https://alchemy.run) in `alchemy.run.ts`. The game itself is described in the [root README](../../README.md#the-survivors-demo).
 
 ## Running it locally
 
@@ -41,4 +41,4 @@ The stage defaults to `live_<your user name>`, so a deploy without `--stage` mak
 
 ## Why one Worker
 
-`Cloudflare.Website.Vite` builds the site with the project's own `vite.config.ts` and uploads it as the Worker's static assets. Its `main` points at `worker/worker.ts`, which exports the `SignallingRoom` Durable Object class and a `fetch` handler (its routes are in `worker/routes.ts`, the room's connections in `worker/connections.ts`), and `assets.runWorkerFirst` sends only `/host` and `/join/*` to that handler ahead of the files. So the site and the signalling routes share an origin: the client needs no URL setting, no CORS and no second deploy, and `alchemy dev` serves both from one port. (`Cloudflare.Website.Foldkit` derives asset routing from `@foldkit/vite-plugin`'s build metadata; this demo doesn't use that plugin, so it is a plain Vite site.)
+`Cloudflare.Website.Vite` builds the site with the project's own `vite.config.ts` and uploads it as the Worker's static assets. Its `main` points at `worker/worker.ts`, which exports the `SignallingRoom` Durable Object class and a `fetch` handler, both made by `arcadekit/net/worker` (`signallingRoom`, `signallingWorker`), and `assets.runWorkerFirst` sends only `/host` and `/join/*` to that handler ahead of the files. So the site and the signalling routes share an origin: the client needs no URL setting, no CORS and no second deploy, and `alchemy dev` serves both from one port. (`Cloudflare.Website.Foldkit` derives asset routing from `@foldkit/vite-plugin`'s build metadata; this demo doesn't use that plugin, so it is a plain Vite site.)
