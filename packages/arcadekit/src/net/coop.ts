@@ -39,7 +39,10 @@ export interface CoopRules<G extends CoopTypes> {
   readonly codec: InputCodec<G["PlayerInput"]>;
   /** A digest of the whole state, the same on every peer for the same run. */
   readonly hash: (state: G["State"]) => number;
-  /** The valid lobby picks, in order. On the host, the first replaces an empty or unknown one at the start. */
+  /**
+   * The valid lobby picks, in order, at least one: a game with nothing to choose lists one id.
+   * On the host, the first replaces an empty or unknown one at the start.
+   */
   readonly picks: (content: G["Content"]) => readonly string[];
   /** The run's config from the content and each player's lobby pick, by slot. */
   readonly config: (

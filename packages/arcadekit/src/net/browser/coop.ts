@@ -15,7 +15,7 @@ import type { RoomError } from "./errors";
 import { browserRoomLayer, hostRoom, joinRoom } from "./signalling";
 import type { SignallingRoom } from "./signalling";
 
-// The Co-op client's interface (ADR-0012): what a game supplies, and what its app drives. The
+// The Co-op client's interface (ADR-0019): what a game supplies, and what its app drives. The
 // implementation is in coop-client.ts.
 
 /**
