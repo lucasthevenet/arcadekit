@@ -16,11 +16,11 @@ export default signallingWorker({ rooms: "ROOMS", assets: "ASSETS" });
 - The room size is a setting of the worker: `roomSize`, a whole number from 2 to `MAX_ROOM_SIZE` (16), and `DEFAULT_ROOM_SIZE` (4) if left out. `signallingRoom` throws a `RangeError` for any other size when the Worker's module loads; it never changes it to another one. A lockstep run's own limit on the wire is separate and unchanged.
 - The worker behaves as the demo's did (ADR-0012). Its Effect service key is `arcadekit/net/worker/RoomConnections`.
 - `@cloudflare/workers-types` (^5) is a new optional peer, for this entry's types. The entry imports `cloudflare:workers`, so it runs only on Cloudflare; typecheck a Worker that uses it with Workers types, no DOM `lib`, and `skipLibCheck` (Effect's own type files name DOM types).
-- It adds no arrow between entries: the worker is in the `net` group and imports only `net/signalling`'s protocol.
+- It adds no arrow between entries: the worker is in the `net` group, which lint checks as one entry, and imports only `net/signalling`'s protocol. Within the group, only the worker's own typecheck (Workers types, no DOM) keeps it apart from `arcadekit/net/browser`.
 
 **Breaking:**
 
 - `arcadekit/net/signalling` exports `DEFAULT_ROOM_SIZE` (4) and `MAX_ROOM_SIZE` (16) in place of `MAX_PLAYERS` (4). Use `DEFAULT_ROOM_SIZE` where you used `MAX_PLAYERS`, unless your worker sets another room size.
-- `parseServerMessage` accepts a `welcome` that lists up to `MAX_ROOM_SIZE - 1` peers (it was 3), so a client reads the welcome of a larger room.
+- `parseServerMessage` accepts a `welcome` that lists up to `MAX_ROOM_SIZE - 1` peers (it was 3). The bound follows the renamed constant: the worker's `welcome` still lists at most the host, at any room size.
 
 No other entry changes.
