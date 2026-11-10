@@ -3,9 +3,9 @@
 // Its pages are the repository's own markdown, read in place: `srcDir` is the repository's root,
 // `rewrites` gives each page its address, and `srcExclude` leaves every other markdown file out.
 // pages.ts finds the pages, sidebar.ts groups them, links.ts makes the links the READMEs
-// already have work here, and reference.ts gives the glossary and the decisions what a page
-// needs.
-import { readFileSync, writeFileSync } from "node:fs";
+// already have work here, reference.ts gives the glossary and the decisions what a page needs,
+// and version.ts says which version the pages describe.
+import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -22,6 +22,7 @@ import {
 } from "./pages.ts";
 import { createReferencePlugin } from "./reference.ts";
 import { entriesNav, sidebar } from "./sidebar.ts";
+import { packageVersion, versionLabel } from "./version.ts";
 
 /** Where the site is served: its canonical address, with no trailing slash. */
 const SITE_URL = "https://arcadekit.dev";
@@ -62,9 +63,7 @@ const reference = createReferencePlugin({
   adrs: adrByFile,
 });
 
-const { version } = JSON.parse(
-  readFileSync(path.join(REPO_ROOT, "packages/arcadekit/package.json"), "utf-8")
-) as { readonly version: string };
+const { version, unreleased } = packageVersion(REPO_ROOT);
 
 export default defineConfig({
   srcDir: REPO_ROOT,
@@ -190,12 +189,31 @@ export default defineConfig({
     logo: { src: "/favicon.svg", alt: "" },
     nav: [
       { text: "Entries", items: entriesNav(pages) },
-      { text: "Glossary", link: pages.glossary.link },
-      { text: "Decisions", link: pages.adrIndex.link, activeMatch: "^/adr" },
+      {
+        text: "Reference",
+        activeMatch: "^/(?:glossary|adr)",
+        items: [
+          { text: "Glossary", link: pages.glossary.link },
+          {
+            text: "Decisions",
+            link: pages.adrIndex.link,
+            activeMatch: "^/adr",
+          },
+        ],
+      },
       { text: "GRIMBONK", link: GRIMBONK_URL },
       {
-        text: `v${version}`,
+        // The pages follow `main`, which may be ahead of the package on npm (version.ts).
+        text: versionLabel(version, unreleased),
         items: [
+          ...(unreleased
+            ? [
+                {
+                  text: "Unreleased changes",
+                  link: `${REPO_URL}/tree/${BRANCH}/.changeset`,
+                },
+              ]
+            : []),
           {
             text: "Changelog",
             link: `${REPO_URL}/blob/${BRANCH}/packages/arcadekit/CHANGELOG.md`,

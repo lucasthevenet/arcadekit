@@ -33,6 +33,29 @@
   margin-top: 32px;
 }
 
+/*
+ * From 768px the top bar shows its menus, and they fill it: the search box, four menus and the
+ * "..." menu are wider than a tablet held upright, so the page scrolled sideways, and from
+ * 960px, where a page's sidebar sets the title's width, the "..." menu was cut off. The bar has
+ * room for all of it from about 1010px. So below 1100px, which leaves room for a longer version
+ * number, the search box is its icon alone, as on a phone, and the menus sit closer.
+ */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .VPNavBarSearch .DocSearch-Button .DocSearch-Button-Placeholder,
+  .VPNavBarSearch .DocSearch-Button .DocSearch-Button-Keys {
+    display: none;
+  }
+
+  .VPNavBarSearch .DocSearch-Button .DocSearch-Search-Icon {
+    margin-right: 0;
+  }
+
+  .VPNavBarMenu .VPNavBarMenuLink,
+  .VPNavBarMenu .VPFlyout .button {
+    padding: 0 8px;
+  }
+}
+
 /* A decision's number and status, above its heading (.vitepress/reference.ts). */
 .vp-doc .adr-record {
   margin: 0 0 8px;
