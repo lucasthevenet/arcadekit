@@ -17,14 +17,16 @@ const lobby = Phase.CoopLobby({
   code: "K7MQ2X",
   self: "guest-1",
   players: [
-    { id: "host", heroId: "spark" },
-    { id: "guest-1", heroId: "ember" },
+    { id: "host", name: "Host", pick: "spark" },
+    { id: "guest-1", name: "Guest 1", pick: "ember" },
   ],
+  maxPlayers: 4,
+  canStart: true,
 });
 
 const started = Message.GotCoopStarted({
   slot: 1,
-  players: ["Host", "Guest 1"],
+  names: ["Host", "Guest 1"],
 });
 
 const waiting = Message.GotCoopWaiting({ waitingFor: ["Host"], choosing: [] });
@@ -38,7 +40,7 @@ describe("co-op events on the wrong screen", () => {
       Story.model((model) =>
         expect([model.phase._tag, model.coop]).toStrictEqual([
           "CoopPlaying",
-          { ...emptyCoopRun, slot: 1, players: ["Host", "Guest 1"] },
+          { ...emptyCoopRun, slot: 1, names: ["Host", "Guest 1"] },
         ])
       )
     );

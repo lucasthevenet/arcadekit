@@ -82,7 +82,16 @@ describe("music and ducking", () => {
           },
         })
       ),
-      at(Phase.CoopLobby({ role: "host", code: "", self: "", players: [] })),
+      at(
+        Phase.CoopLobby({
+          role: "host",
+          code: "",
+          self: "",
+          players: [],
+          maxPlayers: 4,
+          canStart: false,
+        })
+      ),
       at(Phase.CoopPlaying()),
     ]).toStrictEqual([
       { music: "menu", ducked: false },

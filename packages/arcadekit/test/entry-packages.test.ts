@@ -38,6 +38,7 @@ const ENTRY_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   "runtime/testing": ["effect"],
   net: ["effect"],
   "net/browser": ["effect"],
+  "net/testing": ["effect"],
   "net/signalling": ["effect"],
   "net/worker": ["effect", "cloudflare:workers"],
   foldkit: ["effect", "foldkit"],

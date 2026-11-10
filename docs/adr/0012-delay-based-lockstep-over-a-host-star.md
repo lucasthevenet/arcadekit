@@ -5,6 +5,8 @@ status: accepted
 # Co-op runs in delay-based lockstep over a host star
 
 > Amended on 2026-11-06: `GameDriver` is gone; `makeGameEngine`'s `attach` is the `requestAnimationFrame` adapter, see the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+>
+> Since [ADR-0019](0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md): the signalling worker is the kit's (`arcadekit/net/worker`), and the demo's Worker is a few lines over it. The demo's `CoopClient` is the kit's Co-op client (`makeCoopClient`, `arcadekit/net/browser`), with the lobby, the content hash and the worker-timed ticker behind it. A genre's per-player step input is `PlayerInputs` (`arcadekit/runtime`).
 
 #25 makes survivors a co-op game for 2 to 4 players in different browsers. The kit already has what lockstep needs: a deterministic step with all randomness from the run's `Rng`, step arithmetic that agrees across JavaScript engines ([ADR-0011](0011-a-step-uses-only-exact-math.md)), one plain input value per step, and a DOM-free `GameLoop` whose `frame(input, { steps }, nowMs)` runs exactly the steps it is given ([ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md)). What was missing is the decision on how peers agree on each step's input, and what happens when they can't.
 

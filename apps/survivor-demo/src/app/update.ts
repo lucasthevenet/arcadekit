@@ -263,24 +263,31 @@ const handle = (model: Model, message: Message): Return =>
         : { model },
     ClickedLeaveCoop: () =>
       isCoop(model.phase) ? leaveCoop(model) : { model },
-    GotCoopLobby: ({ role, code, self, players }) =>
+    GotCoopLobby: ({ role, code, self, players, maxPlayers, canStart }) =>
       model.phase._tag === "CoopConnecting" || model.phase._tag === "CoopLobby"
         ? {
             model: {
               ...model,
-              phase: Phase.CoopLobby({ role, code, self, players }),
+              phase: Phase.CoopLobby({
+                role,
+                code,
+                self,
+                players,
+                maxPlayers,
+                canStart,
+              }),
             },
           }
         : { model },
     // Co-op events can be queued behind a Leave: each counts only in the phase it belongs to.
-    GotCoopStarted: ({ slot, players }) =>
+    GotCoopStarted: ({ slot, names }) =>
       model.phase._tag === "CoopLobby"
         ? {
             model: {
               ...model,
               phase: Phase.CoopPlaying(),
               hud: emptyHud,
-              coop: { ...emptyCoopRun, slot, players },
+              coop: { ...emptyCoopRun, slot, names },
             },
           }
         : { model },

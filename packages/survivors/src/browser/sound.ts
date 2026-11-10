@@ -28,11 +28,16 @@ export interface SurvivorsSounds {
   readonly auraHum: string;
 }
 
+const firstHero = () => 0;
+
 interface SurvivorsSoundViewOptions {
   readonly audio: AudioSystem;
   readonly sounds: SurvivorsSounds;
-  /** This browser's hero: its hurt and down sounds play at full volume. Defaults to 0. */
-  readonly localHero?: number;
+  /**
+   * The slot of this browser's hero: its hurt and down sounds play at full volume. Read on
+   * every render. Defaults to slot 0.
+   */
+  readonly localHero?: () => number;
   /** The volume of a teammate's hurt and down sounds. Defaults to 0.45. */
   readonly teammateVolume?: number;
   /** The aura hum's volume. Defaults to 0.6. */
@@ -102,7 +107,7 @@ const auraPlaying = (world: World): boolean =>
 export class SurvivorsSoundView implements GameView<World> {
   private readonly audio: AudioSystem;
   private readonly sounds: SurvivorsSounds;
-  private readonly localHero: number;
+  private readonly localHero: () => number;
   private readonly teammateVolume: number;
   private readonly auraVolume: number;
   private seen: Seen | null = null;
@@ -113,7 +118,7 @@ export class SurvivorsSoundView implements GameView<World> {
   constructor(options: SurvivorsSoundViewOptions) {
     this.audio = options.audio;
     this.sounds = options.sounds;
-    this.localHero = options.localHero ?? 0;
+    this.localHero = options.localHero ?? firstHero;
     this.teammateVolume = options.teammateVolume ?? 0.45;
     this.auraVolume = options.auraVolume ?? 0.6;
   }
@@ -188,7 +193,7 @@ export class SurvivorsSoundView implements GameView<World> {
    * play that same frame may then be dropped by the sound's minimum gap, never the local one.
    */
   private playByHero(counts: Uint32Array, seen: Float64Array, sound: string) {
-    const local = this.localHero;
+    const local = this.localHero();
     if (counts[local] !== undefined && counts[local] > seen[local]!) {
       seen[local] = counts[local];
       this.audio.play(sound);

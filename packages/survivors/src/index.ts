@@ -1,6 +1,6 @@
 // Survivors-like genre: what an app uses from the DOM-free side. The content definition and
-// service, the GameSimulation and the World it runs, the step input, the event payloads and the
-// lockstep hash. Rules internals (heroes, weapons, the content sub-schemas) stay in their modules.
+// service, the GameSimulation and the World it runs, the step input, the event payloads, the
+// lockstep hash and the Co-op rules. Rules internals (heroes, weapons, the content sub-schemas) stay in their modules.
 // No DOM or Three.js here; those are in "@arcadekit/survivors/browser".
 
 export {
@@ -8,6 +8,11 @@ export {
   makeSurvivorsContentLayer,
   survivorsContentDefinition,
 } from "./content";
+export {
+  type SurvivorsCoop,
+  type SurvivorsCoopEvent,
+  survivorsCoopRules,
+} from "./coop";
 export {
   HudSample,
   RunSummary,

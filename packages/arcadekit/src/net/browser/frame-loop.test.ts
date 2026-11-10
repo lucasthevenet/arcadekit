@@ -1,8 +1,8 @@
-import { GameCrashed } from "arcadekit/runtime/browser";
-import { manualFrames } from "arcadekit/runtime/testing";
 import { Effect, Exit, Fiber } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { GameCrashed } from "../../runtime/browser";
+import { manualFrames } from "../../runtime/testing";
 import { coopFrameLoop } from "./frame-loop";
 
 // The co-op client's frame loop on frames the test runs by hand.

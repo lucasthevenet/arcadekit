@@ -176,6 +176,7 @@ export default defineConfig({
       // The rest of the simulation: core's primitives, the loop that steps a genre, and the
       // lockstep protocol that steps it on every peer, with the input codecs whose decoded
       // value every peer steps on and the step input built from the players' inputs (ADR-0017).
+      // The test game too: its simulation is the one a Co-op game's tests copy.
       files: [
         "packages/arcadekit/src/core/**/*.ts",
         "packages/arcadekit/src/runtime/loop.ts",
@@ -184,6 +185,7 @@ export default defineConfig({
         "packages/arcadekit/src/net/lockstep.ts",
         "packages/arcadekit/src/net/codec.ts",
         "packages/arcadekit/src/net/player-inputs.ts",
+        "packages/arcadekit/src/net/testing/test-game.ts",
       ],
       excludeFiles: ["**/*.test.ts"],
       rules: {
