@@ -148,7 +148,7 @@
     "three": "^0.187.0"
   },
   "peerDependencies": {
-    "@cloudflare/workers-types": "^5.20261104.1",
+    "@cloudflare/workers-types": "^5",
     "@effect/platform-browser": "~4.1.0",
     "@types/three": "^0.187.0",
     "effect": "~4.1.2",
