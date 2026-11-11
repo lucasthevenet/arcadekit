@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { combinePlayerInputs } from "./index";
-import type { ConfirmedStep } from "./index";
+import type { ConfirmedStep } from "./lockstep";
+import { combinePlayerInputs } from "./player-inputs";
 
 const PLAYERS = ["host", "p1", "p2"];
 
 const confirmed = (
-  inputs: readonly (readonly [string, number])[],
+  inputs: readonly (readonly [string, number | null])[],
   removed: readonly string[] = []
-): ConfirmedStep<number> => ({
-  inputs: inputs.map(([player, input]) => ({ player, input })),
+): ConfirmedStep<number, never> => ({
+  inputs: inputs.map(([player, input]) => ({ player, input, commands: [] })),
   removed,
 });
 
@@ -33,6 +33,19 @@ describe(combinePlayerInputs, () => {
       players: [null, null, 30],
       leaving: [],
     });
+  });
+
+  it("leaves null at the slot of a player whose peer has nothing attached", () => {
+    const combine = combinePlayerInputs<number>(PLAYERS);
+    expect(
+      combine(
+        confirmed([
+          ["host", 10],
+          ["p1", null],
+          ["p2", 30],
+        ])
+      )
+    ).toStrictEqual({ players: [10, null, 30], leaving: [] });
   });
 
   it("lists the removed players' slots as leaving, in ascending order", () => {

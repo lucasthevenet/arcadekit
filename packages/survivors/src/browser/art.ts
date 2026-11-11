@@ -2,9 +2,9 @@ import type { SpriteSheet, SpriteSheetData } from "arcadekit/render-three";
 
 import type { GameContent } from "../schema";
 
-// The art a survivors view draws with (ADR-0015): one Aseprite sprite sheet, which the app names
-// and the engine loader (`makeSurvivorsEngineLayer`) loads and keeps for the app's lifetime. A
-// view draws from it and never frees it.
+// The art a survivors view draws with (ADR-0015): one Aseprite sprite sheet, which the app
+// provides as the `SurvivorsSheet` asset (game.ts), loaded once and kept for the app's lifetime.
+// A view draws from it and never frees it.
 
 /** What a survivors game draws with: the app's loaded sprite sheet. */
 export interface SurvivorsArt {

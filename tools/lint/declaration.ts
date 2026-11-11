@@ -17,7 +17,15 @@
 //   definition; a type argument is how a definition that doesn't infer gets papered over.
 // - `declaration/plain-handler`: a function in a definition is not `async` and not a generator.
 //   Its host calls it and goes on.
-// - `declaration/older-contract`: nothing new imports the contract the declarations replace.
+// - `declaration/create-first`: in the definition `Game.Simulation` is given, a `create` written
+//   in place (an arrow, a `function` or a method, not a name such as `create: createPuzzle`)
+//   comes before `step`, `apply` and `sample`. TypeScript types the state from what `create`
+//   returns, and a handler written above it is typed first: every handler's state, and the
+//   simulation's, can then come out `unknown`, sometimes with no error. TypeScript 7 needs the
+//   order for a `create` with an unannotated parameter, and 5.9 also for any method or
+//   `function`. An arrow whose parameters are all annotated needs it under neither, and the
+//   rule asks it to come first all the same: it is one condition a reader can see. Data fields
+//   (`input`, `events`, `commands`, `stepSeconds`) sit anywhere.
 //
 // A builder is found by what the file imports, under whatever name it gave it: `Game.Event`,
 // `G.Event`, or `Event` imported by name. A function that is only called `Content` is no
@@ -28,9 +36,12 @@
 // - `declaration/builder`: a function that returns a class is a builder, and has a builder's
 //   shape: the name first, typed by a type parameter; `kind` and the name as statics; its return type
 //   written out as `<Noun>Class`, an interface of the same file with the statics the class has.
+//   A builder whose own body has a `throw` says "Throws when declared" in its doc comment. A
+//   throw in a function it calls, or in a callback it passes, is not seen.
 //
 // packages/arcadekit/test/style.test.ts checks what takes more than one file: that every
 // builder is listed here, has its docs and is declared by a test.
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 /** The kit's declaration builders, as a game's code writes each. */
@@ -42,6 +53,10 @@ export const DECLARATION_BUILDERS: readonly string[] = [
   "Game.Engine",
   "Content",
   "Asset",
+  "Coop",
+  "Save",
+  "Setting",
+  "CueTable",
 ];
 
 /** How a game names the entries whose builders it writes with a namespace: `Game.Event`. */
@@ -49,43 +64,46 @@ const NAMESPACE = "Game";
 
 /**
  * The entries a game imports builders from, each with whether its builders are written with the
- * namespace (`Game.Event`) or bare (`Content`). The style test checks each exports them.
+ * namespace (`Game.Event`) or bare (`Content`). The style test checks each exports them. A
+ * builder from an entry that is not here is no builder to these rules, in a game's code and in
+ * the kit's own.
  */
 export const BUILDER_ENTRIES: Readonly<Record<string, "namespace" | "bare">> = {
   "arcadekit/game": "namespace",
   "arcadekit/game/browser": "namespace",
   "arcadekit/content": "bare",
+  "arcadekit/net/browser": "bare",
+  "arcadekit/save": "bare",
+  "arcadekit/audio": "bare",
 };
 
-/** The same entries by their public file from the kit's src/, as the kit's own files import them. */
+const KIT_PACKAGE = "packages/arcadekit/package.json";
 const KIT_SRC = "packages/arcadekit/src/";
-const KIT_ENTRY_FILES: Readonly<Record<string, string>> = {
-  "game/index": "arcadekit/game",
-  "game/browser": "arcadekit/game/browser",
-  "content/index": "arcadekit/content",
-};
 
 /**
- * The exports of the older contract, each with the declaration that replaces it. They stay in
- * the kit until survivors and the Co-op client have moved (ADR-0020), and a name leaves this
- * list when its export goes.
+ * The same entries by their public file from the kit's src/, as the kit's own files import them:
+ * `game/browser` for `arcadekit/game/browser`. Read from the package's exports, which name each
+ * entry's source file, so an entry is listed once, in `BUILDER_ENTRIES`.
  */
-export const OLDER_CONTRACT: Readonly<Record<string, string>> = {
-  GameSimulation: "Game.Simulation",
-  GameDefinition: "Game.Engine",
-  GamePresentation: "Game.Engine",
-  GameEngine: "Game.Engine",
-  makeGameEngine: "Game.Engine",
-  EngineLoader: "Game.Engine",
-  LoadedEngine: "Game.Engine",
-  makeEngineLoader: "Game.Engine",
-  engineOf: "Game.Engine",
-  ContentLoader: "Content",
-  makeContentLoader: "Content",
-};
-
-/** The package whose entries export the older contract. */
-const KIT = "arcadekit";
+const KIT_ENTRY_FILES: Readonly<Record<string, string>> = (() => {
+  const { exports } = JSON.parse(
+    readFileSync(path.join(import.meta.dirname, "../..", KIT_PACKAGE), "utf-8")
+  ) as {
+    readonly exports: Readonly<Record<string, { readonly source: string }>>;
+  };
+  return Object.fromEntries(
+    Object.keys(BUILDER_ENTRIES).map((entry) => {
+      const subpath = entry.replace(/^arcadekit/u, ".");
+      const source = exports[subpath]?.source;
+      if (source === undefined) {
+        throw new Error(
+          `BUILDER_ENTRIES in tools/lint/declaration.ts lists "${entry}", which is no entry of the kit: ${KIT_PACKAGE} has no export "${subpath}" with a \`source\`. Write the entry as a game imports it, such as "arcadekit/content".`
+        );
+      }
+      return [source.replace(/^\.\/src\//u, "").replace(/\.ts$/u, ""), entry];
+    })
+  );
+})();
 
 interface Node {
   readonly type: string;
@@ -101,8 +119,6 @@ interface Node {
   readonly generator?: boolean;
   readonly object?: Node;
   readonly property?: Node;
-  readonly left?: Node;
-  readonly right?: Node;
   readonly key?: Node;
   readonly callee?: Node;
   readonly arguments?: readonly Node[];
@@ -130,6 +146,11 @@ interface Node {
 interface RuleContext {
   readonly filename: string;
   readonly report: (descriptor: { node: Node; message: string }) => void;
+  readonly sourceCode: {
+    readonly getCommentsBefore: (
+      node: Node
+    ) => readonly { readonly type: string; readonly value: string }[];
+  };
 }
 
 const guide = "See docs/code-style.md.";
@@ -191,28 +212,14 @@ const plainString = (node: Node | undefined): string | undefined => {
   return undefined;
 };
 
-/** The builders of the entry a file imports with `specifier`, as a game writes each, by export name. */
-const buildersOf = (
-  filename: string,
-  specifier: unknown
+/**
+ * The builders these rules take an import of `entry` to give, as a game writes each, by export
+ * name: every `Game.<Noun>` for an entry written with the namespace, every other builder for one
+ * written bare. Undefined for an entry no builder comes from.
+ */
+export const entryBuilders = (
+  entry: string
 ): ReadonlyMap<string, string> | undefined => {
-  if (typeof specifier !== "string") {
-    return undefined;
-  }
-  let entry = specifier;
-  if (specifier.startsWith(".")) {
-    // A file of the kit imports an entry by the relative path of its public file.
-    const file = filename.split(path.sep).join("/");
-    const at = file.lastIndexOf(KIT_SRC);
-    if (at === -1) {
-      return undefined;
-    }
-    const from = path.posix.dirname(file.slice(at + KIT_SRC.length));
-    const target = path.posix
-      .normalize(path.posix.join(from, specifier))
-      .replace(/\.ts$/u, "");
-    entry = KIT_ENTRY_FILES[target] ?? "";
-  }
   const written = BUILDER_ENTRIES[entry];
   if (written === undefined) {
     return undefined;
@@ -223,6 +230,30 @@ const buildersOf = (
       (name) => name.startsWith(prefix) === (written === "namespace")
     ).map((name) => [name.replace(prefix, ""), name])
   );
+};
+
+/** The builders of the entry a file imports with `specifier`, as a game writes each, by export name. */
+const buildersOf = (
+  filename: string,
+  specifier: unknown
+): ReadonlyMap<string, string> | undefined => {
+  if (typeof specifier !== "string") {
+    return undefined;
+  }
+  if (!specifier.startsWith(".")) {
+    return entryBuilders(specifier);
+  }
+  // A file of the kit imports an entry by the relative path of its public file.
+  const file = filename.split(path.sep).join("/");
+  const at = file.lastIndexOf(KIT_SRC);
+  if (at === -1) {
+    return undefined;
+  }
+  const from = path.posix.dirname(file.slice(at + KIT_SRC.length));
+  const target = path.posix
+    .normalize(path.posix.join(from, specifier))
+    .replace(/\.ts$/u, "");
+  return entryBuilders(KIT_ENTRY_FILES[target] ?? "");
 };
 
 /** The builders a file can call, by the local name it gave each. */
@@ -578,7 +609,7 @@ const plainHandler = {
             const key = dottedName(property.key) ?? "A handler";
             context.report({
               node: value,
-              message: `${key} is ${value.async === true ? "async" : "a generator"}. A function in a ${builder} definition is a plain function: what hosts it calls it and goes on, and waits for nothing. Load what it needs before the run (an Asset, the engine's \`uses\`, the run's config), and report what happened as an event. ${guide}`,
+              message: `${key} is ${value.async === true ? "async" : "a generator"}. A function in a ${builder} definition is a plain function: what hosts it calls it and goes on, and waits for nothing. Have what it would wait for ready before it is called: an Effect loads it, in the field the definition has for that (an engine's \`uses\`, a Coop's \`content\`) or in the app, and the function is given the result. ${guide}`,
             });
           }
         }
@@ -599,88 +630,70 @@ const plainHandler = {
     }),
 };
 
-/** Whether an import or a re-export names one of the kit's entries. */
-const fromKit = (node: Node): boolean => {
-  const source = node.source?.value;
-  return (
-    typeof source === "string" &&
-    (source === KIT || source.startsWith(`${KIT}/`))
-  );
+/** `Game.Simulation` as a game writes it: the one builder whose definition has an order. */
+const SIMULATION = "Game.Simulation";
+
+/** The fields of a simulation's definition that are given the state `create` returns. */
+const STATE_HANDLERS = new Set(["step", "apply", "sample"]);
+
+/** A function written where it is used. A method's value is a function expression. */
+const WRITTEN_IN_PLACE = new Set([
+  "ArrowFunctionExpression",
+  "FunctionExpression",
+]);
+
+/**
+ * The name a property is written under: plain, quoted, or computed from a plain string
+ * (`["create"]`), which is the same field to TypeScript. Undefined for a key computed from
+ * anything else.
+ */
+const keyOf = (property: Node): string | undefined =>
+  property.computed !== true && property.key?.type === "Identifier"
+    ? property.key.name
+    : plainString(property.key);
+
+/** The names as prose lists them, each as code: `` `step`, `apply` and `sample` ``. */
+const listed = (names: readonly string[]): string => {
+  const code = names.map((name) => `\`${name}\``);
+  return code.length < 2
+    ? code.join("")
+    : `${code.slice(0, -1).join(", ")} and ${code.at(-1)}`;
 };
 
-const olderContract = {
+const createFirst = {
   meta: {
     type: "problem",
     docs: {
       description:
-        "New code uses the declarations, not the older contract they replace.",
+        "In a Game.Simulation definition, a create written in place comes before step, apply and sample.",
     },
   },
-  create: (context: RuleContext) => {
-    const report = (node: Node, name: string) => {
-      context.report({
-        node,
-        message: `${name} is the older contract, which stays only until survivors and the Co-op client have moved (ADR-0020). Declare a ${OLDER_CONTRACT[name]} in its place: packages/push-puzzle is the example. A new Co-op game still needs the older contract: turn this rule off for its files in oxlint.config.ts, and say so in the PR. ${guide}`,
-      });
-    };
-    // The names a file gives the kit's entries: `import * as Runtime from "arcadekit/runtime"`.
-    const namespaces = new Set<string>();
-    const checkMember = (
-      object: Node | undefined,
-      member: Node | undefined
-    ) => {
-      if (
-        object?.type === "Identifier" &&
-        object.name !== undefined &&
-        namespaces.has(object.name) &&
-        member?.type === "Identifier" &&
-        member.name !== undefined &&
-        Object.hasOwn(OLDER_CONTRACT, member.name)
-      ) {
-        report(member, member.name);
-      }
-    };
-    return {
-      ImportDeclaration: (node: Node) => {
-        if (!fromKit(node)) {
-          return;
-        }
-        for (const specifier of node.specifiers ?? []) {
-          const imported = specifier.imported?.name;
-          if (specifier.type === "ImportNamespaceSpecifier") {
-            if (specifier.local?.name !== undefined) {
-              namespaces.add(specifier.local.name);
-            }
+  create: (context: RuleContext) =>
+    withBuilders(context, (builders) => ({
+      CallExpression: (node: Node) => {
+        const definition =
+          builders().of(node) === SIMULATION
+            ? node.arguments?.find(({ type }) => type === "ObjectExpression")
+            : undefined;
+        // The handlers met so far, going down the definition.
+        const above: string[] = [];
+        for (const property of definition?.properties ?? []) {
+          const key = keyOf(property);
+          if (key !== undefined && STATE_HANDLERS.has(key)) {
+            above.push(key);
           } else if (
-            imported !== undefined &&
-            Object.hasOwn(OLDER_CONTRACT, imported)
+            key === "create" &&
+            above.length > 0 &&
+            WRITTEN_IN_PLACE.has(asNode(property.value)?.type ?? "")
           ) {
-            report(specifier, imported);
+            context.report({
+              node: property.key ?? property,
+              message: `${listed(above)} ${above.length === 1 ? "is" : "are"} written above \`create\`. TypeScript types a simulation's state from what \`create\` returns, and types a handler written above it first: that handler's state, and the simulation's, can come out \`unknown\` with no error. Write \`create\` before \`step\`, \`apply\` and \`sample\`. ${guide}`,
+            });
           }
         }
       },
-      // `export { makeGameEngine } from "arcadekit/runtime/browser"`.
-      ExportNamedDeclaration: (node: Node) => {
-        if (!fromKit(node)) {
-          return;
-        }
-        for (const specifier of node.specifiers ?? []) {
-          const local = specifier.local?.name;
-          if (local !== undefined && Object.hasOwn(OLDER_CONTRACT, local)) {
-            report(specifier, local);
-          }
-        }
-      },
-      MemberExpression: (node: Node) => {
-        if (node.computed !== true) {
-          checkMember(node.object, node.property);
-        }
-      },
-      TSQualifiedName: (node: Node) => {
-        checkMember(node.left, node.right);
-      },
-    };
-  },
+    })),
 };
 
 /** The function a class expression is the result of, if it is one's result. */
@@ -720,6 +733,9 @@ const membersOf = (
   return members;
 };
 
+/** How a builder's doc comment starts the sentence that says what it refuses when declared. */
+const THROWS_WHEN_DECLARED = "Throws when declared";
+
 const lowerFirst = (text: string): string =>
   text.slice(0, 1).toLowerCase() + text.slice(1);
 
@@ -750,10 +766,50 @@ const builder = {
   },
   create: (context: RuleContext) => {
     const interfaces = new Map<string, Node>();
-    const built: { readonly kind: string; readonly made: Node }[] = [];
+    const built: {
+      readonly kind: string;
+      /** The class the builder returns. */
+      readonly made: Node;
+      /** The builder: the function that returns the class. */
+      readonly by: Node;
+    }[] = [];
     const nouns = new Set(
       DECLARATION_BUILDERS.map((name) => name.split(".").at(-1) ?? name)
     );
+    /** The first `throw` of each function that throws in its own body, not in a function it holds. */
+    const thrownBy = new Map<Node, Node>();
+
+    /**
+     * A builder that throws when a part is declared says what it refuses in its doc comment, in
+     * a sentence that starts "Throws when declared". The throw is one written in the builder's
+     * own body: one in a function the class keeps (`match`, a `layer`) happens later, and that
+     * function's doc comment has it. So a throw in a function the builder calls, or in a
+     * callback it passes, is not seen, though it too happens as the part is declared.
+     */
+    const checkRefusals = (kind: string, by: Node) => {
+      // A builder that takes its types first is two functions, and the declaring runs both.
+      let outer = by;
+      let thrown = thrownBy.get(by);
+      while (outer.parent !== undefined && outer.parent.type !== "Program") {
+        outer = outer.parent;
+        thrown ??= FUNCTIONS.has(outer.type) ? thrownBy.get(outer) : undefined;
+      }
+      if (thrown === undefined) {
+        return;
+      }
+      const doc = context.sourceCode
+        .getCommentsBefore(outer)
+        .findLast(
+          ({ type, value }) => type === "Block" && value.startsWith("*")
+        );
+      const says = doc?.value.replaceAll(/\s*\n\s*\*\s*/gu, " ") ?? "";
+      if (!says.includes(THROWS_WHEN_DECLARED)) {
+        context.report({
+          node: thrown,
+          message: `The builder of ${kind} throws when one is declared, and its doc comment doesn't say so. End the doc comment with what the builder refuses: "${THROWS_WHEN_DECLARED}, for what the types let through: ...". ${guide}`,
+        });
+      }
+    };
 
     const checkInterface = (kind: string, made: Node) => {
       const type = interfaces.get(`${kind}Class`);
@@ -824,7 +880,7 @@ const builder = {
       } else if (!nouns.has(kind)) {
         context.report({
           node: kindStatic ?? node,
-          message: `"${kind}" is not one of the kit's declarations. A new one is a new word of the kit's vocabulary: add its builder to DECLARATION_BUILDERS in tools/lint/declaration.ts and to DECLARATIONS in packages/arcadekit/test/style.test.ts, which then checks its docs. ${guide}`,
+          message: `"${kind}" is not one of the kit's declarations. A new one is a new word of the kit's vocabulary: add its builder to DECLARATION_BUILDERS in tools/lint/declaration.ts, with its entry in BUILDER_ENTRIES there if no builder came from that entry before, and to DECLARATIONS in packages/arcadekit/test/style.test.ts, which then checks its docs. ${guide}`,
         });
       }
       return kind;
@@ -894,6 +950,15 @@ const builder = {
           interfaces.set(node.id.name, node);
         }
       },
+      ThrowStatement: (node: Node) => {
+        let scope = node.parent;
+        while (scope !== undefined && !FUNCTIONS.has(scope.type)) {
+          scope = scope.parent;
+        }
+        if (scope !== undefined && !thrownBy.has(scope)) {
+          thrownBy.set(scope, node);
+        }
+      },
       ClassExpression: (node: Node) => {
         const made = returnedFrom(node);
         if (made === undefined) {
@@ -906,11 +971,12 @@ const builder = {
         }
         checkName(node, statics, kind, made);
         checkSignature(node, kind, made);
-        built.push({ kind, made: node });
+        built.push({ kind, made: node, by: made });
       },
       "Program:exit": () => {
         const kinds = new Set<string>();
-        for (const { kind, made } of built) {
+        for (const { kind, made, by } of built) {
+          checkRefusals(kind, by);
           if (kinds.has(kind)) {
             context.report({
               node: made,
@@ -933,7 +999,7 @@ export default {
     class: declaredAsClass,
     inferred,
     "plain-handler": plainHandler,
-    "older-contract": olderContract,
+    "create-first": createFirst,
     builder,
   },
 };

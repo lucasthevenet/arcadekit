@@ -53,10 +53,7 @@ describe("the site's pages", () => {
 
   it("sends the address of an entry with no README to the page that documents it", () => {
     const redirects = entryRedirects(pages);
-    expect(redirects).toContainEqual({
-      from: "/runtime/testing",
-      to: "/runtime",
-    });
+    expect(redirects).toContainEqual({ from: "/game/testing", to: "/game" });
     expect(redirects).toContainEqual({ from: "/net/signalling", to: "/net" });
     const links = new Set(pages.all.map((page) => page.link));
     for (const { from, to } of redirects) {
@@ -125,18 +122,18 @@ describe("the sidebar", () => {
       // In the order they are found on disk: by path.
       entries: [
         "core",
+        "input",
         "net",
         "net/browser",
         "net/testing",
         "net/worker",
         "physics",
-        "runtime",
       ].map(entry),
     });
     const items = Object.fromEntries(
       groups.map((group) => [group.text, group.items?.map((item) => item.link)])
     );
-    expect(items.Simulation).toStrictEqual(["/core", "/runtime"]);
+    expect(items.Simulation).toStrictEqual(["/core", "/input"]);
     expect(items["Co-op"]).toStrictEqual([
       "/net",
       "/net/browser",

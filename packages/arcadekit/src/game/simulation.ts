@@ -40,14 +40,14 @@ export interface CommandContext<Event> {
  *   turn-based game). `version` is a cheap number the game bumps whenever what `read` reports
  *   may have changed, such as a turn counter.
  */
-export interface Sample<State, S extends AnyEvent> {
+export interface Sample<State, Sampled extends AnyEvent> {
   /** The event a sample is delivered as. */
-  readonly event: S;
+  readonly event: Sampled;
   /** Measured on the time the loop's caller passes in: real time in the browser. */
   readonly every?: Duration.Input;
   readonly version?: (state: State) => number;
   /** The event's payload, read from the state. Must not change the state. */
-  readonly read: (state: State) => Omit<S["Type"], "_tag">;
+  readonly read: (state: State) => Omit<Sampled["Type"], "_tag">;
 }
 
 declare const unreturnable: unique symbol;
@@ -83,20 +83,41 @@ export type RefusalOf<Refusals> = unknown extends Refusals
   : Refusals[keyof Refusals];
 
 /**
+ * The commands of `Command` whose tag may be `Tag`, the key a handler is written under. A tag
+ * that is one literal is its key. One that is wider (a `string`, a union, a template) is not, so
+ * `Extract` by the key would find no command.
+ */
+type CommandTagged<Command extends AnyCommand, Tag> = Command extends AnyCommand
+  ? Tag extends Command["tag"]
+    ? Command
+    : never
+  : never;
+
+/**
  * One `apply` handler per command, by the command's tag. A handler takes the command, changing
  * the state and returning nothing, or refuses it by returning one of the rejections the command
  * declares, having changed nothing.
+ *
+ * Its keys are the commands' tags, read from the list and not renamed with `as`: while a
+ * definition's types are still being inferred, TypeScript types a handler's parameters from a
+ * mapped type only if its keys are not renamed, and a handler written directly under `create`
+ * then takes the state `create` returns. Each key finds its command with `CommandTagged`, so a
+ * command whose tag is not one literal still has a handler typed with it. A tag typed as a union
+ * asks for a handler under each of its members, and `Game.Simulation` refuses the one under a
+ * member that is no listed command's tag: give a command a tag of one literal.
  */
 export type CommandHandlers<
   State,
   Commands extends readonly AnyCommand[],
   Event,
 > = {
-  readonly [C in Commands[number] as C["tag"]]: (
+  readonly [Tag in Commands[number]["tag"]]: (
     state: State,
-    command: C["Type"],
+    command: CommandTagged<Commands[number], Tag>["Type"],
     context: CommandContext<Event>
-  ) => Nothing | InstanceType<C["rejects"][number]>;
+  ) =>
+    | Nothing
+    | InstanceType<CommandTagged<Commands[number], Tag>["rejects"][number]>;
 };
 
 /** What `Game.Simulation` takes: the rules of a game, with no DOM. */
@@ -106,20 +127,25 @@ export interface Definition<
   In extends Schema.Top,
   Events extends readonly AnyEvent[],
   Commands extends readonly AnyCommand[],
-  S extends AnyEvent,
+  Sampled extends AnyEvent,
 > {
   /** Step length in seconds. Defaults to 1/60. */
   readonly stepSeconds?: number;
   /**
-   * One step's worth of input, as a Schema: what a device holds for the step, what a replay
-   * records and what crosses the network in lockstep.
+   * One step's worth of input, as a Schema: what a device holds for the step and what a replay
+   * records. A simulation several players can play declares it with `Game.PlayerInputs`, from
+   * the Schema of one player's input, which is what crosses the network in lockstep.
    */
   readonly input: In;
   /** The events a step may report. */
   readonly events?: Events;
   /** The commands a player may send. Each needs a handler in `apply`. */
   readonly commands?: Commands;
-  /** Makes a run's state. Each run has its own: a view tells runs apart by identity. */
+  /**
+   * Makes a run's state. Each run has its own: a view tells runs apart by identity. Written in
+   * place, it comes before `step`, `apply` and `sample`: TypeScript types the state from what it
+   * returns, and a handler written above it can leave the state `unknown`.
+   */
   readonly create: (
     config: Config,
     run: RunContext<Events[number]["Type"]>
@@ -145,15 +171,30 @@ export interface Definition<
    * before it changes anything. The sender hears which.
    */
   readonly apply?: CommandHandlers<State, Commands, Events[number]["Type"]>;
-  readonly sample?: Sample<State, S>;
+  readonly sample?: Sample<State, Sampled>;
 }
 
-/** A simulation that declares commands must handle each of them. */
-type RequireApply<State, Commands extends readonly AnyCommand[], Event> = [
+declare const noCommand: unique symbol;
+
+/**
+ * What `apply` holds when no command is declared: nothing. A handler written there is a property
+ * this type doesn't have, so it is a type error on its own line. The builder's own type names it,
+ * so the entry exports it: a package that emits its types can then name the builder's.
+ */
+export interface NoHandlers {
+  readonly [noCommand]?: never;
+}
+
+/**
+ * A simulation that declares commands must have an `apply`: `Definition` then asks it for a
+ * handler of each. One that declares none takes no handler. It names no type the handlers
+ * infer, so it settles none of them early.
+ */
+type RequireApply<Commands extends readonly AnyCommand[]> = [
   Commands[number],
 ] extends [never]
-  ? unknown
-  : { readonly apply: CommandHandlers<State, Commands, Event> };
+  ? { readonly apply?: NoHandlers }
+  : { readonly apply: object };
 
 /**
  * A simulation's definition as the loop runs it: defaults filled, and the declarations' classes
@@ -253,6 +294,10 @@ export interface SimulationClass<
    *   LevelSolved: ({ moves }) => Message.GotLevelSolved({ moves }),
    * });
    * ```
+   *
+   * A missing case is a type error. Throws when called, as the app's module loads, for what the
+   * types let through: a case for an event that doesn't exist (one left behind by a renamed
+   * event), and a case a cast left out.
    */
   readonly match: <
     Self extends AnySimulation,
@@ -325,12 +370,18 @@ export const resolve = <Config, State, Input, Event, Command, Refusals>(
  *   step,
  *   sample: { event: Hud, version: (puzzle) => puzzle.turns, read: hudSample },
  * }) {}
+ *
+ * // What runs it takes the class:
+ * const loop = new Game.Loop(PushPuzzle);
+ * loop.start({ content, levelId }, seed, nowMs);
  * ```
  *
  * `create` and `step` are plain functions, and so is each `apply` handler: a step runs no Effect
- * and reads no clock or random source of its own (ADR-0017). A simulation that declares a
- * command without its handler is refused when its module loads. An `apply` handler may refuse
- * its command by returning one of the rejections the command declares (`Game.Rejection`).
+ * and reads no clock or random source of its own (ADR-0017). An `apply` handler may refuse its
+ * command by returning one of the rejections the command declares (`Game.Rejection`).
+ *
+ * Throws when declared, for what the types let through: a command with no `apply` handler, an
+ * `apply` handler for a command it doesn't declare, and two commands with one tag.
  */
 export const make = <
   const Name extends string,
@@ -339,17 +390,17 @@ export const make = <
   In extends Schema.Top,
   const Events extends readonly AnyEvent[] = readonly [],
   const Commands extends readonly AnyCommand[] = readonly [],
-  S extends AnyEvent = never,
+  Sampled extends AnyEvent = never,
 >(
   name: Name,
-  definition: Definition<Config, State, In, Events, Commands, S> &
-    RequireApply<State, Commands, Events[number]["Type"]>
+  definition: Definition<Config, State, In, Events, Commands, Sampled> &
+    RequireApply<Commands>
 ): SimulationClass<
   Name,
   Config,
   State,
   In["Type"],
-  Events[number]["Type"] | S["Type"],
+  Events[number]["Type"] | Sampled["Type"],
   Commands[number]["Type"],
   RefusalsOf<Commands>
 > => {
@@ -369,6 +420,14 @@ export const make = <
     if (apply[command.tag] === undefined) {
       throw new Error(
         `Simulation "${name}" declares the command "${command.tag}" but has no apply.${command.tag} to handle it`
+      );
+    }
+  }
+  for (const tag of Object.keys(apply)) {
+    // `Game.Loop` would never call it, and whoever wrote it would not be told.
+    if (!tags.has(tag)) {
+      throw new Error(
+        `Simulation "${name}" has apply.${tag} but declares no command "${tag}". List the command's class in \`commands\`, or remove the handler.`
       );
     }
   }
@@ -395,28 +454,65 @@ export const make = <
             read: sample.read,
           },
   };
+  /** What a run reports, by tag: its events, then its sample. `match` takes a case for each. */
+  const reported = resolved.events.map(({ tag }) => tag);
+  if (resolved.sample !== undefined) {
+    reported.push(resolved.sample.tag);
+  }
+  const reports =
+    reported.length === 0
+      ? ": it reports nothing"
+      : ` (${reported.join(", ")})`;
+  const noCase = (tag: string): Error =>
+    new Error(
+      `Simulation "${name}" has no case for the event "${tag}". \`match\` takes a case for everything the simulation reports${reported.length === 0 ? "" : ` (${reported.join(", ")})`}.`
+    );
+  /**
+   * Refuses the cases `match` can't use, when it is called: a case for an event that doesn't
+   * exist would never run and nobody would be told, and a case a cast left out would only be
+   * missed when its event came.
+   */
+  const checkCases = (
+    cases: Readonly<Record<string, (event: unknown) => unknown>>
+  ): void => {
+    for (const tag of Object.keys(cases)) {
+      if (!reported.includes(tag)) {
+        throw new Error(
+          `Simulation "${name}" has a case "${tag}", which it doesn't report${reports}. Remove it, or name it after the event it handles.`
+        );
+      }
+    }
+    for (const tag of reported) {
+      if (cases[tag] === undefined) {
+        throw noCase(tag);
+      }
+    }
+  };
   // oxlint-disable-next-line typescript/no-extraneous-class -- A declaration is a class, so a game extends it and gets a name for it.
   return class {
     static readonly kind = "Simulation" as const;
     static readonly simulationName: Name = name;
     static readonly definition = resolved;
-    static readonly match =
-      (cases: Readonly<Record<string, (event: unknown) => unknown>>) =>
-      (event: { readonly _tag: string }) => {
+    static readonly match = (
+      cases: Readonly<Record<string, (event: unknown) => unknown>>
+    ) => {
+      checkCases(cases);
+      return (event: { readonly _tag: string }) => {
         const handle = cases[event._tag];
+        // Every case was there when `match` was called: only an event the simulation doesn't
+        // declare gets here.
         if (handle === undefined) {
-          throw new Error(
-            `Simulation "${name}" has no case for the event "${event._tag}"`
-          );
+          throw noCase(event._tag);
         }
         return handle(event);
       };
+    };
   } as unknown as SimulationClass<
     Name,
     Config,
     State,
     In["Type"],
-    Events[number]["Type"] | S["Type"],
+    Events[number]["Type"] | Sampled["Type"],
     Commands[number]["Type"],
     RefusalsOf<Commands>
   >;

@@ -1,20 +1,34 @@
 import { readFileSync } from "node:fs";
 
 import {
+  HeroLeft,
+  LeveledUp,
+  RunEnded,
   SurvivorsContent,
-  survivorsContentDefinition,
 } from "@arcadekit/survivors";
-import type { GameContent, SurvivorsCoopEvent } from "@arcadekit/survivors";
-import { SurvivorsEngine } from "@arcadekit/survivors/browser";
-import type { SurvivorsEngineLoader } from "@arcadekit/survivors/browser";
+import type { GameContent, Survivors } from "@arcadekit/survivors";
+import {
+  SurvivorsCoop,
+  SurvivorsCueTable,
+  SurvivorsSheet,
+} from "@arcadekit/survivors/browser";
 import { SilentAudioLayer } from "arcadekit/audio";
-import { ContentError, loadContent } from "arcadekit/content";
+import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
+import type * as Game from "arcadekit/game";
+import { Frames } from "arcadekit/game/browser";
+import { manualFrames } from "arcadekit/game/testing";
+import {
+  LobbyChanged,
+  RunStarted,
+  SeatFailed,
+  WaitingChanged,
+} from "arcadekit/net/browser";
 import type { CoopEvent } from "arcadekit/net/browser";
 import { FAKE_JOIN_CODE, fakeCoopRooms } from "arcadekit/net/testing";
 import type { FakeCoopRooms } from "arcadekit/net/testing";
 import { SpriteSheetError } from "arcadekit/render-three";
-import { manualFrames } from "arcadekit/runtime/testing";
+import type { SpriteSheet } from "arcadekit/render-three";
 import {
   Clock,
   Context,
@@ -28,10 +42,17 @@ import {
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HostCoop, LeaveCoop } from "./commands";
-import { Coop, makeCoopLayer } from "./coop";
-import type { CoopApi, CoopDebugSample } from "./coop";
+import {
+  ChooseCoopUpgrade,
+  HostCoop,
+  LeaveCoop,
+  SetCoopPaused,
+} from "./commands";
+import { CoopLayer } from "./coop";
+import type { CoopDebugSample } from "./coop";
 import { Message } from "./message";
+import { emptyHud } from "./model";
+import { survivorsSounds } from "./sound";
 import { coopMessage } from "./subscriptions";
 
 // The app's co-op glue with nothing real behind it: the kit's fake rooms stand in for the
@@ -47,16 +68,16 @@ const fileSource: ContentSource = (file) =>
   });
 
 const content: GameContent = await Effect.runPromise(
-  loadContent({ ...survivorsContentDefinition, source: fileSource })
+  SurvivorsContent.read(fileSource)
 );
 
-/** A loader whose load never finishes: building the layer loads nothing. */
-const idleLoader = { load: Effect.never } as unknown as SurvivorsEngineLoader;
+type SheetLoad = Effect.Effect<SpriteSheet, SpriteSheetError>;
 
-/** A loader that has loaded, with art nothing reads. */
-const loadedLoader = {
-  load: Effect.succeed({ assets: {}, engine: {} }),
-} as unknown as SurvivorsEngineLoader;
+/** A sheet whose load never finishes: building the layer loads nothing. */
+const idleSheet: SheetLoad = Effect.never;
+
+/** A sheet that has loaded, which nothing reads. */
+const loadedSheet: SheetLoad = Effect.succeed({} as SpriteSheet);
 
 const nanos = (ms: number) => BigInt(Math.round(ms * 1_000_000));
 
@@ -103,23 +124,26 @@ const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>
   );
 
 interface Seat {
-  readonly coop: CoopApi;
-  readonly context: Context.Context<Coop>;
+  readonly coop: Context.Service.Shape<typeof SurvivorsCoop>;
+  readonly context: Context.Context<SurvivorsCoop>;
 }
 
 /** The app's co-op layer over `hub`, in the test's scope. */
 const seat = async (
   hub: FakeCoopRooms,
   parts: {
-    readonly engine?: SurvivorsEngineLoader;
+    readonly sheet?: SheetLoad;
     readonly load?: Effect.Effect<GameContent, ContentError>;
   } = {}
 ): Promise<Seat> => {
-  const layer = makeCoopLayer(() => hub.rooms, {
-    frames: manualFrames(),
-  }).pipe(
+  const layer = CoopLayer.pipe(
+    Layer.provide(hub.layer),
+    Layer.provide(Layer.succeed(Frames, manualFrames())),
     Layer.provide(SilentAudioLayer),
-    Layer.provide(Layer.succeed(SurvivorsEngine, parts.engine ?? idleLoader)),
+    Layer.provide(SurvivorsCueTable.layer(survivorsSounds)),
+    Layer.provide(
+      Layer.succeed(SurvivorsSheet, { load: parts.sheet ?? idleSheet })
+    ),
     Layer.provide(
       Layer.succeed(SurvivorsContent, {
         load: parts.load ?? Effect.succeed(content),
@@ -127,10 +151,10 @@ const seat = async (
     )
   );
   const context = await run(Layer.buildWithScope(layer, scope));
-  return { coop: Context.get(context, Coop), context };
+  return { coop: Context.get(context, SurvivorsCoop), context };
 };
 
-type Event = CoopEvent<SurvivorsCoopEvent>;
+type Event = CoopEvent<Game.EventOf<typeof Survivors>>;
 
 const listen = async ({ coop }: Seat): Promise<Event[]> => {
   const events: Event[] = [];
@@ -147,6 +171,16 @@ const listen = async ({ coop }: Seat): Promise<Event[]> => {
 const settle = async () => {
   await vi.advanceTimersByTimeAsync(0);
 };
+
+/** How a run ended for the hero `heroId`. */
+const summary = (heroId: string) => ({
+  won: true,
+  heroId,
+  heroName: heroId,
+  time: 90,
+  kills: 12,
+  level: 3,
+});
 
 const debugGlobal = (): CoopDebugSample =>
   (
@@ -203,18 +237,17 @@ describe("the app's co-op", () => {
         { id: "guest-1", name: "Guest 1", pick: "tide" },
       ];
       const lobby = {
-        type: "lobby",
         code: FAKE_JOIN_CODE,
         players,
         maxPlayers: 4,
         canStart: true,
       };
       expect([
-        hostEvents.findLast((event) => event.type === "lobby"),
-        guestEvents.findLast((event) => event.type === "lobby"),
+        hostEvents.findLast((event) => event._tag === "LobbyChanged"),
+        guestEvents.findLast((event) => event._tag === "LobbyChanged"),
       ]).toStrictEqual([
-        { ...lobby, role: "host", self: "host" },
-        { ...lobby, role: "guest", self: "guest-1" },
+        new LobbyChanged({ ...lobby, role: "host", self: "host" }),
+        new LobbyChanged({ ...lobby, role: "guest", self: "guest-1" }),
       ]);
 
       await run(host.coop.start);
@@ -227,7 +260,7 @@ describe("the app's co-op", () => {
       const sample = debugGlobal();
       expect({
         started: [hostEvents, guestEvents].map((events) =>
-          events.find((event) => event.type === "started")
+          events.find((event) => event._tag === "RunStarted")
         ),
         heroes: guestRun.state?.heroes.map((hero) => hero.def.id),
         errors: [hostRun.error, guestRun.error],
@@ -235,13 +268,13 @@ describe("the app's co-op", () => {
         hashed: common.length > 2,
         hostHashes: common.map((step) => hostRun.hashes[Number(step)]),
         hud: guestEvents.some(
-          (event) => event.type === "run" && event.event.type === "hud"
+          (event) => event._tag === "RunEvent" && event.event._tag === "Hud"
         ),
         sample: structuredClone(sample),
       }).toStrictEqual({
         started: [
-          { type: "started", slot: 0, names: ["Host", "Guest 1"] },
-          { type: "started", slot: 1, names: ["Host", "Guest 1"] },
+          new RunStarted({ slot: 0, names: ["Host", "Guest 1"] }),
+          new RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
         ],
         heroes: ["spark", "tide"],
         errors: [null, null],
@@ -278,11 +311,11 @@ describe("the app's co-op", () => {
       await settle();
       await run(host.coop.start);
       await vi.advanceTimersByTimeAsync(100);
-      const failed = guestEvents.find((event) => event.type === "failed");
+      const failed = guestEvents.find((event) => event._tag === "SeatFailed");
       expect({
-        reason: failed?.type === "failed" && failed.reason,
-        started: guestEvents.some((event) => event.type === "started"),
-        shown: failed && coopMessage(failed)._tag,
+        reason: failed?._tag === "SeatFailed" && failed.reason,
+        started: guestEvents.some((event) => event._tag === "RunStarted"),
+        shown: failed && coopMessage(failed)?._tag,
       }).toStrictEqual({
         reason: "unknownPick",
         started: false,
@@ -297,7 +330,7 @@ describe("the app's co-op", () => {
       const loaded = Effect.runSync(Deferred.make<GameContent, ContentError>());
       const { context } = await seat(hub, { load: Deferred.await(loaded) });
       // Foldkit runs each Command in Message order: Host, then Leave.
-      const command = <A>(effect: Effect.Effect<A, never, Coop>) =>
+      const command = <A>(effect: Effect.Effect<A, never, SurvivorsCoop>) =>
         run(Effect.provideContext(effect, context));
       await command(HostCoop({ heroId: "spark" }).effect);
       await command(LeaveCoop().effect);
@@ -305,6 +338,95 @@ describe("the app's co-op", () => {
       await settle();
       await Effect.runPromise(Scope.close(scope, Exit.void));
       expect(hub.log).toStrictEqual([]);
+    });
+
+    it("hold the run paused on every page with the genre's command, and say when the run holds no pause", async () => {
+      const hub = fakeCoopRooms();
+      const host = await seat(hub);
+      const guest = await seat(hub);
+      const command = <A>(
+        player: Seat,
+        effect: Effect.Effect<A, never, SurvivorsCoop>
+      ) => run(Effect.provideContext(effect, player.context));
+      const pause = (player: Seat, paused: boolean) =>
+        command(player, SetCoopPaused({ paused }).effect);
+      const clocks = () =>
+        [host, guest].map(({ coop }) => coop.debug().state?.time);
+      // With no run, there is nothing to hold: the app's toggle is told so.
+      const early = await pause(host, true);
+      await run(host.coop.host("spark"));
+      await settle();
+      await run(guest.coop.join(FAKE_JOIN_CODE, "ember"));
+      await settle();
+      await run(host.coop.start);
+      await vi.advanceTimersByTimeAsync(1000);
+      const held = pause(guest, true);
+      await vi.advanceTimersByTimeAsync(1000);
+      const [stopped, steps] = [clocks(), host.coop.debug().stepIndex];
+      const heldBy = [host, guest].map(({ coop }) =>
+        coop.debug().state?.heroes.map((hero) => hero.paused)
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      const [stillStopped, stepsLater] = [
+        clocks(),
+        host.coop.debug().stepIndex,
+      ];
+      const released = pause(guest, false);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect({
+        early,
+        held: await held,
+        // The guest's hero holds it, on both pages, and the run's clock stands on both.
+        heldBy,
+        stopped: [stopped[0] === stopped[1], stillStopped],
+        // A paused run still steps, so the pages stay in touch.
+        stepping: stepsLater > steps,
+        released: await released,
+        resumed: clocks().map((time) => (time ?? 0) > (stopped[0] ?? 0)),
+      }).toStrictEqual({
+        early: Message.FailedToHoldCoopPause(),
+        held: Message.CompletedEngineCommand(),
+        heldBy: [
+          [false, true],
+          [false, true],
+        ],
+        stopped: [true, stopped],
+        stepping: true,
+        released: Message.CompletedEngineCommand(),
+        resumed: [true, true],
+      });
+    });
+
+    it("end a pick the same way however the run answers it: with no run, and for an offer that isn't open", async () => {
+      const hub = fakeCoopRooms();
+      const host = await seat(hub);
+      const guest = await seat(hub);
+      const pick = (player: Seat) =>
+        run(
+          Effect.provideContext(
+            ChooseCoopUpgrade({ offer: 1, index: 0 }).effect,
+            player.context
+          )
+        );
+      const noRun = await pick(host);
+      await run(host.coop.host("spark"));
+      await settle();
+      await run(guest.coop.join(FAKE_JOIN_CODE, "ember"));
+      await settle();
+      await run(host.coop.start);
+      await vi.advanceTimersByTimeAsync(1000);
+      // No offer is open a second into a run: the rules refuse the pick, on both pages alike.
+      const refused = pick(guest);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect([
+        noRun,
+        await refused,
+        [host.coop.debug().error, guest.coop.debug().error],
+      ]).toStrictEqual([
+        Message.CompletedEngineCommand(),
+        Message.CompletedEngineCommand(),
+        [null, null],
+      ]);
     });
   });
 
@@ -319,7 +441,7 @@ describe("the app's co-op", () => {
 
     it("fails with an AttachError where it can't draw, as here with no WebGL, after leaving its room", async () => {
       const hub = fakeCoopRooms();
-      const { coop } = await seat(hub, { engine: loadedLoader });
+      const { coop } = await seat(hub, { sheet: loadedSheet });
       await run(coop.host("spark"));
       await settle();
       const error = await run(Effect.flip(coop.attach(element)));
@@ -335,9 +457,7 @@ describe("the app's co-op", () => {
         message: "The sheet can't be loaded",
       });
       const { coop } = await seat(fakeCoopRooms(), {
-        engine: {
-          load: Effect.fail(missing),
-        } as unknown as SurvivorsEngineLoader,
+        sheet: Effect.fail(missing),
       });
       const error = await run(Effect.flip(coop.attach(element)));
       expect(error).toBe(missing);
@@ -345,39 +465,54 @@ describe("the app's co-op", () => {
   });
 
   describe("co-op events as Messages", () => {
-    it("passes the lobby as the client reports it, and unwraps the run's events", () => {
-      const players = [{ id: "host", name: "Host", pick: "spark" }];
-      const lobby = {
-        role: "host" as const,
+    const local = { slot: 1, names: ["Host", "Guest 1"] };
+    /** One of the run's events, as the seat at slot 1 hears it. */
+    const heard = (event: Game.EventOf<typeof Survivors>): Event => ({
+      _tag: "RunEvent",
+      event,
+      local,
+    });
+
+    it("passes the client's own events on: the lobby as it is, the start, who it waits for, a failure's text", () => {
+      const lobby = new LobbyChanged({
+        role: "host",
         code: FAKE_JOIN_CODE,
         self: "host",
-        players,
+        players: [{ id: "host", name: "Host", pick: "spark" }],
         maxPlayers: 4,
         canStart: false,
-      };
-      const summary = {
-        won: true,
-        heroId: "spark",
-        heroName: "Spark",
-        time: 90,
-        kills: 12,
-        level: 3,
-      };
+      });
       const events: Event[] = [
-        { type: "lobby", ...lobby },
-        { type: "started", slot: 1, names: ["Host", "Guest 1"] },
-        { type: "waiting", waitingFor: ["Host"], choosing: ["Guest 2"] },
-        { type: "run", event: { type: "levelUp", offer: 2, choices: [] } },
-        { type: "run", event: { type: "runEnded", summary } },
-        { type: "failed", reason: "hostLost", message: "Lost the host." },
+        lobby,
+        new RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
+        new WaitingChanged({ waitingFor: ["Host"] }),
+        new SeatFailed({ reason: "hostLost", message: "Lost the host." }),
       ];
       expect(events.map(coopMessage)).toStrictEqual([
-        Message.GotCoopLobby(lobby),
+        Message.GotCoopLobby({ lobby }),
         Message.GotCoopStarted({ slot: 1, names: ["Host", "Guest 1"] }),
-        Message.GotCoopWaiting({ waitingFor: ["Host"], choosing: ["Guest 2"] }),
-        Message.GotCoopLevelUp({ offer: 2, choices: [] }),
-        Message.GotCoopRunEnded({ summary }),
+        Message.GotCoopWaiting({ waitingFor: ["Host"] }),
         Message.GotCoopFailed({ error: "Lost the host." }),
+      ]);
+    });
+
+    it("tells the local player the HUD, its own hero's offer and its own summary, and no other hero's", () => {
+      const events: Event[] = [
+        heard(emptyHud),
+        heard(new LeveledUp({ hero: 0, offer: 2, choices: [] })),
+        heard(new LeveledUp({ hero: 1, offer: 2, choices: [] })),
+        heard(new HeroLeft({ hero: 0 })),
+        heard(new RunEnded({ summaries: [summary("spark"), summary("tide")] })),
+        // A run this seat has no hero in: there is no summary to show.
+        heard(new RunEnded({ summaries: [summary("spark")] })),
+      ];
+      expect(events.map(coopMessage)).toStrictEqual([
+        Message.GotHud({ hud: emptyHud }),
+        undefined,
+        Message.GotCoopLevelUp({ offer: 2, choices: [] }),
+        undefined,
+        Message.GotCoopRunEnded({ summary: summary("tide") }),
+        undefined,
       ]);
     });
   });

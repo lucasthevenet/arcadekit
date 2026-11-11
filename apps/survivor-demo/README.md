@@ -2,7 +2,7 @@
 
 The survivors-like demo game, and its Cloudflare deployment: one Worker that serves the site and is co-op's signalling worker, which is the kit's ([`arcadekit/net/worker`](../../packages/arcadekit/src/net/worker/README.md)), declared with [Alchemy](https://alchemy.run) in `alchemy.run.ts`. The game itself is described in the [root README](../../README.md#the-survivors-demo).
 
-Co-op runs on the kit's Co-op client ([`arcadekit/net/browser`](../../packages/arcadekit/src/net/README.md#co-op)) and the genre's Co-op game (`makeSurvivorsCoopGame`). The app keeps the screens and the Foldkit glue: `src/app/coop.ts` makes the client as the `Coop` service, and `src/coop/config.ts` gives it the signalling worker's URL (the page's own origin) and the STUN servers.
+Co-op runs on the kit's Co-op client ([`arcadekit/net/browser`](../../packages/arcadekit/src/net/README.md#co-op)), which the genre's `SurvivorsCoop` declares from its engine. The app keeps the screens and the Foldkit glue: `SurvivorsCoop.layer` provides the client (`src/app/coop.ts`), a Subscription hears it through `SurvivorsCoop.match`, and `src/coop/config.ts` provides its rooms from the signalling worker's URL (the page's own origin) and the STUN servers.
 
 ## Running it locally
 

@@ -3,12 +3,10 @@ import { Asset } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
 import { InputController } from "arcadekit/input";
 import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
-import { Context } from "effect";
 
 import { PushPuzzle } from "../simulation";
-import type { Direction, Puzzle, PushPuzzleInput } from "../world";
-import { PushPuzzleSoundView } from "./sound";
-import type { PushPuzzleSounds } from "./sound";
+import type { Direction, PushPuzzleInput } from "../world";
+import { PushPuzzleCueTable, PushPuzzleSoundView } from "./sound";
 import { PushPuzzleView } from "./view";
 
 const DIRECTIONS = ["up", "down", "left", "right"] as const;
@@ -68,27 +66,22 @@ export class PushPuzzleSheet extends Asset<SpriteSheet, SpriteSheetError>()(
   { release: (sheet) => sheet.dispose() }
 ) {}
 
-/** Which of the app's sounds each cue plays. The app provides its table: it owns the sounds. */
-export class PushPuzzleCueSounds extends Context.Service<
-  PushPuzzleCueSounds,
-  PushPuzzleSounds
->()("@arcadekit/push-puzzle/CueSounds") {}
-
 /**
  * The push-puzzle genre in the browser: its rules, a view that draws them from the app's sheet
- * and plays their cues through the app's `Audio` (tests provide `SilentAudioLayer`), and its
- * input. `PushPuzzleEngine.layer` provides the engine; building it loads nothing, and each
- * attach loads the sheet, or takes the one already loaded.
+ * and plays their cues, with the sounds the app gives its cue table, through the app's `Audio`
+ * (tests provide `SilentAudioLayer`), and its input. `PushPuzzleEngine.layer` provides the
+ * engine; building it loads nothing, and each attach loads the sheet, or takes the one already
+ * loaded.
  */
 export class PushPuzzleEngine extends Game.Engine("PushPuzzleEngine", {
   simulation: PushPuzzle,
   uses: {
     audio: Audio,
-    sounds: PushPuzzleCueSounds,
+    sounds: PushPuzzleCueTable,
     sheet: PushPuzzleSheet.load,
   },
   view: (container, { audio, sounds, sheet }) =>
-    Game.combineViews<Puzzle>(
+    Game.combineViews(
       new PushPuzzleView(container, sheet),
       new PushPuzzleSoundView(audio, sounds)
     ),

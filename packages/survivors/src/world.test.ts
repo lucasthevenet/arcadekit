@@ -1,14 +1,21 @@
-import { GameLoop, soloInput } from "arcadekit/runtime";
-import type { StepInput } from "arcadekit/runtime";
+import type * as Game from "arcadekit/game";
+import * as Scenario from "arcadekit/game/scenario";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { SurvivorsEvent } from "./events";
+import {
+  ChooseUpgrade,
+  HoldPause,
+  NoSuchChoice,
+  NotPlaying,
+  OfferClosed,
+} from "./commands";
+import { HeroLeft, Hud, LeveledUp, RunEnded } from "./events";
 import { hashWorld } from "./hash-world";
 import type { HeroInput, SurvivorsInput } from "./input";
 import { GameContent } from "./schema";
-import { survivorsSimulation } from "./simulation";
-import { chooseUpgrade, createWorld, hudSample, step } from "./world";
+import { Survivors } from "./simulation";
+import { choose, createWorld, hudSample, step } from "./world";
 import type { World } from "./world";
 
 // Small, self-contained content so these tests don't depend on any particular game.
@@ -101,7 +108,22 @@ const content = Schema.decodeUnknownSync(GameContent)({
   waves: [{ from: 0, to: 120, enemy: "grunt", perSecond: 3 }],
 });
 
+/** Everything a survivors run reports: its events and its HUD sample. */
+type SurvivorsEvent = Game.EventOf<typeof Survivors>;
+
 const DT = 1 / 60;
+
+/** A step's context for a test that calls `step` itself: its events go nowhere. */
+const STEP = { dt: DT, step: 0, report: () => {} };
+
+/** A step's context that keeps what the steps report, for a test that calls `step` itself. */
+const collecting = () => {
+  const events: SurvivorsEvent[] = [];
+  const report = (event: SurvivorsEvent) => {
+    events.push(event);
+  };
+  return { events, context: { dt: DT, step: 0, report } };
+};
 
 const STILL: SurvivorsInput = { players: [], leaving: [] };
 
@@ -118,18 +140,18 @@ const solo = (moveX: number, moveZ: number): SurvivorsInput =>
 
 /** Plays `seconds` of a run: walks in a slow circle and always takes the first upgrade. Returns all events. */
 const play = (world: World, seconds: number): SurvivorsEvent[] => {
-  const events: SurvivorsEvent[] = [];
+  const { events, context } = collecting();
   for (
     let frame = 0;
     frame < seconds * 60 && world.status === "running";
     frame++
   ) {
-    if (world.heroes[0]!.offer) {
-      chooseUpgrade(world, 0, 0);
+    const hero = world.heroes[0]!;
+    if (hero.offer) {
+      choose(world, hero, 0);
     }
     const angle = frame / 200;
-    step(world, solo(Math.cos(angle), Math.sin(angle)), DT);
-    events.push(...world.events.drain());
+    step(world, solo(Math.cos(angle), Math.sin(angle)), context);
   }
   return events;
 };
@@ -160,21 +182,27 @@ const offersOpen = (world: World) =>
 
 /** Where an enemy exactly between heroes at x0 and x1 heads: -1 left, 1 right. */
 const chase = (x0: number, x1: number) => {
-  const world = createWorld({ content, heroIds: ["bolter", "bolter"] }, 4);
+  const world = createWorld(
+    { content, heroIds: ["bolter", "bolter"] },
+    { seed: 4 }
+  );
   world.heroes[0]!.x = x0;
   world.heroes[1]!.x = x1;
   const i = addEnemy(world, 0, 10);
-  step(world, STILL, DT);
+  step(world, STILL, STEP);
   return Math.sign(world.enemies.fields.x[i]!);
 };
 
 /** A two-hero world one step into a level-up: both heroes have an offer open. */
-const levelUpForTwo = () => {
-  const world = createWorld({ content, heroIds: ["bolter", "burner"] }, 9);
+const levelUpForTwo = (context: Game.StepContext<SurvivorsEvent> = STEP) => {
+  const world = createWorld(
+    { content, heroIds: ["bolter", "burner"] },
+    { seed: 9 }
+  );
   const [a, b] = world.heroes;
   dropGem(world, a!.x, a!.z, 2);
   dropGem(world, b!.x, b!.z, 1);
-  step(world, STILL, DT);
+  step(world, STILL, context);
   return world;
 };
 
@@ -233,8 +261,8 @@ describe("content", () => {
 
 describe("simulation", () => {
   it("is deterministic for the same seed and inputs", () => {
-    const a = createWorld({ content, heroIds: ["bolter"] }, 42);
-    const b = createWorld({ content, heroIds: ["bolter"] }, 42);
+    const a = createWorld({ content, heroIds: ["bolter"] }, { seed: 42 });
+    const b = createWorld({ content, heroIds: ["bolter"] }, { seed: 42 });
     play(a, 60);
     play(b, 60);
     expect(a.kills).toBe(b.kills);
@@ -244,146 +272,384 @@ describe("simulation", () => {
   });
 
   it("spawns enemies, kills them, levels up, and reports each level-up", () => {
-    const world = createWorld({ content, heroIds: ["burner"] }, 7);
+    const world = createWorld({ content, heroIds: ["burner"] }, { seed: 7 });
     const events = play(world, 45);
     expect(world.enemies.count).toBeGreaterThan(0);
     expect(world.kills).toBeGreaterThan(0);
     expect(world.level).toBeGreaterThan(1);
-    expect(events.filter((e) => e.type === "levelUp")).toHaveLength(
+    expect(events.filter((e) => e._tag === "LeveledUp")).toHaveLength(
       world.level - 1
     );
   });
 
   it("freezes while an upgrade offer is open", () => {
-    const world = createWorld({ content, heroIds: ["bolter"] }, 3);
+    const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 3 });
     while (!world.heroes[0]!.offer && world.time < 60) {
-      step(world, solo(0, 0), DT);
+      step(world, solo(0, 0), STEP);
     }
     expect(world.heroes[0]!.offer).not.toBeNull();
     const { time } = world;
-    step(world, solo(1, 0), DT);
+    step(world, solo(1, 0), STEP);
     expect(world.time).toBe(time);
-    expect(chooseUpgrade(world, 0, 0)).toBe(true);
+    expect(choose(world, world.heroes[0]!, 0)).toBe(true);
     expect(world.heroes[0]!.offer).toBeNull();
   });
 
-  it("reports runEnded once when the player dies", () => {
-    const world = createWorld({ content, heroIds: ["bolter"] }, 1);
-    world.heroes[0]!.hp = 0.0001;
-    const events: SurvivorsEvent[] = [];
+  it("reports RunEnded once when the player dies", () => {
+    const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 1 });
+    const hero = world.heroes[0]!;
+    hero.hp = 0.0001;
+    const { events, context } = collecting();
     for (let i = 0; i < 60 * 60 && world.status === "running"; i++) {
-      if (world.heroes[0]!.offer) {
-        chooseUpgrade(world, 0, 0);
+      if (hero.offer) {
+        choose(world, hero, 0);
       }
-      step(world, solo(0, 0), DT);
-      events.push(...world.events.drain());
+      step(world, solo(0, 0), context);
     }
     expect(world.status).toBe("dead");
-    const ended = events.filter((e) => e.type === "runEnded");
+    const ended = events.filter((e) => e._tag === "RunEnded");
     expect(ended).toHaveLength(1);
     expect(ended[0]).toMatchObject({
       summaries: [{ won: false, heroId: "bolter", heroName: "Bolter" }],
     });
   });
 
-  it("reports a win when the timer runs out", () => {
-    const world = createWorld({ content, heroIds: ["burner"] }, 5);
-    world.time = content.rules.runLength - DT / 2;
-    step(world, solo(0, 0), DT);
-    expect(world.status).toBe("won");
-    expect(
-      world.events
-        .drain()
-        .some((e) => e.type === "runEnded" && e.summaries[0]!.won)
-    ).toBe(true);
-  });
-
-  it("plays the same run whether picks come through modify or step input", () => {
-    // The replay tests pick through modify; lockstep picks through step input. Same run either way.
-    const sturdy = Schema.decodeUnknownSync(GameContent)({
-      ...content,
-      heroes: [{ ...content.heroes[0], maxHp: 1e9 }],
-    });
-    const run = (scheduled: boolean) => {
-      const hashes: number[] = [];
-      const loop = new GameLoop({
-        ...survivorsSimulation,
-        step: (world: World, input: SurvivorsInput, dt: number) => {
-          survivorsSimulation.step(world, input, dt);
-          hashes.push(hashWorld(world));
-        },
-      });
-      loop.start({ content: sturdy, heroIds: ["bolter"] }, 77, 0);
-      const world = loop.state!;
-      const move: { -readonly [K in keyof HeroInput]: HeroInput[K] } = {
-        moveX: 0,
-        moveZ: 0,
-      };
-      const script: StepInput<HeroInput> = {
-        read: (i) => {
-          move.moveX = Math.cos(i / 150);
-          move.moveZ = Math.sin(i / 150);
-          const { offer } = world.heroes[0]!;
-          if (scheduled && offer) {
-            move.pick = {
-              offer: world.offerSeq,
-              index: Math.min(1, offer.length - 1),
-            };
-          } else {
-            delete move.pick;
-          }
-          return move;
-        },
-      };
-      const input = soloInput(script);
-      for (let i = 0; i < 3600; i++) {
-        const nowMs = (i * 1000) / 60;
-        const { offer } = world.heroes[0]!;
-        if (!scheduled && offer) {
-          loop.modify(
-            (w) => chooseUpgrade(w, 0, Math.min(1, offer.length - 1)),
-            nowMs
-          );
-        }
-        loop.frame(input, { steps: 1 }, nowMs);
-      }
-      return { hashes, level: world.level };
-    };
-    const modified = run(false);
-    const scheduled = run(true);
-    expect(modified.level).toBeGreaterThan(3);
-    expect(scheduled.hashes).toStrictEqual(modified.hashes);
-  });
-
   it("rejects a run with no heroes or more than four", () => {
-    expect(() => createWorld({ content, heroIds: [] }, 1)).toThrow(RangeError);
+    expect(() => createWorld({ content, heroIds: [] }, { seed: 1 })).toThrow(
+      RangeError
+    );
     expect(() =>
-      createWorld({ content, heroIds: ["bolter", "a", "b", "c", "d"] }, 1)
+      createWorld(
+        { content, heroIds: ["bolter", "a", "b", "c", "d"] },
+        { seed: 1 }
+      )
     ).toThrow(RangeError);
     expect(
       createWorld(
         { content, heroIds: ["bolter", "x", "y", "burner"] },
-        1
+        { seed: 1 }
       ).heroes.map((hero) => hero.def.id)
     ).toStrictEqual(["bolter", "bolter", "bolter", "burner"]);
   });
 });
 
+// What a run reports, and which picks its rules take and refuse, are told as scenarios: given a
+// run, after these steps and commands, it reported this and refused that. The tests above and
+// below arrange a state by hand, which a scenario can't, so they call `step` themselves.
+const scenario = Scenario.make(Survivors);
+
+/** The run's clock after `steps` steps: the sum the steps themselves make. */
+const clockAfter = (steps: number) => {
+  let time = 0;
+  for (let i = 0; i < steps; i++) {
+    time += DT;
+  }
+  return time;
+};
+
+/** A run that is won on its fourth step, before anything spawns. */
+const brief = Schema.decodeUnknownSync(GameContent)({
+  ...content,
+  rules: { ...content.rules, runLength: clockAfter(4) },
+});
+
+/**
+ * Content whose offers are known whatever the Rng draws: one weapon and no passive, so a hero is
+ * offered that weapon's next level and nothing else. The first kill is a level, the next level is
+ * out of reach, and nobody dies.
+ */
+const oneChoice = Schema.decodeUnknownSync(GameContent)({
+  ...content,
+  rules: { ...content.rules, xpToLevel2: 1, xpGrowth: 1000 },
+  heroes: [{ ...content.heroes[1], maxHp: 1e9 }],
+  weapons: [content.weapons[1]],
+  passives: [],
+});
+const AURA_2 = {
+  kind: "weapon",
+  id: "aura",
+  name: "Aura",
+  description: "Stronger and faster.",
+  level: 2,
+} as const;
+
+/** Long enough for the first grunt to walk into an aura and die. The run freezes at the offer, so the rest changes nothing. */
+const UNTIL_LEVEL_UP = 20 * 60;
+
+describe("what a run reports", () => {
+  it("reports RunEnded when the timer runs out, then samples the HUD", () => {
+    const time = clockAfter(4);
+    scenario(
+      Scenario.given({ content: brief, heroIds: ["burner"] }),
+      Scenario.step(STILL, 3),
+      Scenario.reported(),
+      Scenario.step(STILL),
+      Scenario.reported(
+        new RunEnded({
+          summaries: [
+            {
+              won: true,
+              heroId: "burner",
+              heroName: "Burner",
+              time,
+              kills: 0,
+              level: 1,
+            },
+          ],
+        })
+      ),
+      // Read right after the frame that ended the run, not at the HUD's next 100 ms.
+      Scenario.sampled(
+        new Hud({
+          level: 1,
+          xp: 0,
+          xpNext: 3,
+          time,
+          runLength: time,
+          kills: 0,
+          enemies: 0,
+          heroes: [
+            {
+              heroId: "burner",
+              hp: 120,
+              maxHp: 120,
+              status: "playing",
+              paused: false,
+              choosing: false,
+            },
+          ],
+        })
+      ),
+      // A run that is over does nothing more.
+      Scenario.step(STILL, 60),
+      Scenario.reported(),
+      Scenario.state((world) => {
+        expect([world.status, world.time]).toStrictEqual(["won", time]);
+      })
+    );
+  });
+
+  it("reports HeroLeft when a player leaves, once", () => {
+    scenario(
+      Scenario.given({ content, heroIds: ["bolter", "burner"] }),
+      Scenario.step({ players: [], leaving: [1] }),
+      Scenario.reported(new HeroLeft({ hero: 1 })),
+      Scenario.step({ players: [], leaving: [1] }),
+      Scenario.reported()
+    );
+  });
+
+  it("reports one LeveledUp for each playing hero, and nothing more until they pick", () => {
+    scenario(
+      Scenario.given({
+        content: oneChoice,
+        heroIds: ["burner", "burner", "burner"],
+      }),
+      Scenario.step({ players: [], leaving: [2] }),
+      Scenario.reported(new HeroLeft({ hero: 2 })),
+      Scenario.step(STILL, UNTIL_LEVEL_UP),
+      Scenario.reported(
+        new LeveledUp({ hero: 0, offer: 1, choices: [AURA_2] }),
+        new LeveledUp({ hero: 1, offer: 1, choices: [AURA_2] })
+      ),
+      Scenario.state((world) => {
+        expect(offersOpen(world)).toStrictEqual([true, true, false]);
+      })
+    );
+  });
+});
+
+/** A one-hero run played until its hero is offered an upgrade: offer 1, with one choice. */
+const OFFERED = [
+  Scenario.given({ content: oneChoice, heroIds: ["burner"] }),
+  Scenario.step(STILL, UNTIL_LEVEL_UP),
+  Scenario.reported(new LeveledUp({ hero: 0, offer: 1, choices: [AURA_2] })),
+];
+
+/** The same for two heroes: each has offer 1 open. */
+const OFFERED_TO_TWO = [
+  Scenario.given({ content: oneChoice, heroIds: ["burner", "burner"] }),
+  Scenario.step(STILL, UNTIL_LEVEL_UP),
+  Scenario.reported(
+    new LeveledUp({ hero: 0, offer: 1, choices: [AURA_2] }),
+    new LeveledUp({ hero: 1, offer: 1, choices: [AURA_2] })
+  ),
+];
+
+/** Each hero's first weapon's level: 2 once it took the one choice. */
+const weaponLevels = (world: World) =>
+  world.heroes.map((hero) => hero.weapons[0]!.level);
+
+describe("an upgrade pick", () => {
+  it("gives the sender's hero its choice, closes the offer and resumes the run in that step", () => {
+    let frozenAt = 0;
+    scenario(
+      OFFERED,
+      Scenario.state((world) => {
+        frozenAt = world.time;
+      }),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 })),
+      Scenario.step(STILL),
+      Scenario.refused(),
+      Scenario.reported(),
+      Scenario.state((world) => {
+        expect({
+          weapons: weaponLevels(world),
+          open: offersOpen(world),
+          pending: world.pendingLevelUps,
+          time: world.time,
+        }).toStrictEqual({
+          weapons: [2],
+          open: [false],
+          pending: 0,
+          time: frozenAt + DT,
+        });
+      })
+    );
+  });
+
+  it("is its sender's: the run stays frozen until every hero has picked", () => {
+    let frozenAt = 0;
+    scenario(
+      OFFERED_TO_TWO,
+      Scenario.state((world) => {
+        frozenAt = world.time;
+      }),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 }), 1),
+      Scenario.step(STILL),
+      Scenario.state((world) => {
+        expect([
+          weaponLevels(world),
+          offersOpen(world),
+          world.time,
+        ]).toStrictEqual([[1, 2], [true, false], frozenAt]);
+      }),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 })),
+      Scenario.step(STILL),
+      Scenario.state((world) => {
+        expect([
+          weaponLevels(world),
+          offersOpen(world),
+          world.time,
+        ]).toStrictEqual([[2, 2], [false, false], frozenAt + DT]);
+      })
+    );
+  });
+
+  it("is refused when it names another offer than the open one", () => {
+    scenario(
+      OFFERED,
+      Scenario.send(new ChooseUpgrade({ offer: 0, index: 0 })),
+      Scenario.send(new ChooseUpgrade({ offer: 2, index: 0 })),
+      Scenario.step(STILL),
+      Scenario.refused(
+        new OfferClosed({ offer: 0 }),
+        new OfferClosed({ offer: 2 })
+      ),
+      Scenario.state((world) => {
+        expect([weaponLevels(world), offersOpen(world)]).toStrictEqual([
+          [1],
+          [true],
+        ]);
+      })
+    );
+  });
+
+  it("is refused when the offer has no such choice", () => {
+    scenario(
+      OFFERED,
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 1 })),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: -1 })),
+      Scenario.step(STILL),
+      Scenario.refused(
+        new NoSuchChoice({ offer: 1, index: 1 }),
+        new NoSuchChoice({ offer: 1, index: -1 })
+      ),
+      Scenario.state((world) => {
+        expect([weaponLevels(world), offersOpen(world)]).toStrictEqual([
+          [1],
+          [true],
+        ]);
+      })
+    );
+  });
+
+  it("is refused when repeated: the first one closed the offer", () => {
+    scenario(
+      OFFERED,
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 })),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 })),
+      Scenario.step(STILL),
+      Scenario.refused(new OfferClosed({ offer: 1 })),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 })),
+      Scenario.step(STILL),
+      Scenario.refused(new OfferClosed({ offer: 1 })),
+      Scenario.state((world) => {
+        expect(weaponLevels(world)).toStrictEqual([2]);
+      })
+    );
+  });
+
+  it("is refused with no offer open, and from a slot with no hero", () => {
+    scenario(
+      Scenario.given({ content: oneChoice, heroIds: ["burner"] }),
+      // No offer has been made yet, though the offers' number is still 0.
+      Scenario.send(new ChooseUpgrade({ offer: 0, index: 0 })),
+      Scenario.send(new ChooseUpgrade({ offer: 0, index: 0 }), 3),
+      Scenario.step(STILL),
+      Scenario.refused(
+        new OfferClosed({ offer: 0 }),
+        new OfferClosed({ offer: 0 })
+      )
+    );
+  });
+
+  it("changes nothing in the world when it is refused", () => {
+    let before = 0;
+    scenario(
+      OFFERED_TO_TWO,
+      Scenario.state((world) => {
+        before = hashWorld(world);
+      }),
+      Scenario.send(new ChooseUpgrade({ offer: 2, index: 0 })),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 5 }), 1),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 }), 2),
+      Scenario.step(STILL),
+      Scenario.refused(
+        new OfferClosed({ offer: 2 }),
+        new NoSuchChoice({ offer: 1, index: 5 }),
+        new OfferClosed({ offer: 1 })
+      ),
+      Scenario.state((world) => {
+        expect(hashWorld(world)).toBe(before);
+      })
+    );
+  });
+});
+
+/** Who is choosing as the HUD tells it: what a co-op app shows ("waiting for X to pick"). */
+const choosing = (shown: World) =>
+  hudSample(shown).heroes.map((hero) => hero.choosing);
+
 describe("co-op", () => {
   it("feeds one team XP pool from any hero's gems", () => {
-    const world = createWorld({ content, heroIds: ["bolter", "burner"] }, 2);
+    const world = createWorld(
+      { content, heroIds: ["bolter", "burner"] },
+      { seed: 2 }
+    );
     const [a, b] = world.heroes;
     dropGem(world, b!.x, b!.z, 1);
-    step(world, STILL, DT);
+    step(world, STILL, STEP);
     expect(world.xp).toBe(1);
     dropGem(world, a!.x, a!.z, 1);
-    step(world, STILL, DT);
+    step(world, STILL, STEP);
     expect([world.xp, world.level]).toStrictEqual([2, 1]);
   });
 
   it("offers every hero its own upgrades and stays frozen until all have picked", () => {
-    const world = levelUpForTwo();
-    const levelUps = world.events.drain().filter((e) => e.type === "levelUp");
+    const { events, context } = collecting();
+    const world = levelUpForTwo(context);
+    const levelUps = events.filter((e) => e._tag === "LeveledUp");
     expect([world.level, world.offerSeq, offersOpen(world)]).toStrictEqual([
       2,
       1,
@@ -395,23 +661,17 @@ describe("co-op", () => {
     ]);
     const { time } = world;
 
-    step(
-      world,
-      inputs({ moveX: 1, moveZ: 0, pick: { offer: 1, index: 0 } }),
-      DT
-    );
+    choose(world, world.heroes[0]!, 0);
+    step(world, inputs({ moveX: 1, moveZ: 0 }), STEP);
     expect([
       offersOpen(world),
       world.time,
       world.pendingLevelUps,
     ]).toStrictEqual([[false, true], time, 1]);
 
-    step(
-      world,
-      inputs(null, { moveX: 0, moveZ: 0, pick: { offer: 1, index: 0 } }),
-      DT
-    );
-    // The run resumes in the step that closed the last offer.
+    choose(world, world.heroes[1]!, 0);
+    step(world, STILL, STEP);
+    // The run resumes in the step after the pick that closed the last offer.
     expect([
       offersOpen(world),
       world.time,
@@ -419,50 +679,62 @@ describe("co-op", () => {
     ]).toStrictEqual([[false, false], time + DT, 0]);
   });
 
-  it("ignores a pick that names another offer, or no choice", () => {
+  it("says in the HUD which heroes the run waits on to pick, while each has its offer open", () => {
+    const before = choosing(
+      createWorld({ content, heroIds: ["bolter", "burner"] }, { seed: 9 })
+    );
+    const world = levelUpForTwo();
+    const open = choosing(world);
+    choose(world, world.heroes[0]!, 0);
+    step(world, STILL, STEP);
+    const afterOnePick = choosing(world);
+    // The other hero's offer closes without a pick when its player leaves.
+    step(world, { players: [null, null], leaving: [1] }, STEP);
+    expect({
+      before,
+      open,
+      afterOnePick,
+      afterLeaving: choosing(world),
+    }).toStrictEqual({
+      before: [false, false],
+      open: [true, true],
+      afterOnePick: [false, true],
+      afterLeaving: [false, false],
+    });
+  });
+
+  it("takes a choice its hero's open offer has, once, and no other", () => {
     const world = levelUpForTwo();
     const a = world.heroes[0]!;
-    step(
-      world,
-      inputs({ moveX: 0, moveZ: 0, pick: { offer: 0, index: 0 } }),
-      DT
-    );
-    step(
-      world,
-      inputs({ moveX: 0, moveZ: 0, pick: { offer: 1, index: 9 } }),
-      DT
-    );
+    expect(choose(world, a, 9)).toBe(false);
     expect(a.offer).not.toBeNull();
-    expect(chooseUpgrade(world, 0, 9)).toBe(false);
-    expect(chooseUpgrade(world, 0, 0)).toBe(true);
-    // A pick repeated after the offer closed does nothing more.
+    expect(choose(world, a, 0)).toBe(true);
+    // Repeated after the offer closed, it does nothing more.
     const weapons = a.weapons.map((slot) => slot.level);
     const passives = [...a.passiveLevels];
-    step(
-      world,
-      inputs({ moveX: 0, moveZ: 0, pick: { offer: 1, index: 0 } }),
-      DT
-    );
-    expect(a.weapons.map((slot) => slot.level)).toStrictEqual(weapons);
-    expect([...a.passiveLevels]).toStrictEqual(passives);
+    expect(choose(world, a, 0)).toBe(false);
+    expect([
+      a.weapons.map((slot) => slot.level),
+      [...a.passiveLevels],
+    ]).toStrictEqual([weapons, passives]);
   });
 
   it("lets a leaving player's open offer go, and no longer chases its hero", () => {
     const world = levelUpForTwo();
-    chooseUpgrade(world, 0, 0);
-    world.events.drain();
+    choose(world, world.heroes[0]!, 0);
     const { time } = world;
     const b = world.heroes[1]!;
     const i = addEnemy(world, b.x, b.z + 3);
     const x = world.enemies.fields.x[i]!;
-    step(world, { players: [], leaving: [1] }, DT);
+    const { events, context } = collecting();
+    step(world, { players: [], leaving: [1] }, context);
     expect([
       hudSample(world).heroes[1]!.status,
       offersOpen(world),
       world.pendingLevelUps,
       world.time,
     ]).toStrictEqual(["left", [false, false], 0, time + DT]);
-    expect(world.events.drain()).toContainEqual({ type: "heroLeft", hero: 1 });
+    expect(events).toStrictEqual([new HeroLeft({ hero: 1 })]);
     // It heads for hero 0, toward -x, not straight down at the hero that left.
     expect(world.enemies.fields.x[i]!).toBeLessThan(x);
   });
@@ -479,11 +751,11 @@ describe("co-op", () => {
     });
     const world = createWorld(
       { content: busy, heroIds: ["bolter", "burner"] },
-      6
+      { seed: 6 }
     );
     world.heroes[0]!.x = -25;
     world.heroes[1]!.x = 25;
-    step(world, STILL, DT);
+    step(world, STILL, STEP);
     const sides = (from: number) =>
       [...world.enemies.fields.x.subarray(from, world.enemies.count)].map(
         Math.sign
@@ -493,26 +765,29 @@ describe("co-op", () => {
     expect(first).toStrictEqual(first.map((_, k) => (k % 2 === 0 ? -1 : 1)));
     // Once hero 1 has left, every enemy spawns around hero 0.
     const before = world.enemies.count;
-    step(world, { players: [], leaving: [1] }, DT);
+    step(world, { players: [], leaving: [1] }, STEP);
     expect(new Set(sides(before))).toStrictEqual(new Set([-1]));
   });
 
   it("puts a hero down at 0 HP and ends the run once none is playing", () => {
-    const world = createWorld({ content, heroIds: ["bolter", "burner"] }, 8);
+    const world = createWorld(
+      { content, heroIds: ["bolter", "burner"] },
+      { seed: 8 }
+    );
     const [a, b] = world.heroes;
     b!.hp = 0;
-    step(world, STILL, DT);
+    step(world, STILL, STEP);
     expect([b!.status, world.status]).toStrictEqual(["down", "running"]);
     // A downed hero is offered no upgrades.
     dropGem(world, a!.x, a!.z, 3);
-    step(world, STILL, DT);
+    step(world, STILL, STEP);
     expect(offersOpen(world)).toStrictEqual([true, false]);
-    chooseUpgrade(world, 0, 0);
-    world.events.drain();
+    choose(world, a!, 0);
     a!.hp = 0;
-    step(world, STILL, DT);
+    const { events, context } = collecting();
+    step(world, STILL, context);
     expect(world.status).toBe("dead");
-    const ended = world.events.drain().find((e) => e.type === "runEnded");
+    const ended = events.find((e) => e._tag === "RunEnded");
     expect(ended).toMatchObject({
       summaries: [
         { won: false, heroId: "bolter" },
@@ -520,24 +795,358 @@ describe("co-op", () => {
       ],
     });
   });
+});
 
-  it("holds a co-op run paused while a playing hero's player pauses", () => {
-    const world = createWorld({ content, heroIds: ["bolter", "burner"] }, 3);
-    step(world, STILL, DT);
-    const { time } = world;
-    step(world, inputs(null, { moveX: 0, moveZ: 0, paused: true }), DT);
-    expect(world.time).toBe(time);
-    expect(hudSample(world).heroes.map((hero) => hero.paused)).toStrictEqual([
-      false,
-      true,
-    ]);
-    step(world, STILL, DT);
-    expect(world.time).toBe(time + DT);
-    // A downed hero's player can't hold the run.
-    world.heroes[1]!.hp = 0;
-    step(world, STILL, DT);
-    step(world, inputs(null, { moveX: 0, moveZ: 0, paused: true }), DT);
-    expect(world.time).toBe(time + 3 * DT);
+/**
+ * Content in which the second hero is sure to go down and the first is not: the horde can't be
+ * killed, so it reaches both, and the second hero has hardly a hit point. Nobody levels up.
+ */
+const deadly = Schema.decodeUnknownSync(GameContent)({
+  ...content,
+  heroes: [
+    { ...content.heroes[0], maxHp: 1e9 },
+    { ...content.heroes[1], maxHp: 1 },
+  ],
+  enemies: [{ ...content.enemies[0], hp: 1e9 }],
+});
+
+/** Long enough for the horde to reach the heroes. */
+const UNTIL_TOUCHED = 20 * 60;
+
+const statuses = (world: World) => world.heroes.map((hero) => hero.status);
+
+const pauses = (world: World) => world.heroes.map((hero) => hero.paused);
+
+/** Who holds the run paused as the HUD tells it: what an app shows ("Paused by ..."). */
+const pausesShown = (world: World) =>
+  hudSample(world).heroes.map((hero) => hero.paused);
+
+describe("the co-op pause", () => {
+  it("freezes the run for everyone while a playing hero holds it, and the run plays on in the step that lets go", () => {
+    let time = 0;
+    scenario(
+      Scenario.given({ content, heroIds: ["bolter", "burner"] }),
+      Scenario.step(STILL),
+      Scenario.state((world) => {
+        ({ time } = world);
+      }),
+      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.step(STILL, 60),
+      Scenario.state((world) => {
+        expect([pauses(world), pausesShown(world), world.time]).toStrictEqual([
+          [false, true],
+          [false, true],
+          time,
+        ]);
+      }),
+      // The other hero's letting go lets go of nothing: each hero holds its own.
+      Scenario.send(new HoldPause({ held: false })),
+      Scenario.step(STILL),
+      Scenario.state((world) => {
+        expect([pauses(world), world.time]).toStrictEqual([
+          [false, true],
+          time,
+        ]);
+      }),
+      Scenario.send(new HoldPause({ held: false }), 1),
+      Scenario.step(STILL),
+      Scenario.refused(),
+      Scenario.state((world) => {
+        expect([pauses(world), pausesShown(world), world.time]).toStrictEqual([
+          [false, false],
+          [false, false],
+          time + DT,
+        ]);
+      })
+    );
+  });
+
+  it("keeps the hero that holds it from going down, and is refused from a hero that is down", () => {
+    let time = 0;
+    scenario(
+      Scenario.given({ content: deadly, heroIds: ["bolter", "burner"] }),
+      // Held from the start: nothing moves, so nothing reaches the frail hero.
+      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.step(STILL, UNTIL_TOUCHED),
+      Scenario.state((world) => {
+        expect([statuses(world), world.time]).toStrictEqual([
+          ["playing", "playing"],
+          0,
+        ]);
+      }),
+      // Let go, the horde comes: the hero is down, and holds nothing.
+      Scenario.send(new HoldPause({ held: false }), 1),
+      Scenario.step(STILL, UNTIL_TOUCHED),
+      Scenario.state((world) => {
+        ({ time } = world);
+        expect([statuses(world), pauses(world)]).toStrictEqual([
+          ["playing", "down"],
+          [false, false],
+        ]);
+      }),
+      // Its player can't hold the run any more: the hold is refused and nothing is held.
+      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.step(STILL),
+      Scenario.refused(new NotPlaying()),
+      Scenario.state((world) => {
+        expect([pauses(world), world.time]).toStrictEqual([
+          [false, false],
+          time + DT,
+        ]);
+      }),
+      // Nor can it let go of what it doesn't hold.
+      Scenario.send(new HoldPause({ held: false }), 1),
+      Scenario.step(STILL),
+      Scenario.refused(new NotPlaying()),
+      Scenario.state((world) => {
+        expect([pauses(world), world.time]).toStrictEqual([
+          [false, false],
+          time + DT + DT,
+        ]);
+      })
+    );
+  });
+
+  it("is let go when the hero that holds it leaves, and the run plays on in that step", () => {
+    let time = 0;
+    scenario(
+      Scenario.given({ content, heroIds: ["bolter", "burner"] }),
+      Scenario.step(STILL),
+      Scenario.state((world) => {
+        ({ time } = world);
+      }),
+      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.step(STILL, 60),
+      Scenario.step({ players: [], leaving: [1] }),
+      Scenario.reported(new HeroLeft({ hero: 1 })),
+      Scenario.state((world) => {
+        expect([statuses(world), pauses(world), world.time]).toStrictEqual([
+          ["playing", "left"],
+          [false, false],
+          time + DT,
+        ]);
+      }),
+      // A hero that has left holds nothing, and neither does a slot with no hero.
+      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.send(new HoldPause({ held: true }), 5),
+      Scenario.step(STILL),
+      Scenario.refused(new NotPlaying(), new NotPlaying()),
+      Scenario.state((world) => {
+        expect([pauses(world), world.time]).toStrictEqual([
+          [false, false],
+          time + 2 * DT,
+        ]);
+      })
+    );
+  });
+
+  it("is taken while an offer is open, and holds the run once every hero has picked", () => {
+    let time = 0;
+    scenario(
+      OFFERED_TO_TWO,
+      Scenario.state((world) => {
+        ({ time } = world);
+      }),
+      // The offer has the run frozen already. The hero is playing, so its hold is taken, and
+      // shows at once.
+      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.step(STILL),
+      Scenario.refused(),
+      Scenario.state((world) => {
+        expect([pauses(world), offersOpen(world)]).toStrictEqual([
+          [false, true],
+          [true, true],
+        ]);
+      }),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 })),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 }), 1),
+      Scenario.step(STILL, 60),
+      Scenario.state((world) => {
+        expect([offersOpen(world), world.time]).toStrictEqual([
+          [false, false],
+          time,
+        ]);
+      }),
+      Scenario.send(new HoldPause({ held: false }), 1),
+      Scenario.step(STILL),
+      Scenario.state((world) => {
+        expect(world.time).toBe(time + DT);
+      })
+    );
+  });
+
+  it("changes nothing in the world when it is refused", () => {
+    let before = 0;
+    scenario(
+      Scenario.given({ content: deadly, heroIds: ["bolter", "burner"] }),
+      Scenario.step(STILL, UNTIL_TOUCHED),
+      // The hero that is still playing holds the run, so a step by itself changes nothing.
+      Scenario.send(new HoldPause({ held: true })),
+      Scenario.step(STILL),
+      Scenario.state((world) => {
+        expect([statuses(world), pauses(world)]).toStrictEqual([
+          ["playing", "down"],
+          [true, false],
+        ]);
+        before = hashWorld(world);
+      }),
+      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.step(STILL),
+      Scenario.refused(new NotPlaying()),
+      Scenario.state((world) => {
+        expect(hashWorld(world)).toBe(before);
+      }),
+      Scenario.send(new HoldPause({ held: false }), 1),
+      Scenario.send(new HoldPause({ held: true }), 5),
+      Scenario.step(STILL),
+      Scenario.refused(new NotPlaying(), new NotPlaying()),
+      Scenario.state((world) => {
+        expect(hashWorld(world)).toBe(before);
+      })
+    );
+  });
+
+  it("is let go when its hero leaves last, so the run ends holding none", () => {
+    // The run's clock after its one step that plays.
+    const time = DT;
+    scenario(
+      Scenario.given({ content, heroIds: ["bolter", "burner"] }),
+      Scenario.step(STILL),
+      Scenario.send(new HoldPause({ held: true }), 1),
+      // The other hero leaves under the pause: the run stands, held by the one still playing.
+      Scenario.step({ players: [], leaving: [0] }),
+      Scenario.reported(new HeroLeft({ hero: 0 })),
+      Scenario.state((world) => {
+        expect([world.status, pauses(world), world.time]).toStrictEqual([
+          "running",
+          [false, true],
+          time,
+        ]);
+      }),
+      Scenario.step({ players: [], leaving: [1] }),
+      Scenario.reported(
+        new HeroLeft({ hero: 1 }),
+        new RunEnded({
+          summaries: [content.heroes[0]!, content.heroes[1]!].map((hero) => ({
+            won: false,
+            heroId: hero.id,
+            heroName: hero.name,
+            time,
+            kills: 0,
+            level: 1,
+          })),
+        })
+      ),
+      Scenario.state((world) => {
+        expect([world.status, pauses(world), pausesShown(world)]).toStrictEqual(
+          ["dead", [false, false], [false, false]]
+        );
+      })
+    );
+  });
+
+  it("is refused once the run is over: a finished run holds no pause, and stays as it ended", () => {
+    let ended = 0;
+    scenario(
+      Scenario.given({ content: brief, heroIds: ["bolter", "burner"] }),
+      Scenario.step(STILL, 4),
+      Scenario.reported(
+        new RunEnded({
+          summaries: [content.heroes[0]!, content.heroes[1]!].map((hero) => ({
+            won: true,
+            heroId: hero.id,
+            heroName: hero.name,
+            time: clockAfter(4),
+            kills: 0,
+            level: 1,
+          })),
+        })
+      ),
+      Scenario.state((world) => {
+        // The heroes of a run that was won are still "playing": the run's end is what refuses.
+        expect([world.status, statuses(world)]).toStrictEqual([
+          "won",
+          ["playing", "playing"],
+        ]);
+        ended = hashWorld(world);
+      }),
+      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.send(new HoldPause({ held: false })),
+      Scenario.step(STILL),
+      Scenario.refused(new NotPlaying(), new NotPlaying()),
+      Scenario.state((world) => {
+        expect([
+          pauses(world),
+          pausesShown(world),
+          hashWorld(world),
+        ]).toStrictEqual([[false, false], [false, false], ended]);
+      })
+    );
+  });
+});
+
+// A step's commands are applied before the step, and a step handles its leavers first. So when
+// a pick and a player's leaving come in one step, the pick is taken before the hero leaves.
+/** A scenario step, `now`, that reads the run's hash and clock into `read`. */
+const reading = () => {
+  const read = { hash: 0, time: 0 };
+  const now = Scenario.state((world: World) => {
+    read.hash = hashWorld(world);
+    read.time = world.time;
+  });
+  return { read, now };
+};
+
+describe("a pick and a leave in one step", () => {
+  it.each([
+    { picker: 0, leaver: 1 },
+    { picker: 1, leaver: 0 },
+  ])(
+    "give the run that the leave and then the pick give, when hero $picker picks and hero $leaver leaves",
+    ({ picker, leaver }) => {
+      const pick = Scenario.send(
+        new ChooseUpgrade({ offer: 1, index: 0 }),
+        picker
+      );
+      const leave = Scenario.step({ players: [], leaving: [leaver] });
+      const left = Scenario.reported(new HeroLeft({ hero: leaver }));
+      // In one step the pick comes first: the leaving closes the last offer, and the step plays.
+      const together = [OFFERED_TO_TWO, pick, leave, Scenario.refused(), left];
+      // In two steps, the leave first: the pick closes the last offer, and its step plays.
+      const apart = [
+        OFFERED_TO_TWO,
+        leave,
+        left,
+        pick,
+        Scenario.step(STILL),
+        Scenario.refused(),
+      ];
+      const [frozen, one, two] = [reading(), reading(), reading()];
+      const [oneLater, twoLater] = [reading(), reading()];
+      scenario(OFFERED_TO_TWO, frozen.now);
+      scenario(together, one.now, Scenario.step(STILL, 120), oneLater.now);
+      scenario(apart, two.now, Scenario.step(STILL, 120), twoLater.now);
+      expect(one.read).toStrictEqual(two.read);
+      // One step of play past the freeze, in both.
+      expect(one.read.time).toBe(frozen.read.time + DT);
+      // And they stay the same run.
+      expect(oneLater.read).toStrictEqual(twoLater.read);
+    }
+  );
+
+  it("refuse the pick of a hero that left in the step before", () => {
+    scenario(
+      OFFERED_TO_TWO,
+      Scenario.step({ players: [], leaving: [1] }),
+      Scenario.reported(new HeroLeft({ hero: 1 })),
+      Scenario.send(new ChooseUpgrade({ offer: 1, index: 0 }), 1),
+      Scenario.step(STILL),
+      Scenario.refused(new OfferClosed({ offer: 1 })),
+      // The other hero's offer is still open: the run waits on it alone.
+      Scenario.state((world) => {
+        expect(offersOpen(world)).toStrictEqual([true, false]);
+      })
+    );
   });
 });
 
@@ -549,20 +1158,20 @@ describe("cue counters", () => {
     });
     const world = createWorld(
       { content: sturdy, heroIds: ["bolter", "burner"] },
-      11
+      { seed: 11 }
     );
     const { cues } = world;
     // One tough grunt on hero 1 from the start, so it gets hurt.
     addEnemy(world, world.heroes[1]!.x, world.heroes[1]!.z);
-    step(world, STILL, DT);
+    step(world, STILL, STEP);
     expect([...cues.hurt]).toStrictEqual([0, 1]);
     for (let frame = 0; frame < 30 * 60; frame++) {
       for (const hero of world.heroes) {
         if (hero.offer) {
-          chooseUpgrade(world, hero.slot, 0);
+          choose(world, hero, 0);
         }
       }
-      step(world, inputs({ moveX: 0, moveZ: 0 }), DT);
+      step(world, inputs({ moveX: 0, moveZ: 0 }), STEP);
     }
     expect({
       status: world.status,
@@ -588,33 +1197,39 @@ describe("cue counters", () => {
     expect([...cues.downed, cues.won, cues.lost]).toStrictEqual([0, 0, 0, 0]);
 
     world.heroes[1]!.hp = 0;
-    step(world, STILL, DT);
+    step(world, STILL, STEP);
     expect([...cues.downed, cues.lost]).toStrictEqual([0, 1, 0]);
     world.heroes[0]!.hp = 0;
-    step(world, STILL, DT);
+    step(world, STILL, STEP);
     expect([...cues.downed, cues.won, cues.lost]).toStrictEqual([1, 1, 0, 1]);
   });
 
   it("counts a win", () => {
-    const world = createWorld({ content, heroIds: ["burner"] }, 5);
+    const world = createWorld({ content, heroIds: ["burner"] }, { seed: 5 });
     world.time = content.rules.runLength - DT / 2;
-    step(world, STILL, DT);
+    step(world, STILL, STEP);
     expect([world.cues.won, world.cues.lost]).toStrictEqual([1, 0]);
   });
 
   it("doesn't count aura damage as hits", () => {
-    const world = createWorld({ content, heroIds: ["burner"] }, 5);
+    const world = createWorld({ content, heroIds: ["burner"] }, { seed: 5 });
     const i = addEnemy(world, 1.5, 0);
     for (let k = 0; k < 60; k++) {
-      step(world, STILL, DT);
+      step(world, STILL, STEP);
     }
     expect(world.enemies.fields.hp[i]!).toBeLessThan(1000);
     expect([world.cues.hits, ...world.cues.shots]).toStrictEqual([0, 0, 0]);
   });
 
   it("leaves the counters out of the state hash", () => {
-    const a = createWorld({ content, heroIds: ["bolter", "burner"] }, 21);
-    const b = createWorld({ content, heroIds: ["bolter", "burner"] }, 21);
+    const a = createWorld(
+      { content, heroIds: ["bolter", "burner"] },
+      { seed: 21 }
+    );
+    const b = createWorld(
+      { content, heroIds: ["bolter", "burner"] },
+      { seed: 21 }
+    );
     play(a, 10);
     play(b, 10);
     b.cues.shots[0] = 999;

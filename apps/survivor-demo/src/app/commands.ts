@@ -1,24 +1,22 @@
 import {
+  HoldPause,
   RunSummary,
+  // The genre's command. `ChooseUpgrade` here is the Foldkit Command that sends it.
+  ChooseUpgrade as SurvivorsChooseUpgrade,
   SurvivorsContent,
-  chooseUpgrade,
 } from "@arcadekit/survivors";
-import type {
-  SurvivorsConfig,
-  SurvivorsEvent,
-  World,
-} from "@arcadekit/survivors";
-import { SurvivorsEngine } from "@arcadekit/survivors/browser";
+import {
+  SurvivorsCoop,
+  SurvivorsEngine,
+  SurvivorsSheet,
+} from "@arcadekit/survivors/browser";
 import { Audio, AudioSettings } from "arcadekit/audio";
-import { engineOf } from "arcadekit/runtime/browser";
-import type { GameEngine } from "arcadekit/runtime/browser";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
-import { Coop } from "./coop";
 import { Message } from "./message";
-import { Save } from "./save";
-import { CLICK_SOUND, SoundSettings, soundList } from "./sound";
+import { SurvivorsSave, run } from "./save";
+import { CLICK_SOUND, SurvivorsAudioSettings, soundList } from "./sound";
 import { RETRY_BUTTON_ID } from "./view";
 
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
@@ -26,21 +24,20 @@ import { RETRY_BUTTON_ID } from "./view";
 
 /**
  * Loads the content and the sprite sheet, side by side: the game can't be played or drawn
- * without both. Loading the sheet makes the engine (ADR-0015). Either failing shows on the
- * load-error screen, whose "Try again" runs this again: each loader keeps its first success, so
- * only what failed is fetched again.
+ * without both. Either failing shows on the load-error screen, whose "Try again" runs this
+ * again: each keeps its first success, so only what failed is fetched again.
  */
 export const LoadContent = Command.define("LoadContent", {
   messages: [Message.LoadedContent, Message.FailedToLoadContent],
   execute: Effect.gen(function* () {
     // Both loads run to the end, so one failing doesn't cut the other short: what loaded is kept
     // for a retry.
-    const [loadedContent, loadedEngine] = yield* Effect.all(
-      [(yield* SurvivorsContent).load, (yield* SurvivorsEngine).load],
+    const [loadedContent, loadedSheet] = yield* Effect.all(
+      [SurvivorsContent.load, SurvivorsSheet.load],
       { concurrency: "unbounded", mode: "result" }
     );
     const content = yield* Effect.fromResult(loadedContent);
-    yield* Effect.fromResult(loadedEngine);
+    yield* Effect.fromResult(loadedSheet);
     return Message.LoadedContent({
       heroes: content.heroes.map(({ id, name, description, color }) => ({
         id,
@@ -68,64 +65,73 @@ export const FocusRetry = Command.define("FocusRetry", {
   ),
 });
 
+/** Starts a run with one hero. Playing again is the same: a new run. */
 export const StartRun = Command.define("StartRun", {
   args: { heroId: Schema.String },
   messages: [Message.StartedRun, Message.FailedToStartRun],
   execute: ({ heroId }) =>
     Effect.gen(function* () {
-      const content = yield* (yield* SurvivorsContent).load;
-      const engine = yield* engineOf(SurvivorsEngine);
+      const content = yield* SurvivorsContent.load;
+      const engine = yield* SurvivorsEngine;
       yield* engine.start({ content, heroIds: [heroId] });
       return Message.StartedRun();
     }).pipe(
-      Effect.catchTag(["ContentError", "SpriteSheetError"], (error) =>
+      Effect.catchTag("ContentError", (error) =>
         Effect.succeed(Message.FailedToStartRun({ error: error.message }))
       )
     ),
 });
 
 /**
- * Runs `use` on the engine. The engine comes through the sheet's load, so this can fail only if
- * no load ever succeeded (then there is no run). That failure is reported, never dropped.
+ * The player's pick, sent to the run as the genre's `ChooseUpgrade` command: the rules take it
+ * at the start of the next step. The send waits for their answer, and every answer ends the
+ * same way. The screen offers only the open offer's choices, so the rules don't refuse a pick
+ * it makes; and a pick is dropped when the player quits or starts again before a step takes it.
  */
-const withEngine = (
-  use: (
-    engine: GameEngine<SurvivorsConfig, World, SurvivorsEvent>
-  ) => Effect.Effect<void>
-) =>
-  engineOf(SurvivorsEngine).pipe(
-    Effect.flatMap(use),
-    Effect.as(Message.CompletedEngineCommand()),
-    Effect.catchTag("SpriteSheetError", (error) =>
-      Effect.succeed(Message.FailedToStartRun({ error: error.message }))
-    )
-  );
-
 export const ChooseUpgrade = Command.define("ChooseUpgrade", {
-  args: { index: Schema.Number },
-  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
-  execute: ({ index }) =>
-    withEngine((engine) =>
-      engine.modify((world) => chooseUpgrade(world, 0, index))
+  args: { offer: Schema.Int, index: Schema.Int },
+  messages: [Message.CompletedEngineCommand],
+  execute: ({ offer, index }) =>
+    Effect.gen(function* () {
+      const engine = yield* SurvivorsEngine;
+      yield* engine.send(new SurvivorsChooseUpgrade({ offer, index }));
+      return Message.CompletedEngineCommand();
+    }).pipe(
+      Effect.catchTag(["OfferClosed", "NoSuchChoice"], () =>
+        Effect.succeed(Message.CompletedEngineCommand())
+      ),
+      Effect.catchTag("CommandDropped", () =>
+        Effect.succeed(Message.CompletedEngineCommand())
+      )
     ),
 });
 
+/** Pauses or resumes the run: while paused, the engine draws without stepping. */
 export const SetPaused = Command.define("SetPaused", {
   args: { paused: Schema.Boolean },
-  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
-  execute: ({ paused }) => withEngine((engine) => engine.setPaused(paused)),
+  messages: [Message.CompletedEngineCommand],
+  execute: ({ paused }) =>
+    Effect.gen(function* () {
+      const engine = yield* SurvivorsEngine;
+      yield* engine.setPaused(paused);
+      return Message.CompletedEngineCommand();
+    }),
 });
 
 export const EndRun = Command.define("EndRun", {
-  messages: [Message.CompletedEngineCommand, Message.FailedToStartRun],
-  execute: withEngine((engine) => engine.stop),
+  messages: [Message.CompletedEngineCommand],
+  execute: Effect.gen(function* () {
+    const engine = yield* SurvivorsEngine;
+    yield* engine.stop;
+    return Message.CompletedEngineCommand();
+  }),
 });
 
 /** Reads the save once, at startup. Never fails: a bad save reads as empty. */
 export const LoadSave = Command.define("LoadSave", {
   messages: [Message.LoadedSave],
   execute: Effect.gen(function* () {
-    const records = yield* (yield* Save).load;
+    const records = yield* (yield* SurvivorsSave).read;
     return Message.LoadedSave({ records });
   }),
 });
@@ -136,7 +142,7 @@ export const SaveRun = Command.define("SaveRun", {
   messages: [Message.SavedRun],
   execute: ({ summary }) =>
     Effect.gen(function* () {
-      const records = yield* (yield* Save).recordRun(summary);
+      const records = yield* (yield* SurvivorsSave).write(run(summary));
       return Message.SavedRun({ records });
     }),
 });
@@ -154,7 +160,7 @@ export const HostCoop = Command.define("HostCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: ({ heroId }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).host(heroId);
+      yield* (yield* SurvivorsCoop).host(heroId);
       return Message.CompletedEngineCommand();
     }),
 });
@@ -165,7 +171,7 @@ export const JoinCoop = Command.define("JoinCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: ({ code, heroId }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).join(code, heroId);
+      yield* (yield* SurvivorsCoop).join(code, heroId);
       return Message.CompletedEngineCommand();
     }),
 });
@@ -176,7 +182,7 @@ export const ChooseCoopHero = Command.define("ChooseCoopHero", {
   messages: [Message.CompletedEngineCommand],
   execute: ({ heroId }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).choose(heroId);
+      yield* (yield* SurvivorsCoop).choose(heroId);
       return Message.CompletedEngineCommand();
     }),
 });
@@ -184,41 +190,63 @@ export const ChooseCoopHero = Command.define("ChooseCoopHero", {
 export const StartCoop = Command.define("StartCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: Effect.gen(function* () {
-    yield* (yield* Coop).start;
+    yield* (yield* SurvivorsCoop).start;
     return Message.CompletedEngineCommand();
   }),
 });
 
 /**
- * The local hero's pick, as the Co-op client's answer: it rides the hero's step input until its
- * offer closes, so every peer applies it at the same step.
+ * The local hero's pick, sent to the co-op run as the genre's `ChooseUpgrade` command, the one
+ * the single-player game sends its engine: it rides the hero's next step, and every peer's rules
+ * take it at that step. Every answer ends the same way here: the screen offers only the open
+ * offer's choices, so the rules don't refuse a pick it makes, and a pick is dropped when the
+ * player leaves or the run stops first, which the co-op screens already show.
  */
 export const ChooseCoopUpgrade = Command.define("ChooseCoopUpgrade", {
-  args: { offer: Schema.Number, index: Schema.Number },
+  args: { offer: Schema.Int, index: Schema.Int },
   messages: [Message.CompletedEngineCommand],
   execute: ({ offer, index }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).answer({ offer, index });
+      const coop = yield* SurvivorsCoop;
+      yield* coop.send(new SurvivorsChooseUpgrade({ offer, index }));
       return Message.CompletedEngineCommand();
-    }),
+    }).pipe(
+      Effect.catchTag(["OfferClosed", "NoSuchChoice"], () =>
+        Effect.succeed(Message.CompletedEngineCommand())
+      ),
+      Effect.catchTag("CommandDropped", () =>
+        Effect.succeed(Message.CompletedEngineCommand())
+      )
+    ),
 });
 
-/** Holds the run paused for everyone, through the local hero's pause flag in its step input. */
+/**
+ * Holds the run paused for everyone, or lets it go: the genre's `HoldPause` command, sent once.
+ * The rules refuse it when the local hero isn't playing (it is down) or the run is over, and it
+ * is dropped when there is no run to pause or the run stops first. Either way the pause the
+ * player asked for isn't held, and the answer says so, so the app's own pause flag can follow
+ * the rules. The run's menu, which asked for it, stays up.
+ */
 export const SetCoopPaused = Command.define("SetCoopPaused", {
   args: { paused: Schema.Boolean },
-  messages: [Message.CompletedEngineCommand],
+  messages: [Message.CompletedEngineCommand, Message.FailedToHoldCoopPause],
   execute: ({ paused }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).setPaused(paused);
+      const coop = yield* SurvivorsCoop;
+      yield* coop.send(new HoldPause({ held: paused }));
       return Message.CompletedEngineCommand();
-    }),
+    }).pipe(
+      Effect.catchTag(["NotPlaying", "CommandDropped"], () =>
+        Effect.succeed(Message.FailedToHoldCoopPause())
+      )
+    ),
 });
 
 /** Leaves the lobby or the run, once its room, links, session and worker have closed. */
 export const LeaveCoop = Command.define("LeaveCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: Effect.gen(function* () {
-    yield* (yield* Coop).leave;
+    yield* (yield* SurvivorsCoop).leave;
     return Message.CompletedEngineCommand();
   }),
 });
@@ -250,7 +278,7 @@ export const LoadSounds = Command.define("LoadSounds", {
 export const LoadAudioSettings = Command.define("LoadAudioSettings", {
   messages: [Message.LoadedAudioSettings],
   execute: Effect.gen(function* () {
-    const settings = yield* (yield* SoundSettings).load;
+    const settings = yield* (yield* SurvivorsAudioSettings).read;
     return Message.LoadedAudioSettings({ settings });
   }),
 });
@@ -261,7 +289,7 @@ export const SaveAudioSettings = Command.define("SaveAudioSettings", {
   messages: [Message.CompletedAudioCommand],
   execute: ({ settings }) =>
     Effect.gen(function* () {
-      yield* (yield* SoundSettings).save(settings);
+      yield* (yield* SurvivorsAudioSettings).write(settings);
       return Message.CompletedAudioCommand();
     }),
 });

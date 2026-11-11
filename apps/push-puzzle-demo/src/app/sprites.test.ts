@@ -4,7 +4,7 @@ import { inflateSync } from "node:zlib";
 import { PushPuzzleContent, PuzzleContent } from "@arcadekit/push-puzzle";
 import {
   PUSH_PUZZLE_SPRITE_TAGS,
-  PushPuzzleCueSounds,
+  PushPuzzleCueTable,
   PushPuzzleEngine,
   PushPuzzleSheet,
 } from "@arcadekit/push-puzzle/browser";
@@ -259,7 +259,7 @@ describe("a sheet that fails to load", () => {
           Layer.provide(
             Layer.mergeAll(
               PushPuzzleSheet.layer(Effect.fail(failed)),
-              Layer.succeed(PushPuzzleCueSounds, CUE_SOUNDS),
+              PushPuzzleCueTable.layer(CUE_SOUNDS),
               SilentAudioLayer
             )
           )

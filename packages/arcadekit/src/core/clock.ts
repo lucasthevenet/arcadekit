@@ -1,7 +1,7 @@
 /**
  * Turns variable frame times into a whole number of fixed simulation steps.
  * A fixed step makes a game behave the same on 60 Hz and 144 Hz screens, and makes it deterministic.
- * Core exports it for `arcadekit/runtime`'s `GameLoop`, which steps every genre with it.
+ * Core exports it for `arcadekit/game`'s `Loop`, which steps every genre with it.
  */
 export class FixedStepClock {
   readonly stepSeconds: number;

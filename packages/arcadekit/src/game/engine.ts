@@ -1,20 +1,16 @@
 import { Context, Effect, Layer, Random, Scope } from "effect";
 
-import {
-  animationFrames,
-  attachError,
-  steppedFrames,
-} from "../runtime/browser";
-import type {
-  AttachError,
-  FrameSource,
-  GameCrashed,
-  GameView,
-} from "../runtime/browser";
-import type { InputSource } from "../runtime/index";
+import { attachError } from "./attach-error";
+import type { AttachError } from "./attach-error";
 import type { CommandDropped } from "./command";
+import { steppedFrames } from "./frame-loop";
+import type { GameCrashed } from "./frame-loop";
+import { animationFrames } from "./frames";
+import type { FrameSource } from "./frames";
 import { Loop } from "./loop";
 import type { RefusalFor, SimulationClass } from "./simulation";
+import type { InputSource } from "./step-input";
+import type { GameView } from "./view";
 
 /**
  * What an engine's view and input source are made from, by name: Effects the engine runs on each
@@ -28,6 +24,24 @@ export type Uses = Readonly<
 export type Used<U extends Uses> = {
   readonly [K in keyof U]: Effect.Success<U[K]>;
 };
+
+/**
+ * The local player of a run: this browser's, among the players the run seats by slot. A view's
+ * is read live: a view reads `slot` when it draws, so it follows its player without being made
+ * again. An engine seats its one player at slot 0.
+ */
+export interface LocalPlayer {
+  /** The local player's slot in the run's player order: 0 in a single-player run. */
+  readonly slot: number;
+  /** Every player's name, by slot. None in a single-player run, where nobody is named. */
+  readonly names: readonly string[];
+}
+
+/** What `view` is given besides the container and what it uses. */
+export interface ViewContext {
+  /** Whose view it is. A view of several players' run draws it from this player's side. */
+  readonly local: LocalPlayer;
+}
 
 /**
  * A running game, as an app drives it. Each `Game.Engine` class is the service key of one:
@@ -83,7 +97,7 @@ export interface Engine<Config, Event, Command, E, Refusals> {
 
 /**
  * Where an attached engine gets its frames: `requestAnimationFrame` unless a test provides
- * `manualFrames()` from `arcadekit/runtime/testing`.
+ * `manualFrames()` from `arcadekit/game/testing`.
  *
  * ```ts
  * MyEngine.layer.pipe(Layer.provide(Layer.succeed(Game.Frames, manualFrames())));
@@ -113,7 +127,11 @@ export type EngineService<
   Engine<Config, Event, Command, E, Refusals>
 >;
 
-/** The class `Game.Engine` returns: the key of its engine service, and the Layer that provides it. */
+/**
+ * The class `Game.Engine` returns: the key of its engine service, and the Layer that provides
+ * it. `U` is what the engine uses, as it was declared: a failure of one is `attach`'s, and the
+ * `layer` needs their services.
+ */
 export interface EngineClass<
   Name extends string,
   Config,
@@ -121,13 +139,19 @@ export interface EngineClass<
   Input,
   Event,
   Command,
-  E,
-  R,
+  U extends Uses,
   Refusals,
 > extends Context.ServiceClass<
-  EngineService<Name, Config, Event, Command, E, Refusals>,
+  EngineService<
+    Name,
+    Config,
+    Event,
+    Command,
+    Effect.Error<U[keyof U]>,
+    Refusals
+  >,
   EngineId<Name>,
-  Engine<Config, Event, Command, E, Refusals>
+  Engine<Config, Event, Command, Effect.Error<U[keyof U]>, Refusals>
 > {
   readonly kind: "Engine";
   readonly engineName: Name;
@@ -141,14 +165,35 @@ export interface EngineClass<
     Refusals
   >;
   /**
+   * What the engine was declared with. Another host of the same game reads it: a `Coop`
+   * (`arcadekit/net/browser`) runs `uses` and makes the `view` as the engine does, for the seat
+   * its lobby gave.
+   */
+  readonly definition: EngineDefinition<
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    U,
+    Refusals
+  >;
+  /**
    * Provides the engine. Building it makes nothing and loads nothing: the view and the input
    * source are made on each attach. It needs the services of what the engine `uses`, such as
    * the app's audio and assets.
    */
   readonly layer: Layer.Layer<
-    EngineService<Name, Config, Event, Command, E, Refusals>,
+    EngineService<
+      Name,
+      Config,
+      Event,
+      Command,
+      Effect.Error<U[keyof U]>,
+      Refusals
+    >,
     never,
-    Exclude<R, Scope.Scope>
+    Exclude<Effect.Services<U[keyof U]>, Scope.Scope>
   >;
 }
 
@@ -182,11 +227,14 @@ export interface EngineDefinition<
   /**
    * Makes the view that draws into the viewport element. Called once per attach, first. A view
    * reads the state on every frame and never changes it; several views are one with
-   * `combineViews`.
+   * `combineViews`. A view of a run several players share reads `local.slot` when it draws: the
+   * engine seats its player at slot 0, and another host of this engine, such as a `Coop`, at
+   * the slot its lobby gave.
    */
   readonly view: (
     container: HTMLElement,
-    uses: Used<U>
+    uses: Used<U>,
+    context: ViewContext
   ) => GameView<NoInfer<State>>;
   /** Makes the input source that reads each step's input from the viewport element. Called once per attach, after `view`. */
   readonly input: (
@@ -195,6 +243,9 @@ export interface EngineDefinition<
   ) => InputSource<NoInfer<Input>>;
 }
 
+/** The one player of an engine's run: slot 0, and nobody to name. */
+const SOLO: ViewContext = { local: { slot: 0, names: [] } };
+
 /** The view and input source factories of one attach, with what they use already given. */
 interface Presentation<State, Input> {
   readonly view: (container: HTMLElement) => GameView<State>;
@@ -202,6 +253,7 @@ interface Presentation<State, Input> {
 }
 
 const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
+  name: string,
   simulation: SimulationClass<
     string,
     Config,
@@ -221,7 +273,9 @@ const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
     Effect.suspend(() => {
       if (attached) {
         return Effect.die(
-          new Error("This engine is already attached to an element")
+          new Error(
+            `Engine "${name}" is already attached to an element. An engine draws into one element at a time: interrupt the first attach, which detaches it, before attaching again.`
+          )
         );
       }
       attached = true;
@@ -295,13 +349,17 @@ const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
  * ```ts
  * export class PushPuzzleEngine extends Game.Engine("PushPuzzleEngine", {
  *   simulation: PushPuzzle,
- *   uses: { sheet: PushPuzzleSheet.load, audio: Audio },
- *   view: (container, { sheet, audio }) =>
+ *   uses: {
+ *     audio: Audio,
+ *     sounds: PushPuzzleCueTable,
+ *     sheet: PushPuzzleSheet.load,
+ *   },
+ *   view: (container, { audio, sounds, sheet }) =>
  *     Game.combineViews(
  *       new PushPuzzleView(container, sheet),
- *       new PushPuzzleSoundView(audio)
+ *       new PushPuzzleSoundView(audio, sounds)
  *     ),
- *   input: createInput,
+ *   input: pushPuzzleInput,
  * }) {}
  *
  * // In the app:
@@ -332,17 +390,7 @@ export const make = <
     U,
     Refusals
   >
-): EngineClass<
-  Name,
-  Config,
-  State,
-  Input,
-  Event,
-  Command,
-  Effect.Error<U[keyof U]>,
-  Effect.Services<U[keyof U]>,
-  Refusals
-> => {
+): EngineClass<Name, Config, State, Input, Event, Command, U, Refusals> => {
   type E = Effect.Error<U[keyof U]>;
   type R = Effect.Services<U[keyof U]>;
   const Key = Context.Service<
@@ -365,18 +413,19 @@ export const make = <
       const frames = yield* Frames;
       const presentation = uses.pipe(
         Effect.map((used): Presentation<State, Input> => ({
-          view: (container) => definition.view(container, used),
+          view: (container) => definition.view(container, used, SOLO),
           input: (surface) => definition.input(surface, used),
         })),
         Effect.provideContext(context)
       ) as Effect.Effect<Presentation<State, Input>, E, Scope.Scope>;
-      return makeEngine(definition.simulation, presentation, frames);
+      return makeEngine(name, definition.simulation, presentation, frames);
     })
   );
   return class extends Key {
     static readonly kind = "Engine" as const;
     static readonly engineName: Name = name;
     static readonly simulation = definition.simulation;
+    static readonly definition = definition;
     static readonly layer = layer;
   } as unknown as EngineClass<
     Name,
@@ -385,8 +434,7 @@ export const make = <
     Input,
     Event,
     Command,
-    E,
-    R,
+    U,
     Refusals
   >;
 };

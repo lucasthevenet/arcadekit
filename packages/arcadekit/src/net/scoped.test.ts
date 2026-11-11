@@ -1,13 +1,11 @@
-import { Clock, Effect, Exit, Fiber, Result } from "effect";
-import type { Scope } from "effect";
+import { Clock, Effect, Exit, Fiber, Result, Schema, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
-import type { GameSimulation } from "../runtime/index";
-import { jsonCodec } from "./codec";
+import * as Game from "../game/index";
 import { LockstepError } from "./errors";
 import { hostLockstep } from "./lockstep";
-import type { ConfirmedStep, LockstepOptions } from "./lockstep";
+import type { LockstepOptions } from "./lockstep";
 import { createMemoryNetwork } from "./memory-network";
 import type { MemoryNetwork } from "./memory-network";
 import { hostLockstepScoped, joinLockstepScoped } from "./scoped";
@@ -21,40 +19,84 @@ interface Count {
   total: number;
 }
 
-const NO_EVENTS: readonly never[] = [];
+/** The run's sample: how many steps it has run. */
+class Stepped extends Game.Event("Stepped", { steps: Schema.Int }) {}
 
-/** Counts its steps and adds up every player's input. Samples its step count every 100 ms. */
-const counting: GameSimulation<null, Count, ConfirmedStep<number>, number> = {
-  create: () => ({ steps: 0, total: 0 }),
-  step: (state, input) => {
-    state.steps += 1;
-    for (const { input: n } of input.inputs) {
-      state.total += n;
-    }
-  },
-  drainEvents: () => NO_EVENTS,
-  sample: { everyMs: 100, read: (state) => state.steps },
+/** Every player's input for a step: a number each. */
+const Adds = Game.PlayerInputs(Schema.Number);
+type Adds = typeof Adds.Type;
+
+const createCount = (_config: null): Count => ({ steps: 0, total: 0 });
+
+const count = (state: Count, input: Adds) => {
+  state.steps += 1;
+  for (const n of input.players) {
+    state.total += n ?? 0;
+  }
 };
 
-type Options = LockstepOptions<
-  null,
-  Count,
-  ConfirmedStep<number>,
-  number,
-  number
->;
+/** The step count, every 100 ms. */
+const SAMPLE = {
+  event: Stepped,
+  every: "100 millis",
+  read: (state: Count) => ({ steps: state.steps }),
+} as const;
+
+/** Counts its steps and adds up every player's input. Samples its step count every 100 ms. */
+class Counting extends Game.Simulation("Counting", {
+  input: Adds,
+  create: createCount,
+  step: count,
+  sample: SAMPLE,
+}) {}
+
+/** The counting game in 8 ms steps: each 4 ms tick owes exactly half a step. */
+class CountingEveryEightMs extends Game.Simulation("CountingEveryEightMs", {
+  stepSeconds: 1 / 125,
+  input: Adds,
+  create: createCount,
+  step: count,
+  sample: SAMPLE,
+}) {}
+
+/** More than a player may add at once. */
+class TooMuch extends Game.Rejection("TooMuch", { most: Schema.Int }) {}
+
+/** The sender adds `n` to the total, 10 at most. */
+class Add extends Game.Command(
+  "Add",
+  { n: Schema.Int },
+  { rejects: [TooMuch] }
+) {}
+
+/** The counting game with a command a player may send. */
+class Adding extends Game.Simulation("Adding", {
+  input: Adds,
+  commands: [Add],
+  create: createCount,
+  step: count,
+  apply: {
+    Add: (state, { n }) => {
+      if (n > 10) {
+        return new TooMuch({ most: 10 });
+      }
+      state.total += n;
+    },
+  },
+  sample: SAMPLE,
+}) {}
+
+type Options = LockstepOptions<null, Count, Adds, Stepped, never, unknown>;
 
 const options = (
   transport: Transport,
   overrides: Partial<Options> = {}
 ): Options => ({
-  simulation: counting,
+  simulation: Counting,
   config: null,
   contentHash: "content-1",
   transport,
   local: { read: () => 1 },
-  codec: jsonCodec<number>(),
-  combine: (step) => step,
   hash: (state) => state.total,
   // Far enough ahead that a lone host's steps never wait on its own input.
   inputDelay: 20,
@@ -137,9 +179,23 @@ const lockstepFailure = <A, E>(exit: Exit.Exit<A, E>) => {
 const hostAlone = (
   network: MemoryNetwork,
   overrides: Partial<Options> = {}
-): Effect.Effect<ScopedLockstepSession<Count, number>, never, Scope.Scope> =>
+): Effect.Effect<
+  ScopedLockstepSession<Count, Stepped, never, unknown>,
+  never,
+  Scope.Scope
+> =>
   hostLockstepScoped({
     ...options(network.connect("host"), overrides),
+    peers: [],
+    seed: 1,
+  });
+
+/** A lone host of the game with a command, its input scheduled 2 steps ahead. */
+const adding = (network: MemoryNetwork) =>
+  hostLockstepScoped({
+    ...options(network.connect("host")),
+    simulation: Adding,
+    inputDelay: 2,
     peers: [],
     seed: 1,
   });
@@ -165,7 +221,11 @@ describe("scoped lockstep session", () => {
           peers: ["p1"],
           seed: 1,
         });
-        yield* joinLockstepScoped({ ...options(peer.transport), host: "host" });
+        yield* joinLockstepScoped({
+          ...options(peer.transport),
+          host: "host",
+          players: ["host", "p1"],
+        });
         return [host.listening(), peer.listening()];
       })
     );
@@ -177,16 +237,17 @@ describe("scoped lockstep session", () => {
     const network = createMemoryNetwork({ seed: 1 });
     const { transport, listening } = counted(network.connect("host"));
     const thrown = new Error("no content");
+    class NoContent extends Game.Simulation("NoContent", {
+      input: Adds,
+      create: (_config: null): Count => {
+        throw thrown;
+      },
+      step: count,
+      sample: SAMPLE,
+    }) {}
     const exit = await play(
       hostLockstepScoped({
-        ...options(transport, {
-          simulation: {
-            ...counting,
-            create: () => {
-              throw thrown;
-            },
-          },
-        }),
+        ...options(transport, { simulation: NoContent }),
         peers: [],
         seed: 1,
       })
@@ -256,8 +317,7 @@ describe("scoped lockstep session", () => {
       const exit = await play(
         Effect.gen(function* () {
           const session = yield* hostAlone(network, {
-            // 8 ms steps: each 4 ms tick owes exactly half a step.
-            simulation: { ...counting, stepSeconds: 1 / 125 },
+            simulation: CountingEveryEightMs,
           });
           yield* Effect.forkScoped(session.run());
           yield* TestClock.adjust("1 second");
@@ -301,6 +361,7 @@ describe("scoped lockstep session", () => {
           const session = yield* joinLockstepScoped({
             ...options(network.connect("p1"), { dropAfterMs: 1000 }),
             host: "host",
+            players: ["host", "p1"],
           });
           const fiber = yield* Effect.forkScoped(session.run(ticks.ticker), {
             startImmediately: true,
@@ -347,6 +408,7 @@ describe("scoped lockstep session", () => {
           const session = yield* joinLockstepScoped({
             ...options(network.connect("p1"), { dropAfterMs: 1000 }),
             host: "host",
+            players: ["host", "p1"],
           });
           yield* TestClock.adjust(1000);
           return yield* Effect.exit(session.run(eager));
@@ -374,9 +436,11 @@ describe("scoped lockstep session", () => {
             peers: ["p1", "p2"],
             seed: 1,
           });
+          const players = ["host", "p1", "p2"];
           const p1 = yield* joinLockstepScoped({
             ...options(network.connect("p1"), { inputDelay: 3 }),
             host: "host",
+            players,
           });
           const p2 = yield* joinLockstepScoped({
             ...options(network.connect("p2"), {
@@ -384,6 +448,7 @@ describe("scoped lockstep session", () => {
               hash: drifting,
             }),
             host: "host",
+            players,
           });
           yield* Effect.forkScoped(deliver(network));
           const runs = yield* Effect.forEach([host, p1, p2], (session) =>
@@ -422,6 +487,7 @@ describe("scoped lockstep session", () => {
           const p1 = yield* joinLockstepScoped({
             ...options(links[1].transport, { inputDelay: 3, hash: drifting }),
             host: "host",
+            players: ["host", "p1"],
           });
           yield* Effect.forkScoped(deliver(network));
           const runs = yield* Effect.forEach([host, p1], (session) =>
@@ -493,18 +559,21 @@ describe("scoped lockstep session", () => {
       const network = createMemoryNetwork({ seed: 1 });
       const ticks = manualTicker();
       const thrown = new Error("step 3 broke");
+      class BreaksAtStepThree extends Game.Simulation("BreaksAtStepThree", {
+        input: Adds,
+        create: createCount,
+        step: (state, input) => {
+          count(state, input);
+          if (state.steps === 3) {
+            throw thrown;
+          }
+        },
+        sample: SAMPLE,
+      }) {}
       const exit = await play(
         Effect.gen(function* () {
           const session = yield* hostAlone(network, {
-            simulation: {
-              ...counting,
-              step: (state, input) => {
-                counting.step(state, input, 1 / 60);
-                if (state.steps === 3) {
-                  throw thrown;
-                }
-              },
-            },
+            simulation: BreaksAtStepThree,
           });
           const fiber = yield* Effect.forkScoped(session.run(ticks.ticker), {
             startImmediately: true,
@@ -529,18 +598,21 @@ describe("scoped lockstep session", () => {
       const network = createMemoryNetwork({ seed: 1 });
       const ticks = manualTicker();
       let fiber: Fiber.Fiber<never, LockstepError> | null = null;
+      class LeftInAStep extends Game.Simulation("LeftInAStep", {
+        input: Adds,
+        create: createCount,
+        // Someone leaves the run from inside a tick (a listener, say), and the tick ends the
+        // run too.
+        step: () => {
+          fiber?.interruptUnsafe();
+          throw new Error("after leaving");
+        },
+        sample: SAMPLE,
+      }) {}
       const exit = await play(
         Effect.gen(function* () {
           const session = yield* hostAlone(network, {
-            simulation: {
-              ...counting,
-              // Someone leaves the run from inside a tick (a listener, say), and the tick
-              // ends the run too.
-              step: () => {
-                fiber?.interruptUnsafe();
-                throw new Error("after leaving");
-              },
-            },
+            simulation: LeftInAStep,
           });
           fiber = yield* Effect.forkScoped(session.run(ticks.ticker), {
             startImmediately: true,
@@ -572,6 +644,7 @@ describe("scoped lockstep session", () => {
           const session = yield* joinLockstepScoped({
             ...options(network.connect("p1"), { dropAfterMs: 1000 }),
             host: "host",
+            players: ["host", "p1"],
           });
           const fiber = yield* Effect.forkScoped(session.run(throwing), {
             startImmediately: true,
@@ -617,6 +690,7 @@ describe("scoped lockstep session", () => {
               const session = yield* joinLockstepScoped({
                 ...options(network.connect("p1"), { dropAfterMs: 1000 }),
                 host: "host",
+                players: ["host", "p1"],
               });
               return yield* session.run(drawing);
             }).pipe(Effect.scoped),
@@ -699,6 +773,165 @@ describe("scoped lockstep session", () => {
     });
   });
 
+  describe("send", () => {
+    it("succeeds once this peer's rules took the command, at the step it rode", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          yield* Effect.forkScoped(session.run());
+          yield* TestClock.adjust(100);
+          const before = session.state?.total;
+          const sent = yield* Effect.forkChild(
+            session.send(new Add({ n: 7 })),
+            { startImmediately: true }
+          );
+          // It waits for a step: scheduled at the next tick, 2 steps ahead of the run.
+          const waiting = sent.pollUnsafe() === undefined;
+          yield* TestClock.adjust(100);
+          const after = session.state?.total;
+          return [
+            waiting,
+            yield* Fiber.await(sent),
+            // Seven more than the input alone adds: one a step.
+            (after ?? 0) - (before ?? 0) - 6,
+          ];
+        })
+      );
+      expect(exit).toStrictEqual(Exit.succeed([true, Exit.void, 7]));
+    });
+
+    it("fails with the rejection this peer's rules refused the command with", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          yield* Effect.forkScoped(session.run());
+          const sent = yield* Effect.forkChild(
+            session.send(new Add({ n: 11 })).pipe(Effect.flip),
+            { startImmediately: true }
+          );
+          yield* TestClock.adjust(100);
+          return [
+            yield* Fiber.join(sent),
+            session.stepIndex > 0,
+            // The input alone, one a step: the refused command changed nothing.
+            session.state?.total === session.stepIndex,
+          ];
+        })
+      );
+      expect(exit).toStrictEqual(
+        Exit.succeed([new TooMuch({ most: 10 }), true, true])
+      );
+    });
+
+    it("completes after the tick that ran the command's step, not inside it", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const ticks = manualTicker();
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          yield* Effect.forkScoped(session.run(ticks.ticker), {
+            startImmediately: true,
+          });
+          const seen: string[] = [];
+          yield* Effect.forkChild(
+            session
+              .send(new Add({ n: 1 }))
+              .pipe(
+                Effect.andThen(
+                  Effect.sync(() =>
+                    seen.push(`answered at ${session.stepIndex}`)
+                  )
+                )
+              ),
+            { startImmediately: true }
+          );
+          // The first tick gives the command its step; the second runs it.
+          for (const ms of [50, 50]) {
+            yield* TestClock.adjust(ms);
+            ticks.fire();
+            seen.push(`ticked to ${session.stepIndex}`);
+          }
+          yield* Effect.yieldNow;
+          return seen;
+        })
+      );
+      expect(exit).toStrictEqual(
+        Exit.succeed(["ticked to 3", "ticked to 6", "answered at 6"])
+      );
+    });
+
+    it("fails with CommandDropped when the session's scope closes first", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const exit = await play(
+        Effect.gen(function* () {
+          const scope = yield* Scope.make();
+          const session = yield* adding(network).pipe(Scope.provide(scope));
+          const sent = yield* Effect.forkChild(
+            session.send(new Add({ n: 1 })).pipe(Effect.flip),
+            { startImmediately: true }
+          );
+          yield* Scope.close(scope, Exit.void);
+          const late = yield* Effect.flip(session.send(new Add({ n: 2 })));
+          return [yield* Fiber.join(sent), late];
+        })
+      );
+      const dropped = new Game.CommandDropped({
+        command: "Add",
+        reason: "runEnded",
+      });
+      expect(exit).toStrictEqual(Exit.succeed([dropped, dropped]));
+    });
+
+    it("takes the command back when interrupted before it rides a step", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const ticks = manualTicker();
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          yield* Effect.forkScoped(session.run(ticks.ticker), {
+            startImmediately: true,
+          });
+          const sent = yield* Effect.forkChild(
+            session.send(new Add({ n: 5 })),
+            { startImmediately: true }
+          );
+          yield* Fiber.interrupt(sent);
+          yield* TestClock.adjust(100);
+          ticks.fire();
+          yield* TestClock.adjust(100);
+          ticks.fire();
+          // The input alone, one a step.
+          return [
+            session.stepIndex > 3,
+            session.state?.total === session.stepIndex,
+          ];
+        })
+      );
+      expect(exit).toStrictEqual(Exit.succeed([true, true]));
+    });
+
+    it("dies for a command the simulation doesn't declare", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      class Other extends Game.Command("Other") {}
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* adding(network);
+          // What a cast gets past the types.
+          return yield* session.send(new Other() as never);
+        })
+      );
+      expect(
+        Result.map(Exit.findDefect(exit), (defect) => (defect as Error).message)
+      ).toStrictEqual(
+        Result.succeed(
+          'Simulation "Adding" has no command "Other": list it in `commands` and handle it in `apply`'
+        )
+      );
+    });
+  });
+
   it("calls a listener with the run's events while its scope is open", async () => {
     const network = createMemoryNetwork({ seed: 1 });
     const ticks = manualTicker();
@@ -711,7 +944,7 @@ describe("scoped lockstep session", () => {
         });
         yield* Effect.scoped(
           Effect.gen(function* () {
-            yield* session.listen((event) => events.push(event));
+            yield* session.listen((event) => events.push(event.steps));
             yield* TestClock.adjust(100);
             ticks.fire();
           })
@@ -729,8 +962,8 @@ describe("scoped lockstep session", () => {
     const network = createMemoryNetwork({ seed: 1 });
     const ticks = manualTicker();
     const events: number[] = [];
-    const onEvent = (event: number) => {
-      events.push(event);
+    const onEvent = (event: Stepped) => {
+      events.push(event.steps);
     };
     const exit = await play(
       Effect.gen(function* () {

@@ -7,9 +7,9 @@
 // on. A subpath whose dist paths don't match that name fails the build, so the map and the build
 // can't drift apart.
 //
-// All entries are one build, so what two entries share (runtime's GameLoop, which net also
-// uses) is written once, to a chunk both import: a class or an Effect service is the same
-// object whichever entry it is reached through.
+// All entries are one build, so what two entries share (game's Loop, which net's lockstep
+// session also steps) is written once, to a chunk both import: a class or an Effect service is
+// the same object whichever entry it is reached through.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 

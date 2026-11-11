@@ -1,31 +1,28 @@
-// Survivors-like genre: what an app uses from the DOM-free side. The content definition and
-// service, the GameSimulation and the World it runs, the step input, the event payloads, the
-// lockstep hash and the Co-op rules. Rules internals (heroes, weapons, the content sub-schemas) stay in their modules.
+// Survivors-like genre: what an app uses from the DOM-free side. The content, the simulation
+// with the World it runs, its config and step input, the events it reports, the commands it takes
+// with their rejections, and the state hash lockstep peers compare. Rules internals (heroes,
+// weapons, the content sub-schemas) stay in their modules.
 // No DOM or Three.js here; those are in "@arcadekit/survivors/browser".
 
 export {
-  SurvivorsContent,
-  makeSurvivorsContentLayer,
-  survivorsContentDefinition,
-} from "./content";
+  ChooseUpgrade,
+  HoldPause,
+  NoSuchChoice,
+  NotPlaying,
+  OfferClosed,
+} from "./commands";
+export { SurvivorsContent } from "./content";
 export {
-  type SurvivorsCoop,
-  type SurvivorsCoopEvent,
-  survivorsCoopRules,
-} from "./coop";
-export {
-  HudSample,
+  HeroLeft,
+  Hud,
+  LeveledUp,
+  RunEnded,
   RunSummary,
-  type SurvivorsEvent,
   UpgradeChoice,
 } from "./events";
 export { hashWorld } from "./hash-world";
-export { HeroInput, type SurvivorsInput, UpgradePick } from "./input";
+export { HeroInput, SurvivorsInput } from "./input";
 export { GameContent } from "./schema";
-export { survivorsSimulation } from "./simulation";
-export {
-  type SurvivorsConfig,
-  type World,
-  chooseUpgrade,
-  isChoosing,
-} from "./world";
+// The genre's rules, for headless or replay use: a `Game.Loop` or a scenario steps them.
+export { Survivors } from "./simulation";
+export type { SurvivorsConfig, World } from "./world";

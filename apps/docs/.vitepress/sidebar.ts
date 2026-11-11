@@ -11,7 +11,7 @@ import type { EntryPage, SitePages } from "./pages.ts";
 const GROUPS: readonly { readonly text: string; readonly entries: string[] }[] =
   [
     { text: "Game", entries: ["game"] },
-    { text: "Simulation", entries: ["core", "input", "runtime"] },
+    { text: "Simulation", entries: ["core", "input"] },
     { text: "Presentation", entries: ["render-three", "audio"] },
     { text: "Data", entries: ["content", "save"] },
     { text: "App", entries: ["foldkit"] },

@@ -4,8 +4,9 @@
 //
 //   export class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}
 //
-// `Game.Engine`, which runs a simulation in the browser, is in the ./browser entry, and scenarios,
-// which check one in a test, in the ./scenario entry.
+// `Game.Engine`, which runs a simulation in the browser, is in the ./browser entry; scenarios,
+// which check one in a test, in the ./scenario entry; and the frames a test drives an engine on,
+// in the ./testing entry.
 
 import { make as makeCommand } from "./command";
 import { make as makeEvent } from "./event";
@@ -27,7 +28,16 @@ export type {
   NoFields,
   Payload,
 } from "./event";
+export type { FrameBudget } from "./kernel";
 export { Loop } from "./loop";
+export {
+  type PlayerInputOf,
+  PlayerInputs,
+  type PlayerInputsSchema,
+  type PlayersSimulation,
+  playerInputSchema,
+  soloInput,
+} from "./player-inputs";
 export type {
   AnyRejection,
   RejectionClass,
@@ -43,6 +53,7 @@ export type {
   EventCases,
   EventOf,
   InputOf,
+  NoHandlers,
   Nothing,
   RefusalFor,
   RefusalOf,
@@ -55,6 +66,7 @@ export type {
   StateOf,
   StepContext,
 } from "./simulation";
+export type { InputSource, StepInput } from "./step-input";
 
 /** A rare fact a run reports to the outside. See {@link makeEvent}. */
 export const Event: typeof makeEvent = makeEvent;

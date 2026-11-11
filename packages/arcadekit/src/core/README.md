@@ -14,7 +14,7 @@ pnpm add arcadekit effect
 
 ## Example
 
-Enemies in a pool, spawned with the run's seeded `Rng`, and an event reported through an `EventBuffer` (as `@arcadekit/survivors` does):
+Enemies in a pool, spawned with the run's seeded `Rng` (as `@arcadekit/survivors` does), and an event collected in an `EventBuffer`, which is what `Game.Loop` holds for a declared simulation's `report`:
 
 ```ts
 import { EventBuffer, createPool, makeRng } from "arcadekit/core";
@@ -47,6 +47,6 @@ for (let j = enemies.count - 1; j >= 0; j--) {
 const facts = events.drain();
 ```
 
-`createIdentifiedPool` gives entities stable ids too, for undo or a view that tweens each one. `FixedStepClock` turns frame times into whole fixed steps; `arcadekit/runtime`'s `GameLoop` uses it for you.
+`createIdentifiedPool` gives entities stable ids too, for undo or a view that tweens each one. `FixedStepClock` turns frame times into whole fixed steps; [`Game.Loop`](../game/README.md#how-a-frame-becomes-steps) uses it for you.
 
 See [ADR-0003](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0003-one-fixed-step-clock.md) (one fixed-step clock), [ADR-0006](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0006-identified-pools-reuse-ids.md) (identified pools) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math).

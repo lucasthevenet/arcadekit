@@ -4,6 +4,8 @@ status: accepted
 
 # Pixel-art sprites from sheets the app loads
 
+> Since [ADR-0020](0020-a-game-is-declared.md): the engine exists before its sheet. A genre declares the sheet as an `Asset` (`PushPuzzleSheet`, `SurvivorsSheet`), the app says where it comes from (`PushPuzzleSheet.layer(loadSpriteSheet(url))`), and the genre's `Game.Engine` names the asset's load in `uses`: each attach loads the sheet or takes the one already loaded, and a sheet that can't be loaded is the attach's typed failure. The engine loader (`makeEngineLoader`, `engineOf`) and `makeContentLoader` are gone from the kit. The ownership rule below stands: the app's end frees the sheet, and a view never does.
+
 #24 asked what the demos should look like, and how loaded art fits a view that is created synchronously. An art prototype put four styles side by side in the survivors demo at full crowd: today's coloured primitives, low-poly 3D, pixel-art sprites, and smooth cartoon sprites. The prototype is kept on branch `prototype/24-art`. The pick is **pixel-art sprites**. They are crisp, cheap (4 draw calls at full crowd, the fastest of the four) and easy to source art for.
 
 ## Decision

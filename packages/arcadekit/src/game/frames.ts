@@ -1,8 +1,8 @@
 /**
- * Where an attached engine (`makeGameEngine`) gets its frames and their times: its own frame
- * clock. It times the engine's frames, which step by real time and then draw. It is not where
- * stepping adapters plug in; a test, a replay or a lockstep runner calls `GameLoop.frame`
- * instead, so it can step without drawing.
+ * Where an attached engine gets its frames and their times: its own frame clock, which an app
+ * provides as `Game.Frames`. It times the engine's frames, which step by real time and then
+ * draw. It is not where stepping adapters plug in; a test, a replay or a lockstep session calls
+ * `Game.Loop`'s `frame` instead, so it can step without drawing.
  */
 export interface FrameSource {
   /** Now, in ms, on the same timeline as the times `request` passes its callbacks. */

@@ -85,8 +85,7 @@ export const Content = <
     ContentService<Name, S>,
     Loaded<S["Type"], ContentError>
   >()(`arcadekit/content/Content/${name}` as ContentId<Name>);
-  const read = (source: ContentSource) =>
-    loadContent({ ...definition, source });
+  const read = (source: ContentSource) => loadContent(definition, source);
   return class extends Key {
     static readonly kind = "Content" as const;
     static readonly contentName: Name = name;

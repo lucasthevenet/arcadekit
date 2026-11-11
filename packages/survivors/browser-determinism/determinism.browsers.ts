@@ -14,7 +14,7 @@ import type { run } from "./page";
 // browser must give the recorded final hash and trace for every seed, so Node is the fourth
 // engine. On a mismatch it names the first step whose state differs from Node's.
 //
-// Vite bundles page.ts (survivors' simulation, GameLoop and long-run.ts) into one script, and
+// Vite bundles page.ts (survivors' simulation, `Game.Loop` and long-run.ts) into one script, and
 // Playwright serves it from a made-up origin with `route`: nothing touches the network.
 //
 // Run it with `pnpm test:browsers`. A browser Playwright can't launch is skipped with a message,

@@ -1,6 +1,7 @@
 import { Duration, Effect } from "effect";
 import type { Clock, Scope } from "effect";
 
+import type { CommandDropped, RefusalFor } from "../game/index";
 import type { LockstepError } from "./errors";
 import { hostLockstep, joinLockstep } from "./lockstep";
 import type { HostOptions, JoinOptions, LockstepSession } from "./lockstep";
@@ -29,8 +30,13 @@ const DESYNC_RESEND_MS = 1000;
  * Closing the scope stops it listening to the transport. Its time is the Effect `Clock` it was
  * made on (a `TestClock` in tests): the start and every tick read it, so they always agree.
  */
-export interface ScopedLockstepSession<State, Event> extends Pick<
-  LockstepSession<State, Event>,
+export interface ScopedLockstepSession<
+  State,
+  Event,
+  Command,
+  Refusals,
+> extends Pick<
+  LockstepSession<State, Event, Command, Refusals>,
   "status" | "error" | "waitingFor" | "players" | "state" | "stepIndex"
 > {
   /**
@@ -45,8 +51,8 @@ export interface ScopedLockstepSession<State, Event> extends Pick<
    * A tick is plain: `onTick` ticks the session before it returns, so a ticker can read the
    * session right after, or tick before drawing. The run ends after the tick it stops in, once
    * `onTick` has returned, so the ticker's own code for that tick runs before the program's
-   * handlers and finalizers. Dies with what a tick throws (a bug in the simulation, `combine`,
-   * `hash` or the input source).
+   * handlers and finalizers. Dies with what a tick throws (a bug in the simulation, `hash` or
+   * the input source).
    *
    * In the browser, pass a ticker timed by a dedicated worker: a hidden tab throttles the main
    * thread's timers, the Clock's too. The Clock's ticks are for tests and servers.
@@ -56,31 +62,73 @@ export interface ScopedLockstepSession<State, Event> extends Pick<
   readonly listen: (
     onEvent: (event: Event) => void
   ) => Effect.Effect<void, never, Scope.Scope>;
+  /**
+   * Sends a command to the run as this peer's player and waits for this peer's rules to answer,
+   * as `Game.Engine`'s `send` does: the session's `send`, as an Effect. It succeeds when they
+   * took the command, fails with the rejection they refused it with, one of those the command
+   * declares, and fails with `CommandDropped` when they gave no answer: the session stopped
+   * first, or its scope closed.
+   *
+   * ```ts
+   * yield* session
+   *   .send(new ChooseUpgrade({ offer, index }))
+   *   .pipe(Effect.catchTag("OfferClosed", () => Effect.void));
+   * ```
+   *
+   * The command rides a step `inputDelay` ahead and every peer applies it there, so the answer
+   * comes a few steps later, and later still while the run waits on a player. It completes after
+   * the tick that ran the command's step, never inside it. Interrupt it to take the command
+   * back while it has no step yet; after that it is every peer's, and an interrupt only ends
+   * the wait. Dies for a command the session's `send` throws on.
+   */
+  readonly send: <C extends Command>(
+    command: C
+  ) => Effect.Effect<void, RefusalFor<Refusals, C> | CommandDropped>;
 }
 
 /**
  * Starts a run as its host, now on the Clock, as `hostLockstep` does. Dies with what starting
- * throws (more players than a run holds, a simulation that can't start), with nothing left
- * listening.
+ * throws (more players than a run holds, a simulation whose step input is not a
+ * `Game.PlayerInputs`, a simulation that can't start), with nothing left listening.
  */
-export const hostLockstepScoped = <Config, State, Input, Event, PlayerInput>(
-  options: HostOptions<Config, State, Input, Event, PlayerInput>
-): Effect.Effect<ScopedLockstepSession<State, Event>, never, Scope.Scope> =>
-  scoped((nowMs) => hostLockstep(options, nowMs));
+export const hostLockstepScoped = <
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals,
+>(
+  options: HostOptions<Config, State, Input, Event, Command, Refusals>
+): Effect.Effect<
+  ScopedLockstepSession<State, Event, Command, Refusals>,
+  never,
+  Scope.Scope
+> => scoped((nowMs) => hostLockstep(options, nowMs));
 
 /** Joins the run `host` starts, as `joinLockstep` does. The session is `joining` until the host's start message arrives. */
-export const joinLockstepScoped = <Config, State, Input, Event, PlayerInput>(
-  options: JoinOptions<Config, State, Input, Event, PlayerInput>
-): Effect.Effect<ScopedLockstepSession<State, Event>, never, Scope.Scope> =>
-  scoped((nowMs) => joinLockstep(options, nowMs));
+export const joinLockstepScoped = <
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals,
+>(
+  options: JoinOptions<Config, State, Input, Event, Command, Refusals>
+): Effect.Effect<
+  ScopedLockstepSession<State, Event, Command, Refusals>,
+  never,
+  Scope.Scope
+> => scoped((nowMs) => joinLockstep(options, nowMs));
 
 /** The Clock's monotonic time in milliseconds: a wall clock's jump would stall or end the run. */
 const millis = (clock: Clock.Clock): number =>
   Number(clock.monotonicTimeNanosUnsafe()) / 1_000_000;
 
 /** A session, and whether the scope that owns it has closed. */
-interface Owned<State, Event> {
-  readonly session: LockstepSession<State, Event>;
+interface Owned<State, Event, Command, Refusals> {
+  readonly session: LockstepSession<State, Event, Command, Refusals>;
   closed: boolean;
 }
 
@@ -88,12 +136,16 @@ interface Owned<State, Event> {
 const ranAfterClose = () =>
   new Error("A lockstep session ran after its scope closed");
 
-const scoped = <State, Event>(
-  open: (nowMs: number) => LockstepSession<State, Event>
-): Effect.Effect<ScopedLockstepSession<State, Event>, never, Scope.Scope> =>
+const scoped = <State, Event, Command, Refusals>(
+  open: (nowMs: number) => LockstepSession<State, Event, Command, Refusals>
+): Effect.Effect<
+  ScopedLockstepSession<State, Event, Command, Refusals>,
+  never,
+  Scope.Scope
+> =>
   Effect.clockWith((clock) =>
     Effect.acquireRelease(
-      Effect.sync((): Owned<State, Event> => ({
+      Effect.sync((): Owned<State, Event, Command, Refusals> => ({
         session: open(millis(clock)),
         closed: false,
       })),
@@ -105,10 +157,10 @@ const scoped = <State, Event>(
     ).pipe(Effect.map((owned) => shell(owned, clock)))
   );
 
-const shell = <State, Event>(
-  owned: Owned<State, Event>,
+const shell = <State, Event, Command, Refusals>(
+  owned: Owned<State, Event, Command, Refusals>,
   clock: Clock.Clock
-): ScopedLockstepSession<State, Event> => {
+): ScopedLockstepSession<State, Event, Command, Refusals> => {
   const { session } = owned;
   /** When a desync stopped the session, on the Clock, or null. */
   let desyncAtMs: number | null = null;
@@ -225,5 +277,20 @@ const shell = <State, Event>(
         Effect.sync(() => session.subscribe((event) => onEvent(event))),
         (unsubscribe) => Effect.sync(unsubscribe)
       ).pipe(Effect.asVoid),
+    // The session tells the sender how the command ended: that is this Effect's result. It
+    // resumes after a yield, so the sender's next line never runs on the tick's stack, nor on
+    // that of the scope's close, which drops what still waits. Interrupted, it takes the
+    // command back.
+    send: (command) =>
+      Effect.callback((resume) => {
+        const unsend = session.send(command, (outcome) =>
+          resume(
+            outcome === undefined
+              ? Effect.yieldNow
+              : Effect.andThen(Effect.yieldNow, Effect.fail(outcome))
+          )
+        );
+        return Effect.sync(unsend);
+      }),
   };
 };

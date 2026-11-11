@@ -1,6 +1,6 @@
 /**
  * Collects events a simulation produces during a step ("leveled up", "boss spawned")
- * until the runtime drains them. Keep events rare: they cross into the UI.
+ * until the loop drains them. Keep events rare: they cross into the UI.
  */
 export class EventBuffer<E> {
   private pending: E[] = [];

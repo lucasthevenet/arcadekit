@@ -58,7 +58,10 @@ export interface Hero {
   readonly passiveLevels: Map<string, number>;
   /** The upgrades this hero is choosing from, or null. The whole run is frozen while any hero has one. */
   offer: readonly UpgradeChoice[] | null;
-  /** True while this hero's player holds the run paused (co-op pause, from step input). */
+  /**
+   * True while this hero's player holds the run paused: the co-op pause, set by the `HoldPause`
+   * command. Only a playing hero holds it: going down or leaving lets go.
+   */
   paused: boolean;
 }
 

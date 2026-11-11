@@ -33,12 +33,10 @@ const ENTRY_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   audio: ["effect"],
   "audio/browser": ["effect"],
   "render-three": ["effect", "three"],
-  runtime: ["effect"],
-  "runtime/browser": ["effect"],
-  "runtime/testing": ["effect"],
   game: ["effect"],
   "game/browser": ["effect"],
   "game/scenario": ["effect"],
+  "game/testing": ["effect"],
   net: ["effect"],
   "net/browser": ["effect"],
   "net/testing": ["effect"],
@@ -112,6 +110,25 @@ const packagesReachedFrom = (entryFile: string): readonly string[] => {
 
 const peers = (): readonly string[] => Object.keys(peerDependencies);
 
+/**
+ * The names an entry's public file exports, read from its `export` statements: a list in braces,
+ * where a name after `as` is the one exported, or a `const`. Such a file exports in no other way.
+ */
+const exportedBy = (entry: string): readonly string[] => {
+  const text = readFileSync(
+    path.join(packageDir, exportsMap[entry]?.source ?? ""),
+    "utf-8"
+  );
+  const listed = [...text.matchAll(/^export (?:type )?\{(?<names>[^}]*)\}/gmu)]
+    .flatMap(({ groups }) => (groups?.names ?? "").split(","))
+    .map((item) => item.trim().split(/\s+/u).at(-1) ?? "")
+    .filter((name) => name !== "");
+  const declared = [...text.matchAll(/^export const (?<name>\w+)/gmu)].map(
+    ({ groups }) => groups?.name ?? ""
+  );
+  return [...listed, ...declared].toSorted();
+};
+
 const distBuilt = existsSync(path.join(packageDir, "dist"));
 const distRequired = process.env.ARCADEKIT_REQUIRE_DIST !== undefined;
 
@@ -170,7 +187,7 @@ describe.each(Object.entries(ENTRY_PACKAGES))(
 describe("the walk", () => {
   it("finds effect in an entry that uses it", () => {
     const packages = packagesReachedFrom(
-      path.join(packageDir, exportsMap["./runtime/browser"]?.source ?? "")
+      path.join(packageDir, exportsMap["./game/browser"]?.source ?? "")
     );
     expect(packages).toContain("effect");
   });
@@ -184,4 +201,21 @@ describe("the walk", () => {
       expect(packages).toContain("effect");
     }
   );
+});
+
+describe("arcadekit/game/browser", () => {
+  // A file imports one of the two entries as `Game`. A package that emits its types names the
+  // kit's types through the entry it imports, so a type that only the other entry exports is an
+  // error there (TS2742), though every project of this repository compiles.
+  it("exports everything arcadekit/game does", () => {
+    const game = exportedBy("./game");
+    const browser = new Set(exportedBy("./game/browser"));
+    // A `const` and a listed type: the read finds both kinds of export.
+    expect(game).toContain("Simulation");
+    expect(game).toContain("SimulationClass");
+    expect(
+      game.filter((name) => !browser.has(name)),
+      "src/game/browser.ts must export every name src/game/index.ts does: add these to its lists"
+    ).toStrictEqual([]);
+  });
 });

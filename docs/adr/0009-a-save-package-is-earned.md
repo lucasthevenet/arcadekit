@@ -4,6 +4,8 @@ status: accepted
 
 # Both apps show the same save, so a shared save package is earned
 
+> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: a save is declared. `makeSaveStore(definition)` is the `Save` declaration, whose class is the key of the service each app wrote by hand; its definition's `key` is `storageKey`, its `load` is `read` and its `merge(records)` is `write(records)`, which still merges; `mergeRecords(mergeRecord)` is the class's `merge`. The stored shape, the keys and the backup are as [The shape picked](#the-shape-picked) has them. The settings this decision left to #24 "may reuse the package's store logic", and now do: one value under its own key is the `Setting` declaration, in the same entry, over the module the save reads and writes with.
+
 #23 gave each demo app a save: the records it keeps between sessions. Each app built its own first, as [ADR-0001](0001-kit-changes-need-two-genres.md) asks. Both are done now, so the evidence is in. Most of the code is the same in both apps, and the same parts are the ones that are easy to get wrong. So a `@gamekit/save` package is earned. This ADR records that decision. The extraction is done: see [The shape picked](#the-shape-picked).
 
 ## Evidence

@@ -124,11 +124,13 @@ const ownRunnerProperties = [
 // fixture.
 const TEST_HELPERS = ["**/*.test.ts", "**/testing/**", "**/test-*.ts"];
 
-// Which entry of the arcadekit package may import which (ADR-0018). This is the graph the nine
-// packages had when they were separate: core and input stand alone, runtime steps with core's
-// clock, net steps a GameLoop and seeds its test network with core's Rng, and foldkit's tests
-// drive a real engine from runtime (its own code only names the engine's shape). Adding an
-// arrow here is a design decision: say why in the PR.
+// Which entry of the arcadekit package may import which (ADR-0018). Core and input stand alone.
+// game steps with core's clock and collects events in core's buffer. net seeds its test network
+// with core's Rng, and imports game: a lockstep session is a host of a declared simulation, so it
+// steps a `Game.Loop` and reads one player's input Schema from the simulation's
+// `Game.PlayerInputs`, and the Co-op client draws on game's frame loop (ADR-0020). foldkit's tests
+// drive a real engine from game; its own code only names the engine's shape. Adding an arrow
+// here is a design decision: say why in the PR.
 const KIT_SRC = "packages/arcadekit/src";
 const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   core: [],
@@ -137,10 +139,9 @@ const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   save: [],
   audio: [],
   "render-three": [],
-  runtime: ["core"],
-  game: ["core", "runtime"],
-  net: ["core", "runtime"],
-  foldkit: ["runtime"],
+  game: ["core"],
+  net: ["core", "game"],
+  foldkit: ["game"],
 };
 
 // Each entry's public file: the `source` of each of the package's exports, from src/, without
@@ -182,6 +183,13 @@ export default defineConfig({
     "eslint/func-names": "off",
     // Effect and Foldkit APIs take callbacks by design.
     "promise/prefer-await-to-callbacks": "off",
+    // A `match` case that drops an event says so: `HeroLeft: () => undefined`. An empty body
+    // would be a type error, since a case returns a Message or `undefined`. `checkArguments`
+    // stays off, as ultracite has it: an explicit `undefined` argument is a choice.
+    "unicorn/no-useless-undefined": [
+      "error",
+      { checkArguments: false, checkArrowFunctionBody: false },
+    ],
     // A declaration is a class (`class LevelSolved extends Game.Event(...) {}`), and one file
     // declares what belongs together: a game's events, or a command with what it reports.
     "eslint/max-classes-per-file": "off",
@@ -196,14 +204,8 @@ export default defineConfig({
         "declaration/class": "error",
         "declaration/inferred": "error",
         "declaration/plain-handler": "error",
-        "declaration/older-contract": "error",
+        "declaration/create-first": "error",
       },
-    },
-    {
-      // The games still on the older contract (ADR-0020). This list only gets shorter.
-      files: ["packages/survivors/**/*.ts", "apps/survivor-demo/**/*.ts"],
-      jsPlugins: ["./tools/lint/declaration.ts"],
-      rules: { "declaration/older-contract": "off" },
     },
     {
       // The kit's own builders. The one other function of the kit that returns a class makes
@@ -215,6 +217,14 @@ export default defineConfig({
       ],
       jsPlugins: ["./tools/lint/declaration.ts"],
       rules: { "declaration/builder": "error" },
+    },
+    {
+      // Where the kit and the genres refuse a mistake. A refusal throws `Error`, or `RangeError`
+      // for a number out of range, never `TypeError` (docs/code-style.md, "Refusing a mistake").
+      // This rule makes the throw after a `typeof` test a `TypeError`, so the two halves of one
+      // check threw two classes.
+      files: ["packages/*/src/**/*.ts"],
+      rules: { "unicorn/prefer-type-error": "off" },
     },
     {
       // Library code, but for what a test imports and the one file whose entry points
@@ -255,20 +265,24 @@ export default defineConfig({
       // lockstep protocol that steps it on every peer, with the input codecs whose decoded
       // value every peer steps on and the step input built from the players' inputs (ADR-0017).
       // The test game too: its simulation is the one a Co-op game's tests copy. All of
-      // arcadekit/game but its engine, so a new file of it is held to this from the start:
-      // the engine is the Effect host, and takes its time from `Frames`.
+      // arcadekit/game, the kernel under `Game.Loop` included (kernel.ts), so a new file
+      // of it is held to this from the start. Two of its files are left out by name, since they
+      // are where a browser's time and randomness come in: the engine is the Effect host, and
+      // draws a run's seed from Effect's `Random`; frames.ts is the engine's frame clock, and
+      // reads `performance.now()` to give a frame's time to whoever steps.
       files: [
         "packages/arcadekit/src/core/**/*.ts",
-        "packages/arcadekit/src/runtime/loop.ts",
-        "packages/arcadekit/src/runtime/simulation.ts",
-        "packages/arcadekit/src/runtime/player-inputs.ts",
         "packages/arcadekit/src/game/**/*.ts",
         "packages/arcadekit/src/net/lockstep.ts",
         "packages/arcadekit/src/net/codec.ts",
         "packages/arcadekit/src/net/player-inputs.ts",
         "packages/arcadekit/src/net/testing/test-game.ts",
       ],
-      excludeFiles: ["**/*.test.ts", "packages/arcadekit/src/game/engine.ts"],
+      excludeFiles: [
+        "**/*.test.ts",
+        "packages/arcadekit/src/game/engine.ts",
+        "packages/arcadekit/src/game/frames.ts",
+      ],
       rules: {
         "eslint/no-restricted-properties": [
           "error",

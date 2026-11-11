@@ -1,49 +1,27 @@
-import type { ContentError } from "arcadekit/content";
-import type { CoopGame } from "arcadekit/net/browser";
-import type { SpriteSheetError } from "arcadekit/render-three";
-import { Effect } from "effect";
+import { Coop } from "arcadekit/net/browser";
 
-import { survivorsCoopRules } from "../coop";
-import type { SurvivorsCoop } from "../coop";
-import type { GameContent } from "../schema";
-import type { SurvivorsArt } from "./art";
+import { SurvivorsContent } from "../content";
+import { RunEnded } from "../events";
+import { hashWorld } from "../hash-world";
+import { MAX_HEROES } from "../hero";
 import { heroDevice } from "./device";
-import { survivorsViews } from "./game";
-import type { SurvivorsGameSound } from "./game";
-
-/** What a survivors Co-op game is made with. */
-interface SurvivorsCoopGameOptions {
-  /** The run's content: the app's content load. Run once per seat. */
-  readonly content: Effect.Effect<GameContent, ContentError>;
-  /**
-   * The art the run is drawn with: the app's load of its sheet, such as the engine loader's
-   * (`SurvivorsEngine`), so one sheet serves both. Run once per attach; the view never frees it.
-   */
-  readonly art: Effect.Effect<SurvivorsArt, SpriteSheetError>;
-  /**
-   * What the run's sounds play through: every peer hears the whole fight, its own hero's hurt
-   * and down loudest. Without it the run is silent.
-   */
-  readonly sound?: SurvivorsGameSound;
-}
+import { SurvivorsEngine } from "./game";
 
 /**
- * Survivors as a Co-op game for `arcadekit/net/browser`'s `makeCoopClient`: the Co-op rules,
- * the content, and a presentation whose view follows the local player's hero. The view and the
- * sound view read the local slot on every frame, so one view serves the lobby and the run.
+ * Survivors for several players, each in their own browser, one hero per player by slot
+ * (ADR-0013): the genre's engine, played in lockstep from a lobby. A lobby pick is a hero id, and
+ * the picks, in player order, are the run's heroes. Each player's view follows its own hero, and
+ * draws from the app's sheet as the single-player engine's does. `SurvivorsCoop.layer` provides
+ * the Co-op client an app drives; a pick is the `ChooseUpgrade` command and the pause
+ * `HoldPause`, sent through it, and the HUD says which heroes the run waits on to pick.
  */
-export const makeSurvivorsCoopGame = ({
-  content,
-  art,
-  sound,
-}: SurvivorsCoopGameOptions): CoopGame<SurvivorsCoop, SpriteSheetError> => ({
-  ...survivorsCoopRules,
-  content,
-  presentation: art.pipe(
-    Effect.map((loaded) => ({
-      createInput: heroDevice,
-      createView: (container, local) =>
-        survivorsViews(container, loaded, sound, () => local.slot),
-    }))
-  ),
-});
+export class SurvivorsCoop extends Coop("SurvivorsCoop", {
+  engine: SurvivorsEngine,
+  input: heroDevice,
+  content: SurvivorsContent.load,
+  picks: (content) => content.heroes.map((hero) => hero.id),
+  config: (content, heroIds) => ({ content, heroIds }),
+  maxPlayers: MAX_HEROES,
+  hash: hashWorld,
+  ends: [RunEnded],
+}) {}

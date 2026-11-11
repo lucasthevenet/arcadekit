@@ -1,13 +1,10 @@
-import type { SurvivorsCoopEvent, SurvivorsEvent } from "@arcadekit/survivors";
-import { SurvivorsEngine } from "@arcadekit/survivors/browser";
+import { Survivors } from "@arcadekit/survivors";
+import { SurvivorsCoop, SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { Audio, applyAudioSettings } from "arcadekit/audio";
 import { engineEntry, keyPresses, shortcutPresses } from "arcadekit/foldkit";
-import type { CoopEvent } from "arcadekit/net/browser";
-import { engineOf } from "arcadekit/runtime/browser";
 import { Effect, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
-import { Coop } from "./coop";
 import { Message } from "./message";
 import { isCoop, isLoaded } from "./model";
 import type { Model, Phase } from "./model";
@@ -16,80 +13,33 @@ import { MUSIC } from "./sound";
 /** A single-player run's one hero is slot 0. */
 const LOCAL_HERO = 0;
 
-const toMessage = (event: SurvivorsEvent): Message | undefined => {
-  switch (event.type) {
-    case "hud": {
-      return Message.GotHud({ hud: event.hud });
-    }
-    case "levelUp": {
-      return event.hero === LOCAL_HERO
-        ? Message.GotLevelUp({ choices: event.choices })
-        : undefined;
-    }
-    case "heroLeft": {
-      return undefined;
-    }
-    case "runEnded": {
-      return Message.GotRunEnded({ summary: event.summaries[LOCAL_HERO]! });
-    }
-  }
-};
-
-/** What the co-op run tells the local player: the genre's own events for its hero. */
-const coopRunMessage = (event: SurvivorsCoopEvent): Message => {
-  switch (event.type) {
-    case "hud": {
-      return Message.GotHud({ hud: event.hud });
-    }
-    case "levelUp": {
-      return Message.GotCoopLevelUp({
-        offer: event.offer,
-        choices: event.choices,
-      });
-    }
-    case "runEnded": {
-      return Message.GotCoopRunEnded({ summary: event.summary });
-    }
-  }
-};
-
-export const coopMessage = (event: CoopEvent<SurvivorsCoopEvent>): Message => {
-  switch (event.type) {
-    case "lobby": {
-      return Message.GotCoopLobby({
-        role: event.role,
-        code: event.code,
-        self: event.self,
-        players: event.players.map(({ id, name, pick }) => ({
-          id,
-          name,
-          pick,
-        })),
-        maxPlayers: event.maxPlayers,
-        canStart: event.canStart,
-      });
-    }
-    case "started": {
-      return Message.GotCoopStarted({
-        slot: event.slot,
-        names: [...event.names],
-      });
-    }
-    case "waiting": {
-      return Message.GotCoopWaiting({
-        waitingFor: [...event.waitingFor],
-        choosing: [...event.choosing],
-      });
-    }
-    case "failed": {
-      // The kit's text, as it is. `event.reason` is there for an app that words its own.
-      return Message.GotCoopFailed({ error: event.message });
-    }
-    case "run": {
-      return coopRunMessage(event.event);
-    }
-  }
-};
+/**
+ * Everything a co-op seat reports, as Messages: the Co-op client's own events, and under `run`
+ * the genre's, as the single-player engine reports them, with the local player in the engine's
+ * `LOCAL_HERO`'s place. The lobby goes into its Message as it is; a player's offer and summary
+ * are its own hero's.
+ */
+export const coopMessage = SurvivorsCoop.match({
+  LobbyChanged: (lobby) => Message.GotCoopLobby({ lobby }),
+  RunStarted: ({ slot, names }) => Message.GotCoopStarted({ slot, names }),
+  WaitingChanged: ({ waitingFor }) => Message.GotCoopWaiting({ waitingFor }),
+  // The kit's text, as it is. `reason` is there for an app that words its own.
+  SeatFailed: ({ message }) => Message.GotCoopFailed({ error: message }),
+  run: {
+    Hud: (hud) => Message.GotHud({ hud }),
+    LeveledUp: ({ hero, offer, choices }, { local }) =>
+      hero === local.slot
+        ? Message.GotCoopLevelUp({ offer, choices })
+        : undefined,
+    HeroLeft: () => undefined,
+    RunEnded: ({ summaries }, { local }) => {
+      const summary = summaries[local.slot];
+      return summary === undefined
+        ? undefined
+        : Message.GotCoopRunEnded({ summary });
+    },
+  },
+});
 
 /** The run's music from the start of a run to its end; the menu's everywhere else. */
 const musicFor = (phase: Phase): keyof typeof MUSIC => {
@@ -126,19 +76,29 @@ const SoundDependencies = {
 export const subscriptions = Subscription.make<
   Model,
   Message,
-  SurvivorsEngine | Coop | Audio
+  SurvivorsEngine | SurvivorsCoop | Audio
 >()((entry) => ({
   /**
-   * While the viewport exists, the engine renders into it and its events become Messages, once
-   * the content and sprite sheet have loaded (`isLoaded`): the engine is made from the sheet,
-   * and an entry that reported a failed load wouldn't run again after a retry. A failed load is
-   * shown like LoadContent's. Co-op's screens hand the viewport to the co-op client instead.
+   * While the viewport exists, the engine renders into it and the run's events become Messages,
+   * once the content and sprite sheet have loaded (`isLoaded`): attaching loads the sheet, and an
+   * entry that reported a failed load wouldn't run again after a retry. A sheet that can't be
+   * loaded, a view that can't be made and a crash are shown like LoadContent's failure. Co-op's
+   * screens hand the viewport to the co-op client instead.
    */
   engine: engineEntry({
-    engine: engineOf(SurvivorsEngine),
+    engine: SurvivorsEngine,
     isViewportMounted: (model) =>
       model.isViewportMounted && isLoaded(model.phase) && !isCoop(model.phase),
-    toMessage,
+    toMessage: Survivors.match({
+      Hud: (hud) => Message.GotHud({ hud }),
+      LeveledUp: ({ hero, offer, choices }) =>
+        hero === LOCAL_HERO
+          ? Message.GotLevelUp({ offer, choices })
+          : undefined,
+      HeroLeft: () => undefined,
+      RunEnded: ({ summaries }) =>
+        Message.GotRunEnded({ summary: summaries[LOCAL_HERO]! }),
+    }),
     onError: (error) => Message.FailedToLoadContent({ error: error.message }),
   }),
 
@@ -148,14 +108,17 @@ export const subscriptions = Subscription.make<
    * sheet, no WebGL, a frame that throws) ends co-op: the client has left by then.
    */
   coop: engineEntry({
-    engine: Coop,
+    engine: SurvivorsCoop,
     isViewportMounted: (model) =>
       model.isViewportMounted && isCoop(model.phase),
     toMessage: coopMessage,
     onError: (error) => Message.GotCoopFailed({ error: error.message }),
   }),
 
-  /** Escape (or P) toggles pause, but only during a run. */
+  /**
+   * Escape (or P) toggles pause, but only during a run. In co-op it opens and closes the run's
+   * menu, which holds the co-op pause while it is up.
+   */
   pauseKey: entry(
     { canPause: Schema.Boolean },
     {

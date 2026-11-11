@@ -1,5 +1,9 @@
 import type { SurvivorsContent } from "@arcadekit/survivors";
-import type { SurvivorsEngine } from "@arcadekit/survivors/browser";
+import type {
+  SurvivorsCoop,
+  SurvivorsEngine,
+  SurvivorsSheet,
+} from "@arcadekit/survivors/browser";
 import { defaultAudioSettings } from "arcadekit/audio";
 import type { Audio, AudioSettings } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
@@ -25,21 +29,26 @@ import {
   StartCoop,
   StartRun,
 } from "./commands";
-import type { Coop } from "./coop";
 import { Message } from "./message";
-import { Phase, emptyCoopRun, emptyHud, isCoop } from "./model";
+import {
+  Phase,
+  emptyCoopRun,
+  emptyHud,
+  isCoop,
+  isLocalHeroDown,
+} from "./model";
 import type { Model } from "./model";
-import { emptyRecords, mergeRecords, withRun } from "./save";
-import type { Save } from "./save";
-import type { SoundSettings } from "./sound";
+import { SurvivorsSave, emptyRecords, withRun } from "./save";
+import type { SurvivorsAudioSettings } from "./sound";
 
 export type Services =
   | SurvivorsContent
   | SurvivorsEngine
-  | Save
-  | Coop
+  | SurvivorsSheet
+  | SurvivorsSave
+  | SurvivorsCoop
   | Audio
-  | SoundSettings;
+  | SurvivorsAudioSettings;
 type Return = Update.Return<Model, Message, Services>;
 
 export const init: Runtime.ApplicationInit<
@@ -102,11 +111,22 @@ const leaveCoop = (model: Model): Return => ({
   commands: [LeaveCoop()],
 });
 
-/** Toggles the local player's pause flag in a co-op run: its hero holds the run for everyone. */
-const toggleCoopPause = (model: Model, paused: boolean): Return => ({
-  model: { ...model, coop: { ...model.coop, paused } },
-  commands: [SetCoopPaused({ paused })],
-});
+/**
+ * Opens the co-op run's menu, or closes it. While it is up the local player holds the run
+ * paused for everyone: opening it asks the run for the pause and closing it lets go. The app's
+ * own pause flag changes at once, so the screen answers the key; the run takes the command a
+ * few steps later, or refuses it. The menu doesn't wait on that answer, nor close on it: it is
+ * the only way to leave the run. A hero that is down holds no pause, so its player's menu opens
+ * over a run that plays on, and asks for nothing.
+ */
+const setCoopMenu = (model: Model, open: boolean): Return => {
+  const paused = open && !isLocalHeroDown(model);
+  return {
+    model: { ...model, coop: { ...model.coop, menu: open, paused } },
+    // Nothing to send when the pause stays as it is: none was asked for, or the run took none.
+    commands: paused === model.coop.paused ? [] : [SetCoopPaused({ paused })],
+  };
+};
 
 const backToMenu = (model: Model): Return => ({
   model: { ...model, phase: Phase.Menu() },
@@ -131,8 +151,8 @@ const handle = (model: Model, message: Message): Return =>
       },
     }),
     FailedToLoadContent: ({ error }) => loadFailed(model, error),
-    // Loads again, then goes to the menu as on a first load. Each loader keeps its first
-    // success, so only what failed is fetched again.
+    // Loads again, then goes to the menu as on a first load. The content and the sheet each
+    // keep their first success, so only what failed is fetched again.
     ClickedRetry: () =>
       model.phase._tag === "LoadFailed"
         ? {
@@ -141,7 +161,7 @@ const handle = (model: Model, message: Message): Return =>
           }
         : { model },
     LoadedSave: ({ records }) => ({
-      model: { ...model, records: mergeRecords(model.records, records) },
+      model: { ...model, records: SurvivorsSave.merge(model.records, records) },
     }),
     MountedViewport: () => ({ model: { ...model, isViewportMounted: true } }),
     UnmountedViewport: () => ({
@@ -161,8 +181,8 @@ const handle = (model: Model, message: Message): Return =>
     FailedToStartRun: ({ error }) => loadFailed(model, error),
 
     GotHud: ({ hud }) => ({ model: { ...model, hud } }),
-    GotLevelUp: ({ choices }) => ({
-      model: { ...model, phase: Phase.LevelUp({ choices }) },
+    GotLevelUp: ({ offer, choices }) => ({
+      model: { ...model, phase: Phase.LevelUp({ offer, choices }) },
     }),
     GotRunEnded: ({ summary }) => ({
       model: {
@@ -173,19 +193,19 @@ const handle = (model: Model, message: Message): Return =>
       commands: [SaveRun({ summary })],
     }),
     SavedRun: ({ records }) => ({
-      model: { ...model, records: mergeRecords(model.records, records) },
+      model: { ...model, records: SurvivorsSave.merge(model.records, records) },
     }),
 
     ClickedUpgrade: ({ index }) =>
       model.phase._tag === "LevelUp"
         ? {
             model: { ...model, phase: Phase.Playing() },
-            commands: [ChooseUpgrade({ index })],
+            commands: [ChooseUpgrade({ offer: model.phase.offer, index })],
           }
         : { model },
     PressedEscape: () => {
       if (model.phase._tag === "CoopPlaying") {
-        return toggleCoopPause(model, !model.coop.paused);
+        return setCoopMenu(model, !model.coop.menu);
       }
       if (model.phase._tag === "Playing") {
         return {
@@ -247,7 +267,7 @@ const handle = (model: Model, message: Message): Return =>
           }
         : { model },
     ClickedStartCoop: () =>
-      model.phase._tag === "CoopLobby" && model.phase.role === "host"
+      model.phase._tag === "CoopLobby" && model.phase.lobby.role === "host"
         ? { model, commands: [StartCoop()] }
         : { model },
     ClickedCoopUpgrade: ({ index }) =>
@@ -259,25 +279,13 @@ const handle = (model: Model, message: Message): Return =>
         : { model },
     ClickedCoopResume: () =>
       model.phase._tag === "CoopPlaying"
-        ? toggleCoopPause(model, false)
+        ? setCoopMenu(model, false)
         : { model },
     ClickedLeaveCoop: () =>
       isCoop(model.phase) ? leaveCoop(model) : { model },
-    GotCoopLobby: ({ role, code, self, players, maxPlayers, canStart }) =>
+    GotCoopLobby: ({ lobby }) =>
       model.phase._tag === "CoopConnecting" || model.phase._tag === "CoopLobby"
-        ? {
-            model: {
-              ...model,
-              phase: Phase.CoopLobby({
-                role,
-                code,
-                self,
-                players,
-                maxPlayers,
-                canStart,
-              }),
-            },
-          }
+        ? { model: { ...model, phase: Phase.CoopLobby({ lobby }) } }
         : { model },
     // Co-op events can be queued behind a Leave: each counts only in the phase it belongs to.
     GotCoopStarted: ({ slot, names }) =>
@@ -291,11 +299,9 @@ const handle = (model: Model, message: Message): Return =>
             },
           }
         : { model },
-    GotCoopWaiting: ({ waitingFor, choosing }) =>
+    GotCoopWaiting: ({ waitingFor }) =>
       model.phase._tag === "CoopPlaying" || model.phase._tag === "CoopLevelUp"
-        ? {
-            model: { ...model, coop: { ...model.coop, waitingFor, choosing } },
-          }
+        ? { model: { ...model, coop: { ...model.coop, waitingFor } } }
         : { model },
     GotCoopLevelUp: ({ offer, choices }) =>
       model.phase._tag === "CoopPlaying"
@@ -308,6 +314,13 @@ const handle = (model: Model, message: Message): Return =>
     GotCoopFailed: ({ error }) =>
       isCoop(model.phase)
         ? { model: { ...model, phase: Phase.CoopFailed({ error }) } }
+        : { model },
+    // The rules hold no pause for this player: its hero is down, or the run is over. The
+    // app's pause flag follows them, so the screen doesn't say "paused" over a run that plays
+    // on. The menu stays up: a player whose hero is down still needs its "Leave run".
+    FailedToHoldCoopPause: () =>
+      model.coop.paused
+        ? { model: { ...model, coop: { ...model.coop, paused: false } } }
         : { model },
 
     LoadedAudioSettings: ({ settings }) => ({

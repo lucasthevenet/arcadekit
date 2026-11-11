@@ -1,6 +1,6 @@
 import { PushPuzzleContent } from "@arcadekit/push-puzzle";
 import {
-  PushPuzzleCueSounds,
+  PushPuzzleCueTable,
   PushPuzzleEngine,
   PushPuzzleSheet,
 } from "@arcadekit/push-puzzle/browser";
@@ -10,8 +10,8 @@ import { loadSpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
-import { AudioSettingsLayer, CUE_SOUNDS } from "./audio";
-import { SaveLayer } from "./save";
+import { CUE_SOUNDS, PushPuzzleAudioSettings } from "./audio";
+import { PushPuzzleSave } from "./save";
 import { SHEET_URL } from "./sprites";
 
 export { Model } from "./model";
@@ -20,12 +20,13 @@ export { view } from "./view";
 export { subscriptions } from "./subscriptions";
 
 /**
- * What the genre's engine is made from, which this app owns: its sheet, its cue table and its
- * audio, which makes no AudioContext until the player's first gesture (ADR-0015).
+ * What the genre's engine is made from, which this app owns: its sheet, its sounds for the
+ * genre's cue table and its audio, which makes no AudioContext until the player's first gesture
+ * (ADR-0015).
  */
 const assets = Layer.mergeAll(
   PushPuzzleSheet.layer(loadSpriteSheet(SHEET_URL)),
-  Layer.succeed(PushPuzzleCueSounds, CUE_SOUNDS),
+  PushPuzzleCueTable.layer(CUE_SOUNDS),
   BrowserAudioLayer
 );
 
@@ -38,7 +39,7 @@ export const resources = Layer.mergeAll(
   PushPuzzleContent.layer(
     fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
   ),
-  Layer.mergeAll(SaveLayer, AudioSettingsLayer).pipe(
+  Layer.mergeAll(PushPuzzleSave.layer, PushPuzzleAudioSettings.layer).pipe(
     Layer.provide(BrowserSaveStorage)
   )
 ).pipe(Layer.provideMerge(assets));

@@ -32,13 +32,14 @@ export type StopReason =
     }
   /**
    * `player`'s input for `step` didn't decode on this peer: in a step from the host, or, on the
-   * host, its own. The peers' codecs differ, or the host's encodes what it can't decode.
+   * host, its own. The peers' one-player Schemas differ (they play other code), or the host's
+   * own input doesn't survive the wire (a NaN, which JSON carries as null).
    */
   | {
       readonly kind: "badInput";
       readonly player: PeerId;
       readonly step: number;
-      /** What the codec said is wrong with it. */
+      /** What the one-player Schema said is wrong with it. */
       readonly issue: string;
     }
   /** Nothing came from the host for `silentMs`. With no host, no step can be decided. */

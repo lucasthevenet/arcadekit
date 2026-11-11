@@ -1,9 +1,6 @@
 import type { RunSummary } from "@arcadekit/survivors";
-import {
-  makeSaveStore,
-  mergeRecords as mergeRecordsWith,
-} from "arcadekit/save";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Save } from "arcadekit/save";
+import { Schema } from "effect";
 
 // The save: what this game remembers between sessions, per hero id. It is UI
 // state, not simulation state. The app reads it once at startup and writes it
@@ -27,19 +24,25 @@ export type HeroRecords = typeof HeroRecords.Type;
 
 export const emptyRecords: HeroRecords = {};
 
-export const SAVE_KEY = "arcadekit/survivors/save";
+/**
+ * This game's save. A write merges into what is stored, and `SurvivorsSave.merge` is that merge
+ * with no storage: the best of both sets of records, the longer time, the more kills, and won if
+ * either says so. Neither its `read` nor its `write` fails: storage problems are logged and play
+ * goes on.
+ */
+export class SurvivorsSave extends Save("SurvivorsSave", {
+  storageKey: "arcadekit/survivors/save",
+  field: "heroes",
+  record: HeroRecord,
+  mergeRecord: (a, b) => ({
+    bestTime: Math.max(a.bestTime, b.bestTime),
+    mostKills: Math.max(a.mostKills, b.mostKills),
+    won: a.won || b.won,
+  }),
+}) {}
 
-const mergeRecord = (a: HeroRecord, b: HeroRecord): HeroRecord => ({
-  bestTime: Math.max(a.bestTime, b.bestTime),
-  mostKills: Math.max(a.mostKills, b.mostKills),
-  won: a.won || b.won,
-});
-
-/** The best of both: the longer time, the more kills, and won if either says so. */
-export const mergeRecords: (a: HeroRecords, b: HeroRecords) => HeroRecords =
-  mergeRecordsWith(mergeRecord);
-
-const run = (summary: RunSummary): HeroRecords => ({
+/** One run as records: what a run's end writes into the save. */
+export const run = (summary: RunSummary): HeroRecords => ({
   [summary.heroId]: {
     bestTime: summary.time,
     mostKills: summary.kills,
@@ -51,37 +54,4 @@ const run = (summary: RunSummary): HeroRecords => ({
 export const withRun = (
   records: HeroRecords,
   summary: RunSummary
-): HeroRecords => mergeRecords(records, run(summary));
-
-/** The save service. Neither method fails: storage problems are logged and play goes on. */
-export interface SaveApi {
-  /** The stored records. A missing save is empty. A corrupt or unknown-version one is backed up, logged and read as empty. */
-  readonly load: Effect.Effect<HeroRecords>;
-  /**
-   * Records a run. Re-reads the stored save first and keeps the best of both,
-   * so a record another tab wrote isn't lost. Returns the merged records, even
-   * when the write fails (that is logged and dropped).
-   */
-  readonly recordRun: (summary: RunSummary) => Effect.Effect<HeroRecords>;
-}
-
-export class Save extends Context.Service<Save, SaveApi>()(
-  "survivor-demo/Save"
-) {}
-
-/** The save service over whatever `KeyValueStore` is provided. */
-export const SaveLayer = Layer.effect(
-  Save,
-  Effect.map(
-    makeSaveStore({
-      key: SAVE_KEY,
-      field: "heroes",
-      record: HeroRecord,
-      mergeRecord,
-    }),
-    (store): SaveApi => ({
-      load: store.load,
-      recordRun: (summary) => store.merge(run(summary)),
-    })
-  )
-);
+): HeroRecords => SurvivorsSave.merge(records, run(summary));

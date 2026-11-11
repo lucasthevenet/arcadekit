@@ -1,29 +1,33 @@
 import { existsSync } from "node:fs";
 
-import { defaultAudioSettings } from "arcadekit/audio";
+import { Audio, defaultAudioSettings, silentAudio } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
+import { CUE_SOUNDS, PushPuzzleAudioSettings, SOUND_LIST } from "./audio";
 import {
-  AUDIO_SETTINGS_KEY,
-  AudioSettingsLayer,
-  AudioSettingsStorage,
-  CUE_SOUNDS,
-  SOUND_LIST,
-} from "./audio";
-import { ChangeAudioSettings, EndRun, PlayClick, StartLevel } from "./commands";
+  ChangeAudioSettings,
+  EndRun,
+  LoadAudioSettings,
+  PlayClick,
+  StartLevel,
+} from "./commands";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
 import { init, update } from "./update";
 
-// The app's sound table, its audio settings under their own key (over an in-memory
-// KeyValueStore), and the UI that changes them. Mixing and storage problems are
-// arcadekit/audio's tests.
+// The sounds the app gives the cue table, its audio settings under their own key (over
+// an in-memory KeyValueStore, through the Commands the app runs), and the UI that changes
+// them. Mixing is arcadekit/audio's tests, and storage problems are arcadekit/save's.
 
-describe("the sound table", () => {
+/** The audio settings' storage key, written out: moving it would leave what is stored behind. */
+const SETTINGS_KEY = "arcadekit/push-puzzle/settings";
+
+describe("the sounds", () => {
   it("plays every cue with a sound from the list, each a file in public/sounds", () => {
     const ids = Object.values(CUE_SOUNDS);
     expect({
@@ -38,27 +42,48 @@ describe("the sound table", () => {
 });
 
 describe("the audio settings", () => {
-  it("keep the last write under their own key, apart from the save", async () => {
+  it("keep the last write under their own key, apart from the save, and are applied when read", async () => {
+    const applied: unknown[] = [];
+    const audio: AudioSystem = {
+      ...silentAudio,
+      setVolume: (bus, volume) => {
+        applied.push([bus, volume]);
+      },
+      setMuted: (muted) => {
+        applied.push(muted);
+      },
+    };
+    const muted = { ...defaultAudioSettings, muted: true };
     const result = await Effect.gen(function* () {
-      const store = yield* AudioSettingsStorage;
-      const before = yield* store.load;
-      yield* store.save({ ...defaultAudioSettings, music: 0.2 });
-      yield* store.save({ ...defaultAudioSettings, muted: true });
-      const raw = yield* (yield* KeyValueStore.KeyValueStore).get(
-        AUDIO_SETTINGS_KEY
-      );
-      return { before, after: yield* store.load, stored: raw !== undefined };
+      const before = (yield* LoadAudioSettings().effect).settings;
+      yield* ChangeAudioSettings({
+        settings: { ...defaultAudioSettings, music: 0.2 },
+      }).effect;
+      yield* ChangeAudioSettings({ settings: muted }).effect;
+      const raw = yield* (yield* KeyValueStore.KeyValueStore).get(SETTINGS_KEY);
+      applied.length = 0;
+      const after = (yield* LoadAudioSettings().effect).settings;
+      return { before, after, raw, applied };
     }).pipe(
       Effect.provide(
-        AudioSettingsLayer.pipe(Layer.provideMerge(KeyValueStore.layerMemory))
+        PushPuzzleAudioSettings.layer.pipe(
+          Layer.provideMerge(KeyValueStore.layerMemory)
+        )
       ),
+      Effect.provide(Layer.succeed(Audio, audio)),
       Effect.orDie,
       Effect.runPromise
     );
     expect(result).toStrictEqual({
       before: defaultAudioSettings,
-      after: { ...defaultAudioSettings, muted: true },
-      stored: true,
+      after: muted,
+      raw: JSON.stringify(muted),
+      applied: [
+        ["master", muted.master],
+        ["sfx", muted.sfx],
+        ["music", muted.music],
+        true,
+      ],
     });
   });
 });

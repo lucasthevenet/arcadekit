@@ -1,33 +1,27 @@
-import {
-  combinePlayerInputs,
-  createMemoryNetwork,
-  hostLockstep,
-  joinLockstep,
-  schemaCodec,
-} from "arcadekit/net";
+import * as Game from "arcadekit/game";
+import { createMemoryNetwork, hostLockstep, joinLockstep } from "arcadekit/net";
 import type {
   LockstepOptions,
   LockstepSession,
   MemoryNetwork,
 } from "arcadekit/net";
-import { GameLoop } from "arcadekit/runtime";
-import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { SurvivorsEvent } from "./events";
+import { ChooseUpgrade, HoldPause } from "./commands";
 import { hashWorld } from "./hash-world";
 import type { Hero } from "./hero";
-import { HeroInput } from "./input";
-import type { SurvivorsInput } from "./input";
+import type { HeroInput, SurvivorsInput } from "./input";
 import { GameContent } from "./schema";
-import { survivorsSimulation } from "./simulation";
+import { Survivors } from "./simulation";
 import type { SurvivorsConfig, World } from "./world";
 
-// Survivors' real simulation in lockstep, one hero per player: three peers, each driving its own
-// hero, over a lossy, jittery in-memory network. Every peer must step through the same states as
-// every other, step for step, including level-ups each player answers with its own pick, and a
-// player the host removes.
+// Survivors' declared simulation in lockstep, one hero per player: three peers, each driving its
+// own hero, over a lossy, jittery in-memory network. Every peer must step through the same
+// states as every other, step for step, including level-ups each player answers with its own
+// pick, a pause one player holds for everyone, and a player the host removes. A pick and a pause
+// are commands, sent through each peer's session. The peers compare their hashes after every
+// step (`hashEvery: 1`), and the test keeps each peer's to compare them itself.
 
 const decode = Schema.decodeUnknownSync(GameContent);
 
@@ -136,49 +130,45 @@ const zigZag = (turn: number, step: number, input: Mutable<HeroInput>) => {
   return input;
 };
 
-/**
- * Player `slot`'s script: its zig-zag, and, when `picks`, choice `slot % length` of every offer
- * its hero has open in the session's current state. One object, refilled.
- */
-const script = (
-  slot: number,
-  picks: boolean,
-  state: () => World | null
-): StepInput<HeroInput> => {
+/** Player `slot`'s device: its zig-zag. One object, refilled. */
+const script = (slot: number): Game.StepInput<HeroInput> => {
   const input: Mutable<HeroInput> = { moveX: 0, moveZ: 0 };
-  return {
-    read: (step) => {
-      zigZag(TURNS[slot]!, step, input);
-      const world = state();
-      const offer = world?.heroes[slot]!.offer;
-      if (picks && world && offer) {
-        input.pick = { offer: world.offerSeq, index: slot % offer.length };
-      } else {
-        delete input.pick;
-      }
-      return input;
-    },
-  };
+  return { read: (step) => zigZag(TURNS[slot]!, step, input) };
 };
 
-/** Survivors' simulation, with the world's hash recorded after every step. */
+/** A session's `hash` that also keeps each hash: with `hashEvery: 1`, the world's after every step. */
 const recorded = () => {
   const hashes: number[] = [];
-  const simulation = {
-    ...survivorsSimulation,
-    step: (world: World, input: SurvivorsInput, dt: number) => {
-      survivorsSimulation.step(world, input, dt);
-      hashes.push(hashWorld(world));
-    },
+  const hash = (world: World) => {
+    const hashed = hashWorld(world);
+    hashes.push(hashed);
+    return hashed;
   };
-  return { hashes, simulation };
+  return { hashes, hash };
 };
 
-type Session = LockstepSession<World, SurvivorsEvent>;
+/** The rejections each of survivors' commands can be refused with. */
+type Refusals = Game.RefusalsOf<
+  readonly [typeof ChooseUpgrade, typeof HoldPause]
+>;
+
+type Session = LockstepSession<
+  World,
+  Game.EventOf<typeof Survivors>,
+  Game.CommandOf<typeof Survivors>,
+  Refusals
+>;
 
 interface Peer {
+  readonly slot: number;
   readonly session: Session;
   readonly hashes: number[];
+  /** Whether this player picks its upgrades. */
+  readonly picking: boolean;
+  /** The number of the last offer this player answered. */
+  answered: number;
+  /** How each of its picks ended: "taken", or the rejection's tag or the drop's. */
+  readonly picks: string[];
 }
 
 interface RunOptions {
@@ -195,35 +185,65 @@ const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
     heroIds: HERO_IDS,
   };
   return PLAYERS.map((id, slot) => {
-    const { hashes, simulation } = recorded();
-    let session: Session | null = null;
+    const { hashes, hash } = recorded();
     const options: LockstepOptions<
       SurvivorsConfig,
       World,
       SurvivorsInput,
-      SurvivorsEvent,
-      HeroInput
+      Game.EventOf<typeof Survivors>,
+      Game.CommandOf<typeof Survivors>,
+      Refusals
     > = {
-      simulation,
+      simulation: Survivors,
       config,
       contentHash: "survivors-test-content",
       transport: network.connect(id),
-      local: script(slot, run.picking[slot]!, () => session?.state ?? null),
-      codec: schemaCodec(HeroInput),
-      combine: combinePlayerInputs(PLAYERS),
-      hash: hashWorld,
+      local: script(slot),
+      hash,
       inputDelay: 4,
-      hashEvery: 30,
+      hashEvery: 1,
       ...(run.dropAfterMs === undefined
         ? {}
         : { dropAfterMs: run.dropAfterMs }),
     };
-    session =
+    const session =
       slot === 0
         ? hostLockstep({ ...options, peers: ["p1", "p2"], seed: SEED }, 0)
-        : joinLockstep({ ...options, host: "host" }, 0);
-    return { session, hashes };
+        : joinLockstep({ ...options, host: "host", players: PLAYERS }, 0);
+    return {
+      slot,
+      session,
+      hashes,
+      picking: run.picking[slot]!,
+      answered: 0,
+      picks: [],
+    };
   });
+};
+
+/**
+ * What a player's app does after a tick: it answers its hero's open offer once, with choice
+ * `slot % length`, as the `ChooseUpgrade` command.
+ */
+const pick = (peer: Peer) => {
+  const world = peer.session.state;
+  const offer = world?.heroes[peer.slot]!.offer ?? null;
+  if (
+    !peer.picking ||
+    world === null ||
+    offer === null ||
+    peer.answered === world.offerSeq
+  ) {
+    return;
+  }
+  peer.answered = world.offerSeq;
+  peer.session.send(
+    new ChooseUpgrade({
+      offer: world.offerSeq,
+      index: peer.slot % offer.length,
+    }),
+    (outcome) => peer.picks.push(outcome?._tag ?? "taken")
+  );
 };
 
 /** Advances the network and ticks each session on its own timer, as arcadekit/net's tests do. */
@@ -238,6 +258,7 @@ const runNetwork = (
     for (let i = 0; i < peers.length; i++) {
       if (nowMs % (4 + i) === 0) {
         peers[i]!.session.tick(nowMs);
+        pick(peers[i]!);
       }
     }
   }
@@ -264,26 +285,27 @@ const loadout = (hero: Hero) =>
     [...hero.passiveLevels],
   ]);
 
-/** The run played alone through GameLoop, every player's zig-zag in one step input: what every peer must match. */
+/** The run played alone through `Game.Loop`, every player's zig-zag in one step input: what every peer must match. */
 const soloHashes = (steps: number) => {
-  const { hashes, simulation } = recorded();
-  const loop = new GameLoop(simulation);
+  const hashes: number[] = [];
+  const loop = new Game.Loop(Survivors);
   loop.start({ content: content(1_000_000), heroIds: HERO_IDS }, SEED, 0);
+  const world = loop.state!;
   const players = TURNS.map(() => ({ moveX: 0, moveZ: 0 }));
   const input: SurvivorsInput = { players, leaving: [] };
-  loop.frame(
-    {
-      read: (step) => {
-        for (const [slot, turn] of TURNS.entries()) {
-          zigZag(turn, step, players[slot]!);
-        }
-        return input;
-      },
+  const source: Game.StepInput<SurvivorsInput> = {
+    read: (step) => {
+      for (const [slot, turn] of TURNS.entries()) {
+        zigZag(turn, step, players[slot]!);
+      }
+      return input;
     },
-    { steps },
-    0
-  );
-  return { hashes, world: loop.state! };
+  };
+  for (let step = 0; step < steps; step++) {
+    loop.frame(source, { steps: 1 }, 0);
+    hashes.push(hashWorld(world));
+  }
+  return { hashes, world };
 };
 
 describe("survivors in lockstep", () => {
@@ -320,6 +342,18 @@ describe("survivors in lockstep", () => {
       world.level > 2,
     ]).toStrictEqual([null, null, null, true, true]);
     expect([p1, p2]).toStrictEqual([host, host]);
+    // Each player sent one pick an offer, and every peer's rules took each: a pick rides one
+    // step, so none arrives twice or late.
+    expect(
+      peers.map((peer) => [
+        peer.picks.length >= world.level - 2,
+        new Set(peer.picks),
+      ])
+    ).toStrictEqual([
+      [true, new Set(["taken"])],
+      [true, new Set(["taken"])],
+      [true, new Set(["taken"])],
+    ]);
     // Every hero took an upgrade for each finished level-up, and the two bolters chose differently.
     const done = world.level - 1 - world.pendingLevelUps;
     expect(world.heroes.map((hero) => upgrades(hero) >= done)).toStrictEqual([
@@ -328,6 +362,59 @@ describe("survivors in lockstep", () => {
       true,
     ]);
     expect(loadout(world.heroes[0]!)).not.toBe(loadout(world.heroes[2]!));
+  });
+
+  it("holds the run on every peer while one player holds the pause, and plays on when it lets go", () => {
+    const network = lossy();
+    const peers = startRun(network, {
+      xpToLevel2: 1_000_000,
+      picking: [false, false, false],
+    });
+    const [, p1] = peers;
+    const told: (string | undefined)[] = [];
+    const times = () => peers.map((peer) => peer.session.state!.time);
+    runNetwork(network, peers, 0, 2000);
+    p1!.session.send(new HoldPause({ held: true }), (outcome) =>
+      told.push(outcome?._tag)
+    );
+    runNetwork(network, peers, 2001, 4000);
+    const held = times();
+    const heldBy = peers.map((peer) =>
+      peer.session.state!.heroes.map((hero) => hero.paused)
+    );
+    runNetwork(network, peers, 4001, 6000);
+    const stillHeld = times();
+    p1!.session.send(new HoldPause({ held: false }), (outcome) =>
+      told.push(outcome?._tag)
+    );
+    runNetwork(network, peers, 6001, 9000);
+    expect(peers.map((peer) => peer.session.error)).toStrictEqual([
+      null,
+      null,
+      null,
+    ]);
+    // Every peer's clock stood at the same time, and the steps went on: a frozen run still
+    // steps, so the peers stay in touch.
+    expect([held, stillHeld]).toStrictEqual([
+      [held[0], held[0], held[0]],
+      [held[0], held[0], held[0]],
+    ]);
+    expect(heldBy).toStrictEqual([
+      [false, true, false],
+      [false, true, false],
+      [false, true, false],
+    ]);
+    expect(times().map((time) => time > held[0]!)).toStrictEqual([
+      true,
+      true,
+      true,
+    ]);
+    // The pause is in the state every peer hashes: they agreed at every step, through both.
+    const [host, ...others] = commonHashes(peers);
+    expect([told, others]).toStrictEqual([
+      [undefined, undefined],
+      [host, host],
+    ]);
   });
 
   it("drops a silent player's hero at the same step on every peer, and plays on", () => {

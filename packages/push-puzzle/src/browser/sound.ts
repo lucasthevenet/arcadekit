@@ -1,19 +1,29 @@
-import type { AudioSystem } from "arcadekit/audio";
+import { CueTable, SoundId } from "arcadekit/audio";
+import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
 import type * as Game from "arcadekit/game/browser";
 
 import type { Puzzle, PushPuzzleCues } from "../world";
 
-/** The sound id the app plays for each push-puzzle cue. Ids name sounds in the app's sound list. */
-export interface PushPuzzleSounds {
-  /** A turn that moved without pushing. */
-  readonly move: string;
-  /** A turn that pushed a box, including into a hole. */
-  readonly push: string;
-  /** A box falling into a hole. Plays with the push. */
-  readonly hole: string;
-  readonly undo: string;
-  readonly solved: string;
-}
+/**
+ * Push-puzzle's cue table: which of the app's sounds each of its cues plays (ADR-0014). The app
+ * gives the sounds, `PushPuzzleCueTable.layer({ move: "move", ... })`: it owns the sound files,
+ * and the genre ships none.
+ */
+export class PushPuzzleCueTable extends CueTable("PushPuzzleCueTable", {
+  cues: {
+    /** A turn that moved without pushing. */
+    move: SoundId,
+    /** A turn that pushed a box, including into a hole. */
+    push: SoundId,
+    /** A box falling into a hole. Plays with the push. */
+    hole: SoundId,
+    undo: SoundId,
+    solved: SoundId,
+  },
+}) {}
+
+/** The app's sound for each cue: what the sound view plays from. */
+type PushPuzzleSounds = CueSoundsOf<typeof PushPuzzleCueTable>;
 
 /** Cue counter name and the sound it plays, in play order. */
 const CUES: readonly (readonly [

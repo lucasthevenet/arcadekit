@@ -1,13 +1,13 @@
-import { Effect, Exit, Fiber, Scope } from "effect";
+import { Effect, Exit, Fiber, Option, Result, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { AttachError, GameCrashed } from "../../runtime/browser";
-import type { GameView } from "../../runtime/browser";
-import { manualFrames } from "../../runtime/testing";
-import { testCoopGame, testPresentation } from "../testing/index";
-import type { TestCoop, TestState } from "../testing/index";
-import type { CoopClient, CoopPresentation } from "./coop";
-import { makeCoopClient } from "./coop-client";
+import { AttachError, GameCrashed } from "../../game/browser";
+import type { View as GameView } from "../../game/browser";
+import { manualFrames } from "../../game/testing";
+import type { TestState } from "../testing/index";
+import type { CoopPresented } from "./coop-client";
+import { testCoopClient, testCoopParts, testPresentation } from "./test-client";
+import type { TestCoopClient } from "./test-client";
 
 // Attaching and detaching in Node, with no browser, no room and no seat: the input and the view
 // are fakes that count what is made and disposed, and the test runs the frames.
@@ -35,16 +35,16 @@ let presentations: number;
 
 const client = (
   frames: ReturnType<typeof manualFrames>,
-  createView: CoopPresentation<TestState, unknown>["createView"]
-): CoopClient<TestCoop> =>
+  view: CoopPresented<TestState, unknown>["view"]
+): TestCoopClient =>
   Effect.runSync(
     Scope.provide(
-      makeCoopClient(
-        testCoopGame({
+      testCoopClient(
+        testCoopParts({
           presentation: Effect.sync(() => {
             presentations += 1;
             return testPresentation({
-              createInput: () => {
+              input: () => {
                 inputs += 1;
                 return {
                   read: () => ({ add: 0 }),
@@ -53,7 +53,7 @@ const client = (
                   },
                 };
               },
-              createView,
+              view,
             });
           }),
         }),
@@ -84,23 +84,31 @@ describe("attaching a co-op client", () => {
       new AttachError({ message: "no WebGL", cause: noWebGl }),
       0,
     ]);
+    // A tagged error's `message` and `cause` aren't enumerable, so the comparison above holds
+    // the error's class and neither of them.
+    expect(error).toMatchObject({ _tag: "AttachError", message: "no WebGL" });
+    expect(error.cause).toBe(noWebGl);
   });
 
-  it("fails with an AttachError, making no view, when the input can't be made", async () => {
+  it("fails with an AttachError, disposing the view it made, when the input can't be made", async () => {
     const noPointer = new Error("no pointer");
     let views = 0;
     const coop = Effect.runSync(
       Scope.provide(
-        makeCoopClient(
-          testCoopGame({
+        testCoopClient(
+          testCoopParts({
             presentation: Effect.succeed(
               testPresentation({
-                createInput: () => {
+                input: () => {
                   throw noPointer;
                 },
-                createView: () => {
+                view: () => {
                   views += 1;
-                  return fakeView();
+                  return fakeView({
+                    dispose: () => {
+                      views -= 1;
+                    },
+                  });
                 },
               })
             ),
@@ -115,12 +123,18 @@ describe("attaching a co-op client", () => {
       new AttachError({ message: "no pointer", cause: noPointer }),
       0,
     ]);
+    // As above: the message and the cause, on the error itself.
+    expect(error).toMatchObject({
+      _tag: "AttachError",
+      message: "no pointer",
+    });
+    expect(error.cause).toBe(noPointer);
   });
 
   it("draws no run on each frame until detached, then cancels its frame and releases the input", async () => {
     const frames = manualFrames();
     const drawn: [TestState | null, number][] = [];
-    const coop = client(frames, (_container, local) =>
+    const coop = client(frames, (_container, { local }) =>
       fakeView({
         render: (state, seconds) => drawn.push([state, seconds + local.slot]),
       })
@@ -142,7 +156,7 @@ describe("attaching a co-op client", () => {
     ]);
   });
 
-  it("runs the presentation once per attach, before the input and the view", async () => {
+  it("runs the presentation once per attach, then makes the view, then the input, as an engine does", async () => {
     const order: string[] = [];
     const coop = client(manualFrames(), () => {
       order.push(`view after ${presentations} presentation, ${inputs} input`);
@@ -156,8 +170,8 @@ describe("attaching a co-op client", () => {
       await Effect.runPromise(Fiber.interrupt(attach));
     }
     expect(order).toStrictEqual([
-      "view after 1 presentation, 1 input",
-      "view after 2 presentation, 1 input",
+      "view after 1 presentation, 0 input",
+      "view after 2 presentation, 0 input",
     ]);
   });
 
@@ -219,6 +233,13 @@ describe("attaching a co-op client", () => {
       false,
       0,
     ]);
+    // As above: the message and the cause, on the error itself.
+    const error = Option.getOrUndefined(Exit.findErrorOption(exit));
+    expect(error).toMatchObject({
+      _tag: "GameCrashed",
+      message: "lost context",
+    });
+    expect(error?.cause).toBe(bug);
   });
 
   it("dies when attached twice at once", async () => {
@@ -227,6 +248,18 @@ describe("attaching a co-op client", () => {
     await Effect.runPromise(Effect.yieldNow);
     const second = await Effect.runPromise(Effect.exit(coop.attach(element)));
     await Effect.runPromise(Fiber.interrupt(first));
-    expect([Exit.hasDies(second), inputs]).toStrictEqual([true, 0]);
+    // The defect names the Coop and says what to do. The second attach made nothing.
+    expect([
+      Result.map(
+        Exit.findDefect(second),
+        (defect) => (defect as Error).message
+      ),
+      inputs,
+    ]).toStrictEqual([
+      Result.succeed(
+        'Coop "TestCoop" is already attached to an element. Its Co-op client draws into one element at a time: interrupt the first attach, which detaches without leaving, before attaching again.'
+      ),
+      0,
+    ]);
   });
 });

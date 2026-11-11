@@ -3,8 +3,9 @@
 // that carries a lockstep session over those links. A room is a scoped Effect: its scope owns
 // the socket and every link. The DOM-free lockstep session is in the root entry.
 //
-// It also has the Co-op client (`makeCoopClient`): one player's side of a Co-op game, from the
-// lobby to the run, for a game that supplies its lockstep parts and its presentation.
+// It also has the `Coop` declaration: a game's engine, played by several players in lockstep
+// from a lobby. Its class is the key of the Co-op client an app drives, one player's side of a
+// run, over the app's rooms (`CoopRooms`).
 
 export {
   type DataChannelLike,
@@ -14,19 +15,30 @@ export {
   linksTransport,
 } from "./channel";
 export {
+  type AnyCoop,
+  Coop,
+  type CoopCases,
+  type CoopClass,
   type CoopClient,
-  type CoopClientOptions,
   type CoopDebug,
+  type CoopDefinition,
+  type CoopId,
+  type CoopService,
+  CoopTicker,
+  type RunCases,
+} from "./coop";
+export {
   type CoopEvent,
   type CoopFailure,
-  type CoopGame,
-  type CoopPresentation,
-  type CoopRooms,
+  LobbyChanged,
   type LobbyPlayer,
-  type LocalPlayer,
-  browserCoopRooms,
-} from "./coop";
-export { makeCoopClient } from "./coop-client";
+  type RunEvent,
+  RunStarted,
+  type SeatContext,
+  SeatFailed,
+  WaitingChanged,
+} from "./coop-events";
+export { CoopRooms, type Rooms, browserCoopRoomsLayer } from "./coop-rooms";
 export { RoomError, type RoomFailure } from "./errors";
 export {
   DEFAULT_ICE_SERVERS,

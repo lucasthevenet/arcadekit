@@ -1,19 +1,13 @@
-import { Effect, Schema } from "effect";
+import { Schema } from "effect";
 
-import type { GameView } from "../../runtime/browser";
-import type {
-  GameSimulation,
-  InputSource,
-  PlayerInputs,
-} from "../../runtime/index";
-import type { CoopGame, CoopPresentation } from "../browser/index";
-import { schemaCodec } from "../codec";
-import type { InputCodec } from "../codec";
-import type { CoopRules, CoopTypes } from "../coop";
+import * as Game from "../../game/index";
 
 // A small Co-op game for tests: every player adds a number each step, and now and then the run
 // stops on an offer that each player answers. It is enough to drive every part of the Co-op
-// client: lobby picks, an answer held until it settles, players choosing, pause, and a run's end.
+// client: lobby picks, a command the rules take or refuse, players choosing, pause, and a run's
+// end. An event says whose it is by slot (`OfferOpened.slot`, `RunEnded.totals`), as a genre's do. Its rules are declared as a genre's are: events, commands with their rejections, then the
+// simulation. Each declaration's base is named first, with its type, since the kit's type files
+// are made one file at a time (isolatedDeclarations).
 
 /** The test game's content, as JSON data. */
 export interface TestContent {
@@ -38,18 +32,10 @@ export interface TestConfig {
   readonly picks: readonly string[];
 }
 
-/** A player's answer to offer `offer`: `value` is added to its bonus. */
-export interface TestAnswer {
-  readonly offer: number;
-  readonly value: number;
-}
-
-/** One player's input for one step. */
+/** One player's input for one step: what its device holds. */
 export interface TestInput {
   /** Added to the player's total this step. */
   readonly add: number;
-  readonly answer?: TestAnswer;
-  readonly paused?: boolean;
 }
 
 export interface TestState {
@@ -67,88 +53,97 @@ export interface TestState {
   readonly owes: boolean[];
   /** Whether each player has left the run, by slot. */
   readonly gone: boolean[];
+  /** Whether each player holds the run paused (`HoldPause`), by slot. */
+  readonly held: boolean[];
   ended: boolean;
-  events: TestEvent[];
 }
 
-export type TestEvent =
-  /** The run's sample, every 100 ms. */
-  | {
-      readonly type: "score";
-      readonly steps: number;
-      readonly totals: readonly number[];
-    }
-  /** Offer `offer` opened for `slot`'s player. */
-  | { readonly type: "offer"; readonly offer: number; readonly slot: number }
-  /** The run ended. `totals` is each player's total plus bonus, by slot. */
-  | { readonly type: "ended"; readonly totals: readonly number[] };
-
-/** What the local player hears of the run. */
-export type TestLocalEvent =
-  | { readonly type: "score"; readonly steps: number; readonly total: number }
-  | { readonly type: "offer"; readonly offer: number }
-  | {
-      readonly type: "ended";
-      readonly total: number;
-      readonly names: readonly string[];
-    };
-
-/** The test game's types, as the bag a Co-op game names. */
-export interface TestCoop extends CoopTypes {
-  readonly Config: TestConfig;
-  readonly State: TestState;
-  readonly Event: TestEvent;
-  readonly PlayerInput: TestInput;
-  readonly Answer: TestAnswer;
-  readonly LocalEvent: TestLocalEvent;
-  readonly Content: TestContent;
-}
-
-const TestInputSchema = Schema.Struct({
-  add: Schema.Number,
-  answer: Schema.optionalKey(
-    Schema.Struct({ offer: Schema.Number, value: Schema.Number })
-  ),
-  paused: Schema.optionalKey(Schema.Boolean),
+const ScoreBase: Game.EventClass<
+  "Score",
+  {
+    readonly steps: Schema.Int;
+    readonly totals: Schema.$Array<Schema.Number>;
+    readonly owes: Schema.$Array<Schema.Boolean>;
+  }
+> = Game.Event("Score", {
+  steps: Schema.Int,
+  totals: Schema.Array(Schema.Number),
+  owes: Schema.Array(Schema.Boolean),
 });
 
-const nothing = (): void => undefined;
+/**
+ * The run's sample, every 100 ms: the steps played, each player's total by slot, and whether
+ * each still owes the open offer an answer. Who a run waits on to decide is the game's to say,
+ * and it says it here.
+ */
+export class Score extends ScoreBase {}
 
-/** The run waits on an offer: only its answers count. */
-const answerOffer = (
-  state: TestState,
-  players: readonly (TestInput | null)[]
-): void => {
-  for (let slot = 0; slot < players.length; slot++) {
-    const answer = players[slot]?.answer;
-    if (
-      state.owes[slot] === true &&
-      answer !== undefined &&
-      answer.offer === state.offer
-    ) {
-      state.bonus[slot]! += answer.value;
-      state.owes[slot] = false;
-    }
-  }
-};
+const OfferOpenedBase: Game.EventClass<
+  "OfferOpened",
+  { readonly offer: Schema.Int; readonly slot: Schema.Int }
+> = Game.Event("OfferOpened", { offer: Schema.Int, slot: Schema.Int });
 
-/** Whether a player still in the run holds the pause. */
-const pausedAny = (
-  state: TestState,
-  players: readonly (TestInput | null)[]
-): boolean => {
-  for (let slot = 0; slot < players.length; slot++) {
-    if (state.gone[slot] !== true && players[slot]?.paused === true) {
-      return true;
-    }
-  }
-  return false;
-};
+/** Offer `offer` opened for `slot`'s player. */
+export class OfferOpened extends OfferOpenedBase {}
+
+const RunEndedBase: Game.EventClass<
+  "RunEnded",
+  { readonly totals: Schema.$Array<Schema.Number> }
+> = Game.Event("RunEnded", { totals: Schema.Array(Schema.Number) });
+
+/** The run ended. `totals` is each player's total plus bonus, by slot. */
+export class RunEnded extends RunEndedBase {}
+
+/** Everything a run of the test game reports: its two events and its sample. */
+export type TestEvent = Score | OfferOpened | RunEnded;
+
+const NothingOwedBase: Game.RejectionClass<
+  "NothingOwed",
+  { readonly offer: Schema.Int }
+> = Game.Rejection("NothingOwed", { offer: Schema.Int });
+
+/**
+ * The sender owes offer `offer` no answer: another offer is the open one, none is, or the
+ * sender has answered it already.
+ */
+export class NothingOwed extends NothingOwedBase {}
+
+const AnswerOfferBase: Game.CommandClass<
+  "AnswerOffer",
+  { readonly offer: Schema.Int; readonly value: Schema.Number },
+  readonly [typeof NothingOwed]
+> = Game.Command(
+  "AnswerOffer",
+  { offer: Schema.Int, value: Schema.Number },
+  { rejects: [NothingOwed] }
+);
+
+/** The sender answers offer `offer`: `value` is added to its bonus, and it owes nothing more. */
+export class AnswerOffer extends AnswerOfferBase {}
+
+const HoldPauseBase: Game.CommandClass<
+  "HoldPause",
+  { readonly held: Schema.Boolean }
+> = Game.Command("HoldPause", { held: Schema.Boolean });
+
+/** The sender holds the run paused for everyone (`held: true`), or lets it go. Leaving lets go. */
+export class HoldPause extends HoldPauseBase {}
+
+/** Every command a run of the test game takes. */
+export type TestCommand = AnswerOffer | HoldPause;
+
+/** The rejections each of the test game's commands can be refused with, by the command's tag. */
+export type TestRefusals = Game.RefusalsOf<
+  readonly [typeof AnswerOffer, typeof HoldPause]
+>;
+
+const TestInputSchema = Schema.Struct({ add: Schema.Number });
 
 /** One step of play: every player's `add`, then the end, or the next offer. */
 const advance = (
   state: TestState,
-  players: readonly (TestInput | null)[]
+  players: readonly (TestInput | null)[],
+  report: (event: OfferOpened | RunEnded) => void
 ): void => {
   state.steps += 1;
   for (let slot = 0; slot < players.length; slot++) {
@@ -159,29 +154,35 @@ const advance = (
   const { length, offerEvery } = state.content;
   if (state.steps >= length) {
     state.ended = true;
-    state.events.push({
-      type: "ended",
-      totals: state.totals.map((total, slot) => total + state.bonus[slot]!),
-    });
+    report(
+      new RunEnded({
+        totals: state.totals.map((total, slot) => total + state.bonus[slot]!),
+      })
+    );
   } else if (offerEvery > 0 && state.steps % offerEvery === 0) {
     state.offer += 1;
     for (let slot = 0; slot < state.owes.length; slot++) {
       if (state.gone[slot] !== true) {
         state.owes[slot] = true;
-        state.events.push({ type: "offer", offer: state.offer, slot });
+        report(new OfferOpened({ offer: state.offer, slot }));
       }
     }
   }
 };
 
-/** The test game's simulation: plain and deterministic, as a genre's is. */
-export const testSimulation: GameSimulation<
+const TestGameBase: Game.SimulationClass<
+  "TestGame",
   TestConfig,
   TestState,
-  PlayerInputs<TestInput>,
-  TestEvent
-> = {
-  create: ({ content, picks }) => ({
+  Game.PlayerInputs<TestInput>,
+  TestEvent,
+  TestCommand,
+  TestRefusals
+> = Game.Simulation("TestGame", {
+  input: Game.PlayerInputs(TestInputSchema),
+  events: [OfferOpened, RunEnded],
+  commands: [AnswerOffer, HoldPause],
+  create: ({ content, picks }: TestConfig): TestState => ({
     content,
     picks,
     steps: 0,
@@ -190,37 +191,55 @@ export const testSimulation: GameSimulation<
     offer: 0,
     owes: picks.map(() => false),
     gone: picks.map(() => false),
+    held: picks.map(() => false),
     ended: false,
-    events: [],
   }),
-  step: (state, input) => {
+  step: (state, input, { report }) => {
     if (state.ended) {
       return;
     }
     for (const slot of input.leaving) {
       state.gone[slot] = true;
       state.owes[slot] = false;
+      state.held[slot] = false;
     }
-    if (state.owes.includes(true)) {
-      answerOffer(state, input.players);
-    } else if (!pausedAny(state, input.players)) {
-      advance(state, input.players);
+    // The run waits while a player owes the open offer an answer, or holds the pause.
+    if (!state.owes.includes(true) && !state.held.includes(true)) {
+      advance(state, input.players, report);
     }
   },
-  drainEvents: (state) => {
-    const drained = state.events;
-    state.events = [];
-    return drained;
+  apply: {
+    // Decide first, then change: a refused answer leaves the state as it was.
+    AnswerOffer: (state, { offer, value }, { player }) => {
+      if (state.offer !== offer || state.owes[player] !== true) {
+        return new NothingOwed({ offer });
+      }
+      state.bonus[player]! += value;
+      state.owes[player] = false;
+    },
+    HoldPause: (state, { held }, { player }) => {
+      if (state.gone[player] === false) {
+        state.held[player] = held;
+      }
+    },
   },
   sample: {
-    everyMs: 100,
+    event: Score,
+    every: "100 millis",
     read: (state) => ({
-      type: "score",
       steps: state.steps,
       totals: [...state.totals],
+      owes: [...state.owes],
     }),
   },
-};
+});
+
+/**
+ * The test game's rules: plain and deterministic, as a genre's are. Several players play it, so
+ * its step input is a `Game.PlayerInputs`. A player answers an offer with `AnswerOffer` and
+ * holds the pause with `HoldPause`.
+ */
+export class TestGame extends TestGameBase {}
 
 const mix = (hash: number, value: number): number =>
   Math.imul(hash ^ value, 0x01_00_01_93) >>> 0;
@@ -233,108 +252,7 @@ export const hashTestState = (state: TestState): number => {
     hash = mix(hash, state.bonus[slot]!);
     hash = mix(hash, state.owes[slot] === true ? 1 : 0);
     hash = mix(hash, state.gone[slot] === true ? 1 : 0);
+    hash = mix(hash, state.held[slot] === true ? 1 : 0);
   }
   return mix(hash, state.ended ? 1 : 0);
 };
-
-const testCodec: InputCodec<TestInput> = schemaCodec(TestInputSchema);
-
-/** The test game's lockstep parts. */
-export const testCoopRules: CoopRules<TestCoop> = {
-  simulation: testSimulation,
-  codec: testCodec,
-  hash: hashTestState,
-  picks: (content) => content.picks,
-  config: (content, picks) => ({ content, picks }),
-  localInput: () => {
-    const input: { add: number; answer?: TestAnswer; paused?: boolean } = {
-      add: 0,
-    };
-    return (device, answer, paused) => {
-      input.add = device === null ? 0 : device.add;
-      if (answer === null) {
-        delete input.answer;
-      } else {
-        input.answer = answer;
-      }
-      if (paused) {
-        input.paused = true;
-      } else {
-        delete input.paused;
-      }
-      return input;
-    };
-  },
-  settled: (answer, state, slot) =>
-    state.offer !== answer.offer || state.owes[slot] !== true,
-  choosing: (state, slot) => state.owes[slot] === true,
-  localEvent: (event, slot, names) => {
-    switch (event.type) {
-      case "score": {
-        return {
-          type: "score",
-          steps: event.steps,
-          total: event.totals[slot] ?? 0,
-        };
-      }
-      case "offer": {
-        return event.slot === slot
-          ? { type: "offer", offer: event.offer }
-          : null;
-      }
-      case "ended": {
-        return { type: "ended", total: event.totals[slot] ?? 0, names };
-      }
-    }
-  },
-  runEnded: (event) => event.type === "ended",
-};
-
-const ADD_ONE: TestInput = { add: 1 };
-
-/**
- * The test game's presentation: an input that adds 1 each step while attached, and a view that
- * draws nothing. Pass `createInput` or `createView` to watch or replace either.
- */
-export const testPresentation = (
-  parts: Partial<CoopPresentation<TestState, TestInput>> = {}
-): CoopPresentation<TestState, TestInput> => ({
-  createInput: (): InputSource<TestInput> => ({
-    read: () => ADD_ONE,
-    dispose: nothing,
-  }),
-  createView: (): GameView<TestState> => ({
-    render: nothing,
-    dispose: nothing,
-  }),
-  ...parts,
-});
-
-export interface TestCoopGameOptions<LoadError = never> {
-  /** The content each seat loads. Defaults to `testContent`, at once. */
-  readonly content?: Effect.Effect<TestContent, { readonly message: string }>;
-  /** What each attach makes. Defaults to `testPresentation()`, at once. */
-  readonly presentation?: Effect.Effect<
-    CoopPresentation<TestState, TestInput>,
-    LoadError
-  >;
-  readonly maxPlayers?: number;
-  readonly lockstep?: CoopRules<TestCoop>["lockstep"];
-}
-
-/** The test game as a Co-op game: `testCoopRules`, with content and a presentation from `options`. */
-export const testCoopGame = <LoadError = never>(
-  options: TestCoopGameOptions<LoadError> = {}
-): CoopGame<TestCoop, LoadError> => ({
-  ...testCoopRules,
-  ...(options.maxPlayers === undefined
-    ? {}
-    : { maxPlayers: options.maxPlayers }),
-  ...(options.lockstep === undefined ? {} : { lockstep: options.lockstep }),
-  content: options.content ?? Effect.succeed(testContent),
-  presentation:
-    options.presentation ??
-    Effect.sync((): CoopPresentation<TestState, TestInput> =>
-      testPresentation()
-    ),
-});

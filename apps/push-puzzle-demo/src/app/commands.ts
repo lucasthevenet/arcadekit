@@ -7,9 +7,9 @@ import { Audio, AudioSettings, applyAudioSettings } from "arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
-import { AudioSettingsStorage, CLICK, MUSIC, SOUND_LIST } from "./audio";
+import { CLICK, MUSIC, PushPuzzleAudioSettings, SOUND_LIST } from "./audio";
 import { Message } from "./message";
-import { Save } from "./save";
+import { PushPuzzleSave, solve } from "./save";
 import { RETRY_BUTTON_ID } from "./view";
 
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
@@ -83,7 +83,7 @@ export const EndRun = Command.define("EndRun", {
 export const LoadSave = Command.define("LoadSave", {
   messages: [Message.LoadedSave],
   execute: Effect.gen(function* () {
-    const records = yield* (yield* Save).load;
+    const records = yield* (yield* PushPuzzleSave).read;
     return Message.LoadedSave({ records });
   }),
 });
@@ -94,7 +94,8 @@ export const SaveSolve = Command.define("SaveSolve", {
   messages: [Message.SavedSolve],
   execute: ({ levelId, moves }) =>
     Effect.gen(function* () {
-      const records = yield* (yield* Save).recordSolve(levelId, moves);
+      const save = yield* PushPuzzleSave;
+      const records = yield* save.write(solve(levelId, moves));
       return Message.SavedSolve({ records });
     }),
 });
@@ -127,7 +128,7 @@ export const LoadSounds = Command.define("LoadSounds", {
 export const LoadAudioSettings = Command.define("LoadAudioSettings", {
   messages: [Message.LoadedAudioSettings],
   execute: Effect.gen(function* () {
-    const settings = yield* (yield* AudioSettingsStorage).load;
+    const settings = yield* (yield* PushPuzzleAudioSettings).read;
     applyAudioSettings(yield* Audio, settings);
     return Message.LoadedAudioSettings({ settings });
   }),
@@ -140,7 +141,7 @@ export const ChangeAudioSettings = Command.define("ChangeAudioSettings", {
   execute: ({ settings }) =>
     Effect.gen(function* () {
       applyAudioSettings(yield* Audio, settings);
-      yield* (yield* AudioSettingsStorage).save(settings);
+      yield* (yield* PushPuzzleAudioSettings).write(settings);
       return Message.CompletedAudioCommand();
     }),
 });

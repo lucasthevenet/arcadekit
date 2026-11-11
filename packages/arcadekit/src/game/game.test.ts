@@ -68,26 +68,30 @@ class Counter extends Game.Simulation("Counter", {
 const holding = (add: number) => ({ read: () => ({ add }) });
 
 /** Simulations whose handlers return what a handler can't: each is a type error. */
-/* oxlint-disable declaration/class, declaration/plain-handler -- A test declares what a builder or its host must refuse. */
 const declareMistyped = () => [
+  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Game.Simulation("Late", {
     input: Schema.Null,
     create: () => ({ n: 0 }),
     // @ts-expect-error -- a step can't be async: it would return a promise.
+    // oxlint-disable-next-line declaration/plain-handler -- The async step is what the types must refuse.
     step: async () => {},
   }),
+  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Game.Simulation("Lazy", {
     input: Schema.Null,
     create: () => ({ n: 0 }),
     // @ts-expect-error -- a step returns no Effect: nothing would run it.
     step: () => Effect.void,
   }),
+  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Game.Simulation("Folded", {
     input: Schema.Null,
     create: () => ({ n: 0 }),
     // @ts-expect-error -- a step changes the state in place; it returns no next state.
     step: (state) => ({ n: state.n + 1 }),
   }),
+  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Game.Simulation("Decided", {
     input: Schema.Null,
     events: [Reached],
@@ -100,7 +104,6 @@ const declareMistyped = () => [
     },
   }),
 ];
-/* oxlint-enable declaration/class, declaration/plain-handler */
 
 /** A handler with its return type cast away, as a cast or plain JavaScript would pass it. */
 const unchecked = <Args extends readonly unknown[]>(
@@ -136,6 +139,39 @@ const declareWithoutHandler = () =>
     // @ts-expect-error -- `apply` has no AddBonus.
     apply: {},
   });
+
+/** Declares a simulation with a handler in `apply` and no command for it. */
+const declareWithoutCommand = () =>
+  // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
+  Game.Simulation("Idle", {
+    input: Schema.Null,
+    create: () => ({ bonus: 0 }),
+    step: () => {},
+    apply: {
+      // @ts-expect-error -- no command is declared, so `apply` takes no handler.
+      AddBonus: (state) => {
+        state.bonus += 1;
+      },
+    },
+  });
+
+// `apply` is written directly under `create` here, and `step` last: with `create` the first of
+// the handlers, each takes the state it returns wherever it is written. Typecheck holds it.
+class Ordered extends Game.Simulation("Ordered", {
+  input: Schema.Null,
+  commands: [AddBonus],
+  create: (config: { readonly start: number }, { seed }) => ({
+    total: config.start + seed,
+  }),
+  apply: {
+    AddBonus: (state, command) => {
+      state.total += command.amount;
+    },
+  },
+  step: (state) => {
+    state.total += 1;
+  },
+}) {}
 
 /** A started loop of the counter game, and every event it reports. */
 const startCounter = (target = 3) => {
@@ -192,8 +228,78 @@ describe("Game.Simulation", () => {
     expectTypeOf<AddBonus>().toExtend<Game.CommandOf<typeof Counter>>();
   });
 
+  it("types an apply handler from create when create is the first of the handlers", () => {
+    expectTypeOf<Game.StateOf<typeof Ordered>>().toEqualTypeOf<{
+      total: number;
+    }>();
+    const loop = new Game.Loop(Ordered);
+    loop.start({ start: 1 }, 2, 0);
+    loop.send(new AddBonus({ amount: 4 }));
+    loop.frame({ read: () => null }, { steps: 1 }, 0);
+    expect(loop.state).toStrictEqual({ total: 8 });
+  });
+
+  it("types a handler with its command when the command's tag is not one literal", () => {
+    // A tag typed `string`, as a command has it when a function made its class from a name.
+    // Typecheck holds the handler's `command`.
+    class Nudge extends Game.Command("Nudge" as string, { by: Schema.Int }) {}
+    class Loose extends Game.Simulation("Loose", {
+      input: Schema.Null,
+      commands: [Nudge],
+      create: () => ({ total: 0 }),
+      step: () => {},
+      apply: {
+        Nudge: (state, command) => {
+          state.total += command.by;
+        },
+      },
+    }) {}
+    expectTypeOf(Nudge.tag).toEqualTypeOf<string>();
+    const loop = new Game.Loop(Loose);
+    loop.start(undefined, 1, 0);
+    loop.send(new Nudge({ by: 3 }));
+    loop.frame({ read: () => null }, { steps: 1 }, 0);
+    expect(loop.state).toStrictEqual({ total: 3 });
+  });
+
+  it("asks a tag typed as a union for a handler under each member, and refuses the one with no command", () => {
+    // Only "Left" is the class's tag when it runs, so no definition of it both typechecks and
+    // declares: a command has a tag of one literal.
+    class Left extends Game.Command("Left" as "Left" | "Right") {}
+    expect(() =>
+      // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
+      Game.Simulation("Turning", {
+        input: Schema.Null,
+        commands: [Left],
+        create: () => ({ turns: 0 }),
+        step: () => {},
+        // @ts-expect-error -- the tag's other member, "Right", has no handler.
+        apply: { Left: () => {} },
+      })
+    ).not.toThrow();
+    expect(() =>
+      // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
+      Game.Simulation("Turning", {
+        input: Schema.Null,
+        commands: [Left],
+        create: () => ({ turns: 0 }),
+        step: () => {},
+        apply: { Left: () => {}, Right: () => {} },
+      })
+    ).toThrow('has apply.Right but declares no command "Right"');
+  });
+
   it("refuses a command with no handler when it is declared", () => {
     expect(declareWithoutHandler).toThrow(/declares the command "AddBonus"/u);
+  });
+
+  it("refuses a handler with no command when it is declared", () => {
+    // An `Error` holds the whole message: a string would only have to be a part of it.
+    expect(declareWithoutCommand).toThrow(
+      new Error(
+        'Simulation "Idle" has apply.AddBonus but declares no command "AddBonus". List the command\'s class in `commands`, or remove the handler.'
+      )
+    );
   });
 
   it("matches every event by its tag", () => {
@@ -205,6 +311,41 @@ describe("Game.Simulation", () => {
     expectTypeOf(describeEvent).returns.toEqualTypeOf<string | number>();
     expect(describeEvent(new Reached({ count: 4 }))).toBe("reached 4");
     expect(describeEvent(new Tally({ count: 1, bonus: 2 }))).toBe(3);
+  });
+
+  it("refuses a case for an event it doesn't report, when match is called", () => {
+    // The types let an extra case through: one a renamed event left behind would never run.
+    expect(() =>
+      Counter.match({
+        Started: () => "started",
+        Reached: () => "reached",
+        Tally: () => "tally",
+        Finished: () => "finished",
+      })
+    ).toThrow(
+      'Simulation "Counter" has a case "Finished", which it doesn\'t report (Started, Reached, Tally). Remove it, or name it after the event it handles.'
+    );
+  });
+
+  it("refuses a missing case when match is called, not when its event comes", () => {
+    expect(() =>
+      // @ts-expect-error -- Tally, the sample, has no case
+      Counter.match({ Started: () => "started", Reached: () => "reached" })
+    ).toThrow(
+      'Simulation "Counter" has no case for the event "Tally". `match` takes a case for everything the simulation reports (Started, Reached, Tally).'
+    );
+  });
+
+  it("refuses an event the simulation doesn't declare, when it comes", () => {
+    const describeEvent = Counter.match({
+      Started: () => "started",
+      Reached: () => "reached",
+      Tally: () => "tally",
+    });
+    expect(() =>
+      // @ts-expect-error -- not one of the simulation's events
+      describeEvent({ _tag: "Undeclared" })
+    ).toThrow('Simulation "Counter" has no case for the event "Undeclared".');
   });
 });
 
@@ -248,6 +389,46 @@ describe("Game.Loop", () => {
       "step 1 dt 0.015625",
       "step 2 dt 0.015625",
     ]);
+  });
+
+  it("applies a command its input source sends from read at that same step, before the step", () => {
+    const { loop } = startCounter(100);
+    const told: string[] = [];
+    // A command sent before the frame waits for its first step; the source's own are sent as it
+    // reads steps 1 and 2, as a lockstep session hands over what a confirmed step carries.
+    loop.send(new AddBonus({ amount: 1 }));
+    const source = {
+      read: (step: number) => {
+        if (step === 0) {
+          // After the one that was already waiting.
+          loop.send(new AddBonus({ amount: 3 }), 1);
+        }
+        if (step === 1) {
+          loop.send(new AddBonus({ amount: 5 }), 2, () =>
+            told.push(`told after ${loop.stepIndex} steps`)
+          );
+          loop.send(new AddBonus({ amount: 7 }), 1);
+        }
+        if (step === 2) {
+          loop.send(new AddBonus({ amount: 9 }), 3);
+        }
+        return { add: 1 };
+      },
+    };
+    expect(loop.frame(source, { steps: 4 }, 0)).toBe(4);
+    expect(loop.state?.log).toStrictEqual([
+      "bonus 1 from 0 at 0",
+      "bonus 3 from 1 at 0",
+      "step 0 dt 0.015625",
+      "bonus 5 from 2 at 1",
+      "bonus 7 from 1 at 1",
+      "step 1 dt 0.015625",
+      "bonus 9 from 3 at 2",
+      "step 2 dt 0.015625",
+      "step 3 dt 0.015625",
+    ]);
+    // The sender hears once the frame's steps are over, as for any other command.
+    expect(told).toStrictEqual(["told after 4 steps"]);
   });
 
   it("holds commands while paused, and applies them when it steps again", () => {
@@ -638,6 +819,26 @@ describe("a command the rules may refuse", () => {
       })
     ).toThrow(
       'Simulation "Twins" lists two commands with the tag "Deposit". A command is told from another by its tag: give each its own.'
+    );
+  });
+
+  it("refuses a handler for a command the simulation doesn't list, when it is declared", () => {
+    expect(() =>
+      // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
+      Game.Simulation("Forgetful", {
+        input: Schema.Null,
+        commands: [Deposit],
+        create: () => ({ coins: 0 }),
+        step: () => {},
+        // A cast gets Empty's handler past the types, as handlers held in a variable would.
+        apply: { Deposit: () => {}, Empty: () => {} } as {
+          Deposit: () => void;
+        },
+      })
+    ).toThrow(
+      new Error(
+        'Simulation "Forgetful" has apply.Empty but declares no command "Empty". List the command\'s class in `commands`, or remove the handler.'
+      )
     );
   });
 

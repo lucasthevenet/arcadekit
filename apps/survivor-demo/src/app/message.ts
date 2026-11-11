@@ -1,9 +1,10 @@
-import { HudSample, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
+import { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import { AudioSettings } from "arcadekit/audio";
+import { LobbyChanged } from "arcadekit/net/browser";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
-import { CoopPlayer, HeroSummary } from "./model";
+import { HeroSummary } from "./model";
 import { HeroRecords } from "./save";
 
 // Every fact the UI can react to. Named for what happened, not what to do.
@@ -23,13 +24,13 @@ export const Message = defineMessageUnion({
   FailedToStartRun: { error: Schema.String },
 
   // From the engine
-  GotHud: { hud: HudSample },
-  GotLevelUp: { choices: Schema.Array(UpgradeChoice) },
+  GotHud: { hud: Hud },
+  GotLevelUp: { offer: Schema.Int, choices: Schema.Array(UpgradeChoice) },
   GotRunEnded: { summary: RunSummary },
   SavedRun: { records: HeroRecords },
 
   // In-run UI
-  ClickedUpgrade: { index: Schema.Number },
+  ClickedUpgrade: { index: Schema.Int },
   PressedEscape: {},
   ClickedResume: {},
   ClickedQuit: {},
@@ -41,24 +42,17 @@ export const Message = defineMessageUnion({
   ChangedJoinCode: { code: Schema.String },
   ClickedJoinCoop: {},
   ClickedStartCoop: {},
-  ClickedCoopUpgrade: { index: Schema.Number },
+  ClickedCoopUpgrade: { index: Schema.Int },
   ClickedCoopResume: {},
   ClickedLeaveCoop: {},
-  GotCoopLobby: {
-    role: Schema.Literals(["host", "guest"]),
-    code: Schema.String,
-    self: Schema.String,
-    players: Schema.Array(CoopPlayer),
-    maxPlayers: Schema.Number,
-    canStart: Schema.Boolean,
-  },
-  GotCoopStarted: { slot: Schema.Number, names: Schema.Array(Schema.String) },
-  GotCoopWaiting: {
-    waitingFor: Schema.Array(Schema.String),
-    choosing: Schema.Array(Schema.String),
-  },
+  /** The run didn't take the local player's pause, or its letting go: it holds none. */
+  FailedToHoldCoopPause: {},
+  /** The Co-op client's own event, as it reports it: who is in the lobby, and whether it can start. */
+  GotCoopLobby: { lobby: LobbyChanged },
+  GotCoopStarted: { slot: Schema.Int, names: Schema.Array(Schema.String) },
+  GotCoopWaiting: { waitingFor: Schema.Array(Schema.String) },
   GotCoopLevelUp: {
-    offer: Schema.Number,
+    offer: Schema.Int,
     choices: Schema.Array(UpgradeChoice),
   },
   GotCoopRunEnded: { summary: RunSummary },

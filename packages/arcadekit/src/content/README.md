@@ -75,4 +75,4 @@ export const checked = GameContent.read(
 
 A [`Game.Engine`](../game/README.md) names what it draws from in `uses` (`uses: { sheet: GameSheet.load }`), so each attach loads the sheet or takes the one already loaded, and the app's loading screen runs the same `GameSheet.load` to show a failure and retry.
 
-`loadOnce(load, release)` is what both are built on: a `load` that keeps its first success for as long as its scope is open. `loadContent` and `makeContentLoader` are the older, undeclared forms, which survivors still uses.
+`loadOnce(load, release)` is what both are built on: a `load` that keeps its first success for as long as its scope is open. A content's `read(source)` reads and checks the files once, with nothing kept.

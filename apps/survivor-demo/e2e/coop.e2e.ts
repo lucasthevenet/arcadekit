@@ -15,9 +15,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // Co-op end to end (#25): the demo under `alchemy dev` (Vite's dev server, with the Worker that
 // serves the signalling routes and its Durable Objects in workerd), and two Chromium pages, each
 // its own player. The host hosts, the guest joins with the code the host's
-// page shows, each picks a hero, the host starts, and both play a few seconds pressing different
-// keys and taking every upgrade offered. Both pages must then report the same state hash at the
-// same steps, and no error.
+// page shows, each picks a hero, the host starts, and both play pressing different keys until
+// each has picked an upgrade: a pick is a command that crosses to the other page, and the run
+// plays on only once both pages have both picks. Then each page in turn holds the co-op pause,
+// another command: the other page says who paused, and the run's clock stands on both while
+// they keep stepping. Both pages must then report the same state hash at the same steps, and no
+// error.
 //
 // A single-player run is checked too, to show it still runs on the single-player engine.
 //
@@ -98,6 +101,8 @@ interface Debug {
   readonly stepIndex: number;
   readonly error: string | null;
   readonly hashes: Readonly<Record<string, number>>;
+  /** The run's clock in seconds: it stands while the run is frozen, though the steps go on. */
+  readonly time: number | null;
 }
 
 const debug = (page: Page) =>
@@ -311,24 +316,49 @@ describe("co-op in two browsers", () => {
     const errors: string[] = [];
     const host = await openPage(browser, errors);
     const guest = await openPage(browser, errors);
+    const pages = [host, guest];
     await startRun(host, guest, dev.url);
 
-    // Different inputs on each page, for a few seconds, taking every upgrade offered.
+    // Different inputs on each page, taking every upgrade offered, for a few seconds and then
+    // until each page has picked one. The team levels up together, so both are offered at once.
     const legs: [string, string][] = [
       ["ArrowRight", "ArrowLeft"],
       ["ArrowUp", "ArrowDown"],
       ["ArrowLeft", "ArrowUp"],
+      ["ArrowDown", "ArrowRight"],
     ];
-    for (const [hostKey, guestKey] of legs) {
+    const picks = [0, 0];
+    const giveUpAt = performance.now() + 60_000;
+    for (
+      let leg = 0;
+      leg < 3 || (picks.includes(0) && performance.now() < giveUpAt);
+      leg++
+    ) {
+      const [hostKey, guestKey] = legs[leg % legs.length]!;
       await host.keyboard.down(hostKey);
       await guest.keyboard.down(guestKey);
       for (let i = 0; i < 4; i++) {
         await sleep(400);
-        await takeOffers([host, guest]);
+        const taken = await takeOffers(pages);
+        picks[0]! += taken[0]!;
+        picks[1]! += taken[1]!;
       }
       await host.keyboard.up(hostKey);
       await guest.keyboard.up(guestKey);
     }
+    // A pick that didn't reach the other page would leave its run waiting for it.
+    const playedOn = await runsOn(pages);
+    expect({
+      picked: picks.map((count) => count > 0),
+      playedOn,
+    }).toStrictEqual({ picked: [true, true], playedOn: true });
+
+    // The co-op pause, held by each page in turn.
+    const pauses = [
+      await pauseHeldBy(host, guest, "Host"),
+      await pauseHeldBy(guest, host, "Guest 1"),
+    ];
+    expect(pauses).toStrictEqual([HELD_AND_LET_GO, HELD_AND_LET_GO]);
 
     await host.waitForFunction(
       "globalThis.arcadekitCoop.debug().stepIndex > 300",
@@ -443,13 +473,117 @@ const startRun = async (host: Page, guest: Page, url: string) => {
   );
 };
 
-/** Takes the first choice of every upgrade offer open on these pages. */
+const has = async (page: Page, selector: string) =>
+  (await page.locator(selector).count()) > 0;
+
+/**
+ * Takes the first choice of every upgrade offer open on these pages. Returns how many it took
+ * on each.
+ */
 const takeOffers = async (pages: readonly Page[]) => {
+  const taken: number[] = [];
   for (const page of pages) {
-    if ((await page.locator(".choice").count()) > 0) {
+    const offered = await has(page, ".choice");
+    if (offered) {
       await page.locator(".choice").first().click();
     }
+    taken.push(offered ? 1 : 0);
   }
+  return taken;
+};
+
+/**
+ * Waits until `seen` holds, taking every upgrade offered on `pages` meanwhile: an open offer
+ * freezes the run and covers the playing screen. False if it didn't hold in time.
+ */
+const eventually = async (
+  pages: readonly Page[],
+  seen: () => Promise<boolean>,
+  timeoutMs = 10_000
+) => {
+  const giveUpAt = performance.now() + timeoutMs;
+  while (performance.now() < giveUpAt) {
+    if (await seen()) {
+      return true;
+    }
+    await takeOffers(pages);
+    await sleep(100);
+  }
+  return false;
+};
+
+/** Each page's run, read `overMs` apart: its clock and its step index. */
+const readTwice = async (pages: readonly Page[], overMs: number) => {
+  const before = await Promise.all(pages.map(debug));
+  await sleep(overMs);
+  const after = await Promise.all(pages.map(debug));
+  return { before, after };
+};
+
+/** Whether the run's clock moves on every page, once no offer holds it. */
+const runsOn = (pages: readonly Page[]) =>
+  eventually(pages, async () => {
+    const { before, after } = await readTwice(pages, 300);
+    return after.every((now, at) => (now.time ?? 0) > (before[at]!.time ?? 0));
+  });
+
+const PAUSED = "text=The run is paused for everyone until you resume.";
+
+/** What the test expects of `pauseHeldBy`. */
+const HELD_AND_LET_GO = {
+  holderSaysPaused: true,
+  otherSaysWho: true,
+  clockStands: true,
+  stepsGoOn: true,
+  playsOnAfter: true,
+};
+
+/**
+ * `holder` holds the co-op pause with Escape and lets go with Resume. The pause is a command
+ * that crosses to `other`: its page says who paused, and the run's clock stands at one time on
+ * both pages while both keep stepping.
+ */
+const pauseHeldBy = async (holder: Page, other: Page, name: string) => {
+  const pages = [holder, other];
+  // Escape opens the menu on the playing screen only. One pressed under an offer that has just
+  // opened does nothing, so it is pressed again once the offer is taken.
+  let holderSaysPaused = false;
+  for (let press = 0; press < 3 && !holderSaysPaused; press++) {
+    await holder.keyboard.down("Escape");
+    await holder.keyboard.up("Escape");
+    holderSaysPaused = await eventually(pages, () => has(holder, PAUSED), 3000);
+  }
+  const otherSaysWho = await eventually(pages, () =>
+    has(other, `text=Paused by ${name}`)
+  );
+  // Each page takes the pause at the same step, a moment apart: wait for one standing clock.
+  const standing = async (overMs: number) => {
+    const { before, after } = await readTwice(pages, overMs);
+    return {
+      stands:
+        after.every((now, at) => now.time === before[at]!.time) &&
+        after[0]!.time === after[1]!.time,
+      stepsGoOn: after.every(
+        (now, at) => now.stepIndex > before[at]!.stepIndex
+      ),
+    };
+  };
+  await eventually(pages, async () => {
+    const { stands } = await standing(300);
+    return stands;
+  });
+  const { stands: clockStands, stepsGoOn } = await standing(1000);
+  if (await has(holder, "button:has-text('Resume')")) {
+    await holder.click("button:has-text('Resume')");
+  }
+  const playsOnAfter = await runsOn(pages);
+  return {
+    holderSaysPaused,
+    otherSaysWho,
+    clockStands,
+    stepsGoOn,
+    playsOnAfter,
+  };
 };
 
 /** What the test expects of `outcome`: no error anywhere, and hashes for the same steps that agree. */

@@ -8,7 +8,7 @@ import { Tile, parseLevel } from "./level";
 import type { PuzzleContent } from "./schema";
 
 // The push-puzzle simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
-// The runtime calls `step` on a fixed clock, but the game is played in turns: a step holds
+// The loop calls `step` on a fixed clock, but the game is played in turns: a step holds
 // at most one turn (a move or an undo), and most steps hold none.
 // Nothing is allocated per step or per turn, but the one event a solve reports.
 

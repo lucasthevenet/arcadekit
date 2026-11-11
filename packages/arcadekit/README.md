@@ -34,24 +34,22 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | --- | --- | --- |
 | [`arcadekit/core`](src/core/README.md) | `FixedStepClock`, seeded `makeRng`, struct-of-arrays pools, `SpatialGrid`, `EventBuffer`. No DOM and no Effect |  |
 | [`arcadekit/input`](src/input/README.md) | `InputController`: keyboard, gamepad, touch-drag and swipes mapped to named axes and buttons. No Effect | DOM |
-| [`arcadekit/content`](src/content/README.md) | `loadContent` and `makeContentLoader`: load files, validate them with an Effect Schema, cache the first success | Effect |
+| [`arcadekit/content`](src/content/README.md) | `Content` and `Asset`: a game's content files, validated with an Effect Schema, and what the app loads once for it, such as a sprite sheet. Each is a class that keys its own service and keeps the first success | Effect |
 | [`arcadekit/content/browser`](src/content/README.md) | `fetchJsonSource` | Effect, DOM |
-| [`arcadekit/save`](src/save/README.md) | `makeSaveStore`: a game's records by id under one versioned key | Effect |
+| [`arcadekit/save`](src/save/README.md) | `Save`, a game's records by id under one versioned key, and `Setting`, one value kept apart from it, such as the audio settings | Effect |
 | [`arcadekit/save/browser`](src/save/README.md) | `BrowserSaveStorage`: localStorage, or memory if the browser refuses | Effect, `@effect/platform-browser`, DOM |
-| [`arcadekit/audio`](src/audio/README.md) | `AudioSystem`, the `Audio` service with `SilentAudioLayer`, and `makeAudioSettingsStore` | Effect |
+| [`arcadekit/audio`](src/audio/README.md) | `AudioSystem`, the `Audio` service with `SilentAudioLayer`, `CueTable` for a genre's cues, and the audio settings' Schema and default | Effect |
 | [`arcadekit/audio/browser`](src/audio/README.md) | `BrowserAudioLayer` (Web Audio) | Effect, DOM |
 | [`arcadekit/render-three`](src/render-three/README.md) | `Stage`, `MeshInstances`, camera helpers, and pixel-art sprites: `loadSpriteSheet`, `InstancedSprites`, `PixelCamera` | Effect, Three.js, DOM |
-| [`arcadekit/game`](src/game/README.md) | A game's declarations: `Game.Event`, `Game.Command`, `Game.Rejection` and `Game.Simulation` (the DOM-free rules), and `Game.Loop`, which steps one anywhere | Effect, core, runtime |
-| [`arcadekit/game/browser`](src/game/README.md) | The same, plus `Game.Engine`: a simulation with the view and input that draw it and read its input, as a service an app drives. `Game.Frames`, `Game.frameLoop`, `Game.combineViews` | Effect, core, runtime, DOM |
-| [`arcadekit/game/scenario`](src/game/README.md) | Scenarios: given a run, after these steps and commands, it reported these events. Checks a simulation in a test, with no browser | Effect, core, runtime |
-| [`arcadekit/runtime`](src/runtime/README.md) | `GameSimulation`, the DOM-free half a game implements, and `GameLoop`, which steps one anywhere. `PlayerInputs`, the step input of a game with several players, and `soloInput` | Effect, core |
-| [`arcadekit/runtime/browser`](src/runtime/README.md) | `GameDefinition`, `makeGameEngine`, `makeEngineLoader`, `combineViews` | Effect, core, DOM |
-| [`arcadekit/runtime/testing`](src/runtime/README.md) | `manualFrames`: a frame source a test drives, to run an engine without a browser's frames |  |
-| [`arcadekit/net`](src/net/README.md) | Lockstep multiplayer for 2 to 4 peers over a `Transport`, with an in-memory network for tests. `combinePlayerInputs` makes `PlayerInputs` from its confirmed steps. `CoopRules`, a Co-op game's lockstep parts | Effect, core, runtime |
-| [`arcadekit/net/browser`](src/net/README.md) | `makeCoopClient`, the Co-op client: one player's lobby, run and drawing for a `CoopGame`, over `browserCoopRooms`. Under it, `hostRoom` and `joinRoom` (join code to WebRTC links) and `linksTransport` | Effect, core, runtime, DOM |
-| [`arcadekit/net/testing`](src/net/README.md) | `fakeCoopRooms`, `manualTicker` and `testCoopGame`: a Co-op client's rooms, ticker and game for tests, with no browser | Effect, core, runtime, DOM types |
+| [`arcadekit/game`](src/game/README.md) | A game's declarations: `Game.Event`, `Game.Command`, `Game.Rejection` and `Game.Simulation` (the DOM-free rules), and `Game.Loop`, which steps one anywhere. `Game.PlayerInputs`, the step input of a simulation several players can play, and `Game.soloInput` | Effect, core |
+| [`arcadekit/game/browser`](src/game/README.md) | The same, plus `Game.Engine`: a simulation with the view and input that draw it and read its input, as a service an app drives. `Game.Frames`, `Game.frameLoop`, `Game.combineViews` | Effect, core, DOM |
+| [`arcadekit/game/scenario`](src/game/README.md) | Scenarios: given a run, after these steps and commands, it reported these events. Checks a simulation in a test, with no browser | Effect, core |
+| [`arcadekit/game/testing`](src/game/README.md) | `manualFrames`: a frame source a test drives, to run an engine without a browser's frames |  |
+| [`arcadekit/net`](src/net/README.md) | Lockstep multiplayer for 2 to 4 peers over a `Transport`, with an in-memory network for tests: a session steps a declared simulation whose step input is a `Game.PlayerInputs`, and carries a player's commands to every peer at one step | Effect, core, game |
+| [`arcadekit/net/browser`](src/net/README.md) | `Coop`, a game's engine declared for several players: its class is the key of the Co-op client, one player's lobby, run and drawing, over the app's `CoopRooms` (`browserCoopRoomsLayer`). Under it, `hostRoom` and `joinRoom` (join code to WebRTC links) and `linksTransport` | Effect, core, game, DOM |
+| [`arcadekit/net/testing`](src/net/README.md) | `fakeCoopRooms`, `manualTicker` and a test game (`TestGame`): the rooms, the ticker and a game for a `Coop`'s tests, with no browser | Effect, core, game, DOM types |
 | [`arcadekit/net/signalling`](src/net/README.md) | The protocol a signalling server speaks, as Effect Schemas | Effect |
 | [`arcadekit/net/worker`](src/net/worker/README.md) | The signalling worker, for Cloudflare: `signallingRoom` (a room's Durable Object class) and `signallingWorker` (the Worker's `fetch`) | Effect, Cloudflare Workers |
-| [`arcadekit/foldkit`](src/foldkit/README.md) | `gameViewport`, `engineEntry`, `keyPresses`, `shortcutPresses` | Effect, Foldkit, runtime, DOM |
+| [`arcadekit/foldkit`](src/foldkit/README.md) | `gameViewport`, `engineEntry`, `keyPresses`, `shortcutPresses` | Effect, Foldkit, game, DOM |
 
 The source is in [the arcadekit repository](https://github.com/lucasthevenet/arcadekit), with two genre packages and two demo games built on these entries. [ADR-0018](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0018-one-package-with-entries.md) records why the kit is one package.

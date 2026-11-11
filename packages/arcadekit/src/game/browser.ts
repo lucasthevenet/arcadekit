@@ -8,6 +8,7 @@ import { make as makeEngine } from "./engine";
 import type { Engine as RunningEngine } from "./engine";
 import type { AnySimulation, CommandOf, ConfigOf, EventOf } from "./simulation";
 
+export { AttachError } from "./attach-error";
 export {
   type AnyCommand,
   type CommandClass,
@@ -23,8 +24,19 @@ export type {
   NoFields,
   Payload,
 } from "./event";
+export { GameCrashed, frameLoop } from "./frame-loop";
+export { type FrameSource, animationFrames } from "./frames";
+export type { FrameBudget } from "./kernel";
 export { Command, Event, Rejection, Simulation } from "./index";
 export { Loop } from "./loop";
+export {
+  type PlayerInputOf,
+  PlayerInputs,
+  type PlayerInputsSchema,
+  type PlayersSimulation,
+  playerInputSchema,
+  soloInput,
+} from "./player-inputs";
 export type {
   AnyRejection,
   RejectionClass,
@@ -40,6 +52,7 @@ export type {
   EventCases,
   EventOf,
   InputOf,
+  NoHandlers,
   Nothing,
   RefusalFor,
   RefusalOf,
@@ -52,25 +65,19 @@ export type {
   StateOf,
   StepContext,
 } from "./simulation";
+export type { InputSource, StepInput } from "./step-input";
+export { type GameView as View, combineViews } from "./view";
 export {
   type EngineClass,
   type EngineDefinition,
   type EngineId,
   type EngineService,
   Frames,
+  type LocalPlayer,
   type Used,
   type Uses,
+  type ViewContext,
 } from "./engine";
-export {
-  AttachError,
-  type FrameSource,
-  GameCrashed,
-  type GameView as View,
-  animationFrames,
-  combineViews,
-  frameLoop,
-} from "../runtime/browser";
-export type { InputSource, StepInput } from "../runtime/index";
 
 /** A game as the browser runs it for one player. See {@link makeEngine}. */
 export const Engine: typeof makeEngine = makeEngine;

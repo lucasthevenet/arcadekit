@@ -1,15 +1,12 @@
-import type {
-  HudSample,
-  RunSummary,
-  UpgradeChoice,
-} from "@arcadekit/survivors";
+import type { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import type { AudioSettings } from "arcadekit/audio";
 import { gameViewport } from "arcadekit/foldkit";
+import type { LobbyChanged } from "arcadekit/net/browser";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "./message";
-import { Phase } from "./model";
-import type { CoopPlayer, Model } from "./model";
+import { Phase, isLocalHeroDown } from "./model";
+import type { Model } from "./model";
 import type { HeroRecord } from "./save";
 
 type H = HtmlBuilder<Message>;
@@ -88,7 +85,7 @@ const overlay = (model: Model, h: H): Html =>
         h.p([], ["Connecting…"]),
         h.button([h.OnClick(Message.ClickedLeaveCoop())], ["Cancel"]),
       ]),
-    CoopLobby: (lobby) => coopLobby(model, lobby, h),
+    CoopLobby: ({ lobby }) => coopLobby(model, lobby, h),
     CoopPlaying: () => coopPlaying(model, h),
     CoopLevelUp: ({ choices }) =>
       h.div(
@@ -218,7 +215,7 @@ const soundPanel = (audio: AudioSettings, h: H): Html =>
     ]
   );
 
-const hud = (data: HudSample, h: H): Html => {
+const hud = (data: Hud, h: H): Html => {
   // A single-player run's hero is the first.
   const hero = data.heroes[0] ?? { hp: 0, maxHp: 1 };
   return h.div(
@@ -353,17 +350,7 @@ const coopMenu = (joinCode: string, h: H): Html =>
 const heroName = (model: Model, heroId: string) =>
   model.heroes.find((hero) => hero.id === heroId)?.name ?? "choosing…";
 
-const coopLobby = (
-  model: Model,
-  lobby: {
-    readonly role: "host" | "guest";
-    readonly code: string;
-    readonly self: string;
-    readonly players: readonly CoopPlayer[];
-    readonly canStart: boolean;
-  },
-  h: H
-): Html => {
+const coopLobby = (model: Model, lobby: LobbyChanged, h: H): Html => {
   const startable = lobby.canStart;
   return panel(h, [
     lobby.role === "host"
@@ -430,7 +417,11 @@ const coopHud = (model: Model, h: H): Html => {
             [`${formatTime(data.time)} / ${formatTime(data.runLength)}`]
           ),
           h.span([], [`${data.kills} defeated`]),
-          h.span([h.Class("muted")], ["Esc to pause"]),
+          // A hero that is down holds no pause: Escape is then the menu alone.
+          h.span(
+            [h.Class("muted")],
+            [isLocalHeroDown(model) ? "Esc for the menu" : "Esc to pause"]
+          ),
         ]
       ),
       h.div(
@@ -470,42 +461,61 @@ const coopBanner = (
   return undefined;
 };
 
+/**
+ * A co-op run's menu, which Escape opens: the way to leave the run, and the sound controls.
+ * While it is up the local player holds the run paused for everyone, if the run took the pause
+ * (`paused`). It takes none from a hero that is down, and then the menu says the run plays on.
+ */
+const coopMenuPanel = (model: Model, h: H): Html => {
+  const { paused } = model.coop;
+  return panel(h, [
+    h.h2([], [paused ? "Paused" : "Menu"]),
+    h.p(
+      [h.Class("muted")],
+      [
+        paused
+          ? "The run is paused for everyone until you resume."
+          : "The run plays on: a hero that is down can't pause it.",
+      ]
+    ),
+    h.div(
+      [h.Class("row")],
+      [
+        h.button(
+          [h.Class("primary"), h.OnClick(Message.ClickedCoopResume())],
+          [paused ? "Resume" : "Back to the run"]
+        ),
+        h.button([h.OnClick(Message.ClickedLeaveCoop())], ["Leave run"]),
+      ]
+    ),
+    soundPanel(model.audio, h),
+  ]);
+};
+
+/**
+ * The other players whose hero the HUD flags: who the run waits on to pick an upgrade
+ * (`choosing`), and who holds it paused (`paused`). The genre says both, in its sample.
+ */
+const others = (model: Model, flag: "choosing" | "paused"): string[] => {
+  const { slot, names } = model.coop;
+  return model.hud.heroes.flatMap((hero, index) => {
+    const name = names[index];
+    return hero[flag] && index !== slot && name !== undefined ? [name] : [];
+  });
+};
+
 const coopPlaying = (model: Model, h: H): Html => {
-  const { waitingFor, choosing, paused, slot, names } = model.coop;
-  const pausedBy = model.hud.heroes
-    .map((hero, index) =>
-      hero.paused && index !== slot ? names[index] : undefined
-    )
-    .filter((name) => name !== undefined);
-  const banner = coopBanner(waitingFor, choosing, pausedBy);
+  const banner = coopBanner(
+    model.coop.waitingFor,
+    others(model, "choosing"),
+    others(model, "paused")
+  );
   return h.div(
     [],
     [
       coopHud(model, h),
       banner === undefined ? h.empty : h.div([h.Class("banner")], [banner]),
-      paused
-        ? panel(h, [
-            h.h2([], ["Paused"]),
-            h.p(
-              [h.Class("muted")],
-              ["The run is paused for everyone until you resume."]
-            ),
-            h.div(
-              [h.Class("row")],
-              [
-                h.button(
-                  [h.Class("primary"), h.OnClick(Message.ClickedCoopResume())],
-                  ["Resume"]
-                ),
-                h.button(
-                  [h.OnClick(Message.ClickedLeaveCoop())],
-                  ["Leave run"]
-                ),
-              ]
-            ),
-            soundPanel(model.audio, h),
-          ])
-        : h.empty,
+      model.coop.menu ? coopMenuPanel(model, h) : h.empty,
     ]
   );
 };

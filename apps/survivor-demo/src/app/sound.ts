@@ -1,11 +1,11 @@
-import type { SurvivorsSounds } from "@arcadekit/survivors/browser";
-import { makeAudioSettingsStore } from "arcadekit/audio";
-import type { AudioSettingsStore, SoundDef, SoundList } from "arcadekit/audio";
-import { Context, Layer } from "effect";
+import type { SurvivorsCueTable } from "@arcadekit/survivors/browser";
+import { AudioSettings, defaultAudioSettings } from "arcadekit/audio";
+import type { CueSoundsOf, SoundDef, SoundList } from "arcadekit/audio";
+import { Setting } from "arcadekit/save";
 
-// The game's sounds: the files in public/sounds, the table of cue to sound the survivors sound
-// view plays from, the music and the player's audio settings. Each sound id is its file name
-// without `.wav`, so a file can be swapped for a real one with no code change.
+// The game's sounds: the files in public/sounds, the sound each cue of the survivors cue table
+// plays, the music and the player's audio settings. Each sound id is its file name without
+// `.wav`, so a file can be swapped for a real one with no code change.
 
 const file = (id: string) => `${import.meta.env.BASE_URL}sounds/${id}.wav`;
 
@@ -51,7 +51,7 @@ export const soundList: SoundList = {
 };
 
 /** Which sound each survivors cue plays. A weapon's `sound` in weapons.json overrides `shot`. */
-export const survivorsSounds: SurvivorsSounds = {
+export const survivorsSounds: CueSoundsOf<typeof SurvivorsCueTable> = {
   shot: "shot-arc",
   hit: "hit",
   kill: "kill",
@@ -70,16 +70,9 @@ export const CLICK_SOUND = "click";
 /** The music on the menus and during a run. Starting or ending a run crossfades between them. */
 export const MUSIC = { menu: "music-menu", run: "music-run" } as const;
 
-export const AUDIO_SETTINGS_KEY = "arcadekit/survivors/settings";
-
-/** The player's volume and mute, kept under their own key (ADR-0009). Neither method fails. */
-export class SoundSettings extends Context.Service<
-  SoundSettings,
-  AudioSettingsStore
->()("survivor-demo/SoundSettings") {}
-
-/** The settings store over whatever `KeyValueStore` is provided. */
-export const SoundSettingsLayer = Layer.effect(
-  SoundSettings,
-  makeAudioSettingsStore(AUDIO_SETTINGS_KEY)
-);
+/** The player's volume and mute: app settings, kept apart from the save, where the last write wins (ADR-0009). */
+export class SurvivorsAudioSettings extends Setting("SurvivorsAudioSettings", {
+  storageKey: "arcadekit/survivors/settings",
+  schema: AudioSettings,
+  default: defaultAudioSettings,
+}) {}

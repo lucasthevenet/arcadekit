@@ -1,24 +1,27 @@
 import { readFileSync, readdirSync } from "node:fs";
 
 import { defaultAudioSettings } from "arcadekit/audio";
+import { LobbyChanged } from "arcadekit/net/browser";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { ChooseUpgrade, PlayClick, SaveAudioSettings } from "./commands";
+import {
+  ChooseUpgrade,
+  LoadAudioSettings,
+  PlayClick,
+  SaveAudioSettings,
+} from "./commands";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
-import {
-  AUDIO_SETTINGS_KEY,
-  SoundSettings,
-  SoundSettingsLayer,
-  soundList,
-  survivorsSounds,
-} from "./sound";
+import { SurvivorsAudioSettings, soundList, survivorsSounds } from "./sound";
 import { subscriptions } from "./subscriptions";
 import { init, update } from "./update";
+
+/** The audio settings' storage key, written out: moving it would leave what is stored behind. */
+const SETTINGS_KEY = "arcadekit/survivors/settings";
 
 const soundsDir = new URL("../../public/sounds/", import.meta.url);
 const weapons = JSON.parse(
@@ -43,7 +46,7 @@ describe("the sound list", () => {
     });
   });
 
-  it("has every sound the cue table and the weapons name", () => {
+  it("has every sound the app gives the cue table and the weapons name", () => {
     const named = [
       ...Object.values(survivorsSounds),
       ...weapons.flatMap((weapon) => weapon.sound ?? []),
@@ -69,7 +72,7 @@ describe("music and ducking", () => {
       at(Phase.Menu()),
       at(Phase.Playing()),
       at(Phase.Paused()),
-      at(Phase.LevelUp({ choices: [] })),
+      at(Phase.LevelUp({ offer: 1, choices: [] })),
       at(
         Phase.GameOver({
           summary: {
@@ -84,12 +87,14 @@ describe("music and ducking", () => {
       ),
       at(
         Phase.CoopLobby({
-          role: "host",
-          code: "",
-          self: "",
-          players: [],
-          maxPlayers: 4,
-          canStart: false,
+          lobby: new LobbyChanged({
+            role: "host",
+            code: "",
+            self: "",
+            players: [],
+            maxPlayers: 4,
+            canStart: false,
+          }),
         })
       ),
       at(Phase.CoopPlaying()),
@@ -166,23 +171,30 @@ describe("the audio settings", () => {
     );
   });
 
-  it("are stored under their own key, and read back", async () => {
+  it("read as the defaults, then are stored under their own key and read back", async () => {
     const settings = { master: 0.3, sfx: 0.4, music: 0.5, muted: true };
     const result = await Effect.gen(function* () {
-      const store = yield* SoundSettings;
-      yield* store.save(settings);
+      const before = (yield* LoadAudioSettings().effect).settings;
+      yield* SaveAudioSettings({ settings }).effect;
       return [
-        yield* store.load,
-        yield* (yield* KeyValueStore.KeyValueStore).get(AUDIO_SETTINGS_KEY),
+        before,
+        (yield* LoadAudioSettings().effect).settings,
+        yield* (yield* KeyValueStore.KeyValueStore).get(SETTINGS_KEY),
       ];
     }).pipe(
       Effect.provide(
-        SoundSettingsLayer.pipe(Layer.provideMerge(KeyValueStore.layerMemory))
+        SurvivorsAudioSettings.layer.pipe(
+          Layer.provideMerge(KeyValueStore.layerMemory)
+        )
       ),
       Effect.orDie,
       Effect.runPromise
     );
-    expect(result).toStrictEqual([settings, JSON.stringify(settings)]);
+    expect(result).toStrictEqual([
+      defaultAudioSettings,
+      settings,
+      JSON.stringify(settings),
+    ]);
   });
 });
 
@@ -190,9 +202,13 @@ describe("clicks", () => {
   it("play on menu buttons and upgrade picks", () => {
     Story.story(
       update,
-      Story.given({ ...menu, phase: Phase.LevelUp({ choices: [] }) }),
+      Story.given({ ...menu, phase: Phase.LevelUp({ offer: 1, choices: [] }) }),
       Story.message(Message.ClickedUpgrade({ index: 0 })),
-      Story.Command.expectExact(ChooseUpgrade({ index: 0 }), PlayClick()),
+      // The pick names the offer on screen.
+      Story.Command.expectExact(
+        ChooseUpgrade({ offer: 1, index: 0 }),
+        PlayClick()
+      ),
       Story.Command.resolve(PlayClick, Message.CompletedAudioCommand()),
       Story.Command.resolve(ChooseUpgrade, Message.CompletedEngineCommand()),
       Story.model((model) => expect(model.phase._tag).toBe("Playing"))
