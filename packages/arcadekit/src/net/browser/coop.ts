@@ -127,6 +127,12 @@ export interface CoopClient<State, Event, Command, E, Refusals> {
    * command back while it has no step yet, which is about one step's time; after that every
    * peer applies it. A player the host removes after its command's step was confirmed is told
    * `runEnded`, though the others applied the command.
+   *
+   * When it succeeds, or fails with a rejection, a listener (`listen`) has been called with
+   * what the command's step reported, as an engine's has: an Effect that listens and then sends
+   * knows, on the line after the send, what that step did. Here nothing is excepted: a run that
+   * throws in that step answers `CommandDropped`. The order is that of the two calls, not of
+   * the Messages an app makes of them.
    */
   readonly send: <C extends Command>(
     command: C
@@ -151,7 +157,10 @@ export interface CoopClient<State, Event, Command, E, Refusals> {
   ) => Effect.Effect<never, AttachError | GameCrashed | E>;
   /**
    * Calls `onEvent` with everything the current seat reports while the scope is open: the
-   * client's own events and the run's, in one order. The class's `match` makes the handler.
+   * client's own events and the run's, in one order. A seat hears its run from the start, the
+   * host's as a guest's: after its `RunStarted`, what the simulation's `create` reports, then
+   * the first sample, then what each step reports, each once. The class's `match` makes the
+   * handler.
    */
   readonly listen: (
     onEvent: (event: CoopEvent<Event>) => void
@@ -463,7 +472,9 @@ type GivenCases = Readonly<Record<string, (event: unknown) => unknown>> & {
  * view is told the local player, whose slot it reads when it draws. What a co-op run needs
  * besides is declared here: one player's input source, the content every peer loads, the lobby
  * picks and the config they make, the state hash the peers compare, and the events that end a
- * run. An app turns what a seat reports into its Messages with the class's `match`.
+ * run. An app turns what a seat reports into its Messages with the class's `match`. Every seat
+ * hears its run from the start, the host's as a guest's: what the simulation's `create` reports
+ * (a first stage's banner, say) follows the seat's `RunStarted`, then the first sample.
  *
  * Throws when declared, for what the types let through: an engine whose simulation's `input`
  * was not declared with `Game.PlayerInputs`, an `ends` entry the simulation doesn't report, and

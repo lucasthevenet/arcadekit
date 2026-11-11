@@ -703,6 +703,11 @@ export const coopClient = <
         // run, so an event allocates none, and not the live one a view reads, so an event an
         // app kept still says whose it was once the player has left or taken another seat.
         const player: LocalPlayer = { slot: seat.slot, names: seat.names };
+        // Before the session's first tick, which is the ticker's below: a session reports only
+        // from a tick, and its first tells what the run's start reported. A guest's run starts
+        // in a tick; a host's started as its session was made, and the session kept what
+        // `create` reported, and the first sample, for that tick. So every seat hears its run
+        // from the start, after its `RunStarted`.
         yield* session.listen((event) => onGameEvent(seat, player, event));
         const timer = yield* parts.ticker;
         const clock = yield* Effect.clockWith(Effect.succeed);

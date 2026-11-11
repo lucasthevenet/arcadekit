@@ -120,7 +120,10 @@ const RunStartedBase: SeatEvent<
   names: Schema.Array(Schema.String),
 });
 
-/** The run started. `slot` is the local player's; `names` every player's name, by slot. */
+/**
+ * The run started. `slot` is the local player's; `names` every player's name, by slot. Every
+ * event of the run comes after it, what the run's start reports first.
+ */
 export class RunStarted extends RunStartedBase {}
 
 const WaitingChangedBase: SeatEvent<
@@ -179,7 +182,9 @@ export interface RunEvent<Event> extends SeatContext {
 /**
  * What the Co-op client reports to the app, in one order: a seat's `LobbyChanged` events, one
  * `RunStarted`, then the run's own events and `WaitingChanged`, then at most one `SeatFailed`,
- * which is its last. The class's `match` handles each.
+ * which is its last. The run's own begin with what its start reports, on the host's seat as on
+ * a guest's: what the simulation's `create` reports, then the first sample. The class's `match`
+ * handles each.
  */
 export type CoopEvent<Event> =
   | LobbyChanged

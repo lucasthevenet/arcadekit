@@ -858,6 +858,39 @@ describe("a command the rules may refuse", () => {
     expect(loop.stepIndex).toBe(0);
   });
 
+  it("tells a sender after the listeners heard its frame: the events of every step of it, then its sample", () => {
+    const { loop } = startCounter(6);
+    const order: string[] = [];
+    loop.subscribe((event) => order.push(event._tag));
+    loop.send(new AddBonus({ amount: 5 }), 0, (outcome) =>
+      order.push(outcome === undefined ? "told: taken" : "told: not taken")
+    );
+    // Two steps in one frame. The first applies the bonus and reaches the target; the sample
+    // is the frame's, read after both.
+    loop.frame(holding(1), { steps: 2 }, 0);
+    expect(order).toStrictEqual(["Reached", "Tally", "told: taken"]);
+    expect(loop.state?.log[0]).toBe("bonus 5 from 0 at 0");
+  });
+
+  it("tells a sender a new run dropped after the listeners heard that run's start", () => {
+    const { loop } = startCounter();
+    const order: string[] = [];
+    loop.subscribe((event) => order.push(event._tag));
+    loop.send(new AddBonus({ amount: 1 }), 0, (outcome) =>
+      order.push(
+        outcome instanceof Game.CommandDropped
+          ? `told: dropped, ${outcome.reason}`
+          : "told: answered"
+      )
+    );
+    loop.start({ target: 3 }, 8, 0);
+    expect(order).toStrictEqual([
+      "Started",
+      "Tally",
+      "told: dropped, runEnded",
+    ]);
+  });
+
   it("lets a sender send again when it is told, and applies that at the next step", () => {
     const { loop, outcomes, send, step } = startJar();
     loop.send(new Deposit({ coins: 20 }), 0, () => {
@@ -959,6 +992,38 @@ describe("a command the rules may refuse", () => {
     loop.start(undefined, 2, 0);
     loop.frame(IDLE, { steps: 1 }, 0);
     expect(heard).toStrictEqual([]);
+  });
+
+  // The one frame whose sender hears of a command no listener heard reported: the rules took
+  // it, so its sender is told so, and what the frame reported went with the run.
+  it("tells a sender the rules took its command in a frame that then threw, at the stop that follows, though no listener heard that frame", () => {
+    class Noted extends Game.Event("Noted", { coins: Schema.Int }) {}
+    class Tripping extends Game.Simulation("Tripping", {
+      input: Schema.Null,
+      events: [Noted],
+      commands: [Deposit],
+      create: () => ({ coins: 0 }),
+      step: () => {
+        throw new Error("a step threw");
+      },
+      apply: {
+        Deposit: (jar, command, { report }) => {
+          jar.coins += command.coins;
+          report(new Noted({ coins: jar.coins }));
+        },
+      },
+    }) {}
+    const loop = new Game.Loop(Tripping);
+    const order: string[] = [];
+    loop.subscribe((event) => order.push(`heard ${event.coins}`));
+    loop.start(undefined, 1, 0);
+    loop.send(new Deposit({ coins: 4 }), 0, (outcome) =>
+      order.push(outcome === undefined ? "told: taken" : "told: not taken")
+    );
+    expect(() => loop.frame(IDLE, { steps: 1 }, 0)).toThrow("a step threw");
+    expect(order).toStrictEqual([]);
+    loop.stop();
+    expect(order).toStrictEqual(["told: taken"]);
   });
 
   it("refuses a command the simulation doesn't declare, where it is sent", () => {

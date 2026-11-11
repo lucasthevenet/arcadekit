@@ -245,7 +245,11 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
     this.tell();
   }
 
-  /** Calls `listener` for every event and sample, in order. Returns a function that stops it. */
+  /**
+   * Calls `listener` for every event and sample, in order, inside the `start` or the `frame`
+   * that reports it: so before the sender of a command that call answered is told. Returns a
+   * function that stops it.
+   */
   subscribe(listener: (event: Event) => void): () => void {
     return this.kernel.subscribe(listener);
   }
@@ -259,7 +263,9 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
    * the run where the throw left it, and tells nobody. Whoever catches the throw ends the run
    * with `stop`, as the engine does, and the senders hear then. A command whose handler threw is
    * told it was dropped, though the handler may have changed the state first; those sent after
-   * it still wait.
+   * it still wait. One the frame had applied before the throw is told the rules' answer, the
+   * one case where a sender hears of a step no listener heard: `stop` discards what that frame
+   * reported.
    */
   frame(input: StepInput<Input>, budget: FrameBudget, nowMs: number): number {
     const steps = this.kernel.frame(input, budget, nowMs);

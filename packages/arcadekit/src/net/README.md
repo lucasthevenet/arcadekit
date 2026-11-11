@@ -90,6 +90,7 @@ What a player decides outside what its devices hold, such as an upgrade to pick 
 
 - **It rides one step.** The command goes with its sender's payload for the next step the session schedules, `inputDelay` ahead as its input is. The host confirms that step once, with the command in it, so every peer applies the command once, at the start of that step: the commands of the players before the sender in player order first, and each player's in the order sent. No peer picks the step from its own clock, and a resent message brings no second copy.
 - **Every peer's rules answer alike.** Each peer's `apply` handler takes the command or refuses it with one of the rejections it declares, from the same state. Only the sender's peer has a sender to tell: `settled` is called there, once the session is out of the tick that ran the step, with `undefined`, the rejection, or a `CommandDropped`.
+- **Its sender hears after its session's listeners.** A session's listeners (`subscribe`) are called inside the tick, and `settled` after it. So whenever a sender hears the rules' answer, taken or refused, the listeners of its session have heard everything that tick's steps reported, the command's step among them: a sender that listens knows what its command's step did. A tick that throws before it has told that step tells the sender `CommandDropped`: no sender hears the rules' answer to a command whose step its listeners did not hear.
 - **Every send ends.** A send whose session stops, is disposed or throws out of a tick before this peer's rules answer is told `CommandDropped` with `runEnded`, and so is one sent after. A command sent while a guest's session is still `joining` waits, and rides the run's first steps.
 - **It can be taken back while it has no step.** `send` returns a function for that. Once the command rides a step, which takes about one step's time and longer while the run waits on a player, it is every peer's, and taking it back only keeps `settled` from being called.
 - **At most four commands ride one player's step.** A fifth rides the next step, in the order sent. A peer that sends five in one is removed, as for any payload that doesn't decode.
@@ -169,11 +170,76 @@ for (let now = 0; now < 1000; now += 4) {
 console.log(host.state?.coins, guest.state?.coins); // 7 7
 ```
 
+## Listening to a run
+
+`session.subscribe(listener)` hears what the run reports, its events and its samples, as `Game.Loop`'s `subscribe` does, and returns a function that stops it.
+
+- **A session reports from its ticks, and from nowhere else.** A listener is called inside a tick, with what that tick's steps reported.
+- **A listener in place before the first tick hears the run from its start**: what the simulation's `create` reports, then the first sample. A guest's run starts in a tick, the one that has the host's start message. A host's has started by the time `hostLockstep` returns, with its state there to draw, and nothing can have subscribed by then: the session keeps what that start reported and tells it at its first tick, before the tick does anything else. So a host's listener and a guest's hear one run alike.
+- **Nothing is told twice.** A listener that comes after the first tick hears what comes after it.
+- **A listener hears a tick before a sender does.** What a tick's steps reported is told inside the tick, a step's events and then a sample if one is due, and the senders whose commands those steps answered are told once the tick's work is over ([Commands](#commands)).
+
+```ts
+import * as Game from "arcadekit/game";
+import { createMemoryNetwork, hostLockstep } from "arcadekit/net";
+import { Schema } from "effect";
+
+class RaceBegan extends Game.Event("RaceBegan", { laps: Schema.Int }) {}
+class Standings extends Game.Event("Standings", { metres: Schema.Number }) {}
+
+// `create` reports the start, and the sample says how far the cars have come together.
+class Race extends Game.Simulation("Race", {
+  input: Game.PlayerInputs(Schema.Number),
+  events: [RaceBegan],
+  create: (config: { readonly laps: number }, { report }) => {
+    report(new RaceBegan({ laps: config.laps }));
+    return { metres: 0 };
+  },
+  step: (state, input) => {
+    for (const speed of input.players) {
+      state.metres += speed ?? 0;
+    }
+  },
+  sample: {
+    event: Standings,
+    every: "100 millis",
+    read: (state) => ({ metres: state.metres }),
+  },
+}) {}
+
+const network = createMemoryNetwork({ seed: 1 });
+const host = hostLockstep(
+  {
+    simulation: Race,
+    config: { laps: 3 },
+    contentHash: "content-v1",
+    transport: network.connect("host"),
+    local: { read: () => 1 },
+    hash: (state) => state.metres,
+    inputDelay: 3,
+    hashEvery: 30,
+    peers: ["guest"],
+    seed: 7,
+  },
+  0
+);
+// The run has started, and nothing has been told yet.
+console.log(host.state?.metres); // 0
+// Before the first tick: it hears the run from its start.
+host.subscribe(
+  Race.match({
+    RaceBegan: ({ laps }) => console.log(`${laps} laps`),
+    Standings: ({ metres }) => console.log(`${metres} m`),
+  })
+);
+host.tick(4); // 3 laps, then 0 m
+```
+
 ## In an Effect program
 
 `hostLockstepScoped(options)` and `joinLockstepScoped(options)` take the same options and return `Effect<ScopedLockstepSession, never, Scope>`. Closing the scope stops the session listening to its transport, and so does starting when it throws (the Effect dies with what was thrown). The session's time is Effect's `Clock` (its monotonic time; a `TestClock` in tests): the start and every tick read it.
 
-`session.run(ticker?)` ticks the session until it stops, then fails with its `LockstepError`; interrupting it stops the ticking. After a desync it fails a second after the stop, which `status` and `error` show at once: until then its ticks resend the desync, which the transport may lose, so that every peer stops with it. Run it in the session's scope: a run still going once that closes dies on its next tick. Without a ticker it ticks every 4 ms of the Clock, for tests and servers. A `Ticker` is `(onTick) => stop`: a timer, a dedicated worker's timer (a hidden tab throttles the main thread's to about once a second, which stalls the others), animation frames, or all of those. `onTick` ticks the session before it returns, so the ticker can read the session right after, or tick before drawing, and no Effect runs per tick: the run ends once the `onTick` it stops in has returned, so the rest of that tick runs before the program's handlers and finalizers. `session.listen(onEvent)` hears the run's events and samples until its scope closes, each call on its own, even with the same `onEvent`. `session.send(command)` is the plain session's `send` as an Effect, in the shape of an engine's: it succeeds when this peer's rules took the command, fails with the rejection they refused it with, and fails with `CommandDropped` when they gave no answer, which closing the session's scope makes sure of. It completes after the tick of the command's step, and interrupting it takes the command back while it has no step yet. Its `status`, `error`, `waitingFor`, `players`, `state` and `stepIndex` are plain reads, as on the plain session.
+`session.run(ticker?)` ticks the session until it stops, then fails with its `LockstepError`; interrupting it stops the ticking. After a desync it fails a second after the stop, which `status` and `error` show at once: until then its ticks resend the desync, which the transport may lose, so that every peer stops with it. Run it in the session's scope: a run still going once that closes dies on its next tick. Without a ticker it ticks every 4 ms of the Clock, for tests and servers. A `Ticker` is `(onTick) => stop`: a timer, a dedicated worker's timer (a hidden tab throttles the main thread's to about once a second, which stalls the others), animation frames, or all of those. `onTick` ticks the session before it returns, so the ticker can read the session right after, or tick before drawing, and no Effect runs per tick: the run ends once the `onTick` it stops in has returned, so the rest of that tick runs before the program's handlers and finalizers. `session.listen(onEvent)` hears the run's events and samples until its scope closes, each call on its own, even with the same `onEvent`: it is the plain session's `subscribe`, so listen before `run`, whose first tick tells what the run's start reported, to hear the run [from its start](#listening-to-a-run). `session.send(command)` is the plain session's `send` as an Effect, in the shape of an engine's: it succeeds when this peer's rules took the command, fails with the rejection they refused it with, and fails with `CommandDropped` when they gave no answer, which closing the session's scope makes sure of. It completes after the tick of the command's step, when a `listen` callback has heard what that tick reported, and interrupting it takes the command back while it has no step yet. Its `status`, `error`, `waitingFor`, `players`, `state` and `stepIndex` are plain reads, as on the plain session.
 
 The example's two peers again, as one Effect program:
 
@@ -482,8 +548,8 @@ A `Coop` refuses what can't work when it is declared: an engine whose simulation
 The client's commands return at once, except `leave`, which returns once the seat has closed. One stream of events says what happened:
 
 - `host(pick)`, `join(code, pick)` and `leave` choose the **seat**: this player's place in one room, from its host or join on. A new seat says nothing until every seat before it has closed. A **lobby pick** is a string id the game lists in `picks(content)`. `choose(pick)` changes it, and `start` starts the run if the lobby's `canStart` is true: at least two players, at most the game's `maxPlayers`, each with a pick. At the start the host replaces a pick its game doesn't have with the first, and leaves out a guest that linked too late to fit in `maxPlayers` (it fails with `leftOut`). A guest whose game doesn't have one of the picks fails with `unknownPick`, and one whose game takes fewer players fails with `tooManyPlayers`.
-- `send(command)` is how a player tells the run anything besides its device's input: an upgrade pick, a pause it holds for everyone. It is an engine's `send` in shape and in type. The command [rides the player's next step](#commands), every peer's rules take or refuse it alike at that step, and the Effect succeeds when the local player's own took it, fails with the rejection they refused it with, and fails with `CommandDropped` when they gave no answer: there is no run yet (`noRun`), or the run stopped or the player left first (`runEnded`). The kit knows nothing of pausing: a game that has a pause declares a command for it, and its app keeps the screen.
-- `listen` reports a seat in order: `LobbyChanged` events (who is in the lobby, and whether it can start), one `RunStarted` (the local player's slot, and every player's name), then the run's own events and `WaitingChanged` (who stepping waits on, once the run has stood at one step for 300 ms; a run that steps waits on nobody, however far behind another peer's it is), then at most one `SeatFailed`, which is its last: it has the kit's `message` and a `reason` tag an app can re-word. The four are Schema classes, so an app puts one in a Message or its Model as it is.
+- `send(command)` is how a player tells the run anything besides its device's input: an upgrade pick, a pause it holds for everyone. It is an engine's `send` in shape and in type. The command [rides the player's next step](#commands), every peer's rules take or refuse it alike at that step, and the Effect succeeds when the local player's own took it, fails with the rejection they refused it with, and fails with `CommandDropped` when they gave no answer: there is no run yet (`noRun`), or the run stopped or the player left first (`runEnded`). It completes after the seat's listener (`listen`) has been called with what the command's step reported, so a Command that listens and then sends knows what its command's step did: whether a pick opened another offer for the local player, say. The kit knows nothing of pausing: a game that has a pause declares a command for it, and its app keeps the screen.
+- `listen` reports a seat in order: `LobbyChanged` events (who is in the lobby, and whether it can start), one `RunStarted` (the local player's slot, and every player's name), then the run's own events and `WaitingChanged` (who stepping waits on, once the run has stood at one step for 300 ms; a run that steps waits on nobody, however far behind another peer's it is), then at most one `SeatFailed`, which is its last: it has the kit's `message` and a `reason` tag an app can re-word. The four are Schema classes, so an app puts one in a Message or its Model as it is. A seat hears its run from the start, the host's as a guest's: what the simulation's `create` reports (a first stage's banner, say) comes right after `RunStarted`, then the run's first sample, each once.
 - **`SumCoop.match({ ... })`** turns all of it into one value, as a simulation's `match` does for an engine: a case for each of the client's events by its tag, and under `run` a case for each of the run's events and its sample, which gets `{ local }` beside the event: the local player of the seat that heard it, which stays that seat's if the event is kept. A run's events reach every seat as the rules reported them, so the app says which are the local player's: `hero === local.slot`. The run's cases have their own place, so a game may name an event as it likes. A missing case is a type error, and a case for an event that doesn't exist (one a renamed event left behind, or a run's case written beside the client's own) is refused when `match` is called, as the app's module loads, with a message that says where it goes.
 - **Who a run waits on to decide** something, such as an upgrade to pick, is the game's to say: its sample does, as survivors' HUD has a `choosing` flag for each hero, and the app names the players from it. The client reports only who stepping waits on.
 - `attach(element)` draws and reads input until interrupted, as an engine's does: it runs what the engine uses, makes the view, then the input source. `attach` and `listen` have `arcadekit/foldkit`'s `AttachableEngine` shapes, so `engineEntry({ engine: SumCoop, toMessage: SumCoop.match({ ... }), ... })` mounts co-op as it mounts an engine. A failed attach leaves the seat; a detach doesn't.
@@ -492,7 +558,7 @@ What every peer of a run must agree on is on the class as plain values and funct
 
 ### Testing a Co-op game
 
-`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links) and `manualTicker()` a ticker the test drives, each with the `layer` a `Coop`'s layer takes. Frames come from `manualFrames()` in [`arcadekit/game/testing`](../game/README.md#testing-an-engine), provided as `Game.Frames`. It also has a small game to run: `TestGame`, a declared simulation with lobby picks, an offer each player answers with a command the rules may refuse (`AnswerOffer`, `NothingOwed`), a pause a player holds with another (`HoldPause`) and an end (`RunEnded`), with its content (`testContent`) and its state hash (`hashTestState`). It has no Co-op client of its own: a test makes one as an app does, from a `Coop`'s `layer`, its own game's or one declared over `TestGame`.
+`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links) and `manualTicker()` a ticker the test drives, each with the `layer` a `Coop`'s layer takes. `onFakeTimers(effect)` has an Effect run on the timers a test fakes ([below](#on-fake-timers)). Frames come from `manualFrames()` in [`arcadekit/game/testing`](../game/README.md#testing-an-engine), provided as `Game.Frames`. It also has a small game to run: `TestGame`, a declared simulation with lobby picks, an offer each player answers with a command the rules may refuse (`AnswerOffer`, `NothingOwed`), a pause a player holds with another (`HoldPause`) and an end (`RunEnded`), with its content (`testContent`) and its state hash (`hashTestState`). Content with `offerAtStart: true` starts the run on an offer that its `create` reports: a start that reports, for a test of what a seat hears first. It has no Co-op client of its own: a test makes one as an app does, from a `Coop`'s `layer`, its own game's or one declared over `TestGame`.
 
 ```ts
 import * as Game from "arcadekit/game/browser";
@@ -563,6 +629,43 @@ const twoPlayers = Effect.gen(function* () {
 Effect.runFork(twoPlayers);
 ```
 
-A test on fake timers also gives the clients a `Clock` that reads the faked time and a Scheduler that runs fibers on microtasks, as the kit's own client tests do ([co-op-findings.md](https://github.com/lucasthevenet/arcadekit/blob/main/docs/co-op-findings.md), finding 2).
+#### On fake timers
 
-See [ADR-0012](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0012-delay-based-lockstep-over-a-host-star.md) (delay-based lockstep over a host star), [ADR-0019](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md) (the kit owns co-op from the signalling worker to the client; the screens stay in the app), [ADR-0021](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0021-co-op-is-declared-from-the-games-engine.md) (co-op is declared from the game's engine, and heard through one `match`) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math, so every browser computes the same run).
+The example above waits on real time. A test on fake timers runs each of its Effects through `onFakeTimers(effect)`, so that advancing the timers moves a run's ticker and its clock together.
+
+In Node, Effect reads its time from `process.hrtime` and runs its fibers on `setImmediate`, and a test's fake timers reach neither: a run's clock would stand still while its ticker's faked timer ran on, and a fiber would go on at a real moment the test doesn't await. `onFakeTimers` gives the Effect a `Clock` on the page's timers (`performance.now()` for the time a run steps by, `setTimeout` for a sleep) and a scheduler that runs its fibers on microtasks, as Foldkit's does in the browser. Nothing else of the Effect changes: what it gives, fails with and needs.
+
+```ts
+import { onFakeTimers } from "arcadekit/net/testing";
+import { Effect, Scope } from "effect";
+
+// The test's scope, which owns its clients. A test file makes it in `beforeEach`, after faking
+// the timers, and closes it in `afterEach`, before restoring them. With Vitest:
+//   vi.useFakeTimers({
+//     toFake: ["setInterval", "clearInterval", "setTimeout", "performance"],
+//   });
+const scope = Effect.runSync(Scope.make());
+
+/** Runs `effect` as the app does: in the app's scope, on the timers the test fakes. */
+export const run = <A, E>(
+  effect: Effect.Effect<A, E, Scope.Scope>
+): Promise<A> =>
+  Effect.runPromise(effect.pipe(Scope.provide(scope), onFakeTimers));
+
+// With `player` as above, built without `timer.layer`, a run ticks on the default ticker: in
+// Node, the faked `setInterval`. A test then reads:
+//   const host = await run(player);
+//   const guest = await run(player);
+//   await run(host.host("red"));
+//   await vi.advanceTimersByTimeAsync(0); // lets what woke run, at the faked time
+//   await run(guest.join(hub.code, "green"));
+//   await vi.advanceTimersByTimeAsync(0); // a lobby needs its second player to start
+//   await run(host.start);
+//   await vi.advanceTimersByTimeAsync(5000); // five seconds of the run
+```
+
+- **Wrap every Effect the test runs or forks**, the one that builds the client's layer first: a client takes its Clock and its scheduler from the Effect that made it, and what it forks later runs on them.
+- **It fakes nothing itself**, and imports no test runner: it reads the globals as they are when the Effect runs. Fake `performance` and `setTimeout`, and `setInterval` with `clearInterval` for a run on the default ticker, which ticks on the page's timer where no worker starts, as in Node. Leave `queueMicrotask` real.
+- **With `manualTicker()`** the test ticks, and the faked time is still the run's: move the time, then tick.
+
+See [ADR-0012](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0012-delay-based-lockstep-over-a-host-star.md) (delay-based lockstep over a host star), [ADR-0019](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md) (the kit owns co-op from the signalling worker to the client; the screens stay in the app), [ADR-0021](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0021-co-op-is-declared-from-the-games-engine.md) (co-op is declared from the game's engine, and heard through one `match`), [ADR-0022](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0022-a-lockstep-session-reports-only-from-its-ticks.md) (a session reports only from its ticks, and tells a host's start at the first) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math, so every browser computes the same run).

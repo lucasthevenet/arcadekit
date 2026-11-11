@@ -132,8 +132,9 @@ export type LockstepStatus = "joining" | "running" | "waiting" | "stopped";
 /**
  * One peer's side of a lockstep run. Drive it with `tick(nowMs)` from a timer, often (every few
  * milliseconds is fine): each tick reads what arrived, steps every due step whose inputs are all
- * confirmed, schedules local input and sends. Time comes only from `nowMs`. In an Effect
- * program, `hostLockstepScoped` and `joinLockstepScoped` make one owned by a scope and run it.
+ * confirmed, schedules local input and sends. Time comes only from `nowMs`, and what the run
+ * reports reaches its listeners inside a tick, never outside one. In an Effect program,
+ * `hostLockstepScoped` and `joinLockstepScoped` make one owned by a scope and run it.
  */
 export interface LockstepSession<State, Event, Command, Refusals> {
   readonly status: LockstepStatus;
@@ -151,7 +152,21 @@ export interface LockstepSession<State, Event, Command, Refusals> {
   /** Steps run since the start. */
   readonly stepIndex: number;
   readonly tick: (nowMs: number) => void;
-  /** Hears the run's events and samples, as `Game.Loop`'s `subscribe`. */
+  /**
+   * Hears the run's events and samples, as `Game.Loop`'s `subscribe`. Returns a function that
+   * stops it.
+   *
+   * A session reports from its ticks and from nowhere else, so a listener in place before the
+   * first tick hears the run from its start: what `create` reports, then the first sample, then
+   * what each tick's steps report. A guest's run starts in a tick, the one that has the host's
+   * start message. A host's starts as the session is made, before anything can listen to it:
+   * the session keeps what that start reported and tells it at its first tick, before the tick
+   * does anything else. No step has run by then, so `state` is still the one `create` made. A
+   * listener that comes later hears what comes after it: nothing is told twice.
+   *
+   * A listener is called inside the tick, before the senders (`send`) whose commands that
+   * tick's steps answered are told.
+   */
   readonly subscribe: (listener: (event: Event) => void) => () => void;
   /**
    * Sends a command to the run as this peer's player: `Game.Loop`'s `send`, without the slot.
@@ -176,6 +191,12 @@ export interface LockstepSession<State, Event, Command, Refusals> {
    * dispose it is called at once. Otherwise it is called once the session is out of the tick that
    * ended the command, so it may send again.
    *
+   * A listener (`subscribe`) is called inside the tick, so whenever `settled` hears the rules'
+   * answer, the listeners have heard everything that tick's steps reported, the command's step
+   * among them. A tick that throws before it has told that step tells the sender
+   * `CommandDropped`: no sender hears the rules' answer to a command whose step its listeners
+   * did not hear.
+   *
    * It speaks for this peer's rules alone. A player the host removes after it confirmed the
    * step of that player's command is told `runEnded`, though the peers still in the run applied
    * the command: no peer can tell from where it stands.
@@ -199,7 +220,11 @@ export interface LockstepSession<State, Event, Command, Refusals> {
 }
 
 /**
- * Starts a run as its host, now: the host is the first player, and `peers` the others.
+ * Starts a run as its host, now: the host is the first player, and `peers` the others. The run's
+ * state is there when it returns. What the start reports (what the simulation's `create`
+ * reports, then the first sample) is told at the session's first tick, as everything a session
+ * reports is told from a tick: `subscribe` before that tick to hear the run from its start, as
+ * a guest's listener does.
  *
  * ```ts
  * const session = hostLockstep(
@@ -217,6 +242,8 @@ export interface LockstepSession<State, Event, Command, Refusals> {
  *   },
  *   0
  * );
+ * // Before the first tick: it hears the run from its start.
+ * session.subscribe(Survivors.match({ ... }));
  * session.tick(16);
  * ```
  *
@@ -247,8 +274,9 @@ export const hostLockstep = <Config, State, Input, Event, Command, Refusals>(
 /**
  * Joins the run `host` starts, with the options the host passed but `peers` and `seed`, and
  * with the run's player order as `players`. The session is `joining` until the host's start
- * message arrives. Throws for a simulation whose step input was not declared with
- * `Game.PlayerInputs`, as `hostLockstep` does.
+ * message arrives: the tick that has it starts the run, and tells what the start reports.
+ * Throws for a simulation whose step input was not declared with `Game.PlayerInputs`, as
+ * `hostLockstep` does.
  */
 export const joinLockstep = <Config, State, Input, Event, Command, Refusals>(
   options: JoinOptions<Config, State, Input, Event, Command, Refusals>,
@@ -464,6 +492,13 @@ class Session<
     Refusals
   >;
   private readonly loop: Loop<Config, State, Input, Event, Command, Refusals>;
+  /** Who hears the run's events and samples: the session's own set, told only from a tick. */
+  private readonly listeners = new Set<(event: Event) => void>();
+  /**
+   * What a host's start reported, in order, until its first tick tells it: `create`'s events,
+   * then the first sample. Null once told, and on a guest, whose run starts in a tick.
+   */
+  private startReport: Event[] | null = null;
   /** One player's part of a step to its wire form and back, from the simulation's declaration. */
   private readonly codec: PayloadCodec<PlayerInputOf<Input>, Command>;
   /** The tags of the simulation's commands. */
@@ -537,6 +572,7 @@ class Session<
     this.loop = new Loop<Config, State, Input, Event, Command, Refusals>(
       options.simulation
     );
+    this.loop.subscribe((event) => this.emit(event));
     this.stepMs = options.simulation.definition.stepSeconds * 1000;
     this.dropAfterMs = options.dropAfterMs ?? 10_000;
     this.lastTickMs = nowMs;
@@ -577,7 +613,37 @@ class Session<
   }
 
   subscribe(listener: (event: Event) => void): () => void {
-    return this.loop.subscribe(listener);
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * What the loop reports, on its way to the listeners. A host's loop starts while the session
+   * is being made, when nothing can listen yet: what it reports then is kept for the first tick.
+   */
+  private emit(event: Event): void {
+    if (this.startReport !== null) {
+      this.startReport.push(event);
+      return;
+    }
+    for (const listener of this.listeners) {
+      listener(event);
+    }
+  }
+
+  /**
+   * Host, at its first tick: tells what the start reported, in the order the loop reported it,
+   * before the tick does anything else. No step has run since the start, so a listener that
+   * reads the state on hearing it reads the one `create` made.
+   */
+  private tellStart(reported: readonly Event[]): void {
+    // Forgotten first: a listener that throws ends this tick, and no later one tells it again.
+    this.startReport = null;
+    for (const event of reported) {
+      this.emit(event);
+    }
   }
 
   send<C extends Command>(
@@ -742,6 +808,12 @@ class Session<
       removing: [],
       seed,
     };
+    // The run starts here, not at the first tick. Its state is there at once, what starting
+    // throws is thrown with nothing left listening, and the run's first steps are scheduled
+    // before anyone can send: started at the first tick, a command sent before it would ride
+    // step 0 on every peer, where it rides the step after those. Only the telling waits for
+    // that tick, since the caller has no session to listen to until this returns (ADR-0022).
+    this.startReport = [];
     this.begin(players, seed, nowMs);
   }
 
@@ -766,6 +838,9 @@ class Session<
 
   /** One tick's work. Senders hear how their commands ended after it, never inside it. */
   private work(nowMs: number): void {
+    if (this.startReport !== null) {
+      this.tellStart(this.startReport);
+    }
     const inbox = this.inbox.splice(0);
     for (const [from, text] of inbox) {
       const message = decodeMessage(text);

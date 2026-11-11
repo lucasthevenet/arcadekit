@@ -1,5 +1,4 @@
 import {
-  Clock,
   Deferred,
   Duration,
   Effect,
@@ -7,7 +6,6 @@ import {
   Fiber,
   Option,
   Result,
-  Scheduler,
   Scope,
   Stream,
 } from "effect";
@@ -18,21 +16,21 @@ import { CommandDropped } from "../../game/index";
 import { manualFrames } from "../../game/testing";
 import { encodeLobbyMessage } from "../lobby";
 import type { Ticker } from "../scoped";
-import { microtasks, performanceClock } from "../test-harness";
 import {
   AnswerOffer,
   HoldPause,
   NothingOwed,
   OfferOpened,
   RunEnded,
+  Score,
   fakeCoopRooms,
   hashTestState,
   manualTicker,
+  onFakeTimers,
   testContent,
 } from "../testing/index";
 import type {
   FakeCoopRooms,
-  Score,
   TestContent,
   TestEvent,
   TestState,
@@ -60,10 +58,11 @@ import type {
 // links the host to each guest with in-memory channels, and fake timers drive the clients'
 // tickers. Nothing is attached unless a test attaches it, so the local input stands still.
 //
-// Each client is made as an app makes it, on a Clock and a Scheduler of the test's: the Clock
-// reads the faked `performance.now()` (Effect's own reads `process.hrtime` in Node, which fake
-// timers don't reach), and the Scheduler runs fibers on microtasks, as Foldkit's does in the
-// browser, so no fiber waits on a real `setImmediate`.
+// Each client is made as an app makes it, on a Clock and a Scheduler of the test's
+// (`onFakeTimers`, `arcadekit/net/testing`): the Clock reads the faked `performance.now()`
+// (Effect's own reads `process.hrtime` in Node, which fake timers don't reach), and the
+// Scheduler runs fibers on microtasks, as Foldkit's does in the browser, so no fiber waits on a
+// real `setImmediate`.
 
 type Event = CoopEvent<TestEvent>;
 
@@ -75,22 +74,11 @@ let scope: Scope.Closeable;
 
 /** Runs `effect` as the app does: in the app's scope, on the test's Clock and Scheduler. */
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): Promise<A> =>
-  Effect.runPromise(
-    effect.pipe(
-      Scope.provide(scope),
-      Effect.provideService(Clock.Clock, performanceClock),
-      Effect.provideService(Scheduler.Scheduler, microtasks)
-    )
-  );
+  Effect.runPromise(effect.pipe(Scope.provide(scope), onFakeTimers));
 
 /** Forks `effect` as `run` runs it. */
 const fork = <A, E>(effect: Effect.Effect<A, E>): Fiber.Fiber<A, E> =>
-  Effect.runFork(
-    effect.pipe(
-      Effect.provideService(Clock.Clock, performanceClock),
-      Effect.provideService(Scheduler.Scheduler, microtasks)
-    )
-  );
+  Effect.runFork(onFakeTimers(effect));
 
 interface Player<LoadError = never> {
   readonly coop: TestCoopClient<LoadError>;
@@ -144,6 +132,15 @@ const sampled = (events: readonly Event[]): Score | undefined =>
         : []
     )
     .at(-1);
+
+/**
+ * Everything a seat reported from its run's start on, in order: `RunStarted`, then each of the
+ * run's events and samples as the rules reported it.
+ */
+const fromStart = (events: readonly Event[]) =>
+  events
+    .slice(events.findIndex((event) => event._tag === "RunStarted"))
+    .map((event) => (event._tag === "RunEvent" ? event.event : event));
 
 /** Each time a seat said who its run waits on, with somebody to name. */
 const named = (events: readonly Event[]) =>
@@ -523,6 +520,38 @@ describe("a co-op run", () => {
     ]).toStrictEqual([true, 1, 1]);
   });
 
+  // A run's first news is what `create` reports: here an offer for each player, in a game it
+  // may be the first stage's banner. A guest's run starts in a tick, on the host's start message.
+  // A host's starts as its session is made, before the seat can listen to it, and the session
+  // tells that start at its first tick: to the seat, which has said `RunStarted` by then.
+  it("tells the host's seat what the run's start reports as it tells a guest's: after RunStarted, in one order, each once", async () => {
+    const hub = fakeCoopRooms();
+    const opening = game({ offerAtStart: true });
+    const { host, guest } = await lobbyOfTwo(hub, {
+      host: opening,
+      guest: opening,
+    });
+    await run(host.coop.start);
+    // Half of the 100 ms a second sample is due after: the start's sample is the only one.
+    await vi.advanceTimersByTimeAsync(50);
+    const names = ["Host", "Guest 1"];
+    const start = [
+      new OfferOpened({ offer: 1, slot: 0 }),
+      new OfferOpened({ offer: 1, slot: 1 }),
+      new Score({ steps: 0, totals: [0, 0], owes: [true, true] }),
+    ];
+    expect([fromStart(host.events), fromStart(guest.events)]).toStrictEqual([
+      [new RunStarted({ slot: 0, names }), ...start],
+      [new RunStarted({ slot: 1, names }), ...start],
+    ]);
+    // Nothing of the start comes again: a second later each seat has heard each offer once.
+    await vi.advanceTimersByTimeAsync(1000);
+    expect([heard(host.events), heard(guest.events)]).toStrictEqual([
+      start.slice(0, 2),
+      start.slice(0, 2),
+    ]);
+  });
+
   it("closes the room and the ticker before it reports a run that stopped", async () => {
     const hub = fakeCoopRooms();
     const ticker = loggedTicker((line) => {
@@ -702,8 +731,7 @@ describe("hosting, joining and leaving", () => {
     const coop = await Effect.runPromise(
       testCoopClient(testCoopParts(), { rooms: hub.rooms }).pipe(
         Scope.provide(own),
-        Effect.provideService(Clock.Clock, performanceClock),
-        Effect.provideService(Scheduler.Scheduler, microtasks)
+        onFakeTimers
       )
     );
     await run(coop.host("red"));
@@ -1055,6 +1083,46 @@ describe("sending a command", () => {
       [false, false],
       false,
     ]);
+  });
+
+  it("completes after its seat's listener heard what the command's step reported", async () => {
+    const hub = fakeCoopRooms();
+    // The run starts on an offer and opens the next after every step, so the answer that
+    // closes one opens another in the same step: what an app looks for after a pick.
+    const chained = { offerAtStart: true, offerEvery: 1 };
+    const { host, guest } = await lobbyOfTwo(hub, {
+      host: game(chained),
+      guest: game(chained),
+    });
+    await run(host.coop.start);
+    await vi.advanceTimersByTimeAsync(500);
+    // What each seat heard of offers from here on, and where its own send completed.
+    const order: Record<"host" | "guest", string[]> = { host: [], guest: [] };
+    const answer = async (name: "host" | "guest", { coop }: Player) => {
+      await run(
+        coop.listen((event) => {
+          if (event._tag === "RunEvent" && event.event._tag === "OfferOpened") {
+            const { offer, slot } = event.event;
+            order[name].push(`heard: offer ${offer} for ${slot}`);
+          }
+        })
+      );
+      const sent = run(
+        coop
+          .send(new AnswerOffer({ offer: 1, value: 1 }))
+          .pipe(Effect.andThen(Effect.sync(() => order[name].push("answered"))))
+      );
+      await vi.advanceTimersByTimeAsync(300);
+      await sent;
+    };
+    // The host's answer closes nothing: the guest still owes, so its step reports nothing.
+    await answer("host", host);
+    // The guest's closes offer 1, and that step opens offer 2 for both.
+    await answer("guest", guest);
+    expect(order).toStrictEqual({
+      host: ["answered", "heard: offer 2 for 0", "heard: offer 2 for 1"],
+      guest: ["heard: offer 2 for 0", "heard: offer 2 for 1", "answered"],
+    });
   });
 
   it("fails with the rejection the rules refused it with, having changed nothing on any peer", async () => {

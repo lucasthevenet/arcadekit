@@ -62,7 +62,13 @@ export interface Engine<Config, Event, Command, E, Refusals> {
   readonly attach: (
     element: HTMLElement
   ) => Effect.Effect<never, AttachError | GameCrashed | E>;
-  /** Calls `onEvent` for every event and sample of the run while the scope is open. */
+  /**
+   * Calls `onEvent` for every event and sample of the run while the scope is open, in the order
+   * the run reports them: inside `start`, what `create` reports and then the first sample;
+   * inside each frame, the events of its steps and then its sample, if one is due. It is called
+   * before the frame draws, and before any `send` that frame answered completes. It is a plain
+   * call in the middle of that work, so it only notes what it hears.
+   */
   readonly listen: (
     onEvent: (event: Event) => void
   ) => Effect.Effect<void, never, Scope.Scope>;
@@ -78,8 +84,34 @@ export interface Engine<Config, Event, Command, E, Refusals> {
    * the rules gave no answer: there is no run, or the run ended first.
    *
    * It completes after the frame of the command's step has drawn, never inside the step, so
-   * the line after it may start or stop a run. Its answer and the events of that step arrive in
-   * no fixed order.
+   * the line after it may start or stop a run. By then a listener (`listen`) has been called
+   * with everything that frame reported: the events of each of its steps, the command's step
+   * among them, then its sample if one was due. So an Effect that listens and then sends knows,
+   * on the line after the send, what the command's step did:
+   *
+   * ```ts
+   * let offered = false;
+   * yield* engine.listen((event) => {
+   *   offered ||= event._tag === "OfferOpened";
+   * });
+   * yield* engine.send(new ChooseUpgrade({ offer, index }));
+   * // `offered` says whether the frame of the pick opened another offer.
+   * ```
+   *
+   * That holds whenever the rules answered, whether they took the command or refused it, with
+   * one exception: a frame that throws before its listeners have heard it all, as `attach`
+   * fails with `GameCrashed`. A command one of its steps had applied still gets the rules'
+   * answer. But if a step threw, what the frame had reported is discarded with its run and
+   * reaches no listener; and if a listener threw, the telling ended there: the listeners called
+   * before it heard that event, and none heard what came after. A render that throws comes
+   * after both, so the listeners heard its whole frame. A send that fails with `CommandDropped`
+   * had no step to hear of; if a new `start` dropped it, the listener has heard that run's
+   * start.
+   *
+   * The order is that of the two calls, not of Messages. An app's Subscription makes a Message
+   * of each event and its Command another of the send's result, and the kit fixes no order
+   * between those in `update`: a Command that needs what its command's step reported listens
+   * itself, as above.
    *
    * A step needs a frame, so it waits while the engine is paused or not attached, and ends when
    * the run next steps or ends. Interrupt it to take the command back, if it hasn't been applied

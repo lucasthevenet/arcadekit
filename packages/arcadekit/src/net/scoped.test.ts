@@ -862,6 +862,74 @@ describe("scoped lockstep session", () => {
       );
     });
 
+    it("completes after a listener heard what the tick of the command's step reported: its events, then its sample", async () => {
+      const network = createMemoryNetwork({ seed: 1 });
+      const ticks = manualTicker();
+      class Added extends Game.Event("Added", { n: Schema.Int }) {}
+      /** The counting game, whose command reports what it added. */
+      class Telling extends Game.Simulation("Telling", {
+        input: Adds,
+        events: [Added],
+        commands: [Add],
+        create: createCount,
+        step: count,
+        apply: {
+          Add: (state, { n }, { report }) => {
+            state.total += n;
+            report(new Added({ n }));
+          },
+        },
+        sample: SAMPLE,
+      }) {}
+      const exit = await play(
+        Effect.gen(function* () {
+          const session = yield* hostLockstepScoped({
+            ...options(network.connect("host")),
+            simulation: Telling,
+            inputDelay: 2,
+            peers: [],
+            seed: 1,
+          });
+          const seen: string[] = [];
+          yield* session.listen((event) =>
+            seen.push(
+              event._tag === "Added"
+                ? `heard: added ${event.n}`
+                : `heard: sample at ${event.steps}`
+            )
+          );
+          yield* Effect.forkScoped(session.run(ticks.ticker), {
+            startImmediately: true,
+          });
+          yield* Effect.forkChild(
+            session
+              .send(new Add({ n: 1 }))
+              .pipe(Effect.andThen(Effect.sync(() => seen.push("answered")))),
+            { startImmediately: true }
+          );
+          // The first tick tells the start and gives the command its step; the second runs it,
+          // and is due a sample.
+          for (const ms of [50, 50]) {
+            yield* TestClock.adjust(ms);
+            ticks.fire();
+            seen.push(`ticked to ${session.stepIndex}`);
+          }
+          yield* Effect.yieldNow;
+          return seen;
+        })
+      );
+      expect(exit).toStrictEqual(
+        Exit.succeed([
+          "heard: sample at 0",
+          "ticked to 3",
+          "heard: added 1",
+          "heard: sample at 6",
+          "ticked to 6",
+          "answered",
+        ])
+      );
+    });
+
     it("fails with CommandDropped when the session's scope closes first", async () => {
       const network = createMemoryNetwork({ seed: 1 });
       const exit = await play(
@@ -954,8 +1022,51 @@ describe("scoped lockstep session", () => {
       })
     );
     expect(Exit.isSuccess(exit)).toBe(true);
-    // The sample at the 100 ms tick: 6 steps. The one at 200 ms came after the listener left.
-    expect(events).toStrictEqual([6]);
+    // The start's sample, which the session tells at its first tick: no step yet. Then that
+    // tick's own, at 100 ms: 6 steps. The one at 200 ms came after the listener left.
+    expect(events).toStrictEqual([0, 6]);
+  });
+
+  it("tells a listener in place before the run's first tick what the host's start reported: create's events, then the first sample", async () => {
+    const network = createMemoryNetwork({ seed: 1 });
+    const ticks = manualTicker();
+    class Began extends Game.Event("Began", { seed: Schema.Int }) {}
+    class Beginning extends Game.Simulation("Beginning", {
+      input: Adds,
+      events: [Began],
+      create: (_config: null, { seed, report }): Count => {
+        report(new Began({ seed }));
+        return { steps: 0, total: 0 };
+      },
+      step: count,
+      sample: SAMPLE,
+    }) {}
+    const heard: (Began | Stepped)[] = [];
+    const exit = await play(
+      Effect.gen(function* () {
+        const session = yield* hostLockstepScoped({
+          ...options(network.connect("host")),
+          simulation: Beginning,
+          peers: [],
+          seed: 7,
+        });
+        yield* session.listen((event) => heard.push(event));
+        // The run has started, and nothing is told before a tick.
+        const before = [session.state?.steps, heard.length];
+        yield* Effect.forkScoped(session.run(ticks.ticker), {
+          startImmediately: true,
+        });
+        ticks.fire();
+        ticks.fire();
+        return before;
+      })
+    );
+    expect(exit).toStrictEqual(Exit.succeed([0, 0]));
+    // Told once, by the first tick: the second, at the same time, has nothing new.
+    expect(heard).toStrictEqual([
+      new Began({ seed: 7 }),
+      new Stepped({ steps: 0 }),
+    ]);
   });
 
   it("keeps a listener while its scope is open, when another scope listens with the same callback", async () => {
@@ -979,6 +1090,7 @@ describe("scoped lockstep session", () => {
       })
     );
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(events).toStrictEqual([6]);
+    // Each sample once: the start's, told at the first tick, then that tick's own.
+    expect(events).toStrictEqual([0, 6]);
   });
 });
