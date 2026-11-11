@@ -1,15 +1,20 @@
 import { Effect, Schema } from "effect";
+import type { Scope } from "effect";
 
+import { Frames } from "../../game/browser";
 import * as Game from "../../game/index";
-import type { GameView } from "../../runtime/browser";
+import type { FrameSource, GameView } from "../../runtime/browser";
 import type { InputSource } from "../../runtime/index";
-import type { CoopGame, CoopPresentation } from "../browser/index";
-import type { CoopRules, CoopTypes } from "../coop";
+import { coopClient } from "../browser/coop-client";
+import type { CoopParts, CoopPresented } from "../browser/coop-client";
+import { CoopTicker } from "../browser/index";
+import type { CoopClient, Rooms } from "../browser/index";
+import type { Ticker } from "../scoped";
 
 // A small Co-op game for tests: every player adds a number each step, and now and then the run
 // stops on an offer that each player answers. It is enough to drive every part of the Co-op
 // client: lobby picks, a command the rules take or refuse, players choosing, pause, and a run's
-// end. Its rules are declared as a genre's are: events, commands with their rejections, then the
+// end. An event says whose it is by slot (`OfferOpened.slot`, `RunEnded.totals`), as a genre's do. Its rules are declared as a genre's are: events, commands with their rejections, then the
 // simulation. Each declaration's base is named first, with its type, since the kit's type files
 // are made one file at a time (isolatedDeclarations).
 
@@ -67,13 +72,19 @@ const ScoreBase: Game.EventClass<
   {
     readonly steps: Schema.Int;
     readonly totals: Schema.$Array<Schema.Number>;
+    readonly owes: Schema.$Array<Schema.Boolean>;
   }
 > = Game.Event("Score", {
   steps: Schema.Int,
   totals: Schema.Array(Schema.Number),
+  owes: Schema.Array(Schema.Boolean),
 });
 
-/** The run's sample, every 100 ms: the steps played, and each player's total by slot. */
+/**
+ * The run's sample, every 100 ms: the steps played, each player's total by slot, and whether
+ * each still owes the open offer an answer. Who a run waits on to decide is the game's to say,
+ * and it says it here.
+ */
 export class Score extends ScoreBase {}
 
 const OfferOpenedBase: Game.EventClass<
@@ -130,29 +141,10 @@ export class HoldPause extends HoldPauseBase {}
 /** Every command a run of the test game takes. */
 export type TestCommand = AnswerOffer | HoldPause;
 
-/** What the local player hears of the run. */
-export type TestLocalEvent =
-  | { readonly type: "score"; readonly steps: number; readonly total: number }
-  | { readonly type: "offer"; readonly offer: number }
-  | {
-      readonly type: "ended";
-      readonly total: number;
-      readonly names: readonly string[];
-    };
-
-/** The test game's types, as the bag a Co-op game names. */
-export interface TestCoop extends CoopTypes {
-  readonly Config: TestConfig;
-  readonly State: TestState;
-  readonly Event: TestEvent;
-  readonly PlayerInput: TestInput;
-  readonly Command: TestCommand;
-  readonly Refusals: Game.RefusalsOf<
-    readonly [typeof AnswerOffer, typeof HoldPause]
-  >;
-  readonly LocalEvent: TestLocalEvent;
-  readonly Content: TestContent;
-}
+/** The rejections each of the test game's commands can be refused with, by the command's tag. */
+export type TestRefusals = Game.RefusalsOf<
+  readonly [typeof AnswerOffer, typeof HoldPause]
+>;
 
 const TestInputSchema = Schema.Struct({ add: Schema.Number });
 
@@ -196,7 +188,7 @@ const TestGameBase: Game.SimulationClass<
   Game.PlayerInputs<TestInput>,
   TestEvent,
   TestCommand,
-  Game.RefusalsOf<readonly [typeof AnswerOffer, typeof HoldPause]>
+  TestRefusals
 > = Game.Simulation("TestGame", {
   input: Game.PlayerInputs(TestInputSchema),
   events: [OfferOpened, RunEnded],
@@ -245,7 +237,11 @@ const TestGameBase: Game.SimulationClass<
   sample: {
     event: Score,
     every: "100 millis",
-    read: (state) => ({ steps: state.steps, totals: [...state.totals] }),
+    read: (state) => ({
+      steps: state.steps,
+      totals: [...state.totals],
+      owes: [...state.owes],
+    }),
   },
 });
 
@@ -272,72 +268,65 @@ export const hashTestState = (state: TestState): number => {
   return mix(hash, state.ended ? 1 : 0);
 };
 
-/** The test game's lockstep parts. */
-export const testCoopRules: CoopRules<TestCoop> = {
-  simulation: TestGame,
-  hash: hashTestState,
-  picks: (content) => content.picks,
-  config: (content, picks) => ({ content, picks }),
-  choosing: (state, slot) => state.owes[slot] === true,
-  localEvent: (event, slot, names) => {
-    switch (event._tag) {
-      case "Score": {
-        return {
-          type: "score",
-          steps: event.steps,
-          total: event.totals[slot] ?? 0,
-        };
-      }
-      case "OfferOpened": {
-        return event.slot === slot
-          ? { type: "offer", offer: event.offer }
-          : null;
-      }
-      case "RunEnded": {
-        return { type: "ended", total: event.totals[slot] ?? 0, names };
-      }
-    }
-  },
-  runEnded: (event) => event._tag === "RunEnded",
-};
-
 const ADD_ONE: TestInput = { add: 1 };
 
 /**
- * The test game's presentation: an input that adds 1 each step while attached, and a view that
- * draws nothing. Pass `createInput` or `createView` to watch or replace either.
+ * What the test game's attach makes: a view that draws nothing, and an input that adds 1 each
+ * step while attached. Pass `view` or `input` to watch or replace either.
  */
 export const testPresentation = (
-  parts: Partial<CoopPresentation<TestState, TestInput>> = {}
-): CoopPresentation<TestState, TestInput> => ({
-  createInput: (): InputSource<TestInput> => ({
-    read: () => ADD_ONE,
+  parts: Partial<CoopPresented<TestState, TestInput>> = {}
+): CoopPresented<TestState, TestInput> => ({
+  view: (): GameView<TestState> => ({
+    render: nothing,
     dispose: nothing,
   }),
-  createView: (): GameView<TestState> => ({
-    render: nothing,
+  input: (): InputSource<TestInput> => ({
+    read: () => ADD_ONE,
     dispose: nothing,
   }),
   ...parts,
 });
 
-export interface TestCoopGameOptions<LoadError = never> {
+/**
+ * The test game as the Co-op client takes one: plain parts, with no declaration and no Layer, so
+ * a test can replace any of them. Spread it to change one (`{ ...testCoopParts(), hash }`).
+ */
+export type TestCoopParts<LoadError = never> = Omit<
+  CoopParts<
+    TestConfig,
+    TestState,
+    Game.PlayerInputs<TestInput>,
+    TestEvent,
+    TestCommand,
+    TestRefusals,
+    TestContent,
+    LoadError
+  >,
+  "rooms" | "ticker" | "frames"
+>;
+
+export interface TestCoopOptions<LoadError = never> {
   /** The content each seat loads. Defaults to `testContent`, at once. */
   readonly content?: Effect.Effect<TestContent, { readonly message: string }>;
   /** What each attach makes. Defaults to `testPresentation()`, at once. */
   readonly presentation?: Effect.Effect<
-    CoopPresentation<TestState, TestInput>,
+    CoopPresented<TestState, TestInput>,
     LoadError
   >;
   readonly maxPlayers?: number;
-  readonly lockstep?: CoopRules<TestCoop>["lockstep"];
+  readonly lockstep?: TestCoopParts["lockstep"];
 }
 
-/** The test game as a Co-op game: `testCoopRules`, with content and a presentation from `options`. */
-export const testCoopGame = <LoadError = never>(
-  options: TestCoopGameOptions<LoadError> = {}
-): CoopGame<TestCoop, LoadError> => ({
-  ...testCoopRules,
+/** The test game's parts, with content and a presentation from `options`. */
+export const testCoopParts = <LoadError = never>(
+  options: TestCoopOptions<LoadError> = {}
+): TestCoopParts<LoadError> => ({
+  simulation: TestGame,
+  hash: hashTestState,
+  picks: (content) => content.picks,
+  config: (content, picks) => ({ content, picks }),
+  ends: new Set([RunEnded.tag]),
   ...(options.maxPlayers === undefined
     ? {}
     : { maxPlayers: options.maxPlayers }),
@@ -345,7 +334,44 @@ export const testCoopGame = <LoadError = never>(
   content: options.content ?? Effect.succeed(testContent),
   presentation:
     options.presentation ??
-    Effect.sync((): CoopPresentation<TestState, TestInput> =>
-      testPresentation()
-    ),
+    Effect.sync((): CoopPresented<TestState, TestInput> => testPresentation()),
 });
+
+/** The Co-op client of the test game, as an app drives it. */
+export type TestCoopClient<LoadError = never> = CoopClient<
+  TestState,
+  TestEvent,
+  TestCommand,
+  LoadError,
+  TestRefusals
+>;
+
+/**
+ * The Co-op client of the test game, from its plain parts: over `rooms` (`fakeCoopRooms().rooms`),
+ * ticked by `ticker` (`manualTicker().ticker`) and drawn on `frames` (`manualFrames()`). Without
+ * one of the last two, it reads the reference a declared `Coop` reads: `CoopTicker`, a worker's
+ * timer, and `Game.Frames`, animation frames. Its scope owns the current seat.
+ *
+ * ```ts
+ * const hub = fakeCoopRooms();
+ * const coop = yield* testCoopClient(testCoopParts(), { rooms: hub.rooms });
+ * yield* coop.host("red");
+ * ```
+ */
+export const testCoopClient = <LoadError = never>(
+  parts: TestCoopParts<LoadError>,
+  options: {
+    readonly rooms: Rooms;
+    readonly ticker?: Ticker;
+    readonly frames?: FrameSource;
+  }
+): Effect.Effect<TestCoopClient<LoadError>, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    const { ticker } = options;
+    return yield* coopClient({
+      ...parts,
+      rooms: options.rooms,
+      ticker: ticker === undefined ? yield* CoopTicker : Effect.succeed(ticker),
+      frames: options.frames ?? (yield* Frames),
+    });
+  });

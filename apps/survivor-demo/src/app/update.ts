@@ -1,5 +1,6 @@
 import type { SurvivorsContent } from "@arcadekit/survivors";
 import type {
+  SurvivorsCoop,
   SurvivorsEngine,
   SurvivorsSheet,
 } from "@arcadekit/survivors/browser";
@@ -28,7 +29,6 @@ import {
   StartCoop,
   StartRun,
 } from "./commands";
-import type { Coop } from "./coop";
 import { Message } from "./message";
 import {
   Phase,
@@ -47,7 +47,7 @@ export type Services =
   | SurvivorsEngine
   | SurvivorsSheet
   | Save
-  | Coop
+  | SurvivorsCoop
   | Audio
   | SoundSettings;
 type Return = Update.Return<Model, Message, Services>;
@@ -268,7 +268,7 @@ const handle = (model: Model, message: Message): Return =>
           }
         : { model },
     ClickedStartCoop: () =>
-      model.phase._tag === "CoopLobby" && model.phase.role === "host"
+      model.phase._tag === "CoopLobby" && model.phase.lobby.role === "host"
         ? { model, commands: [StartCoop()] }
         : { model },
     ClickedCoopUpgrade: ({ index }) =>
@@ -284,21 +284,9 @@ const handle = (model: Model, message: Message): Return =>
         : { model },
     ClickedLeaveCoop: () =>
       isCoop(model.phase) ? leaveCoop(model) : { model },
-    GotCoopLobby: ({ role, code, self, players, maxPlayers, canStart }) =>
+    GotCoopLobby: ({ lobby }) =>
       model.phase._tag === "CoopConnecting" || model.phase._tag === "CoopLobby"
-        ? {
-            model: {
-              ...model,
-              phase: Phase.CoopLobby({
-                role,
-                code,
-                self,
-                players,
-                maxPlayers,
-                canStart,
-              }),
-            },
-          }
+        ? { model: { ...model, phase: Phase.CoopLobby({ lobby }) } }
         : { model },
     // Co-op events can be queued behind a Leave: each counts only in the phase it belongs to.
     GotCoopStarted: ({ slot, names }) =>
@@ -312,11 +300,9 @@ const handle = (model: Model, message: Message): Return =>
             },
           }
         : { model },
-    GotCoopWaiting: ({ waitingFor, choosing }) =>
+    GotCoopWaiting: ({ waitingFor }) =>
       model.phase._tag === "CoopPlaying" || model.phase._tag === "CoopLevelUp"
-        ? {
-            model: { ...model, coop: { ...model.coop, waitingFor, choosing } },
-          }
+        ? { model: { ...model, coop: { ...model.coop, waitingFor } } }
         : { model },
     GotCoopLevelUp: ({ offer, choices }) =>
       model.phase._tag === "CoopPlaying"

@@ -10,6 +10,7 @@ import { loadSpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
+import { BrowserRoomsLayer } from "../coop/config";
 import { CoopLayer } from "./coop";
 import { SaveLayer } from "./save";
 import { SoundSettingsLayer, survivorsSounds } from "./sound";
@@ -21,8 +22,8 @@ export { subscriptions } from "./subscriptions";
 
 /**
  * What the genre's engine is made from, which this app owns: its sprite sheet, its cue table and
- * its audio, which makes no AudioContext until the player's first gesture (ADR-0015). The co-op
- * client takes the sheet and the audio from here too: one Layer value, so both draw from one
+ * its audio, which makes no AudioContext until the player's first gesture (ADR-0015). Co-op
+ * plays the same engine, so it takes them from here too: one Layer value, so both draw from one
  * sheet, loaded once.
  */
 const assets = Layer.mergeAll(
@@ -50,5 +51,6 @@ export const resources = Layer.mergeAll(
   SurvivorsEngine.layer,
   SaveLayer.pipe(Layer.provide(BrowserSaveStorage)),
   SoundSettingsLayer.pipe(Layer.provide(BrowserSaveStorage)),
-  CoopLayer
+  // Co-op's rooms are on the signalling worker that serves the page.
+  CoopLayer.pipe(Layer.provide(BrowserRoomsLayer))
 ).pipe(Layer.provideMerge(ContentLayer), Layer.provideMerge(assets));

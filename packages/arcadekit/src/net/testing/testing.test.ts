@@ -12,30 +12,44 @@ import {
   TestGame,
   manualTicker,
   testContent,
-  testCoopRules,
+  testCoopParts,
 } from "./index";
-import type { TestConfig, TestEvent, TestInput } from "./index";
+import type { Score, TestConfig, TestEvent, TestInput } from "./index";
 
 // The test helpers' own rules: the test game's lockstep parts as values, its commands as
 // scenarios, and the manual ticker.
 
-/** A run of the test game on a loop: its state, what it reported but its samples, and a step. */
+const rules = testCoopParts();
+
+/**
+ * A run of the test game on a loop: its state, what it reported but its samples, its last
+ * sample, and a step, which takes the 100 ms a sample is due after.
+ */
 const startRun = (config: TestConfig) => {
   const loop = new Game.Loop(TestGame);
   const reported: TestEvent[] = [];
+  let sampled: Score | undefined;
+  let nowMs = 0;
   loop.subscribe((event) => {
-    if (event._tag !== "Score") {
+    if (event._tag === "Score") {
+      sampled = event;
+    } else {
       reported.push(event);
     }
   });
-  loop.start(config, 1, 0);
+  loop.start(config, 1, nowMs);
   return {
     state: loop.state!,
     reported,
+    /** Who still owes the open offer an answer, by slot, as the run's last sample says. */
+    owes: () => sampled?.owes,
     stepAll: (
       players: readonly (TestInput | null)[],
       leaving: readonly number[] = []
-    ) => loop.frame({ read: () => ({ players, leaving }) }, { steps: 1 }, 0),
+    ) => {
+      nowMs += 100;
+      loop.frame({ read: () => ({ players, leaving }) }, { steps: 1 }, nowMs);
+    },
     /** `slot`'s player answers offer 1: the next step applies it. */
     answer: (slot: number, value: number) => {
       loop.send(new AnswerOffer({ offer: 1, value }), slot);
@@ -48,12 +62,12 @@ const offered = (slot: number) => new OfferOpened({ offer: 1, slot });
 
 describe("the test game", () => {
   const content = { ...testContent, length: 5, offerEvery: 2 };
-  const start = () => startRun(testCoopRules.config(content, ["red", "blue"]));
+  const start = () => startRun(rules.config(content, ["red", "blue"]));
 
   it("lists its content's picks, and makes its config from the players' picks", () => {
     expect([
-      testCoopRules.picks(content),
-      testCoopRules.config(content, ["blue", "red"]),
+      rules.picks(content),
+      rules.config(content, ["blue", "red"]),
     ]).toStrictEqual([
       ["red", "green", "blue"],
       { content, picks: ["blue", "red"] },
@@ -62,27 +76,23 @@ describe("the test game", () => {
 
   it("is the declared simulation its lockstep parts run, with one player's input to send", () => {
     const decode = Schema.decodeUnknownResult(
-      Game.playerInputSchema(testCoopRules.simulation)
+      Game.playerInputSchema(rules.simulation)
     );
     expect([
-      testCoopRules.simulation === TestGame,
+      rules.simulation === TestGame,
       decode({ add: 1 }),
       Result.isFailure(decode({ add: "1" })),
     ]).toStrictEqual([true, Result.succeed({ add: 1 }), true]);
   });
 
-  it("waits on an offer until each player answers it, and says who still owes one", () => {
-    const { state, reported, stepAll, answer } = start();
+  it("waits on an offer until each player answers it, and says in its sample who still owes one", () => {
+    const { state, reported, owes, stepAll, answer } = start();
     stepAll([{ add: 1 }, { add: 2 }]);
     stepAll([{ add: 1 }, { add: 2 }]);
     const opened = [...reported];
     answer(1, 9);
     stepAll([{ add: 1 }, { add: 2 }]);
-    const midway = [
-      state.steps,
-      testCoopRules.choosing(state, 0),
-      testCoopRules.choosing(state, 1),
-    ];
+    const midway = [state.steps, owes()];
     answer(0, 4);
     stepAll([{ add: 1 }, { add: 2 }]);
     expect([
@@ -91,47 +101,34 @@ describe("the test game", () => {
       state.steps,
       state.totals,
       state.bonus,
-      testCoopRules.choosing(state, 0),
+      owes(),
     ]).toStrictEqual([
       [
         new OfferOpened({ offer: 1, slot: 0 }),
         new OfferOpened({ offer: 1, slot: 1 }),
       ],
-      [2, true, false],
+      [2, [true, false]],
       // The step that took the last answer played.
       3,
       [3, 6],
       [4, 9],
-      false,
+      [false, false],
     ]);
   });
 
-  it("ends after its length, and tells each player its own total", () => {
+  it("ends after its length, with every player's total, and names the event a run ends with", () => {
     const { state, reported, stepAll } = startRun(
-      testCoopRules.config({ ...content, offerEvery: 0 }, ["red", "blue"])
+      rules.config({ ...content, offerEvery: 0 }, ["red", "blue"])
     );
     for (let i = 0; i < 7; i++) {
       stepAll([{ add: 1 }, { add: 3 }], i === 2 ? [1] : []);
     }
-    const [end] = reported;
-    const names = ["Host", "Guest 1"];
     expect([
       state.steps,
       reported,
-      end && testCoopRules.runEnded(end),
-      end && testCoopRules.localEvent(end, 1, names),
-      testCoopRules.localEvent(offered(0), 1, names),
-      testCoopRules.localEvent(offered(1), 1, names),
-      testCoopRules.runEnded(offered(1)),
-    ]).toStrictEqual([
-      5,
-      [new RunEnded({ totals: [5, 6] })],
-      true,
-      { type: "ended", total: 6, names },
-      null,
-      { type: "offer", offer: 1 },
-      false,
-    ]);
+      reported.map((event) => rules.ends.has(event._tag)),
+      rules.ends.has(offered(1)._tag),
+    ]).toStrictEqual([5, [new RunEnded({ totals: [5, 6] })], [true], false]);
   });
 });
 

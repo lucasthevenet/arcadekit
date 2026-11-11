@@ -1,5 +1,6 @@
 import { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import { AudioSettings } from "arcadekit/audio";
+import { LobbyChanged } from "arcadekit/net/browser";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
@@ -9,7 +10,7 @@ import { HeroRecords } from "./save";
 // Those live in the simulation. The UI only holds what it shows.
 // Hud is the genre's own sample, which is also its Schema, and UpgradeChoice and
 // RunSummary are its Schemas for what its events carry, so a field the genre adds
-// reaches the Model.
+// reaches the Model. The co-op lobby is the Co-op client's own event, held the same way.
 
 export const HeroSummary = Schema.Struct({
   id: Schema.String,
@@ -18,14 +19,6 @@ export const HeroSummary = Schema.Struct({
   color: Schema.String,
 });
 export type HeroSummary = typeof HeroSummary.Type;
-
-/** One player in a co-op lobby: its peer id, its name, and its lobby pick, a hero id ("" until it picks). */
-export const CoopPlayer = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  pick: Schema.String,
-});
-export type CoopPlayer = typeof CoopPlayer.Type;
 
 export const Phase = defineTaggedUnion({
   Loading: {},
@@ -41,15 +34,11 @@ export const Phase = defineTaggedUnion({
   // Co-op (#25): a lobby over the signalling worker, then a lockstep run.
   CoopMenu: { joinCode: Schema.String },
   CoopConnecting: {},
-  CoopLobby: {
-    role: Schema.Literals(["host", "guest"]),
-    code: Schema.String,
-    self: Schema.String,
-    players: Schema.Array(CoopPlayer),
-    /** The most players a run takes, and whether the host can start: the Co-op client's word. */
-    maxPlayers: Schema.Number,
-    canStart: Schema.Boolean,
-  },
+  /**
+   * The lobby as the Co-op client last reported it: the local player's role, the join code,
+   * who is in it with their picks, and whether the host can start.
+   */
+  CoopLobby: { lobby: LobbyChanged },
   CoopPlaying: {},
   /** `offer` is the number of the offer the choices are from: the pick names it. */
   CoopLevelUp: { offer: Schema.Int, choices: Schema.Array(UpgradeChoice) },
@@ -71,13 +60,14 @@ export const isCoop = (phase: Phase): boolean => phase._tag.startsWith("Coop");
 /** A co-op run as the UI shows it. */
 export const CoopRun = Schema.Struct({
   /** The local player's hero. */
-  slot: Schema.Number,
+  slot: Schema.Int,
   /** Every player's name, by slot. */
   names: Schema.Array(Schema.String),
-  /** The players stepping waits on ("waiting for X"). */
+  /**
+   * The players stepping waits on ("waiting for X"). Who the run waits on to pick an upgrade is
+   * in the HUD, as who holds it paused is.
+   */
   waitingFor: Schema.Array(Schema.String),
-  /** The other players with an upgrade to pick while the run is frozen. */
-  choosing: Schema.Array(Schema.String),
   /**
    * True while the local player has the run's menu up (Escape): the way to leave the run, and
    * the sound controls. It is the app's own, so it stays up whatever the run answers the pause
@@ -97,7 +87,6 @@ export const emptyCoopRun: CoopRun = {
   slot: 0,
   names: [],
   waitingFor: [],
-  choosing: [],
   menu: false,
   paused: false,
 };
@@ -135,5 +124,14 @@ export const emptyHud = new Hud({
   runLength: 1,
   kills: 0,
   enemies: 0,
-  heroes: [{ heroId: "", hp: 0, maxHp: 1, status: "playing", paused: false }],
+  heroes: [
+    {
+      heroId: "",
+      hp: 0,
+      maxHp: 1,
+      status: "playing",
+      paused: false,
+      choosing: false,
+    },
+  ],
 });

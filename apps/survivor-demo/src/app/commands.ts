@@ -5,12 +5,15 @@ import {
   ChooseUpgrade as SurvivorsChooseUpgrade,
   SurvivorsContent,
 } from "@arcadekit/survivors";
-import { SurvivorsEngine, SurvivorsSheet } from "@arcadekit/survivors/browser";
+import {
+  SurvivorsCoop,
+  SurvivorsEngine,
+  SurvivorsSheet,
+} from "@arcadekit/survivors/browser";
 import { Audio, AudioSettings } from "arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
-import { Coop } from "./coop";
 import { Message } from "./message";
 import { Save } from "./save";
 import { CLICK_SOUND, SoundSettings, soundList } from "./sound";
@@ -157,7 +160,7 @@ export const HostCoop = Command.define("HostCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: ({ heroId }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).host(heroId);
+      yield* (yield* SurvivorsCoop).host(heroId);
       return Message.CompletedEngineCommand();
     }),
 });
@@ -168,7 +171,7 @@ export const JoinCoop = Command.define("JoinCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: ({ code, heroId }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).join(code, heroId);
+      yield* (yield* SurvivorsCoop).join(code, heroId);
       return Message.CompletedEngineCommand();
     }),
 });
@@ -179,7 +182,7 @@ export const ChooseCoopHero = Command.define("ChooseCoopHero", {
   messages: [Message.CompletedEngineCommand],
   execute: ({ heroId }) =>
     Effect.gen(function* () {
-      yield* (yield* Coop).choose(heroId);
+      yield* (yield* SurvivorsCoop).choose(heroId);
       return Message.CompletedEngineCommand();
     }),
 });
@@ -187,7 +190,7 @@ export const ChooseCoopHero = Command.define("ChooseCoopHero", {
 export const StartCoop = Command.define("StartCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: Effect.gen(function* () {
-    yield* (yield* Coop).start;
+    yield* (yield* SurvivorsCoop).start;
     return Message.CompletedEngineCommand();
   }),
 });
@@ -204,7 +207,7 @@ export const ChooseCoopUpgrade = Command.define("ChooseCoopUpgrade", {
   messages: [Message.CompletedEngineCommand],
   execute: ({ offer, index }) =>
     Effect.gen(function* () {
-      const coop = yield* Coop;
+      const coop = yield* SurvivorsCoop;
       yield* coop.send(new SurvivorsChooseUpgrade({ offer, index }));
       return Message.CompletedEngineCommand();
     }).pipe(
@@ -229,7 +232,7 @@ export const SetCoopPaused = Command.define("SetCoopPaused", {
   messages: [Message.CompletedEngineCommand, Message.FailedToHoldCoopPause],
   execute: ({ paused }) =>
     Effect.gen(function* () {
-      const coop = yield* Coop;
+      const coop = yield* SurvivorsCoop;
       yield* coop.send(new HoldPause({ held: paused }));
       return Message.CompletedEngineCommand();
     }).pipe(
@@ -243,7 +246,7 @@ export const SetCoopPaused = Command.define("SetCoopPaused", {
 export const LeaveCoop = Command.define("LeaveCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: Effect.gen(function* () {
-    yield* (yield* Coop).leave;
+    yield* (yield* SurvivorsCoop).leave;
     return Message.CompletedEngineCommand();
   }),
 });

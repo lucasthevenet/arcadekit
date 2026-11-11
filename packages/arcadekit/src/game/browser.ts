@@ -66,8 +66,10 @@ export {
   type EngineId,
   type EngineService,
   Frames,
+  type LocalPlayer,
   type Used,
   type Uses,
+  type ViewContext,
 } from "./engine";
 export {
   AttachError,

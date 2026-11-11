@@ -72,11 +72,12 @@ type DeclaredPlayerInputs<Input> = typeof declared extends keyof Input
  *
  * A simulation with any other step input, a struct written by hand with `players` and `leaving`
  * included, is a type error that names `Game.PlayerInputs` where a host infers `Input` from the
- * simulation it is handed: `hostLockstep`, `playerInputSchema`. Where `Input` is named, as in
- * `CoopRules` (`PlayersSimulation<Config, State, PlayerInputs<P>, ...>`), the types can't tell:
- * such a struct's type is a players' input's too, since the mark is optional, and the host's
- * throw is the only refusal. So a builder that is to refuse one by type takes the simulation as
- * a type parameter, or its `Input`, and doesn't name the step input itself.
+ * simulation it is handed: `hostLockstep`, `playerInputSchema`, and the `Coop` builder, which
+ * infers it from its engine's. Where `Input` is named
+ * (`PlayersSimulation<Config, State, PlayerInputs<P>, ...>`), the types can't tell: such a
+ * struct's type is a players' input's too, since the mark is optional, and the host's throw is
+ * the only refusal. So a builder that is to refuse one by type takes the simulation's `Input`
+ * as a type parameter, and doesn't name the step input itself.
  */
 export type PlayersSimulation<Config, State, Input, Event, Command, Refusals> =
   SimulationClass<string, Config, State, Input, Event, Command, Refusals> & {
@@ -125,8 +126,8 @@ export const PlayerInputs = <P extends Schema.Top>(
  * ```
  *
  * Throws for a simulation whose `input` was not declared with `Game.PlayerInputs`: what a cast,
- * plain JavaScript or a type that names the step input, as `CoopRules` does, gets past
- * `PlayersSimulation`'s type error.
+ * plain JavaScript or a type that names the step input gets past `PlayersSimulation`'s type
+ * error.
  */
 export const playerInputSchema = <Input>(
   simulation: PlayersSimulation<

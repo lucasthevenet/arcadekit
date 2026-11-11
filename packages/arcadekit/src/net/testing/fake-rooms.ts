@@ -1,14 +1,14 @@
-import { Cause, Deferred, Effect, Queue, Stream } from "effect";
+import { Cause, Deferred, Effect, Layer, Queue, Stream } from "effect";
 import type { Scope } from "effect";
 
 import type {
-  CoopRooms,
   PeerLink,
   RoomEvent,
+  Rooms,
   SignallingRoom,
   TextChannel,
 } from "../browser/index";
-import { RoomError } from "../browser/index";
+import { CoopRooms, RoomError } from "../browser/index";
 import type { PeerId } from "../transport";
 
 // A signalling worker and WebRTC in one, in memory, for tests of a Co-op game and its app: no
@@ -19,8 +19,13 @@ import type { PeerId } from "../transport";
 export const FAKE_JOIN_CODE = "K7MQ2X";
 
 export interface FakeCoopRooms {
-  /** Pass to `makeCoopClient(game, { rooms })`: one client hosts, the others join `code`. */
-  readonly rooms: CoopRooms;
+  /**
+   * Provides `CoopRooms` with this hub's rooms: give it to each player's `MyCoop.layer`, then
+   * one hosts and the others join `code`.
+   */
+  readonly layer: Layer.Layer<CoopRooms>;
+  /** The rooms themselves, for a test that wraps them: one client hosts, the others join `code`. */
+  readonly rooms: Rooms;
   readonly code: string;
   /** Each room opened and released, in order: `open host`, `open guest-1`, `release guest-1`. */
   readonly log: string[];
@@ -216,7 +221,7 @@ export const fakeCoopRooms = (): FakeCoopRooms => {
     });
   };
 
-  const rooms: CoopRooms = {
+  const rooms: Rooms = {
     host: fakeRoom("host", "host").pipe(
       Effect.map((made) => {
         host = made;
@@ -254,6 +259,7 @@ export const fakeCoopRooms = (): FakeCoopRooms => {
   };
 
   return {
+    layer: Layer.succeed(CoopRooms, rooms),
     rooms,
     code: FAKE_JOIN_CODE,
     log,

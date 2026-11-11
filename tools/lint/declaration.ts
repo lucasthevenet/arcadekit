@@ -42,6 +42,7 @@ export const DECLARATION_BUILDERS: readonly string[] = [
   "Game.Engine",
   "Content",
   "Asset",
+  "Coop",
 ];
 
 /** How a game names the entries whose builders it writes with a namespace: `Game.Event`. */
@@ -55,6 +56,7 @@ export const BUILDER_ENTRIES: Readonly<Record<string, "namespace" | "bare">> = {
   "arcadekit/game": "namespace",
   "arcadekit/game/browser": "namespace",
   "arcadekit/content": "bare",
+  "arcadekit/net/browser": "bare",
 };
 
 /** The same entries by their public file from the kit's src/, as the kit's own files import them. */
@@ -63,12 +65,13 @@ const KIT_ENTRY_FILES: Readonly<Record<string, string>> = {
   "game/index": "arcadekit/game",
   "game/browser": "arcadekit/game/browser",
   "content/index": "arcadekit/content",
+  "net/browser/index": "arcadekit/net/browser",
 };
 
 /**
  * The exports of the older contract, each with the declaration that replaces it. No game uses
- * one any more: they stay in the kit until the end of the co-op move (ADR-0020), for the kit's
- * own tests and its older engine, and a name leaves this list when its export goes.
+ * one any more: they stay in the kit until the end of the move to declarations (ADR-0020), for
+ * the kit's own tests and its older engine, and a name leaves this list when its export goes.
  */
 export const OLDER_CONTRACT: Readonly<Record<string, string>> = {
   GameSimulation: "Game.Simulation",
@@ -614,7 +617,7 @@ const olderContract = {
     const report = (node: Node, name: string) => {
       context.report({
         node,
-        message: `${name} is the older contract, which no game uses any more and which goes when the Co-op client has moved (ADR-0020). Declare a ${OLDER_CONTRACT[name]} in its place: packages/push-puzzle is the example, and a Co-op game's rules take the declared simulation too. ${guide}`,
+        message: `${name} is the older contract, which no game uses any more and which goes at the end of the move to declarations (ADR-0020). Declare a ${OLDER_CONTRACT[name]} in its place: packages/push-puzzle is the example, and a \`Coop\` is made from the declared engine too. ${guide}`,
       });
     };
     // The names a file gives the kit's entries: `import * as Runtime from "arcadekit/runtime"`.

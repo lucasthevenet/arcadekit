@@ -189,6 +189,20 @@ export class JarEngine extends Kit.Engine("JarEngine", { view: async () => 1 }) 
       ["plain-handler", "view is async"],
     ],
   },
+  "a Coop, declared from an engine": {
+    of: "game",
+    imports: `import { Coop } from "arcadekit/net/browser";`,
+    code: `export class JarCoop extends Coop("JarCoop", { engine: 1, hash: () => 0 }) {}
+export class JarsCoop extends Coop("JarCoop", { engine: 1 }) {}
+export const Made = Coop("Made", { engine: 1 });
+export class Typed extends Coop<"Typed">("Typed", { picks: async () => [] }) {}`,
+    reports: [
+      ["named", 'The class JarsCoop is declared as "JarCoop"'],
+      ["class", '`class Made extends Coop("Made", ...) {}`'],
+      ["inferred", "Coop takes no type argument"],
+      ["plain-handler", "picks is async"],
+    ],
+  },
   "functions of the app's own that are only named like a builder": {
     of: "game",
     imports: `import { defineTaggedUnion } from "./union";`,

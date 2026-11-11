@@ -10,7 +10,6 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { ChooseUpgrade, HoldPause } from "./commands";
-import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
 import type { Hero } from "./hero";
 import type { HeroInput, SurvivorsInput } from "./input";
@@ -156,7 +155,7 @@ type Refusals = Game.RefusalsOf<
 
 type Session = LockstepSession<
   World,
-  SurvivorsEvent,
+  Game.EventOf<typeof Survivors>,
   Game.CommandOf<typeof Survivors>,
   Refusals
 >;
@@ -192,7 +191,7 @@ const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
       SurvivorsConfig,
       World,
       SurvivorsInput,
-      SurvivorsEvent,
+      Game.EventOf<typeof Survivors>,
       Game.CommandOf<typeof Survivors>,
       Refusals
     > = {

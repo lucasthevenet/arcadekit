@@ -1,174 +1,63 @@
-import { Effect } from "effect";
-import type { Scope } from "effect";
+import { Context, Effect, Layer, Scope } from "effect";
 
-import type { CommandDropped, RefusalFor } from "../../game/index";
+import { Frames } from "../../game/browser";
+import type { EngineClass, Used, Uses, ViewContext } from "../../game/browser";
+import { playerInputSchema } from "../../game/index";
 import type {
-  AttachError,
-  FrameSource,
-  GameCrashed,
-  GameView,
-} from "../../runtime/browser";
+  AnyEvent,
+  AnySimulation,
+  CommandDropped,
+  EventOf,
+  PlayerInputOf,
+  PlayersSimulation,
+  RefusalFor,
+} from "../../game/index";
+import type { AttachError, GameCrashed } from "../../runtime/browser";
 import type { InputSource } from "../../runtime/index";
-import type { CoopRules, CoopTypes } from "../coop";
 import type { Ticker } from "../scoped";
-import type { PeerId } from "../transport";
-import type { RoomError } from "./errors";
-import { browserRoomLayer, hostRoom, joinRoom } from "./signalling";
-import type { SignallingRoom } from "./signalling";
+import { DEFAULT_ROOM_SIZE, MAX_ROOM_SIZE } from "../signalling/protocol";
+import { coopClient } from "./coop-client";
+import type { CoopPresented } from "./coop-client";
+import type {
+  CoopEvent,
+  LobbyChanged,
+  RunStarted,
+  SeatContext,
+  SeatFailed,
+  WaitingChanged,
+} from "./coop-events";
+import { CoopRooms } from "./coop-rooms";
+import { workerTicker } from "./ticker";
 
-// The Co-op client's interface (ADR-0019): what a game supplies, and what its app drives. The
-// implementation is in coop-client.ts.
+// A game for several players, each in their own browser: the `Coop` declaration, and the Co-op
+// client its class is the key of (ADR-0019, ADR-0021). The client's implementation is in
+// coop-client.ts.
 
-/**
- * The local player's seat, read live: a view reads `slot` in `render`, so it follows the seat
- * without being made again. Slot 0 and no names until a run starts.
- */
-export interface LocalPlayer {
-  /** The local player's slot in the run's player order, host first. */
-  readonly slot: number;
-  /** Every player's name, by slot ("Host", "Guest 2"). */
-  readonly names: readonly string[];
-}
-
-/** How a Co-op game reads the local player's input from the viewport and draws the run into it. */
-export interface CoopPresentation<State, PlayerInput> {
-  /** Makes the local player's devices. Called once per attach, before `createView`. */
-  readonly createInput: (surface: HTMLElement) => InputSource<PlayerInput>;
-  /**
-   * Makes the view that draws the run from `local`'s point of view. Called once per attach: the
-   * client never makes it again, so it reads `local.slot` when it renders.
-   */
-  readonly createView: (
-    container: HTMLElement,
-    local: LocalPlayer
-  ) => GameView<State>;
-}
-
-/**
- * A Co-op game: its lockstep parts (`CoopRules`, from `arcadekit/net`) plus what a browser needs
- * to play them, its content and its presentation. A genre builds it in its `./browser` entry as
- * `{ ...myCoopRules, content, presentation }`.
- */
-export interface CoopGame<
-  G extends CoopTypes,
-  LoadError = never,
-> extends CoopRules<G> {
-  /**
-   * Loads the run's content. Run once per seat (each host or join), in the seat's fiber, so
-   * leaving cancels it. It must be JSON data: the client hashes it, and every peer's must match.
-   */
-  readonly content: Effect.Effect<G["Content"], { readonly message: string }>;
-  /**
-   * Run once per attach, before anything is made. What an attach loads (a sprite sheet) and
-   * what its input and view share (a camera's state) live in its closure. Its failure is
-   * `attach`'s.
-   */
-  readonly presentation: Effect.Effect<
-    CoopPresentation<G["State"], G["PlayerInput"]>,
-    LoadError
-  >;
-}
-
-/** How the client opens rooms: `browserCoopRooms` in an app, `fakeCoopRooms` (`arcadekit/net/testing`) in tests. */
-export interface CoopRooms {
-  readonly host: Effect.Effect<SignallingRoom, RoomError, Scope.Scope>;
-  readonly join: (
-    code: string
-  ) => Effect.Effect<SignallingRoom, RoomError, Scope.Scope>;
-}
-
-/**
- * The browser's rooms: the signalling worker at `url` (its base URL, `ws:` or `wss:`), and
- * WebRTC links through `iceServers`. The kit reads no environment: the app passes both.
- */
-export const browserCoopRooms = (options: {
-  readonly url: string;
-  readonly iceServers: readonly RTCIceServer[];
-}): CoopRooms => {
-  const room = { url: options.url };
-  const services = browserRoomLayer({ iceServers: options.iceServers });
-  return {
-    host: hostRoom(room).pipe(Effect.provide(services)),
-    join: (code) => joinRoom(room, code).pipe(Effect.provide(services)),
-  };
+/** One handler per event or sample of a run, by its tag, each given the local player. */
+export type RunCases<Event> = {
+  readonly [
+    E in Event as E extends { readonly _tag: infer Tag extends string }
+      ? Tag
+      : never
+  ]: (event: E, context: SeatContext) => unknown;
 };
 
-/** One player in the lobby: its peer id, its name as players read it, and its lobby pick ("" until it says). */
-export interface LobbyPlayer {
-  readonly id: PeerId;
-  readonly name: string;
-  readonly pick: string;
+/** What a `Coop`'s `match` takes: a handler for each of the client's own events, and `run`'s for the run's. */
+export interface CoopCases<Event> {
+  readonly LobbyChanged: (event: LobbyChanged) => unknown;
+  readonly RunStarted: (event: RunStarted) => unknown;
+  readonly WaitingChanged: (event: WaitingChanged) => unknown;
+  readonly SeatFailed: (event: SeatFailed) => unknown;
+  /** The run's own events and its sample, each by its tag. */
+  readonly run: RunCases<Event>;
 }
 
-/**
- * Why a seat failed, so an app can say it in its own words:
- *
- * - `content`: the content didn't load.
- * - `room`: the room couldn't be opened, or failed before the start.
- * - `leftOut`: the host started without this player.
- * - `unknownPick`: the host started with a lobby pick this player's game doesn't have. The two
- *   are on different builds.
- * - `tooManyPlayers`: the host started with more players than this player's game takes. Only a
- *   host on another build sends such a start.
- * - `hostLost`: nothing came from the host, before the run or in it.
- * - `desync`, `contentMismatch`, `removed`, `badInput`: the lockstep session's stops.
- * - `bug`: the client or the game threw.
- */
-export type CoopFailure =
-  | "content"
-  | "room"
-  | "leftOut"
-  | "unknownPick"
-  | "tooManyPlayers"
-  | "hostLost"
-  | "desync"
-  | "contentMismatch"
-  | "removed"
-  | "badInput"
-  | "bug";
-
-/**
- * What the Co-op client reports to the app, in one order: a seat's `lobby` events, one
- * `started`, then `run` and `waiting` events, then at most one `failed`, which is its last.
- */
-export type CoopEvent<LocalEvent> =
-  /**
-   * The lobby changed: who's in it and their lobby picks, host first. `canStart` says whether
-   * the host can start: at least two players, at most `maxPlayers`, each with a pick.
-   */
-  | {
-      readonly type: "lobby";
-      readonly role: "host" | "guest";
-      readonly code: string;
-      readonly self: PeerId;
-      readonly players: readonly LobbyPlayer[];
-      readonly maxPlayers: number;
-      readonly canStart: boolean;
-    }
-  /** The run started. `slot` is the local player's; `names` every player's name, by slot. */
-  | {
-      readonly type: "started";
-      readonly slot: number;
-      readonly names: readonly string[];
-    }
-  /**
-   * Who stepping waits on (lockstep's "waiting for X"), once it has waited 300 ms, and which
-   * other players the run waits on to decide something (the game's `choosing`). Names, in slot
-   * order. Reported when either changes.
-   */
-  | {
-      readonly type: "waiting";
-      readonly waitingFor: readonly string[];
-      readonly choosing: readonly string[];
-    }
-  /** The seat failed for good. `message` is the kit's text for a player; `reason` lets an app re-word it. */
-  | {
-      readonly type: "failed";
-      readonly reason: CoopFailure;
-      readonly message: string;
-    }
-  /** What the local player hears of one of the run's events (the game's `localEvent`). */
-  | { readonly type: "run"; readonly event: LocalEvent };
+/** What the handlers of `Handlers` return, together. */
+type Returned<Handlers> = Handlers[keyof Handlers] extends (
+  ...args: never[]
+) => infer Result
+  ? Result
+  : never;
 
 /** For tests and debugging: a read of the current seat's run. */
 export interface CoopDebug<State> {
@@ -184,9 +73,10 @@ export interface CoopDebug<State> {
 }
 
 /**
- * One player's side of a Co-op game in the browser: the lobby over the signalling worker and
- * WebRTC, then a lockstep session stepped on a worker's timer, and a view drawn on animation
- * frames while attached. A hidden tab keeps stepping at full rate, so it holds no one up, and
+ * The Co-op client: one player's side of a co-op game in the browser, as an app drives it. Each
+ * `Coop` class is the service key of one: `yield* MyCoop`. It runs the lobby over the signalling
+ * worker and WebRTC, then a lockstep session stepped on a worker's timer, and a view drawn on
+ * animation frames while attached. A hidden tab keeps stepping at full rate, so it holds no one up, and
  * draws nothing, since the browser runs no animation frames for it (ADR-0012). What a player
  * decides reaches the run as a command, through `send`: it rides the player's next step, so
  * every peer applies it at that step.
@@ -194,7 +84,7 @@ export interface CoopDebug<State> {
  * `attach` and `listen` have `arcadekit/foldkit`'s `AttachableEngine` shapes, so an app mounts
  * the client as it mounts an engine.
  */
-export interface CoopClient<G extends CoopTypes, LoadError = never> {
+export interface CoopClient<State, Event, Command, E, Refusals> {
   /**
    * Hosts a room with lobby pick `pick`, after interrupting the seat before it. Returns at once:
    * the lobby, the run and any failure are reported through `listen`, and none of them before
@@ -232,9 +122,9 @@ export interface CoopClient<G extends CoopTypes, LoadError = never> {
    * peer applies it. A player the host removes after its command's step was confirmed is told
    * `runEnded`, though the others applied the command.
    */
-  readonly send: <C extends G["Command"]>(
+  readonly send: <C extends Command>(
     command: C
-  ) => Effect.Effect<void, RefusalFor<G["Refusals"], C> | CommandDropped>;
+  ) => Effect.Effect<void, RefusalFor<Refusals, C> | CommandDropped>;
   /**
    * Leaves the lobby or the run, and returns once its room, links, session and ticker have
    * closed, with those of any earlier seat still closing. No event of that seat follows. The
@@ -243,30 +133,482 @@ export interface CoopClient<G extends CoopTypes, LoadError = never> {
   readonly leave: Effect.Effect<void>;
   /**
    * Draws the run into `element` on every frame, and reads input from it, for as long as it
-   * runs. With no run it draws `render(null, t)`. Fails with the presentation's `LoadError`,
-   * with `AttachError` if the input or the view can't be made, and with `GameCrashed` if a frame
-   * throws (that frame is the last), each with nothing left attached and after leaving: a seat
-   * left running undrawn would hold the others up. Interrupt it to detach, which doesn't leave.
-   * One attach at a time: a second dies.
+   * runs. With no run it draws `render(null, t)`. Fails with what one of the engine's `uses`
+   * fails with (`E`: an asset that can't be loaded), with `AttachError` if the view or the input
+   * source can't be made, and with `GameCrashed` if a frame throws (that frame is the last),
+   * each with nothing left attached and after leaving: a seat left running undrawn would hold
+   * the others up. Interrupt it to detach, which doesn't leave. One attach at a time: a second
+   * dies.
    */
   readonly attach: (
     element: HTMLElement
-  ) => Effect.Effect<never, AttachError | GameCrashed | LoadError>;
-  /** Calls `onEvent` for every co-op event while the scope is open. */
+  ) => Effect.Effect<never, AttachError | GameCrashed | E>;
+  /**
+   * Calls `onEvent` with everything the current seat reports while the scope is open: the
+   * client's own events and the run's, in one order. The class's `match` makes the handler.
+   */
   readonly listen: (
-    onEvent: (event: CoopEvent<G["LocalEvent"]>) => void
+    onEvent: (event: CoopEvent<Event>) => void
   ) => Effect.Effect<void, never, Scope.Scope>;
-  readonly debug: () => CoopDebug<G["State"]>;
+  readonly debug: () => CoopDebug<State>;
 }
 
-export interface CoopClientOptions {
-  readonly rooms: CoopRooms;
-  /**
-   * What ticks the session, every few milliseconds. Defaults to a timer in a dedicated worker,
-   * which a hidden tab doesn't throttle, made and stopped with each run. Tests pass
-   * `manualTicker()` from `arcadekit/net/testing`.
-   */
-  readonly ticker?: Ticker;
-  /** The frame clock while attached. Defaults to `animationFrames`; tests pass `manualFrames()`. */
-  readonly frames?: FrameSource;
+/** How often a run ticks on the default ticker. Browsers clamp shorter timers to about 4 ms anyway. */
+const TICK_MS = 4;
+
+/**
+ * What ticks a co-op run, every few milliseconds: made when a run starts, in the run's scope,
+ * and stopped with it. A timer in a dedicated worker, which a hidden tab doesn't throttle,
+ * unless a test provides its own: `manualTicker().layer` (`arcadekit/net/testing`).
+ *
+ * ```ts
+ * MyCoop.layer.pipe(
+ *   Layer.provide(Layer.succeed(CoopTicker, Effect.succeed(ticker)))
+ * );
+ * ```
+ */
+export const CoopTicker: Context.Reference<
+  Effect.Effect<Ticker, never, Scope.Scope>
+> = Context.Reference("arcadekit/net/CoopTicker", {
+  defaultValue: () => workerTicker({ everyMs: TICK_MS }),
+});
+
+/** The key string of the Co-op client of the declaration named `Name`. */
+export type CoopId<Name extends string> = `arcadekit/net/Coop/${Name}`;
+
+/**
+ * The type-level identity of a Co-op client's service: what `yield* MyCoop` requires. It is the
+ * type of the class's own values, so the class names it: `Layer.Layer<MyCoop>`.
+ */
+export type CoopService<
+  Name extends string,
+  State,
+  Event,
+  Command,
+  E,
+  Refusals,
+> = Context.ServiceClass.Shape<
+  CoopId<Name>,
+  CoopClient<State, Event, Command, E, Refusals>
+>;
+
+/** Any class made by `Coop`, as far as its `match` reads it. */
+export interface AnyCoop {
+  readonly kind: "Coop";
+  readonly engine: { readonly simulation: AnySimulation };
 }
+
+/**
+ * The class `Coop` returns: the key of its Co-op client, and the Layer that provides it. Its
+ * types are the engine's and the content's: `U` is what the engine uses, `Content` what
+ * `content` loads and `R` what that load needs.
+ */
+export interface CoopClass<
+  Name extends string,
+  EngineName extends string,
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  U extends Uses,
+  Refusals,
+  Content,
+  R,
+> extends Context.ServiceClass<
+  CoopService<Name, State, Event, Command, Effect.Error<U[keyof U]>, Refusals>,
+  CoopId<Name>,
+  CoopClient<State, Event, Command, Effect.Error<U[keyof U]>, Refusals>
+> {
+  readonly kind: "Coop";
+  readonly coopName: Name;
+  /** The game the players share: its simulation, and what each player's view is made from. */
+  readonly engine: EngineClass<
+    EngineName,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    U,
+    Refusals
+  >;
+  /**
+   * What the Coop was declared with: what every peer of a run must agree on, as plain values
+   * and functions (`hash`, `picks`, `config`, `maxPlayers`, `lockstep`). A test reads them here,
+   * and so does a peer with no browser.
+   */
+  readonly definition: CoopDefinition<
+    EngineName,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    U,
+    Refusals,
+    Content,
+    { readonly message: string },
+    R
+  >;
+  /**
+   * Provides the Co-op client. Building it opens no room and loads nothing: a host or a join
+   * loads the content, and an attach runs what the engine uses. It needs the app's rooms
+   * (`CoopRooms`), and the services of what the engine uses and of the content's load. Its
+   * scope (the app) owns the current seat: closing it leaves. A run is ticked by `CoopTicker`
+   * and drawn on `Game.Frames`, which a test provides.
+   */
+  readonly layer: Layer.Layer<
+    CoopService<
+      Name,
+      State,
+      Event,
+      Command,
+      Effect.Error<U[keyof U]>,
+      Refusals
+    >,
+    never,
+    CoopRooms | Exclude<Effect.Services<U[keyof U]> | R, Scope.Scope>
+  >;
+  /**
+   * A function that handles everything a seat reports, checked to cover it all: what turns
+   * co-op into an app's Messages. The client's own events are handled by their tags, and the
+   * run's events and sample under `run`, by theirs, each with the local player beside it.
+   *
+   * ```ts
+   * const toMessage = SurvivorsCoop.match({
+   *   LobbyChanged: (lobby) => Message.GotCoopLobby({ lobby }),
+   *   RunStarted: ({ slot, names }) => Message.GotCoopStarted({ slot, names }),
+   *   WaitingChanged: ({ waitingFor }) => Message.GotCoopWaiting({ waitingFor }),
+   *   SeatFailed: ({ message }) => Message.GotCoopFailed({ error: message }),
+   *   run: {
+   *     Hud: (hud) => Message.GotHud({ hud }),
+   *     LeveledUp: ({ hero, offer, choices }, { local }) =>
+   *       hero === local.slot
+   *         ? Message.GotCoopLevelUp({ offer, choices })
+   *         : undefined,
+   *     HeroLeft: () => undefined,
+   *     RunEnded: ({ summaries }, { local }) => {
+   *       const summary = summaries[local.slot];
+   *       return summary === undefined
+   *         ? undefined
+   *         : Message.GotCoopRunEnded({ summary });
+   *     },
+   *   },
+   * });
+   * ```
+   *
+   * A run's events reach every seat as the rules reported them, so a case says which are the
+   * local player's (`hero === local.slot`). `local` is read when the event is heard. The run's
+   * cases have a place of their own, so a game may name an event as it likes: no tag is
+   * reserved. Pass it to `listen`, or to `arcadekit/foldkit`'s `engineEntry` as `toMessage`.
+   */
+  readonly match: <
+    Self extends AnyCoop,
+    const Cases extends CoopCases<EventOf<Self["engine"]["simulation"]>>,
+  >(
+    this: Self,
+    cases: Cases
+  ) => (
+    event: CoopEvent<EventOf<Self["engine"]["simulation"]>>
+  ) => Returned<Omit<Cases, "run">> | Returned<Cases["run"]>;
+}
+
+/**
+ * What `Coop` takes: the game's engine, and what only a run that several players share needs.
+ * Every type comes from the engine's simulation and from `content`.
+ */
+export interface CoopDefinition<
+  EngineName extends string,
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  U extends Uses,
+  Refusals,
+  Content,
+  ContentError extends { readonly message: string },
+  R,
+> {
+  /**
+   * The game: its simulation, what its view is made from (`uses`) and the view. The Co-op
+   * client steps the same simulation in lockstep and makes the same view, for the local player
+   * at the slot the lobby gave. The simulation's `input` is a `Game.PlayerInputs`: any other is
+   * a type error here that names it.
+   */
+  readonly engine: EngineClass<
+    EngineName,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    U,
+    Refusals
+  > & {
+    readonly simulation: PlayersSimulation<
+      Config,
+      State,
+      Input,
+      Event,
+      Command,
+      Refusals
+    >;
+  };
+  /**
+   * Makes the input source that reads the local player's own input from the viewport element:
+   * one player's, where the engine's `input` reads the whole step's. Called once per attach,
+   * after the view, with what the engine uses. What it reads rides each step this player
+   * schedules; with nothing attached, null does.
+   */
+  readonly input: (
+    surface: HTMLElement,
+    uses: Used<NoInfer<U>>
+  ) => InputSource<PlayerInputOf<NoInfer<Input>>>;
+  /**
+   * Loads what a run is played with: a `Content` declaration's `load`. Run once per seat (each
+   * host or join), in the seat's fiber, so leaving cancels it. It must be JSON data: the client
+   * hashes it, and every peer's must match. `picks` and `config` take their `content` from it,
+   * so give it as a value: an Effect built here with a function in it (a `pipe` with a `map`)
+   * is typed after them, and their `content` is then unknown. Name such an Effect first.
+   */
+  readonly content: Effect.Effect<Content, ContentError, R>;
+  /**
+   * The valid lobby picks, in order, at least one: a game with nothing to choose lists one id.
+   * On the host, the first replaces an empty or unknown one at the start.
+   */
+  readonly picks: (content: NoInfer<Content>) => readonly string[];
+  /** The run's config from the content and each player's lobby pick, by slot. */
+  readonly config: (
+    content: NoInfer<Content>,
+    picks: readonly string[]
+  ) => NoInfer<Config>;
+  /**
+   * The most players a run of this game takes: the lobby refuses a start above it, on the host
+   * and on a guest. A signalling room's default size (4) if left out; state a smaller number, or
+   * the app's own room size. The same on every peer, since it is part of the game.
+   */
+  readonly maxPlayers?: number;
+  /** A digest of the whole state, the same on every peer for the same run. */
+  readonly hash: (state: NoInfer<State>) => number;
+  /**
+   * The events that end a run, of those the simulation reports. After one, a lost host or peer
+   * is no failure: the others leaving a run that is over stops it quietly, with its end still
+   * on screen.
+   */
+  readonly ends?: readonly (AnyEvent & { readonly Type: NoInfer<Event> })[];
+  /**
+   * Steps ahead local input is scheduled, and steps between state hash comparisons. Defaults 4
+   * (67 ms at 60 Hz, ADR-0012) and 60. The same on every peer, since it is part of the game.
+   */
+  readonly lockstep?: {
+    readonly inputDelay?: number;
+    readonly hashEvery?: number;
+  };
+}
+
+/**
+ * A game as several players play it, each in their own browser: the game's engine, played in
+ * lockstep from a lobby. The class is the key of the Co-op client an app drives, and its `layer`
+ * provides it.
+ *
+ * ```ts
+ * export class SurvivorsCoop extends Coop("SurvivorsCoop", {
+ *   engine: SurvivorsEngine,
+ *   input: heroDevice,
+ *   content: SurvivorsContent.load,
+ *   picks: (content) => content.heroes.map((hero) => hero.id),
+ *   config: (content, heroIds) => ({ content, heroIds }),
+ *   maxPlayers: MAX_HEROES,
+ *   hash: hashWorld,
+ *   ends: [RunEnded],
+ * }) {}
+ *
+ * // In the app:
+ * const coop = yield* SurvivorsCoop;
+ * yield* coop.host(heroId);
+ * yield* coop.send(new ChooseUpgrade({ offer, index }));
+ * ```
+ *
+ * The engine's simulation, what its view is made from and the view serve both hosts, and the
+ * view is told the local player, whose slot it reads when it draws. What a co-op run needs
+ * besides is declared here: one player's input source, the content every peer loads, the lobby
+ * picks and the config they make, the state hash the peers compare, and the events that end a
+ * run. An app turns what a seat reports into its Messages with the class's `match`.
+ *
+ * Throws when declared, for what the types let through: an engine whose simulation's `input`
+ * was not declared with `Game.PlayerInputs`, an `ends` entry the simulation doesn't report, and
+ * a `maxPlayers` no room can have.
+ */
+export const Coop = <
+  const Name extends string,
+  EngineName extends string,
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals,
+  Content,
+  ContentError extends { readonly message: string },
+  U extends Uses = Record<never, never>,
+  R = never,
+>(
+  name: Name,
+  definition: CoopDefinition<
+    EngineName,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    U,
+    Refusals,
+    Content,
+    ContentError,
+    R
+  >
+): CoopClass<
+  Name,
+  EngineName,
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  U,
+  Refusals,
+  Content,
+  R
+> => {
+  type E = Effect.Error<U[keyof U]>;
+  type Needs = Effect.Services<U[keyof U]> | R;
+  type PlayerInput = PlayerInputOf<Input>;
+  const { engine } = definition;
+  const { simulation } = engine;
+  // What the types let through is refused here, as the game's module loads.
+  try {
+    playerInputSchema<Input>(simulation);
+  } catch (error) {
+    throw new Error(
+      `Coop "${name}" is declared with the engine "${engine.engineName}", whose simulation several players can't play. ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
+    );
+  }
+  const reported = simulation.definition.events.map(({ tag }) => tag);
+  const ends = new Set<string>();
+  for (const { tag } of definition.ends ?? []) {
+    if (tag === simulation.definition.sample?.tag) {
+      throw new Error(
+        `Coop "${name}" lists "${tag}" in \`ends\`, which is the sample of the simulation "${simulation.simulationName}": a run reports it all the time, so every run would count as over at once. List the event a run ends with, one of the simulation's \`events\`.`
+      );
+    }
+    if (!reported.includes(tag)) {
+      throw new Error(
+        `Coop "${name}" lists "${tag}" in \`ends\`, which the simulation "${simulation.simulationName}" doesn't report. List the event a run ends with, one of the simulation's \`events\`${reported.length === 0 ? ", which declares none" : ` (${reported.join(", ")})`}.`
+      );
+    }
+    ends.add(tag);
+  }
+  const maxPlayers = definition.maxPlayers ?? DEFAULT_ROOM_SIZE;
+  if (
+    !Number.isInteger(maxPlayers) ||
+    maxPlayers < 2 ||
+    maxPlayers > MAX_ROOM_SIZE
+  ) {
+    throw new Error(
+      `Coop "${name}" has maxPlayers ${maxPlayers}, a size no room has: a signalling room holds 2 to ${MAX_ROOM_SIZE} players. Write a whole number from 2 to ${MAX_ROOM_SIZE}, or leave it out for ${DEFAULT_ROOM_SIZE}.`
+    );
+  }
+  const Key = Context.Service<
+    CoopService<Name, State, Event, Command, E, Refusals>,
+    CoopClient<State, Event, Command, E, Refusals>
+  >()(`arcadekit/net/Coop/${name}` as CoopId<Name>);
+  const uses = Effect.all(
+    engine.definition.uses ?? {}
+  ) as unknown as Effect.Effect<Used<U>, E, Needs>;
+  const layer = Layer.effect(
+    Key,
+    Effect.gen(function* () {
+      // What the engine uses and what the content's load needs are taken once, here, so a seat
+      // and an attach need nothing but their scope. The layer's own scope is left out: what an
+      // attach acquires is released when it detaches.
+      const context = Context.omit(Scope.Scope)(
+        yield* Effect.context<Exclude<Needs, Scope.Scope>>()
+      );
+      return yield* coopClient({
+        simulation,
+        content: definition.content.pipe(
+          Effect.provideContext(context)
+        ) as Effect.Effect<Content, ContentError>,
+        presentation: uses.pipe(
+          Effect.map((used) => ({
+            view: (container: HTMLElement, seat: ViewContext) =>
+              engine.definition.view(container, used, seat),
+            input: (surface: HTMLElement) => definition.input(surface, used),
+          })),
+          Effect.provideContext(context)
+        ) as Effect.Effect<CoopPresented<State, PlayerInput>, E, Scope.Scope>,
+        hash: definition.hash,
+        picks: definition.picks,
+        config: definition.config,
+        maxPlayers,
+        ...(definition.lockstep === undefined
+          ? {}
+          : { lockstep: definition.lockstep }),
+        ends,
+        rooms: yield* CoopRooms,
+        ticker: yield* CoopTicker,
+        frames: yield* Frames,
+      });
+    })
+  );
+  return class extends Key {
+    static readonly kind = "Coop" as const;
+    static readonly coopName: Name = name;
+    static readonly engine = engine;
+    static readonly definition = definition;
+    static readonly layer = layer;
+    static readonly match =
+      (
+        cases: Readonly<Record<string, (event: unknown) => unknown>> & {
+          // What a cast or plain JavaScript leaves out is refused when its event comes.
+          readonly run?: Readonly<
+            Record<string, (event: unknown, context: SeatContext) => unknown>
+          >;
+        }
+      ) =>
+      (heard: CoopEvent<{ readonly _tag: string }>) => {
+        // One of the run's events is handled by its own tag, under `run`.
+        if (heard._tag === "RunEvent") {
+          const handle = cases.run?.[heard.event._tag];
+          if (handle === undefined) {
+            throw new Error(
+              `Coop "${name}" has no case under \`run\` for the run's event "${heard.event._tag}"`
+            );
+          }
+          return handle(heard.event, heard);
+        }
+        const handle = cases[heard._tag];
+        if (handle === undefined) {
+          throw new Error(
+            `Coop "${name}" has no case for the event "${heard._tag}"`
+          );
+        }
+        return handle(heard);
+      };
+  } as unknown as CoopClass<
+    Name,
+    EngineName,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    U,
+    Refusals,
+    Content,
+    R
+  >;
+};

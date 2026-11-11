@@ -1,12 +1,13 @@
 import { Cause, Data, Effect, Fiber, FiberHandle, Queue, Stream } from "effect";
 import type { Clock, Scope } from "effect";
 
-import { CommandDropped, playerInputSchema } from "../../game/index";
-import type { PlayerInputs } from "../../game/index";
-import { animationFrames, attachError, frameLoop } from "../../runtime/browser";
+import type { LocalPlayer, ViewContext } from "../../game/browser";
+import { CommandDropped } from "../../game/index";
+import type { PlayerInputOf, PlayersSimulation } from "../../game/index";
+import { attachError, frameLoop } from "../../runtime/browser";
+import type { FrameSource, GameView } from "../../runtime/browser";
 import type { InputSource, StepInput } from "../../runtime/index";
 import { contentHash } from "../content-hash";
-import type { CoopTypes } from "../coop";
 import type { LockstepError } from "../errors";
 import {
   canStart,
@@ -27,21 +28,80 @@ import { DEFAULT_ROOM_SIZE } from "../signalling/protocol";
 import type { PeerId } from "../transport";
 import { linksTransport } from "./channel";
 import type { PeerLink } from "./channel";
-import type {
-  CoopClient,
-  CoopClientOptions,
-  CoopEvent,
-  CoopFailure,
-  CoopGame,
-  LocalPlayer,
-} from "./coop";
+import type { CoopClient } from "./coop";
+import {
+  LobbyChanged,
+  RunStarted,
+  SeatFailed,
+  WaitingChanged,
+} from "./coop-events";
+import type { CoopEvent, CoopFailure } from "./coop-events";
+import type { Rooms } from "./coop-rooms";
 import type { RoomError } from "./errors";
 import type { RoomEvent, SignallingRoom } from "./signalling";
-import { workerTicker } from "./ticker";
 
 // The Co-op client's implementation. Its lifecycles are Effect: a seat is a fiber whose scope
 // owns the room, the lobby, the session and the ticker, and an attach is a scope that owns the
-// input and the view. What runs per tick and per frame is plain code (ADR-0017).
+// view and the input. What runs per tick and per frame is plain code (ADR-0017).
+
+/** The view and input source factories of one attach, with what they use already given. */
+export interface CoopPresented<State, PlayerInput> {
+  readonly view: (
+    container: HTMLElement,
+    context: ViewContext
+  ) => GameView<State>;
+  readonly input: (surface: HTMLElement) => InputSource<PlayerInput>;
+}
+
+/**
+ * What the Co-op client is made from: a `Coop` declaration with nothing left to resolve. What
+ * it uses has its services, and the app's rooms, the ticker and the frame clock are beside it.
+ * Only the kit builds one: the `Coop` builder's `layer`, and the test game's client in
+ * `arcadekit/net/testing`.
+ */
+export interface CoopParts<
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals,
+  Content,
+  E,
+> {
+  readonly simulation: PlayersSimulation<
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    Refusals
+  >;
+  /** Run once per seat, in the seat's fiber, so leaving cancels it. */
+  readonly content: Effect.Effect<Content, { readonly message: string }>;
+  /** Run once per attach, in the attach's scope, before the view and the input are made. */
+  readonly presentation: Effect.Effect<
+    CoopPresented<State, PlayerInputOf<Input>>,
+    E,
+    Scope.Scope
+  >;
+  readonly hash: (state: State) => number;
+  readonly picks: (content: Content) => readonly string[];
+  readonly config: (content: Content, picks: readonly string[]) => Config;
+  /** A signalling room's default size (4) if left out. */
+  readonly maxPlayers?: number;
+  /** Defaults 4 steps ahead (67 ms at 60 Hz, ADR-0012) and a hash every 60 steps. */
+  readonly lockstep?: {
+    readonly inputDelay?: number;
+    readonly hashEvery?: number;
+  };
+  /** The tags of the events that end a run: after one, a lost host or peer is no failure. */
+  readonly ends: ReadonlySet<string>;
+  readonly rooms: Rooms;
+  /** Makes what ticks a run, in the run's scope: the `CoopTicker` reference's value. */
+  readonly ticker: Effect.Effect<Ticker, never, Scope.Scope>;
+  readonly frames: FrameSource;
+}
 
 /** A seat's own failure: what isn't the room's error or the session's stop. */
 class SeatError extends Data.TaggedError("SeatError")<{
@@ -77,7 +137,7 @@ interface RunPlan {
  * This player's place in one room, from its host or join to the next host, join or leave.
  * Its fiber owns the room, the lobby, the session and the ticker; the client reads the rest.
  */
-interface Seat<G extends CoopTypes> {
+interface Seat<State, Event, Command, Refusals> {
   pick: string;
   /** The lobby's inputs, while the lobby runs. */
   lobby: Queue.Enqueue<LobbyInput, RoomError | SeatError> | null;
@@ -86,28 +146,20 @@ interface Seat<G extends CoopTypes> {
   players: readonly PeerId[];
   /** Every player's name, by slot. */
   names: readonly string[];
-  run: ScopedLockstepSession<
-    G["State"],
-    G["Event"],
-    G["Command"],
-    G["Refusals"]
-  > | null;
+  run: ScopedLockstepSession<State, Event, Command, Refusals> | null;
   /** Ticks the run, while it runs: a frame ticks it before drawing. */
   frameTick: (() => void) | null;
   /** The run ended: what the session reports after that (the others leaving) is no failure. */
   ended: boolean;
   /** The seat failed: it has said its last. */
   failed: boolean;
-  /** The players shown as waited on, and as choosing: a bit per slot. */
+  /** The players shown as waited on: a bit per slot. */
   waitingMask: number;
-  choosingMask: number;
   /** Since when stepping has waited without a break, or null. */
   waitingSinceMs: number | null;
   readonly hashes: Map<number, number>;
 }
 
-/** How often the session ticks. Browsers clamp shorter timers to about 4 ms anyway. */
-const TICK_MS = 4;
 /**
  * How long stepping must wait before the players it waits on are shown. Lockstep waits a frame
  * now and then as input arrives; that isn't worth a banner.
@@ -119,7 +171,6 @@ const KEPT_HASHES = 32;
 const INPUT_DELAY = 4;
 /** Steps between state hash comparisons, without the game's own number. */
 const HASH_EVERY = 60;
-
 const NO_NAMES: readonly string[] = [];
 
 const stopMessage = (error: LockstepError): string => {
@@ -179,7 +230,9 @@ const namesOf = (names: readonly string[], mask: number): string[] => {
   return result;
 };
 
-const makeSeat = <G extends CoopTypes>(pick: string): Seat<G> => ({
+const makeSeat = <State, Event, Command, Refusals>(
+  pick: string
+): Seat<State, Event, Command, Refusals> => ({
   pick,
   lobby: null,
   slot: 0,
@@ -190,15 +243,12 @@ const makeSeat = <G extends CoopTypes>(pick: string): Seat<G> => ({
   ended: false,
   failed: false,
   waitingMask: 0,
-  choosingMask: 0,
   waitingSinceMs: null,
   hashes: new Map(),
 });
 
 /**
- * The Co-op client for `game`. Its scope (the app) owns the current seat: closing it leaves.
- * Throws where it is called for a game whose simulation's step input was not declared with
- * `Game.PlayerInputs`: no lockstep run could send one player's input.
+ * The Co-op client of `parts`. Its scope (the app) owns the current seat: closing it leaves.
  *
  * Each host or join is one fiber, a seat, in a `FiberHandle`: it loads the content, opens the
  * room, runs the lobby, then the run, and its scope owns all of them. A new host or join
@@ -207,24 +257,33 @@ const makeSeat = <G extends CoopTypes>(pick: string): Seat<G> => ({
  * Only host, join and leave choose the current seat, and a seat reports only while it is
  * current, so a seat being closed can't speak over the next.
  */
-export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
-  game: CoopGame<G, LoadError>,
-  options: CoopClientOptions
-): Effect.Effect<CoopClient<G, LoadError>, never, Scope.Scope> => {
-  // Refused here, where the app makes its client, not after a lobby, when a run would start.
-  playerInputSchema(game.simulation);
-  return Effect.gen(function* () {
-    type State = G["State"];
-    type PlayerInput = G["PlayerInput"];
-    type Content = G["Content"];
+export const coopClient = <
+  Config,
+  State,
+  Input,
+  Event,
+  Command,
+  Refusals,
+  Content,
+  E,
+>(
+  parts: CoopParts<Config, State, Input, Event, Command, Refusals, Content, E>
+): Effect.Effect<
+  CoopClient<State, Event, Command, E, Refusals>,
+  never,
+  Scope.Scope
+> =>
+  Effect.gen(function* () {
+    type PlayerInput = PlayerInputOf<Input>;
+    type Seated = Seat<State, Event, Command, Refusals>;
 
     const seats = yield* FiberHandle.make();
     // Seats fork from plain code (host and join), on the Scheduler and Clock the client was made with.
     const runSeat = yield* FiberHandle.runtime(seats)<never>();
-    const frames = options.frames ?? animationFrames;
-    const maxPlayers = game.maxPlayers ?? DEFAULT_ROOM_SIZE;
-    const listeners = new Set<(event: CoopEvent<G["LocalEvent"]>) => void>();
-    let current: Seat<G> | null = null;
+    const { frames } = parts;
+    const maxPlayers = parts.maxPlayers ?? DEFAULT_ROOM_SIZE;
+    const listeners = new Set<(event: CoopEvent<Event>) => void>();
+    let current: Seated | null = null;
     /** The fiber of the last seat taken: the next waits for it to close before it speaks. */
     let lastSeat: Fiber.Fiber<unknown, unknown> | null = null;
     /** The attached devices, while attached. */
@@ -237,8 +296,22 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
       })
     );
 
+    /**
+     * The local player's seat, read live: by the attached view when it draws, and by whoever
+     * hears one of the run's events, when it hears it.
+     */
+    const local: LocalPlayer = {
+      get slot() {
+        return current?.slot ?? 0;
+      },
+      get names() {
+        return current?.names ?? NO_NAMES;
+      },
+    };
+    const seated: ViewContext = { local };
+
     /** Reports `event` if `seat` is still this player's: a seat being replaced says nothing. */
-    const emit = (seat: Seat<G>, event: CoopEvent<G["LocalEvent"]>) => {
+    const emit = (seat: Seated, event: CoopEvent<Event>) => {
       if (current !== seat || seat.failed) {
         return;
       }
@@ -248,14 +321,14 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
     };
 
     /** Reports the seat's failure: its last event. */
-    const fail = (seat: Seat<G>, reason: CoopFailure, message: string) => {
-      emit(seat, { type: "failed", reason, message });
+    const fail = (seat: Seated, reason: CoopFailure, message: string) => {
+      emit(seat, new SeatFailed({ reason, message }));
       seat.failed = true;
     };
 
     // The lobby: one input at a time, from the room, the links and the local player.
     const lobby = (
-      seat: Seat<G>,
+      seat: Seated,
       room: SignallingRoom,
       content: Content
     ): Effect.Effect<RunPlan, RoomError | SeatError, Scope.Scope> =>
@@ -289,24 +362,26 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
         );
         const { role, code, self } = room;
         /** This game's lobby picks: what the host starts with, and what a guest accepts. */
-        const valid = game.picks(content);
+        const valid = parts.picks(content);
         /** The host keeps the lobby; a guest has the host's last word on it. */
         let roster: readonly LobbyPick[] =
           role === "host" ? [{ id: self, pick: seat.pick }] : [];
         const emitLobby = () =>
-          emit(seat, {
-            type: "lobby",
-            role,
-            code,
-            self,
-            players: roster.map(({ id, pick }) => ({
-              id,
-              name: playerName(id),
-              pick,
-            })),
-            maxPlayers,
-            canStart: canStart(roster, maxPlayers),
-          });
+          emit(
+            seat,
+            new LobbyChanged({
+              role,
+              code,
+              self,
+              players: roster.map(({ id, pick }) => ({
+                id,
+                name: playerName(id),
+                pick,
+              })),
+              maxPlayers,
+              canStart: canStart(roster, maxPlayers),
+            })
+          );
         /** Host: tells every guest the lobby, and the app. */
         const shareLobby = () => {
           if (role === "host") {
@@ -502,8 +577,8 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
       endFrame: () => device?.endFrame?.(),
     };
 
-    const recordHash = (seat: Seat<G>, state: State): number => {
-      const hash = game.hash(state);
+    const recordHash = (seat: Seated, state: State): number => {
+      const hash = parts.hash(state);
       seat.hashes.set(seat.run?.stepIndex ?? 0, hash);
       if (seat.hashes.size > KEPT_HASHES) {
         seat.hashes.delete(seat.hashes.keys().next().value!);
@@ -511,23 +586,22 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
       return hash;
     };
 
-    const onGameEvent = (seat: Seat<G>, event: G["Event"]) => {
-      if (game.runEnded(event)) {
+    // The run's events reach the app as the rules reported them, each with the local player.
+    const onGameEvent = (seat: Seated, event: Event) => {
+      if (parts.ends.has((event as { readonly _tag: string })._tag)) {
         seat.ended = true;
       }
-      const heard = game.localEvent(event, seat.slot, seat.names);
-      if (heard !== null) {
-        emit(seat, { type: "run", event: heard });
-      }
+      emit(seat, { _tag: "RunEvent", event, local });
     };
 
     /**
-     * After each tick: who stepping waits on, and who else the run waits on to decide, when
-     * either changes. Both are kept as a bit per slot; the names are built only on a change.
+     * After each tick: who stepping waits on, when that changes. Kept as a bit per slot; the
+     * names are built only on a change. It reads the session alone: nothing of the game's runs
+     * between steps but the local player's input source.
      */
-    const afterTick = (seat: Seat<G>, clock: Clock.Clock) => {
+    const afterTick = (seat: Seated, clock: Clock.Clock) => {
       const { run } = seat;
-      // Stopped, or ended: nothing is left to wait on or choose.
+      // Stopped, or ended: nothing is left to wait on.
       if (run === null || run.error !== null || seat.ended) {
         return;
       }
@@ -550,29 +624,18 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
           }
         }
       }
-      let choosing = 0;
-      const { state } = run;
-      if (state !== null) {
-        for (let slot = 0; slot < seat.players.length; slot++) {
-          if (slot !== seat.slot && game.choosing(state, slot)) {
-            choosing |= 1 << slot;
-          }
-        }
-      }
-      if (waiting !== seat.waitingMask || choosing !== seat.choosingMask) {
+      if (waiting !== seat.waitingMask) {
         seat.waitingMask = waiting;
-        seat.choosingMask = choosing;
-        emit(seat, {
-          type: "waiting",
-          waitingFor: namesOf(seat.names, waiting),
-          choosing: namesOf(seat.names, choosing),
-        });
+        emit(
+          seat,
+          new WaitingChanged({ waitingFor: namesOf(seat.names, waiting) })
+        );
       }
     };
 
     // The run, in the seat's scope: the session, its listener and its ticker close with it.
     const play = (
-      seat: Seat<G>,
+      seat: Seated,
       room: SignallingRoom,
       content: Content,
       plan: RunPlan
@@ -582,21 +645,21 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
         seat.names = plan.players.map(playerName);
         seat.slot = plan.players.indexOf(room.self);
         const shared: LockstepOptions<
-          G["Config"],
+          Config,
           State,
-          PlayerInputs<PlayerInput>,
-          G["Event"],
-          G["Command"],
-          G["Refusals"]
+          Input,
+          Event,
+          Command,
+          Refusals
         > = {
-          simulation: game.simulation,
-          config: game.config(content, plan.picks),
+          simulation: parts.simulation,
+          config: parts.config(content, plan.picks),
           contentHash: contentHash(content),
           transport: linksTransport(room.self, room.links()),
           local: localInput,
           hash: (state) => recordHash(seat, state),
-          inputDelay: game.lockstep?.inputDelay ?? INPUT_DELAY,
-          hashEvery: game.lockstep?.hashEvery ?? HASH_EVERY,
+          inputDelay: parts.lockstep?.inputDelay ?? INPUT_DELAY,
+          hashEvery: parts.lockstep?.hashEvery ?? HASH_EVERY,
         };
         const session =
           room.role === "host"
@@ -611,10 +674,9 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
                 players: plan.players,
               });
         seat.run = session;
-        emit(seat, { type: "started", slot: seat.slot, names: seat.names });
+        emit(seat, new RunStarted({ slot: seat.slot, names: seat.names }));
         yield* session.listen((event) => onGameEvent(seat, event));
-        const timer: Ticker =
-          options.ticker ?? (yield* workerTicker({ everyMs: TICK_MS }));
+        const timer = yield* parts.ticker;
         const clock = yield* Effect.clockWith(Effect.succeed);
         // The timer's ticks and the frames' ticks, as one ticker. A frame ticks too: when drawing
         // keeps the main thread busy, the worker's messages wait, and a tick per frame keeps input
@@ -648,7 +710,7 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
      * failure. Its fiber ends no sooner than `previous`, so the wait covers every earlier seat.
      */
     const playSeat = (
-      seat: Seat<G>,
+      seat: Seated,
       open: Effect.Effect<SignallingRoom, RoomError, Scope.Scope>,
       previous: Fiber.Fiber<unknown, unknown> | null
     ): Effect.Effect<void> => {
@@ -657,7 +719,7 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
         previous === null ? Effect.void : Effect.asVoid(Fiber.await(previous));
       return Effect.gen(function* () {
         const content = yield* Effect.mapError(
-          game.content,
+          parts.content,
           ({ message }) => new SeatError({ reason: "content", message })
         );
         const room = yield* open;
@@ -705,7 +767,7 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
       open: Effect.Effect<SignallingRoom, RoomError, Scope.Scope>
     ) =>
       Effect.sync(() => {
-        const seat = makeSeat<G>(pick);
+        const seat: Seated = makeSeat(pick);
         current = seat;
         lastSeat = runSeat(playSeat(seat, open, lastSeat));
       });
@@ -714,16 +776,6 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
       current = null;
       return FiberHandle.clear(seats);
     });
-
-    /** The local player's seat, read live by the attached view. */
-    const local: LocalPlayer = {
-      get slot() {
-        return current?.slot ?? 0;
-      },
-      get names() {
-        return current?.names ?? NO_NAMES;
-      },
-    };
 
     // Attaching twice at once is a programming error, so it dies rather than fail.
     const claim = Effect.acquireRelease(
@@ -743,8 +795,8 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
     );
 
     return {
-      host: (pick) => take(pick, options.rooms.host),
-      join: (code, pick) => take(pick, options.rooms.join(code)),
+      host: (pick) => take(pick, parts.rooms.host),
+      join: (code, pick) => take(pick, parts.rooms.join(code)),
       choose: (pick) =>
         Effect.sync(() => {
           const seat = current;
@@ -781,13 +833,21 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
         Effect.scoped(
           Effect.gen(function* () {
             yield* claim;
-            const presentation = yield* game.presentation;
-            const input = yield* Effect.acquireRelease(
+            const made = yield* parts.presentation;
+            // The view first, then the input source, as an engine makes them.
+            const view = yield* Effect.acquireRelease(
               Effect.try({
-                try: () => presentation.createInput(element),
+                try: () => made.view(element, seated),
                 catch: attachError,
               }),
-              (made) => Effect.sync(() => made.dispose())
+              (drawn) => Effect.sync(() => drawn.dispose())
+            );
+            const input = yield* Effect.acquireRelease(
+              Effect.try({
+                try: () => made.input(element),
+                catch: attachError,
+              }),
+              (read) => Effect.sync(() => read.dispose())
             );
             yield* Effect.acquireRelease(
               Effect.sync(() => {
@@ -799,14 +859,6 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
                     device = null;
                   }
                 })
-            );
-            // Released first: the view is disposed before the input.
-            const view = yield* Effect.acquireRelease(
-              Effect.try({
-                try: () => presentation.createView(element, local),
-                catch: attachError,
-              }),
-              (made) => Effect.sync(() => made.dispose())
             );
             return yield* frameLoop(frames, (nowMs) => {
               const seat = current;
@@ -823,7 +875,7 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
         ),
       listen: (onEvent) => {
         // Its own function, so one handler listening twice is two listeners.
-        const listener = (event: CoopEvent<G["LocalEvent"]>) => onEvent(event);
+        const listener = (event: CoopEvent<Event>) => onEvent(event);
         return Effect.acquireRelease(
           Effect.sync(() => {
             listeners.add(listener);
@@ -846,4 +898,3 @@ export const makeCoopClient = <G extends CoopTypes, LoadError = never>(
       },
     };
   });
-};

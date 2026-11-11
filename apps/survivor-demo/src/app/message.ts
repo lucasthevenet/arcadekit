@@ -1,9 +1,10 @@
 import { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import { AudioSettings } from "arcadekit/audio";
+import { LobbyChanged } from "arcadekit/net/browser";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
-import { CoopPlayer, HeroSummary } from "./model";
+import { HeroSummary } from "./model";
 import { HeroRecords } from "./save";
 
 // Every fact the UI can react to. Named for what happened, not what to do.
@@ -46,19 +47,10 @@ export const Message = defineMessageUnion({
   ClickedLeaveCoop: {},
   /** The run didn't take the local player's pause, or its letting go: it holds none. */
   FailedToHoldCoopPause: {},
-  GotCoopLobby: {
-    role: Schema.Literals(["host", "guest"]),
-    code: Schema.String,
-    self: Schema.String,
-    players: Schema.Array(CoopPlayer),
-    maxPlayers: Schema.Number,
-    canStart: Schema.Boolean,
-  },
-  GotCoopStarted: { slot: Schema.Number, names: Schema.Array(Schema.String) },
-  GotCoopWaiting: {
-    waitingFor: Schema.Array(Schema.String),
-    choosing: Schema.Array(Schema.String),
-  },
+  /** The Co-op client's own event, as it reports it: who is in the lobby, and whether it can start. */
+  GotCoopLobby: { lobby: LobbyChanged },
+  GotCoopStarted: { slot: Schema.Int, names: Schema.Array(Schema.String) },
+  GotCoopWaiting: { waitingFor: Schema.Array(Schema.String) },
   GotCoopLevelUp: {
     offer: Schema.Int,
     choices: Schema.Array(UpgradeChoice),

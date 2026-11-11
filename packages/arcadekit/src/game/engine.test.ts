@@ -106,6 +106,18 @@ class CounterEngine extends Game.Engine("CounterEngine", {
   },
 }) {}
 
+/** An engine whose view keeps what it was made with: the local player, as the engine seats it. */
+const seats: Game.LocalPlayer[] = [];
+
+class SeatedEngine extends Game.Engine("SeatedEngine", {
+  simulation: Counter,
+  view: (_container, _uses, { local }) => {
+    seats.push(local);
+    return { render: () => {}, dispose: () => {} };
+  },
+  input: () => ({ read: () => null, dispose: () => {} }),
+}) {}
+
 const element = { id: "game" } as HTMLElement;
 
 type CounterService = Context.Service.Shape<typeof CounterEngine>;
@@ -169,6 +181,24 @@ describe("Game.Engine", () => {
       "dispose view",
       "released",
     ]);
+  });
+
+  it("tells the view which seat is the local player's: slot 0, and nobody to name", async () => {
+    seats.length = 0;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const engine = yield* SeatedEngine;
+          yield* Effect.forkScoped(engine.attach(element), {
+            startImmediately: true,
+          });
+        })
+      ).pipe(
+        Effect.provide(SeatedEngine.layer),
+        Effect.provide(Layer.succeed(Game.Frames, manualFrames()))
+      )
+    );
+    expect(seats).toStrictEqual([{ slot: 0, names: [] }]);
   });
 
   it("starts a run with the seed it is given, or a random 32-bit one", async () => {

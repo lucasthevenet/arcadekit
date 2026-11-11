@@ -47,6 +47,7 @@ const DECLARATIONS: Readonly<Record<string, Declared>> = {
   "Game.Engine": { file: "game/engine.ts", service: true },
   Content: { file: "content/content.ts", service: true },
   Asset: { file: "content/asset.ts", service: true },
+  Coop: { file: "net/browser/coop.ts", service: true },
 };
 
 const nounOf = (builder: string): string =>
@@ -80,18 +81,16 @@ const FACTORIES: readonly string[] = [
 // shorter.
 const OLDER_FACTORIES: readonly string[] = [
   "makeAudioSettingsStore",
-  "makeCoopClient",
   "makeGameEngine",
   "makeSaveStore",
 ];
 
 // Those of them with no declaration to use in their place yet, so lint can't refuse them
-// (OLDER_CONTRACT in tools/lint/declaration.ts): a save, the audio settings and the Co-op client
-// are still to move (ADR-0020). A name leaves this list for OLDER_CONTRACT with the change that
-// adds its declaration.
+// (OLDER_CONTRACT in tools/lint/declaration.ts): a save and the audio settings are still to move
+// (ADR-0020). A name leaves this list for OLDER_CONTRACT with the change that adds its
+// declaration.
 const NOT_YET_DECLARED: readonly string[] = [
   "makeAudioSettingsStore",
-  "makeCoopClient",
   "makeSaveStore",
 ];
 

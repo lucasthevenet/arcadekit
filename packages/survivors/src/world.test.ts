@@ -11,7 +11,6 @@ import {
   OfferClosed,
 } from "./commands";
 import { HeroLeft, Hud, LeveledUp, RunEnded } from "./events";
-import type { SurvivorsEvent } from "./events";
 import { hashWorld } from "./hash-world";
 import type { HeroInput, SurvivorsInput } from "./input";
 import { GameContent } from "./schema";
@@ -108,6 +107,9 @@ const content = Schema.decodeUnknownSync(GameContent)({
   ],
   waves: [{ from: 0, to: 120, enemy: "grunt", perSecond: 3 }],
 });
+
+/** Everything a survivors run reports: its events and its HUD sample. */
+type SurvivorsEvent = Game.EventOf<typeof Survivors>;
 
 const DT = 1 / 60;
 
@@ -413,6 +415,7 @@ describe("what a run reports", () => {
               maxHp: 120,
               status: "playing",
               paused: false,
+              choosing: false,
             },
           ],
         })
@@ -624,6 +627,10 @@ describe("an upgrade pick", () => {
   });
 });
 
+/** Who is choosing as the HUD tells it: what a co-op app shows ("waiting for X to pick"). */
+const choosing = (shown: World) =>
+  hudSample(shown).heroes.map((hero) => hero.choosing);
+
 describe("co-op", () => {
   it("feeds one team XP pool from any hero's gems", () => {
     const world = createWorld(
@@ -670,6 +677,30 @@ describe("co-op", () => {
       world.time,
       world.pendingLevelUps,
     ]).toStrictEqual([[false, false], time + DT, 0]);
+  });
+
+  it("says in the HUD which heroes the run waits on to pick, while each has its offer open", () => {
+    const before = choosing(
+      createWorld({ content, heroIds: ["bolter", "burner"] }, { seed: 9 })
+    );
+    const world = levelUpForTwo();
+    const open = choosing(world);
+    choose(world, world.heroes[0]!, 0);
+    step(world, STILL, STEP);
+    const afterOnePick = choosing(world);
+    // The other hero's offer closes without a pick when its player leaves.
+    step(world, { players: [null, null], leaving: [1] }, STEP);
+    expect({
+      before,
+      open,
+      afterOnePick,
+      afterLeaving: choosing(world),
+    }).toStrictEqual({
+      before: [false, false],
+      open: [true, true],
+      afterOnePick: [false, true],
+      afterLeaving: [false, false],
+    });
   });
 
   it("takes a choice its hero's open offer has, once, and no other", () => {

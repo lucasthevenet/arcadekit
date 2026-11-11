@@ -15,6 +15,11 @@ const HeroHud = Schema.Struct({
   status: Schema.Literals(["playing", "down", "left"]),
   /** True while this hero's player holds a co-op run paused. */
   paused: Schema.Boolean,
+  /**
+   * True while this hero has an upgrade offer open: the run waits on its player to pick. A
+   * co-op app tells the others who from it ("waiting for X to pick").
+   */
+  choosing: Schema.Boolean,
 });
 
 /** One upgrade the player can pick. `LeveledUp` carries the choices on offer. */
@@ -57,8 +62,8 @@ export class Hud extends Game.Event("Hud", {
 
 /**
  * The team leveled up, and the hero in slot `hero` is offered `choices`, in the offer numbered
- * `offer`. One per playing hero. Its player answers with the `ChooseUpgrade` command, or in a
- * lockstep run with a step input's `pick`.
+ * `offer`. One per playing hero. Its player answers with the `ChooseUpgrade` command, which
+ * names `offer`.
  */
 export class LeveledUp extends Game.Event("LeveledUp", {
   hero: Schema.Int,
@@ -75,10 +80,3 @@ export class HeroLeft extends Game.Event("HeroLeft", {
 export class RunEnded extends Game.Event("RunEnded", {
   summaries: Schema.Array(RunSummary),
 }) {}
-
-/**
- * Everything a survivors run reports to the outside: its events and its sample. It is
- * `Game.EventOf<typeof Survivors>` spelled out for the Co-op rules' bag of types (`CoopTypes`),
- * and goes with it: a declared host reads the type from the class.
- */
-export type SurvivorsEvent = Hud | LeveledUp | HeroLeft | RunEnded;

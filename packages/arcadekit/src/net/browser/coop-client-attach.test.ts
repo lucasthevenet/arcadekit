@@ -1,14 +1,16 @@
-import { Effect, Exit, Fiber, Schema, Scope } from "effect";
+import { Effect, Exit, Fiber, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import * as Game from "../../game/index";
 import { AttachError, GameCrashed } from "../../runtime/browser";
 import type { GameView } from "../../runtime/browser";
 import { manualFrames } from "../../runtime/testing";
-import { testCoopGame, testPresentation } from "../testing/index";
-import type { TestCoop, TestState } from "../testing/index";
-import type { CoopClient, CoopGame, CoopPresentation } from "./coop";
-import { makeCoopClient } from "./coop-client";
+import {
+  testCoopClient,
+  testCoopParts,
+  testPresentation,
+} from "../testing/index";
+import type { TestCoopClient, TestState } from "../testing/index";
+import type { CoopPresented } from "./coop-client";
 
 // Attaching and detaching in Node, with no browser, no room and no seat: the input and the view
 // are fakes that count what is made and disposed, and the test runs the frames.
@@ -36,16 +38,16 @@ let presentations: number;
 
 const client = (
   frames: ReturnType<typeof manualFrames>,
-  createView: CoopPresentation<TestState, unknown>["createView"]
-): CoopClient<TestCoop> =>
+  view: CoopPresented<TestState, unknown>["view"]
+): TestCoopClient =>
   Effect.runSync(
     Scope.provide(
-      makeCoopClient(
-        testCoopGame({
+      testCoopClient(
+        testCoopParts({
           presentation: Effect.sync(() => {
             presentations += 1;
             return testPresentation({
-              createInput: () => {
+              input: () => {
                 inputs += 1;
                 return {
                   read: () => ({ add: 0 }),
@@ -54,7 +56,7 @@ const client = (
                   },
                 };
               },
-              createView,
+              view,
             });
           }),
         }),
@@ -87,21 +89,25 @@ describe("attaching a co-op client", () => {
     ]);
   });
 
-  it("fails with an AttachError, making no view, when the input can't be made", async () => {
+  it("fails with an AttachError, disposing the view it made, when the input can't be made", async () => {
     const noPointer = new Error("no pointer");
     let views = 0;
     const coop = Effect.runSync(
       Scope.provide(
-        makeCoopClient(
-          testCoopGame({
+        testCoopClient(
+          testCoopParts({
             presentation: Effect.succeed(
               testPresentation({
-                createInput: () => {
+                input: () => {
                   throw noPointer;
                 },
-                createView: () => {
+                view: () => {
                   views += 1;
-                  return fakeView();
+                  return fakeView({
+                    dispose: () => {
+                      views -= 1;
+                    },
+                  });
                 },
               })
             ),
@@ -121,7 +127,7 @@ describe("attaching a co-op client", () => {
   it("draws no run on each frame until detached, then cancels its frame and releases the input", async () => {
     const frames = manualFrames();
     const drawn: [TestState | null, number][] = [];
-    const coop = client(frames, (_container, local) =>
+    const coop = client(frames, (_container, { local }) =>
       fakeView({
         render: (state, seconds) => drawn.push([state, seconds + local.slot]),
       })
@@ -143,7 +149,7 @@ describe("attaching a co-op client", () => {
     ]);
   });
 
-  it("runs the presentation once per attach, before the input and the view", async () => {
+  it("runs the presentation once per attach, then makes the view, then the input, as an engine does", async () => {
     const order: string[] = [];
     const coop = client(manualFrames(), () => {
       order.push(`view after ${presentations} presentation, ${inputs} input`);
@@ -157,8 +163,8 @@ describe("attaching a co-op client", () => {
       await Effect.runPromise(Fiber.interrupt(attach));
     }
     expect(order).toStrictEqual([
-      "view after 1 presentation, 1 input",
-      "view after 2 presentation, 1 input",
+      "view after 1 presentation, 0 input",
+      "view after 2 presentation, 0 input",
     ]);
   });
 
@@ -229,31 +235,5 @@ describe("attaching a co-op client", () => {
     const second = await Effect.runPromise(Effect.exit(coop.attach(element)));
     await Effect.runPromise(Fiber.interrupt(first));
     expect([Exit.hasDies(second), inputs]).toStrictEqual([true, 0]);
-  });
-});
-
-describe("making a co-op client", () => {
-  it("refuses a game whose simulation's step input is not a Game.PlayerInputs, where the client is made", () => {
-    class ByHand extends Game.Simulation("ByHand", {
-      input: Schema.Struct({
-        players: Schema.Array(
-          Schema.NullOr(Schema.Struct({ add: Schema.Number }))
-        ),
-        leaving: Schema.Array(Schema.Int),
-      }),
-      create: () => ({ total: 0 }),
-      step: (state, input) => {
-        state.total += input.players.length;
-      },
-    }) {}
-    // `CoopRules` names its types in a bag, so its types can't tell this simulation's step input
-    // from a players' input: making the client refuses it. (A lockstep session's options can.)
-    const game: CoopGame<TestCoop> = {
-      ...testCoopGame(),
-      simulation: ByHand as unknown as CoopGame<TestCoop>["simulation"],
-    };
-    expect(() => makeCoopClient(game, { rooms: noRooms })).toThrow(
-      'Simulation "ByHand" can\'t seat several players: its `input` was not declared with Game.PlayerInputs.'
-    );
   });
 });

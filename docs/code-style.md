@@ -21,8 +21,8 @@ If it needs one of them, change the builder, not the example.
 | --- | --- | --- | --- |
 | A part each game supplies under a name of its own | a **declaration** | a builder that returns a class | [`game/event.ts`](../packages/arcadekit/src/game/event.ts) for a value, [`content/asset.ts`](../packages/arcadekit/src/content/asset.ts) for a service |
 | What runs a declaration | a **host** | a plain class when a step or a frame calls it; the declaration's `layer` when it has a lifecycle | [`game/loop.ts`](../packages/arcadekit/src/game/loop.ts), the `layer` in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts) |
-| One thing of the app's that has several implementations | a **service** | a `Context.Service` class, and a named Layer for each implementation | [`audio/service.ts`](../packages/arcadekit/src/audio/service.ts) |
-| A setting with a default that suits most apps | a **reference** | a `Context.Reference` | `Frames` in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts) |
+| One thing of the app's that has several implementations | a **service** | a `Context.Service` class, and a named Layer for each implementation | [`audio/service.ts`](../packages/arcadekit/src/audio/service.ts), [`net/browser/coop-rooms.ts`](../packages/arcadekit/src/net/browser/coop-rooms.ts) |
+| A setting with a default that suits most apps | a **reference** | a `Context.Reference` | `Frames` in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts), `CoopTicker` in [`net/browser/coop.ts`](../packages/arcadekit/src/net/browser/coop.ts) |
 | Data work, or a data structure, that no game names | a **primitive** | a plain function or class | [`core/pool.ts`](../packages/arcadekit/src/core/pool.ts), [`core/rng.ts`](../packages/arcadekit/src/core/rng.ts) |
 | A Schema that a declaration takes as a field and a host must recognise | a **Schema builder** | a plain function that returns a Schema, marked in its annotations, with a type-only mark for the hosts that ask for it | `Game.PlayerInputs` in [`game/player-inputs.ts`](../packages/arcadekit/src/game/player-inputs.ts) |
 | A failure a caller should handle | a **typed error** | a tagged error class with a `reason` | `CommandDropped` in [`game/command.ts`](../packages/arcadekit/src/game/command.ts) |
@@ -69,10 +69,12 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 
 ## The definition a game writes
 
-- **One flat object.** A field holds data, a Schema, another declaration's class (`simulation: PushPuzzle`, `events: [LevelSolved]`) or a plain function. TypeScript infers a handler's parameters from the fields beside it only while the handler is a field itself. Inside a call, an Effect or a nested generic, inference stops and the game has to annotate.
+- **One flat object.** A field holds data, a Schema, another declaration's class (`simulation: PushPuzzle`, `events: [LevelSolved]`, `engine: SurvivorsEngine`) or a plain function. TypeScript infers a handler's parameters from the fields beside it only while the handler is a field itself. Inside a call, an Effect or a nested generic, inference stops and the game has to annotate.
+- **An Effect is a field only as a value**: what another declaration gives (`content: SurvivorsContent.load`, the entries of `uses`). The handlers beside it take their types from it, and an Effect built in the definition with a function in it is typed after them. A doc comment says so where a field is one.
+- **A declaration made from another takes its class**, and every type from it: `Coop`'s `engine`. The game then states each thing once, and the two can't disagree. The builder is generic over the other's own types, so a mistake there is a type error on that field.
 - **What handlers share is a named field** that the host resolves and passes in: `uses` in `Game.Engine`.
 - **A handler is a plain function**, and what hosts it is Effect ("Effect and plain code" in `AGENTS.md` says which code is which).
-- **A handler's parameters come in one order**: what it acts on, what it acts with, then one context object the host fills. `step(state, input, { dt, report })`, `apply.Deposit(jar, command, { player })`, `view(container, uses)`. Something new a handler needs is a new field of that context.
+- **A handler's parameters come in one order**: what it acts on, what it acts with, then one context object the host fills. `step(state, input, { dt, report })`, `apply.Deposit(jar, command, { player })`, `view(container, uses, { local })`. Something new a handler needs is a new field of that context.
 - **A handler that changes state returns `Nothing`** ([`game/simulation.ts`](../packages/arcadekit/src/game/simulation.ts)), a type no value has by accident, so returning the next state, a promise or an Effect is a type error. Its host refuses the same at run time.
 - **A game reads its types from the class**: `StateOf<typeof PushPuzzle>`, `PushPuzzle.match({ ... })`. The builder carries them on a `"~types"` field that exists only as a type.
 - **`NoInfer<T>`** goes on a parameter that is checked against a type another field decides: the `view`'s state in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts).
@@ -91,7 +93,7 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 - **The glossary's word**, the same in code, docs, tests and messages ([`CONTEXT.md`](../CONTEXT.md)). A new concept gets its term in the same change, with the words to avoid.
 - **A builder is a singular noun**: `Event`, `Asset`.
 - **What a game declares**: an event in the past tense (`LevelSolved`), a command in the imperative (`ChooseUpgrade`), a rejection by what is wrong (`JarFull`), a simulation by the game's name (`PushPuzzle`), anything else by the game and the noun (`PushPuzzleEngine`, `PushPuzzleContent`).
-- **The definition's words are taken**: `create`, `step`, `apply`, `report`, `send`, `sample`, `uses`, `view`, `input`, `load`, `layer`, `match`. A new declaration uses the ones that fit, and adds a word only for a new idea.
+- **The definition's words are taken**: `create`, `step`, `apply`, `report`, `send`, `sample`, `uses`, `view`, `input`, `load`, `layer`, `match`, `engine`, `content`, `hash`, `ends`. A new declaration uses the ones that fit, and adds a word only for a new idea.
 - **Check Effect's and Foldkit's exports before settling a name.** A word one of them uses for something else, in a file that would import both, is taken: Foldkit's `Story` is why the kit's is `Scenario`.
 - **A module imported as a namespace exports no `then`.** The namespace would be a thenable, and under vitest a test file that imports it never starts.
 

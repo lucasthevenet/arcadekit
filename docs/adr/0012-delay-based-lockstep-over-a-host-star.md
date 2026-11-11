@@ -8,6 +8,8 @@ status: accepted
 >
 > Since [ADR-0019](0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md): the signalling worker is the kit's (`arcadekit/net/worker`), and the demo's Worker is a few lines over it. The demo's `CoopClient` is the kit's Co-op client (`makeCoopClient`, `arcadekit/net/browser`), with the lobby, the content hash and the worker-timed ticker behind it. A genre's per-player step input is `PlayerInputs` (`arcadekit/runtime`).
 >
+> Since [ADR-0021](0021-co-op-is-declared-from-the-games-engine.md): the Co-op client is no `makeCoopClient` call. A game declares a `Coop` from its engine, and the class is the key of the client, provided by its `layer` over the app's rooms.
+>
 > Since [ADR-0020](0020-a-game-is-declared.md): a lockstep session is a host of a declared `Game.Simulation`, stepped through `Game.Loop`, which runs it on the same `GameLoop`. The simulation declares its step input with `Game.PlayerInputs` (`arcadekit/game`, where `PlayerInputs` now lives): the session takes the Schema of one player's input from it, which is what it sends, and combines the players' inputs itself, so its options have no `codec` and no `combine`. It combines them by the run's player order as the lobby agreed it, which a guest passes as `players`: the host's start message lists only who is still in the run, so the slots can't come from it. The messages, their bounds and the hash comparison are unchanged.
 >
 > Since [ADR-0020](0020-a-game-is-declared.md): a single-player pick is the command `ChooseUpgrade`, sent with `engine.send` and applied at the start of the next step. `chooseUpgrade` and the engine's `modify` are gone from survivors.

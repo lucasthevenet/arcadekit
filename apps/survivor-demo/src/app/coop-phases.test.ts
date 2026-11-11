@@ -1,4 +1,5 @@
 import { Hud } from "@arcadekit/survivors";
+import { LobbyChanged } from "arcadekit/net/browser";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
@@ -20,15 +21,17 @@ import { view } from "./view";
 const at = (phase: Phase): Model => ({ ...init().model, phase });
 
 const lobby = Phase.CoopLobby({
-  role: "guest",
-  code: "K7MQ2X",
-  self: "guest-1",
-  players: [
-    { id: "host", name: "Host", pick: "spark" },
-    { id: "guest-1", name: "Guest 1", pick: "ember" },
-  ],
-  maxPlayers: 4,
-  canStart: true,
+  lobby: new LobbyChanged({
+    role: "guest",
+    code: "K7MQ2X",
+    self: "guest-1",
+    players: [
+      { id: "host", name: "Host", pick: "spark" },
+      { id: "guest-1", name: "Guest 1", pick: "ember" },
+    ],
+    maxPlayers: 4,
+    canStart: true,
+  }),
 });
 
 const started = Message.GotCoopStarted({
@@ -36,7 +39,7 @@ const started = Message.GotCoopStarted({
   names: ["Host", "Guest 1"],
 });
 
-const waiting = Message.GotCoopWaiting({ waitingFor: ["Host"], choosing: [] });
+const waiting = Message.GotCoopWaiting({ waitingFor: ["Host"] });
 
 describe("co-op events on the wrong screen", () => {
   it("starts the run from the lobby only", () => {
@@ -201,6 +204,7 @@ const guestWith = (hero: "playing" | "down"): Model => ({
         maxHp: 80,
         status: "playing",
         paused: false,
+        choosing: false,
       },
       {
         heroId: "ember",
@@ -208,9 +212,73 @@ const guestWith = (hero: "playing" | "down"): Model => ({
         maxHp: 140,
         status: hero,
         paused: false,
+        choosing: false,
       },
     ],
   }),
+});
+
+// Who the run waits on to pick an upgrade is the genre's to say: its HUD flags each hero, and the
+// app names the others from it, as it names who holds the run paused.
+/** The guest's screen, with each hero's HUD flags as the last sample had them. */
+const flagged = (
+  host: { readonly choosing?: boolean; readonly paused?: boolean },
+  guest: { readonly choosing?: boolean; readonly paused?: boolean } = {}
+): Model => {
+  const model = guestWith("playing");
+  const [first, second] = model.hud.heroes;
+  return {
+    ...model,
+    hud: new Hud({
+      ...model.hud,
+      heroes: [
+        { ...first!, ...host },
+        { ...second!, ...guest },
+      ],
+    }),
+  };
+};
+
+/** The banner over a co-op run on `model`'s screen: `banner`, or none. */
+const shows = (model: Model, banner: string | undefined) =>
+  Scene.scene(
+    { update, view },
+    Scene.given(model),
+    Scene.Mount.resolve({ name: "GameViewport" }, Message.MountedViewport()),
+    banner === undefined
+      ? Scene.expect(Scene.selector(".banner")).not.toExist()
+      : Scene.expect(Scene.text(banner)).toExist()
+  );
+
+describe("what a co-op run waits for", () => {
+  it("names the other players the HUD says are choosing, and not the local player", () => {
+    expect(() => {
+      shows(
+        flagged({ choosing: true }),
+        "Waiting for Host to pick an upgrade…"
+      );
+      shows(
+        flagged({ choosing: true }, { choosing: true }),
+        "Waiting for Host to pick an upgrade…"
+      );
+      shows(flagged({}, { choosing: true }), undefined);
+      shows(flagged({}), undefined);
+    }).not.toThrow();
+  });
+
+  it("says who stepping waits on first, then who is choosing, then who holds the pause", () => {
+    const waited: Model = {
+      ...flagged({ choosing: true, paused: true }),
+    };
+    expect(() => {
+      shows(
+        { ...waited, coop: { ...waited.coop, waitingFor: ["Host"] } },
+        "Waiting for Host…"
+      );
+      shows(waited, "Waiting for Host to pick an upgrade…");
+      shows(flagged({ paused: true }), "Paused by Host");
+    }).not.toThrow();
+  });
 });
 
 // Survivors has no revive, so a player whose hero is down watches the rest of the run, and the

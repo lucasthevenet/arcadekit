@@ -1,11 +1,12 @@
 import type { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import type { AudioSettings } from "arcadekit/audio";
 import { gameViewport } from "arcadekit/foldkit";
+import type { LobbyChanged } from "arcadekit/net/browser";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "./message";
 import { Phase, isLocalHeroDown } from "./model";
-import type { CoopPlayer, Model } from "./model";
+import type { Model } from "./model";
 import type { HeroRecord } from "./save";
 
 type H = HtmlBuilder<Message>;
@@ -84,7 +85,7 @@ const overlay = (model: Model, h: H): Html =>
         h.p([], ["Connecting…"]),
         h.button([h.OnClick(Message.ClickedLeaveCoop())], ["Cancel"]),
       ]),
-    CoopLobby: (lobby) => coopLobby(model, lobby, h),
+    CoopLobby: ({ lobby }) => coopLobby(model, lobby, h),
     CoopPlaying: () => coopPlaying(model, h),
     CoopLevelUp: ({ choices }) =>
       h.div(
@@ -349,17 +350,7 @@ const coopMenu = (joinCode: string, h: H): Html =>
 const heroName = (model: Model, heroId: string) =>
   model.heroes.find((hero) => hero.id === heroId)?.name ?? "choosing…";
 
-const coopLobby = (
-  model: Model,
-  lobby: {
-    readonly role: "host" | "guest";
-    readonly code: string;
-    readonly self: string;
-    readonly players: readonly CoopPlayer[];
-    readonly canStart: boolean;
-  },
-  h: H
-): Html => {
+const coopLobby = (model: Model, lobby: LobbyChanged, h: H): Html => {
   const startable = lobby.canStart;
   return panel(h, [
     lobby.role === "host"
@@ -501,14 +492,24 @@ const coopMenuPanel = (model: Model, h: H): Html => {
   ]);
 };
 
+/**
+ * The other players whose hero the HUD flags: who the run waits on to pick an upgrade
+ * (`choosing`), and who holds it paused (`paused`). The genre says both, in its sample.
+ */
+const others = (model: Model, flag: "choosing" | "paused"): string[] => {
+  const { slot, names } = model.coop;
+  return model.hud.heroes.flatMap((hero, index) => {
+    const name = names[index];
+    return hero[flag] && index !== slot && name !== undefined ? [name] : [];
+  });
+};
+
 const coopPlaying = (model: Model, h: H): Html => {
-  const { waitingFor, choosing, slot, names } = model.coop;
-  const pausedBy = model.hud.heroes
-    .map((hero, index) =>
-      hero.paused && index !== slot ? names[index] : undefined
-    )
-    .filter((name) => name !== undefined);
-  const banner = coopBanner(waitingFor, choosing, pausedBy);
+  const banner = coopBanner(
+    model.coop.waitingFor,
+    others(model, "choosing"),
+    others(model, "paused")
+  );
   return h.div(
     [],
     [

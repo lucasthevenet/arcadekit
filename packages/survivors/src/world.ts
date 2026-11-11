@@ -199,6 +199,7 @@ export const hudSample = (world: World): Omit<Hud, "_tag"> => ({
     maxHp: hero.maxHp,
     status: hero.status,
     paused: hero.paused,
+    choosing: hero.offer !== null,
   })),
 });
 

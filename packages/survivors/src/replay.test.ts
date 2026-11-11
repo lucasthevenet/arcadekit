@@ -14,8 +14,8 @@ import { Survivors } from "./simulation";
 // the step order and sample timing of any declared host, so it guards the simulation, core's
 // clock and the loop's step order. Its script has no endStep or endFrame; runtime's loop.test.ts
 // pins their order. It doesn't cover input devices or the view. A lockstep run steps this same
-// `Survivors` through the same loop (`survivorsCoopRules.simulation`): lockstep.test.ts holds its
-// peers to one another, and to a run played alone, step for step.
+// `Survivors` through the same loop: lockstep.test.ts holds its peers to one another, and to a
+// run played alone, step for step.
 
 const content = Schema.decodeUnknownSync(GameContent)({
   rules: {

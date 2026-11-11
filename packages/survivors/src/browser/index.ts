@@ -1,8 +1,8 @@
 // Browser-only parts of the survivors genre: the engine an app runs for one player and what the
-// app gives it (its sprite sheet and its cue table), the Co-op game the app gives the kit's Co-op
-// client, and the art, sound and view pieces.
+// app gives it (its sprite sheet and its cue table), the same game for several players
+// (`SurvivorsCoop`), and the art, sound and view pieces.
 export { type SurvivorsArt, missingSpriteTags } from "./art";
-export { makeSurvivorsCoopGame } from "./coop";
+export { SurvivorsCoop } from "./coop";
 export {
   SurvivorsCueSounds,
   SurvivorsEngine,

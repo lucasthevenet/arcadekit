@@ -55,7 +55,7 @@ export const survivorsInput = (
  * The app's survivors sheet, with every tag the view draws for its content (`missingSpriteTags`
  * checks one; ADR-0015). The app says where it comes from,
  * `SurvivorsSheet.layer(loadSpriteSheet(url))`, and loads it on its loading screen; the engine
- * and the Co-op game draw from it and never free it. The app's end does.
+ * draws from it, for one player and in co-op, and never frees it. The app's end does.
  */
 export class SurvivorsSheet extends Asset<SpriteSheet, SpriteSheetError>()(
   "SurvivorsSheet",
@@ -72,7 +72,8 @@ export class SurvivorsCueSounds extends Context.Service<
  * The survivors genre in the browser, for one player: its rules, a view that draws them from
  * the app's sheet and plays their cues through the app's `Audio` (tests provide
  * `SilentAudioLayer`), and its input. `SurvivorsEngine.layer` provides the engine; building it
- * loads nothing, and each attach loads the sheet, or takes the one already loaded.
+ * loads nothing, and each attach loads the sheet, or takes the one already loaded. The view
+ * follows the local player's hero, so `SurvivorsCoop` plays this engine for several players.
  */
 export class SurvivorsEngine extends Game.Engine("SurvivorsEngine", {
   simulation: Survivors,
@@ -81,7 +82,7 @@ export class SurvivorsEngine extends Game.Engine("SurvivorsEngine", {
     sounds: SurvivorsCueSounds,
     sheet: SurvivorsSheet.load,
   },
-  view: (container, { audio, sounds, sheet }) =>
-    survivorsViews(container, { sheet }, { audio, sounds }),
+  view: (container, { audio, sounds, sheet }, { local }) =>
+    survivorsViews(container, { sheet }, { audio, sounds }, () => local.slot),
   input: survivorsInput,
 }) {}

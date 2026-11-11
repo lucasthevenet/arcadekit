@@ -17,34 +17,40 @@ import { AttachError, GameCrashed } from "../../runtime/browser";
 import { manualFrames } from "../../runtime/testing";
 import { encodeLobbyMessage } from "../lobby";
 import type { Ticker } from "../scoped";
+import { microtasks, performanceClock } from "../test-harness";
 import {
   AnswerOffer,
   HoldPause,
   NothingOwed,
+  OfferOpened,
+  RunEnded,
   fakeCoopRooms,
   hashTestState,
   manualTicker,
   testContent,
-  testCoopGame,
+  testCoopClient,
+  testCoopParts,
   testPresentation,
 } from "../testing/index";
 import type {
   FakeCoopRooms,
+  Score,
   TestContent,
-  TestCoop,
-  TestCoopGameOptions,
-  TestLocalEvent,
+  TestCoopClient,
+  TestCoopOptions,
+  TestCoopParts,
+  TestEvent,
   TestState,
 } from "../testing/index";
 import type { PeerLink, TextChannel } from "./channel";
-import type {
-  CoopClient,
-  CoopClientOptions,
-  CoopEvent,
-  CoopGame,
-  CoopRooms,
-} from "./coop";
-import { makeCoopClient } from "./coop-client";
+import {
+  LobbyChanged,
+  RunStarted,
+  SeatFailed,
+  WaitingChanged,
+} from "./coop-events";
+import type { CoopEvent } from "./coop-events";
+import type { Rooms } from "./coop-rooms";
 import { RoomError } from "./errors";
 import type { SignallingRoom } from "./signalling";
 
@@ -58,41 +64,11 @@ import type { SignallingRoom } from "./signalling";
 // timers don't reach), and the Scheduler runs fibers on microtasks, as Foldkit's does in the
 // browser, so no fiber waits on a real `setImmediate`.
 
-type Event = CoopEvent<TestLocalEvent>;
-type Game<LoadError = never> = CoopGame<TestCoop, LoadError>;
+type Event = CoopEvent<TestEvent>;
 
-const nanos = (ms: number) => BigInt(Math.round(ms * 1_000_000));
-
-/** Effect's Clock on the page's timers, which the tests fake. */
-const performanceClock: Clock.Clock = {
-  currentTimeMillisUnsafe: () => Date.now(),
-  currentTimeMillis: Effect.sync(() => Date.now()),
-  currentTimeNanosUnsafe: () => nanos(Date.now()),
-  currentTimeNanos: Effect.sync(() => nanos(Date.now())),
-  monotonicTimeNanosUnsafe: () => nanos(performance.now()),
-  monotonicTimeNanos: Effect.sync(() => nanos(performance.now())),
-  sleep: (duration) =>
-    Effect.callback((resume) => {
-      const timer = setTimeout(
-        () => resume(Effect.void),
-        Duration.toMillis(duration)
-      );
-      return Effect.sync(() => clearTimeout(timer));
-    }),
-};
-
-/** Runs fibers on microtasks, as Foldkit's browser scheduler does. */
-const microtasks = new Scheduler.MixedScheduler("async", (task) => {
-  let cancelled = false;
-  queueMicrotask(() => {
-    if (!cancelled) {
-      task();
-    }
-  });
-  return () => {
-    cancelled = true;
-  };
-});
+/** What a test gives a client besides the game: its rooms, and what ticks and draws its run. */
+type TestSeatOptions = Parameters<typeof testCoopClient>[1];
+type Game<LoadError = never> = TestCoopParts<LoadError>;
 
 let scope: Scope.Closeable;
 
@@ -116,19 +92,19 @@ const fork = <A, E>(effect: Effect.Effect<A, E>): Fiber.Fiber<A, E> =>
   );
 
 interface Player<LoadError = never> {
-  readonly coop: CoopClient<TestCoop, LoadError>;
+  readonly coop: TestCoopClient<LoadError>;
   readonly events: Event[];
 }
 
 const client = async <LoadError = never>(
   hub: FakeCoopRooms,
-  game: Game<LoadError> = testCoopGame<LoadError>(),
-  options: Partial<CoopClientOptions> = {}
+  game: Game<LoadError> = testCoopParts<LoadError>(),
+  options: Partial<TestSeatOptions> = {}
 ): Promise<Player<LoadError>> => {
   const events: Event[] = [];
   const coop = await run(
     Effect.gen(function* () {
-      const made = yield* makeCoopClient(game, {
+      const made = yield* testCoopClient(game, {
         rooms: hub.rooms,
         ...options,
       });
@@ -139,22 +115,34 @@ const client = async <LoadError = never>(
   return { coop, events };
 };
 
-const types = (events: readonly Event[]) => events.map((event) => event.type);
+const tags = (events: readonly Event[]) => events.map((event) => event._tag);
 
 const started = (events: readonly Event[]) =>
-  events.find((event) => event.type === "started");
+  events.find((event) => event._tag === "RunStarted");
 
 const failed = (events: readonly Event[]) =>
-  events.find((event) => event.type === "failed");
+  events.find((event) => event._tag === "SeatFailed");
 
 const lastLobby = (events: readonly Event[]) =>
-  events.findLast((event) => event.type === "lobby");
+  events.findLast((event) => event._tag === "LobbyChanged");
 
-/** What the local player heard of the run, without its samples. */
-const heard = (events: readonly Event[]): TestLocalEvent[] =>
+/** The run's own events a seat heard, without its samples. */
+const heard = (events: readonly Event[]): TestEvent[] =>
   events.flatMap((event) =>
-    event.type === "run" && event.event.type !== "score" ? [event.event] : []
+    event._tag === "RunEvent" && event.event._tag !== "Score"
+      ? [event.event]
+      : []
   );
+
+/** The run's last sample a seat heard. */
+const sampled = (events: readonly Event[]): Score | undefined =>
+  events
+    .flatMap((event) =>
+      event._tag === "RunEvent" && event.event._tag === "Score"
+        ? [event.event]
+        : []
+    )
+    .at(-1);
 
 /** Lets queued microtasks run, at the current fake time. */
 const settle = async () => {
@@ -163,9 +151,9 @@ const settle = async () => {
 
 const game = (
   content: Partial<TestContent> = {},
-  options: TestCoopGameOptions = {}
+  options: TestCoopOptions = {}
 ): Game =>
-  testCoopGame({
+  testCoopParts({
     content: Effect.succeed({ ...testContent, ...content }),
     ...options,
   });
@@ -174,7 +162,7 @@ const game = (
 const lobbyOfTwo = async (
   hub: FakeCoopRooms,
   games: { readonly host?: Game; readonly guest?: Game } = {},
-  options: Partial<CoopClientOptions> = {}
+  options: Partial<TestSeatOptions> = {}
 ) => {
   const host = await client(hub, games.host, options);
   const guest = await client(hub, games.guest, options);
@@ -197,7 +185,7 @@ const loggedTicker =
     };
   };
 
-const duo = () => testCoopGame({ maxPlayers: 2 });
+const duo = () => testCoopParts({ maxPlayers: 2 });
 
 /** One player's payload in a lockstep message, as a peer on other code would encode it. */
 const NOT_AN_INPUT = "not an input";
@@ -227,12 +215,12 @@ const forged =
  * hears through `heard`: the raw messages, forged as they cross.
  */
 const forging = (
-  rooms: CoopRooms,
+  rooms: Rooms,
   forge: {
     readonly sent?: (message: ForgedMessage) => void;
     readonly heard?: (message: ForgedMessage) => void;
   }
-): CoopRooms => {
+): Rooms => {
   const outgoing = forged(forge.sent);
   const incoming = forged(forge.heard);
   return {
@@ -302,7 +290,7 @@ const scriptedRoom = (
 const numberedRooms = (
   log: string[],
   releaseMs: (room: number) => number
-): CoopRooms => {
+): Rooms => {
   let opened = 0;
   return {
     host: Effect.suspend(() => {
@@ -338,11 +326,13 @@ const numberedRooms = (
 };
 
 /** A client on `rooms` that logs each event beside the rooms' own lines. */
-const loggedClient = async (rooms: CoopRooms, log: string[]) => {
-  const { coop } = await client(fakeCoopRooms(), testCoopGame(), { rooms });
+const loggedClient = async (rooms: Rooms, log: string[]) => {
+  const { coop } = await client(fakeCoopRooms(), testCoopParts(), { rooms });
   await run(
     coop.listen((event) =>
-      log.push(event.type === "lobby" ? `lobby ${event.code}` : event.type)
+      log.push(
+        event._tag === "LobbyChanged" ? `lobby ${event.code}` : event._tag
+      )
     )
   );
   return coop;
@@ -371,7 +361,6 @@ describe("a co-op run", () => {
     await run(guest.coop.choose("blue"));
     await settle();
     const lobby = {
-      type: "lobby",
       code: "K7MQ2X",
       players: [
         { id: "host", name: "Host", pick: "red" },
@@ -381,16 +370,16 @@ describe("a co-op run", () => {
       canStart: true,
     };
     expect([lastLobby(host.events), lastLobby(guest.events)]).toStrictEqual([
-      { ...lobby, role: "host", self: "host" },
-      { ...lobby, role: "guest", self: "guest-1" },
+      new LobbyChanged({ ...lobby, role: "host", self: "host" }),
+      new LobbyChanged({ ...lobby, role: "guest", self: "guest-1" }),
     ]);
 
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(5000);
     const [hostRun, guestRun] = [host.coop.debug(), guest.coop.debug()];
     expect([started(host.events), started(guest.events)]).toStrictEqual([
-      { type: "started", slot: 0, names: ["Host", "Guest 1"] },
-      { type: "started", slot: 1, names: ["Host", "Guest 1"] },
+      new RunStarted({ slot: 0, names: ["Host", "Guest 1"] }),
+      new RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
     ]);
     // Both stepped most of the 5 s, and agree on the state at every step both hashed.
     const common = Object.keys(hostRun.hashes).filter(
@@ -426,15 +415,15 @@ describe("a co-op run", () => {
     await run(host.coop.leave);
     await vi.advanceTimersByTimeAsync(12_000);
     const waited = guest.events.some(
-      (event) => event.type === "waiting" && event.waitingFor.includes("Host")
+      (event) =>
+        event._tag === "WaitingChanged" && event.waitingFor.includes("Host")
     );
     expect([waited, guest.events.at(-1)]).toStrictEqual([
       true,
-      {
-        type: "failed",
+      new SeatFailed({
         reason: "hostLost",
         message: "Lost the host: nothing heard for 10 s. The run is over.",
-      },
+      }),
     ]);
   });
 
@@ -442,7 +431,7 @@ describe("a co-op run", () => {
     const hub = fakeCoopRooms();
     const stalled = manualTicker();
     const host = await client(hub);
-    const guest = await client(hub, testCoopGame(), {
+    const guest = await client(hub, testCoopParts(), {
       ticker: stalled.ticker,
     });
     await run(host.coop.host("red"));
@@ -453,23 +442,21 @@ describe("a co-op run", () => {
     // The guest's ticker stands still, so the host's run waits on it from its first step.
     const named = () =>
       host.events.some(
-        (event) => event.type === "waiting" && event.waitingFor.length > 0
+        (event) =>
+          event._tag === "WaitingChanged" && event.waitingFor.length > 0
       );
     await vi.advanceTimersByTimeAsync(296);
     const early = named();
     await vi.advanceTimersByTimeAsync(104);
     expect([
       early,
-      host.events.findLast((event) => event.type === "waiting"),
-    ]).toStrictEqual([
-      false,
-      { type: "waiting", waitingFor: ["Guest 1"], choosing: [] },
-    ]);
+      host.events.findLast((event) => event._tag === "WaitingChanged"),
+    ]).toStrictEqual([false, new WaitingChanged({ waitingFor: ["Guest 1"] })]);
   });
 
   it("keeps the last 32 state hashes for debug", async () => {
     const hub = fakeCoopRooms();
-    const often = testCoopGame({ lockstep: { hashEvery: 2 } });
+    const often = testCoopParts({ lockstep: { hashEvery: 2 } });
     const { host, guest } = await lobbyOfTwo(hub, {
       host: often,
       guest: often,
@@ -493,11 +480,13 @@ describe("a co-op run", () => {
     await vi.advanceTimersByTimeAsync(1000);
     hub.closeHost();
     await vi.advanceTimersByTimeAsync(15_000);
-    const order = types(guest.events).join(" ");
+    const order = tags(guest.events).join(" ");
     expect([
-      /^(?:lobby )+started (?:(?:run|waiting) )+failed$/u.test(order),
-      types(guest.events).filter((type) => type === "started").length,
-      types(guest.events).filter((type) => type === "failed").length,
+      /^(?:LobbyChanged )+RunStarted (?:(?:RunEvent|WaitingChanged) )+SeatFailed$/u.test(
+        order
+      ),
+      tags(guest.events).filter((tag) => tag === "RunStarted").length,
+      tags(guest.events).filter((tag) => tag === "SeatFailed").length,
     ]).toStrictEqual([true, 1, 1]);
   });
 
@@ -511,7 +500,7 @@ describe("a co-op run", () => {
     const { host, guest } = await lobbyOfTwo(hub, {}, { ticker });
     await run(
       guest.coop.listen((event) => {
-        if (event.type === "failed") {
+        if (event._tag === "SeatFailed") {
           hub.log.push("failed");
         }
       })
@@ -537,11 +526,7 @@ describe("a co-op run", () => {
     });
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(3000);
-    const end = {
-      type: "ended",
-      total: 0,
-      names: ["Host", "Guest 1"],
-    };
+    const end = new RunEnded({ totals: [0, 0] });
     expect([heard(host.events), heard(guest.events)]).toStrictEqual([
       [end],
       [end],
@@ -552,18 +537,18 @@ describe("a co-op run", () => {
     // and its room closed as it stopped.
     const afterEnd = guest.events.slice(
       guest.events.findIndex(
-        (event) => event.type === "run" && event.event.type === "ended"
+        (event) => event._tag === "RunEvent" && event.event._tag === "RunEnded"
       )
     );
     expect([
       guest.coop.debug().error,
-      afterEnd.filter(
-        (event) => !(event.type === "run" && event.event.type === "score")
-      ),
+      heard(afterEnd),
+      tags(afterEnd).filter((tag) => tag !== "RunEvent"),
       hub.log.filter((line) => line.endsWith("guest-1")),
     ]).toStrictEqual([
       "Lost the host host: nothing heard for 10000 ms",
-      [{ type: "run", event: end }],
+      [end],
+      [],
       ["open guest-1", "release guest-1"],
     ]);
   });
@@ -579,7 +564,7 @@ describe("hosting, joining and leaving", () => {
     );
     const { coop, events } = await client(
       hub,
-      testCoopGame({ content: Deferred.await(loaded) })
+      testCoopParts({ content: Deferred.await(loaded) })
     );
     await run(coop.host("red"));
     await settle();
@@ -592,7 +577,7 @@ describe("hosting, joining and leaving", () => {
   it("closes the room it hosted as it hosts the next, whose lobby alone is reported", async () => {
     const hub = fakeCoopRooms();
     const { coop, events } = await client(hub);
-    await run(coop.listen((event) => hub.log.push(event.type)));
+    await run(coop.listen((event) => hub.log.push(event._tag)));
     await run(coop.host("red"));
     await settle();
     const first = [...hub.log];
@@ -602,12 +587,12 @@ describe("hosting, joining and leaving", () => {
     // The next room opens first, then the one before it closes, before `host` returns. The
     // seat before says nothing more, and the next speaks only once it has closed.
     expect([first, atSwap, hub.log.slice(first.length)]).toStrictEqual([
-      ["open host", "lobby"],
-      ["open host", "release host", "lobby"],
-      ["open host", "release host", "lobby"],
+      ["open host", "LobbyChanged"],
+      ["open host", "release host", "LobbyChanged"],
+      ["open host", "release host", "LobbyChanged"],
     ]);
-    expect([types(events), lastLobby(events)]).toMatchObject([
-      ["lobby", "lobby"],
+    expect([tags(events), lastLobby(events)]).toMatchObject([
+      ["LobbyChanged", "LobbyChanged"],
       { players: [{ id: "host", name: "Host", pick: "green" }] },
     ]);
   });
@@ -651,7 +636,7 @@ describe("hosting, joining and leaving", () => {
     await vi.advanceTimersByTimeAsync(100);
     expect([early, log.slice(early.length)]).toStrictEqual([
       ["open 1", "lobby ROOM1"],
-      ["release 1", "failed"],
+      ["release 1", "SeatFailed"],
     ]);
   });
 
@@ -682,7 +667,7 @@ describe("hosting, joining and leaving", () => {
     const hub = fakeCoopRooms();
     const own = Effect.runSync(Scope.make());
     const coop = await Effect.runPromise(
-      makeCoopClient(testCoopGame(), { rooms: hub.rooms }).pipe(
+      testCoopClient(testCoopParts(), { rooms: hub.rooms }).pipe(
         Scope.provide(own),
         Effect.provideService(Clock.Clock, performanceClock),
         Effect.provideService(Scheduler.Scheduler, microtasks)
@@ -743,19 +728,19 @@ describe("hosting, joining and leaving", () => {
       message: "Couldn't reach the signalling server at ws://unused.",
     });
     const hub = fakeCoopRooms();
-    const offline = await client(hub, testCoopGame(), {
+    const offline = await client(hub, testCoopParts(), {
       rooms: { ...hub.rooms, host: Effect.fail(unreachable) },
     });
     const broken = await client(
       hub,
-      testCoopGame({ content: Effect.fail({ message: "heroes.json: 404" }) })
+      testCoopParts({ content: Effect.fail({ message: "heroes.json: 404" }) })
     );
     await run(offline.coop.host("red"));
     await run(broken.coop.join(hub.code, "red"));
     await settle();
     expect([offline.events, broken.events, hub.log]).toStrictEqual([
-      [{ type: "failed", reason: "room", message: unreachable.message }],
-      [{ type: "failed", reason: "content", message: "heroes.json: 404" }],
+      [new SeatFailed({ reason: "room", message: unreachable.message })],
+      [new SeatFailed({ reason: "content", message: "heroes.json: 404" })],
       [],
     ]);
   });
@@ -765,17 +750,16 @@ describe("hosting, joining and leaving", () => {
     const logged = vi.spyOn(console, "log").mockImplementation(() => {});
     const { coop, events } = await client(
       hub,
-      testCoopGame({ content: Effect.die(new Error("no heroes")) })
+      testCoopParts({ content: Effect.die(new Error("no heroes")) })
     );
     await run(coop.host("red"));
     await settle();
     expect([events, logged.mock.calls.length > 0]).toStrictEqual([
       [
-        {
-          type: "failed",
+        new SeatFailed({
           reason: "bug",
           message: "Co-op stopped on a bug: no heroes",
-        },
+        }),
       ],
       true,
     ]);
@@ -794,22 +778,21 @@ describe("hosting, joining and leaving", () => {
       links: () => [],
       start: Effect.void,
     };
-    const { coop, events } = await client(hub, testCoopGame(), {
+    const { coop, events } = await client(hub, testCoopParts(), {
       rooms: { ...hub.rooms, host: Effect.succeed(buggy) },
     });
     await run(coop.host("red"));
     await settle();
     expect([
-      types(events),
+      tags(events),
       events.at(-1),
       logged.mock.calls.length > 0,
     ]).toStrictEqual([
-      ["lobby", "failed"],
-      {
-        type: "failed",
+      ["LobbyChanged", "SeatFailed"],
+      new SeatFailed({
         reason: "bug",
         message: "Co-op stopped on a bug: room bug",
-      },
+      }),
       true,
     ]);
     logged.mockRestore();
@@ -859,7 +842,7 @@ describe("hosting, joining and leaving", () => {
         canStart: true,
         players: [{ id: "host" }, { id: "guest-1" }],
       },
-      { type: "started", names: ["Host", "Guest 1"] },
+      { _tag: "RunStarted", names: ["Host", "Guest 1"] },
     ]);
   });
 
@@ -887,15 +870,14 @@ describe("hosting, joining and leaving", () => {
     ]).toMatchObject([
       // The third was in the lobby at the start: one too many.
       { canStart: false, players: [{}, {}, { id: "guest-2" }] },
-      { type: "started", slot: 0, names: ["Host", "Guest 1"] },
-      { type: "started", slot: 1, names: ["Host", "Guest 1"] },
+      new RunStarted({ slot: 0, names: ["Host", "Guest 1"] }),
+      new RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
       ["red", "green"],
       [null, true],
-      {
-        type: "failed",
+      new SeatFailed({
         reason: "leftOut",
         message: "The run started without you.",
-      },
+      }),
     ]);
   });
 
@@ -958,18 +940,17 @@ describe("lobby picks at the start", () => {
     await vi.advanceTimersByTimeAsync(500);
     expect([
       started(host.events) !== undefined,
-      types(guest.events).includes("started"),
+      tags(guest.events).includes("RunStarted"),
       guest.events.at(-1),
       hub.log.filter((line) => line.endsWith("guest-1")),
     ]).toStrictEqual([
       true,
       false,
-      {
-        type: "failed",
+      new SeatFailed({
         reason: "unknownPick",
         message:
           "The host started with a pick your game doesn't have. Are you both on the same version?",
-      },
+      }),
       ["open guest-1", "release guest-1"],
     ]);
   });
@@ -995,7 +976,11 @@ describe("sending a command", () => {
     // Offer 1 is open for both: the run waits on it.
     const frozen = host.coop.debug().state?.steps;
     const offered = [heard(host.events), heard(guest.events)];
-    const choosing = host.events.findLast((event) => event.type === "waiting");
+    const bothOffered = [
+      new OfferOpened({ offer: 1, slot: 0 }),
+      new OfferOpened({ offer: 1, slot: 1 }),
+    ];
+    const owing = sampled(host.events)?.owes;
     const taken = send(host, new AnswerOffer({ offer: 1, value: 5 }));
     await vi.advanceTimersByTimeAsync(500);
     const states = [host, guest].map(({ coop }) => {
@@ -1003,36 +988,39 @@ describe("sending a command", () => {
       const state = structuredClone(coop.debug().state);
       return [state?.bonus, state?.owes, state?.steps];
     });
-    const guestSees = guest.events.findLast(
-      (event) => event.type === "waiting"
-    );
+    const guestSees = sampled(guest.events)?.owes;
     const guestTaken = send(guest, new AnswerOffer({ offer: 1, value: 7 }));
     await vi.advanceTimersByTimeAsync(300);
     const after = guest.coop.debug().state;
     expect([
       frozen,
       offered,
-      choosing,
+      owing,
       await taken,
       states,
       guestSees,
       await guestTaken,
       [after?.bonus, (after?.steps ?? 0) > 30],
-      host.events.findLast((event) => event.type === "waiting"),
+      sampled(host.events)?.owes,
+      // Stepping never waited on a player: a run that waits on a decision still steps.
+      tags(host.events).includes("WaitingChanged"),
     ]).toStrictEqual([
       30,
-      [[{ type: "offer", offer: 1 }], [{ type: "offer", offer: 1 }]],
-      { type: "waiting", waitingFor: [], choosing: ["Guest 1"] },
+      // Each seat hears the run's events as every peer's rules reported them: both offers.
+      [bothOffered, bothOffered],
+      // Who the run waits on to decide is the game's to say: its sample does, on every seat.
+      [true, true],
       Result.succeed(undefined),
       // Applied once on both: a command rides one step.
       [
         [[5, 0], [false, true], 30],
         [[5, 0], [false, true], 30],
       ],
-      { type: "waiting", waitingFor: [], choosing: [] },
+      [false, true],
       Result.succeed(undefined),
       [[5, 7], true],
-      { type: "waiting", waitingFor: [], choosing: [] },
+      [false, false],
+      false,
     ]);
   });
 
@@ -1164,11 +1152,15 @@ describe("sending a command", () => {
       reason: "runEnded",
     });
     expect([
-      guest.events.at(-1)?.type,
+      guest.events.at(-1)?._tag,
       await waiting,
       // The seat is still this player's, with its run stopped: the same answer, at once.
       await send(guest, new HoldPause({ held: false })),
-    ]).toStrictEqual(["failed", Result.fail(runEnded), Result.fail(runEnded)]);
+    ]).toStrictEqual([
+      "SeatFailed",
+      Result.fail(runEnded),
+      Result.fail(runEnded),
+    ]);
   });
 });
 
@@ -1180,21 +1172,20 @@ describe("why a seat failed", () => {
     // The host dropped this guest at the start: its room started, then its link closed.
     const hostLeft = Effect.runSync(Deferred.make<undefined>());
     const dropped = scriptedRoom([], Deferred.await(hostLeft));
-    const { coop, events } = await client(hub, testCoopGame(), {
+    const { coop, events } = await client(hub, testCoopParts(), {
       rooms: { ...hub.rooms, join: () => Effect.succeed(dropped) },
     });
     await run(coop.join("K7MQ2X", "green"));
     await settle();
-    const beforeClose = types(events);
+    const beforeClose = tags(events);
     Effect.runSync(Deferred.succeed(hostLeft, undefined));
     await settle();
     expect([beforeClose, events.at(-1)]).toStrictEqual([
-      ["lobby"],
-      {
-        type: "failed",
+      ["LobbyChanged"],
+      new SeatFailed({
         reason: "hostLost",
         message: "Lost the host before the run started.",
-      },
+      }),
     ]);
   });
 
@@ -1207,16 +1198,17 @@ describe("why a seat failed", () => {
         picks: ["red", "green"],
       }),
     ]);
-    const { coop, events } = await client(hub, testCoopGame(), {
+    const { coop, events } = await client(hub, testCoopParts(), {
       rooms: { ...hub.rooms, join: () => Effect.succeed(leftOut) },
     });
     await run(coop.join("K7MQ2X", "green"));
     await settle();
-    expect(events.at(-1)).toStrictEqual({
-      type: "failed",
-      reason: "leftOut",
-      message: "The run started without you.",
-    });
+    expect(events.at(-1)).toStrictEqual(
+      new SeatFailed({
+        reason: "leftOut",
+        message: "The run started without you.",
+      })
+    );
   });
 
   it("fails a guest the host started with more players than its game takes", async () => {
@@ -1234,14 +1226,13 @@ describe("why a seat failed", () => {
     });
     await run(coop.join("K7MQ2X", "green"));
     await settle();
-    expect([types(events), events.at(-1)]).toStrictEqual([
-      ["lobby", "failed"],
-      {
-        type: "failed",
+    expect([tags(events), events.at(-1)]).toStrictEqual([
+      ["LobbyChanged", "SeatFailed"],
+      new SeatFailed({
         reason: "tooManyPlayers",
         message:
           "The host started with more players than your game takes. Are you both on the same version?",
-      },
+      }),
     ]);
   });
 
@@ -1250,20 +1241,21 @@ describe("why a seat failed", () => {
     const { guest } = await lobbyOfTwo(hub);
     hub.closeHost();
     await settle();
-    expect(guest.events.at(-1)).toStrictEqual({
-      type: "failed",
-      reason: "room",
-      message: "The host left.",
-    });
+    expect(guest.events.at(-1)).toStrictEqual(
+      new SeatFailed({
+        reason: "room",
+        message: "The host left.",
+      })
+    );
   });
 
   it("stops everyone on a desync", async () => {
     const hub = fakeCoopRooms();
     const lockstep = { hashEvery: 10 };
     const { host, guest } = await lobbyOfTwo(hub, {
-      host: testCoopGame({ lockstep }),
+      host: testCoopParts({ lockstep }),
       guest: {
-        ...testCoopGame({ lockstep }),
+        ...testCoopParts({ lockstep }),
         hash: (state) => hashTestState(state) + 1,
       },
     });
@@ -1288,7 +1280,7 @@ describe("why a seat failed", () => {
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(1000);
     expect(guest.events.at(-1)).toMatchObject({
-      type: "failed",
+      _tag: "SeatFailed",
       reason: "contentMismatch",
       message: expect.stringMatching(
         /^Your game content differs from the host's, so you can't play this run together \(host [0-9a-f]{8}, yours [0-9a-f]{8}\)\.$/u
@@ -1300,7 +1292,7 @@ describe("why a seat failed", () => {
     const hub = fakeCoopRooms();
     const stalled = manualTicker();
     const host = await client(hub);
-    const guest = await client(hub, testCoopGame(), {
+    const guest = await client(hub, testCoopParts(), {
       ticker: stalled.ticker,
     });
     await run(host.coop.host("red"));
@@ -1326,7 +1318,7 @@ describe("why a seat failed", () => {
       true,
       0,
       {
-        type: "failed",
+        _tag: "SeatFailed",
         reason: "removed",
         message: expect.stringMatching(
           /^The host removed you from the run at step \d+: it waited on you too long\.$/u
@@ -1375,14 +1367,14 @@ describe("why a seat failed", () => {
       deaf.guest.events.at(-1),
     ]).toMatchObject([
       {
-        type: "failed",
+        _tag: "SeatFailed",
         reason: "removed",
         message: expect.stringMatching(
           /your game sent input it couldn't read\. Are you both on the same version\?$/u
         ) as unknown,
       },
       {
-        type: "failed",
+        _tag: "SeatFailed",
         reason: "badInput",
         message: expect.stringMatching(
           /^The run stopped: input from \S+ for step \d+ couldn't be read\. Are you both on the same version\?$/u
@@ -1402,18 +1394,18 @@ describe("drawing a co-op run", () => {
     const hub = fakeCoopRooms();
     const made: string[] = [];
     const drawn: [number, readonly string[], number | undefined][] = [];
-    const guestGame = testCoopGame({
+    const guestGame = testCoopParts({
       presentation: Effect.sync(() => {
         made.push("presentation");
         return testPresentation({
-          createInput: () => {
+          input: () => {
             made.push("input");
             return {
               read: () => ({ add: 2 }),
               dispose: () => made.push("dispose input"),
             };
           },
-          createView: (_container, local) => {
+          view: (_container, { local }) => {
             made.push("view");
             return {
               render: (state) =>
@@ -1447,7 +1439,7 @@ describe("drawing a co-op run", () => {
       guest.coop.debug().error,
       guest.coop.debug().stepIndex > 40,
     ]).toStrictEqual([
-      ["presentation", "input", "view", "dispose view", "dispose input"],
+      ["presentation", "view", "input", "dispose input", "dispose view"],
       [
         [0, [], undefined],
         [1, ["Host", "Guest 1"], 2],
@@ -1500,10 +1492,10 @@ describe("drawing a co-op run", () => {
   it("leaves when a frame crashes, with nothing left attached", async () => {
     const frames = manualFrames();
     const hub = fakeCoopRooms();
-    const guestGame = testCoopGame({
+    const guestGame = testCoopParts({
       presentation: Effect.succeed(
         testPresentation({
-          createView: () => ({
+          view: () => ({
             render: (state: TestState | null) => {
               if (state !== null) {
                 throw new Error("lost context");
@@ -1545,7 +1537,7 @@ describe("drawing a co-op run", () => {
     const noSheet = { _tag: "NoSheet" } as const;
     const unloaded = await client(
       hub,
-      testCoopGame({ presentation: Effect.fail(noSheet) })
+      testCoopParts({ presentation: Effect.fail(noSheet) })
     );
     await run(unloaded.coop.host("red"));
     await settle();
@@ -1554,10 +1546,10 @@ describe("drawing a co-op run", () => {
     const noWebGl = new Error("no WebGL");
     const blind = await client(
       hub,
-      testCoopGame({
+      testCoopParts({
         presentation: Effect.succeed(
           testPresentation({
-            createView: () => {
+            view: () => {
               throw noWebGl;
             },
           })
