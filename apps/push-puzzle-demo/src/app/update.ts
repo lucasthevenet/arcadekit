@@ -24,16 +24,15 @@ import {
 import { Message } from "./message";
 import { Phase, emptyHud } from "./model";
 import type { Model } from "./model";
-import { emptyRecords, isNewBest, mergeRecords, withSolve } from "./save";
-import type { Save } from "./save";
+import { PushPuzzleSave, emptyRecords, isNewBest, withSolve } from "./save";
 
 export type Services =
   | Audio
   | AudioSettingsStorage
   | PushPuzzleContent
   | PushPuzzleEngine
-  | PushPuzzleSheet
-  | Save;
+  | PushPuzzleSave
+  | PushPuzzleSheet;
 type Return = Update.Return<Model, Message, Services>;
 
 export const init: Runtime.ApplicationInit<
@@ -100,7 +99,10 @@ export const update = (model: Model, message: Message): Return =>
           })
         : { model },
     LoadedSave: ({ records }) => ({
-      model: { ...model, records: mergeRecords(model.records, records) },
+      model: {
+        ...model,
+        records: PushPuzzleSave.merge(model.records, records),
+      },
     }),
     LoadedAudioSettings: ({ settings }) => ({
       model: { ...model, audio: settings },
@@ -130,7 +132,10 @@ export const update = (model: Model, message: Message): Return =>
       commands: [SaveSolve({ levelId: model.levelId, moves })],
     }),
     SavedSolve: ({ records }) => ({
-      model: { ...model, records: mergeRecords(model.records, records) },
+      model: {
+        ...model,
+        records: PushPuzzleSave.merge(model.records, records),
+      },
     }),
 
     PressedRestart: () => startLevel(model, model.levelId),

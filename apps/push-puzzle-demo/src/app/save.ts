@@ -1,8 +1,5 @@
-import {
-  makeSaveStore,
-  mergeRecords as mergeRecordsWith,
-} from "arcadekit/save";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Save } from "arcadekit/save";
+import { Schema } from "effect";
 
 // The save: what this game remembers between sessions, per level id. It is UI
 // state, not simulation state. The app reads it once at startup and writes it
@@ -23,23 +20,29 @@ export type LevelRecords = typeof LevelRecords.Type;
 
 export const emptyRecords: LevelRecords = {};
 
-export const SAVE_KEY = "arcadekit/push-puzzle/save";
+/**
+ * This game's save. A write merges into what is stored, and `PushPuzzleSave.merge` is that merge
+ * with no storage: the best of both sets of records, a level solved if either says so, with the
+ * fewer moves. Neither its `read` nor its `write` fails: storage problems are logged and play
+ * goes on.
+ */
+export class PushPuzzleSave extends Save("PushPuzzleSave", {
+  storageKey: "arcadekit/push-puzzle/save",
+  field: "levels",
+  record: LevelRecord,
+  mergeRecord: (a, b) => {
+    if (!a.solved) {
+      return b;
+    }
+    if (!b.solved) {
+      return a;
+    }
+    return { solved: true, bestMoves: Math.min(a.bestMoves, b.bestMoves) };
+  },
+}) {}
 
-const mergeRecord = (a: LevelRecord, b: LevelRecord): LevelRecord => {
-  if (!a.solved) {
-    return b;
-  }
-  if (!b.solved) {
-    return a;
-  }
-  return { solved: true, bestMoves: Math.min(a.bestMoves, b.bestMoves) };
-};
-
-/** The best of both: a level is solved if either says so, with the fewer moves. */
-export const mergeRecords: (a: LevelRecords, b: LevelRecords) => LevelRecords =
-  mergeRecordsWith(mergeRecord);
-
-const solve = (levelId: string, moves: number): LevelRecords => ({
+/** One solve of `levelId` in `moves` moves, as records: what a solve writes into the save. */
+export const solve = (levelId: string, moves: number): LevelRecords => ({
   [levelId]: { solved: true, bestMoves: moves },
 });
 
@@ -48,7 +51,7 @@ export const withSolve = (
   records: LevelRecords,
   levelId: string,
   moves: number
-): LevelRecords => mergeRecords(records, solve(levelId, moves));
+): LevelRecords => PushPuzzleSave.merge(records, solve(levelId, moves));
 
 /** True when `moves` beats an earlier solve of `levelId`. A first solve has nothing to beat. */
 export const isNewBest = (
@@ -61,39 +64,3 @@ export const isNewBest = (
     : undefined;
   return earlier !== undefined && earlier.solved && moves < earlier.bestMoves;
 };
-
-/** The save service. Neither method fails: storage problems are logged and play goes on. */
-export interface SaveApi {
-  /** The stored records. A missing save is empty. A corrupt or unknown-version one is backed up, logged and read as empty. */
-  readonly load: Effect.Effect<LevelRecords>;
-  /**
-   * Records a solve. Re-reads the stored save first and keeps the best of both,
-   * so a record another tab wrote isn't lost. Returns the merged records, even
-   * when the write fails (that is logged and dropped).
-   */
-  readonly recordSolve: (
-    levelId: string,
-    moves: number
-  ) => Effect.Effect<LevelRecords>;
-}
-
-export class Save extends Context.Service<Save, SaveApi>()(
-  "push-puzzle-demo/Save"
-) {}
-
-/** The save service over whatever `KeyValueStore` is provided. */
-export const SaveLayer = Layer.effect(
-  Save,
-  Effect.map(
-    makeSaveStore({
-      key: SAVE_KEY,
-      field: "levels",
-      record: LevelRecord,
-      mergeRecord,
-    }),
-    (store): SaveApi => ({
-      load: store.load,
-      recordSolve: (levelId, moves) => store.merge(solve(levelId, moves)),
-    })
-  )
-);

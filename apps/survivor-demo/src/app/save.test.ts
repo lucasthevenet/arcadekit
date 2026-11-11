@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { SaveRun } from "./commands";
 import { Message } from "./message";
 import type { Model } from "./model";
-import { SAVE_KEY, Save, SaveLayer } from "./save";
+import { SurvivorsSave, run as runRecords } from "./save";
 import { init, update } from "./update";
 
 // The app's save over an in-memory KeyValueStore, never real localStorage.
@@ -16,11 +16,11 @@ import { init, update } from "./update";
 // its merge rule and its key.
 
 const run = <A>(
-  program: Effect.Effect<A, never, Save | KeyValueStore.KeyValueStore>
+  program: Effect.Effect<A, never, SurvivorsSave | KeyValueStore.KeyValueStore>
 ) =>
   program.pipe(
     Effect.provide(
-      SaveLayer.pipe(Layer.provideMerge(KeyValueStore.layerMemory))
+      SurvivorsSave.layer.pipe(Layer.provideMerge(KeyValueStore.layerMemory))
     ),
     Effect.runPromise
   );
@@ -31,11 +31,11 @@ const readRaw = (key: string) =>
   }).pipe(Effect.orDie);
 
 const load = Effect.gen(function* () {
-  return yield* (yield* Save).load;
+  return yield* (yield* SurvivorsSave).read;
 });
 const recordRun = (summary: RunSummary) =>
   Effect.gen(function* () {
-    return yield* (yield* Save).recordRun(summary);
+    return yield* (yield* SurvivorsSave).write(runRecords(summary));
   });
 
 const runSummary = (
@@ -57,7 +57,7 @@ describe("the save", () => {
     const result = await run(
       Effect.andThen(
         recordRun(runSummary("bolter", { time: 95, kills: 40, won: false })),
-        Effect.all([load, readRaw(SAVE_KEY)])
+        Effect.all([load, readRaw(SurvivorsSave.definition.storageKey)])
       )
     );
     expect(result).toStrictEqual([

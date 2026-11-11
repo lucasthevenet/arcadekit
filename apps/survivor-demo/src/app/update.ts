@@ -38,15 +38,14 @@ import {
   isLocalHeroDown,
 } from "./model";
 import type { Model } from "./model";
-import { emptyRecords, mergeRecords, withRun } from "./save";
-import type { Save } from "./save";
+import { SurvivorsSave, emptyRecords, withRun } from "./save";
 import type { SoundSettings } from "./sound";
 
 export type Services =
   | SurvivorsContent
   | SurvivorsEngine
   | SurvivorsSheet
-  | Save
+  | SurvivorsSave
   | SurvivorsCoop
   | Audio
   | SoundSettings;
@@ -162,7 +161,7 @@ const handle = (model: Model, message: Message): Return =>
           }
         : { model },
     LoadedSave: ({ records }) => ({
-      model: { ...model, records: mergeRecords(model.records, records) },
+      model: { ...model, records: SurvivorsSave.merge(model.records, records) },
     }),
     MountedViewport: () => ({ model: { ...model, isViewportMounted: true } }),
     UnmountedViewport: () => ({
@@ -194,7 +193,7 @@ const handle = (model: Model, message: Message): Return =>
       commands: [SaveRun({ summary })],
     }),
     SavedRun: ({ records }) => ({
-      model: { ...model, records: mergeRecords(model.records, records) },
+      model: { ...model, records: SurvivorsSave.merge(model.records, records) },
     }),
 
     ClickedUpgrade: ({ index }) =>

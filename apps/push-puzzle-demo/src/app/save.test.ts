@@ -7,7 +7,7 @@ import { SaveSolve } from "./commands";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
-import { SAVE_KEY, Save, SaveLayer, mergeRecords } from "./save";
+import { PushPuzzleSave, solve } from "./save";
 import { init, update } from "./update";
 
 // The app's save over an in-memory KeyValueStore, never real localStorage.
@@ -16,11 +16,11 @@ import { init, update } from "./update";
 // its merge rule and its key.
 
 const run = <A>(
-  program: Effect.Effect<A, never, Save | KeyValueStore.KeyValueStore>
+  program: Effect.Effect<A, never, PushPuzzleSave | KeyValueStore.KeyValueStore>
 ) =>
   program.pipe(
     Effect.provide(
-      SaveLayer.pipe(Layer.provideMerge(KeyValueStore.layerMemory))
+      PushPuzzleSave.layer.pipe(Layer.provideMerge(KeyValueStore.layerMemory))
     ),
     Effect.runPromise
   );
@@ -31,11 +31,11 @@ const readRaw = (key: string) =>
   }).pipe(Effect.orDie);
 
 const load = Effect.gen(function* () {
-  return yield* (yield* Save).load;
+  return yield* (yield* PushPuzzleSave).read;
 });
 const recordSolve = (levelId: string, moves: number) =>
   Effect.gen(function* () {
-    return yield* (yield* Save).recordSolve(levelId, moves);
+    return yield* (yield* PushPuzzleSave).write(solve(levelId, moves));
   });
 
 const stored = (levels: object) => JSON.stringify({ version: 1, levels });
@@ -45,7 +45,7 @@ describe("the save", () => {
     const result = await run(
       Effect.andThen(
         recordSolve("first-push", 6),
-        Effect.all([load, readRaw(SAVE_KEY)])
+        Effect.all([load, readRaw(PushPuzzleSave.definition.storageKey)])
       )
     );
     expect(result).toStrictEqual([
@@ -86,7 +86,7 @@ describe("the save", () => {
 
   it("takes a solved record over an unsolved one, whatever its moves", () => {
     expect(
-      mergeRecords(
+      PushPuzzleSave.merge(
         { "first-push": { solved: true, bestMoves: 12 } },
         { "first-push": { solved: false, bestMoves: 0 } }
       )

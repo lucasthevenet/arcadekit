@@ -15,7 +15,7 @@ import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
 import { Message } from "./message";
-import { Save } from "./save";
+import { SurvivorsSave, run } from "./save";
 import { CLICK_SOUND, SoundSettings, soundList } from "./sound";
 import { RETRY_BUTTON_ID } from "./view";
 
@@ -131,7 +131,7 @@ export const EndRun = Command.define("EndRun", {
 export const LoadSave = Command.define("LoadSave", {
   messages: [Message.LoadedSave],
   execute: Effect.gen(function* () {
-    const records = yield* (yield* Save).load;
+    const records = yield* (yield* SurvivorsSave).read;
     return Message.LoadedSave({ records });
   }),
 });
@@ -142,7 +142,7 @@ export const SaveRun = Command.define("SaveRun", {
   messages: [Message.SavedRun],
   execute: ({ summary }) =>
     Effect.gen(function* () {
-      const records = yield* (yield* Save).recordRun(summary);
+      const records = yield* (yield* SurvivorsSave).write(run(summary));
       return Message.SavedRun({ records });
     }),
 });

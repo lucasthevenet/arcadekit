@@ -1,7 +1,9 @@
 export {
-  makeSaveStore,
-  mergeRecords,
   type Records,
+  Save,
+  type SaveClass,
   type SaveDefinition,
-  type SaveStore,
+  type SaveId,
+  type SaveService,
 } from "./save";
+export type { Stored } from "./stored";

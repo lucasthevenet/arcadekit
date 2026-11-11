@@ -12,7 +12,7 @@ import { Layer } from "effect";
 
 import { BrowserRoomsLayer } from "../coop/config";
 import { CoopLayer } from "./coop";
-import { SaveLayer } from "./save";
+import { SurvivorsSave } from "./save";
 import { SoundSettingsLayer, survivorsSounds } from "./sound";
 
 export { Model } from "./model";
@@ -49,7 +49,7 @@ const ContentLayer = SurvivorsContent.layer(
  */
 export const resources = Layer.mergeAll(
   SurvivorsEngine.layer,
-  SaveLayer.pipe(Layer.provide(BrowserSaveStorage)),
+  SurvivorsSave.layer.pipe(Layer.provide(BrowserSaveStorage)),
   SoundSettingsLayer.pipe(Layer.provide(BrowserSaveStorage)),
   // Co-op's rooms are on the signalling worker that serves the page.
   CoopLayer.pipe(Layer.provide(BrowserRoomsLayer))

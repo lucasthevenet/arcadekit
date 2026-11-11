@@ -36,7 +36,7 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | [`arcadekit/input`](src/input/README.md) | `InputController`: keyboard, gamepad, touch-drag and swipes mapped to named axes and buttons. No Effect | DOM |
 | [`arcadekit/content`](src/content/README.md) | `Content` and `Asset`: a game's content files, validated with an Effect Schema, and what the app loads once for it, such as a sprite sheet. Each is a class that keys its own service and keeps the first success | Effect |
 | [`arcadekit/content/browser`](src/content/README.md) | `fetchJsonSource` | Effect, DOM |
-| [`arcadekit/save`](src/save/README.md) | `makeSaveStore`: a game's records by id under one versioned key | Effect |
+| [`arcadekit/save`](src/save/README.md) | `Save`: a game's records by id under one versioned key | Effect |
 | [`arcadekit/save/browser`](src/save/README.md) | `BrowserSaveStorage`: localStorage, or memory if the browser refuses | Effect, `@effect/platform-browser`, DOM |
 | [`arcadekit/audio`](src/audio/README.md) | `AudioSystem`, the `Audio` service with `SilentAudioLayer`, and `makeAudioSettingsStore` | Effect |
 | [`arcadekit/audio/browser`](src/audio/README.md) | `BrowserAudioLayer` (Web Audio) | Effect, DOM |

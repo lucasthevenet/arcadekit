@@ -11,7 +11,7 @@ import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
 import { AudioSettingsLayer, CUE_SOUNDS } from "./audio";
-import { SaveLayer } from "./save";
+import { PushPuzzleSave } from "./save";
 import { SHEET_URL } from "./sprites";
 
 export { Model } from "./model";
@@ -38,7 +38,7 @@ export const resources = Layer.mergeAll(
   PushPuzzleContent.layer(
     fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
   ),
-  Layer.mergeAll(SaveLayer, AudioSettingsLayer).pipe(
+  Layer.mergeAll(PushPuzzleSave.layer, AudioSettingsLayer).pipe(
     Layer.provide(BrowserSaveStorage)
   )
 ).pipe(Layer.provideMerge(assets));

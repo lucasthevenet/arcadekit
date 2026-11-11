@@ -21,7 +21,7 @@ import type {
   SpriteSheet,
   SpriteSheetError,
 } from "arcadekit/render-three";
-import { makeSaveStore } from "arcadekit/save";
+import { Save } from "arcadekit/save";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Effect, Layer, Schema } from "effect";
 
@@ -102,19 +102,20 @@ class DotsContent extends Content("DotsContent", {
   files: { settings: "settings.json" },
 }) {}
 
-const BestRecord = Schema.Struct({ near: Schema.Int });
+/** What the game keeps between sessions: the most dots near the cursor, by run. */
+class DotsSave extends Save("DotsSave", {
+  storageKey: "smoke/dots/save",
+  field: "runs",
+  record: Schema.Struct({ near: Schema.Int }),
+  mergeRecord: (a, b) => (a.near >= b.near ? a : b),
+}) {}
 
 const program = Effect.gen(function* () {
   const settings = yield* DotsContent.load;
-  const save = yield* makeSaveStore({
-    key: "smoke/dots/save",
-    field: "runs",
-    record: BestRecord,
-    mergeRecord: (a, b) => (a.near >= b.near ? a : b),
-  });
+  const save = yield* DotsSave;
   const audioSettings = yield* makeAudioSettingsStore("smoke/dots/settings");
   yield* audioSettings.load;
-  yield* save.merge({ first: { near: replay(1, 60) } });
+  yield* save.write({ first: { near: replay(1, 60) } });
 
   const engine: Game.EngineOf<typeof Dots, SpriteSheetError> =
     yield* DotsEngine;
@@ -178,7 +179,8 @@ Effect.runFork(
         Layer.provideMerge(
           Layer.mergeAll(
             BrowserAudioLayer,
-            BrowserSaveStorage,
+            // The audio settings store still reads the storage itself.
+            DotsSave.layer.pipe(Layer.provideMerge(BrowserSaveStorage)),
             DotsSheet.layer(loadSpriteSheet("sprites/dots.json")),
             DotsContent.layer(
               memorySource({ "settings.json": { dots: 128, speed: 6 } })

@@ -55,6 +55,7 @@ const DECLARATIONS: Readonly<Record<string, Declared>> = {
   Content: { file: "content/content.ts", service: true },
   Asset: { file: "content/asset.ts", service: true },
   Coop: { file: "net/browser/coop.ts", service: true },
+  Save: { file: "save/save.ts", service: true },
 };
 
 const nounOf = (builder: string): string =>
@@ -98,15 +99,12 @@ const FACTORIES: readonly string[] = [
   "makeSpriteSheet",
 ];
 
-// The factories a game still calls to supply one of its parts, for want of a declaration: a save
-// and the audio settings store are still to move (ADR-0020). So is the cue sounds table, which
-// each genre hand-writes as a service (`PushPuzzleCueSounds`, `SurvivorsCueSounds`) and which
-// has no factory to list. A name leaves this list with the change that adds its declaration,
-// moves every caller and deletes the factory, so the list only gets shorter.
-const NOT_YET_DECLARED: readonly string[] = [
-  "makeAudioSettingsStore",
-  "makeSaveStore",
-];
+// The factories a game still calls to supply one of its parts, for want of a declaration: the
+// audio settings store is still to move (ADR-0020). So is the cue sounds table, which each
+// genre hand-writes as a service (`PushPuzzleCueSounds`, `SurvivorsCueSounds`) and which has no
+// factory to list. A name leaves this list with the change that adds its declaration, moves
+// every caller and deletes the factory, so the list only gets shorter.
+const NOT_YET_DECLARED: readonly string[] = ["makeAudioSettingsStore"];
 
 const read = (file: string): string => {
   if (!existsSync(file)) {

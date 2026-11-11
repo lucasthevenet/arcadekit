@@ -9,7 +9,7 @@ import { Command, Dom } from "foldkit";
 
 import { AudioSettingsStorage, CLICK, MUSIC, SOUND_LIST } from "./audio";
 import { Message } from "./message";
-import { Save } from "./save";
+import { PushPuzzleSave, solve } from "./save";
 import { RETRY_BUTTON_ID } from "./view";
 
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
@@ -83,7 +83,7 @@ export const EndRun = Command.define("EndRun", {
 export const LoadSave = Command.define("LoadSave", {
   messages: [Message.LoadedSave],
   execute: Effect.gen(function* () {
-    const records = yield* (yield* Save).load;
+    const records = yield* (yield* PushPuzzleSave).read;
     return Message.LoadedSave({ records });
   }),
 });
@@ -94,7 +94,8 @@ export const SaveSolve = Command.define("SaveSolve", {
   messages: [Message.SavedSolve],
   execute: ({ levelId, moves }) =>
     Effect.gen(function* () {
-      const records = yield* (yield* Save).recordSolve(levelId, moves);
+      const save = yield* PushPuzzleSave;
+      const records = yield* save.write(solve(levelId, moves));
       return Message.SavedSolve({ records });
     }),
 });
