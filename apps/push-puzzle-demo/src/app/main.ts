@@ -10,7 +10,7 @@ import { loadSpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
-import { AudioSettingsLayer, CUE_SOUNDS } from "./audio";
+import { CUE_SOUNDS, PushPuzzleAudioSettings } from "./audio";
 import { PushPuzzleSave } from "./save";
 import { SHEET_URL } from "./sprites";
 
@@ -38,7 +38,7 @@ export const resources = Layer.mergeAll(
   PushPuzzleContent.layer(
     fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
   ),
-  Layer.mergeAll(PushPuzzleSave.layer, AudioSettingsLayer).pipe(
+  Layer.mergeAll(PushPuzzleSave.layer, PushPuzzleAudioSettings.layer).pipe(
     Layer.provide(BrowserSaveStorage)
   )
 ).pipe(Layer.provideMerge(assets));

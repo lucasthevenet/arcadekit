@@ -55,6 +55,7 @@ export const DECLARATION_BUILDERS: readonly string[] = [
   "Asset",
   "Coop",
   "Save",
+  "Setting",
 ];
 
 /** How a game names the entries whose builders it writes with a namespace: `Game.Event`. */

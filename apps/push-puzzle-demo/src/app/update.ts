@@ -8,7 +8,7 @@ import type { Audio, AudioSettings } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
 
 import { withVolume } from "./audio";
-import type { AudioSettingsStorage } from "./audio";
+import type { PushPuzzleAudioSettings } from "./audio";
 import {
   ChangeAudioSettings,
   EndRun,
@@ -28,7 +28,7 @@ import { PushPuzzleSave, emptyRecords, isNewBest, withSolve } from "./save";
 
 export type Services =
   | Audio
-  | AudioSettingsStorage
+  | PushPuzzleAudioSettings
   | PushPuzzleContent
   | PushPuzzleEngine
   | PushPuzzleSave

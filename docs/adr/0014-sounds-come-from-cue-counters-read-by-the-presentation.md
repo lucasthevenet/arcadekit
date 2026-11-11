@@ -4,6 +4,8 @@ status: accepted
 
 # Sounds come from cue counters that the presentation reads
 
+> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: the volume and mute are a `Setting` (`arcadekit/save`) an app declares from `AudioSettings`.
+
 #24 adds sound to the kit. The first question was what triggers a sound. Survivors' sound-worthy moments (shots, hits, kills, gem pickups) can happen hundreds of times a second at about 750 enemies, so they can't be events ([ADR-0008](0008-events-are-rare-facts.md)). Sound must also never influence the simulation, and the recorded replay hashes must not move.
 
 ## Decision

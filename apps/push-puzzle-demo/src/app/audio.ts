@@ -1,11 +1,7 @@
 import type { PushPuzzleSounds } from "@arcadekit/push-puzzle/browser";
-import { makeAudioSettingsStore } from "arcadekit/audio";
-import type {
-  AudioSettings,
-  AudioSettingsStore,
-  SoundList,
-} from "arcadekit/audio";
-import { Context, Layer } from "effect";
+import { AudioSettings, defaultAudioSettings } from "arcadekit/audio";
+import type { SoundList } from "arcadekit/audio";
+import { Setting } from "arcadekit/save";
 
 // This game's sounds: the files it ships, which sound each cue plays, and where the
 // player's volume and mute are kept. The files are in public/sounds; each id is its file name.
@@ -36,21 +32,15 @@ export const CUE_SOUNDS: PushPuzzleSounds = {
   solved: "solved",
 };
 
-/**
- * Audio settings are app settings, kept apart from the save (ADR-0009).
- */
-export const AUDIO_SETTINGS_KEY = "arcadekit/push-puzzle/settings";
-
-export class AudioSettingsStorage extends Context.Service<
-  AudioSettingsStorage,
-  AudioSettingsStore
->()("push-puzzle-demo/AudioSettingsStorage") {}
-
-/** The audio settings store over whatever `KeyValueStore` is provided. */
-export const AudioSettingsLayer = Layer.effect(
-  AudioSettingsStorage,
-  makeAudioSettingsStore(AUDIO_SETTINGS_KEY)
-);
+/** The player's volume and mute: app settings, kept apart from the save, where the last write wins (ADR-0009). */
+export class PushPuzzleAudioSettings extends Setting(
+  "PushPuzzleAudioSettings",
+  {
+    storageKey: "arcadekit/push-puzzle/settings",
+    schema: AudioSettings,
+    default: defaultAudioSettings,
+  }
+) {}
 
 /** A volume from a slider, kept within 0 to 1. Anything unreadable is 0. */
 export const toVolume = (value: number): number =>

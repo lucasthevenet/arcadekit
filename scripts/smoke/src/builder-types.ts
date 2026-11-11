@@ -8,3 +8,4 @@ import * as Kept from "arcadekit/save";
 
 export const Rules = Game.Simulation;
 export const Records = Kept.Save;
+export const Apart = Kept.Setting;

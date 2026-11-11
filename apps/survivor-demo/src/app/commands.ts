@@ -16,7 +16,7 @@ import { Command, Dom } from "foldkit";
 
 import { Message } from "./message";
 import { SurvivorsSave, run } from "./save";
-import { CLICK_SOUND, SoundSettings, soundList } from "./sound";
+import { CLICK_SOUND, SurvivorsAudioSettings, soundList } from "./sound";
 import { RETRY_BUTTON_ID } from "./view";
 
 // Commands are the UI's only way to cause side effects. Each one runs an Effect
@@ -278,7 +278,7 @@ export const LoadSounds = Command.define("LoadSounds", {
 export const LoadAudioSettings = Command.define("LoadAudioSettings", {
   messages: [Message.LoadedAudioSettings],
   execute: Effect.gen(function* () {
-    const settings = yield* (yield* SoundSettings).load;
+    const settings = yield* (yield* SurvivorsAudioSettings).read;
     return Message.LoadedAudioSettings({ settings });
   }),
 });
@@ -289,7 +289,7 @@ export const SaveAudioSettings = Command.define("SaveAudioSettings", {
   messages: [Message.CompletedAudioCommand],
   execute: ({ settings }) =>
     Effect.gen(function* () {
-      yield* (yield* SoundSettings).save(settings);
+      yield* (yield* SurvivorsAudioSettings).write(settings);
       return Message.CompletedAudioCommand();
     }),
 });

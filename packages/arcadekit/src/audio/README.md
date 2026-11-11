@@ -1,6 +1,6 @@
 # arcadekit/audio
 
-Sound for a game: one-shots with pitch and volume jitter, a voice cap and minimum gap per sound, loops held from state, music with crossfades, master, sfx and music buses, mute and ducking. It stays silent until the player's first gesture and while the tab is hidden. `Audio` is the Effect service; `BrowserAudioLayer` in `arcadekit/audio/browser` provides it over Web Audio, and `SilentAudioLayer` plays nothing, for tests. `makeAudioSettingsStore` keeps the player's volumes and mute.
+Sound for a game: one-shots with pitch and volume jitter, a voice cap and minimum gap per sound, loops held from state, music with crossfades, master, sfx and music buses, mute and ducking. It stays silent until the player's first gesture and while the tab is hidden. `Audio` is the Effect service; `BrowserAudioLayer` in `arcadekit/audio/browser` provides it over Web Audio, and `SilentAudioLayer` plays nothing, for tests. `AudioSettings` is the shape of the player's volumes and mute, which an app keeps with a `Setting`.
 
 An entry of the [`arcadekit`](../../README.md) package. The root entry is DOM-free.
 
@@ -10,7 +10,7 @@ An entry of the [`arcadekit`](../../README.md) package. The root entry is DOM-fr
 pnpm add arcadekit effect
 ```
 
-Peer dependency: `effect` (~4.1). Saving settings needs a `KeyValueStore`, such as `BrowserSaveStorage` from `arcadekit/save/browser`.
+Peer dependency: `effect` (~4.1).
 
 ## Example
 
@@ -50,3 +50,7 @@ export const loadSounds = Effect.gen(function* () {
 `makeAudioMixer` makes the mixer behind `Audio`. It plays into whatever `AudioOutput` it is unlocked with, such as a fake one in a test. Making it is an Effect; after that, every call but `load` is plain. `makeBrowserAudio` in `arcadekit/audio/browser` makes it over Web Audio for the life of a scope, and `BrowserAudioLayer` is built on it.
 
 A game's view plays its sounds from cue counters in the state, as [ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md) describes.
+
+## The audio settings
+
+The player's volume and mute are `AudioSettings`, with `defaultAudioSettings` before they change anything and `applyAudioSettings(audio, settings)` to set them. An app keeps them between sessions with a [`Setting`](../save/README.md), under its own storage key: `schema: AudioSettings, default: defaultAudioSettings`.

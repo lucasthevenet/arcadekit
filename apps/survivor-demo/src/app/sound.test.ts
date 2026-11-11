@@ -11,13 +11,7 @@ import { ChooseUpgrade, PlayClick, SaveAudioSettings } from "./commands";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
-import {
-  AUDIO_SETTINGS_KEY,
-  SoundSettings,
-  SoundSettingsLayer,
-  soundList,
-  survivorsSounds,
-} from "./sound";
+import { SurvivorsAudioSettings, soundList, survivorsSounds } from "./sound";
 import { subscriptions } from "./subscriptions";
 import { init, update } from "./update";
 
@@ -172,15 +166,19 @@ describe("the audio settings", () => {
   it("are stored under their own key, and read back", async () => {
     const settings = { master: 0.3, sfx: 0.4, music: 0.5, muted: true };
     const result = await Effect.gen(function* () {
-      const store = yield* SoundSettings;
-      yield* store.save(settings);
+      const setting = yield* SurvivorsAudioSettings;
+      yield* setting.write(settings);
       return [
-        yield* store.load,
-        yield* (yield* KeyValueStore.KeyValueStore).get(AUDIO_SETTINGS_KEY),
+        yield* setting.read,
+        yield* (yield* KeyValueStore.KeyValueStore).get(
+          SurvivorsAudioSettings.definition.storageKey
+        ),
       ];
     }).pipe(
       Effect.provide(
-        SoundSettingsLayer.pipe(Layer.provideMerge(KeyValueStore.layerMemory))
+        SurvivorsAudioSettings.layer.pipe(
+          Layer.provideMerge(KeyValueStore.layerMemory)
+        )
       ),
       Effect.orDie,
       Effect.runPromise

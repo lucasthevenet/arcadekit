@@ -39,7 +39,7 @@ import {
 } from "./model";
 import type { Model } from "./model";
 import { SurvivorsSave, emptyRecords, withRun } from "./save";
-import type { SoundSettings } from "./sound";
+import type { SurvivorsAudioSettings } from "./sound";
 
 export type Services =
   | SurvivorsContent
@@ -48,7 +48,7 @@ export type Services =
   | SurvivorsSave
   | SurvivorsCoop
   | Audio
-  | SoundSettings;
+  | SurvivorsAudioSettings;
 type Return = Update.Return<Model, Message, Services>;
 
 export const init: Runtime.ApplicationInit<

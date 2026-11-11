@@ -6,13 +6,7 @@ import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import {
-  AUDIO_SETTINGS_KEY,
-  AudioSettingsLayer,
-  AudioSettingsStorage,
-  CUE_SOUNDS,
-  SOUND_LIST,
-} from "./audio";
+import { CUE_SOUNDS, PushPuzzleAudioSettings, SOUND_LIST } from "./audio";
 import { ChangeAudioSettings, EndRun, PlayClick, StartLevel } from "./commands";
 import { Message } from "./message";
 import { Phase } from "./model";
@@ -40,17 +34,19 @@ describe("the sound table", () => {
 describe("the audio settings", () => {
   it("keep the last write under their own key, apart from the save", async () => {
     const result = await Effect.gen(function* () {
-      const store = yield* AudioSettingsStorage;
-      const before = yield* store.load;
-      yield* store.save({ ...defaultAudioSettings, music: 0.2 });
-      yield* store.save({ ...defaultAudioSettings, muted: true });
+      const setting = yield* PushPuzzleAudioSettings;
+      const before = yield* setting.read;
+      yield* setting.write({ ...defaultAudioSettings, music: 0.2 });
+      yield* setting.write({ ...defaultAudioSettings, muted: true });
       const raw = yield* (yield* KeyValueStore.KeyValueStore).get(
-        AUDIO_SETTINGS_KEY
+        PushPuzzleAudioSettings.definition.storageKey
       );
-      return { before, after: yield* store.load, stored: raw !== undefined };
+      return { before, after: yield* setting.read, stored: raw !== undefined };
     }).pipe(
       Effect.provide(
-        AudioSettingsLayer.pipe(Layer.provideMerge(KeyValueStore.layerMemory))
+        PushPuzzleAudioSettings.layer.pipe(
+          Layer.provideMerge(KeyValueStore.layerMemory)
+        )
       ),
       Effect.orDie,
       Effect.runPromise

@@ -1,6 +1,6 @@
 // The smoke test's tiny game in the browser: input, a pixel stage drawing sprites from a sheet,
 // sound, a save and content, run by its declared engine. Vite builds it from the packed packages.
-import { Audio, makeAudioSettingsStore } from "arcadekit/audio";
+import { Audio, AudioSettings, defaultAudioSettings } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
 import { BrowserAudioLayer } from "arcadekit/audio/browser";
 import { Asset, Content, memorySource } from "arcadekit/content";
@@ -21,7 +21,7 @@ import type {
   SpriteSheet,
   SpriteSheetError,
 } from "arcadekit/render-three";
-import { Save } from "arcadekit/save";
+import { Save, Setting } from "arcadekit/save";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Effect, Layer, Schema } from "effect";
 
@@ -110,11 +110,17 @@ class DotsSave extends Save("DotsSave", {
   mergeRecord: (a, b) => (a.near >= b.near ? a : b),
 }) {}
 
+/** The player's volume and mute, under their own key. */
+class DotsAudioSettings extends Setting("DotsAudioSettings", {
+  storageKey: "smoke/dots/settings",
+  schema: AudioSettings,
+  default: defaultAudioSettings,
+}) {}
+
 const program = Effect.gen(function* () {
   const settings = yield* DotsContent.load;
   const save = yield* DotsSave;
-  const audioSettings = yield* makeAudioSettingsStore("smoke/dots/settings");
-  yield* audioSettings.load;
+  yield* (yield* DotsAudioSettings).read;
   yield* save.write({ first: { near: replay(1, 60) } });
 
   const engine: Game.EngineOf<typeof Dots, SpriteSheetError> =
@@ -179,8 +185,9 @@ Effect.runFork(
         Layer.provideMerge(
           Layer.mergeAll(
             BrowserAudioLayer,
-            // The audio settings store still reads the storage itself.
-            DotsSave.layer.pipe(Layer.provideMerge(BrowserSaveStorage)),
+            Layer.mergeAll(DotsSave.layer, DotsAudioSettings.layer).pipe(
+              Layer.provide(BrowserSaveStorage)
+            ),
             DotsSheet.layer(loadSpriteSheet("sprites/dots.json")),
             DotsContent.layer(
               memorySource({ "settings.json": { dots: 128, speed: 6 } })
