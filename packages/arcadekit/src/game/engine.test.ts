@@ -6,6 +6,7 @@ import {
   Fiber,
   Layer,
   Option,
+  Result,
   Schema,
 } from "effect";
 import type { Scope } from "effect";
@@ -649,7 +650,17 @@ describe("Game.Engine", () => {
         frames.runFrameAt(15.625);
       })
     );
-    expect(second !== undefined && Exit.hasDies(second)).toBe(true);
+    // The defect names the engine and says what to do.
+    expect(
+      Result.map(
+        Exit.findDefect(second ?? Exit.void),
+        (defect) => (defect as Error).message
+      )
+    ).toStrictEqual(
+      Result.succeed(
+        'Engine "CounterEngine" is already attached to an element. An engine draws into one element at a time: interrupt the first attach, which detaches it, before attaching again.'
+      )
+    );
     // The second attach made nothing, and the first one drew its frame.
     expect(log).toStrictEqual([
       "load sheet",

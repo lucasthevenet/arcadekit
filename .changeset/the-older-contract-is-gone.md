@@ -62,7 +62,7 @@ const simulation: GameSimulation<Config, State, Input, Event> = {
   sample: { everyMs: 100, read: (state) => ({ type: "hud", hp: state.hp }) },
 };
 const engine = makeGameEngine({ ...simulation, createInput, createView });
-yield * engine.modify((state) => choose(state, index));
+const pick = (index: number) => engine.modify((state) => choose(state, index));
 
 // After
 export class Hud extends Game.Event("Hud", { hp: Schema.Number }) {}
@@ -93,8 +93,12 @@ export class MyEngine extends Game.Engine("MyEngine", {
   input: createInput,
 }) {}
 
-const engine = yield * MyEngine; // provided by MyEngine.layer
-yield * engine.send(new Choose({ index }));
+// The engine is the service `MyEngine`, provided by MyEngine.layer.
+const pick = (index: number) =>
+  Effect.gen(function* () {
+    const engine = yield* MyEngine;
+    yield* engine.send(new Choose({ index }));
+  });
 ```
 
 **Unchanged**

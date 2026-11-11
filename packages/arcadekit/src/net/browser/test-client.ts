@@ -92,6 +92,7 @@ export interface TestCoopOptions<LoadError = never> {
 export const testCoopParts = <LoadError = never>(
   options: TestCoopOptions<LoadError> = {}
 ): TestCoopParts<LoadError> => ({
+  name: "TestCoop",
   simulation: TestGame,
   hash: hashTestState,
   picks: (content) => content.picks,

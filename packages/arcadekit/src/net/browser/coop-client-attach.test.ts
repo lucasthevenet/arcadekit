@@ -1,4 +1,4 @@
-import { Effect, Exit, Fiber, Option, Scope } from "effect";
+import { Effect, Exit, Fiber, Option, Result, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { AttachError, GameCrashed } from "../../game/browser";
@@ -248,6 +248,18 @@ describe("attaching a co-op client", () => {
     await Effect.runPromise(Effect.yieldNow);
     const second = await Effect.runPromise(Effect.exit(coop.attach(element)));
     await Effect.runPromise(Fiber.interrupt(first));
-    expect([Exit.hasDies(second), inputs]).toStrictEqual([true, 0]);
+    // The defect names the Coop and says what to do. The second attach made nothing.
+    expect([
+      Result.map(
+        Exit.findDefect(second),
+        (defect) => (defect as Error).message
+      ),
+      inputs,
+    ]).toStrictEqual([
+      Result.succeed(
+        'Coop "TestCoop" is already attached to an element. Its Co-op client draws into one element at a time: interrupt the first attach, which detaches without leaving, before attaching again.'
+      ),
+      0,
+    ]);
   });
 });

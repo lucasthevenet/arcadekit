@@ -6,7 +6,7 @@ import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
 import { Context } from "effect";
 
 import { PushPuzzle } from "../simulation";
-import type { Direction, Puzzle, PushPuzzleInput } from "../world";
+import type { Direction, PushPuzzleInput } from "../world";
 import { PushPuzzleSoundView } from "./sound";
 import type { PushPuzzleSounds } from "./sound";
 import { PushPuzzleView } from "./view";
@@ -88,7 +88,7 @@ export class PushPuzzleEngine extends Game.Engine("PushPuzzleEngine", {
     sheet: PushPuzzleSheet.load,
   },
   view: (container, { audio, sounds, sheet }) =>
-    Game.combineViews<Puzzle>(
+    Game.combineViews(
       new PushPuzzleView(container, sheet),
       new PushPuzzleSoundView(audio, sounds)
     ),

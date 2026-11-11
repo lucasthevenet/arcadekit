@@ -253,6 +253,7 @@ interface Presentation<State, Input> {
 }
 
 const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
+  name: string,
   simulation: SimulationClass<
     string,
     Config,
@@ -272,7 +273,9 @@ const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
     Effect.suspend(() => {
       if (attached) {
         return Effect.die(
-          new Error("This engine is already attached to an element")
+          new Error(
+            `Engine "${name}" is already attached to an element. An engine draws into one element at a time: interrupt the first attach, which detaches it, before attaching again.`
+          )
         );
       }
       attached = true;
@@ -346,13 +349,17 @@ const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
  * ```ts
  * export class PushPuzzleEngine extends Game.Engine("PushPuzzleEngine", {
  *   simulation: PushPuzzle,
- *   uses: { sheet: PushPuzzleSheet.load, audio: Audio },
- *   view: (container, { sheet, audio }) =>
+ *   uses: {
+ *     audio: Audio,
+ *     sounds: PushPuzzleCueSounds,
+ *     sheet: PushPuzzleSheet.load,
+ *   },
+ *   view: (container, { audio, sounds, sheet }) =>
  *     Game.combineViews(
  *       new PushPuzzleView(container, sheet),
- *       new PushPuzzleSoundView(audio)
+ *       new PushPuzzleSoundView(audio, sounds)
  *     ),
- *   input: createInput,
+ *   input: pushPuzzleInput,
  * }) {}
  *
  * // In the app:
@@ -411,7 +418,7 @@ export const make = <
         })),
         Effect.provideContext(context)
       ) as Effect.Effect<Presentation<State, Input>, E, Scope.Scope>;
-      return makeEngine(definition.simulation, presentation, frames);
+      return makeEngine(name, definition.simulation, presentation, frames);
     })
   );
   return class extends Key {

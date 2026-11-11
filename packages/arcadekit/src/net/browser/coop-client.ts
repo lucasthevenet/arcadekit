@@ -74,6 +74,8 @@ export interface CoopParts<
   Content,
   E,
 > {
+  /** The Coop's declared name: a message that refuses a mistake names it. */
+  readonly name: string;
   readonly simulation: PlayersSimulation<
     Config,
     State,
@@ -808,7 +810,9 @@ export const coopClient = <
       Effect.suspend(() => {
         if (attached) {
           return Effect.die(
-            new Error("This co-op client is already attached to an element")
+            new Error(
+              `Coop "${parts.name}" is already attached to an element. Its Co-op client draws into one element at a time: interrupt the first attach, which detaches without leaving, before attaching again.`
+            )
           );
         }
         attached = true;

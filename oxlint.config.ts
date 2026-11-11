@@ -218,6 +218,14 @@ export default defineConfig({
       rules: { "declaration/builder": "error" },
     },
     {
+      // Where the kit and the genres refuse a mistake. A refusal throws `Error`, or `RangeError`
+      // for a number out of range, never `TypeError` (docs/code-style.md, "Refusing a mistake").
+      // This rule makes the throw after a `typeof` test a `TypeError`, so the two halves of one
+      // check threw two classes.
+      files: ["packages/*/src/**/*.ts"],
+      rules: { "unicorn/prefer-type-error": "off" },
+    },
+    {
       // Library code, but for what a test imports and the one file whose entry points
       // Cloudflare owns. The two overrides below set the same rule for the simulation's files,
       // and the last one's options replace the others', so they repeat this list.

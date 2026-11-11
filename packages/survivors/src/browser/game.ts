@@ -34,10 +34,7 @@ export const survivorsViews = (
   const view = new SurvivorsView(container, art, options);
   return sound === undefined
     ? view
-    : Game.combineViews<World>(
-        view,
-        new SurvivorsSoundView({ ...sound, ...options })
-      );
+    : Game.combineViews(view, new SurvivorsSoundView({ ...sound, ...options }));
 };
 
 /**

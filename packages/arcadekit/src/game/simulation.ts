@@ -40,14 +40,14 @@ export interface CommandContext<Event> {
  *   turn-based game). `version` is a cheap number the game bumps whenever what `read` reports
  *   may have changed, such as a turn counter.
  */
-export interface Sample<State, S extends AnyEvent> {
+export interface Sample<State, Sampled extends AnyEvent> {
   /** The event a sample is delivered as. */
-  readonly event: S;
+  readonly event: Sampled;
   /** Measured on the time the loop's caller passes in: real time in the browser. */
   readonly every?: Duration.Input;
   readonly version?: (state: State) => number;
   /** The event's payload, read from the state. Must not change the state. */
-  readonly read: (state: State) => Omit<S["Type"], "_tag">;
+  readonly read: (state: State) => Omit<Sampled["Type"], "_tag">;
 }
 
 declare const unreturnable: unique symbol;
@@ -86,17 +86,25 @@ export type RefusalOf<Refusals> = unknown extends Refusals
  * One `apply` handler per command, by the command's tag. A handler takes the command, changing
  * the state and returning nothing, or refuses it by returning one of the rejections the command
  * declares, having changed nothing.
+ *
+ * Its keys are the commands' tags, read from the list and not renamed with `as`: TypeScript
+ * types a handler's parameters from a mapped type only while its keys are not renamed, and a
+ * handler written directly under `create` then takes the state `create` returns.
  */
 export type CommandHandlers<
   State,
   Commands extends readonly AnyCommand[],
   Event,
 > = {
-  readonly [C in Commands[number] as C["tag"]]: (
+  readonly [Tag in Commands[number]["tag"]]: (
     state: State,
-    command: C["Type"],
+    command: Extract<Commands[number], { readonly tag: Tag }>["Type"],
     context: CommandContext<Event>
-  ) => Nothing | InstanceType<C["rejects"][number]>;
+  ) =>
+    | Nothing
+    | InstanceType<
+        Extract<Commands[number], { readonly tag: Tag }>["rejects"][number]
+      >;
 };
 
 /** What `Game.Simulation` takes: the rules of a game, with no DOM. */
@@ -106,7 +114,7 @@ export interface Definition<
   In extends Schema.Top,
   Events extends readonly AnyEvent[],
   Commands extends readonly AnyCommand[],
-  S extends AnyEvent,
+  Sampled extends AnyEvent,
 > {
   /** Step length in seconds. Defaults to 1/60. */
   readonly stepSeconds?: number;
@@ -146,15 +154,18 @@ export interface Definition<
    * before it changes anything. The sender hears which.
    */
   readonly apply?: CommandHandlers<State, Commands, Events[number]["Type"]>;
-  readonly sample?: Sample<State, S>;
+  readonly sample?: Sample<State, Sampled>;
 }
 
-/** A simulation that declares commands must handle each of them. */
-type RequireApply<State, Commands extends readonly AnyCommand[], Event> = [
+/**
+ * A simulation that declares commands must have an `apply`: `Definition` then asks it for a
+ * handler of each. It names no type the handlers infer, so it settles none of them early.
+ */
+type RequireApply<Commands extends readonly AnyCommand[]> = [
   Commands[number],
 ] extends [never]
   ? unknown
-  : { readonly apply: CommandHandlers<State, Commands, Event> };
+  : { readonly apply: object };
 
 /**
  * A simulation's definition as the loop runs it: defaults filled, and the declarations' classes
@@ -330,12 +341,18 @@ export const resolve = <Config, State, Input, Event, Command, Refusals>(
  *   step,
  *   sample: { event: Hud, version: (puzzle) => puzzle.turns, read: hudSample },
  * }) {}
+ *
+ * // What runs it takes the class:
+ * const loop = new Game.Loop(PushPuzzle);
+ * loop.start({ content, levelId }, seed, nowMs);
  * ```
  *
  * `create` and `step` are plain functions, and so is each `apply` handler: a step runs no Effect
- * and reads no clock or random source of its own (ADR-0017). A simulation that declares a
- * command without its handler is refused when its module loads. An `apply` handler may refuse
- * its command by returning one of the rejections the command declares (`Game.Rejection`).
+ * and reads no clock or random source of its own (ADR-0017). An `apply` handler may refuse its
+ * command by returning one of the rejections the command declares (`Game.Rejection`).
+ *
+ * Throws when declared, for what the types let through: a command with no `apply` handler, and
+ * two commands with one tag.
  */
 export const make = <
   const Name extends string,
@@ -344,17 +361,17 @@ export const make = <
   In extends Schema.Top,
   const Events extends readonly AnyEvent[] = readonly [],
   const Commands extends readonly AnyCommand[] = readonly [],
-  S extends AnyEvent = never,
+  Sampled extends AnyEvent = never,
 >(
   name: Name,
-  definition: Definition<Config, State, In, Events, Commands, S> &
-    RequireApply<State, Commands, Events[number]["Type"]>
+  definition: Definition<Config, State, In, Events, Commands, Sampled> &
+    RequireApply<Commands>
 ): SimulationClass<
   Name,
   Config,
   State,
   In["Type"],
-  Events[number]["Type"] | S["Type"],
+  Events[number]["Type"] | Sampled["Type"],
   Commands[number]["Type"],
   RefusalsOf<Commands>
 > => {
@@ -458,7 +475,7 @@ export const make = <
     Config,
     State,
     In["Type"],
-    Events[number]["Type"] | S["Type"],
+    Events[number]["Type"] | Sampled["Type"],
     Commands[number]["Type"],
     RefusalsOf<Commands>
   >;

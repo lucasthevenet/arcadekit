@@ -16,7 +16,5 @@ export {
   type ContentDefinition,
   ContentError,
   type ContentSource,
-  type LoadContentOptions,
-  loadContent,
   memorySource,
 } from "./loader";

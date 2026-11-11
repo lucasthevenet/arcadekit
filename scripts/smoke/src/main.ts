@@ -3,7 +3,7 @@
 import { Audio, makeAudioSettingsStore } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
 import { BrowserAudioLayer } from "arcadekit/audio/browser";
-import { Asset, loadContent, memorySource } from "arcadekit/content";
+import { Asset, Content, memorySource } from "arcadekit/content";
 import type { AttachableEngine } from "arcadekit/foldkit";
 import * as Game from "arcadekit/game/browser";
 import { InputController, MOVE_AXES } from "arcadekit/input";
@@ -90,20 +90,22 @@ class DotsEngine extends Game.Engine("DotsEngine", {
   simulation: Dots,
   uses: { sheet: DotsSheet.load, audio: Audio },
   view: (container, { sheet, audio }) =>
-    Game.combineViews<Field>(new DotsView(container, sheet), soundView(audio)),
+    Game.combineViews(new DotsView(container, sheet), soundView(audio)),
   input: createInput,
 }) {}
 
 const Settings = Schema.Struct({ dots: Schema.Int, speed: Schema.Finite });
 
+/** What a run is played with: one file, checked by its Schema. The app says where it is. */
+class DotsContent extends Content("DotsContent", {
+  schema: Schema.Struct({ settings: Settings }),
+  files: { settings: "settings.json" },
+}) {}
+
 const BestRecord = Schema.Struct({ near: Schema.Int });
 
 const program = Effect.gen(function* () {
-  const settings = yield* loadContent({
-    schema: Schema.Struct({ settings: Settings }),
-    files: { settings: "settings.json" },
-    source: memorySource({ "settings.json": { dots: 128, speed: 6 } }),
-  });
+  const settings = yield* DotsContent.load;
   const save = yield* makeSaveStore({
     key: "smoke/dots/save",
     field: "runs",
@@ -177,7 +179,10 @@ Effect.runFork(
           Layer.mergeAll(
             BrowserAudioLayer,
             BrowserSaveStorage,
-            DotsSheet.layer(loadSpriteSheet("sprites/dots.json"))
+            DotsSheet.layer(loadSpriteSheet("sprites/dots.json")),
+            DotsContent.layer(
+              memorySource({ "settings.json": { dots: 128, speed: 6 } })
+            )
           )
         )
       )

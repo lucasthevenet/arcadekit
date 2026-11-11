@@ -552,9 +552,10 @@ describe("a declared Coop", () => {
   });
 
   // `picks` and `config` take their `content` from the `content` field. An Effect piped where
-  // it is given still tells them; one made by a call that takes the Effect and a function
-  // together does not, on any TypeScript tried (5.6 to 7.0). `CoopDefinition.content`'s doc
-  // comment and the guide say so: if the second block ever compiles, they are out of date.
+  // it is given still tells them; one made by a data-first call, here `Effect.map` given the
+  // Effect and the function together, does not, on any TypeScript tried (5.6 to 7.0).
+  // `CoopDefinition.content`'s doc comment and the guide say so: if the second block ever
+  // compiles, they are out of date.
   it("takes its content's type from an Effect piped in the definition, but not from a data-first call", () => {
     class Piped extends Coop("Piped", {
       engine: TestEngine,

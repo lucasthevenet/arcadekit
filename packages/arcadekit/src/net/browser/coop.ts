@@ -382,8 +382,8 @@ export interface CoopDefinition<
    * Loads what a run is played with: a `Content` declaration's `load`. Run once per seat (each
    * host or join), in the seat's fiber, so leaving cancels it. It must be JSON data: the client
    * hashes it, and every peer's must match. `picks` and `config` take their `content` from it.
-   * One way of building it here leaves their `content` unknown: a call that takes the Effect
-   * and a function together (`Effect.map(load, fn)`). Pipe it (`load.pipe(Effect.map(fn))`),
+   * Building it here with a data-first call can leave their `content` unknown
+   * (`Effect.map(load, fn)`, `Effect.as(load, value)`). Pipe it (`load.pipe(Effect.map(fn))`),
    * or name it first.
    */
   readonly content: Effect.Effect<Content, ContentError, R>;
@@ -613,6 +613,7 @@ export const Coop = <
         yield* Effect.context<Exclude<Needs, Scope.Scope>>()
       );
       return yield* coopClient({
+        name,
         simulation,
         content: definition.content.pipe(
           Effect.provideContext(context)

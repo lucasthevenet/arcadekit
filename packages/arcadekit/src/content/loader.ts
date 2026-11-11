@@ -28,9 +28,9 @@ export const memorySource =
         );
 
 /**
- * A genre's schema, the file each part comes from, and the checks the schema can't express,
- * as one value. The genre's content service and its tests load the same definition, each
- * with its own source, so they run the same checks.
+ * What `Content` takes: a genre's schema, the file each part comes from, and the checks the
+ * schema can't express. The genre's content service and its tests load the same definition,
+ * each with its own source, so they run the same checks.
  */
 export interface ContentDefinition<S extends Schema.Top> {
   /** Schema for the whole content object. Should be a struct: each field is loaded from its own file. */
@@ -42,40 +42,35 @@ export interface ContentDefinition<S extends Schema.Top> {
   readonly validate?: (content: S["Type"]) => readonly string[];
 }
 
-/** A content definition and the source its files come from. */
-export interface LoadContentOptions<
-  S extends Schema.Top,
-> extends ContentDefinition<S> {
-  readonly source: ContentSource;
-}
-
 /**
- * Loads every file in parallel, decodes the result with the schema, then runs `validate`.
- * Call it to load and check content directly, for example in a test of a game's real
- * content files: `loadContent({ ...definition, source })` runs the genre's own checks.
- * A `Content` declaration loads with it: its `read` is this call, and its service keeps the
- * first successful result.
+ * Loads every file of `definition` from `source` in parallel, decodes the result with the
+ * schema, then runs `validate`. It is what a `Content` declaration loads with, and no entry
+ * exports it: the class's `read(source)` is this call, and its service keeps the first
+ * successful result.
  */
 export const loadContent = <S extends Schema.Top>(
-  options: LoadContentOptions<S>
+  definition: ContentDefinition<S>,
+  source: ContentSource
 ): Effect.Effect<S["Type"], ContentError, S["DecodingServices"]> =>
   Effect.gen(function* () {
     const raw = yield* Effect.all(
       Object.fromEntries(
-        Object.entries<string>(options.files).map(([field, file]) => [
+        Object.entries<string>(definition.files).map(([field, file]) => [
           field,
-          options.source(file),
+          source(file),
         ])
       ),
       { concurrency: "unbounded" }
     );
-    const content = yield* Schema.decodeUnknownEffect(options.schema)(raw).pipe(
+    const content = yield* Schema.decodeUnknownEffect(definition.schema)(
+      raw
+    ).pipe(
       Effect.mapError(
         (error) =>
           new ContentError({ message: `Invalid content: ${error.message}` })
       )
     );
-    const problems = options.validate?.(content) ?? [];
+    const problems = definition.validate?.(content) ?? [];
     if (problems.length > 0) {
       return yield* new ContentError({
         message: `Content problems: ${problems.join("; ")}`,

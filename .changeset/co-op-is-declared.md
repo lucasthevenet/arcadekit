@@ -23,12 +23,10 @@ const survivorsCoopRules: CoopRules<SurvivorsCoop> = {
   localEvent: (event, slot) => /* a second event vocabulary */ null,
   runEnded: (event) => event._tag === "RunEnded",
 };
-const coop =
-  yield *
-  makeCoopClient(
-    { ...survivorsCoopRules, content, presentation },
-    { rooms: browserCoopRooms({ url, iceServers }) }
-  );
+const coopClient = makeCoopClient(
+  { ...survivorsCoopRules, content, presentation },
+  { rooms: browserCoopRooms({ url, iceServers }) }
+);
 
 // After: one declaration, over the engine the game already has. Every type is inferred.
 export class SurvivorsCoop extends Coop("SurvivorsCoop", {
@@ -42,9 +40,13 @@ export class SurvivorsCoop extends Coop("SurvivorsCoop", {
   ends: [RunEnded],
 }) {}
 
-const coop = yield * SurvivorsCoop;
-// ...provided by SurvivorsCoop.layer, over
+// The client is the service `SurvivorsCoop`, provided by SurvivorsCoop.layer over
 // browserCoopRoomsLayer(() => ({ url, iceServers }))
+const hostRoom = (heroId: string) =>
+  Effect.gen(function* () {
+    const coop = yield* SurvivorsCoop;
+    yield* coop.host(heroId);
+  });
 ```
 
 - **`engine`** gives the simulation, what the view is made from (`uses`) and the view: the browser half is declared once. **`input`** is one player's input source, made as the engine's is, with what the engine uses.

@@ -68,26 +68,30 @@ class Counter extends Game.Simulation("Counter", {
 const holding = (add: number) => ({ read: () => ({ add }) });
 
 /** Simulations whose handlers return what a handler can't: each is a type error. */
-/* oxlint-disable declaration/class, declaration/plain-handler -- A test declares what a builder or its host must refuse. */
 const declareMistyped = () => [
+  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Game.Simulation("Late", {
     input: Schema.Null,
     create: () => ({ n: 0 }),
     // @ts-expect-error -- a step can't be async: it would return a promise.
+    // oxlint-disable-next-line declaration/plain-handler -- The async step is what the types must refuse.
     step: async () => {},
   }),
+  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Game.Simulation("Lazy", {
     input: Schema.Null,
     create: () => ({ n: 0 }),
     // @ts-expect-error -- a step returns no Effect: nothing would run it.
     step: () => Effect.void,
   }),
+  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Game.Simulation("Folded", {
     input: Schema.Null,
     create: () => ({ n: 0 }),
     // @ts-expect-error -- a step changes the state in place; it returns no next state.
     step: (state) => ({ n: state.n + 1 }),
   }),
+  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Game.Simulation("Decided", {
     input: Schema.Null,
     events: [Reached],
@@ -100,7 +104,6 @@ const declareMistyped = () => [
     },
   }),
 ];
-/* oxlint-enable declaration/class, declaration/plain-handler */
 
 /** A handler with its return type cast away, as a cast or plain JavaScript would pass it. */
 const unchecked = <Args extends readonly unknown[]>(
@@ -136,6 +139,24 @@ const declareWithoutHandler = () =>
     // @ts-expect-error -- `apply` has no AddBonus.
     apply: {},
   });
+
+// `apply` is written directly under `create` here, and `step` last: a handler takes the state
+// `create` returns wherever it is written below it. Typecheck holds it.
+class Ordered extends Game.Simulation("Ordered", {
+  input: Schema.Null,
+  commands: [AddBonus],
+  create: (config: { readonly start: number }, { seed }) => ({
+    total: config.start + seed,
+  }),
+  apply: {
+    AddBonus: (state, command) => {
+      state.total += command.amount;
+    },
+  },
+  step: (state) => {
+    state.total += 1;
+  },
+}) {}
 
 /** A started loop of the counter game, and every event it reports. */
 const startCounter = (target = 3) => {
@@ -190,6 +211,17 @@ describe("Game.Simulation", () => {
     >();
     expectTypeOf<Game.CommandOf<typeof Counter>>().toExtend<AddBonus>();
     expectTypeOf<AddBonus>().toExtend<Game.CommandOf<typeof Counter>>();
+  });
+
+  it("types an apply handler from create, wherever it is written below it", () => {
+    expectTypeOf<Game.StateOf<typeof Ordered>>().toEqualTypeOf<{
+      total: number;
+    }>();
+    const loop = new Game.Loop(Ordered);
+    loop.start({ start: 1 }, 2, 0);
+    loop.send(new AddBonus({ amount: 4 }));
+    loop.frame({ read: () => null }, { steps: 1 }, 0);
+    expect(loop.state).toStrictEqual({ total: 8 });
   });
 
   it("refuses a command with no handler when it is declared", () => {

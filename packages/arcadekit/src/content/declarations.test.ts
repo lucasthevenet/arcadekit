@@ -237,6 +237,19 @@ describe(Content, () => {
     );
   });
 
+  it("fails with the source's ContentError for a file it doesn't have", async () => {
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        GameContent.read(memorySource({ "levels.json": [{ id: "one" }] }))
+      )
+    );
+    expect(exit).toStrictEqual(
+      Exit.fail(
+        new ContentError({ message: "No content file named title.json" })
+      )
+    );
+  });
+
   it("keeps no failure: a load that failed runs again", async () => {
     const files: Record<string, unknown> = { "title.json": "Demo" };
     const outcomes = await Effect.runPromise(
