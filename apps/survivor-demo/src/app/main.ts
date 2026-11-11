@@ -1,6 +1,6 @@
 import { SurvivorsContent } from "@arcadekit/survivors";
 import {
-  SurvivorsCueSounds,
+  SurvivorsCueTable,
   SurvivorsEngine,
   SurvivorsSheet,
 } from "@arcadekit/survivors/browser";
@@ -30,7 +30,7 @@ const assets = Layer.mergeAll(
   SurvivorsSheet.layer(
     loadSpriteSheet(`${import.meta.env.BASE_URL}sprites/survivors.json`)
   ),
-  Layer.succeed(SurvivorsCueSounds, survivorsSounds),
+  SurvivorsCueTable.layer(survivorsSounds),
   BrowserAudioLayer
 );
 

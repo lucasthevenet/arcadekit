@@ -1,7 +1,18 @@
 // Sound for a game: the audio system apps and sound views call, its mixer, the Effect
-// service, and the shape of the player's audio settings. Plain TypeScript with no DOM; the Web
-// Audio backend is in ./browser.
+// service, a genre's cue table, and the shape of the player's audio settings. Plain TypeScript
+// with no DOM; the Web Audio backend is in ./browser.
 
+export {
+  type AnyCueTable,
+  type CueSounds,
+  type CueSoundsOf,
+  CueTable,
+  type CueTableClass,
+  type CueTableDefinition,
+  type CueTableId,
+  type CueTableService,
+  SoundId,
+} from "./cue-table";
 export { Audio, SilentAudioLayer, silentAudio } from "./service";
 export {
   AudioSettings,

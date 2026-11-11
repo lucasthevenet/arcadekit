@@ -38,7 +38,7 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | [`arcadekit/content/browser`](src/content/README.md) | `fetchJsonSource` | Effect, DOM |
 | [`arcadekit/save`](src/save/README.md) | `Save`, a game's records by id under one versioned key, and `Setting`, one value kept apart from it, such as the audio settings | Effect |
 | [`arcadekit/save/browser`](src/save/README.md) | `BrowserSaveStorage`: localStorage, or memory if the browser refuses | Effect, `@effect/platform-browser`, DOM |
-| [`arcadekit/audio`](src/audio/README.md) | `AudioSystem`, the `Audio` service with `SilentAudioLayer`, and the audio settings' Schema and default | Effect |
+| [`arcadekit/audio`](src/audio/README.md) | `AudioSystem`, the `Audio` service with `SilentAudioLayer`, `CueTable` for a genre's cues, and the audio settings' Schema and default | Effect |
 | [`arcadekit/audio/browser`](src/audio/README.md) | `BrowserAudioLayer` (Web Audio) | Effect, DOM |
 | [`arcadekit/render-three`](src/render-three/README.md) | `Stage`, `MeshInstances`, camera helpers, and pixel-art sprites: `loadSpriteSheet`, `InstancedSprites`, `PixelCamera` | Effect, Three.js, DOM |
 | [`arcadekit/game`](src/game/README.md) | A game's declarations: `Game.Event`, `Game.Command`, `Game.Rejection` and `Game.Simulation` (the DOM-free rules), and `Game.Loop`, which steps one anywhere. `Game.PlayerInputs`, the step input of a simulation several players can play, and `Game.soloInput` | Effect, core |

@@ -3,7 +3,7 @@ import { inflateSync } from "node:zlib";
 
 import { SurvivorsContent } from "@arcadekit/survivors";
 import {
-  SurvivorsCueSounds,
+  SurvivorsCueTable,
   SurvivorsEngine,
   SurvivorsSheet,
   missingSpriteTags,
@@ -265,7 +265,7 @@ describe("loading", () => {
           Layer.provide(
             Layer.mergeAll(
               SurvivorsSheet.layer(Effect.fail(sheetError)),
-              Layer.succeed(SurvivorsCueSounds, survivorsSounds),
+              SurvivorsCueTable.layer(survivorsSounds),
               SilentAudioLayer
             )
           )

@@ -1,32 +1,39 @@
-import type { AudioSystem } from "arcadekit/audio";
+import { CueTable, SoundId } from "arcadekit/audio";
+import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
 import type * as Game from "arcadekit/game/browser";
 
 import { isChoosing } from "../world";
 import type { World } from "../world";
 
 /**
- * The app's table of cue to sound: an id from the app's sound list for each of survivors'
- * cue counters (ADR-0014). The genre ships no sounds.
+ * Survivors' cue table: which of the app's sounds each of its cues plays (ADR-0014). The app
+ * gives the sounds, `SurvivorsCueTable.layer({ shot: "shot-arc", ... })`: it owns the sound
+ * files, and the genre ships none.
  */
-export interface SurvivorsSounds {
-  /** A bolt weapon's shot, when its content names no `sound` of its own. */
-  readonly shot: string;
-  /** A bolt hitting an enemy. */
-  readonly hit: string;
-  readonly kill: string;
-  /** A hero picking up a gem. */
-  readonly pickup: string;
-  /** A hero taking contact damage. */
-  readonly hurt: string;
-  /** A hero going down. */
-  readonly down: string;
-  /** The team gaining a level. */
-  readonly levelUp: string;
-  readonly won: string;
-  readonly lost: string;
-  /** Loops while a playing hero has an aura weapon. */
-  readonly auraHum: string;
-}
+export class SurvivorsCueTable extends CueTable("SurvivorsCueTable", {
+  cues: {
+    /** A bolt weapon's shot, when its content names no `sound` of its own. */
+    shot: SoundId,
+    /** A bolt hitting an enemy. */
+    hit: SoundId,
+    kill: SoundId,
+    /** A hero picking up a gem. */
+    pickup: SoundId,
+    /** A hero taking contact damage. */
+    hurt: SoundId,
+    /** A hero going down. */
+    down: SoundId,
+    /** The team gaining a level. */
+    levelUp: SoundId,
+    won: SoundId,
+    lost: SoundId,
+    /** Loops while a playing hero has an aura weapon. */
+    auraHum: SoundId,
+  },
+}) {}
+
+/** The app's sound for each cue: what the sound view plays from. */
+export type SurvivorsSounds = CueSoundsOf<typeof SurvivorsCueTable>;
 
 const firstHero = () => 0;
 

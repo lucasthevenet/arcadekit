@@ -1,6 +1,6 @@
-import type { SurvivorsSounds } from "@arcadekit/survivors/browser";
+import type { SurvivorsCueTable } from "@arcadekit/survivors/browser";
 import { AudioSettings, defaultAudioSettings } from "arcadekit/audio";
-import type { SoundDef, SoundList } from "arcadekit/audio";
+import type { CueSoundsOf, SoundDef, SoundList } from "arcadekit/audio";
 import { Setting } from "arcadekit/save";
 
 // The game's sounds: the files in public/sounds, the table of cue to sound the survivors sound
@@ -51,7 +51,7 @@ export const soundList: SoundList = {
 };
 
 /** Which sound each survivors cue plays. A weapon's `sound` in weapons.json overrides `shot`. */
-export const survivorsSounds: SurvivorsSounds = {
+export const survivorsSounds: CueSoundsOf<typeof SurvivorsCueTable> = {
   shot: "shot-arc",
   hit: "hit",
   kill: "kill",

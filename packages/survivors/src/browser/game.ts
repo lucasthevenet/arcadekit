@@ -3,18 +3,17 @@ import type { AudioSystem } from "arcadekit/audio";
 import { Asset } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
 import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
-import { Context } from "effect";
 
 import type { SurvivorsInput } from "../input";
 import { Survivors } from "../simulation";
 import type { World } from "../world";
 import type { SurvivorsArt } from "./art";
 import { heroDevice } from "./device";
-import { SurvivorsSoundView } from "./sound";
+import { SurvivorsCueTable, SurvivorsSoundView } from "./sound";
 import type { SurvivorsSounds } from "./sound";
 import { SurvivorsView } from "./view";
 
-/** What a survivors game plays its sounds through: the app's audio system and its cue table. */
+/** What a survivors game plays its sounds through: the app's audio system and its cue table's sounds. */
 export interface SurvivorsGameSound {
   readonly audio: AudioSystem;
   readonly sounds: SurvivorsSounds;
@@ -59,16 +58,10 @@ export class SurvivorsSheet extends Asset<SpriteSheet, SpriteSheetError>()(
   { release: (sheet) => sheet.dispose() }
 ) {}
 
-/** Which of the app's sounds each cue plays. The app provides its table: it owns the sounds. */
-export class SurvivorsCueSounds extends Context.Service<
-  SurvivorsCueSounds,
-  SurvivorsSounds
->()("@arcadekit/survivors/CueSounds") {}
-
 /**
  * The survivors genre in the browser, for one player: its rules, a view that draws them from
- * the app's sheet and plays their cues through the app's `Audio` (tests provide
- * `SilentAudioLayer`), and its input. `SurvivorsEngine.layer` provides the engine; building it
+ * the app's sheet and plays their cues, by the app's cue table, through the app's `Audio` (tests
+ * provide `SilentAudioLayer`), and its input. `SurvivorsEngine.layer` provides the engine; building it
  * loads nothing, and each attach loads the sheet, or takes the one already loaded. The view
  * follows the local player's hero, so `SurvivorsCoop` plays this engine for several players.
  */
@@ -76,7 +69,7 @@ export class SurvivorsEngine extends Game.Engine("SurvivorsEngine", {
   simulation: Survivors,
   uses: {
     audio: Audio,
-    sounds: SurvivorsCueSounds,
+    sounds: SurvivorsCueTable,
     sheet: SurvivorsSheet.load,
   },
   view: (container, { audio, sounds, sheet }, { local }) =>

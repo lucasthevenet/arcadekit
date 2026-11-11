@@ -4,10 +4,9 @@
 export { type SurvivorsArt, missingSpriteTags } from "./art";
 export { SurvivorsCoop } from "./coop";
 export {
-  SurvivorsCueSounds,
   SurvivorsEngine,
   type SurvivorsGameSound,
   SurvivorsSheet,
 } from "./game";
-export { SurvivorsSoundView, type SurvivorsSounds } from "./sound";
+export { SurvivorsCueTable, SurvivorsSoundView } from "./sound";
 export { SurvivorsView } from "./view";

@@ -9,7 +9,7 @@ import {
 import type { GameContent, Survivors } from "@arcadekit/survivors";
 import {
   SurvivorsCoop,
-  SurvivorsCueSounds,
+  SurvivorsCueTable,
   SurvivorsSheet,
 } from "@arcadekit/survivors/browser";
 import { SilentAudioLayer } from "arcadekit/audio";
@@ -140,7 +140,7 @@ const seat = async (
     Layer.provide(hub.layer),
     Layer.provide(Layer.succeed(Frames, manualFrames())),
     Layer.provide(SilentAudioLayer),
-    Layer.provide(Layer.succeed(SurvivorsCueSounds, survivorsSounds)),
+    Layer.provide(SurvivorsCueTable.layer(survivorsSounds)),
     Layer.provide(
       Layer.succeed(SurvivorsSheet, { load: parts.sheet ?? idleSheet })
     ),

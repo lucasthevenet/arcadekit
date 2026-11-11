@@ -56,6 +56,7 @@ export const DECLARATION_BUILDERS: readonly string[] = [
   "Coop",
   "Save",
   "Setting",
+  "CueTable",
 ];
 
 /** How a game names the entries whose builders it writes with a namespace: `Game.Event`. */
@@ -73,6 +74,7 @@ export const BUILDER_ENTRIES: Readonly<Record<string, "namespace" | "bare">> = {
   "arcadekit/content": "bare",
   "arcadekit/net/browser": "bare",
   "arcadekit/save": "bare",
+  "arcadekit/audio": "bare",
 };
 
 const KIT_PACKAGE = "packages/arcadekit/package.json";

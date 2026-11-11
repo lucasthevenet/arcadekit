@@ -41,7 +41,10 @@ vi.mock(import("./view"), () => ({
   SurvivorsView: recorder("sprites", 2) as never,
 }));
 
-vi.mock(import("./sound"), () => ({
+// The cue table is declared beside the sound view, and the engine uses it: only the view is
+// stood in for.
+vi.mock(import("./sound"), async (importOriginal) => ({
+  ...(await importOriginal()),
   SurvivorsSoundView: recorder("sounds", 0) as never,
 }));
 

@@ -32,7 +32,7 @@ If it needs one of them, change the builder, not the example.
 
 The test for a declaration: would two games each write one, and call it something of their own? Events, a simulation, an engine, content: yes. The audio system, the frame clock, a pool: no.
 
-A game never calls a `make…` or `create…` function to supply one of its parts: adding the declaration moves every caller and deletes the factory. First look for one that fits: the audio settings are a `Setting` an app declares from the kit's Schema and default.
+A game never calls a `make…` or `create…` function to supply one of its parts: adding the declaration moves every caller and deletes the factory. First look for one that fits (the audio settings are a `Setting` of the kit's Schema and default) and for who needs it: a `CueTable` hands a genre package the app's sounds, so a game that owns its sounds declares none.
 
 ## A declaration
 
@@ -67,7 +67,7 @@ The class is the service's key, as in [`content/asset.ts`](../packages/arcadekit
 - The key is `` `arcadekit/<folder>/<Noun>/${name}` `` as `<Noun>Id<Name>`, with the entry's first folder under `src/`.
 - Its identity is `<Noun>Service`, a `Context.ServiceClass.Shape<Id, Service>`: the type of the class's own values, so the class names it (`Layer.Layer<PushPuzzleEngine>`).
 - `layer` provides it, and loads nothing until the first use. It takes what the app knows, as its argument (`layer(source)`) or as a service it reads (`CoopRooms`), and takes that context once: the service's Effects require none of it.
-- A service that is one Effect has it as a static: `PushPuzzleSheet.load` for `(yield* PushPuzzleSheet).load`. One with methods is reached with `yield* PushPuzzleEngine`, however few: a save's `read` and `write` are no statics, and one call as an Effect is Effect's own `PushPuzzleSave.use((save) => save.read)`.
+- A service that is one Effect has it as a static: `PushPuzzleSheet.load` for `(yield* PushPuzzleSheet).load`. One with methods is reached with `yield* PushPuzzleEngine`, however few: a save's `read` and `write` are no statics, and one call is Effect's own `PushPuzzleSave.use((save) => save.read)`.
 - No field of a definition has the name of a static the class has for something else: a service's has `key`, so a storage key is `storageKey`.
 
 ### Register it
@@ -78,13 +78,13 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 
 - **One object.** A field holds data, a Schema, another declaration's class (`simulation: PushPuzzle`, `events: [LevelSolved]`) or a plain function, there or one object down (`apply`, `sample`). TypeScript infers a handler's parameters from the fields beside it, but not through a call or a spread: there the game has to annotate. A `create` written in place comes before the other handlers.
 - **An Effect is a field's value, which the host runs**: a service's key, a declaration's `load`, one built in place (`Effect.succeed("#e0b040")`). The handlers beside it take their types from it. Building it with a data-first call can break that, in `uses` and `content` alike (`Effect.map(load, fn)`, `Effect.as(load, value)`): pipe it (`load.pipe(Effect.map(fn))`) or name it first.
-- **A name a game gives is a key of an object**, which takes a doc comment: an event's fields, `files`, `uses`, `apply`. A list holds other declarations' classes.
+- **A name a game gives is a key of an object**, which takes a doc comment and whose value is what the kit reads: an event's fields, `files`, `uses`, `apply`, `cues`. A list holds other declarations' classes.
 - **A declaration made from another takes its class**, and every type from it: `Coop`'s `engine`. The builder is generic over the other's types, so the two can't disagree, and a mistake is a type error on that field.
 - **What handlers share is a named field** that the host resolves and passes in: `uses` in `Game.Engine`.
 - **A handler's parameters come in one order**: what it acts on, what it acts with, then one context object the host fills. `step(state, input, { dt, report })`, `view(container, uses, { local })`. Something new a handler needs is a new field of that context.
-- **A handler that changes state returns `Nothing`** ([`game/simulation.ts`](../packages/arcadekit/src/game/simulation.ts)), a type no value has by accident, so returning the next state, a promise or an Effect is a type error. Its host refuses the same at run time.
+- **A handler that changes state returns `Nothing`** ([`game/simulation.ts`](../packages/arcadekit/src/game/simulation.ts)), a type no value has by accident, so returning the next state, a promise or an Effect is a type error.
 - **A game reads its types from the class**: `StateOf<typeof PushPuzzle>`, `PushPuzzle.match({ ... })`. A type that reads a class takes `Any<Noun>`, so it refuses a look-alike. `Game.Simulation` keeps them on a types-only `"~types"` field.
-- **`NoInfer<T>`** goes on a handler's parameter or result that is checked against a type another field decides: the view's state in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts), the content `picks` takes in [`net/browser/coop.ts`](../packages/arcadekit/src/net/browser/coop.ts). A type read off a Schema (`S["Type"]`) needs none: nothing is inferred from it. `S` is `const` where a handler builds that value, so a literal there keeps its type ([`save/save.ts`](../packages/arcadekit/src/save/save.ts)).
+- **`NoInfer<T>`** goes on a handler's parameter or result that is checked against a type another field decides: the view's state in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts), the content `picks` takes in [`net/browser/coop.ts`](../packages/arcadekit/src/net/browser/coop.ts). A type read off a Schema (`S["Type"]`) needs none: nothing is inferred from it. `S` is `const` where a handler builds that value, so a literal keeps its type ([`save/save.ts`](../packages/arcadekit/src/save/save.ts)).
 
 ## A host
 
@@ -101,7 +101,7 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 - **The glossary's word**, the same in code, docs, tests and messages ([`CONTEXT.md`](../CONTEXT.md)). A new concept gets its term in the same change, with the words to avoid. A two-word name is headed as prose writes it: **Player inputs**, whose entry names `PlayerInputs`.
 - **A builder is a singular noun**: `Event`, `Asset`.
 - **What a game declares**: an event in the past tense (`LevelSolved`), a sample for what it shows (`Hud`), a command in the imperative (`ChooseUpgrade`), a rejection by what is wrong (`OfferClosed`), a simulation by the game's name (`PushPuzzle`), an asset or a setting by the game and the thing (`PushPuzzleSheet`, `PushPuzzleAudioSettings`), anything else by the game and the builder's noun (`PushPuzzleEngine`).
-- **The kit's words are taken**, each in its place. A definition: `input`, `events`, `commands`, `rejects`, `create`, `step`, `apply`, `sample`, `stepSeconds`, `simulation`, `uses`, `view`, `schema`, `files`, `validate`, `release`, `engine`, `content`, `picks`, `config`, `maxPlayers`, `hash`, `ends`, `lockstep`, `storageKey`, `field`, `record`, `mergeRecord`, `default`, `merge`. A context: `seed`, `report`, `dt`, `step`, `player`, `local`. A class: `kind`, `tag`, `definition`, `load` (keeps its first success), `read` (keeps nothing), `layer`, `match`, `merge`. A service: `read`, `write` (stores; a save's merges), `attach`, `listen`, `start`, `send`, `setPaused`, `stop`, `host`, `join`, `choose`, `leave`, `debug`. A new declaration uses the ones that fit, and adds a word only for a new idea. One made from another may take its word for a part of the same thing, and says so: a `Coop`'s `input`.
+- **The kit's words are taken**, each in its place. A definition: `input`, `events`, `commands`, `rejects`, `create`, `step`, `apply`, `sample`, `stepSeconds`, `simulation`, `uses`, `view`, `schema`, `files`, `validate`, `release`, `engine`, `content`, `picks`, `config`, `maxPlayers`, `hash`, `ends`, `lockstep`, `storageKey`, `field`, `record`, `mergeRecord`, `default`, `merge`, `cues`. A context: `seed`, `report`, `dt`, `step`, `player`, `local`. A class: `kind`, `tag`, `definition`, `load` (keeps its first success), `read` (keeps nothing), `layer`, `match`, `merge`. A service: `read`, `write` (stores; a save's merges), `attach`, `listen`, `start`, `send`, `setPaused`, `stop`, `host`, `join`, `choose`, `leave`, `debug`. A new declaration uses the ones that fit, and adds a word only for a new idea. One made from another may take its word for a part of the same thing, and says so: a `Coop`'s `input`.
 - **Check Effect's and Foldkit's exports before settling a name a file writes bare.** A word one of them uses for something else is taken there: Foldkit's `Story` is why the kit's is `Scenario`. Behind a namespace a name may clash: `Game.Command`, beside Foldkit's.
 - **A declaration's other names are its glossary entry's**: the type its service gives (`CoopClient`), and the one word its examples bind it to (`coop`).
 - **A static has one job**: it is not another static plus a suffix, nor an export of its entry under other arguments.
@@ -113,9 +113,9 @@ At the earliest moment that can see it, in this order:
 
 1. **A type error**, for whatever the definition itself shows: an inferred type parameter costs a game nothing (`RequireApply` in [`game/simulation.ts`](../packages/arcadekit/src/game/simulation.ts), with its throw behind it). A test holds each one: `// @ts-expect-error` on the line directly above the wrong line.
 2. **A throw when the part is declared**, as the module loads: `Simulation "Jar" declares the command "Deposit" but has no apply.Deposit to handle it`.
-3. **A throw from the host**, for what a cast gets past the types: `Game.Loop` throws on a handler's stray return.
+3. **A throw from the host**, for what a cast gets past the types: `Game.Loop` throws on a handler's stray return, a `CueTable`'s `layer` on sounds that don't fit its cues.
 
-Never drop it in silence. A refusal throws `Error`, or `RangeError` for a number out of range, never `TypeError`. A message names the declaration and says what to write. A test holds each message.
+Never drop it in silence. A refusal throws `Error`, or `RangeError` for a number out of range, never `TypeError`. A message names the declaration and says what to write.
 
 ## Done when
 
@@ -128,7 +128,7 @@ Never drop it in silence. A refusal throws `Error`, or `RangeError` for a number
 
 ## What checks it
 
-What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/lint/declaration.ts) or [`oxlint.config.ts`](../oxlint.config.ts). What takes several files is a test, [`packages/arcadekit/test/style.test.ts`](../packages/arcadekit/test/style.test.ts). A rule of this page that can be checked gets a check, and the `declaration/…` rules and that test say what to write.
+What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/lint/declaration.ts) or [`oxlint.config.ts`](../oxlint.config.ts). What takes several files is a test, [`packages/arcadekit/test/style.test.ts`](../packages/arcadekit/test/style.test.ts).
 
 | Rule | Checked by |
 | --- | --- |

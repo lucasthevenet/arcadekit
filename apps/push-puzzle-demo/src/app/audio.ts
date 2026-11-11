@@ -1,6 +1,6 @@
-import type { PushPuzzleSounds } from "@arcadekit/push-puzzle/browser";
+import type { PushPuzzleCueTable } from "@arcadekit/push-puzzle/browser";
 import { AudioSettings, defaultAudioSettings } from "arcadekit/audio";
-import type { SoundList } from "arcadekit/audio";
+import type { CueSoundsOf, SoundList } from "arcadekit/audio";
 import { Setting } from "arcadekit/save";
 
 // This game's sounds: the files it ships, which sound each cue plays, and where the
@@ -24,7 +24,7 @@ export const SOUND_LIST: SoundList = {
 };
 
 /** Which sound each push-puzzle cue plays. */
-export const CUE_SOUNDS: PushPuzzleSounds = {
+export const CUE_SOUNDS: CueSoundsOf<typeof PushPuzzleCueTable> = {
   move: "move",
   push: "push",
   hole: "hole",

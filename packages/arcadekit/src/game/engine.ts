@@ -351,7 +351,7 @@ const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
  *   simulation: PushPuzzle,
  *   uses: {
  *     audio: Audio,
- *     sounds: PushPuzzleCueSounds,
+ *     sounds: PushPuzzleCueTable,
  *     sheet: PushPuzzleSheet.load,
  *   },
  *   view: (container, { audio, sounds, sheet }) =>

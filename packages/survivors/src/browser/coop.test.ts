@@ -16,7 +16,8 @@ import { Survivors } from "../simulation";
 import { createWorld } from "../world";
 import { SurvivorsCoop } from "./coop";
 import { heroDevice } from "./device";
-import { SurvivorsCueSounds, SurvivorsEngine, SurvivorsSheet } from "./game";
+import { SurvivorsEngine, SurvivorsSheet } from "./game";
+import { SurvivorsCueTable } from "./sound";
 import type { SurvivorsSounds } from "./sound";
 
 // Survivors' Coop declaration, in Node: what every peer of a run must agree on, read from the
@@ -93,6 +94,20 @@ const content = Schema.decodeUnknownSync(GameContent)({
   passives: [],
   waves: [{ from: 0, to: 90, enemy: "grunt", perSecond: 1 }],
 });
+
+/** The app's sounds, for a silent audio system: each cue plays a sound named after it. */
+const sounds: SurvivorsSounds = {
+  shot: "shot",
+  hit: "hit",
+  kill: "kill",
+  pickup: "pickup",
+  hurt: "hurt",
+  down: "down",
+  levelUp: "levelUp",
+  won: "won",
+  lost: "lost",
+  auraHum: "auraHum",
+};
 
 /** An EventTarget that counts the listeners on it. */
 const countingTarget = () => {
@@ -195,8 +210,8 @@ describe("survivors' Coop", () => {
       Layer.provide(fakeCoopRooms().layer),
       Layer.provide(Layer.succeed(Frames, manualFrames())),
       Layer.provide(SilentAudioLayer),
-      // A cue table nothing reads: the attach fails before a view is made.
-      Layer.provide(Layer.succeed(SurvivorsCueSounds, {} as SurvivorsSounds)),
+      // The attach fails before a view is made, so nothing plays from the table.
+      Layer.provide(SurvivorsCueTable.layer(sounds)),
       Layer.provide(SurvivorsSheet.layer(Effect.fail(error))),
       Layer.provide(
         Layer.succeed(SurvivorsContent, { load: Effect.succeed(content) })

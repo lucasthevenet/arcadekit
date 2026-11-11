@@ -57,6 +57,7 @@ const DECLARATIONS: Readonly<Record<string, Declared>> = {
   Coop: { file: "net/browser/coop.ts", service: true },
   Save: { file: "save/save.ts", service: true },
   Setting: { file: "save/setting.ts", service: true },
+  CueTable: { file: "audio/cue-table.ts", service: true },
 };
 
 const nounOf = (builder: string): string =>
