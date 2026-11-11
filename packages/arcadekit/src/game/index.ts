@@ -28,7 +28,7 @@ export type {
   NoFields,
   Payload,
 } from "./event";
-export type { FrameBudget } from "./game-loop";
+export type { FrameBudget } from "./kernel";
 export { Loop } from "./loop";
 export {
   type PlayerInputOf,

@@ -6,7 +6,7 @@ status: accepted
 
 > Amended on 2026-11-06: `GameDriver` is gone; `makeGameEngine`'s `attach` is the `requestAnimationFrame` adapter, see the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
 >
-> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: `makeGameEngine` and the `runtime` entries are gone. A `Game.Engine`'s `attach` is that adapter, `GameLoop` is the kernel under `Game.Loop`, exported from no entry, and `StepInput` is `arcadekit/game`'s. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: `makeGameEngine` and the `runtime` entries are gone. A `Game.Engine`'s `attach` is that adapter, `GameLoop` is the kernel under `Game.Loop` (`Kernel`), exported from no entry, and `StepInput` is `arcadekit/game`'s. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
 >
 > Since [ADR-0019](0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md): the signalling worker is the kit's (`arcadekit/net/worker`), and the demo's Worker is a few lines over it. The demo's `CoopClient` is the kit's Co-op client (`makeCoopClient`, `arcadekit/net/browser`), with the lobby, the content hash and the worker-timed ticker behind it. A genre's per-player step input is `PlayerInputs` (`arcadekit/runtime`).
 >

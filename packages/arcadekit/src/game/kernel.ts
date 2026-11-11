@@ -1,5 +1,4 @@
 import { FixedStepClock } from "../core/index";
-import type { GameSimulation } from "./game-simulation";
 import type { StepInput } from "./step-input";
 
 /** Longest frame gap counted, so a hidden tab or a debugger pause doesn't fast-forward the game. */
@@ -20,20 +19,60 @@ export type FrameBudget =
   | { readonly steps: number };
 
 /**
- * Runs a GameSimulation: one run at a time, its fixed clock, its events and samples. It owns the
- * step order and the time policy. Time and input come from the caller, so it needs no DOM and
- * reads no global clock.
+ * What the kernel steps: a run's `create`, `step`, events and sample as plain functions over a
+ * state it never looks inside. No game writes one and no entry exports it: `Game.Loop` makes one
+ * from a declared `Game.Simulation`, with the simulation's commands and its event buffer behind
+ * `step` and `drainEvents`.
  *
- * It is the kernel under `Game.Loop` (loop.ts), and no entry exports it: `Game.Loop` makes the
- * `GameSimulation` from a declared simulation, adds its commands, and calls `frame` for every
- * host, which are the browser engine (one frame per requestAnimationFrame callback), tests and
- * replays (a scripted `StepInput` and `{ steps }` frames), and a lockstep session. Every recorded
- * hash of a run was computed by the lines below that step, so they change only with those hashes.
- *
- * Listeners must not call `frame`, `start` or `modify` synchronously while an event is
- * delivered; schedule that work instead.
+ * - `Config`: what starting a run needs (content, chosen character, difficulty…).
+ * - `State`: the simulation state.
+ * - `Input`: one step's worth of player input, as the game wants it.
+ * - `Event`: the facts the game reports to the outside (UI, sound, analytics).
  */
-export class GameLoop<Config, State, Input, Event> {
+export interface KernelSimulation<Config, State, Input, Event> {
+  /** Simulation step length in seconds. Defaults to 1/60. */
+  readonly stepSeconds?: number;
+  readonly create: (config: Config, seed: number) => State;
+  /**
+   * Advances the state by one step of `dt` seconds. Must be deterministic: the same state, input
+   * and `dt` give the same result. Must not allocate per entity. A turn-based genre may ignore `dt`
+   * (push-puzzle does).
+   */
+  readonly step: (state: State, input: Input, dt: number) => void;
+  /** Returns, and forgets, the events produced since the last call. */
+  readonly drainEvents: (state: State) => readonly Event[];
+  /**
+   * Optional sample: a read of the state for the UI (a HUD, for example), emitted as an event
+   * when a run starts and then while it is active:
+   *
+   * - every `everyMs`, measured on the `nowMs` the loop's caller passes in (real time in the
+   *   browser), for a state that changes all the time (a real-time game);
+   * - and/or right after any frame in which `version` changed, for a state that changes rarely
+   *   (a turn-based game). `version` is a cheap number the game bumps whenever what `read`
+   *   reports may have changed, such as a turn counter.
+   */
+  readonly sample?: {
+    readonly everyMs?: number;
+    readonly version?: (state: State) => number;
+    readonly read: (state: State) => Event;
+  };
+}
+
+/**
+ * The kernel under `Game.Loop` (loop.ts): it runs a `KernelSimulation`, one run at a time, on its
+ * fixed clock, and delivers its events and samples. It owns the step order and the time policy.
+ * Time and input come from the caller, so it needs no DOM and reads no global clock.
+ *
+ * No entry exports it. `Game.Loop` makes the `KernelSimulation` from a declared simulation, adds
+ * its commands, and calls `frame` for every host, which are the browser engine (one frame per
+ * requestAnimationFrame callback), tests and replays (a scripted `StepInput` and `{ steps }`
+ * frames), and a lockstep session. Every recorded hash of a run was computed by the lines below
+ * that step, so they change only with those hashes.
+ *
+ * Listeners must not call `frame` or `start` synchronously while an event is delivered; schedule
+ * that work instead.
+ */
+export class Kernel<Config, State, Input, Event> {
   private run: State | null = null;
   private steps = 0;
   private paused = false;
@@ -41,14 +80,14 @@ export class GameLoop<Config, State, Input, Event> {
   private readonly listeners = new Set<(event: Event) => void>();
   private lastSample = 0;
   private lastVersion = 0;
-  private readonly simulation: GameSimulation<Config, State, Input, Event>;
+  private readonly simulation: KernelSimulation<Config, State, Input, Event>;
 
-  constructor(simulation: GameSimulation<Config, State, Input, Event>) {
+  constructor(simulation: KernelSimulation<Config, State, Input, Event>) {
     this.simulation = simulation;
     this.clock = new FixedStepClock(simulation.stepSeconds ?? 1 / 60);
   }
 
-  /** The current run's state, or null between runs. Read it; change it only through `modify`. */
+  /** The current run's state, or null between runs. Read it; only a step changes it. */
   get state(): State | null {
     return this.run;
   }
@@ -72,20 +111,6 @@ export class GameLoop<Config, State, Input, Event> {
     if (this.simulation.sample) {
       this.emitSample(state, nowMs);
     }
-  }
-
-  /**
-   * Changes the current state between steps, then reports any events that produced, and a
-   * sample if `version` moved. Does nothing with no run. `Game.Loop` never calls it: a declared
-   * run changes only at a step, by its input and its commands (ADR-0020).
-   */
-  modify(change: (state: State) => void, nowMs: number): void {
-    if (this.run === null) {
-      return;
-    }
-    change(this.run);
-    this.flushEvents(this.run);
-    this.emitSampleIfChanged(this.run, nowMs);
   }
 
   /** While paused, frames run nothing and their budget is discarded: paused time doesn't count. */

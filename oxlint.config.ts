@@ -256,7 +256,7 @@ export default defineConfig({
       // lockstep protocol that steps it on every peer, with the input codecs whose decoded
       // value every peer steps on and the step input built from the players' inputs (ADR-0017).
       // The test game too: its simulation is the one a Co-op game's tests copy. All of
-      // arcadekit/game, the kernel loop under `Game.Loop` included (game-loop.ts), so a new file
+      // arcadekit/game, the kernel under `Game.Loop` included (kernel.ts), so a new file
       // of it is held to this from the start. Two of its files are left out by name, since they
       // are where a browser's time and randomness come in: the engine is the Effect host, and
       // draws a run's seed from Effect's `Random`; frames.ts is the engine's frame clock, and

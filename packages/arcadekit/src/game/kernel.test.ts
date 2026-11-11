@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { GameLoop } from "./game-loop";
-import type { GameSimulation } from "./game-simulation";
+import { Kernel } from "./kernel";
+import type { KernelSimulation } from "./kernel";
 import type { StepInput } from "./step-input";
 
-// GameLoop needs no DOM and reads no clock: these tests pass time and input in, as the
+// The kernel needs no DOM and reads no clock: these tests pass time and input in, as the
 // browser engine does each frame.
 
 // A game that counts steps and how many of them saw a "just pressed" button.
@@ -14,7 +14,7 @@ interface PressState {
 }
 
 // 1/64 s steps: frame times below are exact in floating point.
-const pressGame: GameSimulation<null, PressState, boolean, PressState> = {
+const pressGame: KernelSimulation<null, PressState, boolean, PressState> = {
   stepSeconds: 1 / 64,
   create: () => ({ steps: 0, presses: 0 }),
   step: (state, pressed) => {
@@ -50,7 +50,7 @@ const fakeButton = ({ resetOn }: { readonly resetOn: "step" | "frame" }) => {
 
 /** A started press game, with its button and the last sample it reported. */
 const startPresses = (options: { readonly resetOn: "step" | "frame" }) => {
-  const loop = new GameLoop(pressGame);
+  const loop = new Kernel(pressGame);
   const button = fakeButton(options);
   let last: PressState = { steps: 0, presses: 0 };
   loop.subscribe((state) => {
@@ -90,7 +90,7 @@ describe("button presses", () => {
 /** A game whose every call, and every call to its input source and listener, goes into `log`. */
 const loggingLoop = (log: string[]) => {
   let pending = 0;
-  const loop = new GameLoop<null, { steps: number }, number, string>({
+  const loop = new Kernel<null, { steps: number }, number, string>({
     stepSeconds: 1 / 64,
     create: () => ({ steps: 0 }),
     step: (state, input) => {
@@ -121,7 +121,7 @@ const loggingLoop = (log: string[]) => {
 };
 
 /** A game that counts its steps, with no input. */
-const counterGame: GameSimulation<null, { steps: number }, null, number> = {
+const counterGame: KernelSimulation<null, { steps: number }, null, number> = {
   stepSeconds: 1 / 64,
   create: () => ({ steps: 0 }),
   step: (state) => {
@@ -132,7 +132,7 @@ const counterGame: GameSimulation<null, { steps: number }, null, number> = {
 
 const noInput: StepInput<null> = { read: () => null };
 
-describe(GameLoop, () => {
+describe(Kernel, () => {
   it("runs each step as read, step, endStep, then endFrame, events and a sample once per frame", () => {
     const log: string[] = [];
     const { loop, input } = loggingLoop(log);
@@ -155,7 +155,7 @@ describe(GameLoop, () => {
   });
 
   it("runs exactly the steps asked for, past the cap, and clears the clock's leftover time", () => {
-    const loop = new GameLoop(counterGame);
+    const loop = new Kernel(counterGame);
     loop.start(null, 1, 0);
     // Half a step of leftover time.
     expect(loop.frame(noInput, { seconds: 1 / 128 }, 0)).toBe(0);
@@ -180,7 +180,7 @@ describe(GameLoop, () => {
   });
 
   it("counts everyMs on the time the caller passes in", () => {
-    const loop = new GameLoop<null, { steps: number }, null, number>({
+    const loop = new Kernel<null, { steps: number }, null, number>({
       ...counterGame,
       sample: { everyMs: 100, read: (state) => state.steps },
     });
@@ -201,8 +201,8 @@ interface TurnState {
 }
 
 describe("sample with a version", () => {
-  it("emits on start, then only right after a frame or modify that changed the version", () => {
-    const loop = new GameLoop<null, TurnState, null, string>({
+  it("emits on start, then only right after a frame that changed the version", () => {
+    const loop = new Kernel<null, TurnState, null, string>({
       stepSeconds: 1 / 64,
       create: () => ({ steps: 0, turns: 0 }),
       step: (state) => {
@@ -224,17 +224,10 @@ describe("sample with a version", () => {
     for (let frame = 1; frame <= 7; frame++) {
       loop.frame(noInput, { seconds: 1 / 64 }, frame * 15.625);
     }
-    loop.modify((state) => {
-      state.steps = 100;
-    }, 120);
-    loop.modify((state) => {
-      state.turns = 10;
-    }, 130);
     expect(samples).toStrictEqual([
       "turns 0 at step 0",
       "turns 1 at step 3",
       "turns 2 at step 6",
-      "turns 10 at step 100",
     ]);
   });
 });

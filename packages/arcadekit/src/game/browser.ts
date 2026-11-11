@@ -26,7 +26,7 @@ export type {
 } from "./event";
 export { GameCrashed, frameLoop } from "./frame-loop";
 export { type FrameSource, animationFrames } from "./frames";
-export type { FrameBudget } from "./game-loop";
+export type { FrameBudget } from "./kernel";
 export { Command, Event, Rejection, Simulation } from "./index";
 export { Loop } from "./loop";
 export {

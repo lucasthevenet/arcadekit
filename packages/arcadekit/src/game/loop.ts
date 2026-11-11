@@ -3,9 +3,8 @@ import { Duration, Effect, Function } from "effect";
 import { EventBuffer } from "../core/index";
 import { CommandDropped } from "./command";
 import type { AnyCommand, Settled } from "./command";
-import { GameLoop } from "./game-loop";
-import type { FrameBudget } from "./game-loop";
-import type { GameSimulation } from "./game-simulation";
+import { Kernel } from "./kernel";
+import type { FrameBudget, KernelSimulation } from "./kernel";
 import { resolve } from "./simulation";
 import type {
   CommandContext,
@@ -121,7 +120,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
   private readonly name: string;
   private readonly definition: Resolved<Config, State, Input, Event, Command>;
   private readonly commands: ReadonlyMap<string, AnyCommand>;
-  private readonly loop: GameLoop<Config, State, Input, Event>;
+  private readonly kernel: Kernel<Config, State, Input, Event>;
   private readonly events = new EventBuffer<Event>();
   /** The commands waiting for the next step, in the order sent. */
   private pending: Sent<Command>[] = [];
@@ -150,17 +149,17 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
     this.commands = new Map(
       this.definition.commands.map((command) => [command.tag, command])
     );
-    this.loop = new GameLoop(this.compile());
+    this.kernel = new Kernel(this.compile());
   }
 
   /** The current run's state, or null between runs. Read it; change it only through a step. */
   get state(): State | null {
-    return this.loop.state;
+    return this.kernel.state;
   }
 
   /** Steps run since `start`: the number of the next step. 0 with no run. */
   get stepIndex(): number {
-    return this.loop.stepIndex;
+    return this.kernel.stepIndex;
   }
 
   /**
@@ -175,7 +174,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
     // What a frame that threw left unreported is not the new run's to report.
     this.events.drain();
     try {
-      this.loop.start(config, seed, nowMs);
+      this.kernel.start(config, seed, nowMs);
     } catch (error) {
       this.events.drain();
       throw error;
@@ -209,7 +208,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
         `Simulation "${this.name}" has no command "${tag}": list it in \`commands\` and handle it in \`apply\``
       );
     }
-    if (this.loop.state === null) {
+    if (this.kernel.state === null) {
       settled?.(new CommandDropped({ command: tag, reason: "noRun" }));
       // Nothing is waiting, so there is nothing to take back.
       return Function.constVoid;
@@ -232,7 +231,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
 
   /** While paused, frames run nothing and their time is discarded. Commands wait. */
   setPaused(paused: boolean): void {
-    this.loop.setPaused(paused);
+    this.kernel.setPaused(paused);
   }
 
   /**
@@ -240,7 +239,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
    * frame that threw had left unreported is discarded.
    */
   stop(): void {
-    this.loop.stop();
+    this.kernel.stop();
     this.events.drain();
     this.drop("runEnded");
     this.tell();
@@ -248,7 +247,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
 
   /** Calls `listener` for every event and sample, in order. Returns a function that stops it. */
   subscribe(listener: (event: Event) => void): () => void {
-    return this.loop.subscribe(listener);
+    return this.kernel.subscribe(listener);
   }
 
   /**
@@ -263,15 +262,15 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
    * it still wait.
    */
   frame(input: StepInput<Input>, budget: FrameBudget, nowMs: number): number {
-    const steps = this.loop.frame(input, budget, nowMs);
+    const steps = this.kernel.frame(input, budget, nowMs);
     if (this.answers.length > 0) {
       this.tell();
     }
     return steps;
   }
 
-  /** The definition as the kernel loop steps it, with this loop's commands and events. */
-  private compile(): GameSimulation<Config, State, Input, Event> {
+  /** The definition as the kernel steps it, with this loop's commands and events. */
+  private compile(): KernelSimulation<Config, State, Input, Event> {
     const { definition, report, events, name } = this;
     // One context for the run's steps and one for its commands, refilled in place.
     const stepContext: Mutable<StepContext<Event>> = {
@@ -298,7 +297,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
         return state;
       },
       step: (state, input, dt) => {
-        const step = this.loop.stepIndex;
+        const step = this.kernel.stepIndex;
         if (this.pending.length > 0) {
           commandContext.step = step;
           this.applyPending(state, commandContext);

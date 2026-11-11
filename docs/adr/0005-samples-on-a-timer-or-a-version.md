@@ -6,7 +6,7 @@ status: accepted
 
 > Amended by [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md) on 2026-11-04: `GameSimulation.sample` holds these fields, and `everyMs` counts on the `nowMs` that `GameLoop`'s caller passes in: the frame time in the browser.
 
-> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: a game declares its sample in its `Game.Simulation` (`sample: { event, every, version, read }`), where `every` is a duration and the sample is delivered as the declared event. `GameSimulation` is the internal contract of the kernel under `Game.Loop`, which still counts `everyMs` on the time its caller passes in, and `GameDefinition` is gone. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: a game declares its sample in its `Game.Simulation` (`sample: { event, every, version, read }`), where `every` is a duration and the sample is delivered as the declared event. `GameSimulation` is the internal contract of the kernel under `Game.Loop` (`KernelSimulation`), which still counts `everyMs` on the time its caller passes in, and `GameDefinition` is gone. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
 
 A sample used to run only every so many milliseconds of real time, so push-puzzle's HUD lagged a turn by up to 100 ms and sent ten identical HUD events a second between turns (#16, finding 2). `GameDefinition.sample` now takes `everyMs` (real time), `version` (a cheap number the game bumps when what `read` reports may have changed), or both. The driver emits a sample when a run starts, each time `everyMs` has passed, and right after any frame or `modify` that changed the version.
 

@@ -3,7 +3,7 @@
 import { Data, Effect } from "effect";
 
 import type { FrameSource } from "./frames";
-import type { FrameBudget } from "./game-loop";
+import type { FrameBudget } from "./kernel";
 import type { StepInput } from "./step-input";
 import type { GameView } from "./view";
 
