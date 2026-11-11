@@ -50,47 +50,47 @@ const fakeButton = ({ resetOn }: { readonly resetOn: "step" | "frame" }) => {
 
 /** A started press game, with its button and the last sample it reported. */
 const startPresses = (options: { readonly resetOn: "step" | "frame" }) => {
-  const loop = new Kernel(pressGame);
+  const kernel = new Kernel(pressGame);
   const button = fakeButton(options);
   let last: PressState = { steps: 0, presses: 0 };
-  loop.subscribe((state) => {
+  kernel.subscribe((state) => {
     last = state;
   });
-  loop.start(null, 1, 0);
-  return { loop, button, read: () => last };
+  kernel.start(null, 1, 0);
+  return { kernel, button, read: () => last };
 };
 
 describe("button presses", () => {
   it("reaches one step of a frame that runs several, when reset in endStep", () => {
-    const { loop, button, read } = startPresses({ resetOn: "step" });
+    const { kernel, button, read } = startPresses({ resetOn: "step" });
     button.press();
     // 62.5 ms is four steps.
-    expect(loop.frame(button.source, { seconds: 0.0625 }, 62.5)).toBe(4);
+    expect(kernel.frame(button.source, { seconds: 0.0625 }, 62.5)).toBe(4);
     expect(read()).toStrictEqual({ steps: 4, presses: 1 });
   });
 
   it("reaches every step of a frame, when reset only in endFrame", () => {
-    const { loop, button, read } = startPresses({ resetOn: "frame" });
+    const { kernel, button, read } = startPresses({ resetOn: "frame" });
     button.press();
-    loop.frame(button.source, { seconds: 0.0625 }, 62.5);
+    kernel.frame(button.source, { seconds: 0.0625 }, 62.5);
     expect(read()).toStrictEqual({ steps: 4, presses: 4 });
   });
 
   it("waits for the next step when a frame runs none", () => {
-    const { loop, button, read } = startPresses({ resetOn: "step" });
+    const { kernel, button, read } = startPresses({ resetOn: "step" });
     button.press();
     // Less than one step: nothing runs, and the press must not be lost.
-    loop.frame(button.source, { seconds: 0.01 }, 10);
-    loop.frame(button.source, { seconds: 0.01 }, 20);
-    loop.frame(button.source, { seconds: 0.02 }, 40);
+    kernel.frame(button.source, { seconds: 0.01 }, 10);
+    kernel.frame(button.source, { seconds: 0.01 }, 20);
+    kernel.frame(button.source, { seconds: 0.02 }, 40);
     expect(read()).toStrictEqual({ steps: 2, presses: 1 });
   });
 });
 
 /** A game whose every call, and every call to its input source and listener, goes into `log`. */
-const loggingLoop = (log: string[]) => {
+const loggingKernel = (log: string[]) => {
   let pending = 0;
-  const loop = new Kernel<null, { steps: number }, number, string>({
+  const kernel = new Kernel<null, { steps: number }, number, string>({
     stepSeconds: 1 / 64,
     create: () => ({ steps: 0 }),
     step: (state, input) => {
@@ -108,7 +108,7 @@ const loggingLoop = (log: string[]) => {
       read: (state) => `sample ${state.steps}`,
     },
   });
-  loop.subscribe((event) => log.push(event));
+  kernel.subscribe((event) => log.push(event));
   const input: StepInput<number> = {
     read: (step) => {
       log.push(`read ${step}`);
@@ -117,7 +117,7 @@ const loggingLoop = (log: string[]) => {
     endStep: () => log.push("endStep"),
     endFrame: () => log.push("endFrame"),
   };
-  return { loop, input };
+  return { kernel, input };
 };
 
 /** A game that counts its steps, with no input. */
@@ -135,11 +135,11 @@ const noInput: StepInput<null> = { read: () => null };
 describe(Kernel, () => {
   it("runs each step as read, step, endStep, then endFrame, events and a sample once per frame", () => {
     const log: string[] = [];
-    const { loop, input } = loggingLoop(log);
-    loop.start(null, 1, 0);
-    loop.frame(input, { steps: 2 }, 0);
+    const { kernel, input } = loggingKernel(log);
+    kernel.start(null, 1, 0);
+    kernel.frame(input, { steps: 2 }, 0);
     // Too short for a step: events and samples are checked, but no input is read.
-    loop.frame(input, { seconds: 0.001 }, 1);
+    kernel.frame(input, { seconds: 0.001 }, 1);
     expect(log).toStrictEqual([
       "sample 0",
       "read 0",
@@ -155,40 +155,52 @@ describe(Kernel, () => {
   });
 
   it("runs exactly the steps asked for, past the cap, and clears the clock's leftover time", () => {
-    const loop = new Kernel(counterGame);
-    loop.start(null, 1, 0);
+    const kernel = new Kernel(counterGame);
+    kernel.start(null, 1, 0);
     // Half a step of leftover time.
-    expect(loop.frame(noInput, { seconds: 1 / 128 }, 0)).toBe(0);
-    expect(loop.frame(noInput, { steps: 10 }, 0)).toBe(10);
+    expect(kernel.frame(noInput, { seconds: 1 / 128 }, 0)).toBe(0);
+    expect(kernel.frame(noInput, { steps: 10 }, 0)).toBe(10);
     // The half step is gone: another half step still owes none.
-    expect(loop.frame(noInput, { seconds: 1 / 128 }, 0)).toBe(0);
+    expect(kernel.frame(noInput, { seconds: 1 / 128 }, 0)).toBe(0);
     // Time is still clamped and capped at 5 steps.
-    expect(loop.frame(noInput, { seconds: 10 }, 0)).toBe(5);
-    expect(loop.stepIndex).toBe(15);
+    expect(kernel.frame(noInput, { seconds: 10 }, 0)).toBe(5);
+    expect(kernel.stepIndex).toBe(15);
+  });
+
+  it("has no state and no steps after stop, and a new run counts its steps from 0", () => {
+    const kernel = new Kernel(counterGame);
+    kernel.start(null, 1, 0);
+    kernel.frame(noInput, { steps: 3 }, 0);
+    kernel.stop();
+    expect([kernel.state, kernel.stepIndex]).toStrictEqual([null, 0]);
+    expect(kernel.frame(noInput, { steps: 3 }, 0)).toBe(0);
+    kernel.start(null, 1, 0);
+    kernel.frame(noInput, { steps: 2 }, 0);
+    expect(kernel.stepIndex).toBe(2);
   });
 
   it("runs nothing and calls no input with no run or while paused", () => {
     const log: string[] = [];
-    const { loop, input } = loggingLoop(log);
-    expect(loop.frame(input, { steps: 3 }, 0)).toBe(0);
-    loop.start(null, 1, 0);
-    loop.setPaused(true);
-    expect(loop.frame(input, { steps: 3 }, 0)).toBe(0);
-    expect(loop.frame(input, { seconds: 0.25 }, 250)).toBe(0);
-    expect(loop.stepIndex).toBe(0);
+    const { kernel, input } = loggingKernel(log);
+    expect(kernel.frame(input, { steps: 3 }, 0)).toBe(0);
+    kernel.start(null, 1, 0);
+    kernel.setPaused(true);
+    expect(kernel.frame(input, { steps: 3 }, 0)).toBe(0);
+    expect(kernel.frame(input, { seconds: 0.25 }, 250)).toBe(0);
+    expect(kernel.stepIndex).toBe(0);
     expect(log).toStrictEqual(["sample 0"]);
   });
 
   it("counts everyMs on the time the caller passes in", () => {
-    const loop = new Kernel<null, { steps: number }, null, number>({
+    const kernel = new Kernel<null, { steps: number }, null, number>({
       ...counterGame,
       sample: { everyMs: 100, read: (state) => state.steps },
     });
     const samples: number[] = [];
-    loop.subscribe((steps) => samples.push(steps));
-    loop.start(null, 1, 0);
+    kernel.subscribe((steps) => samples.push(steps));
+    kernel.start(null, 1, 0);
     for (let i = 1; i <= 30; i++) {
-      loop.frame(noInput, { steps: 1 }, i * 10);
+      kernel.frame(noInput, { steps: 1 }, i * 10);
     }
     expect(samples).toStrictEqual([0, 10, 20, 30]);
   });
@@ -202,7 +214,7 @@ interface TurnState {
 
 describe("sample with a version", () => {
   it("emits on start, then only right after a frame that changed the version", () => {
-    const loop = new Kernel<null, TurnState, null, string>({
+    const kernel = new Kernel<null, TurnState, null, string>({
       stepSeconds: 1 / 64,
       create: () => ({ steps: 0, turns: 0 }),
       step: (state) => {
@@ -218,11 +230,11 @@ describe("sample with a version", () => {
       },
     });
     const samples: string[] = [];
-    loop.subscribe((sample) => samples.push(sample));
-    loop.start(null, 1, 0);
+    kernel.subscribe((sample) => samples.push(sample));
+    kernel.start(null, 1, 0);
     // One step per frame (1/64 s = 15.625 ms): turns land on steps 3 and 6.
     for (let frame = 1; frame <= 7; frame++) {
-      loop.frame(noInput, { seconds: 1 / 64 }, frame * 15.625);
+      kernel.frame(noInput, { seconds: 1 / 64 }, frame * 15.625);
     }
     expect(samples).toStrictEqual([
       "turns 0 at step 0",

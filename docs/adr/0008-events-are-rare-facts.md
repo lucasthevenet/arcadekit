@@ -4,6 +4,8 @@ status: accepted
 
 # An event is a rare, meaningful fact
 
+> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: a declared simulation reports an event with `report`, and `Game.Loop` keeps the buffer. Events are delivered after `start` and after a frame's steps; `modify` is gone. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+
 The simulation pushes events into an `EventBuffer` during a step, and the runtime drains it after the frame's steps (and after `start` and `modify`) and passes each event to the engine's listeners, such as the UI. An event is a rare, meaningful fact, such as "level solved" or "leveled up"; events never carry per-entity data, and the HUD gets the state through samples (`CONTEXT.md`, the README's rules of thumb). Each event is a new object made during a step and then a message in the UI, so events stay cheap only while they are rare.
 
 ## Consequences

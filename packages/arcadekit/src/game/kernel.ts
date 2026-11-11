@@ -45,7 +45,7 @@ export interface KernelSimulation<Config, State, Input, Event> {
    * Optional sample: a read of the state for the UI (a HUD, for example), emitted as an event
    * when a run starts and then while it is active:
    *
-   * - every `everyMs`, measured on the `nowMs` the loop's caller passes in (real time in the
+   * - every `everyMs`, measured on the `nowMs` the kernel's caller passes in (real time in the
    *   browser), for a state that changes all the time (a real-time game);
    * - and/or right after any frame in which `version` changed, for a state that changes rarely
    *   (a turn-based game). `version` is a cheap number the game bumps whenever what `read`
@@ -69,8 +69,9 @@ export interface KernelSimulation<Config, State, Input, Event> {
  * frames), and a lockstep session. Every recorded hash of a run was computed by the lines below
  * that step, so they change only with those hashes.
  *
- * Listeners must not call `frame` or `start` synchronously while an event is delivered; schedule
- * that work instead.
+ * Listeners must not call `frame`, `start` or `stop` synchronously while an event is delivered:
+ * the rest of the frame's events, and its sample, are still delivered after it. Schedule that
+ * work instead.
  */
 export class Kernel<Config, State, Input, Event> {
   private run: State | null = null;

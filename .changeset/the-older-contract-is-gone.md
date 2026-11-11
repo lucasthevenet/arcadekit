@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-The older contract is gone, and with it the `runtime` entries. A game is its declarations ([ADR-0020](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0020-a-game-is-declared.md)): no game in the repository was on the older contract any more, and nothing of it is kept as a compatibility layer. What `arcadekit/runtime` had that a declared game still uses is `arcadekit/game`'s, under the same names. Nothing changed in how a run steps: the loop under `Game.Loop` is the same code, and no recorded hash moved.
+The older contract is gone, and with it the `runtime` entries. A game is its declarations ([ADR-0020](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0020-a-game-is-declared.md)): no game in the repository was on the older contract any more, and nothing of it is kept as a compatibility layer. What `arcadekit/runtime` had that a declared game still uses is `arcadekit/game`'s, under the same names. Nothing changed in how a run steps: the kernel under `Game.Loop` steps with the same lines, and no recorded hash moved.
 
 **Breaking**
 
