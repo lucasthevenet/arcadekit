@@ -17,6 +17,7 @@ import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
 import type * as Game from "arcadekit/game";
 import { Frames } from "arcadekit/game/browser";
+import { manualFrames } from "arcadekit/game/testing";
 import {
   LobbyChanged,
   RunStarted,
@@ -28,7 +29,6 @@ import { FAKE_JOIN_CODE, fakeCoopRooms } from "arcadekit/net/testing";
 import type { FakeCoopRooms } from "arcadekit/net/testing";
 import { SpriteSheetError } from "arcadekit/render-three";
 import type { SpriteSheet } from "arcadekit/render-three";
-import { manualFrames } from "arcadekit/runtime/testing";
 import {
   Clock,
   Context,

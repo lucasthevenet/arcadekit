@@ -10,6 +10,8 @@ status: accepted
 
 > Amended on 2026-11-06: `GameDriver` is gone. The `requestAnimationFrame` loop below is now `makeGameEngine`'s `attach`, which steps `GameLoop` by `{ seconds }` frames (see the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md)).
 
+> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: `makeGameEngine` and the `runtime` entries are gone. The fixed clock, the 0.25 s clamp and the backlog drop are where they were, in `GameLoop`, which is now the kernel under `Game.Loop` (`arcadekit/game`); a `Game.Engine`'s `attach` is the `requestAnimationFrame` loop. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+
 The runtime has one time model: `GameDriver` advances a run in fixed steps, 1/60 s by default, using core's `FixedStepClock` in a `requestAnimationFrame` loop. Fixed steps make a run behave the same on any screen and keep it deterministic. Turn-based genres use the same clock and count steps: push-puzzle takes at most one turn per step, ignores `dt`, and times hold-to-repeat in steps, so its replays are exact (finding 10).
 
 ## Considered Options

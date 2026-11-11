@@ -3,9 +3,9 @@
 import { Data, Effect } from "effect";
 
 import type { FrameSource } from "./frames";
-import type { FrameBudget } from "./loop";
-import type { GameView } from "./presentation";
-import type { StepInput } from "./simulation";
+import type { FrameBudget } from "./game-loop";
+import type { StepInput } from "./step-input";
+import type { GameView } from "./view";
 
 // Named so the type files can be made one file at a time (isolatedDeclarations).
 const GameCrashedBase: ReturnType<typeof Data.TaggedError<"GameCrashed">> =
@@ -66,7 +66,7 @@ export const frameLoop = (
   );
 };
 
-/** What an attached engine's frames step: a `GameLoop`, or `arcadekit/game`'s `Loop`. */
+/** What an attached engine's frames step: the part of `Game.Loop` they call. */
 export interface SteppedLoop<State, Input> {
   readonly state: State | null;
   readonly frame: (

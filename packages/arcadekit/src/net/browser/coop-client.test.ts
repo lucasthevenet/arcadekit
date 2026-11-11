@@ -5,6 +5,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  Option,
   Result,
   Scheduler,
   Scope,
@@ -12,9 +13,9 @@ import {
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AttachError, GameCrashed } from "../../game/browser";
 import { CommandDropped } from "../../game/index";
-import { AttachError, GameCrashed } from "../../runtime/browser";
-import { manualFrames } from "../../runtime/testing";
+import { manualFrames } from "../../game/testing";
 import { encodeLobbyMessage } from "../lobby";
 import type { Ticker } from "../scoped";
 import { microtasks, performanceClock } from "../test-harness";
@@ -1532,13 +1533,14 @@ describe("drawing a co-op run", () => {
   it("leaves when a frame crashes, with nothing left attached", async () => {
     const frames = manualFrames();
     const hub = fakeCoopRooms();
+    const bug = new Error("lost context");
     const guestGame = testCoopParts({
       presentation: Effect.succeed(
         testPresentation({
           view: () => ({
             render: (state: TestState | null) => {
               if (state !== null) {
-                throw new Error("lost context");
+                throw bug;
               }
             },
             dispose: () => {},
@@ -1562,14 +1564,17 @@ describe("drawing a co-op run", () => {
       guest.coop.debug().slot,
       hub.log.filter((line) => line.endsWith("guest-1")),
     ]).toStrictEqual([false, -1, ["open guest-1", "release guest-1"]]);
-    expect(exit).toMatchObject(
-      Exit.fail(
-        new GameCrashed({
-          message: "lost context",
-          cause: new Error("lost context"),
-        })
-      )
+    expect(exit).toStrictEqual(
+      Exit.fail(new GameCrashed({ message: "lost context", cause: bug }))
     );
+    // A tagged error's `message` and `cause` aren't enumerable, so the comparison above holds
+    // the error's class and neither of them.
+    const crash = Option.getOrUndefined(Exit.findErrorOption(exit));
+    expect(crash).toMatchObject({
+      _tag: "GameCrashed",
+      message: "lost context",
+    });
+    expect(crash?.cause).toBe(bug);
   });
 
   it("leaves when the presentation can't load, or the view can't be made", async () => {
@@ -1612,5 +1617,12 @@ describe("drawing a co-op run", () => {
       ["open host", "release host"],
       -1,
     ]);
+    // A tagged error's `message` and `cause` aren't enumerable, so the comparison above holds
+    // the error's class and neither of them.
+    expect(attachError).toMatchObject({
+      _tag: "AttachError",
+      message: "no WebGL",
+    });
+    expect(attachError.cause).toBe(noWebGl);
   });
 });

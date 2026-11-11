@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
-import type { StepInput } from "../runtime/index";
 import type { SimulationClass } from "./simulation";
+import type { StepInput } from "./step-input";
 
 // The step input of a simulation several players can play: every player's input for the step,
 // plus the players leaving at it. Plain code, like the step that reads it (ADR-0017): whoever

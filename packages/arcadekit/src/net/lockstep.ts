@@ -6,8 +6,8 @@ import type {
   PlayersSimulation,
   RefusalFor,
   Settled,
+  StepInput,
 } from "../game/index";
-import type { StepInput } from "../runtime/index";
 import { MAX_STEP_COMMANDS, payloadCodec } from "./codec";
 import type { PayloadCodec, StepPayload } from "./codec";
 import { lockstepError } from "./errors";

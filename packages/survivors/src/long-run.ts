@@ -1,5 +1,4 @@
 import * as Game from "arcadekit/game";
-import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 
 import { ChooseUpgrade } from "./commands";
@@ -128,7 +127,7 @@ const axis = (bits: number): number => (bits - 32_767.5) / 32_767.5;
  * step number (no Math.random, so every engine reads the same input). The length can pass 1, so
  * the simulation's own normalisation runs too.
  */
-const wander = (): StepInput<HeroInput> => {
+const wander = (): Game.StepInput<HeroInput> => {
   const input = { moveX: 0, moveZ: 0 };
   return {
     read: (step) => {

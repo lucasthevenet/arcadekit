@@ -65,11 +65,11 @@ export const gameViewport = <Message>(
   );
 
 /**
- * What `engineEntry` uses of an engine: `attach` and `listen`. A `GameEngine` is one; so is any
- * client that draws into the viewport and reports events, such as a co-op client. `attach` may
- * fail with `E`: a `GameEngine`'s fails with `AttachError` when its view can't be made (no
- * WebGL) and `GameCrashed` when a frame throws, and a client's may also fail when what it draws
- * with comes through a load.
+ * What `engineEntry` uses of an engine: `attach` and `listen`. A `Game.Engine`'s service is
+ * one; so is any client that draws into the viewport and reports events, such as a Co-op
+ * client. `attach` may fail with `E`: an engine's fails with `AttachError` when its view can't
+ * be made (no WebGL), with `GameCrashed` when a frame throws, and with what one of its `uses`
+ * fails with, such as a sprite sheet that can't be loaded.
  */
 export interface AttachableEngine<Event, E = never> {
   /**
@@ -101,9 +101,9 @@ export type EngineEntryConfig<
    * itself (`MyEngine`), and give `Subscription.make` that service; `resources` must
    * provide it. Only `attach` and `listen` are used: Commands call the rest.
    *
-   * A `GameEngine`'s attach can fail (`AttachError` or `GameCrashed`,
-   * `arcadekit/runtime/browser`), and so can this Effect, when it reaches the engine through
-   * a load: pass `onError`.
+   * An engine's attach can fail (`AttachError` or `GameCrashed`, `arcadekit/game/browser`, or
+   * what one of its `uses` fails with), and so can this Effect, when it reaches the engine
+   * through a load: pass `onError`.
    */
   readonly engine: Effect.Effect<AttachableEngine<Event, A>, E, R>;
   /** Reads the Boolean that `gameViewport`'s `mounted` and `unmounted` Messages set. */
@@ -138,11 +138,12 @@ export type EngineEntryConfig<
  * but no `gameViewport` is in the document, the Subscription dies and Foldkit shows its crash
  * view: that is a programming error.
  *
- * A `GameEngine` can fail to attach (`AttachError`: no WebGL, say) or crash while attached
- * (`GameCrashed`: a step or a render threw), and an engine reached through a load (an `engine`
- * Effect that can fail) can fail to load. Pass `onError`, which turns any of these into a
- * Message, and keep `isViewportMounted` false until the app's own load has succeeded. The
- * entry runs again only when its Boolean changes, so it won't retry by itself.
+ * An engine can fail to attach (`AttachError`: no WebGL, say; or what one of its `uses` fails
+ * with: a sheet that can't be loaded) or crash while attached (`GameCrashed`: a step or a
+ * render threw), and an engine reached through a load (an `engine` Effect that can fail) can
+ * fail to load. Pass `onError`, which turns any of these into a Message, and keep
+ * `isViewportMounted` false until the app's own load has succeeded. The entry runs again only
+ * when its Boolean changes, so it won't retry by itself.
  */
 export const engineEntry = <Model, Message, Event, R, E = never, A = never>(
   config: EngineEntryConfig<Model, Message, Event, R, E, A>

@@ -33,12 +33,10 @@ const ENTRY_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   audio: ["effect"],
   "audio/browser": ["effect"],
   "render-three": ["effect", "three"],
-  runtime: ["effect"],
-  "runtime/browser": ["effect"],
-  "runtime/testing": ["effect"],
   game: ["effect"],
   "game/browser": ["effect"],
   "game/scenario": ["effect"],
+  "game/testing": ["effect"],
   net: ["effect"],
   "net/browser": ["effect"],
   "net/testing": ["effect"],
@@ -170,7 +168,7 @@ describe.each(Object.entries(ENTRY_PACKAGES))(
 describe("the walk", () => {
   it("finds effect in an entry that uses it", () => {
     const packages = packagesReachedFrom(
-      path.join(packageDir, exportsMap["./runtime/browser"]?.source ?? "")
+      path.join(packageDir, exportsMap["./game/browser"]?.source ?? "")
     );
     expect(packages).toContain("effect");
   });

@@ -1,5 +1,6 @@
 import { FixedStepClock } from "../core/index";
-import type { GameSimulation, StepInput } from "./simulation";
+import type { GameSimulation } from "./game-simulation";
+import type { StepInput } from "./step-input";
 
 /** Longest frame gap counted, so a hidden tab or a debugger pause doesn't fast-forward the game. */
 const MAX_FRAME_SECONDS = 0.25;
@@ -9,7 +10,7 @@ const MAX_FRAME_SECONDS = 0.25;
  *
  * - `{ seconds }`: time passed. The loop counts at most 0.25 s, turns it into whole steps on its
  *   fixed clock, carries the remainder, and drops the backlog after the clock's
- *   `maxStepsPerFrame` (5). The browser engine's frames (`makeGameEngine`) use it.
+ *   `maxStepsPerFrame` (5). The browser engine's frames (`Game.Engine`) use it.
  * - `{ steps }`: exactly this many steps. No clamp, no cap, no drop, and it clears any remainder
  *   carried from `{ seconds }` frames. Tests, replays and lockstep use it. It has no cap, so a
  *   caller that passes a huge count blocks its thread.
@@ -23,9 +24,11 @@ export type FrameBudget =
  * step order and the time policy. Time and input come from the caller, so it needs no DOM and
  * reads no global clock.
  *
- * `frame` is the seam where stepping adapters plug in: the browser engine (`makeGameEngine`, one
- * frame per requestAnimationFrame callback), tests and replays (a scripted `StepInput` and
- * `{ steps }` frames), and a timer or lockstep runner.
+ * It is the kernel under `Game.Loop` (loop.ts), and no entry exports it: `Game.Loop` makes the
+ * `GameSimulation` from a declared simulation, adds its commands, and calls `frame` for every
+ * host, which are the browser engine (one frame per requestAnimationFrame callback), tests and
+ * replays (a scripted `StepInput` and `{ steps }` frames), and a lockstep session. Every recorded
+ * hash of a run was computed by the lines below that step, so they change only with those hashes.
  *
  * Listeners must not call `frame`, `start` or `modify` synchronously while an event is
  * delivered; schedule that work instead.
@@ -72,9 +75,9 @@ export class GameLoop<Config, State, Input, Event> {
   }
 
   /**
-   * Changes the current state between steps (a menu choice, a cheat), then reports any events
-   * that produced, and a sample if `version` moved. Does nothing with no run. A lockstep run
-   * schedules its changes as step input instead (ADR-0012).
+   * Changes the current state between steps, then reports any events that produced, and a
+   * sample if `version` moved. Does nothing with no run. `Game.Loop` never calls it: a declared
+   * run changes only at a step, by its input and its commands (ADR-0020).
    */
   modify(change: (state: State) => void, nowMs: number): void {
     if (this.run === null) {

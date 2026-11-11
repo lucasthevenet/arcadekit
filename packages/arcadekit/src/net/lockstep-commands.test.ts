@@ -2,7 +2,6 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as Game from "../game/index";
-import type { StepInput } from "../runtime/index";
 import { hostLockstep, joinLockstep } from "./lockstep";
 import type { LockstepSession } from "./lockstep";
 import { createMemoryNetwork } from "./memory-network";
@@ -128,7 +127,7 @@ const script = (player: string, step: number): Move => ({
   n: (step * 7 + player.codePointAt(player.length - 1)! * 13) % 11,
 });
 
-const scripted = (player: string): StepInput<Move> => ({
+const scripted = (player: string): Game.StepInput<Move> => ({
   read: (step) => script(player, step),
 });
 
@@ -147,7 +146,7 @@ const options = (
   transport: Transport,
   players: number,
   capacity = 1000,
-  local: StepInput<Move | null> = scripted(transport.self)
+  local: Game.StepInput<Move | null> = scripted(transport.self)
 ) => ({
   simulation: JarGame,
   config: { capacity, players },
@@ -161,7 +160,7 @@ const options = (
 
 interface StartOptions {
   readonly capacity?: number;
-  readonly local?: (id: string) => StepInput<Move | null>;
+  readonly local?: (id: string) => Game.StepInput<Move | null>;
   readonly dropAfterMs?: number;
   /** A peer's transport, to wrap it. */
   readonly transport?: (transport: Transport) => Transport;

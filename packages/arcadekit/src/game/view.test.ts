@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { combineViews } from "./browser";
-import type { GameView } from "./browser";
+import type { View } from "./browser";
 
-const recording = (name: string, calls: string[]): GameView<number> => ({
+const recording = (name: string, calls: string[]): View<number> => ({
   render: (state, time) => calls.push(`${name} render ${state} ${time}`),
   dispose: () => calls.push(`${name} dispose`),
 });

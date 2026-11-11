@@ -26,10 +26,10 @@ features:
     details: A fixed-step clock, a seeded random generator and pools that allocate nothing per step. The same seed and inputs give the same run.
     link: /core
     linkText: arcadekit/core
-  - title: A game is two halves
-    details: A simulation with no DOM, and the input and view that present it. The loop steps the first anywhere, and the engine draws it in a browser.
-    link: /runtime
-    linkText: arcadekit/runtime
+  - title: A game is declared
+    details: Each part is one named class. The rules have no DOM, and the engine adds the view and input that present them. A loop steps the rules anywhere, and the engine draws them in a browser.
+    link: /game
+    linkText: arcadekit/game
   - title: Co-op in lockstep
     details: Two to four players run one simulation over WebRTC, joined by a code. The signalling worker for Cloudflare is an entry too.
     link: /net

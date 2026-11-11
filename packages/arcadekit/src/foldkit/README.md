@@ -1,6 +1,6 @@
 # arcadekit/foldkit
 
-Connects an `arcadekit/runtime` engine to a [Foldkit](https://www.npmjs.com/package/foldkit) app. The view renders `gameViewport`, the element the engine draws into; the Subscription `engineEntry` runs the engine there while it is mounted and turns its events into Messages. `keyPresses` and `shortcutPresses` make Streams of key presses for the app's own keys (pause, restart, mute).
+Connects a game's engine ([`Game.Engine`](../game/README.md#in-the-browser)) to a [Foldkit](https://www.npmjs.com/package/foldkit) app. The view renders `gameViewport`, the element the engine draws into; the Subscription `engineEntry` runs the engine there while it is mounted and turns its events into Messages. `keyPresses` and `shortcutPresses` make Streams of key presses for the app's own keys (pause, restart, mute).
 
 An entry of the [`arcadekit`](../../README.md) package. Needs the DOM.
 
@@ -18,39 +18,34 @@ A whole app around an engine that reports a score: the viewport, its two Message
 
 ```ts
 import { engineEntry, gameViewport } from "arcadekit/foldkit";
-import type { GameSimulation } from "arcadekit/runtime";
-import { makeGameEngine } from "arcadekit/runtime/browser";
-import type { GameEngine } from "arcadekit/runtime/browser";
-import { Context, Effect, Layer, Schema } from "effect";
+import * as Game from "arcadekit/game/browser";
+import { Effect, Schema } from "effect";
 import { Command, Runtime, Subscription } from "foldkit";
 import type { Update } from "foldkit";
 import type { Document, HtmlBuilder } from "foldkit/html";
 import { defineMessageUnion } from "foldkit/message";
 
 // The game: its score goes up every step, reported twice a second.
-type Event = { readonly type: "score"; readonly score: number };
-const simulation: GameSimulation<null, { score: number }, null, Event> = {
+class Scored extends Game.Event("Scored", { score: Schema.Number }) {}
+
+class Counting extends Game.Simulation("Counting", {
+  input: Schema.Null,
   create: () => ({ score: 0 }),
   step: (state) => {
     state.score += 1;
   },
-  drainEvents: () => [],
   sample: {
-    everyMs: 500,
-    read: (state) => ({ type: "score", score: state.score }),
+    event: Scored,
+    every: "500 millis",
+    read: (state) => ({ score: state.score }),
   },
-};
-class Engine extends Context.Service<
-  Engine,
-  GameEngine<null, { score: number }, Event>
->()("my-game/Engine") {}
-const EngineLayer = Layer.sync(Engine, () =>
-  makeGameEngine({
-    ...simulation,
-    createInput: () => ({ read: () => null, dispose: () => {} }),
-    createView: () => ({ render: () => {}, dispose: () => {} }),
-  })
-);
+}) {}
+
+class CountingEngine extends Game.Engine("CountingEngine", {
+  simulation: Counting,
+  view: () => ({ render: () => {}, dispose: () => {} }),
+  input: () => ({ read: () => null, dispose: () => {} }),
+}) {}
 
 const Message = defineMessageUnion({
   MountedViewport: {},
@@ -70,12 +65,12 @@ type Model = typeof Model.Type;
 const StartRun = Command.define("StartRun", {
   messages: [Message.StartedRun],
   execute: Effect.gen(function* () {
-    yield* (yield* Engine).start(null);
+    yield* (yield* CountingEngine).start(null);
     return Message.StartedRun();
   }),
 });
 
-type Return = Update.Return<Model, Message, Engine>;
+type Return = Update.Return<Model, Message, CountingEngine>;
 const update = (model: Model, message: Message): Return =>
   Message.match<Return>(message, {
     // Start once the viewport is in the document, so the engine's first events arrive.
@@ -106,14 +101,20 @@ const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   ),
 });
 
-const subscriptions = Subscription.make<Model, Message, Engine>()(() => ({
-  engine: engineEntry({
-    engine: Engine,
-    isViewportMounted: (model) => model.isViewportMounted,
-    toMessage: (event): Message => Message.GotScore({ score: event.score }),
-    onError: (error) => Message.FailedToRun({ error: error.message }),
-  }),
-}));
+const subscriptions = Subscription.make<Model, Message, CountingEngine>()(
+  () => ({
+    engine: engineEntry({
+      // The engine's class is its service's key, so it is the Effect that reaches the engine.
+      engine: CountingEngine,
+      isViewportMounted: (model) => model.isViewportMounted,
+      // The simulation's `match` handles every event by its tag.
+      toMessage: Counting.match({
+        Scored: ({ score }) => Message.GotScore({ score }),
+      }),
+      onError: (error) => Message.FailedToRun({ error: error.message }),
+    }),
+  })
+);
 
 Runtime.run(
   Runtime.makeApplication({
@@ -122,10 +123,10 @@ Runtime.run(
     update,
     view,
     subscriptions,
-    resources: EngineLayer,
+    resources: CountingEngine.layer,
     container: document.querySelector("#root")!,
   })
 );
 ```
 
-Style `.viewport` in the app: it needs a size. `onError` turns a failed attach (`AttachError`, such as no WebGL) or a crash while attached (`GameCrashed`, a step or a render that threw) into a Message, sent once; for an engine reached through a load (an `engine` Effect that can fail) it also gets the load's error. `engineEntry` takes anything with an engine's `attach` and `listen` (`AttachableEngine`), so `arcadekit/net/browser`'s Co-op client goes there as it is. The survivors and push-puzzle demos in the [repository](https://github.com/lucasthevenet/arcadekit#readme) are complete apps.
+Style `.viewport` in the app: it needs a size. `onError` turns a failed attach (`AttachError`, such as no WebGL, or what one of the engine's `uses` fails with, such as a sprite sheet that can't be loaded) or a crash while attached (`GameCrashed`, a step or a render that threw) into a Message, sent once; for an engine reached through a load (an `engine` Effect that can fail) it also gets the load's error. `engineEntry` takes anything with an engine's `attach` and `listen` (`AttachableEngine`), so `arcadekit/net/browser`'s Co-op client goes there as it is. The survivors and push-puzzle demos in the [repository](https://github.com/lucasthevenet/arcadekit#readme) are complete apps.

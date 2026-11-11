@@ -1,6 +1,6 @@
 // Lets a path in a table's cell wrap, so a table fits a phone.
 //
-// The READMEs' tables hold names in code, such as `arcadekit/runtime/browser`. A browser never
+// The READMEs' tables hold names in code, such as `arcadekit/game/browser`. A browser never
 // breaks one, so a column is as wide as its longest name, and on a phone the entries' table was
 // nearly twice the page's width. Here a name in a cell may break after each slash: the browser
 // takes the break only when the name doesn't fit its line, and a copied name has no mark of it.

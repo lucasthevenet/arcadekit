@@ -1,9 +1,9 @@
-import { Effect, Exit, Fiber, Scope } from "effect";
+import { Effect, Exit, Fiber, Option, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { AttachError, GameCrashed } from "../../runtime/browser";
-import type { GameView } from "../../runtime/browser";
-import { manualFrames } from "../../runtime/testing";
+import { AttachError, GameCrashed } from "../../game/browser";
+import type { View as GameView } from "../../game/browser";
+import { manualFrames } from "../../game/testing";
 import type { TestState } from "../testing/index";
 import type { CoopPresented } from "./coop-client";
 import { testCoopClient, testCoopParts, testPresentation } from "./test-client";
@@ -84,6 +84,10 @@ describe("attaching a co-op client", () => {
       new AttachError({ message: "no WebGL", cause: noWebGl }),
       0,
     ]);
+    // A tagged error's `message` and `cause` aren't enumerable, so the comparison above holds
+    // the error's class and neither of them.
+    expect(error).toMatchObject({ _tag: "AttachError", message: "no WebGL" });
+    expect(error.cause).toBe(noWebGl);
   });
 
   it("fails with an AttachError, disposing the view it made, when the input can't be made", async () => {
@@ -119,6 +123,12 @@ describe("attaching a co-op client", () => {
       new AttachError({ message: "no pointer", cause: noPointer }),
       0,
     ]);
+    // As above: the message and the cause, on the error itself.
+    expect(error).toMatchObject({
+      _tag: "AttachError",
+      message: "no pointer",
+    });
+    expect(error.cause).toBe(noPointer);
   });
 
   it("draws no run on each frame until detached, then cancels its frame and releases the input", async () => {
@@ -223,6 +233,13 @@ describe("attaching a co-op client", () => {
       false,
       0,
     ]);
+    // As above: the message and the cause, on the error itself.
+    const error = Option.getOrUndefined(Exit.findErrorOption(exit));
+    expect(error).toMatchObject({
+      _tag: "GameCrashed",
+      message: "lost context",
+    });
+    expect(error?.cause).toBe(bug);
   });
 
   it("dies when attached twice at once", async () => {

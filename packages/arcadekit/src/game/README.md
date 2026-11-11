@@ -2,7 +2,7 @@
 
 A game's building blocks. Each part of a game is one named declaration: `Game.Event` for what a run reports, `Game.Command` for what a player decides, `Game.Rejection` for why the rules may refuse it, `Game.Simulation` for the rules, and, in `arcadekit/game/browser`, `Game.Engine` for the browser half that draws a run and reads its input. A declaration runs nothing by itself: `Game.Loop` steps a simulation anywhere, an engine's `layer` provides it to an app, and a scenario (`arcadekit/game/scenario`) checks the rules in a test. `Game.PlayerInputs` is the step input of a simulation several players can play, and `Game.soloInput` fills it for one.
 
-An entry of the [`arcadekit`](../../README.md) package. The root entry and `./scenario` are DOM-free. Import each as a namespace: `import * as Game from "arcadekit/game"`.
+An entry of the [`arcadekit`](../../README.md) package. The root entry and `./scenario` are DOM-free. Import each as a namespace: `import * as Game from "arcadekit/game"`. `arcadekit/game/testing` has the frames a test drives an engine on, and only tests import it.
 
 ## Install
 
@@ -80,6 +80,15 @@ console.log(loop.state?.x); // about 8: one second at speed 8
 - **`sample`** is a read of the state for the UI, such as a HUD, delivered as an event: when a run starts and then every `every`, and/or right after any frame in which `version` (a cheap number, such as a turn counter) changed.
 
 `Game.StateOf<typeof Race>`, `ConfigOf`, `InputOf`, `EventOf` and `CommandOf` name a simulation's types. `Race.match({ Finished: ..., Hud: ... })` makes a function that handles each event by its tag, checked to cover them all. A case for an event the simulation doesn't report compiles (one left behind by a renamed event), so `match` refuses it when it is called, as the app's module loads.
+
+## How a frame becomes steps
+
+`Game.Loop` steps a run in frames. A frame is one `loop.frame(input, budget, nowMs)` call: its caller says where each step's input comes from, how much the frame steps and what time it is, so the loop needs no DOM and reads no clock. A test, a replay, the browser engine and a lockstep session all step a game through it, in one order.
+
+- **The budget** is a `Game.FrameBudget`: `{ seconds }` of time passed, or exactly `{ steps }`. An attached engine passes the seconds since its last animation frame. The loop turns them into whole steps on the simulation's fixed clock (`stepSeconds`, 1/60 s unless the simulation declares another) and carries the rest to the next frame. It counts at most 0.25 s of one frame, so a hidden tab or a debugger pause doesn't fast-forward the game, and it runs at most five steps a frame: a frame further behind than that drops its backlog. Tests, replays and lockstep pass `{ steps }`, which runs exactly that many, with no clamp and nothing carried.
+- **Each step** is the input source's `read(step)`, then the commands sent since the last step, then `step`, then the source's `endStep`. Steps are numbered from 0 in each run. After the frame's last step comes the source's `endFrame`, once, if any step ran; then the events those steps reported; then a sample, if one is due.
+- **The input source** is a `Game.StepInput`: `read(step)`, with `endStep` and `endFrame` if it needs them. A script reads by the step's number and a device ignores it. `read` runs inside the step loop, so it returns the same object each time, refilled. A source that reads presses forgets them in `endStep` ([`arcadekit/input`](../input/README.md)'s `consumePresses`), so one press reaches one step even on a slow frame that runs several; what it does once a frame, such as polling gamepads, goes in `endFrame`.
+- **`frame` returns the steps it ran**: none with no run, while paused (`loop.setPaused(true)`: the frame's time is discarded, and commands wait), or while a `{ seconds }` frame is still short of a step.
 
 ## Refusing a command
 
@@ -333,13 +342,67 @@ export const play = Effect.gen(function* () {
 ```
 
 - **`uses`** names what the view and the input source are made from. Each Effect runs once per attach, in the attach's scope, before anything is made: the app's audio, a sprite sheet's load ([`arcadekit/content`](../content/README.md)'s `Asset`), or something the view and the input share for that attach. The engine's `layer` needs their services, and a failure of one is `attach`'s.
-- **`view`** and **`input`** are called once per attach, the view first, and disposed when the engine detaches. Several views are one with `Game.combineViews`, such as a drawing view and a sound view. The view's third argument is `{ local }`, the local player's seat, which a view of a run several players share reads when it draws (`local.slot`): the engine seats its one player at slot 0, and a [`Coop`](../net/README.md#co-op), which plays the same engine for several players, at the slot its lobby gave.
-- **`engine.attach(element)`** steps the run by the time since the last frame, then draws it, on every animation frame. It never succeeds: it fails with what a `uses` Effect fails with, with `AttachError` if the view or the input source can't be made (no WebGL), and with `GameCrashed` if a frame throws. `engine.start`, `setPaused` and `stop` drive the run, `engine.send` sends it a command and waits for the rules' answer ([Refusing a command](#refusing-a-command)), and `engine.listen` hears its events.
-- **`Game.Frames`** is where an attached engine gets its frames: `requestAnimationFrame`, unless a test provides `manualFrames()` from `arcadekit/runtime/testing` (`Layer.succeed(Game.Frames, frames)`).
-- **`Game.frameLoop(frames, frame)`** is the loop an engine draws on, for anything else an app draws on animation frames.
+- **`view`** and **`input`** are called once per attach, the view first, and disposed when the engine detaches, the input source first. Several views are one with `Game.combineViews`, such as a drawing view and a sound view: it renders each in order and disposes them in reverse. The view's third argument is `{ local }`, the local player's seat, which a view of a run several players share reads when it draws (`local.slot`): the engine seats its one player at slot 0, and a [`Coop`](../net/README.md#co-op), which plays the same engine for several players, at the slot its lobby gave.
+- **A view** is a `Game.View`: `render(state, timeSeconds)` and `dispose`. `render` reads the state and never changes it, and gets no state (null) when no run is active. Each run has its own state object, made by `create`, and `render` gets that same object on every frame until the run ends, so a view tells runs apart by identity: push-puzzle's view resets when the object changes.
+- **An input source** is a `Game.InputSource`: a `Game.StepInput` ([How a frame becomes steps](#how-a-frame-becomes-steps)) that owns what it listens with, and gives it back in `dispose`.
+- **`engine.attach(element)`** steps the run by the time since the last frame, then draws it, on every animation frame. A first frame timed before the attach counts as no time. It never succeeds, so run it last: it fails with what a `uses` Effect fails with, with `AttachError` if the view or the input source can't be made (no WebGL), and with `GameCrashed` if a step, a render or a listener of the run's events throws. That frame is the last: the run ends, and the view and the input source are disposed, so the app can say why instead of showing a frozen viewport. Those failures reach only what waits on `attach`: a forked `attach` that nothing joins loses them, so join its fiber or race the rest of the program against it. Attaching an engine that is already attached dies: an engine draws into one element at a time.
+- **`engine.start`**, `setPaused` and `stop` drive the run: while paused a frame draws but doesn't step, and paused time doesn't count. `engine.send` sends the run a command and waits for the rules' answer ([Refusing a command](#refusing-a-command)), and `engine.listen` hears its events.
+- **`Game.Frames`** is where an attached engine gets its frames: `requestAnimationFrame` (`Game.animationFrames`), unless the app or a test provides another `Game.FrameSource` ([Testing an engine](#testing-an-engine)).
+- **`Game.frameLoop(frames, frame)`** is the loop an engine draws on, for anything else an app draws on animation frames. It fails with `GameCrashed` when a frame throws.
 
 In a Foldkit app, [`arcadekit/foldkit`](../foldkit/README.md)'s `engineEntry` attaches the engine to the viewport and turns its events into Messages: `engineEntry({ engine: RaceEngine, toMessage: Race.match({ ... }), ... })`.
 
-## What is still on the older contract
+## Testing an engine
 
-No game is. Both games are declared, for one player and for several: co-op is the [`Coop`](../net/README.md#co-op) declaration, made from the game's engine, whose lockstep run is a host of the declared simulation as the engine is. What the kit still keeps from before is its own to remove: the older engine (`makeGameEngine`) and the `GameSimulation` contract ([`arcadekit/runtime`](../runtime/README.md)), which its own tests and the `GameLoop` under `Game.Loop` still use. They go at the end of the move ([ADR-0020](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0020-a-game-is-declared.md)). `Game.Loop` steps a declared simulation on the same `GameLoop`, so the step order is one.
+`arcadekit/game/testing` has `manualFrames()`, a frame source a test drives: no frame runs until the test runs one with `runFrameAt(ms)`, at a time it chooses, so an engine steps and draws in Node with no `requestAnimationFrame`. Provide it as `Game.Frames`. Only tests import this entry.
+
+```ts
+import * as Game from "arcadekit/game/browser";
+import { manualFrames } from "arcadekit/game/testing";
+import { Effect, Layer, Schema } from "effect";
+
+class Count extends Game.Simulation("Count", {
+  // 1/64 s steps, so the frame times below are exact in floating point.
+  stepSeconds: 1 / 64,
+  input: Schema.Null,
+  create: () => ({ steps: 0 }),
+  step: (count) => {
+    count.steps += 1;
+  },
+}) {}
+
+// What the view drew, frame by frame.
+const drawn: (number | null)[] = [];
+
+class CountEngine extends Game.Engine("CountEngine", {
+  simulation: Count,
+  view: () => ({
+    render: (count) => {
+      drawn.push(count?.steps ?? null);
+    },
+    dispose: () => {},
+  }),
+  input: () => ({ read: () => null, dispose: () => {} }),
+}) {}
+
+const frames = manualFrames();
+// Node has no DOM, and this view touches nothing of its element.
+const element = {} as HTMLElement;
+
+// In a test: `await Effect.runPromise(play)`, then `expect(drawn).toStrictEqual([1, 2])`.
+export const play = Effect.gen(function* () {
+  const engine = yield* CountEngine;
+  yield* engine.start(null, { seed: 1 });
+  // Attached on a fiber of this scope. It has asked for its first frame when this returns.
+  yield* Effect.forkScoped(engine.attach(element), { startImmediately: true });
+  // 1/64 s after the attach: one step, then a draw. Then another.
+  frames.runFrameAt(15.625);
+  frames.runFrameAt(31.25);
+}).pipe(
+  Effect.scoped,
+  Effect.provide(CountEngine.layer),
+  Effect.provide(Layer.succeed(Game.Frames, frames))
+);
+```
+
+`frames.waiting()` says whether the engine has asked for a frame that hasn't run: it has while attached, and not after a detach or a crash. A Co-op client draws on the same frames ([`arcadekit/net`](../net/README.md#testing-a-co-op-game)). To check the rules themselves, use [a scenario](#a-scenario): it needs no engine and no frames.

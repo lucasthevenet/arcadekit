@@ -2,7 +2,6 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as Game from "../game/index";
-import type { StepInput } from "../runtime/index";
 import { hostLockstep, joinLockstep } from "./lockstep";
 import type { LockstepOptions, LockstepSession } from "./lockstep";
 import { createMemoryNetwork } from "./memory-network";
@@ -85,7 +84,7 @@ const script = (player: string, step: number): Move => ({
   n: (step * 7 + player.codePointAt(player.length - 1)! * 13) % 11,
 });
 
-const scripted = (player: string): StepInput<Move> => ({
+const scripted = (player: string): Game.StepInput<Move> => ({
   read: (step) => script(player, step),
 });
 

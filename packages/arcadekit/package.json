@@ -107,20 +107,10 @@
       "types": "./dist/game/scenario.d.ts",
       "default": "./dist/game/scenario.js"
     },
-    "./runtime": {
-      "source": "./src/runtime/index.ts",
-      "types": "./dist/runtime.d.ts",
-      "default": "./dist/runtime.js"
-    },
-    "./runtime/browser": {
-      "source": "./src/runtime/browser.ts",
-      "types": "./dist/runtime/browser.d.ts",
-      "default": "./dist/runtime/browser.js"
-    },
-    "./runtime/testing": {
-      "source": "./src/runtime/testing.ts",
-      "types": "./dist/runtime/testing.d.ts",
-      "default": "./dist/runtime/testing.js"
+    "./game/testing": {
+      "source": "./src/game/testing.ts",
+      "types": "./dist/game/testing.d.ts",
+      "default": "./dist/game/testing.js"
     },
     "./net": {
       "source": "./src/net/index.ts",

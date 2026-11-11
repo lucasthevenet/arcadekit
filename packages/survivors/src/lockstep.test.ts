@@ -5,7 +5,6 @@ import type {
   LockstepSession,
   MemoryNetwork,
 } from "arcadekit/net";
-import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -132,7 +131,7 @@ const zigZag = (turn: number, step: number, input: Mutable<HeroInput>) => {
 };
 
 /** Player `slot`'s device: its zig-zag. One object, refilled. */
-const script = (slot: number): StepInput<HeroInput> => {
+const script = (slot: number): Game.StepInput<HeroInput> => {
   const input: Mutable<HeroInput> = { moveX: 0, moveZ: 0 };
   return { read: (step) => zigZag(TURNS[slot]!, step, input) };
 };
@@ -294,7 +293,7 @@ const soloHashes = (steps: number) => {
   const world = loop.state!;
   const players = TURNS.map(() => ({ moveX: 0, moveZ: 0 }));
   const input: SurvivorsInput = { players, leaving: [] };
-  const source: StepInput<SurvivorsInput> = {
+  const source: Game.StepInput<SurvivorsInput> = {
     read: (step) => {
       for (const [slot, turn] of TURNS.entries()) {
         zigZag(turn, step, players[slot]!);

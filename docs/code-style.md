@@ -30,7 +30,7 @@ If it needs one of them, change the builder, not the example.
 
 The test for a declaration: would two games each write one, and call it something of their own? Events, a simulation, an engine, content: yes. The audio system, the frame clock, a pool: no.
 
-A game never calls a `make…` or `create…` function to supply one of its parts. The kit still exports a few from the older contract, and that list only gets shorter.
+A game never calls a `make…` or `create…` function to supply one of its parts. The kit still exports two that have no declaration yet, `makeSaveStore` and `makeAudioSettingsStore`, and that list only gets shorter.
 
 ## A declaration
 
@@ -128,12 +128,11 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 | A builder is given no type argument, apart from types given first | lint: `declaration/inferred` |
 | A function in a definition is not async and not a generator | lint: `declaration/plain-handler` |
 | A step or an `apply` returns nothing | the `Nothing` type, and `Game.Loop` at run time |
-| New code is written with the declarations | lint: `declaration/older-contract` |
 | A builder's shape: the name first, typed by a type parameter, `kind` and the name as statics, `<Noun>Class` written out and exported with the statics the class sets, the base named, one builder for each kind | lint: `declaration/builder`, on the kit's source |
 | Every builder is listed, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |
-| No new factory without a reason | the style test's `FACTORIES` |
+| No new factory without a reason | the style test's `FACTORIES` and `NOT_YET_DECLARED` |
 | Library code runs no Effect itself | lint: `Effect.run…` and `ManagedRuntime.make` are refused in `packages/*/src`, outside what a test imports |
-| The simulation reads no clock or random source, and uses only exact math | lint, on the root entry of every genre package and on `arcadekit/game` but its engine. `oxlint.config.ts` lists the other plain files of the kit: add a new one there |
+| The simulation reads no clock or random source, and uses only exact math | lint, on the root entry of every genre package and on `arcadekit/game` but its engine and its frame clock. `oxlint.config.ts` lists the other plain files of the kit: add a new one there |
 | A module exports no `then` | lint: `unicorn/no-thenable` |
 | Which entry may import which, and which packages | lint's `ENTRY_IMPORTS`, [`packages/arcadekit/test/entry-packages.test.ts`](../packages/arcadekit/test/entry-packages.test.ts) |
 | A README's examples compile | `pnpm smoke` |

@@ -124,13 +124,13 @@ const ownRunnerProperties = [
 // fixture.
 const TEST_HELPERS = ["**/*.test.ts", "**/testing/**", "**/test-*.ts"];
 
-// Which entry of the arcadekit package may import which (ADR-0018). This is the graph the nine
-// packages had when they were separate, plus one arrow: core and input stand alone, runtime steps
-// with core's clock, net seeds its test network with core's Rng, and foldkit's tests drive a real
-// engine from runtime (its own code only names the engine's shape). The arrow added since is net
-// to game: a lockstep session is a host of a declared simulation, so it steps a `Game.Loop` and
-// reads one player's input Schema from the simulation's `Game.PlayerInputs` (ADR-0020). Adding
-// an arrow here is a design decision: say why in the PR.
+// Which entry of the arcadekit package may import which (ADR-0018). Core and input stand alone.
+// game steps with core's clock and collects events in core's buffer. net seeds its test network
+// with core's Rng, and imports game: a lockstep session is a host of a declared simulation, so it
+// steps a `Game.Loop` and reads one player's input Schema from the simulation's
+// `Game.PlayerInputs`, and the Co-op client draws on game's frame loop (ADR-0020). foldkit's tests
+// drive a real engine from game; its own code only names the engine's shape. Adding an arrow
+// here is a design decision: say why in the PR.
 const KIT_SRC = "packages/arcadekit/src";
 const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   core: [],
@@ -139,10 +139,9 @@ const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   save: [],
   audio: [],
   "render-three": [],
-  runtime: ["core"],
-  game: ["core", "runtime"],
-  net: ["core", "runtime", "game"],
-  foldkit: ["runtime"],
+  game: ["core"],
+  net: ["core", "game"],
+  foldkit: ["game"],
 };
 
 // Each entry's public file: the `source` of each of the package's exports, from src/, without
@@ -205,7 +204,6 @@ export default defineConfig({
         "declaration/class": "error",
         "declaration/inferred": "error",
         "declaration/plain-handler": "error",
-        "declaration/older-contract": "error",
       },
     },
     {
@@ -258,19 +256,24 @@ export default defineConfig({
       // lockstep protocol that steps it on every peer, with the input codecs whose decoded
       // value every peer steps on and the step input built from the players' inputs (ADR-0017).
       // The test game too: its simulation is the one a Co-op game's tests copy. All of
-      // arcadekit/game but its engine, so a new file of it is held to this from the start:
-      // the engine is the Effect host, and takes its time from `Frames`.
+      // arcadekit/game, the kernel loop under `Game.Loop` included (game-loop.ts), so a new file
+      // of it is held to this from the start. Two of its files are left out by name, since they
+      // are where a browser's time and randomness come in: the engine is the Effect host, and
+      // draws a run's seed from Effect's `Random`; frames.ts is the engine's frame clock, and
+      // reads `performance.now()` to give a frame's time to whoever steps.
       files: [
         "packages/arcadekit/src/core/**/*.ts",
-        "packages/arcadekit/src/runtime/loop.ts",
-        "packages/arcadekit/src/runtime/simulation.ts",
         "packages/arcadekit/src/game/**/*.ts",
         "packages/arcadekit/src/net/lockstep.ts",
         "packages/arcadekit/src/net/codec.ts",
         "packages/arcadekit/src/net/player-inputs.ts",
         "packages/arcadekit/src/net/testing/test-game.ts",
       ],
-      excludeFiles: ["**/*.test.ts", "packages/arcadekit/src/game/engine.ts"],
+      excludeFiles: [
+        "**/*.test.ts",
+        "packages/arcadekit/src/game/engine.ts",
+        "packages/arcadekit/src/game/frames.ts",
+      ],
       rules: {
         "eslint/no-restricted-properties": [
           "error",

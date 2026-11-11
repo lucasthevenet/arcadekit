@@ -1,9 +1,9 @@
 import { SilentAudioLayer } from "arcadekit/audio";
 import * as Game from "arcadekit/game";
 import { Frames } from "arcadekit/game/browser";
+import { manualFrames } from "arcadekit/game/testing";
 import { fakeCoopRooms } from "arcadekit/net/testing";
 import { SpriteSheetError } from "arcadekit/render-three";
-import { manualFrames } from "arcadekit/runtime/testing";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

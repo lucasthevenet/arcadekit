@@ -1,10 +1,11 @@
 import { Duration, Effect, Function } from "effect";
 
 import { EventBuffer } from "../core/index";
-import { GameLoop } from "../runtime/index";
-import type { FrameBudget, GameSimulation, StepInput } from "../runtime/index";
 import { CommandDropped } from "./command";
 import type { AnyCommand, Settled } from "./command";
+import { GameLoop } from "./game-loop";
+import type { FrameBudget } from "./game-loop";
+import type { GameSimulation } from "./game-simulation";
 import { resolve } from "./simulation";
 import type {
   CommandContext,
@@ -13,6 +14,7 @@ import type {
   SimulationClass,
   StepContext,
 } from "./simulation";
+import type { StepInput } from "./step-input";
 
 // Plain code, like the step it runs (ADR-0017): no Effect, no clock of its own. Time comes in
 // with each call.

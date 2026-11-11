@@ -5,7 +5,7 @@ import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { ContentError } from "arcadekit/content";
 import type { ContentSource } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
-import { manualFrames } from "arcadekit/runtime/testing";
+import { manualFrames } from "arcadekit/game/testing";
 import { Effect, Fiber, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";

@@ -12,13 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 const repoDir = path.resolve(import.meta.dirname, "../..");
 
-const GAME_RULES = [
-  "named",
-  "class",
-  "inferred",
-  "plain-handler",
-  "older-contract",
-];
+const GAME_RULES = ["named", "class", "inferred", "plain-handler"];
 const KIT_RULES = ["builder"];
 
 const gameHeader = `import { Asset, Content } from "arcadekit/content";
@@ -131,36 +125,6 @@ export class Sub extends Base {}`,
   view: (container, { sheet }) => view(container, sheet),
   input: (surface) => input(surface),
 }) {}`,
-    reports: [],
-  },
-  "the older contract, imported by name": {
-    of: "game",
-    code: `import { makeGameEngine, combineViews } from "arcadekit/runtime/browser";
-import type { GameSimulation, StepInput } from "arcadekit/runtime";
-export type { GameDefinition } from "arcadekit/runtime/browser";
-export const made = [makeGameEngine, combineViews];
-export type Old = [GameSimulation<1, 2, 3, 4>, StepInput<1>];`,
-    reports: [
-      ["older-contract", "makeGameEngine is the older contract"],
-      ["older-contract", "Declare a Game.Simulation in its place"],
-      ["older-contract", "GameDefinition is the older contract"],
-    ],
-  },
-  "the older contract, through an entry's namespace": {
-    of: "game",
-    code: `import * as Runtime from "arcadekit/runtime/browser";
-export const made = [Runtime.makeGameEngine, Runtime.combineViews];
-export type Old = Runtime.GameEngine<1, 2, 3>;`,
-    reports: [
-      ["older-contract", "makeGameEngine is the older contract"],
-      ["older-contract", "GameEngine is the older contract"],
-    ],
-  },
-  "the same names from somewhere else": {
-    of: "game",
-    code: `import { makeGameEngine } from "./engine";
-import * as Other from "other-kit";
-export const made = [makeGameEngine, Other.makeGameEngine];`,
     reports: [],
   },
   "a builder imported by name, or under another name": {

@@ -4,6 +4,8 @@ status: accepted
 
 # The kit is one package with entries
 
+> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: the package has nineteen entries. The three `runtime` entries are gone, with the older contract they held, and `game/testing` joined (`manualFrames`, which only tests import). What `runtime` had that survives is `game`'s: the frame loop, views, the input types and, exported from no entry, `GameLoop`. So `game` imports only `core`, `net` imports `core` and `game`, and `foldkit` imports `game`, which only its tests use. `tsconfig.root.json` compiles `core` and the root entries of `content`, `save`, `audio`, `game` (with `game/scenario`) and `net`, with `net/signalling`, without DOM types.
+
 > Since [ADR-0020](0020-a-game-is-declared.md): the package has twenty-one entries. `game`, `game/browser` and `game/scenario` (a game's declarations, its engine and its scenarios) are a tenth group, which may import `core` and `runtime`, and `net` may import `game`: a lockstep session hosts a declared simulation.
 
 > Since [ADR-0019](0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md): the package has eighteen entries. `net/worker` (the signalling worker, for Cloudflare) and `net/testing` (test helpers for a Co-op game) joined the sixteen below. Both are in the `net` group, so the graph has no new arrow. `net/worker` may import `cloudflare:workers`, with `@cloudflare/workers-types` as an optional peer for its types; `tsconfig.worker.json` checks it with Workers types and no DOM.

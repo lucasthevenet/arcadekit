@@ -21,7 +21,7 @@ import {
 } from "vitest";
 
 import * as Game from "../../game/browser";
-import { manualFrames } from "../../runtime/testing";
+import { manualFrames } from "../../game/testing";
 import type { Ticker } from "../scoped";
 import { microtasks, performanceClock } from "../test-harness";
 import {

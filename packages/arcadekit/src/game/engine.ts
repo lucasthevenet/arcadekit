@@ -1,20 +1,16 @@
 import { Context, Effect, Layer, Random, Scope } from "effect";
 
-import {
-  animationFrames,
-  attachError,
-  steppedFrames,
-} from "../runtime/browser";
-import type {
-  AttachError,
-  FrameSource,
-  GameCrashed,
-  GameView,
-} from "../runtime/browser";
-import type { InputSource } from "../runtime/index";
+import { attachError } from "./attach-error";
+import type { AttachError } from "./attach-error";
 import type { CommandDropped } from "./command";
+import { steppedFrames } from "./frame-loop";
+import type { GameCrashed } from "./frame-loop";
+import { animationFrames } from "./frames";
+import type { FrameSource } from "./frames";
 import { Loop } from "./loop";
 import type { RefusalFor, SimulationClass } from "./simulation";
+import type { InputSource } from "./step-input";
+import type { GameView } from "./view";
 
 /**
  * What an engine's view and input source are made from, by name: Effects the engine runs on each
@@ -101,7 +97,7 @@ export interface Engine<Config, Event, Command, E, Refusals> {
 
 /**
  * Where an attached engine gets its frames: `requestAnimationFrame` unless a test provides
- * `manualFrames()` from `arcadekit/runtime/testing`.
+ * `manualFrames()` from `arcadekit/game/testing`.
  *
  * ```ts
  * MyEngine.layer.pipe(Layer.provide(Layer.succeed(Game.Frames, manualFrames())));

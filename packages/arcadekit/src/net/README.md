@@ -492,10 +492,11 @@ What every peer of a run must agree on is on the class as plain values and funct
 
 ### Testing a Co-op game
 
-`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links) and `manualTicker()` a ticker the test drives, each with the `layer` a `Coop`'s layer takes. Frames come from `manualFrames()` in `arcadekit/runtime/testing`, provided as `Game.Frames`. It also has a small game to run: `TestGame`, a declared simulation with lobby picks, an offer each player answers with a command the rules may refuse (`AnswerOffer`, `NothingOwed`), a pause a player holds with another (`HoldPause`) and an end (`RunEnded`), with its content (`testContent`) and its state hash (`hashTestState`). It has no Co-op client of its own: a test makes one as an app does, from a `Coop`'s `layer`, its own game's or one declared over `TestGame`.
+`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links) and `manualTicker()` a ticker the test drives, each with the `layer` a `Coop`'s layer takes. Frames come from `manualFrames()` in [`arcadekit/game/testing`](../game/README.md#testing-an-engine), provided as `Game.Frames`. It also has a small game to run: `TestGame`, a declared simulation with lobby picks, an offer each player answers with a command the rules may refuse (`AnswerOffer`, `NothingOwed`), a pause a player holds with another (`HoldPause`) and an end (`RunEnded`), with its content (`testContent`) and its state hash (`hashTestState`). It has no Co-op client of its own: a test makes one as an app does, from a `Coop`'s `layer`, its own game's or one declared over `TestGame`.
 
 ```ts
 import * as Game from "arcadekit/game/browser";
+import { manualFrames } from "arcadekit/game/testing";
 import { Coop } from "arcadekit/net/browser";
 import {
   RunEnded,
@@ -505,7 +506,6 @@ import {
   manualTicker,
   testContent,
 } from "arcadekit/net/testing";
-import { manualFrames } from "arcadekit/runtime/testing";
 import { Context, Effect, Layer } from "effect";
 
 // A Coop to test: the kit's test game, drawn nowhere.

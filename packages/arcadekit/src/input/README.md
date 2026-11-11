@@ -14,7 +14,7 @@ pnpm add arcadekit effect
 
 ## Example
 
-A `createInput` for `arcadekit/runtime`'s `GameDefinition`: moves from the left stick or keys, and a dash button where one press reaches one step:
+The `input` of a [`Game.Engine`](../game/README.md#in-the-browser): moves from the left stick or keys, and a dash button where one press reaches one step:
 
 ```ts
 import { InputController, MOVE_AXES } from "arcadekit/input";

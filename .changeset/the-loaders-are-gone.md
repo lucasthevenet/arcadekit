@@ -51,4 +51,4 @@ The engine loader and the content loader are gone. A game's engine, its assets a
 
 - `ContentLoader<A>`: the class `Content` returns is the content service's key, so `MyContent` is the requirement and `MyContent.load` the load. The shape of the service is `Loaded<A, ContentError>`.
 
-`loadContent` stays: a `Content` declaration loads with it, and `MyContent.read(source)` is that call for a test. `GameSimulation`, `GameDefinition`, `GameEngine` and `makeGameEngine` stay until the Co-op client has moved.
+`loadContent` stays: a `Content` declaration loads with it, and `MyContent.read(source)` is that call for a test.

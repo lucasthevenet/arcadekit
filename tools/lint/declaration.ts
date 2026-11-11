@@ -17,7 +17,6 @@
 //   definition; a type argument is how a definition that doesn't infer gets papered over.
 // - `declaration/plain-handler`: a function in a definition is not `async` and not a generator.
 //   Its host calls it and goes on.
-// - `declaration/older-contract`: nothing new imports the contract the declarations replace.
 //
 // A builder is found by what the file imports, under whatever name it gave it: `Game.Event`,
 // `G.Event`, or `Event` imported by name. A function that is only called `Content` is no
@@ -68,22 +67,6 @@ const KIT_ENTRY_FILES: Readonly<Record<string, string>> = {
   "net/browser/index": "arcadekit/net/browser",
 };
 
-/**
- * The exports of the older contract, each with the declaration that replaces it. No game uses
- * one any more: they stay in the kit until the end of the move to declarations (ADR-0020), for
- * the kit's own tests and its older engine, and a name leaves this list when its export goes.
- */
-export const OLDER_CONTRACT: Readonly<Record<string, string>> = {
-  GameSimulation: "Game.Simulation",
-  GameDefinition: "Game.Engine",
-  GamePresentation: "Game.Engine",
-  GameEngine: "Game.Engine",
-  makeGameEngine: "Game.Engine",
-};
-
-/** The package whose entries export the older contract. */
-const KIT = "arcadekit";
-
 interface Node {
   readonly type: string;
   readonly parent?: Node;
@@ -98,8 +81,6 @@ interface Node {
   readonly generator?: boolean;
   readonly object?: Node;
   readonly property?: Node;
-  readonly left?: Node;
-  readonly right?: Node;
   readonly key?: Node;
   readonly callee?: Node;
   readonly arguments?: readonly Node[];
@@ -596,90 +577,6 @@ const plainHandler = {
     }),
 };
 
-/** Whether an import or a re-export names one of the kit's entries. */
-const fromKit = (node: Node): boolean => {
-  const source = node.source?.value;
-  return (
-    typeof source === "string" &&
-    (source === KIT || source.startsWith(`${KIT}/`))
-  );
-};
-
-const olderContract = {
-  meta: {
-    type: "problem",
-    docs: {
-      description:
-        "New code uses the declarations, not the older contract they replace.",
-    },
-  },
-  create: (context: RuleContext) => {
-    const report = (node: Node, name: string) => {
-      context.report({
-        node,
-        message: `${name} is the older contract, which no game uses any more and which goes at the end of the move to declarations (ADR-0020). Declare a ${OLDER_CONTRACT[name]} in its place: packages/push-puzzle is the example, and a \`Coop\` is made from the declared engine too. ${guide}`,
-      });
-    };
-    // The names a file gives the kit's entries: `import * as Runtime from "arcadekit/runtime"`.
-    const namespaces = new Set<string>();
-    const checkMember = (
-      object: Node | undefined,
-      member: Node | undefined
-    ) => {
-      if (
-        object?.type === "Identifier" &&
-        object.name !== undefined &&
-        namespaces.has(object.name) &&
-        member?.type === "Identifier" &&
-        member.name !== undefined &&
-        Object.hasOwn(OLDER_CONTRACT, member.name)
-      ) {
-        report(member, member.name);
-      }
-    };
-    return {
-      ImportDeclaration: (node: Node) => {
-        if (!fromKit(node)) {
-          return;
-        }
-        for (const specifier of node.specifiers ?? []) {
-          const imported = specifier.imported?.name;
-          if (specifier.type === "ImportNamespaceSpecifier") {
-            if (specifier.local?.name !== undefined) {
-              namespaces.add(specifier.local.name);
-            }
-          } else if (
-            imported !== undefined &&
-            Object.hasOwn(OLDER_CONTRACT, imported)
-          ) {
-            report(specifier, imported);
-          }
-        }
-      },
-      // `export { makeGameEngine } from "arcadekit/runtime/browser"`.
-      ExportNamedDeclaration: (node: Node) => {
-        if (!fromKit(node)) {
-          return;
-        }
-        for (const specifier of node.specifiers ?? []) {
-          const local = specifier.local?.name;
-          if (local !== undefined && Object.hasOwn(OLDER_CONTRACT, local)) {
-            report(specifier, local);
-          }
-        }
-      },
-      MemberExpression: (node: Node) => {
-        if (node.computed !== true) {
-          checkMember(node.object, node.property);
-        }
-      },
-      TSQualifiedName: (node: Node) => {
-        checkMember(node.left, node.right);
-      },
-    };
-  },
-};
-
 /** The function a class expression is the result of, if it is one's result. */
 const returnedFrom = (node: Node): Node | undefined => {
   let outer = node;
@@ -930,7 +827,6 @@ export default {
     class: declaredAsClass,
     inferred,
     "plain-handler": plainHandler,
-    "older-contract": olderContract,
     builder,
   },
 };

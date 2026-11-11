@@ -32,7 +32,6 @@ const ENTRIES = [
   "save",
   "audio",
   "render-three",
-  "runtime",
   "game",
   "net",
   "foldkit",

@@ -1,7 +1,15 @@
 import { Context, Effect, Layer, Scope } from "effect";
 
 import { Frames } from "../../game/browser";
-import type { EngineClass, Used, Uses, ViewContext } from "../../game/browser";
+import type {
+  AttachError,
+  EngineClass,
+  GameCrashed,
+  InputSource,
+  Used,
+  Uses,
+  ViewContext,
+} from "../../game/browser";
 import { playerInputSchema } from "../../game/index";
 import type {
   AnyEvent,
@@ -12,8 +20,6 @@ import type {
   PlayersSimulation,
   RefusalFor,
 } from "../../game/index";
-import type { AttachError, GameCrashed } from "../../runtime/browser";
-import type { InputSource } from "../../runtime/index";
 import type { Ticker } from "../scoped";
 import { DEFAULT_ROOM_SIZE, MAX_ROOM_SIZE } from "../signalling/protocol";
 import { coopClient } from "./coop-client";

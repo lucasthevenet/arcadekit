@@ -6,6 +6,8 @@ status: accepted
 
 > Amended on 2026-11-06: `GameDriver` is gone; `makeGameEngine`'s `attach` is the `requestAnimationFrame` adapter, see the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
 
+> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: `makeGameEngine` and the `runtime` entries are gone; a `Game.Engine`'s `attach` is that adapter. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+
 Survivors shaped the kit alone, so nobody could tell which of its primitives were general and which only looked general (#4). The kit changes only where two genres, or two apps, show the same need (#4, restated in #27). A need that only one of them shows is recorded as a finding or an issue, and its code stays in that genre or app.
 
 ## Consequences

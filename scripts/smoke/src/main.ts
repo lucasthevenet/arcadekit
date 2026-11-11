@@ -1,11 +1,11 @@
 // The smoke test's tiny game in the browser: input, a pixel stage drawing sprites from a sheet,
-// sound, a save and content, run by the Effect engine. Vite builds it from the packed packages.
+// sound, a save and content, run by its declared engine. Vite builds it from the packed packages.
 import { Audio, makeAudioSettingsStore } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
 import { BrowserAudioLayer } from "arcadekit/audio/browser";
-import { loadContent, memorySource } from "arcadekit/content";
+import { Asset, loadContent, memorySource } from "arcadekit/content";
 import type { AttachableEngine } from "arcadekit/foldkit";
-import type * as Game from "arcadekit/game";
+import * as Game from "arcadekit/game/browser";
 import { InputController, MOVE_AXES } from "arcadekit/input";
 import { createMemoryNetwork, hostLockstep } from "arcadekit/net";
 import type { LockstepSession } from "arcadekit/net";
@@ -19,24 +19,16 @@ import {
 import type {
   InstancedSpritesOptions,
   SpriteSheet,
+  SpriteSheetError,
 } from "arcadekit/render-three";
-import { combineViews, makeGameEngine } from "arcadekit/runtime/browser";
-import type {
-  AttachError,
-  GameCrashed,
-  GameDefinition,
-  GameEngine,
-  GameView,
-  InputSource,
-} from "arcadekit/runtime/browser";
 import { makeSaveStore } from "arcadekit/save";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Effect, Layer, Schema } from "effect";
 
-import { DotsTogether, Nudge, dotsSimulation, replay } from "./simulation";
-import type { Dots, DotsConfig, DotsEvent, DotsInput } from "./simulation";
+import { Dots, DotsTogether, Nudge, replay } from "./simulation";
+import type { DotsInput, Field } from "./simulation";
 
-const createInput = (surface: HTMLElement): InputSource<DotsInput> => {
+const createInput = (surface: HTMLElement): Game.InputSource<DotsInput> => {
   const controller = new InputController(surface, { axes: MOVE_AXES });
   const input = { moveX: 0, moveY: 0 };
   return {
@@ -53,7 +45,7 @@ const createInput = (surface: HTMLElement): InputSource<DotsInput> => {
 
 const SPRITE_OPTIONS: InstancedSpritesOptions = { capacity: 256, layer: 1 };
 
-class DotsView implements GameView<Dots> {
+class DotsView implements Game.View<Field> {
   private readonly stage: Stage<"pixel">;
   private readonly sprites: InstancedSprites;
 
@@ -63,16 +55,16 @@ class DotsView implements GameView<Dots> {
     this.stage.scene.add(this.sprites.mesh);
   }
 
-  render(state: Dots | null, timeSeconds: number): void {
+  render(field: Field | null, timeSeconds: number): void {
     const tag = this.sprites.sheet.data.tags.get("dot");
-    if (state !== null && tag !== undefined) {
+    if (field !== null && tag !== undefined) {
       const frame = frameAt(this.sprites.sheet.data, tag, timeSeconds);
-      const { x, z } = state.dots.fields;
-      for (let i = 0; i < state.dots.count; i++) {
+      const { x, z } = field.dots.fields;
+      for (let i = 0; i < field.dots.count; i++) {
         this.sprites.set(i, x[i]!, z[i]!, frame);
       }
-      this.sprites.commit(state.dots.count);
-      this.stage.camera.follow(state.playerX, state.playerZ);
+      this.sprites.commit(field.dots.count);
+      this.stage.camera.follow(field.playerX, field.playerZ);
     }
     this.stage.render();
   }
@@ -83,20 +75,24 @@ class DotsView implements GameView<Dots> {
   }
 }
 
-const soundView = (audio: AudioSystem): GameView<Dots> => ({
-  render: (state) => audio.setLoop("hum", state === null ? 0 : 0.5),
+const soundView = (audio: AudioSystem): Game.View<Field> => ({
+  render: (field) => audio.setLoop("hum", field === null ? 0 : 0.5),
   dispose: () => audio.setLoop("hum", 0),
 });
 
-const makeDotsGame = (
-  sheet: SpriteSheet,
-  audio: AudioSystem
-): GameDefinition<DotsConfig, Dots, DotsInput, DotsEvent> => ({
-  ...dotsSimulation,
-  createInput,
-  createView: (container) =>
-    combineViews(new DotsView(container, sheet), soundView(audio)),
-});
+/** The sheet the dots are drawn from. The app says where it is, and frees it at its end. */
+class DotsSheet extends Asset<SpriteSheet, SpriteSheetError>()("DotsSheet", {
+  release: (sheet) => sheet.dispose(),
+}) {}
+
+/** The game in the browser: its rules, drawn from the app's sheet and heard through its audio. */
+class DotsEngine extends Game.Engine("DotsEngine", {
+  simulation: Dots,
+  uses: { sheet: DotsSheet.load, audio: Audio },
+  view: (container, { sheet, audio }) =>
+    Game.combineViews<Field>(new DotsView(container, sheet), soundView(audio)),
+  input: createInput,
+}) {}
 
 const Settings = Schema.Struct({ dots: Schema.Int, speed: Schema.Finite });
 
@@ -118,27 +114,33 @@ const program = Effect.gen(function* () {
   yield* audioSettings.load;
   yield* save.merge({ first: { near: replay(1, 60) } });
 
-  const audio = yield* Audio;
-  const sheet = yield* loadSpriteSheet("sprites/dots.json");
-  const engine: GameEngine<DotsConfig, Dots, DotsEvent> = makeGameEngine(
-    makeDotsGame(sheet, audio)
-  );
-  const attachable: AttachableEngine<DotsEvent, AttachError | GameCrashed> =
-    engine;
+  const engine: Game.EngineOf<typeof Dots, SpriteSheetError> =
+    yield* DotsEngine;
+  // What a Foldkit app's `engineEntry` takes: the engine's `attach` and `listen`.
+  const attachable: AttachableEngine<
+    Game.EventOf<typeof Dots>,
+    Game.AttachError | Game.GameCrashed | SpriteSheetError
+  > = engine;
   const element = document.querySelector<HTMLElement>("#game");
   if (element === null) {
     return;
   }
-  yield* attachable.listen((event) => console.log(event));
+  yield* attachable.listen(
+    Dots.match({
+      Started: ({ dots }) => console.log(`${dots} dots`),
+      Hud: ({ near }) => console.log(`${near} near`),
+    })
+  );
   yield* engine.start(settings.settings);
-  // Draws until the page closes. Fails if the view can't be made or the game crashes.
+  // Draws until the page closes. Fails if the sheet can't be loaded, the view can't be made or
+  // the game crashes.
   return yield* attachable.attach(element);
 });
 
 // Lockstep over the in-memory network: one player, a few steps, and a command the rules answer.
 const network = createMemoryNetwork({ seed: 1 });
 const session: LockstepSession<
-  Dots,
+  Field,
   Game.EventOf<typeof DotsTogether>,
   Game.CommandOf<typeof DotsTogether>,
   Game.RefusalsOf<readonly [typeof Nudge]>
@@ -149,7 +151,7 @@ const session: LockstepSession<
     contentHash: "smoke",
     transport: network.connect("host"),
     local: { read: () => ({ moveX: 0, moveY: 0 }) },
-    hash: (state) => state.playerX,
+    hash: (field) => field.playerX,
     inputDelay: 2,
     hashEvery: 30,
     peers: [],
@@ -169,6 +171,16 @@ console.log(signalling);
 Effect.runFork(
   program.pipe(
     Effect.scoped,
-    Effect.provide(Layer.mergeAll(BrowserAudioLayer, BrowserSaveStorage))
+    Effect.provide(
+      DotsEngine.layer.pipe(
+        Layer.provideMerge(
+          Layer.mergeAll(
+            BrowserAudioLayer,
+            BrowserSaveStorage,
+            DotsSheet.layer(loadSpriteSheet("sprites/dots.json"))
+          )
+        )
+      )
+    )
   )
 );

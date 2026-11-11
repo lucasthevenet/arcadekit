@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import {
   BUILDER_ENTRIES,
   DECLARATION_BUILDERS,
-  OLDER_CONTRACT,
 } from "../../../tools/lint/declaration";
 
 // The part of the kit's style that takes more than one file to check (docs/code-style.md has all
@@ -16,9 +15,9 @@ import {
 //
 // - DECLARATIONS: every declaration builder, checked for its docs and for a test that declares
 //   one.
-// - FACTORIES and OLDER_FACTORIES: every exported `make…` and `create…` function. A new part a
+// - FACTORIES and NOT_YET_DECLARED: every exported `make…` and `create…` function. A new part a
 //   game supplies is a declaration, so a new factory needs a reason.
-// - Lint's own lists, DECLARATION_BUILDERS and OLDER_CONTRACT, checked against the source.
+// - Lint's own list, DECLARATION_BUILDERS, checked against the source.
 // - The guide's links, so it keeps naming files that exist.
 //
 // It reads text and runs nothing, as test/entry-packages.test.ts does: a builder's behaviour is
@@ -76,19 +75,9 @@ const FACTORIES: readonly string[] = [
   "makeSpriteSheet",
 ];
 
-// The factories of the older contract, which a game calls to supply one of its parts. Each goes
-// when the games that call it have moved to a declaration (ADR-0020), so this list only gets
-// shorter.
-const OLDER_FACTORIES: readonly string[] = [
-  "makeAudioSettingsStore",
-  "makeGameEngine",
-  "makeSaveStore",
-];
-
-// Those of them with no declaration to use in their place yet, so lint can't refuse them
-// (OLDER_CONTRACT in tools/lint/declaration.ts): a save and the audio settings are still to move
-// (ADR-0020). A name leaves this list for OLDER_CONTRACT with the change that adds its
-// declaration.
+// The factories a game still calls to supply one of its parts, for want of a declaration: a save
+// and the audio settings are still to move (ADR-0020). A name leaves this list with the change
+// that adds its declaration and deletes the factory, so the list only gets shorter.
 const NOT_YET_DECLARED: readonly string[] = [
   "makeAudioSettingsStore",
   "makeSaveStore",
@@ -239,35 +228,6 @@ describe("the table of declarations", () => {
   });
 });
 
-describe("the older contract lint keeps new code off", () => {
-  // Each entry's public file, where a game's import of a name resolves.
-  const entryFiles = Object.values(
-    (
-      JSON.parse(read(path.join(packageDir, "package.json"))) as {
-        readonly exports: Readonly<Record<string, { readonly source: string }>>;
-      }
-    ).exports
-  ).map(({ source }) => read(path.join(packageDir, source)));
-
-  it("names only what the kit still exports", () => {
-    // A name whose export has gone is a line to delete from OLDER_CONTRACT.
-    const gone = Object.keys(OLDER_CONTRACT).filter(
-      (name) =>
-        !entryFiles.some((text) =>
-          new RegExp(String.raw`\b${name}\b`, "u").test(text)
-        )
-    );
-    expect(gone).toStrictEqual([]);
-  });
-
-  it("names every factory of the older contract that has a declaration", () => {
-    // The older factories lint doesn't name are the ones with no declaration to use yet.
-    expect(
-      OLDER_FACTORIES.filter((name) => !Object.hasOwn(OLDER_CONTRACT, name))
-    ).toStrictEqual(NOT_YET_DECLARED);
-  });
-});
-
 describe.each(Object.entries(DECLARATIONS))(
   "%s",
   (builder, { file, service }) => {
@@ -359,7 +319,7 @@ describe("the exported factories", () => {
     expect(
       exported.toSorted(),
       `The kit's exported make… and create… functions changed. An export named that way is read as a factory, and a part each game supplies is a declaration, not a factory: see "What kind of module is it" in ${guide}. If it makes nothing a game supplies, name it for what it returns.`
-    ).toStrictEqual([...FACTORIES, ...OLDER_FACTORIES].toSorted());
+    ).toStrictEqual([...FACTORIES, ...NOT_YET_DECLARED].toSorted());
   });
 });
 

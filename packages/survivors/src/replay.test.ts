@@ -1,5 +1,4 @@
 import * as Game from "arcadekit/game";
-import type { StepInput } from "arcadekit/runtime";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -12,10 +11,10 @@ import { Survivors } from "./simulation";
 // Replay check: the same seed, the same input script and the same commands must give the same
 // run, bit for bit. It steps the declared simulation, `Survivors`, with arcadekit/game's Loop, in
 // the step order and sample timing of any declared host, so it guards the simulation, core's
-// clock and the loop's step order. Its script has no endStep or endFrame; runtime's loop.test.ts
-// pins their order. It doesn't cover input devices or the view. A lockstep run steps this same
-// `Survivors` through the same loop: lockstep.test.ts holds its peers to one another, and to a
-// run played alone, step for step.
+// clock and the loop's step order. Its script has no endStep or endFrame; the kit's
+// game-loop.test.ts pins their order. It doesn't cover input devices or the view. A lockstep run
+// steps this same `Survivors` through the same loop: lockstep.test.ts holds its peers to one
+// another, and to a run played alone, step for step.
 
 const content = Schema.decodeUnknownSync(GameContent)({
   rules: {
@@ -100,7 +99,7 @@ const content = Schema.decodeUnknownSync(GameContent)({
 const LEG_MOVE_X = [1, 0.3, -1, 0.3];
 
 /** Zig-zag movement: a leg every 90 steps. One object, refilled each step, as a device source does. */
-const zigZag = (): StepInput<HeroInput> => {
+const zigZag = (): Game.StepInput<HeroInput> => {
   const input = { moveX: 0, moveZ: 0 };
   return {
     read: (step) => {

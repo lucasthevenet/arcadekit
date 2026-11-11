@@ -1,29 +1,3 @@
-import type { GameSimulation, InputSource } from "./simulation";
-
-/** The browser half of a game: how it reads input from the viewport and draws into it. */
-export interface GamePresentation<State, Input> {
-  /** Creates the input source that reads input from the viewport element. Called once per attach, after `createView`. */
-  readonly createInput: (surface: HTMLElement) => InputSource<Input>;
-  /**
-   * Creates the view that draws into the viewport element. Called once per attach. It is
-   * synchronous: load assets before, and pass them in by closure.
-   */
-  readonly createView: (container: HTMLElement) => GameView<State>;
-}
-
-/**
- * Everything the runtime needs to run a game in the browser: its simulation, plus its
- * presentation. A genre builds it in its `./browser` entry as
- * `{ ...mySimulation, createInput, createView }`.
- */
-export type GameDefinition<Config, State, Input, Event> = GameSimulation<
-  Config,
-  State,
-  Input,
-  Event
-> &
-  GamePresentation<State, Input>;
-
 /**
  * Draws a game. Two rules apply to every view:
  *

@@ -5,6 +5,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  Layer,
   Option,
   Queue,
   Schema,
@@ -15,16 +16,15 @@ import type { HtmlBuilder } from "foldkit/html";
 import { defineMessageUnion } from "foldkit/message";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeGameEngine } from "../runtime/browser";
-import type { GameDefinition, GameEngine } from "../runtime/browser";
-import { manualFrames } from "../runtime/testing";
+import * as Game from "../game/browser";
+import { manualFrames } from "../game/testing";
 import { engineEntry, gameViewport } from "./index";
 import type { AttachableEngine } from "./index";
 
 // No DOM here. Scene renders the view as VNodes and resolves its Mount; `document` is stubbed;
-// the engine is a real `makeGameEngine` around a tiny game whose view logs the element it draws
-// into, on frames that never run. The host app wires the viewport the way the demos
-// do.
+// the engine is a declared `Game.Engine` for a tiny game whose view logs the element it draws
+// into, on frames that run only when a test runs them. The host app wires the viewport the way
+// the demos do.
 
 const Message = defineMessageUnion({
   MountedViewport: {},
@@ -68,57 +68,90 @@ const view = (model: Model, h: HtmlBuilder<Message>) =>
 const unmounted: Model = { isViewportMounted: false, showsViewport: true };
 const mounted: Model = { isViewportMounted: true, showsViewport: true };
 
-interface GameEvent {
-  readonly type: "started" | "noise" | "sample";
-}
-interface GameState {
-  readonly events: GameEvent[];
-}
+// A game whose run reports that it started, some noise, and a sample.
+class Started extends Game.Event("Started") {}
+class Noise extends Game.Event("Noise") {}
+class Sampled extends Game.Event("Sampled") {}
 
-class TestEngine extends Context.Service<
-  TestEngine,
-  GameEngine<null, GameState, GameEvent>
->()("test/Engine") {}
+class Quiet extends Game.Simulation("Quiet", {
+  input: Schema.Null,
+  events: [Started, Noise],
+  create: (_config: null, { report }) => {
+    report(new Started());
+    report(new Noise());
+    return {};
+  },
+  step: () => {},
+  sample: { event: Sampled, every: "1 second", read: () => ({}) },
+}) {}
+
+type GameEvent = Game.EventOf<typeof Quiet>;
+
+/** What one test's engine logs to, and what the test makes go wrong in it. */
+class Setup extends Context.Service<
+  Setup,
+  {
+    readonly log: string[];
+    readonly noWebGl: boolean;
+    readonly renderBug: boolean;
+  }
+>()("test/Setup") {}
+
+class TestEngine extends Game.Engine("TestEngine", {
+  simulation: Quiet,
+  uses: { setup: Setup },
+  view: (container, { setup }) => {
+    if (setup.noWebGl) {
+      throw new Error("no WebGL");
+    }
+    setup.log.push(`attach ${container.title}`);
+    return {
+      render: () => {
+        if (setup.renderBug) {
+          throw new Error("render bug");
+        }
+      },
+      dispose: () => {
+        setup.log.push("detach");
+      },
+    };
+  },
+  input: () => ({ read: () => null, dispose: () => {} }),
+}) {}
 
 /**
- * A game whose run reports "started", "noise" and a sample, and whose view logs its element.
- * With `noWebGl`, making its view throws, as Three.js does without WebGL; with `renderBug`,
- * drawing a frame throws. Its frames run only when the test runs them on `frames`.
+ * The engine's layer for one test, with the log its view writes to. With `noWebGl`, making the
+ * view throws, as Three.js does without WebGL; with `renderBug`, drawing a frame throws. Its
+ * frames run only when the test runs them on `frames`.
  */
 const testEngine = ({ noWebGl = false, renderBug = false } = {}) => {
   const log: string[] = [];
   const frames = manualFrames();
-  const game: GameDefinition<null, GameState, null, GameEvent> = {
-    create: () => ({ events: [{ type: "started" }, { type: "noise" }] }),
-    step: () => {},
-    drainEvents: (state) => state.events.splice(0),
-    sample: { everyMs: 1000, read: () => ({ type: "sample" }) },
-    createInput: () => ({ read: () => null, dispose: () => {} }),
-    createView: (container) => {
-      if (noWebGl) {
-        throw new Error("no WebGL");
-      }
-      log.push(`attach ${container.title}`);
-      return {
-        render: () => {
-          if (renderBug) {
-            throw new Error("render bug");
-          }
-        },
-        dispose: () => {
-          log.push("detach");
-        },
-      };
-    },
-  };
-  return { engine: makeGameEngine(game, { frames }), frames, log };
+  const layer = TestEngine.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.succeed(Game.Frames, frames),
+        Layer.succeed(Setup, { log, noWebGl, renderBug })
+      )
+    )
+  );
+  return { layer, frames, log };
 };
+
+/** Starts a run of the test's engine. */
+const startRun = Effect.gen(function* () {
+  const engine = yield* TestEngine;
+  yield* engine.start(null);
+});
 
 const entry = engineEntry({
   engine: TestEngine,
   isViewportMounted: (model: Model) => model.isViewportMounted,
-  toMessage: (event: GameEvent): Message | undefined =>
-    event.type === "noise" ? undefined : Message.GotEvent({ name: event.type }),
+  toMessage: Quiet.match({
+    Started: (): Message | undefined => Message.GotEvent({ name: "started" }),
+    Noise: () => undefined,
+    Sampled: () => Message.GotEvent({ name: "sample" }),
+  }),
   onError: (error) => Message.FailedToLoad({ error: error.message }),
 });
 
@@ -227,11 +260,9 @@ describe(engineEntry, () => {
   });
 
   it("does nothing while the viewport isn't mounted", async () => {
-    const { engine, log } = testEngine();
+    const { layer, log } = testEngine();
     const messages = await Effect.runPromise(
-      Stream.runCollect(streamFor(unmounted)).pipe(
-        Effect.provideService(TestEngine, engine)
-      )
+      Stream.runCollect(streamFor(unmounted)).pipe(Effect.provide(layer))
     );
     expect(messages).toStrictEqual([]);
     expect(lookups).toStrictEqual([]);
@@ -239,16 +270,16 @@ describe(engineEntry, () => {
   });
 
   it("draws into the element gameViewport rendered and reports a run started right after", async () => {
-    const { engine, log } = testEngine();
+    const { layer, log } = testEngine();
     const messages = await Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
           Stream.runCollect(Stream.take(streamFor(mounted), 2))
         );
         yield* waitUntil(() => log.length > 0);
-        yield* engine.start(null);
+        yield* startRun;
         return yield* Fiber.join(fiber);
-      }).pipe(Effect.provideService(TestEngine, engine))
+      }).pipe(Effect.provide(layer))
     );
     expect(log).toStrictEqual(["attach first", "detach"]);
     // The first event and the first sample arrive; "noise" maps to undefined and is dropped.
@@ -263,7 +294,7 @@ describe(engineEntry, () => {
     // (foldkit/dist/runtime/subscriptionFibers.js): changesWith, then switchMap. switchMap
     // starts the next Stream before it stops the previous one, and a second attach of one
     // engine dies, so an overlap fails this test.
-    const { engine, log } = testEngine();
+    const { layer, log } = testEngine();
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -288,11 +319,11 @@ describe(engineEntry, () => {
           elements.set(viewportId, element("second"));
           yield* Queue.offerAll(models, [unmounted, mounted]);
           yield* waitUntil(() => log.length === 3);
-          yield* engine.start(null);
+          yield* startRun;
           expect(yield* Queue.take(messages)).toStrictEqual(
             Message.GotEvent({ name: "started" })
           );
-        }).pipe(Effect.provideService(TestEngine, engine))
+        }).pipe(Effect.provide(layer))
       )
     );
     expect(log).toStrictEqual([
@@ -304,10 +335,10 @@ describe(engineEntry, () => {
   });
 
   it("sends onError's Message once when the engine can't make its view, and doesn't fail", async () => {
-    const { engine } = testEngine({ noWebGl: true });
+    const { layer } = testEngine({ noWebGl: true });
     const messages = await Effect.runPromise(
       Stream.runCollect(throughFirstMessage(streamFor(mounted))).pipe(
-        Effect.provideService(TestEngine, engine)
+        Effect.provide(layer)
       )
     );
     expect(messages).toStrictEqual([
@@ -316,7 +347,7 @@ describe(engineEntry, () => {
   });
 
   it("sends onError's Message once when the game crashes, and detaches", async () => {
-    const { engine, frames, log } = testEngine({ renderBug: true });
+    const { layer, frames, log } = testEngine({ renderBug: true });
     const messages = await Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
@@ -325,7 +356,7 @@ describe(engineEntry, () => {
         yield* waitUntil(() => log.length > 0);
         frames.runFrameAt(16);
         return yield* Fiber.join(fiber);
-      }).pipe(Effect.provideService(TestEngine, engine))
+      }).pipe(Effect.provide(layer))
     );
     expect(messages).toStrictEqual([
       Message.FailedToLoad({ error: "render bug" }),
@@ -338,11 +369,9 @@ describe(engineEntry, () => {
 
   it("fails loudly when the viewport isn't in the document", async () => {
     elements.clear();
-    const { engine } = testEngine();
+    const { layer } = testEngine();
     const exit = await Effect.runPromiseExit(
-      Stream.runCollect(streamFor(mounted)).pipe(
-        Effect.provideService(TestEngine, engine)
-      )
+      Stream.runCollect(streamFor(mounted)).pipe(Effect.provide(layer))
     );
     const cause = Exit.isFailure(exit) ? exit.cause : Cause.empty;
     expect(Cause.hasDies(cause)).toBe(true);
@@ -367,7 +396,7 @@ const failingEntry = (
     engine,
     isViewportMounted: (model: Model) => model.isViewportMounted,
     toMessage: (event: GameEvent): Message =>
-      Message.GotEvent({ name: event.type }),
+      Message.GotEvent({ name: event._tag }),
     onError: (error) => Message.FailedToLoad({ error: error.message }),
   });
 
@@ -433,7 +462,7 @@ describe("an engine reached through a load", () => {
       Effect.andThen(
         Effect.sync(() => {
           for (const onEvent of listeners) {
-            onEvent({ type: "noise" });
+            onEvent(new Noise());
           }
         })
       )
@@ -474,16 +503,16 @@ const eventToNonMessage = Subscription.make<Model, Message, TestEngine>()(
       engine: TestEngine,
       isViewportMounted: (model) => model.isViewportMounted,
       // @ts-expect-error A string is not one of the app's Messages.
-      toMessage: (event: GameEvent) => event.type,
+      toMessage: (event: GameEvent) => event._tag,
     }),
   })
 );
 const attachFailingWithoutOnError = engineEntry(
-  // @ts-expect-error A GameEngine's attach can fail, so it needs onError.
+  // @ts-expect-error An engine's attach can fail, so it needs onError.
   {
     engine: TestEngine,
     isViewportMounted: (model: Model) => model.isViewportMounted,
-    toMessage: (event: GameEvent) => Message.GotEvent({ name: event.type }),
+    toMessage: (event: GameEvent) => Message.GotEvent({ name: event._tag }),
   }
 );
 const failingWithoutOnError = engineEntry(
@@ -494,7 +523,7 @@ const failingWithoutOnError = engineEntry(
       LoadError
     >,
     isViewportMounted: (model: Model) => model.isViewportMounted,
-    toMessage: (event: GameEvent) => Message.GotEvent({ name: event.type }),
+    toMessage: (event: GameEvent) => Message.GotEvent({ name: event._tag }),
   }
 );
 const onErrorWithoutFailure = engineEntry({
@@ -503,7 +532,7 @@ const onErrorWithoutFailure = engineEntry({
     listen: () => Effect.void,
   }),
   isViewportMounted: (model: Model) => model.isViewportMounted,
-  toMessage: (event: GameEvent) => Message.GotEvent({ name: event.type }),
+  toMessage: (event: GameEvent) => Message.GotEvent({ name: event._tag }),
   // @ts-expect-error An engine that can't fail takes no onError.
   onError: () => Message.FailedToLoad({ error: "" }),
 });

@@ -1,7 +1,6 @@
 import { Result, Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import type { StepInput } from "../runtime/index";
 import * as Game from "./index";
 
 // A small game for several players: each step adds every player's `n` to its total, by slot, and
@@ -222,7 +221,7 @@ describe(Game.soloInput, () => {
   it("feeds a loop whose simulation reads each player by slot", () => {
     const loop = new Game.Loop(Sum);
     loop.start({ players: 1 }, 1, 0);
-    const source: StepInput<Move> = { read: (step) => ({ n: step + 5 }) };
+    const source: Game.StepInput<Move> = { read: (step) => ({ n: step + 5 }) };
     loop.frame(Game.soloInput(source), { steps: 3 }, 0);
     expect(loop.state).toStrictEqual({ totals: [18], left: 0 });
   });

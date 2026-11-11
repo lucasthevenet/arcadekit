@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { GameLoop } from "./index";
-import type { GameSimulation, StepInput } from "./index";
+import { GameLoop } from "./game-loop";
+import type { GameSimulation } from "./game-simulation";
+import type { StepInput } from "./step-input";
 
 // GameLoop needs no DOM and reads no clock: these tests pass time and input in, as the
 // browser engine does each frame.

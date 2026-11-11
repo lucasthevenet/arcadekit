@@ -1,4 +1,4 @@
-import { Effect, Exit, Fiber } from "effect";
+import { Effect, Exit, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { GameCrashed, frameLoop } from "./browser";
@@ -61,5 +61,13 @@ describe(frameLoop, () => {
       2,
       false,
     ]);
+    // A tagged error's `message` and `cause` aren't enumerable, so the comparison above holds
+    // the error's class and neither of them.
+    const error = Option.getOrUndefined(Exit.findErrorOption(exit));
+    expect(error).toMatchObject({
+      _tag: "GameCrashed",
+      message: "lost context",
+    });
+    expect(error?.cause).toBe(bug);
   });
 });

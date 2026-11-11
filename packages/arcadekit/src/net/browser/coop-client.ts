@@ -1,12 +1,17 @@
 import { Cause, Data, Effect, Fiber, FiberHandle, Queue, Stream } from "effect";
 import type { Clock, Scope } from "effect";
 
-import type { LocalPlayer, ViewContext } from "../../game/browser";
+import { AttachError, frameLoop } from "../../game/browser";
+import type {
+  FrameSource,
+  View as GameView,
+  InputSource,
+  LocalPlayer,
+  StepInput,
+  ViewContext,
+} from "../../game/browser";
 import { CommandDropped } from "../../game/index";
 import type { PlayerInputOf, PlayersSimulation } from "../../game/index";
-import { attachError, frameLoop } from "../../runtime/browser";
-import type { FrameSource, GameView } from "../../runtime/browser";
-import type { InputSource, StepInput } from "../../runtime/index";
 import { contentHash } from "../content-hash";
 import type { LockstepError } from "../errors";
 import {
@@ -216,6 +221,10 @@ const failureOf = (
 
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
+
+/** An AttachError for what making the view or the input source threw, as an engine's is. */
+const attachError = (cause: unknown): AttachError =>
+  new AttachError({ message: messageOf(cause), cause });
 
 /** The Clock's monotonic time in milliseconds, as the session reads it. */
 const millis = (clock: Clock.Clock): number =>

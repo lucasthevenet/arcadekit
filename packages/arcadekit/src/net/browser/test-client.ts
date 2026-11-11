@@ -2,9 +2,12 @@ import { Effect } from "effect";
 import type { Scope } from "effect";
 
 import { Frames } from "../../game/browser";
+import type {
+  FrameSource,
+  View as GameView,
+  InputSource,
+} from "../../game/browser";
 import type * as Game from "../../game/index";
-import type { FrameSource, GameView } from "../../runtime/browser";
-import type { InputSource } from "../../runtime/index";
 import type { Ticker } from "../scoped";
 import {
   RunEnded,
