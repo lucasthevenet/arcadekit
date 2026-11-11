@@ -22,11 +22,11 @@ import type { SoundList } from "arcadekit/audio";
 import { BrowserAudioLayer } from "arcadekit/audio/browser";
 import { Effect } from "effect";
 
-const SOUNDS: SoundList = {
+const SOUNDS = {
   move: { file: "/sounds/move.wav", pitchJitter: 0.06, volumeJitter: 0.2 },
   click: { file: "/sounds/click.wav", pitchJitter: 0.05 },
   music: { file: "/sounds/music.wav", bus: "music" },
-};
+} satisfies SoundList;
 
 export const loadSounds = Effect.gen(function* () {
   const audio = yield* Audio;
@@ -77,7 +77,7 @@ export const playLap = (
 ): void => audio.play(sounds.lap);
 
 // The app says which sound of its sound list each cue plays.
-export const RaceSounds = RaceCueTable.layer({
+export const RaceCueTableLayer = RaceCueTable.layer({
   lap: "bell",
   bump: "crunch",
   engine: "engine-loop",
@@ -87,10 +87,10 @@ export const RaceSounds = RaceCueTable.layer({
 // `uses: { audio: Audio, sounds: RaceCueTable }`.
 export const lap = Effect.gen(function* () {
   playLap(yield* Audio, yield* RaceCueTable);
-}).pipe(Effect.provide(Layer.mergeAll(RaceSounds, SilentAudioLayer)));
+}).pipe(Effect.provide(Layer.mergeAll(RaceCueTableLayer, SilentAudioLayer)));
 ```
 
-A cue the app leaves out, and a sound for a name that is no cue, are type errors in a table written in place or annotated with `CueSoundsOf<typeof RaceCueTable>`, and `layer` throws for one that got past the types. A sound id stays a string, as `audio.play` takes it; an app can check its table against its own sound list with `satisfies Record<string, keyof typeof SOUNDS>`. A game that keeps its sounds beside its rules needs no cue table: its view takes a plain object.
+A cue the app leaves out, and a sound for a name that is no cue, are type errors in a table written in place or annotated with `CueSoundsOf<typeof RaceCueTable>`, and `layer` throws for one that got past the types. A sound id stays a string, as `audio.play` takes it. An app can check its table against its own sound list with `satisfies Record<string, keyof typeof SOUNDS>`, if the list keeps its keys: written `const SOUNDS = { ... } satisfies SoundList`, as above. One annotated `: SoundList` has every string for a key, and the check then refuses nothing. A game that keeps its sounds beside its rules needs no cue table: its view takes a plain object.
 
 ## The audio settings
 

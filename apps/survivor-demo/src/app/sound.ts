@@ -3,9 +3,9 @@ import { AudioSettings, defaultAudioSettings } from "arcadekit/audio";
 import type { CueSoundsOf, SoundDef, SoundList } from "arcadekit/audio";
 import { Setting } from "arcadekit/save";
 
-// The game's sounds: the files in public/sounds, the table of cue to sound the survivors sound
-// view plays from, the music and the player's audio settings. Each sound id is its file name
-// without `.wav`, so a file can be swapped for a real one with no code change.
+// The game's sounds: the files in public/sounds, the sound each cue of the survivors cue table
+// plays, the music and the player's audio settings. Each sound id is its file name without
+// `.wav`, so a file can be swapped for a real one with no code change.
 
 const file = (id: string) => `${import.meta.env.BASE_URL}sounds/${id}.wav`;
 

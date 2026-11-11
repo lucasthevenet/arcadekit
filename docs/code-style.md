@@ -32,7 +32,7 @@ If it needs one of them, change the builder, not the example.
 
 The test for a declaration: would two games each write one, and call it something of their own? Events, a simulation, an engine, content: yes. The audio system, the frame clock, a pool: no.
 
-A game never calls a `make…` or `create…` function to supply one of its parts: adding the declaration moves every caller and deletes the factory. First look for one that fits (the audio settings are a `Setting` of the kit's Schema and default) and for who needs it: a `CueTable` hands a genre package the app's sounds, so a game that owns its sounds declares none.
+A game never calls a `make…` or `create…` function to supply one of its parts: a new declaration moves a factory's callers and deletes it. First look for one that fits (the audio settings are a `Setting` of the kit's Schema and default) and for who needs it: a `CueTable` hands a genre package the app's sounds, so a game that owns its sounds declares none.
 
 ## A declaration
 
@@ -67,7 +67,7 @@ The class is the service's key, as in [`content/asset.ts`](../packages/arcadekit
 - The key is `` `arcadekit/<folder>/<Noun>/${name}` `` as `<Noun>Id<Name>`, with the entry's first folder under `src/`.
 - Its identity is `<Noun>Service`, a `Context.ServiceClass.Shape<Id, Service>`: the type of the class's own values, so the class names it (`Layer.Layer<PushPuzzleEngine>`).
 - `layer` provides it, and loads nothing until the first use. It takes what the app knows, as its argument (`layer(source)`) or as a service it reads (`CoopRooms`), and takes that context once: the service's Effects require none of it.
-- A service that is one Effect has it as a static: `PushPuzzleSheet.load` for `(yield* PushPuzzleSheet).load`. One with methods is reached with `yield* PushPuzzleEngine`, however few: a save's `read` and `write` are no statics, and one call is Effect's own `PushPuzzleSave.use((save) => save.read)`.
+- A service that is one Effect has it as a static: `PushPuzzleSheet.load` for `(yield* PushPuzzleSheet).load`. One with methods is reached with `yield* PushPuzzleEngine`, however few: a save's `read` and `write` are no statics, and a Command writes `(yield* PushPuzzleSave).read`.
 - No field of a definition has the name of a static the class has for something else: a service's has `key`, so a storage key is `storageKey`.
 
 ### Register it

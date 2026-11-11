@@ -59,7 +59,9 @@ export interface CueTableClass<
    * module loads, for sounds that got past the types (a cast, parsed JSON, a variable with a key
    * too many) with a cue left out, a sound for a name that is no cue, or a sound that is no
    * sound id: the audio system drops an id it doesn't know, so each would be a cue nobody hears.
-   * `Layer.succeed(MyCueTable, sounds)` provides the same service and checks nothing.
+   * A table with no cue has nothing to check, in the types or here: it takes anything but
+   * `null` and `undefined`. `Layer.succeed(MyCueTable, sounds)` provides the same service and
+   * checks nothing.
    */
   readonly layer: (
     sounds: CueSounds<F>

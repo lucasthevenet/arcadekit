@@ -7,13 +7,21 @@ import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { ChooseUpgrade, PlayClick, SaveAudioSettings } from "./commands";
+import {
+  ChooseUpgrade,
+  LoadAudioSettings,
+  PlayClick,
+  SaveAudioSettings,
+} from "./commands";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
 import { SurvivorsAudioSettings, soundList, survivorsSounds } from "./sound";
 import { subscriptions } from "./subscriptions";
 import { init, update } from "./update";
+
+/** The audio settings' storage key, written out: moving it would leave what is stored behind. */
+const SETTINGS_KEY = "arcadekit/survivors/settings";
 
 const soundsDir = new URL("../../public/sounds/", import.meta.url);
 const weapons = JSON.parse(
@@ -38,7 +46,7 @@ describe("the sound list", () => {
     });
   });
 
-  it("has every sound the cue table and the weapons name", () => {
+  it("has every sound the app gives the cue table and the weapons name", () => {
     const named = [
       ...Object.values(survivorsSounds),
       ...weapons.flatMap((weapon) => weapon.sound ?? []),
@@ -163,16 +171,15 @@ describe("the audio settings", () => {
     );
   });
 
-  it("are stored under their own key, and read back", async () => {
+  it("read as the defaults, then are stored under their own key and read back", async () => {
     const settings = { master: 0.3, sfx: 0.4, music: 0.5, muted: true };
     const result = await Effect.gen(function* () {
-      const setting = yield* SurvivorsAudioSettings;
-      yield* setting.write(settings);
+      const before = (yield* LoadAudioSettings().effect).settings;
+      yield* SaveAudioSettings({ settings }).effect;
       return [
-        yield* setting.read,
-        yield* (yield* KeyValueStore.KeyValueStore).get(
-          SurvivorsAudioSettings.definition.storageKey
-        ),
+        before,
+        (yield* LoadAudioSettings().effect).settings,
+        yield* (yield* KeyValueStore.KeyValueStore).get(SETTINGS_KEY),
       ];
     }).pipe(
       Effect.provide(
@@ -183,7 +190,11 @@ describe("the audio settings", () => {
       Effect.orDie,
       Effect.runPromise
     );
-    expect(result).toStrictEqual([settings, JSON.stringify(settings)]);
+    expect(result).toStrictEqual([
+      defaultAudioSettings,
+      settings,
+      JSON.stringify(settings),
+    ]);
   });
 });
 

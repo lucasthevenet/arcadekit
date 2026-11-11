@@ -68,9 +68,10 @@ export class PushPuzzleSheet extends Asset<SpriteSheet, SpriteSheetError>()(
 
 /**
  * The push-puzzle genre in the browser: its rules, a view that draws them from the app's sheet
- * and plays their cues, by the app's cue table, through the app's `Audio` (tests provide
- * `SilentAudioLayer`), and its input. `PushPuzzleEngine.layer` provides the engine; building it loads nothing, and each
- * attach loads the sheet, or takes the one already loaded.
+ * and plays their cues, with the sounds the app gives its cue table, through the app's `Audio`
+ * (tests provide `SilentAudioLayer`), and its input. `PushPuzzleEngine.layer` provides the
+ * engine; building it loads nothing, and each attach loads the sheet, or takes the one already
+ * loaded.
  */
 export class PushPuzzleEngine extends Game.Engine("PushPuzzleEngine", {
   simulation: PushPuzzle,

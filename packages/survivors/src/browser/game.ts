@@ -13,7 +13,10 @@ import { SurvivorsCueTable, SurvivorsSoundView } from "./sound";
 import type { SurvivorsSounds } from "./sound";
 import { SurvivorsView } from "./view";
 
-/** What a survivors game plays its sounds through: the app's audio system and its cue table's sounds. */
+/**
+ * What a survivors game plays its sounds through: the app's audio system, and the sounds the
+ * app gives `SurvivorsCueTable`.
+ */
 export interface SurvivorsGameSound {
   readonly audio: AudioSystem;
   readonly sounds: SurvivorsSounds;
@@ -60,10 +63,11 @@ export class SurvivorsSheet extends Asset<SpriteSheet, SpriteSheetError>()(
 
 /**
  * The survivors genre in the browser, for one player: its rules, a view that draws them from
- * the app's sheet and plays their cues, by the app's cue table, through the app's `Audio` (tests
- * provide `SilentAudioLayer`), and its input. `SurvivorsEngine.layer` provides the engine; building it
- * loads nothing, and each attach loads the sheet, or takes the one already loaded. The view
- * follows the local player's hero, so `SurvivorsCoop` plays this engine for several players.
+ * the app's sheet and plays their cues, with the sounds the app gives its cue table, through
+ * the app's `Audio` (tests provide `SilentAudioLayer`), and its input. `SurvivorsEngine.layer`
+ * provides the engine; building it loads nothing, and each attach loads the sheet, or takes
+ * the one already loaded. The view follows the local player's hero, so `SurvivorsCoop` plays
+ * this engine for several players.
  */
 export class SurvivorsEngine extends Game.Engine("SurvivorsEngine", {
   simulation: Survivors,

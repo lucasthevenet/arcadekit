@@ -20,8 +20,9 @@ export { view } from "./view";
 export { subscriptions } from "./subscriptions";
 
 /**
- * What the genre's engine is made from, which this app owns: its sheet, its cue table and its
- * audio, which makes no AudioContext until the player's first gesture (ADR-0015).
+ * What the genre's engine is made from, which this app owns: its sheet, its sounds for the
+ * genre's cue table and its audio, which makes no AudioContext until the player's first gesture
+ * (ADR-0015).
  */
 const assets = Layer.mergeAll(
   PushPuzzleSheet.layer(loadSpriteSheet(SHEET_URL)),

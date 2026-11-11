@@ -18,8 +18,9 @@ export interface Stored<A> {
    */
   readonly read: Effect.Effect<A>;
   /**
-   * Stores `value`. A save's write merges and never replaces: it reads what is stored first and
-   * stores the two as one, by id, so the other records, and what another tab wrote, aren't lost.
+   * Stores `value`. A save's write merges into what it could read: it reads what is stored first
+   * and stores the two as one, by id, so the other records, and what another tab wrote, aren't
+   * lost. Where that read fails, which is logged, it stores `value` alone, over what is there.
    * A setting's replaces what is stored, unless it declares a `merge`. It gives the value after
    * the merge (the value itself, where nothing merges), also when the write fails, which is
    * logged and dropped.

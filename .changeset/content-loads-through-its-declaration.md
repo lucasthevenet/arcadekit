@@ -28,4 +28,4 @@ const checked = MyContent.read(source);
 **Changed**
 
 - Attaching an engine or a Co-op client that is already attached still dies, and the defect now names the declaration and says what to do: `Engine "MyEngine" is already attached to an element. An engine draws into one element at a time: interrupt the first attach, which detaches it, before attaching again.` A `Coop`'s says the same of its Co-op client.
-- `Game.Simulation`'s doc comment says what it refuses when declared and shows a loop that steps one, and `Game.Engine`'s example is push-puzzle's engine as it is written, with its cue sounds in `uses`.
+- `Game.Simulation`'s doc comment says what it refuses when declared and shows a loop that steps one, and `Game.Engine`'s example is push-puzzle's engine as it is written, with its cue table in `uses`.

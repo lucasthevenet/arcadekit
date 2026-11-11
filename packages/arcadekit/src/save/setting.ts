@@ -51,7 +51,11 @@ export interface SettingDefinition<S extends Schema.Top> {
    * nothing refuses it. Not the class's `key`, which is its service's.
    */
   readonly storageKey: string;
-  /** The value's Schema. It is stored as the JSON of its encoded side. */
+  /**
+   * The value's Schema. It is stored as the JSON of its encoded side. If it is a Schema class,
+   * a value is an instance of it, in what `write` is given and in what `merge` returns: the
+   * types take a plain object there, and its write is logged and dropped.
+   */
   readonly schema: S;
   /**
    * The value before anything is stored, which a missing or unreadable one reads as. It must
@@ -63,8 +67,9 @@ export interface SettingDefinition<S extends Schema.Top> {
    * "the tutorial was offered", so another tab's write isn't undone. `stored` is what `read`
    * gives, so it is the `default` when nothing is stored. Without a merge, a write replaces what
    * is stored: the last write wins, as it should for a volume. Leave the field out for that:
-   * `merge: undefined` is refused. A literal in the value it builds keeps its type, and an
-   * array written there is read-only, as in a save's `mergeRecord`.
+   * `merge: undefined` is refused where `exactOptionalPropertyTypes` is on, and means the same
+   * where it is off. A literal in the value it builds keeps its type, and an array written
+   * there is read-only, as in a save's `mergeRecord`.
    */
   readonly merge?: (stored: S["Type"], written: S["Type"]) => S["Type"];
 }

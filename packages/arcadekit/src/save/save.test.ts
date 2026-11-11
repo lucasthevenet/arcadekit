@@ -46,6 +46,33 @@ const failing = (method: "get" | "set") =>
     })
   ).pipe(Layer.provide(KeyValueStore.layerMemory));
 
+/** A store whose reads fail while `broken.reads` is set, so a test can read it afterwards. */
+const breakable = () => {
+  const broken = { reads: false };
+  const layer = Layer.effect(
+    KeyValueStore.KeyValueStore,
+    Effect.gen(function* () {
+      const store = yield* KeyValueStore.KeyValueStore;
+      return {
+        ...store,
+        get: (key: string) =>
+          Effect.suspend(() =>
+            broken.reads
+              ? Effect.fail(
+                  new KeyValueStore.KeyValueStoreError({
+                    message: "Storage is broken",
+                    method: "get",
+                    key,
+                  })
+                )
+              : store.get(key)
+          ),
+      };
+    })
+  ).pipe(Layer.provide(KeyValueStore.layerMemory));
+  return { layer, broken };
+};
+
 /** A store that counts its reads, as they run. */
 const counting = () => {
   const reads: string[] = [];
@@ -252,7 +279,12 @@ describe(Save, () => {
       storage: failing("get"),
     });
     expect(result).toStrictEqual({});
-    expect(warnings).toHaveLength(1);
+    expect(warnings).toStrictEqual([
+      [
+        `Save "GameSave" can't be read. Play goes on without it.`,
+        "Storage is broken",
+      ],
+    ]);
   });
 
   it("writes the records under the storage key, versioned, in the game's field", async () => {
@@ -297,6 +329,52 @@ describe(Save, () => {
       two: { best: 7, cleared: false },
       "old-stage": { best: 1, cleared: true },
     });
+  });
+
+  it("gives the game's merge the stored record first and the written one second", async () => {
+    const result = await Effect.gen(function* () {
+      const save = yield* MedalSave;
+      yield* save.write({ oval: { medal: "gold", laps: [61] } });
+      return yield* save.write({ oval: { medal: "silver", laps: [58] } });
+    }).pipe(
+      Effect.provide(
+        MedalSave.layer.pipe(Layer.provide(KeyValueStore.layerMemory))
+      ),
+      Effect.runPromise
+    );
+    expect(result).toStrictEqual({ oval: { medal: "gold", laps: [61, 58] } });
+  });
+
+  it("stores a write alone, over what is there, when what is stored can't be read", async () => {
+    const { layer, broken } = breakable();
+    const { result, warnings } = await run(
+      (save) =>
+        Effect.gen(function* () {
+          broken.reads = true;
+          const written = yield* save.write({
+            one: { best: 1, cleared: false },
+          });
+          broken.reads = false;
+          return [written, yield* readRaw(KEY)];
+        }),
+      {
+        stored: stored({
+          one: { best: 5, cleared: true },
+          two: { best: 9, cleared: true },
+        }),
+        storage: layer,
+      }
+    );
+    expect(result).toStrictEqual([
+      { one: { best: 1, cleared: false } },
+      stored({ one: { best: 1, cleared: false } }),
+    ]);
+    expect(warnings).toStrictEqual([
+      [
+        `Save "GameSave" can't be read. Play goes on without it.`,
+        "Storage is broken",
+      ],
+    ]);
   });
 
   it("logs and drops a failed write, and still gives the records", async () => {

@@ -250,7 +250,12 @@ describe(Setting, () => {
       storage: failing("get"),
     });
     expect(result).toStrictEqual(defaultControls);
-    expect(warnings).toHaveLength(1);
+    expect(warnings).toStrictEqual([
+      [
+        `Setting "GameControls" can't be read. Play goes on without it.`,
+        "Storage is broken",
+      ],
+    ]);
   });
 
   it("logs and drops a failed write", async () => {

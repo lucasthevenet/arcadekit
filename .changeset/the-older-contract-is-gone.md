@@ -105,4 +105,3 @@ const pick = (index: number) =>
 
 - A run's step order, its fixed clock, the 0.25 s clamp and the five steps a frame may run: `Game.Loop` steps on the same kernel, whose stepping lines moved into `arcadekit/game` as they were. No entry exports it.
 - `arcadekit/foldkit`'s `engineEntry` and `gameViewport`, `arcadekit/net`'s lockstep session and its wire, and the `Coop` declaration.
-- `makeSaveStore` and `makeAudioSettingsStore`: a save and the audio settings are not declarations yet.

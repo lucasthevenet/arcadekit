@@ -102,9 +102,8 @@ const FACTORIES: readonly string[] = [
 ];
 
 // The factories a game still calls to supply one of its parts, for want of a declaration. None
-// is left: `makeSaveStore` went with `Save`, and `makeAudioSettingsStore` with `Setting`
-// (ADR-0020). A name is listed here only until the change that adds its declaration, moves
-// every caller and deletes the factory.
+// is left (ADR-0020). A name is listed here only until the change that adds its declaration,
+// moves every caller and deletes the factory.
 const NOT_YET_DECLARED: readonly string[] = [];
 
 const read = (file: string): string => {

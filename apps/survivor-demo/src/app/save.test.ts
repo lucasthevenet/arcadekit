@@ -4,16 +4,19 @@ import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { SaveRun } from "./commands";
+import { LoadSave, SaveRun } from "./commands";
 import { Message } from "./message";
 import type { Model } from "./model";
-import { SurvivorsSave, run as runRecords } from "./save";
+import { SurvivorsSave } from "./save";
 import { init, update } from "./update";
 
-// The app's save over an in-memory KeyValueStore, never real localStorage.
-// Missing, corrupt and unknown-version saves, the merge with another tab and
-// failed writes are arcadekit/save's tests; these cover this game's record,
-// its merge rule and its key.
+// The app's save over an in-memory KeyValueStore, never real localStorage, read
+// and written by the Commands the app runs. Missing, corrupt and unknown-version
+// saves, the merge with another tab and failed writes are arcadekit/save's
+// tests; these cover this game's record, its merge rule and its key.
+
+/** The save's storage key, written out: moving it would leave every stored save behind. */
+const SAVE_KEY = "arcadekit/survivors/save";
 
 const run = <A>(
   program: Effect.Effect<A, never, SurvivorsSave | KeyValueStore.KeyValueStore>
@@ -30,13 +33,11 @@ const readRaw = (key: string) =>
     return yield* (yield* KeyValueStore.KeyValueStore).get(key);
   }).pipe(Effect.orDie);
 
-const load = Effect.gen(function* () {
-  return yield* (yield* SurvivorsSave).read;
-});
-const recordRun = (summary: RunSummary) =>
-  Effect.gen(function* () {
-    return yield* (yield* SurvivorsSave).write(runRecords(summary));
-  });
+/** The records the app reads at startup. */
+const read = LoadSave().effect.pipe(Effect.map(({ records }) => records));
+/** Writes a run as the app does when one ends, and gives the records it reports. */
+const writeRun = (summary: RunSummary) =>
+  SaveRun({ summary }).effect.pipe(Effect.map(({ records }) => records));
 
 const runSummary = (
   heroId: string,
@@ -56,8 +57,8 @@ describe("the save", () => {
   it("remembers a run's time, kills and outcome, under a versioned key", async () => {
     const result = await run(
       Effect.andThen(
-        recordRun(runSummary("bolter", { time: 95, kills: 40, won: false })),
-        Effect.all([load, readRaw(SurvivorsSave.definition.storageKey)])
+        writeRun(runSummary("bolter", { time: 95, kills: 40, won: false })),
+        Effect.all([read, readRaw(SAVE_KEY)])
       )
     );
     expect(result).toStrictEqual([
@@ -70,10 +71,10 @@ describe("the save", () => {
     const result = await run(
       Effect.andThen(
         Effect.all([
-          recordRun(runSummary("bolter", { time: 300, kills: 20, won: true })),
-          recordRun(runSummary("bolter", { time: 95, kills: 40, won: false })),
+          writeRun(runSummary("bolter", { time: 300, kills: 20, won: true })),
+          writeRun(runSummary("bolter", { time: 95, kills: 40, won: false })),
         ]),
-        load
+        read
       )
     );
     expect(result).toStrictEqual({

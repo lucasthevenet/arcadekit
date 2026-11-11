@@ -3,17 +3,20 @@ import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { SaveSolve } from "./commands";
+import { LoadSave, SaveSolve } from "./commands";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
-import { PushPuzzleSave, solve } from "./save";
+import { PushPuzzleSave } from "./save";
 import { init, update } from "./update";
 
-// The app's save over an in-memory KeyValueStore, never real localStorage.
-// Missing, corrupt and unknown-version saves, the merge with another tab and
-// failed writes are arcadekit/save's tests; these cover this game's record,
-// its merge rule and its key.
+// The app's save over an in-memory KeyValueStore, never real localStorage, read
+// and written by the Commands the app runs. Missing, corrupt and unknown-version
+// saves, the merge with another tab and failed writes are arcadekit/save's
+// tests; these cover this game's record, its merge rule and its key.
+
+/** The save's storage key, written out: moving it would leave every stored save behind. */
+const SAVE_KEY = "arcadekit/push-puzzle/save";
 
 const run = <A>(
   program: Effect.Effect<A, never, PushPuzzleSave | KeyValueStore.KeyValueStore>
@@ -30,13 +33,13 @@ const readRaw = (key: string) =>
     return yield* (yield* KeyValueStore.KeyValueStore).get(key);
   }).pipe(Effect.orDie);
 
-const load = Effect.gen(function* () {
-  return yield* (yield* PushPuzzleSave).read;
-});
-const recordSolve = (levelId: string, moves: number) =>
-  Effect.gen(function* () {
-    return yield* (yield* PushPuzzleSave).write(solve(levelId, moves));
-  });
+/** The records the app reads at startup. */
+const read = LoadSave().effect.pipe(Effect.map(({ records }) => records));
+/** Writes a solve as the app does when a level is solved, and gives the records it reports. */
+const writeSolve = (levelId: string, moves: number) =>
+  SaveSolve({ levelId, moves }).effect.pipe(
+    Effect.map(({ records }) => records)
+  );
 
 const stored = (levels: object) => JSON.stringify({ version: 1, levels });
 
@@ -44,8 +47,8 @@ describe("the save", () => {
   it("remembers a solve with its moves, under a versioned key", async () => {
     const result = await run(
       Effect.andThen(
-        recordSolve("first-push", 6),
-        Effect.all([load, readRaw(PushPuzzleSave.definition.storageKey)])
+        writeSolve("first-push", 6),
+        Effect.all([read, readRaw(SAVE_KEY)])
       )
     );
     expect(result).toStrictEqual([
@@ -57,11 +60,8 @@ describe("the save", () => {
   it("keeps the best when a later solve takes more moves", async () => {
     const result = await run(
       Effect.andThen(
-        Effect.all([
-          recordSolve("first-push", 6),
-          recordSolve("first-push", 9),
-        ]),
-        load
+        Effect.all([writeSolve("first-push", 6), writeSolve("first-push", 9)]),
+        read
       )
     );
     expect(result).toStrictEqual({
@@ -72,11 +72,8 @@ describe("the save", () => {
   it("raises the best when a later solve takes fewer moves", async () => {
     const result = await run(
       Effect.andThen(
-        Effect.all([
-          recordSolve("first-push", 9),
-          recordSolve("first-push", 6),
-        ]),
-        load
+        Effect.all([writeSolve("first-push", 9), writeSolve("first-push", 6)]),
+        read
       )
     );
     expect(result).toStrictEqual({

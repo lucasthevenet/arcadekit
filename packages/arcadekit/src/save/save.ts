@@ -71,16 +71,23 @@ export interface SaveDefinition<
   readonly storageKey: string;
   /**
    * The field of the stored save that holds the records, such as `levels` or `heroes`: the
-   * stored shape is `{ version: 1, [field]: records }`, so it can't be `version`.
+   * stored shape is `{ version: 1, [field]: records }`, so it can't be `version`. It is a
+   * string, where a name a game gives is otherwise a key of an object, because it is a key of
+   * the stored save itself.
    */
   readonly field: Field;
-  /** One record's Schema. */
+  /**
+   * One record's Schema. If it is a Schema class, a record is an instance of it
+   * (`new LevelRecord({ ... })`), in what `write` is given and in what `mergeRecord` returns:
+   * the types take a plain object there, and its write is logged and dropped.
+   */
   readonly record: S;
   /**
-   * The record merge: two records for the same id, as one. Usually the best of both. Its
-   * records are typed from `record`, and a literal in the record it builds keeps its type. The
-   * price: an array written in that record is read-only, so for a Schema of a mutable array,
-   * name the array first (`const ids = [...a.ids, ...b.ids]; return { ids };`).
+   * The record merge: two records for the same id, as one. Usually the best of both. On a
+   * write, `a` is the stored record and `b` the one written. Its records are typed from
+   * `record`, and a literal in the record it builds keeps its type. The price: an array written
+   * in that record is read-only, so for a Schema of a mutable array, name the array first
+   * (`const ids = [...a.ids, ...b.ids]; return { ids };`).
    */
   readonly mergeRecord: (a: S["Type"], b: S["Type"]) => S["Type"];
 }
@@ -146,7 +153,7 @@ const storedSave = <A>(
  * const merged = yield* save.write({ [levelId]: { bestMoves: moves } });
  * ```
  *
- * A write merges, and never replaces: `write(records)` reads the stored save again, merges
+ * A write merges into what it could read: `write(records)` reads the stored save again, merges
  * `records` into it by id through `mergeRecord`, stores the result and gives every record after
  * it, so the other ids, and a record another tab wrote, aren't lost. `read` gives the stored
  * records, and reads storage each time: a missing save is empty, and one that can't be decoded

@@ -29,6 +29,15 @@ class ShapesCueTable extends CueTable("ShapesCueTable", {
   },
 }) {}
 
+/** A cue whose Schema transforms: the app gives the side a view reads, the decoded one. */
+class GainCueTable extends CueTable("GainCueTable", {
+  cues: {
+    hit: SoundId,
+    /** How loud the hit plays, which a file would hold as text. */
+    hitGain: Schema.FiniteFromString,
+  },
+}) {}
+
 const sounds: CueSoundsOf<typeof GameCueTable> = {
   bump: "ping",
   drain: "lost",
@@ -45,6 +54,12 @@ const fits =
 const readUndeclared = (given: CueSoundsOf<typeof GameCueTable>) =>
   // @ts-expect-error -- a cue the table does not declare.
   given.jackpot;
+
+/** Names the sounds of what only looks like a cue table: a type error. */
+const cuesOfLookAlike = (
+  // @ts-expect-error -- `CueSoundsOf` takes a class made by `CueTable`, not a look-alike.
+  given: CueSoundsOf<{ readonly cues: typeof GameCueTable.cues }>
+) => Object.keys(given);
 
 /** Declares a cue with the app's sound, where its Schema goes: a type error. */
 const declareWithSound = () =>
@@ -113,6 +128,12 @@ describe(CueTable, () => {
     ).not.toThrow();
   });
 
+  it("checks the sounds as the app has them, with no decoding", () => {
+    expect(() =>
+      GainCueTable.layer({ hit: "hit", hitGain: 0.5 })
+    ).not.toThrow();
+  });
+
   it("refuses sounds with a cue left out", () => {
     expect(() => layerOf({ bump: "ping" })).toThrow(
       new Error(
@@ -169,6 +190,7 @@ describe(CueTable, () => {
       GameCueTable.layer({ ...sounds, drain: null }),
     ]).toThrow(/don't fit its cues/u);
     expect(readUndeclared(sounds)).toBeUndefined();
+    expect(cuesOfLookAlike(sounds)).toStrictEqual(["bump", "drain"]);
     expect(declareWithSound).toBeTypeOf("function");
   });
 });
