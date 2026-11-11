@@ -17,6 +17,15 @@
 //   definition; a type argument is how a definition that doesn't infer gets papered over.
 // - `declaration/plain-handler`: a function in a definition is not `async` and not a generator.
 //   Its host calls it and goes on.
+// - `declaration/create-first`: in the definition `Game.Simulation` is given, a `create` written
+//   in place (an arrow, a `function` or a method, not a name such as `create: createPuzzle`)
+//   comes before `step`, `apply` and `sample`. TypeScript types the state from what `create`
+//   returns, and a handler written above it is typed first: every handler's state, and the
+//   simulation's, can then come out `unknown`, sometimes with no error. TypeScript 7 needs the
+//   order for a `create` with an unannotated parameter, and 5.9 also for any method or
+//   `function`. An arrow whose parameters are all annotated needs it under neither, and the
+//   rule asks it to come first all the same: it is one condition a reader can see. Data fields
+//   (`input`, `events`, `commands`, `stepSeconds`) sit anywhere.
 //
 // A builder is found by what the file imports, under whatever name it gave it: `Game.Event`,
 // `G.Event`, or `Event` imported by name. A function that is only called `Content` is no
@@ -616,6 +625,72 @@ const plainHandler = {
     }),
 };
 
+/** `Game.Simulation` as a game writes it: the one builder whose definition has an order. */
+const SIMULATION = "Game.Simulation";
+
+/** The fields of a simulation's definition that are given the state `create` returns. */
+const STATE_HANDLERS = new Set(["step", "apply", "sample"]);
+
+/** A function written where it is used. A method's value is a function expression. */
+const WRITTEN_IN_PLACE = new Set([
+  "ArrowFunctionExpression",
+  "FunctionExpression",
+]);
+
+/**
+ * The name a property is written under: plain, quoted, or computed from a plain string
+ * (`["create"]`), which is the same field to TypeScript. Undefined for a key computed from
+ * anything else.
+ */
+const keyOf = (property: Node): string | undefined =>
+  property.computed !== true && property.key?.type === "Identifier"
+    ? property.key.name
+    : plainString(property.key);
+
+/** The names as prose lists them, each as code: `` `step`, `apply` and `sample` ``. */
+const listed = (names: readonly string[]): string => {
+  const code = names.map((name) => `\`${name}\``);
+  return code.length < 2
+    ? code.join("")
+    : `${code.slice(0, -1).join(", ")} and ${code.at(-1)}`;
+};
+
+const createFirst = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "In a Game.Simulation definition, a create written in place comes before step, apply and sample.",
+    },
+  },
+  create: (context: RuleContext) =>
+    withBuilders(context, (builders) => ({
+      CallExpression: (node: Node) => {
+        const definition =
+          builders().of(node) === SIMULATION
+            ? node.arguments?.find(({ type }) => type === "ObjectExpression")
+            : undefined;
+        // The handlers met so far, going down the definition.
+        const above: string[] = [];
+        for (const property of definition?.properties ?? []) {
+          const key = keyOf(property);
+          if (key !== undefined && STATE_HANDLERS.has(key)) {
+            above.push(key);
+          } else if (
+            key === "create" &&
+            above.length > 0 &&
+            WRITTEN_IN_PLACE.has(asNode(property.value)?.type ?? "")
+          ) {
+            context.report({
+              node: property.key ?? property,
+              message: `${listed(above)} ${above.length === 1 ? "is" : "are"} written above \`create\`. TypeScript types a simulation's state from what \`create\` returns, and types a handler written above it first: that handler's state, and the simulation's, can come out \`unknown\` with no error. Write \`create\` before \`step\`, \`apply\` and \`sample\`. ${guide}`,
+            });
+          }
+        }
+      },
+    })),
+};
+
 /** The function a class expression is the result of, if it is one's result. */
 const returnedFrom = (node: Node): Node | undefined => {
   let outer = node;
@@ -919,6 +994,7 @@ export default {
     class: declaredAsClass,
     inferred,
     "plain-handler": plainHandler,
+    "create-first": createFirst,
     builder,
   },
 };

@@ -76,7 +76,7 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 
 ## The definition a game writes
 
-- **One object.** A field holds data, a Schema, another declaration's class (`simulation: PushPuzzle`, `events: [LevelSolved]`) or a plain function, there or one object down (`apply`, `sample`). TypeScript infers a handler's parameters from the fields beside it, but not through a call or a spread: there the game has to annotate. A `create` with an unannotated parameter comes before the other handlers.
+- **One object.** A field holds data, a Schema, another declaration's class (`simulation: PushPuzzle`, `events: [LevelSolved]`) or a plain function, there or one object down (`apply`, `sample`). TypeScript infers a handler's parameters from the fields beside it, but not through a call or a spread: there the game has to annotate. A `create` written in place comes before the other handlers.
 - **An Effect is a field's value, which the host runs**: a service's key, a declaration's `load`, one built in place (`Effect.succeed("#e0b040")`). The handlers beside it take their types from it. Building it with a data-first call can break that, in `uses` and `content` alike (`Effect.map(load, fn)`, `Effect.as(load, value)`): pipe it (`load.pipe(Effect.map(fn))`) or name it first.
 - **A name a game gives is a key of an object**, which takes a doc comment: an event's fields, `files`, `uses`, `apply`. A list holds other declarations' classes.
 - **A declaration made from another takes its class**, and every type from it: `Coop`'s `engine`. The builder is generic over the other's types, so the two can't disagree, and a mistake is a type error on that field.
@@ -135,6 +135,7 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 | A declaration is a class with the name it is declared with, and no second class extends it | lint: `declaration/named`, `declaration/class`. They find a builder by what the file imports, under any local name; in a file of the kit, only one imported from an entry's public file |
 | A builder is given no type argument, apart from types given first | lint: `declaration/inferred` |
 | A function in a definition is not async and not a generator | lint: `declaration/plain-handler` |
+| A simulation's `create`, written in place, comes before its other handlers | lint: `declaration/create-first` |
 | A step or an `apply` returns nothing | the `Nothing` type, and `Game.Loop` at run time |
 | A builder's shape: the name first, typed by a type parameter, `kind` and the name as statics, `<Noun>Class` written out and exported with the statics the class sets, the base named, one builder for each kind, and "Throws when declared" in its doc comment if its own body throws | lint: `declaration/builder`, on the kit's source |
 | Every builder is listed where [Register it](#register-it) says, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |

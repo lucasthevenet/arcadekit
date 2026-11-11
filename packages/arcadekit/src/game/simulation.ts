@@ -83,13 +83,28 @@ export type RefusalOf<Refusals> = unknown extends Refusals
   : Refusals[keyof Refusals];
 
 /**
+ * The commands of `Command` whose tag may be `Tag`, the key a handler is written under. A tag
+ * that is one literal is its key. One that is wider (a `string`, a union, a template) is not, so
+ * `Extract` by the key would find no command.
+ */
+type CommandTagged<Command extends AnyCommand, Tag> = Command extends AnyCommand
+  ? Tag extends Command["tag"]
+    ? Command
+    : never
+  : never;
+
+/**
  * One `apply` handler per command, by the command's tag. A handler takes the command, changing
  * the state and returning nothing, or refuses it by returning one of the rejections the command
  * declares, having changed nothing.
  *
- * Its keys are the commands' tags, read from the list and not renamed with `as`: TypeScript
- * types a handler's parameters from a mapped type only while its keys are not renamed, and a
- * handler written directly under `create` then takes the state `create` returns.
+ * Its keys are the commands' tags, read from the list and not renamed with `as`: while a
+ * definition's types are still being inferred, TypeScript types a handler's parameters from a
+ * mapped type only if its keys are not renamed, and a handler written directly under `create`
+ * then takes the state `create` returns. Each key finds its command with `CommandTagged`, so a
+ * command whose tag is not one literal still has a handler typed with it. A tag typed as a union
+ * asks for a handler under each of its members, and `Game.Simulation` refuses the one under a
+ * member that is no listed command's tag: give a command a tag of one literal.
  */
 export type CommandHandlers<
   State,
@@ -98,13 +113,11 @@ export type CommandHandlers<
 > = {
   readonly [Tag in Commands[number]["tag"]]: (
     state: State,
-    command: Extract<Commands[number], { readonly tag: Tag }>["Type"],
+    command: CommandTagged<Commands[number], Tag>["Type"],
     context: CommandContext<Event>
   ) =>
     | Nothing
-    | InstanceType<
-        Extract<Commands[number], { readonly tag: Tag }>["rejects"][number]
-      >;
+    | InstanceType<CommandTagged<Commands[number], Tag>["rejects"][number]>;
 };
 
 /** What `Game.Simulation` takes: the rules of a game, with no DOM. */
@@ -128,7 +141,11 @@ export interface Definition<
   readonly events?: Events;
   /** The commands a player may send. Each needs a handler in `apply`. */
   readonly commands?: Commands;
-  /** Makes a run's state. Each run has its own: a view tells runs apart by identity. */
+  /**
+   * Makes a run's state. Each run has its own: a view tells runs apart by identity. Written in
+   * place, it comes before `step`, `apply` and `sample`: TypeScript types the state from what it
+   * returns, and a handler written above it can leave the state `unknown`.
+   */
   readonly create: (
     config: Config,
     run: RunContext<Events[number]["Type"]>
@@ -157,14 +174,26 @@ export interface Definition<
   readonly sample?: Sample<State, Sampled>;
 }
 
+declare const noCommand: unique symbol;
+
+/**
+ * What `apply` holds when no command is declared: nothing. A handler written there is a property
+ * this type doesn't have, so it is a type error on its own line. The builder's own type names it,
+ * so the entry exports it: a package that emits its types can then name the builder's.
+ */
+export interface NoHandlers {
+  readonly [noCommand]?: never;
+}
+
 /**
  * A simulation that declares commands must have an `apply`: `Definition` then asks it for a
- * handler of each. It names no type the handlers infer, so it settles none of them early.
+ * handler of each. One that declares none takes no handler. It names no type the handlers
+ * infer, so it settles none of them early.
  */
 type RequireApply<Commands extends readonly AnyCommand[]> = [
   Commands[number],
 ] extends [never]
-  ? unknown
+  ? { readonly apply?: NoHandlers }
   : { readonly apply: object };
 
 /**
@@ -351,8 +380,8 @@ export const resolve = <Config, State, Input, Event, Command, Refusals>(
  * and reads no clock or random source of its own (ADR-0017). An `apply` handler may refuse its
  * command by returning one of the rejections the command declares (`Game.Rejection`).
  *
- * Throws when declared, for what the types let through: a command with no `apply` handler, and
- * two commands with one tag.
+ * Throws when declared, for what the types let through: a command with no `apply` handler, an
+ * `apply` handler for a command it doesn't declare, and two commands with one tag.
  */
 export const make = <
   const Name extends string,
@@ -391,6 +420,14 @@ export const make = <
     if (apply[command.tag] === undefined) {
       throw new Error(
         `Simulation "${name}" declares the command "${command.tag}" but has no apply.${command.tag} to handle it`
+      );
+    }
+  }
+  for (const tag of Object.keys(apply)) {
+    // `Game.Loop` would never call it, and whoever wrote it would not be told.
+    if (!tags.has(tag)) {
+      throw new Error(
+        `Simulation "${name}" has apply.${tag} but declares no command "${tag}". List the command's class in \`commands\`, or remove the handler.`
       );
     }
   }

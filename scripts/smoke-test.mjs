@@ -3,8 +3,10 @@
 // there:
 // - typechecks a tiny game (scripts/smoke/) and every `ts` example in the entries' READMEs
 //   (packages/arcadekit/src/<entry>/README.md), with TypeScript 5.9 and with the workspace's
-//   TypeScript 7. arcadekit/net/worker's examples are a project of their own
-//   (tsconfig.worker.json), checked with Cloudflare's Workers types and no DOM;
+//   TypeScript 7, as a package that emits its types is checked (`declaration`): an export whose
+//   type names something no entry exports is an error. arcadekit/net/worker's examples are a
+//   project of their own (tsconfig.worker.json), checked with Cloudflare's Workers types and no
+//   DOM;
 // - builds the game with Vite;
 // - checks that exactly one copy of effect and of three is installed.
 //

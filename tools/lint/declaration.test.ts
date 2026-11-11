@@ -24,7 +24,13 @@ import { BUILDER_ENTRIES, entryBuilders } from "./declaration";
 
 const repoDir = path.resolve(import.meta.dirname, "../..");
 
-const GAME_RULES = ["named", "class", "inferred", "plain-handler"];
+const GAME_RULES = [
+  "named",
+  "class",
+  "inferred",
+  "plain-handler",
+  "create-first",
+];
 const KIT_RULES = ["builder"];
 
 /** Where the kit's source is, as tools/lint/declaration.ts finds a file of the kit. */
@@ -165,6 +171,170 @@ export class Sub extends Base {}`,
 }) {}`,
     reports: [],
   },
+  // The data fields sit between the handlers and `create`: a handler written above `create`
+  // is one whatever follows it.
+  "a simulation's create written below its other handlers": {
+    of: "game",
+    code: `export class Jar extends Game.Simulation("Jar", {
+  step: (jar) => {
+    jar.coins += 1;
+  },
+  apply: {
+    Empty: (jar) => {
+      jar.coins = 0;
+    },
+  },
+  sample: { event: Hud, read: (jar) => ({ coins: jar.coins }) },
+  input: Schema.Null,
+  commands: [Empty],
+  create: (config: Config, { seed }) => ({ coins: config.start + seed }),
+}) {}`,
+    reports: [
+      [
+        "create-first",
+        "`step`, `apply` and `sample` are written above `create`. TypeScript types a simulation's state from what `create` returns, and types a handler written above it first: that handler's state, and the simulation's, can come out `unknown` with no error. Write `create` before `step`, `apply` and `sample`. See docs/code-style.md.",
+      ],
+    ],
+  },
+  "a simulation's create written between two handlers, as a method and as a function":
+    {
+      of: "game",
+      code: `export class Jar extends Game.Simulation("Jar", {
+  input: Schema.Null,
+  step(jar) {
+    jar.coins += 1;
+  },
+  create(config: Config) {
+    return { coins: config.start };
+  },
+  sample: { event: Hud, read: (jar) => ({ coins: jar.coins }) },
+}) {}
+export class Tin extends Game.Simulation("Tin", {
+  input: Schema.Null,
+  commands: [Empty],
+  "apply": { Empty: () => {} },
+  create: function (config: Config) {
+    return { coins: config.start };
+  },
+  step: () => {},
+}) {}`,
+      reports: [
+        ["create-first", "`step` is written above `create`."],
+        ["create-first", "`apply` is written above `create`."],
+      ],
+    },
+  // A key computed from a plain string is the same field to TypeScript, and is read as one. A
+  // key computed from a name is not known here: Tin's `create` and Pot's `step` may be any field.
+  "a simulation's create and handlers under computed keys": {
+    of: "game",
+    code: `export class Jar extends Game.Simulation("Jar", {
+  input: Schema.Null,
+  ["sample"]: { event: Hud, read: (jar) => ({ coins: jar.coins }) },
+  [\`create\`]: (config: Config) => ({ coins: config.start }),
+}) {}
+export class Tin extends Game.Simulation("Tin", {
+  input: Schema.Null,
+  step: () => {},
+  [create]: () => ({ coins: 0 }),
+}) {}
+export class Pot extends Game.Simulation("Pot", {
+  input: Schema.Null,
+  [step]: () => {},
+  create: () => ({ coins: 0 }),
+}) {}`,
+    reports: [["create-first", "`sample` is written above `create`."]],
+  },
+  "a simulation's create that is a name, below a handler": {
+    of: "game",
+    code: `export class Jar extends Game.Simulation("Jar", {
+  input: Schema.Null,
+  step,
+  sample: { event: Hud, read: hudSample },
+  create: createJar,
+}) {}
+export class Tin extends Game.Simulation("Tin", {
+  input: Schema.Null,
+  step: (tin) => {
+    tin.coins += 1;
+  },
+  create,
+}) {}`,
+    reports: [],
+  },
+  "a simulation's create written in place, first of the handlers": {
+    of: "game",
+    code: `export class Jar extends Game.Simulation("Jar", {
+  create: (config: Config, { seed }) => ({ coins: config.start + seed }),
+  input: Schema.Null,
+  step: (jar) => {
+    jar.coins += 1;
+  },
+  sample: { event: Hud, read: (jar) => ({ coins: jar.coins }) },
+}) {}
+export class Tin extends Game.Simulation("Tin", {
+  input: Schema.Null,
+  create() {
+    return { coins: 0 };
+  },
+  step: () => {},
+}) {}`,
+    reports: [],
+  },
+  "only a simulation's data fields above its create": {
+    of: "game",
+    code: `export class Jar extends Game.Simulation("Jar", {
+  stepSeconds: 1 / 64,
+  input: Schema.Null,
+  events: [Rattled],
+  commands: [Empty],
+  create: (config: Config, { seed }) => ({ coins: config.start + seed }),
+  step: () => {},
+  apply: { Empty: () => {} },
+}) {}`,
+    reports: [],
+  },
+  // Only a simulation's handlers are typed from its `create`. A Content has neither field, and
+  // the last call is no builder's: both are written this way so that the case fails if the
+  // rule forgets which builder it is for.
+  "handlers in another builder's definition, which has no create to type them":
+    {
+      of: "game",
+      code: `export class JarEngine extends Game.Engine("JarEngine", {
+  simulation: Jar,
+  view: (container) => view(container),
+  input: (surface) => input(surface),
+}) {}
+export class Levels extends Content("Levels", {
+  schema: 1,
+  files: {},
+  step: () => {},
+  create: () => 1,
+}) {}
+const Simulation = (name: string, rules: object) => ({ name, rules });
+export const made = Simulation("Made", { step: () => {}, create: () => 1 });`,
+      reports: [],
+    },
+  "a simulation's builder imported under another name, with create below a handler":
+    {
+      of: "game",
+      imports: `import { Simulation as Rules } from "arcadekit/game";
+import * as Kit from "arcadekit/game/browser";`,
+      code: `export class Jar extends Rules("Jar", {
+  input: Schema.Null,
+  step: () => {},
+  create: () => ({ coins: 0 }),
+}) {}
+export class Tin extends Kit.Simulation("Tin", {
+  input: Schema.Null,
+  sample: { event: Hud, read: hudSample },
+  step,
+  create: () => ({ coins: 0 }),
+}) {}`,
+      reports: [
+        ["create-first", "`step` is written above `create`."],
+        ["create-first", "`sample` and `step` are written above `create`."],
+      ],
+    },
   "a builder imported by name, or under another name": {
     of: "game",
     imports: `import { Event, Simulation as Rules } from "arcadekit/game";

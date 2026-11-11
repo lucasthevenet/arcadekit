@@ -204,6 +204,7 @@ export default defineConfig({
         "declaration/class": "error",
         "declaration/inferred": "error",
         "declaration/plain-handler": "error",
+        "declaration/create-first": "error",
       },
     },
     {

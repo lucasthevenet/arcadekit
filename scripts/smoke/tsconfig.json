@@ -10,6 +10,9 @@
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": false,
+    // Checked as a package that emits its types is: an export whose type names something the
+    // kit's entries don't export is an error. src/builder-types.ts is there for that.
+    "declaration": true,
     "noEmit": true
   },
   "include": ["src"]

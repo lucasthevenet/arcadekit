@@ -140,8 +140,23 @@ const declareWithoutHandler = () =>
     apply: {},
   });
 
-// `apply` is written directly under `create` here, and `step` last: a handler takes the state
-// `create` returns wherever it is written below it. Typecheck holds it.
+/** Declares a simulation with a handler in `apply` and no command for it. */
+const declareWithoutCommand = () =>
+  // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
+  Game.Simulation("Idle", {
+    input: Schema.Null,
+    create: () => ({ bonus: 0 }),
+    step: () => {},
+    apply: {
+      // @ts-expect-error -- no command is declared, so `apply` takes no handler.
+      AddBonus: (state) => {
+        state.bonus += 1;
+      },
+    },
+  });
+
+// `apply` is written directly under `create` here, and `step` last: with `create` the first of
+// the handlers, each takes the state it returns wherever it is written. Typecheck holds it.
 class Ordered extends Game.Simulation("Ordered", {
   input: Schema.Null,
   commands: [AddBonus],
@@ -213,7 +228,7 @@ describe("Game.Simulation", () => {
     expectTypeOf<AddBonus>().toExtend<Game.CommandOf<typeof Counter>>();
   });
 
-  it("types an apply handler from create, wherever it is written below it", () => {
+  it("types an apply handler from create when create is the first of the handlers", () => {
     expectTypeOf<Game.StateOf<typeof Ordered>>().toEqualTypeOf<{
       total: number;
     }>();
@@ -224,8 +239,67 @@ describe("Game.Simulation", () => {
     expect(loop.state).toStrictEqual({ total: 8 });
   });
 
+  it("types a handler with its command when the command's tag is not one literal", () => {
+    // A tag typed `string`, as a command has it when a function made its class from a name.
+    // Typecheck holds the handler's `command`.
+    class Nudge extends Game.Command("Nudge" as string, { by: Schema.Int }) {}
+    class Loose extends Game.Simulation("Loose", {
+      input: Schema.Null,
+      commands: [Nudge],
+      create: () => ({ total: 0 }),
+      step: () => {},
+      apply: {
+        Nudge: (state, command) => {
+          state.total += command.by;
+        },
+      },
+    }) {}
+    expectTypeOf(Nudge.tag).toEqualTypeOf<string>();
+    const loop = new Game.Loop(Loose);
+    loop.start(undefined, 1, 0);
+    loop.send(new Nudge({ by: 3 }));
+    loop.frame({ read: () => null }, { steps: 1 }, 0);
+    expect(loop.state).toStrictEqual({ total: 3 });
+  });
+
+  it("asks a tag typed as a union for a handler under each member, and refuses the one with no command", () => {
+    // Only "Left" is the class's tag when it runs, so no definition of it both typechecks and
+    // declares: a command has a tag of one literal.
+    class Left extends Game.Command("Left" as "Left" | "Right") {}
+    expect(() =>
+      // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
+      Game.Simulation("Turning", {
+        input: Schema.Null,
+        commands: [Left],
+        create: () => ({ turns: 0 }),
+        step: () => {},
+        // @ts-expect-error -- the tag's other member, "Right", has no handler.
+        apply: { Left: () => {} },
+      })
+    ).not.toThrow();
+    expect(() =>
+      // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
+      Game.Simulation("Turning", {
+        input: Schema.Null,
+        commands: [Left],
+        create: () => ({ turns: 0 }),
+        step: () => {},
+        apply: { Left: () => {}, Right: () => {} },
+      })
+    ).toThrow('has apply.Right but declares no command "Right"');
+  });
+
   it("refuses a command with no handler when it is declared", () => {
     expect(declareWithoutHandler).toThrow(/declares the command "AddBonus"/u);
+  });
+
+  it("refuses a handler with no command when it is declared", () => {
+    // An `Error` holds the whole message: a string would only have to be a part of it.
+    expect(declareWithoutCommand).toThrow(
+      new Error(
+        'Simulation "Idle" has apply.AddBonus but declares no command "AddBonus". List the command\'s class in `commands`, or remove the handler.'
+      )
+    );
   });
 
   it("matches every event by its tag", () => {
@@ -745,6 +819,26 @@ describe("a command the rules may refuse", () => {
       })
     ).toThrow(
       'Simulation "Twins" lists two commands with the tag "Deposit". A command is told from another by its tag: give each its own.'
+    );
+  });
+
+  it("refuses a handler for a command the simulation doesn't list, when it is declared", () => {
+    expect(() =>
+      // oxlint-disable-next-line declaration/class -- A test declares what a builder or its host must refuse.
+      Game.Simulation("Forgetful", {
+        input: Schema.Null,
+        commands: [Deposit],
+        create: () => ({ coins: 0 }),
+        step: () => {},
+        // A cast gets Empty's handler past the types, as handlers held in a variable would.
+        apply: { Deposit: () => {}, Empty: () => {} } as {
+          Deposit: () => void;
+        },
+      })
+    ).toThrow(
+      new Error(
+        'Simulation "Forgetful" has apply.Empty but declares no command "Empty". List the command\'s class in `commands`, or remove the handler.'
+      )
     );
   });
 
