@@ -28,17 +28,11 @@ import {
   hashTestState,
   manualTicker,
   testContent,
-  testCoopClient,
-  testCoopParts,
-  testPresentation,
 } from "../testing/index";
 import type {
   FakeCoopRooms,
   Score,
   TestContent,
-  TestCoopClient,
-  TestCoopOptions,
-  TestCoopParts,
   TestEvent,
   TestState,
 } from "../testing/index";
@@ -53,11 +47,17 @@ import type { CoopEvent } from "./coop-events";
 import type { Rooms } from "./coop-rooms";
 import { RoomError } from "./errors";
 import type { SignallingRoom } from "./signalling";
+import { testCoopClient, testCoopParts, testPresentation } from "./test-client";
+import type {
+  TestCoopClient,
+  TestCoopOptions,
+  TestCoopParts,
+} from "./test-client";
 
-// The Co-op client in Node, with no browser, playing the test game (`arcadekit/net/testing`): a
-// fake signalling hub links the host to each guest with in-memory channels, and fake timers
-// drive the clients' tickers. Nothing is attached unless a test attaches it, so the local input
-// stands still.
+// The Co-op client in Node, with no browser, playing the test game (`arcadekit/net/testing`)
+// from plain parts (test-client.ts), so a test can replace any of them: a fake signalling hub
+// links the host to each guest with in-memory channels, and fake timers drive the clients'
+// tickers. Nothing is attached unless a test attaches it, so the local input stands still.
 //
 // Each client is made as an app makes it, on a Clock and a Scheduler of the test's: the Clock
 // reads the faked `performance.now()` (Effect's own reads `process.hrtime` in Node, which fake
@@ -143,6 +143,12 @@ const sampled = (events: readonly Event[]): Score | undefined =>
         : []
     )
     .at(-1);
+
+/** Each time a seat said who its run waits on, with somebody to name. */
+const named = (events: readonly Event[]) =>
+  events.filter(
+    (event) => event._tag === "WaitingChanged" && event.waitingFor.length > 0
+  );
 
 /** Lets queued microtasks run, at the current fake time. */
 const settle = async () => {
@@ -440,18 +446,44 @@ describe("a co-op run", () => {
     await settle();
     await run(host.coop.start);
     // The guest's ticker stands still, so the host's run waits on it from its first step.
-    const named = () =>
-      host.events.some(
-        (event) =>
-          event._tag === "WaitingChanged" && event.waitingFor.length > 0
-      );
     await vi.advanceTimersByTimeAsync(296);
-    const early = named();
+    const early = named(host.events).length > 0;
     await vi.advanceTimersByTimeAsync(104);
     expect([
       early,
       host.events.findLast((event) => event._tag === "WaitingChanged"),
     ]).toStrictEqual([false, new WaitingChanged({ waitingFor: ["Guest 1"] })]);
+  });
+
+  // A host whose clock is ahead of a guest's by more than the input delay always has a step due
+  // that the guest's input hasn't reached, so its session says it waits on the guest at every
+  // tick, while it steps at the pace the input arrives: at full rate. That is no wait to show.
+  it("names nobody while the run steps, though a guest that began late keeps it a step behind", async () => {
+    const hub = fakeCoopRooms();
+    const late = manualTicker();
+    const host = await client(hub);
+    const guest = await client(hub, testCoopParts(), { ticker: late.ticker });
+    await run(host.coop.host("red"));
+    await settle();
+    await run(guest.coop.join(hub.code, "green"));
+    await settle();
+    await run(host.coop.start);
+    // The guest's session begins at its first tick, 100 ms after the host's: more than the 67 ms
+    // its input is scheduled ahead.
+    await vi.advanceTimersByTimeAsync(100);
+    const from = host.coop.debug().stepIndex;
+    for (let i = 0; i < 750; i++) {
+      late.tick();
+      // oxlint-disable-next-line no-await-in-loop -- each tick's messages cross before the next.
+      await vi.advanceTimersByTimeAsync(4);
+    }
+    expect([
+      // Three seconds at 60 steps a second, on both.
+      host.coop.debug().stepIndex - from > 170,
+      guest.coop.debug().stepIndex > 170,
+      named(host.events),
+      named(guest.events),
+    ]).toStrictEqual([true, true, [], []]);
   });
 
   it("keeps the last 32 state hashes for debug", async () => {
@@ -1324,6 +1356,14 @@ describe("why a seat failed", () => {
           /^The host removed you from the run at step \d+: it waited on you too long\.$/u
         ) as unknown,
       },
+    ]);
+    // The host said who it waited on, then that the wait was over: it names nobody once it
+    // steps again, so an app's "Waiting for Guest 1…" goes.
+    expect(
+      host.events.filter((event) => event._tag === "WaitingChanged")
+    ).toStrictEqual([
+      new WaitingChanged({ waitingFor: ["Guest 1"] }),
+      new WaitingChanged({ waitingFor: [] }),
     ]);
   });
 

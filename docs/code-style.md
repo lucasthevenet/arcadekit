@@ -70,7 +70,7 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 ## The definition a game writes
 
 - **One flat object.** A field holds data, a Schema, another declaration's class (`simulation: PushPuzzle`, `events: [LevelSolved]`, `engine: SurvivorsEngine`) or a plain function. TypeScript infers a handler's parameters from the fields beside it only while the handler is a field itself. Inside a call, an Effect or a nested generic, inference stops and the game has to annotate.
-- **An Effect is a field only as a value**: what another declaration gives (`content: SurvivorsContent.load`, the entries of `uses`). The handlers beside it take their types from it, and an Effect built in the definition with a function in it is typed after them. A doc comment says so where a field is one.
+- **An Effect is a field only as a value**: what another declaration gives (`content: SurvivorsContent.load`, the entries of `uses`). The handlers beside it take their types from it. One way of building it in the definition breaks that: a call that takes the Effect and a function together (`Effect.map(load, fn)`) leaves the handlers' parameters unknown, where the same Effect piped (`load.pipe(Effect.map(fn))`) or named first infers. A doc comment says so where a field is one, and a test holds it.
 - **A declaration made from another takes its class**, and every type from it: `Coop`'s `engine`. The game then states each thing once, and the two can't disagree. The builder is generic over the other's own types, so a mistake there is a type error on that field.
 - **What handlers share is a named field** that the host resolves and passes in: `uses` in `Game.Engine`.
 - **A handler is a plain function**, and what hosts it is Effect ("Effect and plain code" in `AGENTS.md` says which code is which).
@@ -93,7 +93,7 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 - **The glossary's word**, the same in code, docs, tests and messages ([`CONTEXT.md`](../CONTEXT.md)). A new concept gets its term in the same change, with the words to avoid.
 - **A builder is a singular noun**: `Event`, `Asset`.
 - **What a game declares**: an event in the past tense (`LevelSolved`), a command in the imperative (`ChooseUpgrade`), a rejection by what is wrong (`JarFull`), a simulation by the game's name (`PushPuzzle`), anything else by the game and the noun (`PushPuzzleEngine`, `PushPuzzleContent`).
-- **The definition's words are taken**: `create`, `step`, `apply`, `report`, `send`, `sample`, `uses`, `view`, `input`, `load`, `layer`, `match`, `engine`, `content`, `hash`, `ends`. A new declaration uses the ones that fit, and adds a word only for a new idea.
+- **The definition's words are taken**: `create`, `step`, `apply`, `report`, `send`, `sample`, `uses`, `view`, `input`, `load`, `layer`, `match`, `engine`, `content`, `hash`, `ends`. A new declaration uses the ones that fit, and adds a word only for a new idea. A declaration made from another may take one of its words for a part of the same thing, and says so: `input` is the whole step's source in `Game.Engine` and one player's in `Coop`, where the engine's is `Game.soloInput` of the Coop's.
 - **Check Effect's and Foldkit's exports before settling a name.** A word one of them uses for something else, in a file that would import both, is taken: Foldkit's `Story` is why the kit's is `Scenario`.
 - **A module imported as a namespace exports no `then`.** The namespace would be a thenable, and under vitest a test file that imports it never starts.
 

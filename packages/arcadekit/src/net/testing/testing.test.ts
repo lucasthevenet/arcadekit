@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import * as Game from "../../game/index";
 import * as Scenario from "../../game/scenario";
+import * as Testing from "./index";
 import {
   AnswerOffer,
   HoldPause,
@@ -12,14 +13,33 @@ import {
   TestGame,
   manualTicker,
   testContent,
-  testCoopParts,
 } from "./index";
 import type { Score, TestConfig, TestEvent, TestInput } from "./index";
 
-// The test helpers' own rules: the test game's lockstep parts as values, its commands as
+// The test helpers' own rules: what the entry holds, the test game on a loop, its commands as
 // scenarios, and the manual ticker.
 
-const rules = testCoopParts();
+describe("arcadekit/net/testing", () => {
+  // A game makes a Co-op client one way, from its `Coop`'s `layer`, and so does its test, over
+  // these rooms and this ticker. The kit's own client tests make theirs from plain parts, which
+  // stay the kit's (browser/test-client.ts): a second way here would be public API.
+  it("holds a test's rooms, its ticker and a game to run, and no Co-op client of its own", () => {
+    expect(Object.keys(Testing).toSorted()).toStrictEqual([
+      "AnswerOffer",
+      "FAKE_JOIN_CODE",
+      "HoldPause",
+      "NothingOwed",
+      "OfferOpened",
+      "RunEnded",
+      "Score",
+      "TestGame",
+      "fakeCoopRooms",
+      "hashTestState",
+      "manualTicker",
+      "testContent",
+    ]);
+  });
+});
 
 /**
  * A run of the test game on a loop: its state, what it reported but its samples, its last
@@ -57,32 +77,17 @@ const startRun = (config: TestConfig) => {
   };
 };
 
-/** Offer 1, as it opens for `slot`'s player. */
-const offered = (slot: number) => new OfferOpened({ offer: 1, slot });
-
 describe("the test game", () => {
   const content = { ...testContent, length: 5, offerEvery: 2 };
-  const start = () => startRun(rules.config(content, ["red", "blue"]));
+  const start = () => startRun({ content, picks: ["red", "blue"] });
 
-  it("lists its content's picks, and makes its config from the players' picks", () => {
+  it("is a declared simulation several players play, with one player's input to send", () => {
+    const decode = Schema.decodeUnknownResult(Game.playerInputSchema(TestGame));
     expect([
-      rules.picks(content),
-      rules.config(content, ["blue", "red"]),
-    ]).toStrictEqual([
-      ["red", "green", "blue"],
-      { content, picks: ["blue", "red"] },
-    ]);
-  });
-
-  it("is the declared simulation its lockstep parts run, with one player's input to send", () => {
-    const decode = Schema.decodeUnknownResult(
-      Game.playerInputSchema(rules.simulation)
-    );
-    expect([
-      rules.simulation === TestGame,
+      TestGame.kind,
       decode({ add: 1 }),
       Result.isFailure(decode({ add: "1" })),
-    ]).toStrictEqual([true, Result.succeed({ add: 1 }), true]);
+    ]).toStrictEqual(["Simulation", Result.succeed({ add: 1 }), true]);
   });
 
   it("waits on an offer until each player answers it, and says in its sample who still owes one", () => {
@@ -116,19 +121,18 @@ describe("the test game", () => {
     ]);
   });
 
-  it("ends after its length, with every player's total, and names the event a run ends with", () => {
-    const { state, reported, stepAll } = startRun(
-      rules.config({ ...content, offerEvery: 0 }, ["red", "blue"])
-    );
+  it("ends after its length, with every player's total", () => {
+    const { state, reported, stepAll } = startRun({
+      content: { ...content, offerEvery: 0 },
+      picks: ["red", "blue"],
+    });
     for (let i = 0; i < 7; i++) {
       stepAll([{ add: 1 }, { add: 3 }], i === 2 ? [1] : []);
     }
-    expect([
-      state.steps,
-      reported,
-      reported.map((event) => rules.ends.has(event._tag)),
-      rules.ends.has(offered(1)._tag),
-    ]).toStrictEqual([5, [new RunEnded({ totals: [5, 6] })], [true], false]);
+    expect([state.steps, reported]).toStrictEqual([
+      5,
+      [new RunEnded({ totals: [5, 6] })],
+    ]);
   });
 });
 

@@ -30,9 +30,9 @@ export type Used<U extends Uses> = {
 };
 
 /**
- * The local player of a run: this browser's, among the players the run seats by slot. It is read
- * live: a view reads `slot` when it draws, so it follows its player without being made again.
- * An engine seats its one player at slot 0.
+ * The local player of a run: this browser's, among the players the run seats by slot. A view's
+ * is read live: a view reads `slot` when it draws, so it follows its player without being made
+ * again. An engine seats its one player at slot 0.
  */
 export interface LocalPlayer {
   /** The local player's slot in the run's player order: 0 in a single-player run. */

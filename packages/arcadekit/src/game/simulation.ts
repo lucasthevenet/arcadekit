@@ -254,6 +254,10 @@ export interface SimulationClass<
    *   LevelSolved: ({ moves }) => Message.GotLevelSolved({ moves }),
    * });
    * ```
+   *
+   * A missing case is a type error. Throws when called, as the app's module loads, for what the
+   * types let through: a case for an event that doesn't exist (one left behind by a renamed
+   * event), and a case a cast left out.
    */
   readonly match: <
     Self extends AnySimulation,
@@ -396,22 +400,59 @@ export const make = <
             read: sample.read,
           },
   };
+  /** What a run reports, by tag: its events, then its sample. `match` takes a case for each. */
+  const reported = resolved.events.map(({ tag }) => tag);
+  if (resolved.sample !== undefined) {
+    reported.push(resolved.sample.tag);
+  }
+  const reports =
+    reported.length === 0
+      ? ": it reports nothing"
+      : ` (${reported.join(", ")})`;
+  const noCase = (tag: string): Error =>
+    new Error(
+      `Simulation "${name}" has no case for the event "${tag}". \`match\` takes a case for everything the simulation reports${reported.length === 0 ? "" : ` (${reported.join(", ")})`}.`
+    );
+  /**
+   * Refuses the cases `match` can't use, when it is called: a case for an event that doesn't
+   * exist would never run and nobody would be told, and a case a cast left out would only be
+   * missed when its event came.
+   */
+  const checkCases = (
+    cases: Readonly<Record<string, (event: unknown) => unknown>>
+  ): void => {
+    for (const tag of Object.keys(cases)) {
+      if (!reported.includes(tag)) {
+        throw new Error(
+          `Simulation "${name}" has a case "${tag}", which it doesn't report${reports}. Remove it, or name it after the event it handles.`
+        );
+      }
+    }
+    for (const tag of reported) {
+      if (cases[tag] === undefined) {
+        throw noCase(tag);
+      }
+    }
+  };
   // oxlint-disable-next-line typescript/no-extraneous-class -- A declaration is a class, so a game extends it and gets a name for it.
   return class {
     static readonly kind = "Simulation" as const;
     static readonly simulationName: Name = name;
     static readonly definition = resolved;
-    static readonly match =
-      (cases: Readonly<Record<string, (event: unknown) => unknown>>) =>
-      (event: { readonly _tag: string }) => {
+    static readonly match = (
+      cases: Readonly<Record<string, (event: unknown) => unknown>>
+    ) => {
+      checkCases(cases);
+      return (event: { readonly _tag: string }) => {
         const handle = cases[event._tag];
+        // Every case was there when `match` was called: only an event the simulation doesn't
+        // declare gets here.
         if (handle === undefined) {
-          throw new Error(
-            `Simulation "${name}" has no case for the event "${event._tag}"`
-          );
+          throw noCase(event._tag);
         }
         return handle(event);
       };
+    };
   } as unknown as SimulationClass<
     Name,
     Config,

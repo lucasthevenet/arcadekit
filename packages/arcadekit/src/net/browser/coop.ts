@@ -299,9 +299,14 @@ export interface CoopClass<
    * ```
    *
    * A run's events reach every seat as the rules reported them, so a case says which are the
-   * local player's (`hero === local.slot`). `local` is read when the event is heard. The run's
-   * cases have a place of their own, so a game may name an event as it likes: no tag is
-   * reserved. Pass it to `listen`, or to `arcadekit/foldkit`'s `engineEntry` as `toMessage`.
+   * local player's (`hero === local.slot`). `local` is the seat's own: an event that is kept
+   * says whose it was, whatever seat the player takes next. The run's cases have a place of
+   * their own, so a game may name an event as it likes: no tag is reserved. Pass it to
+   * `listen`, or to `arcadekit/foldkit`'s `engineEntry` as `toMessage`.
+   *
+   * A missing case is a type error. Throws when called, as the app's module loads, for what the
+   * types let through: a case for an event that doesn't exist (one left behind by a renamed
+   * event, or a run's case beside the client's own), and a case a cast left out.
    */
   readonly match: <
     Self extends AnyCoop,
@@ -358,7 +363,8 @@ export interface CoopDefinition<
   };
   /**
    * Makes the input source that reads the local player's own input from the viewport element:
-   * one player's, where the engine's `input` reads the whole step's. Called once per attach,
+   * one player's, where the engine's `input` reads the whole step's. They are one source: the
+   * engine's is `Game.soloInput` of this one, which puts it at slot 0. Called once per attach,
    * after the view, with what the engine uses. What it reads rides each step this player
    * schedules; with nothing attached, null does.
    */
@@ -369,9 +375,10 @@ export interface CoopDefinition<
   /**
    * Loads what a run is played with: a `Content` declaration's `load`. Run once per seat (each
    * host or join), in the seat's fiber, so leaving cancels it. It must be JSON data: the client
-   * hashes it, and every peer's must match. `picks` and `config` take their `content` from it,
-   * so give it as a value: an Effect built here with a function in it (a `pipe` with a `map`)
-   * is typed after them, and their `content` is then unknown. Name such an Effect first.
+   * hashes it, and every peer's must match. `picks` and `config` take their `content` from it.
+   * One way of building it here leaves their `content` unknown: a call that takes the Effect
+   * and a function together (`Effect.map(load, fn)`). Pipe it (`load.pipe(Effect.map(fn))`),
+   * or name it first.
    */
   readonly content: Effect.Effect<Content, ContentError, R>;
   /**
@@ -407,6 +414,21 @@ export interface CoopDefinition<
     readonly hashEvery?: number;
   };
 }
+
+/** The Co-op client's own events, by tag: the cases `match` takes beside `run`. */
+const SEAT_EVENTS: readonly string[] = [
+  "LobbyChanged",
+  "RunStarted",
+  "WaitingChanged",
+  "SeatFailed",
+] satisfies readonly Exclude<keyof CoopCases<never>, "run">[];
+
+/** What `match` is handed, as far as it reads it: the types have checked the rest. */
+type GivenCases = Readonly<Record<string, (event: unknown) => unknown>> & {
+  readonly run?: Readonly<
+    Record<string, (event: unknown, context: SeatContext) => unknown>
+  >;
+};
 
 /**
  * A game as several players play it, each in their own browser: the game's engine, played in
@@ -521,6 +543,53 @@ export const Coop = <
       `Coop "${name}" has maxPlayers ${maxPlayers}, a size no room has: a signalling room holds 2 to ${MAX_ROOM_SIZE} players. Write a whole number from 2 to ${MAX_ROOM_SIZE}, or leave it out for ${DEFAULT_ROOM_SIZE}.`
     );
   }
+  /** What a run reports, by tag: its events, then its sample. Each has a case under `run`. */
+  const sampled = simulation.definition.sample?.tag;
+  const runEvents = sampled === undefined ? reported : [...reported, sampled];
+  const noCase = (tag: string): Error =>
+    new Error(
+      `Coop "${name}" has no case for the event "${tag}". \`match\` takes a case for each of the Co-op client's own events (${SEAT_EVENTS.join(", ")}), and the run's under \`run\`.`
+    );
+  const noRunCase = (tag: string): Error =>
+    new Error(
+      `Coop "${name}" has no case under \`run\` for the run's event "${tag}". \`match\` takes one there for everything the simulation "${simulation.simulationName}" reports${runEvents.length === 0 ? "" : ` (${runEvents.join(", ")})`}.`
+    );
+  /**
+   * Refuses the cases `match` can't use, when it is called: a case for an event that doesn't
+   * exist would never run and nobody would be told, and a case a cast left out would only be
+   * missed when its event came.
+   */
+  const checkCases = (cases: GivenCases): void => {
+    const run = cases.run ?? {};
+    for (const tag of Object.keys(cases)) {
+      if (tag !== "run" && !SEAT_EVENTS.includes(tag)) {
+        throw new Error(
+          runEvents.includes(tag)
+            ? `Coop "${name}" has a case "${tag}" beside the Co-op client's own, and "${tag}" is one of the run's events. Its case goes under \`run\`.`
+            : `Coop "${name}" has a case "${tag}", which is none of the Co-op client's own events (${SEAT_EVENTS.join(", ")}). Remove it, or name it after the event it handles; a case for one of the run's events goes under \`run\`.`
+        );
+      }
+    }
+    for (const tag of Object.keys(run)) {
+      if (!runEvents.includes(tag)) {
+        throw new Error(
+          SEAT_EVENTS.includes(tag)
+            ? `Coop "${name}" has a case "${tag}" under \`run\`, and "${tag}" is one of the Co-op client's own events. Its case goes beside \`run\`, not under it.`
+            : `Coop "${name}" has a case "${tag}" under \`run\`, which the simulation "${simulation.simulationName}" doesn't report${runEvents.length === 0 ? ": it reports nothing" : ` (${runEvents.join(", ")})`}. Remove it, or name it after the event it handles.`
+        );
+      }
+    }
+    for (const tag of SEAT_EVENTS) {
+      if (cases[tag] === undefined) {
+        throw noCase(tag);
+      }
+    }
+    for (const tag of runEvents) {
+      if (run[tag] === undefined) {
+        throw noRunCase(tag);
+      }
+    }
+  };
   const Key = Context.Service<
     CoopService<Name, State, Event, Command, E, Refusals>,
     CoopClient<State, Event, Command, E, Refusals>
@@ -570,34 +639,26 @@ export const Coop = <
     static readonly engine = engine;
     static readonly definition = definition;
     static readonly layer = layer;
-    static readonly match =
-      (
-        cases: Readonly<Record<string, (event: unknown) => unknown>> & {
-          // What a cast or plain JavaScript leaves out is refused when its event comes.
-          readonly run?: Readonly<
-            Record<string, (event: unknown, context: SeatContext) => unknown>
-          >;
-        }
-      ) =>
-      (heard: CoopEvent<{ readonly _tag: string }>) => {
+    static readonly match = (cases: GivenCases) => {
+      checkCases(cases);
+      return (heard: CoopEvent<{ readonly _tag: string }>) => {
         // One of the run's events is handled by its own tag, under `run`.
         if (heard._tag === "RunEvent") {
           const handle = cases.run?.[heard.event._tag];
+          // Every case was there when `match` was called: only an event the simulation
+          // doesn't declare gets here.
           if (handle === undefined) {
-            throw new Error(
-              `Coop "${name}" has no case under \`run\` for the run's event "${heard.event._tag}"`
-            );
+            throw noRunCase(heard.event._tag);
           }
           return handle(heard.event, heard);
         }
         const handle = cases[heard._tag];
         if (handle === undefined) {
-          throw new Error(
-            `Coop "${name}" has no case for the event "${heard._tag}"`
-          );
+          throw noCase(heard._tag);
         }
         return handle(heard);
       };
+    };
   } as unknown as CoopClass<
     Name,
     EngineName,

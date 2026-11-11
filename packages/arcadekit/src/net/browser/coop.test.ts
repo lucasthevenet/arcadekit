@@ -50,14 +50,29 @@ import type { CoopRooms } from "./coop-rooms";
 /** What the views and the input sources log to: the test's own service, to show the layer hands it over. */
 class Log extends Context.Service<Log, string[]>()("test/Log") {}
 
-/** The test game's content, as an app's content service gives it. */
-class Levels extends Context.Service<Levels, { readonly length: number }>()(
-  "test/Levels"
-) {}
+/** The test game's content, as an app's content service gives it, and how often it was loaded. */
+class Levels extends Context.Service<
+  Levels,
+  { readonly length: number; loads: number }
+>()("test/Levels") {}
+
+/**
+ * Something an attach acquires and gives back, as what an engine uses may be (a camera's state,
+ * a listener): it logs both, to show whose scope holds it.
+ */
+const lamp = Effect.acquireRelease(
+  Log.pipe(
+    Effect.map((log) => {
+      log.push("lamp on");
+      return log;
+    })
+  ),
+  (log) => Effect.sync(() => log.push("lamp off"))
+);
 
 class TestEngine extends Game.Engine("TestEngine", {
   simulation: TestGame,
-  uses: { log: Log },
+  uses: { log: Log, lamp },
   view: (_container, { log }, { local }) => ({
     render: (state) => {
       log.push(
@@ -75,7 +90,10 @@ class TestEngine extends Game.Engine("TestEngine", {
 
 /** The content each seat loads: the test game's, as long as the app's levels say. */
 const levels = Levels.pipe(
-  Effect.map(({ length }) => ({ ...testContent, length }))
+  Effect.map((app) => {
+    app.loads += 1;
+    return { ...testContent, length: app.length };
+  })
 );
 
 class TestCoop extends Coop("TestCoop", {
@@ -93,6 +111,20 @@ class TestCoop extends Coop("TestCoop", {
   maxPlayers: 2,
   hash: hashTestState,
   ends: [RunEnded],
+}) {}
+
+/**
+ * The same game with lockstep numbers of its own and a hash a test can tell from any other: one
+ * more than the steps played, so a hash says which state it is of.
+ */
+class PacedCoop extends Coop("PacedCoop", {
+  engine: TestEngine,
+  input: () => ({ read: () => ({ add: 2 }), dispose: () => {} }),
+  content: levels,
+  picks: (content) => content.picks,
+  config: (content, picks) => ({ content, picks }),
+  hash: (state) => state.steps + 1,
+  lockstep: { inputDelay: 2, hashEvery: 2 },
 }) {}
 
 type Event = Seat.CoopEvent<TestEvent>;
@@ -126,6 +158,7 @@ const settle = async () => {
 const seat = async (hub: FakeCoopRooms, length = 1_000_000) => {
   const frames = manualFrames();
   const log: string[] = [];
+  const app = { length, loads: 0 };
   const events: Event[] = [];
   const coop = await run(
     Effect.gen(function* () {
@@ -135,7 +168,7 @@ const seat = async (hub: FakeCoopRooms, length = 1_000_000) => {
           Layer.provide(Layer.succeed(CoopTicker, Effect.succeed(pageTicker))),
           Layer.provide(Layer.succeed(Game.Frames, frames)),
           Layer.provide(Layer.succeed(Log, log)),
-          Layer.provide(Layer.succeed(Levels, { length }))
+          Layer.provide(Layer.succeed(Levels, app))
         )
       );
       const made = Context.get(context, TestCoop);
@@ -143,7 +176,7 @@ const seat = async (hub: FakeCoopRooms, length = 1_000_000) => {
       return made;
     })
   );
-  return { coop, events, frames, log };
+  return { coop, events, frames, log, app };
 };
 
 /** A host and a guest in one lobby, with their picks. */
@@ -231,6 +264,28 @@ describe("a declared Coop", () => {
     ]);
   });
 
+  // An app may keep an event and match it later (a queue, a log): by then the player may have
+  // left, or taken another seat, and the event must still say whose it was.
+  it("gives a seat's run events the seat's own local player, which a later seat doesn't change", async () => {
+    const hub = fakeCoopRooms();
+    const { host, guest } = await lobbyOfTwo(hub);
+    await run(host.coop.start);
+    await vi.advanceTimersByTimeAsync(500);
+    const kept = guest.events.filter((event) => event._tag === "RunEvent");
+    const whenHeard = kept.map(({ local }) => [local.slot, local.names]);
+    await run(guest.coop.leave);
+    // Its next seat is another room's host, at slot 0.
+    await run(guest.coop.host("blue"));
+    await settle();
+    expect([
+      kept.length > 0,
+      new Set(whenHeard.map((local) => JSON.stringify(local))),
+      kept.map(({ local }) => [local.slot, local.names]),
+      // One object for the seat: an event allocates none.
+      new Set(kept.map(({ local }) => local)).size,
+    ]).toStrictEqual([true, new Set(['[1,["Host","Guest 1"]]']), whenHeard, 1]);
+  });
+
   it("ticks a run on a worker's timer unless a test provides its own, as it draws on Game.Frames", async () => {
     const hub = fakeCoopRooms();
     const ticks = manualTicker();
@@ -242,7 +297,9 @@ describe("a declared Coop", () => {
               Layer.provide(hub.layer),
               Layer.provide(ticks.layer),
               Layer.provide(Layer.succeed(Log, [])),
-              Layer.provide(Layer.succeed(Levels, { length: 1_000_000 }))
+              Layer.provide(
+                Layer.succeed(Levels, { length: 1_000_000, loads: 0 })
+              )
             )
           );
           return Context.get(context, TestCoop);
@@ -293,13 +350,147 @@ describe("a declared Coop", () => {
       [totals[0], (totals[1] ?? 0) > 0, (totals[1] ?? 0) % 2],
     ]).toStrictEqual([
       [
+        "lamp on",
         "input",
         "seat 0 of [] draws no run",
         "seat 1 of [Host, Guest 1] draws a run",
         "dispose input",
         "dispose view",
+        "lamp off",
       ],
       [0, true, 0],
+    ]);
+  });
+
+  // What the engine uses is run in each attach's own scope, not in the layer's, which is the
+  // app's: a view's listeners and what it loaded for one mount go when it is unmounted.
+  it("gives back what an attach acquired when it detaches, and acquires it again for the next", async () => {
+    const hub = fakeCoopRooms();
+    const { coop, log, frames } = await seat(hub);
+    const attach = () =>
+      Effect.runFork(
+        coop
+          .attach(element)
+          .pipe(
+            Effect.provideService(Clock.Clock, performanceClock),
+            Effect.provideService(Scheduler.Scheduler, microtasks)
+          )
+      );
+    const first = attach();
+    await settle();
+    frames.runFrameAt(100);
+    await Effect.runPromise(Fiber.interrupt(first));
+    // The app's scope, which the layer was built in, is still open.
+    const detached = [...log];
+    const second = attach();
+    await settle();
+    await Effect.runPromise(Fiber.interrupt(second));
+    expect([detached, log.slice(detached.length)]).toStrictEqual([
+      [
+        "lamp on",
+        "input",
+        "seat 0 of [] draws no run",
+        "dispose input",
+        "dispose view",
+        "lamp off",
+      ],
+      ["lamp on", "input", "dispose input", "dispose view", "lamp off"],
+    ]);
+  });
+
+  it("tells the lobby the most players it declares, and takes no start above it", async () => {
+    const hub = fakeCoopRooms();
+    const { host } = await lobbyOfTwo(hub);
+    const lobby = (canStart: boolean, guests: number) =>
+      new Seat.LobbyChanged({
+        role: "host",
+        code: hub.code,
+        self: "host",
+        players: [
+          { id: "host", name: "Host", pick: "red" },
+          ...Array.from({ length: guests }, (_, index) => ({
+            id: `guest-${index + 1}`,
+            name: `Guest ${index + 1}`,
+            pick: "green",
+          })),
+        ],
+        maxPlayers: 2,
+        canStart,
+      });
+    const two = host.events.at(-1);
+    const third = await seat(hub);
+    await run(third.coop.join(hub.code, "green"));
+    await settle();
+    await run(host.coop.start);
+    await vi.advanceTimersByTimeAsync(200);
+    // TestCoop declares 2 where a room's default is 4: three players can't start.
+    expect([
+      two,
+      host.events.at(-1),
+      host.coop.debug().stepIndex,
+    ]).toStrictEqual([lobby(true, 1), lobby(false, 2), 0]);
+  });
+
+  it("loads its content again for each seat", async () => {
+    const hub = fakeCoopRooms();
+    const { coop, app } = await seat(hub);
+    const built = app.loads;
+    await run(coop.host("red"));
+    await settle();
+    await run(coop.leave);
+    await run(coop.host("blue"));
+    await settle();
+    // Building the layer loaded nothing: each host did.
+    expect([built, app.loads]).toStrictEqual([0, 2]);
+  });
+
+  it("runs on the lockstep numbers it declares, and compares the hash it declares", async () => {
+    const hub = fakeCoopRooms();
+    const paced = () =>
+      run(
+        Effect.gen(function* () {
+          const context = yield* Layer.build(
+            PacedCoop.layer.pipe(
+              Layer.provide(hub.layer),
+              Layer.provide(
+                Layer.succeed(CoopTicker, Effect.succeed(pageTicker))
+              ),
+              Layer.provide(Layer.succeed(Log, [])),
+              Layer.provide(
+                Layer.succeed(Levels, { length: 1_000_000, loads: 0 })
+              )
+            )
+          );
+          return Context.get(context, PacedCoop);
+        })
+      );
+    const [host, guest] = [await paced(), await paced()];
+    await run(host.host("red"));
+    await settle();
+    await run(guest.join(hub.code, "green"));
+    await settle();
+    await run(host.start);
+    await vi.advanceTimersByTimeAsync(1000);
+    const hashes = Object.entries(host.debug().hashes).map(
+      ([step, hash]) => [Number(step), hash] as const
+    );
+    const steps = hashes.map(([step]) => step);
+    expect([
+      [host.debug().error, guest.debug().error],
+      // A hash every 2 steps, where the default is every 60.
+      steps.length > 10,
+      steps.map((step) => step % 2),
+      steps.slice(1).map((step, index) => step - steps[index]!),
+      // Each is the declared hash of the state after that many steps.
+      hashes.map(([, hash]) => hash),
+      Object.keys(guest.debug().hashes).length > 10,
+    ]).toStrictEqual([
+      [null, null],
+      true,
+      steps.map(() => 0),
+      steps.slice(1).map(() => 2),
+      steps.map((step) => step + 1),
+      true,
     ]);
   });
 
@@ -358,6 +549,43 @@ describe("a declared Coop", () => {
       void coop.send(new RunEnded({ totals: [] }));
     });
     expect(Effect.isEffect(program)).toBe(true);
+  });
+
+  // `picks` and `config` take their `content` from the `content` field. An Effect piped where
+  // it is given still tells them; one made by a call that takes the Effect and a function
+  // together does not, on any TypeScript tried (5.6 to 7.0). `CoopDefinition.content`'s doc
+  // comment and the guide say so: if the second block ever compiles, they are out of date.
+  it("takes its content's type from an Effect piped in the definition, but not from a data-first call", () => {
+    class Piped extends Coop("Piped", {
+      engine: TestEngine,
+      input: () => ({ read: () => ({ add: 2 }), dispose: () => {} }),
+      content: Levels.pipe(
+        Effect.map(({ length }) => ({ ...testContent, length }))
+      ),
+      picks: (content) => content.picks,
+      config: (content, picks) => ({ content, picks }),
+      hash: hashTestState,
+    }) {}
+    class DataFirst extends Coop("DataFirst", {
+      engine: TestEngine,
+      input: () => ({ read: () => ({ add: 2 }), dispose: () => {} }),
+      // oxlint-disable-next-line unicorn/no-array-method-this-argument -- no array's map: Effect.map given the Effect and the function together, the form this test is about.
+      content: Effect.map(Levels, ({ length }) => ({ ...testContent, length })),
+      // @ts-expect-error -- `content` is unknown here
+      picks: (content) => content.picks,
+      // @ts-expect-error -- and here, so this is no config of the test game
+      config: (content, picks) => ({ content, picks }),
+      hash: hashTestState,
+    }) {}
+    // The piped Effect told the declaration its content, and what loading it needs.
+    expectTypeOf(Piped.layer).toEqualTypeOf<
+      Layer.Layer<Piped, never, CoopRooms | Log | Levels>
+    >();
+    // Only the types differ: both are declared, and would play.
+    expect([
+      Piped.definition.picks({ ...testContent, length: 1 }),
+      DataFirst.coopName,
+    ]).toStrictEqual([testContent.picks, "DataFirst"]);
   });
 });
 
@@ -487,38 +715,125 @@ describe("a Coop's match", () => {
     ]);
   });
 
-  it("refuses cases that leave an event out, by type and when the event comes", () => {
-    const own = {
-      LobbyChanged: () => 1,
-      RunStarted: () => 2,
-      WaitingChanged: () => 3,
-      SeatFailed: () => 4,
-    };
-    const everyRun = {
-      Score: () => 5,
-      OfferOpened: () => 6,
-      RunEnded: () => 7,
-    };
-    // @ts-expect-error -- the run's events have no cases: `run` is missing
-    const noRun = TestCoop.match(own);
-    const noEnd = TestCoop.match({
-      ...own,
-      // @ts-expect-error -- RunEnded has no case
-      run: { Score: () => 5, OfferOpened: () => 6 },
-    });
+  const own = {
+    LobbyChanged: () => 1,
+    RunStarted: () => 2,
+    WaitingChanged: () => 3,
+    SeatFailed: () => 4,
+  };
+  const everyRun = {
+    Score: () => 5,
+    OfferOpened: () => 6,
+    RunEnded: () => 7,
+  };
+
+  it("refuses cases that leave an event out, by type and when it is called", () => {
     const { SeatFailed: _, ...noFailure } = own;
-    // @ts-expect-error -- SeatFailed has no case
-    const unfailing = TestCoop.match({ ...noFailure, run: everyRun });
-    const end = heard(new RunEnded({ totals: [] }));
-    expect(() => noRun(end)).toThrow(
-      'Coop "TestCoop" has no case under `run` for the run\'s event "RunEnded"'
-    );
-    expect(() => noEnd(end)).toThrow(
-      'Coop "TestCoop" has no case under `run` for the run\'s event "RunEnded"'
+    expect(() =>
+      // @ts-expect-error -- the run's events have no cases: `run` is missing
+      TestCoop.match(own)
+    ).toThrow(
+      'Coop "TestCoop" has no case under `run` for the run\'s event "OfferOpened". `match` takes one there for everything the simulation "TestGame" reports (OfferOpened, RunEnded, Score).'
     );
     expect(() =>
-      unfailing(new Seat.SeatFailed({ reason: "bug", message: "It broke." }))
-    ).toThrow('Coop "TestCoop" has no case for the event "SeatFailed"');
+      TestCoop.match({
+        ...own,
+        // @ts-expect-error -- RunEnded has no case
+        run: { Score: () => 5, OfferOpened: () => 6 },
+      })
+    ).toThrow(
+      'Coop "TestCoop" has no case under `run` for the run\'s event "RunEnded". `match` takes one there for everything the simulation "TestGame" reports (OfferOpened, RunEnded, Score).'
+    );
+    expect(() =>
+      // @ts-expect-error -- SeatFailed has no case
+      TestCoop.match({ ...noFailure, run: everyRun })
+    ).toThrow(
+      'Coop "TestCoop" has no case for the event "SeatFailed". `match` takes a case for each of the Co-op client\'s own events (LobbyChanged, RunStarted, WaitingChanged, SeatFailed), and the run\'s under `run`.'
+    );
+  });
+
+  // A case that no event reaches is dead code nobody is told about: one left behind by a
+  // renamed event, or written in the wrong place. The types take it, so `match` refuses it when
+  // it is called, which is as the app's module loads.
+  it("refuses a case for an event that doesn't exist, when it is called", () => {
+    expect(() =>
+      TestCoop.match({ ...own, run: { ...everyRun, PlayerLeft: () => 8 } })
+    ).toThrow(
+      'Coop "TestCoop" has a case "PlayerLeft" under `run`, which the simulation "TestGame" doesn\'t report (OfferOpened, RunEnded, Score). Remove it, or name it after the event it handles.'
+    );
+    expect(() =>
+      TestCoop.match({ ...own, RunStopped: () => 0, run: everyRun })
+    ).toThrow(
+      'Coop "TestCoop" has a case "RunStopped", which is none of the Co-op client\'s own events (LobbyChanged, RunStarted, WaitingChanged, SeatFailed). Remove it, or name it after the event it handles; a case for one of the run\'s events goes under `run`.'
+    );
+  });
+
+  it("takes no case under `run` for a simulation that reports nothing, and says so", () => {
+    class Quiet extends Game.Simulation("Quiet", {
+      input: Game.PlayerInputs(Schema.Null),
+      create: () => ({ steps: 0 }),
+      step: () => {},
+    }) {}
+    class QuietEngine extends Game.Engine("QuietEngine", {
+      simulation: Quiet,
+      view: () => ({ render: () => {}, dispose: () => {} }),
+      input: () => ({
+        read: () => ({ players: [], leaving: [] }),
+        dispose: () => {},
+      }),
+    }) {}
+    class QuietCoop extends Coop("QuietCoop", {
+      engine: QuietEngine,
+      input: () => ({ read: () => null, dispose: () => {} }),
+      content: Effect.succeed(null),
+      picks: () => ["one"],
+      config: () => undefined,
+      hash: (state) => state.steps,
+    }) {}
+    const toNumber = QuietCoop.match({ ...own, run: {} });
+    expect(toNumber(new Seat.RunStarted({ slot: 0, names: [] }))).toBe(2);
+    expect(() =>
+      QuietCoop.match({ ...own, run: { Stepped: () => 5 } })
+    ).toThrow(
+      'Coop "QuietCoop" has a case "Stepped" under `run`, which the simulation "Quiet" doesn\'t report: it reports nothing. Remove it, or name it after the event it handles.'
+    );
+    expect(() =>
+      toNumber({
+        _tag: "RunEvent",
+        event: { _tag: "Stepped" } as never,
+        local,
+      })
+    ).toThrow(
+      'Coop "QuietCoop" has no case under `run` for the run\'s event "Stepped". `match` takes one there for everything the simulation "Quiet" reports.'
+    );
+  });
+
+  it("refuses a case in the wrong place, and says where it goes", () => {
+    const { RunEnded: ended, ...noEnd } = everyRun;
+    const { SeatFailed: failed, ...noFailure } = own;
+    expect(() =>
+      // @ts-expect-error -- RunEnded's case is beside the client's own, so `run` lacks it
+      TestCoop.match({ ...own, RunEnded: ended, run: noEnd })
+    ).toThrow(
+      'Coop "TestCoop" has a case "RunEnded" beside the Co-op client\'s own, and "RunEnded" is one of the run\'s events. Its case goes under `run`.'
+    );
+    expect(() =>
+      // @ts-expect-error -- SeatFailed's case is under `run`, so the client's own lack it
+      TestCoop.match({ ...noFailure, run: { ...everyRun, SeatFailed: failed } })
+    ).toThrow(
+      'Coop "TestCoop" has a case "SeatFailed" under `run`, and "SeatFailed" is one of the Co-op client\'s own events. Its case goes beside `run`, not under it.'
+    );
+  });
+
+  it("still refuses an event its cases don't cover when one comes: one the simulation never declared", () => {
+    const toNumber = TestCoop.match({ ...own, run: everyRun });
+    const undeclared = { _tag: "Undeclared" } as unknown as TestEvent;
+    expect(() => toNumber(heard(undeclared))).toThrow(
+      'Coop "TestCoop" has no case under `run` for the run\'s event "Undeclared".'
+    );
+    expect(() =>
+      toNumber({ _tag: "SeatMoved" } as unknown as Seat.SeatFailed)
+    ).toThrow('Coop "TestCoop" has no case for the event "SeatMoved".');
   });
 });
 

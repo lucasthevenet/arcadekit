@@ -4,13 +4,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AttachError, GameCrashed } from "../../runtime/browser";
 import type { GameView } from "../../runtime/browser";
 import { manualFrames } from "../../runtime/testing";
-import {
-  testCoopClient,
-  testCoopParts,
-  testPresentation,
-} from "../testing/index";
-import type { TestCoopClient, TestState } from "../testing/index";
+import type { TestState } from "../testing/index";
 import type { CoopPresented } from "./coop-client";
+import { testCoopClient, testCoopParts, testPresentation } from "./test-client";
+import type { TestCoopClient } from "./test-client";
 
 // Attaching and detaching in Node, with no browser, no room and no seat: the input and the view
 // are fakes that count what is made and disposed, and the test runs the frames.

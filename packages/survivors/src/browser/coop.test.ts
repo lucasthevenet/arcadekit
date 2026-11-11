@@ -23,7 +23,8 @@ import type { SurvivorsSounds } from "./sound";
 // class as plain values and functions, and its input source on an EventTarget that stands in for
 // the window and the surface, so its listeners can be counted. The Co-op client that runs the
 // declaration is tested in arcadekit/net/browser; the rules a run steps in world.test.ts and
-// lockstep.test.ts; the views' live local slot in scene.test.ts and sound.test.ts.
+// lockstep.test.ts; the views' live local slot in scene.test.ts and sound.test.ts, and that the
+// engine hands it to both in engine.test.ts.
 
 const content = Schema.decodeUnknownSync(GameContent)({
   rules: {

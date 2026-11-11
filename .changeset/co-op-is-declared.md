@@ -94,7 +94,8 @@ toMessage: SurvivorsCoop.match({
 });
 ```
 
-- **The client's own events are Schema classes**, told by `_tag`: `LobbyChanged`, `RunStarted`, `WaitingChanged` and `SeatFailed`, where `CoopEvent` had `type: "lobby" | "started" | "waiting" | "failed"`. An app puts one in a Message or its Model as it is. A run's event comes as `{ _tag: "RunEvent", event, local }`, where it was `{ type: "run", event }` with what the game's `localEvent` made.
+- **The client's own events are Schema classes**, told by `_tag`: `LobbyChanged`, `RunStarted`, `WaitingChanged` and `SeatFailed`, where `CoopEvent` had `type: "lobby" | "started" | "waiting" | "failed"`. An app puts one in a Message or its Model as it is. A run's event comes as `{ _tag: "RunEvent", event, local }`, where it was `{ type: "run", event }` with what the game's `localEvent` made. `local` is the local player of the seat that heard it, one object for that seat's run, so an event an app keeps still says whose it was after the player has left or taken another seat.
+- **`match` covers everything a seat reports, and nothing else.** A missing case is a type error. A case for an event that doesn't exist, such as one left behind by a renamed event or a run's case written beside the client's own, compiles; `match` refuses it when it is called, as the app's module loads, and says where the case goes.
 - **The rooms are a service**, `CoopRooms`, with a Layer for each implementation: `browserCoopRoomsLayer(() => ({ url, iceServers }))`, which replaces `browserCoopRooms(options)` and reads its options when the layer is built, and `fakeCoopRooms().layer`. **The ticker is a reference**, `CoopTicker`, whose default is the worker's timer; a test provides `manualTicker().layer`. The frame clock is the engine's `Game.Frames`. `CoopClientOptions` is gone.
 
 **`Game.Engine`** (`arcadekit/game/browser`)
@@ -103,16 +104,21 @@ toMessage: SurvivorsCoop.match({
 - **`input` is unchanged**: the whole step's input, so an engine can still fill several slots.
 - **`EngineClass` is typed by what the engine uses** (`EngineClass<Name, Config, State, Input, Event, Command, U, Refusals>`, where it had the error and the services of those as two parameters), and has the engine's `definition`, which a `Coop` reads.
 
+**`Game.Simulation`** (`arcadekit/game`)
+
+- **`match` refuses a case for an event the simulation doesn't report**, when it is called, as a `Coop`'s does. The types let an extra case through (one left behind by a renamed event), and it would never run. A case a cast left out is refused then too, where it was refused when its event came.
+
 **The Co-op client**
 
 - `CoopClient<State, Event, Command, E, Refusals>` has five type parameters, as `Game.Engine`'s service has, where it had the type bag. Its methods are the same.
 - On attach it makes the view first, then the input source, as an engine does. It made the input first.
 - It calls nothing of the game's between steps but the local player's input source.
+- `WaitingChanged` names a player only once the run has stood at one step for 300 ms. A peer whose run began more than the input delay before another's has a step due for the whole run while it steps at full rate, and its client named the other player all that time ("Waiting for Guest 1…" over a run that played).
 
 **`arcadekit/net/testing`**
 
 - `fakeCoopRooms()` has a `layer`, and so has `manualTicker()`.
-- The test game has no `testCoopRules`, `testCoopGame`, `TestCoop` bag or `TestLocalEvent` any more. `testCoopParts(options)` is the test game as plain parts and `testCoopClient(parts, { rooms, ticker?, frames? })` its Co-op client, for a test that replaces one of them; `testPresentation` makes `{ view, input }`. Its sample `Score` says who still owes the open offer an answer (`owes`). To test a `Coop` of your own, provide its layer with `fakeCoopRooms().layer`.
+- The entry makes no Co-op client any more: `testCoopRules`, `testCoopGame`, `testPresentation`, the `TestCoop` bag and `TestLocalEvent` are gone, with nothing in their place. A test makes a client as an app does, from a `Coop`'s `layer`: provide it with `fakeCoopRooms().layer`, `manualTicker().layer` and `manualFrames()` as `Game.Frames`. That is your own game's `Coop`, or one declared over the test game, which stays: `TestGame` with its events and commands, `testContent` and `hashTestState`. Its sample `Score` says who still owes the open offer an answer (`owes`).
 
 **Removed**
 

@@ -206,6 +206,41 @@ describe("Game.Simulation", () => {
     expect(describeEvent(new Reached({ count: 4 }))).toBe("reached 4");
     expect(describeEvent(new Tally({ count: 1, bonus: 2 }))).toBe(3);
   });
+
+  it("refuses a case for an event it doesn't report, when match is called", () => {
+    // The types let an extra case through: one a renamed event left behind would never run.
+    expect(() =>
+      Counter.match({
+        Started: () => "started",
+        Reached: () => "reached",
+        Tally: () => "tally",
+        Finished: () => "finished",
+      })
+    ).toThrow(
+      'Simulation "Counter" has a case "Finished", which it doesn\'t report (Started, Reached, Tally). Remove it, or name it after the event it handles.'
+    );
+  });
+
+  it("refuses a missing case when match is called, not when its event comes", () => {
+    expect(() =>
+      // @ts-expect-error -- Tally, the sample, has no case
+      Counter.match({ Started: () => "started", Reached: () => "reached" })
+    ).toThrow(
+      'Simulation "Counter" has no case for the event "Tally". `match` takes a case for everything the simulation reports (Started, Reached, Tally).'
+    );
+  });
+
+  it("refuses an event the simulation doesn't declare, when it comes", () => {
+    const describeEvent = Counter.match({
+      Started: () => "started",
+      Reached: () => "reached",
+      Tally: () => "tally",
+    });
+    expect(() =>
+      // @ts-expect-error -- not one of the simulation's events
+      describeEvent({ _tag: "Undeclared" })
+    ).toThrow('Simulation "Counter" has no case for the event "Undeclared".');
+  });
 });
 
 describe("Game.Loop", () => {

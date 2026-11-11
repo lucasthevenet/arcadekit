@@ -1,15 +1,6 @@
-import { Effect, Schema } from "effect";
-import type { Scope } from "effect";
+import { Schema } from "effect";
 
-import { Frames } from "../../game/browser";
 import * as Game from "../../game/index";
-import type { FrameSource, GameView } from "../../runtime/browser";
-import type { InputSource } from "../../runtime/index";
-import { coopClient } from "../browser/coop-client";
-import type { CoopParts, CoopPresented } from "../browser/coop-client";
-import { CoopTicker } from "../browser/index";
-import type { CoopClient, Rooms } from "../browser/index";
-import type { Ticker } from "../scoped";
 
 // A small Co-op game for tests: every player adds a number each step, and now and then the run
 // stops on an offer that each player answers. It is enough to drive every part of the Co-op
@@ -148,8 +139,6 @@ export type TestRefusals = Game.RefusalsOf<
 
 const TestInputSchema = Schema.Struct({ add: Schema.Number });
 
-const nothing = (): void => undefined;
-
 /** One step of play: every player's `add`, then the end, or the next offer. */
 const advance = (
   state: TestState,
@@ -267,111 +256,3 @@ export const hashTestState = (state: TestState): number => {
   }
   return mix(hash, state.ended ? 1 : 0);
 };
-
-const ADD_ONE: TestInput = { add: 1 };
-
-/**
- * What the test game's attach makes: a view that draws nothing, and an input that adds 1 each
- * step while attached. Pass `view` or `input` to watch or replace either.
- */
-export const testPresentation = (
-  parts: Partial<CoopPresented<TestState, TestInput>> = {}
-): CoopPresented<TestState, TestInput> => ({
-  view: (): GameView<TestState> => ({
-    render: nothing,
-    dispose: nothing,
-  }),
-  input: (): InputSource<TestInput> => ({
-    read: () => ADD_ONE,
-    dispose: nothing,
-  }),
-  ...parts,
-});
-
-/**
- * The test game as the Co-op client takes one: plain parts, with no declaration and no Layer, so
- * a test can replace any of them. Spread it to change one (`{ ...testCoopParts(), hash }`).
- */
-export type TestCoopParts<LoadError = never> = Omit<
-  CoopParts<
-    TestConfig,
-    TestState,
-    Game.PlayerInputs<TestInput>,
-    TestEvent,
-    TestCommand,
-    TestRefusals,
-    TestContent,
-    LoadError
-  >,
-  "rooms" | "ticker" | "frames"
->;
-
-export interface TestCoopOptions<LoadError = never> {
-  /** The content each seat loads. Defaults to `testContent`, at once. */
-  readonly content?: Effect.Effect<TestContent, { readonly message: string }>;
-  /** What each attach makes. Defaults to `testPresentation()`, at once. */
-  readonly presentation?: Effect.Effect<
-    CoopPresented<TestState, TestInput>,
-    LoadError
-  >;
-  readonly maxPlayers?: number;
-  readonly lockstep?: TestCoopParts["lockstep"];
-}
-
-/** The test game's parts, with content and a presentation from `options`. */
-export const testCoopParts = <LoadError = never>(
-  options: TestCoopOptions<LoadError> = {}
-): TestCoopParts<LoadError> => ({
-  simulation: TestGame,
-  hash: hashTestState,
-  picks: (content) => content.picks,
-  config: (content, picks) => ({ content, picks }),
-  ends: new Set([RunEnded.tag]),
-  ...(options.maxPlayers === undefined
-    ? {}
-    : { maxPlayers: options.maxPlayers }),
-  ...(options.lockstep === undefined ? {} : { lockstep: options.lockstep }),
-  content: options.content ?? Effect.succeed(testContent),
-  presentation:
-    options.presentation ??
-    Effect.sync((): CoopPresented<TestState, TestInput> => testPresentation()),
-});
-
-/** The Co-op client of the test game, as an app drives it. */
-export type TestCoopClient<LoadError = never> = CoopClient<
-  TestState,
-  TestEvent,
-  TestCommand,
-  LoadError,
-  TestRefusals
->;
-
-/**
- * The Co-op client of the test game, from its plain parts: over `rooms` (`fakeCoopRooms().rooms`),
- * ticked by `ticker` (`manualTicker().ticker`) and drawn on `frames` (`manualFrames()`). Without
- * one of the last two, it reads the reference a declared `Coop` reads: `CoopTicker`, a worker's
- * timer, and `Game.Frames`, animation frames. Its scope owns the current seat.
- *
- * ```ts
- * const hub = fakeCoopRooms();
- * const coop = yield* testCoopClient(testCoopParts(), { rooms: hub.rooms });
- * yield* coop.host("red");
- * ```
- */
-export const testCoopClient = <LoadError = never>(
-  parts: TestCoopParts<LoadError>,
-  options: {
-    readonly rooms: Rooms;
-    readonly ticker?: Ticker;
-    readonly frames?: FrameSource;
-  }
-): Effect.Effect<TestCoopClient<LoadError>, never, Scope.Scope> =>
-  Effect.gen(function* () {
-    const { ticker } = options;
-    return yield* coopClient({
-      ...parts,
-      rooms: options.rooms,
-      ticker: ticker === undefined ? yield* CoopTicker : Effect.succeed(ticker),
-      frames: options.frames ?? (yield* Frames),
-    });
-  });

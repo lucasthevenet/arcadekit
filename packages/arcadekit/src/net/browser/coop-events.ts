@@ -49,17 +49,27 @@ export type CoopFailure = (typeof FAILURES)[number];
  * values. They are what a seat reports of itself, not what a run reports, so they are no
  * `Game.Event`s, and their tags are told from the run's by where each stands in `match`.
  */
-type SeatEvent<
+export type SeatEvent<
   Tag extends string,
   F extends Schema.Struct.Fields,
 > = Schema.Class<EventInstance<Tag, F>, Schema.TaggedStruct<Tag, F>, NoFields>;
 
-/** A seat event's class, from its tag and fields. Each is given its written type where it is declared. */
-const seatEvent = (tag: string, fields: Schema.Struct.Fields): unknown =>
+/**
+ * A seat event's class, from its tag and fields, typed by them: where one is declared, its
+ * written type is checked against its Schema, so the two can't disagree. Exported for this
+ * file's test, not from the entry.
+ */
+export const seatEvent = <
+  const Tag extends string,
+  const F extends Schema.Struct.Fields,
+>(
+  tag: Tag,
+  fields: F
+): SeatEvent<Tag, F> =>
   Schema.TaggedClass<{ readonly _tag: string }>(`arcadekit/net/${tag}`)(
     tag,
     fields
-  );
+  ) as unknown as SeatEvent<Tag, F>;
 
 const LobbyChangedBase: SeatEvent<
   "LobbyChanged",
@@ -90,7 +100,7 @@ const LobbyChangedBase: SeatEvent<
   ),
   maxPlayers: Schema.Int,
   canStart: Schema.Boolean,
-}) as typeof LobbyChangedBase;
+});
 
 /**
  * The lobby changed: the local player's `role` in it, its join `code`, the local player's peer
@@ -108,7 +118,7 @@ const RunStartedBase: SeatEvent<
 > = seatEvent("RunStarted", {
   slot: Schema.Int,
   names: Schema.Array(Schema.String),
-}) as typeof RunStartedBase;
+});
 
 /** The run started. `slot` is the local player's; `names` every player's name, by slot. */
 export class RunStarted extends RunStartedBase {}
@@ -118,13 +128,14 @@ const WaitingChangedBase: SeatEvent<
   { readonly waitingFor: Schema.$Array<Schema.String> }
 > = seatEvent("WaitingChanged", {
   waitingFor: Schema.Array(Schema.String),
-}) as typeof WaitingChangedBase;
+});
 
 /**
  * Who the run waits for changed: the players stepping waits on (lockstep's "waiting for X"),
- * once it has waited 300 ms. Names, in slot order; none once it steps again. Who a run waits on
- * to decide something, such as an upgrade to pick, is the game's to say: its sample does, as
- * survivors' HUD has a `choosing` flag for each hero.
+ * once the run has stood at one step for 300 ms. Names, in slot order; none once it steps
+ * again. A run that steps waits on nobody, however far behind another peer's it is. Who a run
+ * waits on to decide something, such as an upgrade to pick, is the game's to say: its sample
+ * does, as survivors' HUD has a `choosing` flag for each hero.
  */
 export class WaitingChanged extends WaitingChangedBase {}
 
@@ -137,7 +148,7 @@ const SeatFailedBase: SeatEvent<
 > = seatEvent("SeatFailed", {
   reason: Schema.Literals(FAILURES),
   message: Schema.String,
-}) as typeof SeatFailedBase;
+});
 
 /**
  * The seat failed for good: its last event. `message` is the kit's text for a player; `reason`
@@ -147,7 +158,11 @@ export class SeatFailed extends SeatFailedBase {}
 
 /** What a run case of `match` is given besides the event. */
 export interface SeatContext {
-  /** The local player, whose seat heard the event: `local.slot` is this player's hero, tile, score. */
+  /**
+   * The local player, whose seat heard the event: `local.slot` is this player's hero, tile,
+   * score. It is that seat's own, one object for all its run's events, so an event that is
+   * kept says whose it was after the player has left or taken another seat.
+   */
   readonly local: LocalPlayer;
 }
 

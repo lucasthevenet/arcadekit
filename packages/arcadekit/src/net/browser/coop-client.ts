@@ -56,8 +56,8 @@ export interface CoopPresented<State, PlayerInput> {
 /**
  * What the Co-op client is made from: a `Coop` declaration with nothing left to resolve. What
  * it uses has its services, and the app's rooms, the ticker and the frame clock are beside it.
- * Only the kit builds one: the `Coop` builder's `layer`, and the test game's client in
- * `arcadekit/net/testing`.
+ * Only the kit builds one: the `Coop` builder's `layer`, and the kit's own client tests
+ * (test-client.ts).
  */
 export interface CoopParts<
   Config,
@@ -155,14 +155,16 @@ interface Seat<State, Event, Command, Refusals> {
   failed: boolean;
   /** The players shown as waited on: a bit per slot. */
   waitingMask: number;
-  /** Since when stepping has waited without a break, or null. */
+  /** Since when the run has stood at one step, waiting on players for the next, or null. */
   waitingSinceMs: number | null;
+  /** The step the run had reached at its last tick. */
+  tickedAtStep: number;
   readonly hashes: Map<number, number>;
 }
 
 /**
- * How long stepping must wait before the players it waits on are shown. Lockstep waits a frame
- * now and then as input arrives; that isn't worth a banner.
+ * How long a run must stand at one step before the players it waits on are shown. Lockstep
+ * waits a frame now and then as input arrives; that isn't worth a banner.
  */
 const WAITING_SHOWN_MS = 300;
 /** How many recent state hashes `debug` keeps. */
@@ -244,6 +246,7 @@ const makeSeat = <State, Event, Command, Refusals>(
   failed: false,
   waitingMask: 0,
   waitingSinceMs: null,
+  tickedAtStep: 0,
   hashes: new Map(),
 });
 
@@ -297,8 +300,9 @@ export const coopClient = <
     );
 
     /**
-     * The local player's seat, read live: by the attached view when it draws, and by whoever
-     * hears one of the run's events, when it hears it.
+     * The local player of the current seat, read live by the attached view when it draws: one
+     * view follows its player from the lobby into the run, and into the next seat. A run's
+     * events don't carry this one: each has its own seat's (`play`).
      */
     const local: LocalPlayer = {
       get slot() {
@@ -586,18 +590,26 @@ export const coopClient = <
       return hash;
     };
 
-    // The run's events reach the app as the rules reported them, each with the local player.
-    const onGameEvent = (seat: Seated, event: Event) => {
+    // The run's events reach the app as the rules reported them, each with its seat's local
+    // player.
+    const onGameEvent = (seat: Seated, player: LocalPlayer, event: Event) => {
       if (parts.ends.has((event as { readonly _tag: string })._tag)) {
         seat.ended = true;
       }
-      emit(seat, { _tag: "RunEvent", event, local });
+      emit(seat, { _tag: "RunEvent", event, local: player });
     };
 
     /**
      * After each tick: who stepping waits on, when that changes. Kept as a bit per slot; the
      * names are built only on a change. It reads the session alone: nothing of the game's runs
      * between steps but the local player's input source.
+     *
+     * A wait is a run standing at one step. The session's `waitingFor` alone doesn't say so:
+     * it names who the next step waits on whenever more steps are due than are confirmed, and a
+     * peer whose clock is ahead of another's by more than the input delay (one whose run began
+     * sooner) has a step due for the whole run, while it steps at full rate, as fast as the
+     * other's input arrives. So a tick that finds the run at a new step ends the wait, as it
+     * does where the session counts a stall (`dropStalledPeers`).
      */
     const afterTick = (seat: Seated, clock: Clock.Clock) => {
       const { run } = seat;
@@ -606,12 +618,13 @@ export const coopClient = <
         return;
       }
       const nowMs = millis(clock);
-      const { waitingFor } = run;
-      if (waitingFor.length === 0) {
+      const { waitingFor, stepIndex } = run;
+      if (waitingFor.length === 0 || stepIndex !== seat.tickedAtStep) {
         seat.waitingSinceMs = null;
       } else {
         seat.waitingSinceMs ??= nowMs;
       }
+      seat.tickedAtStep = stepIndex;
       let waiting = 0;
       if (
         seat.waitingSinceMs !== null &&
@@ -675,7 +688,11 @@ export const coopClient = <
               });
         seat.run = session;
         emit(seat, new RunStarted({ slot: seat.slot, names: seat.names }));
-        yield* session.listen((event) => onGameEvent(seat, event));
+        // The seat's local player, as every event of its run carries it: one object for the
+        // run, so an event allocates none, and not the live one a view reads, so an event an
+        // app kept still says whose it was once the player has left or taken another seat.
+        const player: LocalPlayer = { slot: seat.slot, names: seat.names };
+        yield* session.listen((event) => onGameEvent(seat, player, event));
         const timer = yield* parts.ticker;
         const clock = yield* Effect.clockWith(Effect.succeed);
         // The timer's ticks and the frames' ticks, as one ticker. A frame ticks too: when drawing

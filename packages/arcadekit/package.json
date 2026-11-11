@@ -41,7 +41,8 @@
     "dist",
     "src",
     "!src/**/*.test.ts",
-    "!src/net/test-harness.ts"
+    "!src/net/test-harness.ts",
+    "!src/net/browser/test-client.ts"
   ],
   "type": "module",
   "sideEffects": false,
