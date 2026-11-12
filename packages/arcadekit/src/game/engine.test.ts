@@ -176,6 +176,141 @@ class TimedEngine extends Game.Engine("TimedEngine", {
   },
 }) {}
 
+// A third game, for the order a listener and a sender hear in. Its start, its command and each
+// of its steps report, and its sample follows every frame that stepped, so one log of what a
+// listener heard, what the view drew and where a sender went on shows that order.
+
+class Opened extends Game.Event("Opened") {}
+class Turned extends Game.Event("Turned", { to: Schema.Int }) {}
+class Walked extends Game.Event("Walked", { step: Schema.Int }) {}
+class Faced extends Game.Event("Faced", {
+  facing: Schema.Int,
+  steps: Schema.Int,
+}) {}
+class NoSuchWay extends Game.Rejection("NoSuchWay") {}
+class Turn extends Game.Command(
+  "Turn",
+  { to: Schema.Int },
+  { rejects: [NoSuchWay] }
+) {}
+
+class Walk extends Game.Simulation("Walk", {
+  stepSeconds: 1 / 64,
+  input: Schema.Null,
+  events: [Opened, Turned, Walked],
+  commands: [Turn],
+  // With `trip`, the step of that number throws, as a bug in the rules does.
+  create: (config: { readonly trip?: number }, { report }) => {
+    report(new Opened());
+    return { facing: 0, steps: 0, trip: config.trip };
+  },
+  step: (state, _input, { report, step }) => {
+    if (step === state.trip) {
+      throw new Error("tripped");
+    }
+    state.steps += 1;
+    report(new Walked({ step }));
+  },
+  apply: {
+    Turn: (state, command, { report }) => {
+      if (command.to > 3) {
+        return new NoSuchWay();
+      }
+      state.facing = command.to;
+      report(new Turned({ to: command.to }));
+    },
+  },
+  sample: {
+    event: Faced,
+    version: (state) => state.steps,
+    read: (state) => ({ facing: state.facing, steps: state.steps }),
+  },
+}) {}
+
+class WalkEngine extends Game.Engine("WalkEngine", {
+  simulation: Walk,
+  uses: { log: Log },
+  view: (_container, { log }) => ({
+    // It can't draw a walker that faces 3, as a view with a bug can't draw some state.
+    render: (state) => {
+      if (state?.facing === 3) {
+        throw new Error("can't draw 3");
+      }
+      log.push(`draw ${state?.steps ?? "no run"}`);
+    },
+    dispose: () => {},
+  }),
+  input: () => ({ read: () => null, dispose: () => {} }),
+}) {}
+
+type WalkService = Context.Service.Shape<typeof WalkEngine>;
+
+/**
+ * Attaches the walking game's engine on `frames` and logs what a listener hears beside what the
+ * view draws, runs `drive` with the log, then closes everything. Returns the log and how the
+ * attach ended, if it did while `drive` ran.
+ */
+const playWalk = async (
+  frames: ReturnType<typeof manualFrames>,
+  drive: (
+    engine: WalkService,
+    log: string[]
+  ) => Effect.Effect<void, never, Scope.Scope>
+) => {
+  const log: string[] = [];
+  let attach: Exit.Exit<never, unknown> | undefined;
+  const layer = WalkEngine.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.succeed(Game.Frames, frames),
+        Layer.succeed(Log, log)
+      )
+    )
+  );
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const engine = yield* WalkEngine;
+        yield* engine.listen(
+          Walk.match({
+            Opened: () => log.push("heard: opened"),
+            Turned: ({ to }) => log.push(`heard: turned to ${to}`),
+            Walked: ({ step }) => log.push(`heard: walked step ${step}`),
+            Faced: ({ facing, steps }) =>
+              log.push(`heard: facing ${facing} after ${steps}`),
+          })
+        );
+        const fiber = yield* Effect.forkScoped(engine.attach(element), {
+          startImmediately: true,
+        });
+        yield* drive(engine, log);
+        attach = fiber.pollUnsafe();
+      })
+    ).pipe(Effect.provide(layer))
+  );
+  return { log, attach };
+};
+
+/**
+ * Sends a turn on a fiber of the caller's, and logs how it ended on the line after the send: a
+ * line of the log that comes before it was there when the send completed.
+ */
+const turning = (engine: WalkService, log: string[], to: number) =>
+  Effect.forkChild(
+    engine.send(new Turn({ to })).pipe(
+      Effect.match({
+        onSuccess: () => log.push("sender: taken"),
+        onFailure: (error) =>
+          log.push(
+            error._tag === "CommandDropped"
+              ? `sender: dropped, ${error.reason}`
+              : `sender: refused, ${error._tag}`
+          ),
+      })
+    ),
+    { startImmediately: true }
+  );
+
 /** An engine whose view keeps what it was made with: the local player, as the engine seats it. */
 const seats: Game.LocalPlayer[] = [];
 
@@ -671,6 +806,195 @@ describe("Game.Engine", () => {
       "dispose view",
       "released",
     ]);
+  });
+});
+
+// `engine.listen` is the loop's `subscribe`, called inside the frame, and `engine.send` is told
+// once the loop is out of that frame, then resumes after a yield. So the order is fixed: by the
+// line after a send, a listener has been called with everything the frame of the command's
+// step reported.
+describe("what a listener has heard when a send completes", () => {
+  it("is everything the frame of the command's step reported: the events of each of its steps, then its sample; the frame has drawn too", async () => {
+    const frames = manualFrames();
+    const { log } = await playWalk(frames, (engine, lines) =>
+      Effect.gen(function* () {
+        yield* engine.start({});
+        lines.length = 0;
+        const sender = yield* turning(engine, lines, 2);
+        // Nothing has stepped, so nothing was heard and the sender waits.
+        lines.push(`before the frame: ${sender.pollUnsafe() === undefined}`);
+        // 3/64 s after attach: three steps in one frame. The first applies the turn.
+        frames.runFrameAt(46.875);
+        yield* Fiber.await(sender);
+      })
+    );
+    expect(log).toStrictEqual([
+      "before the frame: true",
+      "heard: turned to 2",
+      "heard: walked step 0",
+      "heard: walked step 1",
+      "heard: walked step 2",
+      "heard: facing 2 after 3",
+      "draw 3",
+      "sender: taken",
+    ]);
+  });
+
+  it("is that frame's events and sample when the rules refused the command, which reported nothing itself", async () => {
+    const frames = manualFrames();
+    const { log } = await playWalk(frames, (engine, lines) =>
+      Effect.gen(function* () {
+        yield* engine.start({});
+        lines.length = 0;
+        const sender = yield* turning(engine, lines, 9);
+        frames.runFrameAt(15.625);
+        yield* Fiber.await(sender);
+      })
+    );
+    expect(log).toStrictEqual([
+      "heard: walked step 0",
+      "heard: facing 0 after 1",
+      "draw 1",
+      "sender: refused, NoSuchWay",
+    ]);
+  });
+
+  it("is the same after a wait: a send made while paused completes after the first frame that steps", async () => {
+    const frames = manualFrames();
+    const { log } = await playWalk(frames, (engine, lines) =>
+      Effect.gen(function* () {
+        yield* engine.start({});
+        lines.length = 0;
+        yield* engine.setPaused(true);
+        const sender = yield* turning(engine, lines, 1);
+        frames.runFrameAt(15.625);
+        yield* Effect.yieldNow;
+        lines.push(`still waiting: ${sender.pollUnsafe() === undefined}`);
+        yield* engine.setPaused(false);
+        frames.runFrameAt(31.25);
+        yield* Fiber.await(sender);
+      })
+    );
+    expect(log).toStrictEqual([
+      "draw 0",
+      "still waiting: true",
+      "heard: turned to 1",
+      "heard: walked step 0",
+      "heard: facing 1 after 1",
+      "draw 1",
+      "sender: taken",
+    ]);
+  });
+
+  it("is the new run's start, for a send that run dropped; a stop and a send with no run report nothing", async () => {
+    const frames = manualFrames();
+    const { log } = await playWalk(frames, (engine, lines) =>
+      Effect.gen(function* () {
+        yield* engine.start({});
+        lines.length = 0;
+        const overtaken = yield* turning(engine, lines, 1);
+        yield* engine.start({});
+        yield* Fiber.await(overtaken);
+        lines.push("-- stop");
+        const stopped = yield* turning(engine, lines, 1);
+        yield* engine.stop;
+        yield* Fiber.await(stopped);
+        lines.push("-- no run");
+        yield* Fiber.await(yield* turning(engine, lines, 1));
+      })
+    );
+    expect(log).toStrictEqual([
+      "heard: opened",
+      "heard: facing 0 after 0",
+      "sender: dropped, runEnded",
+      "-- stop",
+      "sender: dropped, runEnded",
+      "-- no run",
+      "sender: dropped, noRun",
+    ]);
+  });
+
+  // The one exception: a frame that throws before its listeners have heard it all. A command a
+  // step of it had applied before the throw was still taken, and its sender is told so. A step
+  // that throws is the first way: what the frame had reported is discarded with its run.
+  it("is nothing of a frame a step threw in, though the sender of a command it took hears that it was taken", async () => {
+    const frames = manualFrames();
+    const { log, attach } = await playWalk(frames, (engine, lines) =>
+      Effect.gen(function* () {
+        // The second step of the run throws.
+        yield* engine.start({ trip: 1 });
+        lines.length = 0;
+        const sender = yield* turning(engine, lines, 2);
+        // Two steps in one frame: the first applies the turn and reports, the second throws.
+        frames.runFrameAt(31.25);
+        yield* Fiber.await(sender);
+        yield* Effect.yieldNow;
+      })
+    );
+    expect(log).toStrictEqual(["sender: taken"]);
+    // The app hears of the crash from `attach`, which that frame ended.
+    expect(
+      Option.getOrUndefined(Exit.findErrorOption(attach ?? Exit.void))
+    ).toMatchObject({ _tag: "GameCrashed", message: "tripped" });
+  });
+
+  // A listener that throws is the other: the telling ends there.
+  it("is what was told before the throw, of a frame a listener threw in: that event for the listeners before it, and nothing after", async () => {
+    const frames = manualFrames();
+    const { log, attach } = await playWalk(frames, (engine, lines) =>
+      Effect.gen(function* () {
+        yield* engine.start({});
+        // A second listener, which throws on a step's event, and a third after it.
+        yield* engine.listen((event) => {
+          if (event._tag === "Walked") {
+            throw new Error("deaf to steps");
+          }
+        });
+        yield* engine.listen((event) =>
+          lines.push(`the third heard: ${event._tag}`)
+        );
+        lines.length = 0;
+        const sender = yield* turning(engine, lines, 2);
+        // One step: the turn's event is told, then the step's, which the second throws on.
+        frames.runFrameAt(15.625);
+        yield* Fiber.await(sender);
+        yield* Effect.yieldNow;
+      })
+    );
+    expect(log).toStrictEqual([
+      "heard: turned to 2",
+      "the third heard: Turned",
+      "heard: walked step 0",
+      "sender: taken",
+    ]);
+    expect(
+      Option.getOrUndefined(Exit.findErrorOption(attach ?? Exit.void))
+    ).toMatchObject({ _tag: "GameCrashed", message: "deaf to steps" });
+  });
+
+  // No exception: a render that throws crashes the engine too, after everything was told.
+  it("is all of a frame whose render threw: the view draws after the listeners have heard the frame", async () => {
+    const frames = manualFrames();
+    const { log, attach } = await playWalk(frames, (engine, lines) =>
+      Effect.gen(function* () {
+        yield* engine.start({});
+        lines.length = 0;
+        // The view can't draw the way this turns to.
+        const sender = yield* turning(engine, lines, 3);
+        frames.runFrameAt(15.625);
+        yield* Fiber.await(sender);
+        yield* Effect.yieldNow;
+      })
+    );
+    expect(log).toStrictEqual([
+      "heard: turned to 3",
+      "heard: walked step 0",
+      "heard: facing 3 after 1",
+      "sender: taken",
+    ]);
+    expect(
+      Option.getOrUndefined(Exit.findErrorOption(attach ?? Exit.void))
+    ).toMatchObject({ _tag: "GameCrashed", message: "can't draw 3" });
   });
 });
 

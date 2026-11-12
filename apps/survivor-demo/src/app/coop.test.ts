@@ -25,21 +25,15 @@ import {
   WaitingChanged,
 } from "arcadekit/net/browser";
 import type { CoopEvent } from "arcadekit/net/browser";
-import { FAKE_JOIN_CODE, fakeCoopRooms } from "arcadekit/net/testing";
+import {
+  FAKE_JOIN_CODE,
+  fakeCoopRooms,
+  onFakeTimers,
+} from "arcadekit/net/testing";
 import type { FakeCoopRooms } from "arcadekit/net/testing";
 import { SpriteSheetError } from "arcadekit/render-three";
 import type { SpriteSheet } from "arcadekit/render-three";
-import {
-  Clock,
-  Context,
-  Deferred,
-  Duration,
-  Effect,
-  Exit,
-  Layer,
-  Scheduler,
-  Scope,
-} from "effect";
+import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -79,49 +73,14 @@ const idleSheet: SheetLoad = Effect.never;
 /** A sheet that has loaded, which nothing reads. */
 const loadedSheet: SheetLoad = Effect.succeed({} as SpriteSheet);
 
-const nanos = (ms: number) => BigInt(Math.round(ms * 1_000_000));
-
-/** Effect's Clock on the page's timers, which the tests fake. */
-const performanceClock: Clock.Clock = {
-  currentTimeMillisUnsafe: () => Date.now(),
-  currentTimeMillis: Effect.sync(() => Date.now()),
-  currentTimeNanosUnsafe: () => nanos(Date.now()),
-  currentTimeNanos: Effect.sync(() => nanos(Date.now())),
-  monotonicTimeNanosUnsafe: () => nanos(performance.now()),
-  monotonicTimeNanos: Effect.sync(() => nanos(performance.now())),
-  sleep: (duration) =>
-    Effect.callback((resume) => {
-      const timer = setTimeout(
-        () => resume(Effect.void),
-        Duration.toMillis(duration)
-      );
-      return Effect.sync(() => clearTimeout(timer));
-    }),
-};
-
-/** Runs fibers on microtasks, as Foldkit's browser scheduler does. */
-const microtasks = new Scheduler.MixedScheduler("async", (task) => {
-  let cancelled = false;
-  queueMicrotask(() => {
-    if (!cancelled) {
-      task();
-    }
-  });
-  return () => {
-    cancelled = true;
-  };
-});
-
 let scope: Scope.Closeable;
 
-/** Runs `effect` as the app does, on the test's Clock and Scheduler. */
+/**
+ * Runs `effect` as the app does, on the test's Clock and Scheduler: the faked time, and fibers
+ * on microtasks.
+ */
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>
-  Effect.runPromise(
-    effect.pipe(
-      Effect.provideService(Clock.Clock, performanceClock),
-      Effect.provideService(Scheduler.Scheduler, microtasks)
-    )
-  );
+  Effect.runPromise(onFakeTimers(effect));
 
 interface Seat {
   readonly coop: Context.Service.Shape<typeof SurvivorsCoop>;

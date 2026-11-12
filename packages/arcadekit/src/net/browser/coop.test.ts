@@ -1,12 +1,10 @@
 import {
-  Clock,
   Context,
   Effect,
   Exit,
   Fiber,
   Layer,
   Result,
-  Scheduler,
   Schema,
   Scope,
 } from "effect";
@@ -23,7 +21,6 @@ import {
 import * as Game from "../../game/browser";
 import { manualFrames } from "../../game/testing";
 import type { Ticker } from "../scoped";
-import { microtasks, performanceClock } from "../test-harness";
 import {
   AnswerOffer,
   HoldPause,
@@ -35,6 +32,7 @@ import {
   fakeCoopRooms,
   hashTestState,
   manualTicker,
+  onFakeTimers,
   testContent,
 } from "../testing/index";
 import type { FakeCoopRooms, TestEvent } from "../testing/index";
@@ -141,26 +139,42 @@ let scope: Scope.Closeable;
 
 /** Runs `effect` as the app does: in the app's scope, on the test's Clock and Scheduler. */
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): Promise<A> =>
-  Effect.runPromise(
-    effect.pipe(
-      Scope.provide(scope),
-      Effect.provideService(Clock.Clock, performanceClock),
-      Effect.provideService(Scheduler.Scheduler, microtasks)
-    )
-  );
+  Effect.runPromise(effect.pipe(Scope.provide(scope), onFakeTimers));
+
+/** As `run`, but on Effect's own Clock and scheduler, which fake timers don't reach. */
+const plain: typeof run = (effect) =>
+  Effect.runPromise(effect.pipe(Scope.provide(scope)));
 
 /** Lets queued microtasks run, at the current fake time. */
 const settle = async () => {
   await vi.advanceTimersByTimeAsync(0);
 };
 
-/** One player's Co-op client, from the declaration's layer over the app's services. */
-const seat = async (hub: FakeCoopRooms, length = 1_000_000) => {
+/** Settles until `done`, at most `turns` times: each is a real turn of the event loop too. */
+const settledUntil = async (
+  done: () => boolean,
+  turns = 100
+): Promise<void> => {
+  if (!done() && turns > 0) {
+    await settle();
+    await settledUntil(done, turns - 1);
+  }
+};
+
+/**
+ * One player's Co-op client, from the declaration's layer over the app's services. `build` runs
+ * the Effect that builds the layer: `run`, unless a test says.
+ */
+const seat = async (
+  hub: FakeCoopRooms,
+  length = 1_000_000,
+  build: typeof run = run
+) => {
   const frames = manualFrames();
   const log: string[] = [];
   const app = { length, loads: 0 };
   const events: Event[] = [];
-  const coop = await run(
+  const coop = await build(
     Effect.gen(function* () {
       const context = yield* Layer.build(
         TestCoop.layer.pipe(
@@ -325,17 +339,62 @@ describe("a declared Coop", () => {
     ]);
   });
 
+  // Why a test on fake timers runs the Effect that builds the layer through `onFakeTimers`: the
+  // client reads its time there, and what it forks later runs as that Effect did.
+  it("runs on the Clock and the scheduler of the Effect that built its layer, whatever its calls run on", async () => {
+    /**
+     * A lobby of two started, then a second of faked time: whether the host's seat heard its
+     * run start, the steps that run took, and the steps the real time since had room for.
+     */
+    const play = async (build: typeof run, call: typeof run) => {
+      const hub = fakeCoopRooms();
+      const host = await seat(hub, undefined, build);
+      const guest = await seat(hub, undefined, build);
+      const heard = (isIt: (event: Event) => boolean) => () =>
+        host.events.some(isIt);
+      const started = heard((event) => event._tag === "RunStarted");
+      await call(host.coop.host("red"));
+      await settle();
+      await call(guest.coop.join(hub.code, "green"));
+      // A client built on Effect's own scheduler goes on at real moments, not at the one a
+      // test names: after a single `settle` its lobby can't start yet, and a start asked of
+      // it then starts nothing.
+      await settledUntil(
+        heard((event) => event._tag === "LobbyChanged" && event.canStart)
+      );
+      // `Date` is not faked: it measures the real time the run has.
+      const realFromMs = Date.now();
+      await call(host.coop.start);
+      await settledUntil(started);
+      await vi.advanceTimersByTimeAsync(1000);
+      return {
+        started: started(),
+        steps: host.coop.debug().stepIndex,
+        realSteps:
+          (Date.now() - realFromMs) / (TestGame.definition.stepSeconds * 1000),
+      };
+    };
+    const builtOnFakeTimers = await play(run, plain);
+    const calledOnFakeTimers = await play(plain, run);
+    expect([
+      // A second at 60 Hz, less the start.
+      [builtOnFakeTimers.started, builtOnFakeTimers.steps > 50],
+      // Built on Effect's own Clock, the run steps by the real time that passed, to a step,
+      // however long the machine took: not by the faked second its ticker's timer ran through.
+      [
+        calledOnFakeTimers.started,
+        calledOnFakeTimers.steps <= calledOnFakeTimers.realSteps + 1,
+      ],
+    ]).toStrictEqual([
+      [true, true],
+      [true, true],
+    ]);
+  });
+
   it("makes the engine's view for the seat the lobby gave, and its own input source for one player", async () => {
     const hub = fakeCoopRooms();
     const { host, guest } = await lobbyOfTwo(hub);
-    const attach = Effect.runFork(
-      guest.coop
-        .attach(element)
-        .pipe(
-          Effect.provideService(Clock.Clock, performanceClock),
-          Effect.provideService(Scheduler.Scheduler, microtasks)
-        )
-    );
+    const attach = Effect.runFork(onFakeTimers(guest.coop.attach(element)));
     await settle();
     guest.frames.runFrameAt(100);
     await run(host.coop.start);
@@ -367,15 +426,7 @@ describe("a declared Coop", () => {
   it("gives back what an attach acquired when it detaches, and acquires it again for the next", async () => {
     const hub = fakeCoopRooms();
     const { coop, log, frames } = await seat(hub);
-    const attach = () =>
-      Effect.runFork(
-        coop
-          .attach(element)
-          .pipe(
-            Effect.provideService(Clock.Clock, performanceClock),
-            Effect.provideService(Scheduler.Scheduler, microtasks)
-          )
-      );
+    const attach = () => Effect.runFork(onFakeTimers(coop.attach(element)));
     const first = attach();
     await settle();
     frames.runFrameAt(100);

@@ -79,6 +79,28 @@ class ByHandGame extends Game.Simulation("ByHandGame", {
   step: tinyStep,
 }) {}
 
+/** The run began, from this seed: what the opening game's `create` reports. */
+class Opened extends Game.Event("Opened", { seed: Schema.Int }) {}
+
+/** The opening game's sample, every 100 ms: the steps played. */
+class Played extends Game.Event("Played", { steps: Schema.Int }) {}
+
+/** The tiny game with a start that reports, as a game's does whose `create` begins its first stage. */
+class OpeningGame extends Game.Simulation("OpeningGame", {
+  input: TinyInput,
+  events: [Opened],
+  create: (_config: null, { seed, report }): Tiny => {
+    report(new Opened({ seed }));
+    return { digest: seed, history: [] };
+  },
+  step: tinyStep,
+  sample: {
+    event: Played,
+    every: "100 millis",
+    read: (state) => ({ steps: state.history.length }),
+  },
+}) {}
+
 /** Each player's scripted input for a step: different per player, the same on every run. */
 const script = (player: string, step: number): Move => ({
   n: (step * 7 + player.codePointAt(player.length - 1)! * 13) % 11,
@@ -285,6 +307,25 @@ const runWithP1 = (wrap: (transport: Transport) => Transport) => {
     2000
   );
   return { host, p1, p2, sessions };
+};
+
+/** A host and a guest of the opening game on a good network, neither ticked yet. */
+const opening = () => {
+  const network = createMemoryNetwork({ seed: 1 });
+  const of = (id: string) => ({
+    ...options(network, id),
+    simulation: OpeningGame,
+  });
+  const host = hostLockstep({ ...of("host"), peers: ["p1"], seed: SEED }, 0);
+  const guest = joinLockstep(
+    { ...of("p1"), host: "host", players: ["host", "p1"] },
+    0
+  );
+  const ticked = [
+    { session: host, everyMs: 4 },
+    { session: guest, everyMs: 5 },
+  ];
+  return { network, host, guest, ticked };
 };
 
 describe("lockstep session", () => {
@@ -886,6 +927,54 @@ describe("lockstep session", () => {
     expect(() =>
       hostLockstep({ ...options(network, "host"), peers, seed: SEED }, 0)
     ).toThrow(RangeError);
+  });
+
+  // A guest's run starts in a tick, on the host's start message. A host's starts as its session
+  // is made, before anything can listen to it, so the session tells that start at its first tick.
+  describe("what a run's start reports", () => {
+    it("is told at a session's first tick, to a host's listener as to a guest's: create's events, then the first sample, each once", () => {
+      const { network, host, guest, ticked } = opening();
+      const heard = [host, guest].map((session) => {
+        const events: (Opened | Played)[] = [];
+        session.subscribe((event) => events.push(event));
+        return events;
+      });
+      // The host's run has started: its state is there to draw. Nothing is told outside a tick.
+      const before = [host.state?.digest, guest.state, heard.flat().length];
+      // Half of the 100 ms a second sample is due after.
+      runNetwork(network, ticked, 1, 50);
+      const start = [new Opened({ seed: SEED }), new Played({ steps: 0 })];
+      expect([before, ...heard]).toStrictEqual([[SEED, null, 0], start, start]);
+      // Nothing of the start comes again: a second later each has heard it once, and its
+      // samples count up from there.
+      runNetwork(network, ticked, 51, 1000);
+      for (const events of heard) {
+        const steps = events.slice(1).map((event) => (event as Played).steps);
+        expect(events.filter((event) => event._tag === "Opened")).toHaveLength(
+          1
+        );
+        expect(steps).toStrictEqual(
+          [...new Set(steps)].toSorted((a, b) => a - b)
+        );
+        expect(steps.length).toBeGreaterThan(5);
+      }
+    });
+
+    it("is told to whoever listens at the first tick, and not again to a listener that comes later", () => {
+      const { network, host, ticked } = opening();
+      const early: string[] = [];
+      const late: string[] = [];
+      const stopEarly = host.subscribe((event) => early.push(event._tag));
+      host.subscribe((event) => early.push(`again ${event._tag}`));
+      runNetwork(network, ticked, 1, 50);
+      stopEarly();
+      host.subscribe((event) => late.push(event._tag));
+      runNetwork(network, ticked, 51, 250);
+      expect([early.slice(0, 4), late]).toStrictEqual([
+        ["Opened", "again Opened", "Played", "again Played"],
+        ["Played", "Played"],
+      ]);
+    });
   });
 });
 

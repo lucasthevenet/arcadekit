@@ -4,8 +4,10 @@ import * as Game from "../../game/index";
 
 // A small Co-op game for tests: every player adds a number each step, and now and then the run
 // stops on an offer that each player answers. It is enough to drive every part of the Co-op
-// client: lobby picks, a command the rules take or refuse, players choosing, pause, and a run's
-// end. An event says whose it is by slot (`OfferOpened.slot`, `RunEnded.totals`), as a genre's do. Its rules are declared as a genre's are: events, commands with their rejections, then the
+// client: lobby picks, a command the rules take or refuse, players choosing, pause, a run's end,
+// and a start that reports (`offerAtStart`), as a game's does whose `create` begins its first
+// stage. An event says whose it is by slot (`OfferOpened.slot`, `RunEnded.totals`), as a genre's
+// do. Its rules are declared as a genre's are: events, commands with their rejections, then the
 // simulation. Each declaration's base is named first, with its type, since the kit's type files
 // are made one file at a time (isolatedDeclarations).
 
@@ -17,6 +19,12 @@ export interface TestContent {
   readonly length: number;
   /** An offer opens after every this many steps; 0 for none. */
   readonly offerEvery: number;
+  /**
+   * Whether the run starts on an offer: `create` opens offer 1 for every player and reports it,
+   * before any step, as a game that begins on a choice or on its first stage's banner does. Left
+   * out, it starts on none, and `create` reports nothing.
+   */
+  readonly offerAtStart?: boolean;
 }
 
 /** Three picks, a run that outlasts any test, and no offers. */
@@ -139,6 +147,20 @@ export type TestRefusals = Game.RefusalsOf<
 
 const TestInputSchema = Schema.Struct({ add: Schema.Number });
 
+/** Opens the next offer for every player still in the run, and reports it to each. */
+const openOffer = (
+  state: TestState,
+  report: (event: OfferOpened) => void
+): void => {
+  state.offer += 1;
+  for (let slot = 0; slot < state.owes.length; slot++) {
+    if (state.gone[slot] !== true) {
+      state.owes[slot] = true;
+      report(new OfferOpened({ offer: state.offer, slot }));
+    }
+  }
+};
+
 /** One step of play: every player's `add`, then the end, or the next offer. */
 const advance = (
   state: TestState,
@@ -160,13 +182,7 @@ const advance = (
       })
     );
   } else if (offerEvery > 0 && state.steps % offerEvery === 0) {
-    state.offer += 1;
-    for (let slot = 0; slot < state.owes.length; slot++) {
-      if (state.gone[slot] !== true) {
-        state.owes[slot] = true;
-        report(new OfferOpened({ offer: state.offer, slot }));
-      }
-    }
+    openOffer(state, report);
   }
 };
 
@@ -182,18 +198,24 @@ const TestGameBase: Game.SimulationClass<
   input: Game.PlayerInputs(TestInputSchema),
   events: [OfferOpened, RunEnded],
   commands: [AnswerOffer, HoldPause],
-  create: ({ content, picks }: TestConfig): TestState => ({
-    content,
-    picks,
-    steps: 0,
-    totals: picks.map(() => 0),
-    bonus: picks.map(() => 0),
-    offer: 0,
-    owes: picks.map(() => false),
-    gone: picks.map(() => false),
-    held: picks.map(() => false),
-    ended: false,
-  }),
+  create: ({ content, picks }: TestConfig, { report }): TestState => {
+    const state: TestState = {
+      content,
+      picks,
+      steps: 0,
+      totals: picks.map(() => 0),
+      bonus: picks.map(() => 0),
+      offer: 0,
+      owes: picks.map(() => false),
+      gone: picks.map(() => false),
+      held: picks.map(() => false),
+      ended: false,
+    };
+    if (content.offerAtStart === true) {
+      openOffer(state, report);
+    }
+    return state;
+  },
   step: (state, input, { report }) => {
     if (state.ended) {
       return;

@@ -58,7 +58,13 @@ export interface ScopedLockstepSession<
    * thread's timers, the Clock's too. The Clock's ticks are for tests and servers.
    */
   readonly run: (ticker?: Ticker) => Effect.Effect<never, LockstepError>;
-  /** Calls `onEvent` with the run's events and samples, in the tick that makes them, while the scope is open. */
+  /**
+   * Calls `onEvent` with the run's events and samples, in the tick that tells them, while the
+   * scope is open: the session's `subscribe`, as an Effect. Listen before `run` to hear the run
+   * from its start, what `create` reports and then the first sample: a guest's run starts in a
+   * tick, and a host's session, whose run started as it was made, tells what that start
+   * reported at its first tick. A listener that comes after that tick hears what comes after it.
+   */
   readonly listen: (
     onEvent: (event: Event) => void
   ) => Effect.Effect<void, never, Scope.Scope>;
@@ -77,7 +83,8 @@ export interface ScopedLockstepSession<
    *
    * The command rides a step `inputDelay` ahead and every peer applies it there, so the answer
    * comes a few steps later, and later still while the run waits on a player. It completes after
-   * the tick that ran the command's step, never inside it. Interrupt it to take the command
+   * the tick that ran the command's step, never inside it: a `listen` callback has by then been
+   * called with everything that tick's steps reported. Interrupt it to take the command
    * back while it has no step yet; after that it is every peer's, and an interrupt only ends
    * the wait. Dies for a command the session's `send` throws on.
    */
@@ -87,9 +94,11 @@ export interface ScopedLockstepSession<
 }
 
 /**
- * Starts a run as its host, now on the Clock, as `hostLockstep` does. Dies with what starting
- * throws (more players than a run holds, a simulation whose step input is not a
- * `Game.PlayerInputs`, a simulation that can't start), with nothing left listening.
+ * Starts a run as its host, now on the Clock, as `hostLockstep` does: the run's state is there
+ * at once, and what its start reports is told at the first tick of `run`, so `listen` before
+ * running it. Dies with what starting throws (more players than a run holds, a simulation whose
+ * step input is not a `Game.PlayerInputs`, a simulation that can't start), with nothing left
+ * listening.
  */
 export const hostLockstepScoped = <
   Config,
@@ -106,7 +115,10 @@ export const hostLockstepScoped = <
   Scope.Scope
 > => scoped((nowMs) => hostLockstep(options, nowMs));
 
-/** Joins the run `host` starts, as `joinLockstep` does. The session is `joining` until the host's start message arrives. */
+/**
+ * Joins the run `host` starts, as `joinLockstep` does. The session is `joining` until the host's
+ * start message arrives: the tick of `run` that has it starts the run.
+ */
 export const joinLockstepScoped = <
   Config,
   State,

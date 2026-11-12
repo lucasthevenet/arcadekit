@@ -637,6 +637,35 @@ describe("a command in a lockstep run", () => {
     expect(run.joined[0]!.state!.log).toStrictEqual(run.host.state!.log);
   });
 
+  // A session's listeners hear inside the tick, and its senders once the tick's work is over. So
+  // whenever a sender hears the rules' answer, its peer's listeners have heard that step.
+  it("tells its sender after its session's listeners heard what the command's step reported", () => {
+    const run = start(GOOD, ["a"]);
+    const [a] = run.joined;
+    runNetwork(run.network, run.ticked, 1, 100);
+    const order: Record<"host" | "a", string[]> = { host: [], a: [] };
+    for (const [name, session] of [
+      ["host", run.host],
+      ["a", a!],
+    ] as const) {
+      session.subscribe(({ player, amount }) =>
+        order[name].push(`heard +${amount} from ${player}`)
+      );
+    }
+    run.host.send(new Deposit({ amount: 5 }), (outcome) =>
+      order.host.push(`told ${ended(outcome)}`)
+    );
+    runNetwork(run.network, run.ticked, 101, 400);
+    a!.send(new Deposit({ amount: 7 }), (outcome) =>
+      order.a.push(`told ${ended(outcome)}`)
+    );
+    runNetwork(run.network, run.ticked, 401, 700);
+    expect(order).toStrictEqual({
+      host: ["heard +5 from 0", "told taken", "heard +7 from 1"],
+      a: ["heard +5 from 0", "heard +7 from 1", "told taken"],
+    });
+  });
+
   describe("that this peer's rules never answer", () => {
     it("is dropped when the session stops: what waited for a step, and what rode one", () => {
       const run = start(GOOD, ["a", "b"], { dropAfterMs: 2000 });
@@ -856,6 +885,9 @@ describe("a command in a lockstep run", () => {
         "bug:dropped:runEnded",
         "after:dropped:runEnded",
       ]);
+      // The first was applied, and reported, before the bug threw. No listener heard that step,
+      // and no sender heard that the rules took a command of it: the two agree.
+      expect([run.host.state!.coins, run.events[0]]).toStrictEqual([1, []]);
       // Its run is over: a send is answered at once, and disposing tells nobody twice.
       run.host.send(new Deposit({ amount: 3 }), (outcome) =>
         told.push(`late:${ended(outcome)}`)
