@@ -42,6 +42,7 @@ import type { EnemyDef, GameContent } from "./schema";
 // exactly what the single-player game always has.
 
 const PLAYER_RADIUS = 0.5;
+const PROJECTILE_RADIUS = 0.25;
 const MAX_PROJECTILES = 512;
 const MAX_GEMS = 1024;
 const NEIGHBOR_BUFFER = 256;
@@ -144,6 +145,10 @@ export interface World {
   readonly spawnBudget: Float64Array;
   readonly grid: SpatialGrid;
   readonly neighbors: Int32Array;
+  /** Each enemy's radius, by pool index: filled before the grid is built from it. Scratch, in no pool, so not part of the state hash. */
+  readonly radii: Float64Array;
+  /** 1 for an enemy a bolt already aims at, while its targets are picked, and all 0 otherwise. Scratch, as `radii` is. */
+  readonly taken: Uint8Array;
   /** Sound triggers, read by the presentation only. Not part of the state hash. */
   readonly cues: SurvivorsCues;
 }
@@ -188,6 +193,8 @@ export const createWorld = (
       capacity: cap,
     }),
     neighbors: new Int32Array(NEIGHBOR_BUFFER),
+    radii: new Float64Array(cap),
+    taken: new Uint8Array(cap),
     cues: {
       shots: new Uint32Array(content.weapons.length),
       hits: 0,
@@ -279,11 +286,13 @@ export const step = (
   moveHeroes(world, input, dt);
   spawnEnemies(world, dt);
   moveEnemies(world, dt);
-  world.grid.build(
-    world.enemies.fields.x,
-    world.enemies.fields.z,
-    world.enemies.count
-  );
+  // The grid the rest of the step asks: each enemy where it now is, as a circle of its type's
+  // radius. Nothing moves or removes an enemy until `removeDeadEnemies`.
+  const { x, z, type } = world.enemies.fields;
+  for (let i = 0; i < world.enemies.count; i++) {
+    world.radii[i] = world.enemyDefs[type[i]!]!.radius;
+  }
+  world.grid.build(x, z, world.enemies.count, world.radii);
   touchHeroes(world, dt);
   fireWeapons(world, dt);
   moveProjectiles(world, dt);
@@ -503,28 +512,23 @@ const moveEnemies = (world: World, dt: number) => {
 };
 
 const touchHeroes = (world: World, dt: number) => {
-  const { x, z, type } = world.enemies.fields;
+  const { type } = world.enemies.fields;
   for (const hero of world.heroes) {
     if (hero.status !== "playing") {
       continue;
     }
-    const found = world.grid.query(
+    const found = world.grid.within(
       hero.x,
       hero.z,
-      PLAYER_RADIUS + 1,
+      PLAYER_RADIUS,
       world.neighbors
     );
-    let hurt = false;
     for (let k = 0; k < found; k++) {
-      const i = world.neighbors[k]!;
-      const def = world.enemyDefs[type[i]!]!;
-      if (hypot2(x[i]! - hero.x, z[i]! - hero.z) < def.radius + PLAYER_RADIUS) {
-        hero.hp -= def.damage * dt;
-        hero.hurtTimer = 0.15;
-        hurt = true;
-      }
+      const def = world.enemyDefs[type[world.neighbors[k]!]!]!;
+      hero.hp -= def.damage * dt;
+      hero.hurtTimer = 0.15;
     }
-    if (hurt) {
+    if (found > 0) {
       world.cues.hurt[hero.slot]! += 1;
     }
   }
@@ -565,38 +569,24 @@ const fireBolt = (
     return false;
   }
   const e = world.enemies.fields;
-  const enemyCount = world.enemies.count;
   const shots = Math.floor(
     behavior.count + behavior.countPerLevel * (slot.level - 1)
   );
   const range = behavior.range * p.stats.areaMult;
-  // Pick the `shots` nearest enemies in range. Shots is small, so a simple scan is fine.
+  // Pick the `shots` nearest enemies in range: the nearest not yet taken, once for each shot.
   const targets = world.neighbors;
   let targetCount = 0;
   for (let s = 0; s < shots && s < targets.length; s++) {
-    let best = -1;
-    let bestD = range;
-    for (let i = 0; i < enemyCount; i++) {
-      const d = hypot2(e.x[i]! - p.x, e.z[i]! - p.z);
-      if (d >= bestD) {
-        continue;
-      }
-      let taken = false;
-      for (let t = 0; t < targetCount; t++) {
-        if (targets[t] === i) {
-          taken = true;
-        }
-      }
-      if (!taken) {
-        best = i;
-        bestD = d;
-      }
-    }
+    const best = world.grid.nearest(p.x, p.z, range, world.taken);
     if (best === -1) {
       break;
     }
+    world.taken[best] = 1;
     targets[targetCount] = best;
     targetCount += 1;
+  }
+  for (let t = 0; t < targetCount; t++) {
+    world.taken[targets[t]!] = 0;
   }
   if (targetCount === 0) {
     return false;
@@ -629,16 +619,11 @@ const fireBolt = (
 };
 
 const pulseAura = (world: World, p: Hero, slot: WeaponSlot): boolean => {
-  const { x, z, type } = world.enemies.fields;
   const radius = auraRadius(p, slot);
   const damage = weaponDamage(p, slot);
-  const found = world.grid.query(p.x, p.z, radius + 1, world.neighbors);
+  const found = world.grid.within(p.x, p.z, radius, world.neighbors);
   for (let k = 0; k < found; k++) {
-    const i = world.neighbors[k]!;
-    const r = world.enemyDefs[type[i]!]!.radius;
-    if (hypot2(x[i]! - p.x, z[i]! - p.z) < radius + r) {
-      hitEnemy(world, i, damage);
-    }
+    hitEnemy(world, world.neighbors[k]!, damage);
   }
   return true;
 };
@@ -655,14 +640,15 @@ const moveProjectiles = (world: World, dt: number) => {
     pr.rehit[i] = countDown(pr.rehit[i]!, dt);
     let spent = pr.life[i]! <= 0;
     if (!spent && pr.rehit[i] === 0) {
-      const found = world.grid.query(pr.x[i]!, pr.z[i]!, 1.2, world.neighbors);
+      const found = world.grid.within(
+        pr.x[i]!,
+        pr.z[i]!,
+        PROJECTILE_RADIUS,
+        world.neighbors
+      );
       for (let k = 0; k < found; k++) {
         const j = world.neighbors[k]!;
         if (e.hp[j]! <= 0) {
-          continue;
-        }
-        const r = world.enemyDefs[e.type[j]!]!.radius;
-        if (hypot2(e.x[j]! - pr.x[i]!, e.z[j]! - pr.z[i]!) > r + 0.25) {
           continue;
         }
         hitEnemy(world, j, pr.damage[i]!);

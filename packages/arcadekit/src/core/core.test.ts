@@ -10,6 +10,7 @@ import {
   easeIn,
   easeOut,
   easeOutCubic,
+  hypot2,
   makeRng,
   progress,
   smoothstep,
@@ -387,6 +388,39 @@ describe(createIdentifiedPool, () => {
   });
 });
 
+/** What a grid wrote into a buffer of `size`, as a list. */
+const listed = (size: number, ask: (out: Int32Array) => number): number[] => {
+  const out = new Int32Array(size);
+  return [...out.subarray(0, ask(out))];
+};
+
+/** The nearest point as a loop over every point finds it: the first of the lowest length under `range`. */
+const scanNearest = (
+  xs: ArrayLike<number>,
+  ys: ArrayLike<number>,
+  count: number,
+  x: number,
+  y: number,
+  range: number,
+  skip: ArrayLike<number>
+): number => {
+  let best = -1;
+  let bestD = range;
+  for (let i = 0; i < count; i++) {
+    const d = hypot2(xs[i]! - x, ys[i]! - y);
+    if (d < bestD && skip[i] === 0) {
+      best = i;
+      bestD = d;
+    }
+  }
+  return best;
+};
+
+// Cells are 2 wide and cell 5 starts at 0, so a circle of radius 1 at the origin overlaps cells
+// 4 and 5 on each axis: the points from -2 up to, but not at, 2.
+const makeGrid = (capacity = 8) =>
+  new SpatialGrid({ halfSize: 10, cellSize: 2, capacity });
+
 describe(SpatialGrid, () => {
   it("finds nearby points and skips distant ones", () => {
     const grid = new SpatialGrid({ halfSize: 10, cellSize: 2, capacity: 3 });
@@ -396,6 +430,334 @@ describe(SpatialGrid, () => {
     const out = new Int32Array(8);
     const found = [...out.subarray(0, grid.query(0, 0, 1, out))].toSorted();
     expect(found).toStrictEqual([0, 1]);
+  });
+
+  it("has no points before its first build", () => {
+    const grid = makeGrid();
+    const out = new Int32Array(4);
+    expect([
+      grid.query(0, 0, 1, out),
+      grid.within(0, 0, 1, out),
+      grid.nearest(0, 0, 100),
+    ]).toStrictEqual([0, 0, -1]);
+  });
+
+  it("refuses a build of more points than its capacity, and keeps the build it had", () => {
+    const grid = makeGrid(2);
+    grid.build([0.5, 0.6], [0, 0], 2);
+    // A third point has no place in the cells' lists: asked for it, the grid would never end.
+    expect(() => grid.build([0.1, 0.2, 0.3], [0, 0, 0], 3)).toThrow(
+      new RangeError(
+        "SpatialGrid.build needs a count within the grid's capacity of 2, got 3"
+      )
+    );
+    expect(listed(8, (out) => grid.query(0, 0, 1, out))).toStrictEqual([1, 0]);
+    expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([1, 0]);
+    expect(grid.nearest(0, 0, 1)).toBe(0);
+  });
+
+  it("refuses a build with fewer radii than points, and keeps the build it had", () => {
+    const grid = makeGrid();
+    grid.build([0.5], [0], 1);
+    expect(() => grid.build([0.1, 0.2, 0.3], [0, 0, 0], 3, [1, 1])).toThrow(
+      new RangeError(
+        "SpatialGrid.build needs a radius for each of its 3 points, got 2"
+      )
+    );
+    expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([0]);
+    // More radii than points is a pool's field: the build reads its first `count`.
+    grid.build([0.1, 0.2, 0.3], [0, 0, 0], 2, [1, 1, 1]);
+    expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([1, 0]);
+  });
+
+  describe("within", () => {
+    it("leaves out a point that query returns for the same circle", () => {
+      const grid = makeGrid();
+      // Both are in the cell the circle is in. The second is 2.7 from the centre.
+      grid.build([0.5, 1.9], [0.5, 1.9], 2);
+      expect(listed(8, (out) => grid.query(0, 0, 1, out))).toStrictEqual([
+        1, 0,
+      ]);
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([0]);
+    });
+
+    it("finds a wide point whose centre and cell are outside the circle's", () => {
+      const grid = makeGrid();
+      // The point is 5 from the centre, two cells past the circle's, with a radius of 4.5.
+      grid.build([5, 9], [0, 9], 2, [4.5, 0.5]);
+      expect(listed(8, (out) => grid.query(0, 0, 1, out))).toStrictEqual([]);
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([0]);
+    });
+
+    it("leaves out a circle that only touches", () => {
+      const grid = makeGrid();
+      // Each is 5 from the centre, a 3-4-5 triangle, so the lengths are exact.
+      const xs = [3, -3, 5];
+      const ys = [4, 4, 0];
+      grid.build(xs, ys, 3, [4, 4.25, 3.75]);
+      // 5 is not under 1 + 4, and is under 1 + 4.25.
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([1]);
+      grid.build(xs, ys, 3);
+      expect(listed(8, (out) => grid.within(0, 0, 5, out))).toStrictEqual([]);
+      expect(
+        listed(8, (out) => grid.within(0, 0, 5.25, out)).toSorted()
+      ).toStrictEqual([0, 1, 2]);
+    });
+
+    it("returns the points in query's order: rows, then columns, then each cell's list", () => {
+      const grid = makeGrid();
+      // Four cells around the origin. Points 0, 3 and 5 share one, and 5 is too far.
+      grid.build(
+        [0.5, -0.5, 0.5, 0.6, -0.5, 1.9],
+        [0.5, 0.5, -0.5, 0.6, -0.5, 1.9],
+        6
+      );
+      expect(listed(8, (out) => grid.query(0, 0, 1, out))).toStrictEqual([
+        4, 2, 1, 5, 3, 0,
+      ]);
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([
+        4, 2, 1, 3, 0,
+      ]);
+    });
+
+    it("gives the points a test of every candidate gives, in query's order", () => {
+      const rng = makeRng(81);
+      const count = 300;
+      const grid = new SpatialGrid({
+        halfSize: 10,
+        cellSize: 2,
+        capacity: count,
+      });
+      const xs = new Float32Array(count);
+      const ys = new Float32Array(count);
+      const radii = new Float64Array(count);
+      // Some points are past the grid's edge, where they are kept in the edge cells.
+      for (let i = 0; i < count; i++) {
+        xs[i] = rng.range(-12, 12);
+        ys[i] = rng.range(-12, 12);
+        radii[i] = rng.range(0, 1.5);
+      }
+      grid.build(xs, ys, count, radii);
+      const widest = Math.max(...radii);
+      let hits = 0;
+      for (let q = 0; q < 200; q++) {
+        const x = rng.range(-12, 12);
+        const y = rng.range(-12, 12);
+        const radius = rng.range(0, 3);
+        const expected = listed(count, (out) =>
+          grid.query(x, y, radius + widest, out)
+        ).filter((i) => hypot2(xs[i]! - x, ys[i]! - y) < radius + radii[i]!);
+        const everyPoint = Array.from({ length: count }, (_, i) => i).filter(
+          (i) => hypot2(xs[i]! - x, ys[i]! - y) < radius + radii[i]!
+        );
+        expect(
+          listed(count, (out) => grid.within(x, y, radius, out))
+        ).toStrictEqual(expected);
+        expect(expected.toSorted((a, b) => a - b)).toStrictEqual(everyPoint);
+        hits += expected.length;
+      }
+      // The circles must find something, or the loop proves little.
+      expect(hits).toBeGreaterThan(200);
+    });
+
+    it("stops when out is full, and fills it with points that overlap", () => {
+      const grid = makeGrid();
+      // Point 0 comes first in the circle's cells, and is too far.
+      grid.build([-1.9, 0.5, 0.6, 0.7], [-1.9, 0.5, 0.6, 0.7], 4);
+      // How many each found, then what it wrote.
+      const two = new Int32Array(2);
+      expect([grid.query(0, 0, 1, two), ...two]).toStrictEqual([2, 0, 3]);
+      expect([grid.within(0, 0, 1, two), ...two]).toStrictEqual([2, 3, 2]);
+      const four = new Int32Array(4).fill(-1);
+      expect([grid.within(0, 0, 1, four), ...four]).toStrictEqual([
+        3, 3, 2, 1, -1,
+      ]);
+      expect(grid.within(0, 0, 1, new Int32Array(0))).toBe(0);
+    });
+
+    it("tests a point where it is now, and finds it from the cell it was built in", () => {
+      const grid = makeGrid();
+      const xs = new Float32Array([1.5]);
+      const ys = new Float32Array([0]);
+      grid.build(xs, ys, 1);
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([]);
+      xs[0] = 0.5;
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([0]);
+      // Across the grid: the origin's circle no longer overlaps it, and no circle over there
+      // visits the cell it was built in.
+      xs[0] = 9;
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([]);
+      expect(listed(8, (out) => grid.within(9, 0, 1, out))).toStrictEqual([]);
+    });
+
+    it("tests a radius as it is now, and looks no further for it than the build's widest", () => {
+      const grid = makeGrid();
+      const xs = [5, 0.5];
+      const ys = [0, 0];
+      const radii = [0.5, 0.5];
+      grid.build(xs, ys, 2, radii);
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([1]);
+      // Raised to reach the origin's circle, 5 away. From there the cells visited are those of
+      // 1 plus the build's 0.5, so the point's cell is not among them.
+      radii[0] = 4.5;
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([1]);
+      // A circle that visits its cell tests it with the radius it has now: 1.5 away, under 1 + 4.5.
+      expect(listed(8, (out) => grid.within(3.5, 0, 1, out))).toStrictEqual([
+        0,
+      ]);
+      // Built again, the origin's circle finds it.
+      grid.build(xs, ys, 2, radii);
+      expect(
+        listed(8, (out) => grid.within(0, 0, 1, out)).toSorted()
+      ).toStrictEqual([0, 1]);
+    });
+
+    it("tests centres alone on a grid built without radii", () => {
+      const grid = makeGrid();
+      const xs = [3, 0.5];
+      const ys = [0, 0];
+      grid.build(xs, ys, 2, [2.5, 0]);
+      expect(
+        listed(8, (out) => grid.within(0, 0, 1, out)).toSorted()
+      ).toStrictEqual([0, 1]);
+      // The same points, built again with no radii: the first is a centre 3 away.
+      grid.build(xs, ys, 2);
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([1]);
+      // And no cell past the circle's is visited for it: moved into the circle, it is not found.
+      xs[0] = 0.5;
+      expect(listed(8, (out) => grid.within(0, 0, 1, out))).toStrictEqual([1]);
+      grid.build(xs, ys, 2);
+      expect(
+        listed(8, (out) => grid.within(0, 0, 1, out)).toSorted()
+      ).toStrictEqual([0, 1]);
+    });
+  });
+
+  describe("nearest", () => {
+    it("gives -1 with nothing in range", () => {
+      const grid = makeGrid();
+      grid.build([4], [0], 1);
+      expect(grid.nearest(0, 0, 3)).toBe(-1);
+      expect(grid.nearest(0, 0, 4.5)).toBe(0);
+      grid.build([], [], 0);
+      expect(grid.nearest(0, 0, 100)).toBe(-1);
+    });
+
+    it("leaves out a point at exactly its range", () => {
+      const grid = makeGrid();
+      // 5 from the origin, a 3-4-5 triangle, so the length is exact.
+      grid.build([3], [4], 1);
+      expect(grid.nearest(0, 0, 5)).toBe(-1);
+      expect(grid.nearest(0, 0, 5.25)).toBe(0);
+    });
+
+    it("gives the nearer of two points, whichever was built first", () => {
+      const grid = makeGrid();
+      grid.build([1, 3], [0, 0], 2);
+      expect(grid.nearest(0, 0, 10)).toBe(0);
+      grid.build([3, 1], [0, 0], 2);
+      expect(grid.nearest(0, 0, 10)).toBe(1);
+    });
+
+    it("passes over a point whose skip is not 0", () => {
+      const grid = makeGrid();
+      grid.build([1, 2, 3], [0, 0, 0], 3);
+      const skip = new Uint8Array(3);
+      expect(grid.nearest(0, 0, 10, skip)).toBe(0);
+      skip[0] = 1;
+      expect(grid.nearest(0, 0, 10, skip)).toBe(1);
+      skip[1] = 2;
+      expect(grid.nearest(0, 0, 10, skip)).toBe(2);
+      skip[2] = 1;
+      expect(grid.nearest(0, 0, 10, skip)).toBe(-1);
+    });
+
+    it("refuses a skip mask shorter than the build", () => {
+      const grid = makeGrid();
+      grid.build([1, 2, 3], [0, 0, 0], 3);
+      // Read past its end, a mask would pass over every point it does not cover.
+      for (const skip of [[1, 0], []]) {
+        expect(() => grid.nearest(0, 0, 10, skip)).toThrow(
+          new RangeError(
+            `SpatialGrid.nearest needs a skip mask as long as the build's 3 points, got ${skip.length}`
+          )
+        );
+      }
+      // A longer one is a pool's field: what is past the build's count is not read.
+      expect(grid.nearest(0, 0, 10, [1, 0, 0, 1])).toBe(1);
+      // And a grid with no points takes any mask.
+      grid.build([], [], 0);
+      expect(grid.nearest(0, 0, 10, [])).toBe(-1);
+    });
+
+    it("gives the lower index of two points at one distance, whichever was built first", () => {
+      const grid = makeGrid();
+      // In two cells: the one at -1 is visited first, whichever index it has.
+      grid.build([1, -1], [0, 0], 2);
+      expect(grid.nearest(0, 0, 10)).toBe(0);
+      grid.build([-1, 1], [0, 0], 2);
+      expect(grid.nearest(0, 0, 10)).toBe(0);
+      // In one cell, whose list starts with the point built last.
+      grid.build([0.5, 0, 0.5], [0, 0.5, 0], 3);
+      expect(grid.nearest(0, 0, 10)).toBe(0);
+      // And with the lower one skipped, the next.
+      expect(grid.nearest(0, 0, 10, [1, 0, 0])).toBe(1);
+    });
+
+    it("measures to a centre, whatever the point's radius", () => {
+      const grid = makeGrid();
+      // Point 0's circle reaches to 0.5 from the origin, and its centre is the farther one.
+      grid.build([3, 2], [0, 0], 2, [2.5, 0.125]);
+      expect(grid.nearest(0, 0, 10)).toBe(1);
+      expect(grid.nearest(0, 0, 2)).toBe(-1);
+      expect(grid.nearest(0, 0, 3, [0, 1])).toBe(-1);
+      expect(grid.nearest(0, 0, 3.5, [0, 1])).toBe(0);
+    });
+
+    it("agrees with a scan of every point, ties and skipped points included", () => {
+      const rng = makeRng(2026);
+      const count = 300;
+      const grid = new SpatialGrid({
+        halfSize: 10,
+        cellSize: 2,
+        capacity: count,
+      });
+      const xs = new Float32Array(count);
+      const ys = new Float32Array(count);
+      const skip = new Uint8Array(count);
+      // Whole coordinates, so many points are at one distance, and some are past the grid's
+      // edge, where they are kept in the edge cells.
+      for (let i = 0; i < count; i++) {
+        xs[i] = rng.int(25) - 12;
+        ys[i] = rng.int(25) - 12;
+        skip[i] = rng.int(4) === 0 ? 1 : 0;
+      }
+      grid.build(xs, ys, count);
+      let found = 0;
+      let ties = 0;
+      for (let q = 0; q < 400; q++) {
+        const x = rng.int(25) - 12;
+        const y = rng.int(25) - 12;
+        const range = rng.range(0, 4);
+        const expected = scanNearest(xs, ys, count, x, y, range, skip);
+        expect(grid.nearest(x, y, range, skip)).toBe(expected);
+        if (expected === -1) {
+          continue;
+        }
+        found += 1;
+        const best = hypot2(xs[expected]! - x, ys[expected]! - y);
+        for (let i = expected + 1; i < count; i++) {
+          if (skip[i] === 0 && hypot2(xs[i]! - x, ys[i]! - y) === best) {
+            ties += 1;
+            break;
+          }
+        }
+      }
+      // The points must give hits, misses and ties, or the loop proves little.
+      expect(found).toBeGreaterThan(100);
+      expect(found).toBeLessThan(400);
+      expect(ties).toBeGreaterThan(50);
+    });
   });
 });
 

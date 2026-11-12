@@ -102,7 +102,7 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Pool**: a fixed-capacity set of entities stored as one typed array per field (`createPool` in `arcadekit/core`). Removing swaps the last entity in, so pool indices are not stable. An **identified pool** (`createIdentifiedPool`) also gives each entity a stable id, for a genre that must name one entity across removals (undo, tweening).
 
-**Spatial grid**: a uniform grid in `arcadekit/core` (`SpatialGrid`) for "which points are near here?", rebuilt every step from continuous positions. Not a tile map.
+**Spatial grid**: a uniform grid in `arcadekit/core` (`SpatialGrid`) for "which points are near here?", rebuilt every step from continuous positions. `within` and `nearest` answer with the distance tested; `query` gives the candidates of the cells a circle overlaps. Not a tile map.
 
 **Tile map**: a genre's grid of static cells (wall, floor, hole), stored in typed arrays and indexed by column and row (`row * cols + col`). It describes the level, not where entities are. Push-puzzle's lives in the genre package.
 
