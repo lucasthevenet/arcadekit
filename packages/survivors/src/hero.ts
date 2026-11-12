@@ -1,7 +1,7 @@
+import { powInt } from "arcadekit/core";
 import type { Rng } from "arcadekit/core";
 
 import type { UpgradeChoice } from "./events";
-import { powInt } from "./math";
 import type { GameContent, HeroDef, WeaponDef } from "./schema";
 
 // What each player owns in a survivors run: a hero's body, stats, weapons, passives and the
@@ -205,12 +205,8 @@ export const rollUpgrades = (
       });
     }
   }
-  // Partial Fisher-Yates shuffle with the run's seeded RNG, so runs stay reproducible.
-  const count = Math.min(content.rules.choicesPerLevelUp, candidates.length);
-  for (let i = 0; i < count; i++) {
-    const j = i + rng.int(candidates.length - i);
-    [candidates[i], candidates[j]] = [candidates[j]!, candidates[i]!];
-  }
+  // Drawn with the run's seeded Rng, so runs stay reproducible.
+  const count = rng.pickDistinct(candidates, content.rules.choicesPerLevelUp);
   const picks = candidates.slice(0, count);
   return picks.length > 0
     ? picks

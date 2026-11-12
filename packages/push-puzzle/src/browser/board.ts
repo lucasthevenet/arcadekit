@@ -1,3 +1,4 @@
+import { easeOut, hashCell, lerp, progress } from "arcadekit/core";
 import { InstancedSprites, frameAt, snapToPixel } from "arcadekit/render-three";
 import type {
   PixelCamera,
@@ -339,7 +340,7 @@ export class PuzzleSprites {
         if (count >= tiles.capacity) {
           break;
         }
-        const h = hash2(col, row);
+        const h = hashCell(col, row);
         let tag = tags.floor;
         let frame = -1;
         if (h % 31 === 0 && tags.goal) {
@@ -475,10 +476,9 @@ export class PuzzleSprites {
       slide.fromZ = slide.z;
       slide.startedAt = t;
     }
-    const k = Math.min(1, (t - slide.startedAt) / SLIDE_SECONDS);
-    const eased = k * (2 - k);
-    slide.x = slide.fromX + (this.cellX(cell) - slide.fromX) * eased;
-    slide.z = slide.fromZ + (this.cellZ(cell) - slide.fromZ) * eased;
+    const eased = easeOut(progress(t, slide.startedAt, SLIDE_SECONDS));
+    slide.x = lerp(slide.fromX, this.cellX(cell), eased);
+    slide.z = lerp(slide.fromZ, this.cellZ(cell), eased);
     return slide;
   }
 
@@ -527,17 +527,10 @@ const facingOf = (delta: number, cols: number, current: Facing): Facing => {
   return current;
 };
 
-/** Mixes two whole numbers into a well-spread unsigned one. */
-const hash2 = (a: number, b: number): number => {
-  let h = Math.imul(a, 0x27_d4_eb_2d) ^ Math.imul(b, 0x16_56_67_b1);
-  h = Math.imul(h ^ (h >>> 15), 0x85_eb_ca_6b);
-  return (h ^ (h >>> 13)) >>> 0;
-};
-
 /** Which floor frame a cell gets: mostly the plain one, now and then another. */
 const floorVariant = (seed: number, floor: SpriteTag): number => {
   const count = floor.to - floor.from + 1;
-  const h = hash2(seed, 7);
+  const h = hashCell(seed, 7);
   const roll = h % 5;
   return roll < 3 || count === 1 ? 0 : 1 + ((h >>> 4) % (count - 1));
 };

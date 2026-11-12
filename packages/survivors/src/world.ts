@@ -1,5 +1,18 @@
-import { SpatialGrid, clamp, createPool, makeRng } from "arcadekit/core";
-import type { Pool, Rng } from "arcadekit/core";
+import {
+  SpatialGrid,
+  clamp,
+  clampLength,
+  cos,
+  countDown,
+  createPool,
+  hypot2,
+  makeRng,
+  moveToward,
+  powInt,
+  sin,
+  takeWhole,
+} from "arcadekit/core";
+import type { Point2, Pool, Rng } from "arcadekit/core";
 import type * as Game from "arcadekit/game";
 
 import { HeroLeft, LeveledUp, RunEnded } from "./events";
@@ -16,7 +29,6 @@ import {
 } from "./hero";
 import type { Hero, WeaponSlot } from "./hero";
 import type { HeroInput, SurvivorsInput } from "./input";
-import { cos, hypot2, powInt, sin } from "./math";
 import type { EnemyDef, GameContent } from "./schema";
 
 // The survivors simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
@@ -38,6 +50,12 @@ const GEM_PICKUP_DISTANCE = 0.6;
 const GEM_MAGNET_SPEED = 18;
 const SPAWN_DISTANCE_MIN = 16;
 const SPAWN_DISTANCE_MAX = 22;
+
+// Where `clampLength` and `moveToward` write their two numbers: the move a hero wishes for, and
+// where a gem flies to. Each is written and read back before anything else runs, so neither
+// holds anything between calls, and neither is part of a run.
+const wish: Point2 = { x: 0, y: 0 };
+const flown: Point2 = { x: 0, y: 0 };
 
 export interface SurvivorsConfig {
   readonly content: GameContent;
@@ -362,20 +380,15 @@ const moveHeroes = (world: World, input: SurvivorsInput, dt: number) => {
       continue;
     }
     const move = heroInput(input, hero);
-    let mx = move === null ? 0 : move.moveX;
-    let mz = move === null ? 0 : move.moveZ;
-    const len = hypot2(mx, mz);
-    if (len > 1) {
-      mx /= len;
-      mz /= len;
+    // A move longer than 1 is shortened to 1, so a diagonal is no faster.
+    const length = clampLength(move?.moveX ?? 0, move?.moveZ ?? 0, 1, wish);
+    if (length > 0.05) {
+      hero.faceX = wish.x;
+      hero.faceZ = wish.y;
     }
-    if (len > 0.05) {
-      hero.faceX = mx;
-      hero.faceZ = mz;
-    }
-    hero.x = clamp(hero.x + mx * hero.stats.moveSpeed * dt, -limit, limit);
-    hero.z = clamp(hero.z + mz * hero.stats.moveSpeed * dt, -limit, limit);
-    hero.hurtTimer = Math.max(0, hero.hurtTimer - dt);
+    hero.x = clamp(hero.x + wish.x * hero.stats.moveSpeed * dt, -limit, limit);
+    hero.z = clamp(hero.z + wish.y * hero.stats.moveSpeed * dt, -limit, limit);
+    hero.hurtTimer = countDown(hero.hurtTimer, dt);
   }
 };
 
@@ -404,9 +417,10 @@ const spawnEnemies = (world: World, dt: number) => {
       continue;
     }
     world.spawnBudget[w]! += wave.perSecond * dt;
+    const due = takeWhole(world.spawnBudget[w]!);
+    world.spawnBudget[w]! -= due;
     const enemyType = world.enemyTypeById.get(wave.enemy)!;
-    while (world.spawnBudget[w]! >= 1) {
-      world.spawnBudget[w]! -= 1;
+    for (let spawned = 0; spawned < due; spawned++) {
       const i = world.enemies.add();
       if (i === -1) {
         continue;
@@ -459,7 +473,7 @@ const moveEnemies = (world: World, dt: number) => {
       x[i]! += (dx / d) * def.speed * dt;
       z[i]! += (dz / d) * def.speed * dt;
     }
-    hitFlash[i] = Math.max(0, hitFlash[i]! - dt);
+    hitFlash[i] = countDown(hitFlash[i]!, dt);
   }
   // Push overlapping enemies apart so the horde spreads out instead of stacking.
   world.grid.build(x, z, count);
@@ -638,7 +652,7 @@ const moveProjectiles = (world: World, dt: number) => {
     pr.x[i]! += pr.vx[i]! * dt;
     pr.z[i]! += pr.vz[i]! * dt;
     pr.life[i]! -= dt;
-    pr.rehit[i] = Math.max(0, pr.rehit[i]! - dt);
+    pr.rehit[i] = countDown(pr.rehit[i]!, dt);
     let spent = pr.life[i]! <= 0;
     if (!spent && pr.rehit[i] === 0) {
       const found = world.grid.query(pr.x[i]!, pr.z[i]!, 1.2, world.neighbors);
@@ -711,16 +725,15 @@ const collectGems = (world: World, dt: number) => {
     if (p === null) {
       return;
     }
-    const dx = p.x - g.x[i]!;
-    const dz = p.z - g.z[i]!;
-    const d = hypot2(dx, dz);
+    const d = hypot2(p.x - g.x[i]!, p.z - g.z[i]!);
     if (d < p.stats.pickupRadius) {
       g.magnet[i] = 1;
     }
-    if (g.magnet[i] === 1 && d > 0) {
-      const move = Math.min(d, GEM_MAGNET_SPEED * dt);
-      g.x[i]! += (dx / d) * move;
-      g.z[i]! += (dz / d) * move;
+    if (g.magnet[i] === 1) {
+      // Within one step of its hero a gem lands on it, and is picked up below.
+      moveToward(g.x[i]!, g.z[i]!, p.x, p.z, GEM_MAGNET_SPEED * dt, flown);
+      g.x[i] = flown.x;
+      g.z[i] = flown.y;
     }
     if (d < GEM_PICKUP_DISTANCE) {
       world.cues.pickups += 1;

@@ -1,3 +1,4 @@
+import { hashCell } from "arcadekit/core";
 import { InstancedSprites } from "arcadekit/render-three";
 import type { SpriteSheet, SpriteTag } from "arcadekit/render-three";
 import type * as THREE from "three";
@@ -26,12 +27,9 @@ const PATCH_AREA = 420;
 /** Patches are 3 by 2 units: this many tiles past the window's edge can still show one. */
 const PATCH_REACH = 2;
 
-/** A small integer hash to [0, 1), for picking tile variants and patch places. */
-const hash = (x: number, y: number): number => {
-  let h = Math.imul(x, 374_761_393) + Math.imul(y, 668_265_263);
-  h = Math.imul(h ^ (h >>> 13), 1_274_126_177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4_294_967_296;
-};
+/** The hash of two whole numbers as a number in [0, 1), for picking tile variants and patch places. */
+const fraction = (a: number, b: number): number =>
+  hashCell(a, b) / 4_294_967_296;
 
 /** Which tag the tile at (col, row) shows, in an arena from -half to half on both axes. */
 const tileTag = (
@@ -116,7 +114,7 @@ export class GroundTiles {
           i,
           c + 0.5,
           r + 0.5,
-          variant(tileTag(this.tags, half, c, r), hash(c, r))
+          variant(tileTag(this.tags, half, c, r), fraction(c, r))
         );
         i += 1;
       }
@@ -125,14 +123,14 @@ export class GroundTiles {
     const patches = Math.floor((4 * half * half) / PATCH_AREA);
     const reach = half - 3;
     for (let k = 0; k < patches; k++) {
-      const px = Math.round((hash(k, 7919) * 2 - 1) * reach);
-      const pz = Math.round((hash(k, 104_729) * 2 - 1) * reach);
+      const px = Math.round((fraction(k, 7919) * 2 - 1) * reach);
+      const pz = Math.round((fraction(k, 104_729) * 2 - 1) * reach);
       if (
         i < sprites.capacity &&
         Math.abs(px - col) <= cols + PATCH_REACH &&
         Math.abs(pz - row) <= rows + PATCH_REACH
       ) {
-        sprites.set(i, px, pz, variant(this.tags.patch, hash(k, 3)));
+        sprites.set(i, px, pz, variant(this.tags.patch, fraction(k, 3)));
         sprites.setLayer(i, 1);
         i += 1;
       }

@@ -257,6 +257,16 @@ describe("content", () => {
     const broken = { ...content, rules: { ...content.rules, maxEnemies: 2.5 } };
     expect(decodeFailure(broken)).toContain("maxEnemies");
   });
+
+  it("rejects a fractional number of upgrades to offer", () => {
+    // The roll draws once for each upgrade it offers, so half a draw is no offer: content
+    // that asks for one is refused when it loads, not at a hero's first level-up.
+    const broken = {
+      ...content,
+      rules: { ...content.rules, choicesPerLevelUp: 2.5 },
+    };
+    expect(decodeFailure(broken)).toContain("choicesPerLevelUp");
+  });
 });
 
 describe("simulation", () => {

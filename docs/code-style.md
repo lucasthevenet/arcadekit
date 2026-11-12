@@ -141,7 +141,7 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 | Every builder is listed where [Register it](#register-it) says, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |
 | No new factory without a reason | the style test's `FACTORIES` and `NOT_YET_DECLARED` |
 | Library code runs no Effect itself | lint: `Effect.run…` and `ManagedRuntime.make` are refused in `packages/*/src`, outside what a test imports and the worker's entry points. The `…With` forms pass |
-| The simulation reads no clock or random source, and a genre's uses only exact math | lint, on the root entry of every genre package. The first also on `arcadekit/game` but its engine and its frame clock: `oxlint.config.ts` lists the other plain files of the kit, so add a new one there |
+| The simulation reads no clock or random source, and a genre's uses only exact math | lint, on the root entry of every genre package and on `arcadekit/core`, whose functions a step calls. The first also on `arcadekit/game` but its engine and its frame clock: `oxlint.config.ts` lists the other plain files of the kit, so add a new one there |
 | A module exports no `then` | lint: `unicorn/no-thenable` |
 | Which entry may import which, and which packages | lint's `ENTRY_IMPORTS`, [`packages/arcadekit/test/entry-packages.test.ts`](../packages/arcadekit/test/entry-packages.test.ts) |
 | A README's examples compile | `pnpm smoke` |
