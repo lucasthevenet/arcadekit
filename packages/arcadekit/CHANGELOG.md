@@ -2,6 +2,60 @@
 
 Versions up to 0.2.3 were published as the nine `@arcadekit/*` packages (core, input, content, save, audio, render-three, runtime, net and foldkit); their entries are merged here.
 
+## 0.6.0
+
+### Minor Changes
+
+- [#76](https://github.com/lucasthevenet/arcadekit/pull/76) [`29de556`](https://github.com/lucasthevenet/arcadekit/commit/29de55669810fee724d1f1fdad092f47dd737e01) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - A co-op host hears its run from the start. A host's run has started by the time `hostLockstep` returns, before anything can listen to the session, so what that start reported reached no listener: what the simulation's `create` reports, and the run's first sample. A `Coop`'s host seat heard `RunStarted` and then nothing until its first steps, where a guest's seat heard the start. A game whose `create` reports its first stage showed that stage's banner to the guests alone.
+
+  A session now keeps what a host's start reported and tells it at its first tick, before the tick does anything else.
+
+  - **The Co-op client.** The host's seat hears what `create` reports and then the first sample, after its `RunStarted`, as a guest's seat does: each once, in the same order. A `Coop` and its `match` need no change.
+  - **`hostLockstep` and `hostLockstepScoped`.** `session.subscribe(listener)` before the session's first tick, or `yield* session.listen(onEvent)` before `session.run(...)`, hears the run from its start. A listener that comes later hears what comes after it, and nothing is told twice. The entry's README has it under "Listening to a run".
+  - **Nothing else of a session changed.** The run still starts in `hostLockstep`: its state is there at once, and what starting throws is thrown there. What peers exchange, the step a command rides and when steps run are as they were.
+  - **`arcadekit/net/testing`.** The test game's content takes `offerAtStart: true`: the run then starts on an offer that `create` reports, for a test of what a seat hears first. Left out, the game is as it was.
+
+  **What a game written against 0.5.0 may have to change.** Nothing stops compiling. A host's listener hears more than it did, at its session's first tick: a test that lists everything a host's session or seat reported now has the start's events and its first sample in that list, and a workaround that gave a host the start's news another way now gives it twice.
+
+- [#76](https://github.com/lucasthevenet/arcadekit/pull/76) [`29de556`](https://github.com/lucasthevenet/arcadekit/commit/29de55669810fee724d1f1fdad092f47dd737e01) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/net/testing` has `onFakeTimers(effect)`: what a test of a Co-op client on fake timers runs its Effects on. Nothing breaks: it only adds an export.
+
+  In Node, Effect reads its time from `process.hrtime` and runs its fibers on `setImmediate`, and a test's fake timers reach neither. A run's clock would stand still while its ticker's faked timer ran on. So each such test carried about forty lines: a `Clock` on the page's timers and a scheduler on microtasks, as Foldkit's is in the browser. The kit's own client tests had them, and so had the survivors demo's and grimbonk's ([co-op-findings.md](https://github.com/lucasthevenet/arcadekit/blob/main/docs/co-op-findings.md), finding 2).
+
+  `onFakeTimers` gives an Effect both, and changes nothing else of it: what it gives, fails with and needs.
+
+  ```ts
+  import { onFakeTimers } from "arcadekit/net/testing";
+  import { Effect } from "effect";
+
+  // Before: the test's own Clock and scheduler, about forty lines above this.
+  const before = <A, E>(effect: Effect.Effect<A, E>) =>
+    Effect.runPromise(
+      effect.pipe(
+        Effect.provideService(Clock.Clock, performanceClock),
+        Effect.provideService(Scheduler.Scheduler, microtasks)
+      )
+    );
+
+  // After
+  const run = <A, E>(effect: Effect.Effect<A, E>) =>
+    Effect.runPromise(onFakeTimers(effect));
+  ```
+
+  - Wrap every Effect the test runs or forks, the one that builds the client's layer first: a client takes its Clock and its scheduler from the Effect that made it.
+  - It fakes nothing itself and imports no test runner. Fake `performance` and `setTimeout`, and `setInterval` with `clearInterval` for a run on the default ticker; leave `queueMicrotask` real. The entry's README has it under "On fake timers".
+
+### Patch Changes
+
+- [#76](https://github.com/lucasthevenet/arcadekit/pull/76) [`29de556`](https://github.com/lucasthevenet/arcadekit/commit/29de55669810fee724d1f1fdad092f47dd737e01) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - The docs now say what a listener has heard when a `send` completes. `Game.Engine`'s `send` said that its answer and the events of its step "arrive in no fixed order". That was wrong for a listener: the order is fixed, and a game may rely on it. No code changed, so nothing breaks: tests now hold the order.
+
+  - **`engine.send`.** When it completes, the callback given to `engine.listen` has been called with everything the frame of the command's step reported: the events of each of that frame's steps, then its sample if one was due. So an Effect that listens and then sends knows, on the line after the send, what its command's step did, such as whether a pick opened another offer. It holds whether the rules took the command or refused it, and after a wait behind a pause.
+  - **The one exception is a frame that throws before its listeners have heard it all**, as `attach` fails with `GameCrashed`. A command one of its steps had applied still gets the rules' answer. But if a step threw, what the frame had reported is discarded with its run and reaches no listener; and if a listener threw, the telling ended there: the listeners called before it heard that event, and none heard what came after. A render that throws comes after both, so the listeners heard its whole frame.
+  - **A send that fails with `CommandDropped`** had no step to hear of. One that a new `start` dropped completes after the listener heard that run's start.
+  - **A lockstep session's `send`, the scoped session's and the Co-op client's** have the same order, with no exception: a session's listeners are called inside the tick and its senders after it, and a tick that throws tells its senders `CommandDropped`. So no sender hears the rules' answer to a command whose step its listeners did not hear.
+  - **The order is that of the two calls, not of Messages.** An app's Subscription makes a Message of each event and its Command another of the send's result, and the kit fixes no order between those in `update`. A Command that needs what its command's step reported listens itself, around its send.
+
+  `Game.Loop`'s `subscribe` and `frame`, the entries' READMEs (`arcadekit/game`, `arcadekit/net`) and the glossary say the same.
+
 ## 0.5.0
 
 ### Minor Changes
