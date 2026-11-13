@@ -16,6 +16,7 @@
     "test:browsers": "vitest run --config packages/survivors/browser-determinism/vitest.config.ts",
     "lint:packages": "bash scripts/lint-packages.sh",
     "smoke": "node scripts/smoke-test.mjs",
+    "bench": "pnpm --filter @arcadekit/bench bench",
     "check": "ultracite check",
     "fix": "ultracite fix",
     "sounds": "node scripts/generate-placeholder-sounds.mjs",

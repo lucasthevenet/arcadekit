@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - apps/*
+  - scripts/bench
 
 overrides:
   # The docs site's VitePress 1 asks for Vite 5, a line that gets no more fixes: its dev server

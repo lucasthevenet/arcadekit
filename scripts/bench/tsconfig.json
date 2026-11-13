@@ -1,0 +1,11 @@
+{
+  // The bench runs in Node. `run.ts` runs as it is, with Node's type stripping, so it imports
+  // source-condition.ts with its extension; `hot-paths.ts` is bundled by Vite first.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["."]
+}
