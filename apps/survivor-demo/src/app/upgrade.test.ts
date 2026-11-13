@@ -2,8 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { GameContent, Survivors, SurvivorsContent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
-import { ContentError } from "arcadekit/content";
-import type { ContentSource } from "arcadekit/content";
+import { ContentSource } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
 import { manualFrames } from "arcadekit/game/testing";
 import { Effect, Fiber, Layer, Schema } from "effect";
@@ -19,12 +18,14 @@ import { Message } from "./message";
 // runs when the test runs it.
 
 const contentDir = new URL("../../public/content/", import.meta.url);
-const fileSource: ContentSource = (file) =>
+const fileSource = ContentSource.make((file) =>
   Effect.try({
     try: () =>
       JSON.parse(readFileSync(new URL(file, contentDir), "utf-8")) as unknown,
-    catch: (cause) => new ContentError({ message: String(cause) }),
-  });
+    catch: (cause) =>
+      new ContentSource.ContentError({ message: String(cause), cause }),
+  })
+);
 
 const shipped = await Effect.runPromise(SurvivorsContent.read(fileSource));
 

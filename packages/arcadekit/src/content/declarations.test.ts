@@ -1,21 +1,44 @@
 import {
+  Cause,
   Data,
   Deferred,
   Effect,
   Exit,
   Fiber,
   Layer,
+  Option,
   Schema,
   Scope,
 } from "effect";
-import { describe, expect, it } from "vitest";
+import type { Tracer } from "effect";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { Asset, Content, ContentError, memorySource } from "./index";
-import type { ContentSource } from "./index";
+import { Asset, Content, ContentSource } from "./index";
+
+/**
+ * What a failed exit failed with: each reason of its cause, a failure as its error. A load and a
+ * read are traced, so their failures carry their spans as annotations, which this leaves out. A
+ * success is "succeeded", which no expected list equals.
+ */
+const failures = <A, E>(exit: Exit.Exit<A, E>) =>
+  Exit.isSuccess(exit)
+    ? "succeeded"
+    : exit.cause.reasons.map((reason) =>
+        Cause.isFailReason(reason) ? reason.error : reason
+      );
 
 class SheetMissing extends Data.TaggedError("SheetMissing")<{
   readonly url: string;
 }> {}
+
+/** The names of a span and of every span above it, the innermost first. */
+const spanNames = (span: Tracer.AnySpan): readonly string[] =>
+  span._tag === "Span"
+    ? [
+        span.name,
+        ...Option.match(span.parent, { onNone: () => [], onSome: spanNames }),
+      ]
+    : [];
 
 /** A sheet as a test sees it: its url, and whether it was freed. */
 interface Sheet {
@@ -78,11 +101,11 @@ describe(Asset, () => {
         const failed = yield* Effect.exit(GameSheet.load);
         state.failing = false;
         const loaded = yield* Effect.exit(GameSheet.load);
-        return [failed, Exit.isSuccess(loaded)] as const;
+        return [failures(failed), Exit.isSuccess(loaded)] as const;
       }).pipe(Effect.provide(GameSheet.layer(load)))
     );
     expect(exits).toStrictEqual([
-      Exit.fail(new SheetMissing({ url: "sheet.json" })),
+      [new SheetMissing({ url: "sheet.json" })],
       true,
     ]);
     expect(state.attempts).toBe(2);
@@ -164,6 +187,42 @@ describe(Asset, () => {
     });
   });
 
+  it("traces each load under the declared name, through the class or the key", () => {
+    const traced = Effect.currentSpan.pipe(
+      Effect.orDie,
+      Effect.map((span): Sheet => ({
+        url: spanNames(span).join(" < "),
+        freed: false,
+      }))
+    );
+    const urls = Effect.runSync(
+      Effect.gen(function* () {
+        const byClass = yield* GameSheet.load;
+        const byKey = yield* (yield* GameSheet).load;
+        return [byClass.url, byKey === byClass];
+      }).pipe(Effect.provide(GameSheet.layer(traced)))
+    );
+    expect(urls).toStrictEqual(["GameSheet.load", true]);
+  });
+
+  it("frees only the asset it kept: a failed load has nothing to free", async () => {
+    const { load, loads, state } = countedLoad();
+    state.failing = true;
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* Effect.exit(GameSheet.load);
+        yield* Effect.exit(GameSheet.load);
+        state.failing = false;
+        yield* GameSheet.load;
+        yield* GameSheet.load;
+      }).pipe(Effect.provide(GameSheet.layer(load)))
+    );
+    expect({
+      attempts: state.attempts,
+      freed: loads.map((sheet) => sheet.freed),
+    }).toStrictEqual({ attempts: 3, freed: [true] });
+  });
+
   it("is reached through its key as well", async () => {
     const { load } = countedLoad();
     const url = await Effect.runPromise(
@@ -193,11 +252,11 @@ const good = { "levels.json": [{ id: "one" }], "title.json": "Demo" };
 /** A source that counts the files it serves. */
 const counted = (files: Readonly<Record<string, unknown>>) => {
   const state = { reads: 0 };
-  const inner = memorySource(files);
-  const source: ContentSource = (file) => {
+  const inner = ContentSource.fromRecord(files);
+  const source = ContentSource.make((file) => {
     state.reads += 1;
-    return inner(file);
-  };
+    return ContentSource.read(inner, file);
+  });
   return { source, state };
 };
 
@@ -220,34 +279,38 @@ describe(Content, () => {
     const exits = await Effect.runPromise(
       Effect.all([
         Effect.exit(
-          GameContent.read(memorySource({ ...good, "title.json": 7 }))
+          GameContent.read(
+            ContentSource.fromRecord({ ...good, "title.json": 7 })
+          )
         ),
         Effect.exit(
-          GameContent.read(memorySource({ ...good, "levels.json": [] }))
+          GameContent.read(
+            ContentSource.fromRecord({ ...good, "levels.json": [] })
+          )
         ),
       ])
     );
     expect(JSON.stringify(exits[0])).toContain("Invalid content");
-    expect(exits[1]).toStrictEqual(
-      Exit.fail(
-        new ContentError({
-          message: "Content problems: levels.json has no levels",
-        })
-      )
-    );
+    expect(failures(exits[1])).toStrictEqual([
+      new ContentSource.ContentError({
+        message: "Content problems: levels.json has no levels",
+      }),
+    ]);
   });
 
   it("fails with the source's ContentError for a file it doesn't have", async () => {
     const exit = await Effect.runPromise(
       Effect.exit(
-        GameContent.read(memorySource({ "levels.json": [{ id: "one" }] }))
+        GameContent.read(
+          ContentSource.fromRecord({ "levels.json": [{ id: "one" }] })
+        )
       )
     );
-    expect(exit).toStrictEqual(
-      Exit.fail(
-        new ContentError({ message: "No content file named title.json" })
-      )
-    );
+    expect(failures(exit)).toStrictEqual([
+      new ContentSource.ContentError({
+        message: "No content file named title.json",
+      }),
+    ]);
   });
 
   it("keeps no failure: a load that failed runs again", async () => {
@@ -259,7 +322,13 @@ describe(Content, () => {
         const loaded = yield* Effect.exit(GameContent.load);
         return [Exit.isFailure(failed), Exit.isSuccess(loaded)];
       }).pipe(
-        Effect.provide(GameContent.layer((file) => memorySource(files)(file)))
+        Effect.provide(
+          GameContent.layer(
+            ContentSource.make((file) =>
+              ContentSource.read(ContentSource.fromRecord(files), file)
+            )
+          )
+        )
       )
     );
     expect(outcomes).toStrictEqual([true, true]);
@@ -267,9 +336,50 @@ describe(Content, () => {
 
   it("reads straight from a source, for a test of a game's real files", async () => {
     const content = await Effect.runPromise(
-      GameContent.read(memorySource(good))
+      GameContent.read(ContentSource.fromRecord(good))
     );
     expect(content.levels.map((level) => level.id)).toStrictEqual(["one"]);
+  });
+
+  it("traces each load under the declared name, and each read of its files under the load", () => {
+    class Traced extends Content("Traced", {
+      schema: Schema.Struct({ spans: Schema.Array(Schema.String) }),
+      files: { spans: "spans.json" },
+    }) {}
+    const source = ContentSource.make(() =>
+      Effect.currentSpan.pipe(Effect.orDie, Effect.map(spanNames))
+    );
+    const [loaded, read] = Effect.runSync(
+      Effect.all([Traced.load, Traced.read(source)]).pipe(
+        Effect.provide(Traced.layer(source))
+      )
+    );
+    expect([loaded.spans, read.spans]).toStrictEqual([
+      ["ContentSource.read", "Traced.read", "Traced.load"],
+      ["ContentSource.read", "Traced.read"],
+    ]);
+  });
+
+  it("types its load by its Schema and its class, and fails it with a ContentError", () => {
+    expectTypeOf(GameContent.load).toEqualTypeOf<
+      Effect.Effect<
+        {
+          readonly levels: readonly { readonly id: string }[];
+          readonly title: string;
+        },
+        ContentSource.ContentError,
+        GameContent
+      >
+    >();
+    expectTypeOf(
+      GameContent.layer(ContentSource.fromRecord(good))
+    ).toEqualTypeOf<Layer.Layer<GameContent>>();
+    // oxlint-disable-next-line declaration/class -- a test of what the builder refuses.
+    Content("Misfiled", {
+      schema: Schema.Struct({ title: Schema.String }),
+      // @ts-expect-error -- each field of the Schema names its file.
+      files: { heading: "title.json" },
+    });
   });
 
   it("provides one content per layer", async () => {
@@ -279,7 +389,9 @@ describe(Content, () => {
           GameContent.load.pipe(
             Effect.map((content) => content.title),
             Effect.provide(
-              GameContent.layer(memorySource({ ...good, "title.json": title }))
+              GameContent.layer(
+                ContentSource.fromRecord({ ...good, "title.json": title })
+              )
             )
           )
         )
@@ -287,6 +399,8 @@ describe(Content, () => {
     );
     expect(titles).toStrictEqual(["Demo", "Other"]);
     // A layer value is reused when provided twice in one program: this is two layers.
-    expect(Layer.isLayer(GameContent.layer(memorySource(good)))).toBe(true);
+    expect(
+      Layer.isLayer(GameContent.layer(ContentSource.fromRecord(good)))
+    ).toBe(true);
   });
 });

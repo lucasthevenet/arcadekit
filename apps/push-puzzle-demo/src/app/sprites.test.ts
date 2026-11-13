@@ -8,7 +8,7 @@ import {
   PushPuzzleSheet,
 } from "@arcadekit/push-puzzle/browser";
 import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
-import { memorySource } from "arcadekit/content";
+import { ContentSource } from "arcadekit/content";
 import {
   SpriteSheetError,
   decodeSpriteSheet,
@@ -166,7 +166,9 @@ describe("a sheet that fails to load", () => {
       Effect.provide(
         Layer.mergeAll(
           PushPuzzleEngine.layer,
-          PushPuzzleContent.layer(memorySource({ "levels.json": levels }))
+          PushPuzzleContent.layer(
+            ContentSource.fromRecord({ "levels.json": levels })
+          )
         ).pipe(
           Layer.provide(
             Layer.mergeAll(

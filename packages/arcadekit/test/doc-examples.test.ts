@@ -10,7 +10,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // same examples against the packed package; this runs them against src/.
 //
 // The entries are those off NOT_YET_EFFECT_STYLE, which this reads from the style test's text,
-// as `pnpm smoke` does: the list is the style test's.
+// as `pnpm smoke` does: the list is the style test's. An example imports what a game would: any of
+// those entries, a sub-entry's examples its parent's too (`arcadekit/content` beside
+// `arcadekit/content/browser`), and `effect`, to run what an entry's Effects do.
 //
 // An entry that needs the DOM has examples written as a browser runs them. They run here on a
 // stand-in of the few globals they use (BROWSER_ENTRIES), made again for each example. An entry
@@ -128,7 +130,7 @@ const runnable = (code: string): string =>
     code
       .replaceAll(/^import type [\s\S]*?;$/gmu, "")
       .replaceAll(
-        /^import (?<names>\{[\s\S]*?\}) from "(?<from>arcadekit\/[\w/-]+)";$/gmu,
+        /^import (?<names>\{[\s\S]*?\}) from "(?<from>arcadekit\/[\w/-]+|effect)";$/gmu,
         (_whole, names: string, from: string) =>
           `const ${names} = kit[${JSON.stringify(from)}];`
       )
@@ -155,11 +157,18 @@ describe.each(entries)("arcadekit/$entry", ({ entry, publicFile }) => {
       code.split("\n").filter((line) => /^\s*[)\]}].*\/\/ =>/u.test(line)),
       "A result shown as `// =>` ends an expression that spans lines. Name what spans lines first, then show its result on one line."
     ).toStrictEqual([]);
-    const kit = {
-      [`arcadekit/${entry}`]: (await import(
-        path.join(srcDir, publicFile)
-      )) as unknown,
-    };
+    const kit: Readonly<Record<string, unknown>> = Object.fromEntries([
+      ["effect", await import("effect")],
+      ...(await Promise.all(
+        entries.map(
+          async ({ entry: imported, publicFile: file }) =>
+            [
+              `arcadekit/${imported}`,
+              await import(path.join(srcDir, file)),
+            ] as const
+        )
+      )),
+    ]);
     if (BROWSER_ENTRIES.has(entry)) {
       for (const [name, value] of Object.entries(browserStandIn())) {
         vi.stubGlobal(name, value);

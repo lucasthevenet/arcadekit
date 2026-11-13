@@ -3,8 +3,7 @@ import { readFileSync } from "node:fs";
 import { PushPuzzleContent } from "@arcadekit/push-puzzle";
 import { PushPuzzleSheet } from "@arcadekit/push-puzzle/browser";
 import { defaultAudioSettings } from "arcadekit/audio";
-import { ContentError } from "arcadekit/content";
-import type { ContentSource } from "arcadekit/content";
+import { ContentSource } from "arcadekit/content";
 import {
   SpriteSheetError,
   decodeSpriteSheet,
@@ -70,12 +69,12 @@ const flakyResources = (failures: {
           Effect.as(makeSpriteSheet(sheetData, image))
         );
   });
-  const source: ContentSource = (file) =>
+  const source = ContentSource.make((file) =>
     Effect.suspend(() => {
       runs.content += 1;
       return runs.content <= failures.content
         ? Effect.fail(
-            new ContentError({
+            new ContentSource.ContentError({
               message: `The levels can't be loaded (try ${runs.content})`,
             })
           )
@@ -83,11 +82,16 @@ const flakyResources = (failures: {
             Effect.andThen(
               Effect.try({
                 try: () => JSON.parse(read(`content/${file}`)) as unknown,
-                catch: (cause) => new ContentError({ message: String(cause) }),
+                catch: (cause) =>
+                  new ContentSource.ContentError({
+                    message: String(cause),
+                    cause,
+                  }),
               })
             )
           );
-    });
+    })
+  );
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       PushPuzzleSheet.layer(sheet),

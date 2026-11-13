@@ -52,7 +52,6 @@ const SECTIONS = {
 // and joins it never. `pnpm smoke` reads the list here (scripts/smoke-test.mjs), to compile the
 // doc comments' examples of every entry off it.
 const NOT_YET_EFFECT_STYLE: readonly string[] = [
-  "content",
   "save",
   "audio",
   "render-three",
@@ -783,11 +782,15 @@ const shapeProblems = (file: string, entry: string): readonly string[] => {
         ({ name }) =>
           `${name}: makeX makes a secondary type X of its module, and the module exports no ${name.slice("make".length)}`
       ),
+    // A constructor and a declaration builder are no `dual`: a builder takes the name, then the
+    // definition ("The builder" in the guide).
     ...exported
       .filter(
         ({ kind, from, comment }) =>
           kind === "const" &&
-          !commentText(comment).includes("@category constructors") &&
+          !/^@category (?:constructors|declarations)$/mu.test(
+            commentText(comment)
+          ) &&
           (arrowParameters(from)?.length ?? 0) > 1
       )
       .map(

@@ -63,7 +63,7 @@
       "default": "./dist/content.js"
     },
     "./content/browser": {
-      "source": "./src/content/browser.ts",
+      "source": "./src/content/browser/index.ts",
       "types": "./dist/content/browser.d.ts",
       "default": "./dist/content/browser.js"
     },
