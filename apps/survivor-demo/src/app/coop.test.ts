@@ -13,8 +13,7 @@ import {
   SurvivorsSheet,
 } from "@arcadekit/survivors/browser";
 import { SilentAudioLayer } from "arcadekit/audio";
-import { ContentError } from "arcadekit/content";
-import type { ContentSource } from "arcadekit/content";
+import { ContentSource } from "arcadekit/content";
 import type * as Game from "arcadekit/game";
 import { Frames } from "arcadekit/game/browser";
 import { manualFrames } from "arcadekit/game/testing";
@@ -54,12 +53,14 @@ import { coopMessage } from "./subscriptions";
 // Co-op client itself is tested in arcadekit/net/browser, and survivors' rules in its package.
 
 const contentDir = new URL("../../public/content/", import.meta.url);
-const fileSource: ContentSource = (file) =>
+const fileSource = ContentSource.make((file) =>
   Effect.try({
     try: () =>
       JSON.parse(readFileSync(new URL(file, contentDir), "utf-8")) as unknown,
-    catch: (cause) => new ContentError({ message: String(cause) }),
-  });
+    catch: (cause) =>
+      new ContentSource.ContentError({ message: String(cause), cause }),
+  })
+);
 
 const content: GameContent = await Effect.runPromise(
   SurvivorsContent.read(fileSource)
@@ -92,7 +93,7 @@ const seat = async (
   hub: FakeCoopRooms,
   parts: {
     readonly sheet?: SheetLoad;
-    readonly load?: Effect.Effect<GameContent, ContentError>;
+    readonly load?: Effect.Effect<GameContent, ContentSource.ContentError>;
   } = {}
 ): Promise<Seat> => {
   const layer = CoopLayer.pipe(
@@ -286,7 +287,9 @@ describe("the app's co-op", () => {
   describe("the co-op Commands", () => {
     it("open no room when Leave comes while Host waits on the content", async () => {
       const hub = fakeCoopRooms();
-      const loaded = Effect.runSync(Deferred.make<GameContent, ContentError>());
+      const loaded = Effect.runSync(
+        Deferred.make<GameContent, ContentSource.ContentError>()
+      );
       const { context } = await seat(hub, { load: Deferred.await(loaded) });
       // Foldkit runs each Command in Message order: Host, then Leave.
       const command = <A>(effect: Effect.Effect<A, never, SurvivorsCoop>) =>

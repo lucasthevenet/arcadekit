@@ -10,7 +10,9 @@ status: accepted
 
 > Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: a genre's root entry holds its declared `Game.Simulation`, and a Worker or server steps it with `Game.Loop` (`arcadekit/game`, which is DOM-free). `GameSimulation`, `GameDefinition`, `makeGameEngine` and the `runtime` entries are gone; its `./browser` entry holds the genre's `Game.Engine`. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
 
-A genre's simulation must run where there is no DOM: in a Web Worker, on a game server, in a test. So a genre package's root entry (content schema, content service, simulation) uses no DOM and no Three.js, and only its `./browser` entry (the `GameDefinition`, view, input and engine) may use them. `@gamekit/content` follows the same rule: `fetchJsonSource` needs `fetch`, so it lives in `@gamekit/content/browser` (#20, finding 6).
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-13: `arcadekit/content`'s sources are the namespace `ContentSource`, and the browser's is `FetchContentSource.fromUrl` in `arcadekit/content/browser`. The text below uses its name.
+
+A genre's simulation must run where there is no DOM: in a Web Worker, on a game server, in a test. So a genre package's root entry (content schema, content service, simulation) uses no DOM and no Three.js, and only its `./browser` entry (the `GameDefinition`, view, input and engine) may use them. `@gamekit/content` follows the same rule: `FetchContentSource.fromUrl` needs `fetch`, so it lives in `@gamekit/content/browser` (#20, finding 6).
 
 ## Consequences
 

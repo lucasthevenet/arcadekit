@@ -8,8 +8,7 @@ import {
   wantedTags,
 } from "@arcadekit/survivors/browser";
 import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
-import { ContentError } from "arcadekit/content";
-import type { ContentSource } from "arcadekit/content";
+import { ContentSource } from "arcadekit/content";
 import {
   SpriteSheetError,
   decodeSpriteSheet,
@@ -46,11 +45,13 @@ import { view } from "./view";
 const publicDir = new URL("../../public/", import.meta.url);
 const read = (file: string) => readFileSync(new URL(file, publicDir));
 
-const fileSource: ContentSource = (file) =>
+const fileSource = ContentSource.make((file) =>
   Effect.try({
     try: () => JSON.parse(read(`content/${file}`).toString()) as unknown,
-    catch: (cause) => new ContentError({ message: String(cause) }),
-  });
+    catch: (cause) =>
+      new ContentSource.ContentError({ message: String(cause), cause }),
+  })
+);
 
 const content = await Effect.runPromise(SurvivorsContent.read(fileSource));
 
@@ -75,8 +76,10 @@ describe("the sprite sheet", () => {
     // The demo's content names a sprite for each (below), and a choice after the one found
     // is not tried: so this asks for the same content with no sprite named.
     const unnamed = await Effect.runPromise(
-      SurvivorsContent.read((file) =>
-        fileSource(file).pipe(Effect.map(withoutSprites))
+      SurvivorsContent.read(
+        ContentSource.make((file) =>
+          ContentSource.read(fileSource, file).pipe(Effect.map(withoutSprites))
+        )
       )
     );
     expect({

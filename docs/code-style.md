@@ -62,7 +62,7 @@ Every module of the kit is shaped and documented as a module of Effect 4 is ([AD
 
 ### Constructors
 
-- **`make`** makes the module's type; **`empty`**, an empty collection that has a `make` from items; **`fromX`**, one from another shape; and **`makeX`**, a secondary type (`EntityPool.makeIdentified`, as Effect has `Effect.makeSemaphore`). Nothing is named `create…`. Core needs no `empty`: `EventBuffer.make` is the empty buffer, as Effect's `MutableList.make` is. `fromX` first applies in `arcadekit/content`, whose `memorySource` makes a content source from an object of files.
+- **`make`** makes the module's type; **`empty`**, an empty collection that has a `make` from items; **`fromX`**, one from another shape; and **`makeX`**, a secondary type (`EntityPool.makeIdentified`, as Effect has `Effect.makeSemaphore`). Nothing is named `create…`. Core needs no `empty`: `EventBuffer.make` is the empty buffer, as Effect's `MutableList.make` is. `fromX` first applies in `arcadekit/content`, whose `ContentSource.fromRecord` makes a content source from a record of files, as Effect's `Migrator.fromRecord` makes a loader from one.
 - **A caller writes `new` only for a Schema class, an error or a declaration.** A data type is an interface and its `make`, never a class.
 - **A constructor that is handed a mistake throws**, as [Refusing a mistake](#refusing-a-mistake) says, and its message names it: `Ring.make needs a whole capacity of 1 or more, got 0`.
 

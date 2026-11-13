@@ -3,7 +3,7 @@
 import { Audio, AudioSettings, defaultAudioSettings } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
 import { BrowserAudioLayer } from "arcadekit/audio/browser";
-import { Asset, Content, memorySource } from "arcadekit/content";
+import { Asset, Content, ContentSource } from "arcadekit/content";
 import type { AttachableEngine } from "arcadekit/foldkit";
 import * as Game from "arcadekit/game/browser";
 import { InputController } from "arcadekit/input";
@@ -193,7 +193,9 @@ Effect.runFork(
             ),
             DotsSheet.layer(loadSpriteSheet("sprites/dots.json")),
             DotsContent.layer(
-              memorySource({ "settings.json": { dots: 128, speed: 6 } })
+              ContentSource.fromRecord({
+                "settings.json": { dots: 128, speed: 6 },
+              })
             )
           )
         )

@@ -5,8 +5,7 @@ import {
   Survivors,
   SurvivorsContent,
 } from "@arcadekit/survivors";
-import { ContentError } from "arcadekit/content";
-import type { ContentSource } from "arcadekit/content";
+import { ContentSource } from "arcadekit/content";
 import * as Game from "arcadekit/game";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
@@ -15,12 +14,14 @@ import { describe, expect, it } from "vitest";
 // and every hero can play a minute of a run, as `Game.Loop` steps it for any declared host.
 
 const contentDir = new URL("../public/content/", import.meta.url);
-const fileSource: ContentSource = (file) =>
+const fileSource = ContentSource.make((file) =>
   Effect.try({
     try: () =>
       JSON.parse(readFileSync(new URL(file, contentDir), "utf-8")) as unknown,
-    catch: (cause) => new ContentError({ message: String(cause) }),
-  });
+    catch: (cause) =>
+      new ContentSource.ContentError({ message: String(cause), cause }),
+  })
+);
 
 const content = await Effect.runPromise(SurvivorsContent.read(fileSource));
 

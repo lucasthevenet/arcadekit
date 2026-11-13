@@ -3,8 +3,7 @@ import { readFileSync } from "node:fs";
 import { SurvivorsContent } from "@arcadekit/survivors";
 import { SurvivorsSheet } from "@arcadekit/survivors/browser";
 import { defaultAudioSettings } from "arcadekit/audio";
-import { ContentError } from "arcadekit/content";
-import type { ContentSource } from "arcadekit/content";
+import { ContentSource } from "arcadekit/content";
 import {
   SpriteSheetError,
   decodeSpriteSheet,
@@ -48,7 +47,8 @@ const readFile = (file: string) =>
     Effect.andThen(
       Effect.try({
         try: () => JSON.parse(read(`content/${file}`)) as unknown,
-        catch: (cause) => new ContentError({ message: String(cause) }),
+        catch: (cause) =>
+          new ContentSource.ContentError({ message: String(cause), cause }),
       })
     )
   );
@@ -82,7 +82,7 @@ const flakyResources = (failures: {
         );
   });
   // A content load reads every file; heroes.json stands for the load, and fails.
-  const source: ContentSource = (file) =>
+  const source = ContentSource.make((file) =>
     Effect.suspend(() => {
       if (file !== "heroes.json") {
         return readFile(file);
@@ -90,12 +90,13 @@ const flakyResources = (failures: {
       runs.content += 1;
       return runs.content <= failures.content
         ? Effect.fail(
-            new ContentError({
+            new ContentSource.ContentError({
               message: `The heroes can't be loaded (try ${runs.content})`,
             })
           )
         : readFile(file);
-    });
+    })
+  );
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(SurvivorsSheet.layer(sheet), SurvivorsContent.layer(source))
   );

@@ -5,7 +5,7 @@ import {
   PushPuzzleSheet,
 } from "@arcadekit/push-puzzle/browser";
 import { BrowserAudioLayer } from "arcadekit/audio/browser";
-import { fetchJsonSource } from "arcadekit/content/browser";
+import { FetchContentSource } from "arcadekit/content/browser";
 import { loadSpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
@@ -37,7 +37,7 @@ const assets = Layer.mergeAll(
 export const resources = Layer.mergeAll(
   PushPuzzleEngine.layer,
   PushPuzzleContent.layer(
-    fetchJsonSource(`${import.meta.env.BASE_URL}content/`)
+    FetchContentSource.fromUrl(`${import.meta.env.BASE_URL}content/`)
   ),
   Layer.mergeAll(PushPuzzleSave.layer, PushPuzzleAudioSettings.layer).pipe(
     Layer.provide(BrowserSaveStorage)
