@@ -1,153 +1,307 @@
-import type { PoolFields, PoolLayout } from "./pool";
+/**
+ * Rings of records: a fixed number of records stored as one typed array per field, where a new
+ * record overwrites the oldest (ADR-0023).
+ *
+ * A ring is one of two things, and the game says which by where it keeps it and what its rules
+ * do with it. A ring only views read carries what a step did: a hit and where it landed, a hole
+ * that was filled. The step pushes and never reads it back, so it can't change what a run does,
+ * its `written` only grows, and the game's state hash leaves it out, as it leaves out its cue
+ * counters. It is lossy: a view that looks after more than `capacity` pushes has missed the
+ * oldest. A ring the rules pop or read is state, like any other field: an undo history. A state
+ * hash covers it, and no ring reader follows it.
+ *
+ * @since 0.7.0
+ */
+import type { Types } from "effect";
+import { Inspectable, Pipeable, Predicate } from "effect";
+import { dual } from "effect/Function";
 
-// A ring of records, and the reader a view keeps on one (ADR-0023). A ring is one of two things,
-// and the game says which by where it keeps it and what its rules do with it:
-//
-// - A ring only views read carries what a step did: a hit and where it landed, a hole that was
-//   filled. The step pushes and never reads it back, so it cannot change what a run does, and
-//   its `written` only grows. The game's state hash leaves it out, as it leaves out its cue
-//   counters (ADR-0014). It is lossy: a view that looks after more than `capacity` pushes has
-//   missed the oldest.
-// - A ring the rules pop or read is state, like any other field: an undo history. A state hash
-//   covers it, and no reader follows it.
+import { allocate, arraysOf } from "./internal/fields";
+import type { FieldArray } from "./internal/fields";
+import type * as Layout from "./layout";
 
-/** A field's array, whichever typed array its layout names. */
-type FieldArray = InstanceType<PoolLayout[string]>;
+const TypeId = "~arcadekit/core/Ring";
 
 /**
- * A fixed number of records stored as one typed array per field, as a pool's entities are.
- * Record n, counted from 0, is in slot `n % capacity`: a new record overwrites the oldest.
+ * A fixed number of records stored as one typed array per field, as an entity pool's entities
+ * are. Record n, counted from 0, is in slot `n % capacity`: a new record overwrites the oldest.
  *
- * Nothing is allocated after creation, so a step that pushes a record allocates nothing.
+ * **When to use**
+ *
+ * Keep one for what a step did that its views must show and the state no longer says, such as a
+ * hit, a box that fell in a hole or an undo; or for a bounded history the rules pop, such as an
+ * undo's turns.
+ *
+ * **Details**
+ *
+ * Nothing is allocated after the ring is made, so a step that pushes a record allocates
+ * nothing. `written` counts the records pushed and not popped, and `length` those still held,
+ * the newest ones. Each view takes what is new with a `RingReader` of its own.
+ *
+ * **Example** (Pushing records and reading the newest)
+ *
+ * ```ts
+ * import { Ring } from "arcadekit/core";
+ *
+ * const hits = Ring.make(2, { x: Float32Array, amount: Uint16Array });
+ * for (const amount of [10, 20, 30]) {
+ *   hits.fields.amount[Ring.push(hits)] = amount;
+ * }
+ * [hits.written, hits.length]; // => [3, 2]
+ * hits.fields.amount[Ring.slotOf(hits, 2)]; // => 30
+ * ```
+ *
+ * @category models
+ * @since 0.7.0
  */
-export interface Ring<L extends PoolLayout> {
+export interface Ring<L extends Layout.Layout>
+  extends Pipeable.Pipeable, Inspectable.Inspectable {
+  readonly [TypeId]: typeof TypeId;
+  /** The most records it holds, and the length of every field. */
   readonly capacity: number;
   /** Records pushed and not popped. */
   readonly written: number;
-  /** Records still held, the newest ones: a `push` raises it up to `capacity`, a `pop` lowers it. */
+  /** Records still held, the newest ones: a push raises it up to `capacity`, a pop lowers it. */
   readonly length: number;
-  readonly fields: PoolFields<L>;
-  /** Reserves the slot of record `written` and returns it. Every field of the slot is 0. */
-  readonly push: () => number;
-  /** Forgets the newest record and returns its slot, or -1 when `length` is 0. */
-  readonly pop: () => number;
-  /** The slot of record `n`. */
-  readonly slotOf: (n: number) => number;
-  /** Forgets every record: `written` and `length` are 0 again. No reader of the ring is told. */
-  readonly clear: () => void;
+  /** One typed array per field of the layout, under the layout's names. */
+  readonly fields: Layout.Fields<L>;
 }
 
+/** What the module's functions write, beyond what a caller reads. */
+type Internal<L extends Layout.Layout> = Types.Mutable<Ring<L>> & {
+  arrays: readonly FieldArray[];
+};
+
+const Proto = {
+  [TypeId]: TypeId,
+  ...Pipeable.Prototype,
+  ...Inspectable.BaseProto,
+  toJSON(this: Ring<Layout.Layout>) {
+    return {
+      _id: "Ring",
+      capacity: this.capacity,
+      written: this.written,
+      length: this.length,
+      fields: Object.keys(this.fields),
+    };
+  },
+};
+
 /**
- * Makes a ring of `capacity` records with one typed array for each field of `layout`.
+ * Checks whether a value is a ring.
  *
- * Throws a `RangeError` for a capacity that is not a whole number of 1 or more.
+ * **When to use**
+ *
+ * Narrow an unknown value before reading it as a ring.
+ *
+ * **Details**
+ *
+ * It looks for the ring's marker, and checks nothing of its layout.
+ *
+ * **Example** (Recognising a ring)
+ *
+ * ```ts
+ * import { Ring } from "arcadekit/core";
+ *
+ * Ring.isRing(Ring.make(4, { x: Float32Array })); // => true
+ * Ring.isRing({ capacity: 4, written: 0 }); // => false
+ * ```
+ *
+ * @category guards
+ * @since 0.7.0
  */
-export const createRing = <const L extends PoolLayout>(
+export const isRing = (value: unknown): value is Ring<Layout.Layout> =>
+  Predicate.hasProperty(value, TypeId);
+
+/**
+ * Makes a ring of `capacity` records, with one typed array of that length for each field of
+ * `layout`.
+ *
+ * **When to use**
+ *
+ * Make each of a run's rings once, when its state is made. Size a ring only views read for what
+ * the steps push between two frames.
+ *
+ * **Details**
+ *
+ * The ring starts with no record. It throws a `RangeError` for a capacity that is not a whole
+ * number of 1 or more.
+ *
+ * **Example** (Making a ring)
+ *
+ * ```ts
+ * import { Ring } from "arcadekit/core";
+ *
+ * const changes = Ring.make(8, { box: Int16Array, cell: Int32Array });
+ * [changes.capacity, changes.written, changes.length]; // => [8, 0, 0]
+ * ```
+ *
+ * @category constructors
+ * @since 0.7.0
+ */
+export const make = <const L extends Layout.Layout>(
   capacity: number,
   layout: L
 ): Ring<L> => {
   if (!Number.isInteger(capacity) || capacity < 1) {
     throw new RangeError(
-      `createRing needs a whole capacity of 1 or more, got ${capacity}`
+      `Ring.make needs a whole capacity of 1 or more, got ${capacity}`
     );
   }
-  const fields = Object.fromEntries(
-    Object.entries(layout).map(([name, ArrayType]) => [
-      name,
-      new ArrayType(capacity),
-    ])
-  ) as unknown as PoolFields<L>;
-  const arrays = Object.values(fields) as FieldArray[];
-  let written = 0;
-  let length = 0;
-  return {
-    capacity,
-    get written() {
-      return written;
-    },
-    get length() {
-      return length;
-    },
-    fields,
-    push: () => {
-      const slot = written % capacity;
-      // The slot may hold the record it overwrites, or one that was popped.
-      for (const array of arrays) {
-        array[slot] = 0;
-      }
-      written += 1;
-      if (length < capacity) {
-        length += 1;
-      }
-      return slot;
-    },
-    pop: () => {
-      if (length === 0) {
-        return -1;
-      }
-      written -= 1;
-      length -= 1;
-      return written % capacity;
-    },
-    slotOf: (n) => n % capacity,
-    clear: () => {
-      written = 0;
-      length = 0;
-    },
-  };
+  const self = Object.create(Proto) as Internal<L>;
+  self.capacity = capacity;
+  self.written = 0;
+  self.length = 0;
+  self.fields = allocate(layout, capacity);
+  self.arrays = arraysOf(self.fields);
+  return self;
 };
 
 /**
- * How far one view has read one ring. A view keeps one reader for each ring it reads, and two
- * views read one ring with a reader each. A reader writes nothing to the ring: a view never
- * changes a run's state.
+ * Reserves the slot of record `written` and returns it. Every field of the slot is 0.
  *
- * It follows a ring whose `written` only grows, as that of a ring only views read does. A ring
- * the rules pop or clear is not followed: a reader is told of neither, and misses records
- * pushed after one.
+ * **When to use**
+ *
+ * In a step, to record what it did: push, then write the record's fields at the slot.
+ *
+ * **Details**
+ *
+ * Once the ring holds `capacity` records, the slot is the oldest record's, which is lost. The
+ * slot may also hold a record that was popped: either way it is cleaned here.
+ *
+ * **Example** (Recording a hit)
  *
  * ```ts
- * const { changes } = puzzle;
- * for (let n = this.seen.take(changes); n < changes.written; n++) {
- *   const i = changes.slotOf(n);
- *   this.sinkBox(changes.fields.box[i]!, changes.fields.cell[i]!, t);
- * }
+ * import { Ring } from "arcadekit/core";
+ *
+ * const hits = Ring.make(3, { x: Float32Array });
+ * const slot = Ring.push(hits);
+ * hits.fields.x[slot] = 4.5;
+ * slot; // => 0
+ * Ring.push(hits); // => 1
  * ```
+ *
+ * @category mutations
+ * @since 0.7.0
  */
-export class RingReader {
-  /** The ring last taken from: a new run's ring is another object, and starts the reader again. */
-  private ring: Pick<Ring<PoolLayout>, "capacity" | "written"> | null = null;
-  /** The number of the first record not taken yet. */
-  private next = 0;
-
-  /**
-   * The number of the first record this reader has not taken, and takes every record up to
-   * `ring.written`. Read records `[take(ring), ring.written)`.
-   *
-   * The first `take` of a ring gives `ring.written`: a view shows what happens from now on, not
-   * what happened before it looked. After that it gives where it stopped, or
-   * `ring.written - ring.capacity` if the ring has lapped it.
-   *
-   * If it finds `written` below what it took, the ring was popped or cleared, and it starts
-   * again at `written`. That is all it can see of either: once `written` is back at what it
-   * took, or past it, it takes the records from there as if none had been forgotten.
-   */
-  take(ring: Pick<Ring<PoolLayout>, "capacity" | "written">): number {
-    const { written } = ring;
-    let from = this.next;
-    if (this.ring !== ring || written < from) {
-      this.ring = ring;
-      from = written;
-    } else if (written - from > ring.capacity) {
-      // Lapped: the records before this one were overwritten.
-      from = written - ring.capacity;
-    }
-    this.next = written;
-    return from;
+export const push = <L extends Layout.Layout>(self: Ring<L>): number => {
+  const ring = self as Internal<L>;
+  const slot = ring.written % ring.capacity;
+  for (const array of ring.arrays) {
+    array[slot] = 0;
   }
-
-  /** Forgets the ring, so the next `take` starts at its `written`. */
-  reset(): void {
-    this.ring = null;
+  ring.written += 1;
+  if (ring.length < ring.capacity) {
+    ring.length += 1;
   }
-}
+  return slot;
+};
+
+/**
+ * Forgets the newest record and returns its slot, or -1 when `length` is 0.
+ *
+ * **When to use**
+ *
+ * In the rules, to take back the last record of a ring that is state, such as an undo popping
+ * the turn it undoes.
+ *
+ * **Details**
+ *
+ * The record is still in its slot to read until the next push cleans it. A ring a reader follows
+ * is not popped: a reader sees only that `written` went down.
+ *
+ * **Example** (Undoing the last turn)
+ *
+ * ```ts
+ * import { Ring } from "arcadekit/core";
+ *
+ * const turns = Ring.make(4, { from: Int32Array });
+ * turns.fields.from[Ring.push(turns)] = 12;
+ * turns.fields.from[Ring.push(turns)] = 13;
+ * const slot = Ring.pop(turns);
+ * turns.fields.from[slot]; // => 13
+ * [turns.written, turns.length]; // => [1, 1]
+ * ```
+ *
+ * @category mutations
+ * @since 0.7.0
+ */
+export const pop = <L extends Layout.Layout>(self: Ring<L>): number => {
+  const ring = self as Internal<L>;
+  if (ring.length === 0) {
+    return -1;
+  }
+  ring.written -= 1;
+  ring.length -= 1;
+  return ring.written % ring.capacity;
+};
+
+/**
+ * The slot of record `n`: `n % capacity`.
+ *
+ * **When to use**
+ *
+ * To read record `n`, such as each of those a ring reader took.
+ *
+ * **Details**
+ *
+ * It says where the record is, not whether it is still held: one more than `capacity` pushes
+ * old has been overwritten.
+ *
+ * **Example** (Reading a record by its number)
+ *
+ * ```ts
+ * import { Ring } from "arcadekit/core";
+ *
+ * const ring = Ring.make(3, { x: Float32Array });
+ * for (let n = 0; n < 5; n++) {
+ *   ring.fields.x[Ring.push(ring)] = n;
+ * }
+ * Ring.slotOf(ring, 4); // => 1
+ * ring.fields.x[Ring.slotOf(ring, 4)]; // => 4
+ * ```
+ *
+ * @category getters
+ * @since 0.7.0
+ */
+export const slotOf: {
+  (n: number): <L extends Layout.Layout>(self: Ring<L>) => number;
+  <L extends Layout.Layout>(self: Ring<L>, n: number): number;
+} = dual(
+  2,
+  <L extends Layout.Layout>(self: Ring<L>, n: number): number =>
+    n % self.capacity
+);
+
+/**
+ * Forgets every record: `written` and `length` are 0 again.
+ *
+ * **When to use**
+ *
+ * To empty a ring that is state, such as an undo history when a level restarts.
+ *
+ * **Details**
+ *
+ * It only forgets the counts: each slot is cleaned as `push` hands it out. No reader of the ring
+ * is told.
+ *
+ * **Example** (Emptying a ring)
+ *
+ * ```ts
+ * import { Ring } from "arcadekit/core";
+ *
+ * const ring = Ring.make(3, { x: Float32Array });
+ * Ring.push(ring);
+ * Ring.push(ring);
+ * Ring.clear(ring);
+ * [ring.written, ring.length, Ring.pop(ring)]; // => [0, 0, -1]
+ * ```
+ *
+ * @category mutations
+ * @since 0.7.0
+ */
+export const clear = <L extends Layout.Layout>(self: Ring<L>): void => {
+  const ring = self as Internal<L>;
+  ring.written = 0;
+  ring.length = 0;
+};

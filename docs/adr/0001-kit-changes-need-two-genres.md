@@ -14,7 +14,7 @@ Survivors shaped the kit alone, so nobody could tell which of its primitives wer
 
 - A genre writes its workaround first. The workaround moves into the kit once a second genre needs it. Push-puzzle's tile map stays in its genre package, and a direction-buttons input preset waits for a second grid game (finding 14).
 
-  > Amended on 2026-11-13: grimbonk's terrain is the second: the tile map is `createTileMap` in `arcadekit/core`.
+  > Amended on 2026-11-13: grimbonk's terrain is the second: the tile map is `TileMap` in `arcadekit/core` (`createTileMap` until [ADR-0024](0024-the-kit-is-written-as-effect-modules.md)).
 
 - A shared-layer bug that makes a genre play wrong is fixed right away, unless the fix changes `GameDefinition` or `GameEngine`. A contract change gets its own issue (#4, #27).
 - The kit's author can pick a shape early. PR #22 did that for #15, #16, #17 and #19, whose findings had left the shape to a third genre. Each fix is additive, so a genre that doesn't use it is unchanged.

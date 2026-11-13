@@ -121,7 +121,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
   private readonly definition: Resolved<Config, State, Input, Event, Command>;
   private readonly commands: ReadonlyMap<string, AnyCommand>;
   private readonly kernel: Kernel<Config, State, Input, Event>;
-  private readonly events = new EventBuffer<Event>();
+  private readonly events = EventBuffer.make<Event>();
   /** The commands waiting for the next step, in the order sent. */
   private pending: Sent<Command>[] = [];
   /** The answers owed to senders, in the order the commands ended. */
@@ -130,7 +130,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
   private reports = 0;
   private readonly report = (event: Event): void => {
     this.reports += 1;
-    this.events.push(event);
+    EventBuffer.push(this.events, event);
   };
 
   constructor(
@@ -172,11 +172,11 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
    */
   start(config: Config, seed: number, nowMs: number): void {
     // What a frame that threw left unreported is not the new run's to report.
-    this.events.drain();
+    EventBuffer.drain(this.events);
     try {
       this.kernel.start(config, seed, nowMs);
     } catch (error) {
-      this.events.drain();
+      EventBuffer.drain(this.events);
       throw error;
     }
     this.drop("runEnded");
@@ -240,7 +240,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
    */
   stop(): void {
     this.kernel.stop();
-    this.events.drain();
+    EventBuffer.drain(this.events);
     this.drop("runEnded");
     this.tell();
   }
@@ -312,7 +312,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
         stepContext.step = step;
         refuseResult(definition.step(state, input, stepContext), name, "step");
       },
-      drainEvents: () => events.drain(),
+      drainEvents: () => EventBuffer.drain(events),
       ...(sample === undefined
         ? {}
         : {

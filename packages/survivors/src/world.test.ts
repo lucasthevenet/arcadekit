@@ -1,3 +1,4 @@
+import { EntityPool } from "arcadekit/core";
 import type * as Game from "arcadekit/game";
 import * as Scenario from "arcadekit/game/scenario";
 import { Schema } from "effect";
@@ -158,7 +159,7 @@ const play = (world: World, seconds: number): SurvivorsEvent[] => {
 
 /** Drops a gem worth `value` XP where (x, z) is. */
 const dropGem = (world: World, x: number, z: number, value: number) => {
-  const k = world.gems.add();
+  const k = EntityPool.add(world.gems);
   world.gems.fields.x[k] = x;
   world.gems.fields.z[k] = z;
   world.gems.fields.value[k] = value;
@@ -166,7 +167,7 @@ const dropGem = (world: World, x: number, z: number, value: number) => {
 
 /** Adds one grunt at (x, z). */
 const addEnemy = (world: World, x: number, z: number): number => {
-  const i = world.enemies.add();
+  const i = EntityPool.add(world.enemies);
   const e = world.enemies.fields;
   e.x[i] = x;
   e.z[i] = z;
@@ -368,7 +369,7 @@ const bolterReady = (level: number): World => {
 
 /** Adds a projectile at rest at (x, z), which hits for 1 and is spent by its first hit. */
 const addProjectile = (world: World, x: number, z: number): number => {
-  const i = world.projectiles.add();
+  const i = EntityPool.add(world.projectiles);
   const pr = world.projectiles.fields;
   pr.x[i] = x;
   pr.z[i] = z;

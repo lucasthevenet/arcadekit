@@ -68,6 +68,14 @@ const { exports: exportsMap, peerDependencies } = JSON.parse(
 const SPECIFIER =
   /(?:(?:\bfrom\s*|\bimport\s*)["'](?<fixed>[^"'\s]+)["']|\bimport\s*\(\s*["'`](?<dynamic>[^"'`\s]+)["'`])/gu;
 
+/**
+ * A file's text without its comments, so an example in a doc comment (`import { Ring } from
+ * "arcadekit/core"`) is not read as an import. A line comment starts after a space or a line's
+ * start, so the `//` of a URL in a string stays.
+ */
+const withoutComments = (text: string): string =>
+  text.replaceAll(/\/\*[\s\S]*?\*\/|(?<=^|\s)\/\/.*$/gmu, "");
+
 // A source file imports "./x" for x.ts; a built type file imports "./x.js" for x.d.ts.
 const resolveRelative = (from: string, specifier: string): string => {
   const base = path.resolve(path.dirname(from), specifier);
@@ -101,7 +109,9 @@ const packagesReachedFrom = (entryFile: string): readonly string[] => {
       continue;
     }
     seen.add(file);
-    for (const match of readFileSync(file, "utf-8").matchAll(SPECIFIER)) {
+    for (const match of withoutComments(readFileSync(file, "utf-8")).matchAll(
+      SPECIFIER
+    )) {
       const specifier = match.groups?.fixed ?? match.groups?.dynamic ?? "";
       if (specifier.startsWith(".")) {
         queue.push(resolveRelative(file, specifier));

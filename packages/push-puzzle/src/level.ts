@@ -1,5 +1,4 @@
-import { createTileMap } from "arcadekit/core";
-import type { TileMap } from "arcadekit/core";
+import { TileMap } from "arcadekit/core";
 
 // Reading a level's text rows into a tile map. Used both to check content and to start a run.
 
@@ -27,7 +26,7 @@ export const LEVEL_LAYOUT = {
 
 interface ParsedLevel {
   /** The level's cells, row by row: cell index is `row * cols + col`. */
-  readonly map: TileMap<typeof LEVEL_LAYOUT>;
+  readonly map: TileMap.TileMap<typeof LEVEL_LAYOUT>;
   readonly goalCount: number;
   /** Cell index of each player found. A valid level has exactly one. */
   readonly players: readonly number[];
@@ -42,7 +41,7 @@ export const parseLevel = (rowsText: readonly string[]): ParsedLevel => {
   // content checks can say what it lacks: a map of no columns is refused.
   const cols = Math.max(1, ...rowsText.map((row) => row.length));
   // Every cell starts as `Tile.void`, which is 0.
-  const map = createTileMap(cols, rows, LEVEL_LAYOUT);
+  const map = TileMap.make(cols, rows, LEVEL_LAYOUT);
   const { tile, goal } = map.fields;
   const players: number[] = [];
   const boxes: number[] = [];
@@ -50,7 +49,7 @@ export const parseLevel = (rowsText: readonly string[]): ParsedLevel => {
   for (let row = 0; row < rows; row++) {
     const text = rowsText[row]!;
     for (let col = 0; col < text.length; col++) {
-      const cell = map.cellAt(col, row);
+      const cell = TileMap.cellAt(map, col, row);
       const char = text[col]!;
       tile[cell] = charTile(char);
       if (char === "@" || char === "+") {
@@ -81,7 +80,7 @@ const charTile = (char: string): Tile => {
 
 /** Turns every non-wall cell the player can't reach (ignoring boxes) into void, so the view skips it. */
 const markOutside = (
-  map: TileMap<typeof LEVEL_LAYOUT>,
+  map: TileMap.TileMap<typeof LEVEL_LAYOUT>,
   start: number | undefined
 ) => {
   if (start === undefined) {
@@ -89,7 +88,7 @@ const markOutside = (
   }
   const { tile } = map.fields;
   const reached = new Uint8Array(map.cells);
-  map.flood(start, (cell) => tile[cell] !== Tile.wall, reached);
+  TileMap.flood(map, start, (cell) => tile[cell] !== Tile.wall, reached);
   for (let cell = 0; cell < map.cells; cell++) {
     if (reached[cell] === 0 && tile[cell] !== Tile.wall) {
       tile[cell] = Tile.void;

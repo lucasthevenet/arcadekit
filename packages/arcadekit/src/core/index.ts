@@ -1,29 +1,18 @@
-export { FixedStepClock } from "./clock";
-export { easeIn, easeOut, easeOutCubic, progress, smoothstep } from "./ease";
-export { EventBuffer } from "./events";
-export { SpatialGrid, type SpatialGridOptions } from "./grid";
-export { StateHasher, visitPool } from "./hash";
-export {
-  type Point2,
-  clamp,
-  clampLength,
-  cos,
-  hashCell,
-  hypot2,
-  lerp,
-  moveToward,
-  powInt,
-  sin,
-} from "./math";
-export {
-  type IdentifiedPool,
-  type Pool,
-  type PoolFields,
-  type PoolLayout,
-  createIdentifiedPool,
-  createPool,
-} from "./pool";
-export { type Ring, RingReader, createRing } from "./ring";
-export { type Rng, makeRng } from "./rng";
-export { Side, type TileMap, createTileMap } from "./tile-map";
-export { countDown, takeWhole } from "./timers";
+// arcadekit/core: the data a step keeps and the arithmetic it calls. Plain on purpose (ADR-0024):
+// a step calls all of it, so it gives the same bits on every peer and finishes in the call, and
+// it is data work, as Effect's own Array and MutableRef are. Each module is a namespace.
+
+export * as EntityPool from "./entity-pool";
+export * as EventBuffer from "./event-buffer";
+export * as ExactMath from "./exact-math";
+export * as FixedStepClock from "./fixed-step-clock";
+export * as Layout from "./layout";
+export * as Point2 from "./point2";
+export * as Ring from "./ring";
+export * as RingReader from "./ring-reader";
+export * as Rng from "./rng";
+export * as SpatialGrid from "./spatial-grid";
+export * as StateHash from "./state-hash";
+export * as TileMap from "./tile-map";
+export * as Timer from "./timer";
+export * as Tween from "./tween";

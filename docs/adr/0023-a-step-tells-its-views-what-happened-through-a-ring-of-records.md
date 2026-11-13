@@ -4,6 +4,8 @@ status: accepted
 
 # A step tells its views what happened through a ring of records
 
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-13: core's modules are namespaces in Effect's shape, and a ring is `Ring.make`'s `Ring.Ring`, and a reader `RingReader.make`'s, which takes with `RingReader.take(reader, ring)`. The text below keeps the names of its day; ADR-0024's table gives each one's name now.
+
 A view needs to know what a step did: a hit and where it landed, a hole that was filled, an undo. The kit gave it two channels, and neither fits. An event is a rare, meaningful fact and never per-entity data ([ADR-0008](0008-events-are-rare-facts.md)), and a cue counter is a count with no place or amount ([ADR-0014](0014-sounds-come-from-cue-counters-read-by-the-presentation.md)). So each game found its own way, and each way has a cost:
 
 - Grimbonk wrote the channel: three rings of typed arrays, each with a count of the records written that only grows, the functions its rules push with, and the reader each of its views keeps. Its hash leaves them out.

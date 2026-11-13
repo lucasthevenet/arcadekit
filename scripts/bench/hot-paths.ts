@@ -377,9 +377,7 @@ const lockstepTicks = () => {
 const micros = (nanos: number) => `${(nanos / 1000).toFixed(2)} µs`;
 
 const bytes = (perOperation: number) =>
-  perOperation >= 1024
-    ? `${(perOperation / 1024).toFixed(2)} KiB`
-    : `${perOperation.toFixed(0)} B`;
+  `${Math.round(perOperation).toLocaleString("en")} B`;
 
 const line = (name: string, unit: string, result: Result) =>
   `${name.padEnd(40)} ${`${micros(result.nanos)}/${unit}`.padStart(16)} ${`${bytes(result.bytes)}/${unit}`.padStart(16)}${result.collections === 0 ? "" : `  (a collection ran while counting: too low)`}`;

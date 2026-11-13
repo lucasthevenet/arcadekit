@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { StateHasher } from "../core/index";
+import { StateHash } from "../core/index";
 import * as Game from "../game/index";
 import { hostLockstep, joinLockstep } from "./lockstep";
 import type { LockstepSession } from "./lockstep";
@@ -77,19 +77,19 @@ class JarGame extends Game.Simulation("JarGame", {
       jar.held[slot] = false;
       jar.log.push(`${step}:${slot}:left`);
     }
-    const h = new StateHasher();
-    h.number(jar.digest);
-    h.number(jar.coins);
+    const h = StateHash.make();
+    StateHash.add(h, jar.digest);
+    StateHash.add(h, jar.coins);
     if (!jar.held.includes(true)) {
       for (let slot = 0; slot < input.players.length; slot++) {
         const move = input.players[slot] ?? null;
         if (move === null) {
           jar.idle.push(`${step}:${slot}`);
         }
-        h.number(move === null ? -1 : move.n);
+        StateHash.add(h, move === null ? -1 : move.n);
       }
     }
-    jar.digest = h.digest();
+    jar.digest = StateHash.digest(h);
     jar.history.push(jar.digest);
   },
   apply: {
@@ -115,13 +115,13 @@ class JarGame extends Game.Simulation("JarGame", {
 }) {}
 
 const hashJar = (jar: Jar): number => {
-  const h = new StateHasher();
-  h.number(jar.digest);
-  h.number(jar.coins);
+  const h = StateHash.make();
+  StateHash.add(h, jar.digest);
+  StateHash.add(h, jar.coins);
   for (const held of jar.held) {
-    h.number(held ? 1 : 0);
+    StateHash.add(h, held ? 1 : 0);
   }
-  return h.digest();
+  return StateHash.digest(h);
 };
 
 const script = (player: string, step: number): Move => ({

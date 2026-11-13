@@ -29,3 +29,14 @@ The wall time moves from run to run by up to a fifth on this machine, a VM share
 ## Comparing a change
 
 Run `pnpm bench` on the same machine before and after it. A rework that turns plain code into Effect will cost time and allocation here, and that is expected: say how much in its PR, against this table, and leave the fix to the performance work that follows. A change to the simulation's rules changes what a step does, so its numbers are not comparable.
+
+## Since the baseline
+
+Each rework adds a row. Its numbers come from five runs of `pnpm bench` on its branch, interleaved with five on the baseline commit, on the same machine, so both saw the same load: the median wall time with the range, and the heap allocated, which was the same on every run.
+
+| Commit | survivors step | engine frame | lockstep tick |
+| --- | --- | --- | --- |
+| The baseline, run beside the row below | 118.5 µs (110.6–122.0), 662 B | 0.94 µs (0.76–1.25), 259 B | 11.2 µs (10.6–12.9), 479 B |
+| `arcadekit/core` in Effect's shape ([ADR-0024](adr/0024-the-kit-is-written-as-effect-modules.md)) | 149.9 µs (142.8–159.1), 1,187 B | 0.82 µs (0.72–1.18), 609 B | 12.1 µs (11.4–18.9), 285 B |
+
+Core stayed plain; what moved is its shape. A step calls core through `dual` functions and reads state from fields on a prototype, where it called closures and class methods. Survivors' step runs about a quarter slower and allocates 525 B more; an engine frame, whose loop advances a `FixedStepClock` and drains an `EventBuffer` through them, allocates 350 B more in the same time; a lockstep tick allocates 194 B less, for a reason not yet found. The performance work starts from these.

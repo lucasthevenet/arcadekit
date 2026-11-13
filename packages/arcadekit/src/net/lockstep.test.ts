@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { StateHasher } from "../core/index";
+import { StateHash } from "../core/index";
 import * as Game from "../game/index";
 import { hostLockstep, joinLockstep } from "./lockstep";
 import type { LockstepOptions, LockstepSession } from "./lockstep";
@@ -27,18 +27,18 @@ const TinyInput = Game.PlayerInputs(Move);
 type TinyInput = typeof TinyInput.Type;
 
 const tinyStep = (state: Tiny, input: TinyInput) => {
-  const h = new StateHasher();
-  h.number(state.digest);
+  const h = StateHash.make();
+  StateHash.add(h, state.digest);
   for (let slot = 0; slot < input.players.length; slot++) {
     const move = input.players[slot];
     // A removed player has no input from the step it leaves at.
     if (move !== null && move !== undefined) {
-      h.number(slot);
-      h.number(move.n);
+      StateHash.add(h, slot);
+      StateHash.add(h, move.n);
     }
   }
-  h.number(input.leaving.length);
-  state.digest = h.digest();
+  StateHash.add(h, input.leaving.length);
+  state.digest = StateHash.digest(h);
   state.history.push(state.digest);
 };
 

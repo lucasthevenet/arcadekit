@@ -6,7 +6,7 @@ How a module of the kit is written, so the next one reads like the ones beside i
 
 ## Start from the game's side
 
-Write the block a game would write before the code that makes it work: the `ts` example for the entry's README, as a small game of its own (`Race`), since `pnpm smoke` compiles each block alone. A doc comment's example can use push-puzzle's names. The design is done when that block needs:
+Write the block a game would write before the code that makes it work: the `ts` example for the entry's README, as a small game of its own (`Race`), since `pnpm smoke` compiles each block alone. So does it compile a doc comment's example ([The doc comment](#the-doc-comment)), once the entry has Effect's shape: until then, a doc comment's example can use push-puzzle's names. The design is done when that block needs:
 
 - no type argument, apart from [types given first](#the-builder);
 - no annotation on a handler's parameter, apart from `create`'s config, which nothing else carries;
@@ -18,21 +18,123 @@ If it needs one of them, change the builder, not the example.
 
 ## What kind of module is it
 
+Every kind below is written as [an Effect module](#an-effect-module) is: a namespace, its doc comments, its names. The table says what the module holds.
+
 | What you are adding | It is | Written as | Copy |
 | --- | --- | --- | --- |
 | A part each game supplies under a name of its own | a **declaration** | a builder that returns a class | [`game/event.ts`](../packages/arcadekit/src/game/event.ts) for a value, [`content/asset.ts`](../packages/arcadekit/src/content/asset.ts) for a service |
 | What runs a declaration | a **host** | a plain class or function when a step or a frame calls it; the declaration's `layer` when it has a lifecycle | [`game/loop.ts`](../packages/arcadekit/src/game/loop.ts), the `layer` in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts) |
 | Something more a host does | a **capability** of it | a method, with a file of types for what it takes or gives. Its section is [A host](#a-host) | `frame` in [`game/loop.ts`](../packages/arcadekit/src/game/loop.ts), `StepInput` in [`game/step-input.ts`](../packages/arcadekit/src/game/step-input.ts) |
-| One thing of the app's that has several implementations | a **service** | a `Context.Service` class, and a named Layer for each implementation | [`audio/service.ts`](../packages/arcadekit/src/audio/service.ts), [`net/browser/coop-rooms.ts`](../packages/arcadekit/src/net/browser/coop-rooms.ts) |
+| One thing of the app's that has several implementations | a **service** | a `Context.Service` class with a static `layer`, and a named Layer for each other implementation | [`audio/service.ts`](../packages/arcadekit/src/audio/service.ts), [`net/browser/coop-rooms.ts`](../packages/arcadekit/src/net/browser/coop-rooms.ts) |
 | What a host runs on, with a default that suits most apps | a **reference** | a `Context.Reference` | `Frames` in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts), `CoopTicker` in [`net/browser/coop.ts`](../packages/arcadekit/src/net/browser/coop.ts) |
-| Data work, a data structure or a device's reads, that no game names | a **primitive** | a plain function or class | [`core/pool.ts`](../packages/arcadekit/src/core/pool.ts), [`core/rng.ts`](../packages/arcadekit/src/core/rng.ts), [`input/input-controller.ts`](../packages/arcadekit/src/input/input-controller.ts) |
+| A data structure, or a device's reads, that no game names | a **data type** | an interface named after its module, its `make`, a guard and functions that take it first | [`core/ring.ts`](../packages/arcadekit/src/core/ring.ts), [`core/rng.ts`](../packages/arcadekit/src/core/rng.ts), [`core/entity-pool.ts`](../packages/arcadekit/src/core/entity-pool.ts) for a secondary type |
+| Arithmetic a step or a view calls | a **module of functions** | plain functions of numbers, under a namespace | [`core/exact-math.ts`](../packages/arcadekit/src/core/exact-math.ts), [`core/tween.ts`](../packages/arcadekit/src/core/tween.ts) |
 | A Schema that a declaration takes as a field and a host must recognise | a **Schema builder** | a plain function that returns a Schema, marked in its annotations, with a type-only mark for the hosts that ask for it | `Game.PlayerInputs` in [`game/player-inputs.ts`](../packages/arcadekit/src/game/player-inputs.ts) |
-| A failure a caller should handle | a **typed error** | a tagged error class: a `message` if an app shows it, a `cause` if it wraps a throw, a `reason` if a caller branches on it | `AttachError` in [`game/attach-error.ts`](../packages/arcadekit/src/game/attach-error.ts) |
+| A failure a caller should handle | a **typed error** | a `Schema.TaggedError` class: [Errors](#errors) | `AttachError` in [`game/attach-error.ts`](../packages/arcadekit/src/game/attach-error.ts) |
 | The words a test is written in | a **vocabulary** | a module of plain functions, imported as a namespace | [`game/scenario.ts`](../packages/arcadekit/src/game/scenario.ts) |
 
 The test for a declaration: would two games each write one, and call it something of their own? Events, a simulation, an engine, content: yes. The audio system, the frame clock, a pool: no.
 
-A game never calls a `make…` or `create…` function to supply one of its parts: a new declaration moves a factory's callers and deletes it. First look for one that fits (the audio settings are a `Setting` of the kit's Schema and default) and for who needs it: a `CueTable` hands a genre package the app's sounds, so a game that owns its sounds declares none.
+A game never calls a constructor to supply one of its parts: a part a game supplies is a declaration, and a new declaration moves a factory's callers and deletes it. A module's `make` makes a data type of the kit's, which no game names (`Ring.make`). First look for a declaration that fits (the audio settings are a `Setting` of the kit's Schema and default) and for who needs it: a `CueTable` hands a genre package the app's sounds, so a game that owns its sounds declares none.
+
+## An Effect module
+
+Every module of the kit is shaped and documented as a module of Effect 4 is ([ADR-0024](adr/0024-the-kit-is-written-as-effect-modules.md)). [`arcadekit/core`](../packages/arcadekit/src/core/index.ts) is the reference: copy it, and read Effect's own `MutableRef.ts` and `MutableHashMap.ts` (in `node_modules/effect/src/`) beside it. An entry listed in `NOT_YET_EFFECT_STYLE` in [the style test](../packages/arcadekit/test/style.test.ts) keeps its older shape until the change that reworks it, which takes it off the list: the test then holds it to this section. Where a rule below has nothing to show in core yet, it names the entry where it first applies.
+
+### An entry and its namespaces
+
+- **A namespace per module.** An entry's public file exports each module as a namespace, and nothing else: `export * as Ring from "./ring"`. A game writes `import { Ring } from "arcadekit/core"`, and the type is `Ring.Ring<L>`, as Effect's is `MutableRef.MutableRef<A>`.
+- **An entry a game imports whole is one module**: `arcadekit/game` and its `./browser` (`import * as Game`), and `arcadekit/game/scenario` (`import * as Scenario`). Their public file is the module, and its declarations are its callable members (`Game.Event`). First applies in `arcadekit/game`.
+- **A builder a game writes bare** is exported from its entry's public file beside the namespaces, under its noun, with the types [the builder](#the-builder) lists (`Content`, `ContentClass`). First applies in `arcadekit/content`.
+- **A file is one module, its name the namespace's in kebab-case**: `entity-pool.ts` is `EntityPool`, `point2.ts` is `Point2`.
+- **A namespace is named for the glossary's word, and collides with nothing a file has in scope**: no JavaScript or DOM global (`Math`, `Event`, `Number`, `Image`) and no module of Effect (`Pool`, `Clock`, `Hash`, `Channel`). Where the word collides, the term takes a word more: core's pool is an **entity pool** (`EntityPool`), its clock a **fixed-step clock**, its hash a **state hash** (`StateHash`), its math **exact math** (`ExactMath`). A rename changes `CONTEXT.md` in the same change.
+- **A namespace exports only public API.** What an entry's files share and no game calls is in `src/<entry>/internal/`, which no public file exports: core's `internal/fields.ts` makes the typed arrays of a pool, a ring and a tile map.
+- **A module imports another of its entry by relative path**, as a namespace for its types (`import type * as Layout from "./layout"`) or by name for a function it calls (`import { hypot2 } from "./exact-math"`).
+
+### A data type
+
+- **An interface named after its module**, `Rng.Rng`, `EntityPool.EntityPool<L>`, with a `TypeId` of `"~arcadekit/<entry>/<Module>"`: a `const` the module keeps to itself, and the interface's first member, `readonly [TypeId]: typeof TypeId`. It extends `Pipeable.Pipeable`, and `Inspectable.Inspectable` where a printed value helps debugging, which every data type of core does.
+- **Its values come from a prototype**: `Object.create(Proto)`, where `Proto` holds the `TypeId`, `...Pipeable.Prototype` and `...Inspectable.BaseProto`, and a `toJSON` that gives `_id`, the module's name, and the fields worth reading in a log: a pool's capacity, count and field names, not its arrays.
+- **State lives in fields, and behaviour in the module's functions.** The prototype has no method but `pipe` and the printing ones. A field a caller reads is in the interface, `readonly` unless the caller may write it too (`Point2`'s `x` and `y`). A field only the module reads stays off the interface, in an internal type its functions cast to (`Types.Mutable<Ring<L>> & { arrays: … }`).
+- **A guard**, `isX(value: unknown): value is X`, built on `Predicate.hasProperty(value, TypeId)`: `Rng.isRng`. A look-alike with the same fields is no `X`.
+- **A secondary type** is one that exists only as a kind of the module's type. It lives in the module, with a marker and a guard of its own: `EntityPool.Identified`, `EntityPool.isIdentified`. A type with a life and functions of its own is a module of its own: `RingReader`, beside `Ring`.
+- **A type a game writes as a literal is no data type**: a layout (`Layout.Layout`) or an options object (`SpatialGrid.Options`). It has no `TypeId` and no guard. Neither has **a module of functions over numbers**: `ExactMath`, `Timer`, `Tween`.
+
+### Constructors
+
+- **`make`** makes the module's type; **`empty`**, an empty collection that has a `make` from items; **`fromX`**, one from another shape; and **`makeX`**, a secondary type (`EntityPool.makeIdentified`, as Effect has `Effect.makeSemaphore`). Nothing is named `create…`. Core needs no `empty`: `EventBuffer.make` is the empty buffer, as Effect's `MutableList.make` is. `fromX` first applies in `arcadekit/content`, whose `memorySource` makes a content source from an object of files.
+- **A caller writes `new` only for a Schema class, an error or a declaration.** A data type is an interface and its `make`, never a class.
+- **A constructor that is handed a mistake throws**, as [Refusing a mistake](#refusing-a-mistake) says, and its message names it: `Ring.make needs a whole capacity of 1 or more, got 0`.
+
+### Functions
+
+- **`self` first.** A function of the module's type takes it first, named `self`: `Ring.push(self)`, `Ring.slotOf(self, n)`. In a module of numbers the first operand is `self`, and keeps the name of what it is: `ExactMath.clamp(value, min, max)`, `Tween.progress(now, startedAt, duration)`.
+- **`dual` when it takes more than `self`**, from `effect/Function`, typed with both overloads, data-last first, as Effect's `MutableRef.ts` writes them (isolatedDeclarations needs the written type anyway):
+
+  ```ts
+  export const slotOf: {
+    (n: number): <L extends Layout.Layout>(self: Ring<L>) => number;
+    <L extends Layout.Layout>(self: Ring<L>, n: number): number;
+  } = dual(
+    2,
+    <L extends Layout.Layout>(self: Ring<L>, n: number): number =>
+      n % self.capacity
+  );
+  ```
+
+  A caller then writes `Ring.slotOf(ring, n)`, or `ring.pipe(Ring.slotOf(n))`. A function whose last parameter is optional can't be told apart by how many arguments it got: its `dual` takes a predicate on the first, `dual((args) => isSpatialGrid(args[0]), …)`, as `SpatialGrid.build` and `SpatialGrid.nearest` do. A constructor, a guard, a function of `self` alone (`Ring.push`) and a function of one number (`ExactMath.sin`) are no `dual`.
+
+- **A function that gives two numbers writes them into a point it is handed**, the point first (`Point2.clampLength(wish, x, y, 1)`), so a step that calls it for every entity allocates nothing.
+- **An exported function or a service's method that returns an Effect is `Effect.fn("Module.name")`**, so a trace shows it; one only its module calls is `Effect.fnUntraced`. First applies in `arcadekit/content` (`load`), `arcadekit/save` (`read`, `write`) and `arcadekit/net/browser` (the Co-op client's methods).
+- **Plain or Effect is [`AGENTS.md`](../AGENTS.md)'s question**, "Effect and plain code". A plain module's functions run no Effect: core imports `effect` only for its shape (`Pipeable`, `Inspectable`, `Predicate`, `Types` and `dual`).
+
+### Errors
+
+- **A failure a caller should handle is a `Schema.TaggedError`**, its base named first, as kit source names every class's base (isolatedDeclarations): `const AttachErrorBase = Schema.TaggedError<AttachError>()("AttachError", { … })`, then `export class AttachError extends AttachErrorBase {}`.
+- **Its fields say what it is for**: a `message` if an app shows it, a `cause: Schema.Defect()` if it wraps a throw, a `reason` if a caller branches on it.
+- **A mistake in a game's code is no typed error**: it throws, as [Refusing a mistake](#refusing-a-mistake) says.
+- First applies in `arcadekit/game` (`AttachError`, `GameCrashed`) and `arcadekit/net` (`LockstepError`), which are `Data.TaggedError`s until their rework.
+
+### Services and references
+
+- **A service is a `Context.Service` class, and a reference a `Context.Reference`**, each with a static `layer` for the implementation the kit gives, and a named Layer for each other one. A service of the kit's is keyed `arcadekit/<entry>/<Name>` (`arcadekit/audio/Audio`), and a declaration's as [A declaration with a service](#a-declaration-with-a-service) says.
+- **Its methods that return an Effect are `Effect.fn("Name.method")`.**
+- First applies in `arcadekit/audio` (`Audio`), `arcadekit/game/browser` (`Game.Frames`) and `arcadekit/net/browser` (`CoopRooms`, `CoopTicker`).
+
+### The doc comment
+
+**Every module file opens with a module comment**: what the module is, in the glossary's words, and why it is as it is, ending in `@since`.
+
+**Every export has a doc comment in Effect's structure**, written in the kit's own prose voice and the glossary's words:
+
+1. **A summary**: what it is or does, in a sentence or two.
+2. **`**When to use**`**: the moment in a game where it is the thing to reach for.
+3. **`**Details**`**, when there is more to say: its edge cases, what it costs, what it refuses (`It throws a RangeError for …`).
+4. **At least one `**Example** (Title)`**, each a `ts` block that imports from `arcadekit/<entry>`, as a game would, and shows results as `// =>` comments, which are true. `pnpm smoke` compiles every block alone. A result ends one line: name what spans lines first, then show it.
+5. **"Throws when declared"**, for a declaration builder whose body throws ([the builder's file](#the-builders-file)). First applies in `arcadekit/game` (`Game.Simulation`).
+6. **`@category`**, from the list below, then **`@since`**: the version that added the export in this shape, `@since 0.7.0` for all of core. No `@stability`, and no other tag.
+
+A `dual` function's doc comment is on its export, not repeated on each overload: an editor shows it and the API page renders it. A field of a data type has a one-line comment when its name doesn't say it all.
+
+**The categories are one closed list**, which the style test's `CATEGORIES` holds. A new category is a change to both.
+
+| Category | What goes in it |
+| --- | --- |
+| `models` | A data type's interface, a secondary type, a type a game writes (a layout, options) and a set of constants (`TileMap.Side`) |
+| `constructors` | `make`, `empty`, `fromX`, `makeX` |
+| `guards` | `isX` |
+| `getters` | What reads a value, and a query that writes only into what its caller hands it (`SpatialGrid.within`) |
+| `mutations` | What changes the value it is given, or draws from it (`Rng.next`) |
+| `combinators` | What takes values of the module and returns a new one |
+| `math` | A function of numbers |
+| `utility types` | A type computed from another (`Layout.Fields<L>`) |
+| `schemas` | A Schema, or what builds one |
+| `services` | A `Context.Service` |
+| `layers` | A Layer |
+| `references` | A `Context.Reference` |
+| `errors` | A typed error |
+| `declarations` | A declaration builder |
+| `testing` | What only a test imports |
 
 ## A declaration
 
@@ -44,7 +146,7 @@ Top to bottom:
 
 1. **The types a game's code names.** What a value or the service looks like (`EventInstance`, `Loaded`), and for a service its key's type and its identity.
 2. **`<Noun>Class`.** An interface with everything the returned class has. It is the builder's written return type: what a reader and the type files see.
-3. **The doc comment.** What the part is, in the glossary's words, then a `ts` example that declares one and uses it, then what the builder refuses if it throws when declared.
+3. **The doc comment**, in Effect's structure ([The doc comment](#the-doc-comment)): what the part is, in the glossary's words, **When to use**, then a `ts` example that declares one and uses it, then what the builder refuses if it throws when declared, then `@category declarations` and `@since`.
 4. **The builder**, last.
 
 Anything else goes anywhere above the doc comment: the definition's interface, `Any<Noun>`, types that read the class (`StateOf`).
@@ -99,10 +201,12 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 ## Names
 
 - **The glossary's word**, the same in code, docs, tests and messages ([`CONTEXT.md`](../CONTEXT.md)). A new concept gets its term in the same change, with the words to avoid. A two-word name is headed as prose writes it: **Player inputs**, whose entry names `PlayerInputs`.
+- **A namespace is the glossary's word, and its file the same word in kebab-case**, as [An Effect module](#an-entry-and-its-namespaces) says: `EntityPool` in `entity-pool.ts`. Its members are short, since the namespace says what they are of: `Ring.make`, `Ring.push`, `Rng.next`, `EntityPool.Identified`.
+- **A constructor is `make`, `empty`, `fromX` or `makeX`** ([Constructors](#constructors)), and a guard `isX`, where `X` is the type it makes or knows.
 - **A builder is a singular noun**: `Event`, `Asset`.
 - **What a game declares**: an event in the past tense (`LevelSolved`), a sample for what it shows (`Hud`), a command in the imperative (`ChooseUpgrade`), a rejection by what is wrong (`OfferClosed`), a simulation by the game's name (`PushPuzzle`), an asset or a setting by the game and the thing (`PushPuzzleSheet`, `PushPuzzleAudioSettings`), anything else by the game and the builder's noun (`PushPuzzleEngine`).
 - **The kit's words are taken**, each in its place. A definition: `input`, `events`, `commands`, `rejects`, `create`, `step`, `apply`, `sample`, `stepSeconds`, `simulation`, `uses`, `view`, `schema`, `files`, `validate`, `release`, `engine`, `content`, `picks`, `config`, `maxPlayers`, `hash`, `ends`, `lockstep`, `storageKey`, `field`, `record`, `mergeRecord`, `default`, `merge`, `cues`. A context: `seed`, `report`, `dt`, `step`, `player`, `local`. A class: `kind`, `tag`, `definition`, `load` (keeps its first success), `read` (keeps nothing), `layer`, `match`, `merge`. A service: `read`, `write` (stores; a save's merges), `attach`, `listen`, `start`, `send`, `setPaused`, `stop`, `host`, `join`, `choose`, `leave`, `debug`. A new declaration uses the ones that fit, and adds a word only for a new idea. One made from another may take its word for a part of the same thing, and says so: a `Coop`'s `input`.
-- **Check Effect's and Foldkit's exports before settling a name a file writes bare.** A word one of them uses for something else is taken there: Foldkit's `Story` is why the kit's is `Scenario`. Behind a namespace a name may clash: `Game.Command`, beside Foldkit's.
+- **Check Effect's and Foldkit's exports before settling a name a file writes bare.** A word one of them uses for something else is taken there: Foldkit's `Story` is why the kit's is `Scenario`, and Effect's `Pool` why core's is `EntityPool`. Behind a namespace a name may clash: `Game.Command`, beside Foldkit's, and `Ring.make`, beside every other `make`.
 - **A declaration's other names are its glossary entry's**: the type its service gives (`CoopClient`), and the one word its examples bind it to (`coop`).
 - **A static has one job**: it is not another static plus a suffix, nor an export of its entry under other arguments.
 - **A module imported as a namespace exports no `then`**, or the namespace is a thenable, and under vitest a test file that imports it never starts.
@@ -120,10 +224,12 @@ Never drop it in silence. A refusal throws `Error`, or `RangeError` for a number
 ## Done when
 
 - [ ] `pnpm check`, `pnpm typecheck` and `pnpm test` pass; `pnpm fix` formats what `pnpm check` reports.
+- [ ] The module has [Effect's shape](#an-effect-module), and its entry is off `NOT_YET_EFFECT_STYLE`, so the style test holds it there. Every export has its doc comment, every example's `// =>` is true, and `pnpm build:packages && pnpm smoke --no-build` compiles the examples.
 - [ ] The README block from [the first step](#start-from-the-games-side) is in the entry's README, and `pnpm build:packages && pnpm smoke --no-build` compiles it.
 - [ ] A game uses the module as that block shows: push-puzzle or its demo, or a small game declared in the module's test.
 - [ ] A simulation's rules are checked by scenarios, anything else by tests beside it; its types by `expectTypeOf` and `@ts-expect-error`, and every refusal's message by a test.
 - [ ] The glossary has its term. A choice that was hard to make, or that the next reader would otherwise undo, has an ADR. Both tables of entries (`README.md`, `packages/arcadekit/README.md`) follow an entry's exports.
+- [ ] A change that moves code to Effect, or that touches a step, a frame or a lockstep tick, gives `pnpm bench`'s numbers against [`docs/perf-baseline.md`](perf-baseline.md) in its PR.
 - [ ] A changeset says what breaks, or that nothing does (`minor` either way). [`.changeset/README.md`](../.changeset/README.md) has the file's format.
 
 ## What checks it
@@ -139,12 +245,17 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 | A step or an `apply` returns nothing | the `Nothing` type, and `Game.Loop` at run time |
 | A builder's shape: the name first, typed by a type parameter, `kind` and the name as statics, `<Noun>Class` written out and exported with the statics the class sets, the base named, one builder for each kind, and "Throws when declared" in its doc comment if its own body throws | lint: `declaration/builder`, on the kit's source |
 | Every builder is listed where [Register it](#register-it) says, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |
-| No new factory without a reason | the style test's `FACTORIES` and `NOT_YET_DECLARED` |
+| An entry with Effect's shape: its public file exports namespaces, each named for its file and colliding with no global or Effect module, beside the builders a game writes bare and their types; an entry a game imports whole is one module | the style test's `NOT_YET_EFFECT_STYLE`, which lists the entries it doesn't hold yet |
+| Every export of such an entry has its doc comment: a summary, **When to use**, an **Example** whose `ts` imports from its entry and shows a `// =>`, a `@category` from `CATEGORIES` and a `@since`, and no `@stability`; and every module opens with a comment that ends in `@since` | the style test |
+| A data type has its `TypeId` and its guard on `Predicate.hasProperty`; a constructor is no `create…`, and a `makeX` makes a type of its module; a function of more than `self` is `dual`; a module re-exports nothing; a data type is no class | the style test |
+| The doc comments' examples compile, and the results they show hold | `pnpm smoke` compiles them against the packed package, and [`packages/arcadekit/test/doc-examples.test.ts`](../packages/arcadekit/test/doc-examples.test.ts) runs them against `src/`, each `expression; // => value` checked: both for every entry off `NOT_YET_EFFECT_STYLE` |
+| No new factory without a reason | the style test's `FACTORIES` and `NOT_YET_DECLARED`, in the entries on `NOT_YET_EFFECT_STYLE`. In the others a constructor is a module's `make` |
 | Library code runs no Effect itself | lint: `Effect.run…` and `ManagedRuntime.make` are refused in `packages/*/src`, outside what a test imports and the worker's entry points. The `…With` forms pass |
 | The simulation reads no clock or random source, and a genre's uses only exact math | lint, on the root entry of every genre package and on `arcadekit/core`, whose functions a step calls. The first also on `arcadekit/game` but its engine and its frame clock: `oxlint.config.ts` lists the other plain files of the kit, so add a new one there |
 | A module exports no `then` | lint: `unicorn/no-thenable` |
 | Which entry may import which, and which packages | lint's `ENTRY_IMPORTS`, [`packages/arcadekit/test/entry-packages.test.ts`](../packages/arcadekit/test/entry-packages.test.ts) |
 | A README's examples compile | `pnpm smoke` |
+| Whether the hot paths got slower | `pnpm bench`, read against [`docs/perf-baseline.md`](perf-baseline.md) in review |
 | Every export of the kit has a written type | the build (`isolatedDeclarations`) |
 
 [`tools/lint/declaration.test.ts`](../tools/lint/declaration.test.ts) runs the linter on a case for each `declaration/…` rule: a new rule gets its cases there, and a new builder gets its own by being registered. The rules are on in tests too: a test's small game is what the next one copies. A test that has to declare what a builder refuses says so on the line: `// oxlint-disable-next-line declaration/class -- <why>`.

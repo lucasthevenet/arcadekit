@@ -4,7 +4,9 @@ status: accepted
 
 # A step uses only exact arithmetic
 
-> Amended on 2026-11-12: the replacements live in `arcadekit/core` (`core/math.ts`): grimbonk is the second game that needs them. A genre that needs another function still writes an exact version first.
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-13: the replacements are `ExactMath`'s (`core/exact-math.ts`): `ExactMath.hypot2`, `sin`, `cos` and `powInt`. Below, read `hypot2` as `ExactMath.hypot2`, and so on.
+
+> Amended on 2026-11-12: the replacements live in `arcadekit/core` (`core/math.ts`, now `core/exact-math.ts`): grimbonk is the second game that needs them. A genre that needs another function still writes an exact version first.
 
 Lockstep (#25) needs every peer's run to stay identical, step by step, on whatever engine each peer's browser runs. ECMA-262 defines `+ - * /`, `Math.sqrt`, `Math.round`, `Math.floor`, `Math.fround` and `Math.imul` exactly: the IEEE 754 result, rounded once, never fused. It lets each engine approximate `Math.hypot`, `sin`, `cos`, `tan`, `atan2`, `exp`, `log`, `Math.pow` and `**` however it likes. [The research](../research/cross-engine-determinism.md) measured survivors in Node (V8), Bun (JavaScriptCore) and Chromium 153 (a newer V8). Every 20,000-step run ended with three different hashes, splitting as early as step 330 under analog input. The pinned 3,600-step replay still matched in all three, because the pools' `Float32Array` fields and `Math.ceil` absorbed the last-bit differences in that short scenario.
 

@@ -34,7 +34,7 @@ const APPROXIMATED_MATH = [
 ] as const;
 
 const approximatedMathMessage =
-  "is approximated differently by each engine, so a step that calls it can desync lockstep peers. Use exact operations, such as arcadekit/core's (hypot2, sin, cos, powInt). See docs/adr/0011-a-step-uses-only-exact-math.md.";
+  "is approximated differently by each engine, so a step that calls it can desync lockstep peers. Use exact operations, such as arcadekit/core's ExactMath (hypot2, sin, cos, powInt). See docs/adr/0011-a-step-uses-only-exact-math.md.";
 
 const approximatedMathProperties = APPROXIMATED_MATH.map((property) => ({
   object: "Math",
@@ -200,6 +200,9 @@ export default defineConfig({
     // A declaration is a class (`class LevelSolved extends Game.Event(...) {}`), and one file
     // declares what belongs together: a game's events, or a command with what it reports.
     "eslint/max-classes-per-file": "off",
+    // A doc comment is written as Effect's are, and ends in `@category` and `@since`
+    // (docs/code-style.md, "The doc comment"). `@since` is a standard tag; `@category` is Effect's.
+    "jsdoc/check-tag-names": ["error", { definedTags: ["category"] }],
   },
   overrides: [
     {
@@ -296,7 +299,7 @@ export default defineConfig({
       },
     },
     {
-      // Core holds the exact math a step calls (core/math.ts, ADR-0011), and its timers, eases
+      // Core holds the exact math a step calls (core/exact-math.ts, ADR-0011), and its timers, eases
       // and Rng are a step's too. So core is held to exact math as a genre's root entry is: no
       // approximated `Math` function and no `**`. It comes after the override above, whose
       // options for this rule it replaces, so it repeats that list. Not its tests: they compare
@@ -313,6 +316,14 @@ export default defineConfig({
         ],
         "deterministic-math/no-exponentiation": "error",
       },
+    },
+    {
+      // An entry's public file in Effect's shape is a barrel of namespaces (`export * as Ring from
+      // "./ring"`), as Effect's own index is (docs/code-style.md, "An Effect module"), and its
+      // modules import `effect`, so what it loads is counted in the hundreds. What a game imports
+      // of it is what a bundler keeps.
+      files: ENTRY_FILES.map((file) => `${KIT_SRC}/${file}.ts`),
+      rules: { "oxc/no-barrel-file": "off" },
     },
     {
       // The entries of the one package keep the direction the nine packages had (ADR-0018).

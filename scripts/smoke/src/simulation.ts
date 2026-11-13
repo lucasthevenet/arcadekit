@@ -1,7 +1,6 @@
 // The smoke test's tiny game: dots that drift and wrap, and a player dot you move. DOM-free, as
 // a genre's root entry is.
-import { SpatialGrid, clamp, createPool, makeRng } from "arcadekit/core";
-import type { Pool, Rng } from "arcadekit/core";
+import { EntityPool, ExactMath, Rng, SpatialGrid } from "arcadekit/core";
 import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 
@@ -29,9 +28,9 @@ const DOT_LAYOUT = {
 };
 
 export interface Field {
-  readonly rng: Rng;
-  readonly dots: Pool<typeof DOT_LAYOUT>;
-  readonly grid: SpatialGrid;
+  readonly rng: Rng.Rng;
+  readonly dots: EntityPool.EntityPool<typeof DOT_LAYOUT>;
+  readonly grid: SpatialGrid.SpatialGrid;
   readonly found: Int32Array;
   readonly speed: number;
   playerX: number;
@@ -42,19 +41,19 @@ export interface Field {
 const SIZE = 20;
 
 const createField = (config: DotsConfig, seed: number): Field => {
-  const rng = makeRng(seed);
-  const dots = createPool(config.dots, DOT_LAYOUT);
+  const rng = Rng.make(seed);
+  const dots = EntityPool.make(config.dots, DOT_LAYOUT);
   for (let i = 0; i < config.dots; i++) {
-    const index = dots.add();
-    dots.fields.x[index] = rng.range(-SIZE / 2, SIZE / 2);
-    dots.fields.z[index] = rng.range(-SIZE / 2, SIZE / 2);
-    dots.fields.vx[index] = rng.range(-1, 1);
-    dots.fields.vz[index] = rng.range(-1, 1);
+    const index = EntityPool.add(dots);
+    dots.fields.x[index] = Rng.range(rng, -SIZE / 2, SIZE / 2);
+    dots.fields.z[index] = Rng.range(rng, -SIZE / 2, SIZE / 2);
+    dots.fields.vx[index] = Rng.range(rng, -1, 1);
+    dots.fields.vz[index] = Rng.range(rng, -1, 1);
   }
   return {
     rng,
     dots,
-    grid: new SpatialGrid({
+    grid: SpatialGrid.make({
       halfSize: SIZE / 2,
       cellSize: 2,
       capacity: config.dots,
@@ -83,18 +82,24 @@ const stepField = (field: Field, input: DotsInput, dt: number): void => {
     x[i] = wrap(x[i]! + vx[i]! * dt);
     z[i] = wrap(z[i]! + vz[i]! * dt);
   }
-  field.playerX = clamp(
+  field.playerX = ExactMath.clamp(
     field.playerX + input.moveX * field.speed * dt,
     -SIZE / 2,
     SIZE / 2
   );
-  field.playerZ = clamp(
+  field.playerZ = ExactMath.clamp(
     field.playerZ + input.moveY * field.speed * dt,
     -SIZE / 2,
     SIZE / 2
   );
-  field.grid.build(x, z, field.dots.count);
-  field.near = field.grid.query(field.playerX, field.playerZ, 2, field.found);
+  SpatialGrid.build(field.grid, x, z, field.dots.count);
+  field.near = SpatialGrid.query(
+    field.grid,
+    field.playerX,
+    field.playerZ,
+    2,
+    field.found
+  );
 };
 
 /** The game's rules for one player: what the engine runs in the browser. */
@@ -145,7 +150,7 @@ export class DotsTogether extends Game.Simulation("DotsTogether", {
       if (field.playerX >= SIZE / 2) {
         return new AtTheEdge();
       }
-      field.playerX = clamp(field.playerX + by, -SIZE / 2, SIZE / 2);
+      field.playerX = ExactMath.clamp(field.playerX + by, -SIZE / 2, SIZE / 2);
     },
   },
 }) {}

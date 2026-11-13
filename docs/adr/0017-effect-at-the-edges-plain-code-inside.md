@@ -2,6 +2,8 @@
 status: accepted
 ---
 
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-13: cost no longer keeps code plain. Code stays plain only where correctness needs it: a step's same bits on every peer and its finishing in the call, a frame drawn whole, pure data work, and Foldkit's pure `update` and `view`. Code that was plain only for allocation, a fiber per frame, tick or message, or an Effect per entity moves to Effect wherever Effect buys a lifecycle, interruption, a typed failure, a service, a stream or a span. Performance is measured against `docs/perf-baseline.md` and fixed later. The bridges and the `Effect.run*` rule below stand.
+
 > Amended on 2026-11-13: `arcadekit/core` and `arcadekit/input` may import `effect`, as every other entry may. The kit is an Effect library and `effect` is its one required peer, so lint no longer bans it there, and `packages/arcadekit/test/entry-packages.test.ts` allows it for both. What the simulation may not use is unchanged: no `Clock`, `Random` or `DateTime` from `effect`, and a step runs no Effect.
 
 > Amended by [ADR-0020](0020-a-game-is-declared.md): a game's parts are declarations that Layers host, and the rule below is what keeps their handlers plain. `Game.Loop` and a declared simulation's `create`, `step` and `apply` are simulation code, and a `Game.Engine`'s `view` and `input` are per-frame code. "Must not allocate" now means per entity: a step may allocate an event it reports.

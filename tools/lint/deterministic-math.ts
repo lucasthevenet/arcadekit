@@ -12,7 +12,7 @@ interface RuleContext {
 }
 
 const message =
-  "`**` is approximated differently by each engine, so a step that uses it can desync lockstep peers. Use exact operations, such as powInt in arcadekit/core. See docs/adr/0011-a-step-uses-only-exact-math.md.";
+  "`**` is approximated differently by each engine, so a step that uses it can desync lockstep peers. Use exact operations, such as ExactMath.powInt in arcadekit/core. See docs/adr/0011-a-step-uses-only-exact-math.md.";
 
 const noExponentiation = {
   meta: {

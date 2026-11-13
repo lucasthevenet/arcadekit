@@ -1,3 +1,4 @@
+import { EntityPool, Ring } from "arcadekit/core";
 import * as Game from "arcadekit/game";
 import * as Scenario from "arcadekit/game/scenario";
 import { Schema } from "effect";
@@ -384,7 +385,7 @@ const changesOf = (puzzle: Puzzle): number[][] => {
   const { changes } = puzzle;
   const records: number[][] = [];
   for (let n = changes.written - changes.length; n < changes.written; n++) {
-    const i = changes.slotOf(n);
+    const i = Ring.slotOf(changes, n);
     records.push([
       changes.fields.kind[i]!,
       changes.fields.box[i]!,
@@ -430,7 +431,7 @@ describe("changes", () => {
     // The first box falls, then around to the left of the second.
     taps(puzzle, "RLD");
     // The fall took the first box out of the pool, and the second moved into its place.
-    const index = puzzle.boxes.indexOf(1);
+    const index = EntityPool.indexOf(puzzle.boxes, 1);
     taps(puzzle, "R");
     expect([ids, index, changesOf(puzzle)]).toStrictEqual([
       [0, 1],

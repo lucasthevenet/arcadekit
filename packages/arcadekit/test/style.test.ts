@@ -15,8 +15,11 @@ import {
 //
 // - DECLARATIONS: every declaration builder, checked for its docs and for a test that declares
 //   one.
-// - FACTORIES and NOT_YET_DECLARED: every exported `make…` and `create…` function. A new part a
-//   game supplies is a declaration, so a new factory needs a reason.
+// - FACTORIES and NOT_YET_DECLARED: every exported `make…` and `create…` function of the entries
+//   not yet in Effect's shape. A new part a game supplies is a declaration, so a new factory
+//   needs a reason.
+// - NOT_YET_EFFECT_STYLE and CATEGORIES: every entry off the list is held to Effect's module
+//   shape and doc comments, with a category from the closed list.
 // - Lint's own lists, DECLARATION_BUILDERS and BUILDER_ENTRIES, checked against the source.
 // - The guide's links, so it keeps naming files that exist.
 //
@@ -33,7 +36,59 @@ const SECTIONS = {
   kinds: "What kind of module is it",
   service: "A declaration with a service",
   register: "Register it",
+  effectModule: "An Effect module",
+  namespaces: "An entry and its namespaces",
+  dataType: "A data type",
+  constructors: "Constructors",
+  functions: "Functions",
+  docComment: "The doc comment",
 } as const;
+
+// The entries not yet in Effect's module shape (ADR-0024, "An Effect module" in the guide), each
+// by its first folder under src/, which covers its sub-entries: "net" is arcadekit/net and
+// arcadekit/net/browser, net/testing, net/signalling and net/worker. Every other entry is held
+// to the shape by the tests below, so an entry leaves this list in the change that reworks it,
+// and joins it never. `pnpm smoke` reads the list here (scripts/smoke-test.mjs), to compile the
+// doc comments' examples of every entry off it.
+const NOT_YET_EFFECT_STYLE: readonly string[] = [
+  "input",
+  "content",
+  "save",
+  "audio",
+  "render-three",
+  "game",
+  "net",
+  "foldkit",
+];
+
+// The categories a doc comment's `@category` takes: one closed list, which the guide's table
+// under "The doc comment" explains. A new one is a change to both.
+const CATEGORIES: readonly string[] = [
+  "models",
+  "constructors",
+  "guards",
+  "getters",
+  "mutations",
+  "combinators",
+  "math",
+  "utility types",
+  "schemas",
+  "services",
+  "layers",
+  "references",
+  "errors",
+  "declarations",
+  "testing",
+];
+
+// The entries a game imports whole, as one module (`import * as Game from "arcadekit/game"`):
+// their public file is the module, whose members are what it exports, its declarations
+// included.
+const WHOLE_MODULES: ReadonlySet<string> = new Set([
+  "game",
+  "game/browser",
+  "game/scenario",
+]);
 
 interface Declared {
   /** The builder's file, from src/. Its first folder is the entry whose README shows it. */
@@ -84,22 +139,18 @@ const OTHER_CLASS_FACTORIES: readonly string[] = [
   "net/worker/index.ts",
 ];
 
-// The exported factories that stay: a primitive of the simulation, a plain module of rules
-// behind an Effect shell, or what one implementation of a service is built from. None is a part
-// each game supplies. Adding a name here is a design decision: say in the PR why the new thing
-// is not a declaration.
+// The exported factories that stay, in the entries not yet in Effect's shape: a plain module of
+// rules behind an Effect shell, or what one implementation of a service is built from. None is
+// a part each game supplies. In an entry with Effect's shape a constructor is its module's
+// `make`, so an entry's factories leave this list in the change that reworks it. Adding a name
+// here is a design decision: say in the PR why the new thing is not a declaration.
 const FACTORIES: readonly string[] = [
-  "createIdentifiedPool",
   "createMemoryNetwork",
-  "createPool",
-  "createRing",
   "createRoom",
   "createRoomState",
   "createSocketRoom",
-  "createTileMap",
   "makeAudioMixer",
   "makeBrowserAudio",
-  "makeRng",
   "makeSpriteSheet",
 ];
 
@@ -376,18 +427,443 @@ describe.each(Object.entries(DECLARATIONS))(
 
 describe("the exported factories", () => {
   it("are the ones listed", () => {
-    const exported = sourceFiles(srcDir).flatMap((file) =>
-      [
-        ...read(path.join(srcDir, file)).matchAll(
-          /^export (?:const|function|async function) (?<name>(?:make|create)[A-Z]\w*)/gmu
-        ),
-      ].map((match) => match.groups?.name ?? "")
-    );
+    const exported = sourceFiles(srcDir)
+      .filter((file) => NOT_YET_EFFECT_STYLE.includes(file.split("/", 1)[0]!))
+      .flatMap((file) =>
+        [
+          ...read(path.join(srcDir, file)).matchAll(
+            /^export (?:const|function|async function) (?<name>(?:make|create)[A-Z]\w*)/gmu
+          ),
+        ].map((match) => match.groups?.name ?? "")
+      );
     expect(
       exported.toSorted(),
       `The kit's exported make… and create… functions are not the ones FACTORIES and NOT_YET_DECLARED list. A new export named that way is read as a factory, and a part each game supplies is a declaration, not a factory: see "${SECTIONS.kinds}" in ${guide}. If it makes nothing a game supplies, name it for what it returns. Take a factory that is gone out of its list in this file: a name leaves NOT_YET_DECLARED with the change that adds its declaration, moves every caller and deletes the factory.`
     ).toStrictEqual([...FACTORIES, ...NOT_YET_DECLARED].toSorted());
   });
+});
+
+// An entry in Effect's module shape ("An Effect module" in the guide). Each check below runs on
+// every entry off NOT_YET_EFFECT_STYLE, by its public file and the modules that file exports.
+
+/** The package's entries, by their path under src/ (`net/browser`), each with its public file. */
+const kitEntries = (): readonly { entry: string; publicFile: string }[] =>
+  Object.entries(
+    (
+      JSON.parse(read(path.join(packageDir, "package.json"))) as {
+        readonly exports: Readonly<Record<string, { readonly source: string }>>;
+      }
+    ).exports
+  ).map(([key, { source }]) => ({
+    entry: key.slice("./".length),
+    publicFile: source.slice("./src/".length),
+  }));
+
+/** The entries the shape holds: every one whose first folder is off NOT_YET_EFFECT_STYLE. */
+const effectStyleEntries = (): readonly {
+  entry: string;
+  publicFile: string;
+}[] =>
+  kitEntries().filter(
+    ({ entry }) => !NOT_YET_EFFECT_STYLE.includes(entry.split("/", 1)[0]!)
+  );
+
+/** A file's base name as its namespace is written: `entity-pool` is `EntityPool`. */
+const pascal = (base: string): string =>
+  base
+    .split("-")
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join("");
+
+/** The names of Effect's modules, as its root entry exports them as namespaces. */
+const effectModules = (): ReadonlySet<string> =>
+  new Set(
+    [
+      ...read(
+        path.join(packageDir, "node_modules/effect/src/index.ts")
+      ).matchAll(/^export \* as (?<name>\w+) from/gmu),
+    ].map((match) => match.groups?.name ?? "")
+  );
+
+// The DOM's globals that Node lacks and a module might be named: `globalThis` gives the rest.
+const DOM_GLOBALS: readonly string[] = [
+  "Animation",
+  "Attr",
+  "Audio",
+  "Cache",
+  "Clipboard",
+  "Comment",
+  "Credential",
+  "Document",
+  "Element",
+  "Gamepad",
+  "History",
+  "Image",
+  "Location",
+  "Lock",
+  "Node",
+  "Notification",
+  "Option",
+  "Path2D",
+  "Plugin",
+  "Range",
+  "Report",
+  "Screen",
+  "Selection",
+  "Storage",
+  "Text",
+  "Touch",
+  "Window",
+  "Worker",
+];
+
+/** One `export * as X from "./x"` of a public file. */
+interface Namespace {
+  readonly name: string;
+  /** The module's file, from src/. */
+  readonly file: string;
+}
+
+const namespacesOf = (publicFile: string): readonly Namespace[] =>
+  [
+    ...code(read(path.join(srcDir, publicFile))).matchAll(
+      /^export \* as (?<name>\w+) from "\.\/(?<base>[\w-]+)";$/gmu
+    ),
+  ].map((match) => ({
+    name: match.groups?.name ?? "",
+    file: path.posix.join(
+      path.posix.dirname(publicFile),
+      `${match.groups?.base ?? ""}.ts`
+    ),
+  }));
+
+/**
+ * What a public file exports besides its namespaces, as written: an entry's public file in
+ * Effect's shape exports namespaces, and the builders a game writes bare with their types.
+ */
+const strayExports = (publicFile: string): readonly string[] => {
+  const folder = `${publicFile.split("/", 1)[0]}/`;
+  const bareBuilders = new Set(
+    Object.entries(DECLARATIONS)
+      .filter(
+        ([builder, { file }]) =>
+          !builder.includes(".") && file.startsWith(folder)
+      )
+      .map(([builder]) => builder)
+  );
+  const rest = code(read(path.join(srcDir, publicFile)))
+    .replaceAll(/^export \* as \w+ from "\.\/[\w-]+";$/gmu, "")
+    .replaceAll(
+      /^export \{(?<names>[^}]*)\} from "\.\/[\w/-]+";$/gmu,
+      (whole, names: string) =>
+        names
+          .split(",")
+          .map((name) => name.trim())
+          .every(
+            (name) =>
+              name === "" || name.startsWith("type ") || bareBuilders.has(name)
+          )
+          ? ""
+          : whole
+    );
+  return rest
+    .split(/;\s*$/mu)
+    .map((statement) => statement.trim())
+    .filter((statement) => statement !== "");
+};
+
+/**
+ * The files that are an entry's modules: every file its public file exports from, which in
+ * Effect's shape is a namespace's, and for an entry imported whole, the public file too. An
+ * entry that only re-exports names is checked by what it re-exports, so each of those files
+ * shows what it lacks.
+ */
+const modulesOf = (entry: string, publicFile: string): readonly string[] => {
+  const dir = path.posix.dirname(publicFile);
+  const exportedFrom = [
+    ...code(read(path.join(srcDir, publicFile))).matchAll(
+      /^export\b[^;]*?\bfrom "(?<from>\.\/[\w/.-]+)";$/gmsu
+    ),
+  ].map((match) => {
+    const target = path.posix.join(dir, match.groups?.from ?? "");
+    return existsSync(path.join(srcDir, `${target}.ts`))
+      ? `${target}.ts`
+      : `${target}/index.ts`;
+  });
+  return [
+    ...new Set([
+      ...(WHOLE_MODULES.has(entry) ? [publicFile] : []),
+      ...exportedFrom,
+    ]),
+  ];
+};
+
+/** One exported name of a module, with the doc comment right above it, or "" if it has none. */
+interface Exported {
+  readonly name: string;
+  readonly kind: string;
+  readonly comment: string;
+  /** The source from the export on, for what the checks read of its definition. */
+  readonly from: string;
+}
+
+const exportsOf = (source: string): readonly Exported[] =>
+  [
+    ...source.matchAll(
+      /^export (?:declare )?(?<kind>const|let|function|abstract class|class|interface|type|enum) (?<name>\w+)/gmu
+    ),
+  ].map((match) => {
+    const before = source.slice(0, match.index).trimEnd();
+    const comment = before.endsWith("*/")
+      ? before.slice(before.lastIndexOf("/**"))
+      : "";
+    return {
+      name: match.groups?.name ?? "",
+      kind: match.groups?.kind ?? "",
+      comment,
+      from: source.slice(match.index),
+    };
+  });
+
+/** A doc comment's text, without the ` * ` each of its lines starts with. */
+const commentText = (comment: string): string =>
+  comment
+    .replace(/^\/\*\*/u, "")
+    .replace(/\*\/$/u, "")
+    .replaceAll(/^\s*\* ?/gmu, "");
+
+/** What an export's doc comment lacks of Effect's structure, each as the guide names it. */
+const missingParts = (comment: string, entry: string): readonly string[] => {
+  const text = commentText(comment);
+  const blocks = [...text.matchAll(/^```ts\n(?<code>[\s\S]*?)^```/gmu)].map(
+    (match) => match.groups?.code ?? ""
+  );
+  const category = /^@category (?<name>.+)$/mu.exec(text)?.groups?.name;
+  const tags = [...text.matchAll(/^@(?<tag>\w+)/gmu)].map(
+    (match) => match.groups?.tag
+  );
+  return [
+    ...(/^\s*[^\s*@]/u.test(text) ? [] : ["a summary first"]),
+    ...(text.includes("**When to use**") ? [] : ["**When to use**"]),
+    ...(/^\*\*Example\*\* \(.+\)$/mu.test(text) && blocks.length > 0
+      ? []
+      : ["an **Example** (Title) with a `ts` block"]),
+    ...(blocks.every((block) => block.includes(`from "arcadekit/${entry}"`))
+      ? []
+      : [`examples that import from "arcadekit/${entry}"`]),
+    ...(blocks.some((block) => block.includes("// =>"))
+      ? []
+      : ["a result shown as `// =>`"]),
+    ...(category !== undefined && CATEGORIES.includes(category)
+      ? []
+      : [`a @category from CATEGORIES, not ${category ?? "none"}`]),
+    ...(/^@since \d+\.\d+\.\d+$/mu.test(text) ? [] : ["@since x.y.z"]),
+    ...(tags.join(" ") === "category since"
+      ? []
+      : [`@category then @since and no other tag, not ${tags.join(", ")}`]),
+  ];
+};
+
+/** The parameters of an arrow function written at `from`, or undefined if it is none. */
+const arrowParameters = (from: string): readonly string[] | undefined => {
+  let i = from.indexOf("=") + 1;
+  while (/\s/u.test(from[i] ?? "")) {
+    i += 1;
+  }
+  const balanced = (open: string, close: string): string | undefined => {
+    if (from[i] !== open) {
+      return undefined;
+    }
+    const start = i;
+    let depth = 0;
+    for (; i < from.length; i++) {
+      const char = from[i];
+      // The `>` of an arrow closes nothing.
+      if (char === open) {
+        depth += 1;
+      } else if (char === close && !(close === ">" && from[i - 1] === "=")) {
+        depth -= 1;
+        if (depth === 0) {
+          i += 1;
+          return from.slice(start + 1, i - 1);
+        }
+      }
+    }
+    return undefined;
+  };
+  balanced("<", ">");
+  const inside = balanced("(", ")");
+  if (inside === undefined || !/^\s*(?::[^=]*?)?=>/u.test(from.slice(i))) {
+    return undefined;
+  }
+  const parameters: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const [k, char] of [...inside].entries()) {
+    if ("([{<".includes(char)) {
+      depth += 1;
+    } else if (
+      ")]}".includes(char) ||
+      (char === ">" && inside[k - 1] !== "=")
+    ) {
+      depth -= 1;
+    }
+    if (char === "," && depth === 0) {
+      parameters.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  parameters.push(current);
+  return parameters.map((parameter) => parameter.trim()).filter(Boolean);
+};
+
+/** What a module of an entry in Effect's shape breaks of the guide's rules, each as a line. */
+const shapeProblems = (file: string, entry: string): readonly string[] => {
+  const source = read(path.join(srcDir, file));
+  const exported = exportsOf(source);
+  const names = new Set(exported.map(({ name }) => name));
+  const namespace = pascal(path.posix.basename(file, ".ts"));
+  const moduleComment = /^\/\*\*[\s\S]*?\*\//u.exec(source.trimStart())?.[0];
+  const typeId = `~arcadekit/${entry}/${namespace}`;
+  const guard = exported.find(({ name }) => name === `is${namespace}`);
+  return [
+    ...(moduleComment !== undefined &&
+    /@since \d+\.\d+\.\d+\s*\*\/$/u.test(moduleComment)
+      ? []
+      : ["opens with no module comment that ends in @since"]),
+    ...exported.flatMap(({ name, comment }) =>
+      comment === ""
+        ? [`${name}: has no doc comment`]
+        : missingParts(comment, entry).map(
+            (part) => `${name}: its doc comment lacks ${part}`
+          )
+    ),
+    ...(/^export (?:\*|\{)/mu.test(code(source))
+      ? ["re-exports: a module exports what it defines"]
+      : []),
+    ...exported
+      .filter(
+        ({ kind, from }) =>
+          kind.endsWith("class") && !/^[^{]*\bextends\b/u.test(from)
+      )
+      .map(
+        ({ name }) =>
+          `${name}: a class of its own; a data type is an interface and its make`
+      ),
+    ...(exported.some(
+      ({ name, kind }) => name === namespace && kind === "interface"
+    )
+      ? [
+          ...(source.includes(`const TypeId = "${typeId}";`)
+            ? []
+            : [`${namespace}: no \`const TypeId = "${typeId}"\``]),
+          ...(guard !== undefined &&
+          /Predicate\.hasProperty\(\w+, TypeId\)/u.test(
+            guard.from.split(/\n\n/u, 1)[0] ?? ""
+          )
+            ? []
+            : [
+                `${namespace}: no guard \`is${namespace}\` built on Predicate.hasProperty(value, TypeId)`,
+              ]),
+        ]
+      : []),
+    ...exported
+      .filter(({ name }) => /^create[A-Z]/u.test(name))
+      .map(
+        ({ name }) => `${name}: a constructor is make, empty, fromX or makeX`
+      ),
+    ...exported
+      .filter(
+        ({ name }) =>
+          /^make[A-Z]/u.test(name) && !names.has(name.slice("make".length))
+      )
+      .map(
+        ({ name }) =>
+          `${name}: makeX makes a secondary type X of its module, and the module exports no ${name.slice("make".length)}`
+      ),
+    ...exported
+      .filter(
+        ({ kind, from, comment }) =>
+          kind === "const" &&
+          !commentText(comment).includes("@category constructors") &&
+          (arrowParameters(from)?.length ?? 0) > 1
+      )
+      .map(
+        ({ name }) =>
+          `${name}: takes more than \`self\`, so it is \`dual\`, with both overloads written`
+      ),
+  ];
+};
+
+/** Where in the guide a message of the checks below sends its reader. */
+const rule = (section: string): string => `See "${section}" in ${guide}.`;
+
+describe("the entries in Effect's module shape", () => {
+  it("are every entry off NOT_YET_EFFECT_STYLE, which names only entries that are", () => {
+    const folders = new Set(
+      kitEntries().map(({ entry }) => entry.split("/", 1)[0]!)
+    );
+    expect(
+      NOT_YET_EFFECT_STYLE.filter((folder) => !folders.has(folder)),
+      "NOT_YET_EFFECT_STYLE names a folder of src/ that is no entry's. Take it off the list."
+    ).toStrictEqual([]);
+    expect(
+      effectStyleEntries().length,
+      "No entry is held to Effect's module shape: arcadekit/core at least is in it."
+    ).toBeGreaterThan(0);
+  });
+
+  describe.each(effectStyleEntries())(
+    "arcadekit/$entry",
+    ({ entry, publicFile }) => {
+      it.skipIf(WHOLE_MODULES.has(entry))(
+        "exports namespaces from its public file, and nothing else but the builders a game writes bare",
+        () => {
+          expect(
+            strayExports(publicFile),
+            `src/${publicFile} exports something other than a namespace (\`export * as Ring from "./ring"\`), a builder a game writes bare, or that builder's types. Give it a module of its own, exported as a namespace, or move what the entry's files share to src/${entry.split("/", 1)[0]}/internal/. ${rule(SECTIONS.namespaces)}`
+          ).toStrictEqual([]);
+          expect(
+            namespacesOf(publicFile).length,
+            `src/${publicFile} exports no namespace. ${rule(SECTIONS.namespaces)}`
+          ).toBeGreaterThan(0);
+        }
+      );
+
+      it("names each namespace for its file, and for no global or module of Effect", () => {
+        const effect = effectModules();
+        const taken = new Set([
+          ...Object.getOwnPropertyNames(globalThis),
+          ...DOM_GLOBALS,
+        ]);
+        expect(
+          namespacesOf(publicFile).flatMap(({ name, file }) => [
+            ...(name === pascal(path.posix.basename(file, ".ts"))
+              ? []
+              : [
+                  `${name}: its file is ${path.posix.basename(file)}, so it is ${pascal(path.posix.basename(file, ".ts"))}`,
+                ]),
+            ...(effect.has(name) ? [`${name}: a module of Effect`] : []),
+            ...(taken.has(name) ? [`${name}: a JavaScript or DOM global`] : []),
+          ]),
+          `src/${publicFile} exports a namespace under a name that is not its file's, in PascalCase, or that collides with a module of Effect or a global. Name it for the glossary's word, with a word more where that word collides (\`EntityPool\`, \`StateHash\`), name its file the same in kebab-case, and change CONTEXT.md with it. ${rule(SECTIONS.namespaces)}`
+        ).toStrictEqual([]);
+      });
+
+      it("has modules in Effect's shape, each export with Effect's doc comment", () => {
+        expect(
+          modulesOf(entry, publicFile).flatMap((file) =>
+            shapeProblems(file, entry).map(
+              (problem) => `src/${file}: ${problem}`
+            )
+          ),
+          `These exports of arcadekit/${entry} are not written as an Effect module's are. A doc comment has a summary, **When to use**, **Details** if there is more to say, an **Example** (Title) whose \`ts\` block imports from "arcadekit/${entry}" and shows a result as \`// =>\`, then @category (one of ${CATEGORIES.join(", ")}) and @since. ${rule(SECTIONS.docComment)} For a data type's TypeId and guard, see "${SECTIONS.dataType}"; for constructors, "${SECTIONS.constructors}"; for \`dual\`, "${SECTIONS.functions}".`
+        ).toStrictEqual([]);
+      });
+    }
+  );
 });
 
 describe("the guide", () => {
