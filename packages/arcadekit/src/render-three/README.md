@@ -127,10 +127,10 @@ A batch says which it was made with, as `snap`.
 
 A floor of tiles is a grid of cells, and a view draws only the ones on screen. A `TileLayer` does it in one draw call: each frame the view gives `draw` the rectangle of ground its camera shows and a function that says which frame a cell shows. `PixelCamera.groundOnScreen(out)` writes that rectangle into an object the view keeps, after `follow` or `fit`.
 
-Cell (col, row) is the square of ground from (col, row) to (col + 1, row + 1), and its tile is drawn at its centre. `frameOf(col, row)` gives a frame's index, as `frameAt` does, or a negative number for a cell with no tile. The layer imports nothing of the rules: a game whose level is a [tile map](../core/README.md#a-tile-map) reads it in that function, where `cellAt` gives -1 for a cell off the map, and a game whose ground is a rule of the cell alone, such as an arena's wall, works the frame out there.
+Cell (col, row) is the square of ground from (col, row) to (col + 1, row + 1), and its tile is drawn at its centre. `frameOf(col, row)` gives a frame's index, as `frameAt` does, or a negative number for a cell with no tile. The layer imports nothing of the rules: a game whose level is a [tile map](../core/README.md#a-tile-map) reads it in that function, where `TileMap.cellAt` gives -1 for a cell off the map, and a game whose ground is a rule of the cell alone, such as an arena's wall, works the frame out there.
 
 ```ts
-import type { TileMap } from "arcadekit/core";
+import { TileMap } from "arcadekit/core";
 import { Stage, TileLayer, resolveTags } from "arcadekit/render-three";
 import type {
   MutableGroundBounds,
@@ -143,7 +143,7 @@ const TRACK_LAYOUT = {
   /** 1 where a cell is road, and 0 where it is grass. */
   tile: Uint8Array,
 };
-type Track = TileMap<typeof TRACK_LAYOUT>;
+type Track = TileMap.TileMap<typeof TRACK_LAYOUT>;
 
 interface Race {
   readonly track: Track;
@@ -176,7 +176,7 @@ export class TrackView {
     if (track === null) {
       return -1;
     }
-    const cell = track.cellAt(col, row);
+    const cell = TileMap.cellAt(track, col, row);
     // Off the track: no tile, and the stage's background shows.
     if (cell === -1) {
       return -1;

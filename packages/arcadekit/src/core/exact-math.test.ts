@@ -1,15 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  clampLength,
-  cos,
-  hashCell,
-  hypot2,
-  lerp,
-  moveToward,
-  powInt,
-  sin,
-} from "./math";
+import { ExactMath } from "./index";
+
+const { cos, hashCell, hypot2, lerp, powInt, sin } = ExactMath;
 
 // These functions exist to give the same bits in every engine (ADR-0011). Comparing them with
 // this engine's Math checks they are accurate enough; the pinned literals check their bits stay
@@ -32,7 +25,7 @@ const worstAbsoluteError = (
 // except near their zeros, where the absolute error is what moves an entity.
 const TRIG_TOLERANCE = 2 ** -52;
 
-describe(hypot2, () => {
+describe("ExactMath.hypot2", () => {
   it("is within 2 ulp of Math.hypot over the arena", () => {
     const xs = spread(-60, 60, 20_000);
     const zs = spread(-60, 60, 20_000).toReversed();
@@ -56,7 +49,7 @@ describe(hypot2, () => {
   });
 });
 
-describe("sin and cos", () => {
+describe("ExactMath.sin and ExactMath.cos", () => {
   it("match Math within 2^-52 on the spawn ring's angles, [0, 2pi)", () => {
     const angles = spread(0, 2 * Math.PI, 50_000);
     expect(worstAbsoluteError(sin, Math.sin, angles)).toBeLessThanOrEqual(
@@ -109,7 +102,7 @@ describe("sin and cos", () => {
   });
 });
 
-describe(powInt, () => {
+describe("ExactMath.powInt", () => {
   it("is exact where every product is representable", () => {
     expect([
       powInt(2, 10),
@@ -158,7 +151,7 @@ describe(powInt, () => {
   });
 });
 
-describe(lerp, () => {
+describe("ExactMath.lerp", () => {
   it("gives `from` at 0, `to` at 1 and the point between at a fraction", () => {
     expect(lerp(2, 10, 0)).toBe(2);
     expect(lerp(2, 10, 1)).toBe(10);
@@ -180,146 +173,7 @@ describe(lerp, () => {
   });
 });
 
-describe(clampLength, () => {
-  it("leaves a vector no longer than `max` as it is, and returns its length", () => {
-    const out = { x: 9, y: 9 };
-    expect(clampLength(0.3, -0.4, 1, out)).toBe(0.5);
-    expect(out).toStrictEqual({ x: 0.3, y: -0.4 });
-  });
-
-  it("leaves a vector exactly `max` long as it is: that is not longer", () => {
-    const out = { x: 9, y: 9 };
-    expect(clampLength(3, 4, 5, out)).toBe(5);
-    expect(out).toStrictEqual({ x: 3, y: 4 });
-    // Here shortening the vector to its own length would move x's last bit.
-    const length = hypot2(0.2, -0.7);
-    expect((0.2 / length) * length).toBe(0.20000000000000004);
-    expect(clampLength(0.2, -0.7, length, out)).toBe(length);
-    expect(out).toStrictEqual({ x: 0.2, y: -0.7 });
-  });
-
-  it("leaves no move as no move, whatever `max` is", () => {
-    const out = { x: 9, y: 9 };
-    // A `max` below 0 is a mistake, and still divides nothing by a length of 0.
-    for (const max of [1, 0, -1, Number.NaN]) {
-      out.x = 9;
-      out.y = 9;
-      expect(clampLength(0, 0, max, out)).toBe(0);
-      expect(out).toStrictEqual({ x: 0, y: 0 });
-    }
-  });
-
-  it("shortens a longer vector to `max`, and returns the length it had", () => {
-    const out = { x: 9, y: 9 };
-    expect(clampLength(0, -8, 2, out)).toBe(8);
-    expect(out).toStrictEqual({ x: 0, y: -2 });
-    expect(clampLength(6, 8, 5, out)).toBe(10);
-    expect(out.x).toBeCloseTo(3, 12);
-    expect(out.y).toBeCloseTo(4, 12);
-  });
-
-  it("gives x / length, bit for bit, at a `max` of 1", () => {
-    // What a step did before it called this: `x /= length`. A run's hashes depend on it.
-    const out = { x: 0, y: 0 };
-    for (const [x, y] of [
-      [0.7, 0.9],
-      [-1, 1],
-      [1.0001, 0],
-      [-3.3, -0.1],
-      [1e-3, 1e3],
-    ] as const) {
-      const length = hypot2(x, y);
-      expect(length).toBeGreaterThan(1);
-      expect(clampLength(x, y, 1, out)).toBe(length);
-      expect(out).toStrictEqual({ x: x / length, y: y / length });
-    }
-    expect(clampLength(0.7, 0.9, 1, out)).toBe(1.140175425099138);
-    expect(out).toStrictEqual({ x: 0.6139406135149204, y: 0.7893522173763262 });
-  });
-
-  it("is (x / length) * max, bit for bit, at any other `max`", () => {
-    // A run's hashes depend on the order of these operations, so the bits are pinned where
-    // the other orders give other bits.
-    const out = { x: 0, y: 0 };
-    clampLength(3.3, -0.1, 2.5, out);
-    expect(out).toStrictEqual({
-      x: 2.4988529478634534,
-      y: -0.07572281660192284,
-    });
-    // (y * max) / length moves y's last bit there.
-    expect((-0.1 * 2.5) / hypot2(3.3, -0.1)).toBe(-0.07572281660192283);
-    clampLength(0.7, 0.9, 0.5, out);
-    expect(out).toStrictEqual({ x: 0.3069703067574602, y: 0.3946761086881631 });
-    // And y * (max / length) moves it here.
-    expect(0.9 * (0.5 / hypot2(0.7, 0.9))).toBe(0.39467610868816316);
-  });
-
-  it("is the same expression on x as on y", () => {
-    // The two vectors above with their axes swapped, so x is pinned as y is.
-    const out = { x: 0, y: 0 };
-    clampLength(-0.1, 3.3, 2.5, out);
-    expect(out).toStrictEqual({
-      x: -0.07572281660192284,
-      y: 2.4988529478634534,
-    });
-    clampLength(0.9, 0.7, 0.5, out);
-    expect(out).toStrictEqual({ x: 0.3946761086881631, y: 0.3069703067574602 });
-  });
-});
-
-describe(moveToward, () => {
-  it("lands on a target within `maxStep`", () => {
-    const out = { x: 9, y: 9 };
-    moveToward(1, 1, 4, 5, 6, out);
-    expect(out).toStrictEqual({ x: 4, y: 5 });
-    // Exactly `maxStep` away is within it.
-    moveToward(1, 1, 4, 5, 5, out);
-    expect(out).toStrictEqual({ x: 4, y: 5 });
-    // So is this one, where going its whole distance toward it would miss x by its last bit.
-    const distance = hypot2(0.2, -0.7);
-    expect((0.2 / distance) * distance).toBe(0.20000000000000004);
-    moveToward(0, 0, 0.2, -0.7, distance, out);
-    expect(out).toStrictEqual({ x: 0.2, y: -0.7 });
-  });
-
-  it("stays on a target it is already on, whatever `maxStep` is", () => {
-    const out = { x: 9, y: 9 };
-    // A `maxStep` below 0 is a mistake, and still divides nothing by a distance of 0.
-    for (const maxStep of [0, 0.3, -0.1, Number.NaN]) {
-      out.x = 9;
-      out.y = 9;
-      moveToward(2, -2, 2, -2, maxStep, out);
-      expect(out).toStrictEqual({ x: 2, y: -2 });
-    }
-  });
-
-  it("goes `maxStep` toward a target beyond it", () => {
-    const out = { x: 9, y: 9 };
-    moveToward(1, 1, 4, 5, 2.5, out);
-    expect(out).toStrictEqual({ x: 2.5, y: 3 });
-    moveToward(0, 0, -10, 0, 0.25, out);
-    expect(out).toStrictEqual({ x: -0.25, y: 0 });
-  });
-
-  it("is x + (dx / distance) * maxStep, bit for bit", () => {
-    // A run's hashes depend on the order of these operations, so the bits are pinned where
-    // the other orders give other bits.
-    const out = { x: 0, y: 0 };
-    moveToward(0.2, 0.4, 5.3, 3.9, 0.7, out);
-    expect(out).toStrictEqual({ x: 0.7771593468506621, y: 0.7960897478386899 });
-    const dx = 5.3 - 0.2;
-    const dy = 3.9 - 0.4;
-    const distance = hypot2(dx, dy);
-    // dx * (maxStep / distance) moves x's last bit, and (dy * maxStep) / distance moves y's.
-    expect(0.2 + dx * (0.7 / distance)).toBe(0.7771593468506623);
-    expect(0.4 + (dy * 0.7) / distance).toBe(0.7960897478386898);
-    // The same with the axes swapped, so each axis is pinned against both.
-    moveToward(0.4, 0.2, 3.9, 5.3, 0.7, out);
-    expect(out).toStrictEqual({ x: 0.7960897478386899, y: 0.7771593468506621 });
-  });
-});
-
-describe(hashCell, () => {
+describe("ExactMath.hashCell", () => {
   it("gives the same unsigned 32-bit integers as when they were recorded", () => {
     // Recorded from push-puzzle's floor hash, which this is. A change moves every tile variant
     // a view picks with it.

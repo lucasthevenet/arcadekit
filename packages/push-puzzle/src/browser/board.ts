@@ -1,4 +1,11 @@
-import { RingReader, easeOut, hashCell, lerp, progress } from "arcadekit/core";
+import {
+  EntityPool,
+  ExactMath,
+  Ring,
+  RingReader,
+  TileMap,
+  Tween,
+} from "arcadekit/core";
 import {
   Gait,
   InstancedSprites,
@@ -115,7 +122,7 @@ export class PuzzleSprites {
   /** Whether the player is walking: through a slide and a little after, so a held key walks without a stutter. */
   private readonly gait = new Gait({ linger: SLIDE_SECONDS + WALK_LINGER });
   /** How far this view has read the run's `changes`: what a turn did that the board no longer shows. */
-  private readonly seen = new RingReader();
+  private readonly seen = RingReader.make();
   /** Indexed by box stable id. Pool indices move when a box fills a hole, so they can't be used. */
   private boxSlides: Slide[] = [];
   /** 1 for each box id still sliding into the hole it filled, drawn until it gets there. */
@@ -132,7 +139,7 @@ export class PuzzleSprites {
   private readonly levelFrame = (col: number, row: number): number => {
     const { tags, time } = this;
     const { map } = this.puzzle!;
-    const cell = map.cellAt(col, row);
+    const cell = TileMap.cellAt(map, col, row);
     if (cell === -1) {
       return -1;
     }
@@ -145,7 +152,7 @@ export class PuzzleSprites {
     let tag: SpriteTag;
     if (kind === Tile.wall) {
       // A wall shows its face when the cell below it is inside the walls.
-      const below = map.cellAt(col, row + 1);
+      const below = TileMap.cellAt(map, col, row + 1);
       tag =
         below !== -1 && tile[below] !== Tile.wall && tile[below] !== Tile.void
           ? tags.wallFace
@@ -167,7 +174,7 @@ export class PuzzleSprites {
 
   /** The frame a cell of the menu's floor shows: a goal now and then, from the cell's hash. */
   private readonly menuFrame = (col: number, row: number): number => {
-    const h = hashCell(col, row);
+    const h = ExactMath.hashCell(col, row);
     return h % 31 === 0
       ? this.menuGoal
       : this.tags.floor.from + floorVariant(h, this.tags.floor);
@@ -213,8 +220,12 @@ export class PuzzleSprites {
     // What the turns since the last frame did that the board no longer shows.
     const { changes } = puzzle;
     let undid = false;
-    for (let n = this.seen.take(changes); n < changes.written; n++) {
-      const i = changes.slotOf(n);
+    for (
+      let n = RingReader.take(this.seen, changes);
+      n < changes.written;
+      n++
+    ) {
+      const i = Ring.slotOf(changes, n);
       if (changes.fields.kind[i] === Change.undone) {
         undid = true;
       } else {
@@ -237,7 +248,7 @@ export class PuzzleSprites {
     const { boxes } = puzzle;
     const { actors, tags } = this;
     for (let i = 0; i < boxes.count; i++) {
-      const id = boxes.idOf(i);
+      const id = EntityPool.idOf(boxes, i);
       const cell = boxes.fields.cell[i]!;
       // On the board, so not sinking: an undo brought back a box that was.
       this.boxSinking[id] = 0;
@@ -323,7 +334,7 @@ export class PuzzleSprites {
     actors.begin();
     for (let row = top; row < bottom; row++) {
       for (let col = left; col < right; col++) {
-        const h = hashCell(col, row);
+        const h = ExactMath.hashCell(col, row);
         if ((h >>> 8) % 29 === 0) {
           const crate = h % 31 === 0 ? tags.boxOnGoal : tags.box;
           actors.setTint(
@@ -357,7 +368,7 @@ export class PuzzleSprites {
     }
     this.filledAt = new Float64Array(cells).fill(-Infinity);
     // What this run's turns did before now is not shown: the board is drawn at rest.
-    this.seen.reset();
+    RingReader.reset(this.seen);
 
     this.playerSlide = this.restingSlide(puzzle.player);
     this.gait.reset();
@@ -366,7 +377,7 @@ export class PuzzleSprites {
     this.boxSlides = [];
     this.boxSinking = new Uint8Array(boxes.capacity);
     for (let i = 0; i < boxes.count; i++) {
-      const id = boxes.idOf(i);
+      const id = EntityPool.idOf(boxes, i);
       this.boxSlides[id] = this.restingSlide(boxes.fields.cell[i]!);
     }
     for (let id = 0; id < boxes.capacity; id++) {
@@ -385,7 +396,7 @@ export class PuzzleSprites {
   private sinkBox(id: number, cell: number, t: number) {
     const slide = this.boxSlides[id]!;
     // Where the pool has the box, or -1: it has it again once the fall is undone.
-    const index = this.puzzle!.boxes.indexOf(id);
+    const index = EntityPool.indexOf(this.puzzle!.boxes, id);
     if (index !== -1 || slide.cell === cell) {
       return;
     }
@@ -406,9 +417,11 @@ export class PuzzleSprites {
       slide.fromZ = slide.z;
       slide.startedAt = t;
     }
-    const eased = easeOut(progress(t, slide.startedAt, SLIDE_SECONDS));
-    slide.x = lerp(slide.fromX, this.cellX(cell), eased);
-    slide.z = lerp(slide.fromZ, this.cellZ(cell), eased);
+    const eased = Tween.easeOut(
+      Tween.progress(t, slide.startedAt, SLIDE_SECONDS)
+    );
+    slide.x = ExactMath.lerp(slide.fromX, this.cellX(cell), eased);
+    slide.z = ExactMath.lerp(slide.fromZ, this.cellZ(cell), eased);
     return slide;
   }
 
@@ -420,12 +433,12 @@ export class PuzzleSprites {
 
   /** World x of a cell's center. Columns run along +x from the origin, as the tile layer's do. */
   private cellX(cell: number): number {
-    return this.puzzle!.map.colOf(cell) + 0.5;
+    return TileMap.colOf(this.puzzle!.map, cell) + 0.5;
   }
 
   /** World z of a cell's center. Rows run along +z, so row 0 is at the top of the screen. */
   private cellZ(cell: number): number {
-    return this.puzzle!.map.rowOf(cell) + 0.5;
+    return TileMap.rowOf(this.puzzle!.map, cell) + 0.5;
   }
 }
 
@@ -458,7 +471,7 @@ const facingOf = (delta: number, cols: number, current: Facing): Facing => {
 /** Which floor frame a cell gets: mostly the plain one, now and then another. */
 const floorVariant = (seed: number, floor: SpriteTag): number => {
   const count = floor.to - floor.from + 1;
-  const h = hashCell(seed, 7);
+  const h = ExactMath.hashCell(seed, 7);
   const roll = h % 5;
   return roll < 3 || count === 1 ? 0 : 1 + ((h >>> 4) % (count - 1));
 };

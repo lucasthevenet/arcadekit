@@ -1,0 +1,126 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
+import path from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+// Runs the `ts` examples of the doc comments of every entry in Effect's module shape, and checks
+// that each result an example shows is true: a line `expression; // => value` holds when the
+// expression gives the value (docs/code-style.md, "The doc comment"). `pnpm smoke` compiles the
+// same examples against the packed package; this runs them against src/.
+//
+// The entries are those off NOT_YET_EFFECT_STYLE, which this reads from the style test's text,
+// as `pnpm smoke` does: the list is the style test's.
+
+const packageDir = path.resolve(import.meta.dirname, "..");
+const srcDir = path.join(packageDir, "src");
+
+const notYet = new Set(
+  [
+    ...(
+      /^const NOT_YET_EFFECT_STYLE: readonly string\[\] = \[(?<names>[^\]]*)\];$/mu.exec(
+        readFileSync(path.join(packageDir, "test", "style.test.ts"), "utf-8")
+      )?.groups?.names ?? ""
+    ).matchAll(/"(?<name>[^"]+)"/gu),
+  ].map((match) => match.groups?.name ?? "")
+);
+
+/** The entries in Effect's shape, by import path, each with its public file under src/. */
+const entries = Object.entries(
+  (
+    JSON.parse(
+      readFileSync(path.join(packageDir, "package.json"), "utf-8")
+    ) as {
+      readonly exports: Readonly<Record<string, { readonly source: string }>>;
+    }
+  ).exports
+)
+  .map(([key, { source }]) => ({
+    entry: key.slice("./".length),
+    publicFile: source.slice("./src/".length),
+  }))
+  .filter(({ entry }) => !notYet.has(entry.split("/", 1)[0] ?? ""));
+
+/** One example of a doc comment: where it is, its title and its code. */
+interface Example {
+  readonly name: string;
+  readonly code: string;
+}
+
+/** The examples of a module's doc comments, each named by its file and its title. */
+const examplesOf = (file: string): readonly Example[] =>
+  (
+    readFileSync(path.join(srcDir, file), "utf-8").match(
+      /\/\*\*[\s\S]*?\*\//gu
+    ) ?? []
+  )
+    .map((comment) => comment.replaceAll(/^\s*\/?\*+\/? ?/gmu, ""))
+    .flatMap((text) =>
+      [
+        ...text.matchAll(
+          /^\*\*Example\*\* \((?<title>[^)]+)\)\n+```ts\n(?<code>[\s\S]*?)^```/gmu
+        ),
+      ].map((match) => ({
+        name: `${file}: ${match.groups?.title ?? ""}`,
+        code: match.groups?.code ?? "",
+      }))
+    );
+
+/** The modules of an entry: every source file of its folder but tests, internals and other entries'. */
+const modulesOf = (publicFile: string): readonly string[] => {
+  const dir = path.posix.dirname(publicFile);
+  return readdirSync(path.join(srcDir, dir), { encoding: "utf-8" })
+    .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+    .map((file) => path.posix.join(dir, file));
+};
+
+/**
+ * The example as a function body: its imports of the kit read from `kit`, each result shown as
+ * `// =>` checked with `check`, and its types stripped.
+ */
+const runnable = (code: string): string =>
+  stripTypeScriptTypes(
+    code
+      .replaceAll(/^import type [\s\S]*?;$/gmu, "")
+      .replaceAll(
+        /^import (?<names>\{[\s\S]*?\}) from "(?<from>arcadekit\/[\w/-]+)";$/gmu,
+        (_whole, names: string, from: string) =>
+          `const ${names} = kit[${JSON.stringify(from)}];`
+      )
+      .replaceAll(
+        /^(?<indent>\s*)(?<expression>.+?);\s*\/\/ => (?<value>.+)$/gmu,
+        (_whole, indent: string, expression: string, value: string) =>
+          `${indent}check((${expression}), (${value}), ${JSON.stringify(expression)});`
+      )
+  );
+
+describe.each(entries)("arcadekit/$entry", ({ entry, publicFile }) => {
+  const examples = modulesOf(publicFile).flatMap(examplesOf);
+
+  it("has examples to run", () => {
+    expect(examples.length).toBeGreaterThan(0);
+  });
+
+  it.each(examples)("$name", async ({ code }) => {
+    expect(
+      code.split("\n").filter((line) => /^\s*[)\]}].*\/\/ =>/u.test(line)),
+      "A result shown as `// =>` ends an expression that spans lines. Name what spans lines first, then show its result on one line."
+    ).toStrictEqual([]);
+    const kit = {
+      [`arcadekit/${entry}`]: (await import(
+        path.join(srcDir, publicFile)
+      )) as unknown,
+    };
+    let shown = 0;
+    const check = (got: unknown, want: unknown, expression: string) => {
+      shown += 1;
+      expect(got, `${expression} // => ${String(want)}`).toStrictEqual(want);
+    };
+    // oxlint-disable-next-line eslint/no-new-func -- the example is the kit's own doc comment, run as its reader would.
+    new Function("kit", "check", runnable(code))(kit, check);
+    expect(
+      shown,
+      "The example shows no result as `// =>`: show what a reader should see."
+    ).toBeGreaterThan(0);
+  });
+});

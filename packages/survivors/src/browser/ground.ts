@@ -1,4 +1,4 @@
-import { hashCell } from "arcadekit/core";
+import { ExactMath } from "arcadekit/core";
 import type { InstancedSprites, SpriteTag } from "arcadekit/render-three";
 
 // The arena floor as one-unit tiles from the sheet: calm grass inside, the stone wall around it
@@ -27,7 +27,7 @@ const PATCH_AREA = 420;
 
 /** The hash of two whole numbers as a number in [0, 1), for picking tile variants and patch places. */
 export const fraction = (a: number, b: number): number =>
-  hashCell(a, b) / 4_294_967_296;
+  ExactMath.hashCell(a, b) / 4_294_967_296;
 
 /** Which tag the tile at (col, row) shows, in an arena from -half to half on both axes. */
 export const tileTag = (

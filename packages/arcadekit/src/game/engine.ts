@@ -350,7 +350,7 @@ const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
     start: (config, options) =>
       Effect.gen(function* () {
         const seed = options?.seed ?? (yield* Random.nextInt);
-        // A seed is 32 bits, as core's `makeRng` reads it.
+        // A seed is 32 bits, as core's `Rng.make` reads it.
         loop.start(config, seed >>> 0, frames.now());
       }),
     // The loop tells the sender how the command ended: that is this Effect's result.

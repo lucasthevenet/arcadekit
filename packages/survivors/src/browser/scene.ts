@@ -1,3 +1,4 @@
+import { EntityPool } from "arcadekit/core";
 import {
   Gait,
   InstancedSprites,
@@ -422,7 +423,7 @@ export class SurvivorsScene {
       const look = looks.enemies[type[i]!]!;
       const ex = x[i]!;
       const feet = z[i]! + ENEMY_FEET;
-      const phase = phaseOf(world.enemies.idOf(i)) * 4;
+      const phase = phaseOf(EntityPool.idOf(world.enemies, i)) * 4;
       const a = actors.push(
         ex,
         feet,
@@ -450,7 +451,7 @@ export class SurvivorsScene {
       const gem = actors.push(
         x[i]!,
         z[i]! + 0.5,
-        frameAt(data, tag, time + phaseOf(world.gems.idOf(i)) * 3)
+        frameAt(data, tag, time + phaseOf(EntityPool.idOf(world.gems, i)) * 3)
       );
       actors.setLayer(gem, LAYER.marks);
     }

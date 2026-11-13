@@ -1,14 +1,18 @@
-import { StateHasher, visitPool } from "arcadekit/core";
+import { EntityPool, StateHash } from "arcadekit/core";
 
 import type { World } from "./world";
 
 // A digest of a run's whole simulation state, so the replay, determinism and lockstep tests
 // notice a change in any bit of it, and a lockstep session's desync check does too: `hashWorld`
 // is the root entry's `hash` for `arcadekit/net`. The list of what it covers is this file's;
-// the fold and the walk over a pool are the kit's (`StateHasher`, `visitPool`).
+// the fold and the walk over a pool are the kit's (`StateHash`, `EntityPool.visit`).
 
-/** One hasher for every hash: `hashWorld` resets it first. */
-const hasher = new StateHasher();
+/** One state hash for every hash: `hashWorld` resets it first. */
+const hash = StateHash.make();
+/** Folds a number into it: the `add` `visitWorld` is given, made once. */
+const fold = (value: number): void => {
+  StateHash.add(hash, value);
+};
 
 const STATUS_CODE = { playing: 0, down: 1, left: 2 } as const;
 
@@ -37,9 +41,9 @@ export const visitWorld = (world: World, add: (value: number) => void) => {
     add(slot.level);
     add(slot.timer);
   }
-  visitPool(world.enemies, add);
-  visitPool(world.projectiles, add);
-  visitPool(world.gems, add);
+  EntityPool.visit(world.enemies, add);
+  EntityPool.visit(world.projectiles, add);
+  EntityPool.visit(world.gems, add);
   if (world.heroes.length === 1) {
     return;
   }
@@ -70,7 +74,7 @@ export const visitWorld = (world: World, add: (value: number) => void) => {
 
 /** Hashes everything `visitWorld` visits. The cue counters (`World.cues`) aren't visited: they only drive sound (ADR-0014). */
 export const hashWorld = (world: World): number => {
-  hasher.reset();
-  visitWorld(world, hasher.number);
-  return hasher.digest();
+  StateHash.reset(hash);
+  visitWorld(world, fold);
+  return StateHash.digest(hash);
 };

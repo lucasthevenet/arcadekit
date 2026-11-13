@@ -1,5 +1,4 @@
-import { Side, createIdentifiedPool, createRing } from "arcadekit/core";
-import type { IdentifiedPool, Ring, TileMap } from "arcadekit/core";
+import { EntityPool, Ring, TileMap } from "arcadekit/core";
 import type * as Game from "arcadekit/game";
 import { Schema } from "effect";
 
@@ -114,13 +113,13 @@ export interface Puzzle {
    * goal. Cells are indexed `row * cols + col`. A cell's tile changes only when a hole is
    * filled or reopened by undo.
    */
-  readonly map: TileMap<typeof LEVEL_LAYOUT>;
+  readonly map: TileMap.TileMap<typeof LEVEL_LAYOUT>;
   readonly goalCount: number;
   /**
    * Every box still on the board. Pool indices move when a box is removed (filling a hole),
    * so undo and the view name a box by its stable id (`idOf`, `indexOf`), never by index.
    */
-  readonly boxes: IdentifiedPool<typeof BOX_LAYOUT>;
+  readonly boxes: EntityPool.Identified<typeof BOX_LAYOUT>;
   /** The player's cell. */
   player: number;
   /** Moves made, minus moves undone. */
@@ -130,13 +129,13 @@ export interface Puzzle {
   /** Set on the turn every goal gets a box. No further turns are taken. */
   solved: boolean;
   /** One record for each turn undo can take back, newest last. The rules pop it, so it is state. */
-  readonly history: Ring<typeof HISTORY_LAYOUT>;
+  readonly history: Ring.Ring<typeof HISTORY_LAYOUT>;
   /**
    * What a turn did that the board no longer shows after it: a box that filled a hole, which is
    * gone with it, and an undo. A ring the view alone reads: the rules push to it and never read
    * it back. Not part of the replay's end state.
    */
-  readonly changes: Ring<typeof CHANGE_LAYOUT>;
+  readonly changes: Ring.Ring<typeof CHANGE_LAYOUT>;
   /** The pressed direction that is still held, and steps until it moves again. Timed in steps, so replays are exact. */
   readonly repeat: { direction: Direction | null; stepsLeft: number };
   /** Sound triggers, read by the presentation only. Not part of the replay's end state. */
@@ -156,7 +155,7 @@ export const createPuzzle = ({
   }
   const turnsKept = historyCapacity ?? DEFAULT_HISTORY_CAPACITY;
   if (!Number.isInteger(turnsKept) || turnsKept < 1) {
-    // `createRing` refuses it too, by a name the game never wrote.
+    // `Ring.make` refuses it too, by a name the game never wrote.
     throw new RangeError(
       `push-puzzle's historyCapacity must be a whole number of 1 or more, got ${turnsKept}`
     );
@@ -166,9 +165,9 @@ export const createPuzzle = ({
   const player = parsed.players[0]!;
   // Boxes get ids 0, 1, 2… in level reading order. None is ever added after this, so an id
   // freed by filling a hole stays free until undo brings that box back.
-  const boxes = createIdentifiedPool(parsed.boxes.length, BOX_LAYOUT);
+  const boxes = EntityPool.makeIdentified(parsed.boxes.length, BOX_LAYOUT);
   for (const cell of parsed.boxes) {
-    boxes.fields.cell[boxes.add()] = cell;
+    boxes.fields.cell[EntityPool.add(boxes)] = cell;
   }
   return {
     map: parsed.map,
@@ -178,8 +177,8 @@ export const createPuzzle = ({
     moves: 0,
     turns: 0,
     solved: false,
-    history: createRing(turnsKept, HISTORY_LAYOUT),
-    changes: createRing(CHANGES_CAPACITY, CHANGE_LAYOUT),
+    history: Ring.make(turnsKept, HISTORY_LAYOUT),
+    changes: Ring.make(CHANGES_CAPACITY, CHANGE_LAYOUT),
     repeat: { direction: null, stepsLeft: 0 },
     cues: { moves: 0, pushes: 0, holesFilled: 0, undos: 0, solved: 0 },
   };
@@ -234,10 +233,10 @@ const takeMove = (
 
 /** The side of a cell each direction moves to. Row 0 is the top of the board, so up is north. */
 const SIDE = {
-  up: Side.north,
-  down: Side.south,
-  left: Side.west,
-  right: Side.east,
+  up: TileMap.Side.north,
+  down: TileMap.Side.south,
+  left: TileMap.Side.west,
+  right: TileMap.Side.east,
 } as const;
 
 /** Pool index of the box on `cell`, or -1. */
@@ -256,7 +255,7 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
   const { map } = puzzle;
   const { tile } = map.fields;
   const side = SIDE[direction];
-  const target = map.neighbor(puzzle.player, side);
+  const target = TileMap.neighbor(map, puzzle.player, side);
   if (target === -1 || tile[target] !== Tile.floor) {
     return false;
   }
@@ -264,7 +263,7 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
   let boxId = -1;
   let filledHole = 0;
   if (box !== -1) {
-    const beyond = map.neighbor(target, side);
+    const beyond = TileMap.neighbor(map, target, side);
     if (beyond === -1 || boxIndexAt(puzzle, beyond) !== -1) {
       return false;
     }
@@ -272,14 +271,14 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
     if (under !== Tile.floor && under !== Tile.hole) {
       return false;
     }
-    boxId = puzzle.boxes.idOf(box);
+    boxId = EntityPool.idOf(puzzle.boxes, box);
     if (under === Tile.hole) {
       // The box fills the hole: both are gone, and the cell is floor from now on.
       tile[beyond] = Tile.floor;
-      puzzle.boxes.remove(box);
+      EntityPool.remove(puzzle.boxes, box);
       filledHole = 1;
       const { changes } = puzzle;
-      const change = changes.push();
+      const change = Ring.push(changes);
       changes.fields.kind[change] = Change.holeFilled;
       changes.fields.box[change] = boxId;
       changes.fields.cell[change] = beyond;
@@ -288,7 +287,7 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
     }
   }
   const { history } = puzzle;
-  const record = history.push();
+  const record = Ring.push(history);
   history.fields.playerFrom[record] = puzzle.player;
   history.fields.boxId[record] = boxId;
   history.fields.boxFrom[record] = target;
@@ -308,7 +307,7 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
 /** Reverses the last recorded move exactly. Does nothing when the history is empty. */
 const undoTurn = (puzzle: Puzzle): void => {
   const { history, boxes, changes } = puzzle;
-  const record = history.pop();
+  const record = Ring.pop(history);
   if (record === -1) {
     return;
   }
@@ -320,9 +319,9 @@ const undoTurn = (puzzle: Puzzle): void => {
     const boxTo = boxFrom + (boxFrom - playerFrom);
     if (history.fields.filledHole[record] === 1) {
       puzzle.map.fields.tile[boxTo] = Tile.hole;
-      boxes.fields.cell[boxes.addWithId(boxId)] = boxFrom;
+      boxes.fields.cell[EntityPool.addWithId(boxes, boxId)] = boxFrom;
     } else {
-      boxes.fields.cell[boxes.indexOf(boxId)] = boxFrom;
+      boxes.fields.cell[EntityPool.indexOf(boxes, boxId)] = boxFrom;
     }
   }
   puzzle.player = playerFrom;
@@ -330,7 +329,7 @@ const undoTurn = (puzzle: Puzzle): void => {
   puzzle.turns += 1;
   // The cues stay as they are: undo is a sound of its own, never a move counted back down.
   puzzle.cues.undos += 1;
-  const change = changes.push();
+  const change = Ring.push(changes);
   changes.fields.kind[change] = Change.undone;
   changes.fields.box[change] = -1;
   changes.fields.cell[change] = -1;
@@ -338,8 +337,8 @@ const undoTurn = (puzzle: Puzzle): void => {
 
 /** Stable id of the box at (col, row), or -1. */
 export const boxIdAt = (puzzle: Puzzle, col: number, row: number): number => {
-  const i = boxIndexAt(puzzle, puzzle.map.cellAt(col, row));
-  return i === -1 ? -1 : puzzle.boxes.idOf(i);
+  const i = boxIndexAt(puzzle, TileMap.cellAt(puzzle.map, col, row));
+  return i === -1 ? -1 : EntityPool.idOf(puzzle.boxes, i);
 };
 
 /** Goals that have no box on them yet. */
@@ -368,7 +367,7 @@ export const boardText = (puzzle: Puzzle): string[] => {
   for (let row = 0; row < map.rows; row++) {
     let line = "";
     for (let col = 0; col < map.cols; col++) {
-      line += cellChar(puzzle, map.cellAt(col, row));
+      line += cellChar(puzzle, TileMap.cellAt(map, col, row));
     }
     lines.push(line.trimEnd());
   }

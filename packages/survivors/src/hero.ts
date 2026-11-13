@@ -1,5 +1,4 @@
-import { powInt } from "arcadekit/core";
-import type { Rng } from "arcadekit/core";
+import { ExactMath, Rng } from "arcadekit/core";
 
 import type { UpgradeChoice } from "./events";
 import type { GameContent, HeroDef, WeaponDef } from "./schema";
@@ -153,7 +152,7 @@ export const weaponDamage = (hero: Hero, slot: WeaponSlot): number =>
 
 export const weaponCooldown = (hero: Hero, slot: WeaponSlot): number =>
   slot.def.cooldown *
-  powInt(slot.def.cooldownScalePerLevel, slot.level - 1) *
+  ExactMath.powInt(slot.def.cooldownScalePerLevel, slot.level - 1) *
   hero.stats.cooldownMult;
 
 export const auraRadius = (hero: Hero, slot: WeaponSlot): number =>
@@ -169,7 +168,7 @@ export const auraRadius = (hero: Hero, slot: WeaponSlot): number =>
 /** Rolls a hero's upgrade offer from what it can still take, with the run's seeded Rng. */
 export const rollUpgrades = (
   content: GameContent,
-  rng: Rng,
+  rng: Rng.Rng,
   hero: Hero
 ): readonly UpgradeChoice[] => {
   const candidates: UpgradeChoice[] = [];
@@ -206,7 +205,11 @@ export const rollUpgrades = (
     }
   }
   // Drawn with the run's seeded Rng, so runs stay reproducible.
-  const count = rng.pickDistinct(candidates, content.rules.choicesPerLevelUp);
+  const count = Rng.pickDistinct(
+    rng,
+    candidates,
+    content.rules.choicesPerLevelUp
+  );
   const picks = candidates.slice(0, count);
   return picks.length > 0
     ? picks

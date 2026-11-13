@@ -77,7 +77,7 @@ export class Kernel<Config, State, Input, Event> {
   private run: State | null = null;
   private steps = 0;
   private paused = false;
-  private readonly clock: FixedStepClock;
+  private readonly clock: FixedStepClock.FixedStepClock;
   private readonly listeners = new Set<(event: Event) => void>();
   private lastSample = 0;
   private lastVersion = 0;
@@ -85,7 +85,9 @@ export class Kernel<Config, State, Input, Event> {
 
   constructor(simulation: KernelSimulation<Config, State, Input, Event>) {
     this.simulation = simulation;
-    this.clock = new FixedStepClock(simulation.stepSeconds ?? 1 / 60);
+    this.clock = FixedStepClock.make({
+      stepSeconds: simulation.stepSeconds ?? 1 / 60,
+    });
   }
 
   /** The current run's state, or null between runs. Read it; only a step changes it. */
@@ -107,7 +109,7 @@ export class Kernel<Config, State, Input, Event> {
     this.run = state;
     this.steps = 0;
     this.paused = false;
-    this.clock.reset();
+    FixedStepClock.reset(this.clock);
     this.flushEvents(state);
     if (this.simulation.sample) {
       this.emitSample(state, nowMs);
@@ -153,12 +155,13 @@ export class Kernel<Config, State, Input, Event> {
     let ran = 0;
     if ("steps" in budget) {
       const { steps } = budget;
-      this.clock.reset();
+      FixedStepClock.reset(this.clock);
       for (; ran < steps; ran++) {
         runStep(this.clock.stepSeconds);
       }
     } else {
-      ran = this.clock.advance(
+      ran = FixedStepClock.advance(
+        this.clock,
         Math.min(budget.seconds, MAX_FRAME_SECONDS),
         runStep
       );

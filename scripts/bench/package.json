@@ -1,0 +1,16 @@
+{
+  "name": "@arcadekit/bench",
+  "version": "0.0.0",
+  "private": true,
+  "description": "`pnpm bench`: wall time and heap allocated on the hot paths ADR-0017 measured",
+  "type": "module",
+  "scripts": {
+    "bench": "node run.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@arcadekit/survivors": "workspace:*",
+    "arcadekit": "workspace:*",
+    "effect": "~4.1.2"
+  }
+}

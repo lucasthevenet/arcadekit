@@ -1,4 +1,4 @@
-import { makeRng } from "../core/index";
+import { Rng } from "../core/index";
 import type { PeerId, Transport } from "./transport";
 
 export interface MemoryNetworkOptions {
@@ -41,7 +41,7 @@ interface InFlight {
 export const createMemoryNetwork = (
   options: MemoryNetworkOptions
 ): MemoryNetwork => {
-  const rng = makeRng(options.seed);
+  const rng = Rng.make(options.seed);
   const latencyMs = options.latencyMs ?? 0;
   const jitterMs = options.jitterMs ?? 0;
   const loss = options.loss ?? 0;
@@ -64,8 +64,8 @@ export const createMemoryNetwork = (
       self: id,
       send: (to, message) => {
         // Draw for every message, lost or not, so cutting a peer off doesn't change the others'.
-        const lost = rng.next() < loss;
-        const dueMs = nowMs + latencyMs + rng.next() * jitterMs;
+        const lost = Rng.next(rng) < loss;
+        const dueMs = nowMs + latencyMs + Rng.next(rng) * jitterMs;
         if (lost || cut.has(id) || cut.has(to)) {
           return;
         }

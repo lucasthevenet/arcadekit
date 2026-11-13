@@ -1,3 +1,4 @@
+import { EntityPool } from "arcadekit/core";
 import { resolveTags } from "arcadekit/render-three";
 import type { InstancedSprites, TileLayer } from "arcadekit/render-three";
 import { drawnSprites, testSheet } from "arcadekit/render-three/testing";
@@ -167,7 +168,7 @@ const groundPicture = (
 };
 
 const addEnemy = (world: World, type: number, x: number, z: number) => {
-  const i = world.enemies.add();
+  const i = EntityPool.add(world.enemies);
   world.enemies.fields.type[i] = type;
   world.enemies.fields.x[i] = x;
   world.enemies.fields.z[i] = z;
@@ -189,10 +190,10 @@ describe(SurvivorsScene, () => {
     addEnemy(world, 0, 3, 0);
     addEnemy(world, 1, -3, 0);
     for (const value of [1, 3, 5]) {
-      const g = world.gems.add();
+      const g = EntityPool.add(world.gems);
       world.gems.fields.value[g] = value;
     }
-    const p = world.projectiles.add();
+    const p = EntityPool.add(world.projectiles);
     world.projectiles.fields.vx[p] = 10;
     world.projectiles.fields.weapon[p] = 0;
 
@@ -321,9 +322,9 @@ describe(SurvivorsScene, () => {
   it("draws gems by value and the projectile its weapon names", () => {
     const world = createWorld({ content, heroIds: ["knight"] }, { seed: 1 });
     for (const value of [1, 3, 5]) {
-      world.gems.fields.value[world.gems.add()] = value;
+      world.gems.fields.value[EntityPool.add(world.gems)] = value;
     }
-    const p = world.projectiles.add();
+    const p = EntityPool.add(world.projectiles);
     world.projectiles.fields.vx[p] = -10;
     const scene = new SurvivorsScene(art);
     scene.draw(world, 0);
@@ -351,7 +352,7 @@ describe(SurvivorsScene, () => {
     // Its x names each one here: enemies right of the hero, gems left.
     for (const x of [1, 2, 3, 4, 5]) {
       addEnemy(world, 0, x, 0);
-      const g = world.gems.add();
+      const g = EntityPool.add(world.gems);
       world.gems.fields.x[g] = -x;
       world.gems.fields.value[g] = 1;
     }
@@ -375,8 +376,8 @@ describe(SurvivorsScene, () => {
       false,
       false,
     ]);
-    world.enemies.remove(0);
-    world.gems.remove(0);
+    EntityPool.remove(world.enemies, 0);
+    EntityPool.remove(world.gems, 0);
     expect([world.enemies.fields.x[0], world.gems.fields.x[0]]).toStrictEqual([
       5, -5,
     ]);
