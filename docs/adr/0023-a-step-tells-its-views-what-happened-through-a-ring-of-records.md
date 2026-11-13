@@ -4,7 +4,7 @@ status: accepted
 
 # A step tells its views what happened through a ring of records
 
-> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-13: core's modules are namespaces in Effect's shape, and a ring is `Ring.make`'s `Ring.Ring`, and a reader `RingReader.make`'s, which takes with `RingReader.take(reader, ring)`. The text below keeps the names of its day; ADR-0024's table gives each one's name now.
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-13: core's modules are namespaces in Effect's shape, and the text below uses their names: a ring is a `Ring.Ring`, and a reader is made with `RingReader.make()`.
 
 A view needs to know what a step did: a hit and where it landed, a hole that was filled, an undo. The kit gave it two channels, and neither fits. An event is a rare, meaningful fact and never per-entity data ([ADR-0008](0008-events-are-rare-facts.md)), and a cue counter is a count with no place or amount ([ADR-0014](0014-sounds-come-from-cue-counters-read-by-the-presentation.md)). So each game found its own way, and each way has a cost:
 
@@ -17,24 +17,24 @@ All three games show the need, and two wrote a ring ([ADR-0001](0001-kit-changes
 
 ## Decision
 
-**A ring of records is a primitive of `arcadekit/core`.** `createRing(capacity, layout)` makes a fixed number of records stored as one typed array per field, as a pool's entities are. Record n, counted from 0, is in slot `n % capacity`, so a new record overwrites the oldest. `push` reserves the next slot with every field 0, `pop` forgets the newest record, `written` counts the records pushed and not popped, and `length` those still held. Nothing is allocated after the ring is made, so a step that pushes a record allocates nothing. No game supplies a ring as a part under a name of its own, so it is no declaration ([ADR-0020](0020-a-game-is-declared.md)).
+**A ring of records is a primitive of `arcadekit/core`.** `Ring.make(capacity, layout)` makes a fixed number of records stored as one typed array per field, as a pool's entities are. Record n, counted from 0, is in slot `n % capacity`, so a new record overwrites the oldest. `Ring.push` reserves the next slot with every field 0, `Ring.pop` forgets the newest record, `written` counts the records pushed and not popped, and `length` those still held. Nothing is allocated after the ring is made, so a step that pushes a record allocates nothing. No game supplies a ring as a part under a name of its own, so it is no declaration ([ADR-0020](0020-a-game-is-declared.md)).
 
 **A ring is one of two things**, and the game says which by where it keeps it and what its rules do with it:
 
 - **A ring only views read** carries what a step did. The step pushes and never reads it back, so it cannot change what a run does, and its `written` only grows. The game's state hash leaves it out, as it leaves out its cue counters. It is lossy: a view that looks after more than `capacity` pushes has missed the oldest. This carries ADR-0014's rule from a count to a record: a moment that needs a place or an amount is a record, under the same rule.
 - **A ring the rules pop or read** is state, like any other field: push-puzzle's undo history. A state hash covers it, and no reader follows it.
 
-**Each view takes what is new with a reader of its own.** A `RingReader` is how far one view has read one ring. `take(ring)` gives the number of the first record the reader has not taken, and takes every record up to `ring.written`:
+**Each view takes what is new with a reader of its own.** A `RingReader` is how far one view has read one ring. `RingReader.take(reader, ring)` gives the number of the first record the reader has not taken, and takes every record up to `ring.written`:
 
 ```ts
 const { changes } = puzzle;
-for (let n = this.seen.take(changes); n < changes.written; n++) {
-  const i = changes.slotOf(n);
+for (let n = RingReader.take(this.seen, changes); n < changes.written; n++) {
+  const i = Ring.slotOf(changes, n);
   this.sinkBox(changes.fields.box[i]!, changes.fields.cell[i]!, t);
 }
 ```
 
-- The first `take` of a ring gives `ring.written`: a view shows what happens from now on, not what happened before it looked. A new run is a new state and so a new ring, which the reader sees by identity.
+- The first `RingReader.take` of a ring gives `ring.written`: a view shows what happens from now on, not what happened before it looked. A new run is a new state and so a new ring, which the reader sees by identity.
 - After that it gives where it stopped, or `ring.written - ring.capacity` if the ring has lapped it.
 - If it finds `written` below what it took, the ring was popped or cleared, and it starts again at `written`. That is all it can see of either, so a reader follows a ring whose `written` only grows: a ring the rules pop or clear is not followed.
 
@@ -48,7 +48,7 @@ A view keeps one reader for each ring it reads, and two views read one ring with
 
 ## Consequences
 
-- Push-puzzle's undo history is made with `createRing`, and its own ring is deleted (`History`, `createHistory`, `pushRecord`, `popRecord`). The slots are the ones it had. `length` is a count of its own, as the history's was: a record that was overwritten is not popped, though `written` is still above 0. Its `historyCapacity` is a ring's capacity now, a whole number of 1 or more, and `createPuzzle` refuses any other: 0 used to give a run with no undo.
+- Push-puzzle's undo history is made with `Ring.make`, and its own ring is deleted (`History`, `createHistory`, `pushRecord`, `popRecord`). The slots are the ones it had. `length` is a count of its own, as the history's was: a record that was overwritten is not popped, though `written` is still above 0. Its `historyCapacity` is a ring's capacity now, a whole number of 1 or more, and `createPuzzle` refuses any other: 0 used to give a run with no undo.
 - Push-puzzle's rules push to `Puzzle.changes`, a ring of eight records only its view reads, what a turn did that the state no longer shows after it: the id of a box that filled a hole with the hole's cell, and an undo. The view reads it in place of comparing with last frame, which answers finding 12. The engine's frame runs at most five steps and a step holds at most one turn, so eight records lose nothing. Where a thing is drawn between two cells is still the view's own: its slides stay.
 - Survivors keeps `hitFlash` and `hurtTimer` in its state. Its recorded hashes cover both, and moving a view's timer is no change to the rules. They move to a ring with the next change that re-records survivors on purpose.
 - No recorded hash moved. Push-puzzle has no state hash, and its replay test compares the board, the boxes' ids and the counts, which no ring changes.
