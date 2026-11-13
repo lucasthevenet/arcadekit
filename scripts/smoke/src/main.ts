@@ -108,7 +108,6 @@ class DotsContent extends Content("DotsContent", {
 /** What the game keeps between sessions: the most dots near the cursor, by run. */
 class DotsSave extends Save("DotsSave", {
   storageKey: "smoke/dots/save",
-  field: "runs",
   record: Schema.Struct({ near: Schema.Int }),
   mergeRecord: (a, b) => (a.near >= b.near ? a : b),
 }) {}
@@ -189,7 +188,7 @@ Effect.runFork(
           Layer.mergeAll(
             BrowserAudioLayer,
             Layer.mergeAll(DotsSave.layer, DotsAudioSettings.layer).pipe(
-              Layer.provide(BrowserSaveStorage)
+              Layer.provide(BrowserSaveStorage.layer)
             ),
             DotsSheet.layer(loadSpriteSheet("sprites/dots.json")),
             DotsContent.layer(

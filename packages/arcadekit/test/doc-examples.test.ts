@@ -12,7 +12,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // The entries are those off NOT_YET_EFFECT_STYLE, which this reads from the style test's text,
 // as `pnpm smoke` does: the list is the style test's. An example imports what a game would: any of
 // those entries, a sub-entry's examples its parent's too (`arcadekit/content` beside
-// `arcadekit/content/browser`), and `effect`, to run what an entry's Effects do.
+// `arcadekit/content/browser`), `effect`, to run what an entry's Effects do, and
+// `effect/persistence`, for the store a save is kept in (EFFECT_MODULES).
 //
 // An entry that needs the DOM has examples written as a browser runs them. They run here on a
 // stand-in of the few globals they use (BROWSER_ENTRIES), made again for each example. An entry
@@ -48,7 +49,10 @@ const entries = Object.entries(
   .filter(({ entry }) => !notYet.has(entry.split("/", 1)[0] ?? ""));
 
 // The entries whose examples run in a browser, by import path.
-const BROWSER_ENTRIES: ReadonlySet<string> = new Set(["input"]);
+const BROWSER_ENTRIES: ReadonlySet<string> = new Set(["input", "save/browser"]);
+
+// The modules of Effect an example may import, each by its import path.
+const EFFECT_MODULES: readonly string[] = ["effect", "effect/persistence"];
 
 /** A key event, as a browser makes one: the fields `arcadekit/input` reads. */
 class StandInKeyboardEvent extends Event {
@@ -64,10 +68,31 @@ class StandInKeyboardEvent extends Event {
   }
 }
 
+/** A browser's `localStorage`, as far as Effect's store over it calls one: kept in memory. */
+const storageStandIn = () => {
+  const items = new Map<string, string>();
+  return {
+    get length() {
+      return items.size;
+    },
+    key: (index: number) => [...items.keys()][index] ?? null,
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      items.set(key, value);
+    },
+    removeItem: (key: string) => {
+      items.delete(key);
+    },
+    clear: () => {
+      items.clear();
+    },
+  };
+};
+
 /**
  * What a browser gives the examples of BROWSER_ENTRIES: a window to dispatch key events on, a
- * document that makes elements to listen on, and no gamepad. Node's EventTarget and Event do the
- * dispatching.
+ * document that makes elements to listen on, no gamepad, and a localStorage that starts empty.
+ * Node's EventTarget and Event do the dispatching.
  */
 const browserStandIn = (): Readonly<Record<string, unknown>> => {
   const document = {
@@ -85,6 +110,7 @@ const browserStandIn = (): Readonly<Record<string, unknown>> => {
     document,
     navigator: { getGamepads: () => [] },
     KeyboardEvent: StandInKeyboardEvent,
+    localStorage: storageStandIn(),
   };
 };
 
@@ -130,7 +156,7 @@ const runnable = (code: string): string =>
     code
       .replaceAll(/^import type [\s\S]*?;$/gmu, "")
       .replaceAll(
-        /^import (?<names>\{[\s\S]*?\}) from "(?<from>arcadekit\/[\w/-]+|effect)";$/gmu,
+        /^import (?<names>\{[\s\S]*?\}) from "(?<from>arcadekit\/[\w/-]+|effect(?:\/[\w-]+)?)";$/gmu,
         (_whole, names: string, from: string) =>
           `const ${names} = kit[${JSON.stringify(from)}];`
       )
@@ -158,7 +184,11 @@ describe.each(entries)("arcadekit/$entry", ({ entry, publicFile }) => {
       "A result shown as `// =>` ends an expression that spans lines. Name what spans lines first, then show its result on one line."
     ).toStrictEqual([]);
     const kit: Readonly<Record<string, unknown>> = Object.fromEntries([
-      ["effect", await import("effect")],
+      ...(await Promise.all(
+        EFFECT_MODULES.map(
+          async (module) => [module, await import(module)] as const
+        )
+      )),
       ...(await Promise.all(
         entries.map(
           async ({ entry: imported, publicFile: file }) =>

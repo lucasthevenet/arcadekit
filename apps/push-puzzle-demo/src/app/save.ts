@@ -28,7 +28,6 @@ export const emptyRecords: LevelRecords = {};
  */
 export class PushPuzzleSave extends Save("PushPuzzleSave", {
   storageKey: "arcadekit/push-puzzle/save",
-  field: "levels",
   record: LevelRecord,
   mergeRecord: (a, b) => {
     if (!a.solved) {

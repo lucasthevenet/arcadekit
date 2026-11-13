@@ -73,7 +73,7 @@
       "default": "./dist/save.js"
     },
     "./save/browser": {
-      "source": "./src/save/browser.ts",
+      "source": "./src/save/browser/index.ts",
       "types": "./dist/save/browser.d.ts",
       "default": "./dist/save/browser.js"
     },
