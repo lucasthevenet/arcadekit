@@ -1,4 +1,4 @@
-import { easeOut, hashCell, lerp, progress } from "arcadekit/core";
+import { RingReader, easeOut, hashCell, lerp, progress } from "arcadekit/core";
 import { InstancedSprites, frameAt, snapToPixel } from "arcadekit/render-three";
 import type {
   PixelCamera,
@@ -8,6 +8,7 @@ import type {
 import * as THREE from "three";
 
 import { Tile } from "../level";
+import { Change } from "../world";
 import type { Puzzle } from "../world";
 
 /** Every tag the view draws. A sheet for push-puzzle needs them all. */
@@ -104,19 +105,14 @@ export class PuzzleSprites {
   private facing: Facing = "right";
   /** When the current walk began, for its animation. */
   private walkStartedAt = 0;
-  private lastUndos = 0;
+  /** How far this view has read the run's `changes`: what a turn did that the board no longer shows. */
+  private readonly seen = new RingReader();
   /** Indexed by box stable id. Pool indices move when a box fills a hole, so they can't be used. */
   private boxSlides: Slide[] = [];
-  /** 1 for each box id that was on the board last frame. */
-  private boxWasOn = new Uint8Array(0);
-  /** 1 for each box id on the board this frame. */
-  private boxIsOn = new Uint8Array(0);
   /** 1 for each box id still sliding into the hole it filled, drawn until it gets there. */
   private boxSinking = new Uint8Array(0);
   /** 1 for each cell that was a hole when the run started: once it's floor, a box filled it. */
   private startedAsHole = new Uint8Array(0);
-  /** Each cell's tile last frame, to see a hole get filled. */
-  private lastTiles = new Uint8Array(0);
   /** When each hole was filled. It shows open until the box slides in. */
   private filledAt = new Float64Array(0);
 
@@ -165,9 +161,20 @@ export class PuzzleSprites {
     if (this.puzzle !== puzzle) {
       this.startDrawing(puzzle);
     }
+    // What the turns since the last frame did that the board no longer shows.
+    const { changes } = puzzle;
+    let undid = false;
+    for (let n = this.seen.take(changes); n < changes.written; n++) {
+      const i = changes.slotOf(n);
+      if (changes.fields.kind[i] === Change.undone) {
+        undid = true;
+      } else {
+        this.sinkBox(changes.fields.box[i]!, changes.fields.cell[i]!, t);
+      }
+    }
     this.drawTiles(puzzle, t);
     let count = this.drawBoxes(puzzle, t);
-    count = this.drawPlayer(puzzle, t, count);
+    count = this.drawPlayer(puzzle, t, count, undid);
     this.actors.commit(count);
   }
 
@@ -178,10 +185,6 @@ export class PuzzleSprites {
     let count = 0;
     for (let cell = 0; cell < cells; cell++) {
       const tile = puzzle.tiles[cell];
-      if (tile === Tile.floor && this.lastTiles[cell] === Tile.hole) {
-        this.filledAt[cell] = t;
-      }
-      this.lastTiles[cell] = tile!;
       let tag: SpriteTag | undefined;
       let frame = -1;
       if (tile === Tile.wall) {
@@ -223,12 +226,11 @@ export class PuzzleSprites {
   private drawBoxes(puzzle: Puzzle, t: number): number {
     const { boxes } = puzzle;
     const { actors, tags } = this;
-    this.boxIsOn.fill(0);
     let count = 0;
     for (let i = 0; i < boxes.count; i++) {
       const id = boxes.idOf(i);
       const cell = boxes.fields.cell[i]!;
-      this.boxIsOn[id] = 1;
+      // On the board, so not sinking: an undo brought back a box that was.
       this.boxSinking[id] = 0;
       const tag = puzzle.goals[cell] === 1 ? tags.boxOnGoal : tags.box;
       const slide = this.slideTo(this.boxSlides[id]!, cell, t);
@@ -242,43 +244,42 @@ export class PuzzleSprites {
         count += 1;
       }
     }
-    // A box that left the pool fell into a hole next to where it was: slide it in, then drop it.
-    for (let id = 0; id < this.boxWasOn.length; id++) {
-      const slide = this.boxSlides[id]!;
-      if (this.boxWasOn[id] === 1 && this.boxIsOn[id] === 0) {
-        const hole = this.filledNeighbor(puzzle, slide.cell, t);
-        this.boxSinking[id] = hole === -1 ? 0 : 1;
-        if (hole !== -1) {
-          this.slideTo(slide, hole, t);
-        }
+    // A box that filled a hole has left the pool: it is drawn until it has slid in.
+    for (let id = 0; id < this.boxSinking.length; id++) {
+      if (this.boxSinking[id] === 0) {
+        continue;
       }
-      this.boxWasOn[id] = this.boxIsOn[id]!;
-      if (this.boxSinking[id] === 1 && this.boxIsOn[id] === 0) {
-        if (t - slide.startedAt >= SLIDE_SECONDS) {
-          this.boxSinking[id] = 0;
-        } else if (tags.box) {
-          this.slideTo(slide, slide.cell, t);
-          actors.set(
-            count,
-            this.snap(slide.x),
-            this.snap(slide.z),
-            frameAt(this.sheet.data, tags.box, t)
-          );
-          count += 1;
-        }
+      const slide = this.boxSlides[id]!;
+      if (t - slide.startedAt >= SLIDE_SECONDS) {
+        this.boxSinking[id] = 0;
+      } else if (tags.box) {
+        this.slideTo(slide, slide.cell, t);
+        actors.set(
+          count,
+          this.snap(slide.x),
+          this.snap(slide.z),
+          frameAt(this.sheet.data, tags.box, t)
+        );
+        count += 1;
       }
     }
     return count;
   }
 
-  /** Writes the player as sprite `index`. Returns the count after it. */
-  private drawPlayer(puzzle: Puzzle, t: number, index: number): number {
+  /**
+   * Writes the player as sprite `index`, and returns the count after it. `undid` says whether a
+   * turn since the last frame was an undo.
+   */
+  private drawPlayer(
+    puzzle: Puzzle,
+    t: number,
+    index: number,
+    undid: boolean
+  ): number {
     const slide = this.playerSlide;
     const from = slide.cell;
     const wasWalking = t - slide.startedAt < SLIDE_SECONDS + WALK_LINGER;
     this.slideTo(slide, puzzle.player, t);
-    const undid = puzzle.cues.undos !== this.lastUndos;
-    this.lastUndos = puzzle.cues.undos;
     if (from !== slide.cell) {
       if (!wasWalking) {
         this.walkStartedAt = t;
@@ -396,21 +397,18 @@ export class PuzzleSprites {
     for (let cell = 0; cell < cells; cell++) {
       this.startedAsHole[cell] = puzzle.tiles[cell] === Tile.hole ? 1 : 0;
     }
-    this.lastTiles = Uint8Array.from(puzzle.tiles);
     this.filledAt = new Float64Array(cells).fill(-Infinity);
+    // What this run's turns did before now is not shown: the board is drawn at rest.
+    this.seen.reset();
 
     this.playerSlide = this.restingSlide(puzzle.player);
     this.facing = "right";
-    this.lastUndos = puzzle.cues.undos;
     // Every box that will ever exist in this run is in the pool now, before any hole is filled.
     this.boxSlides = [];
-    this.boxWasOn = new Uint8Array(boxes.capacity);
-    this.boxIsOn = new Uint8Array(boxes.capacity);
     this.boxSinking = new Uint8Array(boxes.capacity);
     for (let i = 0; i < boxes.count; i++) {
       const id = boxes.idOf(i);
       this.boxSlides[id] = this.restingSlide(boxes.fields.cell[i]!);
-      this.boxWasOn[id] = 1;
     }
     for (let id = 0; id < boxes.capacity; id++) {
       this.boxSlides[id] ??= newSlide(-1);
@@ -439,24 +437,24 @@ export class PuzzleSprites {
     return actors;
   }
 
-  /** The hole next to `cell` that was filled this frame, or -1. */
-  private filledNeighbor(puzzle: Puzzle, cell: number, t: number): number {
-    const { cols } = puzzle;
-    const col = cell % cols;
-    const { filledAt } = this;
-    if (filledAt[cell - cols] === t) {
-      return cell - cols;
+  /**
+   * A turn since the last frame put the box `id` in the hole at `cell` and took it out of the
+   * pool: the hole shows open and the box is drawn until it has slid in.
+   *
+   * A frame may take several turns' records, so a fall is shown only if the board still has
+   * it and the view does not. Not one a later turn undid, which put the box back on the
+   * board. And not one into the hole the box was last drawn in, undone and made again since.
+   */
+  private sinkBox(id: number, cell: number, t: number) {
+    const slide = this.boxSlides[id]!;
+    // Where the pool has the box, or -1: it has it again once the fall is undone.
+    const index = this.puzzle!.boxes.indexOf(id);
+    if (index !== -1 || slide.cell === cell) {
+      return;
     }
-    if (filledAt[cell + cols] === t) {
-      return cell + cols;
-    }
-    if (col > 0 && filledAt[cell - 1] === t) {
-      return cell - 1;
-    }
-    if (col < cols - 1 && filledAt[cell + 1] === t) {
-      return cell + 1;
-    }
-    return -1;
+    this.filledAt[cell] = t;
+    this.boxSinking[id] = 1;
+    this.slideTo(slide, cell, t);
   }
 
   /** A world position rounded to the nearest screen pixel, so a slide never blurs or shimmers. */

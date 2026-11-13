@@ -1,6 +1,6 @@
 # arcadekit/core
 
-The DOM-free building blocks of a game's simulation: a fixed-step clock, a seeded random generator, struct-of-arrays entity pools, a spatial grid and an event buffer, with the exact math, the timers and the eases a step calls, and the hasher of a state hash. Nothing in it allocates per step, and nothing touches the DOM, so it runs in a browser, a Web Worker or on a server.
+The DOM-free building blocks of a game's simulation: a fixed-step clock, a seeded random generator, struct-of-arrays entity pools, rings of records, a spatial grid and an event buffer, with the exact math, the timers and the eases a step calls, and the hasher of a state hash. Nothing in it allocates per step, and nothing touches the DOM, so it runs in a browser, a Web Worker or on a server.
 
 An entry of the [`arcadekit`](../../README.md) package.
 
@@ -243,6 +243,69 @@ const offer = upgrades.slice(0, count);
 
 It draws once for each item it picks, the last one included, and every later draw of the run follows from that: the number of draws is part of its contract. So `count` is a whole number of 0 or more, and any other is a `RangeError`.
 
+## Telling a view what a step did
+
+A view needs to know what a step did: a hit and where it landed, a hole that was filled. An event is a rare fact for the app, and a cue counter is a count with no place or amount. A **ring** carries the rest: `createRing(capacity, layout)` makes a fixed number of records stored as one typed array per field, as a pool's entities are. The step pushes a record, and each view takes the records written since it last looked, with a `RingReader` of its own ([ADR-0023](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0023-a-step-tells-its-views-what-happened-through-a-ring-of-records.md)).
+
+```ts
+import { RingReader, createRing } from "arcadekit/core";
+import type { Ring } from "arcadekit/core";
+
+const BUMP_LAYOUT = {
+  /** Where the two cars touched. */
+  x: Float32Array,
+  z: Float32Array,
+  /** How hard, in metres a second. */
+  speed: Float32Array,
+};
+
+interface Race {
+  /** Bumps, for the views alone: the step pushes them and never reads them back. */
+  readonly bumps: Ring<typeof BUMP_LAYOUT>;
+}
+
+const createRace = (): Race => ({ bumps: createRing(32, BUMP_LAYOUT) });
+
+/** In the step: a record for the bump. Nothing is allocated. */
+const bump = (race: Race, x: number, z: number, speed: number) => {
+  const { bumps } = race;
+  const i = bumps.push();
+  bumps.fields.x[i] = x;
+  bumps.fields.z[i] = z;
+  bumps.fields.speed[i] = speed;
+};
+
+/** A view that draws a spark for each bump since its last frame. */
+class SparkView {
+  /** How far this view has read `bumps`. */
+  private readonly seen = new RingReader();
+  private readonly spark: (x: number, z: number, speed: number) => void;
+
+  constructor(spark: (x: number, z: number, speed: number) => void) {
+    this.spark = spark;
+  }
+
+  render(race: Race): void {
+    const { bumps } = race;
+    for (let n = this.seen.take(bumps); n < bumps.written; n++) {
+      const i = bumps.slotOf(n);
+      this.spark(
+        bumps.fields.x[i]!,
+        bumps.fields.z[i]!,
+        bumps.fields.speed[i]!
+      );
+    }
+  }
+}
+```
+
+- **Record n, counted from 0, is in slot `n % capacity`**, which `slotOf(n)` gives, and a new record overwrites the oldest. `push` reserves the slot of the next record and returns it with every field 0, so a step writes only the fields that start at something else. `written` counts the records pushed and not popped, and nothing is allocated after the ring is made.
+- **`take(ring)` gives the number of the first record the reader has not taken**, and takes every record up to `ring.written`: a view reads the records from there to `written`. The first `take` of a ring gives `written`, so a view shows what happens from now on, not what happened before it looked. A new run is a new state and so a new ring, which the reader tells by which object it is handed; `reset` forgets the ring, for a view that starts again on the same run. A reader follows a ring whose `written` only grows.
+- **A ring only views read is lossy.** A view that looks after more than `capacity` pushes has missed the oldest: `take` then gives `written - capacity`. Size it for what a frame's steps can push.
+- **The step pushes and never reads it back**, so it cannot change what a run does, and the game's state hash leaves it out, as it leaves out its cue counters. A reader writes nothing to the ring, so two views read one ring with a reader each, and a view still never changes a run's state.
+- **A ring the rules pop or read is state**, like any other field. `pop` forgets the newest record and returns its slot, or -1 when none is held, and `length` counts the records still held, `capacity` at most. `clear` forgets them all. An undo history is one: each turn pushes a record, and an undo pops it. A state hash covers such a ring, and no reader follows it. A reader is told of no `pop` or `clear`: all it can do is start again at `written` when it finds `written` below what it took, so it misses records pushed after one.
+- **A capacity that is not a whole number of 1 or more is a `RangeError`.**
+
 ## The state hash
 
 A state hash is a 32-bit digest of the numbers a game lists from a run's state, in a fixed order. Lockstep peers compare it to notice a desync, and a replay test pins one. The game writes the list, since the kit never looks inside a state ([ADR-0007](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0007-no-runtime-snapshots.md)), and the kit folds it: `StateHasher` takes one number at a time, and `visitPool` lists a pool's live entities.
@@ -273,8 +336,8 @@ const hashRace = (race: Race): number => {
 
 - **`StateHasher` is FNV-1a, 32 bits, over each number's eight bytes as a float64**, so a change in any bit shows: 0 and -0 have different digests. A NaN is the exception: every NaN has the same digest, since an engine may hold one in any of its bit patterns and no rule can tell them apart. `number` folds one number in and allocates nothing, `digest` gives an unsigned 32-bit integer, and `reset` starts again, so one hasher serves every hash.
 - **`visitPool` calls its `visit` with the pool's `count`, then with each field's live values**, one field at a time in the layout's order, and with nothing past `count`. It allocates nothing either, so a host can take a hash after every step. It does not visit an identified pool's ids: they follow from the order of its adds and removes.
-- **What is not listed is not hashed.** A cue counter, or anything else a view alone reads, is left out by not being listed ([ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md)): `horns` above. Scratch a step fills and reads back within one step is left out the same way.
+- **What is not listed is not hashed.** A cue counter, a ring only views read, or anything else a view alone reads, is left out by not being listed ([ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md)): `horns` above. Scratch a step fills and reads back within one step is left out the same way.
 - **`number` is a function of its own**, so it is passed where a function is asked for, as `visitPool`'s `visit` above. A game that folds the same list a second way, such as a trace after every step of a long run, writes the list as a function that takes `add` (`visitRace(race, add)`) and passes it `hasher.number`.
 - **A host or a test takes a hash, between steps.** The rules never read one.
 
-See [ADR-0003](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0003-one-fixed-step-clock.md) (one fixed-step clock), [ADR-0006](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0006-identified-pools-reuse-ids.md) (identified pools) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math).
+See [ADR-0003](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0003-one-fixed-step-clock.md) (one fixed-step clock), [ADR-0006](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0006-identified-pools-reuse-ids.md) (identified pools), [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math) and [ADR-0023](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0023-a-step-tells-its-views-what-happened-through-a-ring-of-records.md) (a ring of records from a step to its views).

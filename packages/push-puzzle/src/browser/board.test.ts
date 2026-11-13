@@ -130,6 +130,10 @@ const settle = (sprites: PuzzleSprites, puzzle: Puzzle, t: number) => {
 const player = (sprites: PuzzleSprites, sheet: SpriteSheet) =>
   shown(sprites, sheet, 1).find((sprite) => sprite.tag.startsWith("player"))!;
 
+/** Every box drawn now, on the board or on its way into a hole. */
+const boxes = (sprites: PuzzleSprites, sheet: SpriteSheet) =>
+  shown(sprites, sheet, 1).filter((sprite) => sprite.tag.startsWith("box"));
+
 describe("the push-puzzle sprites", () => {
   it("draws a tile per cell inside the walls, then the boxes and the player, in two batches", () => {
     const { sheet, sprites } = setup();
@@ -233,6 +237,148 @@ describe("the push-puzzle sprites", () => {
       "#,@o.#",
       "#@$^.#",
     ]);
+  });
+
+  it("draws a box once when its fall is undone while it slides in", () => {
+    const { sheet, sprites } = setup();
+    const puzzle = start(["######", "#@$^.#", "######"]);
+    sprites.draw(puzzle, 0);
+    tap(puzzle, "right");
+    sprites.draw(puzzle, 1);
+    undo(puzzle);
+    sprites.draw(puzzle, 1 + SLIDE / 3);
+    // Back in the pool, so no longer drawn as a box on its way into the hole.
+    expect(boxes(sprites, sheet)).toHaveLength(1);
+    sprites.draw(puzzle, 2);
+    expect(picture(sprites, sheet, puzzle)[1]).toBe("#@$^.#");
+  });
+
+  it("slides the second box to fall, though the first fall moved it in the pool", () => {
+    const { sheet, sprites } = setup();
+    const puzzle = start([
+      "########",
+      "#@$^   #",
+      "# $^   #",
+      "#   .  #",
+      "########",
+    ]);
+    sprites.draw(puzzle, 0);
+    tap(puzzle, "right");
+    settle(sprites, puzzle, 1);
+    tap(puzzle, "left");
+    tap(puzzle, "down");
+    settle(sprites, puzzle, 2);
+    tap(puzzle, "right");
+    sprites.draw(puzzle, 3);
+    const sinking = picture(sprites, sheet, puzzle);
+    sprites.draw(puzzle, 3.5);
+    const filled = picture(sprites, sheet, puzzle);
+
+    expect([sinking.slice(1, 3), filled.slice(1, 3)]).toStrictEqual([
+      ["#,,o,,,#", "#@$^,,,#"],
+      ["#,,o,,,#", "#,@o,,,#"],
+    ]);
+  });
+
+  it("slides a box into a hole from where it was last drawn, after a push and the fall in one frame", () => {
+    const { sheet, sprites } = setup();
+    const puzzle = start(["#######", "#@$ ^.#", "#######"]);
+    sprites.draw(puzzle, 0);
+    // A push and then the fall, with no frame between them: the hole is two cells from where
+    // the box was last drawn, and the board has neither any more.
+    tap(puzzle, "right");
+    tap(puzzle, "right");
+    sprites.draw(puzzle, 1);
+    sprites.draw(puzzle, 1 + SLIDE / 3);
+    const midway = boxes(sprites, sheet);
+    const sinking = picture(sprites, sheet, puzzle);
+    sprites.draw(puzzle, 1.5);
+
+    expect(midway).toHaveLength(1);
+    // Columns 2 and 4 of 7 are at x -1 and 1.
+    expect(midway[0]!.x).toBeGreaterThan(-1);
+    expect(midway[0]!.x).toBeLessThan(1);
+    expect([sinking[1]!.charAt(4), boxes(sprites, sheet)]).toStrictEqual([
+      "^",
+      [],
+    ]);
+    expect(picture(sprites, sheet, puzzle)[1]).toBe("#,,@o.#");
+  });
+
+  it("goes on with a box's slide through a fall that was undone before it looked", () => {
+    const { sheet, sprites } = setup();
+    const puzzle = start(["#######", "#@$ ^.#", "#######"]);
+    sprites.draw(puzzle, 0);
+    tap(puzzle, "right");
+    sprites.draw(puzzle, 1);
+    // Into the hole and back out between two frames: the box is in the cell it was sliding to.
+    tap(puzzle, "right");
+    undo(puzzle);
+    sprites.draw(puzzle, 1 + SLIDE / 3);
+    const midway = boxes(sprites, sheet);
+    sprites.draw(puzzle, 1 + SLIDE);
+    const after = boxes(sprites, sheet);
+
+    expect([midway.length, after.length]).toStrictEqual([1, 1]);
+    // Columns 2 and 3 of 7 are at x -1 and 0.
+    expect(midway[0]!.x).toBeGreaterThan(-1);
+    expect(midway[0]!.x).toBeLessThan(0);
+    expect(after[0]!.x).toBe(0);
+    expect(picture(sprites, sheet, puzzle)[1]).toBe("#,@$^.#");
+  });
+
+  it("keeps a hole filled through an undo and the same fall again before it looked", () => {
+    const { sheet, sprites } = setup();
+    const puzzle = start(["######", "#@$^.#", "######"]);
+    sprites.draw(puzzle, 0);
+    tap(puzzle, "right");
+    settle(sprites, puzzle, 1);
+    // Out of the hole and into it again between two frames: the box is in the hole, as it was.
+    undo(puzzle);
+    tap(puzzle, "right");
+    sprites.draw(puzzle, 2);
+    expect(picture(sprites, sheet, puzzle)[1]).toBe("#,@o.#");
+  });
+
+  it("still slides a box into a hole once the run's changes have gone round their ring", () => {
+    const { sheet, sprites } = setup();
+    const puzzle = start(["######", "#@$^.#", "######"]);
+    sprites.draw(puzzle, 0);
+    // Four times into the hole and back out, with a frame after each turn: eight records.
+    for (let i = 0; i < 4; i++) {
+      tap(puzzle, "right");
+      sprites.draw(puzzle, 2 * i + 1);
+      undo(puzzle);
+      sprites.draw(puzzle, 2 * i + 2);
+    }
+    // The ninth is written over the first.
+    tap(puzzle, "right");
+    sprites.draw(puzzle, 9);
+    const sinking = picture(sprites, sheet, puzzle);
+    sprites.draw(puzzle, 9.5);
+    const filled = picture(sprites, sheet, puzzle);
+
+    expect([
+      puzzle.changes.capacity,
+      puzzle.changes.written,
+      sinking[1],
+      filled[1],
+    ]).toStrictEqual([8, 9, "#@$^.#", "#,@o.#"]);
+  });
+
+  it("draws a run again after the menu at rest, with nothing of the turns it missed", () => {
+    const { sheet, sprites } = setup();
+    const puzzle = start(["######", "#@$^.#", "######"]);
+    sprites.draw(puzzle, 0);
+    sprites.draw(null, 1);
+    // A box falls while the menu shows.
+    tap(puzzle, "right");
+    sprites.draw(puzzle, 2);
+    // No box is on its way into the hole: the player alone, standing where it is. Column 2 of
+    // 6 is at x -0.5.
+    expect(
+      shown(sprites, sheet, 1).map(({ tag, x }) => [tag, x])
+    ).toStrictEqual([["player/idle", -0.5]]);
   });
 
   it("starts a new run at rest, and shows a dim floor with no run", () => {

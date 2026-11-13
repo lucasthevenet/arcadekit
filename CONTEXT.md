@@ -104,6 +104,8 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Pool**: a fixed-capacity set of entities stored as one typed array per field (`createPool` in `arcadekit/core`). A new entity's fields start at 0. Removing swaps the last entity in, so pool indices are not stable. An **identified pool** (`createIdentifiedPool`) also gives each entity a stable id, for a genre that must name one entity across removals (undo, tweening).
 
+**Ring**: a fixed number of records stored as one typed array per field, where a new record overwrites the oldest (`createRing` in `arcadekit/core`). A ring only views read carries what a step did, such as a hit or a hole filled: the step pushes and never reads it, the state hash leaves it out, and each view takes what is new with a `RingReader`. A ring the rules pop, such as push-puzzle's undo history, is state. _Avoid_: event buffer (`EventBuffer` holds a frame's events), queue, log.
+
 **Spatial grid**: a uniform grid in `arcadekit/core` (`SpatialGrid`) for "which points are near here?", rebuilt every step from continuous positions. `within` and `nearest` answer with the distance tested; `query` gives the candidates of the cells a circle overlaps. Not a tile map.
 
 **Tile map**: a genre's grid of static cells (wall, floor, hole), stored in typed arrays and indexed by column and row (`row * cols + col`). It describes the level, not where entities are. Push-puzzle's lives in the genre package.

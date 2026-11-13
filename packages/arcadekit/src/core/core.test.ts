@@ -3,11 +3,13 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   EventBuffer,
   FixedStepClock,
+  RingReader,
   SpatialGrid,
   StateHasher,
   countDown,
   createIdentifiedPool,
   createPool,
+  createRing,
   easeIn,
   easeOut,
   easeOutCubic,
@@ -18,7 +20,7 @@ import {
   takeWhole,
   visitPool,
 } from "./index";
-import type { Pool, PoolLayout, Rng } from "./index";
+import type { Pool, PoolLayout, Ring, Rng } from "./index";
 
 describe(makeRng, () => {
   it("repeats for the same seed and differs for another", () => {
@@ -454,6 +456,290 @@ describe(createIdentifiedPool, () => {
     pool.clear();
     expect(pool.idOf(pool.add())).toBe(0);
     expect(pool.idOf(pool.add())).toBe(1);
+  });
+});
+
+const HIT_LAYOUT = { x: Float32Array, amount: Uint16Array };
+
+/** Pushes a record and reads its fields before anything writes them, then writes both. */
+const pushHit = (
+  ring: Ring<typeof HIT_LAYOUT>,
+  x: number,
+  amount: number
+): number[] => {
+  const slot = ring.push();
+  const clean = [slot, ring.fields.x[slot]!, ring.fields.amount[slot]!];
+  ring.fields.x[slot] = x;
+  ring.fields.amount[slot] = amount;
+  return clean;
+};
+
+describe(createRing, () => {
+  it("has one typed array of `capacity` for each field of its layout, and no record", () => {
+    const ring = createRing(3, HIT_LAYOUT);
+    // Each field is the typed array its layout names, not any of them.
+    expectTypeOf(ring.fields.x).toExtend<Float32Array>();
+    expectTypeOf(ring.fields.amount).toExtend<Uint16Array>();
+    expectTypeOf(ring.fields.amount).not.toExtend<Float32Array>();
+    expect([ring.fields.x, ring.fields.amount]).toStrictEqual([
+      new Float32Array(3),
+      new Uint16Array(3),
+    ]);
+    expect([ring.capacity, ring.written, ring.length]).toStrictEqual([3, 0, 0]);
+  });
+
+  it("pushes into slots 0 to capacity - 1 and then 0 again, each with every field 0", () => {
+    const ring = createRing(3, HIT_LAYOUT);
+    expect([
+      pushHit(ring, 1.5, 10),
+      pushHit(ring, 2.5, 20),
+      pushHit(ring, 3.5, 30),
+    ]).toStrictEqual([
+      [0, 0, 0],
+      [1, 0, 0],
+      [2, 0, 0],
+    ]);
+    // The ring is full: every slot holds what its record wrote.
+    expect([[...ring.fields.x], [...ring.fields.amount]]).toStrictEqual([
+      [1.5, 2.5, 3.5],
+      [10, 20, 30],
+    ]);
+    // Records 3 and 4 overwrite records 0 and 1, and their slots come back clean.
+    expect([pushHit(ring, 4.5, 40), pushHit(ring, 5.5, 50)]).toStrictEqual([
+      [0, 0, 0],
+      [1, 0, 0],
+    ]);
+    expect([[...ring.fields.x], [...ring.fields.amount]]).toStrictEqual([
+      [4.5, 5.5, 3.5],
+      [40, 50, 30],
+    ]);
+  });
+
+  it("counts every push in `written`, and in `length` up to its capacity", () => {
+    const ring = createRing(3, HIT_LAYOUT);
+    const counts: number[][] = [];
+    for (let n = 0; n < 5; n++) {
+      ring.push();
+      counts.push([ring.written, ring.length]);
+    }
+    expect(counts).toStrictEqual([
+      [1, 1],
+      [2, 2],
+      [3, 3],
+      [4, 3],
+      [5, 3],
+    ]);
+  });
+
+  it("gives record n's slot, n % capacity, which is where push put it", () => {
+    const ring = createRing(3, HIT_LAYOUT);
+    const pushed = Array.from({ length: 7 }, () => ring.push());
+    expect(pushed).toStrictEqual([0, 1, 2, 0, 1, 2, 0]);
+    expect(pushed.map((_, n) => ring.slotOf(n))).toStrictEqual(pushed);
+  });
+
+  it("pops the newest record's slot, and lowers both counts", () => {
+    const ring = createRing(4, HIT_LAYOUT);
+    pushHit(ring, 1.5, 10);
+    pushHit(ring, 2.5, 20);
+    pushHit(ring, 3.5, 30);
+    expect([ring.pop(), ring.written, ring.length]).toStrictEqual([2, 2, 2]);
+    // The record is still there to read: a pop forgets it, and the next push cleans its slot.
+    expect([ring.fields.x[2], ring.fields.amount[2]]).toStrictEqual([3.5, 30]);
+    expect([ring.pop(), ring.written, ring.length]).toStrictEqual([1, 1, 1]);
+    expect([pushHit(ring, 4.5, 40), ring.written, ring.length]).toStrictEqual([
+      [1, 0, 0],
+      2,
+      2,
+    ]);
+    expect([
+      ring.pop(),
+      ring.pop(),
+      ring.pop(),
+      ring.written,
+      ring.length,
+    ]).toStrictEqual([1, 0, -1, 0, 0]);
+  });
+
+  it("pops `capacity` records after capacity + 1 pushes, and then -1", () => {
+    const ring = createRing(3, HIT_LAYOUT);
+    for (const amount of [10, 20, 30, 40]) {
+      pushHit(ring, 0, amount);
+    }
+    // Newest first: records 3, 2 and 1. Record 0 was overwritten by record 3.
+    const popped = [ring.pop(), ring.pop(), ring.pop()];
+    expect(popped).toStrictEqual([0, 2, 1]);
+    expect(popped.map((slot) => ring.fields.amount[slot])).toStrictEqual([
+      40, 30, 20,
+    ]);
+    // One record was written and not popped, and it is not held any more.
+    expect([ring.written, ring.length]).toStrictEqual([1, 0]);
+    expect([ring.pop(), ring.written, ring.length]).toStrictEqual([-1, 1, 0]);
+    // The next record is number 1, in slot 1.
+    expect([pushHit(ring, 0, 50), ring.written, ring.length]).toStrictEqual([
+      [1, 0, 0],
+      2,
+      1,
+    ]);
+  });
+
+  it("forgets every record on clear, and starts again at slot 0", () => {
+    const ring = createRing(3, HIT_LAYOUT);
+    for (const amount of [10, 20, 30, 40, 50]) {
+      pushHit(ring, 0, amount);
+    }
+    ring.clear();
+    expect([ring.written, ring.length, ring.pop()]).toStrictEqual([0, 0, -1]);
+    // `clear` only forgets the counts: each slot is cleaned as `push` hands it out.
+    expect([...ring.fields.amount]).toStrictEqual([40, 50, 30]);
+    expect(pushHit(ring, 0, 60)).toStrictEqual([0, 0, 0]);
+  });
+
+  it("refuses a capacity that is not a whole number of 1 or more", () => {
+    for (const capacity of [0, -1, 2.5, Number.NaN, Infinity]) {
+      expect(() => createRing(capacity, HIT_LAYOUT)).toThrow(
+        new RangeError(
+          `createRing needs a whole capacity of 1 or more, got ${capacity}`
+        )
+      );
+    }
+    expect(createRing(1, HIT_LAYOUT).capacity).toBe(1);
+  });
+});
+
+/** The records a reader takes from a ring now, by number. */
+const taken = (
+  reader: RingReader,
+  ring: Pick<Ring<PoolLayout>, "capacity" | "written">
+): number[] => {
+  const numbers: number[] = [];
+  for (let n = reader.take(ring); n < ring.written; n++) {
+    numbers.push(n);
+  }
+  return numbers;
+};
+
+const pushTimes = (ring: Ring<typeof HIT_LAYOUT>, times: number) => {
+  for (let i = 0; i < times; i++) {
+    ring.push();
+  }
+};
+
+describe(RingReader, () => {
+  it("gives `written` on its first take: what was pushed before it looked is not taken", () => {
+    const ring = createRing(4, HIT_LAYOUT);
+    pushTimes(ring, 2);
+    const reader = new RingReader();
+    expect(reader.take(ring)).toBe(2);
+    // And a ring nothing was pushed to starts at 0.
+    expect(new RingReader().take(createRing(4, HIT_LAYOUT))).toBe(0);
+  });
+
+  it("gives where it stopped, so each record is taken once", () => {
+    const ring = createRing(4, HIT_LAYOUT);
+    const reader = new RingReader();
+    expect(taken(reader, ring)).toStrictEqual([]);
+    pushTimes(ring, 3);
+    expect(taken(reader, ring)).toStrictEqual([0, 1, 2]);
+    expect(taken(reader, ring)).toStrictEqual([]);
+    pushTimes(ring, 2);
+    expect(taken(reader, ring)).toStrictEqual([3, 4]);
+    // A whole ring of new records is not a lap: none was overwritten.
+    pushTimes(ring, 4);
+    expect(taken(reader, ring)).toStrictEqual([5, 6, 7, 8]);
+  });
+
+  it("gives `written - capacity` once the ring has lapped it: the oldest are lost", () => {
+    const ring = createRing(4, HIT_LAYOUT);
+    const reader = new RingReader();
+    pushTimes(ring, 1);
+    expect(reader.take(ring)).toBe(1);
+    // Six more: records 1 and 2 were overwritten by 5 and 6 before the reader looked.
+    pushTimes(ring, 6);
+    expect(reader.take(ring)).toBe(3);
+    expect(reader.take(ring)).toBe(7);
+  });
+
+  it("reads each record it takes from the slot `slotOf` gives", () => {
+    const ring = createRing(3, HIT_LAYOUT);
+    const reader = new RingReader();
+    reader.take(ring);
+    for (const amount of [10, 20, 30, 40, 50]) {
+      pushHit(ring, 0, amount);
+    }
+    const amounts: number[] = [];
+    for (let n = reader.take(ring); n < ring.written; n++) {
+      amounts.push(ring.fields.amount[ring.slotOf(n)]!);
+    }
+    expect(amounts).toStrictEqual([30, 40, 50]);
+  });
+
+  it("starts again at `written` for another ring", () => {
+    const first = createRing(4, HIT_LAYOUT);
+    const second = createRing(4, HIT_LAYOUT);
+    const reader = new RingReader();
+    reader.take(first);
+    pushTimes(first, 2);
+    // A new run's ring. By its counts alone it is the first one with a record to take: the
+    // reader tells them apart by which object it is handed.
+    pushTimes(second, 1);
+    expect(reader.take(second)).toBe(1);
+    pushTimes(second, 2);
+    expect(taken(reader, second)).toStrictEqual([1, 2]);
+    // Back on the first, it starts again there too: it follows one ring at a time.
+    expect(reader.take(first)).toBe(2);
+  });
+
+  it("starts again at `written` after reset", () => {
+    const ring = createRing(4, HIT_LAYOUT);
+    const reader = new RingReader();
+    reader.take(ring);
+    pushTimes(ring, 2);
+    reader.reset();
+    expect(reader.take(ring)).toBe(2);
+    pushTimes(ring, 1);
+    expect(taken(reader, ring)).toStrictEqual([2]);
+  });
+
+  it("starts again at `written` when it finds a ring popped or cleared below what it took", () => {
+    const ring = createRing(4, HIT_LAYOUT);
+    const reader = new RingReader();
+    pushTimes(ring, 3);
+    reader.take(ring);
+    ring.pop();
+    expect(reader.take(ring)).toBe(2);
+    pushTimes(ring, 2);
+    expect(taken(reader, ring)).toStrictEqual([2, 3]);
+    ring.clear();
+    expect(reader.take(ring)).toBe(0);
+    pushTimes(ring, 1);
+    expect(taken(reader, ring)).toStrictEqual([0]);
+  });
+
+  it("leaves a second reader of the same ring where it was", () => {
+    const ring = createRing(4, HIT_LAYOUT);
+    const drawing = new RingReader();
+    const sound = new RingReader();
+    drawing.take(ring);
+    sound.take(ring);
+    pushTimes(ring, 2);
+    expect(taken(drawing, ring)).toStrictEqual([0, 1]);
+    pushTimes(ring, 1);
+    expect(taken(drawing, ring)).toStrictEqual([2]);
+    // The other reader has taken nothing since its first look, whatever the first one took.
+    expect(taken(sound, ring)).toStrictEqual([0, 1, 2]);
+    expect(taken(drawing, ring)).toStrictEqual([]);
+    // And taking writes nothing to the ring.
+    expect([ring.written, ring.length]).toStrictEqual([3, 3]);
+  });
+
+  it("takes anything with a ring's two counts", () => {
+    // What a module that imports no ring is handed: the shape alone.
+    const counts = { capacity: 2, written: 5 };
+    const reader = new RingReader();
+    expect(reader.take(counts)).toBe(5);
+    counts.written = 9;
+    expect(reader.take(counts)).toBe(7);
   });
 });
 

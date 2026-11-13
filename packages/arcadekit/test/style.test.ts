@@ -92,6 +92,7 @@ const FACTORIES: readonly string[] = [
   "createIdentifiedPool",
   "createMemoryNetwork",
   "createPool",
+  "createRing",
   "createRoom",
   "createRoomState",
   "createSocketRoom",
