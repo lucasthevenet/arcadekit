@@ -1,5 +1,6 @@
 import type * as Game from "arcadekit/game/browser";
 import { Stage } from "arcadekit/render-three";
+import type { MutableGroundBounds } from "arcadekit/render-three";
 
 import type { World } from "../world";
 import type { SurvivorsArt } from "./art";
@@ -24,6 +25,13 @@ interface SurvivorsViewOptions {
 export class SurvivorsView implements Game.View<World> {
   private readonly stage: Stage<"pixel">;
   private readonly scene: SurvivorsScene;
+  /** The ground the camera shows, filled each frame. */
+  private readonly seen: MutableGroundBounds = {
+    minX: 0,
+    maxX: 0,
+    minZ: 0,
+    maxZ: 0,
+  };
 
   constructor(
     container: HTMLElement,
@@ -42,12 +50,9 @@ export class SurvivorsView implements Game.View<World> {
 
   render(world: World | null, timeSeconds: number): void {
     const { camera } = this.stage;
-    this.scene.setViewSize(
-      camera.right - camera.left,
-      camera.top - camera.bottom
-    );
     this.scene.draw(world, timeSeconds);
     camera.follow(this.scene.focus.x, this.scene.focus.z);
+    this.scene.drawGround(camera.groundOnScreen(this.seen));
     this.stage.render();
   }
 

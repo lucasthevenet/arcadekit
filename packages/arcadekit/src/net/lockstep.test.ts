@@ -1,12 +1,13 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { StateHasher } from "../core/index";
 import * as Game from "../game/index";
 import { hostLockstep, joinLockstep } from "./lockstep";
 import type { LockstepOptions, LockstepSession } from "./lockstep";
 import { createMemoryNetwork } from "./memory-network";
 import type { MemoryNetwork, MemoryNetworkOptions } from "./memory-network";
-import { hasher, runNetwork } from "./test-harness";
+import { runNetwork } from "./test-harness";
 import type { Transport } from "./transport";
 
 // A tiny deterministic game: its state is a running digest of every input it has stepped on, and
@@ -26,18 +27,18 @@ const TinyInput = Game.PlayerInputs(Move);
 type TinyInput = typeof TinyInput.Type;
 
 const tinyStep = (state: Tiny, input: TinyInput) => {
-  const h = hasher();
-  h.add(state.digest);
+  const h = new StateHasher();
+  h.number(state.digest);
   for (let slot = 0; slot < input.players.length; slot++) {
     const move = input.players[slot];
     // A removed player has no input from the step it leaves at.
     if (move !== null && move !== undefined) {
-      h.add(slot);
-      h.add(move.n);
+      h.number(slot);
+      h.number(move.n);
     }
   }
-  h.add(input.leaving.length);
-  state.digest = h.value;
+  h.number(input.leaving.length);
+  state.digest = h.digest();
   state.history.push(state.digest);
 };
 

@@ -60,10 +60,11 @@ class DotsView implements Game.View<Field> {
     if (field !== null && tag !== undefined) {
       const frame = frameAt(this.sprites.sheet.data, tag, timeSeconds);
       const { x, z } = field.dots.fields;
+      this.sprites.begin();
       for (let i = 0; i < field.dots.count; i++) {
-        this.sprites.set(i, x[i]!, z[i]!, frame);
+        this.sprites.push(x[i]!, z[i]!, frame);
       }
-      this.sprites.commit(field.dots.count);
+      this.sprites.end();
       this.stage.camera.follow(field.playerX, field.playerZ);
     }
     this.stage.render();

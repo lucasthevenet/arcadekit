@@ -1,5 +1,19 @@
-import { SpatialGrid, clamp, createPool, makeRng } from "arcadekit/core";
-import type { Pool, Rng } from "arcadekit/core";
+import {
+  SpatialGrid,
+  clamp,
+  clampLength,
+  cos,
+  countDown,
+  createIdentifiedPool,
+  createPool,
+  hypot2,
+  makeRng,
+  moveToward,
+  powInt,
+  sin,
+  takeWhole,
+} from "arcadekit/core";
+import type { IdentifiedPool, Point2, Pool, Rng } from "arcadekit/core";
 import type * as Game from "arcadekit/game";
 
 import { HeroLeft, LeveledUp, RunEnded } from "./events";
@@ -16,7 +30,6 @@ import {
 } from "./hero";
 import type { Hero, WeaponSlot } from "./hero";
 import type { HeroInput, SurvivorsInput } from "./input";
-import { cos, hypot2, powInt, sin } from "./math";
 import type { EnemyDef, GameContent } from "./schema";
 
 // The survivors simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
@@ -30,6 +43,7 @@ import type { EnemyDef, GameContent } from "./schema";
 // exactly what the single-player game always has.
 
 const PLAYER_RADIUS = 0.5;
+const PROJECTILE_RADIUS = 0.25;
 const MAX_PROJECTILES = 512;
 const MAX_GEMS = 1024;
 const NEIGHBOR_BUFFER = 256;
@@ -38,6 +52,12 @@ const GEM_PICKUP_DISTANCE = 0.6;
 const GEM_MAGNET_SPEED = 18;
 const SPAWN_DISTANCE_MIN = 16;
 const SPAWN_DISTANCE_MAX = 22;
+
+// Where `clampLength` and `moveToward` write their two numbers: the move a hero wishes for, and
+// where a gem flies to. Each is written and read back before anything else runs, so neither
+// holds anything between calls, and neither is part of a run.
+const wish: Point2 = { x: 0, y: 0 };
+const flown: Point2 = { x: 0, y: 0 };
 
 export interface SurvivorsConfig {
   readonly content: GameContent;
@@ -120,12 +140,21 @@ export interface World {
   readonly heroes: readonly Hero[];
   readonly enemyDefs: readonly EnemyDef[];
   readonly enemyTypeById: ReadonlyMap<string, number>;
-  readonly enemies: Pool<typeof ENEMY_LAYOUT>;
+  /**
+   * Identified, as `gems` is, for the view: it keys what it keeps for an enemy or a gem on
+   * `idOf`, since removing one moves another into its index. The rules name neither by id, and
+   * an id is in no field, so the state hash covers none.
+   */
+  readonly enemies: IdentifiedPool<typeof ENEMY_LAYOUT>;
   readonly projectiles: Pool<typeof PROJECTILE_LAYOUT>;
-  readonly gems: Pool<typeof GEM_LAYOUT>;
+  readonly gems: IdentifiedPool<typeof GEM_LAYOUT>;
   readonly spawnBudget: Float64Array;
   readonly grid: SpatialGrid;
   readonly neighbors: Int32Array;
+  /** Each enemy's radius, by pool index: filled before the grid is built from it. Scratch, in no pool, so not part of the state hash. */
+  readonly radii: Float64Array;
+  /** 1 for an enemy a bolt already aims at, while its targets are picked, and all 0 otherwise. Scratch, as `radii` is. */
+  readonly taken: Uint8Array;
   /** Sound triggers, read by the presentation only. Not part of the state hash. */
   readonly cues: SurvivorsCues;
 }
@@ -160,9 +189,9 @@ export const createWorld = (
     heroes: heroIds.map((id, slot) => createHero(content, id, slot)),
     enemyDefs: content.enemies,
     enemyTypeById: new Map(content.enemies.map((e, i) => [e.id, i])),
-    enemies: createPool(cap, ENEMY_LAYOUT),
+    enemies: createIdentifiedPool(cap, ENEMY_LAYOUT),
     projectiles: createPool(MAX_PROJECTILES, PROJECTILE_LAYOUT),
-    gems: createPool(MAX_GEMS, GEM_LAYOUT),
+    gems: createIdentifiedPool(MAX_GEMS, GEM_LAYOUT),
     spawnBudget: new Float64Array(content.waves.length),
     grid: new SpatialGrid({
       halfSize: content.rules.arenaHalfSize,
@@ -170,6 +199,8 @@ export const createWorld = (
       capacity: cap,
     }),
     neighbors: new Int32Array(NEIGHBOR_BUFFER),
+    radii: new Float64Array(cap),
+    taken: new Uint8Array(cap),
     cues: {
       shots: new Uint32Array(content.weapons.length),
       hits: 0,
@@ -261,11 +292,13 @@ export const step = (
   moveHeroes(world, input, dt);
   spawnEnemies(world, dt);
   moveEnemies(world, dt);
-  world.grid.build(
-    world.enemies.fields.x,
-    world.enemies.fields.z,
-    world.enemies.count
-  );
+  // The grid the rest of the step asks: each enemy where it now is, as a circle of its type's
+  // radius. Nothing moves or removes an enemy until `removeDeadEnemies`.
+  const { x, z, type } = world.enemies.fields;
+  for (let i = 0; i < world.enemies.count; i++) {
+    world.radii[i] = world.enemyDefs[type[i]!]!.radius;
+  }
+  world.grid.build(x, z, world.enemies.count, world.radii);
   touchHeroes(world, dt);
   fireWeapons(world, dt);
   moveProjectiles(world, dt);
@@ -362,20 +395,15 @@ const moveHeroes = (world: World, input: SurvivorsInput, dt: number) => {
       continue;
     }
     const move = heroInput(input, hero);
-    let mx = move === null ? 0 : move.moveX;
-    let mz = move === null ? 0 : move.moveZ;
-    const len = hypot2(mx, mz);
-    if (len > 1) {
-      mx /= len;
-      mz /= len;
+    // A move longer than 1 is shortened to 1, so a diagonal is no faster.
+    const length = clampLength(move?.moveX ?? 0, move?.moveZ ?? 0, 1, wish);
+    if (length > 0.05) {
+      hero.faceX = wish.x;
+      hero.faceZ = wish.y;
     }
-    if (len > 0.05) {
-      hero.faceX = mx;
-      hero.faceZ = mz;
-    }
-    hero.x = clamp(hero.x + mx * hero.stats.moveSpeed * dt, -limit, limit);
-    hero.z = clamp(hero.z + mz * hero.stats.moveSpeed * dt, -limit, limit);
-    hero.hurtTimer = Math.max(0, hero.hurtTimer - dt);
+    hero.x = clamp(hero.x + wish.x * hero.stats.moveSpeed * dt, -limit, limit);
+    hero.z = clamp(hero.z + wish.y * hero.stats.moveSpeed * dt, -limit, limit);
+    hero.hurtTimer = countDown(hero.hurtTimer, dt);
   }
 };
 
@@ -396,7 +424,7 @@ const nextSpawnHero = (world: World): Hero => {
 
 const spawnEnemies = (world: World, dt: number) => {
   const { waves, rules } = world.content;
-  const { x, z, hp, type, hitFlash } = world.enemies.fields;
+  const { x, z, hp, type } = world.enemies.fields;
   const limit = rules.arenaHalfSize - 1;
   for (let w = 0; w < waves.length; w++) {
     const wave = waves[w]!;
@@ -404,9 +432,10 @@ const spawnEnemies = (world: World, dt: number) => {
       continue;
     }
     world.spawnBudget[w]! += wave.perSecond * dt;
+    const due = takeWhole(world.spawnBudget[w]!);
+    world.spawnBudget[w]! -= due;
     const enemyType = world.enemyTypeById.get(wave.enemy)!;
-    while (world.spawnBudget[w]! >= 1) {
-      world.spawnBudget[w]! -= 1;
+    for (let spawned = 0; spawned < due; spawned++) {
       const i = world.enemies.add();
       if (i === -1) {
         continue;
@@ -418,7 +447,6 @@ const spawnEnemies = (world: World, dt: number) => {
       z[i] = clamp(hero.z + sin(angle) * distance, -limit, limit);
       hp[i] = world.enemyDefs[enemyType]!.hp;
       type[i] = enemyType;
-      hitFlash[i] = 0;
     }
   }
 };
@@ -459,7 +487,7 @@ const moveEnemies = (world: World, dt: number) => {
       x[i]! += (dx / d) * def.speed * dt;
       z[i]! += (dz / d) * def.speed * dt;
     }
-    hitFlash[i] = Math.max(0, hitFlash[i]! - dt);
+    hitFlash[i] = countDown(hitFlash[i]!, dt);
   }
   // Push overlapping enemies apart so the horde spreads out instead of stacking.
   world.grid.build(x, z, count);
@@ -489,28 +517,23 @@ const moveEnemies = (world: World, dt: number) => {
 };
 
 const touchHeroes = (world: World, dt: number) => {
-  const { x, z, type } = world.enemies.fields;
+  const { type } = world.enemies.fields;
   for (const hero of world.heroes) {
     if (hero.status !== "playing") {
       continue;
     }
-    const found = world.grid.query(
+    const found = world.grid.within(
       hero.x,
       hero.z,
-      PLAYER_RADIUS + 1,
+      PLAYER_RADIUS,
       world.neighbors
     );
-    let hurt = false;
     for (let k = 0; k < found; k++) {
-      const i = world.neighbors[k]!;
-      const def = world.enemyDefs[type[i]!]!;
-      if (hypot2(x[i]! - hero.x, z[i]! - hero.z) < def.radius + PLAYER_RADIUS) {
-        hero.hp -= def.damage * dt;
-        hero.hurtTimer = 0.15;
-        hurt = true;
-      }
+      const def = world.enemyDefs[type[world.neighbors[k]!]!]!;
+      hero.hp -= def.damage * dt;
+      hero.hurtTimer = 0.15;
     }
-    if (hurt) {
+    if (found > 0) {
       world.cues.hurt[hero.slot]! += 1;
     }
   }
@@ -551,38 +574,24 @@ const fireBolt = (
     return false;
   }
   const e = world.enemies.fields;
-  const enemyCount = world.enemies.count;
   const shots = Math.floor(
     behavior.count + behavior.countPerLevel * (slot.level - 1)
   );
   const range = behavior.range * p.stats.areaMult;
-  // Pick the `shots` nearest enemies in range. Shots is small, so a simple scan is fine.
+  // Pick the `shots` nearest enemies in range: the nearest not yet taken, once for each shot.
   const targets = world.neighbors;
   let targetCount = 0;
   for (let s = 0; s < shots && s < targets.length; s++) {
-    let best = -1;
-    let bestD = range;
-    for (let i = 0; i < enemyCount; i++) {
-      const d = hypot2(e.x[i]! - p.x, e.z[i]! - p.z);
-      if (d >= bestD) {
-        continue;
-      }
-      let taken = false;
-      for (let t = 0; t < targetCount; t++) {
-        if (targets[t] === i) {
-          taken = true;
-        }
-      }
-      if (!taken) {
-        best = i;
-        bestD = d;
-      }
-    }
+    const best = world.grid.nearest(p.x, p.z, range, world.taken);
     if (best === -1) {
       break;
     }
+    world.taken[best] = 1;
     targets[targetCount] = best;
     targetCount += 1;
+  }
+  for (let t = 0; t < targetCount; t++) {
+    world.taken[targets[t]!] = 0;
   }
   if (targetCount === 0) {
     return false;
@@ -607,7 +616,6 @@ const fireBolt = (
     pr.damage[i] = damage;
     pr.life[i] = (range / behavior.projectileSpeed) * 1.3;
     pr.pierce[i] = behavior.pierce;
-    pr.rehit[i] = 0;
     pr.weapon[i] = weaponIndex;
     world.cues.shots[defIndex]! += 1;
   }
@@ -615,16 +623,11 @@ const fireBolt = (
 };
 
 const pulseAura = (world: World, p: Hero, slot: WeaponSlot): boolean => {
-  const { x, z, type } = world.enemies.fields;
   const radius = auraRadius(p, slot);
   const damage = weaponDamage(p, slot);
-  const found = world.grid.query(p.x, p.z, radius + 1, world.neighbors);
+  const found = world.grid.within(p.x, p.z, radius, world.neighbors);
   for (let k = 0; k < found; k++) {
-    const i = world.neighbors[k]!;
-    const r = world.enemyDefs[type[i]!]!.radius;
-    if (hypot2(x[i]! - p.x, z[i]! - p.z) < radius + r) {
-      hitEnemy(world, i, damage);
-    }
+    hitEnemy(world, world.neighbors[k]!, damage);
   }
   return true;
 };
@@ -638,17 +641,18 @@ const moveProjectiles = (world: World, dt: number) => {
     pr.x[i]! += pr.vx[i]! * dt;
     pr.z[i]! += pr.vz[i]! * dt;
     pr.life[i]! -= dt;
-    pr.rehit[i] = Math.max(0, pr.rehit[i]! - dt);
+    pr.rehit[i] = countDown(pr.rehit[i]!, dt);
     let spent = pr.life[i]! <= 0;
     if (!spent && pr.rehit[i] === 0) {
-      const found = world.grid.query(pr.x[i]!, pr.z[i]!, 1.2, world.neighbors);
+      const found = world.grid.within(
+        pr.x[i]!,
+        pr.z[i]!,
+        PROJECTILE_RADIUS,
+        world.neighbors
+      );
       for (let k = 0; k < found; k++) {
         const j = world.neighbors[k]!;
         if (e.hp[j]! <= 0) {
-          continue;
-        }
-        const r = world.enemyDefs[e.type[j]!]!.radius;
-        if (hypot2(e.x[j]! - pr.x[i]!, e.z[j]! - pr.z[i]!) > r + 0.25) {
           continue;
         }
         hitEnemy(world, j, pr.damage[i]!);
@@ -694,7 +698,6 @@ const removeDeadEnemies = (world: World) => {
         g.x[k] = e.x[i]!;
         g.z[k] = e.z[i]!;
         g.value[k] = xp;
-        g.magnet[k] = 0;
       }
     }
     world.enemies.remove(i);
@@ -711,16 +714,15 @@ const collectGems = (world: World, dt: number) => {
     if (p === null) {
       return;
     }
-    const dx = p.x - g.x[i]!;
-    const dz = p.z - g.z[i]!;
-    const d = hypot2(dx, dz);
+    const d = hypot2(p.x - g.x[i]!, p.z - g.z[i]!);
     if (d < p.stats.pickupRadius) {
       g.magnet[i] = 1;
     }
-    if (g.magnet[i] === 1 && d > 0) {
-      const move = Math.min(d, GEM_MAGNET_SPEED * dt);
-      g.x[i]! += (dx / d) * move;
-      g.z[i]! += (dz / d) * move;
+    if (g.magnet[i] === 1) {
+      // Within one step of its hero a gem lands on it, and is picked up below.
+      moveToward(g.x[i]!, g.z[i]!, p.x, p.z, GEM_MAGNET_SPEED * dt, flown);
+      g.x[i] = flown.x;
+      g.z[i] = flown.y;
     }
     if (d < GEM_PICKUP_DISTANCE) {
       world.cues.pickups += 1;

@@ -170,4 +170,76 @@ describe(PixelCamera, () => {
     camera.follow(0, 0);
     expect(camera.pixelScale).toBe(pixelScale(1200, 20, 16));
   });
+
+  it("says which rectangle of ground is on screen after it follows, into the object it is given", () => {
+    const camera = new PixelCamera({ pixelsPerUnit: 16, viewHeight: 20 });
+    // 2 screen pixels per sprite pixel: 32 to a unit. An odd size has its spare pixel on the
+    // right and at the bottom.
+    camera.setBufferSize(641, 481);
+    camera.follow(3.21, -7.77);
+    const out = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+    const seen = camera.groundOnScreen(out);
+    // The object it was given, filled: a view keeps one, and a frame allocates nothing.
+    expect(seen).toBe(out);
+    expect(out).toStrictEqual({
+      minX: camera.position.x + camera.left,
+      maxX: camera.position.x + camera.right,
+      minZ: camera.position.z - camera.top,
+      maxZ: camera.position.z - camera.bottom,
+    });
+    // The camera is at (103 / 32, -249 / 32), with 320 pixels to its left and 240 above it.
+    expect(out).toStrictEqual({
+      minX: -6.78125,
+      maxX: 13.25,
+      minZ: -15.28125,
+      maxZ: -0.25,
+    });
+    // Its corners are the buffer's corners.
+    expect([
+      toBuffer(camera, 641, 481, out.minX, out.minZ),
+      toBuffer(camera, 641, 481, out.maxX, out.maxZ),
+    ]).toStrictEqual([
+      { x: closeTo(0), y: closeTo(0) },
+      { x: closeTo(641), y: closeTo(481) },
+    ]);
+    // It follows the camera: the same object, filled again.
+    camera.follow(4.21, -7.77);
+    expect(camera.groundOnScreen(out)).toStrictEqual({
+      minX: -5.78125,
+      maxX: 14.25,
+      minZ: -15.28125,
+      maxZ: -0.25,
+    });
+  });
+
+  it("says which rectangle of ground is on screen after it fits, with the room around the area", () => {
+    const camera = new PixelCamera({ pixelsPerUnit: 16 });
+    camera.setBufferSize(1000, 600);
+    const bounds = { minX: 0, maxX: 10, minZ: 0, maxZ: 6 };
+    camera.fit(bounds, 1);
+    const out = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+    expect(camera.groundOnScreen(out)).toBe(out);
+    expect(out).toStrictEqual({
+      minX: camera.position.x + camera.left,
+      maxX: camera.position.x + camera.right,
+      minZ: camera.position.z - camera.top,
+      maxZ: camera.position.z - camera.bottom,
+    });
+    // 4 screen pixels per sprite pixel, so 64 to a unit, around (5, 3): the 12 by 8 units it
+    // fitted, and what is left of the buffer on each side.
+    expect(out).toStrictEqual({
+      minX: -2.8125,
+      maxX: 12.8125,
+      minZ: -1.6875,
+      maxZ: 7.6875,
+    });
+    // A resize is a new rectangle: at 9 to a sprite pixel, 144 to a unit.
+    camera.setBufferSize(2000, 1200);
+    expect(camera.groundOnScreen(out)).toStrictEqual({
+      minX: 5 - 1000 / 144,
+      maxX: 5 + 1000 / 144,
+      minZ: 3 - 600 / 144,
+      maxZ: 3 + 600 / 144,
+    });
+  });
 });

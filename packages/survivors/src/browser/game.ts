@@ -51,8 +51,8 @@ export const survivorsInput = (
 };
 
 /**
- * The app's survivors sheet, with every tag the view draws for its content (`missingSpriteTags`
- * checks one; ADR-0015). The app says where it comes from,
+ * The app's survivors sheet, with every tag the view draws for its content (`wantedTags` lists
+ * them, for a test to check a sheet with `resolveTags`; ADR-0015). The app says where it comes from,
  * `SurvivorsSheet.layer(loadSpriteSheet(url))`, and loads it on its loading screen; the engine
  * draws from it, for one player and in co-op, and never frees it. The app's end does.
  */

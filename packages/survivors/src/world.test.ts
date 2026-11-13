@@ -162,7 +162,6 @@ const dropGem = (world: World, x: number, z: number, value: number) => {
   world.gems.fields.x[k] = x;
   world.gems.fields.z[k] = z;
   world.gems.fields.value[k] = value;
-  world.gems.fields.magnet[k] = 0;
 };
 
 /** Adds one grunt at (x, z). */
@@ -173,7 +172,6 @@ const addEnemy = (world: World, x: number, z: number): number => {
   e.z[i] = z;
   e.hp[i] = 1000;
   e.type[i] = 0;
-  e.hitFlash[i] = 0;
   return i;
 };
 
@@ -257,6 +255,16 @@ describe("content", () => {
     const broken = { ...content, rules: { ...content.rules, maxEnemies: 2.5 } };
     expect(decodeFailure(broken)).toContain("maxEnemies");
   });
+
+  it("rejects a fractional number of upgrades to offer", () => {
+    // The roll draws once for each upgrade it offers, so half a draw is no offer: content
+    // that asks for one is refused when it loads, not at a hero's first level-up.
+    const broken = {
+      ...content,
+      rules: { ...content.rules, choicesPerLevelUp: 2.5 },
+    };
+    expect(decodeFailure(broken)).toContain("choicesPerLevelUp");
+  });
 });
 
 describe("simulation", () => {
@@ -330,6 +338,194 @@ describe("simulation", () => {
         { seed: 1 }
       ).heroes.map((hero) => hero.def.id)
     ).toStrictEqual(["bolter", "bolter", "bolter", "burner"]);
+  });
+});
+
+/** The test content with a wide enemy: its radius is more than a cell of the horde's grid, which is 2 wide. */
+const wideEnemy = Schema.decodeUnknownSync(GameContent)({
+  ...content,
+  enemies: [{ ...content.enemies[0], radius: 2.5 }],
+});
+
+/** A burner at the centre whose aura fires on its first step. */
+const burnerReady = (): World => {
+  const world = createWorld(
+    { content: wideEnemy, heroIds: ["burner"] },
+    { seed: 5 }
+  );
+  world.heroes[0]!.weapons[0]!.timer = 0;
+  return world;
+};
+
+/** A bolter at the centre whose bolt is at `level` and fires on its first step. */
+const bolterReady = (level: number): World => {
+  const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 5 });
+  const [slot] = world.heroes[0]!.weapons;
+  slot!.level = level;
+  slot!.timer = 0;
+  return world;
+};
+
+/** Adds a projectile at rest at (x, z), which hits for 1 and is spent by its first hit. */
+const addProjectile = (world: World, x: number, z: number): number => {
+  const i = world.projectiles.add();
+  const pr = world.projectiles.fields;
+  pr.x[i] = x;
+  pr.z[i] = z;
+  pr.vx[i] = 0;
+  pr.vz[i] = 0;
+  pr.damage[i] = 1;
+  pr.life[i] = 1;
+  pr.pierce[i] = 0;
+  pr.weapon[i] = 0;
+  return i;
+};
+
+/** Where each projectile heads on the x axis: -1 left, 1 right. */
+const headings = (world: World): number[] =>
+  [...world.projectiles.fields.vx.subarray(0, world.projectiles.count)].map(
+    Math.sign
+  );
+
+describe("the horde's circles", () => {
+  it("hurt a hero that a wide enemy overlaps, though its centre is cells away", () => {
+    const world = burnerReady();
+    const [hero] = world.heroes;
+    // 2.8 from a hero of radius 0.5: the two overlap, and the enemy's centre is in the cell
+    // past the ones the hero's own circle is in.
+    addEnemy(world, 2.8, 0);
+    step(world, STILL, STEP);
+    expect(hero!.hp).toBeLessThan(hero!.maxHp);
+    expect([...world.cues.hurt]).toStrictEqual([1]);
+  });
+
+  it("each hurt a hero they overlap, and it cries out once", () => {
+    const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 5 });
+    const [hero] = world.heroes;
+    // One on each side, each well inside the 0.95 at which a grunt and a hero touch.
+    addEnemy(world, 0.5, 0);
+    addEnemy(world, -0.5, 0);
+    step(world, STILL, STEP);
+    // A grunt's damage is 10 a second, and both dealt a step of it.
+    expect(hero!.hp).toBeCloseTo(hero!.maxHp - 2 * 10 * DT, 9);
+    expect([...world.cues.hurt]).toStrictEqual([1]);
+  });
+
+  it("leave a hero alone that no enemy overlaps", () => {
+    const world = burnerReady();
+    const [hero] = world.heroes;
+    addEnemy(world, 3.2, 0);
+    step(world, STILL, STEP);
+    expect(hero!.hp).toBe(hero!.maxHp);
+    expect([...world.cues.hurt]).toStrictEqual([0]);
+  });
+
+  it("are hit by an aura that overlaps them, and by no other", () => {
+    const world = burnerReady();
+    // The aura's radius is 2.6, so it reaches a wide enemy's edge to 5.1 from the hero.
+    const near = addEnemy(world, 0, 4.9);
+    const far = addEnemy(world, 0, -5.5);
+    step(world, STILL, STEP);
+    expect(world.enemies.fields.hp[near]!).toBeLessThan(1000);
+    expect(world.enemies.fields.hp[far]!).toBe(1000);
+  });
+
+  it("are hit by a projectile that overlaps them, and passed by one that only touches", () => {
+    const round = Schema.decodeUnknownSync(GameContent)({
+      ...content,
+      enemies: [{ ...content.enemies[0], radius: 0.5 }],
+    });
+    const world = createWorld(
+      { content: round, heroIds: ["bolter"] },
+      { seed: 5 }
+    );
+    // An enemy on its hero has nowhere to go, so it stays at the centre and the lengths are
+    // exact: a projectile's radius is 0.25, so one 0.75 away only touches it.
+    const enemy = addEnemy(world, 0, 0);
+    addProjectile(world, 0.75, 0);
+    addProjectile(world, 0, -0.5);
+    step(world, STILL, STEP);
+    expect(world.cues.hits).toBe(1);
+    expect(world.enemies.fields.hp[enemy]!).toBe(999);
+    // The one that hit is spent; the other flies on.
+    expect([
+      world.projectiles.count,
+      world.projectiles.fields.x[0],
+    ]).toStrictEqual([1, 0.75]);
+  });
+
+  it("are passed by a projectile once dead, which hits the living one it also overlaps", () => {
+    const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 5 });
+    // Both in one cell of the grid, whose list starts with the one added last: the dead one,
+    // killed earlier in the step as an aura would, and not yet removed.
+    const living = addEnemy(world, 4.5, 0);
+    const dead = addEnemy(world, 5.5, 0);
+    world.enemies.fields.hp[dead] = 0;
+    // Half a unit from each, give or take their step toward the hero: under 0.25 + 0.45.
+    addProjectile(world, 5, 0);
+    step(world, STILL, STEP);
+    expect(world.cues.hits).toBe(1);
+    // The dead one is removed at the end of the step, and it was last in the pool.
+    expect([world.enemies.count, world.kills]).toStrictEqual([1, 1]);
+    expect(world.enemies.fields.hp[living]!).toBe(999);
+    expect(world.projectiles.count).toBe(0);
+  });
+});
+
+describe("a bolt", () => {
+  it("aims one shot at each of the nearest enemies in range", () => {
+    // Level 3 fires two shots.
+    const world = bolterReady(3);
+    addEnemy(world, 6, 0);
+    addEnemy(world, -5, 0);
+    addEnemy(world, 4, 0);
+    step(world, STILL, STEP);
+    // The nearest first, at 4 to the right, then the one at 5 to the left.
+    expect(headings(world)).toStrictEqual([1, -1]);
+  });
+
+  it("aims every shot at the one enemy in range", () => {
+    const world = bolterReady(3);
+    addEnemy(world, -4, 0);
+    addEnemy(world, 20, 0);
+    step(world, STILL, STEP);
+    expect(headings(world)).toStrictEqual([-1, -1]);
+  });
+
+  it("stays unfired with no enemy in range", () => {
+    const world = bolterReady(3);
+    addEnemy(world, 20, 0);
+    step(world, STILL, STEP);
+    expect(world.projectiles.count).toBe(0);
+  });
+
+  it("aims at the lower index of two enemies at one distance", () => {
+    const right = bolterReady(1);
+    addEnemy(right, 5, 0);
+    addEnemy(right, -5, 0);
+    step(right, STILL, STEP);
+    expect(headings(right)).toStrictEqual([1]);
+
+    const left = bolterReady(1);
+    addEnemy(left, -5, 0);
+    addEnemy(left, 5, 0);
+    step(left, STILL, STEP);
+    expect(headings(left)).toStrictEqual([-1]);
+  });
+
+  it("leaves its targets free for the next bolt", () => {
+    const world = createWorld(
+      { content, heroIds: ["bolter", "bolter"] },
+      { seed: 5 }
+    );
+    for (const hero of world.heroes) {
+      hero.weapons[0]!.timer = 0;
+    }
+    addEnemy(world, 0, 6);
+    step(world, STILL, STEP);
+    // Both heroes fired at the one enemy.
+    expect(world.projectiles.count).toBe(2);
+    expect([...world.taken].every((taken) => taken === 0)).toBe(true);
   });
 });
 

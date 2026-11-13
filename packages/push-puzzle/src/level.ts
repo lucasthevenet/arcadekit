@@ -1,3 +1,6 @@
+import { createTileMap } from "arcadekit/core";
+import type { TileMap } from "arcadekit/core";
+
 // Reading a level's text rows into a tile map. Used both to check content and to start a run.
 
 /** What a tile-map cell holds. Boxes and the player are not tiles: they move. */
@@ -14,13 +17,17 @@ export type Tile = (typeof Tile)[keyof typeof Tile];
 /** The characters a level row may use: standard Sokoban, plus `^` for a hole. */
 export const LEVEL_CHARACTERS = "#@+$*. ^";
 
+/** What a level's tile map holds for each cell. */
+export const LEVEL_LAYOUT = {
+  /** The cell's `Tile`. */
+  tile: Uint8Array,
+  /** 1 where the cell is a goal. */
+  goal: Uint8Array,
+};
+
 interface ParsedLevel {
-  readonly cols: number;
-  readonly rows: number;
-  /** One Tile per cell, row by row: cell index is `row * cols + col`. */
-  readonly tiles: Uint8Array;
-  /** 1 where a cell is a goal. */
-  readonly goals: Uint8Array;
+  /** The level's cells, row by row: cell index is `row * cols + col`. */
+  readonly map: TileMap<typeof LEVEL_LAYOUT>;
   readonly goalCount: number;
   /** Cell index of each player found. A valid level has exactly one. */
   readonly players: readonly number[];
@@ -31,18 +38,21 @@ interface ParsedLevel {
 /** Parses rows of level text. Unknown characters count as walls; content checks reject them first. */
 export const parseLevel = (rowsText: readonly string[]): ParsedLevel => {
   const rows = rowsText.length;
-  const cols = Math.max(...rowsText.map((row) => row.length));
-  const tiles = new Uint8Array(cols * rows).fill(Tile.void);
-  const goals = new Uint8Array(cols * rows);
+  // A level whose rows are all empty has no cell. It gets one column of void, so that the
+  // content checks can say what it lacks: a map of no columns is refused.
+  const cols = Math.max(1, ...rowsText.map((row) => row.length));
+  // Every cell starts as `Tile.void`, which is 0.
+  const map = createTileMap(cols, rows, LEVEL_LAYOUT);
+  const { tile, goal } = map.fields;
   const players: number[] = [];
   const boxes: number[] = [];
   let goalCount = 0;
   for (let row = 0; row < rows; row++) {
     const text = rowsText[row]!;
     for (let col = 0; col < text.length; col++) {
-      const cell = row * cols + col;
+      const cell = map.cellAt(col, row);
       const char = text[col]!;
-      tiles[cell] = charTile(char);
+      tile[cell] = charTile(char);
       if (char === "@" || char === "+") {
         players.push(cell);
       }
@@ -50,13 +60,13 @@ export const parseLevel = (rowsText: readonly string[]): ParsedLevel => {
         boxes.push(cell);
       }
       if (char === "." || char === "+" || char === "*") {
-        goals[cell] = 1;
+        goal[cell] = 1;
         goalCount += 1;
       }
     }
   }
-  markOutside(tiles, cols, rows, players[0]);
-  return { cols, rows, tiles, goals, goalCount, players, boxes };
+  markOutside(map, players[0]);
+  return { map, goalCount, players, boxes };
 };
 
 const charTile = (char: string): Tile => {
@@ -71,48 +81,18 @@ const charTile = (char: string): Tile => {
 
 /** Turns every non-wall cell the player can't reach (ignoring boxes) into void, so the view skips it. */
 const markOutside = (
-  tiles: Uint8Array,
-  cols: number,
-  rows: number,
+  map: TileMap<typeof LEVEL_LAYOUT>,
   start: number | undefined
 ) => {
   if (start === undefined) {
     return;
   }
-  const reached = new Uint8Array(tiles.length);
-  const stack = [start];
-  reached[start] = 1;
-  while (stack.length > 0) {
-    const cell = stack.pop()!;
-    const col = cell % cols;
-    const row = Math.floor(cell / cols);
-    for (const [dc, dr] of NEIGHBORS) {
-      const c = col + dc;
-      const r = row + dr;
-      const next = r * cols + c;
-      if (
-        c >= 0 &&
-        c < cols &&
-        r >= 0 &&
-        r < rows &&
-        reached[next] === 0 &&
-        tiles[next] !== Tile.wall
-      ) {
-        reached[next] = 1;
-        stack.push(next);
-      }
-    }
-  }
-  for (let cell = 0; cell < tiles.length; cell++) {
-    if (reached[cell] === 0 && tiles[cell] !== Tile.wall) {
-      tiles[cell] = Tile.void;
+  const { tile } = map.fields;
+  const reached = new Uint8Array(map.cells);
+  map.flood(start, (cell) => tile[cell] !== Tile.wall, reached);
+  for (let cell = 0; cell < map.cells; cell++) {
+    if (reached[cell] === 0 && tile[cell] !== Tile.wall) {
+      tile[cell] = Tile.void;
     }
   }
 };
-
-const NEIGHBORS = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-] as const;

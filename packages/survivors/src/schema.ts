@@ -124,7 +124,8 @@ const Rules = Schema.Struct({
   xpGrowth: Positive,
   baseMoveSpeedScale: Positive,
   basePickupRadius: Positive,
-  choicesPerLevelUp: Positive,
+  /** How many upgrades a level-up offers. A whole number: the roll draws once for each. */
+  choicesPerLevelUp: PositiveInt,
   /** Seconds to survive to win the run. */
   runLength: Positive,
 });

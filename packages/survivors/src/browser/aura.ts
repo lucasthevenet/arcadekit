@@ -1,3 +1,4 @@
+import { MeshInstances } from "arcadekit/render-three";
 import type { SpriteSheet, SpriteTag } from "arcadekit/render-three";
 import * as THREE from "three";
 
@@ -52,14 +53,13 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
+/** What the shader reads for each ring: `aAura` is x, z, radius and pulse. */
+const ATTRIBUTES = { aAura: 4, aColor: 3 } as const;
+
 /** Up to `capacity` aura rings in one draw call, blended over the ground. */
 export class AuraRings {
-  readonly mesh: THREE.Mesh<
-    THREE.InstancedBufferGeometry,
-    THREE.ShaderMaterial
-  >;
-  private readonly aura: THREE.InstancedBufferAttribute;
-  private readonly color: THREE.InstancedBufferAttribute;
+  readonly material: THREE.ShaderMaterial;
+  private readonly rings: MeshInstances<typeof ATTRIBUTES>;
 
   /**
    * Rings from `tag` in `sheet` (frame 0 at rest, frame 1 pulsing). `depth` is the world
@@ -73,23 +73,6 @@ export class AuraRings {
     depth: number
   ) {
     const quad = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
-    const geometry = new THREE.InstancedBufferGeometry();
-    geometry.index = quad.index;
-    geometry.setAttribute("position", quad.getAttribute("position"));
-    quad.dispose();
-    this.aura = new THREE.InstancedBufferAttribute(
-      new Float32Array(capacity * 4),
-      4
-    );
-    this.color = new THREE.InstancedBufferAttribute(
-      new Float32Array(capacity * 3),
-      3
-    );
-    this.aura.setUsage(THREE.DynamicDrawUsage);
-    this.color.setUsage(THREE.DynamicDrawUsage);
-    geometry.setAttribute("aAura", this.aura);
-    geometry.setAttribute("aColor", this.color);
-    geometry.instanceCount = 0;
     const frames = [tag.from, Math.min(tag.from + 1, tag.to)].map((index) => {
       const frame = sheet.data.frames[index] ?? sheet.data.frames[0]!;
       return {
@@ -102,27 +85,31 @@ export class AuraRings {
         ),
       };
     });
-    this.mesh = new THREE.Mesh(
-      geometry,
-      new THREE.ShaderMaterial({
-        vertexShader: VERTEX,
-        fragmentShader: FRAGMENT,
-        uniforms: {
-          uMap: { value: sheet.texture },
-          uSheetSize: {
-            value: new THREE.Vector2(sheet.data.width, sheet.data.height),
-          },
-          uPx: { value: pixelsPerUnit },
-          uDepth: { value: depth },
-          uRect: { value: frames.map((frame) => frame.rect) },
-          uSource: { value: frames.map((frame) => frame.source) },
+    this.material = new THREE.ShaderMaterial({
+      vertexShader: VERTEX,
+      fragmentShader: FRAGMENT,
+      uniforms: {
+        uMap: { value: sheet.texture },
+        uSheetSize: {
+          value: new THREE.Vector2(sheet.data.width, sheet.data.height),
         },
-        transparent: true,
-        depthWrite: false,
-      })
-    );
-    this.mesh.frustumCulled = false;
-    this.mesh.visible = false;
+        uPx: { value: pixelsPerUnit },
+        uDepth: { value: depth },
+        uRect: { value: frames.map((frame) => frame.rect) },
+        uSource: { value: frames.map((frame) => frame.source) },
+      },
+      transparent: true,
+      depthWrite: false,
+    });
+    this.rings = new MeshInstances(quad, this.material, {
+      capacity,
+      attributes: ATTRIBUTES,
+    });
+  }
+
+  /** The rings' mesh, to add to the scene. */
+  get mesh(): THREE.InstancedMesh {
+    return this.rings.mesh;
   }
 
   /** Ring `index` around (x, z), `pulse` 1 as it deals damage and fading to 0 (the pulse frame shows above 0.5), tinted `color`. */
@@ -134,28 +121,16 @@ export class AuraRings {
     pulse: number,
     color: THREE.Color
   ) {
-    const aura = this.aura.array as Float32Array;
-    aura[index * 4] = x;
-    aura[index * 4 + 1] = z;
-    aura[index * 4 + 2] = radius;
-    aura[index * 4 + 3] = pulse;
-    const rgb = this.color.array as Float32Array;
-    rgb[index * 3] = color.r;
-    rgb[index * 3 + 1] = color.g;
-    rgb[index * 3 + 2] = color.b;
+    this.rings.setAttribute(index, "aAura", x, z, radius, pulse);
+    this.rings.setAttribute(index, "aColor", color.r, color.g, color.b);
   }
 
   /** Shows the first `count` rings. */
   commit(count: number) {
-    this.mesh.geometry.instanceCount = count;
-    this.mesh.visible = count > 0;
-    this.aura.needsUpdate = true;
-    this.color.needsUpdate = true;
+    this.rings.commit(count);
   }
 
   dispose() {
-    this.mesh.removeFromParent();
-    this.mesh.geometry.dispose();
-    this.mesh.material.dispose();
+    this.rings.dispose();
   }
 }

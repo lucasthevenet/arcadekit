@@ -1,15 +1,22 @@
 export {
   type FitCameraOptions,
   type GroundBounds,
+  type MutableGroundBounds,
   fitCamera,
   followTarget,
   orbitAround,
 } from "./camera";
+export { Gait } from "./gait";
 export {
   InstancedSprites,
   type InstancedSpritesOptions,
+  type SpriteSnap,
 } from "./instanced-sprites";
-export { MeshInstances } from "./mesh-instances";
+export {
+  type InstanceAttributes,
+  MeshInstances,
+  type MeshInstancesOptions,
+} from "./mesh-instances";
 export {
   PixelCamera,
   type PixelCameraOptions,
@@ -24,14 +31,18 @@ export {
   makeSpriteSheet,
 } from "./sprite-loader";
 export {
+  type ResolvedTags,
   type SpriteFrame,
   type SpriteSheetData,
   SpriteSheetError,
   type SpriteTag,
   type SpriteTagDirection,
+  type WantedTags,
   decodeSpriteSheet,
   frameAt,
+  resolveTags,
 } from "./sprite-sheet";
+export { TileLayer, type TileLayerOptions } from "./tile-layer";
 export {
   Stage,
   type StageCamera,

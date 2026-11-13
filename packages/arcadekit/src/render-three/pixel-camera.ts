@@ -3,7 +3,7 @@
 
 import * as THREE from "three";
 
-import type { GroundBounds } from "./camera";
+import type { GroundBounds, MutableGroundBounds } from "./camera";
 
 /** How high above the ground the camera sits. Anything from y = -HEIGHT to just below it is drawn. */
 const HEIGHT = 100;
@@ -89,7 +89,8 @@ export interface PixelCameraOptions {
  * `pixelScale` screen pixels per sprite pixel, a whole number, and a position on whole screen
  * pixels. Give it the drawing buffer's size with `setBufferSize` (a `Stage` made with
  * `camera: "pixel"` does, on every resize), then `follow` a point or `fit` an area each frame.
- * Don't move it with `fitCamera` or `lookAt`: they undo the snapping.
+ * `groundOnScreen` then says which rectangle of ground it shows, for a view that draws only
+ * that. Don't move it with `fitCamera` or `lookAt`: they undo the snapping.
  */
 export class PixelCamera extends THREE.OrthographicCamera {
   readonly isPixelCamera = true;
@@ -162,6 +163,20 @@ export class PixelCamera extends THREE.OrthographicCamera {
     this.targetX = (bounds.minX + bounds.maxX) / 2;
     this.targetZ = (bounds.minZ + bounds.maxZ) / 2;
     this.update();
+  }
+
+  /**
+   * Writes the rectangle of ground on screen to `out`, and returns it. Allocates nothing.
+   *
+   * Call it after `follow` or `fit`, with an object the view keeps. It is not named `view`:
+   * `THREE.OrthographicCamera` has a property of that name.
+   */
+  groundOnScreen(out: MutableGroundBounds): GroundBounds {
+    out.minX = this.position.x + this.left;
+    out.maxX = this.position.x + this.right;
+    out.minZ = this.position.z - this.top;
+    out.maxZ = this.position.z - this.bottom;
+    return out;
   }
 
   private update(): void {

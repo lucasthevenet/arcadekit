@@ -92,6 +92,11 @@
       "types": "./dist/render-three.d.ts",
       "default": "./dist/render-three.js"
     },
+    "./render-three/testing": {
+      "source": "./src/render-three/testing/index.ts",
+      "types": "./dist/render-three/testing.d.ts",
+      "default": "./dist/render-three/testing.js"
+    },
     "./game": {
       "source": "./src/game/index.ts",
       "types": "./dist/game.d.ts",
@@ -148,7 +153,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p . && tsc -p tsconfig.root.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.test.json"
+    "typecheck": "tsc -p . && tsc -p tsconfig.root.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json && tsc -p tsconfig.test.json"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261104.1",

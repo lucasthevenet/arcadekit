@@ -6,7 +6,8 @@ import core from "ultracite/oxlint/core";
 import vitest from "ultracite/oxlint/vitest";
 
 // Every Math function ECMA-262 lets each engine approximate. A genre's step must give the same
-// bits in every engine (ADR-0011), so its simulation calls none of them.
+// bits in every engine (ADR-0011), so its simulation calls none of them, and neither does
+// arcadekit/core, whose functions a step calls.
 const APPROXIMATED_MATH = [
   "acos",
   "acosh",
@@ -33,7 +34,13 @@ const APPROXIMATED_MATH = [
 ] as const;
 
 const approximatedMathMessage =
-  "is approximated differently by each engine, so a step that calls it can desync lockstep peers. Use exact operations, such as survivors' math.ts (hypot2, sin, cos, powInt). See docs/adr/0011-a-step-uses-only-exact-math.md.";
+  "is approximated differently by each engine, so a step that calls it can desync lockstep peers. Use exact operations, such as arcadekit/core's (hypot2, sin, cos, powInt). See docs/adr/0011-a-step-uses-only-exact-math.md.";
+
+const approximatedMathProperties = APPROXIMATED_MATH.map((property) => ({
+  object: "Math",
+  property,
+  message: `Math.${property} ${approximatedMathMessage}`,
+}));
 
 // The simulation reads no clock or random source of its own: its time comes in as an argument
 // and its randomness from the run's seeded Rng, so every peer and every replay computes the same
@@ -228,7 +235,7 @@ export default defineConfig({
     },
     {
       // Library code, but for what a test imports and the one file whose entry points
-      // Cloudflare owns. The two overrides below set the same rule for the simulation's files,
+      // Cloudflare owns. The three overrides below set the same rule for the simulation's files,
       // and the last one's options replace the others', so they repeat this list.
       files: ["packages/*/src/**/*.ts"],
       excludeFiles: [
@@ -248,11 +255,7 @@ export default defineConfig({
       rules: {
         "eslint/no-restricted-properties": [
           "error",
-          ...APPROXIMATED_MATH.map((property) => ({
-            object: "Math",
-            property,
-            message: `Math.${property} ${approximatedMathMessage}`,
-          })),
+          ...approximatedMathProperties,
           ...ownTimeOrRandomnessProperties,
           ...ownRunnerProperties,
         ],
@@ -293,27 +296,22 @@ export default defineConfig({
       },
     },
     {
-      // Core and input don't depend on Effect, so a game can use them without it (ADR-0017).
-      // When several overrides set a rule, the last one's options replace the others', so core
-      // gets this import rule instead of the one above. It bans all of `effect`, so it covers it.
-      files: [
-        "packages/arcadekit/src/core/**/*.ts",
-        "packages/arcadekit/src/input/**/*.ts",
-      ],
+      // Core holds the exact math a step calls (core/math.ts, ADR-0011), and its timers, eases
+      // and Rng are a step's too. So core is held to exact math as a genre's root entry is: no
+      // approximated `Math` function and no `**`. It comes after the override above, whose
+      // options for this rule it replaces, so it repeats that list. Not its tests: they compare
+      // the replacements with the engine's `Math`.
+      files: ["packages/arcadekit/src/core/**/*.ts"],
       excludeFiles: ["**/*.test.ts"],
+      jsPlugins: ["./tools/lint/deterministic-math.ts"],
       rules: {
-        "eslint/no-restricted-imports": [
+        "eslint/no-restricted-properties": [
           "error",
-          {
-            patterns: [
-              {
-                group: ["effect", "effect/**", "@effect/**"],
-                message:
-                  "arcadekit/core and arcadekit/input don't depend on Effect, so a game can use them without it. See docs/adr/0017-effect-at-the-edges-plain-code-inside.md.",
-              },
-            ],
-          },
+          ...approximatedMathProperties,
+          ...ownTimeOrRandomnessProperties,
+          ...ownRunnerProperties,
         ],
+        "deterministic-math/no-exponentiation": "error",
       },
     },
     {

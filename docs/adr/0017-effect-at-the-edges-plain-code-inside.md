@@ -2,6 +2,8 @@
 status: accepted
 ---
 
+> Amended on 2026-11-13: `arcadekit/core` and `arcadekit/input` may import `effect`, as every other entry may. The kit is an Effect library and `effect` is its one required peer, so lint no longer bans it there, and `packages/arcadekit/test/entry-packages.test.ts` allows it for both. What the simulation may not use is unchanged: no `Clock`, `Random` or `DateTime` from `effect`, and a step runs no Effect.
+
 > Amended by [ADR-0020](0020-a-game-is-declared.md): a game's parts are declarations that Layers host, and the rule below is what keeps their handlers plain. `Game.Loop` and a declared simulation's `create`, `step` and `apply` are simulation code, and a `Game.Engine`'s `view` and `input` are per-frame code. "Must not allocate" now means per entity: a step may allocate an event it reports.
 
 # Effect at the edges, plain code inside

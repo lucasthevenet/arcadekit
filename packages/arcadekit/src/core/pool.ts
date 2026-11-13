@@ -29,7 +29,7 @@ export interface Pool<L extends PoolLayout> {
   readonly capacity: number;
   readonly count: number;
   readonly fields: PoolFields<L>;
-  /** Reserves the next slot and returns its index, or -1 when full. Field values in the slot are stale: set them all. */
+  /** Reserves the next slot and returns its index, or -1 when full. Every field of the slot is 0. */
   readonly add: () => number;
   /** Removes the entity at `index` by moving the last entity into it. */
   readonly remove: (index: number) => void;
@@ -57,6 +57,10 @@ export const createPool = <const L extends PoolLayout>(
     add: () => {
       if (count === capacity) {
         return -1;
+      }
+      // Here and not in `remove`, so a slot is clean after a `clear` and on its first use too.
+      for (const array of arrays) {
+        array[count] = 0;
       }
       count += 1;
       return count - 1;
@@ -94,6 +98,7 @@ export interface IdentifiedPool<L extends PoolLayout> extends Pool<L> {
   /**
    * Adds an entity under a chosen free id, such as a removed entity coming back on undo.
    * Returns its index, or -1 when the pool is full or the id is in use or out of range.
+   * Every field of its slot is 0, as after `add`.
    */
   readonly addWithId: (id: number) => number;
 }

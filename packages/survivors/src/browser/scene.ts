@@ -1,22 +1,33 @@
-import { InstancedSprites, frameAt, snapToPixel } from "arcadekit/render-three";
-import type { SpriteTag } from "arcadekit/render-three";
+import {
+  Gait,
+  InstancedSprites,
+  TileLayer,
+  frameAt,
+  resolveTags,
+  snapToPixel,
+} from "arcadekit/render-three";
+import type {
+  GroundBounds,
+  ResolvedTags,
+  SpriteTag,
+} from "arcadekit/render-three";
 import * as THREE from "three";
 
 import { MAX_HEROES, MAX_WEAPONS, auraRadius } from "../hero";
 import type { Hero } from "../hero";
 import type { World } from "../world";
-import { SPRITE_TAGS, heroTags } from "./art";
+import { SCENE_TAGS, TAG_NAMES, contentTags, heroTags } from "./art";
 import type { SurvivorsArt } from "./art";
 import { AuraRings } from "./aura";
-import { GroundTiles } from "./ground";
+import { fillPatches, fraction, tileTag, variant } from "./ground";
 import type { GroundTags } from "./ground";
-import { StablePhases } from "./phases";
 
-// What the survivors view draws, as sprites from the app's sheet, in four draw calls: the ground
-// (tiles and dirt patches), the soft shadows, the aura rings (drawn from the sheet's art by their
-// own shader, so they stay in whole pixels at any radius), and everything standing on the
-// ground (markers, gems, heroes, enemies, projectiles and their trails). No renderer here, so
-// tests can draw a World without WebGL. Sprite pixels are 1/16 world unit.
+// What the survivors view draws, as sprites from the app's sheet, in five draw calls: the
+// ground's tiles (a tile layer: only the cells on screen), its dirt patches, the soft shadows,
+// the aura rings (drawn from the sheet's art by their own shader, so they stay in whole pixels
+// at any radius), and everything standing on the ground (markers, gems, heroes, enemies,
+// projectiles and their trails). No renderer here, so tests can draw a World without WebGL.
+// Sprite pixels are 1/16 world unit.
 
 /** Sprite pixels per world unit. */
 export const PIXELS_PER_UNIT = 16;
@@ -37,8 +48,9 @@ const FLOATING: ReadonlyMap<string, number> = new Map([
   ["wraith/move", 0.12],
 ]);
 
-/** Layers, bottom to top. Within one, lower on screen draws in front. */
+/** Layers, bottom to top. Within one, lower on screen draws in front. The ground's tiles are in layer 0. */
 const LAYER = {
+  patches: 1,
   shadows: 2,
   /** The aura's depth, inside the shadows' layer band. */
   aura: 2.5,
@@ -49,10 +61,8 @@ const LAYER = {
 
 /** The arena the menu backdrop shows until a run tells it the real one. */
 const MENU_HALF_SIZE = 60;
-/** How fast a gem can fly to a hero, a little over the simulation's magnet speed. */
-const GEM_MAX_SPEED = 20;
-/** Added to the fastest enemy's speed for crowds pushing each other apart. */
-const ENEMY_PUSH_SPEED = 4;
+/** Phases from the golden ratio: spread evenly, whatever how many. */
+const GOLDEN = 0.61803398875;
 /** Trail puffs per projectile. */
 const TRAIL = 3;
 /** A hero still walks this long after it last moved, so a frame with no step doesn't stop it. */
@@ -63,15 +73,6 @@ const HERO_FEET = 0.75;
 const ENEMY_FEET = 0.5;
 const DOWN_TINT = new THREE.Color("#8a90a8");
 const WHITE = new THREE.Color("#ffffff");
-
-/** Shows frame 0, for a tag the sheet lacks along with its fallback. */
-const FRAME_ZERO: SpriteTag = {
-  name: "",
-  from: 0,
-  to: 0,
-  direction: "forward",
-  duration: 0,
-};
 
 interface HeroLook {
   readonly walk: SpriteTag;
@@ -97,22 +98,30 @@ interface WeaponLook {
 /** The tags and tints for one run's content. */
 interface Looks {
   readonly world: World;
+  /** The content's tags as the sheet has them, by their `TAG_NAMES`. */
+  readonly tags: ResolvedTags<ReturnType<typeof contentTags>>["tags"];
   readonly heroes: readonly HeroLook[];
   readonly enemies: readonly EnemyLook[];
-  /** The fastest an enemy moves, in world units a second. */
-  readonly enemySpeed: number;
   /** Indexed like projectiles' `weapon` field: slot * MAX_WEAPONS + weapon index. */
   readonly weapons: (WeaponLook | undefined)[];
 }
 
-/** The tags every run draws. */
-interface CommonTags {
-  readonly gems: readonly SpriteTag[];
-  readonly bolt: SpriteTag;
-  readonly trail: SpriteTag;
-  readonly marker: SpriteTag;
-  readonly shadow: SpriteTag;
-}
+/** A hero's own tags, or the generic hero's in its colour if the sheet lacks any of them. */
+const heroLook = (tags: Looks["tags"], hero: Hero): HeroLook => {
+  const { id, sprite } = hero.def;
+  const walk = tags[TAG_NAMES.hero(id, "walk")]!;
+  const idle = tags[TAG_NAMES.hero(id, "idle")]!;
+  const down = tags[TAG_NAMES.hero(id, "down")]!;
+  const own = sprite === undefined ? undefined : heroTags(sprite);
+  const whole =
+    walk.name === own?.walk && idle.name === own.idle && down.name === own.down;
+  return {
+    walk,
+    idle,
+    down,
+    tint: whole ? WHITE : new THREE.Color(hero.def.color),
+  };
+};
 
 /** Frame `age` (0 the first) of a tag, held on its last. */
 const frameOf = (tag: SpriteTag, age: number) =>
@@ -134,6 +143,13 @@ const nearestHeroX = (world: World, x: number, z: number): number => {
   return bestX;
 };
 
+/**
+ * An entity's animation phase in [0, 1), from its pool id. A pool moves its last entity into a
+ * removed one's index, so an index isn't an entity: the id stays with it for as long as it
+ * lives, and so does its phase. A later entity may take the id, and the phase with it.
+ */
+const phaseOf = (id: number): number => (id * GOLDEN) % 1;
+
 const gemTier = (value: number) => {
   if (value <= 1) {
     return 0;
@@ -153,9 +169,10 @@ interface SurvivorsSceneOptions {
 
 /**
  * Draws a survivors World, or the menu backdrop, as sprites under `root`. Add `root` to a scene
- * seen by a `PixelCamera`; each frame, give it the view's size, `draw`, then centre the camera on
- * `focus`. Nothing allocates per frame once a run's looks are made. `dispose` frees what it
- * made, never the sheet.
+ * seen by a `PixelCamera`; each frame, `draw`, centre the camera on `focus`, then `drawGround`
+ * with the ground the camera shows. Once a run's looks are made and its batches have grown to
+ * hold it, a frame allocates nothing of the view's own, only what each batch's `end` costs.
+ * `dispose` frees what it made, never the sheet.
  */
 export class SurvivorsScene {
   readonly root = new THREE.Group();
@@ -166,90 +183,92 @@ export class SurvivorsScene {
   readonly focus = { x: 0, z: 0 };
   private readonly art: SurvivorsArt;
   private readonly localHero: () => number;
-  private readonly ground: GroundTiles;
+  /** The ground's tiles: the cells on screen. */
+  private readonly ground: TileLayer;
+  /** The dirt patches over the grass: all of an arena's, filled when the arena changes. */
+  private readonly patches: InstancedSprites;
+  private readonly groundTags: GroundTags;
   private readonly auras: AuraRings;
-  private readonly common: CommonTags;
+  /** The tags every run draws. */
+  private readonly common: ResolvedTags<typeof SCENE_TAGS>["tags"];
+  /** By a gem's tier: small, medium, large. */
+  private readonly gems: readonly SpriteTag[];
   private readonly slotColors = SLOT_COLORS.map((c) => new THREE.Color(c));
-  private actors: InstancedSprites | null = null;
-  private shadows: InstancedSprites | null = null;
+  /** Everything standing on the ground. */
+  private readonly actors: InstancedSprites;
+  /** The soft shadows under heroes and enemies, blended over the ground. */
+  private readonly shadows: InstancedSprites;
   private looks: Looks | null = null;
-  /** Each enemy's and gem's own animation phase, kept as the pools reorder. */
-  private enemyPhases = new StablePhases(0);
-  private gemPhases = new StablePhases(0);
   /** The last run's arena, for the backdrop. */
   private halfSize = MENU_HALF_SIZE;
-  private viewWidth = 48;
-  private viewDepth = 30;
-  /** Sprites and shadows written so far this frame. */
-  private drawn = 0;
-  private shaded = 0;
-  /** Per hero slot: when it last moved, where it was, and whether it faces left. */
-  private readonly movedAt = new Float64Array(MAX_HEROES);
-  private readonly lastX = new Float64Array(MAX_HEROES);
-  private readonly lastZ = new Float64Array(MAX_HEROES);
+  /** The arena the ground was last drawn for, in whole units from its centre to its wall. */
+  private half = -1;
+  /** Per hero slot: whether it is walking, and whether it faces left. */
+  private readonly gaits = Array.from(
+    { length: MAX_HEROES },
+    () => new Gait({ linger: WALK_GRACE })
+  );
   private readonly facingLeft = new Uint8Array(MAX_HEROES);
-  /** Tags found missing from the sheet, so each is logged once. */
-  private readonly reported = new Set<string>();
+  /** The frame the ground shows at a cell. Kept, so a frame makes no closure for the layer. */
+  private readonly groundFrame = (col: number, row: number): number =>
+    variant(tileTag(this.groundTags, this.half, col, row), fraction(col, row));
 
   constructor(art: SurvivorsArt, options: SurvivorsSceneOptions = {}) {
     this.art = art;
     this.localHero = options.localHero ?? firstHero;
-    const { edges } = SPRITE_TAGS;
-    const groundTags: GroundTags = {
-      grass: this.tag(SPRITE_TAGS.grass),
-      patch: this.tag(SPRITE_TAGS.patch),
-      void: this.tag(SPRITE_TAGS.void),
-      n: this.tag(edges.n),
-      e: this.tag(edges.e),
-      s: this.tag(edges.s),
-      w: this.tag(edges.w),
-      nw: this.tag(edges.nw),
-      ne: this.tag(edges.ne),
-      se: this.tag(edges.se),
-      sw: this.tag(edges.sw),
-    };
-    this.ground = new GroundTiles(art.sheet, groundTags, this.root);
-    this.common = {
-      gems: SPRITE_TAGS.gems.map((name) => this.tag(name)),
-      bolt: this.tag(SPRITE_TAGS.bolt),
-      trail: this.tag(SPRITE_TAGS.trail),
-      marker: this.tag(SPRITE_TAGS.marker),
-      shadow: this.tag(SPRITE_TAGS.shadow),
-    };
+    this.common = resolveTags(art.sheet.data, SCENE_TAGS).tags;
+    const { gemSmall, gemMedium, gemLarge } = this.common;
+    this.gems = [gemSmall, gemMedium, gemLarge];
+    this.groundTags = this.common;
+    this.ground = new TileLayer(art.sheet);
+    this.root.add(this.ground.mesh);
+    this.patches = new InstancedSprites(art.sheet, { layer: LAYER.patches });
+    this.root.add(this.patches.mesh);
     this.auras = new AuraRings(
       art.sheet,
-      this.tag(SPRITE_TAGS.aura),
+      this.common.aura,
       MAX_HEROES * MAX_WEAPONS,
       PIXELS_PER_UNIT,
       LAYER.aura
     );
     this.root.add(this.auras.mesh);
+    this.actors = new InstancedSprites(art.sheet, {
+      // Characters stand on the frame's bottom row; centred art is placed half a frame lower.
+      anchor: { x: 0.5, y: 1 },
+    });
+    this.root.add(this.actors.mesh);
+    this.shadows = new InstancedSprites(art.sheet, {
+      transparent: true,
+      layer: LAYER.shadows,
+    });
+    // After the aura rings, which are transparent too.
+    this.shadows.mesh.renderOrder = 1;
+    this.root.add(this.shadows.mesh);
   }
 
   /** The batch everything standing on the ground is drawn in, for tests. */
-  get actorSprites(): InstancedSprites | null {
+  get actorSprites(): InstancedSprites {
     return this.actors;
   }
 
   /** The shadow batch, for tests. */
-  get shadowSprites(): InstancedSprites | null {
+  get shadowSprites(): InstancedSprites {
     return this.shadows;
   }
 
-  /** The ground tile batch, for tests. */
-  get groundSprites(): InstancedSprites | null {
-    return this.ground.batch;
+  /** The ground's tile layer, for tests. */
+  get groundLayer(): TileLayer {
+    return this.ground;
+  }
+
+  /** The dirt patch batch, for tests. */
+  get patchSprites(): InstancedSprites {
+    return this.patches;
   }
 
   /** The aura rings, for tests. */
-  get auraMesh(): AuraRings["mesh"] {
-    return this.auras.mesh;
-  }
-
-  /** The view's size in world units, so the ground covers it. */
-  setViewSize(width: number, depth: number): void {
-    this.viewWidth = width;
-    this.viewDepth = depth;
+  get auraRings(): AuraRings {
+    return this.auras;
   }
 
   draw(world: World | null, time: number): void {
@@ -258,27 +277,38 @@ export class SurvivorsScene {
     } else {
       this.drawWorld(world, time);
     }
-    this.ground.draw(
-      this.halfSize,
-      this.focus.x,
-      this.focus.z,
-      this.viewWidth,
-      this.viewDepth
-    );
+  }
+
+  /**
+   * Shows the ground of the arena last drawn that touches `seen`, the rectangle of ground the
+   * camera shows: call it after `draw`, once the camera is on `focus`. The tiles are filled
+   * again only when `seen` touches other cells, and the patches only for another arena.
+   */
+  drawGround(seen: GroundBounds): void {
+    const half = Math.ceil(this.halfSize);
+    if (half !== this.half) {
+      this.half = half;
+      this.ground.invalidate();
+      fillPatches(this.patches, this.groundTags.patch, half);
+    }
+    this.ground.draw(seen, this.groundFrame);
   }
 
   dispose(): void {
     this.ground.dispose();
-    this.actors?.dispose();
-    this.shadows?.dispose();
+    this.patches.dispose();
+    this.actors.dispose();
+    this.shadows.dispose();
     this.auras.dispose();
     this.root.removeFromParent();
   }
 
   /** No run: a slow loop over the arena. */
   private drawBackdrop(time: number) {
-    this.actors?.commit(0);
-    this.shadows?.commit(0);
+    this.actors.begin();
+    this.actors.end();
+    this.shadows.begin();
+    this.shadows.end();
     this.auras.commit(0);
     const reach = this.halfSize * 0.5;
     this.focus.x = Math.sin(time * 0.025) * reach;
@@ -288,16 +318,15 @@ export class SurvivorsScene {
   private drawWorld(world: World, time: number) {
     const looks = this.looksFor(world);
     this.halfSize = world.content.rules.arenaHalfSize;
-    const actors = this.ensureActors(world);
-    const shadows = this.ensureShadows(world);
-    this.drawn = 0;
-    this.shaded = 0;
+    const { actors, shadows } = this;
+    actors.begin();
+    shadows.begin();
     const auras = this.drawHeroes(world, looks, actors, shadows, time);
     this.drawEnemies(world, looks, actors, shadows, time);
     this.drawGems(world, actors, time);
     this.drawShots(world, looks, actors, time);
-    actors.commit(this.drawn);
-    shadows.commit(this.shaded);
+    actors.end();
+    shadows.end();
     this.auras.commit(auras);
     // On the sprite-pixel grid the hero is drawn on, so the camera moves in the same steps as
     // the hero and it stays still on screen.
@@ -328,9 +357,7 @@ export class SurvivorsScene {
       if (hero.status === "down") {
         tag = look.down;
       }
-      const a = this.drawn;
-      actors.set(
-        a,
+      const a = actors.push(
         hero.x,
         feet,
         frameAt(data, tag, time + hero.slot * 0.13),
@@ -347,15 +374,13 @@ export class SurvivorsScene {
           actors.setFlash(a, Math.floor(time * 20) % 2 === 0 ? 0.85 : 0.35);
         }
       }
-      actors.set(a + 1, hero.x, feet + 3 * PX, this.common.marker.from);
-      actors.setLayer(a + 1, LAYER.marks);
+      const mark = actors.push(hero.x, feet + 3 * PX, this.common.marker.from);
+      actors.setLayer(mark, LAYER.marks);
       actors.setTint(
-        a + 1,
+        mark,
         this.slotColors[hero.slot % this.slotColors.length]!
       );
-      this.drawn += 2;
-      shadows.set(this.shaded, hero.x, feet - PX, this.common.shadow.from);
-      this.shaded += 1;
+      shadows.push(hero.x, feet - PX, this.common.shadow.from);
       if (hero.status === "playing") {
         rings = this.drawAuras(hero, looks, rings);
       }
@@ -393,16 +418,12 @@ export class SurvivorsScene {
   ) {
     const { data } = this.art.sheet;
     const { type, x, z, hitFlash } = world.enemies.fields;
-    const phases = this.enemyPhases;
-    phases.update(world.enemies.count, x, z, type, time, looks.enemySpeed);
     for (let i = 0; i < world.enemies.count; i++) {
       const look = looks.enemies[type[i]!]!;
       const ex = x[i]!;
       const feet = z[i]! + ENEMY_FEET;
-      const phase = phases.phase(i) * 4;
-      const a = this.drawn;
-      actors.set(
-        a,
+      const phase = phaseOf(world.enemies.idOf(i)) * 4;
+      const a = actors.push(
         ex,
         feet,
         frameAt(data, look.tag, time + phase),
@@ -416,9 +437,7 @@ export class SurvivorsScene {
       if (hitFlash[i]! > 0) {
         actors.setFlash(a, Math.min(1, hitFlash[i]! * 10));
       }
-      this.drawn += 1;
-      shadows.set(this.shaded, ex, feet - PX, this.common.shadow.from);
-      this.shaded += 1;
+      shadows.push(ex, feet - PX, this.common.shadow.from);
     }
   }
 
@@ -426,18 +445,14 @@ export class SurvivorsScene {
   private drawGems(world: World, actors: InstancedSprites, time: number) {
     const { data } = this.art.sheet;
     const { x, z, value } = world.gems.fields;
-    const phases = this.gemPhases;
-    phases.update(world.gems.count, x, z, value, time, GEM_MAX_SPEED);
     for (let i = 0; i < world.gems.count; i++) {
-      const tag = this.common.gems[gemTier(value[i]!)]!;
-      actors.set(
-        this.drawn,
+      const tag = this.gems[gemTier(value[i]!)]!;
+      const gem = actors.push(
         x[i]!,
         z[i]! + 0.5,
-        frameAt(data, tag, time + phases.phase(i) * 3)
+        frameAt(data, tag, time + phaseOf(world.gems.idOf(i)) * 3)
       );
-      actors.setLayer(this.drawn, LAYER.marks);
-      this.drawn += 1;
+      actors.setLayer(gem, LAYER.marks);
     }
   }
 
@@ -457,181 +472,80 @@ export class SurvivorsScene {
       // Puffs a few pixels apart, closer for slow shots.
       const spacing = Math.min(0.28, Math.max(0.16, speed * 0.015)) / speed;
       for (let k = TRAIL; k >= 1; k--) {
-        actors.set(
-          this.drawn,
+        const puff = actors.push(
           x[i]! - vx[i]! * spacing * k,
           z[i]! - vz[i]! * spacing * k + 2 * PX,
           frameOf(trail, k - 1)
         );
-        actors.setLayer(this.drawn, LAYER.shots);
-        actors.setTint(this.drawn, look?.color ?? WHITE);
-        this.drawn += 1;
+        actors.setLayer(puff, LAYER.shots);
+        actors.setTint(puff, look?.color ?? WHITE);
       }
-      actors.set(
-        this.drawn,
+      const shot = actors.push(
         x[i]!,
         z[i]! + 6 * PX,
         frameAt(data, look?.tag ?? bolt, time + i * 0.05),
         vx[i]! < 0
       );
-      actors.setLayer(this.drawn, LAYER.shots);
-      actors.setTint(this.drawn, look?.tint ?? WHITE);
-      this.drawn += 1;
+      actors.setLayer(shot, LAYER.shots);
+      actors.setTint(shot, look?.tint ?? WHITE);
     }
   }
 
   /** Whether a hero is walking, and which way it faces; kept per slot across frames. */
   private walking(hero: Hero, time: number): boolean {
     const { slot } = hero;
-    if (hero.x !== this.lastX[slot] || hero.z !== this.lastZ[slot]) {
-      // Not on a run's first frame, when the hero only appeared.
-      if (!Number.isNaN(this.lastX[slot]!)) {
-        this.movedAt[slot] = time;
-      }
-      this.lastX[slot] = hero.x;
-      this.lastZ[slot] = hero.z;
-    }
+    const gait = this.gaits[slot]!;
+    gait.update(hero.x, hero.z, time);
     if (hero.faceX < -0.1) {
       this.facingLeft[slot] = 1;
     } else if (hero.faceX > 0.1) {
       this.facingLeft[slot] = 0;
     }
-    return hero.status === "playing" && time - this.movedAt[slot]! < WALK_GRACE;
+    return hero.status === "playing" && gait.moving;
   }
 
   /** The looks for a run's content, made once per run; weapons picked up mid-run join here. */
   private looksFor(world: World): Looks {
     if (this.looks?.world !== world) {
+      const { tags } = resolveTags(
+        this.art.sheet.data,
+        contentTags(world.content)
+      );
       this.looks = {
         world,
-        heroes: world.heroes.map((hero) => this.heroLook(hero)),
-        enemies: world.enemyDefs.map((def) => {
-          const tag = this.tagOr(def.sprite, SPRITE_TAGS.enemy);
+        tags,
+        heroes: world.heroes.map((hero) => heroLook(tags, hero)),
+        enemies: world.enemyDefs.map((def, type) => {
+          const tag = tags[TAG_NAMES.enemy(type)]!;
           return {
             tag,
-            tint: this.has(def.sprite) ? WHITE : new THREE.Color(def.color),
+            tint: tag.name === def.sprite ? WHITE : new THREE.Color(def.color),
             float: FLOATING.get(tag.name) ?? 0,
           };
         }),
-        enemySpeed:
-          Math.max(0, ...world.enemyDefs.map((def) => def.speed)) +
-          ENEMY_PUSH_SPEED,
         weapons: [],
       };
-      if (this.enemyPhases.capacity !== world.enemies.capacity) {
-        this.enemyPhases = new StablePhases(world.enemies.capacity);
+      for (const gait of this.gaits) {
+        gait.reset();
       }
-      if (this.gemPhases.capacity !== world.gems.capacity) {
-        this.gemPhases = new StablePhases(world.gems.capacity);
-      }
-      this.enemyPhases.reset();
-      this.gemPhases.reset();
-      this.movedAt.fill(Number.NEGATIVE_INFINITY);
-      this.lastX.fill(Number.NaN);
-      this.lastZ.fill(Number.NaN);
       this.facingLeft.fill(0);
     }
-    const { weapons } = this.looks;
+    const { tags, weapons } = this.looks;
     for (const hero of world.heroes) {
       for (let w = 0; w < hero.weapons.length; w++) {
         const index = hero.slot * MAX_WEAPONS + w;
         if (weapons[index] === undefined) {
           const { def } = hero.weapons[w]!;
           const color = new THREE.Color(def.color);
+          const tag = tags[TAG_NAMES.weapon(def.id)]!;
           weapons[index] = {
-            tag: this.tagOr(def.sprite, SPRITE_TAGS.bolt),
-            tint: this.has(def.sprite) ? WHITE : color,
+            tag,
+            tint: tag.name === def.sprite ? WHITE : color,
             color,
           };
         }
       }
     }
     return this.looks;
-  }
-
-  /** A hero's own tags, or the generic hero's in its colour if the sheet lacks any of them. */
-  private heroLook(hero: Hero): HeroLook {
-    const prefix = hero.def.sprite;
-    const own = prefix === undefined ? undefined : heroTags(prefix);
-    const whole =
-      own !== undefined && Object.values(own).every((tag) => this.has(tag));
-    const generic = heroTags(SPRITE_TAGS.hero);
-    return {
-      walk: this.tagOr(own?.walk, generic.walk),
-      idle: this.tagOr(own?.idle, generic.idle),
-      down: this.tagOr(own?.down, generic.down),
-      tint: whole ? WHITE : new THREE.Color(hero.def.color),
-    };
-  }
-
-  private has(name: string | undefined): boolean {
-    return name !== undefined && this.art.sheet.data.tags.has(name);
-  }
-
-  /** The tag `name`, or `fallback` if there is none or the sheet lacks it (logged once). */
-  private tagOr(name: string | undefined, fallback: string): SpriteTag {
-    if (name === undefined || name === fallback) {
-      return this.tag(fallback);
-    }
-    if (this.has(name)) {
-      return this.tag(name);
-    }
-    this.report(name, `drawing "${fallback}" instead`);
-    return this.tag(fallback);
-  }
-
-  /** The tag `name`, or frame 0 if the sheet lacks it (logged once). */
-  private tag(name: string): SpriteTag {
-    const tag = this.art.sheet.data.tags.get(name);
-    if (tag === undefined) {
-      this.report(name, "drawing its first frame instead");
-      return FRAME_ZERO;
-    }
-    return tag;
-  }
-
-  private report(name: string, instead: string) {
-    if (!this.reported.has(name)) {
-      this.reported.add(name);
-      console.warn(
-        `The sprite sheet ${this.art.sheet.data.image} has no tag "${name}": ${instead}.`
-      );
-    }
-  }
-
-  /** The batch for everything standing on the ground, sized for this run's pools. */
-  private ensureActors(world: World): InstancedSprites {
-    const capacity =
-      MAX_HEROES * 2 +
-      world.enemies.capacity +
-      world.gems.capacity +
-      world.projectiles.capacity * (1 + TRAIL);
-    if (this.actors?.capacity !== capacity) {
-      this.actors?.dispose();
-      this.actors = new InstancedSprites(this.art.sheet, {
-        capacity,
-        // Characters stand on the frame's bottom row; centred art is placed half a frame lower.
-        anchor: { x: 0.5, y: 1 },
-      });
-      this.root.add(this.actors.mesh);
-    }
-    return this.actors;
-  }
-
-  /** The soft shadows under heroes and enemies, blended over the ground. */
-  private ensureShadows(world: World): InstancedSprites {
-    const capacity = MAX_HEROES + world.enemies.capacity;
-    if (this.shadows?.capacity !== capacity) {
-      this.shadows?.dispose();
-      this.shadows = new InstancedSprites(this.art.sheet, {
-        capacity,
-        transparent: true,
-        layer: LAYER.shadows,
-      });
-      // After the aura rings, which are transparent too.
-      this.shadows.mesh.renderOrder = 1;
-      this.root.add(this.shadows.mesh);
-    }
-    return this.shadows;
   }
 }

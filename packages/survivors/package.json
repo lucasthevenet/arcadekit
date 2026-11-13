@@ -9,7 +9,7 @@
     "./browser": "./src/browser/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p . && tsc -p tsconfig.root.json && tsc -p browser-determinism"
+    "typecheck": "tsc -p . && tsc -p tsconfig.root.json && tsc -p tsconfig.test.json && tsc -p browser-determinism"
   },
   "dependencies": {
     "arcadekit": "workspace:*",

@@ -1,7 +1,20 @@
 export { FixedStepClock } from "./clock";
+export { easeIn, easeOut, easeOutCubic, progress, smoothstep } from "./ease";
 export { EventBuffer } from "./events";
 export { SpatialGrid, type SpatialGridOptions } from "./grid";
-export { clamp } from "./math";
+export { StateHasher, visitPool } from "./hash";
+export {
+  type Point2,
+  clamp,
+  clampLength,
+  cos,
+  hashCell,
+  hypot2,
+  lerp,
+  moveToward,
+  powInt,
+  sin,
+} from "./math";
 export {
   type IdentifiedPool,
   type Pool,
@@ -10,4 +23,7 @@ export {
   createIdentifiedPool,
   createPool,
 } from "./pool";
+export { type Ring, RingReader, createRing } from "./ring";
 export { type Rng, makeRng } from "./rng";
+export { Side, type TileMap, createTileMap } from "./tile-map";
+export { countDown, takeWhole } from "./timers";

@@ -4,6 +4,8 @@ status: accepted
 
 # Identified pools give stable ids and reuse them
 
+> Amended on 2026-11-12: survivors' enemies and gems are identified pools, so its view keys each one's animation phase on `idOf`. Its recorded hashes did not move: an id is in no field.
+
 Removing an entity from a pool moves the last entity into its index, so an index can't name an entity across a removal. Push-puzzle must name a box across turns for undo and for its view, so core's `createIdentifiedPool` gives each entity a stable id, reused after removal, with O(1) `idOf`, `indexOf` and `addWithId` that allocate nothing (#17, finding 3).
 
 ## Considered Options

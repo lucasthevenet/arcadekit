@@ -26,10 +26,10 @@ Survivors replays identically before and after every kit change: `packages/survi
 | 6 | The DOM-free root entry isn't enforced | content, genre packages | Fixed: [#20](https://github.com/lucasthevenet/arcadekit/issues/20) |
 | 7 | `InputBindings` requires both halves | input | Fixed now |
 | 8 | "No allocation in a step" vs `InputSource.read` | runtime (docs) | Fixed now |
-| 9 | `MeshInstances` rotates around Y only | render-three (docs) | Fixed now |
+| 9 | `MeshInstances` rotates around Y only | render-three (docs) | Fixed now, then answered: [#84](https://github.com/lucasthevenet/arcadekit/issues/84) |
 | 10 | The runtime has only a fixed-clock time model | runtime | No action |
 | 11 | No snapshot or restore of state | runtime | No action |
-| 12 | The view gets no previous positions | runtime | No action |
+| 12 | The view gets no previous positions | runtime | No action, then answered: [#83](https://github.com/lucasthevenet/arcadekit/issues/83) |
 | 13 | No key repeat in the input layer | input | No action |
 | 14 | `MOVE_AXES` naming | input | No action |
 | 15 | Content errors name entries by index | content | No action |
@@ -106,6 +106,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 - **What happened:** the goal marker is a flat ring lying on the floor, which needs a rotation around X. `set` only takes a Y rotation. Push-puzzle rotates the ring geometry once (`RingGeometry(...).rotateX(...)`), the usual Three.js answer for a tilt every instance shares.
 - **Fix:** `set`'s docs say so. A per-instance free rotation would be a new shape (quaternions) that no genre needs yet.
 - **Layer:** render-three (docs).
+- **Answer ([#84](https://github.com/lucasthevenet/arcadekit/issues/84), 2026-11-13):** grimbonk is the game that needs it: two of its views write each instance's matrix with `mesh.setMatrixAt`, since `set` takes a uniform scale and a rotation around the vertical axis, and nothing else. `MeshInstances` has `setMatrix(index, matrix)` now, which gives an instance any transform, and `set` stays as its short form. A tilt every instance shares is still a rotation of the geometry, done once.
 
 ## No action
 
@@ -129,6 +130,7 @@ Each of these was filed because it changes a shared contract or its shape wasn't
 - **What happened:** the simulation moves a box to its new cell in one step. The view keeps, per box id and for the player, the cell it last saw and where it was drawn, and slides from there over 90 ms of real time. A box that fills a hole vanishes in the same step, so there's nothing to animate it falling in.
 - **Proposed layer:** genre package.
 - **Verdict:** no action. The tracking is about 40 lines, entirely genre-specific, and uses the identified pool's ids from finding 3. Revisit if a third genre needs "what changed this step" for its view.
+- **Answer ([#83](https://github.com/lucasthevenet/arcadekit/issues/83), 2026-11-13):** grimbonk is the third game, and its views need what changed in a step. Core has the channel now, a ring of records a step pushes to and each view reads with a reader of its own ([ADR-0023](adr/0023-a-step-tells-its-views-what-happened-through-a-ring-of-records.md)). Push-puzzle's rules push what a turn did that the board no longer shows to `Puzzle.changes`: the id of a box that filled a hole with the hole's cell, and an undo. The view reads `Puzzle.changes`, where it compared the board with last frame and searched a box's neighbours for the hole it fell in. It still keeps the cell it last saw for each box and for the player, and slides from there: where a thing is drawn between two cells is the view's own.
 
 ### 13. No key repeat in the input layer
 

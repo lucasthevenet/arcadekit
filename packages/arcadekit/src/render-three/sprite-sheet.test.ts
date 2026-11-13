@@ -1,8 +1,13 @@
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import { SpriteSheetError, decodeSpriteSheet, frameAt } from "./index";
-import type { SpriteSheetData } from "./index";
+import {
+  SpriteSheetError,
+  decodeSpriteSheet,
+  frameAt,
+  resolveTags,
+} from "./index";
+import type { SpriteSheetData, SpriteTag } from "./index";
 
 const frame = (x: number, duration = 100) => ({
   frame: { x, y: 0, w: 16, h: 16 },
@@ -296,5 +301,137 @@ describe(frameAt, () => {
 
   it("counts a negative time back from the end of a loop", () => {
     expect(frameAt(sheet, tag("forward"), -0.1)).toBe(3);
+  });
+});
+
+describe(resolveTags, () => {
+  // Its tags are "slime/move" (frames 0 and 1) and "bat/fly" (2 and 3), in "sheet.png".
+  const sheet = decode(ARRAY_FORM);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("gives each name the first of its choices the sheet has, and skips an undefined", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { tags, missing } = resolveTags(sheet, {
+      slime: "slime/move",
+      bat: ["bat/fly", "slime/move"],
+      // A content entry that names no sprite of its own.
+      ghost: [undefined, "bat/fly"],
+    });
+    expect({
+      slime: tags.slime === sheet.tags.get("slime/move"),
+      bat: tags.bat.name,
+      ghost: tags.ghost.name,
+      missing,
+      warned: warn.mock.calls.length,
+    }).toStrictEqual({
+      slime: true,
+      bat: "bat/fly",
+      ghost: "bat/fly",
+      missing: [],
+      warned: 0,
+    });
+    expectTypeOf(tags).toEqualTypeOf<{
+      readonly slime: SpriteTag;
+      readonly bat: SpriteTag;
+      readonly ghost: SpriteTag;
+    }>();
+    // @ts-expect-error "rat" is no name this view asked for.
+    expect(tags.rat).toBeUndefined();
+  });
+
+  it("falls back along a name's choices, and gives a tag that shows frame 0 when none is found", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { tags } = resolveTags(sheet, {
+      ghost: ["ghost/move", "wraith/move", "bat/fly"],
+      rat: ["rat/move", undefined, "mouse/move"],
+      mole: "mole/move",
+    });
+    expect({
+      ghost: tags.ghost.name,
+      rat: tags.rat,
+      mole: tags.mole,
+      // It plays as any tag does: its one frame, at any time.
+      frames: [frameAt(sheet, tags.rat, 0), frameAt(sheet, tags.rat, 5.3)],
+    }).toStrictEqual({
+      ghost: "bat/fly",
+      rat: { name: "", from: 0, to: 0, direction: "forward", duration: 0 },
+      mole: { name: "", from: 0, to: 0, direction: "forward", duration: 0 },
+      frames: [0, 0],
+    });
+  });
+
+  it("lists each choice tried and not found once, in the order tried", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { missing } = resolveTags(sheet, {
+      ghost: ["ghost/move", "wraith/move", "bat/fly"],
+      // "wraith/move" was tried for the ghost: it is listed once.
+      wraith: ["wraith/move", "slime/move"],
+      rat: "rat/move",
+      // The first choice is found, so the second is never tried.
+      slime: ["slime/move", "blob/move"],
+    });
+    expect(missing).toStrictEqual(["ghost/move", "wraith/move", "rat/move"]);
+  });
+
+  it("warns once in a call that misses, naming the sheet's image and each missing tag", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    resolveTags(sheet, {
+      ghost: ["ghost/move", "bat/fly"],
+      rat: "rat/move",
+    });
+    expect(warn.mock.calls).toStrictEqual([
+      [
+        'The sprite sheet sheet.png has no tag "ghost/move", "rat/move": a name that asked for one draws its next choice, or frame 0 when it has none left.',
+      ],
+    ]);
+    // Each call says what it missed: a view resolves once, and a game once per run.
+    resolveTags(sheet, { rat: "rat/move" });
+    resolveTags(sheet, { slime: "slime/move" });
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("names in the same warning each name given no tag to try, which draws frame 0", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // A content entry that names no sprite, in a view with no generic one to draw for it.
+    const { tags, missing } = resolveTags(sheet, {
+      boss: [undefined],
+      mole: [],
+      slime: "slime/move",
+    });
+    expect({
+      boss: tags.boss.name,
+      mole: tags.mole.name,
+      missing,
+    }).toStrictEqual(
+      // No tag was tried, so the sheet lacks none.
+      { boss: "", mole: "", missing: [] }
+    );
+    resolveTags(sheet, { boss: [undefined, undefined], rat: "rat/move" });
+    expect(warn.mock.calls).toStrictEqual([
+      [
+        'No tag was given to try for "boss", "mole" in the sprite sheet sheet.png: a name with none draws frame 0.',
+      ],
+      [
+        'The sprite sheet sheet.png has no tag "rat/move": a name that asked for one draws its next choice, or frame 0 when it has none left. No tag was given to try for "boss" in the sprite sheet sheet.png: a name with none draws frame 0.',
+      ],
+    ]);
+  });
+
+  it("gives a tag under every key of the map, whatever the key", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    // A map read from a file can have any key: this one is no prototype here.
+    const wanted = JSON.parse(
+      '{ "__proto__": "bat/fly", "constructor": "rat/move" }'
+    ) as Record<string, string>;
+    const { tags } = resolveTags(sheet, wanted);
+    expect(
+      Object.entries(tags).map(([key, tag]) => [key, tag.name])
+    ).toStrictEqual([
+      ["__proto__", "bat/fly"],
+      ["constructor", ""],
+    ]);
   });
 });

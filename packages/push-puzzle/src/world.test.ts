@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { Hud, LevelSolved } from "./events";
 import { PuzzleContent } from "./schema";
 import { PushPuzzle } from "./simulation";
-import { boardText, boxIdAt, createPuzzle, step } from "./world";
+import { Change, boardText, boxIdAt, createPuzzle, step } from "./world";
 import type {
   Direction,
   Puzzle,
@@ -379,6 +379,129 @@ describe("cue counters", () => {
   });
 });
 
+/** Every record `changes` holds, oldest first, as [kind, box, cell]. */
+const changesOf = (puzzle: Puzzle): number[][] => {
+  const { changes } = puzzle;
+  const records: number[][] = [];
+  for (let n = changes.written - changes.length; n < changes.written; n++) {
+    const i = changes.slotOf(n);
+    records.push([
+      changes.fields.kind[i]!,
+      changes.fields.box[i]!,
+      changes.fields.cell[i]!,
+    ]);
+  }
+  return records;
+};
+
+describe("changes", () => {
+  // The second box, id 1, is the one beside the hole, at column 3 of row 2: cell 2 * 7 + 3.
+  const LEVEL = ["#######", "#  $ .#", "#@$^  #", "#     #", "#######"];
+  const HOLE = 17;
+
+  it("start with no record", () => {
+    const { changes } = start(LEVEL);
+    expect([changes.written, changes.length]).toStrictEqual([0, 0]);
+  });
+
+  it("record a box that filled a hole, with its id and the hole's cell", () => {
+    const puzzle = start(LEVEL);
+    const id = boxIdAt(puzzle, 2, 2);
+    taps(puzzle, "R");
+    // The box is in no pool and the hole on no tile: the record is what is left of the fall.
+    expect(boardText(puzzle)[2]).toBe("# @   #");
+    expect(boxIdAt(puzzle, 3, 2)).toBe(-1);
+    expect([id, changesOf(puzzle)]).toStrictEqual([
+      1,
+      [[Change.holeFilled, 1, HOLE]],
+    ]);
+  });
+
+  it("name the box that fell by its id, which its pool index no longer is once a box has fallen", () => {
+    // Two boxes, each beside a hole: cells 1 * 8 + 3 and 2 * 8 + 3.
+    const puzzle = start([
+      "########",
+      "#@$^   #",
+      "# $^   #",
+      "#   .  #",
+      "########",
+    ]);
+    const ids = [boxIdAt(puzzle, 2, 1), boxIdAt(puzzle, 2, 2)];
+    // The first box falls, then around to the left of the second.
+    taps(puzzle, "RLD");
+    // The fall took the first box out of the pool, and the second moved into its place.
+    const index = puzzle.boxes.indexOf(1);
+    taps(puzzle, "R");
+    expect([ids, index, changesOf(puzzle)]).toStrictEqual([
+      [0, 1],
+      0,
+      [
+        [Change.holeFilled, 0, 11],
+        [Change.holeFilled, 1, 19],
+      ],
+    ]);
+  });
+
+  it("record an undo, and keep the record of what it undid", () => {
+    const puzzle = start(LEVEL);
+    taps(puzzle, "R");
+    undo(puzzle);
+    expect(boardText(puzzle)).toStrictEqual(LEVEL);
+    // Nothing is popped: a view that looks now is told of the fall and of the undo, in order.
+    expect(changesOf(puzzle)).toStrictEqual([
+      [Change.holeFilled, 1, HOLE],
+      [Change.undone, -1, -1],
+    ]);
+    taps(puzzle, "D");
+    undo(puzzle);
+    expect(changesOf(puzzle)).toStrictEqual([
+      [Change.holeFilled, 1, HOLE],
+      [Change.undone, -1, -1],
+      [Change.undone, -1, -1],
+    ]);
+  });
+
+  it("record nothing for a move, a push onto floor, a blocked move or an undo with no history left", () => {
+    const puzzle = start(LEVEL);
+    undo(puzzle);
+    // Down and right, then up, which pushes the second box a cell up, and up again, which
+    // would push it into the wall.
+    taps(puzzle, "DRUU");
+    expect(boardText(puzzle)).toStrictEqual([
+      "#######",
+      "# $$ .#",
+      "# @^  #",
+      "#     #",
+      "#######",
+    ]);
+    expect(puzzle.cues).toStrictEqual({
+      moves: 2,
+      pushes: 1,
+      holesFilled: 0,
+      undos: 0,
+      solved: 0,
+    });
+    expect(puzzle.changes.written).toBe(0);
+  });
+
+  it("hold the newest eight", () => {
+    const puzzle = start(LEVEL);
+    // Five times into the hole and back out: ten records, of which the first two are lost.
+    for (let i = 0; i < 5; i++) {
+      taps(puzzle, "R");
+      undo(puzzle);
+    }
+    const { changes } = puzzle;
+    expect([changes.written, changes.length]).toStrictEqual([10, 8]);
+    expect(changesOf(puzzle)).toStrictEqual(
+      Array.from({ length: 4 }, () => [
+        [Change.holeFilled, 1, HOLE],
+        [Change.undone, -1, -1],
+      ]).flat()
+    );
+  });
+});
+
 /**
  * The replay's input, one entry per step: taps, holds and undos, mixed with idle steps. Each
  * move is held for 20 steps (every 4th) or 1, with the direction pressed on the first, then a
@@ -483,5 +606,31 @@ describe("starting a run", () => {
     expect(() => createPuzzle(config)).toThrow(
       'push-puzzle content has no level "missing"'
     );
+  });
+
+  it("throws, naming historyCapacity, when it isn't a whole number of 1 or more", () => {
+    for (const historyCapacity of [0, -1, 2.5, Number.NaN]) {
+      const config = configFor(["#####", "#@$.#", "#####"], {
+        historyCapacity,
+      });
+      expect(() => createPuzzle(config)).toThrow(
+        new RangeError(
+          `push-puzzle's historyCapacity must be a whole number of 1 or more, got ${historyCapacity}`
+        )
+      );
+    }
+    // One turn is the least undo can go back.
+    const puzzle = start(["#####", "#@  #", "#$. #", "#####"], {
+      historyCapacity: 1,
+    });
+    taps(puzzle, "RR");
+    undo(puzzle);
+    undo(puzzle);
+    expect(boardText(puzzle)).toStrictEqual([
+      "#####",
+      "# @ #",
+      "#$. #",
+      "#####",
+    ]);
   });
 });
