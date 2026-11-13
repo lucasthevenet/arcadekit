@@ -2,8 +2,7 @@ import { Effect, Layer, Logger, Schema } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { Setting } from "./index";
-import type { Stored } from "./index";
+import { Setting, Stored } from "./index";
 
 // Settings run against an in-memory KeyValueStore, never real localStorage.
 
@@ -116,7 +115,7 @@ const counting = () => {
 
 const run = async <A>(
   program: (
-    controls: Stored<Controls>
+    controls: Stored.Stored<Controls>
   ) => Effect.Effect<A, never, KeyValueStore.KeyValueStore>,
   options: {
     readonly stored?: string;
@@ -320,17 +319,31 @@ describe(Setting, () => {
     expect(GameScreen.settingName).toBe("GameScreen");
   });
 
-  it("is its service's key, named for the class, and two settings are two services", () => {
+  it("is its service's key, named for the class, and two settings are two services", async () => {
+    const services = await Effect.gen(function* () {
+      return [yield* GameControls, yield* GameTutorial] as const;
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(GameControls.layer, GameTutorial.layer).pipe(
+          Layer.provide(KeyValueStore.layerMemory)
+        )
+      ),
+      Effect.runPromise
+    );
     expect([
       GameControls.kind,
       GameControls.settingName,
       GameControls.key,
       GameTutorial.key,
+      services.map(Stored.isStored),
+      new Set(services).size,
     ]).toStrictEqual([
       "Setting",
       "GameControls",
       "arcadekit/save/Setting/GameControls",
       "arcadekit/save/Setting/GameTutorial",
+      [true, true],
+      2,
     ]);
   });
 
@@ -339,7 +352,7 @@ describe(Setting, () => {
       Layer.Layer<GameControls, never, KeyValueStore.KeyValueStore>
     >();
     expectTypeOf<Effect.Success<typeof GameControls>>().toEqualTypeOf<
-      Stored<Controls>
+      Stored.Stored<Controls>
     >();
     expectTypeOf(GameTutorial.definition.merge).parameter(0).toEqualTypeOf<{
       readonly offered: boolean;

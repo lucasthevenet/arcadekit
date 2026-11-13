@@ -49,8 +49,8 @@ const ContentLayer = SurvivorsContent.layer(
  */
 export const resources = Layer.mergeAll(
   SurvivorsEngine.layer,
-  SurvivorsSave.layer.pipe(Layer.provide(BrowserSaveStorage)),
-  SurvivorsAudioSettings.layer.pipe(Layer.provide(BrowserSaveStorage)),
+  SurvivorsSave.layer.pipe(Layer.provide(BrowserSaveStorage.layer)),
+  SurvivorsAudioSettings.layer.pipe(Layer.provide(BrowserSaveStorage.layer)),
   // Co-op's rooms are on the signalling worker that serves the page.
   CoopLayer.pipe(Layer.provide(BrowserRoomsLayer))
 ).pipe(Layer.provideMerge(ContentLayer), Layer.provideMerge(assets));

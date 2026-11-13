@@ -1,9 +1,10 @@
-import { Effect, Layer, Logger, Schema } from "effect";
+import { Effect, Layer, Logger, Option, Schema } from "effect";
+import type { Tracer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { Save } from "./index";
-import type { Records, Stored } from "./index";
+import { Save, Stored } from "./index";
+import type { Records } from "./index";
 
 // The save runs against an in-memory KeyValueStore, never real localStorage.
 // Each test seeds the store, runs the save, and reads the store and the logs back.
@@ -16,7 +17,6 @@ type ScoreRecord = typeof ScoreRecord.Type;
 
 class GameSave extends Save("GameSave", {
   storageKey: "arcadekit/test-game/save",
-  field: "stages",
   record: ScoreRecord,
   mergeRecord: (a, b) => ({
     best: Math.max(a.best, b.best),
@@ -93,10 +93,60 @@ const counting = () => {
   return { layer, reads };
 };
 
+/** A store whose reads let other fibers run before they give what they read, as an async store's do. */
+const yielding = Layer.effect(
+  KeyValueStore.KeyValueStore,
+  Effect.gen(function* () {
+    const store = yield* KeyValueStore.KeyValueStore;
+    return {
+      ...store,
+      get: (key: string) =>
+        store.get(key).pipe(Effect.tap(() => Effect.yieldNow)),
+    };
+  })
+).pipe(Layer.provide(KeyValueStore.layerMemory));
+
+/** The names of a span and of every span above it, the innermost first. */
+const spanNames = (span: Tracer.AnySpan): readonly string[] =>
+  span._tag === "Span"
+    ? [
+        span.name,
+        ...Option.match(span.parent, { onNone: () => [], onSome: spanNames }),
+      ]
+    : [];
+
+/** A store that records the spans each of its reads and writes runs in, as they run. */
+const tracing = () => {
+  const spans: string[] = [];
+  const traced = (method: string) =>
+    Effect.currentSpan.pipe(
+      Effect.map(spanNames),
+      Effect.orElseSucceed(() => []),
+      Effect.flatMap((names) =>
+        Effect.sync(() => {
+          spans.push(`${method}: ${names.join(" < ")}`);
+        })
+      )
+    );
+  const layer = Layer.effect(
+    KeyValueStore.KeyValueStore,
+    Effect.gen(function* () {
+      const store = yield* KeyValueStore.KeyValueStore;
+      return {
+        ...store,
+        get: (key: string) => Effect.andThen(traced("get"), store.get(key)),
+        set: (key: string, value: string | Uint8Array) =>
+          Effect.andThen(traced("set"), store.set(key, value)),
+      };
+    })
+  ).pipe(Layer.provide(KeyValueStore.layerMemory));
+  return { layer, spans };
+};
+
 /** Runs `program` with the save over `storage`, after writing `stored` raw under the save key. */
 const run = async <A>(
   program: (
-    save: Stored<Records<ScoreRecord>>
+    save: Stored.Stored<Records<ScoreRecord>>
   ) => Effect.Effect<A, never, KeyValueStore.KeyValueStore>,
   options: {
     readonly stored?: string;
@@ -131,7 +181,7 @@ const readRaw = (key: string) =>
     return yield* (yield* KeyValueStore.KeyValueStore).get(key);
   }).pipe(Effect.orDie);
 
-const stored = (stages: object) => JSON.stringify({ version: 1, stages });
+const stored = (records: object) => JSON.stringify({ version: 1, records });
 
 const MedalRecord = Schema.Struct({
   medal: Schema.Literals(["gold", "silver"]),
@@ -141,7 +191,6 @@ const MedalRecord = Schema.Struct({
 /** A save whose merge builds a record with a literal of a union in it, and an array. */
 class MedalSave extends Save("MedalSave", {
   storageKey: "arcadekit/test-game/medal-save",
-  field: "tracks",
   record: MedalRecord,
   mergeRecord: (a, b) =>
     a.medal === "gold" || b.medal === "gold"
@@ -149,30 +198,19 @@ class MedalSave extends Save("MedalSave", {
       : b,
 }) {}
 
-/** Declares a save whose field the types can't see, to reach the throw behind them. */
-const declareWithField = (field: string) =>
-  // oxlint-disable-next-line declaration/class -- A test declares what a builder must refuse.
-  Save("VersionSave", {
-    storageKey: "arcadekit/test-game/version-save",
-    field,
-    record: ScoreRecord,
-    mergeRecord: (a) => a,
-  });
-
 /** Saves whose definitions show a mistake: each is a type error. */
 const declareMistyped = () => [
   // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("FieldSave", {
     storageKey: "arcadekit/test-game/field-save",
-    // @ts-expect-error -- the stored save keeps its version in `version`.
-    field: "version",
+    // @ts-expect-error -- a save keeps its records under `records`, which no definition names.
+    field: "levels",
     record: ScoreRecord,
     mergeRecord: (a) => a,
   }),
   // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("OtherRecordSave", {
     storageKey: "arcadekit/test-game/other-save",
-    field: "stages",
     record: ScoreRecord,
     // @ts-expect-error -- the record's Schema decides the record, not the handler.
     mergeRecord: (a: { readonly lives: number }) => a,
@@ -180,7 +218,6 @@ const declareMistyped = () => [
   // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("PromiseSave", {
     storageKey: "arcadekit/test-game/promise-save",
-    field: "stages",
     record: ScoreRecord,
     // @ts-expect-error -- a merge gives a record, now.
     mergeRecord: (a) => Promise.resolve(a),
@@ -189,21 +226,18 @@ const declareMistyped = () => [
   // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("NoMergeSave", {
     storageKey: "arcadekit/test-game/no-merge-save",
-    field: "stages",
     record: ScoreRecord,
   }),
   // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("KeySave", {
     // @ts-expect-error -- `key` is the class's, its service's key: the storage key is `storageKey`.
     key: "arcadekit/test-game/key-save",
-    field: "stages",
     record: ScoreRecord,
     mergeRecord: (a) => a,
   }),
   // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("MutableSave", {
     storageKey: "arcadekit/test-game/mutable-save",
-    field: "stages",
     record: Schema.Struct({ ids: Schema.mutable(Schema.Array(Schema.String)) }),
     // @ts-expect-error -- the price of a kept literal: an array written in a merge is read-only.
     mergeRecord: (a, b) => ({ ids: [...a.ids, ...b.ids] }),
@@ -211,7 +245,6 @@ const declareMistyped = () => [
   // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("NamedSave", {
     storageKey: "arcadekit/test-game/named-save",
-    field: "stages",
     record: Schema.Struct({ ids: Schema.mutable(Schema.Array(Schema.String)) }),
     // What such a record writes instead: the array named first.
     mergeRecord: (a, b) => {
@@ -264,8 +297,16 @@ describe(Save, () => {
     ]);
   });
 
-  it("treats a save of an unknown version like a corrupt one", async () => {
-    const raw = JSON.stringify({ version: 99, stages: {} });
+  it.each([
+    ["an unknown version", JSON.stringify({ version: 99, records: {} })],
+    [
+      "records under a field of their own, as saves were stored before",
+      JSON.stringify({
+        version: 1,
+        stages: { one: { best: 3, cleared: true } },
+      }),
+    ],
+  ])("treats a save of %s like a corrupt one", async (_, raw) => {
     const { result, warnings } = await run(
       (save) => Effect.all([save.read, readRaw(BACKUP_KEY)]),
       { stored: raw }
@@ -287,7 +328,7 @@ describe(Save, () => {
     ]);
   });
 
-  it("writes the records under the storage key, versioned, in the game's field", async () => {
+  it("writes the records under the storage key, versioned, in `records`", async () => {
     const { result } = await run((save) =>
       Effect.andThen(
         save.write({ one: { best: 3, cleared: false } }),
@@ -329,6 +370,44 @@ describe(Save, () => {
       two: { best: 7, cleared: false },
       "old-stage": { best: 1, cleared: true },
     });
+  });
+
+  it("merges writes that run at once, one after the other, over a store that yields", async () => {
+    const result = await Effect.gen(function* () {
+      const save = yield* GameSave;
+      yield* Effect.all(
+        [
+          save.write({ one: { best: 3, cleared: true } }),
+          save.write({ two: { best: 5, cleared: false } }),
+        ],
+        { concurrency: "unbounded" }
+      );
+      return yield* save.read;
+    }).pipe(
+      Effect.provide(GameSave.layer.pipe(Layer.provide(yielding))),
+      Effect.runPromise
+    );
+    expect(result).toStrictEqual({
+      one: { best: 3, cleared: true },
+      two: { best: 5, cleared: false },
+    });
+  });
+
+  it("traces each read and write under the declared name, and a write's read inside it", async () => {
+    const { layer, spans } = tracing();
+    await Effect.gen(function* () {
+      const save = yield* GameSave;
+      yield* save.write({ one: { best: 3, cleared: true } });
+      yield* save.read;
+    }).pipe(
+      Effect.provide(GameSave.layer.pipe(Layer.provide(layer))),
+      Effect.runPromise
+    );
+    expect(spans).toStrictEqual([
+      "get: GameSave.read < GameSave.write",
+      "set: GameSave.write",
+      "get: GameSave.read",
+    ]);
   });
 
   it("gives the game's merge the stored record first and the written one second", async () => {
@@ -404,11 +483,25 @@ describe(Save, () => {
     });
   });
 
-  it("is its service's key, named for the class", () => {
-    expect([GameSave.kind, GameSave.saveName, GameSave.key]).toStrictEqual([
+  it("is its service's key, named for the class, and its service is a stored value", async () => {
+    const service = await Effect.gen(function* () {
+      return yield* GameSave;
+    }).pipe(
+      Effect.provide(
+        GameSave.layer.pipe(Layer.provide(KeyValueStore.layerMemory))
+      ),
+      Effect.runPromise
+    );
+    expect([
+      GameSave.kind,
+      GameSave.saveName,
+      GameSave.key,
+      Stored.isStored(service),
+    ]).toStrictEqual([
       "Save",
       "GameSave",
       "arcadekit/save/Save/GameSave",
+      true,
     ]);
   });
 
@@ -417,7 +510,7 @@ describe(Save, () => {
       Layer.Layer<GameSave, never, KeyValueStore.KeyValueStore>
     >();
     expectTypeOf<Effect.Success<typeof GameSave>>().toEqualTypeOf<
-      Stored<Records<ScoreRecord>>
+      Stored.Stored<Records<ScoreRecord>>
     >();
     expectTypeOf(GameSave.definition.mergeRecord)
       .parameter(0)
@@ -440,18 +533,9 @@ describe(Save, () => {
     ).toStrictEqual({ oval: { medal: "gold", laps: [61, 58] } });
   });
 
-  it("refuses the field `version`, where the stored save keeps its version", () => {
-    expect(() => declareWithField("version")).toThrow(
-      new Error(
-        `Save "VersionSave" keeps its records in the field "version", where the stored save keeps its version. Name the field for what the records are, such as "levels" or "heroes".`
-      )
-    );
-    expect(declareWithField("stages").saveName).toBe("VersionSave");
-  });
-
-  it("refuses in the types what a definition shows", () => {
-    expect(declareMistyped).toThrow(
-      /keeps its records in the field "version"/u
+  it("refuses in the types what a definition shows, and declares each when run", () => {
+    expect(declareMistyped().map((save) => save.kind)).toStrictEqual(
+      Array.from({ length: 7 }, () => "Save")
     );
   });
 });

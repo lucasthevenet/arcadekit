@@ -32,7 +32,6 @@ export const emptyRecords: HeroRecords = {};
  */
 export class SurvivorsSave extends Save("SurvivorsSave", {
   storageKey: "arcadekit/survivors/save",
-  field: "heroes",
   record: HeroRecord,
   mergeRecord: (a, b) => ({
     bestTime: Math.max(a.bestTime, b.bestTime),

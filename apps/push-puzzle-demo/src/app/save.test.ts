@@ -41,7 +41,7 @@ const writeSolve = (levelId: string, moves: number) =>
     Effect.map(({ records }) => records)
   );
 
-const stored = (levels: object) => JSON.stringify({ version: 1, levels });
+const stored = (records: object) => JSON.stringify({ version: 1, records });
 
 describe("the save", () => {
   it("remembers a solve with its moves, under a versioned key", async () => {

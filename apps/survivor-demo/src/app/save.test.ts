@@ -51,7 +51,7 @@ const runSummary = (
   level: 1,
 });
 
-const stored = (heroes: object) => JSON.stringify({ version: 1, heroes });
+const stored = (records: object) => JSON.stringify({ version: 1, records });
 
 describe("the save", () => {
   it("remembers a run's time, kills and outcome, under a versioned key", async () => {

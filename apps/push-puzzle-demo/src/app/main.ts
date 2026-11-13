@@ -40,6 +40,6 @@ export const resources = Layer.mergeAll(
     FetchContentSource.fromUrl(`${import.meta.env.BASE_URL}content/`)
   ),
   Layer.mergeAll(PushPuzzleSave.layer, PushPuzzleAudioSettings.layer).pipe(
-    Layer.provide(BrowserSaveStorage)
+    Layer.provide(BrowserSaveStorage.layer)
   )
 ).pipe(Layer.provideMerge(assets));
