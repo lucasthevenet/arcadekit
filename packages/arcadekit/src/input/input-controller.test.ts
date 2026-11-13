@@ -1,9 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from "vitest";
 
 import { InputController } from "./index";
 
 // No DOM here: Node's EventTarget stands in for the window and the surface, and events are
-// plain Events carrying the few fields InputController reads.
+// plain Events carrying the few fields a controller reads.
 
 const BUTTONS = {
   right: { keys: ["ArrowRight"], gamepadButtons: [15], swipe: "right" },
@@ -52,9 +60,9 @@ const stroke = (
   });
 };
 
-const controller = () => new InputController(surface, { buttons: BUTTONS });
+const controller = () => InputController.make(surface, { buttons: BUTTONS });
 
-describe(InputController, () => {
+describe("an input controller", () => {
   beforeEach(() => {
     window = new EventTarget();
     ownerDocument = { pointerLockElement: null };
@@ -85,25 +93,25 @@ describe(InputController, () => {
     it("forgets a key press but keeps the key held", () => {
       const input = controller();
       key("keydown", "KeyZ");
-      expect(input.wasPressed("undo")).toBe(true);
-      input.consumePresses();
-      expect(input.wasPressed("undo")).toBe(false);
-      expect(input.isDown("undo")).toBe(true);
+      expect(InputController.wasPressed(input, "undo")).toBe(true);
+      InputController.consumePresses(input);
+      expect(InputController.wasPressed(input, "undo")).toBe(false);
+      expect(InputController.isDown(input, "undo")).toBe(true);
     });
 
     it("doesn't see a held gamepad button as pressed again", () => {
       const input = controller();
       padButtons[15]!.pressed = true;
-      expect(input.wasPressed("right")).toBe(true);
-      input.consumePresses();
-      expect(input.wasPressed("right")).toBe(false);
-      input.endFrame();
-      expect(input.wasPressed("right")).toBe(false);
+      expect(InputController.wasPressed(input, "right")).toBe(true);
+      InputController.consumePresses(input);
+      expect(InputController.wasPressed(input, "right")).toBe(false);
+      InputController.endFrame(input);
+      expect(InputController.wasPressed(input, "right")).toBe(false);
       // Released, then pressed again: a new press.
       padButtons[15]!.pressed = false;
-      input.endFrame();
+      InputController.endFrame(input);
       padButtons[15]!.pressed = true;
-      expect(input.wasPressed("right")).toBe(true);
+      expect(InputController.wasPressed(input, "right")).toBe(true);
     });
   });
 
@@ -111,31 +119,31 @@ describe(InputController, () => {
     it("counts a quick stroke as one press in its main direction, never as held", () => {
       const input = controller();
       stroke({ x: 100, y: 100, t: 0 }, { x: 150, y: 90, t: 120 });
-      expect(input.wasPressed("right")).toBe(true);
-      expect(input.wasPressed("up")).toBe(false);
-      expect(input.isDown("right")).toBe(false);
-      input.consumePresses();
-      expect(input.wasPressed("right")).toBe(false);
+      expect(InputController.wasPressed(input, "right")).toBe(true);
+      expect(InputController.wasPressed(input, "up")).toBe(false);
+      expect(InputController.isDown(input, "right")).toBe(false);
+      InputController.consumePresses(input);
+      expect(InputController.wasPressed(input, "right")).toBe(false);
     });
 
     it("reads screen up as up", () => {
       const input = controller();
       stroke({ x: 100, y: 100, t: 0 }, { x: 95, y: 40, t: 100 });
-      expect(input.wasPressed("up")).toBe(true);
-      input.endFrame();
-      expect(input.wasPressed("up")).toBe(false);
+      expect(InputController.wasPressed(input, "up")).toBe(true);
+      InputController.endFrame(input);
+      expect(InputController.wasPressed(input, "up")).toBe(false);
     });
 
     it("ignores a stroke that is too short or too slow", () => {
       const input = controller();
       stroke({ x: 100, y: 100, t: 0 }, { x: 120, y: 100, t: 50 });
       stroke({ x: 100, y: 100, t: 1000 }, { x: 200, y: 100, t: 1500 });
-      expect(input.wasPressed("right")).toBe(false);
+      expect(InputController.wasPressed(input, "right")).toBe(false);
     });
   });
   describe("pointer lock", () => {
     it("ignores presses while the pointer is locked, so mouse look neither captures nor drags", () => {
-      const input = new InputController(surface, {
+      const input = InputController.make(surface, {
         axes: { moveX: { pointerDrag: "x" } },
       });
       ownerDocument.pointerLockElement = surface;
@@ -151,11 +159,11 @@ describe(InputController, () => {
         clientY: 100,
       });
       expect(captures).toStrictEqual([]);
-      expect(input.axis("moveX")).toBe(0);
+      expect(InputController.axis(input, "moveX")).toBe(0);
     });
 
     it("drags again once the lock is released", () => {
-      const input = new InputController(surface, {
+      const input = InputController.make(surface, {
         axes: { moveX: { pointerDrag: "x" } },
       });
       ownerDocument.pointerLockElement = surface;
@@ -177,11 +185,11 @@ describe(InputController, () => {
         clientX: 130,
         clientY: 100,
       });
-      expect(input.axis("moveX")).toBe(0.5);
+      expect(InputController.axis(input, "moveX")).toBe(0.5);
     });
 
     it("drags where the browser has no pointer lock (iPhone Safari leaves it undefined)", () => {
-      const input = new InputController(surface, {
+      const input = InputController.make(surface, {
         axes: { moveX: { pointerDrag: "x" } },
       });
       ownerDocument.pointerLockElement = undefined;
@@ -196,7 +204,112 @@ describe(InputController, () => {
         clientX: 130,
         clientY: 100,
       });
-      expect(input.axis("moveX")).toBe(0.5);
+      expect(InputController.axis(input, "moveX")).toBe(0.5);
+    });
+  });
+
+  describe("as a value", () => {
+    it("is told from a look-alike, and prints its names and what it holds", () => {
+      const input = controller();
+      key("keydown", "KeyZ");
+      expect({
+        controller: InputController.isInputController(input),
+        lookAlike: InputController.isInputController({
+          bindings: { buttons: BUTTONS },
+        }),
+        printed: input.toJSON(),
+      }).toStrictEqual({
+        controller: true,
+        lookAlike: false,
+        printed: {
+          _id: "InputController",
+          axes: [],
+          buttons: ["right", "up", "undo"],
+          held: ["KeyZ"],
+          dragging: false,
+        },
+      });
+    });
+
+    it("reads the same whole or piped", () => {
+      const input = InputController.make(surface, {
+        axes: InputController.moveAxes,
+        buttons: BUTTONS,
+      });
+      key("keydown", "KeyD");
+      key("keydown", "KeyZ");
+      expect({
+        axis: [
+          InputController.axis(input, "moveX"),
+          input.pipe(InputController.axis("moveX")),
+        ],
+        isDown: [
+          InputController.isDown(input, "undo"),
+          input.pipe(InputController.isDown("undo")),
+        ],
+        wasPressed: [
+          InputController.wasPressed(input, "undo"),
+          input.pipe(InputController.wasPressed("undo")),
+        ],
+      }).toStrictEqual({
+        axis: [1, 1],
+        isDown: [true, true],
+        wasPressed: [true, true],
+      });
+    });
+
+    it("takes its names from its bindings, and refuses any other", () => {
+      const moving = InputController.make(surface, {
+        axes: InputController.moveAxes,
+      });
+      const input = controller();
+      expectTypeOf(moving).toEqualTypeOf<
+        InputController.InputController<"moveX" | "moveY">
+      >();
+      expectTypeOf(input).toEqualTypeOf<
+        InputController.InputController<never, "right" | "up" | "undo">
+      >();
+      // @ts-expect-error -- the bindings name no axis "moveZ"
+      InputController.axis(moving, "moveZ");
+      // @ts-expect-error -- nor any button
+      InputController.isDown(moving, "undo");
+      // @ts-expect-error -- the bindings name no button "jump"
+      InputController.wasPressed(input, "jump");
+      // @ts-expect-error -- piped, too
+      input.pipe(InputController.isDown("jump"));
+    });
+  });
+
+  describe("dispose", () => {
+    it("removes every listener make added, and hears nothing after", () => {
+      const added = [
+        vi.spyOn(window, "addEventListener"),
+        vi.spyOn(surface, "addEventListener"),
+      ];
+      const removed = [
+        vi.spyOn(window, "removeEventListener"),
+        vi.spyOn(surface, "removeEventListener"),
+      ];
+      const input = controller();
+      key("keydown", "KeyZ");
+      InputController.dispose(input);
+      key("keydown", "ArrowUp");
+      expect({
+        added: added.map((spy) => spy.mock.calls.map(([type]) => type)),
+        // The very listeners added, each with its type.
+        removed: removed.map((spy) => spy.mock.calls),
+        held: [
+          InputController.isDown(input, "undo"),
+          InputController.isDown(input, "up"),
+        ],
+      }).toStrictEqual({
+        added: [
+          ["keydown", "keyup", "blur"],
+          ["pointerdown", "pointermove", "pointerup", "pointercancel"],
+        ],
+        removed: added.map((spy) => spy.mock.calls),
+        held: [false, false],
+      });
     });
   });
 });

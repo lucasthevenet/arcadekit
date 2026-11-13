@@ -51,7 +51,6 @@ const SECTIONS = {
 // and joins it never. `pnpm smoke` reads the list here (scripts/smoke-test.mjs), to compile the
 // doc comments' examples of every entry off it.
 const NOT_YET_EFFECT_STYLE: readonly string[] = [
-  "input",
   "content",
   "save",
   "audio",

@@ -6,7 +6,7 @@ import { BrowserAudioLayer } from "arcadekit/audio/browser";
 import { Asset, Content, memorySource } from "arcadekit/content";
 import type { AttachableEngine } from "arcadekit/foldkit";
 import * as Game from "arcadekit/game/browser";
-import { InputController, MOVE_AXES } from "arcadekit/input";
+import { InputController } from "arcadekit/input";
 import { createMemoryNetwork, hostLockstep } from "arcadekit/net";
 import type { LockstepSession } from "arcadekit/net";
 import type { RoomOptions } from "arcadekit/net/browser";
@@ -29,17 +29,19 @@ import { Dots, DotsTogether, Nudge, replay } from "./simulation";
 import type { DotsInput, Field } from "./simulation";
 
 const createInput = (surface: HTMLElement): Game.InputSource<DotsInput> => {
-  const controller = new InputController(surface, { axes: MOVE_AXES });
+  const controller = InputController.make(surface, {
+    axes: InputController.moveAxes,
+  });
   const input = { moveX: 0, moveY: 0 };
   return {
     read: () => {
-      input.moveX = controller.axis("moveX");
-      input.moveY = controller.axis("moveY");
+      input.moveX = InputController.axis(controller, "moveX");
+      input.moveY = InputController.axis(controller, "moveY");
       return input;
     },
-    endStep: () => controller.consumePresses(),
-    endFrame: () => controller.endFrame(),
-    dispose: () => controller.dispose(),
+    endStep: () => InputController.consumePresses(controller),
+    endFrame: () => InputController.endFrame(controller),
+    dispose: () => InputController.dispose(controller),
   };
 };
 
