@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Runs the `ts` examples of the doc comments of every entry in Effect's module shape, and checks
 // that each result an example shows is true: a line `expression; // => value` holds when the
@@ -11,6 +11,10 @@ import { describe, expect, it } from "vitest";
 //
 // The entries are those off NOT_YET_EFFECT_STYLE, which this reads from the style test's text,
 // as `pnpm smoke` does: the list is the style test's.
+//
+// An entry that needs the DOM has examples written as a browser runs them. They run here on a
+// stand-in of the few globals they use (BROWSER_ENTRIES), made again for each example. An entry
+// joins the list with what it uses: the stand-in grows only as far as an example needs.
 
 const packageDir = path.resolve(import.meta.dirname, "..");
 const srcDir = path.join(packageDir, "src");
@@ -40,6 +44,47 @@ const entries = Object.entries(
     publicFile: source.slice("./src/".length),
   }))
   .filter(({ entry }) => !notYet.has(entry.split("/", 1)[0] ?? ""));
+
+// The entries whose examples run in a browser, by import path.
+const BROWSER_ENTRIES: ReadonlySet<string> = new Set(["input"]);
+
+/** A key event, as a browser makes one: the fields `arcadekit/input` reads. */
+class StandInKeyboardEvent extends Event {
+  readonly code: string;
+  readonly repeat: boolean;
+  constructor(
+    type: string,
+    init?: { readonly code?: string; readonly repeat?: boolean }
+  ) {
+    super(type);
+    this.code = init?.code ?? "";
+    this.repeat = init?.repeat ?? false;
+  }
+}
+
+/**
+ * What a browser gives the examples of BROWSER_ENTRIES: a window to dispatch key events on, a
+ * document that makes elements to listen on, and no gamepad. Node's EventTarget and Event do the
+ * dispatching.
+ */
+const browserStandIn = (): Readonly<Record<string, unknown>> => {
+  const document = {
+    pointerLockElement: null,
+    createElement: (tagName: string) =>
+      Object.assign(new EventTarget(), {
+        tagName: tagName.toUpperCase(),
+        style: {},
+        ownerDocument: document,
+        setPointerCapture: () => undefined,
+      }),
+  };
+  return {
+    window: new EventTarget(),
+    document,
+    navigator: { getGamepads: () => [] },
+    KeyboardEvent: StandInKeyboardEvent,
+  };
+};
 
 /** One example of a doc comment: where it is, its title and its code. */
 interface Example {
@@ -97,6 +142,10 @@ const runnable = (code: string): string =>
 describe.each(entries)("arcadekit/$entry", ({ entry, publicFile }) => {
   const examples = modulesOf(publicFile).flatMap(examplesOf);
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("has examples to run", () => {
     expect(examples.length).toBeGreaterThan(0);
   });
@@ -111,6 +160,11 @@ describe.each(entries)("arcadekit/$entry", ({ entry, publicFile }) => {
         path.join(srcDir, publicFile)
       )) as unknown,
     };
+    if (BROWSER_ENTRIES.has(entry)) {
+      for (const [name, value] of Object.entries(browserStandIn())) {
+        vi.stubGlobal(name, value);
+      }
+    }
     let shown = 0;
     const check = (got: unknown, want: unknown, expression: string) => {
       shown += 1;

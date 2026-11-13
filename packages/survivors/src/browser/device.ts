@@ -1,5 +1,5 @@
 import type * as Game from "arcadekit/game/browser";
-import { InputController, MOVE_AXES } from "arcadekit/input";
+import { InputController } from "arcadekit/input";
 
 import type { HeroInput } from "../input";
 
@@ -11,15 +11,17 @@ import type { HeroInput } from "../input";
 export const heroDevice = (
   surface: HTMLElement
 ): Game.InputSource<HeroInput> => {
-  const controller = new InputController(surface, { axes: MOVE_AXES });
+  const controller = InputController.make(surface, {
+    axes: InputController.moveAxes,
+  });
   const input = { moveX: 0, moveZ: 0 };
   return {
     read: () => {
-      input.moveX = controller.axis("moveX");
-      input.moveZ = controller.axis("moveY");
+      input.moveX = InputController.axis(controller, "moveX");
+      input.moveZ = InputController.axis(controller, "moveY");
       return input;
     },
-    endFrame: () => controller.endFrame(),
-    dispose: () => controller.dispose(),
+    endFrame: () => InputController.endFrame(controller),
+    dispose: () => InputController.dispose(controller),
   };
 };

@@ -27,7 +27,7 @@ const BUTTONS = {
 export const pushPuzzleInput = (
   surface: HTMLElement
 ): Game.InputSource<PushPuzzleInput> => {
-  const controller = new InputController(surface, { buttons: BUTTONS });
+  const controller = InputController.make(surface, { buttons: BUTTONS });
   // One object, refilled each step: reading input allocates nothing.
   const input: {
     -readonly [K in keyof PushPuzzleInput]: PushPuzzleInput[K];
@@ -39,20 +39,26 @@ export const pushPuzzleInput = (
     read: () => {
       input.pressed = null;
       for (const direction of DIRECTIONS) {
-        if (input.pressed === null && controller.wasPressed(direction)) {
+        if (
+          input.pressed === null &&
+          InputController.wasPressed(controller, direction)
+        ) {
           input.pressed = direction;
           latest = direction;
         }
       }
-      input.held = latest !== null && controller.isDown(latest) ? latest : null;
-      input.undo = controller.wasPressed("undo");
+      input.held =
+        latest !== null && InputController.isDown(controller, latest)
+          ? latest
+          : null;
+      input.undo = InputController.wasPressed(controller, "undo");
       return input;
     },
     // A press makes one turn, so each press must reach one step only, even on a slow
     // frame that runs several.
-    endStep: () => controller.consumePresses(),
-    endFrame: () => controller.endFrame(),
-    dispose: () => controller.dispose(),
+    endStep: () => InputController.consumePresses(controller),
+    endFrame: () => InputController.endFrame(controller),
+    dispose: () => InputController.dispose(controller),
   };
 };
 

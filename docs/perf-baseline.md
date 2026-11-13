@@ -38,5 +38,9 @@ Each rework adds a row. Its numbers come from five runs of `pnpm bench` on its b
 | --- | --- | --- | --- |
 | The baseline, run beside the row below | 118.5 µs (110.6–122.0), 662 B | 0.94 µs (0.76–1.25), 259 B | 11.2 µs (10.6–12.9), 479 B |
 | `arcadekit/core` in Effect's shape ([ADR-0024](adr/0024-the-kit-is-written-as-effect-modules.md)) | 149.9 µs (142.8–159.1), 1,187 B | 0.82 µs (0.72–1.18), 609 B | 12.1 µs (11.4–18.9), 285 B |
+| The baseline, run beside the row below | 92.4 µs (90.3–103.6), 662 B | 0.62 µs (0.60–0.89), 259 B | 8.8 µs (8.4–11.2), 479 B |
+| `arcadekit/input` in Effect's shape | 127.3 µs (117.8–131.7), 1,187 B | 0.61 µs (0.58–0.64), 609 B | 8.5 µs (8.1–8.6), 285 B |
 
 Core stayed plain; what moved is its shape. A step calls core through `dual` functions and reads state from fields on a prototype, where it called closures and class methods. Survivors' step runs about a quarter slower and allocates 525 B more; an engine frame, whose loop advances a `FixedStepClock` and drains an `EventBuffer` through them, allocates 350 B more in the same time; a lockstep tick allocates 194 B less, for a reason not yet found. The performance work starts from these.
+
+No workload makes an input controller: each reads a script in its place (survivors' hero walks a circle, the engine's run reads nothing, each lockstep peer adds a count). So input's row is core's, within the wall time's noise, and allocates the same to the byte. Core's commit, run in the same rounds, gave 122.6 µs (115.4–133.6), 0.58 µs (0.57–0.64) and 8.3 µs (8.1–12.4). The baseline ran faster on this machine than on the one beside core's row.

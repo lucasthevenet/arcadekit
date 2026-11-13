@@ -33,7 +33,7 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | Entry | What it gives you | Uses |
 | --- | --- | --- |
 | [`arcadekit/core`](src/core/README.md) | Namespaces in Effect's shape: `FixedStepClock`, the seeded `Rng` (with `pickDistinct`), `EntityPool` (struct-of-arrays entities, identified or not), `SpatialGrid`, `EventBuffer`. Rings of records a step pushes to and a view reads: `Ring`, `RingReader`. A level's static cells with neighbours and a flood fill: `TileMap`. What their records hold: `Layout`. The state hash: `StateHash`. The exact math a step calls: `ExactMath` (`hypot2`, `sin`, `cos`, `powInt`, `clamp`, `lerp`, `hashCell`) and `Point2` (`clampLength`, `moveToward`). Timers (`Timer`) and tweens (`Tween`) as plain functions. No DOM; Effect for its module shape only | Effect |
-| [`arcadekit/input`](src/input/README.md) | `InputController`: keyboard, gamepad, touch-drag and swipes mapped to named axes and buttons | DOM |
+| [`arcadekit/input`](src/input/README.md) | `InputController`, a namespace in Effect's shape: keyboard, gamepad, touch-drag and swipes read as a game's named axes and buttons, with `InputController.moveAxes`. Its reads are plain | Effect, DOM |
 | [`arcadekit/content`](src/content/README.md) | `Content` and `Asset`: a game's content files, validated with an Effect Schema, and what the app loads once for it, such as a sprite sheet. Each is a class that keys its own service and keeps the first success | Effect |
 | [`arcadekit/content/browser`](src/content/README.md) | `fetchJsonSource` | Effect, DOM |
 | [`arcadekit/save`](src/save/README.md) | `Save`, a game's records by id under one versioned key, and `Setting`, one value kept apart from it, such as the audio settings | Effect |
