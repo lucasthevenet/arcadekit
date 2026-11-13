@@ -32,7 +32,7 @@ Each entry's README has an example. An entry imports only the entries under "Use
 
 | Entry | What it gives you | Uses |
 | --- | --- | --- |
-| [`arcadekit/core`](src/core/README.md) | `FixedStepClock`, seeded `makeRng` (with `pickDistinct`), struct-of-arrays pools, `SpatialGrid`, `EventBuffer`. The exact math a step calls: `hypot2`, `sin`, `cos`, `powInt`, `clamp`, `lerp`, `clampLength`, `moveToward`, `hashCell`. Timers (`countDown`, `takeWhole`) and tweens (`progress`, `easeIn`, `easeOut`, `easeOutCubic`, `smoothstep`) as plain functions. No DOM and no Effect |  |
+| [`arcadekit/core`](src/core/README.md) | `FixedStepClock`, seeded `makeRng` (with `pickDistinct`), struct-of-arrays pools, `SpatialGrid`, `EventBuffer`. The state hash: `StateHasher`, `visitPool`. The exact math a step calls: `hypot2`, `sin`, `cos`, `powInt`, `clamp`, `lerp`, `clampLength`, `moveToward`, `hashCell`. Timers (`countDown`, `takeWhole`) and tweens (`progress`, `easeIn`, `easeOut`, `easeOutCubic`, `smoothstep`) as plain functions. No DOM and no Effect |  |
 | [`arcadekit/input`](src/input/README.md) | `InputController`: keyboard, gamepad, touch-drag and swipes mapped to named axes and buttons. No Effect | DOM |
 | [`arcadekit/content`](src/content/README.md) | `Content` and `Asset`: a game's content files, validated with an Effect Schema, and what the app loads once for it, such as a sprite sheet. Each is a class that keys its own service and keeps the first success | Effect |
 | [`arcadekit/content/browser`](src/content/README.md) | `fetchJsonSource` | Effect, DOM |

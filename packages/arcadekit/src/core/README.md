@@ -1,6 +1,6 @@
 # arcadekit/core
 
-The DOM-free building blocks of a game's simulation: a fixed-step clock, a seeded random generator, struct-of-arrays entity pools, a spatial grid and an event buffer, with the exact math, the timers and the eases a step calls. Nothing in it allocates per step, and nothing touches the DOM, so it runs in a browser, a Web Worker or on a server.
+The DOM-free building blocks of a game's simulation: a fixed-step clock, a seeded random generator, struct-of-arrays entity pools, a spatial grid and an event buffer, with the exact math, the timers and the eases a step calls, and the hasher of a state hash. Nothing in it allocates per step, and nothing touches the DOM, so it runs in a browser, a Web Worker or on a server.
 
 An entry of the [`arcadekit`](../../README.md) package.
 
@@ -47,7 +47,11 @@ for (let j = enemies.count - 1; j >= 0; j--) {
 const facts = events.drain();
 ```
 
-`createIdentifiedPool` gives entities stable ids too, for undo or a view that tweens each one. `FixedStepClock` turns frame times into whole fixed steps; [`Game.Loop`](../game/README.md#how-a-frame-becomes-steps) uses it for you.
+`add` gives a slot whose fields are all 0, whatever the entity that had it before left there, so a spawn writes only the fields that start at something else.
+
+`createIdentifiedPool` gives entities stable ids too, for undo or a view that tweens each one. A view that keeps something per entity keys it on `idOf`, never on the index: removing an entity moves another into its index, and the id stays with it. An id is handed out again once its entity is removed, so it names an entity only while that entity lives.
+
+`FixedStepClock` turns frame times into whole fixed steps; [`Game.Loop`](../game/README.md#how-a-frame-becomes-steps) uses it for you.
 
 ## Exact math
 
@@ -238,5 +242,39 @@ const offer = upgrades.slice(0, count);
 ```
 
 It draws once for each item it picks, the last one included, and every later draw of the run follows from that: the number of draws is part of its contract. So `count` is a whole number of 0 or more, and any other is a `RangeError`.
+
+## The state hash
+
+A state hash is a 32-bit digest of the numbers a game lists from a run's state, in a fixed order. Lockstep peers compare it to notice a desync, and a replay test pins one. The game writes the list, since the kit never looks inside a state ([ADR-0007](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0007-no-runtime-snapshots.md)), and the kit folds it: `StateHasher` takes one number at a time, and `visitPool` lists a pool's live entities.
+
+```ts
+import { StateHasher, visitPool } from "arcadekit/core";
+import type { Pool } from "arcadekit/core";
+
+const CAR_LAYOUT = { x: Float32Array, speed: Float32Array, lap: Uint8Array };
+
+interface Race {
+  time: number;
+  metres: number;
+  readonly cars: Pool<typeof CAR_LAYOUT>;
+  /** Horn blasts, counted for the sound view alone. */
+  horns: number;
+}
+
+const hasher = new StateHasher();
+
+/** The race's state hash: every number its rules read, in one fixed order. */
+const hashRace = (race: Race): number => {
+  hasher.reset().number(race.time).number(race.metres);
+  visitPool(race.cars, hasher.number);
+  return hasher.digest();
+};
+```
+
+- **`StateHasher` is FNV-1a, 32 bits, over each number's eight bytes as a float64**, so a change in any bit shows: 0 and -0 have different digests. A NaN is the exception: every NaN has the same digest, since an engine may hold one in any of its bit patterns and no rule can tell them apart. `number` folds one number in and allocates nothing, `digest` gives an unsigned 32-bit integer, and `reset` starts again, so one hasher serves every hash.
+- **`visitPool` calls its `visit` with the pool's `count`, then with each field's live values**, one field at a time in the layout's order, and with nothing past `count`. It allocates nothing either, so a host can take a hash after every step. It does not visit an identified pool's ids: they follow from the order of its adds and removes.
+- **What is not listed is not hashed.** A cue counter, or anything else a view alone reads, is left out by not being listed ([ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md)): `horns` above. Scratch a step fills and reads back within one step is left out the same way.
+- **`number` is a function of its own**, so it is passed where a function is asked for, as `visitPool`'s `visit` above. A game that folds the same list a second way, such as a trace after every step of a long run, writes the list as a function that takes `add` (`visitRace(race, add)`) and passes it `hasher.number`.
+- **A host or a test takes a hash, between steps.** The rules never read one.
 
 See [ADR-0003](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0003-one-fixed-step-clock.md) (one fixed-step clock), [ADR-0006](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0006-identified-pools-reuse-ids.md) (identified pools) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math).

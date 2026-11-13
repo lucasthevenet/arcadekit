@@ -162,7 +162,6 @@ const dropGem = (world: World, x: number, z: number, value: number) => {
   world.gems.fields.x[k] = x;
   world.gems.fields.z[k] = z;
   world.gems.fields.value[k] = value;
-  world.gems.fields.magnet[k] = 0;
 };
 
 /** Adds one grunt at (x, z). */
@@ -173,7 +172,6 @@ const addEnemy = (world: World, x: number, z: number): number => {
   e.z[i] = z;
   e.hp[i] = 1000;
   e.type[i] = 0;
-  e.hitFlash[i] = 0;
   return i;
 };
 
@@ -379,7 +377,6 @@ const addProjectile = (world: World, x: number, z: number): number => {
   pr.damage[i] = 1;
   pr.life[i] = 1;
   pr.pierce[i] = 0;
-  pr.rehit[i] = 0;
   pr.weapon[i] = 0;
   return i;
 };

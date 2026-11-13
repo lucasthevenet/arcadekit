@@ -10,7 +10,6 @@ import type { SurvivorsArt } from "./art";
 import { AuraRings } from "./aura";
 import { GroundTiles } from "./ground";
 import type { GroundTags } from "./ground";
-import { StablePhases } from "./phases";
 
 // What the survivors view draws, as sprites from the app's sheet, in four draw calls: the ground
 // (tiles and dirt patches), the soft shadows, the aura rings (drawn from the sheet's art by their
@@ -49,10 +48,8 @@ const LAYER = {
 
 /** The arena the menu backdrop shows until a run tells it the real one. */
 const MENU_HALF_SIZE = 60;
-/** How fast a gem can fly to a hero, a little over the simulation's magnet speed. */
-const GEM_MAX_SPEED = 20;
-/** Added to the fastest enemy's speed for crowds pushing each other apart. */
-const ENEMY_PUSH_SPEED = 4;
+/** Phases from the golden ratio: spread evenly, whatever how many. */
+const GOLDEN = 0.61803398875;
 /** Trail puffs per projectile. */
 const TRAIL = 3;
 /** A hero still walks this long after it last moved, so a frame with no step doesn't stop it. */
@@ -99,8 +96,6 @@ interface Looks {
   readonly world: World;
   readonly heroes: readonly HeroLook[];
   readonly enemies: readonly EnemyLook[];
-  /** The fastest an enemy moves, in world units a second. */
-  readonly enemySpeed: number;
   /** Indexed like projectiles' `weapon` field: slot * MAX_WEAPONS + weapon index. */
   readonly weapons: (WeaponLook | undefined)[];
 }
@@ -133,6 +128,13 @@ const nearestHeroX = (world: World, x: number, z: number): number => {
   }
   return bestX;
 };
+
+/**
+ * An entity's animation phase in [0, 1), from its pool id. A pool moves its last entity into a
+ * removed one's index, so an index isn't an entity: the id stays with it for as long as it
+ * lives, and so does its phase. A later entity may take the id, and the phase with it.
+ */
+const phaseOf = (id: number): number => (id * GOLDEN) % 1;
 
 const gemTier = (value: number) => {
   if (value <= 1) {
@@ -173,9 +175,6 @@ export class SurvivorsScene {
   private actors: InstancedSprites | null = null;
   private shadows: InstancedSprites | null = null;
   private looks: Looks | null = null;
-  /** Each enemy's and gem's own animation phase, kept as the pools reorder. */
-  private enemyPhases = new StablePhases(0);
-  private gemPhases = new StablePhases(0);
   /** The last run's arena, for the backdrop. */
   private halfSize = MENU_HALF_SIZE;
   private viewWidth = 48;
@@ -393,13 +392,11 @@ export class SurvivorsScene {
   ) {
     const { data } = this.art.sheet;
     const { type, x, z, hitFlash } = world.enemies.fields;
-    const phases = this.enemyPhases;
-    phases.update(world.enemies.count, x, z, type, time, looks.enemySpeed);
     for (let i = 0; i < world.enemies.count; i++) {
       const look = looks.enemies[type[i]!]!;
       const ex = x[i]!;
       const feet = z[i]! + ENEMY_FEET;
-      const phase = phases.phase(i) * 4;
+      const phase = phaseOf(world.enemies.idOf(i)) * 4;
       const a = this.drawn;
       actors.set(
         a,
@@ -426,15 +423,13 @@ export class SurvivorsScene {
   private drawGems(world: World, actors: InstancedSprites, time: number) {
     const { data } = this.art.sheet;
     const { x, z, value } = world.gems.fields;
-    const phases = this.gemPhases;
-    phases.update(world.gems.count, x, z, value, time, GEM_MAX_SPEED);
     for (let i = 0; i < world.gems.count; i++) {
       const tag = this.common.gems[gemTier(value[i]!)]!;
       actors.set(
         this.drawn,
         x[i]!,
         z[i]! + 0.5,
-        frameAt(data, tag, time + phases.phase(i) * 3)
+        frameAt(data, tag, time + phaseOf(world.gems.idOf(i)) * 3)
       );
       actors.setLayer(this.drawn, LAYER.marks);
       this.drawn += 1;
@@ -513,19 +508,8 @@ export class SurvivorsScene {
             float: FLOATING.get(tag.name) ?? 0,
           };
         }),
-        enemySpeed:
-          Math.max(0, ...world.enemyDefs.map((def) => def.speed)) +
-          ENEMY_PUSH_SPEED,
         weapons: [],
       };
-      if (this.enemyPhases.capacity !== world.enemies.capacity) {
-        this.enemyPhases = new StablePhases(world.enemies.capacity);
-      }
-      if (this.gemPhases.capacity !== world.gems.capacity) {
-        this.gemPhases = new StablePhases(world.gems.capacity);
-      }
-      this.enemyPhases.reset();
-      this.gemPhases.reset();
       this.movedAt.fill(Number.NEGATIVE_INFINITY);
       this.lastX.fill(Number.NaN);
       this.lastZ.fill(Number.NaN);

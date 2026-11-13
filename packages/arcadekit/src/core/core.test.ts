@@ -4,6 +4,7 @@ import {
   EventBuffer,
   FixedStepClock,
   SpatialGrid,
+  StateHasher,
   countDown,
   createIdentifiedPool,
   createPool,
@@ -15,8 +16,9 @@ import {
   progress,
   smoothstep,
   takeWhole,
+  visitPool,
 } from "./index";
-import type { Rng } from "./index";
+import type { Pool, PoolLayout, Rng } from "./index";
 
 describe(makeRng, () => {
   it("repeats for the same seed and differs for another", () => {
@@ -320,6 +322,40 @@ describe(createPool, () => {
     pool.clear();
     expect(pool.count).toBe(0);
   });
+
+  it("gives a slot whose fields are all 0, whatever its last entity left", () => {
+    const pool = createPool(3, { x: Float32Array, id: Uint16Array });
+    /** Adds an entity and reads its fields before anything writes them. */
+    const added = () => {
+      const i = pool.add();
+      return [i, pool.fields.x[i], pool.fields.id[i]];
+    };
+    const fill = (x: number, id: number) => {
+      const i = pool.add();
+      pool.fields.x[i] = x;
+      pool.fields.id[i] = id;
+    };
+    fill(1.5, 10);
+    fill(2.5, 20);
+    fill(3.5, 30);
+    // Removing the first moves the last into it, and leaves the last slot as it was.
+    pool.remove(0);
+    expect([pool.fields.x[2], pool.fields.id[2]]).toStrictEqual([3.5, 30]);
+    expect(added()).toStrictEqual([2, 0, 0]);
+    // The entities beside it keep theirs.
+    expect([...pool.fields.id.subarray(0, 2)]).toStrictEqual([30, 20]);
+
+    pool.fields.x[2] = 4.5;
+    pool.fields.id[2] = 40;
+    pool.clear();
+    // `clear` only forgets the count: each slot is cleaned as `add` hands it out.
+    expect([...pool.fields.id]).toStrictEqual([30, 20, 40]);
+    expect([added(), added(), added()]).toStrictEqual([
+      [0, 0, 0],
+      [1, 0, 0],
+      [2, 0, 0],
+    ]);
+  });
 });
 
 const filled = () => {
@@ -371,6 +407,39 @@ describe(createIdentifiedPool, () => {
     expect(pool.idOf(pool.add())).toBe(3);
   });
 
+  it("gives a slot whose fields are all 0 from add and from addWithId", () => {
+    const pool = createIdentifiedPool(4, { x: Float32Array, hp: Uint8Array });
+    for (const x of [10, 20, 30]) {
+      const i = pool.add();
+      pool.fields.x[i] = x;
+      pool.fields.hp[i] = x / 10;
+    }
+    // The last entity, id 2, leaves its values in slot 2.
+    pool.remove(2);
+    expect([pool.fields.x[2], pool.fields.hp[2]]).toStrictEqual([30, 3]);
+    const back = pool.addWithId(2);
+    expect([back, pool.fields.x[back], pool.fields.hp[back]]).toStrictEqual([
+      2, 0, 0,
+    ]);
+
+    pool.fields.x[back] = 30;
+    pool.fields.hp[back] = 3;
+    pool.remove(pool.indexOf(2));
+    const next = pool.add();
+    expect([next, pool.fields.x[next], pool.fields.hp[next]]).toStrictEqual([
+      2, 0, 0,
+    ]);
+
+    pool.fields.x[next] = 40;
+    pool.clear();
+    expect([...pool.fields.x]).toStrictEqual([10, 20, 40, 0]);
+    // Id 1 is free again after the clear, and its slot is the first one handed out.
+    const first = pool.addWithId(1);
+    expect([first, pool.fields.x[first], pool.fields.hp[first]]).toStrictEqual([
+      0, 0, 0,
+    ]);
+  });
+
   it("refuses an id that is in use, and any id when full", () => {
     const pool = filled();
     expect(pool.addWithId(0)).toBe(-1);
@@ -385,6 +454,160 @@ describe(createIdentifiedPool, () => {
     pool.clear();
     expect(pool.idOf(pool.add())).toBe(0);
     expect(pool.idOf(pool.add())).toBe(1);
+  });
+});
+
+const OFFSET_BASIS = 0x81_1c_9d_c5;
+
+/** The digest of `values`, folded in order by a hasher of their own. */
+const digestOf = (...values: number[]): number => {
+  const hasher = new StateHasher();
+  for (const value of values) {
+    hasher.number(value);
+  }
+  return hasher.digest();
+};
+
+/** A list as a game writes one: a function that takes the `add` of whoever folds it. */
+const visitOneTwo = (add: (value: number) => void) => {
+  add(1);
+  add(2);
+};
+
+describe(StateHasher, () => {
+  it("gives FNV-1a's offset basis with nothing folded in", () => {
+    expect(new StateHasher().digest()).toBe(OFFSET_BASIS);
+  });
+
+  it("pins the digest of a short list: FNV-1a over each number's eight float64 bytes", () => {
+    // Recorded from an FNV-1a written apart from this one, over the little-endian bytes of each
+    // float64. A change to the fold moves every hash a game has recorded.
+    expect([
+      digestOf(1, -2.5, 0.1, 1e300),
+      digestOf(1, 2),
+      digestOf(2, 1),
+    ]).toStrictEqual([88_484_247, 1_170_904_120, 3_930_474_840]);
+  });
+
+  it("shows a change in one bit: 0 and -0 have different digests", () => {
+    expect([digestOf(0), digestOf(-0)]).toStrictEqual([
+      2_615_243_109, 467_811_045,
+    ]);
+  });
+
+  it("gives every NaN one digest, whatever bits the engine holds it in", () => {
+    // Three NaNs an engine may store with different bits: the literal, one a division makes, and
+    // one read from bytes that have the sign bit and a payload bit set.
+    const zero = Number("0");
+    const divided = zero / zero;
+    const read = new Float64Array(
+      Uint8Array.of(1, 0, 0, 0, 0, 0, 0xf8, 0xff).buffer
+    )[0]!;
+    expect([divided, read]).toStrictEqual([Number.NaN, Number.NaN]);
+    // Recorded as the other digests are, over the bytes 00 00 00 00 00 00 f8 7f.
+    expect([
+      digestOf(Number.NaN),
+      digestOf(divided),
+      digestOf(read),
+      digestOf(1, read, 2),
+    ]).toStrictEqual([
+      3_428_180_608, 3_428_180_608, 3_428_180_608, 4_198_234_637,
+    ]);
+  });
+
+  it("starts again on reset, and gives the same digest for the same numbers", () => {
+    const hasher = new StateHasher();
+    const first = hasher.number(3).number(0.25).digest();
+    expect(first).not.toBe(OFFSET_BASIS);
+    expect(hasher.reset().digest()).toBe(OFFSET_BASIS);
+    expect(hasher.number(3).number(0.25).digest()).toBe(first);
+    // Without the reset, the second fold goes on from the first.
+    expect(hasher.number(3).number(0.25).digest()).not.toBe(first);
+  });
+
+  it("folds through `number` on its own, as the `add` a game's list takes", () => {
+    const hasher = new StateHasher();
+    visitOneTwo(hasher.number);
+    expect(hasher.digest()).toBe(digestOf(1, 2));
+  });
+});
+
+/** Everything `visitPool` passes to its `visit`, in order. */
+const visited = <L extends PoolLayout>(pool: Pool<L>): number[] => {
+  const values: number[] = [];
+  visitPool(pool, (value) => {
+    values.push(value);
+  });
+  return values;
+};
+
+describe(visitPool, () => {
+  it("visits the count, then each field's live values in the layout's order, and nothing past the count", () => {
+    const pool = createPool(4, { x: Float32Array, hp: Uint8Array });
+    expect(visited(pool)).toStrictEqual([0]);
+    for (const [x, hp] of [
+      [1.5, 10],
+      [2.5, 20],
+      [3.5, 30],
+    ] as const) {
+      const i = pool.add();
+      pool.fields.x[i] = x;
+      pool.fields.hp[i] = hp;
+    }
+    expect(visited(pool)).toStrictEqual([3, 1.5, 2.5, 3.5, 10, 20, 30]);
+    pool.remove(0);
+    // Slot 2 still holds what moved into slot 0. It is past the count, so it is not visited.
+    expect([pool.fields.x[2], pool.fields.hp[2]]).toStrictEqual([3.5, 30]);
+    expect(visited(pool)).toStrictEqual([2, 3.5, 2.5, 30, 20]);
+  });
+
+  it("visits the fields `Object.values` lists, in its order", () => {
+    // An object's keys that are whole numbers come first, in ascending order, whatever the order
+    // they were written in. A hash recorded over a pool depends on this order.
+    const pool = createPool(2, {
+      z: Float32Array,
+      10: Uint8Array,
+      x: Float32Array,
+      2: Uint8Array,
+    });
+    for (const [z, ten, x, two] of [
+      [1.5, 10, 2.5, 20],
+      [3.5, 30, 4.5, 40],
+    ] as const) {
+      const i = pool.add();
+      pool.fields.z[i] = z;
+      pool.fields[10][i] = ten;
+      pool.fields.x[i] = x;
+      pool.fields[2][i] = two;
+    }
+    expect(visited(pool)).toStrictEqual([
+      2, 20, 40, 10, 30, 1.5, 3.5, 2.5, 4.5,
+    ]);
+    expect(visited(pool)).toStrictEqual([
+      pool.count,
+      ...Object.values(pool.fields).flatMap((array) => [...array]),
+    ]);
+  });
+
+  it("visits an identified pool as a pool: no id is visited", () => {
+    const pool = filled();
+    pool.remove(0);
+    // Ids 2 and 1 are live, in that order.
+    expect(entries(pool)).toStrictEqual([
+      [2, 30],
+      [1, 20],
+    ]);
+    expect(visited(pool)).toStrictEqual([2, 30, 20]);
+  });
+
+  it("takes a hasher's `number` as its visit", () => {
+    const pool = createPool(2, { x: Float32Array, hp: Uint8Array });
+    const i = pool.add();
+    pool.fields.x[i] = 1.5;
+    pool.fields.hp[i] = 7;
+    const hasher = new StateHasher();
+    visitPool(pool, hasher.number);
+    expect(hasher.digest()).toBe(digestOf(1, 1.5, 7));
   });
 });
 

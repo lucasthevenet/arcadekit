@@ -4,6 +4,7 @@ import {
   clampLength,
   cos,
   countDown,
+  createIdentifiedPool,
   createPool,
   hypot2,
   makeRng,
@@ -12,7 +13,7 @@ import {
   sin,
   takeWhole,
 } from "arcadekit/core";
-import type { Point2, Pool, Rng } from "arcadekit/core";
+import type { IdentifiedPool, Point2, Pool, Rng } from "arcadekit/core";
 import type * as Game from "arcadekit/game";
 
 import { HeroLeft, LeveledUp, RunEnded } from "./events";
@@ -139,9 +140,14 @@ export interface World {
   readonly heroes: readonly Hero[];
   readonly enemyDefs: readonly EnemyDef[];
   readonly enemyTypeById: ReadonlyMap<string, number>;
-  readonly enemies: Pool<typeof ENEMY_LAYOUT>;
+  /**
+   * Identified, as `gems` is, for the view: it keys what it keeps for an enemy or a gem on
+   * `idOf`, since removing one moves another into its index. The rules name neither by id, and
+   * an id is in no field, so the state hash covers none.
+   */
+  readonly enemies: IdentifiedPool<typeof ENEMY_LAYOUT>;
   readonly projectiles: Pool<typeof PROJECTILE_LAYOUT>;
-  readonly gems: Pool<typeof GEM_LAYOUT>;
+  readonly gems: IdentifiedPool<typeof GEM_LAYOUT>;
   readonly spawnBudget: Float64Array;
   readonly grid: SpatialGrid;
   readonly neighbors: Int32Array;
@@ -183,9 +189,9 @@ export const createWorld = (
     heroes: heroIds.map((id, slot) => createHero(content, id, slot)),
     enemyDefs: content.enemies,
     enemyTypeById: new Map(content.enemies.map((e, i) => [e.id, i])),
-    enemies: createPool(cap, ENEMY_LAYOUT),
+    enemies: createIdentifiedPool(cap, ENEMY_LAYOUT),
     projectiles: createPool(MAX_PROJECTILES, PROJECTILE_LAYOUT),
-    gems: createPool(MAX_GEMS, GEM_LAYOUT),
+    gems: createIdentifiedPool(MAX_GEMS, GEM_LAYOUT),
     spawnBudget: new Float64Array(content.waves.length),
     grid: new SpatialGrid({
       halfSize: content.rules.arenaHalfSize,
@@ -418,7 +424,7 @@ const nextSpawnHero = (world: World): Hero => {
 
 const spawnEnemies = (world: World, dt: number) => {
   const { waves, rules } = world.content;
-  const { x, z, hp, type, hitFlash } = world.enemies.fields;
+  const { x, z, hp, type } = world.enemies.fields;
   const limit = rules.arenaHalfSize - 1;
   for (let w = 0; w < waves.length; w++) {
     const wave = waves[w]!;
@@ -441,7 +447,6 @@ const spawnEnemies = (world: World, dt: number) => {
       z[i] = clamp(hero.z + sin(angle) * distance, -limit, limit);
       hp[i] = world.enemyDefs[enemyType]!.hp;
       type[i] = enemyType;
-      hitFlash[i] = 0;
     }
   }
 };
@@ -611,7 +616,6 @@ const fireBolt = (
     pr.damage[i] = damage;
     pr.life[i] = (range / behavior.projectileSpeed) * 1.3;
     pr.pierce[i] = behavior.pierce;
-    pr.rehit[i] = 0;
     pr.weapon[i] = weaponIndex;
     world.cues.shots[defIndex]! += 1;
   }
@@ -694,7 +698,6 @@ const removeDeadEnemies = (world: World) => {
         g.x[k] = e.x[i]!;
         g.z[k] = e.z[i]!;
         g.value[k] = xp;
-        g.magnet[k] = 0;
       }
     }
     world.enemies.remove(i);

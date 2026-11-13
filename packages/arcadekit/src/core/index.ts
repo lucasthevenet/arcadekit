@@ -2,6 +2,7 @@ export { FixedStepClock } from "./clock";
 export { easeIn, easeOut, easeOutCubic, progress, smoothstep } from "./ease";
 export { EventBuffer } from "./events";
 export { SpatialGrid, type SpatialGridOptions } from "./grid";
+export { StateHasher, visitPool } from "./hash";
 export {
   type Point2,
   clamp,

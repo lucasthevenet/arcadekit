@@ -1,12 +1,13 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { StateHasher } from "../core/index";
 import * as Game from "../game/index";
 import { hostLockstep, joinLockstep } from "./lockstep";
 import type { LockstepSession } from "./lockstep";
 import { createMemoryNetwork } from "./memory-network";
 import type { MemoryNetworkOptions } from "./memory-network";
-import { hasher, runNetwork } from "./test-harness";
+import { runNetwork } from "./test-harness";
 import type { Transport } from "./transport";
 
 // A command in a lockstep run: it rides its sender's payload for one step, every peer's rules
@@ -76,19 +77,19 @@ class JarGame extends Game.Simulation("JarGame", {
       jar.held[slot] = false;
       jar.log.push(`${step}:${slot}:left`);
     }
-    const h = hasher();
-    h.add(jar.digest);
-    h.add(jar.coins);
+    const h = new StateHasher();
+    h.number(jar.digest);
+    h.number(jar.coins);
     if (!jar.held.includes(true)) {
       for (let slot = 0; slot < input.players.length; slot++) {
         const move = input.players[slot] ?? null;
         if (move === null) {
           jar.idle.push(`${step}:${slot}`);
         }
-        h.add(move === null ? -1 : move.n);
+        h.number(move === null ? -1 : move.n);
       }
     }
-    jar.digest = h.value;
+    jar.digest = h.digest();
     jar.history.push(jar.digest);
   },
   apply: {
@@ -114,13 +115,13 @@ class JarGame extends Game.Simulation("JarGame", {
 }) {}
 
 const hashJar = (jar: Jar): number => {
-  const h = hasher();
-  h.add(jar.digest);
-  h.add(jar.coins);
+  const h = new StateHasher();
+  h.number(jar.digest);
+  h.number(jar.coins);
   for (const held of jar.held) {
-    h.add(held ? 1 : 0);
+    h.number(held ? 1 : 0);
   }
-  return h.value;
+  return h.digest();
 };
 
 const script = (player: string, step: number): Move => ({

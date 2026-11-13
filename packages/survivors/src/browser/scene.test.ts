@@ -373,6 +373,45 @@ describe(SurvivorsScene, () => {
     scene.dispose();
   });
 
+  it("keeps each enemy's and gem's animation phase with it when the pool moves it to another slot", () => {
+    const world = createWorld({ content, heroIds: ["knight"] }, { seed: 1 });
+    // Its x names each one here: enemies right of the hero, gems left.
+    for (const x of [1, 2, 3, 4, 5]) {
+      addEnemy(world, 0, x, 0);
+      const g = world.gems.add();
+      world.gems.fields.x[g] = -x;
+      world.gems.fields.value[g] = 1;
+    }
+    const scene = new SurvivorsScene(art);
+    /** The frame each enemy and gem is drawn on at one time, by its x. */
+    const framesByX = () => {
+      scene.draw(world, 0.03);
+      const actors = scene.actorSprites!;
+      const frames: Record<number, number> = {};
+      // The hero and its marker, then the enemies, then the gems.
+      for (let i = 0; i < world.enemies.count + world.gems.count; i++) {
+        const drawn = sprite(actors, 2 + i);
+        frames[drawn.x!] = drawn.frame!;
+      }
+      return frames;
+    };
+    const before = framesByX();
+    // The last of each pool is out of step with the first, whose slot it is about to take: a
+    // phase kept by slot would put it on the first one's frame.
+    expect([before[5] === before[1], before[-5] === before[-1]]).toStrictEqual([
+      false,
+      false,
+    ]);
+    world.enemies.remove(0);
+    world.gems.remove(0);
+    expect([world.enemies.fields.x[0], world.gems.fields.x[0]]).toStrictEqual([
+      5, -5,
+    ]);
+    const { 1: _enemy, [-1]: _gem, ...kept } = before;
+    expect(framesByX()).toStrictEqual(kept);
+    scene.dispose();
+  });
+
   it("follows the local hero, and pans slowly over the ground with no run", () => {
     const world = createWorld(
       { content, heroIds: ["knight", "plain"] },

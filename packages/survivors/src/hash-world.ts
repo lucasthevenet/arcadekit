@@ -1,26 +1,14 @@
+import { StateHasher, visitPool } from "arcadekit/core";
+
 import type { World } from "./world";
 
 // A digest of a run's whole simulation state, so the replay, determinism and lockstep tests
 // notice a change in any bit of it, and a lockstep session's desync check does too: `hashWorld`
-// is the root entry's `hash` for `arcadekit/net`.
+// is the root entry's `hash` for `arcadekit/net`. The list of what it covers is this file's;
+// the fold and the walk over a pool are the kit's (`StateHasher`, `visitPool`).
 
-/** FNV-1a over numbers' float64 bits, so any change in any digit shows. */
-const hasher = () => {
-  let hash = 0x81_1c_9d_c5;
-  const bits = new Float64Array(1);
-  const bytes = new Uint8Array(bits.buffer);
-  return {
-    add: (value: number) => {
-      bits[0] = value;
-      for (const byte of bytes) {
-        hash = Math.imul(hash ^ byte, 0x01_00_01_93) >>> 0;
-      }
-    },
-    get value() {
-      return hash;
-    },
-  };
-};
+/** One hasher for every hash: `hashWorld` resets it first. */
+const hasher = new StateHasher();
 
 const STATUS_CODE = { playing: 0, down: 1, left: 2 } as const;
 
@@ -49,14 +37,9 @@ export const visitWorld = (world: World, add: (value: number) => void) => {
     add(slot.level);
     add(slot.timer);
   }
-  for (const pool of [world.enemies, world.projectiles, world.gems]) {
-    add(pool.count);
-    for (const array of Object.values(pool.fields)) {
-      for (let i = 0; i < pool.count; i++) {
-        add(array[i]!);
-      }
-    }
-  }
+  visitPool(world.enemies, add);
+  visitPool(world.projectiles, add);
+  visitPool(world.gems, add);
   if (world.heroes.length === 1) {
     return;
   }
@@ -87,7 +70,7 @@ export const visitWorld = (world: World, add: (value: number) => void) => {
 
 /** Hashes everything `visitWorld` visits. The cue counters (`World.cues`) aren't visited: they only drive sound (ADR-0014). */
 export const hashWorld = (world: World): number => {
-  const h = hasher();
-  visitWorld(world, h.add);
-  return h.value;
+  hasher.reset();
+  visitWorld(world, hasher.number);
+  return hasher.digest();
 };
