@@ -35,7 +35,6 @@ pnpm add -D @types/three
 ```
 
 - Peer libraries: `effect` (~4.1) is required. The rest are optional: `three` (^0.187) and `@types/three` for `arcadekit/render-three`, `foldkit` (~0.170) for `arcadekit/foldkit`, `@effect/platform-browser` (~4.1) for `arcadekit/save/browser` and Foldkit, and `@cloudflare/workers-types` (^5) for `arcadekit/net/worker`'s types. They are peers so your app has one copy of each: Effect services and Three.js `instanceof` checks need that.
-- `arcadekit/core` and `arcadekit/input` import no Effect, so a game can use them without running any.
 - The package is ESM only, with no root export. It needs TypeScript 5.4 or later, and Node 22 or later for tooling. TypeScript 5.4 to 5.6 need `skipLibCheck`, since Effect 4.1's own type files need 5.7.
 - Each entry's README (linked in the table below) has an example, and [the package's README](packages/arcadekit/README.md) lists all twenty entries.
 

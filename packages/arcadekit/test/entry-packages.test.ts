@@ -10,8 +10,7 @@ import { describe, expect, it } from "vitest";
 // JavaScript and the type files), and fails if a file it reaches imports a package the entry is
 // not allowed.
 //
-// arcadekit/core and arcadekit/input are allowed none, so a game can use them without Effect
-// (ADR-0017). `three`, `foldkit` and `@effect/platform-browser` are optional peers, each allowed
+// Every entry may import `effect`, the package's one required peer. `three`, `foldkit` and `@effect/platform-browser` are optional peers, each allowed
 // only in the entry it is for, so a game that skips one still gets every other entry whole.
 // arcadekit/net/worker runs on Cloudflare, so it alone may import the runtime's own
 // `cloudflare:workers` module, which is not a package: the optional `@cloudflare/workers-types`
@@ -25,8 +24,8 @@ const packageDir = path.resolve(import.meta.dirname, "..");
 
 // The packages each entry may import. Adding one here is a design decision: say why in the PR.
 const ENTRY_PACKAGES: Readonly<Record<string, readonly string[]>> = {
-  core: [],
-  input: [],
+  core: ["effect"],
+  input: ["effect"],
   content: ["effect"],
   "content/browser": ["effect"],
   save: ["effect"],

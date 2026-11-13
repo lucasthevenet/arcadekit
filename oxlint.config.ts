@@ -315,30 +315,6 @@ export default defineConfig({
       },
     },
     {
-      // Core and input don't depend on Effect, so a game can use them without it (ADR-0017).
-      // When several overrides set a rule, the last one's options replace the others', so core
-      // gets this import rule instead of the one above. It bans all of `effect`, so it covers it.
-      files: [
-        "packages/arcadekit/src/core/**/*.ts",
-        "packages/arcadekit/src/input/**/*.ts",
-      ],
-      excludeFiles: ["**/*.test.ts"],
-      rules: {
-        "eslint/no-restricted-imports": [
-          "error",
-          {
-            patterns: [
-              {
-                group: ["effect", "effect/**", "@effect/**"],
-                message:
-                  "arcadekit/core and arcadekit/input don't depend on Effect, so a game can use them without it. See docs/adr/0017-effect-at-the-edges-plain-code-inside.md.",
-              },
-            ],
-          },
-        ],
-      },
-    },
-    {
       // The entries of the one package keep the direction the nine packages had (ADR-0018).
       files: ["packages/arcadekit/src/**/*.ts"],
       jsPlugins: ["./tools/lint/entry-direction.ts"],
