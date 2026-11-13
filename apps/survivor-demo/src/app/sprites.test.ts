@@ -1,12 +1,11 @@
 import { readFileSync } from "node:fs";
-import { inflateSync } from "node:zlib";
 
 import { SurvivorsContent } from "@arcadekit/survivors";
 import {
   SurvivorsCueTable,
   SurvivorsEngine,
   SurvivorsSheet,
-  missingSpriteTags,
+  wantedTags,
 } from "@arcadekit/survivors/browser";
 import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
 import { ContentError } from "arcadekit/content";
@@ -15,8 +14,10 @@ import {
   SpriteSheetError,
   decodeSpriteSheet,
   makeSpriteSheet,
+  resolveTags,
 } from "arcadekit/render-three";
-import type { SpriteSheet, SpriteSheetData } from "arcadekit/render-three";
+import type { SpriteSheet } from "arcadekit/render-three";
+import { framesWithSoftAlpha, pngSize } from "arcadekit/render-three/testing";
 import { Effect, Layer } from "effect";
 import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";
@@ -52,6 +53,12 @@ const fileSource: ContentSource = (file) =>
   });
 
 const content = await Effect.runPromise(SurvivorsContent.read(fileSource));
+
+/** A content file's JSON with no entry's `sprite`: each then draws its generic sprite. */
+const withoutSprites = (json: unknown): unknown =>
+  JSON.parse(JSON.stringify(json), (key, value: unknown) =>
+    key === "sprite" ? undefined : value
+  );
 const sheet = await Effect.runPromise(
   decodeSpriteSheet(
     "survivors.json",
@@ -59,108 +66,38 @@ const sheet = await Effect.runPromise(
   )
 );
 
-/** PNG's Paeth predictor: whichever of left, up and up-left is nearest left + up - up-left. */
-const paeth = (a: number, b: number, c: number) => {
-  const p = a + b - c;
-  const pa = Math.abs(p - a);
-  const pb = Math.abs(p - b);
-  const pc = Math.abs(p - c);
-  if (pa <= pb && pa <= pc) {
-    return a;
-  }
-  return pb <= pc ? b : c;
-};
-
-/**
- * The alpha of every pixel of an 8-bit RGBA PNG, row by row, undoing each row's filter. Enough
- * for the sheets in public/sprites; anything else throws.
- */
-const pngAlpha = (bytes: Buffer): { width: number; alpha: Uint8Array } => {
-  const width = bytes.readUInt32BE(16);
-  const height = bytes.readUInt32BE(20);
-  if (bytes[24] !== 8 || bytes[25] !== 6 || bytes[28] !== 0) {
-    throw new Error("Only 8-bit RGBA PNGs without interlacing are read here.");
-  }
-  const chunks: Buffer[] = [];
-  for (let at = 8; at < bytes.length;) {
-    const length = bytes.readUInt32BE(at);
-    if (bytes.toString("ascii", at + 4, at + 8) === "IDAT") {
-      chunks.push(bytes.subarray(at + 8, at + 8 + length));
-    }
-    at += 12 + length;
-  }
-  const raw = inflateSync(Buffer.concat(chunks));
-  const stride = width * 4;
-  const pixels = new Uint8Array(stride * height);
-  for (let y = 0; y < height; y++) {
-    const filter = raw[y * (stride + 1)]!;
-    for (let i = 0; i < stride; i++) {
-      const a = i >= 4 ? pixels[y * stride + i - 4]! : 0;
-      const b = y > 0 ? pixels[(y - 1) * stride + i]! : 0;
-      const c = i >= 4 && y > 0 ? pixels[(y - 1) * stride + i - 4]! : 0;
-      const predictor = [0, a, b, (a + b) >> 1, paeth(a, b, c)][filter]!;
-      pixels[y * stride + i] =
-        (raw[y * (stride + 1) + 1 + i]! + predictor) & 255;
-    }
-  }
-  const alpha = new Uint8Array(width * height);
-  for (let i = 0; i < alpha.length; i++) {
-    alpha[i] = pixels[i * 4 + 3]!;
-  }
-  return { width, alpha };
-};
-
-/**
- * The names of frames with partly transparent pixels, leaving out tags drawn blended. The
- * views draw sprites opaque, cutting out pixels below half alpha and drawing the rest solid,
- * so art drawn that way should be fully opaque or fully clear.
- */
-const framesWithSoftAlpha = (
-  data: SpriteSheetData,
-  png: Buffer,
-  blended: readonly string[]
-): string[] => {
-  const { width, alpha } = pngAlpha(png);
-  const skip = new Set<number>();
-  for (const name of blended) {
-    const tag = data.tags.get(name);
-    if (tag !== undefined) {
-      for (let f = tag.from; f <= tag.to; f++) {
-        skip.add(f);
-      }
-    }
-  }
-  return data.frames.flatMap((frame, index) => {
-    if (skip.has(index)) {
-      return [];
-    }
-    for (let { y } = frame; y < frame.y + frame.height; y++) {
-      for (let { x } = frame; x < frame.x + frame.width; x++) {
-        const a = alpha[y * width + x]!;
-        if (a !== 0 && a !== 255) {
-          return [frame.name];
-        }
-      }
-    }
-    return [];
-  });
-};
-
 describe("the sprite sheet", () => {
   it("has every tag the view draws for the demo's content", () => {
-    expect(missingSpriteTags(sheet, content)).toStrictEqual([]);
+    expect(resolveTags(sheet, wantedTags(content)).missing).toStrictEqual([]);
+  });
+
+  it("has the generic sprites the view draws for an entry that names none", async () => {
+    // The demo's content names a sprite for each (below), and a choice after the one found
+    // is not tried: so this asks for the same content with no sprite named.
+    const unnamed = await Effect.runPromise(
+      SurvivorsContent.read((file) =>
+        fileSource(file).pipe(Effect.map(withoutSprites))
+      )
+    );
+    expect({
+      named: [...unnamed.heroes, ...unnamed.enemies, ...unnamed.weapons].filter(
+        (def) => def.sprite !== undefined
+      ),
+      missing: resolveTags(sheet, wantedTags(unnamed)).missing,
+    }).toStrictEqual({ named: [], missing: [] });
   });
 
   it("names its PNG, and the PNG is the size the JSON says", () => {
-    const png = read(`sprites/${sheet.image}`);
-    expect({
-      width: png.readUInt32BE(16),
-      height: png.readUInt32BE(20),
-    }).toStrictEqual({ width: sheet.width, height: sheet.height });
+    expect(pngSize(read(`sprites/${sheet.image}`))).toStrictEqual({
+      width: sheet.width,
+      height: sheet.height,
+    });
   });
 
   it("has no partly transparent pixels but in the aura and shadow, which are drawn blended", () => {
     const png = read(`sprites/${sheet.image}`);
+    // The view draws the rest opaque, cutting out pixels below half alpha and drawing what
+    // is left solid, so art drawn that way should be fully opaque or fully clear.
     expect(
       framesWithSoftAlpha(sheet, png, ["aura/ring", "shadow"])
     ).toStrictEqual([]);

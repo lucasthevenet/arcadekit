@@ -1,6 +1,8 @@
 {
-  // Every entry but arcadekit/net/worker, which tsconfig.worker.json checks with Cloudflare's
-  // Workers types in place of the DOM's.
+  // Every entry but two. tsconfig.worker.json checks arcadekit/net/worker with Cloudflare's
+  // Workers types in place of the DOM's, and tsconfig.node.json checks the entries that run in
+  // Node (arcadekit/render-three/testing) with Node's types beside the DOM's. So a file here
+  // that imports one of those entries' public files fails: Node's built-ins have no types here.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
@@ -9,5 +11,5 @@
     "isolatedDeclarations": true
   },
   "include": ["src"],
-  "exclude": ["src/net/worker"]
+  "exclude": ["src/net/worker", "src/render-three/testing"]
 }

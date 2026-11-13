@@ -1,0 +1,14 @@
+{
+  // The entries that only a test or a script imports run in Node, and may import its built-ins:
+  // arcadekit/render-three/testing inflates a PNG with node:zlib. They and their tests are
+  // checked here, with Node's types beside the DOM's (a sprite sheet holds a TexImageSource).
+  // tsconfig.json leaves their folders out, so Node's types reach no other entry.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "declaration": true,
+    "isolatedDeclarations": true
+  },
+  "include": ["src/render-three/testing"]
+}

@@ -15,7 +15,8 @@ import { describe, expect, it } from "vitest";
 // only in the entry it is for, so a game that skips one still gets every other entry whole.
 // arcadekit/net/worker runs on Cloudflare, so it alone may import the runtime's own
 // `cloudflare:workers` module, which is not a package: the optional `@cloudflare/workers-types`
-// peer has its types.
+// peer has its types. An entry that only a test or a script imports runs in Node, so it may
+// import a Node built-in (`node:zlib`), which is no package either: NODE_ENTRIES lists them.
 //
 // `pnpm test` checks src/, and dist/ too when it has been built. `pnpm lint:packages` runs this
 // file after a build with ARCADEKIT_REQUIRE_DIST set, so a missing dist/ fails there.
@@ -33,6 +34,7 @@ const ENTRY_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   audio: ["effect"],
   "audio/browser": ["effect"],
   "render-three": ["effect", "three"],
+  "render-three/testing": ["effect", "three", "node:zlib"],
   game: ["effect"],
   "game/browser": ["effect"],
   "game/scenario": ["effect"],
@@ -44,6 +46,10 @@ const ENTRY_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   "net/worker": ["effect", "cloudflare:workers"],
   foldkit: ["effect", "foldkit"],
 };
+
+// The entries that only a test or a script imports. They run in Node, never in a browser or a
+// Worker, so they may import its built-ins, and tsconfig.node.json checks them with its types.
+const NODE_ENTRIES: readonly string[] = ["render-three/testing"];
 
 interface EntryTarget {
   readonly source: string;
@@ -129,6 +135,15 @@ const exportedBy = (entry: string): readonly string[] => {
   return [...listed, ...declared].toSorted();
 };
 
+/** The folders one of the package's tsconfig files lists under a key, read with `list`. */
+const foldersOf = (file: string, list: RegExp): readonly string[] =>
+  (
+    list.exec(readFileSync(path.join(packageDir, file), "utf-8"))?.groups
+      ?.list ?? ""
+  )
+    .split(",")
+    .map((item) => item.trim().replaceAll('"', ""));
+
 const distBuilt = existsSync(path.join(packageDir, "dist"));
 const distRequired = process.env.ARCADEKIT_REQUIRE_DIST !== undefined;
 
@@ -141,13 +156,32 @@ describe("the table of entries", () => {
     );
   });
 
-  it("allows only the package's peers, and Cloudflare's runtime modules", () => {
+  it("allows only the package's peers, Cloudflare's runtime modules and Node's built-ins", () => {
     const others = Object.values(ENTRY_PACKAGES)
       .flat()
       .filter(
-        (name) => !peers().includes(name) && !name.startsWith("cloudflare:")
+        (name) =>
+          !peers().includes(name) &&
+          !name.startsWith("cloudflare:") &&
+          !name.startsWith("node:")
       );
     expect(others).toStrictEqual([]);
+  });
+
+  it("allows a Node built-in only in an entry that only a test or a script imports", () => {
+    const entries = Object.entries(ENTRY_PACKAGES)
+      .filter(([, names]) => names.some((name) => name.startsWith("node:")))
+      .map(([entry]) => entry);
+    expect(entries).toStrictEqual(NODE_ENTRIES);
+    // What tsconfig.node.json checks with Node's types, tsconfig.json leaves out.
+    for (const entry of NODE_ENTRIES) {
+      expect(
+        foldersOf("tsconfig.node.json", /"include": \[(?<list>[^\]]*)\]/u)
+      ).toContain(`src/${entry}`);
+      expect(
+        foldersOf("tsconfig.json", /"exclude": \[(?<list>[^\]]*)\]/u)
+      ).toContain(`src/${entry}`);
+    }
   });
 
   it("allows Cloudflare's runtime modules only in arcadekit/net/worker", () => {

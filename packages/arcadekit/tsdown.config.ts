@@ -65,8 +65,9 @@ const config: UserConfig = defineConfig({
   dts: { generator: "oxc", sourcemap: true },
   // peerDependencies stay imports (tsdown's default). Bundling anything else from node_modules
   // fails the build. `cloudflare:workers` is Cloudflare's runtime's own module, which only a
-  // Worker has, so arcadekit/net/worker's import of it stays an import too.
-  deps: { onlyBundle: [], neverBundle: [/^cloudflare:/u] },
+  // Worker has, so arcadekit/net/worker's import of it stays an import too. So does a `node:`
+  // built-in, which an entry that only a test or a script imports may use: Node has it.
+  deps: { onlyBundle: [], neverBundle: [/^cloudflare:/u, /^node:/u] },
 });
 
 export default config;

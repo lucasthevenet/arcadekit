@@ -65,6 +65,18 @@ export interface SpriteSheetData {
   readonly tags: ReadonlyMap<string, SpriteTag>;
 }
 
+/** Each name a view draws with its tag, or the tags to try in order. An `undefined` is skipped. */
+export type WantedTags = Readonly<
+  Record<string, string | readonly (string | undefined)[]>
+>;
+
+export interface ResolvedTags<Wanted extends WantedTags> {
+  /** The first choice the sheet has, or a tag named "" that shows frame 0. */
+  readonly tags: { readonly [K in keyof Wanted]: SpriteTag };
+  /** Every choice tried and not found, once each, in the order tried. */
+  readonly missing: readonly string[];
+}
+
 const Count = Schema.Int;
 const Rect = Schema.Struct({ x: Count, y: Count, w: Count, h: Count });
 const Size = Schema.Struct({ w: Count, h: Count });
@@ -310,3 +322,85 @@ export const frameAt = (
   // Rounding can leave a hair of time past the last step.
   return frameOfStep(tag, steps - 1);
 };
+
+/** Shows frame 0: what a name draws when the sheet has none of its choices. */
+const FRAME_ZERO: SpriteTag = {
+  name: "",
+  from: 0,
+  to: 0,
+  direction: "forward",
+  duration: 0,
+};
+
+/**
+ * Picks the tag of each name a view draws, once, when the view is made or a run starts: the
+ * first of the name's choices that the sheet has. A name with none of them gets a tag named ""
+ * that shows frame 0, so a view never tests for a missing tag. A choice after the one found is
+ * not tried.
+ *
+ * ```ts
+ * const PUSH_PUZZLE_TAGS = {
+ *   floor: "floor",
+ *   wallFace: ["wall/face", "wall"],
+ * } as const;
+ * const { tags, missing } = resolveTags(sheet.data, PUSH_PUZZLE_TAGS);
+ * const frame = frameAt(sheet.data, tags.wallFace, seconds);
+ * ```
+ *
+ * A call that misses warns once on the console, naming the sheet's image and each tag in
+ * `missing`: a test reads `missing`, and a game that draws the wrong sprite says why. The same
+ * warning names each name that was given no tag to try, an empty list or one of `undefined`s
+ * alone: it draws frame 0 too, and is in no `missing`, since no sheet could have its tag.
+ */
+export const resolveTags = <const Wanted extends WantedTags>(
+  sheet: SpriteSheetData,
+  wanted: Wanted
+): ResolvedTags<Wanted> => {
+  const missing = new Set<string>();
+  /** The names given no tag to try. */
+  const bare: string[] = [];
+  const resolved = Object.entries(wanted).map(
+    ([key, choices]): [string, SpriteTag] => {
+      let tried = false;
+      let found: SpriteTag | undefined;
+      for (const name of typeof choices === "string" ? [choices] : choices) {
+        if (name !== undefined) {
+          tried = true;
+          found = sheet.tags.get(name);
+          if (found !== undefined) {
+            break;
+          }
+          missing.add(name);
+        }
+      }
+      if (!tried) {
+        bare.push(key);
+      }
+      return [key, found ?? FRAME_ZERO];
+    }
+  );
+  const said: string[] = [];
+  if (missing.size > 0) {
+    said.push(
+      `The sprite sheet ${sheet.image} has no tag ${quoted(missing)}: a name that asked for one draws its next choice, or frame 0 when it has none left.`
+    );
+  }
+  if (bare.length > 0) {
+    said.push(
+      `No tag was given to try for ${quoted(bare)} in the sprite sheet ${sheet.image}: a name with none draws frame 0.`
+    );
+  }
+  if (said.length > 0) {
+    console.warn(said.join(" "));
+  }
+  return {
+    // From entries, so that any key a map has is a name of its own, "__proto__" too.
+    tags: Object.fromEntries(resolved) as {
+      readonly [K in keyof Wanted]: SpriteTag;
+    },
+    missing: [...missing],
+  };
+};
+
+const quoted = (names: Iterable<string>): string =>
+  [...names].map((name) => `"${name}"`).join(", ");

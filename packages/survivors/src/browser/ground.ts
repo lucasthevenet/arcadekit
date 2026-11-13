@@ -1,7 +1,6 @@
 import { hashCell } from "arcadekit/core";
 import { InstancedSprites } from "arcadekit/render-three";
 import type { SpriteSheet, SpriteTag } from "arcadekit/render-three";
-import type * as THREE from "three";
 
 // The arena floor as one-unit tiles from the sheet: calm grass inside, a few dirt patches, the
 // stone wall around it and the dark void beyond. Only the tiles around the camera are drawn,
@@ -66,24 +65,20 @@ const variant = (tag: SpriteTag, pick: number) =>
   tag.from +
   (Math.floor(pick * (tag.to - tag.from + 1)) % (tag.to - tag.from + 1));
 
-/** The ground under a survivors run: a window of tiles around the camera, in one draw call. */
+/**
+ * The ground under a survivors run: a window of tiles around the camera, in one draw call.
+ * Add `batch.mesh` to the scene.
+ */
 export class GroundTiles {
-  private readonly sheet: SpriteSheet;
+  /** The tiles. It grows with the window, and keeps showing its last fill. */
+  readonly batch: InstancedSprites;
   private readonly tags: GroundTags;
-  private readonly root: THREE.Object3D;
-  private sprites: InstancedSprites | null = null;
   /** What the drawn tiles were filled for: arena, window centre tile and size. */
   private filled = { half: -1, col: 0, row: 0, cols: 0, rows: 0 };
 
-  constructor(sheet: SpriteSheet, tags: GroundTags, root: THREE.Object3D) {
-    this.sheet = sheet;
+  constructor(sheet: SpriteSheet, tags: GroundTags) {
+    this.batch = new InstancedSprites(sheet);
     this.tags = tags;
-    this.root = root;
-  }
-
-  /** The tile batch, for tests. */
-  get batch(): InstancedSprites | null {
-    return this.sprites;
   }
 
   /**
@@ -106,17 +101,15 @@ export class GroundTiles {
     ) {
       return;
     }
-    const sprites = this.ensureBatch(cols, rows);
-    let i = 0;
+    const sprites = this.batch;
+    sprites.begin();
     for (let r = row - rows; r < row + rows; r++) {
       for (let c = col - cols; c < col + cols; c++) {
-        sprites.set(
-          i,
+        sprites.push(
           c + 0.5,
           r + 0.5,
           variant(tileTag(this.tags, half, c, r), fraction(c, r))
         );
-        i += 1;
       }
     }
     // A few soft dirt patches, never touching the wall, drawn over the grass.
@@ -126,32 +119,22 @@ export class GroundTiles {
       const px = Math.round((fraction(k, 7919) * 2 - 1) * reach);
       const pz = Math.round((fraction(k, 104_729) * 2 - 1) * reach);
       if (
-        i < sprites.capacity &&
         Math.abs(px - col) <= cols + PATCH_REACH &&
         Math.abs(pz - row) <= rows + PATCH_REACH
       ) {
-        sprites.set(i, px, pz, variant(this.tags.patch, fraction(k, 3)));
-        sprites.setLayer(i, 1);
-        i += 1;
+        const patch = sprites.push(
+          px,
+          pz,
+          variant(this.tags.patch, fraction(k, 3))
+        );
+        sprites.setLayer(patch, 1);
       }
     }
-    sprites.commit(i);
+    sprites.end();
     this.filled = { half, col, row, cols, rows };
   }
 
   dispose() {
-    this.sprites?.dispose();
-    this.sprites = null;
-  }
-
-  /** The batch, made bigger when the window grows. */
-  private ensureBatch(cols: number, rows: number): InstancedSprites {
-    const capacity = 4 * cols * rows + 64;
-    if (this.sprites === null || this.sprites.capacity < capacity) {
-      this.sprites?.dispose();
-      this.sprites = new InstancedSprites(this.sheet, { capacity });
-      this.root.add(this.sprites.mesh);
-    }
-    return this.sprites;
+    this.batch.dispose();
   }
 }

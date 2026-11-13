@@ -1,4 +1,4 @@
-import type { SpriteSheet, SpriteSheetData } from "arcadekit/render-three";
+import type { SpriteSheet, WantedTags } from "arcadekit/render-three";
 
 import type { GameContent } from "../schema";
 
@@ -55,38 +55,68 @@ export const heroTags = (prefix: string) =>
   }) as const;
 
 /**
- * Every tag the view would draw for `content` that `sheet` lacks. The view draws the generic
- * sprite (or frame 0) in place of each, so a test can check a sheet against its content.
+ * The tags the view draws whatever the content, by the name it reads each under. It picks
+ * them once, when it is made.
  */
-export const missingSpriteTags = (
-  sheet: SpriteSheetData,
-  content: GameContent
-): readonly string[] => {
-  const wanted = new Set<string>([
-    ...Object.values(heroTags(SPRITE_TAGS.hero)),
-    SPRITE_TAGS.enemy,
-    SPRITE_TAGS.bolt,
-    SPRITE_TAGS.trail,
-    ...SPRITE_TAGS.gems,
-    SPRITE_TAGS.aura,
-    SPRITE_TAGS.marker,
-    SPRITE_TAGS.shadow,
-    SPRITE_TAGS.grass,
-    SPRITE_TAGS.patch,
-    ...Object.values(SPRITE_TAGS.edges),
-    SPRITE_TAGS.void,
-  ]);
+export const SCENE_TAGS = {
+  bolt: SPRITE_TAGS.bolt,
+  trail: SPRITE_TAGS.trail,
+  gemSmall: SPRITE_TAGS.gems[0],
+  gemMedium: SPRITE_TAGS.gems[1],
+  gemLarge: SPRITE_TAGS.gems[2],
+  aura: SPRITE_TAGS.aura,
+  marker: SPRITE_TAGS.marker,
+  shadow: SPRITE_TAGS.shadow,
+  grass: SPRITE_TAGS.grass,
+  patch: SPRITE_TAGS.patch,
+  void: SPRITE_TAGS.void,
+  ...SPRITE_TAGS.edges,
+} as const;
+
+/**
+ * The names `contentTags` gives the tags of a content's heroes, enemies and weapons: a hero's
+ * and a weapon's by id, as the rules find them, and an enemy's by its place in the content's
+ * `enemies`, which is its type in a run.
+ */
+export const TAG_NAMES = {
+  hero: (id: string, part: keyof ReturnType<typeof heroTags>) =>
+    `hero ${id} ${part}`,
+  enemy: (type: number) => `enemy ${type}`,
+  weapon: (id: string) => `weapon ${id}`,
+} as const;
+
+/**
+ * The tags the view draws for a content's heroes, enemies and weapons, each with what it
+ * draws in its place: the `sprite` the content names, then the generic one, which the view
+ * tints with the entry's `color`. It picks them once per run.
+ */
+export const contentTags = (content: GameContent): WantedTags => {
+  const wanted: Record<string, readonly (string | undefined)[]> = {};
+  const generic = heroTags(SPRITE_TAGS.hero);
+  // Of two entries with one id, the rules play the first: so does the view.
   for (const hero of content.heroes) {
-    if (hero.sprite !== undefined) {
-      for (const tag of Object.values(heroTags(hero.sprite))) {
-        wanted.add(tag);
-      }
-    }
+    const own = hero.sprite === undefined ? undefined : heroTags(hero.sprite);
+    wanted[TAG_NAMES.hero(hero.id, "walk")] ??= [own?.walk, generic.walk];
+    wanted[TAG_NAMES.hero(hero.id, "idle")] ??= [own?.idle, generic.idle];
+    wanted[TAG_NAMES.hero(hero.id, "down")] ??= [own?.down, generic.down];
   }
-  for (const def of [...content.enemies, ...content.weapons]) {
-    if (def.sprite !== undefined) {
-      wanted.add(def.sprite);
-    }
+  for (const [type, enemy] of content.enemies.entries()) {
+    wanted[TAG_NAMES.enemy(type)] = [enemy.sprite, SPRITE_TAGS.enemy];
   }
-  return [...wanted].filter((tag) => !sheet.tags.has(tag));
+  for (const weapon of content.weapons) {
+    wanted[TAG_NAMES.weapon(weapon.id)] ??= [weapon.sprite, SPRITE_TAGS.bolt];
+  }
+  return wanted;
 };
+
+/**
+ * Every tag the view draws for `content`, each with the tags it falls back to. A test checks
+ * a sheet against its content with it: `resolveTags(sheet, wantedTags(content)).missing` lists
+ * what the sheet lacks, and the view draws the next choice (or frame 0) in place of each. A
+ * generic tag is asked of the sheet only for an entry that names no sprite, or one the sheet
+ * lacks: a test that wants them all checks the content with no `sprite` named as well.
+ */
+export const wantedTags = (content: GameContent): WantedTags => ({
+  ...SCENE_TAGS,
+  ...contentTags(content),
+});
