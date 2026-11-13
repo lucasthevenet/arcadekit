@@ -42,6 +42,7 @@ const SECTIONS = {
   constructors: "Constructors",
   functions: "Functions",
   docComment: "The doc comment",
+  names: "Names",
 } as const;
 
 // The entries not yet in Effect's module shape (ADR-0024, "An Effect module" in the guide), each
@@ -793,6 +794,20 @@ const shapeProblems = (file: string, entry: string): readonly string[] => {
         ({ name }) =>
           `${name}: takes more than \`self\`, so it is \`dual\`, with both overloads written`
       ),
+    // A constant in capitals (`MOVE_AXES`), unless the module also exports a type by its name.
+    ...exported
+      .filter(
+        ({ kind, name }) =>
+          kind === "const" &&
+          /^[A-Z][A-Z\d]*(?:_[A-Z\d]+)*$/u.test(name) &&
+          !exported.some(
+            (other) => other.name === name && other.kind === "type"
+          )
+      )
+      .map(
+        ({ name }) =>
+          `${name}: a constant is camelCase, as Effect's are (\`Duration.zero\`), unless it is a type as well (\`TileMap.Side\`)`
+      ),
   ];
 };
 
@@ -858,7 +873,7 @@ describe("the entries in Effect's module shape", () => {
               (problem) => `src/${file}: ${problem}`
             )
           ),
-          `These exports of arcadekit/${entry} are not written as an Effect module's are. A doc comment has a summary, **When to use**, **Details** if there is more to say, an **Example** (Title) whose \`ts\` block imports from "arcadekit/${entry}" and shows a result as \`// =>\`, then @category (one of ${CATEGORIES.join(", ")}) and @since. ${rule(SECTIONS.docComment)} For a data type's TypeId and guard, see "${SECTIONS.dataType}"; for constructors, "${SECTIONS.constructors}"; for \`dual\`, "${SECTIONS.functions}".`
+          `These exports of arcadekit/${entry} are not written as an Effect module's are. A doc comment has a summary, **When to use**, **Details** if there is more to say, an **Example** (Title) whose \`ts\` block imports from "arcadekit/${entry}" and shows a result as \`// =>\`, then @category (one of ${CATEGORIES.join(", ")}) and @since. ${rule(SECTIONS.docComment)} For a data type's TypeId and guard, see "${SECTIONS.dataType}"; for constructors, "${SECTIONS.constructors}"; for \`dual\`, "${SECTIONS.functions}"; for a constant's name, "${SECTIONS.names}".`
         ).toStrictEqual([]);
       });
     }

@@ -4,6 +4,8 @@ status: accepted
 
 # The kit is written as Effect's modules are, and is plain only where correctness needs it
 
+> Amended on 2026-11-13, by what [`arcadekit/input`'s rework](https://github.com/lucasthevenet/arcadekit/pull/100) found, and the text below says so where it changed. Host events a frame or a step reads as state keep plain listeners; a resource that a plain handler makes has its host's lifecycle; every rework's records keep their wording, as core's did; and a module's constants are camelCase.
+
 The kit is an Effect library: `effect` is its one required peer, and every game on it is an Effect program. Its modules were not written as Effect's are. Each took a shape of its own: a class with methods (`StateHasher`, `SpatialGrid`, `FixedStepClock`, `RingReader`), a factory that returns an object of closures (`createPool`, `makeRng`), loose functions (`clamp`, `hypot2`), each documented its own way. A reader who knows `MutableRef` or `Option` learned the kit module by module, and an agent writing a new module had nothing to copy but the module beside it.
 
 [ADR-0017](0017-effect-at-the-edges-plain-code-inside.md) also kept much of the kit plain, for two kinds of reason. One is correctness: a step gives the same bits on every peer, finishes in the call, and reads no clock or random source of its own ([ADR-0011](0011-a-step-uses-only-exact-math.md), and [ADR-0020](0020-a-game-is-declared.md)'s reasons for plain handlers). The other is cost: allocation, a fiber per frame, an Effect per entity. The maintainer has decided that cost no longer decides.
@@ -17,6 +19,7 @@ Every module of the kit is shaped and documented as a module of Effect 4 is. [`d
 - **A namespace per type.** An entry's public file exports each module as a namespace (`export * as Ring from "./ring"`), a game writes `import { Ring } from "arcadekit/core"`, and the type is `Ring.Ring<L>`. A namespace is named for the glossary's word, never for a JavaScript or DOM global or an Effect module: `pool.ts`, `clock.ts` and `hash.ts` would have been `Pool`, `Clock` and `Hash`. An entry a game imports whole (`Game`, `Scenario`) is one module, and its declarations are its callable members.
 - **A data type is an interface named after its module**, with a `TypeId` of `~arcadekit/<entry>/<Module>`. It is `Pipeable`, and `Inspectable` where a printed value helps. Its values come from a prototype, its state is in fields, its behaviour is in the module's functions, and an `isX` guard recognises it.
 - **Constructors are `make`, `empty` and `fromX`**, and `makeX` for a secondary type. A caller writes `new` only for a Schema class, an error or a declaration.
+- **A constant is camelCase**, as Effect's are (`Duration.zero`), unless it is a type as well (`TileMap.Side`).
 - **A function takes `self` first, and is `dual` when it takes more**, with both overloads written. An exported function that returns an Effect is `Effect.fn("Module.name")`.
 - **Errors are `Schema.TaggedError`s; services and references are `Context.Service` and `Context.Reference`** with a static `layer`.
 - **Every export has Effect's doc comment**: a summary, **When to use**, **Details** when there is more to say, an **Example** that compiles, a `@category` from one closed list, and `@since`.
@@ -43,6 +46,8 @@ Cost is not on the list. Code that was plain only for cost (to save an allocatio
 
 What did not change: everything with a lifecycle is Effect, untrusted input is decoded with Schema where it arrives, and a failure a caller should handle is a typed error. Plain code meets Effect through the same bridges (`Effect.callback`, `Stream.callback` or a `Queue` fed with `Queue.offerUnsafe`, a runner captured once, and a run at each entry point a platform owns), and library code runs no other `Effect.run*`.
 
+Two more places where plain code meets Effect were written down after `arcadekit/input`'s rework. Host events that a frame or a step reads as state keep plain listeners, which write it during the event's dispatch: on a stream the write would wait for a fiber, which a browser resumes a task later, so a frame could read the state first (2). `Stream.callback` is for events an Effect reacts to. And what a plain handler makes, such as an `input`'s controller, has a plain constructor and `dispose`: the handler can run no Effect, so the resource's lifecycle is the host's `acquireRelease` around the handler's result.
+
 ### Each kind of plain code, under the new line
 
 These are the kinds `AGENTS.md` listed as plain on purpose before this decision. Each entry's rework applies its line to its own files, and moves its line in `AGENTS.md`.
@@ -58,7 +63,7 @@ These are the kinds `AGENTS.md` listed as plain on purpose before this decision.
 | The lockstep protocol (`lockstep.ts`) and a player's step payload codec (`codec.ts`) | Split | The step it runs and the codec whose value every peer steps on stay plain (1, 2). Its ticking, resends, stall timers and listeners were plain for cost ("a fiber resumed per tick makes 1.5 to 3 KB"), so they move to Effect where it buys interruption, a Clock or a stream. |
 | Per-frame drawing: render-three's drawing, the genres' views and sound views, a `Game.Engine`'s `view`, `Game.View` and `combineViews` | Plain | A frame draws whole before the browser shows it (2). Their lifecycles are Effect already. |
 | Reads of a ring (`RingReader`) | Plain | Data work a view does in its frame (2, 3). |
-| Input reads (a `Game.Engine`'s `input`, `InputController`'s reads, a `Coop`'s `input`) | Plain | A step reads its input inside the frame or tick that runs it (2). The listeners that fill a controller were plain for cost, and move to Effect where a scope or a stream buys something. |
+| Input reads (a `Game.Engine`'s `input`, `InputController`'s reads, a `Coop`'s `input`) | Plain | A step reads its input inside the frame or tick that runs it (2). The listeners that fill a controller were plain for cost, and stay plain for (2): they write what they hear during the event's dispatch, where a stream would write it a task later, after a frame may have read the controller. Adding and removing them is the host's `acquireRelease` around the input source, since the `input` handler that makes the controller can run no Effect. |
 | The `FrameSource` adapter | Plain | It is the bridge: the host's callback, which `Effect.callback` waits on. |
 | The audio mixer's play calls | Plain | A sound view calls them inside its frame (2). The mixer's lifecycle is Effect. |
 | Per-message channel code (`dataChannelText`, `linksTransport`) | Effect | Plain for cost (a fiber per message). Messages become a stream or a queue where that buys a lifecycle or interruption. What a plain tick calls stays a plain call while the tick is plain. |
@@ -103,6 +108,7 @@ The rework is not slowed down to keep the kit fast. `pnpm bench` (`scripts/bench
   | `countDown`, `takeWhole` | `Timer.countDown`, `Timer.takeWhole` |
   | `progress`, `easeIn`, `easeOut`, `easeOutCubic`, `smoothstep` | `Tween.progress` and so on |
 
+- **Each rework renames as core's did.** Every caller and every living doc moves to the new names in the same change, with no alias, and an earlier ADR that names the API gets a note that says so. The records keep their wording: the changelog, the findings (`docs/push-puzzle-findings.md`, `docs/co-op-findings.md`), `docs/architecture-review.md` and the research notes (`docs/research/`). A rework's search for its old names leaves them out, and its changeset has the table of old and new names to read them through.
 - **The kit is slower for a while.** A `dual` function costs a call, and Effect costs fibers and allocations where code moves to it. Each rework reports by how much.
 - **The replay and determinism hashes don't move.** A step does the same arithmetic in the same order, behind new names.
 - [ADR-0017](0017-effect-at-the-edges-plain-code-inside.md) is amended by this decision: its line between Effect and plain code is this one.
