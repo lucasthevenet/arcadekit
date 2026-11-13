@@ -1,5 +1,6 @@
-import { readSprites } from "../instanced-sprites";
-import type { InstancedSprites } from "../instanced-sprites";
+import { InstancedSprites, readSprites } from "../instanced-sprites";
+import { layerSprites } from "../tile-layer";
+import type { TileLayer } from "../tile-layer";
 
 /** `tag`: the sheet's first tag that holds the frame, or "". `tint`: `[r, g, b, alpha]`. */
 export interface DrawnSprite {
@@ -16,7 +17,8 @@ export interface DrawnSprite {
 }
 
 /**
- * Every sprite a batch shows, in the order pushed, with positions as pushed.
+ * Every sprite a batch shows, in the order pushed, with positions as pushed. Given a tile
+ * layer, every tile of its last fill, in the order filled, each at its cell's centre.
  *
  * What it shows is what its last `end` did: a test draws a frame with its view, then reads
  * the view's batches. A number is as the batch holds it, a 32-bit float, so a tint of 0.2
@@ -26,11 +28,13 @@ export interface DrawnSprite {
  * ```ts
  * view.draw(puzzle, 0);
  * expect(drawnSprites(view.actors).at(-1)?.tag).toBe("player/idle");
+ * expect(drawnSprites(view.tiles).map((tile) => tile.tag)).toContain("wall");
  * ```
  */
 export const drawnSprites = (
-  batch: InstancedSprites
+  shown: InstancedSprites | TileLayer
 ): readonly DrawnSprite[] => {
+  const batch = shown instanceof InstancedSprites ? shown : layerSprites(shown);
   const tags = [...batch.sheet.data.tags.values()];
   return readSprites(batch).map((sprite) => ({
     x: sprite.x,

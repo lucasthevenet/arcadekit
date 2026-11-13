@@ -43,6 +43,11 @@ export interface GroundBounds {
   readonly maxZ: number;
 }
 
+/** A `GroundBounds` its owner keeps, for a camera to fill. */
+export type MutableGroundBounds = {
+  -readonly [K in keyof GroundBounds]: number;
+};
+
 export interface FitCameraOptions {
   /** World units of space left around the bounds on every side. Defaults to 0. */
   readonly margin?: number;

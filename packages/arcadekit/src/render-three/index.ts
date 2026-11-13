@@ -1,6 +1,7 @@
 export {
   type FitCameraOptions,
   type GroundBounds,
+  type MutableGroundBounds,
   fitCamera,
   followTarget,
   orbitAround,
@@ -41,6 +42,7 @@ export {
   frameAt,
   resolveTags,
 } from "./sprite-sheet";
+export { TileLayer, type TileLayerOptions } from "./tile-layer";
 export {
   Stage,
   type StageCamera,

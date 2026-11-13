@@ -25,4 +25,5 @@ export {
 } from "./pool";
 export { type Ring, RingReader, createRing } from "./ring";
 export { type Rng, makeRng } from "./rng";
+export { Side, type TileMap, createTileMap } from "./tile-map";
 export { countDown, takeWhole } from "./timers";

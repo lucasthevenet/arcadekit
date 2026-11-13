@@ -3,7 +3,7 @@ import { deflateSync } from "node:zlib";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { InstancedSprites, frameAt } from "../index";
+import { InstancedSprites, TileLayer, frameAt } from "../index";
 import { drawnSprites, framesWithSoftAlpha, pngSize, testSheet } from "./index";
 
 // The entry a view's tests import, used as they use it. The PNGs are made here, so each test
@@ -256,6 +256,29 @@ describe(drawnSprites, () => {
       "floor",
       "",
       "player/walk",
+    ]);
+  });
+
+  it("gives a tile layer's last fill: each tile at its cell's centre, in the layer's layer and tint", () => {
+    const layer = new TileLayer(sheet, { layer: 2 });
+    expect(drawnSprites(layer)).toStrictEqual([]);
+    layer.tint.setRGB(0.5, 0.25, 1);
+    // Cells (0, 0) and (1, 0): a wall, then nothing.
+    layer.draw({ minX: 0, maxX: 2, minZ: 0, maxZ: 1 }, (col) =>
+      col === 0 ? 3 : -1
+    );
+    expect(drawnSprites(layer)).toStrictEqual([
+      {
+        x: 0.5,
+        z: 0.5,
+        frame: 3,
+        tag: "wall",
+        flipX: false,
+        tint: [0.5, 0.25, 1, 1],
+        flash: 0,
+        lift: 0,
+        layer: 2,
+      },
     ]);
   });
 });

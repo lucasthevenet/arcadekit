@@ -1,11 +1,16 @@
 import {
   Gait,
   InstancedSprites,
+  TileLayer,
   frameAt,
   resolveTags,
   snapToPixel,
 } from "arcadekit/render-three";
-import type { ResolvedTags, SpriteTag } from "arcadekit/render-three";
+import type {
+  GroundBounds,
+  ResolvedTags,
+  SpriteTag,
+} from "arcadekit/render-three";
 import * as THREE from "three";
 
 import { MAX_HEROES, MAX_WEAPONS, auraRadius } from "../hero";
@@ -14,13 +19,15 @@ import type { World } from "../world";
 import { SCENE_TAGS, TAG_NAMES, contentTags, heroTags } from "./art";
 import type { SurvivorsArt } from "./art";
 import { AuraRings } from "./aura";
-import { GroundTiles } from "./ground";
+import { fillPatches, fraction, tileTag, variant } from "./ground";
+import type { GroundTags } from "./ground";
 
-// What the survivors view draws, as sprites from the app's sheet, in four draw calls: the ground
-// (tiles and dirt patches), the soft shadows, the aura rings (drawn from the sheet's art by their
-// own shader, so they stay in whole pixels at any radius), and everything standing on the
-// ground (markers, gems, heroes, enemies, projectiles and their trails). No renderer here, so
-// tests can draw a World without WebGL. Sprite pixels are 1/16 world unit.
+// What the survivors view draws, as sprites from the app's sheet, in five draw calls: the
+// ground's tiles (a tile layer: only the cells on screen), its dirt patches, the soft shadows,
+// the aura rings (drawn from the sheet's art by their own shader, so they stay in whole pixels
+// at any radius), and everything standing on the ground (markers, gems, heroes, enemies,
+// projectiles and their trails). No renderer here, so tests can draw a World without WebGL.
+// Sprite pixels are 1/16 world unit.
 
 /** Sprite pixels per world unit. */
 export const PIXELS_PER_UNIT = 16;
@@ -41,8 +48,9 @@ const FLOATING: ReadonlyMap<string, number> = new Map([
   ["wraith/move", 0.12],
 ]);
 
-/** Layers, bottom to top. Within one, lower on screen draws in front. */
+/** Layers, bottom to top. Within one, lower on screen draws in front. The ground's tiles are in layer 0. */
 const LAYER = {
+  patches: 1,
   shadows: 2,
   /** The aura's depth, inside the shadows' layer band. */
   aura: 2.5,
@@ -161,10 +169,10 @@ interface SurvivorsSceneOptions {
 
 /**
  * Draws a survivors World, or the menu backdrop, as sprites under `root`. Add `root` to a scene
- * seen by a `PixelCamera`; each frame, give it the view's size, `draw`, then centre the camera on
- * `focus`. Once a run's looks are made and its batches have grown to hold it, a frame allocates
- * nothing of the view's own, only what each batch's `end` costs. `dispose` frees what it made,
- * never the sheet.
+ * seen by a `PixelCamera`; each frame, `draw`, centre the camera on `focus`, then `drawGround`
+ * with the ground the camera shows. Once a run's looks are made and its batches have grown to
+ * hold it, a frame allocates nothing of the view's own, only what each batch's `end` costs.
+ * `dispose` frees what it made, never the sheet.
  */
 export class SurvivorsScene {
   readonly root = new THREE.Group();
@@ -175,7 +183,11 @@ export class SurvivorsScene {
   readonly focus = { x: 0, z: 0 };
   private readonly art: SurvivorsArt;
   private readonly localHero: () => number;
-  private readonly ground: GroundTiles;
+  /** The ground's tiles: the cells on screen. */
+  private readonly ground: TileLayer;
+  /** The dirt patches over the grass: all of an arena's, filled when the arena changes. */
+  private readonly patches: InstancedSprites;
+  private readonly groundTags: GroundTags;
   private readonly auras: AuraRings;
   /** The tags every run draws. */
   private readonly common: ResolvedTags<typeof SCENE_TAGS>["tags"];
@@ -189,14 +201,17 @@ export class SurvivorsScene {
   private looks: Looks | null = null;
   /** The last run's arena, for the backdrop. */
   private halfSize = MENU_HALF_SIZE;
-  private viewWidth = 48;
-  private viewDepth = 30;
+  /** The arena the ground was last drawn for, in whole units from its centre to its wall. */
+  private half = -1;
   /** Per hero slot: whether it is walking, and whether it faces left. */
   private readonly gaits = Array.from(
     { length: MAX_HEROES },
     () => new Gait({ linger: WALK_GRACE })
   );
   private readonly facingLeft = new Uint8Array(MAX_HEROES);
+  /** The frame the ground shows at a cell. Kept, so a frame makes no closure for the layer. */
+  private readonly groundFrame = (col: number, row: number): number =>
+    variant(tileTag(this.groundTags, this.half, col, row), fraction(col, row));
 
   constructor(art: SurvivorsArt, options: SurvivorsSceneOptions = {}) {
     this.art = art;
@@ -204,8 +219,11 @@ export class SurvivorsScene {
     this.common = resolveTags(art.sheet.data, SCENE_TAGS).tags;
     const { gemSmall, gemMedium, gemLarge } = this.common;
     this.gems = [gemSmall, gemMedium, gemLarge];
-    this.ground = new GroundTiles(art.sheet, this.common);
-    this.root.add(this.ground.batch.mesh);
+    this.groundTags = this.common;
+    this.ground = new TileLayer(art.sheet);
+    this.root.add(this.ground.mesh);
+    this.patches = new InstancedSprites(art.sheet, { layer: LAYER.patches });
+    this.root.add(this.patches.mesh);
     this.auras = new AuraRings(
       art.sheet,
       this.common.aura,
@@ -238,20 +256,19 @@ export class SurvivorsScene {
     return this.shadows;
   }
 
-  /** The ground tile batch, for tests. */
-  get groundSprites(): InstancedSprites {
-    return this.ground.batch;
+  /** The ground's tile layer, for tests. */
+  get groundLayer(): TileLayer {
+    return this.ground;
+  }
+
+  /** The dirt patch batch, for tests. */
+  get patchSprites(): InstancedSprites {
+    return this.patches;
   }
 
   /** The aura rings, for tests. */
   get auraRings(): AuraRings {
     return this.auras;
-  }
-
-  /** The view's size in world units, so the ground covers it. */
-  setViewSize(width: number, depth: number): void {
-    this.viewWidth = width;
-    this.viewDepth = depth;
   }
 
   draw(world: World | null, time: number): void {
@@ -260,17 +277,26 @@ export class SurvivorsScene {
     } else {
       this.drawWorld(world, time);
     }
-    this.ground.draw(
-      this.halfSize,
-      this.focus.x,
-      this.focus.z,
-      this.viewWidth,
-      this.viewDepth
-    );
+  }
+
+  /**
+   * Shows the ground of the arena last drawn that touches `seen`, the rectangle of ground the
+   * camera shows: call it after `draw`, once the camera is on `focus`. The tiles are filled
+   * again only when `seen` touches other cells, and the patches only for another arena.
+   */
+  drawGround(seen: GroundBounds): void {
+    const half = Math.ceil(this.halfSize);
+    if (half !== this.half) {
+      this.half = half;
+      this.ground.invalidate();
+      fillPatches(this.patches, this.groundTags.patch, half);
+    }
+    this.ground.draw(seen, this.groundFrame);
   }
 
   dispose(): void {
     this.ground.dispose();
+    this.patches.dispose();
     this.actors.dispose();
     this.shadows.dispose();
     this.auras.dispose();

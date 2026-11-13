@@ -1,6 +1,6 @@
 # arcadekit/render-three
 
-Three.js drawing for arcadekit games. `Stage` is a renderer, scene and camera that fill an element and resize with it; its `"pixel"` camera (`PixelCamera`) looks straight down and keeps sprite pixels whole. `loadSpriteSheet` loads an Aseprite sheet (PNG and JSON) as an Effect, `resolveTags` picks each tag a view draws, with its fallbacks, `InstancedSprites` draws many sprites from one sheet in one draw call and grows when a frame needs more room, `frameAt` picks a tag's frame at a time, and `Gait` says whether a character a view draws is walking. `MeshInstances` draws one mesh many times, each copy with a matrix, a color and the attributes its view declares. `arcadekit/render-three/testing` has what a view's tests need, and only tests import it.
+Three.js drawing for arcadekit games. `Stage` is a renderer, scene and camera that fill an element and resize with it; its `"pixel"` camera (`PixelCamera`) looks straight down and keeps sprite pixels whole. `loadSpriteSheet` loads an Aseprite sheet (PNG and JSON) as an Effect, `resolveTags` picks each tag a view draws, with its fallbacks, `InstancedSprites` draws many sprites from one sheet in one draw call and grows when a frame needs more room, `TileLayer` draws a grid of cells from the same sheet, only the cells the camera shows, `frameAt` picks a tag's frame at a time, and `Gait` says whether a character a view draws is walking. `MeshInstances` draws one mesh many times, each copy with a matrix, a color and the attributes its view declares. `arcadekit/render-three/testing` has what a view's tests need, and only tests import it.
 
 An entry of the [`arcadekit`](../../README.md) package. Needs the DOM and WebGL.
 
@@ -123,6 +123,107 @@ A batch has room for `capacity` sprites (64 unless told) and doubles it when a f
 
 A batch says which it was made with, as `snap`.
 
+## A tile layer
+
+A floor of tiles is a grid of cells, and a view draws only the ones on screen. A `TileLayer` does it in one draw call: each frame the view gives `draw` the rectangle of ground its camera shows and a function that says which frame a cell shows. `PixelCamera.groundOnScreen(out)` writes that rectangle into an object the view keeps, after `follow` or `fit`.
+
+Cell (col, row) is the square of ground from (col, row) to (col + 1, row + 1), and its tile is drawn at its centre. `frameOf(col, row)` gives a frame's index, as `frameAt` does, or a negative number for a cell with no tile. The layer imports nothing of the rules: a game whose level is a [tile map](../core/README.md#a-tile-map) reads it in that function, where `cellAt` gives -1 for a cell off the map, and a game whose ground is a rule of the cell alone, such as an arena's wall, works the frame out there.
+
+```ts
+import type { TileMap } from "arcadekit/core";
+import { Stage, TileLayer, resolveTags } from "arcadekit/render-three";
+import type {
+  MutableGroundBounds,
+  ResolvedTags,
+  SpriteSheet,
+} from "arcadekit/render-three";
+
+/** The track as the rules hold it. */
+const TRACK_LAYOUT = {
+  /** 1 where a cell is road, and 0 where it is grass. */
+  tile: Uint8Array,
+};
+type Track = TileMap<typeof TRACK_LAYOUT>;
+
+interface Race {
+  readonly track: Track;
+  readonly carX: number;
+  readonly carZ: number;
+}
+
+const TRACK_TAGS = { grass: "track/grass", road: "track/road" } as const;
+
+export class TrackView {
+  private readonly stage: Stage<"pixel">;
+  private readonly ground: TileLayer;
+  private readonly tags: ResolvedTags<typeof TRACK_TAGS>["tags"];
+  /** The ground the camera shows: one object, filled each frame. */
+  private readonly seen: MutableGroundBounds = {
+    minX: 0,
+    maxX: 0,
+    minZ: 0,
+    maxZ: 0,
+  };
+  /** The track being drawn. */
+  private track: Track | null = null;
+
+  /**
+   * Which frame a cell shows, or -1 for none. Kept as a field: an arrow written in the call
+   * to `draw` would be a new closure on every frame.
+   */
+  private readonly frameOf = (col: number, row: number): number => {
+    const { tags, track } = this;
+    if (track === null) {
+      return -1;
+    }
+    const cell = track.cellAt(col, row);
+    // Off the track: no tile, and the stage's background shows.
+    if (cell === -1) {
+      return -1;
+    }
+    return track.fields.tile[cell] === 1 ? tags.road.from : tags.grass.from;
+  };
+
+  constructor(container: HTMLElement, sheet: SpriteSheet) {
+    this.tags = resolveTags(sheet.data, TRACK_TAGS).tags;
+    this.stage = new Stage(container, {
+      camera: "pixel",
+      pixelsPerUnit: 16,
+      background: "#17151f",
+    });
+    // 16 px frames, one to a cell, under everything else.
+    this.ground = new TileLayer(sheet);
+    this.stage.scene.add(this.ground.mesh);
+  }
+
+  render(race: Race | null): void {
+    if (race !== null) {
+      const { camera } = this.stage;
+      if (this.track !== race.track) {
+        // Another run's track: what `frameOf` gives has changed.
+        this.track = race.track;
+        this.ground.invalidate();
+      }
+      camera.follow(race.carX, race.carZ);
+      this.ground.draw(camera.groundOnScreen(this.seen), this.frameOf);
+    }
+    this.stage.render();
+  }
+
+  dispose(): void {
+    // Frees the layer with the rest of the scene, and never the sheet's texture.
+    this.stage.dispose();
+  }
+}
+```
+
+- **A fill asks `frameOf` once for each cell that touches the rectangle**, row by row, and pushes a tile for each frame that is not negative into a batch of the layer's own, which grows with the window. A cell that shares only an edge with the rectangle is left out.
+- **It fills only when the rectangle touches other cells than at the last fill**: when an edge of it crosses into another cell. A camera whose edges stay within the same cells costs the layer nothing, and its batch keeps showing its last fill. A rectangle that is not a whole number of cells wide has edges that cross at different places, so a camera moving one cell east can fill twice on the way.
+- **`invalidate()` makes the next `draw` fill again**, for when what `frameOf` gives has changed: another level, a tile the rules changed, an animated tile's next frame, or another function handed to `draw`. The layer is told of none of them, and compares no functions. A board small enough to fill on every frame, as push-puzzle's is, calls it before each `draw`.
+- **`tint` multiplies every tile's colours**, as a batch's `setTint` does one sprite's: a dimmed floor behind a menu. It is white when the layer is made, and a change shows from the next fill, so `invalidate` after it.
+- **`count` is the tiles the last fill drew**, and `mesh` is what goes in the scene. The options are a batch's `unitsPerPixel` (1/16 unless told: a 16 px frame fills a cell) and `layer` (0 unless told), and a layer rounds to sprite pixels, as the ground of every other batch does.
+- **What is no cell is no tile.** Something larger than a cell or between two, such as a patch of dirt three cells wide, goes in an `InstancedSprites` of its own in a layer above.
+
 ## Walking
 
 The rules hold a position and no animation, so whether a character is walking is the view's to work out. A `Gait` does it for one character from the positions it is shown at: `update(x, z, time)` once per frame drawn, then `moving`, which is true from a change of position until `linger` seconds after the last one (0.1 unless told), and `since`, the time of the update that last changed `moving`, to play the walk from its first frame. The linger keeps a frame with no step, or the gap between two turns of a held key, from flickering the character back to standing. `reset()` forgets the position, for a new run.
@@ -226,7 +327,7 @@ export const leanCrate = (
 
 ## Testing a view
 
-`arcadekit/render-three/testing` runs a view's drawing in Node, with no WebGL. `testSheet(tags)` is a sheet with the tags a test names, each with its number of 16 px frames of 100 ms, and an image that is only a size. `drawnSprites(batch)` is every sprite a batch shows, in the order pushed: its position as pushed, its frame and the tag that holds it, its flip, tint, flash, lift and layer. So a test draws a frame with its view and reads what the view's batches show, and knows nothing of how a batch stores it. The rounding of a position is the shader's, so a test holds which one a batch was made with by its `snap`.
+`arcadekit/render-three/testing` runs a view's drawing in Node, with no WebGL. `testSheet(tags)` is a sheet with the tags a test names, each with its number of 16 px frames of 100 ms, and an image that is only a size. `drawnSprites(batch)` is every sprite a batch shows, in the order pushed: its position as pushed, its frame and the tag that holds it, its flip, tint, flash, lift and layer. Given a `TileLayer`, it is every tile of the layer's last fill, each at its cell's centre. So a test draws a frame with its view and reads what the view's batches and layers show, and knows nothing of how a batch stores it. The rounding of a position is the shader's, so a test holds which one a batch was made with by its `snap`.
 
 Two more check the sheet a game ships, from the bytes of its PNG: `pngSize(png)` is its width and height, which the sheet's JSON must match, and `framesWithSoftAlpha(sheet, png, blended?)` names every frame with a pixel that is neither clear nor opaque. A batch draws opaque unless it is made `transparent`, cutting out pixels below half alpha, so such a frame will not look as it was painted; the tags a view draws blended, such as a soft shadow, go in `blended`. It reads an 8-bit RGBA PNG without interlacing, and throws for any other. This entry imports `node:zlib` for it, so only a test or a script can import it.
 

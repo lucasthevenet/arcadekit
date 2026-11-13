@@ -1,6 +1,6 @@
 # arcadekit/core
 
-The DOM-free building blocks of a game's simulation: a fixed-step clock, a seeded random generator, struct-of-arrays entity pools, rings of records, a spatial grid and an event buffer, with the exact math, the timers and the eases a step calls, and the hasher of a state hash. Nothing in it allocates per step, and nothing touches the DOM, so it runs in a browser, a Web Worker or on a server.
+The DOM-free building blocks of a game's simulation: a fixed-step clock, a seeded random generator, struct-of-arrays entity pools, rings of records, a tile map, a spatial grid and an event buffer, with the exact math, the timers and the eases a step calls, and the hasher of a state hash. Nothing in it allocates per step, and nothing touches the DOM, so it runs in a browser, a Web Worker or on a server.
 
 An entry of the [`arcadekit`](../../README.md) package.
 
@@ -170,6 +170,99 @@ const step = (race: Race) => {
 - **Both measure in the plane.** A game with heights filters what `within` gives, as it filters the dead. `nearest` gives one point, so nothing is left to filter: what must not be chosen goes into `skip` before the step asks, and a choice a mask can't hold is the step's own loop over what `within` gives.
 - **The grid keeps the arrays `build` was given**, and reads them when asked. A point that moved since the build is tested where it is now and found from the cell it was built in, and removing an entity from a pool moves another into its slot. A radius raised since the build is tested as it is now too, and looked for no further than the build's widest, so `within` can miss it. So a step builds once its points have moved and their radii are set, and asks before it moves or removes.
 - **It refuses what it can't index**, with a `RangeError`: a `build` of more points than the grid's `capacity`, or with fewer `radii` than points, and a `skip` mask shorter than the build. A grid made with a pool's capacity and given that pool's fields meets none of them.
+
+## A tile map
+
+A level's static cells, such as wall, floor and hole, are a **tile map**: `createTileMap(cols, rows, layout)` makes a grid with one typed array per field, as a pool's entities have, and cell (col, row) is at `row * cols + col` in each. A tile is a number in a field, not an object. The map says what the level is, not where entities are: those are in pools, and a `SpatialGrid` finds them.
+
+| Member | What it gives |
+| --- | --- |
+| `cols`, `rows`, `cells` | The map's size, and `cols * rows`: the length of every field |
+| `fields` | One typed array per field of the layout, every cell 0 when made |
+| `cellAt(col, row)` | The cell at a column and a row, or -1 off the map |
+| `colOf(cell)`, `rowOf(cell)` | A cell's column and its row |
+| `neighbor(cell, side)` | The cell next to `cell` on a `Side`, or -1 off the map |
+| `flood(start, passes, reached)` | Marks in `reached` the cells joined to `start` through cells `passes` accepts, and returns how many |
+
+```ts
+import { Side, createTileMap } from "arcadekit/core";
+import type { TileMap } from "arcadekit/core";
+
+/** What a cell of the track is. */
+const Tile = { grass: 0, road: 1, barrier: 2 } as const;
+
+const TRACK_LAYOUT = {
+  /** A `Tile`. */
+  tile: Uint8Array,
+  /** 1 where a coin lies. */
+  coin: Uint8Array,
+};
+
+interface Race {
+  readonly track: TileMap<typeof TRACK_LAYOUT>;
+  /** The cell the car is on. */
+  car: number;
+  coins: number;
+  /** How many cells of road the car can still drive to. */
+  open: number;
+  /** Scratch the step owns: 1 for each of those cells, and the test a flood asks of a cell. */
+  readonly reached: Uint8Array;
+  readonly isRoad: (cell: number) => boolean;
+}
+
+/** A track of grass, for the level to lay its road and its coins on. */
+const createRace = (cols: number, rows: number): Race => {
+  const track = createTileMap(cols, rows, TRACK_LAYOUT);
+  const { tile } = track.fields;
+  return {
+    track,
+    car: 0,
+    coins: 0,
+    open: 0,
+    reached: new Uint8Array(track.cells),
+    // Made once, with the mask: a flood in a step makes no closure.
+    isRoad: (cell) => tile[cell] === Tile.road,
+  };
+};
+
+/** In the step: drives the car one cell to `side` if that cell is road, and takes its coin. */
+const drive = (race: Race, side: Side) => {
+  const { track } = race;
+  const { tile, coin } = track.fields;
+  const target = track.neighbor(race.car, side);
+  // -1 past the edge of the track.
+  if (target === -1 || tile[target] !== Tile.road) {
+    return;
+  }
+  race.car = target;
+  race.coins += coin[target]!;
+  coin[target] = 0;
+};
+
+/** In the step: a barrier falls on a cell, and the race counts the road the car has left. */
+const dropBarrier = (race: Race, col: number, row: number) => {
+  const { track, reached } = race;
+  const cell = track.cellAt(col, row);
+  if (cell === -1) {
+    return;
+  }
+  track.fields.tile[cell] = Tile.barrier;
+  reached.fill(0);
+  race.open = track.flood(race.car, race.isRoad, reached);
+};
+
+const race = createRace(12, 8);
+drive(race, Side.east);
+dropBarrier(race, 5, 3);
+```
+
+- **A `Side` is `Side.west`, `Side.east`, `Side.north` or `Side.south`**, numbered 0 to 3 in that order, and north is the row above. `neighbor` gives -1 at the map's edge, and the neighbour of -1, or of any other cell off the map, is -1, so one lookup can follow another.
+- **A column, a row and a cell are whole numbers.** A position on the ground is floored before `cellAt` is asked: given a fraction, it gives no cell and not -1 either.
+- **`flood` marks `start` with 1, then every cell joined to it by sides through cells `passes` accepts**, and returns how many it marked. It does not enter a cell already marked, so two floods share a mask, and a flood from a marked cell marks nothing. Nor does one from a cell off the map. `start` itself is marked whatever `passes` says of it.
+- **`neighbor` and `flood` allocate nothing**, so a step may call them: the map keeps the queue a flood walks, made once, and the step keeps `passes` as it keeps `reached`, which is `cells` long or longer. `passes` must not flood the same map.
+- **A field the rules write is state**, as push-puzzle's tiles are: a box fills a hole, and the cell is floor from then on. A game with a state hash lists such a field. A field written once, when the level is read, changes no run, and no hash needs it.
+- **A view draws one with a tile layer** ([`arcadekit/render-three`](../render-three/README.md#a-tile-layer)), which asks a function of the cell and never names the map.
+- **It refuses what it can't index**, with a `RangeError`: a number of columns or of rows that is not a whole number of 1 or more, and a `reached` mask shorter than the map's `cells`, whose missing cells a flood could neither read nor mark.
 
 ## Timers are numbers in the state
 

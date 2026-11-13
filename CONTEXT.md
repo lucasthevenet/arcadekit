@@ -108,7 +108,9 @@ The words the packages, docs, specs and findings use. One vocabulary for the who
 
 **Spatial grid**: a uniform grid in `arcadekit/core` (`SpatialGrid`) for "which points are near here?", rebuilt every step from continuous positions. `within` and `nearest` answer with the distance tested; `query` gives the candidates of the cells a circle overlaps. Not a tile map.
 
-**Tile map**: a genre's grid of static cells (wall, floor, hole), stored in typed arrays and indexed by column and row (`row * cols + col`). It describes the level, not where entities are. Push-puzzle's lives in the genre package.
+**Tile map**: a genre's grid of static cells (wall, floor, hole), stored in typed arrays and indexed by column and row (`row * cols + col`). It describes the level, not where entities are. Made with `createTileMap` (`arcadekit/core`), which also gives a cell's neighbours and a flood fill.
+
+**Tile layer**: a grid of cells drawn from a sprite sheet's frames, only the cells on screen (`TileLayer`, `arcadekit/render-three`). It belongs to the view: it takes a function of the cell, and knows no tile map. _Avoid_: tilemap, for the layer.
 
 **Mesh instances**: copies of one mesh drawn in a single draw call (`MeshInstances` in `arcadekit/render-three`), for a 3D view that draws one mesh many times, such as a crowd of enemies or a floor of tiles. Both demos draw pixel art instead, with **sprites**. Each instance gets a matrix, a color and the attributes its view declares. Not a pool: mesh instances belong to the view and hold only what it draws. The view sets them from the state it reads.
 

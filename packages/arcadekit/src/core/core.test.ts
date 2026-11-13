@@ -4,12 +4,14 @@ import {
   EventBuffer,
   FixedStepClock,
   RingReader,
+  Side,
   SpatialGrid,
   StateHasher,
   countDown,
   createIdentifiedPool,
   createPool,
   createRing,
+  createTileMap,
   easeIn,
   easeOut,
   easeOutCubic,
@@ -20,7 +22,7 @@ import {
   takeWhole,
   visitPool,
 } from "./index";
-import type { Pool, PoolLayout, Ring, Rng } from "./index";
+import type { Pool, PoolLayout, Ring, Rng, TileMap } from "./index";
 
 describe(makeRng, () => {
   it("repeats for the same seed and differs for another", () => {
@@ -740,6 +742,277 @@ describe(RingReader, () => {
     expect(reader.take(counts)).toBe(5);
     counts.written = 9;
     expect(reader.take(counts)).toBe(7);
+  });
+});
+
+/** A level's cells: 1 in `tile` where a cell is a wall, and how high its ground is. */
+const LEVEL_LAYOUT = { tile: Uint8Array, height: Float32Array };
+
+/** A map from rows of text: `#` is a wall, and any other character is open ground. */
+const mapOf = (rows: readonly string[]): TileMap<typeof LEVEL_LAYOUT> => {
+  const map = createTileMap(rows[0]!.length, rows.length, LEVEL_LAYOUT);
+  for (const [row, text] of rows.entries()) {
+    for (const [col, char] of [...text].entries()) {
+      map.fields.tile[map.cellAt(col, row)] = char === "#" ? 1 : 0;
+    }
+  }
+  return map;
+};
+
+/** A mask as rows of text: `x` for a cell that is marked, `.` for one that is not. */
+const marked = (
+  map: TileMap<typeof LEVEL_LAYOUT>,
+  reached: Uint8Array
+): string[] =>
+  Array.from({ length: map.rows }, (_, row) =>
+    Array.from({ length: map.cols }, (__, col) =>
+      reached[map.cellAt(col, row)] === 1 ? "x" : "."
+    ).join("")
+  );
+
+/** A `passes` that accepts every cell. */
+const everyCell = (): boolean => true;
+
+/** The cell on each side of `cell`. */
+const sidesOf = (map: TileMap<typeof LEVEL_LAYOUT>, cell: number) => ({
+  west: map.neighbor(cell, Side.west),
+  east: map.neighbor(cell, Side.east),
+  north: map.neighbor(cell, Side.north),
+  south: map.neighbor(cell, Side.south),
+});
+
+describe(createTileMap, () => {
+  it("has one typed array of cols * rows for each field of its layout, every cell 0", () => {
+    const map = createTileMap(4, 3, LEVEL_LAYOUT);
+    // Each field is the typed array its layout names, not any of them.
+    expectTypeOf(map.fields.tile).toExtend<Uint8Array>();
+    expectTypeOf(map.fields.height).toExtend<Float32Array>();
+    expectTypeOf(map.fields.height).not.toExtend<Uint8Array>();
+    expect([map.cols, map.rows, map.cells]).toStrictEqual([4, 3, 12]);
+    expect([map.fields.tile, map.fields.height]).toStrictEqual([
+      new Uint8Array(12),
+      new Float32Array(12),
+    ]);
+  });
+
+  it("gives the cell at a column and a row, row * cols + col, and -1 off each edge", () => {
+    const map = createTileMap(4, 3, LEVEL_LAYOUT);
+    // The four corners, then one inside.
+    expect([
+      map.cellAt(0, 0),
+      map.cellAt(3, 0),
+      map.cellAt(0, 2),
+      map.cellAt(3, 2),
+      map.cellAt(2, 1),
+    ]).toStrictEqual([0, 3, 8, 11, 6]);
+    // Off the west, east, north and south edges. A column past the east edge is no cell of
+    // the next row, which `row * cols + col` alone would give.
+    expect([
+      map.cellAt(-1, 1),
+      map.cellAt(4, 1),
+      map.cellAt(1, -1),
+      map.cellAt(1, 3),
+    ]).toStrictEqual([-1, -1, -1, -1]);
+  });
+
+  it("gives a cell's column and its row back", () => {
+    const map = createTileMap(4, 3, LEVEL_LAYOUT);
+    expect([map.colOf(6), map.rowOf(6)]).toStrictEqual([2, 1]);
+    expect([map.colOf(11), map.rowOf(11)]).toStrictEqual([3, 2]);
+    for (let cell = 0; cell < map.cells; cell++) {
+      expect(map.cellAt(map.colOf(cell), map.rowOf(cell))).toBe(cell);
+    }
+  });
+
+  it("numbers the sides west, east, north and south, with north the row above", () => {
+    // A game that looks around a cell side by side does it in this order.
+    expect(Side).toStrictEqual({ west: 0, east: 1, north: 2, south: 3 });
+    const map = createTileMap(4, 3, LEVEL_LAYOUT);
+    expect(map.rowOf(map.neighbor(5, Side.north))).toBe(map.rowOf(5) - 1);
+  });
+
+  it("gives the cell on each side, and -1 at each edge", () => {
+    const map = createTileMap(4, 3, LEVEL_LAYOUT);
+    // Cell 5 is (1, 1): every side is on the map.
+    expect(sidesOf(map, 5)).toStrictEqual({
+      west: 4,
+      east: 6,
+      north: 1,
+      south: 9,
+    });
+    // The first and the last cell: two edges each.
+    expect(sidesOf(map, 0)).toStrictEqual({
+      west: -1,
+      east: 1,
+      north: -1,
+      south: 4,
+    });
+    expect(sidesOf(map, 11)).toStrictEqual({
+      west: 10,
+      east: -1,
+      north: 7,
+      south: -1,
+    });
+    // A row's last cell and the next row's first are one apart, and no neighbours.
+    expect([
+      map.neighbor(3, Side.east),
+      map.neighbor(4, Side.west),
+    ]).toStrictEqual([-1, -1]);
+  });
+
+  it("gives -1 for the neighbour of no cell, and for a side that is none", () => {
+    const map = createTileMap(4, 3, LEVEL_LAYOUT);
+    const nowhere = { west: -1, east: -1, north: -1, south: -1 };
+    // So one lookup can follow another, with no test between them.
+    expect(sidesOf(map, -1)).toStrictEqual(nowhere);
+    // Nor of any other cell off the map: the one past the last is no cell of a fourth row, whose
+    // neighbour above would be cell 8, and -4 none of a row above the first.
+    expect(sidesOf(map, map.cells)).toStrictEqual(nowhere);
+    expect(sidesOf(map, -4)).toStrictEqual(nowhere);
+    expect(
+      // @ts-expect-error -- a side is one of the four `Side` has, and 4 is none.
+      map.neighbor(5, 4)
+    ).toBe(-1);
+  });
+
+  it("refuses a number of columns or of rows that is not a whole number of 1 or more", () => {
+    for (const [cols, rows] of [
+      [0, 3],
+      [3, 0],
+      [-1, 2],
+      [2.5, 2],
+      [2, Number.NaN],
+      [Infinity, 1],
+    ] as const) {
+      expect(() => createTileMap(cols, rows, LEVEL_LAYOUT)).toThrow(
+        new RangeError(
+          `createTileMap needs a whole number of columns and of rows, 1 or more of each, got ${cols} by ${rows}`
+        )
+      );
+    }
+    expect(createTileMap(1, 1, LEVEL_LAYOUT).cells).toBe(1);
+  });
+
+  describe("flood", () => {
+    it("marks the start and what joins it by sides through passing cells, and counts them", () => {
+      const map = mapOf(["..#.", ".#..", "#..."]);
+      const { tile } = map.fields;
+      const reached = new Uint8Array(map.cells);
+      // The walls stop it, and a cell that only touches a marked one at a corner is not joined.
+      expect(
+        map.flood(map.cellAt(0, 0), (cell) => tile[cell] === 0, reached)
+      ).toBe(3);
+      expect(marked(map, reached)).toStrictEqual(["xx..", "x...", "...."]);
+    });
+
+    it("stops at a cell `passes` refuses, and asks it of no cell it has marked", () => {
+      const map = mapOf([".....", ".###.", "....."]);
+      const { tile } = map.fields;
+      const reached = new Uint8Array(map.cells);
+      const asked: number[] = [];
+      const count = map.flood(
+        map.cellAt(0, 1),
+        (cell) => {
+          asked.push(cell);
+          // The middle column is closed too: the ring of open ground is cut at the top and
+          // the bottom, so the east side is joined to the start by no passing cell.
+          return tile[cell] === 0 && map.colOf(cell) !== 2;
+        },
+        reached
+      );
+      expect(count).toBe(5);
+      expect(marked(map, reached)).toStrictEqual(["xx...", "x....", "xx..."]);
+      // It asks about a cell before it enters it, and never once the cell is marked: not about
+      // the start, and once about each cell it entered.
+      expect(
+        asked.filter((cell) => reached[cell] === 1).toSorted((a, b) => a - b)
+      ).toStrictEqual([0, 1, 10, 11]);
+      // A refused cell is asked about from each marked cell beside it: the wall at (1, 1) from
+      // three, and the two closed cells of the middle column from one each.
+      expect(
+        asked.filter((cell) => reached[cell] === 0).toSorted((a, b) => a - b)
+      ).toStrictEqual([2, 6, 6, 6, 12]);
+    });
+
+    it("marks every cell of a map that all passes", () => {
+      const map = createTileMap(4, 3, LEVEL_LAYOUT);
+      const reached = new Uint8Array(map.cells);
+      expect(map.flood(5, everyCell, reached)).toBe(12);
+      expect(marked(map, reached)).toStrictEqual(["xxxx", "xxxx", "xxxx"]);
+    });
+
+    it("marks the start whatever `passes` says of it", () => {
+      const map = mapOf(["#.."]);
+      const { tile } = map.fields;
+      const reached = new Uint8Array(map.cells);
+      // From a wall: the wall, and the open ground beside it.
+      expect(map.flood(0, (cell) => tile[cell] === 0, reached)).toBe(3);
+      expect(marked(map, reached)).toStrictEqual(["xxx"]);
+      // A start with nothing that passes around it is marked alone.
+      reached.fill(0);
+      expect(map.flood(2, () => false, reached)).toBe(1);
+      expect(marked(map, reached)).toStrictEqual(["..x"]);
+    });
+
+    it("does not enter a cell already marked, so two floods share a mask", () => {
+      const map = createTileMap(5, 1, LEVEL_LAYOUT);
+      const reached = new Uint8Array(map.cells);
+      // The caller's mark in the middle cuts the row in two.
+      reached[2] = 1;
+      expect(map.flood(0, everyCell, reached)).toBe(2);
+      expect(marked(map, reached)).toStrictEqual(["xxx.."]);
+      // The second flood marks the other side, into the same mask.
+      expect(map.flood(4, everyCell, reached)).toBe(2);
+      expect(marked(map, reached)).toStrictEqual(["xxxxx"]);
+    });
+
+    it("marks nothing from a cell already marked, whichever flood marked it", () => {
+      const map = createTileMap(5, 1, LEVEL_LAYOUT);
+      const reached = new Uint8Array(map.cells);
+      reached[2] = 1;
+      map.flood(0, everyCell, reached);
+      // From a cell the flood marked, and from the one the caller marked: cells 3 and 4 are
+      // beside it, and stay as they are.
+      expect([
+        map.flood(1, everyCell, reached),
+        map.flood(2, everyCell, reached),
+      ]).toStrictEqual([0, 0]);
+      expect(marked(map, reached)).toStrictEqual(["xxx.."]);
+    });
+
+    it("marks nothing from a start off the map", () => {
+      const map = createTileMap(3, 2, LEVEL_LAYOUT);
+      const reached = new Uint8Array(map.cells);
+      // What `cellAt` and `neighbor` give off the map, and the cell past the last.
+      expect([
+        map.flood(-1, everyCell, reached),
+        map.flood(map.cells, everyCell, reached),
+      ]).toStrictEqual([0, 0]);
+      expect(marked(map, reached)).toStrictEqual(["...", "..."]);
+    });
+
+    it("refuses a mask shorter than the map, wherever it starts, and marks nothing", () => {
+      const map = createTileMap(4, 3, LEVEL_LAYOUT);
+      // A typed array drops a write past its end: given a row's worth of mask, a flood of this
+      // open map would mark that row and count 4 cells of 12.
+      const short = new Uint8Array(4);
+      // From a cell the mask covers, one it doesn't, and one off the map.
+      for (const start of [0, 6, -1]) {
+        expect(() => map.flood(start, everyCell, short)).toThrow(
+          new RangeError(
+            "TileMap.flood needs a reached mask as long as the map's 12 cells, got 4"
+          )
+        );
+      }
+      expect([...short]).toStrictEqual([0, 0, 0, 0]);
+    });
+
+    it("takes a mask longer than the map, and leaves what is past its cells", () => {
+      const map = createTileMap(4, 3, LEVEL_LAYOUT);
+      const long = new Uint8Array(map.cells + 2);
+      expect(map.flood(0, everyCell, long)).toBe(12);
+      expect([...long.subarray(map.cells)]).toStrictEqual([0, 0]);
+    });
   });
 });
 

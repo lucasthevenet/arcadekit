@@ -96,6 +96,7 @@ const FACTORIES: readonly string[] = [
   "createRoom",
   "createRoomState",
   "createSocketRoom",
+  "createTileMap",
   "makeAudioMixer",
   "makeBrowserAudio",
   "makeRng",

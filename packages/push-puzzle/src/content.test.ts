@@ -41,6 +41,8 @@ describe("push-puzzle content", () => {
     ["two players", ["######", "#@$.@#", "######"], "2 players"],
     ["fewer boxes than goals", ["######", "#@$..#", "######"], "1 box"],
     ["no goal", ["#####", "#@$ #", "#####"], "no goal"],
+    // No cell at all: it is told what it lacks, as any other level is.
+    ["rows that are all empty", ["", ""], "no player"],
   ])("rejects a level with %s, naming the level", async (_, rows, problem) => {
     const message = await failure([GOOD, level("broken", rows)]);
     expect(message).toContain('level \\"broken\\"');

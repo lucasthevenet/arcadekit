@@ -1,5 +1,5 @@
 import { resolveTags } from "arcadekit/render-three";
-import type { InstancedSprites } from "arcadekit/render-three";
+import type { InstancedSprites, TileLayer } from "arcadekit/render-three";
 import { drawnSprites, testSheet } from "arcadekit/render-three/testing";
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -143,6 +143,28 @@ const sprite = (sprites: InstancedSprites, index: number) =>
 
 /** How many sprites a batch shows. */
 const count = (sprites: InstancedSprites) => drawnSprites(sprites).length;
+
+/**
+ * The ground's tiles as drawn, one string per row of cells from `minZ`, each cell by its tag
+ * without the folder: `grass`, `void`, or the wall's side. A cell with no tile is `-`.
+ */
+const groundPicture = (
+  layer: TileLayer,
+  seen: { readonly minX: number; readonly minZ: number },
+  cols: number,
+  rows: number
+): string[] => {
+  const cells = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => "-")
+  );
+  for (const tile of drawnSprites(layer)) {
+    const row = cells[Math.floor(tile.z) - seen.minZ];
+    if (row !== undefined) {
+      row[Math.floor(tile.x) - seen.minX] = tile.tag.split("/")[1]!;
+    }
+  }
+  return cells.map((row) => row.join(" "));
+};
 
 const addEnemy = (world: World, type: number, x: number, z: number) => {
   const i = world.enemies.add();
@@ -379,7 +401,6 @@ describe(SurvivorsScene, () => {
     scene.draw(world, 0);
     // Snapped to sprite pixels, as the hero's sprite is, so the hero doesn't wobble on screen.
     expect(scene.focus).toStrictEqual({ x: 40 / 16, z: -16 / 16 });
-    expect(count(scene.groundSprites)).toBeGreaterThan(16 * 16);
 
     scene.draw(null, 10);
     const before = { ...scene.focus };
@@ -404,9 +425,11 @@ describe(SurvivorsScene, () => {
     art.sheet.texture.addEventListener("dispose", () => {
       sheetFreed = true;
     });
+    scene.drawGround({ minX: -4, maxX: 4, minZ: -4, maxZ: 4 });
     const materials = [
       scene.actorSprites.mesh.material,
-      scene.groundSprites.mesh.material,
+      scene.groundLayer.mesh.material,
+      scene.patchSprites.mesh.material,
     ];
     const freed: unknown[] = [];
     for (const material of materials) {
@@ -418,10 +441,143 @@ describe(SurvivorsScene, () => {
       sheetFreed,
       children: scene.root.children.length,
     }).toStrictEqual({
-      freed: 2,
+      freed: 3,
       sheetFreed: false,
       children: 0,
     });
+  });
+});
+
+describe("the survivors ground", () => {
+  // The south-east corner of the content's arena, 8 units from its centre to its wall: the
+  // wall's tiles are in column 8 and row 8, and the void is beyond them.
+  const CORNER = { minX: 6, maxX: 10, minZ: 6, maxZ: 10 };
+
+  it("draws the cells on screen: grass inside the arena, its wall around it and the void beyond", () => {
+    const world = createWorld({ content, heroIds: ["knight"] }, { seed: 1 });
+    const scene = new SurvivorsScene(art);
+    scene.draw(world, 0);
+    scene.drawGround(CORNER);
+    expect(groundPicture(scene.groundLayer, CORNER, 4, 4)).toStrictEqual([
+      "grass grass e void",
+      "grass grass e void",
+      "s s se void",
+      "void void void void",
+    ]);
+    // The other corner: the wall's tiles are in column -9 and row -9 there.
+    const far = { minX: -11, maxX: -7, minZ: -11, maxZ: -7 };
+    scene.drawGround(far);
+    expect(groundPicture(scene.groundLayer, far, 4, 4)).toStrictEqual([
+      "void void void void",
+      "void void void void",
+      "void void nw n",
+      "void void w grass",
+    ]);
+    // Every tile is at its cell's centre, in the lowest layer.
+    const tiles = drawnSprites(scene.groundLayer);
+    expect([tiles.length, tiles[0]?.x, tiles[0]?.z]).toStrictEqual([
+      16, -10.5, -10.5,
+    ]);
+    expect(tiles.every((tile) => tile.layer === 0)).toBe(true);
+    scene.dispose();
+  });
+
+  it("shows a cell the same variant of its tile wherever the camera is", () => {
+    const scene = new SurvivorsScene(art);
+    scene.draw(null, 0);
+    /** The frame drawn at each cell of the last fill. */
+    const frames = () =>
+      new Map(
+        drawnSprites(scene.groundLayer).map((tile) => [
+          `${tile.x} ${tile.z}`,
+          tile.frame,
+        ])
+      );
+    scene.drawGround({ minX: 0, maxX: 12, minZ: 0, maxZ: 8 });
+    const before = frames();
+    // The four grass frames are all in use, picked by each cell's hash.
+    expect(new Set(before.values())).toStrictEqual(
+      new Set([0, 1, 2, 3].map((i) => tag("ground/grass").from + i))
+    );
+    scene.drawGround({ minX: 5.5, maxX: 17.5, minZ: -3.25, maxZ: 4.75 });
+    const after = frames();
+    const shared = [...after.keys()].filter((cell) => before.has(cell));
+    expect(shared).toHaveLength(7 * 5);
+    expect(shared.map((cell) => after.get(cell))).toStrictEqual(
+      shared.map((cell) => before.get(cell))
+    );
+    scene.dispose();
+  });
+
+  it("gives its layer one function for every frame, so a frame makes no closure", () => {
+    const scene = new SurvivorsScene(art);
+    const drawn = vi.spyOn(scene.groundLayer, "draw");
+    scene.draw(null, 0);
+    scene.drawGround(CORNER);
+    scene.draw(null, 1);
+    scene.drawGround(CORNER);
+    expect(drawn).toHaveBeenCalledTimes(2);
+    expect(drawn.mock.calls[1]![1]).toBe(drawn.mock.calls[0]![1]);
+    scene.dispose();
+  });
+
+  it("draws every dirt patch of an arena, over the grass and clear of the wall", () => {
+    const scene = new SurvivorsScene(art);
+    // No run yet: the backdrop's arena, 60 units from its centre to its wall.
+    scene.draw(null, 0);
+    scene.drawGround(CORNER);
+    const patches = drawnSprites(scene.patchSprites);
+    // One patch per 420 square units of its 120 by 120, each at a place of its own.
+    expect([
+      patches.length,
+      new Set(patches.map((patch) => `${patch.x} ${patch.z}`)).size,
+    ]).toStrictEqual([34, 34]);
+    expect(
+      patches.filter(
+        (patch) =>
+          patch.tag !== "ground/patch" ||
+          // Over the ground's tiles, which are in layer 0.
+          patch.layer !== 1 ||
+          // On whole units, and never touching the wall.
+          !Number.isInteger(patch.x) ||
+          !Number.isInteger(patch.z) ||
+          Math.abs(patch.x) > 57 ||
+          Math.abs(patch.z) > 57
+      )
+    ).toStrictEqual([]);
+    // In the patch's three frames.
+    expect(new Set(patches.map((patch) => patch.frame))).toStrictEqual(
+      new Set([0, 1, 2].map((i) => tag("ground/patch").from + i))
+    );
+    scene.dispose();
+  });
+
+  it("fills the patches once for an arena, and the ground and the patches again for another", () => {
+    const scene = new SurvivorsScene(art);
+    const filled = vi.spyOn(scene.patchSprites, "end");
+    scene.draw(null, 0);
+    scene.drawGround(CORNER);
+    // In the middle of the backdrop's arena, the corner of the content's is grass.
+    expect(groundPicture(scene.groundLayer, CORNER, 4, 4)[2]).toBe(
+      "grass grass grass grass"
+    );
+    // The camera moves: the patches are not filled again.
+    scene.draw(null, 1);
+    scene.drawGround({ minX: 20, maxX: 24, minZ: 6, maxZ: 10 });
+    expect(filled).toHaveBeenCalledOnce();
+
+    // A run in a smaller arena, drawn twice: its wall where the grass was, on the same cells,
+    // and an arena too small for a patch.
+    const world = createWorld({ content, heroIds: ["knight"] }, { seed: 1 });
+    scene.draw(world, 2);
+    scene.drawGround(CORNER);
+    scene.drawGround(CORNER);
+    expect(filled).toHaveBeenCalledTimes(2);
+    expect(count(scene.patchSprites)).toBe(0);
+    expect(groundPicture(scene.groundLayer, CORNER, 4, 4)[2]).toBe(
+      "s s se void"
+    );
+    scene.dispose();
   });
 });
 

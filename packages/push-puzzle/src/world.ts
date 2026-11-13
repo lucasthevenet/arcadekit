@@ -1,10 +1,11 @@
-import { createIdentifiedPool, createRing } from "arcadekit/core";
-import type { IdentifiedPool, Ring } from "arcadekit/core";
+import { Side, createIdentifiedPool, createRing } from "arcadekit/core";
+import type { IdentifiedPool, Ring, TileMap } from "arcadekit/core";
 import type * as Game from "arcadekit/game";
 import { Schema } from "effect";
 
 import { LevelSolved } from "./events";
 import { Tile, parseLevel } from "./level";
+import type { LEVEL_LAYOUT } from "./level";
 import type { PuzzleContent } from "./schema";
 
 // The push-puzzle simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
@@ -108,13 +109,12 @@ export interface PushPuzzleCues {
 }
 
 export interface Puzzle {
-  /** The tile map. Cells are indexed `row * cols + col`. */
-  readonly cols: number;
-  readonly rows: number;
-  /** One Tile per cell. Changes only when a hole is filled or reopened by undo. */
-  readonly tiles: Uint8Array;
-  /** 1 where a cell is a goal. */
-  readonly goals: Uint8Array;
+  /**
+   * The tile map: for each cell, its `Tile` in the field `tile`, and 1 in `goal` where it is a
+   * goal. Cells are indexed `row * cols + col`. A cell's tile changes only when a hole is
+   * filled or reopened by undo.
+   */
+  readonly map: TileMap<typeof LEVEL_LAYOUT>;
   readonly goalCount: number;
   /**
    * Every box still on the board. Pool indices move when a box is removed (filling a hole),
@@ -171,10 +171,7 @@ export const createPuzzle = ({
     boxes.fields.cell[boxes.add()] = cell;
   }
   return {
-    cols: parsed.cols,
-    rows: parsed.rows,
-    tiles: parsed.tiles,
-    goals: parsed.goals,
+    map: parsed.map,
     goalCount: parsed.goalCount,
     boxes,
     player,
@@ -235,17 +232,13 @@ const takeMove = (
   }
 };
 
-const COL_DELTA = { up: 0, down: 0, left: -1, right: 1 } as const;
-const ROW_DELTA = { up: -1, down: 1, left: 0, right: 0 } as const;
-
-/** The cell next to `cell` in `direction`, or -1 off the map. */
-const neighbor = (puzzle: Puzzle, cell: number, direction: Direction) => {
-  const col = (cell % puzzle.cols) + COL_DELTA[direction];
-  const row = Math.floor(cell / puzzle.cols) + ROW_DELTA[direction];
-  return col >= 0 && col < puzzle.cols && row >= 0 && row < puzzle.rows
-    ? row * puzzle.cols + col
-    : -1;
-};
+/** The side of a cell each direction moves to. Row 0 is the top of the board, so up is north. */
+const SIDE = {
+  up: Side.north,
+  down: Side.south,
+  left: Side.west,
+  right: Side.east,
+} as const;
 
 /** Pool index of the box on `cell`, or -1. */
 const boxIndexAt = (puzzle: Puzzle, cell: number) => {
@@ -260,26 +253,29 @@ const boxIndexAt = (puzzle: Puzzle, cell: number) => {
 
 /** Moves the player, pushing a box if there is one. Returns whether a move was made. */
 const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
-  const target = neighbor(puzzle, puzzle.player, direction);
-  if (target === -1 || puzzle.tiles[target] !== Tile.floor) {
+  const { map } = puzzle;
+  const { tile } = map.fields;
+  const side = SIDE[direction];
+  const target = map.neighbor(puzzle.player, side);
+  if (target === -1 || tile[target] !== Tile.floor) {
     return false;
   }
   const box = boxIndexAt(puzzle, target);
   let boxId = -1;
   let filledHole = 0;
   if (box !== -1) {
-    const beyond = neighbor(puzzle, target, direction);
+    const beyond = map.neighbor(target, side);
     if (beyond === -1 || boxIndexAt(puzzle, beyond) !== -1) {
       return false;
     }
-    const tile = puzzle.tiles[beyond];
-    if (tile !== Tile.floor && tile !== Tile.hole) {
+    const under = tile[beyond];
+    if (under !== Tile.floor && under !== Tile.hole) {
       return false;
     }
     boxId = puzzle.boxes.idOf(box);
-    if (tile === Tile.hole) {
+    if (under === Tile.hole) {
       // The box fills the hole: both are gone, and the cell is floor from now on.
-      puzzle.tiles[beyond] = Tile.floor;
+      tile[beyond] = Tile.floor;
       puzzle.boxes.remove(box);
       filledHole = 1;
       const { changes } = puzzle;
@@ -323,7 +319,7 @@ const undoTurn = (puzzle: Puzzle): void => {
     // The player pushed from playerFrom into boxFrom, so the box went one cell further the same way.
     const boxTo = boxFrom + (boxFrom - playerFrom);
     if (history.fields.filledHole[record] === 1) {
-      puzzle.tiles[boxTo] = Tile.hole;
+      puzzle.map.fields.tile[boxTo] = Tile.hole;
       boxes.fields.cell[boxes.addWithId(boxId)] = boxFrom;
     } else {
       boxes.fields.cell[boxes.indexOf(boxId)] = boxFrom;
@@ -342,7 +338,7 @@ const undoTurn = (puzzle: Puzzle): void => {
 
 /** Stable id of the box at (col, row), or -1. */
 export const boxIdAt = (puzzle: Puzzle, col: number, row: number): number => {
-  const i = boxIndexAt(puzzle, row * puzzle.cols + col);
+  const i = boxIndexAt(puzzle, puzzle.map.cellAt(col, row));
   return i === -1 ? -1 : puzzle.boxes.idOf(i);
 };
 
@@ -350,8 +346,9 @@ export const boxIdAt = (puzzle: Puzzle, col: number, row: number): number => {
 const boxesLeft = (puzzle: Puzzle): number => {
   let placed = 0;
   const { boxes } = puzzle;
+  const { goal } = puzzle.map.fields;
   for (let i = 0; i < boxes.count; i++) {
-    placed += puzzle.goals[boxes.fields.cell[i]!]!;
+    placed += goal[boxes.fields.cell[i]!]!;
   }
   return puzzle.goalCount - placed;
 };
@@ -367,10 +364,11 @@ export const hudSample = (
 /** The board as level text, one string per row. For tests, debugging and replay checks; allocates. */
 export const boardText = (puzzle: Puzzle): string[] => {
   const lines: string[] = [];
-  for (let row = 0; row < puzzle.rows; row++) {
+  const { map } = puzzle;
+  for (let row = 0; row < map.rows; row++) {
     let line = "";
-    for (let col = 0; col < puzzle.cols; col++) {
-      line += cellChar(puzzle, row * puzzle.cols + col);
+    for (let col = 0; col < map.cols; col++) {
+      line += cellChar(puzzle, map.cellAt(col, row));
     }
     lines.push(line.trimEnd());
   }
@@ -378,7 +376,7 @@ export const boardText = (puzzle: Puzzle): string[] => {
 };
 
 const cellChar = (puzzle: Puzzle, cell: number): string => {
-  switch (puzzle.tiles[cell]) {
+  switch (puzzle.map.fields.tile[cell]) {
     case Tile.wall: {
       return "#";
     }
@@ -386,7 +384,7 @@ const cellChar = (puzzle: Puzzle, cell: number): string => {
       return "^";
     }
     case Tile.floor: {
-      const goal = puzzle.goals[cell] === 1;
+      const goal = puzzle.map.fields.goal[cell] === 1;
       if (cell === puzzle.player) {
         return goal ? "+" : "@";
       }
