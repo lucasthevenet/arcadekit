@@ -46,6 +46,7 @@ Every module of the kit is shaped and documented as a module of Effect 4 is ([AD
 - **A namespace per module.** An entry's public file exports each module as a namespace, and nothing else: `export * as Ring from "./ring"`. A game writes `import { Ring } from "arcadekit/core"`, and the type is `Ring.Ring<L>`, as Effect's is `MutableRef.MutableRef<A>`.
 - **An entry a game imports whole is one module**: `arcadekit/game` and its `./browser` (`import * as Game`), and `arcadekit/game/scenario` (`import * as Scenario`). Their public file is the module, and its declarations are its callable members (`Game.Event`). First applies in `arcadekit/game`.
 - **A builder a game writes bare** is exported from its entry's public file beside the namespaces, under its noun, with the types [the builder](#the-builder) lists (`Content`, `ContentClass`). First applies in `arcadekit/content`.
+- **A sub-entry's module that makes its parent's type is named for its mechanism and the parent's module**, as Effect's `FetchHttpClient` is, and its `fromX` returns the parent module's type, as Effect's `NodeStream.fromReadable` gives a `Stream`: `arcadekit/content/browser`'s `FetchContentSource.fromUrl` makes a `ContentSource.ContentSource`. A sub-entry can't add to its parent's namespace, and a second namespace by the parent's name would clash in a file that imports both entries. A sub-entry that exports namespaces is a folder, [`content/browser/index.ts`](../packages/arcadekit/src/content/browser/index.ts) as `net/browser/index.ts` is, so its modules are apart from its parent's: `doc-examples.test.ts` reads an entry's modules from its folder.
 - **A file is one module, its name the namespace's in kebab-case**: `entity-pool.ts` is `EntityPool`, `point2.ts` is `Point2`.
 - **A namespace is named for the glossary's word, and collides with nothing a file has in scope**: no JavaScript or DOM global (`Math`, `Event`, `Number`, `Image`) and no module of Effect (`Pool`, `Clock`, `Hash`, `Channel`). Where the word collides, the term takes a word more: core's pool is an **entity pool** (`EntityPool`), its clock a **fixed-step clock**, its hash a **state hash** (`StateHash`), its math **exact math** (`ExactMath`). A rename changes `CONTEXT.md` in the same change.
 - **A namespace exports only public API.** What an entry's files share and no game calls is in `src/<entry>/internal/`, which no public file exports: core's `internal/fields.ts` makes the typed arrays of a pool, a ring and a tile map.
@@ -82,18 +83,42 @@ Every module of the kit is shaped and documented as a module of Effect 4 is ([AD
   );
   ```
 
-  A caller then writes `Ring.slotOf(ring, n)`, or `ring.pipe(Ring.slotOf(n))`. A function whose last parameter is optional can't be told apart by how many arguments it got: its `dual` takes a predicate on the first, `dual((args) => isSpatialGrid(args[0]), …)`, as `SpatialGrid.build` and `SpatialGrid.nearest` do. A constructor, a guard, a function of `self` alone (`Ring.push`) and a function of one number (`ExactMath.sin`) are no `dual`.
+  A caller then writes `Ring.slotOf(ring, n)`, or `ring.pipe(Ring.slotOf(n))`. A function whose last parameter is optional can't be told apart by how many arguments it got: its `dual` takes a predicate on the first, `dual((args) => isSpatialGrid(args[0]), …)`, as `SpatialGrid.build` and `SpatialGrid.nearest` do. A constructor, a guard, a function of `self` alone (`Ring.push`), a function of one number (`ExactMath.sin`) and a declaration builder, which takes the name and then the definition ([The builder](#the-builder)), are no `dual`.
 
 - **A function that gives two numbers writes them into a point it is handed**, the point first (`Point2.clampLength(wish, x, y, 1)`), so a step that calls it for every entity allocates nothing.
-- **An exported function or a service's method that returns an Effect is `Effect.fn("Module.name")`**, so a trace shows it; one only its module calls is `Effect.fnUntraced`. First applies in `arcadekit/content` (`load`), `arcadekit/save` (`read`, `write`) and `arcadekit/net/browser` (the Co-op client's methods).
+- **An exported function or a service's method that returns an Effect is `Effect.fn("Module.name")`**, so a trace shows it; one only its module calls is `Effect.fnUntraced`. `arcadekit/content`'s `ContentSource.read` and a content's `read` (`Effect.fn("PushPuzzleContent.read")`) are; `arcadekit/save` (`read`, `write`) and `arcadekit/net/browser` (the Co-op client's methods) are next.
+- **A declaration's static that is one Effect is traced on its service.** `load` is an Effect, not a function, so `Effect.fn` doesn't fit it: the service's own `load` carries the span, `Effect.withSpan(load, "<Name>.load")`, as [`content/internal/loaded.ts`](../packages/arcadekit/src/content/internal/loaded.ts) gives it, so `PushPuzzleSheet.load` and `(yield* PushPuzzleSheet).load` trace the same. The static stays `Effect.andThen(Key, (service) => service.load)`.
 - **Plain or Effect is [`AGENTS.md`](../AGENTS.md)'s question**, "Effect and plain code". A plain module's functions run no Effect: core imports `effect` only for its shape (`Pipeable`, `Inspectable`, `Predicate`, `Types` and `dual`).
 
 ### Errors
 
-- **A failure a caller should handle is a `Schema.TaggedError`**, its base named first, as kit source names every class's base (isolatedDeclarations): `const AttachErrorBase = Schema.TaggedError<AttachError>()("AttachError", { … })`, then `export class AttachError extends AttachErrorBase {}`.
+- **A failure a caller should handle is a `Schema.TaggedError`**, its base named first with its type written out, as kit source names every class's base: isolatedDeclarations needs the type of a base an exported class extends. Name that type first, so the call starts the base's line:
+
+  ```ts
+  type AttachErrorClass = Schema.Class<
+    AttachError,
+    Schema.TaggedStruct<
+      "AttachError",
+      { readonly message: Schema.String; readonly cause: Schema.Defect }
+    >,
+    Cause.YieldableError
+  >;
+
+  // oxlint-disable-next-line unicorn/throw-new-error -- Schema.TaggedError makes a class; it is not an error being thrown.
+  const AttachErrorBase: AttachErrorClass = Schema.TaggedError<AttachError>()(
+    "AttachError",
+    { message: Schema.String, cause: Schema.Defect() }
+  );
+
+  export class AttachError extends AttachErrorBase {}
+  ```
+
+  Lint's `unicorn/throw-new-error` reads the call as an error made without `new`, and `pnpm fix` rewrites it to `new Schema.TaggedError…`, which doesn't compile. Disable it on the line above the call, with that reason, as [`content/content-source.ts`](../packages/arcadekit/src/content/content-source.ts) and [`game/rejection.ts`](../packages/arcadekit/src/game/rejection.ts) do.
+
+- **An error lives in the module whose values fail with it**, as Effect's `ConfigProvider.SourceError` does: a content source fails with `ContentSource.ContentError`, and so does a load of content, which reads through a source. One that several modules fail with alike gets a module of its own, as Effect's `PlatformError` is. An entry's public file exports only namespaces and its builders, so a game reaches an error through its namespace, and catches it by its tag.
 - **Its fields say what it is for**: a `message` if an app shows it, a `cause: Schema.Defect()` if it wraps a throw, a `reason` if a caller branches on it.
 - **A mistake in a game's code is no typed error**: it throws, as [Refusing a mistake](#refusing-a-mistake) says.
-- First applies in `arcadekit/game` (`AttachError`, `GameCrashed`) and `arcadekit/net` (`LockstepError`), which are `Data.TaggedError`s until their rework.
+- `arcadekit/content`'s `ContentSource.ContentError` is one. `arcadekit/game` (`AttachError`, `GameCrashed`) and `arcadekit/net` (`LockstepError`) are next, which are `Data.TaggedError`s until their rework.
 
 ### Services and references
 
@@ -230,6 +255,7 @@ Never drop it in silence. A refusal throws `Error`, or `RangeError` for a number
 - [ ] The README block from [the first step](#start-from-the-games-side) is in the entry's README, and `pnpm build:packages && pnpm smoke --no-build` compiles it.
 - [ ] A game uses the module as that block shows: push-puzzle or its demo, or a small game declared in the module's test.
 - [ ] A simulation's rules are checked by scenarios, anything else by tests beside it; its types by `expectTypeOf` and `@ts-expect-error`, and every refusal's message by a test.
+- [ ] A test of an Effect that can fail compares the error (`Effect.flip`) or its cause's reasons, not the whole `Exit`: an `Effect.fn` or a span annotates the cause with its stack, so `Exit.fail(error)` doesn't equal it. [`content/declarations.test.ts`](../packages/arcadekit/src/content/declarations.test.ts) has a `failures(exit)` that lists the reasons.
 - [ ] The glossary has its term. A choice that was hard to make, or that the next reader would otherwise undo, has an ADR. Both tables of entries (`README.md`, `packages/arcadekit/README.md`) follow an entry's exports.
 - [ ] A change that moves code to Effect, or that touches a step, a frame or a lockstep tick, gives `pnpm bench`'s numbers against [`docs/perf-baseline.md`](perf-baseline.md) in its PR.
 - [ ] A changeset says what breaks, or that nothing does (`minor` either way). [`.changeset/README.md`](../.changeset/README.md) has the file's format.
@@ -249,7 +275,7 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 | Every builder is listed where [Register it](#register-it) says, and has its doc comment, its README block, its glossary term and a test that declares one. A service's key, identity and `layer` | the style test's `DECLARATIONS` |
 | An entry with Effect's shape: its public file exports namespaces, each named for its file and colliding with no global or Effect module, beside the builders a game writes bare and their types; an entry a game imports whole is one module | the style test's `NOT_YET_EFFECT_STYLE`, which lists the entries it doesn't hold yet |
 | Every export of such an entry has its doc comment: a summary, **When to use**, an **Example** whose `ts` imports from its entry and shows a `// =>`, a `@category` from `CATEGORIES` and a `@since`, and no `@stability`; and every module opens with a comment that ends in `@since` | the style test |
-| A data type has its `TypeId` and its guard on `Predicate.hasProperty`; a constructor is no `create…`, and a `makeX` makes a type of its module; a function of more than `self` is `dual`; a module re-exports nothing; a data type is no class; an exported constant is not written in capitals | the style test |
+| A data type has its `TypeId` and its guard on `Predicate.hasProperty`; a constructor is no `create…`, and a `makeX` makes a type of its module; a function of more than `self` is `dual`, but for a constructor or a declaration builder; a module re-exports nothing; a data type is no class; an exported constant is not written in capitals | the style test |
 | The doc comments' examples compile, and the results they show hold | `pnpm smoke` compiles them against the packed package, and [`packages/arcadekit/test/doc-examples.test.ts`](../packages/arcadekit/test/doc-examples.test.ts) runs them against `src/`, each `expression; // => value` checked: both for every entry off `NOT_YET_EFFECT_STYLE` |
 | No new factory without a reason | the style test's `FACTORIES` and `NOT_YET_DECLARED`, in the entries on `NOT_YET_EFFECT_STYLE`. In the others a constructor is a module's `make` |
 | Library code runs no Effect itself | lint: `Effect.run…` and `ManagedRuntime.make` are refused in `packages/*/src`, outside what a test imports and the worker's entry points. The `…With` forms pass |
