@@ -4,17 +4,20 @@
   "private": true,
   "description": "Demo survivors-like game built on arcadekit",
   "type": "module",
+  "imports": {
+    "#survivors": "./src/survivors/index.ts",
+    "#survivors/browser": "./src/survivors/browser/index.ts"
+  },
   "scripts": {
     "dev": "alchemy dev",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -p . && tsc -p tsconfig.worker.json",
+    "typecheck": "tsc -p . && tsc -p tsconfig.rules.json && tsc -p tsconfig.worker.json && tsc -p browser-determinism",
     "plan": "alchemy plan",
     "deploy": "alchemy deploy",
     "destroy": "alchemy destroy"
   },
   "dependencies": {
-    "@arcadekit/survivors": "workspace:*",
     "@effect/platform-browser": "~4.1.0",
     "arcadekit": "workspace:*",
     "effect": "~4.1.2",

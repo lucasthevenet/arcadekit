@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 
-import { GameContent, Survivors, SurvivorsContent } from "@arcadekit/survivors";
-import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { ContentSource } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
 import { ManualFrames } from "arcadekit/game/testing";
 import { Effect, Fiber, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
+
+import { GameContent, Survivors, SurvivorsContent } from "#survivors";
+import { SurvivorsEngine } from "#survivors/browser";
 
 import { PickUpgrade } from "../../src/app/commands";
 import { Message } from "../../src/app/message";

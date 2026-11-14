@@ -1,6 +1,12 @@
 import { setImmediate as settle } from "node:timers/promises";
 import { getHeapSpaceStatistics } from "node:v8";
 
+import * as Game from "arcadekit/game/browser";
+import { ManualFrames } from "arcadekit/game/testing";
+import { MemoryNetwork, ScopedLockstepSession } from "arcadekit/net";
+import { ManualTicker, TestGame } from "arcadekit/net/testing";
+import { Clock, Effect, Layer, Schema } from "effect";
+
 // The kit's hot paths, each timed and its allocations counted:
 //
 // - survivors' step at its largest test population, a horde held at the 300 enemies its world
@@ -13,13 +19,12 @@ import { getHeapSpaceStatistics } from "node:v8";
 // move. The time is the median of several rounds. The heap is counted over one more round, from a
 // collected heap, with a young generation too large to collect during it and the engine's
 // compiler on the main thread (run.ts), so the count is the same on every run.
-import { ChooseUpgrade, GameContent, Survivors } from "@arcadekit/survivors";
-import type { Hero, World } from "@arcadekit/survivors";
-import * as Game from "arcadekit/game/browser";
-import { ManualFrames } from "arcadekit/game/testing";
-import { MemoryNetwork, ScopedLockstepSession } from "arcadekit/net";
-import { ManualTicker, TestGame } from "arcadekit/net/testing";
-import { Clock, Effect, Layer, Schema } from "effect";
+import {
+  ChooseUpgrade,
+  GameContent,
+  Survivors,
+} from "../../apps/survivor-demo/src/survivors";
+import type { Hero, World } from "../../apps/survivor-demo/src/survivors";
 
 declare const gc: () => void;
 

@@ -3,7 +3,7 @@ name: declarations
 description: Declaration builders and their hosts. Use when adding or changing a declaration builder (`Game.Event`, `Content`, `Coop`, `Save`…), the definition a game writes for one, or the host that runs it.
 ---
 
-A game writes `class <Name> extends <Builder>("<Name>", { ... }) {}`, and that statement is the whole part: its value, its type and its definition, under one name. The kit's own source is checked with `isolatedDeclarations`, so it names a declaration's base first, with its type written out (`const ScoreBase: Game.EventClass<...> = Game.Event(...)`, then `class Score extends ScoreBase {}`), as [`net/testing/test-game.ts`](../../../packages/arcadekit/src/net/testing/test-game.ts) does. [`content/asset.ts`](../../../packages/arcadekit/src/content/asset.ts) is the builder to copy, and push-puzzle (`packages/push-puzzle`) the game. The module around a builder follows the kit-modules skill.
+A game writes `class <Name> extends <Builder>("<Name>", { ... }) {}`, and that statement is the whole part: its value, its type and its definition, under one name. The kit's own source is checked with `isolatedDeclarations`, so it names a declaration's base first, with its type written out (`const ScoreBase: Game.EventClass<...> = Game.Event(...)`, then `class Score extends ScoreBase {}`), as [`net/testing/test-game.ts`](../../../packages/arcadekit/src/net/testing/test-game.ts) does. [`content/asset.ts`](../../../packages/arcadekit/src/content/asset.ts) is the builder to copy, and the push-puzzle demo's genre (`apps/push-puzzle-demo/src/push-puzzle`) the game. The module around a builder follows the kit-modules skill.
 
 ## Start from the game's side
 

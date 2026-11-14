@@ -46,7 +46,7 @@ arcadekit is one package of primitives for browser games made with [Effect](http
 ## Games built on it
 
 - [GRIMBONK](https://grimbonk.arcadekit.dev) is a grimdark third-person survivors-like, built on the published package. Play it in the browser.
-- [The survivors demo](https://github.com/lucasthevenet/arcadekit/tree/main/apps/survivor-demo) is a survivors-like with co-op for two to four players. Its genre package is [`packages/survivors`](https://github.com/lucasthevenet/arcadekit/tree/main/packages/survivors).
-- [The push-puzzle demo](https://github.com/lucasthevenet/arcadekit/tree/main/apps/push-puzzle-demo) is a Sokoban-like with undo. Its genre package is [`packages/push-puzzle`](https://github.com/lucasthevenet/arcadekit/tree/main/packages/push-puzzle).
+- [The survivors demo](https://github.com/lucasthevenet/arcadekit/tree/main/apps/survivor-demo) is a survivors-like with co-op for two to four players. Its genre is in [`src/survivors`](https://github.com/lucasthevenet/arcadekit/tree/main/apps/survivor-demo/src/survivors).
+- [The push-puzzle demo](https://github.com/lucasthevenet/arcadekit/tree/main/apps/push-puzzle-demo) is a Sokoban-like with undo. Its genre is in [`src/push-puzzle`](https://github.com/lucasthevenet/arcadekit/tree/main/apps/push-puzzle-demo/src/push-puzzle).
 
 The demos don't publish: copy from them. [The repository's README](https://github.com/lucasthevenet/arcadekit#making-a-new-game) says how to make a new game, in an existing genre or a new one.

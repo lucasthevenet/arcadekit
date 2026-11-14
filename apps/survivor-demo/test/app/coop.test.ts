@@ -1,17 +1,5 @@
 import { readFileSync } from "node:fs";
 
-import {
-  HeroLeft,
-  LeveledUp,
-  RunEnded,
-  SurvivorsContent,
-} from "@arcadekit/survivors";
-import type { GameContent, Survivors } from "@arcadekit/survivors";
-import {
-  SurvivorsCoop,
-  SurvivorsCueTable,
-  SurvivorsSheet,
-} from "@arcadekit/survivors/browser";
 import { AudioSystem } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import type * as Game from "arcadekit/game";
@@ -22,6 +10,14 @@ import { FakeCoopRooms, PageTimers } from "arcadekit/net/testing";
 import { SpriteSheet } from "arcadekit/render-three";
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { HeroLeft, LeveledUp, RunEnded, SurvivorsContent } from "#survivors";
+import type { GameContent, Survivors } from "#survivors";
+import {
+  SurvivorsCoop,
+  SurvivorsCueTable,
+  SurvivorsSheet,
+} from "#survivors/browser";
 
 import {
   HostCoop,

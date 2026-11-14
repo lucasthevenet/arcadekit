@@ -1,15 +1,12 @@
 import { readFileSync } from "node:fs";
 
-import {
-  LevelSolved,
-  PushPuzzle,
-  PushPuzzleContent,
-} from "@arcadekit/push-puzzle";
-import type { World } from "@arcadekit/push-puzzle";
 import { ContentSource } from "arcadekit/content";
 import * as Scenario from "arcadekit/game/scenario";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+
+import { LevelSolved, PushPuzzle, PushPuzzleContent } from "#push-puzzle";
+import type { World } from "#push-puzzle";
 
 // Checks this game's real level file: it decodes, passes the level checks,
 // and every level can be solved (by a known solution, in the fewest moves found).

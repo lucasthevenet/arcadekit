@@ -1,7 +1,8 @@
-import { Hud } from "@arcadekit/survivors";
 import { CoopEvent } from "arcadekit/net/browser";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
+
+import { Hud } from "#survivors";
 
 import {
   LeaveCoop,

@@ -1,19 +1,20 @@
-/**
- * The app as Foldkit runs it: its Model, `init`, `update`, `view` and `subscriptions`, and the
- * `resources` its Commands and Subscriptions run against, which `src/entry.ts` hands to
- * `Runtime.makeApplication`.
- */
-import { PushPuzzleContent } from "@arcadekit/push-puzzle";
-import {
-  PushPuzzleCueTable,
-  PushPuzzleEngine,
-  PushPuzzleSheet,
-} from "@arcadekit/push-puzzle/browser";
 import { BrowserAudioSystem } from "arcadekit/audio/browser";
 import { FetchContentSource } from "arcadekit/content/browser";
 import { SpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
+
+/**
+ * The app as Foldkit runs it: its Model, `init`, `update`, `view` and `subscriptions`, and the
+ * `resources` its Commands and Subscriptions run against, which `src/entry.ts` hands to
+ * `Runtime.makeApplication`.
+ */
+import { PushPuzzleContent } from "#push-puzzle";
+import {
+  PushPuzzleCueTable,
+  PushPuzzleEngine,
+  PushPuzzleSheet,
+} from "#push-puzzle/browser";
 
 import { PushPuzzleAudioSettings } from "./audio-settings";
 import { PushPuzzleSave } from "./save";

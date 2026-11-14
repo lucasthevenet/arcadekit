@@ -6,7 +6,7 @@ Co-op runs on the kit's Co-op client ([`arcadekit/net/browser`](../../packages/a
 
 ## How the app is put together
 
-`src/app/` is a Foldkit app over `@arcadekit/survivors`, shaped as the push-puzzle demo is (the [game-modules skill](../../.agents/skills/game-modules/SKILL.md)'s "A demo"):
+`src/app/` is a Foldkit app over `#survivors`, shaped as the push-puzzle demo is (the [game-modules skill](../../.agents/skills/game-modules/SKILL.md)'s "A demo"):
 
 - Foldkit's contract, under Foldkit's names: the Model (`model.ts`), the Messages (`message.ts`), `init` and `update` (`update.ts`), `view` (`view.ts`), the Subscriptions (`subscriptions.ts`), the Commands (`commands.ts`), and `resources`, the Layer of the app's services (`main.ts`), which `src/entry.ts` hands to Foldkit's runtime.
 - The app's declarations, each in a file of its own: its save (`SurvivorsSave`, `save.ts`) and its audio settings (`SurvivorsAudioSettings`, `audio-settings.ts`).

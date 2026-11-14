@@ -1,12 +1,5 @@
 import { readFileSync } from "node:fs";
 
-import { PushPuzzleContent, PuzzleContent } from "@arcadekit/push-puzzle";
-import {
-  Art,
-  PushPuzzleCueTable,
-  PushPuzzleEngine,
-  PushPuzzleSheet,
-} from "@arcadekit/push-puzzle/browser";
 import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import { SpriteSheet } from "arcadekit/render-three";
@@ -14,6 +7,14 @@ import { Png } from "arcadekit/render-three/testing";
 import { Effect, Layer, Schema } from "effect";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
+
+import { PushPuzzleContent, PuzzleContent } from "#push-puzzle";
+import {
+  Art,
+  PushPuzzleCueTable,
+  PushPuzzleEngine,
+  PushPuzzleSheet,
+} from "#push-puzzle/browser";
 
 import {
   EndRun,

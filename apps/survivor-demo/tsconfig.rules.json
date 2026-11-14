@@ -1,0 +1,13 @@
+{
+  // The game's rules (src/survivors/index.ts: the content's Schema, the content, the simulation,
+  // its commands and state hash) must run without a DOM: in a Web Worker, on a server, in a test,
+  // on every lockstep peer. This checks them with no DOM types. Only src/survivors/browser/ may use
+  // the DOM, Three.js or input devices. internal/long-run.ts (the long run the determinism tests
+  // pin) is checked too: it runs in Node and in each browser.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "files": ["src/survivors/index.ts", "src/survivors/internal/long-run.ts"]
+}

@@ -1,15 +1,13 @@
+import { AudioSettings, AudioSystem } from "arcadekit/audio";
+import { Effect, Schema } from "effect";
+import { Command, Dom } from "foldkit";
+
 /**
  * The app's Commands: Foldkit's contract, and the UI's only way to cause side effects. Each one
  * runs an Effect against the app's services and reports back with a Message.
  */
-import { PushPuzzleContent } from "@arcadekit/push-puzzle";
-import {
-  PushPuzzleEngine,
-  PushPuzzleSheet,
-} from "@arcadekit/push-puzzle/browser";
-import { AudioSettings, AudioSystem } from "arcadekit/audio";
-import { Effect, Schema } from "effect";
-import { Command, Dom } from "foldkit";
+import { PushPuzzleContent } from "#push-puzzle";
+import { PushPuzzleEngine, PushPuzzleSheet } from "#push-puzzle/browser";
 
 import { PushPuzzleAudioSettings } from "./audio-settings";
 import * as LevelRecords from "./level-records";

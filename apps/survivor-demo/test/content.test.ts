@@ -1,14 +1,11 @@
 import { readFileSync } from "node:fs";
 
-import {
-  ChooseUpgrade,
-  Survivors,
-  SurvivorsContent,
-} from "@arcadekit/survivors";
 import { ContentSource } from "arcadekit/content";
 import * as Game from "arcadekit/game";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+
+import { ChooseUpgrade, Survivors, SurvivorsContent } from "#survivors";
 
 // Checks this game's real content files: they decode, reference each other correctly,
 // and every hero can play a minute of a run, as `Game.Loop` steps it for any declared host.

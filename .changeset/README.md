@@ -19,7 +19,7 @@ What changed, in a sentence. Then, under **Breaking**, what a game now writes in
 `pnpm fix` formats a `ts` block of a changeset too. Keep a `yield*` inside a generator there, or the formatter writes it back as `yield * x`.
 
 - `arcadekit` is the one published package; every entry (`arcadekit/core`, `arcadekit/net`, ...) releases with it.
-- The genre packages and the demo apps never release (`ignore`).
+- The demo apps never release (`ignore`), nor the genres inside them.
 - While below 1.0, a minor bump may break the interface. Say how in the changeset.
 - A change that only adds is `minor` too while below 1.0. Say that nothing breaks.
 

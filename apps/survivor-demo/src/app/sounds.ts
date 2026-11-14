@@ -1,3 +1,5 @@
+import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
+
 /**
  * The app's sounds: the files it ships, which of them each of the genre's cues plays, the click
  * and the music.
@@ -8,8 +10,7 @@
  *
  * Plain on purpose: it is data.
  */
-import type { SurvivorsCueTable } from "@arcadekit/survivors/browser";
-import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
+import type { SurvivorsCueTable } from "#survivors/browser";
 
 const file = (id: string) => `${import.meta.env.BASE_URL}sounds/${id}.wav`;
 

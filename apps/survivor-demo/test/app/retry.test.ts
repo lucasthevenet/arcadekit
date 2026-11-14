@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 
-import { SurvivorsContent } from "@arcadekit/survivors";
-import { SurvivorsSheet } from "@arcadekit/survivors/browser";
 import { AudioSettings } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import { SpriteSheet } from "arcadekit/render-three";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { Scene } from "foldkit";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { SurvivorsContent } from "#survivors";
+import { SurvivorsSheet } from "#survivors/browser";
 
 import {
   FocusRetry,

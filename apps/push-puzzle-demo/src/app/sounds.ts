@@ -1,3 +1,5 @@
+import type { AudioSettings, AudioSystem, CueSoundsOf } from "arcadekit/audio";
+
 /**
  * The app's sounds: the files it ships, which of them each of the genre's cues plays, and the
  * volume a slider sets.
@@ -7,8 +9,7 @@
  *
  * Plain on purpose: data, and the pure functions `update` calls.
  */
-import type { PushPuzzleCueTable } from "@arcadekit/push-puzzle/browser";
-import type { AudioSettings, AudioSystem, CueSoundsOf } from "arcadekit/audio";
+import type { PushPuzzleCueTable } from "#push-puzzle/browser";
 
 const file = (id: string) => `${import.meta.env.BASE_URL}sounds/${id}.wav`;
 

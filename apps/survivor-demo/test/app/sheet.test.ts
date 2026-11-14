@@ -1,12 +1,5 @@
 import { readFileSync } from "node:fs";
 
-import { SurvivorsContent } from "@arcadekit/survivors";
-import {
-  Art,
-  SurvivorsCueTable,
-  SurvivorsEngine,
-  SurvivorsSheet,
-} from "@arcadekit/survivors/browser";
 import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import { SpriteSheet } from "arcadekit/render-three";
@@ -14,6 +7,14 @@ import { Png } from "arcadekit/render-three/testing";
 import { Effect, Layer } from "effect";
 import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";
+
+import { SurvivorsContent } from "#survivors";
+import {
+  Art,
+  SurvivorsCueTable,
+  SurvivorsEngine,
+  SurvivorsSheet,
+} from "#survivors/browser";
 
 import {
   EndRun,

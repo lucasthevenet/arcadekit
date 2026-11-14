@@ -1,8 +1,9 @@
-import type { Hero } from "@arcadekit/survivors";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
+
+import type { Hero } from "#survivors";
 
 import { LoadSave, SaveRun } from "../../src/app/commands";
 import { Message } from "../../src/app/message";

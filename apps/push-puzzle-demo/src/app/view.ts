@@ -1,3 +1,7 @@
+import type { AudioSettings, AudioSystem } from "arcadekit/audio";
+import { Viewport } from "arcadekit/foldkit";
+import type { Document, Html, HtmlBuilder } from "foldkit/html";
+
 /**
  * The app's `view`: Foldkit's contract.
  *
@@ -5,10 +9,7 @@
  * rendered on every screen, so changing screens never detaches the engine or makes its canvas
  * again; only a "Try again" after a failure attaches it anew.
  */
-import type { Hud } from "@arcadekit/push-puzzle";
-import type { AudioSettings, AudioSystem } from "arcadekit/audio";
-import { Viewport } from "arcadekit/foldkit";
-import type { Document, Html, HtmlBuilder } from "foldkit/html";
+import type { Hud } from "#push-puzzle";
 
 import { Message } from "./message";
 import { Phase } from "./model";

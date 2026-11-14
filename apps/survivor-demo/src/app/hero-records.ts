@@ -1,3 +1,5 @@
+import { Schema } from "effect";
+
 /**
  * Hero records: what the app remembers of each hero between sessions, by hero id.
  *
@@ -7,8 +9,7 @@
  *
  * Plain on purpose: Schemas, and the pure function `update` and `SaveRun` call.
  */
-import type { Hero } from "@arcadekit/survivors";
-import { Schema } from "effect";
+import type { Hero } from "#survivors";
 
 /** One hero's record: the best of all its runs. */
 export const HeroRecord = Schema.Struct({

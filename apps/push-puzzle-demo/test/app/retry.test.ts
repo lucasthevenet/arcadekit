@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 
-import { PushPuzzleContent } from "@arcadekit/push-puzzle";
-import { PushPuzzleSheet } from "@arcadekit/push-puzzle/browser";
 import { AudioSettings } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import { SpriteSheet } from "arcadekit/render-three";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { Scene } from "foldkit";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { PushPuzzleContent } from "#push-puzzle";
+import { PushPuzzleSheet } from "#push-puzzle/browser";
 
 import {
   FocusRetry,
