@@ -1,4 +1,3 @@
-import type { RunSummary } from "@arcadekit/survivors";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
@@ -9,6 +8,7 @@ import { Message } from "../../src/app/message";
 import type { Model } from "../../src/app/model";
 import { SurvivorsSave } from "../../src/app/save";
 import { init, update } from "../../src/app/update";
+import type { Hero } from "../../src/survivors/index";
 
 // The app's save over an in-memory KeyValueStore, never real localStorage, read
 // and written by the Commands the app runs. Missing, corrupt and unknown-version
@@ -36,13 +36,13 @@ const readRaw = (key: string) =>
 /** The records the app reads at startup. */
 const read = LoadSave().effect.pipe(Effect.map(({ records }) => records));
 /** Writes a run as the app does when one ends, and gives the records it reports. */
-const writeRun = (summary: RunSummary) =>
+const writeRun = (summary: Hero.Summary) =>
   SaveRun({ summary }).effect.pipe(Effect.map(({ records }) => records));
 
 const runSummary = (
   heroId: string,
   { time, kills, won }: { time: number; kills: number; won: boolean }
-): RunSummary => ({
+): Hero.Summary => ({
   won,
   heroId,
   heroName: heroId,

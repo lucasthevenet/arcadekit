@@ -16,7 +16,7 @@ describe("a changeset", () => {
   it("doesn't release a package it only mentions, or another package", () => {
     expect(
       releases(
-        '---\n"@arcadekit/survivors": minor\n---\n\n"arcadekit": minor\n',
+        '---\n"@arcadekit/survivor-demo": minor\n---\n\n"arcadekit": minor\n',
         "arcadekit"
       )
     ).toBe(false);

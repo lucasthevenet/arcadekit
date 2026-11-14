@@ -1,18 +1,18 @@
-This is arcadekit: primitives for browser games on Effect 4, Foldkit and Three.js. It publishes one package, `arcadekit`, with twenty entries; two genre packages and two demo games are built on it. Use `pnpm` from the repository root.
+This is arcadekit: primitives for browser games on Effect 4, Foldkit and Three.js. It publishes one package, `arcadekit`, with twenty entries; two demo games are built on it, each with its genre's code inside it. Use `pnpm` from the repository root.
 
 arcadekit is alpha, with no users to protect, so a better design wins over compatibility. Rename, reshape or remove what needs it, exports, stored formats and localStorage keys included, and move every caller and doc in the same change, with no alias, shim or migration. Say what breaks in the changeset, the commit and the PR. Keep the replay and determinism hashes unless changing the simulation's rules is the point.
 
 ## Layout
 
 - `packages/arcadekit/src/<entry>/`: an entry's source, and its `README.md`, which is also its page on arcadekit.dev. Its tests, and the helpers only tests import, are in `packages/arcadekit/test/<entry>/`.
-- `packages/push-puzzle` and `packages/survivors`: the genre packages. `apps/push-puzzle-demo` and `apps/survivor-demo`: the demos. `apps/docs`: the docs site, built from the entries' READMEs and the glossary.
+- `apps/push-puzzle-demo` and `apps/survivor-demo`: the demos, each with its genre in `src/<genre>/` beside its Foldkit app in `src/app/`. `apps/docs`: the docs site, built from the entries' READMEs and the glossary.
 - `CONTEXT.md`: the glossary. Name things with its words in code, tests and prose, and give a new concept its entry in the same change.
 - `tools/lint/` and `oxlint.config.ts`: the kit's own lint rules. Their messages say what to write.
-- Inside the package, an entry imports another by relative path to its public file (`../core/index`). The genre packages and the apps import `arcadekit/<entry>`.
+- Inside the package, an entry imports another by relative path to its public file (`../core/index`). The apps import `arcadekit/<entry>`, and their genre the same way as an entry: by relative path to its public file (`../push-puzzle/index`, `../push-puzzle/browser/index`).
 
 ## A game is declared
 
-A game is written as declarations: one named class per part, `class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}`, hosted by a Layer or a loop. They are `Game.Event`, `Game.Command`, `Game.Rejection`, `Game.Simulation` (`arcadekit/game`), `Game.Engine` (`arcadekit/game/browser`), `Content`, `Asset` (`arcadekit/content`), `Coop` (`arcadekit/net/browser`), `Save`, `Setting` (`arcadekit/save`) and `CueTable` (`arcadekit/audio`). Push-puzzle and its demo are the example to copy.
+A game is written as declarations: one named class per part, `class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}`, hosted by a Layer or a loop. They are `Game.Event`, `Game.Command`, `Game.Rejection`, `Game.Simulation` (`arcadekit/game`), `Game.Engine` (`arcadekit/game/browser`), `Content`, `Asset` (`arcadekit/content`), `Coop` (`arcadekit/net/browser`), `Save`, `Setting` (`arcadekit/save`) and `CueTable` (`arcadekit/audio`). Every other module of a game is a namespace. The push-puzzle demo is the example to copy.
 
 - The handlers inside a declaration (`create`, `step`, `apply`, `view`, `input`) are plain functions.
 - A run changes only at a step: by its input, and by a command the loop applies at the start of the next step.

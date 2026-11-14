@@ -1,17 +1,5 @@
 import { readFileSync } from "node:fs";
 
-import {
-  HeroLeft,
-  LeveledUp,
-  RunEnded,
-  SurvivorsContent,
-} from "@arcadekit/survivors";
-import type { GameContent, Survivors } from "@arcadekit/survivors";
-import {
-  SurvivorsCoop,
-  SurvivorsCueTable,
-  SurvivorsSheet,
-} from "@arcadekit/survivors/browser";
 import { AudioSystem } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import type * as Game from "arcadekit/game";
@@ -24,17 +12,28 @@ import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  ChooseCoopUpgrade,
   HostCoop,
   LeaveCoop,
+  PickCoopUpgrade,
   SetCoopPaused,
 } from "../../src/app/commands";
-import { CoopLayer } from "../../src/app/coop";
-import type { CoopDebugSample } from "../../src/app/coop";
+import * as CoopDebug from "../../src/app/coop-debug";
 import { Message } from "../../src/app/message";
 import { emptyHud } from "../../src/app/model";
-import { survivorsSounds } from "../../src/app/sound";
+import * as Sounds from "../../src/app/sounds";
 import { coopMessage } from "../../src/app/subscriptions";
+import {
+  SurvivorsCoop,
+  SurvivorsCueTable,
+  SurvivorsSheet,
+} from "../../src/survivors/browser/index";
+import {
+  HeroLeft,
+  LeveledUp,
+  RunEnded,
+  SurvivorsContent,
+} from "../../src/survivors/index";
+import type { GameContent, Survivors } from "../../src/survivors/index";
 
 // The app's co-op glue with nothing real behind it: the kit's fake rooms stand in for the
 // signalling worker and WebRTC, the content is the app's own files, and nothing draws. The
@@ -50,7 +49,7 @@ const fileSource = ContentSource.make((file) =>
   })
 );
 
-const content: GameContent = await Effect.runPromise(
+const content: GameContent.GameContent = await Effect.runPromise(
   SurvivorsContent.read(fileSource)
 );
 
@@ -79,19 +78,23 @@ interface Seat {
   readonly context: Context.Context<SurvivorsCoop>;
 }
 
-/** The app's co-op layer over `hub`, in the test's scope. */
+/** The app's co-op, as `resources` builds it, over `hub`, in the test's scope. */
 const seat = async (
   hub: FakeCoopRooms.FakeCoopRooms,
   parts: {
     readonly sheet?: SheetLoad;
-    readonly load?: Effect.Effect<GameContent, ContentSource.ContentError>;
+    readonly load?: Effect.Effect<
+      GameContent.GameContent,
+      ContentSource.ContentError
+    >;
   } = {}
 ): Promise<Seat> => {
-  const layer = CoopLayer.pipe(
+  const layer = CoopDebug.layer.pipe(
+    Layer.provideMerge(SurvivorsCoop.layer),
     Layer.provide(FakeCoopRooms.layer(hub)),
     Layer.provide(Layer.succeed(Frames, ManualFrames.make())),
     Layer.provide(AudioSystem.layerSilent),
-    Layer.provide(SurvivorsCueTable.layer(survivorsSounds)),
+    Layer.provide(SurvivorsCueTable.layer(Sounds.byCue)),
     Layer.provide(
       Layer.succeed(SurvivorsSheet, { load: parts.sheet ?? idleSheet })
     ),
@@ -133,10 +136,10 @@ const summary = (heroId: string) => ({
   level: 3,
 });
 
-const debugGlobal = (): CoopDebugSample =>
+const debugGlobal = (): CoopDebug.CoopDebug =>
   (
     globalThis as unknown as {
-      arcadekitCoop: { debug: () => CoopDebugSample };
+      arcadekitCoop: { debug: () => CoopDebug.CoopDebug };
     }
   ).arcadekitCoop.debug();
 
@@ -283,7 +286,7 @@ describe("the app's co-op", () => {
     it("open no room when Leave comes while Host waits on the content", async () => {
       const hub = FakeCoopRooms.make();
       const loaded = Effect.runSync(
-        Deferred.make<GameContent, ContentSource.ContentError>()
+        Deferred.make<GameContent.GameContent, ContentSource.ContentError>()
       );
       const { context } = await seat(hub, { load: Deferred.await(loaded) });
       // Foldkit runs each Command in Message order: Host, then Leave.
@@ -361,7 +364,7 @@ describe("the app's co-op", () => {
       const pick = (player: Seat) =>
         run(
           Effect.provideContext(
-            ChooseCoopUpgrade({ offer: 1, index: 0 }).effect,
+            PickCoopUpgrade({ offer: 1, index: 0 }).effect,
             player.context
           )
         );

@@ -1,7 +1,5 @@
 import { readFileSync } from "node:fs";
 
-import { SurvivorsContent } from "@arcadekit/survivors";
-import { SurvivorsSheet } from "@arcadekit/survivors/browser";
 import { AudioSettings } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import { SpriteSheet } from "arcadekit/render-three";
@@ -18,11 +16,13 @@ import {
   PlayClick,
   StartRun,
 } from "../../src/app/commands";
+import * as HeroRecords from "../../src/app/hero-records";
 import { Message } from "../../src/app/message";
 import type { Model } from "../../src/app/model";
-import { emptyRecords } from "../../src/app/save";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
+import { SurvivorsSheet } from "../../src/survivors/browser/index";
+import { SurvivorsContent } from "../../src/survivors/index";
 
 // The load-error screen's "Try again": it runs LoadContent again through the app's real loaders,
 // which fetch again only what failed, and a load that succeeds goes to the menu. No WebGL:
@@ -121,7 +121,7 @@ const startup = (
   Scene.Command.resolve(LoadContent, loaded),
   Scene.Command.resolve(
     LoadSave,
-    Message.LoadedSave({ records: emptyRecords })
+    Message.LoadedSave({ records: HeroRecords.empty })
   ),
   Scene.Command.resolve(
     LoadAudioSettings,

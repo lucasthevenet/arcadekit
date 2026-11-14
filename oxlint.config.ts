@@ -5,7 +5,7 @@ import type { DummyRuleMap } from "oxlint";
 import core from "ultracite/oxlint/core";
 import vitest from "ultracite/oxlint/vitest";
 
-// Every Math function ECMA-262 lets each engine approximate. A genre's step must give the same
+// Every Math function ECMA-262 lets each engine approximate. A game's step must give the same
 // bits in every engine, so its simulation calls none of them, and neither does
 // arcadekit/core, whose functions a step calls.
 const APPROXIMATED_MATH = [
@@ -145,6 +145,19 @@ const ENTRY_FILES = Object.values(kitExports).map(({ source }) =>
   source.replace(/^\.\/src\//u, "").replace(/\.ts$/u, "")
 );
 
+// Each demo's game, in the folder of its `src/` named for its genre. Its public files are the
+// folder's `index.ts` and `browser/index.ts`, which the app imports by relative path, and each is a
+// barrel of namespaces, as an entry's is.
+const GAMES = [
+  "apps/push-puzzle-demo/src/push-puzzle",
+  "apps/survivor-demo/src/survivors",
+] as const;
+const GAME_ENTRY_FILES = GAMES.flatMap((game) => [
+  `${game}/index.ts`,
+  `${game}/browser/index.ts`,
+]);
+const GAME_FILES = GAMES.map((game) => `${game}/**/*.ts`);
+
 export default defineConfig({
   env: core.env,
   extends: [core, vitest],
@@ -189,18 +202,19 @@ export default defineConfig({
   },
   overrides: [
     {
-      // Where the kit and the genres refuse a mistake. A refusal throws `Error`, or `RangeError`
+      // Where the kit and the games refuse a mistake. A refusal throws `Error`, or `RangeError`
       // for a number out of range, never `TypeError` (.agents/skills/declarations/SKILL.md, "Refusing a mistake").
       // This rule makes the throw after a `typeof` test a `TypeError`, so the two halves of one
       // check threw two classes.
-      files: ["packages/*/src/**/*.ts"],
+      files: ["packages/*/src/**/*.ts", ...GAME_FILES],
       rules: { "unicorn/prefer-type-error": "off" },
     },
     {
-      // Library code, but for what a test imports and the one file whose entry points
-      // Cloudflare owns. The three overrides below set the same rule for the simulation's files,
-      // and the last one's options replace the others', so they repeat this list.
-      files: ["packages/*/src/**/*.ts"],
+      // Library code, and the games in the demos, but for what a test imports and the one file
+      // whose entry points Cloudflare owns: an app runs its Effects through Foldkit's runtime. The
+      // three overrides below set the same rule for the simulation's files, and the last one's
+      // options replace the others', so they repeat this list.
+      files: ["packages/*/src/**/*.ts", ...GAME_FILES],
       excludeFiles: [
         ...TEST_HELPERS,
         "packages/arcadekit/src/net/worker/signalling-worker.ts",
@@ -210,10 +224,10 @@ export default defineConfig({
       },
     },
     {
-      // Genre simulation code: the root entry of every package but the kit, so a new genre is
-      // held to it from its first file. Not the views in ./browser, not tests or their helpers.
-      files: ["packages/*/src/**/*.ts"],
-      excludeFiles: ["packages/arcadekit/**", "**/browser/**", ...TEST_HELPERS],
+      // A game's simulation code: every file of a demo's game folder but its `browser/`, so a new
+      // module of the rules is held to it from its first line. Not tests or their helpers.
+      files: GAME_FILES,
+      excludeFiles: ["**/browser/**", ...TEST_HELPERS],
       jsPlugins: ["./tools/lint/deterministic-math.ts"],
       rules: {
         "eslint/no-restricted-properties": [
@@ -279,8 +293,11 @@ export default defineConfig({
       // An entry's public file in Effect's shape is a barrel of namespaces (`export * as Ring from
       // "./ring"`), as Effect's own index is (.agents/skills/kit-modules/SKILL.md), and its
       // modules import `effect`, so what it loads is counted in the hundreds. What a game imports
-      // of it is what a bundler keeps.
-      files: ENTRY_FILES.map((file) => `${KIT_SRC}/${file}.ts`),
+      // of it is what a bundler keeps. A game's public file is one too.
+      files: [
+        ...ENTRY_FILES.map((file) => `${KIT_SRC}/${file}.ts`),
+        ...GAME_ENTRY_FILES,
+      ],
       rules: { "oxc/no-barrel-file": "off" },
     },
     {

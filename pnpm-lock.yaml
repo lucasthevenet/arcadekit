@@ -74,9 +74,6 @@ importers:
 
   apps/push-puzzle-demo:
     dependencies:
-      '@arcadekit/push-puzzle':
-        specifier: workspace:*
-        version: link:../../packages/push-puzzle
       '@effect/platform-browser':
         specifier: ~4.1.0
         version: 4.1.2(effect@4.1.2)
@@ -95,9 +92,6 @@ importers:
 
   apps/survivor-demo:
     dependencies:
-      '@arcadekit/survivors':
-        specifier: workspace:*
-        version: link:../../packages/survivors
       '@effect/platform-browser':
         specifier: ~4.1.0
         version: 4.1.2(effect@4.1.2)
@@ -148,35 +142,8 @@ importers:
         specifier: ^0.187.0
         version: 0.187.0
 
-  packages/push-puzzle:
-    dependencies:
-      arcadekit:
-        specifier: workspace:*
-        version: link:../arcadekit
-      effect:
-        specifier: ~4.1.2
-        version: 4.1.2
-      three:
-        specifier: ^0.187.0
-        version: 0.187.0
-
-  packages/survivors:
-    dependencies:
-      arcadekit:
-        specifier: workspace:*
-        version: link:../arcadekit
-      effect:
-        specifier: ~4.1.2
-        version: 4.1.2
-      three:
-        specifier: ^0.187.0
-        version: 0.187.0
-
   scripts/bench:
     dependencies:
-      '@arcadekit/survivors':
-        specifier: workspace:*
-        version: link:../../packages/survivors
       arcadekit:
         specifier: workspace:*
         version: link:../../packages/arcadekit

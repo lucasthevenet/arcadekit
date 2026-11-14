@@ -1,26 +1,31 @@
-import {
-  HoldPause,
-  RunSummary,
-  // The genre's command. `ChooseUpgrade` here is the Foldkit Command that sends it.
-  ChooseUpgrade as SurvivorsChooseUpgrade,
-  SurvivorsContent,
-} from "@arcadekit/survivors";
-import {
-  SurvivorsCoop,
-  SurvivorsEngine,
-  SurvivorsSheet,
-} from "@arcadekit/survivors/browser";
+/**
+ * The app's Commands: Foldkit's contract, and the UI's only way to cause side effects. Each one
+ * runs an Effect against the app's services and reports back with a Message.
+ *
+ * A Foldkit Command is not a command of the genre's: `PickUpgrade` and `PickCoopUpgrade` send the
+ * genre's `ChooseUpgrade`, and `SetCoopPaused` its `HoldPause`.
+ */
 import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
+import {
+  SurvivorsCoop,
+  SurvivorsEngine,
+  SurvivorsSheet,
+} from "../survivors/browser/index";
+import {
+  ChooseUpgrade,
+  Hero,
+  HoldPause,
+  SurvivorsContent,
+} from "../survivors/index";
+import { SurvivorsAudioSettings } from "./audio-settings";
+import * as HeroRecords from "./hero-records";
 import { Message } from "./message";
-import { SurvivorsSave, run } from "./save";
-import { CLICK_SOUND, SurvivorsAudioSettings, soundList } from "./sound";
-import { RETRY_BUTTON_ID } from "./view";
-
-// Commands are the UI's only way to cause side effects. Each one runs an Effect
-// against the app's services and reports back with a Message.
+import { SurvivorsSave } from "./save";
+import * as Sounds from "./sounds";
+import { retryButtonId } from "./view";
 
 /**
  * Loads the content and the sprite sheet, side by side: the game can't be played or drawn
@@ -59,7 +64,7 @@ export const LoadContent = Command.define("LoadContent", {
  */
 export const FocusRetry = Command.define("FocusRetry", {
   messages: [Message.CompletedFocusCommand],
-  execute: Dom.focus(`#${RETRY_BUTTON_ID}`).pipe(
+  execute: Dom.focus(`#${retryButtonId}`).pipe(
     Effect.catchTag("ElementNotFound", () => Effect.void),
     Effect.as(Message.CompletedFocusCommand())
   ),
@@ -88,13 +93,13 @@ export const StartRun = Command.define("StartRun", {
  * same way. The screen offers only the open offer's choices, so the rules don't refuse a pick
  * it makes; and a pick is dropped when the player quits or starts again before a step takes it.
  */
-export const ChooseUpgrade = Command.define("ChooseUpgrade", {
+export const PickUpgrade = Command.define("PickUpgrade", {
   args: { offer: Schema.Int, index: Schema.Int },
   messages: [Message.CompletedEngineCommand],
   execute: ({ offer, index }) =>
     Effect.gen(function* () {
       const engine = yield* SurvivorsEngine;
-      yield* engine.send(new SurvivorsChooseUpgrade({ offer, index }));
+      yield* engine.send(new ChooseUpgrade({ offer, index }));
       return Message.CompletedEngineCommand();
     }).pipe(
       Effect.catchTag(["OfferClosed", "NoSuchChoice"], () =>
@@ -118,6 +123,7 @@ export const SetPaused = Command.define("SetPaused", {
     }),
 });
 
+/** Ends the run, as the app leaves it for the menu. Commands the run hadn't taken are dropped. */
 export const EndRun = Command.define("EndRun", {
   messages: [Message.CompletedEngineCommand],
   execute: Effect.gen(function* () {
@@ -138,22 +144,24 @@ export const LoadSave = Command.define("LoadSave", {
 
 /** Writes a run into the save, merged with what is stored. Never fails: a failed write is logged. */
 export const SaveRun = Command.define("SaveRun", {
-  args: { summary: RunSummary },
+  args: { summary: Hero.Summary },
   messages: [Message.SavedRun],
   execute: ({ summary }) =>
     Effect.gen(function* () {
-      const records = yield* (yield* SurvivorsSave).write(run(summary));
+      const records = yield* (yield* SurvivorsSave).write(
+        HeroRecords.fromSummary(summary)
+      );
       return Message.SavedRun({ records });
     }),
 });
 
-// Co-op. The co-op client reports what follows (the lobby, the start, errors) as events, which
-// the coop Subscription turns into Messages.
+// Co-op. The Co-op client reports what follows (the lobby, the start, a failure) as events, which
+// the `coop` Subscription turns into Messages.
 
 /**
- * Hosts a co-op room, after leaving any room or run before it. The client loads the content
- * itself, so a Leave that follows cancels the load and no room opens; a content load that fails
- * is reported as its `failed` event.
+ * Hosts a co-op room with the hero `heroId` as the lobby pick, after closing the seat before it,
+ * if any. The client loads the content itself, so a Leave that follows cancels the load and no
+ * room opens; a content load that fails is reported as `SeatFailed`.
  */
 export const HostCoop = Command.define("HostCoop", {
   args: { heroId: Schema.String },
@@ -165,7 +173,7 @@ export const HostCoop = Command.define("HostCoop", {
     }),
 });
 
-/** Joins the co-op room with `code`, as HostCoop hosts one. */
+/** Joins the room with join code `code`, with the hero `heroId` as the lobby pick, as HostCoop hosts one. */
 export const JoinCoop = Command.define("JoinCoop", {
   args: { code: Schema.String, heroId: Schema.String },
   messages: [Message.CompletedEngineCommand],
@@ -176,7 +184,7 @@ export const JoinCoop = Command.define("JoinCoop", {
     }),
 });
 
-/** Changes the local player's lobby pick: its hero. */
+/** Changes the local player's lobby pick: its hero. Does nothing once the run has started. */
 export const ChooseCoopHero = Command.define("ChooseCoopHero", {
   args: { heroId: Schema.String },
   messages: [Message.CompletedEngineCommand],
@@ -187,6 +195,7 @@ export const ChooseCoopHero = Command.define("ChooseCoopHero", {
     }),
 });
 
+/** The host's start: the run starts if the lobby can start (`canStart`), and nothing happens otherwise. */
 export const StartCoop = Command.define("StartCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: Effect.gen(function* () {
@@ -202,13 +211,13 @@ export const StartCoop = Command.define("StartCoop", {
  * offer's choices, so the rules don't refuse a pick it makes, and a pick is dropped when the
  * player leaves or the run stops first, which the co-op screens already show.
  */
-export const ChooseCoopUpgrade = Command.define("ChooseCoopUpgrade", {
+export const PickCoopUpgrade = Command.define("PickCoopUpgrade", {
   args: { offer: Schema.Int, index: Schema.Int },
   messages: [Message.CompletedEngineCommand],
   execute: ({ offer, index }) =>
     Effect.gen(function* () {
       const coop = yield* SurvivorsCoop;
-      yield* coop.send(new SurvivorsChooseUpgrade({ offer, index }));
+      yield* coop.send(new ChooseUpgrade({ offer, index }));
       return Message.CompletedEngineCommand();
     }).pipe(
       Effect.catchTag(["OfferClosed", "NoSuchChoice"], () =>
@@ -242,7 +251,7 @@ export const SetCoopPaused = Command.define("SetCoopPaused", {
     ),
 });
 
-/** Leaves the lobby or the run, once its room, links, session and worker have closed. */
+/** Leaves the lobby or the run, and reports once its room, links, session and ticker have closed. */
 export const LeaveCoop = Command.define("LeaveCoop", {
   messages: [Message.CompletedEngineCommand],
   execute: Effect.gen(function* () {
@@ -251,7 +260,8 @@ export const LeaveCoop = Command.define("LeaveCoop", {
   }),
 });
 
-// Sound. None of these fail or hold anything up: without sound, play goes on silently.
+// Sound. None of these fail or hold anything up: without sound, play goes on silently. The
+// `sound` Subscription plays the music and applies the settings the Model holds.
 
 /**
  * Loads every sound at startup. A sound that can't load is left out (the first such file is
@@ -261,7 +271,7 @@ export const LoadSounds = Command.define("LoadSounds", {
   messages: [Message.CompletedAudioCommand],
   execute: Effect.gen(function* () {
     yield* (yield* AudioSystem.AudioSystem)
-      .load(soundList)
+      .load(Sounds.list)
       .pipe(
         Effect.catchTag("AudioLoadError", (error) =>
           Effect.logWarning(
@@ -294,11 +304,11 @@ export const SaveAudioSettings = Command.define("SaveAudioSettings", {
     }),
 });
 
-/** The click of a menu button or an upgrade pick. */
+/** The click of a button: a menu's, a hero's, an upgrade pick's or the mute's. */
 export const PlayClick = Command.define("PlayClick", {
   messages: [Message.CompletedAudioCommand],
   execute: Effect.gen(function* () {
-    (yield* AudioSystem.AudioSystem).play(CLICK_SOUND);
+    (yield* AudioSystem.AudioSystem).play(Sounds.click);
     return Message.CompletedAudioCommand();
   }),
 });

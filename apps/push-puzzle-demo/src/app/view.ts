@@ -1,24 +1,31 @@
-import type { Hud } from "@arcadekit/push-puzzle";
-import type { AudioSettings } from "arcadekit/audio";
+/**
+ * The app's `view`: Foldkit's contract.
+ *
+ * Plain on purpose: `view` is a pure function of the Model (Foldkit's contract). The viewport is
+ * rendered on every screen, so changing screens never detaches the engine or makes its canvas
+ * again; only a "Try again" after a failure attaches it anew.
+ */
+import type { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Viewport } from "arcadekit/foldkit";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
-import type { Bus } from "./audio";
+import type { Hud } from "../push-puzzle/index";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";
 
 type H = HtmlBuilder<Message>;
 
-/** The load-error screen's "Try again" button, which FocusRetry focuses so Enter retries. */
-export const RETRY_BUTTON_ID = "retry";
+/** The id of the load-error screen's "Try again" button, which FocusRetry focuses so Enter retries. */
+export const retryButtonId = "retry";
 
+/** The page for a Model: the viewport the engine draws in, and the screen over it. */
 export const view = (model: Model, h: H): Document => ({
   title: "Push Puzzle",
   body: h.div(
     [h.Class("app")],
     [
-      // The engine draws here. Rendered on every screen, so the canvas is never recreated.
+      // The engine draws here. Rendered on every screen, so changing screens keeps its canvas.
       Viewport.make(h, {
         mounted: Message.MountedViewport(),
         unmounted: Message.UnmountedViewport(),
@@ -37,7 +44,7 @@ const overlay = (model: Model, h: H): Html =>
         h.p([h.Class("error")], [error]),
         h.button(
           [
-            h.Id(RETRY_BUTTON_ID),
+            h.Id(retryButtonId),
             h.Class("primary"),
             h.OnClick(Message.ClickedRetry()),
           ],
@@ -98,7 +105,7 @@ const levelSelect = (model: Model, h: H): Html =>
     soundPanel(model.audio, h),
   ]);
 
-const BUS_LABELS: readonly (readonly [Bus, string])[] = [
+const BUS_LABELS: readonly (readonly [AudioSystem.Bus, string])[] = [
   ["master", "Volume"],
   ["sfx", "Effects"],
   ["music", "Music"],

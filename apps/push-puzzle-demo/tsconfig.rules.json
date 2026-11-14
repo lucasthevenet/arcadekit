@@ -1,0 +1,11 @@
+{
+  // The game's rules (src/push-puzzle/index.ts: the content's Schema, the content, the simulation)
+  // must run without a DOM: in a Web Worker, on a server, in a test. This checks them with no
+  // DOM types. Only src/push-puzzle/browser/ may use the DOM, Three.js or input devices.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "files": ["src/push-puzzle/index.ts"]
+}

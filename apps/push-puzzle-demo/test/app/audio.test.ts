@@ -6,11 +6,7 @@ import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import {
-  CUE_SOUNDS,
-  PushPuzzleAudioSettings,
-  SOUND_LIST,
-} from "../../src/app/audio";
+import { PushPuzzleAudioSettings } from "../../src/app/audio-settings";
 import {
   ChangeAudioSettings,
   EndRun,
@@ -21,6 +17,7 @@ import {
 import { Message } from "../../src/app/message";
 import { Phase } from "../../src/app/model";
 import type { Model } from "../../src/app/model";
+import * as Sounds from "../../src/app/sounds";
 import { init, update } from "../../src/app/update";
 
 // The sounds the app gives the cue table, its audio settings under their own key (over
@@ -32,10 +29,10 @@ const SETTINGS_KEY = "arcadekit/push-puzzle/settings";
 
 describe("the sounds", () => {
   it("plays every cue with a sound from the list, each a file in public/sounds", () => {
-    const ids = Object.values(CUE_SOUNDS);
+    const ids = Object.values(Sounds.byCue);
     expect({
-      missing: ids.filter((id) => !Object.hasOwn(SOUND_LIST, id)),
-      files: Object.entries(SOUND_LIST).every(
+      missing: ids.filter((id) => !Object.hasOwn(Sounds.list, id)),
+      files: Object.entries(Sounds.list).every(
         ([id, { file }]) =>
           file.endsWith(`sounds/${id}.wav`) &&
           existsSync(new URL(`../../public/sounds/${id}.wav`, import.meta.url))

@@ -14,7 +14,7 @@ Peer dependency: `effect` (~4.1).
 
 ## Example
 
-Levels from `levels.json`, checked by a Schema and by a rule it can't express, and a sheet the app loads once (as `@arcadekit/push-puzzle` does):
+Levels from `levels.json`, checked by a Schema and by a rule it can't express, and a sheet the app loads once (as the push-puzzle demo's genre does):
 
 ```ts
 import { Asset, Content, ContentSource } from "arcadekit/content";

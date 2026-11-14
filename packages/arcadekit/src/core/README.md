@@ -54,7 +54,7 @@ console.log(`${String(rng)} ${digest} ${known}`);
 
 ## Example
 
-Enemies in an entity pool, spawned with the run's seeded `Rng` (as `@arcadekit/survivors` does), and an event collected in an `EventBuffer`, which is what `Game.Loop` holds for a declared simulation's `report`:
+Enemies in an entity pool, spawned with the run's seeded `Rng` (as the survivors demo's genre does), and an event collected in an `EventBuffer`, which is what `Game.Loop` holds for a declared simulation's `report`:
 
 ```ts
 import { EntityPool, EventBuffer, Rng } from "arcadekit/core";

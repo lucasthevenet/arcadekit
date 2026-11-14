@@ -1,19 +1,22 @@
-import { PushPuzzleContent } from "@arcadekit/push-puzzle";
-import {
-  PushPuzzleEngine,
-  PushPuzzleSheet,
-} from "@arcadekit/push-puzzle/browser";
+/**
+ * The app's Commands: Foldkit's contract, and the UI's only way to cause side effects. Each one
+ * runs an Effect against the app's services and reports back with a Message.
+ */
 import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
-import { CLICK, MUSIC, PushPuzzleAudioSettings, SOUND_LIST } from "./audio";
+import {
+  PushPuzzleEngine,
+  PushPuzzleSheet,
+} from "../push-puzzle/browser/index";
+import { PushPuzzleContent } from "../push-puzzle/index";
+import { PushPuzzleAudioSettings } from "./audio-settings";
+import * as LevelRecords from "./level-records";
 import { Message } from "./message";
-import { PushPuzzleSave, solve } from "./save";
-import { RETRY_BUTTON_ID } from "./view";
-
-// Commands are the UI's only way to cause side effects. Each one runs an Effect
-// against the app's services and reports back with a Message.
+import { PushPuzzleSave } from "./save";
+import * as Sounds from "./sounds";
+import { retryButtonId } from "./view";
 
 /**
  * Loads the levels and the sprite sheet, side by side: the game can't be played or drawn
@@ -47,7 +50,7 @@ export const LoadContent = Command.define("LoadContent", {
  */
 export const FocusRetry = Command.define("FocusRetry", {
   messages: [Message.CompletedFocusCommand],
-  execute: Dom.focus(`#${RETRY_BUTTON_ID}`).pipe(
+  execute: Dom.focus(`#${retryButtonId}`).pipe(
     Effect.catchTag("ElementNotFound", () => Effect.void),
     Effect.as(Message.CompletedFocusCommand())
   ),
@@ -70,6 +73,7 @@ export const StartLevel = Command.define("StartLevel", {
     ),
 });
 
+/** Stops the run, as the app leaves it for level select. */
 export const EndRun = Command.define("EndRun", {
   messages: [Message.CompletedEngineCommand],
   execute: Effect.gen(function* () {
@@ -95,7 +99,7 @@ export const SaveSolve = Command.define("SaveSolve", {
   execute: ({ levelId, moves }) =>
     Effect.gen(function* () {
       const save = yield* PushPuzzleSave;
-      const records = yield* save.write(solve(levelId, moves));
+      const records = yield* save.write(LevelRecords.fromSolve(levelId, moves));
       return Message.SavedSolve({ records });
     }),
 });
@@ -109,9 +113,9 @@ export const LoadSounds = Command.define("LoadSounds", {
   messages: [Message.CompletedAudioCommand],
   execute: Effect.gen(function* () {
     const audio = yield* AudioSystem.AudioSystem;
-    audio.playMusic(MUSIC);
+    audio.playMusic(Sounds.music);
     yield* audio
-      .load(SOUND_LIST)
+      .load(Sounds.list)
       .pipe(
         Effect.catchTag("AudioLoadError", (error) =>
           Effect.logWarning(
@@ -150,7 +154,7 @@ export const ChangeAudioSettings = Command.define("ChangeAudioSettings", {
 export const PlayClick = Command.define("PlayClick", {
   messages: [Message.CompletedAudioCommand],
   execute: Effect.gen(function* () {
-    (yield* AudioSystem.AudioSystem).play(CLICK);
+    (yield* AudioSystem.AudioSystem).play(Sounds.click);
     return Message.CompletedAudioCommand();
   }),
 });

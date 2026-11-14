@@ -2,7 +2,15 @@
 
 The survivors-like demo game, and its Cloudflare deployment: one Worker that serves the site and is co-op's signalling worker, which is the kit's ([`arcadekit/net/worker`](../../packages/arcadekit/src/net/worker/README.md)), declared with [Alchemy](https://alchemy.run) in `alchemy.run.ts`. The game itself is described in the [root README](../../README.md#the-survivors-demo).
 
-Co-op runs on the kit's Co-op client ([`arcadekit/net/browser`](../../packages/arcadekit/src/net/README.md#co-op)), which the genre's `SurvivorsCoop` declares from its engine. The app keeps the screens and the Foldkit glue: `SurvivorsCoop.layer` provides the client (`src/app/coop.ts`), a Subscription hears it through `SurvivorsCoop.match`, and `src/coop/config.ts` provides its rooms from the signalling worker's URL (the page's own origin) and the STUN servers.
+Co-op runs on the kit's Co-op client ([`arcadekit/net/browser`](../../packages/arcadekit/src/net/README.md#co-op)), which the genre's `SurvivorsCoop` declares from its engine. The app keeps the screens and the Foldkit glue: `src/app/main.ts` provides the client with `SurvivorsCoop.layer` over the app's rooms, which `src/app/rooms.ts` finds from the signalling worker's URL (the page's own origin) and the STUN servers, a Subscription hears it through `SurvivorsCoop.match`, and in development `src/app/coop-debug.ts` puts the client's run on a global for the end-to-end test.
+
+## How the app is put together
+
+`src/app/` is a Foldkit app over the genre in `src/survivors/`, shaped as the push-puzzle demo's app is:
+
+- Foldkit's contract, under Foldkit's names: the Model (`model.ts`), the Messages (`message.ts`), `init` and `update` (`update.ts`), `view` (`view.ts`), the Subscriptions (`subscriptions.ts`), the Commands (`commands.ts`), and `resources`, the Layer of the app's services (`main.ts`), which `src/entry.ts` hands to Foldkit's runtime.
+- The app's declarations, each in a file of its own: its save (`SurvivorsSave`, `save.ts`) and its audio settings (`SurvivorsAudioSettings`, `audio-settings.ts`).
+- Its namespaces: what the save keeps of each hero (`HeroRecords`), its sounds (`Sounds`), where its sprite sheet is (`Sheet`), where co-op's rooms are (`Rooms`), and the co-op run's debug read (`CoopDebug`).
 
 ## Running it locally
 

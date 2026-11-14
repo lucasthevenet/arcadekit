@@ -266,7 +266,7 @@ const refusals = (issue: SchemaIssue.Issue): readonly string[] =>
  *
  * **When to use**
  *
- * In a genre package, which ships no sound, to be handed the app's. A game that keeps its sounds
+ * In a genre whose views name their cues and ship no sound, to be handed the app's. A game that keeps its sounds
  * beside its rules declares none, and its view takes a plain object.
  *
  * **Details**

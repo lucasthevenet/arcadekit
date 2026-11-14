@@ -53,4 +53,4 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | [`arcadekit/net/worker`](src/net/worker/README.md) | The signalling worker, for Cloudflare: `SignallingWorker.room` (a room's Durable Object class) and `SignallingWorker.make` (the Worker's `fetch`) | Effect, Cloudflare Workers |
 | [`arcadekit/foldkit`](src/foldkit/README.md) | `Viewport`, `EngineEntry`, `KeyPresses`, `ShortcutPresses`, each a namespace in Effect's shape | Effect, Foldkit, game, DOM |
 
-The source is in [the arcadekit repository](https://github.com/lucasthevenet/arcadekit), with two genre packages and two demo games built on these entries.
+The source is in [the arcadekit repository](https://github.com/lucasthevenet/arcadekit), with two demo games built on these entries.

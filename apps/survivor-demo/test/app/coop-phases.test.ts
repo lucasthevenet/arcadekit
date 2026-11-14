@@ -1,11 +1,10 @@
-import { Hud } from "@arcadekit/survivors";
 import { CoopEvent } from "arcadekit/net/browser";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
 import {
-  ChooseCoopUpgrade,
   LeaveCoop,
+  PickCoopUpgrade,
   PlayClick,
   SetCoopPaused,
 } from "../../src/app/commands";
@@ -14,6 +13,7 @@ import { Phase, emptyCoopRun, emptyHud } from "../../src/app/model";
 import type { Model } from "../../src/app/model";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
+import { Hud } from "../../src/survivors/index";
 
 // What the co-op client reports counts only on the screen it belongs to. Its events can still be
 // queued when the player leaves, so one that arrives on another screen changes nothing.
@@ -126,13 +126,10 @@ describe("co-op commands", () => {
       Story.given(at(Phase.CoopLevelUp({ offer: 3, choices: [] }))),
       Story.message(Message.ClickedCoopUpgrade({ index: 1 })),
       Story.Command.expectExact(
-        ChooseCoopUpgrade({ offer: 3, index: 1 }),
+        PickCoopUpgrade({ offer: 3, index: 1 }),
         PlayClick()
       ),
-      Story.Command.resolve(
-        ChooseCoopUpgrade,
-        Message.CompletedEngineCommand()
-      ),
+      Story.Command.resolve(PickCoopUpgrade, Message.CompletedEngineCommand()),
       Story.Command.resolve(PlayClick, Message.CompletedAudioCommand()),
       Story.model((model) => expect(model.phase._tag).toBe("CoopPlaying"))
     );

@@ -1,17 +1,22 @@
-import type { SurvivorsContent } from "@arcadekit/survivors";
-import type {
-  SurvivorsCoop,
-  SurvivorsEngine,
-  SurvivorsSheet,
-} from "@arcadekit/survivors/browser";
+/**
+ * The app's `init` and `update`: Foldkit's contract.
+ *
+ * Plain on purpose: `update` is a pure function, whose side effects are the Commands it returns
+ * (Foldkit's contract).
+ */
 import { AudioSettings } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
 
+import type {
+  SurvivorsCoop,
+  SurvivorsEngine,
+  SurvivorsSheet,
+} from "../survivors/browser/index";
+import type { SurvivorsContent } from "../survivors/index";
+import type { SurvivorsAudioSettings } from "./audio-settings";
 import {
   ChooseCoopHero,
-  ChooseCoopUpgrade,
-  ChooseUpgrade,
   EndRun,
   FocusRetry,
   HostCoop,
@@ -21,6 +26,8 @@ import {
   LoadContent,
   LoadSave,
   LoadSounds,
+  PickCoopUpgrade,
+  PickUpgrade,
   PlayClick,
   SaveAudioSettings,
   SaveRun,
@@ -29,6 +36,7 @@ import {
   StartCoop,
   StartRun,
 } from "./commands";
+import * as HeroRecords from "./hero-records";
 import { Message } from "./message";
 import {
   Phase,
@@ -38,9 +46,9 @@ import {
   isLocalHeroDown,
 } from "./model";
 import type { Model } from "./model";
-import { SurvivorsSave, emptyRecords, withRun } from "./save";
-import type { SurvivorsAudioSettings } from "./sound";
+import { SurvivorsSave } from "./save";
 
+/** The app's services, which its Commands run against: what `resources` provides. */
 export type Services =
   | SurvivorsContent
   | SurvivorsEngine
@@ -51,6 +59,7 @@ export type Services =
   | SurvivorsAudioSettings;
 type Return = Update.Return<Model, Message, Services>;
 
+/** The app at startup: loading, with the Commands that load the content, the save, the settings and the sounds. */
 export const init: Runtime.ApplicationInit<
   Model,
   Message,
@@ -61,7 +70,7 @@ export const init: Runtime.ApplicationInit<
     phase: Phase.Loading(),
     heroes: [],
     selectedHeroId: "",
-    records: emptyRecords,
+    records: HeroRecords.empty,
     hud: emptyHud,
     isViewportMounted: false,
     coop: emptyCoopRun,
@@ -70,7 +79,7 @@ export const init: Runtime.ApplicationInit<
   commands: [LoadContent(), LoadSave(), LoadAudioSettings(), LoadSounds()],
 });
 
-/** The messages of the menu buttons and upgrade picks: each plays a click. */
+/** The Messages of the buttons (menus, heroes, upgrade picks, mute): each plays a click. */
 const CLICKS: ReadonlySet<Message["_tag"]> = new Set([
   "ClickedRetry",
   "SelectedHero",
@@ -89,7 +98,7 @@ const CLICKS: ReadonlySet<Message["_tag"]> = new Set([
   "ClickedMute",
 ]);
 
-/** Changes the audio settings: the sound subscription applies them, and they are saved. */
+/** Changes the audio settings: the `sound` Subscription applies them, and they are saved. */
 const changeAudio = (
   model: Model,
   audio: AudioSettings.AudioSettings
@@ -136,6 +145,10 @@ const backToMenu = (model: Model): Return => ({
   commands: [EndRun()],
 });
 
+/**
+ * The next Model, and the Commands to run, for each Message. A button's Message (`CLICKS`) also
+ * plays the click (`PlayClick`), after the Commands it runs.
+ */
 export const update = (model: Model, message: Message): Return => {
   const result = handle(model, message);
   return CLICKS.has(message._tag)
@@ -191,7 +204,10 @@ const handle = (model: Model, message: Message): Return =>
       model: {
         ...model,
         phase: Phase.GameOver({ summary }),
-        records: withRun(model.records, summary),
+        records: SurvivorsSave.merge(
+          model.records,
+          HeroRecords.fromSummary(summary)
+        ),
       },
       commands: [SaveRun({ summary })],
     }),
@@ -203,7 +219,7 @@ const handle = (model: Model, message: Message): Return =>
       model.phase._tag === "LevelUp"
         ? {
             model: { ...model, phase: Phase.Playing() },
-            commands: [ChooseUpgrade({ offer: model.phase.offer, index })],
+            commands: [PickUpgrade({ offer: model.phase.offer, index })],
           }
         : { model },
     PressedEscape: () => {
@@ -277,7 +293,7 @@ const handle = (model: Model, message: Message): Return =>
       model.phase._tag === "CoopLevelUp"
         ? {
             model: { ...model, phase: Phase.CoopPlaying() },
-            commands: [ChooseCoopUpgrade({ offer: model.phase.offer, index })],
+            commands: [PickCoopUpgrade({ offer: model.phase.offer, index })],
           }
         : { model },
     ClickedCoopResume: () =>

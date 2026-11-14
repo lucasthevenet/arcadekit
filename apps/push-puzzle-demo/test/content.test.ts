@@ -1,15 +1,16 @@
 import { readFileSync } from "node:fs";
 
-import {
-  LevelSolved,
-  PushPuzzle,
-  PushPuzzleContent,
-} from "@arcadekit/push-puzzle";
-import type { Direction } from "@arcadekit/push-puzzle";
 import { ContentSource } from "arcadekit/content";
 import * as Scenario from "arcadekit/game/scenario";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+
+import {
+  LevelSolved,
+  PushPuzzle,
+  PushPuzzleContent,
+} from "../src/push-puzzle/index";
+import type { World } from "../src/push-puzzle/index";
 
 // Checks this game's real level file: it decodes, passes the level checks,
 // and every level can be solved (by a known solution, in the fewest moves found).
@@ -34,7 +35,7 @@ const SOLUTIONS: Record<string, string> = {
   "two-doors": "URRRDDLULURRRRURDDULLLDDDLLUULURRRRR",
 };
 
-const DIRECTIONS: Record<string, Direction> = {
+const DIRECTIONS: Record<string, World.Direction> = {
   U: "up",
   D: "down",
   L: "left",
@@ -44,7 +45,7 @@ const DIRECTIONS: Record<string, Direction> = {
 const scenario = Scenario.make(PushPuzzle);
 
 /** One tap: a step with the direction pressed, then a step with nothing held. */
-const tap = (direction: Direction) => [
+const tap = (direction: World.Direction) => [
   Scenario.step({ held: direction, pressed: direction, undo: false }),
   Scenario.step({ held: null, pressed: null, undo: false }),
 ];

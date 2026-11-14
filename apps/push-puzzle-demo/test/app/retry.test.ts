@@ -1,7 +1,5 @@
 import { readFileSync } from "node:fs";
 
-import { PushPuzzleContent } from "@arcadekit/push-puzzle";
-import { PushPuzzleSheet } from "@arcadekit/push-puzzle/browser";
 import { AudioSettings } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import { SpriteSheet } from "arcadekit/render-three";
@@ -18,11 +16,13 @@ import {
   PlayClick,
   StartLevel,
 } from "../../src/app/commands";
+import * as LevelRecords from "../../src/app/level-records";
 import { Message } from "../../src/app/message";
 import type { Model } from "../../src/app/model";
-import { emptyRecords } from "../../src/app/save";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
+import { PushPuzzleSheet } from "../../src/push-puzzle/browser/index";
+import { PushPuzzleContent } from "../../src/push-puzzle/index";
 
 // The load-error screen's "Try again": it runs LoadContent again through the app's real loaders,
 // which fetch again only what failed, and a load that succeeds goes to level select. No WebGL:
@@ -119,7 +119,7 @@ const startup = (
   Scene.Command.resolve(LoadContent, loaded),
   Scene.Command.resolve(
     LoadSave,
-    Message.LoadedSave({ records: emptyRecords })
+    Message.LoadedSave({ records: LevelRecords.empty })
   ),
   Scene.Command.resolve(
     LoadAudioSettings,

@@ -1,14 +1,19 @@
-import type { PushPuzzleContent } from "@arcadekit/push-puzzle";
-import type {
-  PushPuzzleEngine,
-  PushPuzzleSheet,
-} from "@arcadekit/push-puzzle/browser";
+/**
+ * The app's `init` and `update`: Foldkit's contract.
+ *
+ * Plain on purpose: `update` is a pure function, whose side effects are the Commands it returns
+ * (Foldkit's contract).
+ */
 import { AudioSettings } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
 
-import { withVolume } from "./audio";
-import type { PushPuzzleAudioSettings } from "./audio";
+import type {
+  PushPuzzleEngine,
+  PushPuzzleSheet,
+} from "../push-puzzle/browser/index";
+import type { PushPuzzleContent } from "../push-puzzle/index";
+import type { PushPuzzleAudioSettings } from "./audio-settings";
 import {
   ChangeAudioSettings,
   EndRun,
@@ -21,11 +26,14 @@ import {
   SaveSolve,
   StartLevel,
 } from "./commands";
+import * as LevelRecords from "./level-records";
 import { Message } from "./message";
 import { Phase, emptyHud } from "./model";
 import type { Model } from "./model";
-import { PushPuzzleSave, emptyRecords, isNewBest, withSolve } from "./save";
+import { PushPuzzleSave } from "./save";
+import * as Sounds from "./sounds";
 
+/** The app's services, which its Commands run against: what `resources` provides. */
 export type Services =
   | AudioSystem.AudioSystem
   | PushPuzzleAudioSettings
@@ -35,6 +43,7 @@ export type Services =
   | PushPuzzleSheet;
 type Return = Update.Return<Model, Message, Services>;
 
+/** The app at startup: loading, with the Commands that load the content, the save, the settings and the sounds. */
 export const init: Runtime.ApplicationInit<
   Model,
   Message,
@@ -44,7 +53,7 @@ export const init: Runtime.ApplicationInit<
   model: {
     phase: Phase.Loading(),
     levels: [],
-    records: emptyRecords,
+    records: LevelRecords.empty,
     levelId: "",
     hud: emptyHud,
     audio: AudioSettings.defaults,
@@ -86,6 +95,7 @@ const changeAudio = (
 const toggleMute = (model: Model): Return =>
   changeAudio(model, { ...model.audio, muted: !model.audio.muted });
 
+/** The next Model, and the Commands to run, for each Message. */
 export const update = (model: Model, message: Message): Return =>
   Message.match<Return>(message, {
     LoadedContent: ({ levels }) => ({
@@ -128,9 +138,16 @@ export const update = (model: Model, message: Message): Return =>
         ...model,
         phase: Phase.Solved({
           moves,
-          isNewBest: isNewBest(model.records, model.levelId, moves),
+          isNewBest: LevelRecords.isNewBest(
+            model.records,
+            model.levelId,
+            moves
+          ),
         }),
-        records: withSolve(model.records, model.levelId, moves),
+        records: PushPuzzleSave.merge(
+          model.records,
+          LevelRecords.fromSolve(model.levelId, moves)
+        ),
       },
       commands: [SaveSolve({ levelId: model.levelId, moves })],
     }),
@@ -147,7 +164,7 @@ export const update = (model: Model, message: Message): Return =>
     ClickedLevelSelect: () => withClick(backToLevelSelect(model)),
 
     ChangedVolume: ({ bus, volume }) =>
-      changeAudio(model, withVolume(model.audio, bus, volume)),
+      changeAudio(model, Sounds.withVolume(model.audio, bus, volume)),
     ToggledMute: () => toggleMute(model),
     PressedMuteKey: () => toggleMute(model),
 

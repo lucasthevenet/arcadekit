@@ -11,8 +11,6 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "@arcadekit/survivors",
-    "@arcadekit/push-puzzle",
     "@arcadekit/survivor-demo",
     "@arcadekit/push-puzzle-demo",
     "@arcadekit/docs"
