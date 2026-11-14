@@ -4,8 +4,9 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 
 ## Layout
 
-- `packages/arcadekit/src/<entry>/`: an entry's source, and its `README.md`, which is also its page on arcadekit.dev. Its tests, and the helpers only tests import, are in `packages/arcadekit/test/<entry>/`.
-- `examples/push-puzzle-demo` and `examples/survivor-demo`: the demos, each with its genre in `src/<genre>/` beside its Foldkit app in `src/app/`. `website`: the docs site, built from the entries' READMEs and the glossary.
+- `packages/arcadekit/src/<entry>/`: an entry's source, and its `README.md`, which is also its reference page on arcadekit.dev: what the entry has. Its doc comments are the rest of its reference, a page for each module. Its tests, and the helpers only tests import, are in `packages/arcadekit/test/<entry>/`.
+- `examples/push-puzzle-demo` and `examples/survivor-demo`: the demos, each with its genre in `src/<genre>/` beside its Foldkit app in `src/app/`. `website`: the docs site, built from `docs/`, the entries' READMEs and the glossary.
+- `docs/`: how to use the kit, by task rather than by entry: the walkthrough (`making-a-game.md`), `concepts/`, `guides/` and `testing/`, each file a page of arcadekit.dev. A change to what an entry does changes the guide that shows it too.
 - `CONTEXT.md`: the glossary. Name things with its words in code, tests and prose, and give a new concept its entry in the same change.
 - `tools/lint/` and `oxlint.config.ts`: the kit's own lint rules. Their messages say what to write.
 - Inside the package, an entry imports another by relative path to its public file (`../core/index`). The demos import `arcadekit/<entry>`, and their genre the same way as an entry: by relative path to its public file (`../push-puzzle/index`, `../push-puzzle/browser/index`).
@@ -26,8 +27,8 @@ Run the narrowest check that covers the change. CI runs `pnpm check`, `pnpm test
 | Change | Run |
 | --- | --- |
 | Any code | `pnpm fix`, then `pnpm check`, `pnpm typecheck`, and `pnpm test <files>` for the tests that cover it |
-| A doc comment's example or a README's `ts` block | `pnpm build:packages && pnpm smoke --no-build` |
-| A README, `CONTEXT.md` or `website` | `pnpm build:docs`, which fails on a dead link |
+| A doc comment's example, or a `ts` block of a README or of `docs/` | `pnpm build:packages && pnpm smoke --no-build` |
+| A README, a page of `docs/`, a doc comment, `CONTEXT.md` or `website` | `pnpm build:docs`, which fails on a dead link |
 | A step, a simulation's rules or `arcadekit/core` | `pnpm test` for the replay and determinism hashes, and `pnpm test:browsers` |
 | The package's exports or its build | `pnpm build:packages && pnpm lint:packages` |
 

@@ -2,12 +2,12 @@
 // the tarball with its peer libraries into a throwaway project outside the workspace, and
 // there:
 // - typechecks a tiny game (scripts/smoke/), every `ts` example in the entries' READMEs
-//   (packages/arcadekit/src/<entry>/README.md), and every `ts` example in the entries' doc
-//   comments, with TypeScript 5.9 and with the workspace's TypeScript 7, as a package that emits
-//   its types is checked (`declaration`): an export whose type names something no entry exports
-//   is an error. arcadekit/net/worker's examples are a
-//   project of their own (tsconfig.worker.json), checked with Cloudflare's Workers types and no
-//   DOM;
+//   (packages/arcadekit/src/<entry>/README.md), in the docs' pages (docs/**/*.md) and in the
+//   entries' doc comments, with TypeScript 5.9 and with the workspace's TypeScript 7, as a
+//   package that emits its types is checked (`declaration`): an export whose type names something
+//   no entry exports is an error. A sketch, fenced ```ts sketch, is not compiled.
+//   arcadekit/net/worker's examples are a project of their own (tsconfig.worker.json), checked
+//   with Cloudflare's Workers types and no DOM;
 // - builds the game with Vite;
 // - checks that exactly one copy of effect and of three is installed.
 //
@@ -44,6 +44,10 @@ const ENTRIES = [
 // The entry that runs on Cloudflare, with a README of its own: its examples are a Worker's.
 const WORKER_ENTRY = "net/worker";
 
+// The docs' pages, and the one whose examples are a Worker's, as arcadekit/net/worker's are.
+const DOCS = "docs";
+const WORKER_DOCS = new Set(["guides/signalling-worker.md"]);
+
 const root = path.resolve(import.meta.dirname, "..");
 const packageDir = path.join(root, "packages", "arcadekit");
 const args = new Set(process.argv.slice(2));
@@ -76,7 +80,7 @@ const peerRange = (name) => {
 const workspaceVersion = (name) =>
   readJson(path.join(root, "node_modules", name, "package.json")).version;
 
-/** Each ```ts block in a README, in order. */
+/** Each ```ts block in a README or a page, in order. A ```ts sketch block is not one. */
 const examples = (readme) =>
   [...readme.matchAll(/^```ts\n(?<code>[\s\S]*?)^```$/gmu)].map(
     (match) => match.groups.code
@@ -171,6 +175,30 @@ try {
     }
   }
   console.log(`\n${exampleCount} README examples copied into the project.`);
+
+  let pageCount = 0;
+  const pages = readdirSync(path.join(root, DOCS), {
+    recursive: true,
+    encoding: "utf-8",
+  })
+    .map((file) => file.split(path.sep).join("/"))
+    .filter((file) => file.endsWith(".md"))
+    .toSorted();
+  for (const page of pages) {
+    for (const [index, code] of examples(
+      readFileSync(path.join(root, DOCS, page), "utf-8")
+    ).entries()) {
+      writeFileSync(
+        path.join(
+          WORKER_DOCS.has(page) ? workerReadmes : readmes,
+          `docs-${page.replaceAll("/", "-").replace(/\.md$/u, "")}-${index + 1}.ts`
+        ),
+        `${code}\nexport {};\n`
+      );
+      pageCount += 1;
+    }
+  }
+  console.log(`${pageCount} examples of docs/ copied into the project.`);
 
   // The doc comments' examples. A Worker's go with the Worker's examples, which are checked with
   // its types.

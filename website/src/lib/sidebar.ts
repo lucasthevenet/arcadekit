@@ -1,64 +1,308 @@
-// The sidebar, built from the pages found on disk.
+// The sidebar's topics, built from the pages found on disk: Learn, Guides and Reference, each with
+// a sidebar of its own (starlight-sidebar-topics), as Effect's and Alchemy's docs are split.
 //
-// GROUPS says which group a known entry is in and in what order. It is not the list of pages:
-// an entry's README that isn't named here is still a page, listed under its top folder's group
-// (`net/testing` under `net`'s), or under "More" when that folder is new too.
+// OUTLINE says which group each known page of `docs/` is in and in what order. It is not the list
+// of pages: a page it doesn't name is still listed, at the end of the group of its folder (a new
+// concept at the end of Concepts, a new guide in Guides' "More"). A name in it that is no page
+// fails the build, so the outline can't keep a page that is gone. Reference lists every entry of
+// the package, with its modules, from the pages pages.ts made of them.
 import type { StarlightUserConfig } from "@astrojs/starlight/types";
+import type { StarlightSidebarTopicsUserConfig } from "starlight-sidebar-topics";
 
-import type { EntryPage, SitePages } from "./pages.ts";
+import type { DocPage, EntryPage, ModulePage, SitePages } from "./pages.ts";
+import { BRANCH, GRIMBONK_URL, REPO_URL } from "./site.ts";
 
+type Topic = StarlightSidebarTopicsUserConfig[number];
 type SidebarItem = NonNullable<StarlightUserConfig["sidebar"]>[number];
 
-/** The sidebar's groups, each with its entries' top folders under `src/`, in order. */
-const GROUPS: readonly {
+/** A link to an address, such as a heading of the landing page or another site. */
+interface Link {
   readonly label: string;
-  readonly entries: string[];
-}[] = [
-  { label: "Game", entries: ["game"] },
-  { label: "Simulation", entries: ["core", "input"] },
-  { label: "Presentation", entries: ["render-three", "audio"] },
-  { label: "Data", entries: ["content", "save"] },
-  { label: "App", entries: ["foldkit"] },
-  { label: "Co-op", entries: ["net"] },
+  readonly link: string;
+}
+
+/** A page by its slug, under another label than its title. */
+interface Labelled {
+  readonly label: string;
+  readonly slug: string;
+}
+
+/** A group of pages by their slug, links and groups, in order. */
+interface Group {
+  readonly label: string;
+  readonly items: readonly (string | Link | Labelled | Group)[];
+  /** Shut until opened, unless it holds the page being read. */
+  readonly collapsed?: boolean;
+}
+
+type TopicId = "learn" | "guides";
+
+/**
+ * The groups of the Learn and Guides topics, with the guides and concepts by their slug. A
+ * `section` is the folder of `docs/` whose pages the outline doesn't name go at the group's end.
+ */
+const OUTLINE: readonly (Group & {
+  readonly topic: TopicId;
+  readonly section?: string;
+})[] = [
+  {
+    topic: "learn",
+    label: "Get started",
+    section: "",
+    items: [
+      { label: "Overview", link: "/" },
+      { label: "Install", link: "/#install" },
+      "making-a-game",
+    ],
+  },
+  {
+    topic: "learn",
+    label: "Concepts",
+    section: "concepts",
+    items: [
+      "concepts/declarations",
+      "concepts/steps-and-frames",
+      "concepts/determinism",
+      "concepts/lockstep",
+    ],
+  },
+  {
+    topic: "learn",
+    label: "Examples",
+    items: [
+      { label: "GRIMBONK", link: GRIMBONK_URL },
+      {
+        label: "The survivors demo",
+        link: `${REPO_URL}/tree/${BRANCH}/examples/survivor-demo`,
+      },
+      {
+        label: "The push-puzzle demo",
+        link: `${REPO_URL}/tree/${BRANCH}/examples/push-puzzle-demo`,
+      },
+    ],
+  },
+  {
+    topic: "guides",
+    label: "The rules",
+    items: ["guides/simulation", "guides/commands", "guides/several-players"],
+  },
+  {
+    topic: "guides",
+    label: "The world",
+    items: [
+      "guides/entity-pools",
+      "guides/spatial-grid",
+      "guides/tile-maps",
+      "guides/timers-and-tweens",
+      "guides/rings",
+    ],
+  },
+  {
+    topic: "guides",
+    label: "In the browser",
+    items: [
+      "guides/engine",
+      "guides/input",
+      "guides/content",
+      "guides/saves",
+      "guides/foldkit",
+    ],
+  },
+  {
+    topic: "guides",
+    label: "Drawing and sound",
+    items: [
+      "guides/stages-and-cameras",
+      "guides/sprites",
+      "guides/tile-layers",
+      "guides/mesh-instances",
+      "guides/audio",
+    ],
+  },
+  {
+    topic: "guides",
+    label: "Co-op",
+    items: [
+      "guides/lockstep-sessions",
+      "guides/webrtc",
+      "guides/coop",
+      "guides/signalling-worker",
+    ],
+  },
+  { topic: "guides", label: "More", section: "guides", items: [] },
+  {
+    topic: "guides",
+    label: "Testing",
+    section: "testing",
+    items: [
+      "testing/scenarios",
+      "testing/engines",
+      "testing/views",
+      "testing/coop",
+    ],
+  },
 ];
 
-/** The group of entries no group names. */
-const OTHER_GROUP = "More";
+/** The top-level entries, in the order Reference lists them. Any other follows, by path. */
+const ENTRY_ORDER = [
+  "game",
+  "core",
+  "input",
+  "content",
+  "save",
+  "audio",
+  "render-three",
+  "foldkit",
+  "net",
+];
 
-const topFolder = (page: EntryPage) => page.entry.split("/", 1)[0] ?? "";
+const slugsOf = (items: Group["items"]): string[] =>
+  items.flatMap((item) => {
+    if (typeof item === "string") {
+      return [item];
+    }
+    if ("items" in item) {
+      return slugsOf(item.items);
+    }
+    return "slug" in item ? [item.slug] : [];
+  });
 
-/** The entries by group: each group's own order, then by path, so `net/worker` follows `net`. */
-export const groupedEntries = (
-  entries: readonly EntryPage[]
-): { readonly label: string; readonly pages: EntryPage[] }[] => {
-  const known = new Set(GROUPS.flatMap((group) => group.entries));
-  const groups = [
-    ...GROUPS.map((group) => ({
-      label: group.label,
-      pages: group.entries.flatMap((folder) =>
-        entries.filter((page) => topFolder(page) === folder)
-      ),
-    })),
-    {
-      label: OTHER_GROUP,
-      pages: entries.filter((page) => !known.has(topFolder(page))),
-    },
-  ];
-  return groups.filter((group) => group.pages.length > 0);
+/**
+ * The groups of the Learn and Guides topics: the outline's own order, then each page it doesn't
+ * name at the end of its folder's group, by path. A page of a folder no group has goes in Get
+ * started. A group left with no page is left out.
+ */
+export const outlinedDocs = (
+  docs: readonly DocPage[]
+): (Group & { readonly topic: TopicId })[] => {
+  const slugs = new Set(docs.map((page) => page.slug));
+  const named = new Set(OUTLINE.flatMap((group) => slugsOf(group.items)));
+  const missing = [...named].filter((slug) => !slugs.has(slug));
+  if (missing.length > 0) {
+    throw new Error(
+      `website/src/lib/sidebar.ts lists ${missing.join(", ")}, which no file under docs/ is`
+    );
+  }
+  const sections = new Set(OUTLINE.map((group) => group.section));
+  const rest = (section: string | undefined) =>
+    section === undefined
+      ? []
+      : docs
+          .filter(
+            (page) =>
+              !named.has(page.slug) &&
+              (page.section === section ||
+                (section === "" && !sections.has(page.section)))
+          )
+          .map((page) => page.slug);
+  return OUTLINE.map(({ section, ...group }) => ({
+    ...group,
+    items: [...group.items, ...rest(section)],
+  })).filter((group) => group.items.length > 0);
+};
+
+const topFolder = (entry: string) => entry.split("/", 1)[0] ?? "";
+
+/** Where an entry is in Reference: its top folder's place in the order, or after them all. */
+const rankOf = (entry: string) => {
+  const at = ENTRY_ORDER.indexOf(topFolder(entry));
+  return at === -1 ? ENTRY_ORDER.length : at;
 };
 
 /**
- * Starlight's sidebar: the landing page, the entries by group, then the glossary. A page is
- * named by its slug, and Starlight labels it with its title, an entry's import path.
+ * The entries in Reference's order: the known top folders in theirs, then any other by path, each
+ * with its sub-entries after it, so `net/worker` follows `net`.
  */
-export const sidebar = (pages: SitePages): SidebarItem[] => [
-  {
-    label: "arcadekit",
-    items: [{ label: "Overview", link: pages.home.link }],
-  },
-  ...groupedEntries(pages.entries).map((group) => ({
-    label: group.label,
-    items: group.pages.map((page) => page.slug),
-  })),
-  { label: "Reference", items: [pages.glossary.slug] },
+export const orderedEntries = (entries: readonly EntryPage[]): EntryPage[] =>
+  entries.toSorted(
+    (a, b) =>
+      rankOf(a.entry) - rankOf(b.entry) || a.entry.localeCompare(b.entry)
+  );
+
+/** An entry's page, then its modules' by name. */
+const entryItems = (
+  entry: EntryPage,
+  modules: readonly ModulePage[]
+): Group["items"] => [
+  { label: "Overview", slug: entry.slug },
+  ...modules
+    .filter((module) => module.entry === entry.entry)
+    .toSorted((a, b) => a.module.localeCompare(b.module))
+    .map((module) => module.slug),
 ];
+
+/**
+ * Reference's groups: one for each top-level entry, shut until opened, with its page, its modules,
+ * and each sub-entry: one page alone, or a group of it and its modules. Then the glossary.
+ */
+export const referenceGroups = (pages: SitePages): Group["items"] => {
+  const entries = orderedEntries(pages.entries);
+  return [
+    ...entries
+      .filter((page) => !page.entry.includes("/"))
+      .map((top) => ({
+        label: top.title,
+        collapsed: true,
+        items: [
+          ...entryItems(top, pages.modules),
+          ...entries
+            .filter((page) => page.entry.startsWith(`${top.entry}/`))
+            .map((sub) => {
+              const items = entryItems(sub, pages.modules);
+              return items.length === 1
+                ? sub.slug
+                : { label: sub.title, collapsed: true, items };
+            }),
+        ],
+      })),
+    pages.glossary.slug,
+  ];
+};
+
+const toItem = (item: string | Link | Labelled | Group): SidebarItem => {
+  if (typeof item === "string") {
+    return item;
+  }
+  if ("items" in item) {
+    return {
+      label: item.label,
+      items: item.items.map(toItem),
+      ...(item.collapsed === true ? { collapsed: true } : {}),
+    };
+  }
+  return "slug" in item
+    ? { label: item.label, slug: item.slug }
+    : { label: item.label, link: item.link };
+};
+
+/** The Learn, Guides and Reference topics, each linking to its first page. */
+export const sidebarTopics = (pages: SitePages): Topic[] => {
+  const groups = outlinedDocs(pages.docs);
+  const topic = (id: TopicId) =>
+    groups
+      .filter((group) => group.topic === id)
+      .map(({ topic: _topic, ...group }) => toItem(group));
+  return [
+    {
+      id: "learn",
+      label: "Learn",
+      link: "/making-a-game",
+      icon: "rocket",
+      items: topic("learn"),
+    },
+    {
+      id: "guides",
+      label: "Guides",
+      link: "/guides/simulation",
+      icon: "open-book",
+      items: topic("guides"),
+    },
+    {
+      id: "reference",
+      label: "Reference",
+      link: "/reference/game",
+      icon: "document",
+      items: referenceGroups(pages).map(toItem),
+    },
+  ];
+};
