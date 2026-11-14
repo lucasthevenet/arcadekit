@@ -1,4 +1,4 @@
-// The pack-and-install smoke test (ADR-0018). Builds the arcadekit package, packs it, installs
+// The pack-and-install smoke test. Builds the arcadekit package, packs it, installs
 // the tarball with its peer libraries into a throwaway project outside the workspace, and
 // there:
 // - typechecks a tiny game (scripts/smoke/), every `ts` example in the entries' READMEs

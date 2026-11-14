@@ -9,7 +9,7 @@ import { LONG_RUN_RECORDED, LONG_RUN_SEEDS, longRun } from "../src/long-run";
 import type { LongRunResult, LongRunSeed } from "../src/long-run";
 import type { run } from "./page";
 
-// Cross-browser determinism (#25, ADR-0011): the long run that determinism.test.ts pins
+// Cross-browser determinism (#25): the long run that determinism.test.ts pins
 // in Node, played in Chromium (V8), Firefox (SpiderMonkey) and WebKit (JavaScriptCore). Each
 // browser must give the recorded final hash and trace for every seed, so Node is the fourth
 // engine. On a mismatch it names the first step whose state differs from Node's.

@@ -32,7 +32,7 @@ export const CUE_SOUNDS: CueSoundsOf<typeof PushPuzzleCueTable> = {
   solved: "solved",
 };
 
-/** The player's volume and mute: app settings, kept apart from the save, where the last write wins (ADR-0009). */
+/** The player's volume and mute: app settings, kept apart from the save, where the last write wins. */
 export class PushPuzzleAudioSettings extends Setting(
   "PushPuzzleAudioSettings",
   {

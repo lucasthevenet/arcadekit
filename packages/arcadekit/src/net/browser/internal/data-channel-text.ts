@@ -7,7 +7,7 @@ import type * as RtcPeerConnector from "../rtc-peer-connector";
  * what arrives, so a message the other side sends as soon as its end opens isn't lost before this
  * side's code gets to listen.
  *
- * Plain on purpose (ADR-0024): its listener writes what arrives while the browser dispatches the
+ * Plain on purpose: its listener writes what arrives while the browser dispatches the
  * message, which a lockstep session's tick reads as state and a lobby offers to its queue. The
  * channel's lifecycle is the connector's scope, which closes it.
  */

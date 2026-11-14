@@ -110,5 +110,3 @@ export const stored = Effect.gen(function* () {
 );
 // '{"version":1,"records":{"oval":{"bestLap":61.2}}}'
 ```
-
-See [ADR-0009](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0009-a-save-package-is-earned.md).

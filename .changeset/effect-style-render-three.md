@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-`arcadekit/render-three` and `arcadekit/render-three/testing` are written as Effect's modules are ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)). Each module is a namespace: `Stage`, `PixelCamera`, `Camera`, `SpriteSheet`, `InstancedSprites`, `TileLayer`, `Gait` and `MeshInstances`, and in the testing entry `TestSpriteSheet`, `DrawnSprites` and `Png`. A stage, a pixel camera, a sheet, a batch, a tile layer, a gait and mesh instances are values on a prototype, with a `TypeId`, an `isX` guard, `pipe` and a printed form, made with their module's `make` and changed by functions that take them first. **Breaking**: every export is renamed or reshaped, and a pixel stage's camera is no Three.js camera.
+`arcadekit/render-three` and `arcadekit/render-three/testing` are written as Effect's modules are. Each module is a namespace: `Stage`, `PixelCamera`, `Camera`, `SpriteSheet`, `InstancedSprites`, `TileLayer`, `Gait` and `MeshInstances`, and in the testing entry `TestSpriteSheet`, `DrawnSprites` and `Png`. A stage, a pixel camera, a sheet, a batch, a tile layer, a gait and mesh instances are values on a prototype, with a `TypeId`, an `isX` guard, `pipe` and a printed form, made with their module's `make` and changed by functions that take them first. **Breaking**: every export is renamed or reshaped, and a pixel stage's camera is no Three.js camera.
 
 Loading a sheet is an Effect, as it was, and drawing is plain, as it was: a view draws inside the frame the browser shows. What changed besides the names:
 

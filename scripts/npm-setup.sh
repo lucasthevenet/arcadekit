@@ -180,7 +180,7 @@ finish() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────
-# STAGES: the maintainer's one-time npm steps for the one-package arcadekit (ADR-0018).
+# STAGES: the maintainer's one-time npm steps for the one-package arcadekit.
 # Run from the repository root: bash scripts/npm-setup.sh
 # Safe to re-run: each stage checks what is already done and offers to skip it.
 # No npm token is created: the placeholder publish uses `npm login`, and CI uses

@@ -1,5 +1,5 @@
 // arcadekit/render-three: Three.js drawing for arcadekit games. Loading a sprite sheet is an
-// Effect, with a typed error; drawing is plain (ADR-0024), since a view draws inside the frame the
+// Effect, with a typed error; drawing is plain, since a view draws inside the frame the
 // browser shows, and what it makes has the view's lifecycle, which the engine's acquireRelease
 // holds. Each module is a namespace.
 

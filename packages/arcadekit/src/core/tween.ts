@@ -3,7 +3,7 @@
  *
  * No object holds a tween, nothing calls back, and a view writes nothing: it keeps when a slide
  * or a flash started, takes `progress` toward its end, eases it and draws. Every ease here is a
- * polynomial, so a step may call it too (ADR-0011).
+ * polynomial, so a step may call it too.
  *
  * @since 0.7.0
  */

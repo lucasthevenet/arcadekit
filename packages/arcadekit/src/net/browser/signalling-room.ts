@@ -4,11 +4,11 @@
  *
  * A host opens a room and gets its join code; each guest joins with the code; the worker relays
  * WebRTC signals between the host and each guest (never guest to guest, as in the star) until the
- * host starts the run (#25, ADR-0012). A room is a scoped Effect: its scope owns the socket until
+ * host starts the run (#25). A room is a scoped Effect: its scope owns the socket until
  * the start and every peer link after it, so closing the scope is leaving, and a room that fails
  * has already closed what it opened.
  *
- * Its rules are plain on purpose (ADR-0024): a reducer of inputs to outputs, with a refusal as a
+ * Its rules are plain on purpose: a reducer of inputs to outputs, with a refusal as a
  * value (`internal/room-state.ts`). Here is its Effect shell: one fiber owns the socket to the
  * worker, one per peer makes its link, and the room's fiber carries out the rules, one input at a
  * time. Only the room's fiber removes a peer or closes the socket: `FiberMap.remove` waits for the

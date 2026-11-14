@@ -3,7 +3,7 @@
  *
  * The worker picks a fresh code for each room from random bytes, and a guest types it in any
  * case. Its letters can't be confused when read aloud or typed: no 0/O, no 1/I/L. Plain on
- * purpose (ADR-0024): a Schema, and the data work that reads a code from bytes, a typed string or
+ * purpose: a Schema, and the data work that reads a code from bytes, a typed string or
  * a path.
  *
  * @since 0.7.0

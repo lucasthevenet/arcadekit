@@ -1,4 +1,4 @@
-// arcadekit/net/worker: the signalling worker, for Cloudflare (#25, ADR-0012). It introduces a
+// arcadekit/net/worker: the signalling worker, for Cloudflare (#25). It introduces a
 // lockstep run's peers so they can open WebRTC data channels, then gets out of the way; it never
 // carries game input. An app's Worker is a few lines over `SignallingWorker`: the Durable Object
 // class of one join code's room, and the Worker's `fetch`. It runs only on Cloudflare Workers: it

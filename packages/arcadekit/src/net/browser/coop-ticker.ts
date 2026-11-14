@@ -1,7 +1,7 @@
 /**
  * Co-op tickers: what ticks a Co-op client's lockstep run, every few milliseconds.
  *
- * A co-op run must keep stepping while its tab is hidden (#25, ADR-0012). Browsers throttle a
+ * A co-op run must keep stepping while its tab is hidden (#25). Browsers throttle a
  * hidden tab's main-thread timers to about once a second and stop animation frames, so a run
  * ticked by them falls behind and stalls everyone. A dedicated worker's timers aren't throttled
  * that way, so the default ticker times its ticks in one, and ticks on the main thread, with the

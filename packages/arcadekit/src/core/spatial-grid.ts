@@ -4,8 +4,8 @@
  *
  * A grid indexes the points of a pool by the cell each is in, with linked lists in flat typed
  * arrays, so building it and asking it allocate nothing. Its answers that test a distance do it
- * with exact arithmetic (`ExactMath.hypot2`), so every lockstep peer finds the same points
- * (ADR-0011). Not a tile map, which describes a level's static cells.
+ * with exact arithmetic (`ExactMath.hypot2`), so every lockstep peer finds the same points.
+ * Not a tile map, which describes a level's static cells.
  *
  * @since 0.7.0
  */

@@ -1,4 +1,4 @@
-// The kernel under `Game.Loop` (loop.ts), which no entry exports. Plain on purpose (ADR-0024): it
+// The kernel under `Game.Loop` (loop.ts), which no entry exports. Plain on purpose: it
 // is the step loop, so it gives the same bits on every peer and finishes in the call. Every
 // recorded hash of a run was computed by its lines that step, which moved here unchanged. It is a
 // class, as Effect's own runtime objects are inside its `internal/` (a fiber is a `FiberImpl`): no

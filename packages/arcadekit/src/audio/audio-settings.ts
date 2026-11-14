@@ -3,7 +3,7 @@
  * before the player changes anything.
  *
  * An app keeps them between sessions with a `Setting` (`arcadekit/save`), under its own storage
- * key, apart from its save, where the last write wins (ADR-0009): its `schema` is
+ * key, apart from its save, where the last write wins: its `schema` is
  * `AudioSettings.AudioSettings` and its `default` is `AudioSettings.defaults`. An audio system takes
  * them with `AudioSystem.applySettings`. They are data, plain as Effect's own Schemas are.
  *

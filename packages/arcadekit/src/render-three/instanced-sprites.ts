@@ -6,7 +6,7 @@
  * Each sprite has a position, a frame, a horizontal flip, a tint, a flash toward white, an
  * alpha, a lift and a layer, written into the batch's typed arrays: once a batch has grown to a
  * frame's sprites, a frame allocates no buffer. Its functions are plain calls, made inside the
- * frame the browser shows (ADR-0024). A view makes its batches when it is made and disposes them
+ * frame the browser shows. A view makes its batches when it is made and disposes them
  * with it.
  *
  * @since 0.7.0

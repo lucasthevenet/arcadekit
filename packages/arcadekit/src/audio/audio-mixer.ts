@@ -5,7 +5,7 @@
  * The mixer never touches Web Audio itself. It drives an `Output` (`arcadekit/audio/browser` wraps
  * an AudioContext; a test passes a fake) and decodes through the function it is given, so all of
  * its rules (unlock, voice limits, buses, crossfades) run in a plain test. Its play calls are plain,
- * since a sound view makes them inside its frame (ADR-0024), and so are its host's controls, which
+ * since a sound view makes them inside its frame, and so are its host's controls, which
  * the browser calls while it dispatches a gesture or a change of the page's visibility. Its loads
  * and its lifecycle are Effect: the scope it is made in stops its voices when it closes.
  *

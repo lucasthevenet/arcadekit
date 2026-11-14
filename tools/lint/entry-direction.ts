@@ -1,5 +1,5 @@
 // An oxlint JS plugin (ESLint's plugin shape) for which entry of the arcadekit package may
-// import which (ADR-0018). The entries were separate packages once, and their package.json
+// import which. The entries were separate packages once, and their package.json
 // files said what each could reach; now they are folders of one package, and this rule says it.
 //
 // Inside the package's src/, an import must be relative, and it must either stay in its own
@@ -37,7 +37,7 @@ interface RuleContext {
   readonly report: (descriptor: { node: Node; message: string }) => void;
 }
 
-const adr = "See docs/adr/0018-one-package-with-entries.md.";
+const skill = "See .agents/skills/entries/SKILL.md.";
 
 const withoutExtension = (file: string): string =>
   file.replace(/\.(?:ts|tsx|js|mjs)$/u, "");
@@ -112,7 +112,7 @@ const allowed = {
       ) {
         context.report({
           node,
-          message: `"${specifier}": inside the package, import another entry by its relative path, so the source, the build and the published files all reach the same module. ${adr}`,
+          message: `"${specifier}": inside the package, import another entry by its relative path, so the source, the build and the published files all reach the same module. ${skill}`,
         });
         return;
       }
@@ -140,7 +140,7 @@ const allowed = {
       ) {
         context.report({
           node,
-          message: `"${specifier}" leaves the package's entries. ${adr}`,
+          message: `"${specifier}" leaves the package's entries. ${skill}`,
         });
         return;
       }
@@ -151,14 +151,14 @@ const allowed = {
             : mayImport.join(", ");
         context.report({
           node,
-          message: `arcadekit/${own} may not import arcadekit/${entry}: it may import ${list}. ${adr}`,
+          message: `arcadekit/${own} may not import arcadekit/${entry}: it may import ${list}. ${skill}`,
         });
         return;
       }
       if (!entryFiles.has(withoutExtension(fromRoot))) {
         context.report({
           node,
-          message: `"${specifier}" reaches inside arcadekit/${entry}. Import one of its public files (the sources of the package's exports), as a game would. ${adr}`,
+          message: `"${specifier}" reaches inside arcadekit/${entry}. Import one of its public files (the sources of the package's exports), as a game would. ${skill}`,
         });
       }
     };
@@ -171,7 +171,7 @@ const allowed = {
       ) {
         context.report({
           node,
-          message: `A dynamic import inside the package names its module in a plain string ("..."), so the rules on what an entry may import can read it. ${adr}`,
+          message: `A dynamic import inside the package names its module in a plain string ("..."), so the rules on what an entry may import can read it. ${skill}`,
         });
         return;
       }

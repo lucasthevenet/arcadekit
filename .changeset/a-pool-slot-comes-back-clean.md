@@ -10,7 +10,7 @@ Two things every game wrote around a pool are the pool's own. A slot came back h
 - **`StateHash`.** FNV-1a, 32 bits, over each number's eight bytes as a float64, so a change in any bit shows. A NaN is the exception: every NaN has the same digest, since an engine may hold one in any of its bit patterns and no rule can tell them apart. `StateHash.add(hash, value)` folds one number in and allocates nothing; a game's list that takes an `add` is given a function that calls it, made once. `StateHash.digest(hash)` gives an unsigned 32-bit integer, `0x811c9dc5` with nothing folded in, and `StateHash.reset(hash)` starts again from there. `add` and `reset` return the state hash.
 - **`EntityPool.visit(pool, f)`.** Calls `f` with the pool's `count`, then with each field's live values, one field at a time in the layout's order, and allocates nothing. It does not visit an identified pool's ids: they follow from the order of its adds and removes.
 
-The game still lists its numbers, in its order: the kit never looks inside a state ([ADR-0007](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0007-no-runtime-snapshots.md)), and what only a view reads is left out by not being listed ([ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md)).
+The game still lists its numbers, in its order: the kit never looks inside a state, and what only a view reads is left out by not being listed.
 
 ```ts
 import { EntityPool, StateHash } from "arcadekit/core";

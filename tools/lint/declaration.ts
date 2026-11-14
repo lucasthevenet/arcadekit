@@ -1,8 +1,9 @@
-// An oxlint JS plugin (ESLint's plugin shape) for how a declaration is written (ADR-0020):
+// An oxlint JS plugin (ESLint's plugin shape) for how a declaration is written:
 //
 //   export class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}
 //
-// docs/code-style.md is the style. These rules hold the part of it that one file shows.
+// .agents/skills/declarations/SKILL.md is the style. These rules hold the part of it that one file
+// shows.
 //
 // For the code of a game (a genre package, an app):
 //
@@ -154,7 +155,7 @@ interface RuleContext {
   };
 }
 
-const guide = "See docs/code-style.md.";
+const guide = "See .agents/skills/declarations/SKILL.md.";
 
 const asNode = (value: unknown): Node | undefined =>
   typeof value === "object" &&

@@ -63,7 +63,7 @@ export const pushPuzzleInput = (
 };
 
 /**
- * The app's push-puzzle sheet, with the first tag of each name in `PUSH_PUZZLE_TAGS` (ADR-0015). The app
+ * The app's push-puzzle sheet, with the first tag of each name in `PUSH_PUZZLE_TAGS`. The app
  * says where it comes from, `PushPuzzleSheet.layer(SpriteSheet.fromUrl(url))`, and loads it on its
  * loading screen; the engine draws from it and never frees it. The app's end does.
  */

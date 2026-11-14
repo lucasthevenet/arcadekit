@@ -3,11 +3,11 @@
  *
  * A view makes its stage when it is made and disposes it in its own `dispose`, so the stage has
  * the view's lifecycle: the engine makes the view inside an `acquireRelease` on each attach, and
- * its release disposes it (AGENTS.md, "A resource a plain handler makes"). The constructor and
- * `dispose` are plain, since the view's handler that makes the stage runs no Effect, and so is
- * `render`, which draws inside the frame the browser shows. The resize listener writes the
- * drawing buffer's size and the camera's projection while the browser dispatches it, for the
- * next frame to draw with.
+ * its release disposes it, as "A resource a plain handler makes" in
+ * .agents/skills/effect-or-plain/SKILL.md says. The constructor and `dispose` are plain, since
+ * the view's handler that makes the stage runs no Effect, and so is `render`, which draws inside
+ * the frame the browser shows. The resize listener writes the drawing buffer's size and the
+ * camera's projection while the browser dispatches it, for the next frame to draw with.
  *
  * @since 0.7.0
  */

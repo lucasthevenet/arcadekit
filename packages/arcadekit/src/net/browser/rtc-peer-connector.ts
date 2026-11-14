@@ -150,8 +150,7 @@ export interface PeerConnectionLike {
 }
 
 /**
- * Free public STUN, enough for most home networks. No TURN: two symmetric NATs can't connect
- * (ADR-0012).
+ * Free public STUN, enough for most home networks. No TURN: two symmetric NATs can't connect.
  *
  * **When to use**
  *

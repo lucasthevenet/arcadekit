@@ -6,7 +6,7 @@
  * the transport, its time is the Clock it was made on, `run` ticks it until it stops and then
  * fails with its `LockstepError`, and `send` waits for the rules' answer as an engine's does. The
  * protocol stays the plain session: a tick here calls it once, inside the call that ticks it, and
- * runs no Effect. That is on purpose (ADR-0024): a ticker that also draws ticks the session and
+ * runs no Effect. That is on purpose: a ticker that also draws ticks the session and
  * then draws, in one frame, and reads the session right after the tick.
  *
  * @since 0.7.0

@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-`arcadekit/content` is written as Effect's modules are ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)). `Content` and `Asset` keep their builders, and a game declares them as before. Where a content's files come from is the namespace `ContentSource`: a data type with a `TypeId`, its `make`, `fromRecord`, an `isContentSource` guard, `pipe`, a printed form, and `read`, which takes the source first and, given the file alone, returns the function a `pipe` applies. Its error, `ContentSource.ContentError`, is a `Schema.TaggedError`. The browser's source is `FetchContentSource.fromUrl` in `arcadekit/content/browser`. **Breaking**: every export but the two builders and their types is renamed or reshaped.
+`arcadekit/content` is written as Effect's modules are. `Content` and `Asset` keep their builders, and a game declares them as before. Where a content's files come from is the namespace `ContentSource`: a data type with a `TypeId`, its `make`, `fromRecord`, an `isContentSource` guard, `pipe`, a printed form, and `read`, which takes the source first and, given the file alone, returns the function a `pipe` applies. Its error, `ContentSource.ContentError`, is a `Schema.TaggedError`. The browser's source is `FetchContentSource.fromUrl` in `arcadekit/content/browser`. **Breaking**: every export but the two builders and their types is renamed or reshaped.
 
 A content loads and checks its files as it did: every file at once, then the Schema, then `validate`, with the same messages, and the first success kept for the app. What changed besides the names:
 

@@ -1,12 +1,12 @@
 /**
  * Engines: a game as the browser runs it for one player, its simulation and the view and input
- * source that draw a run and read its input (ADR-0020).
+ * source that draw a run and read its input.
  *
  * `Game.Engine` is a declaration with a service: the class is the key of the running engine an
  * app drives, and its `layer` provides it. The engine is Effect where it has a lifecycle (an
  * attach, what it acquires and releases, a send that waits for the rules' answer) and plain where
  * a frame runs: the view, the input source and the listeners are called inside the frame's one
- * `Effect.try` (ADR-0024).
+ * `Effect.try`.
  *
  * @since 0.7.0
  */

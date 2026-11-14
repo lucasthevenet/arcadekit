@@ -6,7 +6,7 @@
  * screen pixels, so pixel art never shimmers. A pixel camera holds the Three.js camera it places
  * and is moved only by this module's functions: a Three.js `lookAt`, or `Camera.fit`, would undo
  * the snapping, and a pixel camera is no Three.js camera to hand them. Its functions are plain
- * calls, made inside the frame the browser shows (ADR-0024).
+ * calls, made inside the frame the browser shows.
  *
  * @since 0.7.0
  */

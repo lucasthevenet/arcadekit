@@ -4,7 +4,7 @@ import { ExactMath } from "../../src/core/index";
 
 const { cos, hashCell, hypot2, lerp, powInt, sin } = ExactMath;
 
-// These functions exist to give the same bits in every engine (ADR-0011). Comparing them with
+// These functions exist to give the same bits in every engine. Comparing them with
 // this engine's Math checks they are accurate enough; the pinned literals check their bits stay
 // put, since any change to them changes every run the simulation plays.
 

@@ -36,8 +36,6 @@ features:
     linkText: arcadekit/net
   - title: Effect at the edges
     details: Loading, engines, saves and connections are Effect. The step, the views and input are plain code.
-    link: /adr/0017-effect-at-the-edges-plain-code-inside
-    linkText: ADR-0017
 ---
 
 arcadekit is one package of primitives for browser games made with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org). Each of its entries has a page here.

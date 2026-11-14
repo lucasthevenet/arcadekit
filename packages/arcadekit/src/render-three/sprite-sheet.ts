@@ -2,12 +2,11 @@
  * Sprite sheets: one image of pixel art and the JSON Aseprite exports for it, its frames and its
  * tags, with the image as a texture a view draws from.
  *
- * A sheet is loaded by the app and owned by it (ADR-0015): a game declares it as an `Asset`,
+ * A sheet is loaded by the app and owned by it: a game declares it as an `Asset`,
  * whose layer loads it with `fromUrl` and frees it with `dispose` when the app ends, and a view
  * draws from it but never frees it. Loading is an Effect, which fails with a typed
  * `SpriteSheetError` and aborts its requests when interrupted. What a view reads of a sheet
- * (`frameAt`, `resolveTags`) is plain data work, called inside its frame or when it is made
- * (ADR-0024).
+ * (`frameAt`, `resolveTags`) is plain data work, called inside its frame or when it is made.
  *
  * @since 0.7.0
  */

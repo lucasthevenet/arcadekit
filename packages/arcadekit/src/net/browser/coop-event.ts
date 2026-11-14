@@ -5,7 +5,7 @@
  * events and `WaitingChanged`, then at most one `SeatFailed`, which is its last. The four are the
  * client's own, Schema classes an app puts in its Messages and its Model as they are; a run's
  * events come as every peer's rules reported them, each in a `RunEvent` with the local player of
- * the seat that heard it. A `Coop` class's `match` handles them all. Plain on purpose (ADR-0024):
+ * the seat that heard it. A `Coop` class's `match` handles them all. Plain on purpose:
  * Schemas and their values, data an app keeps.
  *
  * @since 0.7.0

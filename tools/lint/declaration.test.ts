@@ -159,7 +159,7 @@ export class Sub extends Base {}`,
     reports: [
       [
         "plain-handler",
-        "validate is async. A function in a Content definition is a plain function: what hosts it calls it and goes on, and waits for nothing. Have what it would wait for ready before it is called: an Effect loads it, in the field the definition has for that (an engine's `uses`, a Coop's `content`) or in the app, and the function is given the result. See docs/code-style.md.",
+        "validate is async. A function in a Content definition is a plain function: what hosts it calls it and goes on, and waits for nothing. Have what it would wait for ready before it is called: an Effect loads it, in the field the definition has for that (an engine's `uses`, a Coop's `content`) or in the app, and the function is given the result. See .agents/skills/declarations/SKILL.md.",
       ],
     ],
   },
@@ -193,7 +193,7 @@ export class Sub extends Base {}`,
     reports: [
       [
         "create-first",
-        "`step`, `apply` and `sample` are written above `create`. TypeScript types a simulation's state from what `create` returns, and types a handler written above it first: that handler's state, and the simulation's, can come out `unknown` with no error. Write `create` before `step`, `apply` and `sample`. See docs/code-style.md.",
+        "`step`, `apply` and `sample` are written above `create`. TypeScript types a simulation's state from what `create` returns, and types a handler written above it first: that handler's state, and the simulation's, can come out `unknown` with no error. Write `create` before `step`, `apply` and `sample`. See .agents/skills/declarations/SKILL.md.",
       ],
     ],
   },

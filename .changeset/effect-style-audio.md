@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-`arcadekit/audio` is written as Effect's modules are ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)). `CueTable` keeps its builder, and a genre declares a cue table as before, with `AudioSystem.SoundId` for each cue. What a game plays through is the namespace `AudioSystem`: `AudioSystem.AudioSystem` is the audio system's type, a value with a `TypeId`, and the key of the service an app provides, as Effect's `KeyValueStore` is a store's. The mixer behind the browser's is `AudioMixer`, the player's settings are `AudioSettings`, and the browser's audio system is `BrowserAudioSystem.layer` in `arcadekit/audio/browser`. **Breaking**: every export but `CueTable` and its types moved into a namespace, and `makeAudioMixer` and `makeBrowserAudio` are gone.
+`arcadekit/audio` is written as Effect's modules are. `CueTable` keeps its builder, and a genre declares a cue table as before, with `AudioSystem.SoundId` for each cue. What a game plays through is the namespace `AudioSystem`: `AudioSystem.AudioSystem` is the audio system's type, a value with a `TypeId`, and the key of the service an app provides, as Effect's `KeyValueStore` is a store's. The mixer behind the browser's is `AudioMixer`, the player's settings are `AudioSettings`, and the browser's audio system is `BrowserAudioSystem.layer` in `arcadekit/audio/browser`. **Breaking**: every export but `CueTable` and its types moved into a namespace, and `makeAudioMixer` and `makeBrowserAudio` are gone.
 
 A sound plays, loops, fades, ducks and is dropped as it was, and `load` decodes and fails as it did, with the same messages. What changed besides the names:
 

@@ -1,6 +1,6 @@
 # arcadekit/net/worker
 
-The signalling worker, for Cloudflare. It introduces the peers of a co-op run so they can open WebRTC data channels to each other ([#25](https://github.com/lucasthevenet/arcadekit/issues/25), [ADR-0012](../../../../../docs/adr/0012-delay-based-lockstep-over-a-host-star.md)): it answers `/host` and `/join/<code>`, with one Durable Object per join code, and sends every other path to the site's files. It never carries game input: once the data channels are open, the peers close their sockets and the worker is out of the loop. [`arcadekit/net/browser`](../README.md)'s `SignallingRoom.host` and `SignallingRoom.join` are its client.
+The signalling worker, for Cloudflare. It introduces the peers of a co-op run so they can open WebRTC data channels to each other ([#25](https://github.com/lucasthevenet/arcadekit/issues/25)): it answers `/host` and `/join/<code>`, with one Durable Object per join code, and sends every other path to the site's files. It never carries game input: once the data channels are open, the peers close their sockets and the worker is out of the loop. [`arcadekit/net/browser`](../README.md)'s `SignallingRoom.host` and `SignallingRoom.join` are its client.
 
 An entry of the [`arcadekit`](../../../README.md) package. It runs only on Cloudflare Workers: it imports `cloudflare:workers`, and it has no DOM.
 
@@ -50,7 +50,7 @@ The worker trusts whoever holds a join code. A code is 6 letters from a 31-lette
 
 ## The code
 
-The entry's one module is `signalling-worker.ts`; the rest is in `internal/`, which no game imports. What is plain is plain on purpose ([ADR-0024](../../../../../docs/adr/0024-the-kit-is-written-as-effect-modules.md)).
+The entry's one module is `signalling-worker.ts`; the rest is in `internal/`, which no game imports. What is plain is plain on purpose.
 
 - `internal/room.ts`: one room's rules (`makeRoom`): who's in it, who may signal whom, the start, expiry. It deals in peer ids and returns what to send and whom to close, so it's tested without Cloudflare. `checkRoomSize` refuses a room size no room can have. Plain: a reducer, whose refusal is a value.
 - `internal/sockets.ts`: the adapter from a room to sockets (`makeSocketRoom`): which socket is which peer, and carrying out the room's sends and closes. Plain: each output is one synchronous call on a socket, and a send or a close that throws is a socket already closing, whose close event tells the room. Tested with fake sockets.

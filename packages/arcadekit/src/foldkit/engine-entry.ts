@@ -7,7 +7,7 @@
  * Messages set, so Foldkit restarts its Stream only when the viewport comes or goes. The Stream is
  * Effect: it reaches the engine, listens, then attaches, and its scope detaches the engine and
  * stops the listening. The listener it hands the engine is plain, since the engine calls it inside
- * its frame, where no Effect runs: it offers each Message to the Stream's queue (ADR-0024).
+ * its frame, where no Effect runs: it offers each Message to the Stream's queue.
  *
  * @since 0.7.0
  */

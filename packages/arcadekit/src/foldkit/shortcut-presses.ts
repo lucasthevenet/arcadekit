@@ -6,7 +6,7 @@
  * alone, and a player's typing: a press with Ctrl, Cmd or Alt held is none, and neither is one
  * that goes into a text field. The Stream is Effect's own for a DOM event
  * (`Stream.fromEventListener`), and the tests of a press are plain data work over the event's
- * fields (ADR-0024).
+ * fields.
  *
  * @since 0.7.0
  */

@@ -6,7 +6,7 @@
  * A key is named by its code, the physical key, as `arcadekit/input`'s bindings name it, so it
  * doesn't move with the keyboard layout, and a key held down is one press. The Stream is Effect's
  * own for a DOM event (`Stream.fromEventListener`): each press is a Message an Effect reacts to,
- * and no frame reads it as state, so no listener of the kit's writes it (ADR-0024).
+ * and no frame reads it as state, so no listener of the kit's writes it.
  *
  * @since 0.7.0
  */

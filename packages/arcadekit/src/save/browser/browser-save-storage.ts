@@ -4,7 +4,7 @@
  *
  * A declaration's `layer` takes a `KeyValueStore`, Effect's, and this module gives the one a
  * browser app provides. It is in an entry of its own, since localStorage is a browser's and the
- * root entry is checked with no DOM types (ADR-0002).
+ * root entry is checked with no DOM types.
  *
  * @since 0.7.0
  */

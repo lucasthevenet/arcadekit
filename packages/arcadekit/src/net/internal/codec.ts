@@ -5,7 +5,7 @@ import type { PlayerInputOf, PlayersSimulation } from "../../game/index";
 import type { PeerId } from "../transport";
 
 // What one player sends for one step of a lockstep run, how it crosses the network, and what the
-// host confirms for a step. Plain on purpose (ADR-0024), like the session that calls it: every
+// host confirms for a step. Plain on purpose, like the session that calls it: every
 // peer steps on what `decode` gives, so it gives the same bits on every peer.
 
 /**

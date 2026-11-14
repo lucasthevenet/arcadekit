@@ -8,8 +8,8 @@ import {
   DECLARATION_BUILDERS,
 } from "../../../tools/lint/declaration";
 
-// The part of the kit's style that takes more than one file to check (docs/code-style.md has all
-// of it, with the reasons). What one file shows, such as the shape of a builder, is lint's:
+// The part of the kit's style that takes more than one file to check (the skills in .agents/skills/
+// have all of it, with the reasons). What one file shows, such as the shape of a builder, is lint's:
 // tools/lint/declaration.ts. This file has the lists a change to the kit's shape has to touch,
 // so that the change is made on purpose:
 //
@@ -21,7 +21,8 @@ import {
 // - NOT_YET_EFFECT_STYLE and CATEGORIES: every entry off the list is held to Effect's module
 //   shape and doc comments, with a category from the closed list.
 // - Lint's own lists, DECLARATION_BUILDERS and BUILDER_ENTRIES, checked against the source.
-// - The guide's links, so it keeps naming files that exist.
+// - The skills' links, so they keep naming files that exist, and the sections this file's
+//   messages send a reader to.
 //
 // It reads text and runs nothing, as test/entry-packages.test.ts does: a builder's behaviour is
 // tested in test/, in the folder its entry has in src/. Each check fails with a message that
@@ -31,23 +32,34 @@ const packageDir = path.resolve(import.meta.dirname, "..");
 const srcDir = path.join(packageDir, "src");
 const testDir = path.join(packageDir, "test");
 const repoDir = path.resolve(packageDir, "../..");
-const guide = "docs/code-style.md";
+const skillsDir = ".agents/skills";
+const MODULES = `${skillsDir}/kit-modules/SKILL.md`;
+const DECLARING = `${skillsDir}/declarations/SKILL.md`;
+const DOC_COMMENTS = `${skillsDir}/doc-comments/SKILL.md`;
 
-// The sections of the guide this file's messages send a reader to, each by its heading.
+interface Section {
+  readonly file: string;
+  readonly heading: string;
+}
+
+// The sections of the skills this file's messages send a reader to, each by its file and heading.
 const SECTIONS = {
-  kinds: "What kind of module is it",
-  service: "A declaration with a service",
-  register: "Register it",
-  effectModule: "An Effect module",
-  namespaces: "An entry and its namespaces",
-  dataType: "A data type",
-  constructors: "Constructors",
-  functions: "Functions",
-  docComment: "The doc comment",
-  names: "Names",
-} as const;
+  kinds: { file: MODULES, heading: "What kind of module is it" },
+  service: { file: DECLARING, heading: "A declaration with a service" },
+  register: { file: DECLARING, heading: "Register it" },
+  namespaces: { file: MODULES, heading: "An entry and its namespaces" },
+  dataType: { file: MODULES, heading: "A data type" },
+  constructors: { file: MODULES, heading: "Constructors" },
+  functions: { file: MODULES, heading: "Functions" },
+  docComment: { file: DOC_COMMENTS, heading: "An export's doc comment" },
+  names: { file: MODULES, heading: "Names" },
+} as const satisfies Readonly<Record<string, Section>>;
 
-// The entries not yet in Effect's module shape (ADR-0024, "An Effect module" in the guide), each
+/** Where in the skills a message of the checks below sends its reader. */
+const rule = ({ file, heading }: Section): string =>
+  `See "${heading}" in ${file}.`;
+
+// The entries not yet in Effect's module shape (the kit-modules skill), each
 // by its first folder under src/, which covers its sub-entries: "net" was arcadekit/net and
 // arcadekit/net/browser, net/testing, net/signalling and net/worker. Every other entry is held
 // to the shape by the tests below, so an entry leaves this list in the change that reworks it,
@@ -55,8 +67,8 @@ const SECTIONS = {
 // doc comments' examples of every entry off it.
 const NOT_YET_EFFECT_STYLE: readonly string[] = [];
 
-// The categories a doc comment's `@category` takes: one closed list, which the guide's table
-// under "The doc comment" explains. A new one is a change to both.
+// The categories a doc comment's `@category` takes: one closed list, which the table under
+// "Categories" in the doc-comments skill explains. A new one is a change to both.
 const CATEGORIES: readonly string[] = [
   "models",
   "constructors",
@@ -97,8 +109,8 @@ interface Declared {
 
 // Every declaration builder of the kit, by the way a game writes it. Adding one is adding a word
 // to the kit's vocabulary: it also goes in DECLARATION_BUILDERS (tools/lint/declaration.ts), with
-// its entry in BUILDER_ENTRIES there, in the glossary, in AGENTS.md and on its entry's page, and
-// this file checks that it did.
+// its entry in BUILDER_ENTRIES there, in the glossary, in .agents/AGENTS.md and on its entry's
+// page, and this file checks that it did.
 const DECLARATIONS: Readonly<Record<string, Declared>> = {
   "Game.Event": { file: "game/event.ts", service: false },
   "Game.Command": { file: "game/command.ts", service: false },
@@ -145,7 +157,7 @@ const OTHER_CLASS_FACTORIES: readonly string[] = [
 const FACTORIES: readonly string[] = [];
 
 // The factories a game still calls to supply one of its parts, for want of a declaration. None
-// is left (ADR-0020). A name is listed here only until the change that adds its declaration,
+// is left. A name is listed here only until the change that adds its declaration,
 // moves every caller and deletes the factory.
 const NOT_YET_DECLARED: readonly string[] = [];
 
@@ -217,7 +229,7 @@ describe("the table of declarations", () => {
     });
     expect(
       found.toSorted(),
-      `The kit's builders are not the ones DECLARATIONS lists. A \`kind\` static is how a builder's class says what it is: one builder for each kind, in the file the table names. Add a new builder to DECLARATIONS in this file, as a game writes it, with its file and whether its class is a service's key. See "${SECTIONS.register}" in ${guide}.`
+      `The kit's builders are not the ones DECLARATIONS lists. A \`kind\` static is how a builder's class says what it is: one builder for each kind, in the file the table names. Add a new builder to DECLARATIONS in this file, as a game writes it, with its file and whether its class is a service's key. ${rule(SECTIONS.register)}`
     ).toStrictEqual(
       [
         ...Object.entries(DECLARATIONS).map(
@@ -290,20 +302,23 @@ describe("the table of declarations", () => {
       /^\*\*Declaration\*\*:.*$/mu.exec(
         read(path.join(repoDir, "CONTEXT.md"))
       )?.[0] ?? "";
-    // The one sentence, as the glossary's one entry: other lines of AGENTS.md name a builder too.
+    // The one sentence, as the glossary's one entry: other lines of .agents/AGENTS.md name a
+    // builder too.
     const agents =
       /\bThey are\b.*?\.(?=\s|$)/mu.exec(
-        read(path.join(repoDir, "AGENTS.md"))
+        read(path.join(repoDir, ".agents/AGENTS.md"))
       )?.[0] ?? "";
     const unlisted = Object.keys(DECLARATIONS).flatMap((builder) => [
       ...(glossary.includes(`\`${builder}\``)
         ? []
         : [`CONTEXT.md: ${builder}`]),
-      ...(agents.includes(`\`${builder}\``) ? [] : [`AGENTS.md: ${builder}`]),
+      ...(agents.includes(`\`${builder}\``)
+        ? []
+        : [`.agents/AGENTS.md: ${builder}`]),
     ]);
     expect(
       unlisted,
-      "The glossary's **Declaration** entry (CONTEXT.md) and the sentence of AGENTS.md that begins \"They are\" each list the kit's declarations. Add each builder below to the file named before it, in backticks, as a game writes it."
+      "The glossary's **Declaration** entry (CONTEXT.md) and the sentence of .agents/AGENTS.md that begins \"They are\" each list the kit's declarations. Add each builder below to the file named before it, in backticks, as a game writes it."
     ).toStrictEqual([]);
   });
 });
@@ -317,7 +332,7 @@ describe.each(Object.entries(DECLARATIONS))(
     const entry = file.split("/", 1)[0] ?? "";
     // Read when a test runs, so a file that moved fails a test and not the whole file.
     const source = (): string => read(path.join(srcDir, file));
-    const serviceRule = `See "${SECTIONS.service}" in ${guide}.`;
+    const serviceRule = rule(SECTIONS.service);
 
     it("shows itself declared in its own doc comment", () => {
       const shown = docComments(source()).some((comment) =>
@@ -428,12 +443,12 @@ describe("the exported factories", () => {
       );
     expect(
       exported.toSorted(),
-      `The kit's exported make… and create… functions are not the ones FACTORIES and NOT_YET_DECLARED list. A new export named that way is read as a factory, and a part each game supplies is a declaration, not a factory: see "${SECTIONS.kinds}" in ${guide}. If it makes nothing a game supplies, name it for what it returns. Take a factory that is gone out of its list in this file: a name leaves NOT_YET_DECLARED with the change that adds its declaration, moves every caller and deletes the factory.`
+      `The kit's exported make… and create… functions are not the ones FACTORIES and NOT_YET_DECLARED list. A new export named that way is read as a factory, and a part each game supplies is a declaration, not a factory. ${rule(SECTIONS.kinds)} If it makes nothing a game supplies, name it for what it returns. Take a factory that is gone out of its list in this file: a name leaves NOT_YET_DECLARED with the change that adds its declaration, moves every caller and deletes the factory.`
     ).toStrictEqual([...FACTORIES, ...NOT_YET_DECLARED].toSorted());
   });
 });
 
-// An entry in Effect's module shape ("An Effect module" in the guide). Each check below runs on
+// An entry in Effect's module shape (the kit-modules skill). Each check below runs on
 // every entry off NOT_YET_EFFECT_STYLE, by its public file and the modules that file exports.
 
 /** The package's entries, by their path under src/ (`net/browser`), each with its public file. */
@@ -634,7 +649,7 @@ const commentText = (comment: string): string =>
     .replace(/\*\/$/u, "")
     .replaceAll(/^\s*\* ?/gmu, "");
 
-/** What an export's doc comment lacks of Effect's structure, each as the guide names it. */
+/** What an export's doc comment lacks of Effect's structure, each as the doc-comments skill names it. */
 const missingParts = (comment: string, entry: string): readonly string[] => {
   const text = commentText(comment);
   const blocks = [...text.matchAll(/^```ts\n(?<code>[\s\S]*?)^```/gmu)].map(
@@ -721,7 +736,7 @@ const arrowParameters = (from: string): readonly string[] | undefined => {
   return parameters.map((parameter) => parameter.trim()).filter(Boolean);
 };
 
-/** What a module of an entry in Effect's shape breaks of the guide's rules, each as a line. */
+/** What a module of an entry in Effect's shape breaks of the kit-modules skill, each as a line. */
 const shapeProblems = (file: string, entry: string): readonly string[] => {
   const source = read(path.join(srcDir, file));
   const exported = exportsOf(source);
@@ -803,7 +818,7 @@ const shapeProblems = (file: string, entry: string): readonly string[] => {
           `${name}: makeX makes a secondary type X of its module, and the module exports no ${name.slice("make".length)}`
       ),
     // A constructor and a declaration builder are no `dual`: a builder takes the name, then the
-    // definition ("The builder" in the guide).
+    // definition ("The builder" in the declarations skill).
     ...exported
       .filter(
         ({ kind, from, comment }) =>
@@ -833,9 +848,6 @@ const shapeProblems = (file: string, entry: string): readonly string[] => {
       ),
   ];
 };
-
-/** Where in the guide a message of the checks below sends its reader. */
-const rule = (section: string): string => `See "${section}" in ${guide}.`;
 
 describe("the entries in Effect's module shape", () => {
   it("are every entry off NOT_YET_EFFECT_STYLE, which names only entries that are", () => {
@@ -896,7 +908,7 @@ describe("the entries in Effect's module shape", () => {
               (problem) => `src/${file}: ${problem}`
             )
           ),
-          `These exports of arcadekit/${entry} are not written as an Effect module's are. A doc comment has a summary, **When to use**, **Details** if there is more to say, an **Example** (Title) whose \`ts\` block imports from "arcadekit/${entry}" and shows a result as \`// =>\`, then @category (one of ${CATEGORIES.join(", ")}) and @since. ${rule(SECTIONS.docComment)} For a data type's TypeId and guard, see "${SECTIONS.dataType}"; for constructors, "${SECTIONS.constructors}"; for \`dual\`, "${SECTIONS.functions}"; for a constant's name, "${SECTIONS.names}".`
+          `These exports of arcadekit/${entry} are not written as an Effect module's are. A doc comment has a summary, **When to use**, **Details** if there is more to say, an **Example** (Title) whose \`ts\` block imports from "arcadekit/${entry}" and shows a result as \`// =>\`, then @category (one of ${CATEGORIES.join(", ")}) and @since. ${rule(SECTIONS.docComment)} For a data type's TypeId and guard, see "${SECTIONS.dataType.heading}" in ${MODULES}; for constructors, "${SECTIONS.constructors.heading}"; for \`dual\`, "${SECTIONS.functions.heading}"; for a constant's name, "${SECTIONS.names.heading}".`
         ).toStrictEqual([]);
       });
     }
@@ -912,66 +924,49 @@ describe("the entries' tests", () => {
   });
 });
 
-describe("the guide", () => {
-  const text = read(path.join(repoDir, guide));
+describe("the skills", () => {
+  const files = readdirSync(path.join(repoDir, ".agents"), { recursive: true })
+    .map(String)
+    .filter((file) => file.endsWith(".md"))
+    .map((file) => path.join(".agents", file));
 
-  it("links only to files that exist", () => {
-    const prose = text.replaceAll(/```[\s\S]*?```/gu, "");
-    // Code is not prose: `cases[tag](event)` is no link. A code span is read whole, so one that
-    // is a link's label is passed over and the link after it is read.
-    const targets = [
-      ...prose.matchAll(/`[^`\n]*`|\]\((?<target>[^)#\s]+)(?:#[^)]*)?\)/gu),
-    ]
-      .map((match) => match.groups?.target)
-      .filter(
-        (target): target is string =>
-          target !== undefined && !/^[a-z]+:/u.test(target)
+  it("link only to files that exist", () => {
+    const dead = files.flatMap((file) => {
+      // Code is not prose: `cases[tag](event)` is no link. A code span is read whole, so one
+      // that is a link's label is passed over and the link after it is read.
+      const prose = read(path.join(repoDir, file)).replaceAll(
+        /```[\s\S]*?```/gu,
+        ""
       );
-    // The guide names the files to copy: finding few links means this stopped reading them.
-    expect(
-      targets.length,
-      `${guide} names the files to copy as links, and this test found ${targets.length} of them: it has stopped reading the guide's links. Fix how it finds one.`
-    ).toBeGreaterThan(10);
-    // A second, cruder count, to hold the reading above: the guide is in docs/, so its link to
-    // a file of the repository starts `](../`, and one after an even number of backticks on
-    // its line is outside a code span. Fewer read than counted is a link passed over.
-    const written = prose
-      .split("\n")
-      .flatMap((line) =>
-        [...line.matchAll(/\]\(\.\.\//gu)].map(({ index }) =>
-          line.slice(0, index)
+      return [
+        ...prose.matchAll(/`[^`\n]*`|\]\((?<target>[^)#\s]+)(?:#[^)]*)?\)/gu),
+      ]
+        .map((match) => match.groups?.target)
+        .filter(
+          (target): target is string =>
+            target !== undefined &&
+            !/^[a-z]+:/u.test(target) &&
+            !existsSync(path.resolve(repoDir, path.dirname(file), target))
         )
-      )
-      .filter((before) => before.split("`").length % 2 === 1).length;
+        .map((target) => `${file}: ${target}`);
+    });
     expect(
-      targets.length,
-      `${guide} has ${written} links that start \`](../\`, and this test read ${targets.length} links to files: it passes over some, and would not see one that is dead. Fix how it finds a link.`
-    ).toBeGreaterThanOrEqual(written);
-    expect(
-      targets.filter(
-        (target) =>
-          !existsSync(path.resolve(repoDir, path.dirname(guide), target))
-      ),
-      `${guide} links to files that don't exist. Write each link below as the file's path from docs/, as the file is now named.`
+      dead,
+      "These links in .agents/ name files that don't exist. Write each as the file's path from the skill's folder, as the file is now named."
     ).toStrictEqual([]);
   });
 
-  it("has the sections this file's messages name", () => {
-    const headings = new Set(
-      [...text.matchAll(/^#{2,3} (?<heading>.+)$/gmu)].map(
-        (match) => match.groups?.heading ?? ""
-      )
+  it("have the sections this file's messages name", () => {
+    const missing = Object.values(SECTIONS).filter(
+      ({ file, heading }) =>
+        !new RegExp(
+          `^#{2,3} ${heading.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")}$`,
+          "mu"
+        ).test(read(path.join(repoDir, file)))
     );
     expect(
-      Object.values(SECTIONS).filter((section) => !headings.has(section)),
-      `${guide} has no section with each heading below, and a message of this file sends its reader there. Keep the heading, or change SECTIONS in this file with it.`
+      missing,
+      "A skill has no section with each heading below, and a message of this file sends its reader there. Keep the heading, or change SECTIONS in this file with it."
     ).toStrictEqual([]);
-  });
-
-  it("is where AGENTS.md sends whoever adds a module", () => {
-    expect(
-      read(path.join(repoDir, "AGENTS.md")),
-      `AGENTS.md doesn't name ${guide}. Its "Adding to the kit" section sends whoever adds a module to the guide: keep the link there.`
-    ).toContain(guide);
   });
 });

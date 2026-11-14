@@ -3,7 +3,7 @@
 // A README is read on GitHub, on npm and here, and its links are written for the first two: a
 // relative link to another file of the repository (`../../README.md`, `worker/README.md`,
 // `../../../../../apps/survivor-demo/alchemy.run.ts`), or a full GitHub URL where the file isn't
-// in the npm package (`https://github.com/.../blob/main/docs/adr/0012-....md`). Here a page is
+// in the npm package (`https://github.com/.../blob/main/CONTEXT.md`). Here a page is
 // served at another address than its file's, so neither kind would land right. This rule
 // rewrites each one as the page is rendered, and leaves the READMEs alone:
 // - a link to a file that is a page of the site goes to that page;

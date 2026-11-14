@@ -4,7 +4,7 @@
  * A transport is the seam between a lockstep session and the network: text to a peer by its id,
  * and a listener for what arrives. It has two adapters in the kit, the in-memory network for
  * tests (`MemoryNetwork`) and WebRTC's peer links in the browser (`arcadekit/net/browser`'s
- * `RtcTransport`). Plain on purpose (ADR-0024): a session sends from inside its tick, which
+ * `RtcTransport`). Plain on purpose: a session sends from inside its tick, which
  * finishes in the call, and what arrives is queued for the next tick to read, as state a step
  * reads is written while the host dispatches its event.
  *

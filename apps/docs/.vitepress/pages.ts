@@ -1,11 +1,10 @@
 // Which files of the repository are pages of the site, and where each one is served.
 //
-// The site has no markdown of its own beyond the landing page and the index of decisions. Every
-// other page is a file that already exists for GitHub and npm, read where it is:
+// The site has no markdown of its own beyond the landing page. Every other page is a file that
+// already exists for GitHub and npm, read where it is:
 // - each entry's README, `packages/arcadekit/src/<entry>/README.md`, at `/<entry>`, so a page's
 //   address is its import path (`arcadekit/net/worker` is `/net/worker`);
-// - the glossary, `CONTEXT.md`, at `/glossary`;
-// - each decision, `docs/adr/<name>.md`, at `/adr/<name>`.
+// - the glossary, `CONTEXT.md`, at `/glossary`.
 // READMEs are found by walking `src/`, so a new entry's README is a page without a change here.
 // An entry with no README has no page: its address goes to the page of the folder above it
 // (`/net/browser` to `/net`), until it gets a README.
@@ -17,10 +16,8 @@ export const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
 
 const KIT_MANIFEST = "packages/arcadekit/package.json";
 const KIT_SRC = "packages/arcadekit/src";
-const ADR_DIR = "docs/adr";
 const GLOSSARY = "CONTEXT.md";
 const HOME = "apps/docs/index.md";
-const ADR_INDEX = "apps/docs/adr.md";
 
 /**
  * The package's README. It has no page of its own: the landing page includes it, from line
@@ -54,15 +51,6 @@ export interface EntryPage extends SitePage {
   readonly entry: string;
   /** The README's first heading, such as `arcadekit/net/worker`. */
   readonly title: string;
-}
-
-export interface AdrPage extends SitePage {
-  /** The decision's number, such as `0018`. */
-  readonly number: string;
-  /** The file's first heading: the decision in a sentence. */
-  readonly title: string;
-  /** The `status` in the file's frontmatter, such as `accepted`. */
-  readonly status: string;
 }
 
 const toPosix = (file: string) => file.split(path.sep).join("/");
@@ -141,25 +129,6 @@ const entryPages = (): EntryPage[] =>
     };
   });
 
-const adrPages = (): AdrPage[] =>
-  readdirSync(path.join(REPO_ROOT, ADR_DIR))
-    .filter((name) => /^\d{4}-.+\.md$/u.test(name))
-    .toSorted()
-    .map((name) => {
-      const file = `${ADR_DIR}/${name}`;
-      const markdown = read(file);
-      return {
-        file,
-        servedAs: `adr/${name}`,
-        link: `/adr/${name.slice(0, -".md".length)}`,
-        description: firstParagraph(markdown),
-        number: name.slice(0, 4),
-        title: firstHeading(markdown, file),
-        status:
-          /^status:\s*(?<status>.+)$/mu.exec(markdown)?.groups?.status ?? "",
-      };
-    });
-
 /**
  * Fails if the package's README no longer has what the landing page takes from it:
  * - its top is a title, a blank line, one paragraph and a blank line, since the landing page
@@ -194,7 +163,6 @@ const checkPackageReadme = () => {
 export const discoverPages = () => {
   checkPackageReadme();
   const entries = entryPages();
-  const adrs = adrPages();
   const home: SitePage = {
     file: HOME,
     servedAs: "index.md",
@@ -207,19 +175,7 @@ export const discoverPages = () => {
     link: "/glossary",
     description: firstParagraph(read(GLOSSARY)),
   };
-  const adrIndex: SitePage = {
-    file: ADR_INDEX,
-    servedAs: "adr.md",
-    link: "/adr",
-    description: "",
-  };
-  const all: readonly SitePage[] = [
-    home,
-    ...entries,
-    glossary,
-    adrIndex,
-    ...adrs,
-  ];
+  const all: readonly SitePage[] = [home, ...entries, glossary];
 
   const sources = new Map<string, string>();
   for (const page of all) {
@@ -232,7 +188,7 @@ export const discoverPages = () => {
     sources.set(page.servedAs, page.file);
   }
 
-  return { home, entries, glossary, adrIndex, adrs, all };
+  return { home, entries, glossary, all };
 };
 
 export type SitePages = ReturnType<typeof discoverPages>;

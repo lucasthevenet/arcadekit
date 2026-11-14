@@ -2,7 +2,7 @@
  * The run's seeded random number generator (mulberry32): the same seed gives the same draws, on
  * every peer and in every replay.
  *
- * A step draws its randomness from its run's `Rng` and from nothing else (ADR-0017): not
+ * A step draws its randomness from its run's `Rng` and from nothing else: not
  * `Math.random`, and not Effect's `Random`, which is not the run's.
  *
  * @since 0.7.0

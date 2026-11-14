@@ -1,6 +1,5 @@
 /**
- * The fixed-step clock: it turns a frame's time into a whole number of fixed simulation steps
- * (ADR-0003).
+ * The fixed-step clock: it turns a frame's time into a whole number of fixed simulation steps.
  *
  * A fixed step makes a game behave the same on a 60 Hz and a 144 Hz screen, and makes it
  * deterministic. `arcadekit/game`'s loop steps every game with one. The clock reads no time of

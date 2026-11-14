@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-`arcadekit/game` is written as Effect's modules are ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)), and every export of `arcadekit/game`, `arcadekit/game/browser`, `arcadekit/game/scenario` and `arcadekit/game/testing` has Effect's doc comment, with an example that runs. `Game.Event`, `Game.Command`, `Game.Rejection`, `Game.Simulation` and `Game.Engine` keep their builders, and a game declares its parts as before. **Breaking**: a loop is made with `Game.makeLoop`, the frames a test drives are the namespace `ManualFrames`, and the entry's three errors are `Schema.TaggedError`s.
+`arcadekit/game` is written as Effect's modules are, and every export of `arcadekit/game`, `arcadekit/game/browser`, `arcadekit/game/scenario` and `arcadekit/game/testing` has Effect's doc comment, with an example that runs. `Game.Event`, `Game.Command`, `Game.Rejection`, `Game.Simulation` and `Game.Engine` keep their builders, and a game declares its parts as before. **Breaking**: a loop is made with `Game.makeLoop`, the frames a test drives are the namespace `ManualFrames`, and the entry's three errors are `Schema.TaggedError`s.
 
 What changed besides the names:
 
@@ -47,4 +47,4 @@ Every export that changed, and what a game writes now. The others keep their nam
 | `Scenario.ScenarioStep<Runner>` | `Scenario.Step<Runner>` |
 | `Scenario.ScenarioSteps<Runner>` | `Scenario.Steps<Runner>` |
 
-The kit's findings, research notes and changelog keep the old names: read them through this table.
+The changelog keeps the old names: read it through this table.

@@ -1,5 +1,5 @@
 /**
- * Coops: a game as several players play it, each in their own browser (ADR-0019, ADR-0021).
+ * Coops: a game as several players play it, each in their own browser.
  *
  * `Coop` is a declaration with a service. A game declares one from its engine, and what only a run
  * that several players share needs besides: one player's input source, the content every peer
@@ -653,7 +653,7 @@ export interface CoopDefinition<
   readonly ends?: readonly (AnyEvent & { readonly Type: NoInfer<Event> })[];
   /**
    * Steps ahead local input is scheduled, and steps between state hash comparisons. Defaults 4
-   * (67 ms at 60 Hz, ADR-0012) and 60. The same on every peer, since it is part of the game.
+   * (67 ms at 60 Hz) and 60. The same on every peer, since it is part of the game.
    */
   readonly lockstep?: {
     readonly inputDelay?: number;

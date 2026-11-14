@@ -10,7 +10,7 @@ An entry of the [`arcadekit`](../../README.md) package.
 pnpm add arcadekit effect
 ```
 
-`effect` (~4.1) is the package's one required peer dependency. This entry imports it only for its modules' shape (`pipe`, the guards, `dual`): a game uses `arcadekit/core` without running any Effect, and a step that calls it stays plain ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)).
+`effect` (~4.1) is the package's one required peer dependency. This entry imports it only for its modules' shape (`pipe`, the guards, `dual`): a game uses `arcadekit/core` without running any Effect, and a step that calls it stays plain.
 
 ## Its modules
 
@@ -95,7 +95,7 @@ const facts = EventBuffer.drain(events);
 
 ## Exact math
 
-A step must give the same bits in every JavaScript engine, or lockstep peers drift apart. Each engine approximates `Math.hypot`, `Math.sin`, `Math.cos` and `**` in its own way, so a step calls none of them ([ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md)). It calls these, which use only operations every engine computes exactly:
+A step must give the same bits in every JavaScript engine, or lockstep peers drift apart. Each engine approximates `Math.hypot`, `Math.sin`, `Math.cos` and `**` in its own way, so a step calls none of them. It calls these, which use only operations every engine computes exactly:
 
 | Function | What it gives |
 | --- | --- |
@@ -388,7 +388,7 @@ It draws once for each item it picks, the last one included, and every later dra
 
 ## Telling a view what a step did
 
-A view needs to know what a step did: a hit and where it landed, a hole that was filled. An event is a rare fact for the app, and a cue counter is a count with no place or amount. A **ring** carries the rest: `Ring.make(capacity, layout)` makes a fixed number of records stored as one typed array per field, as a pool's entities are. The step pushes a record, and each view takes the records written since it last looked, with a `RingReader` of its own ([ADR-0023](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0023-a-step-tells-its-views-what-happened-through-a-ring-of-records.md)).
+A view needs to know what a step did: a hit and where it landed, a hole that was filled. An event is a rare fact for the app, and a cue counter is a count with no place or amount. A **ring** carries the rest: `Ring.make(capacity, layout)` makes a fixed number of records stored as one typed array per field, as a pool's entities are. The step pushes a record, and each view takes the records written since it last looked, with a `RingReader` of its own.
 
 ```ts
 import { Ring, RingReader } from "arcadekit/core";
@@ -450,7 +450,7 @@ class SparkView {
 
 ## The state hash
 
-A state hash is a 32-bit digest of the numbers a game lists from a run's state, in a fixed order. Lockstep peers compare it to notice a desync, and a replay test pins one. The game writes the list, since the kit never looks inside a state ([ADR-0007](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0007-no-runtime-snapshots.md)), and the kit folds it: `StateHash.add` takes one number at a time, and `EntityPool.visit` lists a pool's live entities.
+A state hash is a 32-bit digest of the numbers a game lists from a run's state, in a fixed order. Lockstep peers compare it to notice a desync, and a replay test pins one. The game writes the list, since the kit never looks inside a state, and the kit folds it: `StateHash.add` takes one number at a time, and `EntityPool.visit` lists a pool's live entities.
 
 ```ts
 import { EntityPool, StateHash } from "arcadekit/core";
@@ -484,8 +484,6 @@ const hashRace = (race: Race): number => {
 
 - **A `StateHash` is FNV-1a, 32 bits, over each number's eight bytes as a float64**, so a change in any bit shows: 0 and -0 have different digests. A NaN is the exception: every NaN has the same digest, since an engine may hold one in any of its bit patterns and no rule can tell them apart. `StateHash.add` folds one number in and allocates nothing, `StateHash.digest` gives an unsigned 32-bit integer, and `StateHash.reset` starts again, so one state hash serves every hash.
 - **`EntityPool.visit` calls its function with the pool's `count`, then with each field's live values**, one field at a time in the layout's order, and with nothing past `count`. It allocates nothing either, so a host can take a hash after every step. It does not visit an identified pool's ids: they follow from the order of its adds and removes.
-- **What is not listed is not hashed.** A cue counter, a ring only views read, or anything else a view alone reads, is left out by not being listed ([ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md)): `horns` above. Scratch a step fills and reads back within one step is left out the same way.
+- **What is not listed is not hashed.** A cue counter, a ring only views read, or anything else a view alone reads, is left out by not being listed: `horns` above. Scratch a step fills and reads back within one step is left out the same way.
 - **A list that takes `add` is given a function made once**, such as `add` above, which folds into one state hash: `EntityPool.visit` takes it as its function. A game that folds the same list a second way, such as a trace after every step of a long run, writes the list as a function that takes `add` (`visitRace(race, add)`) and passes it each folder in turn.
 - **A host or a test takes a hash, between steps.** The rules never read one.
-
-See [ADR-0003](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0003-one-fixed-step-clock.md) (one fixed-step clock), [ADR-0006](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0006-identified-pools-reuse-ids.md) (identified pools), [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math) and [ADR-0023](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0023-a-step-tells-its-views-what-happened-through-a-ring-of-records.md) (a ring of records from a step to its views).

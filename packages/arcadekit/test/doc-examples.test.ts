@@ -52,7 +52,7 @@ vi.mock("cloudflare:workers", () => ({
 
 // Runs the `ts` examples of the doc comments of every entry in Effect's module shape, and checks
 // that each result an example shows is true: a line `expression; // => value` holds when the
-// expression gives the value (docs/code-style.md, "The doc comment"). `pnpm smoke` compiles the
+// expression gives the value (.agents/skills/doc-comments/SKILL.md). `pnpm smoke` compiles the
 // same examples against the packed package; this runs them against src/.
 //
 // The entries are those off NOT_YET_EFFECT_STYLE, which this reads from the style test's text,

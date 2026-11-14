@@ -1,7 +1,7 @@
 import type { PeerId, ServerMessage } from "../../signalling/index";
 import type { Room, RoomOutput } from "./room";
 
-// Carries out a room's outputs on its sockets. Plain on purpose (ADR-0024): each output is one
+// Carries out a room's outputs on its sockets. Plain on purpose: each output is one
 // synchronous call on a socket, which Effect would only wrap in `Effect.sync`, and a send or a
 // close that throws is a socket already closing, whose close event tells the room, so there is no
 // failure for a caller to handle. The Durable Object's Effects (connections.ts) call it, each in

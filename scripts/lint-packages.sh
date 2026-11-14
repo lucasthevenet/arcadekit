@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs publint and @arethetypeswrong/cli on the published arcadekit package (ADR-0018), then
+# Runs publint and @arethetypeswrong/cli on the published arcadekit package, then
 # checks that each built entry imports only the packages it may (none for arcadekit/core and
 # arcadekit/input).
 # Packs the package with pnpm first, so both tools see exactly what npm would get

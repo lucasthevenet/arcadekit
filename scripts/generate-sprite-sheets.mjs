@@ -1,7 +1,7 @@
 // Writes the demos' sprite sheets: pixel art painted in code, packed into one PNG per demo with
 // an Aseprite JSON export ("hash" frames form) next to it. Run with `pnpm sprites`. The output
 // is byte-identical every run, so regenerating never shows up as a diff. The art is ported from
-// the pixel-art prototype on branch prototype/24-art (see ADR-0015). Swap a sheet for one
+// the pixel-art prototype on branch prototype/24-art. Swap a sheet for one
 // exported from Aseprite, or mapped from a CC0 pack, with the same tag names.
 
 import { mkdirSync, writeFileSync } from "node:fs";

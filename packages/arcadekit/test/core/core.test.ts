@@ -1674,7 +1674,7 @@ describe("an event buffer", () => {
   });
 });
 
-// Each data type of core has Effect's shape (docs/code-style.md, "An Effect module"): a guard
+// Each data type of core has Effect's shape (.agents/skills/kit-modules/SKILL.md, "A data type"): a guard
 // that knows it from a look-alike, `pipe`, a printed form that names it, and functions that take
 // it first or, with one argument less, return the function a pipe applies.
 

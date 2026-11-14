@@ -6,7 +6,7 @@ import { isChoosing } from "../world";
 import type { World } from "../world";
 
 /**
- * Survivors' cue table: which of the app's sounds each of its cues plays (ADR-0014). The app
+ * Survivors' cue table: which of the app's sounds each of its cues plays. The app
  * gives the sounds, `SurvivorsCueTable.layer({ shot: "shot-arc", ... })`: it owns the sound
  * files, and the genre ships none.
  */
@@ -104,7 +104,7 @@ const auraPlaying = (world: World): boolean =>
   );
 
 /**
- * Plays a survivors run's sounds (ADR-0014). Each frame it compares `world.cues` with what it
+ * Plays a survivors run's sounds. Each frame it compares `world.cues` with what it
  * saw last frame and plays one sound for each counter that rose, however far it rose: the audio
  * system's voice limits keep a jump from playing as a burst. The first frame of a run only
  * takes note of the counters. The aura hum is read from the state, and stops while the run is

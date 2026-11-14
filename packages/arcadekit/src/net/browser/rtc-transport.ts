@@ -3,8 +3,8 @@
  *
  * It is the browser's adapter of `arcadekit/net`'s `Transport` seam, named for its mechanism and
  * the module whose type it makes, as `FetchHttpClient` is Effect's. A host passes a link per
- * guest; a guest, its one link to the host (the host star, ADR-0012). Plain on purpose
- * (ADR-0024): a lockstep session sends from inside its tick, and what arrives is queued for the
+ * guest; a guest, its one link to the host (the host star). Plain on purpose:
+ * a lockstep session sends from inside its tick, and what arrives is queued for the
  * tick to read; the links' lifecycle is the signalling room's scope, and the listener's is the
  * session's.
  *

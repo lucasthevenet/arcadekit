@@ -4,7 +4,7 @@
  * A peer sends signals for the other end of each connection it is making, and the host sends the
  * start. Each message is JSON of its Schema's type, which transforms nothing, so a message on the
  * wire is `JSON.stringify` of its value; `fromJson` reads one back. What arrives at the worker is
- * untrusted, so it is decoded where it arrives. Plain on purpose (ADR-0024): a Schema and the
+ * untrusted, so it is decoded where it arrives. Plain on purpose: a Schema and the
  * data work that reads it.
  *
  * @since 0.7.0

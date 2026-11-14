@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-// Which packages each entry of arcadekit may import (ADR-0018). When the entries were packages
+// Which packages each entry of arcadekit may import. When the entries were packages
 // of their own, each one's package.json said so: `effect` was not installed for core and input,
 // nor `foldkit` for net. In the one package every peer is installed for every entry, so this test
 // says it instead. It follows every import from each entry, in src/ and in the built dist/ (the

@@ -2,8 +2,8 @@
  * State hashes: a 32-bit digest of the numbers a game lists from a run's state, in a fixed
  * order.
  *
- * The game keeps the list and the kit folds it, so the kit never looks inside a state (ADR-0007),
- * and what only a view reads is left out by not being listed (ADR-0014). A host or a test takes
+ * The game keeps the list and the kit folds it, so the kit never looks inside a state,
+ * and what only a view reads is left out by not being listed. A host or a test takes
  * a hash between steps, and lockstep peers compare theirs to find a desync: the rules never read
  * one.
  *

@@ -3,7 +3,7 @@
  *
  * The host is `host`, and each guest `guest-1`, `guest-2` and so on in join order, never reused.
  * The ids are a lockstep run's peer ids too, so a run's player order is the room's. Plain on
- * purpose (ADR-0024): a Schema and its constants.
+ * purpose: a Schema and its constants.
  *
  * @since 0.7.0
  */

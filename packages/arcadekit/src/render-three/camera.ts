@@ -4,7 +4,7 @@
  *
  * Each function writes a camera's position and the way it looks, and allocates nothing, so a
  * view calls it every frame. They are plain calls: a view places its camera inside the frame the
- * browser shows (ADR-0024). A pixel camera is placed by `PixelCamera`'s own functions, which keep
+ * browser shows. A pixel camera is placed by `PixelCamera`'s own functions, which keep
  * its pixels whole; a side-view genre would need helpers of its own.
  *
  * @since 0.7.0

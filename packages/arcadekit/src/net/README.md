@@ -4,7 +4,7 @@ Lockstep multiplayer for 2 to 4 players. `LockstepSession.host` and `LockstepSes
 
 An entry of the [`arcadekit`](../../README.md) package. The root entry is DOM-free. Each entry's modules are namespaces, as Effect's are (`import { LockstepSession, MemoryNetwork } from "arcadekit/net"`), and `Coop` is a builder a game writes bare.
 
-Plain where a tick runs, on purpose ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)): a tick decides each step's input and runs the steps, so it gives the same bits on every peer and finishes in the call that ticks it, and its time comes in as an argument. What has a lifecycle is Effect: a scoped session, a room and its links, a Co-op client's seats and attaches.
+Plain where a tick runs, on purpose: a tick decides each step's input and runs the steps, so it gives the same bits on every peer and finishes in the call that ticks it, and its time comes in as an argument. What has a lifecycle is Effect: a scoped session, a room and its links, a Co-op client's seats and attaches.
 
 ## Install
 
@@ -661,5 +661,3 @@ export const run = <A, E>(
 - **Wrap every Effect the test runs or forks**, the one that builds the client's layer first: a client takes its Clock and its scheduler from the Effect that made it, and what it forks later runs on them.
 - **It fakes nothing itself**, and imports no test runner: it reads the globals as they are when the Effect runs. Fake `performance` and `setTimeout`, and `setInterval` with `clearInterval` for a run on the default ticker, which ticks on the page's timer where no worker starts, as in Node. Leave `queueMicrotask` real.
 - **With `ManualTicker`** the test ticks, and the faked time is still the run's: move the time, then tick.
-
-See [ADR-0012](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0012-delay-based-lockstep-over-a-host-star.md) (delay-based lockstep over a host star), [ADR-0019](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md) (the kit owns co-op from the signalling worker to the client; the screens stay in the app), [ADR-0021](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0021-co-op-is-declared-from-the-games-engine.md) (co-op is declared from the game's engine, and heard through one `match`), [ADR-0022](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0022-a-lockstep-session-reports-only-from-its-ticks.md) (a session reports only from its ticks, and tells a host's start at the first) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math, so every browser computes the same run).
