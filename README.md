@@ -71,7 +71,7 @@ Copy the demo app closest to your game (`apps/survivor-demo` or `apps/push-puzzl
 
 ### In a new genre
 
-Write the genre inside your app, in a folder of its own beside the Foldkit app (`src/<genre>/`, imported as `#<genre>` through the app's `package.json` `imports`), in two halves, as declarations ([`arcadekit/game`](packages/arcadekit/src/game/README.md)). The push-puzzle demo is the example to copy: its genre's declarations are exported bare, and its other modules are namespaces, as the game-modules skill (`.agents/skills/game-modules/SKILL.md`) says. Its public file, `src/push-puzzle/index.ts`, declares the rules, with no DOM:
+Write the genre inside your app, in a folder of its own beside the Foldkit app (`src/<genre>/`, imported as `#<genre>` through the app's `package.json` `imports`), in two halves, as declarations ([`arcadekit/game`](packages/arcadekit/src/game/README.md)). The push-puzzle demo is the example to copy: its genre's declarations are exported bare, and its other modules are namespaces. Its public file, `src/push-puzzle/index.ts`, declares the rules, with no DOM:
 
 ```ts
 import { Content } from "arcadekit/content";

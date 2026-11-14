@@ -147,7 +147,7 @@ const ENTRY_FILES = Object.values(kitExports).map(({ source }) =>
 
 // Each demo's game: its public files, from the demo's `imports` (`#push-puzzle` and
 // `#push-puzzle/browser`), and the folder they are in (`src/push-puzzle/`). A game's public file is
-// a barrel of namespaces too (.agents/skills/game-modules/SKILL.md).
+// a barrel of namespaces too, as an entry's is.
 const DEMOS = ["push-puzzle-demo", "survivor-demo"] as const;
 const GAME_ENTRY_FILES = DEMOS.flatMap((demo) =>
   Object.values(
