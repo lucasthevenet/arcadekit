@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { fitCamera, followTarget, orbitAround } from "./index";
+import { Camera } from "./index";
 
 // No WebGL here: three's cameras and vectors are plain math, so they run in Node.
 
@@ -42,7 +42,7 @@ const perspective = (aspect: number) =>
 const orthographic = (aspect: number) =>
   new THREE.OrthographicCamera(-5 * aspect, 5 * aspect, 5, -5, 0.1, 400);
 
-describe(fitCamera, () => {
+describe(Camera.fit, () => {
   describe.each([
     { camera: "a perspective camera", makeCamera: perspective },
     { camera: "an orthographic camera", makeCamera: orthographic },
@@ -51,7 +51,7 @@ describe(fitCamera, () => {
       "shows every corner of the bounds plus the margin, filling the view one way, at aspect %s",
       (aspect) => {
         const camera = makeCamera(aspect);
-        fitCamera(camera, BOUNDS, { margin: MARGIN });
+        Camera.fit(camera, BOUNDS, { margin: MARGIN });
         const points = corners(camera);
         const farthest = Math.max(...points.map(reach));
         expect(farthest).toBeLessThanOrEqual(1 + NUDGE);
@@ -65,15 +65,15 @@ describe(fitCamera, () => {
 
     it.each([0, 0.35])("looks at the bounds' center with tilt %s", (tilt) => {
       const camera = makeCamera(2);
-      fitCamera(camera, BOUNDS, { margin: MARGIN, tilt });
+      Camera.fit(camera, BOUNDS, { margin: MARGIN, tilt });
       expect(reach(project(camera, 6, 2))).toBeLessThanOrEqual(NUDGE);
     });
 
     it("sits back toward +z by tilt times its height", () => {
       const overhead = makeCamera(2);
-      fitCamera(overhead, BOUNDS, { margin: MARGIN });
+      Camera.fit(overhead, BOUNDS, { margin: MARGIN });
       const tilted = makeCamera(2);
-      fitCamera(tilted, BOUNDS, { margin: MARGIN, tilt: 0.35 });
+      Camera.fit(tilted, BOUNDS, { margin: MARGIN, tilt: 0.35 });
       // With no tilt, straight above the center.
       expect([overhead.position.x, overhead.position.z]).toStrictEqual([6, 2]);
       expect(tilted.position.x).toBe(6);
@@ -86,7 +86,7 @@ describe(fitCamera, () => {
     "keeps an orthographic camera's aspect ratio of %s",
     (aspect) => {
       const camera = orthographic(aspect);
-      fitCamera(camera, BOUNDS, { margin: MARGIN });
+      Camera.fit(camera, BOUNDS, { margin: MARGIN });
       expect(
         (camera.right - camera.left) / (camera.top - camera.bottom)
       ).toBeCloseTo(aspect);
@@ -97,34 +97,34 @@ describe(fitCamera, () => {
   // bounds, and that edge can leave the screen.
   it("leaves an orthographic camera room to spare when it tilts", () => {
     const camera = orthographic(2);
-    fitCamera(camera, BOUNDS, { margin: MARGIN, tilt: 0.35 });
+    Camera.fit(camera, BOUNDS, { margin: MARGIN, tilt: 0.35 });
     expect(Math.max(...corners(camera).map(reach))).toBeLessThan(1);
   });
 });
 
-describe(followTarget, () => {
+describe(Camera.follow, () => {
   it("keeps the camera at a fixed offset from the target, looking at it", () => {
     const camera = perspective(16 / 9);
     const offset = { x: 2, y: 20, z: 13 };
-    followTarget(camera, { x: 3, z: -2 }, offset);
+    Camera.follow(camera, { x: 3, z: -2 }, offset);
     expect(camera.position.toArray()).toStrictEqual([5, 20, 11]);
-    followTarget(camera, { x: -4, z: 6 }, offset);
+    Camera.follow(camera, { x: -4, z: 6 }, offset);
     expect(camera.position.toArray()).toStrictEqual([-2, 20, 19]);
     expect(reach(project(camera, -4, 6))).toBeCloseTo(0);
   });
 });
 
-describe(orbitAround, () => {
+describe(Camera.orbit, () => {
   it("puts the camera on the +z side at angle 0, at the given height and radius, looking at the center", () => {
     const camera = perspective(16 / 9);
-    orbitAround(camera, { x: 1, z: 2 }, { radius: 18, height: 16, angle: 0 });
+    Camera.orbit(camera, { x: 1, z: 2 }, { radius: 18, height: 16, angle: 0 });
     expect(camera.position.toArray()).toStrictEqual([1, 16, 20]);
     expect(reach(project(camera, 1, 2))).toBeCloseTo(0);
   });
 
   it("moves the camera to the +x side a quarter turn later", () => {
     const camera = perspective(16 / 9);
-    orbitAround(
+    Camera.orbit(
       camera,
       { x: 1, z: 2 },
       { radius: 18, height: 16, angle: Math.PI / 2 }

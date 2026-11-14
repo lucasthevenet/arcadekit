@@ -14,11 +14,11 @@ const BACKGROUND = "#17151f";
  * `dispose` frees what the view made and never the sheet, which the app owns.
  */
 export class PushPuzzleView implements Game.View<Puzzle> {
-  private readonly stage: Stage<"pixel">;
+  private readonly stage: Stage.Stage<"pixel">;
   private readonly sprites: PuzzleSprites;
 
-  constructor(container: HTMLElement, sheet: SpriteSheet) {
-    this.stage = new Stage(container, {
+  constructor(container: HTMLElement, sheet: SpriteSheet.SpriteSheet) {
+    this.stage = Stage.make(container, {
       camera: "pixel",
       pixelsPerUnit: PIXELS_PER_CELL,
       background: BACKGROUND,
@@ -29,12 +29,12 @@ export class PushPuzzleView implements Game.View<Puzzle> {
 
   render(puzzle: Puzzle | null, timeSeconds: number): void {
     this.sprites.draw(puzzle, timeSeconds);
-    this.stage.render();
+    Stage.render(this.stage);
   }
 
   dispose(): void {
     this.sprites.dispose();
     // Frees the rest of the scene. The sheet's texture is kept: the app frees it.
-    this.stage.dispose();
+    Stage.dispose(this.stage);
   }
 }

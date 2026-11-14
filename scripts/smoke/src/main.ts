@@ -11,14 +11,9 @@ import type { LockstepSession } from "arcadekit/net";
 import type { RoomOptions } from "arcadekit/net/browser";
 import {
   InstancedSprites,
-  Stage,
-  frameAt,
-  loadSpriteSheet,
-} from "arcadekit/render-three";
-import type {
-  InstancedSpritesOptions,
+  PixelCamera,
   SpriteSheet,
-  SpriteSheetError,
+  Stage,
 } from "arcadekit/render-three";
 import { Save, Setting } from "arcadekit/save";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
@@ -44,36 +39,40 @@ const createInput = (surface: HTMLElement): Game.InputSource<DotsInput> => {
   };
 };
 
-const SPRITE_OPTIONS: InstancedSpritesOptions = { capacity: 256, layer: 1 };
+const SPRITE_OPTIONS: InstancedSprites.Options = { capacity: 256, layer: 1 };
 
 class DotsView implements Game.View<Field> {
-  private readonly stage: Stage<"pixel">;
-  private readonly sprites: InstancedSprites;
+  private readonly stage: Stage.Stage<"pixel">;
+  private readonly sprites: InstancedSprites.InstancedSprites;
 
-  constructor(container: HTMLElement, sheet: SpriteSheet) {
-    this.stage = new Stage(container, { camera: "pixel", pixelsPerUnit: 16 });
-    this.sprites = new InstancedSprites(sheet, SPRITE_OPTIONS);
+  constructor(container: HTMLElement, sheet: SpriteSheet.SpriteSheet) {
+    this.stage = Stage.make(container, { camera: "pixel", pixelsPerUnit: 16 });
+    this.sprites = InstancedSprites.make(sheet, SPRITE_OPTIONS);
     this.stage.scene.add(this.sprites.mesh);
   }
 
   render(field: Field | null, timeSeconds: number): void {
     const tag = this.sprites.sheet.data.tags.get("dot");
     if (field !== null && tag !== undefined) {
-      const frame = frameAt(this.sprites.sheet.data, tag, timeSeconds);
+      const frame = SpriteSheet.frameAt(
+        this.sprites.sheet.data,
+        tag,
+        timeSeconds
+      );
       const { x, z } = field.dots.fields;
-      this.sprites.begin();
+      InstancedSprites.begin(this.sprites);
       for (let i = 0; i < field.dots.count; i++) {
-        this.sprites.push(x[i]!, z[i]!, frame);
+        InstancedSprites.push(this.sprites, x[i]!, z[i]!, frame);
       }
-      this.sprites.end();
-      this.stage.camera.follow(field.playerX, field.playerZ);
+      InstancedSprites.end(this.sprites);
+      PixelCamera.follow(this.stage.camera, field.playerX, field.playerZ);
     }
-    this.stage.render();
+    Stage.render(this.stage);
   }
 
   dispose(): void {
-    this.sprites.dispose();
-    this.stage.dispose();
+    InstancedSprites.dispose(this.sprites);
+    Stage.dispose(this.stage);
   }
 }
 
@@ -83,9 +82,10 @@ const soundView = (audio: AudioSystem.AudioSystem): Game.View<Field> => ({
 });
 
 /** The sheet the dots are drawn from. The app says where it is, and frees it at its end. */
-class DotsSheet extends Asset<SpriteSheet, SpriteSheetError>()("DotsSheet", {
-  release: (sheet) => sheet.dispose(),
-}) {}
+class DotsSheet extends Asset<
+  SpriteSheet.SpriteSheet,
+  SpriteSheet.SpriteSheetError
+>()("DotsSheet", { release: SpriteSheet.dispose }) {}
 
 /** The game in the browser: its rules, drawn from the app's sheet and heard through its audio. */
 class DotsEngine extends Game.Engine("DotsEngine", {
@@ -124,12 +124,12 @@ const program = Effect.gen(function* () {
   yield* (yield* DotsAudioSettings).read;
   yield* save.write({ first: { near: replay(1, 60) } });
 
-  const engine: Game.EngineOf<typeof Dots, SpriteSheetError> =
+  const engine: Game.EngineOf<typeof Dots, SpriteSheet.SpriteSheetError> =
     yield* DotsEngine;
   // What a Foldkit app's `engineEntry` takes: the engine's `attach` and `listen`.
   const attachable: AttachableEngine<
     Game.EventOf<typeof Dots>,
-    Game.AttachError | Game.GameCrashed | SpriteSheetError
+    Game.AttachError | Game.GameCrashed | SpriteSheet.SpriteSheetError
   > = engine;
   const element = document.querySelector<HTMLElement>("#game");
   if (element === null) {
@@ -189,7 +189,7 @@ Effect.runFork(
             Layer.mergeAll(DotsSave.layer, DotsAudioSettings.layer).pipe(
               Layer.provide(BrowserSaveStorage.layer)
             ),
-            DotsSheet.layer(loadSpriteSheet("sprites/dots.json")),
+            DotsSheet.layer(SpriteSheet.fromUrl("sprites/dots.json")),
             DotsContent.layer(
               ContentSource.fromRecord({
                 "settings.json": { dots: 128, speed: 6 },

@@ -2,28 +2,39 @@ import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 
 import { InstancedSprites, PixelCamera } from "./index";
-import { drawnSprites } from "./testing/drawn-sprites";
-import { testSheet } from "./testing/test-sheet";
+import * as DrawnSprites from "./testing/drawn-sprites";
+import * as TestSpriteSheet from "./testing/test-sprite-sheet";
 
 // No WebGL here: a batch is plain Three.js objects, read back with the testing entry's
-// `drawnSprites`, and Three.js would call `mesh.onBeforeRender` with the camera that draws it.
+// `DrawnSprites.read`, and Three.js would call `mesh.onBeforeRender` with the camera that draws it.
 // The helpers are imported by their files: the entry's public file also has the PNG checks,
 // which need Node's types (tsconfig.node.json).
 
 // Frames 0 and 1 are "slime", 2 and 3 are "bat".
-const sheet = testSheet({ slime: 2, bat: 2 });
+const sheet = TestSpriteSheet.fromTags({ slime: 2, bat: 2 });
 
 /** What each sprite shown was pushed with. */
-const pushed = (batch: InstancedSprites) =>
-  drawnSprites(batch).map(({ x, z, frame, flipX }) => [x, z, frame, flipX]);
+const pushed = (batch: InstancedSprites.InstancedSprites) =>
+  DrawnSprites.read(batch).map(({ x, z, frame, flipX }) => [
+    x,
+    z,
+    frame,
+    flipX,
+  ]);
 
-/** Tells a batch that `camera` is about to draw it, as a renderer does before the draw call. */
-const beforeRender = (batch: InstancedSprites, camera: THREE.Camera) => {
+/**
+ * Tells a batch that `camera` is about to draw it, as a renderer does before the draw call: with
+ * the Three.js camera, which for a pixel camera is the one it places.
+ */
+const beforeRender = (
+  batch: InstancedSprites.InstancedSprites,
+  camera: THREE.Camera | PixelCamera.PixelCamera
+) => {
   const { mesh } = batch;
   mesh.onBeforeRender(
     null as unknown as THREE.WebGLRenderer,
     null as unknown as THREE.Scene,
-    camera,
+    PixelCamera.isPixelCamera(camera) ? camera.camera : camera,
     mesh.geometry,
     mesh.material,
     null as unknown as THREE.Group
@@ -31,24 +42,24 @@ const beforeRender = (batch: InstancedSprites, camera: THREE.Camera) => {
 };
 
 /** The world units a batch's shader rounds positions to, or 0 for no rounding. */
-const snapUnit = (batch: InstancedSprites) =>
+const snapUnit = (batch: InstancedSprites.InstancedSprites) =>
   batch.mesh.material.uniforms["uSnapUnit"]?.value as number;
 
 /** A pixel camera drawing `screenPixels` screen pixels for each of its 16 sprite pixels a unit. */
 const pixelCamera = (screenPixels: number) => {
-  const camera = new PixelCamera({ pixelsPerUnit: 16, viewHeight: 10 });
-  camera.setBufferSize(800, 160 * screenPixels);
+  const camera = PixelCamera.make({ pixelsPerUnit: 16, viewHeight: 10 });
+  PixelCamera.setBufferSize(camera, 800, 160 * screenPixels);
   return camera;
 };
 
-describe(InstancedSprites, () => {
+describe("a batch of sprites", () => {
   it("gives each pushed sprite the next index, and shows them at end", () => {
-    const batch = new InstancedSprites(sheet);
-    batch.begin();
+    const batch = InstancedSprites.make(sheet);
+    InstancedSprites.begin(batch);
     const indices = [
-      batch.push(1, 2, 0),
-      batch.push(3, 4, 1, true),
-      batch.push(5, 6, 3),
+      InstancedSprites.push(batch, 1, 2, 0),
+      InstancedSprites.push(batch, 3, 4, 1, true),
+      InstancedSprites.push(batch, 5, 6, 3),
     ];
     expect({ indices, count: batch.count }).toStrictEqual({
       indices: [0, 1, 2],
@@ -56,7 +67,7 @@ describe(InstancedSprites, () => {
     });
     // Pushed, and not shown yet.
     expect(batch.mesh.geometry.instanceCount).toBe(0);
-    batch.end();
+    InstancedSprites.end(batch);
     expect(batch.mesh.geometry.instanceCount).toBe(3);
     expect(pushed(batch)).toStrictEqual([
       [1, 2, 0, false],
@@ -66,35 +77,40 @@ describe(InstancedSprites, () => {
   });
 
   it("starts over at begin, and keeps showing its last end until the next", () => {
-    const batch = new InstancedSprites(sheet);
-    batch.begin();
-    batch.push(1, 1, 0);
-    batch.push(2, 2, 1);
-    batch.end();
-    batch.begin();
+    const batch = InstancedSprites.make(sheet);
+    InstancedSprites.begin(batch);
+    InstancedSprites.push(batch, 1, 1, 0);
+    InstancedSprites.push(batch, 2, 2, 1);
+    InstancedSprites.end(batch);
+    InstancedSprites.begin(batch);
     expect({ count: batch.count, shown: pushed(batch).length }).toStrictEqual({
       count: 0,
       shown: 2,
     });
-    expect(batch.push(7, 8, 2)).toBe(0);
-    batch.end();
+    expect(InstancedSprites.push(batch, 7, 8, 2)).toBe(0);
+    InstancedSprites.end(batch);
     expect(pushed(batch)).toStrictEqual([[7, 8, 2, false]]);
     // A frame with no sprite shows none.
-    batch.begin();
-    batch.end();
+    InstancedSprites.begin(batch);
+    InstancedSprites.end(batch);
     expect(pushed(batch)).toStrictEqual([]);
   });
 
   it("writes what the setters give a sprite, and a push starts its look plain", () => {
-    const batch = new InstancedSprites(sheet, { layer: 2 });
-    batch.begin();
-    const sprite = batch.push(3, 4, 3, true);
-    batch.setTint(sprite, new THREE.Color(0.5, 0.25, 1), 0.75);
-    batch.setFlash(sprite, 0.5);
-    batch.setLift(sprite, 0.25);
-    batch.setLayer(sprite, 3);
-    batch.end();
-    expect(drawnSprites(batch)).toStrictEqual([
+    const batch = InstancedSprites.make(sheet, { layer: 2 });
+    InstancedSprites.begin(batch);
+    const sprite = InstancedSprites.push(batch, 3, 4, 3, true);
+    InstancedSprites.setTint(
+      batch,
+      sprite,
+      new THREE.Color(0.5, 0.25, 1),
+      0.75
+    );
+    InstancedSprites.setFlash(batch, sprite, 0.5);
+    InstancedSprites.setLift(batch, sprite, 0.25);
+    InstancedSprites.setLayer(batch, sprite, 3);
+    InstancedSprites.end(batch);
+    expect(DrawnSprites.read(batch)).toStrictEqual([
       {
         x: 3,
         z: 4,
@@ -109,15 +125,17 @@ describe(InstancedSprites, () => {
       },
     ]);
 
-    batch.setAlpha(sprite, 0.5);
-    expect(drawnSprites(batch)[0]?.tint).toStrictEqual([0.5, 0.25, 1, 0.5]);
+    InstancedSprites.setAlpha(batch, sprite, 0.5);
+    expect(DrawnSprites.read(batch)[0]?.tint).toStrictEqual([
+      0.5, 0.25, 1, 0.5,
+    ]);
 
     // The same slot next frame: nothing of the last sprite is left. A frame outside the
     // sheet draws frame 0.
-    batch.begin();
-    batch.push(5, 6, 9);
-    batch.end();
-    expect(drawnSprites(batch)).toStrictEqual([
+    InstancedSprites.begin(batch);
+    InstancedSprites.push(batch, 5, 6, 9);
+    InstancedSprites.end(batch);
+    expect(DrawnSprites.read(batch)).toStrictEqual([
       {
         x: 5,
         z: 6,
@@ -134,47 +152,55 @@ describe(InstancedSprites, () => {
 
   it("has room for 64 sprites unless told, and for at least one whole sprite", () => {
     expect([
-      new InstancedSprites(sheet).capacity,
-      new InstancedSprites(sheet, { capacity: 300 }).capacity,
-      new InstancedSprites(sheet, { capacity: 0 }).capacity,
-      new InstancedSprites(sheet, { capacity: -3 }).capacity,
-      new InstancedSprites(sheet, { capacity: 2.5 }).capacity,
+      InstancedSprites.make(sheet).capacity,
+      InstancedSprites.make(sheet, { capacity: 300 }).capacity,
+      InstancedSprites.make(sheet, { capacity: 0 }).capacity,
+      InstancedSprites.make(sheet, { capacity: -3 }).capacity,
+      InstancedSprites.make(sheet, { capacity: 2.5 }).capacity,
     ]).toStrictEqual([64, 300, 1, 1, 3]);
   });
 
   it("refuses a capacity that is no finite number", () => {
     // Buffers with no room that never grow would lose every sprite pushed, in silence.
-    expect(() => new InstancedSprites(sheet, { capacity: Number.NaN })).toThrow(
-      new RangeError(
-        "InstancedSprites: a capacity of NaN is no number of sprites: give the batch a whole number to start with, or leave it out for 64"
-      )
-    );
-    expect(
-      () => new InstancedSprites(sheet, { capacity: Number.POSITIVE_INFINITY })
+    expect(() =>
+      InstancedSprites.make(sheet, { capacity: Number.NaN })
     ).toThrow(
       new RangeError(
-        "InstancedSprites: a capacity of Infinity is no number of sprites: give the batch a whole number to start with, or leave it out for 64"
+        "InstancedSprites.make: a capacity of NaN is no number of sprites: give the batch a whole number to start with, or leave it out for 64"
+      )
+    );
+    expect(() =>
+      InstancedSprites.make(sheet, { capacity: Number.POSITIVE_INFINITY })
+    ).toThrow(
+      new RangeError(
+        "InstancedSprites.make: a capacity of Infinity is no number of sprites: give the batch a whole number to start with, or leave it out for 64"
       )
     );
   });
 
   it("doubles its room when a frame pushes past it, keeping every sprite, its mesh and its material", () => {
-    const batch = new InstancedSprites(sheet, { capacity: 2 });
+    const batch = InstancedSprites.make(sheet, { capacity: 2 });
     const { mesh } = batch;
     const { material, geometry: first } = mesh;
     const freed = vi.spyOn(THREE.BufferGeometry.prototype, "dispose");
-    batch.begin();
+    InstancedSprites.begin(batch);
     for (let i = 0; i < 5; i++) {
-      const sprite = batch.push(i, 10 - i, i % 4, i % 2 === 1);
-      batch.setLayer(sprite, i);
-      batch.setFlash(sprite, i / 4);
+      const sprite = InstancedSprites.push(
+        batch,
+        i,
+        10 - i,
+        i % 4,
+        i % 2 === 1
+      );
+      InstancedSprites.setLayer(batch, sprite, i);
+      InstancedSprites.setFlash(batch, sprite, i / 4);
     }
     // 2, then 4, then 8.
     expect(batch.capacity).toBe(8);
-    batch.end();
+    InstancedSprites.end(batch);
 
     expect(
-      drawnSprites(batch).map(({ x, z, frame, flipX, layer, flash }) => [
+      DrawnSprites.read(batch).map(({ x, z, frame, flipX, layer, flash }) => [
         x,
         z,
         frame,
@@ -213,15 +239,15 @@ describe(InstancedSprites, () => {
   });
 
   it("shows as many sprites as its last end did while a frame that grows it is pushed", () => {
-    const batch = new InstancedSprites(sheet, { capacity: 1 });
-    batch.begin();
-    batch.push(1, 1, 0);
-    batch.end();
-    batch.begin();
-    batch.push(2, 2, 1);
-    batch.push(3, 3, 2);
+    const batch = InstancedSprites.make(sheet, { capacity: 1 });
+    InstancedSprites.begin(batch);
+    InstancedSprites.push(batch, 1, 1, 0);
+    InstancedSprites.end(batch);
+    InstancedSprites.begin(batch);
+    InstancedSprites.push(batch, 2, 2, 1);
+    InstancedSprites.push(batch, 3, 3, 2);
     expect(batch.mesh.geometry.instanceCount).toBe(1);
-    batch.end();
+    InstancedSprites.end(batch);
     expect(pushed(batch)).toStrictEqual([
       [2, 2, 1, false],
       [3, 3, 2, false],
@@ -229,7 +255,7 @@ describe(InstancedSprites, () => {
   });
 
   it("dispose removes the mesh and frees what it made, not the sheet", () => {
-    const batch = new InstancedSprites(sheet, { capacity: 4 });
+    const batch = InstancedSprites.make(sheet, { capacity: 4 });
     const scene = new THREE.Scene();
     scene.add(batch.mesh);
     const freed: unknown[] = [];
@@ -240,15 +266,15 @@ describe(InstancedSprites, () => {
     ]) {
       thing.addEventListener("dispose", () => freed.push(thing));
     }
-    batch.dispose();
+    InstancedSprites.dispose(batch);
     expect(batch.mesh.parent).toBeNull();
     expect(freed).toStrictEqual([batch.mesh.geometry, batch.mesh.material]);
   });
 
   describe("the unit it gives its shader to round positions to", () => {
     it('is a sprite pixel for "sprite", the default, whatever camera draws it', () => {
-      const byDefault = new InstancedSprites(sheet);
-      const coarse = new InstancedSprites(sheet, {
+      const byDefault = InstancedSprites.make(sheet);
+      const coarse = InstancedSprites.make(sheet, {
         snap: "sprite",
         unitsPerPixel: 1 / 8,
       });
@@ -260,7 +286,7 @@ describe(InstancedSprites, () => {
     });
 
     it('is a screen pixel of the pixel camera about to draw it for "screen"', () => {
-      const batch = new InstancedSprites(sheet, { snap: "screen" });
+      const batch = InstancedSprites.make(sheet, { snap: "screen" });
       const { material } = batch.mesh;
       // A sprite pixel until a camera draws it.
       expect(snapUnit(batch)).toBe(1 / 16);
@@ -295,16 +321,16 @@ describe(InstancedSprites, () => {
     });
 
     it('is none for "none"', () => {
-      const batch = new InstancedSprites(sheet, { snap: "none" });
+      const batch = InstancedSprites.make(sheet, { snap: "none" });
       beforeRender(batch, pixelCamera(4));
       expect(snapUnit(batch)).toBe(0);
     });
 
     it("says what it was made to round to, so a view's test can hold it", () => {
       expect([
-        new InstancedSprites(sheet).snap,
-        new InstancedSprites(sheet, { snap: "screen" }).snap,
-        new InstancedSprites(sheet, { snap: "none" }).snap,
+        InstancedSprites.make(sheet).snap,
+        InstancedSprites.make(sheet, { snap: "screen" }).snap,
+        InstancedSprites.make(sheet, { snap: "none" }).snap,
       ]).toStrictEqual(["sprite", "screen", "none"]);
     });
   });

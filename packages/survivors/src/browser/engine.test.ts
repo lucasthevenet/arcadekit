@@ -59,7 +59,7 @@ describe("survivors' engine", () => {
       {
         audio: {} as AudioSystem.AudioSystem,
         sounds: {} as SurvivorsSounds,
-        sheet: {} as SpriteSheet,
+        sheet: {} as SpriteSheet.SpriteSheet,
       },
       { local }
     );

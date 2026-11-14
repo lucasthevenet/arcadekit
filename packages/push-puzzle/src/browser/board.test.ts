@@ -1,10 +1,6 @@
-import { PixelCamera, resolveTags } from "arcadekit/render-three";
-import type {
-  InstancedSprites,
-  SpriteSheet,
-  TileLayer,
-} from "arcadekit/render-three";
-import { drawnSprites, testSheet } from "arcadekit/render-three/testing";
+import { PixelCamera, SpriteSheet, TileLayer } from "arcadekit/render-three";
+import type { InstancedSprites } from "arcadekit/render-three";
+import { DrawnSprites, TestSpriteSheet } from "arcadekit/render-three/testing";
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -59,9 +55,11 @@ const undo = (puzzle: Puzzle) => {
   step(puzzle, NOTHING, STEP);
 };
 
-const setup = (sheet: SpriteSheet = testSheet(TAGS)) => {
-  const camera = new PixelCamera({ pixelsPerUnit: 16 });
-  camera.setBufferSize(800, 600);
+const setup = (
+  sheet: SpriteSheet.SpriteSheet = TestSpriteSheet.fromTags(TAGS)
+) => {
+  const camera = PixelCamera.make({ pixelsPerUnit: 16 });
+  PixelCamera.setBufferSize(camera, 800, 600);
   const sprites = new PuzzleSprites(sheet, camera);
   return { sheet, camera, sprites };
 };
@@ -76,8 +74,10 @@ interface Shown {
 }
 
 /** Every sprite a batch shows now, or every tile of the layer's last fill. */
-const shown = (batch: InstancedSprites | TileLayer): Shown[] =>
-  drawnSprites(batch).map(({ x, z, tag, frame, flipX, tint }) => ({
+const shown = (
+  batch: InstancedSprites.InstancedSprites | TileLayer.TileLayer
+): Shown[] =>
+  DrawnSprites.read(batch).map(({ x, z, tag, frame, flipX, tint }) => ({
     x,
     z,
     tag,
@@ -188,7 +188,7 @@ describe("the push-puzzle sprites", () => {
     // columns 0 to 7 and rows 0 to 3, with a cell of room above row 0: the camera is over
     // the middle of the two together, (3.5, 1).
     expect(
-      camera.groundOnScreen({ minX: 0, maxX: 0, minZ: 0, maxZ: 0 })
+      PixelCamera.groundOnScreen(camera, { minX: 0, maxX: 0, minZ: 0, maxZ: 0 })
     ).toStrictEqual({
       minX: 3.5 - 400 / 96,
       maxX: 3.5 + 400 / 96,
@@ -511,7 +511,7 @@ describe("the push-puzzle sprites", () => {
   it("fills the menu's floor again when the drift brings other cells on screen, not before", () => {
     const { sprites } = setup();
     sprites.draw(null, 0);
-    const invalidated = vi.spyOn(sprites.tiles, "invalidate");
+    const invalidated = vi.spyOn(TileLayer, "invalidate");
     const before = shown(sprites.tiles);
     // A hundredth of a second of drift: the same cells, and the layer is left as it is.
     sprites.draw(null, 0.01);
@@ -538,7 +538,9 @@ describe("the push-puzzle sprites", () => {
 
   it("fills the menu's floor again when the goal's animation moves on", () => {
     // A sheet whose goal has two frames of 100 ms.
-    const { sheet, sprites } = setup(testSheet({ ...TAGS, goal: 2 }));
+    const { sheet, sprites } = setup(
+      TestSpriteSheet.fromTags({ ...TAGS, goal: 2 })
+    );
     const goal = sheet.data.tags.get("goal")!;
     const goalFrames = () => [
       ...new Set(
@@ -557,7 +559,7 @@ describe("the push-puzzle sprites", () => {
   it("falls back to a near tag when the sheet lacks one, and says which it lacks", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { sprites } = setup(
-      testSheet({
+      TestSpriteSheet.fromTags({
         floor: 3,
         wall: 1,
         hole: 1,
@@ -591,7 +593,7 @@ describe("the push-puzzle sprites", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     // No box of any kind, and the wall is the first frame.
     const { sprites } = setup(
-      testSheet({ wall: 1, floor: 3, hole: 1, "player/idle": 2 })
+      TestSpriteSheet.fromTags({ wall: 1, floor: 3, hole: 1, "player/idle": 2 })
     );
     const puzzle = start(["#####", "#@$.#", "#####"]);
     sprites.draw(puzzle, 0);
@@ -642,7 +644,10 @@ describe("the push-puzzle sprites", () => {
 
   it("needs every first tag of PUSH_PUZZLE_TAGS: the stand-in sheet lacks none", () => {
     expect(
-      resolveTags(testSheet(TAGS).data, PUSH_PUZZLE_TAGS).missing
+      SpriteSheet.resolveTags(
+        TestSpriteSheet.fromTags(TAGS).data,
+        PUSH_PUZZLE_TAGS
+      ).missing
     ).toStrictEqual([]);
   });
 

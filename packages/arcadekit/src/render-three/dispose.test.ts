@@ -1,14 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import {
-  InstancedSprites,
-  disposeObject,
-  isKeptTexture,
-  keepTexture,
-  makeSpriteSheet,
-} from "./index";
-import type { SpriteSheetData } from "./index";
+import { InstancedSprites, SpriteSheet, Stage } from "./index";
 
 // No WebGL here: disposing only fires "dispose" events, which a renderer would listen to.
 
@@ -26,7 +19,7 @@ const disposals = (
   return (thing: unknown) => counts.get(thing);
 };
 
-const SHEET: SpriteSheetData = {
+const SHEET: SpriteSheet.Data = {
   image: "sheet.png",
   width: 32,
   height: 16,
@@ -52,7 +45,7 @@ const SHEET: SpriteSheetData = {
 /** A stand-in image: three only reads it when uploading. */
 const image = { width: 32, height: 16 } as unknown as TexImageSource;
 
-describe(disposeObject, () => {
+describe(Stage.disposeObject, () => {
   it("frees geometries, materials, their textures and the scene's background", () => {
     const map = new THREE.Texture();
     const uniform = new THREE.Texture();
@@ -76,7 +69,7 @@ describe(disposeObject, () => {
       shader,
     ]);
 
-    disposeObject(scene);
+    Stage.disposeObject(scene);
 
     for (const thing of [map, uniform, background, geometry, basic, shader]) {
       expect(count(thing)).toBe(1);
@@ -84,21 +77,21 @@ describe(disposeObject, () => {
   });
 
   it("leaves a kept texture to its owner", () => {
-    const kept = keepTexture(new THREE.Texture());
+    const kept = Stage.keepTexture(new THREE.Texture());
     const mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(),
       new THREE.MeshBasicMaterial({ map: kept })
     );
     const count = disposals([kept, mesh.material]);
-    disposeObject(mesh);
-    expect(isKeptTexture(kept)).toBe(true);
+    Stage.disposeObject(mesh);
+    expect(Stage.isKeptTexture(kept)).toBe(true);
     expect(count(kept)).toBe(0);
     expect(count(mesh.material)).toBe(1);
   });
 
   it("frees a sprite batch but not its sheet", () => {
-    const sheet = makeSpriteSheet(SHEET, image);
-    const sprites = new InstancedSprites(sheet, { capacity: 4 });
+    const sheet = SpriteSheet.make(SHEET, image);
+    const sprites = InstancedSprites.make(sheet, { capacity: 4 });
     const scene = new THREE.Scene();
     scene.add(sprites.mesh);
     const frameTable = sprites.mesh.material.uniforms["uFrames"]
@@ -110,13 +103,13 @@ describe(disposeObject, () => {
       sprites.mesh.material,
     ]);
 
-    disposeObject(scene);
+    Stage.disposeObject(scene);
 
     expect(count(sheet.texture)).toBe(0);
     expect(count(frameTable)).toBe(1);
     expect(count(sprites.mesh.geometry)).toBe(1);
     expect(count(sprites.mesh.material)).toBe(1);
-    sheet.dispose();
+    SpriteSheet.dispose(sheet);
     expect(count(sheet.texture)).toBe(1);
   });
 });

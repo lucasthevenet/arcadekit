@@ -6,7 +6,7 @@ import {
 } from "@arcadekit/survivors/browser";
 import { BrowserAudioSystem } from "arcadekit/audio/browser";
 import { FetchContentSource } from "arcadekit/content/browser";
-import { loadSpriteSheet } from "arcadekit/render-three";
+import { SpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
@@ -28,7 +28,7 @@ export { subscriptions } from "./subscriptions";
  */
 const assets = Layer.mergeAll(
   SurvivorsSheet.layer(
-    loadSpriteSheet(`${import.meta.env.BASE_URL}sprites/survivors.json`)
+    SpriteSheet.fromUrl(`${import.meta.env.BASE_URL}sprites/survivors.json`)
   ),
   SurvivorsCueTable.layer(survivorsSounds),
   BrowserAudioSystem.layer

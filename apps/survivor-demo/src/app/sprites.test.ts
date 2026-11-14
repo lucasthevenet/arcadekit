@@ -9,14 +9,8 @@ import {
 } from "@arcadekit/survivors/browser";
 import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
-import {
-  SpriteSheetError,
-  decodeSpriteSheet,
-  makeSpriteSheet,
-  resolveTags,
-} from "arcadekit/render-three";
-import type { SpriteSheet } from "arcadekit/render-three";
-import { framesWithSoftAlpha, pngSize } from "arcadekit/render-three/testing";
+import { SpriteSheet } from "arcadekit/render-three";
+import { Png } from "arcadekit/render-three/testing";
 import { Effect, Layer } from "effect";
 import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";
@@ -61,7 +55,7 @@ const withoutSprites = (json: unknown): unknown =>
     key === "sprite" ? undefined : value
   );
 const sheet = await Effect.runPromise(
-  decodeSpriteSheet(
+  SpriteSheet.decode(
     "survivors.json",
     JSON.parse(read("sprites/survivors.json").toString()) as unknown
   )
@@ -69,7 +63,9 @@ const sheet = await Effect.runPromise(
 
 describe("the sprite sheet", () => {
   it("has every tag the view draws for the demo's content", () => {
-    expect(resolveTags(sheet, wantedTags(content)).missing).toStrictEqual([]);
+    expect(
+      SpriteSheet.resolveTags(sheet, wantedTags(content)).missing
+    ).toStrictEqual([]);
   });
 
   it("has the generic sprites the view draws for an entry that names none", async () => {
@@ -86,12 +82,12 @@ describe("the sprite sheet", () => {
       named: [...unnamed.heroes, ...unnamed.enemies, ...unnamed.weapons].filter(
         (def) => def.sprite !== undefined
       ),
-      missing: resolveTags(sheet, wantedTags(unnamed)).missing,
+      missing: SpriteSheet.resolveTags(sheet, wantedTags(unnamed)).missing,
     }).toStrictEqual({ named: [], missing: [] });
   });
 
   it("names its PNG, and the PNG is the size the JSON says", () => {
-    expect(pngSize(read(`sprites/${sheet.image}`))).toStrictEqual({
+    expect(Png.size(read(`sprites/${sheet.image}`))).toStrictEqual({
       width: sheet.width,
       height: sheet.height,
     });
@@ -102,7 +98,7 @@ describe("the sprite sheet", () => {
     // The view draws the rest opaque, cutting out pixels below half alpha and drawing what
     // is left solid, so art drawn that way should be fully opaque or fully clear.
     expect(
-      framesWithSoftAlpha(sheet, png, ["aura/ring", "shadow"])
+      Png.framesWithSoftAlpha(png, sheet, ["aura/ring", "shadow"])
     ).toStrictEqual([]);
   });
 
@@ -117,7 +113,7 @@ describe("the sprite sheet", () => {
   });
 });
 
-const sheetError = new SpriteSheetError({
+const sheetError = new SpriteSheet.SpriteSheetError({
   file: "sprites/survivors.json",
   message:
     "The sprite sheet file sprites/survivors.json can't be loaded: HTTP 404",
@@ -126,7 +122,7 @@ const sheetError = new SpriteSheetError({
 /** Runs `effect` with the real content and `load` as the sheet's. */
 const runWithSheet = <A, E>(
   effect: Effect.Effect<A, E, SurvivorsContent | SurvivorsSheet>,
-  load: Effect.Effect<SpriteSheet, SpriteSheetError>
+  load: Effect.Effect<SpriteSheet.SpriteSheet, SpriteSheet.SpriteSheetError>
 ) =>
   effect.pipe(
     Effect.provideService(SurvivorsSheet, { load }),
@@ -147,7 +143,7 @@ describe("loading", () => {
     const image = { width: 1, height: 1 } as unknown as TexImageSource;
     const message = await runWithSheet(
       LoadContent().effect,
-      Effect.succeed(makeSpriteSheet(sheet, image))
+      Effect.succeed(SpriteSheet.make(sheet, image))
     );
     expect(message._tag).toBe("LoadedContent");
   });

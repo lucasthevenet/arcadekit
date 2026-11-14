@@ -4,11 +4,7 @@ import { PushPuzzleContent } from "@arcadekit/push-puzzle";
 import { PushPuzzleSheet } from "@arcadekit/push-puzzle/browser";
 import { AudioSettings } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
-import {
-  SpriteSheetError,
-  decodeSpriteSheet,
-  makeSpriteSheet,
-} from "arcadekit/render-three";
+import { SpriteSheet } from "arcadekit/render-three";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { Scene } from "foldkit";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,7 +32,7 @@ const publicDir = new URL("../../public/", import.meta.url);
 const read = (file: string) => readFileSync(new URL(file, publicDir), "utf-8");
 
 const sheetData = await Effect.runPromise(
-  decodeSpriteSheet(
+  SpriteSheet.decode(
     "push-puzzle.json",
     JSON.parse(read("sprites/push-puzzle.json")) as unknown
   )
@@ -60,13 +56,13 @@ const flakyResources = (failures: {
     runs.sheet += 1;
     return runs.sheet <= failures.sheet
       ? Effect.fail(
-          new SpriteSheetError({
+          new SpriteSheet.SpriteSheetError({
             file: "sprites/push-puzzle.json",
             message: `The sheet can't be loaded (try ${runs.sheet})`,
           })
         )
       : Effect.sleep("5 millis").pipe(
-          Effect.as(makeSpriteSheet(sheetData, image))
+          Effect.as(SpriteSheet.make(sheetData, image))
         );
   });
   const source = ContentSource.make((file) =>
