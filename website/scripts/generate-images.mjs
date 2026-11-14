@@ -1,7 +1,8 @@
-// Draws the site's two PNGs from its mark, public/favicon.svg, in headless Chromium:
-// - public/apple-touch-icon.png, the icon iOS shows for a bookmark on the home screen;
+// Draws the site's two PNGs from its mark, the D-pad of public/favicon.svg, in headless Chromium:
+// - public/apple-touch-icon.png, the icon iOS shows for a bookmark on the home screen: the mark
+//   in lime on the page's near-black;
 // - public/og.png, the card a shared link shows, in the site's look (src/styles/custom.css): the
-//   landing page's title in the display face, with its last word in pink.
+//   mark and the name, then the landing page's title in the display face, its last word in pink.
 // They are committed, so building the site needs no browser. Run this after changing the mark or
 // the site's look:
 //
@@ -15,8 +16,15 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 const publicDir = path.resolve(import.meta.dirname, "..", "public");
-const mark = readFileSync(path.join(publicDir, "favicon.svg"), "utf-8");
-const markUrl = `data:image/svg+xml;base64,${Buffer.from(mark).toString("base64")}`;
+// The mark's shape, from the one file that holds it, drawn here in the colour each image asks for.
+const markPath = /\sd="(?<d>[^"]+)"/u.exec(
+  readFileSync(path.join(publicDir, "favicon.svg"), "utf-8")
+)?.groups?.d;
+if (markPath === undefined) {
+  throw new Error("public/favicon.svg has no path: it must hold the mark");
+}
+const mark = (fill) =>
+  `<svg viewBox="0 0 24 24"><path fill-rule="evenodd" fill="${fill}" d="${markPath}"/></svg>`;
 
 // The site's palette (src/styles/custom.css).
 const BACKGROUND = "#090b0e";
@@ -34,6 +42,11 @@ const font = (family, weight, file) => {
 };
 const FONTS = [
   font(
+    "Inter",
+    700,
+    "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"
+  ),
+  font(
     "Barlow Condensed",
     700,
     "@fontsource/barlow-condensed/files/barlow-condensed-latin-700-normal.woff2"
@@ -50,7 +63,7 @@ const page = (body, css) => `<!doctype html>
   <head>
     <style>
       html, body { margin: 0; height: 100%; background: ${BACKGROUND}; }
-      img { image-rendering: pixelated; }
+      svg { display: block; }
       ${css}
     </style>
   </head>
@@ -62,10 +75,11 @@ const IMAGES = [
     file: "apple-touch-icon.png",
     width: 180,
     height: 180,
-    // iOS rounds the corners itself, so the mark fills the square.
+    // iOS rounds the corners itself, so the square is the page's colour to its edges, and the
+    // mark sits inside the curve.
     html: page(
-      `<img src="${markUrl}" alt="" />`,
-      "img { display: block; width: 100%; height: 100%; }"
+      `<main>${mark(LIME)}</main>`,
+      "main { display: grid; place-items: center; height: 100%; } svg { width: 62%; height: 62%; }"
     ),
   },
   {
@@ -74,7 +88,7 @@ const IMAGES = [
     height: 630,
     html: page(
       `<main>
-        <header><img src="${markUrl}" alt="" /><span>ARCADE<b>//</b>KIT</span></header>
+        <header>${mark(LIME)}<span>arcadekit</span></header>
         <h1>Primitives for browser <em>games.</em></h1>
         <footer><span>Effect 4 · Foldkit · Three.js</span><span>arcadekit.dev</span></footer>
         <div class="ramp">${RAMP.map((colour) => `<i style="background: ${colour}"></i>`).join("")}</div>
@@ -88,9 +102,8 @@ const IMAGES = [
         color: ${TEXT};
       }
       main { position: relative; display: flex; flex-direction: column; height: 100%; padding: 64px 80px; box-sizing: border-box; }
-      header { display: flex; align-items: center; gap: 20px; font: 600 28px "IBM Plex Mono"; letter-spacing: 1px; }
-      header img { width: 56px; height: 56px; }
-      b { color: ${LIME}; font-weight: 600; }
+      header { display: flex; align-items: center; gap: 18px; font: 700 48px "Inter"; letter-spacing: -1.4px; }
+      header svg { width: 56px; height: 56px; }
       h1 { margin: auto 0; font: 700 148px/0.86 "Barlow Condensed"; text-transform: uppercase; }
       em { font-style: normal; color: ${PINK}; }
       footer { display: flex; justify-content: space-between; font: 600 24px "IBM Plex Mono"; letter-spacing: 3px; text-transform: uppercase; color: ${MUTED}; }

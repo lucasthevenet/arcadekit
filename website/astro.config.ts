@@ -78,7 +78,6 @@ export default defineConfig({
     starlight({
       title: "arcadekit",
       description: DESCRIPTION,
-      logo: { src: "./public/favicon.svg", alt: "" },
       favicon: "/favicon.svg",
       head: [
         {

@@ -47,7 +47,7 @@ So a doc comment is written once, for an editor's hover and for the site, and it
 The site is styled after [polycombo.io](https://polycombo.io): one dark theme, square panels on hairlines, titles in [Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed) and in capitals, labels in [IBM Plex Mono](https://fonts.google.com/specimen/IBM+Plex+Mono), text in [Inter](https://rsms.me/inter/), and an acid lime accent, with a ramp from lime to pink for what is numbered. The faces are self-hosted from their `@fontsource` packages.
 
 - [`src/styles/custom.css`](src/styles/custom.css) holds the palette, as `--ak-*` variables that Starlight's own (`--sl-*`) are made from, and every rule over Starlight's. Starlight's styles are in CSS layers, so these, in none, win over them.
-- [`src/components/`](src/components) replaces five of Starlight's components: the header's wordmark (`site-title.astro`), the landing page's hero (`hero.astro`, with the line over its title from the page's `eyebrow`), a page's title (`page-title.astro`: a reference page's keeps its case), and the theme's two (`theme-provider.astro`, `theme-select.astro`: one theme, so no picker). The landing page's numbers are `kit-stats.astro`, counted from the reference's pages.
+- [`src/components/`](src/components) replaces five of Starlight's components: the header's mark and name (`site-title.astro`: the D-pad in lime, then "arcadekit" in the text face, as Foldkit and Effect set theirs), the landing page's hero (`hero.astro`, with the line over its title from the page's `eyebrow`), a page's title (`page-title.astro`: a reference page's keeps its case), and the theme's two (`theme-provider.astro`, `theme-select.astro`: one theme, so no picker). The landing page's numbers are `kit-stats.astro`, counted from the reference's pages.
 - Code is drawn with the `vesper` theme on the page's panels (`expressiveCode` in [`astro.config.ts`](astro.config.ts)).
 
 ## How it reads the repository
@@ -96,7 +96,7 @@ The other choice is a site that describes only what is released: deploy it when 
 
 ## Images
 
-`public/favicon.svg` is the site's mark, and its logo. `pnpm --filter @arcadekit/website images` draws `apple-touch-icon.png` and `og.png` (the card a shared link shows, in the site's look and faces) from it, in Playwright's Chromium. Both are committed: run it again after changing the mark or the look.
+The site's mark is a D-pad, an arrow cut in each arm, and `public/favicon.svg` is the one file that holds its shape. As the favicon it is near-black in a light browser tab and lime in a dark one. The header draws the same shape inline, in lime (`src/components/site-title.astro`), and `pnpm --filter @arcadekit/website images` draws `apple-touch-icon.png` (the mark in lime on the page's near-black) and `og.png` (the card a shared link shows, in the site's look and faces) from it, in Playwright's Chromium. Both PNGs are committed: run it again after changing the mark or the look.
 
 ## Deploying
 

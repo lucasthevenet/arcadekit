@@ -249,6 +249,10 @@ mobile-starlight-toc .toggle {
   color: var(--ak-text-muted);
 }
 
+mobile-starlight-toc .toggle {
+  border-radius: var(--ak-radius);
+}
+
 starlight-toc a {
   color: var(--ak-text-muted);
 }
