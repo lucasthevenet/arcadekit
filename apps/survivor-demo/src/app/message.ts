@@ -59,7 +59,7 @@ export const Message = defineMessageUnion({
   GotCoopFailed: { error: Schema.String },
 
   // Sound
-  LoadedAudioSettings: { settings: AudioSettings },
+  LoadedAudioSettings: { settings: AudioSettings.AudioSettings },
   ChangedVolume: {
     bus: Schema.Literals(["master", "sfx", "music"]),
     volume: Schema.Number,

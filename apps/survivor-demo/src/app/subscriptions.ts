@@ -1,6 +1,6 @@
 import { Survivors } from "@arcadekit/survivors";
 import { SurvivorsCoop, SurvivorsEngine } from "@arcadekit/survivors/browser";
-import { Audio, applyAudioSettings } from "arcadekit/audio";
+import { AudioSystem } from "arcadekit/audio";
 import { engineEntry, keyPresses, shortcutPresses } from "arcadekit/foldkit";
 import { Effect, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
@@ -76,7 +76,7 @@ const SoundDependencies = {
 export const subscriptions = Subscription.make<
   Model,
   Message,
-  SurvivorsEngine | SurvivorsCoop | Audio
+  SurvivorsEngine | SurvivorsCoop | AudioSystem.AudioSystem
 >()((entry) => ({
   /**
    * While the viewport exists, the engine renders into it and the run's events become Messages,
@@ -151,8 +151,8 @@ export const subscriptions = Subscription.make<
     dependenciesToStream: ({ music, ducked, musicVolume, ...settings }) =>
       Stream.fromEffect(
         Effect.gen(function* () {
-          const audio = yield* Audio;
-          applyAudioSettings(audio, { ...settings, music: musicVolume });
+          const audio = yield* AudioSystem.AudioSystem;
+          AudioSystem.applySettings(audio, { ...settings, music: musicVolume });
           audio.playMusic(MUSIC[music]);
           audio.setDucked(ducked);
         })

@@ -17,7 +17,7 @@ Peer dependencies: `effect` (~4.1), and `@effect/platform-browser` (~4.1, an opt
 A racing game's best lap per track, and its player's audio settings:
 
 ```ts
-import { AudioSettings, defaultAudioSettings } from "arcadekit/audio";
+import { AudioSettings } from "arcadekit/audio";
 import { Save, Setting } from "arcadekit/save";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Effect, Layer, Schema } from "effect";
@@ -35,8 +35,8 @@ export class RaceSave extends Save("RaceSave", {
 // A setting: one value under its own key, and what it is before anything is stored.
 export class RaceAudioSettings extends Setting("RaceAudioSettings", {
   storageKey: "my-studio/race/settings",
-  schema: AudioSettings,
-  default: defaultAudioSettings,
+  schema: AudioSettings.AudioSettings,
+  default: AudioSettings.defaults,
 }) {}
 
 // The app says where they are stored. Building the layers reads nothing.
@@ -69,7 +69,7 @@ export const mute = Effect.gen(function* () {
 
 The stored save is `{ "version": 1, "records": { ... } }` under `storageKey`, and one that can't be decoded is copied to `<storageKey>/corrupt` before it is dropped. A setting is stored as its Schema encodes it. `read` reads storage each time and keeps nothing, so it gives what another tab wrote. A declaration's writes run one at a time, so two writes of one save at once both land. A trace shows each read and write under the declared name: `RaceSave.read`, `RaceSave.write`.
 
-An app may change a default: `default: { ...defaultAudioSettings, music: 0.4 }`. A setting that holds progress rather than a choice, a value that only grows, says how what is stored and what is written become one, and its `write` then re-reads storage first, as a save's does:
+An app may change a default: `default: { ...AudioSettings.defaults, music: 0.4 }`. A setting that holds progress rather than a choice, a value that only grows, says how what is stored and what is written become one, and its `write` then re-reads storage first, as a save's does:
 
 ```ts
 import { Setting } from "arcadekit/save";

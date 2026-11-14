@@ -4,6 +4,8 @@ status: accepted
 
 # The kit is one package with entries
 
+> Amended on 2026-11-14: `arcadekit/audio`'s service is `AudioSystem.AudioSystem`, keyed `arcadekit/audio/AudioSystem`, since `arcadekit/audio` took Effect's module shape ([ADR-0024](0024-the-kit-is-written-as-effect-modules.md)): the key `arcadekit/audio/Audio` below is gone, and `arcadekit/audio/browser` is a folder (`src/audio/browser/index.ts`).
+
 > Amended on 2026-11-13: every entry may import `effect`, the one required peer, `core` and `input` included. Lint no longer bans it in their files, and the entry-packages test allows it for both ([ADR-0017](0017-effect-at-the-edges-plain-code-inside.md)).
 
 > Amended on 2026-11-13: the package has twenty entries. `render-three/testing` joined ([#84](https://github.com/lucasthevenet/arcadekit/issues/84)): what a sprite view's tests need (`testSheet`, `drawnSprites`, `pngSize`, `framesWithSoftAlpha`), which only tests import. It is in the `render-three` group, so the graph has no new arrow. It is the first entry that runs in Node and imports one of its built-ins, `node:zlib`, to inflate a PNG. A built-in is no package, so `ENTRY_PACKAGES` lists it by its `node:` name, and `test/entry-packages.test.ts` allows one only in an entry that only a test or a script imports (`NODE_ENTRIES`). `tsconfig.node.json` checks those entries and their tests with Node's types beside the DOM's, `tsconfig.json` leaves their folders out, and the build keeps a `node:` import as an import. An entry a browser or a Worker loads still imports no built-in.

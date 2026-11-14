@@ -1,7 +1,12 @@
-// Sound for a game: the audio system apps and sound views call, its mixer, the Effect
-// service, a genre's cue table, and the shape of the player's audio settings. Plain TypeScript
-// with no DOM; the Web Audio backend is in ./browser.
+// arcadekit/audio: sound for a game. `CueTable` is a builder a game writes bare, with its types;
+// what a game plays through is the namespace `AudioSystem`, whose key is the service an app
+// provides, and the mixer behind the browser's is `AudioMixer`. Plain where a sound view calls it,
+// inside its frame (ADR-0024); its loads and its lifecycle are Effect. DOM-free: the Web Audio
+// backend is in ./browser.
 
+export * as AudioMixer from "./audio-mixer";
+export * as AudioSettings from "./audio-settings";
+export * as AudioSystem from "./audio-system";
 export {
   type AnyCueTable,
   type CueSounds,
@@ -11,25 +16,4 @@ export {
   type CueTableDefinition,
   type CueTableId,
   type CueTableService,
-  SoundId,
 } from "./cue-table";
-export { Audio, SilentAudioLayer, silentAudio } from "./service";
-export {
-  AudioSettings,
-  applyAudioSettings,
-  defaultAudioSettings,
-} from "./settings";
-export {
-  type AudioBus,
-  type AudioClip,
-  type AudioGain,
-  AudioLoadError,
-  type AudioMixer,
-  type AudioMixerOptions,
-  type AudioOutput,
-  type AudioSystem,
-  type AudioVoice,
-  makeAudioMixer,
-  type SoundDef,
-  type SoundList,
-} from "./system";

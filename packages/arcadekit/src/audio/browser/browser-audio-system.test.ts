@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BrowserAudioLayer, makeBrowserAudio } from "./browser";
-import { Audio, silentAudio } from "./index";
+import { AudioSystem } from "../index";
+import { BrowserAudioSystem } from "./index";
 
 // No DOM here: Node's EventTarget stands in for the document, and small fakes stand in for
 // Web Audio. A fake AudioParam keeps `value` as the browser does before audio renders: set
@@ -85,7 +85,13 @@ const gesture = (type: string, active: boolean) => {
 /** Lets pending promises (a resume) settle. */
 const settle = Effect.sleep("1 millis");
 
-describe("browser audio", () => {
+/** Runs `program` with the browser's audio system, for as long as it runs. */
+const withBrowserAudio = <A, E>(
+  program: Effect.Effect<A, E, AudioSystem.AudioSystem>
+): Promise<A> =>
+  Effect.runPromise(program.pipe(Effect.provide(BrowserAudioSystem.layer)));
+
+describe("BrowserAudioSystem.layer", () => {
   beforeEach(() => {
     contexts = [];
     document = Object.assign(new EventTarget(), { hidden: false });
@@ -104,31 +110,29 @@ describe("browser audio", () => {
   });
 
   it("waits for a gesture that lets audio start, and listens until audio runs", async () => {
-    const seen = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          yield* makeBrowserAudio;
-          // A touch's pointerdown gives no activation: nothing is made.
-          gesture("pointerdown", false);
-          const beforeActivation = contexts.length;
-          // An activating gesture the browser still refuses (the context stays suspended)...
-          gesture("touchend", true);
-          yield* settle;
-          const context = contexts[0]!;
-          // ...so the next one tries again, and that one starts audio.
-          context.allowed = true;
-          gesture("touchend", true);
-          yield* settle;
-          const resume = vi.spyOn(context, "resume");
-          gesture("keydown", true);
-          return {
-            beforeActivation,
-            made: contexts.length,
-            state: context.state,
-            resumesAfterRunning: resume.mock.calls.length,
-          };
-        })
-      )
+    const seen = await withBrowserAudio(
+      Effect.gen(function* () {
+        yield* AudioSystem.AudioSystem;
+        // A touch's pointerdown gives no activation: nothing is made.
+        gesture("pointerdown", false);
+        const beforeActivation = contexts.length;
+        // An activating gesture the browser still refuses (the context stays suspended)...
+        gesture("touchend", true);
+        yield* settle;
+        const context = contexts[0]!;
+        // ...so the next one tries again, and that one starts audio.
+        context.allowed = true;
+        gesture("touchend", true);
+        yield* settle;
+        const resume = vi.spyOn(context, "resume");
+        gesture("keydown", true);
+        return {
+          beforeActivation,
+          made: contexts.length,
+          state: context.state,
+          resumesAfterRunning: resume.mock.calls.length,
+        };
+      })
     );
 
     expect(seen).toStrictEqual({
@@ -140,31 +144,27 @@ describe("browser audio", () => {
   });
 
   it("fades a loop in from silence", async () => {
-    const events = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const audio = yield* makeBrowserAudio;
-          yield* audio.load({ hum: { file: "hum.wav" } });
-          gesture("keydown", true);
-          const context = contexts[0]!;
-          const before = context.gains.length;
-          audio.setLoop("hum", 0.5);
-          return context.gains[before]!.gain.events;
-        })
-      )
+    const events = await withBrowserAudio(
+      Effect.gen(function* () {
+        const audio = yield* AudioSystem.AudioSystem;
+        yield* audio.load({ hum: { file: "hum.wav" } });
+        gesture("keydown", true);
+        const context = contexts[0]!;
+        const before = context.gains.length;
+        audio.setLoop("hum", 0.5);
+        return context.gains[before]!.gain.events;
+      })
     );
 
     expect(events).toStrictEqual(["cancel", "cancel", "set 0", "ramp 0.5"]);
   });
 
   it("closes its context and stops listening when its scope closes", async () => {
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          yield* makeBrowserAudio;
-          gesture("keydown", true);
-        })
-      )
+    await withBrowserAudio(
+      Effect.gen(function* () {
+        yield* AudioSystem.AudioSystem;
+        gesture("keydown", true);
+      })
     );
     const [context] = contexts;
     gesture("keydown", true);
@@ -176,12 +176,12 @@ describe("browser audio", () => {
   });
 
   it("listens for as long as its layer is in use, and closes its context after", async () => {
-    const made = await Effect.runPromise(
+    const made = await withBrowserAudio(
       Effect.gen(function* () {
-        yield* Audio;
+        yield* AudioSystem.AudioSystem;
         gesture("keydown", true);
         return contexts.length;
-      }).pipe(Effect.provide(BrowserAudioLayer))
+      })
     );
 
     expect({ made, state: contexts[0]?.state }).toStrictEqual({
@@ -192,12 +192,12 @@ describe("browser audio", () => {
 
   it("is silent in a browser without Web Audio", async () => {
     vi.stubGlobal("AudioContext", undefined);
-    const audio = await Effect.runPromise(
+    const audio = await withBrowserAudio(
       Effect.gen(function* () {
-        return yield* Audio;
-      }).pipe(Effect.provide(BrowserAudioLayer))
+        return yield* AudioSystem.AudioSystem;
+      })
     );
 
-    expect(audio).toBe(silentAudio);
+    expect(audio).toBe(AudioSystem.silent);
   });
 });

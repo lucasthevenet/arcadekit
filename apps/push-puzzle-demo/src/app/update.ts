@@ -3,8 +3,8 @@ import type {
   PushPuzzleEngine,
   PushPuzzleSheet,
 } from "@arcadekit/push-puzzle/browser";
-import { defaultAudioSettings } from "arcadekit/audio";
-import type { Audio, AudioSettings } from "arcadekit/audio";
+import { AudioSettings } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
 
 import { withVolume } from "./audio";
@@ -27,7 +27,7 @@ import type { Model } from "./model";
 import { PushPuzzleSave, emptyRecords, isNewBest, withSolve } from "./save";
 
 export type Services =
-  | Audio
+  | AudioSystem.AudioSystem
   | PushPuzzleAudioSettings
   | PushPuzzleContent
   | PushPuzzleEngine
@@ -47,7 +47,7 @@ export const init: Runtime.ApplicationInit<
     records: emptyRecords,
     levelId: "",
     hud: emptyHud,
-    audio: defaultAudioSettings,
+    audio: AudioSettings.defaults,
     isViewportMounted: false,
   },
   commands: [LoadContent(), LoadSave(), LoadAudioSettings(), LoadSounds()],
@@ -75,7 +75,10 @@ const withClick = ({ model, commands = [] }: Return): Return => ({
   commands: [...commands, PlayClick()],
 });
 
-const changeAudio = (model: Model, audio: AudioSettings): Return => ({
+const changeAudio = (
+  model: Model,
+  audio: AudioSettings.AudioSettings
+): Return => ({
   model: { ...model, audio },
   commands: [ChangeAudioSettings({ settings: audio })],
 });

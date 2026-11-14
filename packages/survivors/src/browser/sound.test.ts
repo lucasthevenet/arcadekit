@@ -1,5 +1,5 @@
-import type { AudioSystem } from "arcadekit/audio";
-import { Effect, Schema } from "effect";
+import { AudioSystem } from "arcadekit/audio";
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { GameContent } from "../schema";
@@ -117,15 +117,10 @@ const sounds: SurvivorsSounds = {
 const fakeAudio = () => {
   const plays: { id: string; volume: number | undefined }[] = [];
   const loops: { id: string; volume: number }[] = [];
-  const audio: AudioSystem = {
+  const audio = AudioSystem.make({
     play: (id, options) => plays.push({ id, volume: options?.volume }),
     setLoop: (id, volume) => loops.push({ id, volume }),
-    playMusic: () => {},
-    setVolume: () => {},
-    setMuted: () => {},
-    setDucked: () => {},
-    load: () => Effect.void,
-  };
+  });
   return { audio, plays, loops };
 };
 

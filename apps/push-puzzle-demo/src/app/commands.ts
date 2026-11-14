@@ -3,7 +3,7 @@ import {
   PushPuzzleEngine,
   PushPuzzleSheet,
 } from "@arcadekit/push-puzzle/browser";
-import { Audio, AudioSettings, applyAudioSettings } from "arcadekit/audio";
+import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
@@ -108,7 +108,7 @@ export const SaveSolve = Command.define("SaveSolve", {
 export const LoadSounds = Command.define("LoadSounds", {
   messages: [Message.CompletedAudioCommand],
   execute: Effect.gen(function* () {
-    const audio = yield* Audio;
+    const audio = yield* AudioSystem.AudioSystem;
     audio.playMusic(MUSIC);
     yield* audio
       .load(SOUND_LIST)
@@ -129,18 +129,18 @@ export const LoadAudioSettings = Command.define("LoadAudioSettings", {
   messages: [Message.LoadedAudioSettings],
   execute: Effect.gen(function* () {
     const settings = yield* (yield* PushPuzzleAudioSettings).read;
-    applyAudioSettings(yield* Audio, settings);
+    AudioSystem.applySettings(yield* AudioSystem.AudioSystem, settings);
     return Message.LoadedAudioSettings({ settings });
   }),
 });
 
 /** Applies changed audio settings and saves them. Never fails: a failed write is logged. */
 export const ChangeAudioSettings = Command.define("ChangeAudioSettings", {
-  args: { settings: AudioSettings },
+  args: { settings: AudioSettings.AudioSettings },
   messages: [Message.CompletedAudioCommand],
   execute: ({ settings }) =>
     Effect.gen(function* () {
-      applyAudioSettings(yield* Audio, settings);
+      AudioSystem.applySettings(yield* AudioSystem.AudioSystem, settings);
       yield* (yield* PushPuzzleAudioSettings).write(settings);
       return Message.CompletedAudioCommand();
     }),
@@ -150,7 +150,7 @@ export const ChangeAudioSettings = Command.define("ChangeAudioSettings", {
 export const PlayClick = Command.define("PlayClick", {
   messages: [Message.CompletedAudioCommand],
   execute: Effect.gen(function* () {
-    (yield* Audio).play(CLICK);
+    (yield* AudioSystem.AudioSystem).play(CLICK);
     return Message.CompletedAudioCommand();
   }),
 });

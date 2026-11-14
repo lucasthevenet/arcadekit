@@ -4,6 +4,8 @@ status: accepted
 
 # A game is declared, one named block per part, and Layers host it
 
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-14, when `arcadekit/audio` took Effect's module shape: the `Audio` the text below names is `AudioSystem.AudioSystem`, and the audio settings an app declares a `Setting` from are `AudioSettings.AudioSettings` and `AudioSettings.defaults`. `CueTable` keeps its builder.
+
 The kit grew as primitives and factories. A genre wrote a `GameSimulation<Config, State, Input, Event>` object, spread it into a `GameDefinition`, declared its own engine service, its own content service and a layer maker for each, and handed an `EngineLoader` of five type parameters to an app, which reached the engine through `engineOf` and turned events into Messages with a `switch` on `type`. Each piece was sound, but a reader couldn't see a game in it: the glossary named the parts (event, sample, engine, content) and the code spelled each as an interface to satisfy. A run also changed in two ways, `modify` for one player and step input in lockstep, so survivors and grimbonk each wrote every player decision twice.
 
 The kit was meant to be a framework that makes a game easy to write, read and learn from. The reference is [`@alchemy.run/domain`](https://alchemy.run/domain/), which models a business as named declarations (`class DepositMoney extends Domain.Command(...)`) that Layers host, with the rules as plain handlers inside.

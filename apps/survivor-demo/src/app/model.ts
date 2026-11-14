@@ -102,7 +102,7 @@ export const Model = Schema.Struct({
   isViewportMounted: Schema.Boolean,
   coop: CoopRun,
   /** The player's volumes and mute: read at startup, saved on each change. */
-  audio: AudioSettings,
+  audio: AudioSettings.AudioSettings,
 });
 export type Model = typeof Model.Type;
 

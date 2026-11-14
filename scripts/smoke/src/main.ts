@@ -1,8 +1,7 @@
 // The smoke test's tiny game in the browser: input, a pixel stage drawing sprites from a sheet,
 // sound, a save and content, run by its declared engine. Vite builds it from the packed packages.
-import { Audio, AudioSettings, defaultAudioSettings } from "arcadekit/audio";
-import type { AudioSystem } from "arcadekit/audio";
-import { BrowserAudioLayer } from "arcadekit/audio/browser";
+import { AudioSettings, AudioSystem } from "arcadekit/audio";
+import { BrowserAudioSystem } from "arcadekit/audio/browser";
 import { Asset, Content, ContentSource } from "arcadekit/content";
 import type { AttachableEngine } from "arcadekit/foldkit";
 import * as Game from "arcadekit/game/browser";
@@ -78,7 +77,7 @@ class DotsView implements Game.View<Field> {
   }
 }
 
-const soundView = (audio: AudioSystem): Game.View<Field> => ({
+const soundView = (audio: AudioSystem.AudioSystem): Game.View<Field> => ({
   render: (field) => audio.setLoop("hum", field === null ? 0 : 0.5),
   dispose: () => audio.setLoop("hum", 0),
 });
@@ -91,7 +90,7 @@ class DotsSheet extends Asset<SpriteSheet, SpriteSheetError>()("DotsSheet", {
 /** The game in the browser: its rules, drawn from the app's sheet and heard through its audio. */
 class DotsEngine extends Game.Engine("DotsEngine", {
   simulation: Dots,
-  uses: { sheet: DotsSheet.load, audio: Audio },
+  uses: { sheet: DotsSheet.load, audio: AudioSystem.AudioSystem },
   view: (container, { sheet, audio }) =>
     Game.combineViews(new DotsView(container, sheet), soundView(audio)),
   input: createInput,
@@ -115,8 +114,8 @@ class DotsSave extends Save("DotsSave", {
 /** The player's volume and mute, under their own key. */
 class DotsAudioSettings extends Setting("DotsAudioSettings", {
   storageKey: "smoke/dots/settings",
-  schema: AudioSettings,
-  default: defaultAudioSettings,
+  schema: AudioSettings.AudioSettings,
+  default: AudioSettings.defaults,
 }) {}
 
 const program = Effect.gen(function* () {
@@ -186,7 +185,7 @@ Effect.runFork(
       DotsEngine.layer.pipe(
         Layer.provideMerge(
           Layer.mergeAll(
-            BrowserAudioLayer,
+            BrowserAudioSystem.layer,
             Layer.mergeAll(DotsSave.layer, DotsAudioSettings.layer).pipe(
               Layer.provide(BrowserSaveStorage.layer)
             ),

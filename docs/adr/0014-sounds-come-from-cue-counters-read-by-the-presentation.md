@@ -4,6 +4,8 @@ status: accepted
 
 # Sounds come from cue counters that the presentation reads
 
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-14, when `arcadekit/audio` took Effect's module shape: the `Audio` service is `AudioSystem.AudioSystem`, which is also the audio system's type, and `SilentAudioLayer` is `AudioSystem.layerSilent`. A cue is declared with `AudioSystem.SoundId`, and the audio settings are `AudioSettings.AudioSettings` and `AudioSettings.defaults`. `@gamekit/audio`'s mixer, below, is `AudioMixer`, made for the life of a scope; `BrowserAudioLayer` is `BrowserAudioSystem.layer`. The rule is as it was: a sound view plays its sounds with plain calls, inside its frame.
+
 > Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: the table of cue to sound is declared. A genre declares its cues with `CueTable` (`arcadekit/audio`), the app gives the table its sounds (`MyCueTable.layer(sounds)`), and the genre's engine names the class in `uses`, where a genre wrote a service and an app provided it with `Layer.succeed`. The volume and mute are a `Setting` (`arcadekit/save`) an app declares from `AudioSettings`. The engine layers that took `{ sheet, sounds }` went with [ADR-0020](0020-a-game-is-declared.md).
 
 > Extended by [ADR-0023](0023-a-step-tells-its-views-what-happened-through-a-ring-of-records.md) on 2026-11-13: a moment that needs a place or an amount is a record in a ring, under the same rule. The step writes it and never reads it, and the hash leaves it out.

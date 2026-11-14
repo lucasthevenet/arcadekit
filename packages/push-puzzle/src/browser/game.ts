@@ -1,4 +1,4 @@
-import { Audio } from "arcadekit/audio";
+import { AudioSystem } from "arcadekit/audio";
 import { Asset } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
 import { InputController } from "arcadekit/input";
@@ -74,15 +74,15 @@ export class PushPuzzleSheet extends Asset<SpriteSheet, SpriteSheetError>()(
 
 /**
  * The push-puzzle genre in the browser: its rules, a view that draws them from the app's sheet
- * and plays their cues, with the sounds the app gives its cue table, through the app's `Audio`
- * (tests provide `SilentAudioLayer`), and its input. `PushPuzzleEngine.layer` provides the
- * engine; building it loads nothing, and each attach loads the sheet, or takes the one already
- * loaded.
+ * and plays their cues, with the sounds the app gives its cue table, through the app's audio
+ * system (`AudioSystem.AudioSystem`; tests provide `AudioSystem.layerSilent`), and its input.
+ * `PushPuzzleEngine.layer` provides the engine; building it loads nothing, and each attach loads
+ * the sheet, or takes the one already loaded.
  */
 export class PushPuzzleEngine extends Game.Engine("PushPuzzleEngine", {
   simulation: PushPuzzle,
   uses: {
-    audio: Audio,
+    audio: AudioSystem.AudioSystem,
     sounds: PushPuzzleCueTable,
     sheet: PushPuzzleSheet.load,
   },

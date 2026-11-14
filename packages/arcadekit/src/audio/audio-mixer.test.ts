@@ -1,20 +1,13 @@
-import { Effect, Exit, Fiber } from "effect";
+import { Effect, Exit, Fiber, Random, Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { AudioLoadError, makeAudioMixer, silentAudio } from "./index";
-import type {
-  AudioClip,
-  AudioGain,
-  AudioMixer,
-  AudioMixerOptions,
-  AudioOutput,
-  SoundList,
-} from "./index";
+import { AudioMixer, AudioSystem } from "./index";
 
 // The mixer runs against a fake output: gains keep the value they ramp to, voices remember
-// when they were told to stop, and the clock moves only when a test moves it.
+// when they were told to stop, and the clock moves only when a test moves it. Its jitter draws
+// from a `Random` that gives the same number every time.
 
-interface FakeGain extends AudioGain {
+interface FakeGain extends AudioMixer.Gain {
   value: number;
   readonly into: FakeGain | null;
   readonly ramps: { value: number; seconds: number }[];
@@ -22,7 +15,7 @@ interface FakeGain extends AudioGain {
 }
 
 interface FakeVoice {
-  readonly clip: AudioClip;
+  readonly clip: AudioMixer.Clip;
   readonly gain: FakeGain;
   readonly rate: number;
   readonly loop: boolean;
@@ -35,7 +28,7 @@ const makeOutput = () => {
     gains: [] as FakeGain[],
     voices: [] as FakeVoice[],
   };
-  const output: AudioOutput = {
+  const output: AudioMixer.Output = {
     now: () => fake.time,
     gain: (into) => {
       const gain: FakeGain = {
@@ -87,7 +80,7 @@ const loudness = (voice: FakeVoice): number => {
 };
 
 /** One-shots are 0.5 s long; `long` files (loops, music) 10 s. */
-const clipOf = (file: string): AudioClip => ({
+const clipOf = (file: string): AudioMixer.Clip => ({
   duration: file.includes("long") ? 10 : 0.5,
 });
 
@@ -98,7 +91,7 @@ const slowDecode = (decoded: string[]) => (file: string) =>
     Effect.as(clipOf(file))
   );
 
-const SOUNDS: SoundList = {
+const SOUNDS: AudioSystem.SoundList = {
   shot: { file: "shot.wav", maxVoices: 2, minGapMs: 0 },
   hit: { file: "hit.wav", minGapMs: 50 },
   hurt: { file: "hurt.wav", volume: 0.5 },
@@ -107,21 +100,48 @@ const SOUNDS: SoundList = {
   run: { file: "long-run.wav", bus: "music" },
 };
 
-/** Makes a mixer outside Effect, for the tests that only play. */
-const makeMixer = (options: AudioMixerOptions): AudioMixer =>
-  Effect.runSync(makeAudioMixer(options));
+/** A `Random` whose every draw is `value`. */
+const drawing = (value: number): Random.Random => ({
+  nextDoubleUnsafe: () => value,
+  nextIntUnsafe: () => 0,
+});
+
+/** Draws every jitter from `drawing(0.5)`, as the tests below do unless they say otherwise. */
+const fixedRandom = Effect.provideService(Random.Random, drawing(0.5));
+
+/**
+ * Makes a mixer outside Effect, for the tests that only play: in a scope of its own, which
+ * `close` closes. Its audio system is what a game plays through.
+ */
+const makeMixer = (options: AudioMixer.Options, random = 0.5) => {
+  const scope = Scope.makeUnsafe();
+  const mixer = Effect.runSync(
+    AudioMixer.make(options).pipe(
+      Scope.provide(scope),
+      Effect.provideService(Random.Random, drawing(random))
+    )
+  );
+  return {
+    mixer,
+    audio: mixer.system,
+    close: () => Effect.runSync(Scope.close(scope, Exit.void)),
+  };
+};
+
+/** A mixer made in the Effect it is yielded in, with the audio system it plays. */
+const mixerAndSystem = (options: AudioMixer.Options) =>
+  AudioMixer.make(options).pipe(
+    Effect.map((mixer) => ({ mixer, audio: mixer.system }))
+  );
 
 const setup = (options: { unlocked?: boolean } = {}) => {
-  const mixer = makeMixer({
-    decode: (file) => Effect.succeed(clipOf(file)),
-    random: () => 0.5,
-  });
-  Effect.runSync(mixer.load(SOUNDS));
+  const made = makeMixer({ decode: (file) => Effect.succeed(clipOf(file)) });
+  Effect.runSync(made.audio.load(SOUNDS));
   const { fake, output } = makeOutput();
   if (options.unlocked ?? true) {
-    mixer.unlock(output);
+    AudioMixer.unlock(made.mixer, output);
   }
-  return { mixer, fake, output };
+  return { ...made, fake, output };
 };
 
 const playing = (voices: readonly FakeVoice[]) =>
@@ -129,49 +149,49 @@ const playing = (voices: readonly FakeVoice[]) =>
 
 describe("one-shots", () => {
   it("drop plays before the first gesture unlocks audio", () => {
-    const { mixer, fake, output } = setup({ unlocked: false });
-    mixer.play("shot");
+    const { mixer, audio, fake, output } = setup({ unlocked: false });
+    audio.play("shot");
     expect(fake.voices).toHaveLength(0);
-    mixer.unlock(output);
-    mixer.play("shot");
+    AudioMixer.unlock(mixer, output);
+    audio.play("shot");
     expect(fake.voices).toHaveLength(1);
   });
 
   it("drop unknown ids", () => {
-    const { mixer, fake } = setup();
-    mixer.play("nope");
+    const { audio, fake } = setup();
+    audio.play("nope");
     expect(fake.voices).toHaveLength(0);
   });
 
   it("cap the voices of one sound until one ends", () => {
-    const { mixer, fake } = setup();
-    mixer.play("shot");
-    mixer.play("shot");
-    mixer.play("shot");
+    const { audio, fake } = setup();
+    audio.play("shot");
+    audio.play("shot");
+    audio.play("shot");
     expect(fake.voices).toHaveLength(2);
     fake.time = 0.6;
-    mixer.play("shot");
+    audio.play("shot");
     expect(fake.voices).toHaveLength(3);
   });
 
   it("keep a minimum gap between starts of one sound", () => {
-    const { mixer, fake } = setup();
-    mixer.play("hit");
+    const { audio, fake } = setup();
+    audio.play("hit");
     fake.time = 0.03;
-    mixer.play("hit");
+    audio.play("hit");
     expect(fake.voices).toHaveLength(1);
     fake.time = 0.05;
-    mixer.play("hit");
+    audio.play("hit");
     expect(fake.voices).toHaveLength(2);
   });
 
   it("apply jitter from the random source and the play's volume", () => {
-    const mixer = makeMixer({
-      decode: (file) => Effect.succeed(clipOf(file)),
-      random: () => 1,
-    });
+    const { mixer, audio } = makeMixer(
+      { decode: (file) => Effect.succeed(clipOf(file)) },
+      1
+    );
     Effect.runSync(
-      mixer.load({
+      audio.load({
         zap: {
           file: "zap.wav",
           volume: 0.8,
@@ -181,84 +201,84 @@ describe("one-shots", () => {
       })
     );
     const { fake, output } = makeOutput();
-    mixer.unlock(output);
-    mixer.play("zap", { volume: 0.5 });
+    AudioMixer.unlock(mixer, output);
+    audio.play("zap", { volume: 0.5 });
     expect(fake.voices[0]?.rate).toBeCloseTo(1.1);
     expect(fake.voices[0]?.gain.value).toBeCloseTo(0.8 * 0.5 * 0.5);
   });
 
   it("are dropped while the tab is hidden", () => {
-    const { mixer, fake } = setup();
-    mixer.setHidden(true);
-    mixer.play("shot");
+    const { mixer, audio, fake } = setup();
+    AudioMixer.setHidden(mixer, true);
+    audio.play("shot");
     expect(fake.voices).toHaveLength(0);
-    mixer.setHidden(false);
-    mixer.play("shot");
+    AudioMixer.setHidden(mixer, false);
+    audio.play("shot");
     expect(fake.voices).toHaveLength(1);
   });
 });
 
 describe("buses", () => {
   it("scale each sound by its bus and master volume, and mute silences them", () => {
-    const { mixer, fake } = setup();
-    mixer.setVolume("master", 0.5);
-    mixer.setVolume("sfx", 0.4);
-    mixer.play("hurt");
+    const { audio, fake } = setup();
+    audio.setVolume("master", 0.5);
+    audio.setVolume("sfx", 0.4);
+    audio.play("hurt");
     const [voice] = fake.voices;
     if (voice === undefined) {
       throw new Error("no voice");
     }
     expect(loudness(voice)).toBeCloseTo(0.5 * 0.4 * 0.5);
-    mixer.setMuted(true);
+    audio.setMuted(true);
     expect(loudness(voice)).toBe(0);
-    mixer.setMuted(false);
+    audio.setMuted(false);
     expect(loudness(voice)).toBeCloseTo(0.1);
   });
 
   it("keep volumes set before unlocking", () => {
-    const { mixer, fake, output } = setup({ unlocked: false });
-    mixer.setVolume("sfx", 0.25);
-    mixer.setMuted(true);
-    mixer.unlock(output);
-    mixer.play("shot");
+    const { mixer, audio, fake, output } = setup({ unlocked: false });
+    audio.setVolume("sfx", 0.25);
+    audio.setMuted(true);
+    AudioMixer.unlock(mixer, output);
+    audio.play("shot");
     const [voice] = fake.voices;
     expect(voice === undefined ? -1 : loudness(voice)).toBe(0);
-    mixer.setMuted(false);
+    audio.setMuted(false);
     expect(voice === undefined ? -1 : loudness(voice)).toBeCloseTo(0.25);
   });
 
   it("duck the music but not the sfx", () => {
-    const { mixer, fake } = setup();
-    mixer.playMusic("menu");
-    mixer.play("shot");
+    const { audio, fake } = setup();
+    audio.playMusic("menu");
+    audio.play("shot");
     const [music, shot] = fake.voices;
     if (music === undefined || shot === undefined) {
       throw new Error("no voices");
     }
-    mixer.setDucked(true);
+    audio.setDucked(true);
     expect(loudness(music)).toBeCloseTo(0.35);
     expect(loudness(shot)).toBe(1);
-    mixer.setDucked(false);
+    audio.setDucked(false);
     expect(loudness(music)).toBe(1);
   });
 
   it("go silent while hidden", () => {
-    const { mixer, fake } = setup();
-    mixer.playMusic("menu");
+    const { mixer, audio, fake } = setup();
+    audio.playMusic("menu");
     const [music] = fake.voices;
-    mixer.setHidden(true);
+    AudioMixer.setHidden(mixer, true);
     expect(music === undefined ? -1 : loudness(music)).toBe(0);
-    mixer.setHidden(false);
+    AudioMixer.setHidden(mixer, false);
     expect(music === undefined ? -1 : loudness(music)).toBe(1);
   });
 });
 
 describe("music", () => {
   it("crossfades: the old track fades out and stops, the new one fades in", () => {
-    const { mixer, fake } = setup();
-    mixer.playMusic("menu");
+    const { audio, fake } = setup();
+    audio.playMusic("menu");
     fake.time = 5;
-    mixer.playMusic("run", { fadeSeconds: 2 });
+    audio.playMusic("run", { fadeSeconds: 2 });
     const [menu, run] = fake.voices;
     expect(menu?.stopAt).toBe(7);
     expect(menu?.gain.ramps.at(-1)).toStrictEqual({ value: 0, seconds: 2 });
@@ -269,55 +289,54 @@ describe("music", () => {
     ]);
     // The faded-out track's gain is disconnected once it has ended.
     fake.time = 7;
-    mixer.play("shot");
+    audio.play("shot");
     expect(menu?.gain.disposed).toBe(true);
   });
 
   it("ignores the track already playing", () => {
-    const { mixer, fake } = setup();
-    mixer.playMusic("menu");
-    mixer.playMusic("menu");
+    const { audio, fake } = setup();
+    audio.playMusic("menu");
+    audio.playMusic("menu");
     expect(fake.voices).toHaveLength(1);
     expect(fake.voices[0]?.stopAt).toBeNull();
   });
 
   it("fades out with null", () => {
-    const { mixer, fake } = setup();
-    mixer.playMusic("menu");
-    mixer.playMusic(null, { fadeSeconds: 0.5 });
+    const { audio, fake } = setup();
+    audio.playMusic("menu");
+    audio.playMusic(null, { fadeSeconds: 0.5 });
     expect(fake.voices).toHaveLength(1);
     expect(fake.voices[0]?.stopAt).toBe(0.5);
   });
 
   it("asked for before unlocking starts on unlock", () => {
-    const { mixer, fake, output } = setup({ unlocked: false });
-    mixer.playMusic("menu");
+    const { mixer, audio, fake, output } = setup({ unlocked: false });
+    audio.playMusic("menu");
     expect(fake.voices).toHaveLength(0);
-    mixer.unlock(output);
+    AudioMixer.unlock(mixer, output);
     expect(playing(fake.voices)).toHaveLength(1);
   });
 
   it("asked for before its file loads starts once it loads", () => {
-    const mixer = makeMixer({
+    const { mixer, audio } = makeMixer({
       decode: (file) => Effect.succeed(clipOf(file)),
-      random: () => 0.5,
     });
     const { fake, output } = makeOutput();
-    mixer.unlock(output);
-    mixer.playMusic("menu");
+    AudioMixer.unlock(mixer, output);
+    audio.playMusic("menu");
     expect(fake.voices).toHaveLength(0);
-    Effect.runSync(mixer.load(SOUNDS));
+    Effect.runSync(audio.load(SOUNDS));
     expect(fake.voices).toHaveLength(1);
   });
 });
 
 describe("loops", () => {
   it("start once and keep playing at the same volume", () => {
-    const { mixer, fake } = setup();
-    mixer.setLoop("hum", 1);
+    const { audio, fake } = setup();
+    audio.setLoop("hum", 1);
     const [hum] = fake.voices;
     const ramps = hum?.gain.ramps.length;
-    mixer.setLoop("hum", 1);
+    audio.setLoop("hum", 1);
     expect(fake.voices).toHaveLength(1);
     expect(hum?.loop).toBe(true);
     expect(hum?.gain.value).toBe(0.5);
@@ -325,31 +344,31 @@ describe("loops", () => {
   });
 
   it("glide to a new volume", () => {
-    const { mixer, fake } = setup();
-    mixer.setLoop("hum", 1);
-    mixer.setLoop("hum", 0.5);
+    const { audio, fake } = setup();
+    audio.setLoop("hum", 1);
+    audio.setLoop("hum", 0.5);
     expect(fake.voices).toHaveLength(1);
     expect(fake.voices[0]?.gain.value).toBe(0.25);
   });
 
   it("fade out and stop at 0, and start again later", () => {
-    const { mixer, fake } = setup();
-    mixer.setLoop("hum", 1);
-    mixer.setLoop("hum", 0);
-    mixer.setLoop("hum", 0);
+    const { audio, fake } = setup();
+    audio.setLoop("hum", 1);
+    audio.setLoop("hum", 0);
+    audio.setLoop("hum", 0);
     const [hum] = fake.voices;
     expect(hum?.gain.value).toBe(0);
     expect(hum?.stopAt).toBe(0.3);
     expect(fake.voices).toHaveLength(1);
-    mixer.setLoop("hum", 1);
+    audio.setLoop("hum", 1);
     expect(fake.voices).toHaveLength(2);
   });
 
   it("don't start at 0 or before unlocking", () => {
-    const { mixer, fake, output } = setup({ unlocked: false });
-    mixer.setLoop("hum", 1);
-    mixer.unlock(output);
-    mixer.setLoop("hum", 0);
+    const { mixer, audio, fake, output } = setup({ unlocked: false });
+    audio.setLoop("hum", 1);
+    AudioMixer.unlock(mixer, output);
+    audio.setLoop("hum", 0);
     expect(fake.voices).toHaveLength(0);
   });
 });
@@ -359,17 +378,16 @@ describe("loading", () => {
     const decoded: string[] = [];
     Effect.runSync(
       Effect.gen(function* () {
-        const mixer = yield* makeAudioMixer({
+        const { audio } = yield* mixerAndSystem({
           decode: (file) =>
             Effect.sync(() => {
               decoded.push(file);
               return clipOf(file);
             }),
-          random: () => 0.5,
         });
-        yield* mixer.load({ a: { file: "same.wav" }, b: { file: "same.wav" } });
-        yield* mixer.load({ c: { file: "same.wav" } });
-      })
+        yield* audio.load({ a: { file: "same.wav" }, b: { file: "same.wav" } });
+        yield* audio.load({ c: { file: "same.wav" } });
+      }).pipe(Effect.scoped, fixedRandom)
     );
     expect(decoded).toStrictEqual(["same.wav"]);
   });
@@ -382,17 +400,16 @@ describe("loading", () => {
     }
     Effect.runSync(
       Effect.gen(function* () {
-        const mixer = yield* makeAudioMixer({
+        const { audio } = yield* mixerAndSystem({
           decode: (file) =>
             Effect.sync(() => {
               decoded.push(file);
               return clipOf(file);
             }),
-          random: () => 0.5,
         });
-        yield* mixer.load(list);
-        yield* mixer.load(list);
-      })
+        yield* audio.load(list);
+        yield* audio.load(list);
+      }).pipe(Effect.scoped, fixedRandom)
     );
     expect(decoded).toHaveLength(100);
   });
@@ -401,16 +418,15 @@ describe("loading", () => {
     const decoded: string[] = [];
     await Effect.runPromise(
       Effect.gen(function* () {
-        const mixer = yield* makeAudioMixer({
+        const { audio } = yield* mixerAndSystem({
           decode: slowDecode(decoded),
-          random: () => 0.5,
         });
-        yield* mixer.load({
+        yield* audio.load({
           a: { file: "same.wav" },
           b: { file: "same.wav" },
           c: { file: "other.wav" },
         });
-      })
+      }).pipe(Effect.scoped, fixedRandom)
     );
     expect(decoded).toStrictEqual(["same.wav", "other.wav"]);
   });
@@ -420,21 +436,20 @@ describe("loading", () => {
     const { fake, output } = makeOutput();
     await Effect.runPromise(
       Effect.gen(function* () {
-        const mixer = yield* makeAudioMixer({
+        const { mixer, audio } = yield* mixerAndSystem({
           decode: slowDecode(decoded),
-          random: () => 0.5,
         });
-        mixer.unlock(output);
+        AudioMixer.unlock(mixer, output);
         yield* Effect.all(
           [
-            mixer.load({ a: { file: "same.wav" } }),
-            mixer.load({ b: { file: "same.wav" } }),
+            audio.load({ a: { file: "same.wav" } }),
+            audio.load({ b: { file: "same.wav" } }),
           ],
           { concurrency: "unbounded" }
         );
-        mixer.play("a");
-        mixer.play("b");
-      })
+        audio.play("a");
+        audio.play("b");
+      }).pipe(Effect.scoped, fixedRandom)
     );
     expect(decoded).toStrictEqual(["same.wav"]);
     expect(fake.voices).toHaveLength(2);
@@ -444,20 +459,21 @@ describe("loading", () => {
     const decoded: string[] = [];
     const first = Effect.runSync(
       Effect.gen(function* () {
-        const mixer = yield* makeAudioMixer({
+        const { audio } = yield* mixerAndSystem({
           decode: (file) =>
             Effect.suspend(() => {
               decoded.push(file);
               return decoded.length === 1
-                ? Effect.fail(new AudioLoadError({ file, message: "offline" }))
+                ? Effect.fail(
+                    new AudioSystem.AudioLoadError({ file, message: "offline" })
+                  )
                 : Effect.succeed(clipOf(file));
             }),
-          random: () => 0.5,
         });
-        const exit = yield* Effect.exit(mixer.load({ a: { file: "a.wav" } }));
-        yield* mixer.load({ a: { file: "a.wav" } });
+        const exit = yield* Effect.exit(audio.load({ a: { file: "a.wav" } }));
+        yield* audio.load({ a: { file: "a.wav" } });
         return exit;
-      })
+      }).pipe(Effect.scoped, fixedRandom)
     );
     expect(Exit.isFailure(first)).toBe(true);
     expect(decoded).toStrictEqual(["a.wav", "a.wav"]);
@@ -467,26 +483,27 @@ describe("loading", () => {
     const decoded: string[] = [];
     const exits = await Effect.runPromise(
       Effect.gen(function* () {
-        const mixer = yield* makeAudioMixer({
+        const { audio } = yield* mixerAndSystem({
           decode: (file) =>
             Effect.sync(() => decoded.push(file)).pipe(
               Effect.andThen(Effect.sleep("1 millis")),
               Effect.andThen(
-                Effect.fail(new AudioLoadError({ file, message: "offline" }))
+                Effect.fail(
+                  new AudioSystem.AudioLoadError({ file, message: "offline" })
+                )
               )
             ),
-          random: () => 0.5,
         });
         const overlapping = yield* Effect.all(
           [
-            Effect.exit(mixer.load({ a: { file: "a.wav" } })),
-            Effect.exit(mixer.load({ b: { file: "a.wav" } })),
+            Effect.exit(audio.load({ a: { file: "a.wav" } })),
+            Effect.exit(audio.load({ b: { file: "a.wav" } })),
           ],
           { concurrency: "unbounded" }
         );
-        const later = yield* Effect.exit(mixer.load({ c: { file: "a.wav" } }));
+        const later = yield* Effect.exit(audio.load({ c: { file: "a.wav" } }));
         return [...overlapping, later];
-      })
+      }).pipe(Effect.scoped, fixedRandom)
     );
     expect(exits.map(Exit.isFailure)).toStrictEqual([true, true, true]);
     expect(decoded).toStrictEqual(["a.wav", "a.wav"]);
@@ -497,7 +514,7 @@ describe("loading", () => {
     const { fake, output } = makeOutput();
     await Effect.runPromise(
       Effect.gen(function* () {
-        const mixer = yield* makeAudioMixer({
+        const { mixer, audio } = yield* mixerAndSystem({
           // The first decode never ends; the next one does.
           decode: (file) =>
             Effect.suspend(() => {
@@ -506,19 +523,18 @@ describe("loading", () => {
                 ? Effect.never
                 : Effect.succeed(clipOf(file));
             }),
-          random: () => 0.5,
         });
-        mixer.unlock(output);
+        AudioMixer.unlock(mixer, output);
         const first = yield* Effect.forkChild(
-          mixer.load({ a: { file: "a.wav" } })
+          audio.load({ a: { file: "a.wav" } })
         );
         yield* Effect.yieldNow;
         yield* Fiber.interrupt(first);
-        yield* mixer
+        yield* audio
           .load({ a: { file: "a.wav" } })
           .pipe(Effect.timeout("1 second"));
-        mixer.play("a");
-      })
+        audio.play("a");
+      }).pipe(Effect.scoped, fixedRandom)
     );
     expect(decoded).toStrictEqual(["a.wav", "a.wav"]);
     expect(fake.voices).toHaveLength(1);
@@ -528,26 +544,28 @@ describe("loading", () => {
     const { fake, output } = makeOutput();
     const exit = Effect.runSync(
       Effect.gen(function* () {
-        const mixer = yield* makeAudioMixer({
+        const { mixer, audio } = yield* mixerAndSystem({
           decode: (file) =>
             file === "missing.wav"
               ? Effect.fail(
-                  new AudioLoadError({ file, message: `can't load ${file}` })
+                  new AudioSystem.AudioLoadError({
+                    file,
+                    message: `can't load ${file}`,
+                  })
                 )
               : Effect.succeed(clipOf(file)),
-          random: () => 0.5,
         });
-        mixer.unlock(output);
+        AudioMixer.unlock(mixer, output);
         const loaded = yield* Effect.exit(
-          mixer.load({
+          audio.load({
             broken: { file: "missing.wav" },
             shot: { file: "shot.wav" },
           })
         );
-        mixer.play("shot");
-        mixer.play("broken");
+        audio.play("shot");
+        audio.play("broken");
         return loaded;
-      })
+      }).pipe(Effect.scoped, fixedRandom)
     );
     expect(Exit.isFailure(exit)).toBe(true);
     expect(fake.voices.map(({ clip }) => clip.duration)).toStrictEqual([0.5]);
@@ -556,38 +574,82 @@ describe("loading", () => {
   it("fails with an AudioLoadError naming the file", () => {
     const error = Effect.runSync(
       Effect.gen(function* () {
-        const mixer = yield* makeAudioMixer({
+        const { audio } = yield* mixerAndSystem({
           decode: (file) =>
             Effect.fail(
-              new AudioLoadError({ file, message: `can't load ${file}` })
+              new AudioSystem.AudioLoadError({
+                file,
+                message: `can't load ${file}`,
+              })
             ),
-          random: () => 0.5,
         });
-        return yield* Effect.flip(mixer.load({ a: { file: "missing.wav" } }));
-      })
+        return yield* Effect.flip(audio.load({ a: { file: "missing.wav" } }));
+      }).pipe(Effect.scoped, fixedRandom)
     );
     expect(error).toMatchObject({
       _tag: "AudioLoadError",
       file: "missing.wav",
     });
   });
+});
 
-  it("the silent system loads without decoding and plays nothing", () => {
-    expect(Effect.runSync(silentAudio.load(SOUNDS))).toBeUndefined();
-    expect(() => silentAudio.play("shot")).not.toThrow();
+describe("closing its scope", () => {
+  it("stops every voice and disconnects every gain, and the mixer can't be unlocked again", () => {
+    const { mixer, audio, fake, close } = setup();
+    audio.playMusic("menu");
+    audio.setLoop("hum", 1);
+    audio.play("shot");
+    close();
+    expect(fake.voices.every((voice) => voice.stopAt !== null)).toBe(true);
+    expect(fake.gains.every((gain) => gain.disposed)).toBe(true);
+    audio.play("shot");
+    expect(fake.voices).toHaveLength(3);
+    const again = makeOutput();
+    AudioMixer.unlock(mixer, again.output);
+    audio.play("shot");
+    expect(again.fake.gains).toHaveLength(0);
   });
 });
 
-describe("dispose", () => {
-  it("stops every voice and disconnects every gain", () => {
-    const { mixer, fake } = setup();
-    mixer.playMusic("menu");
-    mixer.setLoop("hum", 1);
-    mixer.play("shot");
-    mixer.dispose();
-    expect(fake.voices.every((voice) => voice.stopAt !== null)).toBe(true);
-    expect(fake.gains.every((gain) => gain.disposed)).toBe(true);
-    mixer.play("shot");
-    expect(fake.voices).toHaveLength(3);
+describe("the mixer as data", () => {
+  it("is a mixer whose system is an audio system and no mixer, and prints what it holds", () => {
+    const { mixer, audio, close } = setup({ unlocked: false });
+    audio.setMuted(true);
+    audio.playMusic("menu");
+    const before = mixer.toJSON();
+    AudioMixer.unlock(mixer, makeOutput().output);
+    AudioMixer.setHidden(mixer, true);
+    const after = mixer.toJSON();
+    close();
+    expect({
+      guards: [
+        AudioMixer.isAudioMixer(mixer),
+        AudioMixer.isAudioMixer(audio),
+        AudioSystem.isAudioSystem(audio),
+        AudioMixer.isAudioMixer({ system: audio }),
+      ],
+      before,
+      after,
+    }).toStrictEqual({
+      guards: [true, false, true, false],
+      before: {
+        _id: "AudioMixer",
+        sounds: ["shot", "hit", "hurt", "hum", "menu", "run"],
+        unlocked: false,
+        hidden: false,
+        muted: true,
+        ducked: false,
+        music: "menu",
+      },
+      after: {
+        _id: "AudioMixer",
+        sounds: ["shot", "hit", "hurt", "hum", "menu", "run"],
+        unlocked: true,
+        hidden: true,
+        muted: true,
+        ducked: false,
+        music: "menu",
+      },
+    });
   });
 });

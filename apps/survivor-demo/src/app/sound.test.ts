@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 
-import { defaultAudioSettings } from "arcadekit/audio";
+import { AudioSettings } from "arcadekit/audio";
 import { LobbyChanged } from "arcadekit/net/browser";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
@@ -133,7 +133,7 @@ describe("the audio settings", () => {
       update,
       Story.given(menu),
       Story.model((model) =>
-        expect(model.audio).toStrictEqual(defaultAudioSettings)
+        expect(model.audio).toStrictEqual(AudioSettings.defaults)
       ),
       Story.message(Message.LoadedAudioSettings({ settings: saved })),
       Story.model((model) =>
@@ -148,7 +148,7 @@ describe("the audio settings", () => {
   });
 
   it("saves a volume change, clamped", () => {
-    const settings = { ...defaultAudioSettings, sfx: 1 };
+    const settings = { ...AudioSettings.defaults, sfx: 1 };
     Story.story(
       update,
       Story.given(menu),
@@ -160,7 +160,7 @@ describe("the audio settings", () => {
   });
 
   it("toggles mute with M, during a run too, and saves it", () => {
-    const muted = { ...defaultAudioSettings, muted: true };
+    const muted = { ...AudioSettings.defaults, muted: true };
     Story.story(
       update,
       Story.given({ ...menu, phase: Phase.Playing() }),
@@ -191,7 +191,7 @@ describe("the audio settings", () => {
       Effect.runPromise
     );
     expect(result).toStrictEqual([
-      defaultAudioSettings,
+      AudioSettings.defaults,
       settings,
       JSON.stringify(settings),
     ]);
@@ -221,7 +221,9 @@ describe("clicks", () => {
       Story.given(menu),
       Story.message(Message.ChangedVolume({ bus: "music", volume: 0.2 })),
       Story.Command.expectExact(
-        SaveAudioSettings({ settings: { ...defaultAudioSettings, music: 0.2 } })
+        SaveAudioSettings({
+          settings: { ...AudioSettings.defaults, music: 0.2 },
+        })
       ),
       Story.Command.resolve(SaveAudioSettings, Message.CompletedAudioCommand()),
       Story.model((model) => expect(model.audio.music).toBe(0.2))

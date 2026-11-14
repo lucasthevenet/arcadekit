@@ -180,7 +180,7 @@ const BUSES = [
 ] as const;
 
 /** The volume sliders and mute, on the menu and pause screens. M toggles mute anywhere. */
-const soundPanel = (audio: AudioSettings, h: H): Html =>
+const soundPanel = (audio: AudioSettings.AudioSettings, h: H): Html =>
   h.div(
     [h.Class("sound")],
     [

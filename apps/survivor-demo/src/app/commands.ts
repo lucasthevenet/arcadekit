@@ -10,7 +10,7 @@ import {
   SurvivorsEngine,
   SurvivorsSheet,
 } from "@arcadekit/survivors/browser";
-import { Audio, AudioSettings } from "arcadekit/audio";
+import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
@@ -260,7 +260,7 @@ export const LeaveCoop = Command.define("LeaveCoop", {
 export const LoadSounds = Command.define("LoadSounds", {
   messages: [Message.CompletedAudioCommand],
   execute: Effect.gen(function* () {
-    yield* (yield* Audio)
+    yield* (yield* AudioSystem.AudioSystem)
       .load(soundList)
       .pipe(
         Effect.catchTag("AudioLoadError", (error) =>
@@ -285,7 +285,7 @@ export const LoadAudioSettings = Command.define("LoadAudioSettings", {
 
 /** Stores the audio settings, replacing what is there. A failed write is logged. */
 export const SaveAudioSettings = Command.define("SaveAudioSettings", {
-  args: { settings: AudioSettings },
+  args: { settings: AudioSettings.AudioSettings },
   messages: [Message.CompletedAudioCommand],
   execute: ({ settings }) =>
     Effect.gen(function* () {
@@ -298,7 +298,7 @@ export const SaveAudioSettings = Command.define("SaveAudioSettings", {
 export const PlayClick = Command.define("PlayClick", {
   messages: [Message.CompletedAudioCommand],
   execute: Effect.gen(function* () {
-    (yield* Audio).play(CLICK_SOUND);
+    (yield* AudioSystem.AudioSystem).play(CLICK_SOUND);
     return Message.CompletedAudioCommand();
   }),
 });
