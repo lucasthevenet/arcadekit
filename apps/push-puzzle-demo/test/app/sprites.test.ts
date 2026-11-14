@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { PushPuzzleContent, PuzzleContent } from "@arcadekit/push-puzzle";
 import {
-  PUSH_PUZZLE_TAGS,
+  Art,
   PushPuzzleCueTable,
   PushPuzzleEngine,
   PushPuzzleSheet,
@@ -49,7 +49,7 @@ describe("the push-puzzle sheet", () => {
     const image = Png.size(readFileSync(new URL(data.image, spritesDir)));
     expect({
       url: SHEET_URL.endsWith("/sprites/push-puzzle.json"),
-      missing: SpriteSheet.resolveTags(data, PUSH_PUZZLE_TAGS).missing,
+      missing: SpriteSheet.resolveTags(data, Art.tags).missing,
       image,
     }).toStrictEqual({
       url: true,
@@ -154,7 +154,7 @@ describe("a sheet that fails to load", () => {
     const levels = [
       { id: "one", name: "One", rows: ["#####", "#@$.#", "#####"] },
     ];
-    expect(Schema.is(PuzzleContent)({ levels })).toBe(true);
+    expect(Schema.is(PuzzleContent.PuzzleContent)({ levels })).toBe(true);
     const messages = await Effect.all([
       StartLevel({ levelId: "one" }).effect,
       EndRun().effect,

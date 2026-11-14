@@ -4,10 +4,10 @@ import { DrawnSprites, TestSpriteSheet } from "arcadekit/render-three/testing";
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PUSH_PUZZLE_TAGS, PuzzleSprites } from "../../src/browser/board";
-import { PuzzleContent } from "../../src/schema";
-import { createPuzzle, step } from "../../src/world";
-import type { Direction, Puzzle } from "../../src/world";
+import * as Art from "../../../src/browser/art";
+import * as BoardSprites from "../../../src/browser/internal/board-sprites";
+import * as PuzzleContent from "../../../src/puzzle-content";
+import * as World from "../../../src/world";
 
 // The view's drawing, without WebGL: each test reads back what the view's tile layer and its
 // sprite batch show. Boards are read back as pictures, like the simulation's tests: `#` wall,
@@ -33,9 +33,9 @@ const TAGS = {
 
 const SLIDE = 0.09;
 
-const start = (rows: readonly string[]): Puzzle =>
-  createPuzzle({
-    content: Schema.decodeUnknownSync(PuzzleContent)({
+const start = (rows: readonly string[]): World.Puzzle =>
+  World.make({
+    content: Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
       levels: [{ id: "test", name: "Test", rows }],
     }),
     levelId: "test",
@@ -45,14 +45,18 @@ const NOTHING = { held: null, pressed: null, undo: false } as const;
 /** A step's context for a test that calls `step` itself: its events go nowhere. */
 const STEP = { dt: 1 / 60, step: 0, report: () => {} };
 
-const tap = (puzzle: Puzzle, direction: Direction) => {
-  step(puzzle, { held: direction, pressed: direction, undo: false }, STEP);
-  step(puzzle, NOTHING, STEP);
+const tap = (puzzle: World.Puzzle, direction: World.Direction) => {
+  World.step(
+    puzzle,
+    { held: direction, pressed: direction, undo: false },
+    STEP
+  );
+  World.step(puzzle, NOTHING, STEP);
 };
 
-const undo = (puzzle: Puzzle) => {
-  step(puzzle, { held: null, pressed: null, undo: true }, STEP);
-  step(puzzle, NOTHING, STEP);
+const undo = (puzzle: World.Puzzle) => {
+  World.step(puzzle, { held: null, pressed: null, undo: true }, STEP);
+  World.step(puzzle, NOTHING, STEP);
 };
 
 const setup = (
@@ -60,7 +64,7 @@ const setup = (
 ) => {
   const camera = PixelCamera.make({ pixelsPerUnit: 16 });
   PixelCamera.setBufferSize(camera, 800, 600);
-  const sprites = new PuzzleSprites(sheet, camera);
+  const sprites = BoardSprites.make(sheet, camera);
   return { sheet, camera, sprites };
 };
 
@@ -102,7 +106,10 @@ const CHARS: Record<string, string> = {
 };
 
 /** The board as drawn, one character per cell; boxes and the player over their tile. */
-const picture = (sprites: PuzzleSprites, puzzle: Puzzle): string[] => {
+const picture = (
+  sprites: BoardSprites.BoardSprites,
+  puzzle: World.Puzzle
+): string[] => {
   const rows = Array.from({ length: puzzle.map.rows }, () =>
     Array.from({ length: puzzle.map.cols }, () => " ")
   );
@@ -116,16 +123,20 @@ const picture = (sprites: PuzzleSprites, puzzle: Puzzle): string[] => {
 };
 
 /** Draws a moment after a turn and again once its slide is over. */
-const settle = (sprites: PuzzleSprites, puzzle: Puzzle, t: number) => {
-  sprites.draw(puzzle, t);
-  sprites.draw(puzzle, t + 0.5);
+const settle = (
+  sprites: BoardSprites.BoardSprites,
+  puzzle: World.Puzzle,
+  t: number
+) => {
+  BoardSprites.draw(sprites, puzzle, t);
+  BoardSprites.draw(sprites, puzzle, t + 0.5);
 };
 
-const player = (sprites: PuzzleSprites) =>
+const player = (sprites: BoardSprites.BoardSprites) =>
   shown(sprites.actors).find((sprite) => sprite.tag.startsWith("player"))!;
 
 /** Every box drawn now, on the board or on its way into a hole. */
-const boxes = (sprites: PuzzleSprites) =>
+const boxes = (sprites: BoardSprites.BoardSprites) =>
   shown(sprites.actors).filter((sprite) => sprite.tag.startsWith("box"));
 
 describe("the push-puzzle sprites", () => {
@@ -136,7 +147,7 @@ describe("the push-puzzle sprites", () => {
   it("draws a tile per cell inside the walls, then the boxes and the player, in two draw calls", () => {
     const { sprites } = setup();
     const puzzle = start(["  ####", "###@ #", "#  $.#", "# ^* #", "######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     expect(sprites.root.children).toStrictEqual([
       sprites.tiles.mesh,
       sprites.actors.mesh,
@@ -156,7 +167,7 @@ describe("the push-puzzle sprites", () => {
   it("puts the board's corner at the origin, a tile at each cell's centre", () => {
     const { sprites } = setup();
     const puzzle = start(["####", "#@$.", "####"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     expect(shown(sprites.tiles).map(({ x, z }) => [x, z])).toStrictEqual([
       [0.5, 0.5],
       [1.5, 0.5],
@@ -181,7 +192,7 @@ describe("the push-puzzle sprites", () => {
   it("fits the board in view at a whole pixel scale, with room above it for the HUD", () => {
     const { camera, sprites } = setup();
     const puzzle = start(["#######", "#@ $ .#", "#######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     // 800x600 buffer, 7x3 cells plus margins: 800 / (8 * 16) = 6.25 → 6.
     expect(camera.pixelScale).toBe(6);
     // 96 screen pixels to a cell: 800 / 96 cells across and 600 / 96 down. The board is
@@ -200,7 +211,7 @@ describe("the push-puzzle sprites", () => {
   it("fills the level's tiles again on each frame, with what the turns since the last made of them", () => {
     const { sprites } = setup();
     const puzzle = start(["######", "#@$^.#", "######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     const tiles = () =>
       shown(sprites.tiles)
         .filter(({ z }) => z === 1.5)
@@ -222,13 +233,13 @@ describe("the push-puzzle sprites", () => {
   it("slides the player to its new cell, walking", () => {
     const { sprites } = setup();
     const puzzle = start(["#####", "#@  #", "#$. #", "#####"]);
-    sprites.draw(puzzle, 1);
+    BoardSprites.draw(sprites, puzzle, 1);
     const before = player(sprites);
     tap(puzzle, "right");
-    sprites.draw(puzzle, 2);
-    sprites.draw(puzzle, 2 + SLIDE / 3);
+    BoardSprites.draw(sprites, puzzle, 2);
+    BoardSprites.draw(sprites, puzzle, 2 + SLIDE / 3);
     const midway = player(sprites);
-    sprites.draw(puzzle, 3);
+    BoardSprites.draw(sprites, puzzle, 3);
     const after = player(sprites);
 
     expect(after.x - before.x).toBe(1);
@@ -252,7 +263,7 @@ describe("the push-puzzle sprites", () => {
     const { sprites } = setup();
     // The box and goal keep the level unsolved, so every turn is taken.
     const puzzle = start(["######", "#    #", "# @  #", "#$.  #", "######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     tap(puzzle, "left");
     settle(sprites, puzzle, 1);
     const left = player(sprites);
@@ -271,7 +282,7 @@ describe("the push-puzzle sprites", () => {
   it("draws a box on a goal as on-goal", () => {
     const { sprites } = setup();
     const puzzle = start(["######", "#@$ .#", "######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     tap(puzzle, "right");
     tap(puzzle, "right");
     settle(sprites, puzzle, 1);
@@ -285,16 +296,16 @@ describe("the push-puzzle sprites", () => {
   it("slides a box into a hole, fills the hole, and undo opens it again", () => {
     const { sprites } = setup();
     const puzzle = start(["######", "#@$^.#", "######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     tap(puzzle, "right");
     // The simulation has already filled the hole; the box is still on its way in.
-    sprites.draw(puzzle, 1);
+    BoardSprites.draw(sprites, puzzle, 1);
     const sinking = picture(sprites, puzzle);
-    sprites.draw(puzzle, 1 + SLIDE);
+    BoardSprites.draw(sprites, puzzle, 1 + SLIDE);
     const filled = picture(sprites, puzzle);
     undo(puzzle);
-    sprites.draw(puzzle, 2);
-    sprites.draw(puzzle, 3);
+    BoardSprites.draw(sprites, puzzle, 2);
+    BoardSprites.draw(sprites, puzzle, 3);
     const undone = picture(sprites, puzzle);
 
     expect([sinking[1], filled[1], undone[1]]).toStrictEqual([
@@ -307,14 +318,14 @@ describe("the push-puzzle sprites", () => {
   it("draws a box once when its fall is undone while it slides in", () => {
     const { sprites } = setup();
     const puzzle = start(["######", "#@$^.#", "######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     tap(puzzle, "right");
-    sprites.draw(puzzle, 1);
+    BoardSprites.draw(sprites, puzzle, 1);
     undo(puzzle);
-    sprites.draw(puzzle, 1 + SLIDE / 3);
+    BoardSprites.draw(sprites, puzzle, 1 + SLIDE / 3);
     // Back in the pool, so no longer drawn as a box on its way into the hole.
     expect(boxes(sprites)).toHaveLength(1);
-    sprites.draw(puzzle, 2);
+    BoardSprites.draw(sprites, puzzle, 2);
     expect(picture(sprites, puzzle)[1]).toBe("#@$^.#");
   });
 
@@ -327,16 +338,16 @@ describe("the push-puzzle sprites", () => {
       "#   .  #",
       "########",
     ]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     tap(puzzle, "right");
     settle(sprites, puzzle, 1);
     tap(puzzle, "left");
     tap(puzzle, "down");
     settle(sprites, puzzle, 2);
     tap(puzzle, "right");
-    sprites.draw(puzzle, 3);
+    BoardSprites.draw(sprites, puzzle, 3);
     const sinking = picture(sprites, puzzle);
-    sprites.draw(puzzle, 3.5);
+    BoardSprites.draw(sprites, puzzle, 3.5);
     const filled = picture(sprites, puzzle);
 
     expect([sinking.slice(1, 3), filled.slice(1, 3)]).toStrictEqual([
@@ -348,16 +359,16 @@ describe("the push-puzzle sprites", () => {
   it("slides a box into a hole from where it was last drawn, after a push and the fall in one frame", () => {
     const { sprites } = setup();
     const puzzle = start(["#######", "#@$ ^.#", "#######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     // A push and then the fall, with no frame between them: the hole is two cells from where
     // the box was last drawn, and the board has neither any more.
     tap(puzzle, "right");
     tap(puzzle, "right");
-    sprites.draw(puzzle, 1);
-    sprites.draw(puzzle, 1 + SLIDE / 3);
+    BoardSprites.draw(sprites, puzzle, 1);
+    BoardSprites.draw(sprites, puzzle, 1 + SLIDE / 3);
     const midway = boxes(sprites);
     const sinking = picture(sprites, puzzle);
-    sprites.draw(puzzle, 1.5);
+    BoardSprites.draw(sprites, puzzle, 1.5);
 
     expect(midway).toHaveLength(1);
     // Columns 2 and 4 are at x 2.5 and 4.5.
@@ -370,15 +381,15 @@ describe("the push-puzzle sprites", () => {
   it("goes on with a box's slide through a fall that was undone before it looked", () => {
     const { sprites } = setup();
     const puzzle = start(["#######", "#@$ ^.#", "#######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     tap(puzzle, "right");
-    sprites.draw(puzzle, 1);
+    BoardSprites.draw(sprites, puzzle, 1);
     // Into the hole and back out between two frames: the box is in the cell it was sliding to.
     tap(puzzle, "right");
     undo(puzzle);
-    sprites.draw(puzzle, 1 + SLIDE / 3);
+    BoardSprites.draw(sprites, puzzle, 1 + SLIDE / 3);
     const midway = boxes(sprites);
-    sprites.draw(puzzle, 1 + SLIDE);
+    BoardSprites.draw(sprites, puzzle, 1 + SLIDE);
     const after = boxes(sprites);
 
     expect([midway.length, after.length]).toStrictEqual([1, 1]);
@@ -392,32 +403,32 @@ describe("the push-puzzle sprites", () => {
   it("keeps a hole filled through an undo and the same fall again before it looked", () => {
     const { sprites } = setup();
     const puzzle = start(["######", "#@$^.#", "######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     tap(puzzle, "right");
     settle(sprites, puzzle, 1);
     // Out of the hole and into it again between two frames: the box is in the hole, as it was.
     undo(puzzle);
     tap(puzzle, "right");
-    sprites.draw(puzzle, 2);
+    BoardSprites.draw(sprites, puzzle, 2);
     expect(picture(sprites, puzzle)[1]).toBe("#,@o.#");
   });
 
   it("still slides a box into a hole once the run's changes have gone round their ring", () => {
     const { sprites } = setup();
     const puzzle = start(["######", "#@$^.#", "######"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     // Four times into the hole and back out, with a frame after each turn: eight records.
     for (let i = 0; i < 4; i++) {
       tap(puzzle, "right");
-      sprites.draw(puzzle, 2 * i + 1);
+      BoardSprites.draw(sprites, puzzle, 2 * i + 1);
       undo(puzzle);
-      sprites.draw(puzzle, 2 * i + 2);
+      BoardSprites.draw(sprites, puzzle, 2 * i + 2);
     }
     // The ninth is written over the first.
     tap(puzzle, "right");
-    sprites.draw(puzzle, 9);
+    BoardSprites.draw(sprites, puzzle, 9);
     const sinking = picture(sprites, puzzle);
-    sprites.draw(puzzle, 9.5);
+    BoardSprites.draw(sprites, puzzle, 9.5);
     const filled = picture(sprites, puzzle);
 
     expect([
@@ -431,11 +442,11 @@ describe("the push-puzzle sprites", () => {
   it("draws a run again after the menu at rest, with nothing of the turns it missed", () => {
     const { sprites } = setup();
     const puzzle = start(["######", "#@$^.#", "######"]);
-    sprites.draw(puzzle, 0);
-    sprites.draw(null, 1);
+    BoardSprites.draw(sprites, puzzle, 0);
+    BoardSprites.draw(sprites, null, 1);
     // A box falls while the menu shows.
     tap(puzzle, "right");
-    sprites.draw(puzzle, 2);
+    BoardSprites.draw(sprites, puzzle, 2);
     // No box is on its way into the hole: the player alone, standing where it is. Column 2 is
     // at x 2.5.
     expect(shown(sprites.actors).map(({ tag, x }) => [tag, x])).toStrictEqual([
@@ -446,16 +457,16 @@ describe("the push-puzzle sprites", () => {
   it("starts a new run at rest, and shows a dim floor with no run", () => {
     const { sprites } = setup();
     const first = start(["#####", "#@  #", "#$. #", "#####"]);
-    sprites.draw(first, 0);
+    BoardSprites.draw(sprites, first, 0);
     tap(first, "right");
-    sprites.draw(first, 1);
+    BoardSprites.draw(sprites, first, 1);
 
-    sprites.draw(null, 1.01);
+    BoardSprites.draw(sprites, null, 1.01);
     const menuTiles = shown(sprites.tiles);
     const menuActors = shown(sprites.actors);
 
     const second = start(["#####", "#@  #", "#$. #", "#####"]);
-    sprites.draw(second, 1.02);
+    BoardSprites.draw(sprites, second, 1.02);
     expect({
       menuTiles:
         menuTiles.length > 20 && menuTiles.every((tile) => tile.tinted),
@@ -473,7 +484,7 @@ describe("the push-puzzle sprites", () => {
 
   it("covers what the camera shows with the menu's floor", () => {
     const { camera, sprites } = setup();
-    sprites.draw(null, 0);
+    BoardSprites.draw(sprites, null, 0);
     // 800x600 at 3 screen pixels per sprite pixel: 48 to a cell, around the origin. Columns -9
     // to 8 and rows -7 to 6 are on screen, the outer ones in part.
     expect(camera.pixelScale).toBe(3);
@@ -492,7 +503,7 @@ describe("the push-puzzle sprites", () => {
 
   it("puts the menu's crates on cells of its floor, dimmed, and on a goal where the floor has one", () => {
     const { sprites } = setup();
-    sprites.draw(null, 0);
+    BoardSprites.draw(sprites, null, 0);
     const tagAt = new Map(
       shown(sprites.tiles).map((tile) => [`${tile.x} ${tile.z}`, tile.tag])
     );
@@ -510,15 +521,15 @@ describe("the push-puzzle sprites", () => {
 
   it("fills the menu's floor again when the drift brings other cells on screen, not before", () => {
     const { sprites } = setup();
-    sprites.draw(null, 0);
+    BoardSprites.draw(sprites, null, 0);
     const invalidated = vi.spyOn(TileLayer, "invalidate");
     const before = shown(sprites.tiles);
     // A hundredth of a second of drift: the same cells, and the layer is left as it is.
-    sprites.draw(null, 0.01);
+    BoardSprites.draw(sprites, null, 0.01);
     expect(shown(sprites.tiles)).toStrictEqual(before);
     // Three seconds: a cell to the east and a cell down, and the layer fills the cells now
     // on screen. The view asks for neither fill: the layer sees the cells change.
-    sprites.draw(null, 3);
+    BoardSprites.draw(sprites, null, 3);
     expect(invalidated).not.toHaveBeenCalled();
     const after = shown(sprites.tiles);
     expect([after[0]!.x, after[0]!.z]).toStrictEqual([
@@ -549,10 +560,10 @@ describe("the push-puzzle sprites", () => {
           .map((tile) => tile.frame)
       ),
     ];
-    sprites.draw(null, 0);
+    BoardSprites.draw(sprites, null, 0);
     expect(goalFrames()).toStrictEqual([goal.from]);
     // The same cells are on screen: only the time has changed.
-    sprites.draw(null, 0.15);
+    BoardSprites.draw(sprites, null, 0.15);
     expect(goalFrames()).toStrictEqual([goal.to]);
   });
 
@@ -569,7 +580,7 @@ describe("the push-puzzle sprites", () => {
       })
     );
     const puzzle = start(["#####", "#@$.#", "#  ^#", "#####"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     tap(puzzle, "down");
     settle(sprites, puzzle, 1);
     // No wall face, filled hole or walking-down frames: wall, floor and the right-facing walk.
@@ -596,7 +607,7 @@ describe("the push-puzzle sprites", () => {
       TestSpriteSheet.fromTags({ wall: 1, floor: 3, hole: 1, "player/idle": 2 })
     );
     const puzzle = start(["#####", "#@$.#", "#####"]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     // Where it drew nothing: the box is there, as frame 0, then the player.
     expect(
       shown(sprites.actors).map(({ x, frame, tag }) => [x, frame, tag])
@@ -621,7 +632,7 @@ describe("the push-puzzle sprites", () => {
       `#${".".repeat(18)}${" ".repeat(20)}#`,
       wide,
     ]);
-    sprites.draw(puzzle, 0);
+    BoardSprites.draw(sprites, puzzle, 0);
     expect({
       room,
       tiles: [shown(sprites.tiles).length, sprites.tiles.count],
@@ -642,12 +653,10 @@ describe("the push-puzzle sprites", () => {
     });
   });
 
-  it("needs every first tag of PUSH_PUZZLE_TAGS: the stand-in sheet lacks none", () => {
+  it("needs every first tag of Art.tags: the stand-in sheet lacks none", () => {
     expect(
-      SpriteSheet.resolveTags(
-        TestSpriteSheet.fromTags(TAGS).data,
-        PUSH_PUZZLE_TAGS
-      ).missing
+      SpriteSheet.resolveTags(TestSpriteSheet.fromTags(TAGS).data, Art.tags)
+        .missing
     ).toStrictEqual([]);
   });
 
@@ -657,7 +666,7 @@ describe("the push-puzzle sprites", () => {
     const geometries = [sprites.tiles, sprites.actors].map((batch) =>
       vi.spyOn(batch.mesh.geometry, "dispose")
     );
-    sprites.dispose();
+    BoardSprites.dispose(sprites);
     expect({
       sheet: freed.mock.calls.length,
       batches: geometries.map((spy) => spy.mock.calls.length),

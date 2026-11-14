@@ -1,10 +1,10 @@
 import { AudioSystem } from "arcadekit/audio";
 import { describe, expect, it } from "vitest";
 
-import { PushPuzzleSoundView } from "../../src/browser/sound";
-import type { Puzzle, PushPuzzleCues } from "../../src/world";
+import * as SoundView from "../../../src/browser/internal/sound-view";
+import type * as World from "../../../src/world";
 
-// The sound view only reads `puzzle.cues`, so each run here is a Puzzle with just its counters,
+// The sound view only reads `puzzle.cues`, so each run here is a World.Puzzle with just its counters,
 // bumped by hand the way steps would.
 
 const SOUNDS = {
@@ -15,10 +15,10 @@ const SOUNDS = {
   solved: "s-solved",
 } as const;
 
-const run = (): Puzzle & { cues: PushPuzzleCues } =>
+const run = (): World.Puzzle & { cues: World.Cues } =>
   ({
     cues: { moves: 0, pushes: 0, holesFilled: 0, undos: 0, solved: 0 },
-  }) as unknown as Puzzle & { cues: PushPuzzleCues };
+  }) as unknown as World.Puzzle & { cues: World.Cues };
 
 /** A sound view over an audio system that records what it plays. */
 const listen = () => {
@@ -28,25 +28,25 @@ const listen = () => {
       played.push(id);
     },
   });
-  return { view: new PushPuzzleSoundView(audio, SOUNDS), played };
+  return { view: SoundView.make(audio, SOUNDS), played };
 };
 
 describe("the sound view", () => {
   it("plays a sound for each counter that went up since the last frame", () => {
     const { view, played } = listen();
     const puzzle = run();
-    view.render(puzzle);
+    view.render(puzzle, 0);
     puzzle.cues.moves += 1;
-    view.render(puzzle);
-    view.render(puzzle);
+    view.render(puzzle, 0);
+    view.render(puzzle, 0);
     puzzle.cues.pushes += 1;
     puzzle.cues.holesFilled += 1;
-    view.render(puzzle);
+    view.render(puzzle, 0);
     puzzle.cues.undos += 1;
-    view.render(puzzle);
+    view.render(puzzle, 0);
     puzzle.cues.pushes += 1;
     puzzle.cues.solved += 1;
-    view.render(puzzle);
+    view.render(puzzle, 0);
     expect(played).toStrictEqual([
       "s-move",
       "s-push",
@@ -60,9 +60,9 @@ describe("the sound view", () => {
   it("plays once per counter per frame, however far it went", () => {
     const { view, played } = listen();
     const puzzle = run();
-    view.render(puzzle);
+    view.render(puzzle, 0);
     puzzle.cues.moves += 3;
-    view.render(puzzle);
+    view.render(puzzle, 0);
     expect(played).toStrictEqual(["s-move"]);
   });
 
@@ -71,8 +71,8 @@ describe("the sound view", () => {
     const puzzle = run();
     puzzle.cues.moves = 5;
     puzzle.cues.undos = 2;
-    view.render(puzzle);
-    view.render(puzzle);
+    view.render(puzzle, 0);
+    view.render(puzzle, 0);
     expect(played).toStrictEqual([]);
   });
 
@@ -80,18 +80,18 @@ describe("the sound view", () => {
     const { view, played } = listen();
     const first = run();
     first.cues.moves = 4;
-    view.render(first);
+    view.render(first, 0);
     // A restart: the new run's counters start lower, which plays nothing.
     const second = run();
-    view.render(second);
+    view.render(second, 0);
     second.cues.moves = 1;
-    view.render(second);
+    view.render(second, 0);
     // Back to the menu, then the same level again with counts already taken.
-    view.render(null);
+    view.render(null, 0);
     second.cues.moves = 2;
-    view.render(second);
+    view.render(second, 0);
     second.cues.moves = 3;
-    view.render(second);
+    view.render(second, 0);
     expect(played).toStrictEqual(["s-move", "s-move"]);
   });
 });

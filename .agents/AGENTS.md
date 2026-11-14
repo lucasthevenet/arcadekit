@@ -12,7 +12,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 
 ## A game is declared
 
-A game is written as declarations: one named class per part, `class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}`, hosted by a Layer or a loop. They are `Game.Event`, `Game.Command`, `Game.Rejection`, `Game.Simulation` (`arcadekit/game`), `Game.Engine` (`arcadekit/game/browser`), `Content`, `Asset` (`arcadekit/content`), `Coop` (`arcadekit/net/browser`), `Save`, `Setting` (`arcadekit/save`) and `CueTable` (`arcadekit/audio`). Push-puzzle and its demo are the example to copy.
+A game is written as declarations: one named class per part, `class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}`, hosted by a Layer or a loop. They are `Game.Event`, `Game.Command`, `Game.Rejection`, `Game.Simulation` (`arcadekit/game`), `Game.Engine` (`arcadekit/game/browser`), `Content`, `Asset` (`arcadekit/content`), `Coop` (`arcadekit/net/browser`), `Save`, `Setting` (`arcadekit/save`) and `CueTable` (`arcadekit/audio`). Every other module of a game is a namespace, as the game-modules skill says. Push-puzzle and its demo are the example to copy.
 
 - The handlers inside a declaration (`create`, `step`, `apply`, `view`, `input`) are plain functions.
 - A run changes only at a step: by its input, and by a command the loop applies at the start of the next step.

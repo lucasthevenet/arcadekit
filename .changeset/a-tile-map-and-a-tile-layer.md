@@ -67,6 +67,6 @@ Both genres use them. Push-puzzle's level is a tile map: its rules ask `TileMap.
 **Breaking**
 
 - Nothing in the published package: every export is new, and `DrawnSprites.read` takes what it took.
-- Not in the published package: `@arcadekit/push-puzzle`'s exported `Puzzle` has `map` in place of `cols`, `rows`, `tiles` and `goals` (`map.fields.tile` and `map.fields.goal`), and its view draws the board with its corner at the origin, a cell's centre at (col + 0.5, row + 0.5), where the board was centred on the origin. It lands on the same pixels: the camera fits the board where it now is.
+- Not in the published package: `@arcadekit/push-puzzle`'s exported `World.Puzzle` has `map` in place of `cols`, `rows`, `tiles` and `goals` (`map.fields.tile` and `map.fields.goal`), and its view draws the board with its corner at the origin, a cell's centre at (col + 0.5, row + 0.5), where the board was centred on the origin. It lands on the same pixels: the camera fits the board where it now is.
 
 No recorded hash moved: survivors' rules are untouched, and push-puzzle's replay ends in the state it recorded.

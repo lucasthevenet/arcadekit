@@ -145,6 +145,19 @@ const ENTRY_FILES = Object.values(kitExports).map(({ source }) =>
   source.replace(/^\.\/src\//u, "").replace(/\.ts$/u, "")
 );
 
+// The genre packages' public files, from each one's `exports`: a genre's public file is a barrel
+// of namespaces too (.agents/skills/game-modules/SKILL.md).
+const GENRES = ["push-puzzle", "survivors"] as const;
+const GENRE_ENTRY_FILES = GENRES.flatMap((genre) =>
+  Object.values(
+    (
+      JSON.parse(readFileSync(`packages/${genre}/package.json`, "utf-8")) as {
+        readonly exports: Readonly<Record<string, string>>;
+      }
+    ).exports
+  ).map((source) => `packages/${genre}/${source.replace(/^\.\//u, "")}`)
+);
+
 export default defineConfig({
   env: core.env,
   extends: [core, vitest],
@@ -279,8 +292,11 @@ export default defineConfig({
       // An entry's public file in Effect's shape is a barrel of namespaces (`export * as Ring from
       // "./ring"`), as Effect's own index is (.agents/skills/kit-modules/SKILL.md), and its
       // modules import `effect`, so what it loads is counted in the hundreds. What a game imports
-      // of it is what a bundler keeps.
-      files: ENTRY_FILES.map((file) => `${KIT_SRC}/${file}.ts`),
+      // of it is what a bundler keeps. A genre's public file is one too.
+      files: [
+        ...ENTRY_FILES.map((file) => `${KIT_SRC}/${file}.ts`),
+        ...GENRE_ENTRY_FILES,
+      ],
       rules: { "oxc/no-barrel-file": "off" },
     },
     {

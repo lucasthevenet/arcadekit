@@ -1,22 +1,97 @@
+/**
+ * The push-puzzle world: a run's state, the `Puzzle`, and the step that plays it.
+ *
+ * The loop calls `step` on a fixed clock, but the game is played in turns: a step holds at most
+ * one turn, a move or an undo, and most steps hold none. A held direction repeats, timed in
+ * steps, so a replay of the same input gives the same run. A box that fills a hole leaves the
+ * board, and an undo brings it back with the same id. Push-puzzle has no randomness, so a run
+ * needs no seed.
+ *
+ * Plain on purpose: a step gives the same bits on every peer and every replay, and finishes in
+ * the call. Nothing is allocated per step or per turn, but the one event a solve reports.
+ */
 import { EntityPool, Ring, TileMap } from "arcadekit/core";
 import type * as Game from "arcadekit/game";
 import { Schema } from "effect";
 
 import { LevelSolved } from "./events";
-import { Tile, parseLevel } from "./level";
-import type { LEVEL_LAYOUT } from "./level";
-import type { PuzzleContent } from "./schema";
+import * as Level from "./level";
+import type * as PuzzleContent from "./puzzle-content";
 
-// The push-puzzle simulation: plain data and plain functions, no Effect, no Three.js, no DOM.
-// The loop calls `step` on a fixed clock, but the game is played in turns: a step holds
-// at most one turn (a move or an undo), and most steps hold none.
-// Nothing is allocated per step or per turn, but the one event a solve reports.
-
+/**
+ * A direction the player moves in, as a Schema: `up`, `down`, `left` or `right`.
+ *
+ * **When to use**
+ *
+ * To check a direction that comes from outside the step, such as a recorded input.
+ *
+ * **Example** (Checking a direction)
+ *
+ * ```ts
+ * import { World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * Schema.is(World.Direction)("up"); // => true
+ * Schema.is(World.Direction)("north"); // => false
+ * ```
+ *
+ * @category schemas
+ */
 export const Direction = Schema.Literals(["up", "down", "left", "right"]);
+
+/**
+ * One of the four directions: `"up"`, `"down"`, `"left"` or `"right"`. Up is toward row 0, the
+ * top of the board.
+ *
+ * **When to use**
+ *
+ * To type a direction an input source or a test writes.
+ *
+ * **Example** (Turning around)
+ *
+ * ```ts
+ * import type { World } from "@arcadekit/push-puzzle";
+ *
+ * const back: Record<World.Direction, World.Direction> = {
+ *   up: "down",
+ *   down: "up",
+ *   left: "right",
+ *   right: "left",
+ * };
+ * back.left; // => "right"
+ * ```
+ *
+ * @category models
+ */
 export type Direction = typeof Direction.Type;
 
-/** One step's worth of input. */
-export const PushPuzzleInput = Schema.Struct({
+/**
+ * One step's input, as a Schema: the direction held, the direction pressed during the step, and
+ * whether undo was pressed.
+ *
+ * **When to use**
+ *
+ * As the simulation's `input`, and to check an input script read from a file.
+ *
+ * **Details**
+ *
+ * A press moves at once. Holding the direction pressed last moves again after 12 steps, then
+ * every 6 steps; holding one that wasn't pressed in this run moves nothing. Undo takes back one
+ * turn per press, and never repeats.
+ *
+ * **Example** (A step with nothing pressed)
+ *
+ * ```ts
+ * import { World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * Schema.is(World.Input)({ held: null, pressed: null, undo: false }); // => true
+ * Schema.is(World.Input)({ held: "up", pressed: null }); // => false
+ * ```
+ *
+ * @category schemas
+ */
+export const Input = Schema.Struct({
   /** The direction held down now, if any. Holding it repeats the move. */
   held: Schema.NullOr(Direction),
   /** The direction pressed during this step, if any. Starts a move right away. */
@@ -24,16 +99,62 @@ export const PushPuzzleInput = Schema.Struct({
   /** Whether undo was pressed during this step. Fires once per press, never repeats. */
   undo: Schema.Boolean,
 });
-export type PushPuzzleInput = typeof PushPuzzleInput.Type;
 
-/** A run is one attempt at one level. */
-export interface PushPuzzleConfig {
-  readonly content: PuzzleContent;
-  /** The level to play. Must be one of `content`'s levels: `createPuzzle` throws otherwise. */
+/**
+ * One step's input: what an input source gives the loop for each step.
+ *
+ * **When to use**
+ *
+ * To type an input source or a script of inputs, as a test or a replay writes one.
+ *
+ * **Example** (A script of taps)
+ *
+ * ```ts
+ * import type { World } from "@arcadekit/push-puzzle";
+ * import type * as Game from "arcadekit/game";
+ *
+ * const presses = ["right", "right"] as const;
+ * const script: Game.StepInput<World.Input> = {
+ *   read: (step) => ({ held: null, pressed: presses[step] ?? null, undo: false }),
+ * };
+ * script.read(1).pressed; // => "right"
+ * script.read(2).pressed; // => null
+ * ```
+ *
+ * @category models
+ */
+export type Input = typeof Input.Type;
+
+/**
+ * What a run starts from: the levels, which one to play, and how far undo goes back.
+ *
+ * **When to use**
+ *
+ * As what `engine.start`, `loop.start` or a scenario's `given` takes: a run is one attempt at one
+ * level.
+ *
+ * **Example** (A run with a short undo)
+ *
+ * ```ts
+ * import { PuzzleContent, World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
+ *   levels: [{ id: "corridor", name: "Corridor", rows: ["######", "#@ $.#", "######"] }],
+ * });
+ * const config: World.Config = { content, levelId: "corridor", historyCapacity: 64 };
+ * World.make(config).history.capacity; // => 64
+ * ```
+ *
+ * @category models
+ */
+export interface Config {
+  readonly content: PuzzleContent.PuzzleContent;
+  /** The level to play. Must be one of `content`'s levels: `make` throws otherwise. */
   readonly levelId: string;
   /**
-   * How many turns undo can go back, a whole number of 1 or more: `createPuzzle` throws
-   * otherwise. Defaults to 2048; the oldest are dropped first.
+   * How many turns undo can go back, a whole number of 1 or more: `make` throws otherwise.
+   * Defaults to 2048; the oldest are dropped first.
    */
   readonly historyCapacity?: number;
 }
@@ -64,13 +185,63 @@ const HISTORY_LAYOUT = {
   filledHole: Uint8Array,
 };
 
-/** What a record of `Puzzle.changes` says a turn did. */
+/**
+ * What a record of a run's `changes` says a turn did: a box filled a hole, or a turn was undone.
+ *
+ * **When to use**
+ *
+ * In a view, to read each record of the run's `changes` it hasn't taken yet with a ring reader.
+ *
+ * **Details**
+ *
+ * A record's `box` is the stable id of the box that filled a hole, and its `cell` the hole's
+ * cell. An undo's record has -1 for both.
+ *
+ * **Example** (A box that filled a hole)
+ *
+ * ```ts
+ * import { PuzzleContent, World } from "@arcadekit/push-puzzle";
+ * import { Ring } from "arcadekit/core";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
+ *   levels: [{ id: "hole", name: "Hole", rows: ["######", "#@$^.#", "#  $ #", "######"] }],
+ * });
+ * const puzzle = World.make({ content, levelId: "hole" });
+ * const right = { held: "right", pressed: "right", undo: false } as const;
+ * World.step(puzzle, right, { dt: 1 / 60, step: 0, report: () => {} });
+ * const slot = Ring.slotOf(puzzle.changes, 0);
+ * puzzle.changes.fields.kind[slot] === World.Change.holeFilled; // => true
+ * [puzzle.changes.fields.box[slot], puzzle.changes.fields.cell[slot]]; // => [0, 9]
+ * ```
+ *
+ * @category models
+ */
 export const Change = {
   /** A box fell into a hole and filled it: `box` is the box's id and `cell` the hole's cell. */
   holeFilled: 1,
   /** A turn was undone. Its `box` and `cell` are -1. */
   undone: 2,
 } as const;
+
+/**
+ * One of the two kinds of change: `World.Change.holeFilled` or `undone`.
+ *
+ * **When to use**
+ *
+ * To type a change's kind read from the ring.
+ *
+ * **Example** (Naming a kind)
+ *
+ * ```ts
+ * import { World } from "@arcadekit/push-puzzle";
+ *
+ * const kind: World.Change = World.Change.undone;
+ * kind; // => 2
+ * ```
+ *
+ * @category models
+ */
 export type Change = (typeof Change)[keyof typeof Change];
 
 const CHANGE_LAYOUT = {
@@ -83,18 +254,43 @@ const CHANGE_LAYOUT = {
 };
 
 /**
- * How many records `Puzzle.changes` holds. The engine's frame runs at most five steps
+ * How many records a run's `changes` holds. The engine's frame runs at most five steps
  * (`maxStepsPerFrame`) and a step holds at most one turn, so a view that looks on every frame
  * loses nothing.
  */
 const CHANGES_CAPACITY = 8;
 
 /**
- * Sound triggers: running totals of the moments that make a sound. The step bumps them and
- * never reads them, and undo leaves them alone, so they only go up during a run. A sound view
- * plays a sound for each one that rose since its last frame.
+ * A run's cue counters: running totals of the moments that make a sound.
+ *
+ * **When to use**
+ *
+ * In a sound view, which plays a sound for each counter that rose since its last frame.
+ *
+ * **Details**
+ *
+ * The step bumps them and never reads them, and undo leaves them alone and bumps `undos`, so
+ * they only go up during a run. A replay's end state leaves them out.
+ *
+ * **Example** (A move, then a push that solves)
+ *
+ * ```ts
+ * import { PuzzleContent, World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
+ *   levels: [{ id: "corridor", name: "Corridor", rows: ["######", "#@ $.#", "######"] }],
+ * });
+ * const puzzle = World.make({ content, levelId: "corridor" });
+ * const right = { held: "right", pressed: "right", undo: false } as const;
+ * World.step(puzzle, right, { dt: 1 / 60, step: 0, report: () => {} });
+ * World.step(puzzle, right, { dt: 1 / 60, step: 1, report: () => {} });
+ * puzzle.cues; // => { moves: 1, pushes: 1, holesFilled: 0, undos: 0, solved: 1 }
+ * ```
+ *
+ * @category models
  */
-export interface PushPuzzleCues {
+export interface Cues {
   /** Turns that moved the player without pushing a box. */
   moves: number;
   /** Turns that pushed a box, including into a hole. */
@@ -107,13 +303,43 @@ export interface PushPuzzleCues {
   solved: number;
 }
 
+/**
+ * A run's state: the level's tile map, the boxes and the player on it, the counts the HUD shows,
+ * the undo history, what the turns did for the views, and the cue counters.
+ *
+ * **When to use**
+ *
+ * To read a run in a view, a test or a replay check. Only `step` changes it.
+ *
+ * **Details**
+ *
+ * Each run has its own state object, so a view tells runs apart by identity. Cells are numbered
+ * `row * cols + col`. A box keeps its stable id for the whole run: a box that fills a hole leaves
+ * the pool, and an undo brings it back with the same id, so a view names a box by its id
+ * (`EntityPool.idOf`, `EntityPool.indexOf`), never by its index in the pool.
+ *
+ * **Example** (A run at its start)
+ *
+ * ```ts
+ * import { PuzzleContent, World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
+ *   levels: [{ id: "corridor", name: "Corridor", rows: ["######", "#@ $.#", "######"] }],
+ * });
+ * const puzzle: World.Puzzle = World.make({ content, levelId: "corridor" });
+ * [puzzle.player, puzzle.boxes.count, puzzle.goalCount, puzzle.solved]; // => [7, 1, 1, false]
+ * ```
+ *
+ * @category models
+ */
 export interface Puzzle {
   /**
-   * The tile map: for each cell, its `Tile` in the field `tile`, and 1 in `goal` where it is a
-   * goal. Cells are indexed `row * cols + col`. A cell's tile changes only when a hole is
+   * The tile map: for each cell, its `Level.Tile` in the field `tile`, and 1 in `goal` where it
+   * is a goal. Cells are indexed `row * cols + col`. A cell's tile changes only when a hole is
    * filled or reopened by undo.
    */
-  readonly map: TileMap.TileMap<typeof LEVEL_LAYOUT>;
+  readonly map: TileMap.TileMap<typeof Level.layout>;
   readonly goalCount: number;
   /**
    * Every box still on the board. Pool indices move when a box is removed (filling a hole),
@@ -139,15 +365,48 @@ export interface Puzzle {
   /** The pressed direction that is still held, and steps until it moves again. Timed in steps, so replays are exact. */
   readonly repeat: { direction: Direction | null; stepsLeft: number };
   /** Sound triggers, read by the presentation only. Not part of the replay's end state. */
-  readonly cues: PushPuzzleCues;
+  readonly cues: Cues;
 }
 
-// Push-puzzle has no randomness, so a run needs no seed.
-export const createPuzzle = ({
-  content,
-  levelId,
-  historyCapacity,
-}: PushPuzzleConfig): Puzzle => {
+/**
+ * Starts a run on one level: its tile map, its boxes and its player as the level's text has
+ * them, and an empty history.
+ *
+ * **When to use**
+ *
+ * As the simulation's `create`, which the loop calls on `start`. A test that steps a run by hand
+ * calls it too.
+ *
+ * **Details**
+ *
+ * Boxes get the ids 0, 1, 2… in the level's reading order. It throws an `Error` that names the
+ * level when `levelId` isn't one of the content's, and a `RangeError` when `historyCapacity`
+ * isn't a whole number of 1 or more: decoded content only holds levels that can be played, so
+ * either is the caller's mistake.
+ *
+ * **Example** (A run, and a level the content lacks)
+ *
+ * ```ts
+ * import { PuzzleContent, World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
+ *   levels: [{ id: "corridor", name: "Corridor", rows: ["######", "#@ $.#", "######"] }],
+ * });
+ * World.boardText(World.make({ content, levelId: "corridor" })); // => ["######", "#@ $.#", "######"]
+ *
+ * let refused = "";
+ * try {
+ *   World.make({ content, levelId: "missing" });
+ * } catch (error) {
+ *   refused = String(error);
+ * }
+ * refused; // => 'Error: push-puzzle content has no level "missing"'
+ * ```
+ *
+ * @category constructors
+ */
+export const make = ({ content, levelId, historyCapacity }: Config): Puzzle => {
   const level = content.levels.find((l) => l.id === levelId);
   if (level === undefined) {
     // Decoded content only holds levels that can be played, so this is the caller's mistake.
@@ -160,7 +419,7 @@ export const createPuzzle = ({
       `push-puzzle's historyCapacity must be a whole number of 1 or more, got ${turnsKept}`
     );
   }
-  const parsed = parseLevel(level.rows);
+  const parsed = Level.parse(level.rows);
   // The schema rejects a level without exactly one player.
   const player = parsed.players[0]!;
   // Boxes get ids 0, 1, 2… in level reading order. None is ever added after this, so an id
@@ -184,18 +443,53 @@ export const createPuzzle = ({
   };
 };
 
-/** Advances the run by one step: takes at most one turn. The step's `dt` is unused; turns are counted in steps. */
+/**
+ * Advances a run by one step: takes at most one turn, a move or an undo, and reports
+ * `LevelSolved` on the move that puts a box on the last goal.
+ *
+ * **When to use**
+ *
+ * As the simulation's `step`, which the loop calls once per step. A test that steps a run by hand
+ * calls it with a context of its own.
+ *
+ * **Details**
+ *
+ * The step's `dt` is unused: a held direction is timed in steps. A move into a wall, into a box
+ * with a wall, a hole or another box behind it, or into a hole moves nothing and is no turn; an
+ * undo with no history left is none either. Once the level is solved, no step takes a turn.
+ *
+ * **Example** (Two presses that solve a level)
+ *
+ * ```ts
+ * import { PuzzleContent, World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
+ *   levels: [{ id: "corridor", name: "Corridor", rows: ["######", "#@ $.#", "######"] }],
+ * });
+ * const puzzle = World.make({ content, levelId: "corridor" });
+ * const reported: unknown[] = [];
+ * const right = { held: "right", pressed: "right", undo: false } as const;
+ * for (const step of [0, 1]) {
+ *   World.step(puzzle, right, { dt: 1 / 60, step, report: (event) => reported.push(event) });
+ * }
+ * World.boardText(puzzle); // => ["######", "#  @*#", "######"]
+ * [puzzle.moves, puzzle.solved, reported.length]; // => [2, true, 1]
+ * ```
+ *
+ * @category mutations
+ */
 export const step = (
-  puzzle: Puzzle,
-  input: PushPuzzleInput,
+  self: Puzzle,
+  input: Input,
   { report }: Game.StepContext<LevelSolved>
 ): void => {
-  if (puzzle.solved) {
+  if (self.solved) {
     return;
   }
-  const { repeat } = puzzle;
+  const { repeat } = self;
   if (input.undo) {
-    undoTurn(puzzle);
+    undoTurn(self);
     // A direction held through an undo doesn't move until it's pressed again.
     repeat.direction = null;
     return;
@@ -203,7 +497,7 @@ export const step = (
   if (input.pressed !== null) {
     repeat.direction = input.pressed;
     repeat.stepsLeft = REPEAT_DELAY_STEPS;
-    takeMove(puzzle, input.pressed, report);
+    takeMove(self, input.pressed, report);
     return;
   }
   if (input.held === null || input.held !== repeat.direction) {
@@ -214,7 +508,7 @@ export const step = (
   repeat.stepsLeft -= 1;
   if (repeat.stepsLeft === 0) {
     repeat.stepsLeft = REPEAT_INTERVAL_STEPS;
-    takeMove(puzzle, input.held, report);
+    takeMove(self, input.held, report);
   }
 };
 
@@ -256,7 +550,7 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
   const { tile } = map.fields;
   const side = SIDE[direction];
   const target = TileMap.neighbor(map, puzzle.player, side);
-  if (target === -1 || tile[target] !== Tile.floor) {
+  if (target === -1 || tile[target] !== Level.Tile.floor) {
     return false;
   }
   const box = boxIndexAt(puzzle, target);
@@ -268,13 +562,13 @@ const tryMove = (puzzle: Puzzle, direction: Direction): boolean => {
       return false;
     }
     const under = tile[beyond];
-    if (under !== Tile.floor && under !== Tile.hole) {
+    if (under !== Level.Tile.floor && under !== Level.Tile.hole) {
       return false;
     }
     boxId = EntityPool.idOf(puzzle.boxes, box);
-    if (under === Tile.hole) {
+    if (under === Level.Tile.hole) {
       // The box fills the hole: both are gone, and the cell is floor from now on.
-      tile[beyond] = Tile.floor;
+      tile[beyond] = Level.Tile.floor;
       EntityPool.remove(puzzle.boxes, box);
       filledHole = 1;
       const { changes } = puzzle;
@@ -318,7 +612,7 @@ const undoTurn = (puzzle: Puzzle): void => {
     // The player pushed from playerFrom into boxFrom, so the box went one cell further the same way.
     const boxTo = boxFrom + (boxFrom - playerFrom);
     if (history.fields.filledHole[record] === 1) {
-      puzzle.map.fields.tile[boxTo] = Tile.hole;
+      puzzle.map.fields.tile[boxTo] = Level.Tile.hole;
       boxes.fields.cell[EntityPool.addWithId(boxes, boxId)] = boxFrom;
     } else {
       boxes.fields.cell[EntityPool.indexOf(boxes, boxId)] = boxFrom;
@@ -335,10 +629,32 @@ const undoTurn = (puzzle: Puzzle): void => {
   changes.fields.cell[change] = -1;
 };
 
-/** Stable id of the box at (col, row), or -1. */
-export const boxIdAt = (puzzle: Puzzle, col: number, row: number): number => {
-  const i = boxIndexAt(puzzle, TileMap.cellAt(puzzle.map, col, row));
-  return i === -1 ? -1 : EntityPool.idOf(puzzle.boxes, i);
+/**
+ * The stable id of the box at column `col` and row `row`, or -1 where there is none.
+ *
+ * **When to use**
+ *
+ * In a test or a replay check, to tell boxes apart: board text can't.
+ *
+ * **Example** (The one box of a level)
+ *
+ * ```ts
+ * import { PuzzleContent, World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
+ *   levels: [{ id: "corridor", name: "Corridor", rows: ["######", "#@ $.#", "######"] }],
+ * });
+ * const puzzle = World.make({ content, levelId: "corridor" });
+ * World.boxIdAt(puzzle, 3, 1); // => 0
+ * World.boxIdAt(puzzle, 2, 1); // => -1
+ * ```
+ *
+ * @category getters
+ */
+export const boxIdAt = (self: Puzzle, col: number, row: number): number => {
+  const i = boxIndexAt(self, TileMap.cellAt(self.map, col, row));
+  return i === -1 ? -1 : EntityPool.idOf(self.boxes, i);
 };
 
 /** Goals that have no box on them yet. */
@@ -352,22 +668,69 @@ const boxesLeft = (puzzle: Puzzle): number => {
   return puzzle.goalCount - placed;
 };
 
-/** What the `Hud` sample carries. */
+/**
+ * What the `Hud` sample carries: the moves made, and the goals that have no box on them yet.
+ *
+ * **When to use**
+ *
+ * As the simulation's sample `read`, which the loop calls at a run's start and after each turn.
+ *
+ * **Example** (A run's first HUD)
+ *
+ * ```ts
+ * import { PuzzleContent, World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
+ *   levels: [{ id: "corridor", name: "Corridor", rows: ["######", "#@ $.#", "######"] }],
+ * });
+ * World.hudSample(World.make({ content, levelId: "corridor" })); // => { moves: 0, boxesLeft: 1 }
+ * ```
+ *
+ * @category getters
+ */
 export const hudSample = (
-  puzzle: Puzzle
+  self: Puzzle
 ): { readonly moves: number; readonly boxesLeft: number } => ({
-  moves: puzzle.moves,
-  boxesLeft: boxesLeft(puzzle),
+  moves: self.moves,
+  boxesLeft: boxesLeft(self),
 });
 
-/** The board as level text, one string per row. For tests, debugging and replay checks; allocates. */
-export const boardText = (puzzle: Puzzle): string[] => {
+/**
+ * The board as level text, one string per row, with trailing spaces trimmed.
+ *
+ * **When to use**
+ *
+ * In a test, a replay check or a debugger, to read a run as a picture.
+ *
+ * **Details**
+ *
+ * It allocates, so no step or frame calls it. A filled hole reads as floor, and void as a space.
+ *
+ * **Example** (A push onto the goal)
+ *
+ * ```ts
+ * import { PuzzleContent, World } from "@arcadekit/push-puzzle";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
+ *   levels: [{ id: "push", name: "Push", rows: ["#####", "#@$.#", "#####"] }],
+ * });
+ * const puzzle = World.make({ content, levelId: "push" });
+ * const right = { held: "right", pressed: "right", undo: false } as const;
+ * World.step(puzzle, right, { dt: 1 / 60, step: 0, report: () => {} });
+ * World.boardText(puzzle); // => ["#####", "# @*#", "#####"]
+ * ```
+ *
+ * @category getters
+ */
+export const boardText = (self: Puzzle): string[] => {
   const lines: string[] = [];
-  const { map } = puzzle;
+  const { map } = self;
   for (let row = 0; row < map.rows; row++) {
     let line = "";
     for (let col = 0; col < map.cols; col++) {
-      line += cellChar(puzzle, TileMap.cellAt(map, col, row));
+      line += cellChar(self, TileMap.cellAt(map, col, row));
     }
     lines.push(line.trimEnd());
   }
@@ -376,13 +739,13 @@ export const boardText = (puzzle: Puzzle): string[] => {
 
 const cellChar = (puzzle: Puzzle, cell: number): string => {
   switch (puzzle.map.fields.tile[cell]) {
-    case Tile.wall: {
+    case Level.Tile.wall: {
       return "#";
     }
-    case Tile.hole: {
+    case Level.Tile.hole: {
       return "^";
     }
-    case Tile.floor: {
+    case Level.Tile.floor: {
       const goal = puzzle.map.fields.goal[cell] === 1;
       if (cell === puzzle.player) {
         return goal ? "+" : "@";

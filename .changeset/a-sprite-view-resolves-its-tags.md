@@ -56,7 +56,7 @@ export const makeDraw = (sheet: SpriteSheet.SpriteSheet) => {
 };
 ```
 
-Both genres use every part. Survivors' view resolves its tags once when it is made and once per run for the tags its content names, pushes into batches it makes once, keeps a `Gait` for each hero, and draws its aura rings through `MeshInstances` with two declared attributes, its shader unchanged. Push-puzzle's view draws from `PUSH_PUZZLE_TAGS`, slides its boxes and its player in a batch that rounds to screen pixels, and walks its player with a `Gait`. Their tests read `DrawnSprites.read`, and their apps' tests check the shipped sheets with `Png.size` and `Png.framesWithSoftAlpha`.
+Both genres use every part. Survivors' view resolves its tags once when it is made and once per run for the tags its content names, pushes into batches it makes once, keeps a `Gait` for each hero, and draws its aura rings through `MeshInstances` with two declared attributes, its shader unchanged. Push-puzzle's view draws from `Art.tags`, slides its boxes and its player in a batch that rounds to screen pixels, and walks its player with a `Gait`. Their tests read `DrawnSprites.read`, and their apps' tests check the shipped sheets with `Png.size` and `Png.framesWithSoftAlpha`.
 
 **Breaking**
 
@@ -65,6 +65,6 @@ Both genres use every part. Survivors' view resolves its tags once when it is ma
 - `snap` takes one of three words where it took a boolean: `true` was `"sprite"`, and `false` is `"none"`. A view that rounded positions to screen pixels itself and passed `false` passes `"screen"` and pushes them as they are.
 - `new MeshInstances(geometry, material, capacity)` becomes `MeshInstances.make(geometry, material, { capacity })`.
 - A sprite batch's uniform `uSnap` is `uSnapUnit`, the world units a position is rounded to. A test that read a batch's attributes or uniforms reads `DrawnSprites.read(batch)`.
-- Not in the published package: `@arcadekit/push-puzzle/browser` exports `PUSH_PUZZLE_TAGS`, each name with its tags, in place of the list `PUSH_PUZZLE_SPRITE_TAGS`, and `@arcadekit/survivors/browser` exports `wantedTags(content)`, for `SpriteSheet.resolveTags(data, wantedTags(content)).missing`, in place of `missingSpriteTags(sheet, content)`. A push-puzzle tag missing with all its fallbacks draws frame 0 where it drew nothing.
+- Not in the published package: `@arcadekit/push-puzzle/browser` exports `Art.tags`, each name with its tags, in place of the list `PUSH_PUZZLE_SPRITE_TAGS`, and `@arcadekit/survivors/browser` exports `wantedTags(content)`, for `SpriteSheet.resolveTags(data, wantedTags(content)).missing`, in place of `missingSpriteTags(sheet, content)`. A push-puzzle tag missing with all its fallbacks draws frame 0 where it drew nothing.
 
 No recorded hash moved: only drawing changed.

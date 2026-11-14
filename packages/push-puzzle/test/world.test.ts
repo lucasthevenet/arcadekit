@@ -5,15 +5,9 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { Hud, LevelSolved } from "../src/events";
-import { PuzzleContent } from "../src/schema";
+import * as PuzzleContent from "../src/puzzle-content";
 import { PushPuzzle } from "../src/simulation";
-import { Change, boardText, boxIdAt, createPuzzle, step } from "../src/world";
-import type {
-  Direction,
-  Puzzle,
-  PushPuzzleConfig,
-  PushPuzzleInput,
-} from "../src/world";
+import * as World from "../src/world";
 
 // Tests drive a run the way the loop does: one input per step.
 // Boards are written and read back in level text, so each case reads like a picture.
@@ -25,9 +19,9 @@ const NOTHING = { held: null, pressed: null, undo: false } as const;
 /** A config for a one-level game whose level is `rows`. */
 const configFor = (
   rows: readonly string[],
-  options: Partial<PushPuzzleConfig> = {}
-): PushPuzzleConfig => ({
-  content: Schema.decodeUnknownSync(PuzzleContent)({
+  options: Partial<World.Config> = {}
+): World.Config => ({
+  content: Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
     levels: [{ id: "test", name: "Test", rows }],
   }),
   levelId: "test",
@@ -36,16 +30,20 @@ const configFor = (
 
 const start = (
   rows: readonly string[],
-  options: Partial<PushPuzzleConfig> = {}
-): Puzzle => createPuzzle(configFor(rows, options));
+  options: Partial<World.Config> = {}
+): World.Puzzle => World.make(configFor(rows, options));
 
 /** One tap: a step with the direction pressed, then a step with nothing held. */
-const tap = (puzzle: Puzzle, direction: Direction) => {
-  step(puzzle, { held: direction, pressed: direction, undo: false }, STEP);
-  step(puzzle, NOTHING, STEP);
+const tap = (puzzle: World.Puzzle, direction: World.Direction) => {
+  World.step(
+    puzzle,
+    { held: direction, pressed: direction, undo: false },
+    STEP
+  );
+  World.step(puzzle, NOTHING, STEP);
 };
 
-const taps = (puzzle: Puzzle, directions: string) => {
+const taps = (puzzle: World.Puzzle, directions: string) => {
   for (const char of directions) {
     tap(puzzle, DIRECTION_BY_CHAR[char as keyof typeof DIRECTION_BY_CHAR]);
   }
@@ -56,18 +54,18 @@ const DIRECTION_BY_CHAR = {
   D: "down",
   L: "left",
   R: "right",
-} as const satisfies Record<string, Direction>;
+} as const satisfies Record<string, World.Direction>;
 
-const undo = (puzzle: Puzzle) => {
-  step(puzzle, { held: null, pressed: null, undo: true }, STEP);
-  step(puzzle, NOTHING, STEP);
+const undo = (puzzle: World.Puzzle) => {
+  World.step(puzzle, { held: null, pressed: null, undo: true }, STEP);
+  World.step(puzzle, NOTHING, STEP);
 };
 
 describe("moving", () => {
   it("moves the player one cell per tap", () => {
     const puzzle = start(["#####", "#@  #", "#  .#", "#  $#", "#####"]);
     taps(puzzle, "RRD");
-    expect(boardText(puzzle)).toStrictEqual([
+    expect(World.boardText(puzzle)).toStrictEqual([
       "#####",
       "#   #",
       "#  +#",
@@ -80,7 +78,12 @@ describe("moving", () => {
   it("does nothing when walking into a wall", () => {
     const puzzle = start(["####", "#@.#", "# $#", "####"]);
     taps(puzzle, "UL");
-    expect(boardText(puzzle)).toStrictEqual(["####", "#@.#", "# $#", "####"]);
+    expect(World.boardText(puzzle)).toStrictEqual([
+      "####",
+      "#@.#",
+      "# $#",
+      "####",
+    ]);
     expect(puzzle.moves).toBe(0);
   });
 
@@ -100,15 +103,23 @@ describe("pushing", () => {
   it("pushes a box one cell when the cell behind it is free", () => {
     const puzzle = start(["######", "#@$ .#", "######"]);
     taps(puzzle, "R");
-    expect(boardText(puzzle)).toStrictEqual(["######", "# @$.#", "######"]);
+    expect(World.boardText(puzzle)).toStrictEqual([
+      "######",
+      "# @$.#",
+      "######",
+    ]);
     taps(puzzle, "R");
-    expect(boardText(puzzle)).toStrictEqual(["######", "#  @*#", "######"]);
+    expect(World.boardText(puzzle)).toStrictEqual([
+      "######",
+      "#  @*#",
+      "######",
+    ]);
   });
 
   it("does nothing when a wall or another box is behind the box", () => {
     const puzzle = start(["######", "#@$$.#", "#   .#", "######"]);
     taps(puzzle, "R");
-    expect(boardText(puzzle)).toStrictEqual([
+    expect(World.boardText(puzzle)).toStrictEqual([
       "######",
       "#@$$.#",
       "#   .#",
@@ -116,7 +127,7 @@ describe("pushing", () => {
     ]);
     // Down, right, then up: the box above would go into the wall. Blocked.
     taps(puzzle, "DRU");
-    expect(boardText(puzzle)).toStrictEqual([
+    expect(World.boardText(puzzle)).toStrictEqual([
       "######",
       "# $$.#",
       "# @ .#",
@@ -130,21 +141,21 @@ describe("holes", () => {
   it("blocks walking into an unfilled hole", () => {
     const puzzle = start(["#####", "#@^.#", "#  $#", "#####"]);
     taps(puzzle, "R");
-    expect(boardText(puzzle)[1]).toBe("#@^.#");
+    expect(World.boardText(puzzle)[1]).toBe("#@^.#");
     expect(puzzle.moves).toBe(0);
   });
 
   it("fills a hole with a pushed box, which can then be walked over", () => {
     const puzzle = start(["######", "#@$^ #", "#  $.#", "######"]);
     taps(puzzle, "R");
-    expect(boardText(puzzle)).toStrictEqual([
+    expect(World.boardText(puzzle)).toStrictEqual([
       "######",
       "# @  #",
       "#  $.#",
       "######",
     ]);
     taps(puzzle, "RR");
-    expect(boardText(puzzle)[1]).toBe("#   @#");
+    expect(World.boardText(puzzle)[1]).toBe("#   @#");
     expect(puzzle.moves).toBe(3);
   });
 });
@@ -156,27 +167,27 @@ describe("undo", () => {
     const puzzle = start(LEVEL);
     taps(puzzle, "D");
     undo(puzzle);
-    expect(boardText(puzzle)).toStrictEqual(LEVEL);
+    expect(World.boardText(puzzle)).toStrictEqual(LEVEL);
     expect(puzzle.moves).toBe(0);
   });
 
   it("takes back a push", () => {
     const puzzle = start(LEVEL);
     taps(puzzle, "DRR");
-    expect(boardText(puzzle)[2]).toBe("#  @$ #");
+    expect(World.boardText(puzzle)[2]).toBe("#  @$ #");
     undo(puzzle);
-    expect(boardText(puzzle)[2]).toBe("# @$  #");
+    expect(World.boardText(puzzle)[2]).toBe("# @$  #");
     expect(puzzle.moves).toBe(2);
   });
 
   it("brings back a box that filled a hole, with the same id, and reopens the hole", () => {
     const puzzle = start(LEVEL);
-    const id = boxIdAt(puzzle, 2, 1);
+    const id = World.boxIdAt(puzzle, 2, 1);
     taps(puzzle, "R");
-    expect(boardText(puzzle)[1]).toBe("# @  .#");
+    expect(World.boardText(puzzle)[1]).toBe("# @  .#");
     undo(puzzle);
-    expect(boardText(puzzle)).toStrictEqual(LEVEL);
-    expect(boxIdAt(puzzle, 2, 1)).toBe(id);
+    expect(World.boardText(puzzle)).toStrictEqual(LEVEL);
+    expect(World.boxIdAt(puzzle, 2, 1)).toBe(id);
   });
 
   it("goes back many turns, to the start of the level", () => {
@@ -185,7 +196,7 @@ describe("undo", () => {
     for (let i = 0; i < 6; i++) {
       undo(puzzle);
     }
-    expect(boardText(puzzle)).toStrictEqual(LEVEL);
+    expect(World.boardText(puzzle)).toStrictEqual(LEVEL);
     expect(puzzle.moves).toBe(0);
   });
 
@@ -195,7 +206,7 @@ describe("undo", () => {
     taps(puzzle, "D");
     undo(puzzle);
     undo(puzzle);
-    expect(boardText(puzzle)).toStrictEqual(LEVEL);
+    expect(World.boardText(puzzle)).toStrictEqual(LEVEL);
     expect(puzzle.moves).toBe(0);
   });
 
@@ -206,7 +217,7 @@ describe("undo", () => {
       undo(puzzle);
     }
     // Only the last three moves came back; the first (down) was forgotten.
-    expect(boardText(puzzle)).toStrictEqual([
+    expect(World.boardText(puzzle)).toStrictEqual([
       "#######",
       "# $^ .#",
       "#@ $  #",
@@ -219,18 +230,18 @@ describe("undo", () => {
     const puzzle = start(LEVEL);
     taps(puzzle, "DR");
     for (let i = 0; i < 40; i++) {
-      step(puzzle, { held: null, pressed: null, undo: i === 0 }, STEP);
+      World.step(puzzle, { held: null, pressed: null, undo: i === 0 }, STEP);
     }
     expect(puzzle.moves).toBe(1);
   });
 });
 
 /** Holds right for `steps` steps (pressed on the first) and returns the step numbers that moved. */
-const holdRight = (puzzle: Puzzle, steps: number) => {
+const holdRight = (puzzle: World.Puzzle, steps: number) => {
   const movedAt: number[] = [];
   for (let i = 0; i < steps; i++) {
     const before = puzzle.moves;
-    step(
+    World.step(
       puzzle,
       { held: "right", pressed: i === 0 ? "right" : null, undo: false },
       STEP
@@ -256,7 +267,7 @@ describe("holding a direction", () => {
   it("starts the delay over after a release", () => {
     const puzzle = start(CORRIDOR);
     holdRight(puzzle, 15);
-    step(puzzle, NOTHING, STEP);
+    World.step(puzzle, NOTHING, STEP);
     expect(holdRight(puzzle, 13)).toStrictEqual([0, 12]);
     expect(puzzle.moves).toBe(4);
   });
@@ -264,7 +275,7 @@ describe("holding a direction", () => {
   it("doesn't repeat a direction that was never pressed in this run", () => {
     const puzzle = start(CORRIDOR);
     for (let i = 0; i < 40; i++) {
-      step(puzzle, { held: "right", pressed: null, undo: false }, STEP);
+      World.step(puzzle, { held: "right", pressed: null, undo: false }, STEP);
     }
     expect(puzzle.moves).toBe(0);
   });
@@ -274,7 +285,7 @@ describe("holding a direction", () => {
 const scenario = Scenario.make(PushPuzzle);
 
 /** One tap, as a scenario's steps. */
-const press = (direction: Direction) => [
+const press = (direction: World.Direction) => [
   Scenario.step({ held: direction, pressed: direction, undo: false }),
   Scenario.step(NOTHING),
 ];
@@ -298,7 +309,7 @@ describe("solving", () => {
       Scenario.reported(new LevelSolved({ moves: 3 })),
       Scenario.sampled(new Hud({ moves: 3, boxesLeft: 0 })),
       Scenario.state((puzzle) => {
-        expect(boardText(puzzle)[1]).toBe("#   @*#");
+        expect(World.boardText(puzzle)[1]).toBe("#   @*#");
         expect(puzzle.solved).toBe(true);
       })
     );
@@ -316,7 +327,7 @@ describe("solving", () => {
       UNDO,
       Scenario.reported(),
       Scenario.state((puzzle) => {
-        expect(boardText(puzzle)[1]).toBe("#   @*#");
+        expect(World.boardText(puzzle)[1]).toBe("#   @*#");
         expect(puzzle.moves).toBe(3);
       })
     );
@@ -338,7 +349,7 @@ describe("cue counters", () => {
     expect(puzzle.cues).toStrictEqual({ ...ZERO, moves: 2, pushes: 1 });
     // Left, up, then right pushes the top box into the hole.
     taps(puzzle, "LLUR");
-    expect(boardText(puzzle)[1]).toBe("# @  .#");
+    expect(World.boardText(puzzle)[1]).toBe("# @  .#");
     expect(puzzle.cues).toStrictEqual({
       ...ZERO,
       moves: 5,
@@ -362,7 +373,7 @@ describe("cue counters", () => {
     undo(puzzle);
     undo(puzzle);
     undo(puzzle);
-    expect(boardText(puzzle)[1]).toBe("#@$^ #");
+    expect(World.boardText(puzzle)[1]).toBe("#@$^ #");
     expect(puzzle.cues).toStrictEqual({ ...before, undos: 3 });
     expect(before).toStrictEqual({
       ...ZERO,
@@ -381,7 +392,7 @@ describe("cue counters", () => {
 });
 
 /** Every record `changes` holds, oldest first, as [kind, box, cell]. */
-const changesOf = (puzzle: Puzzle): number[][] => {
+const changesOf = (puzzle: World.Puzzle): number[][] => {
   const { changes } = puzzle;
   const records: number[][] = [];
   for (let n = changes.written - changes.length; n < changes.written; n++) {
@@ -407,14 +418,14 @@ describe("changes", () => {
 
   it("record a box that filled a hole, with its id and the hole's cell", () => {
     const puzzle = start(LEVEL);
-    const id = boxIdAt(puzzle, 2, 2);
+    const id = World.boxIdAt(puzzle, 2, 2);
     taps(puzzle, "R");
     // The box is in no pool and the hole on no tile: the record is what is left of the fall.
-    expect(boardText(puzzle)[2]).toBe("# @   #");
-    expect(boxIdAt(puzzle, 3, 2)).toBe(-1);
+    expect(World.boardText(puzzle)[2]).toBe("# @   #");
+    expect(World.boxIdAt(puzzle, 3, 2)).toBe(-1);
     expect([id, changesOf(puzzle)]).toStrictEqual([
       1,
-      [[Change.holeFilled, 1, HOLE]],
+      [[World.Change.holeFilled, 1, HOLE]],
     ]);
   });
 
@@ -427,7 +438,7 @@ describe("changes", () => {
       "#   .  #",
       "########",
     ]);
-    const ids = [boxIdAt(puzzle, 2, 1), boxIdAt(puzzle, 2, 2)];
+    const ids = [World.boxIdAt(puzzle, 2, 1), World.boxIdAt(puzzle, 2, 2)];
     // The first box falls, then around to the left of the second.
     taps(puzzle, "RLD");
     // The fall took the first box out of the pool, and the second moved into its place.
@@ -437,8 +448,8 @@ describe("changes", () => {
       [0, 1],
       0,
       [
-        [Change.holeFilled, 0, 11],
-        [Change.holeFilled, 1, 19],
+        [World.Change.holeFilled, 0, 11],
+        [World.Change.holeFilled, 1, 19],
       ],
     ]);
   });
@@ -447,18 +458,18 @@ describe("changes", () => {
     const puzzle = start(LEVEL);
     taps(puzzle, "R");
     undo(puzzle);
-    expect(boardText(puzzle)).toStrictEqual(LEVEL);
+    expect(World.boardText(puzzle)).toStrictEqual(LEVEL);
     // Nothing is popped: a view that looks now is told of the fall and of the undo, in order.
     expect(changesOf(puzzle)).toStrictEqual([
-      [Change.holeFilled, 1, HOLE],
-      [Change.undone, -1, -1],
+      [World.Change.holeFilled, 1, HOLE],
+      [World.Change.undone, -1, -1],
     ]);
     taps(puzzle, "D");
     undo(puzzle);
     expect(changesOf(puzzle)).toStrictEqual([
-      [Change.holeFilled, 1, HOLE],
-      [Change.undone, -1, -1],
-      [Change.undone, -1, -1],
+      [World.Change.holeFilled, 1, HOLE],
+      [World.Change.undone, -1, -1],
+      [World.Change.undone, -1, -1],
     ]);
   });
 
@@ -468,7 +479,7 @@ describe("changes", () => {
     // Down and right, then up, which pushes the second box a cell up, and up again, which
     // would push it into the wall.
     taps(puzzle, "DRUU");
-    expect(boardText(puzzle)).toStrictEqual([
+    expect(World.boardText(puzzle)).toStrictEqual([
       "#######",
       "# $$ .#",
       "# @^  #",
@@ -496,8 +507,8 @@ describe("changes", () => {
     expect([changes.written, changes.length]).toStrictEqual([10, 8]);
     expect(changesOf(puzzle)).toStrictEqual(
       Array.from({ length: 4 }, () => [
-        [Change.holeFilled, 1, HOLE],
-        [Change.undone, -1, -1],
+        [World.Change.holeFilled, 1, HOLE],
+        [World.Change.undone, -1, -1],
       ]).flat()
     );
   });
@@ -508,22 +519,22 @@ describe("changes", () => {
  * move is held for 20 steps (every 4th) or 1, with the direction pressed on the first, then a
  * step with nothing held; every 5th move is followed by an undo and a step with nothing.
  */
-const REPLAY_INPUTS: readonly PushPuzzleInput[] = [
-  ..."RRDLLURDDRUULRRDDR",
-].flatMap((char, i) => {
-  const direction = DIRECTION_BY_CHAR[char as keyof typeof DIRECTION_BY_CHAR];
-  const held = i % 4 === 0 ? 20 : 1;
-  const steps: PushPuzzleInput[] = Array.from({ length: held }, (_, s) => ({
-    held: direction,
-    pressed: s === 0 ? direction : null,
-    undo: false,
-  }));
-  steps.push(NOTHING);
-  if (i % 5 === 4) {
-    steps.push({ held: null, pressed: null, undo: true }, NOTHING);
+const REPLAY_INPUTS: readonly World.Input[] = [..."RRDLLURDDRUULRRDDR"].flatMap(
+  (char, i) => {
+    const direction = DIRECTION_BY_CHAR[char as keyof typeof DIRECTION_BY_CHAR];
+    const held = i % 4 === 0 ? 20 : 1;
+    const steps: World.Input[] = Array.from({ length: held }, (_, s) => ({
+      held: direction,
+      pressed: s === 0 ? direction : null,
+      undo: false,
+    }));
+    steps.push(NOTHING);
+    if (i % 5 === 4) {
+      steps.push({ held: null, pressed: null, undo: true }, NOTHING);
+    }
+    return steps;
   }
-  return steps;
-});
+);
 
 describe("replay", () => {
   /** The recorded box ids by cell index (row * 8 + column); every other cell has none (-1). */
@@ -552,10 +563,10 @@ describe("replay", () => {
     }
     const puzzle = loop.state!;
     return {
-      board: boardText(puzzle),
+      board: World.boardText(puzzle),
       // Board text can't tell boxes apart; their stable ids can.
-      boxIds: boardText(puzzle).flatMap((line, row) =>
-        [...line].map((_, col) => boxIdAt(puzzle, col, row))
+      boxIds: World.boardText(puzzle).flatMap((line, row) =>
+        [...line].map((_, col) => World.boxIdAt(puzzle, col, row))
       ),
       moves: puzzle.moves,
       events,
@@ -587,24 +598,22 @@ describe("replay", () => {
 
 describe("starting a run", () => {
   it("starts on the level named by levelId", () => {
-    const content = Schema.decodeUnknownSync(PuzzleContent)({
+    const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
       levels: [
         { id: "a", name: "A", rows: ["#####", "#@$.#", "#####"] },
         { id: "b", name: "B", rows: ["######", "# @$.#", "######"] },
       ],
     });
-    expect(boardText(createPuzzle({ content, levelId: "b" }))).toStrictEqual([
-      "######",
-      "# @$.#",
-      "######",
-    ]);
+    expect(
+      World.boardText(World.make({ content, levelId: "b" }))
+    ).toStrictEqual(["######", "# @$.#", "######"]);
   });
 
   it("throws, naming the level, when levelId isn't in the content", () => {
     const config = configFor(["#####", "#@$.#", "#####"], {
       levelId: "missing",
     });
-    expect(() => createPuzzle(config)).toThrow(
+    expect(() => World.make(config)).toThrow(
       'push-puzzle content has no level "missing"'
     );
   });
@@ -614,7 +623,7 @@ describe("starting a run", () => {
       const config = configFor(["#####", "#@$.#", "#####"], {
         historyCapacity,
       });
-      expect(() => createPuzzle(config)).toThrow(
+      expect(() => World.make(config)).toThrow(
         new RangeError(
           `push-puzzle's historyCapacity must be a whole number of 1 or more, got ${historyCapacity}`
         )
@@ -627,7 +636,7 @@ describe("starting a run", () => {
     taps(puzzle, "RR");
     undo(puzzle);
     undo(puzzle);
-    expect(boardText(puzzle)).toStrictEqual([
+    expect(World.boardText(puzzle)).toStrictEqual([
       "#####",
       "# @ #",
       "#$. #",

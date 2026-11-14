@@ -3,7 +3,7 @@ import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { PushPuzzleContent } from "../src/content";
-import { PuzzleContent } from "../src/schema";
+import * as PuzzleContent from "../src/puzzle-content";
 
 const load = (levels: unknown) =>
   Effect.runPromiseExit(
@@ -20,7 +20,7 @@ const GOOD = level("first", ["#####", "#@$.#", "#####"]);
 
 /** Decodes `levels` with the schema alone, as code that skips the loader does. */
 const decodeLevels = (levels: unknown) => () =>
-  Schema.decodeUnknownSync(PuzzleContent)({ levels });
+  Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({ levels });
 
 /** The failure message, or "" if loading succeeded. */
 const failure = async (levels: unknown) => {

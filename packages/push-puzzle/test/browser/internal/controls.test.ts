@@ -2,10 +2,10 @@ import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { pushPuzzleInput } from "../../src/browser/game";
-import { PuzzleContent } from "../../src/schema";
-import { PushPuzzle } from "../../src/simulation";
-import { boardText } from "../../src/world";
+import * as Controls from "../../../src/browser/internal/controls";
+import * as PuzzleContent from "../../../src/puzzle-content";
+import { PushPuzzle } from "../../../src/simulation";
+import * as World from "../../../src/world";
 
 // Runs push-puzzle's real input source: it reads keys through InputController, and a Game.Loop
 // steps the simulation with it the way the demo's engine does. No view is created.
@@ -21,7 +21,7 @@ const ROOM = [
   "##############################",
 ];
 
-const content = Schema.decodeUnknownSync(PuzzleContent)({
+const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
   levels: [{ id: "room", name: "Room", rows: ROOM }],
 });
 
@@ -46,7 +46,7 @@ const play = () => {
     style: {},
     setPointerCapture: () => {},
   }) as unknown as HTMLElement;
-  const input = pushPuzzleInput(surface);
+  const input = Controls.make(surface);
   const loop = Game.makeLoop(PushPuzzle);
   const samples: number[] = [];
   loop.subscribe((event) => {
@@ -63,7 +63,7 @@ const play = () => {
     run: (steps: number) => loop.frame(input, { steps }, 0),
     /** The player's [column, row]. */
     player: () => {
-      const rows = boardText(loop.state!);
+      const rows = World.boardText(loop.state!);
       const row = rows.findIndex((line) => line.includes("@"));
       return [rows[row]!.indexOf("@"), row];
     },
