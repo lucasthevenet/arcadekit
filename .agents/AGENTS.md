@@ -5,10 +5,10 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 ## Layout
 
 - `packages/arcadekit/src/<entry>/`: an entry's source, and its `README.md`, which is also its page on arcadekit.dev. Its tests, and the helpers only tests import, are in `packages/arcadekit/test/<entry>/`.
-- `apps/push-puzzle-demo` and `apps/survivor-demo`: the demos, each with its genre in `src/<genre>/` beside its Foldkit app in `src/app/`. `apps/docs`: the docs site, built from the entries' READMEs and the glossary.
+- `examples/push-puzzle-demo` and `examples/survivor-demo`: the demos, each with its genre in `src/<genre>/` beside its Foldkit app in `src/app/`. `website`: the docs site, built from the entries' READMEs and the glossary.
 - `CONTEXT.md`: the glossary. Name things with its words in code, tests and prose, and give a new concept its entry in the same change.
 - `tools/lint/` and `oxlint.config.ts`: the kit's own lint rules. Their messages say what to write.
-- Inside the package, an entry imports another by relative path to its public file (`../core/index`). The apps import `arcadekit/<entry>`, and their genre the same way as an entry: by relative path to its public file (`../push-puzzle/index`, `../push-puzzle/browser/index`).
+- Inside the package, an entry imports another by relative path to its public file (`../core/index`). The demos import `arcadekit/<entry>`, and their genre the same way as an entry: by relative path to its public file (`../push-puzzle/index`, `../push-puzzle/browser/index`).
 
 ## A game is declared
 
@@ -27,7 +27,7 @@ Run the narrowest check that covers the change. CI runs `pnpm check`, `pnpm test
 | --- | --- |
 | Any code | `pnpm fix`, then `pnpm check`, `pnpm typecheck`, and `pnpm test <files>` for the tests that cover it |
 | A doc comment's example or a README's `ts` block | `pnpm build:packages && pnpm smoke --no-build` |
-| A README, `CONTEXT.md` or `apps/docs` | `pnpm build:docs`, which fails on a dead link |
+| A README, `CONTEXT.md` or `website` | `pnpm build:docs`, which fails on a dead link |
 | A step, a simulation's rules or `arcadekit/core` | `pnpm test` for the replay and determinism hashes, and `pnpm test:browsers` |
 | The package's exports or its build | `pnpm build:packages && pnpm lint:packages` |
 
@@ -35,8 +35,8 @@ Say which checks you could not run.
 
 ## Generated files
 
-- `apps/*/public/sprites/*.png` and `*.json`: `pnpm sprites` (`scripts/generate-sprite-sheets.mjs`).
-- `apps/*/public/sounds/*.wav`: `pnpm sounds` (`scripts/generate-placeholder-sounds.mjs`).
+- `examples/*/public/sprites/*.png` and `*.json`: `pnpm sprites` (`scripts/generate-sprite-sheets.mjs`).
+- `examples/*/public/sounds/*.wav`: `pnpm sounds` (`scripts/generate-placeholder-sounds.mjs`).
 - `packages/arcadekit/CHANGELOG.md`: Changesets writes it on release, from `.changeset/`.
 
 ## Issues

@@ -149,8 +149,8 @@ const ENTRY_FILES = Object.values(kitExports).map(({ source }) =>
 // folder's `index.ts` and `browser/index.ts`, which the app imports by relative path, and each is a
 // barrel of namespaces, as an entry's is.
 const GAMES = [
-  "apps/push-puzzle-demo/src/push-puzzle",
-  "apps/survivor-demo/src/survivors",
+  "examples/push-puzzle-demo/src/push-puzzle",
+  "examples/survivor-demo/src/survivors",
 ] as const;
 const GAME_ENTRY_FILES = GAMES.flatMap((game) => [
   `${game}/index.ts`,

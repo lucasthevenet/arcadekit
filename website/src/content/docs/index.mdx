@@ -1,0 +1,61 @@
+---
+# The tab's title, before the site's name. The hero's is the site's name alone.
+title: Primitives for browser games
+description: A deterministic simulation, a game loop, input, saves, audio, pixel art and lockstep co-op for browser games. One package, on Effect, Foldkit and Three.js.
+template: splash
+hero:
+  title: arcadekit
+  tagline: Primitives for browser games. A deterministic simulation, a game loop, input, saves, audio, pixel art and lockstep co-op. One package, on Effect, Foldkit and Three.js.
+  image:
+    html: <img class="hero-mark" src="/favicon.svg" alt="" width="400" height="400" />
+  actions:
+    - text: Get started
+      link: "#install"
+      icon: right-arrow
+    - text: Play GRIMBONK
+      link: https://grimbonk.arcadekit.dev
+      icon: external
+      variant: secondary
+    - text: GitHub
+      link: https://github.com/lucasthevenet/arcadekit
+      icon: github
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+import { Content as PackageReadme } from "../../../../packages/arcadekit/README.md";
+
+<CardGrid>
+  <Card title="The same run on every peer" icon="random">
+    A fixed-step clock, a seeded random generator and pools that allocate
+    nothing per step. The same seed and inputs give the same run.
+    [arcadekit/core](/core)
+  </Card>
+  <Card title="A game is declared" icon="puzzle">
+    Each part is one named class. The rules have no DOM, and the engine adds the
+    view and input that present them. A loop steps the rules anywhere, and the
+    engine draws them in a browser. [arcadekit/game](/game)
+  </Card>
+  <Card title="Co-op in lockstep" icon="laptop">
+    Two to four players run one simulation over WebRTC, joined by a code. The
+    signalling worker for Cloudflare is an entry too. [arcadekit/net](/net)
+  </Card>
+  <Card title="Effect at the edges" icon="setting">
+    Loading, engines, saves and connections are Effect. The step, the views and
+    input are plain code.
+  </Card>
+</CardGrid>
+
+arcadekit is one package of primitives for browser games made with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org). Each of its entries has a page here.
+
+{/* The package's README, after its title and first paragraph (src/lib/landing.ts). */}
+
+<PackageReadme />
+
+## Games built on it
+
+- [GRIMBONK](https://grimbonk.arcadekit.dev) is a grimdark third-person survivors-like, built on the published package. Play it in the browser.
+- [The survivors demo](https://github.com/lucasthevenet/arcadekit/tree/main/examples/survivor-demo) is a survivors-like with co-op for two to four players. Its genre is in [`src/survivors`](https://github.com/lucasthevenet/arcadekit/tree/main/examples/survivor-demo/src/survivors).
+- [The push-puzzle demo](https://github.com/lucasthevenet/arcadekit/tree/main/examples/push-puzzle-demo) is a Sokoban-like with undo. Its genre is in [`src/push-puzzle`](https://github.com/lucasthevenet/arcadekit/tree/main/examples/push-puzzle-demo/src/push-puzzle).
+
+The demos don't publish: copy from them. [The repository's README](https://github.com/lucasthevenet/arcadekit#making-a-new-game) says how to make a new game, in an existing genre or a new one.

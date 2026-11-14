@@ -13,6 +13,6 @@
   "ignore": [
     "@arcadekit/survivor-demo",
     "@arcadekit/push-puzzle-demo",
-    "@arcadekit/docs"
+    "@arcadekit/website"
   ]
 }

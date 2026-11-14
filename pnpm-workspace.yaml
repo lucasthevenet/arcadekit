@@ -1,15 +1,5 @@
 packages:
   - packages/*
-  - apps/*
+  - examples/*
+  - website
   - scripts/bench
-
-overrides:
-  # The docs site's VitePress 1 asks for Vite 5, a line that gets no more fixes: its dev server
-  # has open advisories. Vite 6 is the oldest line that does, and VitePress 1 runs on it
-  # (apps/docs/README.md, "How it reads the repository"). Remove this with VitePress 2.
-  "vitepress>vite": ^6.4.4
-
-# VitePress's Vite 6 brings its own esbuild, whose install script only checks its binary. The docs
-# build works without it, so say so: pnpm then stops warning about it on every install.
-ignoredBuiltDependencies:
-  - esbuild

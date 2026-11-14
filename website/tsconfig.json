@@ -1,0 +1,18 @@
+{
+  // The site's config, its loader and plugins, their tests and its Alchemy stack run in Node: no
+  // DOM. Its .astro components are checked by Astro as it builds them.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // The site's files import each other with their extension, as Node loads them.
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  // .astro/types.d.ts is written by `astro sync`: the types of `astro:content`.
+  "include": [
+    ".astro/types.d.ts",
+    "src/**/*.ts",
+    "astro.config.ts",
+    "alchemy.run.ts"
+  ]
+}

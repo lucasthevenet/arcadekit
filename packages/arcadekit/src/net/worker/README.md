@@ -26,7 +26,7 @@ export class SignallingRoom extends SignallingWorker.room({ roomSize: 4 }) {}
 export default SignallingWorker.make({ rooms: "ROOMS", assets: "ASSETS" });
 ```
 
-The app declares the rest where it declares its Worker: a Durable Object namespace of that class bound as `ROOMS`, the static assets bound as `ASSETS`, and the routes `/host` and `/join/*` sent to the Worker ahead of the assets. The survivors demo does it with [Alchemy](https://alchemy.run) in [`alchemy.run.ts`](../../../../../apps/survivor-demo/alchemy.run.ts), and its `alchemy dev` runs the worker locally beside the site.
+The app declares the rest where it declares its Worker: a Durable Object namespace of that class bound as `ROOMS`, the static assets bound as `ASSETS`, and the routes `/host` and `/join/*` sent to the Worker ahead of the assets. The survivors demo does it with [Alchemy](https://alchemy.run) in [`alchemy.run.ts`](../../../../../examples/survivor-demo/alchemy.run.ts), and its `alchemy dev` runs the worker locally beside the site.
 
 - `SignallingWorker.room(options?)` returns the Durable Object class of one room, for the app to extend. `roomSize` is the most players a room holds, host included: a whole number from 2 to `Room.maxSize` (16), and `Room.defaultSize` (4) if left out; both constants are in `arcadekit/net/signalling`. Any other size throws a `RangeError` when the Worker's module loads, so a wrong size fails the deploy and is never changed to another one. A lockstep run has its own limit on the wire, which is not this setting.
 - `SignallingWorker.make({ rooms, assets })` returns the Worker's default export, a `fetch` handler. `rooms` and `assets` are the names of the two bindings in the Worker's `env`.
