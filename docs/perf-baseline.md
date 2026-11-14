@@ -44,6 +44,8 @@ Each rework adds a row. Its numbers come from five runs of `pnpm bench` on its b
 | `arcadekit/content` in Effect's shape | 130.8 µs (111.5–149.5), 1,187 B | 0.64 µs (0.59–0.73), 609 B | 9.1 µs (8.6–10.2), 285 B |
 | The baseline, run beside the row below | 132.4 µs (123.1–148.6), 662 B | 0.89 µs (0.83–2.02), 259 B | 12.6 µs (12.0–18.2), 479 B |
 | `arcadekit/save` in Effect's shape | 158.5 µs (150.7–166.8), 1,187 B | 0.82 µs (0.80–1.20), 609 B | 12.5 µs (12.3–14.2), 285 B |
+| The baseline, run beside the row below | 93.1 µs (91.0–96.3), 662 B | 0.70 µs (0.65–0.93), 259 B | 8.8 µs (8.7–9.2), 479 B |
+| `arcadekit/audio` in Effect's shape | 119.7 µs (112.0–137.6), 1,187 B | 0.64 µs (0.62–0.73), 609 B | 9.1 µs (8.7–9.2), 285 B |
 
 Core stayed plain; what moved is its shape. A step calls core through `dual` functions and reads state from fields on a prototype, where it called closures and class methods. Survivors' step runs about a quarter slower and allocates 525 B more; an engine frame, whose loop advances a `FixedStepClock` and drains an `EventBuffer` through them, allocates 350 B more in the same time; a lockstep tick allocates 194 B less, for a reason not yet found. The performance work starts from these.
 
@@ -52,3 +54,5 @@ No workload makes an input controller: each reads a script in its place (survivo
 No workload loads a content or an asset: survivors' step is given content its Schema decoded once, before anything is timed, and the engine's run and the lockstep peers take theirs as a config. So content's row is input's, within the wall time's noise, and allocates the same to the byte. Input's commit, run in the same rounds, gave 126.4 µs (112.4–142.1), 0.58 µs (0.58–0.78) and 8.8 µs (8.7–9.5).
 
 No workload reads or writes a save or a setting: what a game keeps between sessions is read at startup and written when a run ends, never in a step or a frame. So save's row is content's, within the wall time's noise, and allocates the same to the byte. Content's commit, run in the same rounds, gave 177.6 µs (150.8–186.1), 0.83 µs (0.80–1.16) and 14.5 µs (12.0–20.7). The baseline ran as `3df4d41`, the baseline commit with `pnpm bench` added and nothing else.
+
+No workload plays a sound: survivors' step and the lockstep peers draw nothing, and the engine's run draws with a view that plays nothing, so no audio system is made. So audio's row is save's, within the wall time's noise, and allocates the same to the byte. Save's commit, run in the same rounds, gave 122.1 µs (111.5–127.4), 0.61 µs (0.58–0.64) and 8.8 µs (8.6–9.4). The baseline ran as `3df4d41`, on an Intel(R) Xeon(R) Processor @ 2.30GHz with the same Node.

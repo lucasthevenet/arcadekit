@@ -1,5 +1,4 @@
-import { silentAudio } from "arcadekit/audio";
-import type { AudioSystem } from "arcadekit/audio";
+import { AudioSystem } from "arcadekit/audio";
 import { describe, expect, it } from "vitest";
 
 import type { Puzzle, PushPuzzleCues } from "../world";
@@ -24,12 +23,11 @@ const run = (): Puzzle & { cues: PushPuzzleCues } =>
 /** A sound view over an audio system that records what it plays. */
 const listen = () => {
   const played: string[] = [];
-  const audio: AudioSystem = {
-    ...silentAudio,
+  const audio = AudioSystem.make({
     play: (id) => {
       played.push(id);
     },
-  };
+  });
   return { view: new PushPuzzleSoundView(audio, SOUNDS), played };
 };
 

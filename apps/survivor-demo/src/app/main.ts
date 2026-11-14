@@ -4,7 +4,7 @@ import {
   SurvivorsEngine,
   SurvivorsSheet,
 } from "@arcadekit/survivors/browser";
-import { BrowserAudioLayer } from "arcadekit/audio/browser";
+import { BrowserAudioSystem } from "arcadekit/audio/browser";
 import { FetchContentSource } from "arcadekit/content/browser";
 import { loadSpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
@@ -31,7 +31,7 @@ const assets = Layer.mergeAll(
     loadSpriteSheet(`${import.meta.env.BASE_URL}sprites/survivors.json`)
   ),
   SurvivorsCueTable.layer(survivorsSounds),
-  BrowserAudioLayer
+  BrowserAudioSystem.layer
 );
 
 /**

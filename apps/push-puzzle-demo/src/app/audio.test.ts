@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { Audio, defaultAudioSettings, silentAudio } from "arcadekit/audio";
-import type { AudioSystem } from "arcadekit/audio";
+import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
@@ -44,20 +43,19 @@ describe("the sounds", () => {
 describe("the audio settings", () => {
   it("keep the last write under their own key, apart from the save, and are applied when read", async () => {
     const applied: unknown[] = [];
-    const audio: AudioSystem = {
-      ...silentAudio,
+    const audio = AudioSystem.make({
       setVolume: (bus, volume) => {
         applied.push([bus, volume]);
       },
       setMuted: (muted) => {
         applied.push(muted);
       },
-    };
-    const muted = { ...defaultAudioSettings, muted: true };
+    });
+    const muted = { ...AudioSettings.defaults, muted: true };
     const result = await Effect.gen(function* () {
       const before = (yield* LoadAudioSettings().effect).settings;
       yield* ChangeAudioSettings({
-        settings: { ...defaultAudioSettings, music: 0.2 },
+        settings: { ...AudioSettings.defaults, music: 0.2 },
       }).effect;
       yield* ChangeAudioSettings({ settings: muted }).effect;
       const raw = yield* (yield* KeyValueStore.KeyValueStore).get(SETTINGS_KEY);
@@ -70,12 +68,12 @@ describe("the audio settings", () => {
           Layer.provideMerge(KeyValueStore.layerMemory)
         )
       ),
-      Effect.provide(Layer.succeed(Audio, audio)),
+      Effect.provide(Layer.succeed(AudioSystem.AudioSystem, audio)),
       Effect.orDie,
       Effect.runPromise
     );
     expect(result).toStrictEqual({
-      before: defaultAudioSettings,
+      before: AudioSettings.defaults,
       after: muted,
       raw: JSON.stringify(muted),
       applied: [
@@ -96,7 +94,7 @@ const levelSelect: Model = {
 
 describe("the sound controls", () => {
   it("mutes and unmutes on M, saving each change", () => {
-    const muted = { ...defaultAudioSettings, muted: true };
+    const muted = { ...AudioSettings.defaults, muted: true };
     Story.story(
       update,
       Story.given(levelSelect),
@@ -128,7 +126,7 @@ describe("the sound controls", () => {
       Story.message(Message.ChangedVolume({ bus: "sfx", volume: Number.NaN })),
       Story.model((model) =>
         expect(model.audio).toStrictEqual({
-          ...defaultAudioSettings,
+          ...AudioSettings.defaults,
           music: 1,
           sfx: 0,
         })

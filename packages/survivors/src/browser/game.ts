@@ -1,5 +1,4 @@
-import { Audio } from "arcadekit/audio";
-import type { AudioSystem } from "arcadekit/audio";
+import { AudioSystem } from "arcadekit/audio";
 import { Asset } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
 import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
@@ -18,7 +17,7 @@ import { SurvivorsView } from "./view";
  * app gives `SurvivorsCueTable`.
  */
 export interface SurvivorsGameSound {
-  readonly audio: AudioSystem;
+  readonly audio: AudioSystem.AudioSystem;
   readonly sounds: SurvivorsSounds;
 }
 
@@ -64,15 +63,15 @@ export class SurvivorsSheet extends Asset<SpriteSheet, SpriteSheetError>()(
 /**
  * The survivors genre in the browser, for one player: its rules, a view that draws them from
  * the app's sheet and plays their cues, with the sounds the app gives its cue table, through
- * the app's `Audio` (tests provide `SilentAudioLayer`), and its input. `SurvivorsEngine.layer`
- * provides the engine; building it loads nothing, and each attach loads the sheet, or takes
- * the one already loaded. The view follows the local player's hero, so `SurvivorsCoop` plays
+ * the app's audio system (`AudioSystem.AudioSystem`; tests provide `AudioSystem.layerSilent`),
+ * and its input. `SurvivorsEngine.layer` provides the engine; building it loads nothing, and
+ * each attach loads the sheet, or takes the one already loaded. The view follows the local player's hero, so `SurvivorsCoop` plays
  * this engine for several players.
  */
 export class SurvivorsEngine extends Game.Engine("SurvivorsEngine", {
   simulation: Survivors,
   uses: {
-    audio: Audio,
+    audio: AudioSystem.AudioSystem,
     sounds: SurvivorsCueTable,
     sheet: SurvivorsSheet.load,
   },

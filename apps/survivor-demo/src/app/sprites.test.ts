@@ -7,7 +7,7 @@ import {
   SurvivorsSheet,
   wantedTags,
 } from "@arcadekit/survivors/browser";
-import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
+import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import {
   SpriteSheetError,
@@ -180,7 +180,7 @@ describe("loading", () => {
         ),
         Scene.Command.resolve(
           LoadAudioSettings,
-          Message.LoadedAudioSettings({ settings: defaultAudioSettings })
+          Message.LoadedAudioSettings({ settings: AudioSettings.defaults })
         ),
         Scene.Command.resolve(LoadSounds, Message.CompletedAudioCommand())
       )
@@ -206,7 +206,7 @@ describe("loading", () => {
             Layer.mergeAll(
               SurvivorsSheet.layer(Effect.fail(sheetError)),
               SurvivorsCueTable.layer(survivorsSounds),
-              SilentAudioLayer
+              AudioSystem.layerSilent
             )
           )
         )

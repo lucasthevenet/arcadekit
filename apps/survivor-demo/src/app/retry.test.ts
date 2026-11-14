@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { SurvivorsContent } from "@arcadekit/survivors";
 import { SurvivorsSheet } from "@arcadekit/survivors/browser";
-import { defaultAudioSettings } from "arcadekit/audio";
+import { AudioSettings } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import {
   SpriteSheetError,
@@ -129,7 +129,7 @@ const startup = (
   ),
   Scene.Command.resolve(
     LoadAudioSettings,
-    Message.LoadedAudioSettings({ settings: defaultAudioSettings })
+    Message.LoadedAudioSettings({ settings: AudioSettings.defaults })
   ),
   Scene.Command.resolve(LoadSounds, Message.CompletedAudioCommand()),
 ];

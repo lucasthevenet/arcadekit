@@ -105,7 +105,7 @@ const BUS_LABELS: readonly (readonly [Bus, string])[] = [
 ];
 
 /** A slider per bus and a mute switch. Each change is applied and saved at once. */
-const soundPanel = (settings: AudioSettings, h: H): Html =>
+const soundPanel = (settings: AudioSettings.AudioSettings, h: H): Html =>
   h.div(
     [h.Key("sound"), h.Class("sound")],
     [

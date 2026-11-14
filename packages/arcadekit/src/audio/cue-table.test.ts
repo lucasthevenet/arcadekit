@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect";
 import type { Layer } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { CueTable, SoundId } from "./index";
+import { AudioSystem, CueTable } from "./index";
 import type { CueSoundsOf } from "./index";
 
 // A cue table as a genre declares it, and the sounds an app gives it: what the service gives
@@ -11,28 +11,31 @@ import type { CueSoundsOf } from "./index";
 class GameCueTable extends CueTable("GameCueTable", {
   cues: {
     /** The ball hit a bumper. */
-    bump: SoundId,
+    bump: AudioSystem.SoundId,
     /** The ball was lost. */
-    drain: SoundId,
+    drain: AudioSystem.SoundId,
   },
 }) {}
 
 /** A table with every shape a cue's Schema can give it: silent, left out, and a group. */
 class ShapesCueTable extends CueTable("ShapesCueTable", {
   cues: {
-    hit: SoundId,
+    hit: AudioSystem.SoundId,
     /** `null` fires silently. */
-    miss: Schema.NullOr(SoundId),
+    miss: Schema.NullOr(AudioSystem.SoundId),
     /** Without it, the hit sound plays. */
-    crit: Schema.optionalKey(SoundId),
-    weapons: Schema.Struct({ swing: SoundId, bolt: Schema.NullOr(SoundId) }),
+    crit: Schema.optionalKey(AudioSystem.SoundId),
+    weapons: Schema.Struct({
+      swing: AudioSystem.SoundId,
+      bolt: Schema.NullOr(AudioSystem.SoundId),
+    }),
   },
 }) {}
 
 /** A cue whose Schema transforms: the app gives the side a view reads, the decoded one. */
 class GainCueTable extends CueTable("GainCueTable", {
   cues: {
-    hit: SoundId,
+    hit: AudioSystem.SoundId,
     /** How loud the hit plays, which a file would hold as text. */
     hitGain: Schema.FiniteFromString,
   },

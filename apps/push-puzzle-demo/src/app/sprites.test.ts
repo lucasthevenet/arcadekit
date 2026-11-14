@@ -7,7 +7,7 @@ import {
   PushPuzzleEngine,
   PushPuzzleSheet,
 } from "@arcadekit/push-puzzle/browser";
-import { SilentAudioLayer, defaultAudioSettings } from "arcadekit/audio";
+import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import {
   SpriteSheetError,
@@ -147,7 +147,7 @@ describe("a sheet that fails to load", () => {
         ),
         Scene.Command.resolve(
           LoadAudioSettings,
-          Message.LoadedAudioSettings({ settings: defaultAudioSettings })
+          Message.LoadedAudioSettings({ settings: AudioSettings.defaults })
         ),
         Scene.Command.resolve(LoadSounds, Message.CompletedAudioCommand())
       )
@@ -174,7 +174,7 @@ describe("a sheet that fails to load", () => {
             Layer.mergeAll(
               PushPuzzleSheet.layer(Effect.fail(failed)),
               PushPuzzleCueTable.layer(CUE_SOUNDS),
-              SilentAudioLayer
+              AudioSystem.layerSilent
             )
           )
         )

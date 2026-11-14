@@ -1,6 +1,6 @@
 # arcadekit/audio
 
-Sound for a game: one-shots with pitch and volume jitter, a voice cap and minimum gap per sound, loops held from state, music with crossfades, master, sfx and music buses, mute and ducking. It stays silent until the player's first gesture and while the tab is hidden. `Audio` is the Effect service; `BrowserAudioLayer` in `arcadekit/audio/browser` provides it over Web Audio, and `SilentAudioLayer` plays nothing, for tests. `CueTable` declares a genre's cues, for the app to say which of its sounds each plays. `AudioSettings` is the shape of the player's volumes and mute, which an app keeps with a `Setting`.
+Sound for a game: one-shots with pitch and volume jitter, a voice cap and minimum gap per sound, loops held from state, music with crossfades, master, sfx and music buses, mute and ducking. It stays silent until the player's first gesture and while the tab is hidden. `AudioSystem.AudioSystem` is what a game plays through, and the key of the service an app provides: `BrowserAudioSystem.layer` in `arcadekit/audio/browser` over Web Audio, or `AudioSystem.layerSilent`, which plays nothing, for tests. `CueTable` declares a genre's cues, for the app to say which of its sounds each plays. `AudioSettings.AudioSettings` is the shape of the player's volumes and mute, which an app keeps with a `Setting`. Behind the browser's audio system is an `AudioMixer.AudioMixer`, which plays into whatever output its host unlocks it with.
 
 An entry of the [`arcadekit`](../../README.md) package. The root entry is DOM-free.
 
@@ -14,22 +14,21 @@ Peer dependency: `effect` (~4.1).
 
 ## Example
 
-Load the sounds once at startup, start the music, and play a click (from the push-puzzle demo):
+A racing game loads its sounds once at startup, starts the music and plays a click:
 
 ```ts
-import { Audio } from "arcadekit/audio";
-import type { SoundList } from "arcadekit/audio";
-import { BrowserAudioLayer } from "arcadekit/audio/browser";
+import { AudioSystem } from "arcadekit/audio";
+import { BrowserAudioSystem } from "arcadekit/audio/browser";
 import { Effect } from "effect";
 
 const SOUNDS = {
-  move: { file: "/sounds/move.wav", pitchJitter: 0.06, volumeJitter: 0.2 },
+  engine: { file: "/sounds/engine.wav", pitchJitter: 0.06, volumeJitter: 0.2 },
   click: { file: "/sounds/click.wav", pitchJitter: 0.05 },
   music: { file: "/sounds/music.wav", bus: "music" },
-} satisfies SoundList;
+} satisfies AudioSystem.SoundList;
 
 export const loadSounds = Effect.gen(function* () {
-  const audio = yield* Audio;
+  const audio = yield* AudioSystem.AudioSystem;
   audio.playMusic("music"); // heard once it has loaded and the player has clicked or pressed a key
   yield* audio
     .load(SOUNDS)
@@ -42,37 +41,37 @@ export const loadSounds = Effect.gen(function* () {
       )
     );
   audio.play("click");
-}).pipe(Effect.provide(BrowserAudioLayer));
+}).pipe(Effect.provide(BrowserAudioSystem.layer));
 ```
 
-`load` decodes each file once, even when two loads of it overlap, and tries a file that failed (or whose every load was interrupted) again on the next load, so an app can retry after an `AudioLoadError`. Playing never waits on it: a sound not yet loaded is dropped.
+`load` decodes each file once, even when two loads of it overlap, and tries a file that failed (or whose every load was interrupted) again on the next load, so an app can retry after an `AudioLoadError`. A trace shows each load as `AudioSystem.load`. Playing never waits on it: a sound not yet loaded is dropped. Every call but `load` is plain and never throws, so a sound view plays during its `render`.
 
-`makeAudioMixer` makes the mixer behind `Audio`. It plays into whatever `AudioOutput` it is unlocked with, such as a fake one in a test. Making it is an Effect; after that, every call but `load` is plain. `makeBrowserAudio` in `arcadekit/audio/browser` makes it over Web Audio for the life of a scope, and `BrowserAudioLayer` is built on it.
+`BrowserAudioSystem.layer` makes no `AudioContext` until the player's first pointer, key or touch gesture that lets audio start, and silences everything while the tab is hidden. When its scope closes it stops listening, stops every sound and closes the context. In a browser without Web Audio it provides `AudioSystem.silent`.
 
 ## A cue table
 
-A game's view plays its sounds from cue counters in the state, as [ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md) describes. A genre package ships no sound, so it declares a `CueTable`: its cues by name, each with the Schema of what the app gives for it (`SoundId`, a sound id of the app's sound list). The app gives the table its sounds, and the genre's sound view plays from them:
+A game's view plays its sounds from cue counters in the state, as [ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md) describes. A genre package ships no sound, so it declares a `CueTable`: its cues by name, each with the Schema of what the app gives for it (`AudioSystem.SoundId`, a sound id of the app's sound list). The app gives the table its sounds, and the genre's sound view plays from them:
 
 ```ts
-import { Audio, CueTable, SilentAudioLayer, SoundId } from "arcadekit/audio";
-import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
+import { AudioSystem, CueTable } from "arcadekit/audio";
+import type { CueSoundsOf } from "arcadekit/audio";
 import { Effect, Layer } from "effect";
 
 // The genre declares its cues, and ships no sound.
 export class RaceCueTable extends CueTable("RaceCueTable", {
   cues: {
     /** A car crossing the line. */
-    lap: SoundId,
+    lap: AudioSystem.SoundId,
     /** Two cars touching. */
-    bump: SoundId,
+    bump: AudioSystem.SoundId,
     /** Loops while the engine runs. */
-    engine: SoundId,
+    engine: AudioSystem.SoundId,
   },
 }) {}
 
 // Its sound view takes the sounds beside the audio system.
 export const playLap = (
-  audio: AudioSystem,
+  audio: AudioSystem.AudioSystem,
   sounds: CueSoundsOf<typeof RaceCueTable>
 ): void => audio.play(sounds.lap);
 
@@ -84,14 +83,51 @@ export const RaceCueTableLayer = RaceCueTable.layer({
 });
 
 // And whatever plays them reads both. A `Game.Engine` names them in `uses`:
-// `uses: { audio: Audio, sounds: RaceCueTable }`.
+// `uses: { audio: AudioSystem.AudioSystem, sounds: RaceCueTable }`.
 export const lap = Effect.gen(function* () {
-  playLap(yield* Audio, yield* RaceCueTable);
-}).pipe(Effect.provide(Layer.mergeAll(RaceCueTableLayer, SilentAudioLayer)));
+  playLap(yield* AudioSystem.AudioSystem, yield* RaceCueTable);
+}).pipe(
+  Effect.provide(Layer.mergeAll(RaceCueTableLayer, AudioSystem.layerSilent))
+);
 ```
 
-A cue the app leaves out, and a sound for a name that is no cue, are type errors in a table written in place or annotated with `CueSoundsOf<typeof RaceCueTable>`, and `layer` throws for one that got past the types. A sound id stays a string, as `audio.play` takes it. An app can check its table against its own sound list with `satisfies Record<string, keyof typeof SOUNDS>`, if the list keeps its keys: written `const SOUNDS = { ... } satisfies SoundList`, as above. One annotated `: SoundList` has every string for a key, and the check then refuses nothing. A game that keeps its sounds beside its rules needs no cue table: its view takes a plain object.
+A cue the app leaves out, and a sound for a name that is no cue, are type errors in a table written in place or annotated with `CueSoundsOf<typeof RaceCueTable>`, and `layer` throws for one that got past the types. A sound id stays a string, as `play` takes it. An app can check its table against its own sound list with `satisfies Record<string, keyof typeof SOUNDS>`, if the list keeps its keys: written `const SOUNDS = { ... } satisfies AudioSystem.SoundList`, as above. One annotated `: AudioSystem.SoundList` has every string for a key, and the check then refuses nothing. A game that keeps its sounds beside its rules needs no cue table: its view takes a plain object.
 
 ## The audio settings
 
-The player's volume and mute are `AudioSettings`, with `defaultAudioSettings` before they change anything and `applyAudioSettings(audio, settings)` to set them. An app keeps them between sessions with a [`Setting`](../save/README.md), under its own storage key: `schema: AudioSettings, default: defaultAudioSettings`.
+The player's volume and mute are `AudioSettings.AudioSettings`, with `AudioSettings.defaults` before they change anything and `AudioSystem.applySettings` to set them. An app keeps them between sessions with a [`Setting`](../save/README.md), under its own storage key:
+
+```ts
+import { AudioSettings, AudioSystem } from "arcadekit/audio";
+import { Setting } from "arcadekit/save";
+import { Effect } from "effect";
+
+export class RaceAudioSettings extends Setting("RaceAudioSettings", {
+  storageKey: "my-studio/race/settings",
+  schema: AudioSettings.AudioSettings,
+  default: AudioSettings.defaults,
+}) {}
+
+// At startup, the stored settings are read and applied.
+export const applyStored = Effect.gen(function* () {
+  const settings = yield* (yield* RaceAudioSettings).read;
+  AudioSystem.applySettings(yield* AudioSystem.AudioSystem, settings);
+});
+```
+
+## In a test
+
+A test of a game's sound view gives it an audio system that records what it is asked to play, and a test that only needs one to exist provides `AudioSystem.layerSilent`. `AudioSystem.make` takes the calls a test cares about; each one it isn't given does nothing, and a `load` it isn't given succeeds:
+
+```ts
+import { AudioSystem } from "arcadekit/audio";
+
+const played: string[] = [];
+export const audio = AudioSystem.make({
+  play: (id) => {
+    played.push(id);
+  },
+});
+```
+
+A test of what plays, rather than what is asked for, makes the mixer itself: `AudioMixer.make` decodes through the function it is given, and `AudioMixer.unlock` starts it playing into an `AudioMixer.Output`, such as a fake one that records each voice it starts. The scope `AudioMixer.make` runs in stops its voices when it closes.

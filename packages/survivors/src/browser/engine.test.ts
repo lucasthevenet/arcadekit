@@ -57,7 +57,7 @@ describe("survivors' engine", () => {
     const view = SurvivorsEngine.definition.view(
       {} as HTMLElement,
       {
-        audio: {} as AudioSystem,
+        audio: {} as AudioSystem.AudioSystem,
         sounds: {} as SurvivorsSounds,
         sheet: {} as SpriteSheet,
       },

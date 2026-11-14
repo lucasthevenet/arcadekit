@@ -1,5 +1,5 @@
-import { CueTable, SoundId } from "arcadekit/audio";
-import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
+import { AudioSystem, CueTable } from "arcadekit/audio";
+import type { CueSoundsOf } from "arcadekit/audio";
 import type * as Game from "arcadekit/game/browser";
 
 import type { Puzzle, PushPuzzleCues } from "../world";
@@ -12,13 +12,13 @@ import type { Puzzle, PushPuzzleCues } from "../world";
 export class PushPuzzleCueTable extends CueTable("PushPuzzleCueTable", {
   cues: {
     /** A turn that moved without pushing. */
-    move: SoundId,
+    move: AudioSystem.SoundId,
     /** A turn that pushed a box, including into a hole. */
-    push: SoundId,
+    push: AudioSystem.SoundId,
     /** A box falling into a hole. Plays with the push. */
-    hole: SoundId,
-    undo: SoundId,
-    solved: SoundId,
+    hole: AudioSystem.SoundId,
+    undo: AudioSystem.SoundId,
+    solved: AudioSystem.SoundId,
   },
 }) {}
 
@@ -44,7 +44,7 @@ const CUES: readonly (readonly [
  * simulation; never changes it.
  */
 export class PushPuzzleSoundView implements Game.View<Puzzle> {
-  private readonly audio: AudioSystem;
+  private readonly audio: AudioSystem.AudioSystem;
   private readonly sounds: PushPuzzleSounds;
   /** The run heard last frame. A new run (a restart, another level) takes fresh counts. */
   private puzzle: Puzzle | null = null;
@@ -56,7 +56,7 @@ export class PushPuzzleSoundView implements Game.View<Puzzle> {
     solved: 0,
   };
 
-  constructor(audio: AudioSystem, sounds: PushPuzzleSounds) {
+  constructor(audio: AudioSystem.AudioSystem, sounds: PushPuzzleSounds) {
     this.audio = audio;
     this.sounds = sounds;
   }

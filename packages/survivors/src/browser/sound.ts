@@ -1,5 +1,5 @@
-import { CueTable, SoundId } from "arcadekit/audio";
-import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
+import { AudioSystem, CueTable } from "arcadekit/audio";
+import type { CueSoundsOf } from "arcadekit/audio";
 import type * as Game from "arcadekit/game/browser";
 
 import { isChoosing } from "../world";
@@ -13,22 +13,22 @@ import type { World } from "../world";
 export class SurvivorsCueTable extends CueTable("SurvivorsCueTable", {
   cues: {
     /** A bolt weapon's shot, when its content names no `sound` of its own. */
-    shot: SoundId,
+    shot: AudioSystem.SoundId,
     /** A bolt hitting an enemy. */
-    hit: SoundId,
-    kill: SoundId,
+    hit: AudioSystem.SoundId,
+    kill: AudioSystem.SoundId,
     /** A hero picking up a gem. */
-    pickup: SoundId,
+    pickup: AudioSystem.SoundId,
     /** A hero taking contact damage. */
-    hurt: SoundId,
+    hurt: AudioSystem.SoundId,
     /** A hero going down. */
-    down: SoundId,
+    down: AudioSystem.SoundId,
     /** The team gaining a level. */
-    levelUp: SoundId,
-    won: SoundId,
-    lost: SoundId,
+    levelUp: AudioSystem.SoundId,
+    won: AudioSystem.SoundId,
+    lost: AudioSystem.SoundId,
     /** Loops while a playing hero has an aura weapon. */
-    auraHum: SoundId,
+    auraHum: AudioSystem.SoundId,
   },
 }) {}
 
@@ -38,7 +38,7 @@ export type SurvivorsSounds = CueSoundsOf<typeof SurvivorsCueTable>;
 const firstHero = () => 0;
 
 interface SurvivorsSoundViewOptions {
-  readonly audio: AudioSystem;
+  readonly audio: AudioSystem.AudioSystem;
   readonly sounds: SurvivorsSounds;
   /**
    * The slot of this browser's hero: its hurt and down sounds play at full volume. Read on
@@ -112,7 +112,7 @@ const auraPlaying = (world: World): boolean =>
  * it. Every peer hears the whole fight; a teammate's hurt and down are quieter.
  */
 export class SurvivorsSoundView implements Game.View<World> {
-  private readonly audio: AudioSystem;
+  private readonly audio: AudioSystem.AudioSystem;
   private readonly sounds: SurvivorsSounds;
   private readonly localHero: () => number;
   private readonly teammateVolume: number;

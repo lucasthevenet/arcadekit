@@ -1,6 +1,6 @@
 import type { PushPuzzleCueTable } from "@arcadekit/push-puzzle/browser";
-import { AudioSettings, defaultAudioSettings } from "arcadekit/audio";
-import type { CueSoundsOf, SoundList } from "arcadekit/audio";
+import { AudioSettings } from "arcadekit/audio";
+import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
 import { Setting } from "arcadekit/save";
 
 // This game's sounds: the files it ships, which sound each cue plays, and where the
@@ -13,7 +13,7 @@ export const CLICK = "click";
 /** The music loop, playing from startup. */
 export const MUSIC = "music";
 
-export const SOUND_LIST: SoundList = {
+export const SOUND_LIST: AudioSystem.SoundList = {
   move: { file: file("move"), pitchJitter: 0.06, volumeJitter: 0.2 },
   push: { file: file("push"), pitchJitter: 0.05, volumeJitter: 0.15 },
   hole: { file: file("hole") },
@@ -37,8 +37,8 @@ export class PushPuzzleAudioSettings extends Setting(
   "PushPuzzleAudioSettings",
   {
     storageKey: "arcadekit/push-puzzle/settings",
-    schema: AudioSettings,
-    default: defaultAudioSettings,
+    schema: AudioSettings.AudioSettings,
+    default: AudioSettings.defaults,
   }
 ) {}
 
@@ -49,7 +49,7 @@ export const toVolume = (value: number): number =>
 export type Bus = "master" | "sfx" | "music";
 
 export const withVolume = (
-  settings: AudioSettings,
+  settings: AudioSettings.AudioSettings,
   bus: Bus,
   value: number
-): AudioSettings => ({ ...settings, [bus]: toVolume(value) });
+): AudioSettings.AudioSettings => ({ ...settings, [bus]: toVolume(value) });

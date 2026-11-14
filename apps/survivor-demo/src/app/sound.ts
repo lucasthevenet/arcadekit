@@ -1,6 +1,6 @@
 import type { SurvivorsCueTable } from "@arcadekit/survivors/browser";
-import { AudioSettings, defaultAudioSettings } from "arcadekit/audio";
-import type { CueSoundsOf, SoundDef, SoundList } from "arcadekit/audio";
+import { AudioSettings } from "arcadekit/audio";
+import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
 import { Setting } from "arcadekit/save";
 
 // The game's sounds: the files in public/sounds, the sound each cue of the survivors cue table
@@ -9,7 +9,10 @@ import { Setting } from "arcadekit/save";
 
 const file = (id: string) => `${import.meta.env.BASE_URL}sounds/${id}.wav`;
 
-const sfx = (id: string, def: Omit<SoundDef, "file"> = {}): SoundDef => ({
+const sfx = (
+  id: string,
+  def: Omit<AudioSystem.Sound, "file"> = {}
+): AudioSystem.Sound => ({
   file: file(id),
   ...def,
 });
@@ -22,7 +25,7 @@ const shot = {
 };
 
 /** Every sound the app loads at startup, by id. */
-export const soundList: SoundList = {
+export const soundList: AudioSystem.SoundList = {
   "shot-arc": sfx("shot-arc", shot),
   "shot-bubble": sfx("shot-bubble", shot),
   hit: sfx("hit", {
@@ -73,6 +76,6 @@ export const MUSIC = { menu: "music-menu", run: "music-run" } as const;
 /** The player's volume and mute: app settings, kept apart from the save, where the last write wins (ADR-0009). */
 export class SurvivorsAudioSettings extends Setting("SurvivorsAudioSettings", {
   storageKey: "arcadekit/survivors/settings",
-  schema: AudioSettings,
-  default: defaultAudioSettings,
+  schema: AudioSettings.AudioSettings,
+  default: AudioSettings.defaults,
 }) {}

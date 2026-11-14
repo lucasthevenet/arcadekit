@@ -4,8 +4,8 @@ import type {
   SurvivorsEngine,
   SurvivorsSheet,
 } from "@arcadekit/survivors/browser";
-import { defaultAudioSettings } from "arcadekit/audio";
-import type { Audio, AudioSettings } from "arcadekit/audio";
+import { AudioSettings } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
 
 import {
@@ -47,7 +47,7 @@ export type Services =
   | SurvivorsSheet
   | SurvivorsSave
   | SurvivorsCoop
-  | Audio
+  | AudioSystem.AudioSystem
   | SurvivorsAudioSettings;
 type Return = Update.Return<Model, Message, Services>;
 
@@ -65,7 +65,7 @@ export const init: Runtime.ApplicationInit<
     hud: emptyHud,
     isViewportMounted: false,
     coop: emptyCoopRun,
-    audio: defaultAudioSettings,
+    audio: AudioSettings.defaults,
   },
   commands: [LoadContent(), LoadSave(), LoadAudioSettings(), LoadSounds()],
 });
@@ -90,7 +90,10 @@ const CLICKS: ReadonlySet<Message["_tag"]> = new Set([
 ]);
 
 /** Changes the audio settings: the sound subscription applies them, and they are saved. */
-const changeAudio = (model: Model, audio: AudioSettings): Return => ({
+const changeAudio = (
+  model: Model,
+  audio: AudioSettings.AudioSettings
+): Return => ({
   model: { ...model, audio },
   commands: [SaveAudioSettings({ settings: audio })],
 });

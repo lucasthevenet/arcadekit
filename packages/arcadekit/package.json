@@ -83,7 +83,7 @@
       "default": "./dist/audio.js"
     },
     "./audio/browser": {
-      "source": "./src/audio/browser.ts",
+      "source": "./src/audio/browser/index.ts",
       "types": "./dist/audio/browser.d.ts",
       "default": "./dist/audio/browser.js"
     },

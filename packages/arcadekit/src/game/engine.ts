@@ -14,7 +14,7 @@ import type { GameView } from "./view";
 
 /**
  * What an engine's view and input source are made from, by name: Effects the engine runs on each
- * attach. A service key is one (`Audio`), and so is an asset's load (`MySheet.load`).
+ * attach. A service key is one (`AudioSystem.AudioSystem`), and so is an asset's load (`MySheet.load`).
  */
 export type Uses = Readonly<
   Record<string, Effect.Effect<unknown, unknown, unknown>>
@@ -382,7 +382,7 @@ const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
  * export class PushPuzzleEngine extends Game.Engine("PushPuzzleEngine", {
  *   simulation: PushPuzzle,
  *   uses: {
- *     audio: Audio,
+ *     audio: AudioSystem.AudioSystem,
  *     sounds: PushPuzzleCueTable,
  *     sheet: PushPuzzleSheet.load,
  *   },

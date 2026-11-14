@@ -52,8 +52,8 @@ const DebugGlobal = Layer.effectDiscard(
 );
 
 /**
- * The app's co-op: the genre's `SurvivorsCoop`, which plays its sounds through the `Audio`
- * service, loads the run's content from `SurvivorsContent` and draws from the app's
+ * The app's co-op: the genre's `SurvivorsCoop`, which plays its sounds through the app's audio
+ * system (`AudioSystem.AudioSystem`), loads the run's content from `SurvivorsContent` and draws from the app's
  * `SurvivorsSheet`, as the single-player engine does: one sheet, one load. It needs the app's
  * rooms (`CoopRooms`): the signalling worker's in the app, fake ones in a test. The layer's
  * scope (the app) owns the client: when it closes, the client leaves, and its socket, peer

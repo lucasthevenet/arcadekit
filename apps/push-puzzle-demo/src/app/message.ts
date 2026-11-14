@@ -13,7 +13,7 @@ export const Message = defineMessageUnion({
   FailedToLoadContent: { error: Schema.String },
   ClickedRetry: {},
   LoadedSave: { records: LevelRecords },
-  LoadedAudioSettings: { settings: AudioSettings },
+  LoadedAudioSettings: { settings: AudioSettings.AudioSettings },
   MountedViewport: {},
   UnmountedViewport: {},
 
