@@ -19,7 +19,7 @@ import {
 } from "vitest";
 
 import * as Game from "../../game/browser";
-import { manualFrames } from "../../game/testing";
+import { ManualFrames } from "../../game/testing/index";
 import type { Ticker } from "../scoped";
 import {
   AnswerOffer,
@@ -170,7 +170,7 @@ const seat = async (
   length = 1_000_000,
   build: typeof run = run
 ) => {
-  const frames = manualFrames();
+  const frames = ManualFrames.make();
   const log: string[] = [];
   const app = { length, loads: 0 };
   const events: Event[] = [];
@@ -396,10 +396,10 @@ describe("a declared Coop", () => {
     const { host, guest } = await lobbyOfTwo(hub);
     const attach = Effect.runFork(onFakeTimers(guest.coop.attach(element)));
     await settle();
-    guest.frames.runFrameAt(100);
+    ManualFrames.runFrameAt(guest.frames, 100);
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(500);
-    guest.frames.runFrameAt(600);
+    ManualFrames.runFrameAt(guest.frames, 600);
     await Effect.runPromise(Fiber.interrupt(attach));
     const totals = host.coop.debug().state?.totals ?? [];
     expect([
@@ -429,7 +429,7 @@ describe("a declared Coop", () => {
     const attach = () => Effect.runFork(onFakeTimers(coop.attach(element)));
     const first = attach();
     await settle();
-    frames.runFrameAt(100);
+    ManualFrames.runFrameAt(frames, 100);
     await Effect.runPromise(Fiber.interrupt(first));
     // The app's scope, which the layer was built in, is still open.
     const detached = [...log];

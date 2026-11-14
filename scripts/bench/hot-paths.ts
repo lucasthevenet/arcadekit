@@ -5,7 +5,7 @@ import { getHeapSpaceStatistics } from "node:v8";
 //
 // - survivors' step at its largest test population, a horde held at the 300 enemies its world
 //   tests cap it at, stepped by `Game.Loop`;
-// - an engine's frames, each of which steps and draws, run on `manualFrames`;
+// - an engine's frames, each of which steps and draws, run on `ManualFrames`;
 // - a lockstep run's ticks: two peers' scoped sessions over the in-memory network, ticked by
 //   `manualTicker` on a Clock the bench moves.
 //
@@ -16,7 +16,7 @@ import { getHeapSpaceStatistics } from "node:v8";
 import { ChooseUpgrade, GameContent, Survivors } from "@arcadekit/survivors";
 import type { HeroInput, SurvivorsConfig } from "@arcadekit/survivors";
 import * as Game from "arcadekit/game/browser";
-import { manualFrames } from "arcadekit/game/testing";
+import { ManualFrames } from "arcadekit/game/testing";
 import {
   createMemoryNetwork,
   hostLockstepScoped,
@@ -201,7 +201,7 @@ const content = Schema.decodeUnknownSync(GameContent)({
 });
 
 const survivorsStep = async () => {
-  const loop = new Game.Loop(Survivors);
+  const loop = Game.makeLoop(Survivors);
   const move = { moveX: 0, moveZ: 0 };
   // A slow circle, as the world tests walk.
   const input = Game.soloInput<HeroInput>({
@@ -273,11 +273,11 @@ class BenchEngine extends Game.Engine("BenchEngine", {
 const element = { id: "bench" } as HTMLElement;
 
 const engineFrames = () => {
-  const frames = manualFrames();
+  const frames = ManualFrames.make();
   let nowMs = 0;
   const operate = () => {
     nowMs += 15.625;
-    frames.runFrameAt(nowMs);
+    ManualFrames.runFrameAt(frames, nowMs);
   };
   return Effect.gen(function* () {
     const engine = yield* BenchEngine;
@@ -396,7 +396,7 @@ console.log(
     survivors.result
   )
 );
-console.log(line("engine frame (manualFrames)", "frame", engine));
+console.log(line("engine frame (ManualFrames)", "frame", engine));
 console.log(
   line(
     `lockstep tick (2 peers, ${lockstep.steps} steps)`,

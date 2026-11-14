@@ -119,7 +119,7 @@ export type TestCoopClient<LoadError = never> = CoopClient<
 
 /**
  * The Co-op client of the test game, from its plain parts: over `rooms` (`fakeCoopRooms().rooms`),
- * ticked by `ticker` (`manualTicker().ticker`) and drawn on `frames` (`manualFrames()`). Without
+ * ticked by `ticker` (`manualTicker().ticker`) and drawn on `frames` (`ManualFrames.make()`). Without
  * one of the last two, it reads the reference a declared `Coop` reads: `CoopTicker`, a worker's
  * timer, and `Game.Frames`, animation frames. Its scope owns the current seat.
  */

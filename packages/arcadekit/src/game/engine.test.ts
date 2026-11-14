@@ -1,4 +1,5 @@
 import {
+  Cause,
   Context,
   Data,
   Effect,
@@ -13,7 +14,23 @@ import type { Scope } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Game from "./browser";
-import { manualFrames } from "./testing";
+import { ManualFrames } from "./testing";
+
+/**
+ * The reasons an exit failed with, each a `Fail`'s error or the reason itself. The engine's
+ * methods are traced, so their failures carry their spans as annotations, which this leaves out.
+ * A success is "succeeded", which no expected list equals.
+ */
+const failures = <A, E>(exit: Exit.Exit<A, E> | undefined) => {
+  if (exit === undefined) {
+    return "no exit";
+  }
+  return Exit.isSuccess(exit)
+    ? "succeeded"
+    : exit.cause.reasons.map((reason) =>
+        Cause.isFailReason(reason) ? reason.error : reason
+      );
+};
 
 // A game that counts its steps, declared the way a genre declares one, and an engine for it
 // whose view and input log what the engine does with them. Frames run only when a test runs them.
@@ -251,7 +268,7 @@ type WalkService = Context.Service.Shape<typeof WalkEngine>;
  * attach ended, if it did while `drive` ran.
  */
 const playWalk = async (
-  frames: ReturnType<typeof manualFrames>,
+  frames: ManualFrames.ManualFrames,
   drive: (
     engine: WalkService,
     log: string[]
@@ -334,12 +351,12 @@ type CounterService = Context.Service.Shape<typeof CounterEngine>;
 const play = async (
   drive: (
     engine: CounterService,
-    frames: ReturnType<typeof manualFrames>,
+    frames: ManualFrames.ManualFrames,
     log: string[]
   ) => Effect.Effect<void, never, Scope.Scope>,
   faults: Faults = {}
 ) => {
-  const frames = manualFrames();
+  const frames = ManualFrames.make();
   const log: string[] = [];
   const layer = CounterEngine.layer.pipe(
     Layer.provide(
@@ -375,7 +392,7 @@ const expectFailure = (
   exit: Exit.Exit<never, unknown> | undefined,
   expected: Game.AttachError | Game.GameCrashed
 ) => {
-  expect(exit).toStrictEqual(Exit.fail(expected));
+  expect(failures(exit)).toStrictEqual([expected]);
   const error = Option.getOrUndefined(
     Exit.findErrorOption(exit ?? Exit.void)
   ) as { readonly cause?: unknown } | undefined;
@@ -391,7 +408,7 @@ const expectFailure = (
  * and the input do, runs `drive`, then closes everything. Returns the log.
  */
 const playTimed = async (
-  frames: ReturnType<typeof manualFrames>,
+  frames: ManualFrames.ManualFrames,
   drive: (
     engine: Context.Service.Shape<typeof TimedEngine>
   ) => Effect.Effect<void, never, Scope.Scope>
@@ -432,8 +449,8 @@ describe("Game.Engine", () => {
         yield* engine.start({ from: 10 }, { seed: 1 });
         yield* attached(engine);
         // 1/64 s after attach: one step.
-        frames.runFrameAt(15.625);
-        frames.runFrameAt(31.25);
+        ManualFrames.runFrameAt(frames, 15.625);
+        ManualFrames.runFrameAt(frames, 31.25);
       })
     );
     expect(log).toStrictEqual([
@@ -460,7 +477,7 @@ describe("Game.Engine", () => {
         })
       ).pipe(
         Effect.provide(SeatedEngine.layer),
-        Effect.provide(Layer.succeed(Game.Frames, manualFrames()))
+        Effect.provide(Layer.succeed(Game.Frames, ManualFrames.make()))
       )
     );
     expect(seats).toStrictEqual([{ slot: 0, names: [] }]);
@@ -503,12 +520,12 @@ describe("Game.Engine", () => {
             yield* engine.listen((event) => heard.push(event));
             yield* engine.start({ from: 0 }, { seed: 1 });
             yield* attached(engine);
-            frames.runFrameAt(15.625);
+            ManualFrames.runFrameAt(frames, 15.625);
           })
         );
         yield* attached(engine);
         // The listener's scope has closed: this step's sample reaches no one.
-        frames.runFrameAt(31.25);
+        ManualFrames.runFrameAt(frames, 31.25);
       })
     );
     expect(heard).toStrictEqual([
@@ -529,7 +546,7 @@ describe("Game.Engine", () => {
         );
         // Nothing has stepped yet, so the rules haven't seen it.
         done.push(sent.pollUnsafe() !== undefined);
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         done.push(Exit.isSuccess(yield* Fiber.await(sent)));
       })
     );
@@ -550,9 +567,9 @@ describe("Game.Engine", () => {
           }),
           { startImmediately: true }
         );
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* Fiber.await(sender);
-        frames.runFrameAt(31.25);
+        ManualFrames.runFrameAt(frames, 31.25);
       })
     );
     // The new run steps once in the frame after it started: its clock is its own.
@@ -582,12 +599,12 @@ describe("Game.Engine", () => {
           );
           // The input throws before the step applies the command.
           faults.read = new Error("no gamepad");
-          frames.runFrameAt(15.625);
+          ManualFrames.runFrameAt(frames, 15.625);
           yield* Fiber.await(crashing);
           yield* Fiber.await(sender);
           delete faults.read;
           yield* attached(engine);
-          frames.runFrameAt(31.25);
+          ManualFrames.runFrameAt(frames, 31.25);
         }),
       faults
     );
@@ -606,11 +623,11 @@ describe("Game.Engine", () => {
           engine.send(new Jump({ by: 5000 })),
           { startImmediately: true }
         );
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         exit = yield* Fiber.await(sent);
       })
     );
-    expect(exit).toStrictEqual(Exit.fail(new TooFar({ limit: JUMP_LIMIT })));
+    expect(failures(exit)).toStrictEqual([new TooFar({ limit: JUMP_LIMIT })]);
     // The step ran; the jump did not.
     expect(log).toContain("render 1");
   });
@@ -628,11 +645,9 @@ describe("Game.Engine", () => {
         exits.push(yield* Fiber.await(sent));
       })
     );
-    expect(exits).toStrictEqual([
-      Exit.fail(new Game.CommandDropped({ command: "Jump", reason: "noRun" })),
-      Exit.fail(
-        new Game.CommandDropped({ command: "Jump", reason: "runEnded" })
-      ),
+    expect(exits.map(failures)).toStrictEqual([
+      [new Game.CommandDropped({ command: "Jump", reason: "noRun" })],
+      [new Game.CommandDropped({ command: "Jump", reason: "runEnded" })],
     ]);
   });
 
@@ -646,7 +661,7 @@ describe("Game.Engine", () => {
           { startImmediately: true }
         );
         yield* Fiber.interrupt(sent);
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
       })
     );
     expect(log).toContain("render 1");
@@ -676,11 +691,11 @@ describe("Game.Engine", () => {
         yield* engine.start({ from: 0 }, { seed: 1 });
         yield* attached(engine);
         yield* engine.setPaused(true);
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* engine.setPaused(false);
-        frames.runFrameAt(31.25);
+        ManualFrames.runFrameAt(frames, 31.25);
         yield* engine.stop;
-        frames.runFrameAt(46.875);
+        ManualFrames.runFrameAt(frames, 46.875);
       })
     );
     expect(log.filter((line) => line.startsWith("render"))).toStrictEqual([
@@ -701,12 +716,12 @@ describe("Game.Engine", () => {
           exits.push(yield* Effect.exit(engine.attach(element)));
           delete faults.load;
           yield* attached(engine);
-          frames.runFrameAt(15.625);
+          ManualFrames.runFrameAt(frames, 15.625);
         }),
       faults
     );
-    expect(exits).toStrictEqual([
-      Exit.fail(new SheetMissing({ message: "no sheet" })),
+    expect(exits.map(failures)).toStrictEqual([
+      [new SheetMissing({ message: "no sheet" })],
     ]);
     expect(log).toStrictEqual([
       "load sheet",
@@ -745,12 +760,12 @@ describe("Game.Engine", () => {
           yield* engine.start({ from: 0 }, { seed: 1 });
           const fiber = yield* attached(engine);
           faults.render = cause;
-          frames.runFrameAt(15.625);
+          ManualFrames.runFrameAt(frames, 15.625);
           exit = yield* Fiber.await(fiber);
-          expect(frames.waiting()).toBe(false);
+          expect(ManualFrames.waiting(frames)).toBe(false);
           delete faults.render;
           yield* attached(engine);
-          frames.runFrameAt(31.25);
+          ManualFrames.runFrameAt(frames, 31.25);
         }),
       faults
     );
@@ -782,7 +797,7 @@ describe("Game.Engine", () => {
       Effect.gen(function* () {
         yield* attached(engine);
         second = yield* Effect.exit(engine.attach(element));
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
       })
     );
     // The defect names the engine and says what to do.
@@ -815,7 +830,7 @@ describe("Game.Engine", () => {
 // step reported.
 describe("what a listener has heard when a send completes", () => {
   it("is everything the frame of the command's step reported: the events of each of its steps, then its sample; the frame has drawn too", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const { log } = await playWalk(frames, (engine, lines) =>
       Effect.gen(function* () {
         yield* engine.start({});
@@ -824,7 +839,7 @@ describe("what a listener has heard when a send completes", () => {
         // Nothing has stepped, so nothing was heard and the sender waits.
         lines.push(`before the frame: ${sender.pollUnsafe() === undefined}`);
         // 3/64 s after attach: three steps in one frame. The first applies the turn.
-        frames.runFrameAt(46.875);
+        ManualFrames.runFrameAt(frames, 46.875);
         yield* Fiber.await(sender);
       })
     );
@@ -841,13 +856,13 @@ describe("what a listener has heard when a send completes", () => {
   });
 
   it("is that frame's events and sample when the rules refused the command, which reported nothing itself", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const { log } = await playWalk(frames, (engine, lines) =>
       Effect.gen(function* () {
         yield* engine.start({});
         lines.length = 0;
         const sender = yield* turning(engine, lines, 9);
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* Fiber.await(sender);
       })
     );
@@ -860,18 +875,18 @@ describe("what a listener has heard when a send completes", () => {
   });
 
   it("is the same after a wait: a send made while paused completes after the first frame that steps", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const { log } = await playWalk(frames, (engine, lines) =>
       Effect.gen(function* () {
         yield* engine.start({});
         lines.length = 0;
         yield* engine.setPaused(true);
         const sender = yield* turning(engine, lines, 1);
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* Effect.yieldNow;
         lines.push(`still waiting: ${sender.pollUnsafe() === undefined}`);
         yield* engine.setPaused(false);
-        frames.runFrameAt(31.25);
+        ManualFrames.runFrameAt(frames, 31.25);
         yield* Fiber.await(sender);
       })
     );
@@ -887,7 +902,7 @@ describe("what a listener has heard when a send completes", () => {
   });
 
   it("is the new run's start, for a send that run dropped; a stop and a send with no run report nothing", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const { log } = await playWalk(frames, (engine, lines) =>
       Effect.gen(function* () {
         yield* engine.start({});
@@ -918,7 +933,7 @@ describe("what a listener has heard when a send completes", () => {
   // step of it had applied before the throw was still taken, and its sender is told so. A step
   // that throws is the first way: what the frame had reported is discarded with its run.
   it("is nothing of a frame a step threw in, though the sender of a command it took hears that it was taken", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const { log, attach } = await playWalk(frames, (engine, lines) =>
       Effect.gen(function* () {
         // The second step of the run throws.
@@ -926,7 +941,7 @@ describe("what a listener has heard when a send completes", () => {
         lines.length = 0;
         const sender = yield* turning(engine, lines, 2);
         // Two steps in one frame: the first applies the turn and reports, the second throws.
-        frames.runFrameAt(31.25);
+        ManualFrames.runFrameAt(frames, 31.25);
         yield* Fiber.await(sender);
         yield* Effect.yieldNow;
       })
@@ -940,7 +955,7 @@ describe("what a listener has heard when a send completes", () => {
 
   // A listener that throws is the other: the telling ends there.
   it("is what was told before the throw, of a frame a listener threw in: that event for the listeners before it, and nothing after", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const { log, attach } = await playWalk(frames, (engine, lines) =>
       Effect.gen(function* () {
         yield* engine.start({});
@@ -956,7 +971,7 @@ describe("what a listener has heard when a send completes", () => {
         lines.length = 0;
         const sender = yield* turning(engine, lines, 2);
         // One step: the turn's event is told, then the step's, which the second throws on.
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* Fiber.await(sender);
         yield* Effect.yieldNow;
       })
@@ -974,14 +989,14 @@ describe("what a listener has heard when a send completes", () => {
 
   // No exception: a render that throws crashes the engine too, after everything was told.
   it("is all of a frame whose render threw: the view draws after the listeners have heard the frame", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const { log, attach } = await playWalk(frames, (engine, lines) =>
       Effect.gen(function* () {
         yield* engine.start({});
         lines.length = 0;
         // The view can't draw the way this turns to.
         const sender = yield* turning(engine, lines, 3);
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* Fiber.await(sender);
         yield* Effect.yieldNow;
       })
@@ -1000,17 +1015,17 @@ describe("what a listener has heard when a send completes", () => {
 
 describe("an attached engine's frames", () => {
   it("draws until its scope closes, then cancels the frame it asked for: a later frame draws nothing", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const log = await playTimed(frames, () =>
       Effect.sync(() => {
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         // Each frame asks for the next one.
-        expect(frames.waiting()).toBe(true);
+        expect(ManualFrames.waiting(frames)).toBe(true);
       })
     );
     // Closing the scope cancelled that request, so a later frame draws nothing.
-    expect(frames.waiting()).toBe(false);
-    frames.runFrameAt(31.25);
+    expect(ManualFrames.waiting(frames)).toBe(false);
+    ManualFrames.runFrameAt(frames, 31.25);
     expect(log).toStrictEqual([
       "view game",
       "input game",
@@ -1021,15 +1036,15 @@ describe("an attached engine's frames", () => {
   });
 
   it("ends the run on stop: the view then draws no state, and nothing steps or samples", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const log = await playTimed(frames, (engine) =>
       Effect.gen(function* () {
         yield* engine.start(null, { seed: 1 });
         // 1/64 s after attach: one step.
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* engine.stop;
-        frames.runFrameAt(31.25);
-        frames.runFrameAt(46.875);
+        ManualFrames.runFrameAt(frames, 31.25);
+        ManualFrames.runFrameAt(frames, 46.875);
       })
     );
     expect(log).toStrictEqual([
@@ -1048,16 +1063,16 @@ describe("an attached engine's frames", () => {
   });
 
   it("runs no steps and no timed samples while paused, keeps drawing, and resumes when unpaused", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const log = await playTimed(frames, (engine) =>
       Effect.gen(function* () {
         yield* engine.start(null, { seed: 1 });
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* engine.setPaused(true);
-        frames.runFrameAt(31.25);
-        frames.runFrameAt(46.875);
+        ManualFrames.runFrameAt(frames, 31.25);
+        ManualFrames.runFrameAt(frames, 46.875);
         yield* engine.setPaused(false);
-        frames.runFrameAt(62.5);
+        ManualFrames.runFrameAt(frames, 62.5);
       })
     );
     expect(log).toStrictEqual([
@@ -1079,14 +1094,14 @@ describe("an attached engine's frames", () => {
   });
 
   it("starts a run unpaused, so a restart from a pause steps", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const log = await playTimed(frames, (engine) =>
       Effect.gen(function* () {
         yield* engine.start(null, { seed: 1 });
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* engine.setPaused(true);
         yield* engine.start(null, { seed: 2 });
-        frames.runFrameAt(31.25);
+        ManualFrames.runFrameAt(frames, 31.25);
       })
     );
     expect(log).toStrictEqual([
@@ -1107,15 +1122,15 @@ describe("an attached engine's frames", () => {
   });
 
   it("counts a first frame timed before attach as no time, so the next frame still steps", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     // Attach at 100 ms. requestAnimationFrame passes the time its frame began, which can be
     // before then.
-    frames.runFrameAt(100);
+    ManualFrames.runFrameAt(frames, 100);
     const log = await playTimed(frames, (engine) =>
       Effect.gen(function* () {
         yield* engine.start(null, { seed: 1 });
-        frames.runFrameAt(50);
-        frames.runFrameAt(65.625);
+        ManualFrames.runFrameAt(frames, 50);
+        ManualFrames.runFrameAt(frames, 65.625);
       })
     );
     expect(log).toStrictEqual([
@@ -1139,8 +1154,8 @@ describe("an attached engine's frames", () => {
         yield* attached(engine);
         // Ten seconds in a hidden tab, on 1/64 s steps: five run, and the rest is dropped, so
         // the next frame owes its own step and no more.
-        frames.runFrameAt(10_000);
-        frames.runFrameAt(10_015.625);
+        ManualFrames.runFrameAt(frames, 10_000);
+        ManualFrames.runFrameAt(frames, 10_015.625);
       })
     );
     expect(log.filter((line) => line.startsWith("render"))).toStrictEqual([
@@ -1150,7 +1165,7 @@ describe("an attached engine's frames", () => {
   });
 
   it("counts at most a quarter of a second of a long gap between frames", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const drawn: (number | null)[] = [];
     // 1/16 s steps: a quarter of a second is four of them, under the five a frame may run, so
     // the steps a long gap runs show that the time counted is what stopped them.
@@ -1179,9 +1194,9 @@ describe("an attached engine's frames", () => {
             startImmediately: true,
           });
           // Ten seconds in a hidden tab: four steps, not five.
-          frames.runFrameAt(10_000);
+          ManualFrames.runFrameAt(frames, 10_000);
           // The quarter second was four whole steps, so 1/16 s later one more is owed.
-          frames.runFrameAt(10_062.5);
+          ManualFrames.runFrameAt(frames, 10_062.5);
         })
       ).pipe(
         Effect.provide(SlowEngine.layer),
@@ -1211,7 +1226,7 @@ describe("attaching a game that throws", () => {
       (engine, frames) =>
         Effect.gen(function* () {
           failed = yield* Effect.exit(engine.attach(element));
-          expect(frames.waiting()).toBe(false);
+          expect(ManualFrames.waiting(frames)).toBe(false);
           delete faults.input;
           yield* attachAndDetach(engine);
         }),
@@ -1242,7 +1257,7 @@ describe("attaching a game that throws", () => {
       (engine, frames) =>
         Effect.gen(function* () {
           first = yield* attachAndDetach(engine);
-          expect(frames.waiting()).toBe(false);
+          expect(ManualFrames.waiting(frames)).toBe(false);
           delete faults.disposeInput;
           yield* attachAndDetach(engine);
         }),
@@ -1275,10 +1290,10 @@ describe("a game that throws while attached", () => {
       Effect.gen(function* () {
         const fiber = yield* attached(engine);
         yield* engine.start({ from: 0, bug }, { seed: 1 });
-        frames.runFrameAt(15.625);
-        frames.runFrameAt(31.25);
+        ManualFrames.runFrameAt(frames, 15.625);
+        ManualFrames.runFrameAt(frames, 31.25);
         exit = yield* Fiber.await(fiber);
-        expect(frames.waiting()).toBe(false);
+        expect(ManualFrames.waiting(frames)).toBe(false);
       })
     );
     expectFailure(
@@ -1309,10 +1324,10 @@ describe("a game that throws while attached", () => {
         });
         const fiber = yield* attached(engine);
         yield* engine.start({ from: 0 }, { seed: 1 });
-        frames.runFrameAt(15.625);
-        frames.runFrameAt(31.25);
+        ManualFrames.runFrameAt(frames, 15.625);
+        ManualFrames.runFrameAt(frames, 31.25);
         exit = yield* Fiber.await(fiber);
-        expect(frames.waiting()).toBe(false);
+        expect(ManualFrames.waiting(frames)).toBe(false);
       })
     );
     expectFailure(
@@ -1338,13 +1353,13 @@ describe("a game that throws while attached", () => {
           { from: 0, bug: new Error("step bug") },
           { seed: 1 }
         );
-        frames.runFrameAt(15.625);
+        ManualFrames.runFrameAt(frames, 15.625);
         yield* Fiber.await(crashing);
         yield* attached(engine);
         // No time has passed since the crash, and the step that threw was never counted as
         // run: a run left live would run it again here.
-        frames.runFrameAt(15.625);
-        expect(frames.waiting()).toBe(true);
+        ManualFrames.runFrameAt(frames, 15.625);
+        expect(ManualFrames.waiting(frames)).toBe(true);
       })
     );
     expect(log).toStrictEqual([

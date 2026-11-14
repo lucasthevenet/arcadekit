@@ -1,25 +1,88 @@
 /**
- * Draws a game. Two rules apply to every view:
+ * Views: what draws a run into the viewport, once per browser frame, after the frame's steps.
  *
- * - `render` reads the state and never changes it.
- * - Each run has its own state object: `start` calls `create` for every run. `render` gets that
- *   same object every frame until `stop` or the next `start`, so a view can tell runs apart by
- *   identity. Push-puzzle's view resets when the object changes, and survivors' view keys its
- *   color cache on it.
+ * Plain on purpose (ADR-0024): a frame draws whole before the browser shows it, so `render` is a
+ * plain call inside the frame's one `Effect.try`. A view's lifecycle is its engine's: the engine
+ * makes it in an `acquireRelease` on each attach and calls its `dispose` in the release.
+ *
+ * @since 0.7.0
  */
-export interface GameView<State> {
+
+/**
+ * What draws a game: `render`, called once per frame with the run's state, and `dispose`.
+ *
+ * **When to use**
+ *
+ * As the result of an engine's `view`: a game's drawing view, its sound view, or one made of
+ * several with `combineViews`.
+ *
+ * **Details**
+ *
+ * Two rules apply to every view. `render` reads the state and never changes it, and gets no state
+ * (null) when no run is active, as in a menu. And each run has its own state object: `render`
+ * gets that same object every frame until the run ends, so a view tells runs apart by identity,
+ * as push-puzzle's resets when the object changes.
+ *
+ * **Example** (A view that counts what it drew)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game/browser";
+ *
+ * const drawn: (number | null)[] = [];
+ * const view: Game.View<{ readonly x: number }> = {
+ *   render: (runner) => {
+ *     drawn.push(runner?.x ?? null);
+ *   },
+ *   dispose: () => {},
+ * };
+ * view.render({ x: 2 }, 0);
+ * view.render(null, 0.016);
+ * drawn; // => [2, null]
+ * ```
+ *
+ * @category models
+ * @since 0.7.0
+ */
+export interface View<State> {
   /** Draws one frame. `state` is null when no run is active (menus). */
   readonly render: (state: State | null, timeSeconds: number) => void;
   readonly dispose: () => void;
 }
 
 /**
- * One view made of several, such as a game's drawing view and its sound view. `render` renders
- * each in order; `dispose` disposes them in reverse.
+ * One view made of several, such as a game's drawing view and its sound view: `render` renders
+ * each in order, and `dispose` disposes them in reverse.
+ *
+ * **When to use**
+ *
+ * In an engine's `view`, when a game draws and plays sound from the same state.
+ *
+ * **Example** (Two views, in order and in reverse)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game/browser";
+ *
+ * const log: string[] = [];
+ * const named = (name: string): Game.View<number> => ({
+ *   render: () => {
+ *     log.push(`render ${name}`);
+ *   },
+ *   dispose: () => {
+ *     log.push(`dispose ${name}`);
+ *   },
+ * });
+ * const both = Game.combineViews(named("drawing"), named("sound"));
+ * both.render(1, 0);
+ * both.dispose();
+ * log; // => ["render drawing", "render sound", "dispose sound", "dispose drawing"]
+ * ```
+ *
+ * @category combinators
+ * @since 0.7.0
  */
 export const combineViews = <State>(
-  ...views: readonly GameView<State>[]
-): GameView<State> => ({
+  ...views: readonly View<State>[]
+): View<State> => ({
   render: (state, timeSeconds) => {
     for (const view of views) {
       view.render(state, timeSeconds);

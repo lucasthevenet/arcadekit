@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import type { StepInput } from "../step-input";
 import { Kernel } from "./kernel";
 import type { KernelSimulation } from "./kernel";
-import type { StepInput } from "./step-input";
 
 // The kernel needs no DOM and reads no clock: these tests pass time and input in, as the
 // browser engine does each frame.

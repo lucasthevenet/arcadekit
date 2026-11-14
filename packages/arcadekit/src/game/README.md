@@ -1,6 +1,6 @@
 # arcadekit/game
 
-A game's building blocks. Each part of a game is one named declaration: `Game.Event` for what a run reports, `Game.Command` for what a player decides, `Game.Rejection` for why the rules may refuse it, `Game.Simulation` for the rules, and, in `arcadekit/game/browser`, `Game.Engine` for the browser half that draws a run and reads its input. A declaration runs nothing by itself: `Game.Loop` steps a simulation anywhere, an engine's `layer` provides it to an app, and a scenario (`arcadekit/game/scenario`) checks the rules in a test. `Game.PlayerInputs` is the step input of a simulation several players can play, and `Game.soloInput` fills it for one.
+A game's building blocks. Each part of a game is one named declaration: `Game.Event` for what a run reports, `Game.Command` for what a player decides, `Game.Rejection` for why the rules may refuse it, `Game.Simulation` for the rules, and, in `arcadekit/game/browser`, `Game.Engine` for the browser half that draws a run and reads its input. A declaration runs nothing by itself: a loop (`Game.makeLoop`) steps a simulation anywhere, an engine's `layer` provides it to an app, and a scenario (`arcadekit/game/scenario`) checks the rules in a test. `Game.PlayerInputs` is the step input of a simulation several players can play, and `Game.soloInput` fills it for one.
 
 An entry of the [`arcadekit`](../../README.md) package. The root entry and `./scenario` are DOM-free. Import each as a namespace: `import * as Game from "arcadekit/game"`. `arcadekit/game/testing` has the frames a test drives an engine on, and only tests import it.
 
@@ -64,7 +64,7 @@ export class Race extends Game.Simulation("Race", {
 }) {}
 
 // Step it without a browser, as a replay or a server does.
-const loop = new Game.Loop(Race);
+const loop = Game.makeLoop(Race);
 loop.subscribe((event) => console.log(event._tag));
 loop.start({ goal: 2 }, 1234, 0);
 loop.send(new Boost({ by: 4 }));
@@ -83,7 +83,7 @@ console.log(loop.state?.x); // about 8: one second at speed 8
 
 ## How a frame becomes steps
 
-`Game.Loop` steps a run in frames. A frame is one `loop.frame(input, budget, nowMs)` call: its caller says where each step's input comes from, how much the frame steps and what time it is, so the loop needs no DOM and reads no clock. A test, a replay, the browser engine and a lockstep session all step a game through it, in one order.
+A loop steps a run in frames: `Game.makeLoop(simulation)` makes one, a `Game.Loop`. A frame is one `loop.frame(input, budget, nowMs)` call: its caller says where each step's input comes from, how much the frame steps and what time it is, so the loop needs no DOM and reads no clock. A test, a replay, the browser engine and a lockstep session all step a game through it, in one order.
 
 - **The budget** is a `Game.FrameBudget`: `{ seconds }` of time passed, or exactly `{ steps }`. An attached engine passes the seconds since its last animation frame. The loop turns them into whole steps on the simulation's fixed clock (`stepSeconds`, 1/60 s unless the simulation declares another) and carries the rest to the next frame. It counts at most 0.25 s of one frame, so a hidden tab or a debugger pause doesn't fast-forward the game, and it runs at most five steps a frame: a frame further behind than that drops its backlog. Tests, replays and lockstep pass `{ steps }`, which runs exactly that many, with no clamp and nothing carried.
 - **Each step** is the input source's `read(step)`, then the commands sent since the last step, then `step`, then the source's `endStep`. Steps are numbered from 0 in each run. After the frame's last step comes the source's `endFrame`, once, if any step ran; then the events those steps reported; then a sample, if one is due.
@@ -254,7 +254,7 @@ class Race extends Game.Simulation("Race", {
 }) {}
 
 // One player: their source fills slot 0, and nobody leaves.
-const solo = new Game.Loop(Race);
+const solo = Game.makeLoop(Race);
 solo.start({ players: 1 }, 1234, 0);
 solo.frame(Game.soloInput({ read: () => ({ moveX: 1 }) }), { steps: 60 }, 1000);
 console.log(solo.state?.[0]); // about 1: one second at speed 1
@@ -355,11 +355,11 @@ In a Foldkit app, [`arcadekit/foldkit`](../foldkit/README.md)'s `engineEntry` at
 
 ## Testing an engine
 
-`arcadekit/game/testing` has `manualFrames()`, a frame source a test drives: no frame runs until the test runs one with `runFrameAt(ms)`, at a time it chooses, so an engine steps and draws in Node with no `requestAnimationFrame`. Provide it as `Game.Frames`. Only tests import this entry.
+`arcadekit/game/testing` has `ManualFrames`, a frame source a test drives: `ManualFrames.make()` makes one, and no frame runs until the test runs it with `ManualFrames.runFrameAt(frames, ms)`, at a time it chooses, so an engine steps and draws in Node with no `requestAnimationFrame`. Provide it as `Game.Frames`. Only tests import this entry.
 
 ```ts
 import * as Game from "arcadekit/game/browser";
-import { manualFrames } from "arcadekit/game/testing";
+import { ManualFrames } from "arcadekit/game/testing";
 import { Effect, Layer, Schema } from "effect";
 
 class Count extends Game.Simulation("Count", {
@@ -386,7 +386,7 @@ class CountEngine extends Game.Engine("CountEngine", {
   input: () => ({ read: () => null, dispose: () => {} }),
 }) {}
 
-const frames = manualFrames();
+const frames = ManualFrames.make();
 // Node has no DOM, and this view touches nothing of its element.
 const element = {} as HTMLElement;
 
@@ -397,8 +397,8 @@ export const play = Effect.gen(function* () {
   // Attached on a fiber of this scope. It has asked for its first frame when this returns.
   yield* Effect.forkScoped(engine.attach(element), { startImmediately: true });
   // 1/64 s after the attach: one step, then a draw. Then another.
-  frames.runFrameAt(15.625);
-  frames.runFrameAt(31.25);
+  ManualFrames.runFrameAt(frames, 15.625);
+  ManualFrames.runFrameAt(frames, 31.25);
 }).pipe(
   Effect.scoped,
   Effect.provide(CountEngine.layer),
@@ -406,4 +406,4 @@ export const play = Effect.gen(function* () {
 );
 ```
 
-`frames.waiting()` says whether the engine has asked for a frame that hasn't run: it has while attached, and not after a detach or a crash. A Co-op client draws on the same frames ([`arcadekit/net`](../net/README.md#testing-a-co-op-game)). To check the rules themselves, use [a scenario](#a-scenario): it needs no engine and no frames.
+`ManualFrames.waiting(frames)` says whether the engine has asked for a frame that hasn't run: it has while attached, and not after a detach or a crash. A Co-op client draws on the same frames ([`arcadekit/net`](../net/README.md#testing-a-co-op-game)). To check the rules themselves, use [a scenario](#a-scenario): it needs no engine and no frames.

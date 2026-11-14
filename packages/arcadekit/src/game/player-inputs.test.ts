@@ -103,7 +103,7 @@ describe("Game.PlayerInputs", () => {
   it("takes a value with the two fields as a players' input: the mark is in the types alone", () => {
     const input: Game.PlayerInputs<Move> = { players: [{ n: 2 }], leaving: [] };
     expect(Object.keys(input)).toStrictEqual(["players", "leaving"]);
-    const loop = new Game.Loop(Sum);
+    const loop = Game.makeLoop(Sum);
     loop.start({ players: 2 }, 1, 0);
     loop.frame(
       { read: () => ({ players: [{ n: 2 }, { n: 3 }], leaving: [1] }) },
@@ -219,7 +219,7 @@ describe(Game.soloInput, () => {
   });
 
   it("feeds a loop whose simulation reads each player by slot", () => {
-    const loop = new Game.Loop(Sum);
+    const loop = Game.makeLoop(Sum);
     loop.start({ players: 1 }, 1, 0);
     const source: Game.StepInput<Move> = { read: (step) => ({ n: step + 5 }) };
     loop.frame(Game.soloInput(source), { steps: 3 }, 0);

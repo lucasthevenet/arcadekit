@@ -189,7 +189,7 @@ export interface LongRunResult {
  * when offered: the pick is sent before the frame whose step applies it.
  */
 export const longRun = (seed: number): LongRunResult => {
-  const loop = new Game.Loop(Survivors);
+  const loop = Game.makeLoop(Survivors);
   const input = Game.soloInput(wander());
   loop.start({ content, heroIds: ["bolter"] }, seed, 0);
   const world = loop.state!;

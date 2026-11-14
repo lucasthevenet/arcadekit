@@ -60,7 +60,7 @@ describe("arcadekit/net/testing", () => {
  * sample, and a step, which takes the 100 ms a sample is due after.
  */
 const startRun = (config: TestConfig) => {
-  const loop = new Game.Loop(TestGame);
+  const loop = Game.makeLoop(TestGame);
   const reported: TestEvent[] = [];
   let sampled: Score | undefined;
   let nowMs = 0;

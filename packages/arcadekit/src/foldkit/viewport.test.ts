@@ -17,7 +17,7 @@ import { defineMessageUnion } from "foldkit/message";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as Game from "../game/browser";
-import { manualFrames } from "../game/testing";
+import { ManualFrames } from "../game/testing/index";
 import { engineEntry, gameViewport } from "./index";
 import type { AttachableEngine } from "./index";
 
@@ -126,7 +126,7 @@ class TestEngine extends Game.Engine("TestEngine", {
  */
 const testEngine = ({ noWebGl = false, renderBug = false } = {}) => {
   const log: string[] = [];
-  const frames = manualFrames();
+  const frames = ManualFrames.make();
   const layer = TestEngine.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -354,14 +354,14 @@ describe(engineEntry, () => {
           Stream.runCollect(throughFirstMessage(streamFor(mounted)))
         );
         yield* waitUntil(() => log.length > 0);
-        frames.runFrameAt(16);
+        ManualFrames.runFrameAt(frames, 16);
         return yield* Fiber.join(fiber);
       }).pipe(Effect.provide(layer))
     );
     expect(messages).toStrictEqual([
       Message.FailedToLoad({ error: "render bug" }),
     ]);
-    expect({ log, waiting: frames.waiting() }).toStrictEqual({
+    expect({ log, waiting: ManualFrames.waiting(frames) }).toStrictEqual({
       log: ["attach first", "detach"],
       waiting: false,
     });

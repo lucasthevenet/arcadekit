@@ -1,22 +1,14 @@
-import { FixedStepClock } from "../core/index";
-import type { StepInput } from "./step-input";
+// The kernel under `Game.Loop` (loop.ts), which no entry exports. Plain on purpose (ADR-0024): it
+// is the step loop, so it gives the same bits on every peer and finishes in the call. Every
+// recorded hash of a run was computed by its lines that step, which moved here unchanged. It is a
+// class, as Effect's own runtime objects are inside its `internal/` (a fiber is a `FiberImpl`): no
+// game names it or makes one.
+
+import { FixedStepClock } from "../../core/index";
+import type { FrameBudget, StepInput } from "../step-input";
 
 /** Longest frame gap counted, so a hidden tab or a debugger pause doesn't fast-forward the game. */
 const MAX_FRAME_SECONDS = 0.25;
-
-/**
- * How much one frame steps.
- *
- * - `{ seconds }`: time passed. The loop counts at most 0.25 s, turns it into whole steps on its
- *   fixed clock, carries the remainder, and drops the backlog after the clock's
- *   `maxStepsPerFrame` (5). The browser engine's frames (`Game.Engine`) use it.
- * - `{ steps }`: exactly this many steps. No clamp, no cap, no drop, and it clears any remainder
- *   carried from `{ seconds }` frames. Tests, replays and lockstep use it. It has no cap, so a
- *   caller that passes a huge count blocks its thread.
- */
-export type FrameBudget =
-  | { readonly seconds: number }
-  | { readonly steps: number };
 
 /**
  * What the kernel steps: a run's `create`, `step`, events and sample as plain functions over a

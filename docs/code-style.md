@@ -26,7 +26,7 @@ Every kind below is written as [an Effect module](#an-effect-module) is: a names
 | What runs a declaration | a **host** | a plain class or function when a step or a frame calls it; the declaration's `layer` when it has a lifecycle | [`game/loop.ts`](../packages/arcadekit/src/game/loop.ts), the `layer` in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts) |
 | Something more a host does | a **capability** of it | a method, with a file of types for what it takes or gives. Its section is [A host](#a-host) | `frame` in [`game/loop.ts`](../packages/arcadekit/src/game/loop.ts), `StepInput` in [`game/step-input.ts`](../packages/arcadekit/src/game/step-input.ts) |
 | One thing of the app's that has several implementations | a **service** | a `Context.Service` class with a static `layer`, and a named Layer for each other implementation | [`net/browser/coop-rooms.ts`](../packages/arcadekit/src/net/browser/coop-rooms.ts) |
-| What a host runs on, with a default that suits most apps | a **reference** | a `Context.Reference` | `Frames` in [`game/engine.ts`](../packages/arcadekit/src/game/engine.ts), `CoopTicker` in [`net/browser/coop.ts`](../packages/arcadekit/src/net/browser/coop.ts) |
+| What a host runs on, with a default that suits most apps | a **reference** | a `Context.Reference` | `Frames` in [`game/frames.ts`](../packages/arcadekit/src/game/frames.ts), `CoopTicker` in [`net/browser/coop.ts`](../packages/arcadekit/src/net/browser/coop.ts) |
 | A data structure, or a device's reads, that no game names | a **data type** | an interface named after its module, its `make`, a guard and functions that take it first | [`core/ring.ts`](../packages/arcadekit/src/core/ring.ts), [`core/rng.ts`](../packages/arcadekit/src/core/rng.ts), [`core/entity-pool.ts`](../packages/arcadekit/src/core/entity-pool.ts) for a secondary type |
 | Arithmetic a step or a view calls | a **module of functions** | plain functions of numbers, under a namespace | [`core/exact-math.ts`](../packages/arcadekit/src/core/exact-math.ts), [`core/tween.ts`](../packages/arcadekit/src/core/tween.ts) |
 | A Schema that a declaration takes as a field and a host must recognise | a **Schema builder** | a plain function that returns a Schema, marked in its annotations, with a type-only mark for the hosts that ask for it | `Game.PlayerInputs` in [`game/player-inputs.ts`](../packages/arcadekit/src/game/player-inputs.ts) |
@@ -121,7 +121,7 @@ Every module of the kit is shaped and documented as a module of Effect 4 is ([AD
 - **Its fields say what it is for**: a `message` if an app shows it, a `cause: Schema.Defect()` if it wraps a throw, a `reason` if a caller branches on it.
 - **A mistake in a game's code is no typed error**: it throws, as [Refusing a mistake](#refusing-a-mistake) says.
 - **An expected throw that a module of Effect's reports as a defect is caught around that module's Effect.** The kit wraps a throw of its own with `Effect.try` ([`AGENTS.md`](../AGENTS.md), "Throws"), but Effect's `KeyValueStore.layerStorage` reads localStorage in `Layer.sync`, so a browser that refuses it is a defect before any code of the kit's runs. The boundary is then a `Layer.catchCause` or `Effect.catchCause` around the module's Layer or Effect, which recovers or fails with a typed error, and its doc comment names the throw: [`save/browser/browser-save-storage.ts`](../packages/arcadekit/src/save/browser/browser-save-storage.ts) falls back to memory. Writing Effect's module again, to own the `Effect.try`, is no fix.
-- `arcadekit/content`'s `ContentSource.ContentError` is one, and so is `arcadekit/audio`'s `AudioSystem.AudioLoadError`. `arcadekit/game` (`AttachError`, `GameCrashed`) and `arcadekit/net` (`LockstepError`) are next, which are `Data.TaggedError`s until their rework.
+- `arcadekit/content`'s `ContentSource.ContentError` is one, and so are `arcadekit/audio`'s `AudioSystem.AudioLoadError` and `arcadekit/game`'s `AttachError`, `GameCrashed` and `CommandDropped`. `arcadekit/net` (`LockstepError`) is next, a `Data.TaggedError` until its rework.
 
 ### Services and references
 
@@ -218,7 +218,7 @@ Add the builder to `DECLARATIONS` in [`packages/arcadekit/test/style.test.ts`](.
 
 ## A host
 
-- **It takes the declaration, and nothing a game would repeat**: `new Game.Loop(PushPuzzle)`, `PushPuzzleEngine.layer`, `Scenario.make(PushPuzzle)`.
+- **It takes the declaration, and nothing a game would repeat**: `Game.makeLoop(PushPuzzle)`, `PushPuzzleEngine.layer`, `Scenario.make(PushPuzzle)`.
 - **It owns what every game would otherwise write**: the event buffer, the command queue, the sample, what an attach acquires and releases.
 - **One way to do each thing.** A run changes only at a step; an asset loads only through `load`. Replace the path that exists: a second path, or an option that switches behaviours, is two things to learn. A content's `read(source)` is another thing: it keeps nothing.
 - **What it does besides its work only watches**: a listener changes nothing a handler is given.

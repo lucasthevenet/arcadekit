@@ -535,7 +535,7 @@ describe("replay", () => {
    * the demo runs. Collects the events and counts the HUD samples the run reported.
    */
   const replay = () => {
-    const loop = new Game.Loop(PushPuzzle);
+    const loop = Game.makeLoop(PushPuzzle);
     const events: LevelSolved[] = [];
     let samples = 0;
     loop.subscribe((event) => {

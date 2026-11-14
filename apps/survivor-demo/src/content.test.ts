@@ -37,7 +37,7 @@ describe("demo content", () => {
   it.each(content.heroes.map((hero) => hero.id))(
     "%s survives a minute of play",
     (heroId) => {
-      const loop = new Game.Loop(Survivors);
+      const loop = Game.makeLoop(Survivors);
       loop.start({ content, heroIds: [heroId] }, 1, 0);
       const world = loop.state!;
       for (
