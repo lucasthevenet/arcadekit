@@ -15,7 +15,6 @@ import { Effect, Layer, Schema } from "effect";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { CUE_SOUNDS } from "../../src/app/audio";
 import {
   EndRun,
   FocusRetry,
@@ -25,9 +24,10 @@ import {
   LoadSounds,
   StartLevel,
 } from "../../src/app/commands";
+import * as LevelRecords from "../../src/app/level-records";
 import { Message } from "../../src/app/message";
-import { emptyRecords } from "../../src/app/save";
-import { SHEET_URL } from "../../src/app/sprites";
+import * as Sheet from "../../src/app/sheet";
+import * as Sounds from "../../src/app/sounds";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
 
@@ -48,7 +48,7 @@ describe("the push-puzzle sheet", () => {
     );
     const image = Png.size(readFileSync(new URL(data.image, spritesDir)));
     expect({
-      url: SHEET_URL.endsWith("/sprites/push-puzzle.json"),
+      url: Sheet.url.endsWith("/sprites/push-puzzle.json"),
       missing: SpriteSheet.resolveTags(data, Art.tags).missing,
       image,
     }).toStrictEqual({
@@ -139,7 +139,7 @@ describe("a sheet that fails to load", () => {
         Scene.Command.resolve(FocusRetry, Message.CompletedFocusCommand()),
         Scene.Command.resolve(
           LoadSave,
-          Message.LoadedSave({ records: emptyRecords })
+          Message.LoadedSave({ records: LevelRecords.empty })
         ),
         Scene.Command.resolve(
           LoadAudioSettings,
@@ -169,7 +169,7 @@ describe("a sheet that fails to load", () => {
           Layer.provide(
             Layer.mergeAll(
               PushPuzzleSheet.layer(Effect.fail(failed)),
-              PushPuzzleCueTable.layer(CUE_SOUNDS),
+              PushPuzzleCueTable.layer(Sounds.cues),
               AudioSystem.layerSilent
             )
           )

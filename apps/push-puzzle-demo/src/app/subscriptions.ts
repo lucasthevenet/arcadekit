@@ -1,3 +1,7 @@
+/**
+ * The app's Subscriptions: Foldkit's contract. Each turns something outside the UI into Messages
+ * as a Stream: the engine's events, and the app's own keys.
+ */
 import { PushPuzzle } from "@arcadekit/push-puzzle";
 import { PushPuzzleEngine } from "@arcadekit/push-puzzle/browser";
 import { EngineEntry, KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
@@ -8,6 +12,7 @@ import { Message } from "./message";
 import { isLoaded } from "./model";
 import type { Model } from "./model";
 
+/** The app's Subscriptions: the engine's entry, and the keys that work outside a run's input. */
 export const subscriptions = Subscription.make<
   Model,
   Message,

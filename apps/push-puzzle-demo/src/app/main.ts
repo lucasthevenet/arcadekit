@@ -1,3 +1,8 @@
+/**
+ * The app as Foldkit runs it: its Model, `init`, `update`, `view` and `subscriptions`, and the
+ * `resources` its Commands and Subscriptions run against, which `src/entry.ts` hands to
+ * `Runtime.makeApplication`.
+ */
 import { PushPuzzleContent } from "@arcadekit/push-puzzle";
 import {
   PushPuzzleCueTable,
@@ -10,9 +15,10 @@ import { SpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
-import { CUE_SOUNDS, PushPuzzleAudioSettings } from "./audio";
+import { PushPuzzleAudioSettings } from "./audio-settings";
 import { PushPuzzleSave } from "./save";
-import { SHEET_URL } from "./sprites";
+import * as Sheet from "./sheet";
+import * as Sounds from "./sounds";
 
 export { Model } from "./model";
 export { init, update } from "./update";
@@ -24,8 +30,8 @@ export { subscriptions } from "./subscriptions";
  * genre's cue table and its audio, which makes no AudioContext until the player's first gesture.
  */
 const assets = Layer.mergeAll(
-  PushPuzzleSheet.layer(SpriteSheet.fromUrl(SHEET_URL)),
-  PushPuzzleCueTable.layer(CUE_SOUNDS),
+  PushPuzzleSheet.layer(SpriteSheet.fromUrl(Sheet.url)),
+  PushPuzzleCueTable.layer(Sounds.cues),
   BrowserAudioSystem.layer
 );
 

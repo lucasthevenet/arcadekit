@@ -1,18 +1,24 @@
+/**
+ * The app's Messages: Foldkit's contract. The engine's events reach the app as Messages
+ * (`GotHud`, `GotLevelSolved`), so a Message is not an event.
+ *
+ * Plain on purpose: a Schema, which `update` matches on (Foldkit's contract).
+ */
 import { Hud } from "@arcadekit/push-puzzle";
 import { AudioSettings } from "arcadekit/audio";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
+import * as LevelRecords from "./level-records";
 import { LevelSummary } from "./model";
-import { LevelRecords } from "./save";
 
-// Every fact the UI can react to. Named for what happened, not what to do.
+/** Every fact the UI can react to, named for what happened, not what to do. */
 export const Message = defineMessageUnion({
   // Boot
   LoadedContent: { levels: Schema.Array(LevelSummary) },
   FailedToLoadContent: { error: Schema.String },
   ClickedRetry: {},
-  LoadedSave: { records: LevelRecords },
+  LoadedSave: { records: LevelRecords.LevelRecords },
   LoadedAudioSettings: { settings: AudioSettings.AudioSettings },
   MountedViewport: {},
   UnmountedViewport: {},
@@ -25,7 +31,7 @@ export const Message = defineMessageUnion({
   // From the engine
   GotHud: { hud: Hud },
   GotLevelSolved: { moves: Schema.Number },
-  SavedSolve: { records: LevelRecords },
+  SavedSolve: { records: LevelRecords.LevelRecords },
 
   // In-run UI
   PressedRestart: {},
@@ -46,4 +52,5 @@ export const Message = defineMessageUnion({
   CompletedAudioCommand: {},
   CompletedFocusCommand: {},
 });
+/** One fact the UI reacts to, decoded. */
 export type Message = typeof Message.Type;
