@@ -1,7 +1,7 @@
 import { AudioSystem } from "arcadekit/audio";
 import { Asset } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
-import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
+import { SpriteSheet } from "arcadekit/render-three";
 
 import type { SurvivorsInput } from "../input";
 import { Survivors } from "../simulation";
@@ -51,14 +51,15 @@ export const survivorsInput = (
 
 /**
  * The app's survivors sheet, with every tag the view draws for its content (`wantedTags` lists
- * them, for a test to check a sheet with `resolveTags`; ADR-0015). The app says where it comes from,
- * `SurvivorsSheet.layer(loadSpriteSheet(url))`, and loads it on its loading screen; the engine
- * draws from it, for one player and in co-op, and never frees it. The app's end does.
+ * them, for a test to check a sheet with `SpriteSheet.resolveTags`; ADR-0015). The app says
+ * where it comes from, `SurvivorsSheet.layer(SpriteSheet.fromUrl(url))`, and loads it on its
+ * loading screen; the engine draws from it, for one player and in co-op, and never frees it.
+ * The app's end does.
  */
-export class SurvivorsSheet extends Asset<SpriteSheet, SpriteSheetError>()(
-  "SurvivorsSheet",
-  { release: (sheet) => sheet.dispose() }
-) {}
+export class SurvivorsSheet extends Asset<
+  SpriteSheet.SpriteSheet,
+  SpriteSheet.SpriteSheetError
+>()("SurvivorsSheet", { release: SpriteSheet.dispose }) {}
 
 /**
  * The survivors genre in the browser, for one player: its rules, a view that draws them from

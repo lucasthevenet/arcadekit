@@ -7,7 +7,7 @@ import { MeshInstances } from "./index";
 // uploads when their version has moved (`needsUpdate`).
 
 const make = () =>
-  new MeshInstances(new THREE.PlaneGeometry(), new THREE.MeshBasicMaterial(), {
+  MeshInstances.make(new THREE.PlaneGeometry(), new THREE.MeshBasicMaterial(), {
     capacity: 4,
     attributes: { aAura: 4, aColor: 3, aGlow: 1 },
   });
@@ -31,7 +31,11 @@ const valuesOf = (
   );
 };
 
-describe(MeshInstances, () => {
+/** The names `MeshInstances.setAttribute` takes for these instances: what they declared. */
+type NameOf<M> =
+  M extends MeshInstances.MeshInstances<infer A> ? keyof A & string : never;
+
+describe("mesh instances", () => {
   it("makes one buffer for each declared attribute, a value per instance, on the geometry", () => {
     const instances = make();
     expect(
@@ -52,12 +56,12 @@ describe(MeshInstances, () => {
 
   it("writes an instance's values of an attribute, as many floats as it declared", () => {
     const instances = make();
-    instances.setAttribute(2, "aAura", 1, 2, 3, 4);
-    instances.setAttribute(2, "aColor", 0.5, 0.25, 0.125);
-    instances.setAttribute(2, "aGlow", 7);
+    MeshInstances.setAttribute(instances, 2, "aAura", 1, 2, 3, 4);
+    MeshInstances.setAttribute(instances, 2, "aColor", 0.5, 0.25, 0.125);
+    MeshInstances.setAttribute(instances, 2, "aGlow", 7);
     // A missing float is 0, and one too many is dropped: the next instance is untouched.
-    instances.setAttribute(0, "aAura", 9);
-    instances.setAttribute(0, "aGlow", 5, 6, 7, 8);
+    MeshInstances.setAttribute(instances, 0, "aAura", 9);
+    MeshInstances.setAttribute(instances, 0, "aGlow", 5, 6, 7, 8);
     expect({
       aura: valuesOf(instances, "aAura", 2),
       color: valuesOf(instances, "aColor", 2),
@@ -96,8 +100,8 @@ describe(MeshInstances, () => {
       1
     );
     const written = [...squash.elements];
-    instances.setMatrix(1, squash);
-    instances.set(2, 4, 5, 6, 2);
+    MeshInstances.setMatrix(instances, 1, squash);
+    MeshInstances.set(instances, 2, 4, 5, 6, 2);
     const read = new THREE.Matrix4();
     instances.mesh.getMatrixAt(1, read);
     expect(read.elements).toStrictEqual(written);
@@ -121,65 +125,64 @@ describe(MeshInstances, () => {
       attributeOf(instances, "aColor").version,
       attributeOf(instances, "aGlow").version,
     ];
-    instances.setAttribute(0, "aGlow", 1);
-    instances.setMatrix(0, new THREE.Matrix4());
+    MeshInstances.setAttribute(instances, 0, "aGlow", 1);
+    MeshInstances.setMatrix(instances, 0, new THREE.Matrix4());
     const before = buffers();
-    instances.commit(3);
+    MeshInstances.commit(instances, 3);
     expect({
       count: mesh.count,
       moved: buffers().map((version, i) => (version ?? 0) - (before[i] ?? 0)),
     }).toStrictEqual({ count: 3, moved: [1, 1, 1, 1, 1] });
     // Never more than it has room for.
-    instances.commit(9);
+    MeshInstances.commit(instances, 9);
     expect(mesh.count).toBe(4);
   });
 
   it("refuses a name that was not declared: a type error, and a throw", () => {
     const instances = make();
-    expectTypeOf(instances.setAttribute)
-      .parameter(1)
-      .toEqualTypeOf<"aAura" | "aColor" | "aGlow">();
+    expectTypeOf<NameOf<typeof instances>>().toEqualTypeOf<
+      "aAura" | "aColor" | "aGlow"
+    >();
     expect(() => {
       // @ts-expect-error "aHalo" is no attribute these instances declared.
-      instances.setAttribute(0, "aHalo", 1);
+      MeshInstances.setAttribute(instances, 0, "aHalo", 1);
     }).toThrow(
       'MeshInstances has no attribute "aHalo": declare it when the instances are made, as attributes: { aHalo: 1 }, with its number of floats (1 to 4)'
     );
   });
 
   it("declares none unless told, so every name is refused", () => {
-    const instances = new MeshInstances(
+    const instances = MeshInstances.make(
       new THREE.PlaneGeometry(),
       new THREE.MeshBasicMaterial(),
       { capacity: 2 }
     );
-    expectTypeOf(instances.setAttribute).parameter(1).toBeNever();
+    expectTypeOf<NameOf<typeof instances>>().toBeNever();
     expect(() => {
       // @ts-expect-error No attribute was declared.
-      instances.setAttribute(0, "aColor", 1);
+      MeshInstances.setAttribute(instances, 0, "aColor", 1);
     }).toThrow('MeshInstances has no attribute "aColor"');
     // The mesh, the matrices and the colors are as they were.
-    instances.set(0, 1, 2, 3);
-    instances.setColor(0, new THREE.Color("#ff0000"));
-    instances.commit(1);
+    MeshInstances.set(instances, 0, 1, 2, 3);
+    MeshInstances.setColor(instances, 0, new THREE.Color("#ff0000"));
+    MeshInstances.commit(instances, 1);
     expect([instances.capacity, instances.mesh.count]).toStrictEqual([2, 1]);
   });
 
   it("refuses an attribute that is not 1 to 4 floats: a type error, and a throw", () => {
-    expect(
-      () =>
-        new MeshInstances(
-          new THREE.PlaneGeometry(),
-          new THREE.MeshBasicMaterial(),
-          {
-            capacity: 2,
-            // @ts-expect-error An attribute has 1 to 4 floats: a matrix is none of them.
-            attributes: { aMatrix: 16 },
-          }
-        )
+    expect(() =>
+      MeshInstances.make(
+        new THREE.PlaneGeometry(),
+        new THREE.MeshBasicMaterial(),
+        {
+          capacity: 2,
+          // @ts-expect-error An attribute has 1 to 4 floats: a matrix is none of them.
+          attributes: { aMatrix: 16 },
+        }
+      )
     ).toThrow(
       new RangeError(
-        'MeshInstances: the attribute "aMatrix" has 16 floats per instance, and a shader reads 1 to 4 under one name (a float, a vec2, a vec3 or a vec4)'
+        'MeshInstances.make: the attribute "aMatrix" has 16 floats per instance, and a shader reads 1 to 4 under one name (a float, a vec2, a vec3 or a vec4)'
       )
     );
   });
@@ -187,15 +190,14 @@ describe(MeshInstances, () => {
   it("refuses an attribute under a name the geometry already has", () => {
     const quad = new THREE.PlaneGeometry();
     const vertices = quad.getAttribute("position");
-    expect(
-      () =>
-        new MeshInstances(quad, new THREE.MeshBasicMaterial(), {
-          capacity: 3,
-          attributes: { aGlow: 1, position: 3 },
-        })
+    expect(() =>
+      MeshInstances.make(quad, new THREE.MeshBasicMaterial(), {
+        capacity: 3,
+        attributes: { aGlow: 1, position: 3 },
+      })
     ).toThrow(
       new Error(
-        'MeshInstances: the geometry already has an attribute "position", and declaring it would replace it: declare the view\'s own value under another name, or give each MeshInstances a geometry of its own'
+        'MeshInstances.make: the geometry already has an attribute "position", and declaring it would replace it: declare the view\'s own value under another name, or give each MeshInstances a geometry of its own'
       )
     );
     // The geometry is as it was given: its own vertices, and nothing of what was declared.
@@ -210,45 +212,44 @@ describe(MeshInstances, () => {
 
   it("refuses a second instances over one geometry that declares the first's attribute", () => {
     const quad = new THREE.PlaneGeometry();
-    const first = new MeshInstances(quad, new THREE.MeshBasicMaterial(), {
+    const first = MeshInstances.make(quad, new THREE.MeshBasicMaterial(), {
       capacity: 2,
       attributes: { aGlow: 1 },
     });
-    expect(
-      () =>
-        new MeshInstances(quad, new THREE.MeshBasicMaterial(), {
-          capacity: 5,
-          attributes: { aGlow: 1 },
-        })
-    ).toThrow('MeshInstances: the geometry already has an attribute "aGlow"');
+    expect(() =>
+      MeshInstances.make(quad, new THREE.MeshBasicMaterial(), {
+        capacity: 5,
+        attributes: { aGlow: 1 },
+      })
+    ).toThrow(
+      'MeshInstances.make: the geometry already has an attribute "aGlow"'
+    );
     // The first still writes the buffer the geometry draws from.
-    first.setAttribute(1, "aGlow", 7);
+    MeshInstances.setAttribute(first, 1, "aGlow", 7);
     expect([...quad.getAttribute("aGlow").array]).toStrictEqual([0, 7]);
   });
 
   it("refuses an attribute under the names Three.js keeps an instance's matrix and color", () => {
-    expect(
-      () =>
-        new MeshInstances(
-          new THREE.PlaneGeometry(),
-          new THREE.MeshBasicMaterial(),
-          { capacity: 2, attributes: { instanceColor: 3 } }
-        )
+    expect(() =>
+      MeshInstances.make(
+        new THREE.PlaneGeometry(),
+        new THREE.MeshBasicMaterial(),
+        { capacity: 2, attributes: { instanceColor: 3 } }
+      )
     ).toThrow(
       new Error(
-        "MeshInstances: the attribute \"instanceColor\" is where Three.js keeps each instance's color, which setColor writes: declare the view's own value under another name"
+        "MeshInstances.make: the attribute \"instanceColor\" is where Three.js keeps each instance's color, which setColor writes: declare the view's own value under another name"
       )
     );
-    expect(
-      () =>
-        new MeshInstances(
-          new THREE.PlaneGeometry(),
-          new THREE.MeshBasicMaterial(),
-          { capacity: 2, attributes: { instanceMatrix: 4 } }
-        )
+    expect(() =>
+      MeshInstances.make(
+        new THREE.PlaneGeometry(),
+        new THREE.MeshBasicMaterial(),
+        { capacity: 2, attributes: { instanceMatrix: 4 } }
+      )
     ).toThrow(
       new Error(
-        "MeshInstances: the attribute \"instanceMatrix\" is where Three.js keeps each instance's matrix, which set and setMatrix write: declare the view's own value under another name"
+        "MeshInstances.make: the attribute \"instanceMatrix\" is where Three.js keeps each instance's matrix, which set and setMatrix write: declare the view's own value under another name"
       )
     );
   });
@@ -256,7 +257,7 @@ describe(MeshInstances, () => {
   it("takes its attributes off the geometry on dispose, so new instances can be made over it", () => {
     const quad = new THREE.PlaneGeometry();
     const options = { capacity: 2, attributes: { aGlow: 1 } } as const;
-    const first = new MeshInstances(
+    const first = MeshInstances.make(
       quad,
       new THREE.MeshBasicMaterial(),
       options
@@ -267,18 +268,18 @@ describe(MeshInstances, () => {
     quad.addEventListener("dispose", () => {
       held = quad.getAttribute("aGlow");
     });
-    first.dispose();
+    MeshInstances.dispose(first);
     expect({
       freedWithIt: held === glow,
       left: Object.keys(quad.attributes),
     }).toStrictEqual({ freedWithIt: true, left: ["position", "normal", "uv"] });
 
-    const second = new MeshInstances(
+    const second = MeshInstances.make(
       quad,
       new THREE.MeshBasicMaterial(),
       options
     );
-    second.setAttribute(0, "aGlow", 3);
+    MeshInstances.setAttribute(second, 0, "aGlow", 3);
     expect([...quad.getAttribute("aGlow").array]).toStrictEqual([3, 0]);
   });
 
@@ -294,7 +295,7 @@ describe(MeshInstances, () => {
       "dispose",
       () => freed.push("material")
     );
-    instances.dispose();
+    MeshInstances.dispose(instances);
     expect({ freed, parent: instances.mesh.parent }).toStrictEqual({
       freed: ["geometry", "material"],
       parent: null,

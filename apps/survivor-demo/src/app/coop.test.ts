@@ -30,8 +30,7 @@ import {
   onFakeTimers,
 } from "arcadekit/net/testing";
 import type { FakeCoopRooms } from "arcadekit/net/testing";
-import { SpriteSheetError } from "arcadekit/render-three";
-import type { SpriteSheet } from "arcadekit/render-three";
+import { SpriteSheet } from "arcadekit/render-three";
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -66,13 +65,16 @@ const content: GameContent = await Effect.runPromise(
   SurvivorsContent.read(fileSource)
 );
 
-type SheetLoad = Effect.Effect<SpriteSheet, SpriteSheetError>;
+type SheetLoad = Effect.Effect<
+  SpriteSheet.SpriteSheet,
+  SpriteSheet.SpriteSheetError
+>;
 
 /** A sheet whose load never finishes: building the layer loads nothing. */
 const idleSheet: SheetLoad = Effect.never;
 
 /** A sheet that has loaded, which nothing reads. */
-const loadedSheet: SheetLoad = Effect.succeed({} as SpriteSheet);
+const loadedSheet: SheetLoad = Effect.succeed({} as SpriteSheet.SpriteSheet);
 
 let scope: Scope.Closeable;
 
@@ -414,7 +416,7 @@ describe("the app's co-op", () => {
     });
 
     it("fails with the sheet's error when the sheet can't load", async () => {
-      const missing = new SpriteSheetError({
+      const missing = new SpriteSheet.SpriteSheetError({
         file: "sprites/survivors.json",
         message: "The sheet can't be loaded",
       });

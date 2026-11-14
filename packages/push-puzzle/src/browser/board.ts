@@ -9,17 +9,11 @@ import {
 import {
   Gait,
   InstancedSprites,
-  TileLayer,
-  frameAt,
-  resolveTags,
-} from "arcadekit/render-three";
-import type {
-  MutableGroundBounds,
   PixelCamera,
-  ResolvedTags,
   SpriteSheet,
-  SpriteTag,
+  TileLayer,
 } from "arcadekit/render-three";
+import type { Camera } from "arcadekit/render-three";
 import * as THREE from "three";
 
 import { Tile } from "../level";
@@ -29,7 +23,7 @@ import type { Puzzle } from "../world";
 /**
  * Every tag the view draws, by the name it reads each under, with the tags it draws in its
  * place when the sheet lacks it. A sheet for push-puzzle needs the first of each: a test
- * checks one with `resolveTags(sheet, PUSH_PUZZLE_TAGS).missing`.
+ * checks one with `SpriteSheet.resolveTags(sheet, PUSH_PUZZLE_TAGS).missing`.
  */
 export const PUSH_PUZZLE_TAGS = {
   floor: "floor",
@@ -92,13 +86,15 @@ export class PuzzleSprites {
   /** Holds the tile layer's mesh and the batch's. */
   readonly root = new THREE.Group();
   /** The board's tiles, or the menu's floor: the cells on screen. */
-  readonly tiles: TileLayer;
+  readonly tiles: TileLayer.TileLayer;
   /** The boxes and the player, over the tiles. */
-  readonly actors: InstancedSprites;
-  private readonly sheet: SpriteSheet;
-  private readonly camera: PixelCamera;
+  readonly actors: InstancedSprites.InstancedSprites;
+  private readonly sheet: SpriteSheet.SpriteSheet;
+  private readonly camera: PixelCamera.PixelCamera;
   /** The sheet's tags this view draws, picked once: a missing one is a near one, or frame 0. */
-  private readonly tags: ResolvedTags<typeof PUSH_PUZZLE_TAGS>["tags"];
+  private readonly tags: SpriteSheet.ResolvedTags<
+    typeof PUSH_PUZZLE_TAGS
+  >["tags"];
 
   /** The run being drawn. A new run (a restart, another level) resets everything below. */
   private puzzle: Puzzle | null = null;
@@ -107,7 +103,7 @@ export class PuzzleSprites {
   /** The board, with room above it for the HUD: what the camera fits. */
   private readonly bounds = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
   /** The ground the camera shows, filled each frame for the tile layer. */
-  private readonly onScreen: MutableGroundBounds = {
+  private readonly onScreen: Camera.MutableGroundBounds = {
     minX: 0,
     maxX: 0,
     minZ: 0,
@@ -120,7 +116,7 @@ export class PuzzleSprites {
   private playerSlide: Slide = newSlide(-1);
   private facing: Facing = "right";
   /** Whether the player is walking: through a slide and a little after, so a held key walks without a stutter. */
-  private readonly gait = new Gait({ linger: SLIDE_SECONDS + WALK_LINGER });
+  private readonly gait = Gait.make({ linger: SLIDE_SECONDS + WALK_LINGER });
   /** How far this view has read the run's `changes`: what a turn did that the board no longer shows. */
   private readonly seen = RingReader.make();
   /** Indexed by box stable id. Pool indices move when a box fills a hole, so they can't be used. */
@@ -149,7 +145,7 @@ export class PuzzleSprites {
     if (kind === Tile.void) {
       return -1;
     }
-    let tag: SpriteTag;
+    let tag: SpriteSheet.Tag;
     if (kind === Tile.wall) {
       // A wall shows its face when the cell below it is inside the walls.
       const below = TileMap.cellAt(map, col, row + 1);
@@ -169,7 +165,7 @@ export class PuzzleSprites {
     } else {
       return tags.floor.from + floorVariant(cell, tags.floor);
     }
-    return frameAt(this.sheet.data, tag, time);
+    return SpriteSheet.frameAt(this.sheet.data, tag, time);
   };
 
   /** The frame a cell of the menu's floor shows: a goal now and then, from the cell's hash. */
@@ -180,15 +176,15 @@ export class PuzzleSprites {
       : this.tags.floor.from + floorVariant(h, this.tags.floor);
   };
 
-  constructor(sheet: SpriteSheet, camera: PixelCamera) {
+  constructor(sheet: SpriteSheet.SpriteSheet, camera: PixelCamera.PixelCamera) {
     this.sheet = sheet;
     this.camera = camera;
-    this.tags = resolveTags(sheet.data, PUSH_PUZZLE_TAGS).tags;
-    this.tiles = new TileLayer(sheet, {
+    this.tags = SpriteSheet.resolveTags(sheet.data, PUSH_PUZZLE_TAGS).tags;
+    this.tiles = TileLayer.make(sheet, {
       unitsPerPixel: 1 / PIXELS_PER_CELL,
       layer: 0,
     });
-    this.actors = new InstancedSprites(sheet, {
+    this.actors = InstancedSprites.make(sheet, {
       unitsPerPixel: 1 / PIXELS_PER_CELL,
       layer: 1,
       // A slide moves by screen pixels, finer than sprite pixels at any scale above 1.
@@ -208,8 +204,8 @@ export class PuzzleSprites {
 
   /** Frees the tile layer and the batch. Never the sheet: the app owns it. */
   dispose(): void {
-    this.tiles.dispose();
-    this.actors.dispose();
+    TileLayer.dispose(this.tiles);
+    InstancedSprites.dispose(this.actors);
     this.root.removeFromParent();
   }
 
@@ -235,12 +231,16 @@ export class PuzzleSprites {
     // A level's frames follow its turns and the time, so its tiles are filled again each
     // frame: a board is small.
     this.time = t;
-    this.tiles.invalidate();
-    this.tiles.draw(this.camera.groundOnScreen(this.onScreen), this.levelFrame);
-    this.actors.begin();
+    TileLayer.invalidate(this.tiles);
+    TileLayer.draw(
+      this.tiles,
+      PixelCamera.groundOnScreen(this.camera, this.onScreen),
+      this.levelFrame
+    );
+    InstancedSprites.begin(this.actors);
     this.drawBoxes(puzzle, t);
     this.drawPlayer(puzzle, t, undid);
-    this.actors.end();
+    InstancedSprites.end(this.actors);
   }
 
   /** Pushes every box, and any still sliding into a hole. */
@@ -255,7 +255,12 @@ export class PuzzleSprites {
       const tag =
         puzzle.map.fields.goal[cell] === 1 ? tags.boxOnGoal : tags.box;
       const slide = this.slideTo(this.boxSlides[id]!, cell, t);
-      actors.push(slide.x, slide.z, frameAt(this.sheet.data, tag, t));
+      InstancedSprites.push(
+        actors,
+        slide.x,
+        slide.z,
+        SpriteSheet.frameAt(this.sheet.data, tag, t)
+      );
     }
     // A box that filled a hole has left the pool: it is drawn until it has slid in.
     for (let id = 0; id < this.boxSinking.length; id++) {
@@ -267,7 +272,12 @@ export class PuzzleSprites {
         this.boxSinking[id] = 0;
       } else {
         this.slideTo(slide, slide.cell, t);
-        actors.push(slide.x, slide.z, frameAt(this.sheet.data, tags.box, t));
+        InstancedSprites.push(
+          actors,
+          slide.x,
+          slide.z,
+          SpriteSheet.frameAt(this.sheet.data, tags.box, t)
+        );
       }
     }
   }
@@ -282,10 +292,15 @@ export class PuzzleSprites {
       this.facing = facingOf(slide.cell - from, puzzle.map.cols, this.facing);
     }
     // By the cell the rules have it in: it walks from the turn that moved it.
-    this.gait.update(this.cellX(puzzle.player), this.cellZ(puzzle.player), t);
+    Gait.update(
+      this.gait,
+      this.cellX(puzzle.player),
+      this.cellZ(puzzle.player),
+      t
+    );
     const walking = this.gait.moving;
     const { tags } = this;
-    let tag: SpriteTag;
+    let tag: SpriteSheet.Tag;
     if (this.facing === "up") {
       tag = tags.up;
     } else if (this.facing === "down") {
@@ -295,14 +310,20 @@ export class PuzzleSprites {
     }
     let frame: number;
     if (walking) {
-      frame = frameAt(this.sheet.data, tag, t - this.gait.since);
+      frame = SpriteSheet.frameAt(this.sheet.data, tag, t - this.gait.since);
     } else if (tag === tags.up || tag === tags.down) {
       // Standing still facing up or down: the first step of that walk.
       frame = tag.from;
     } else {
-      frame = frameAt(this.sheet.data, tag, t);
+      frame = SpriteSheet.frameAt(this.sheet.data, tag, t);
     }
-    this.actors.push(slide.x, slide.z, frame, this.facing === "left");
+    InstancedSprites.push(
+      this.actors,
+      slide.x,
+      slide.z,
+      frame,
+      this.facing === "left"
+    );
   }
 
   /** Behind the menus: a dim floor with a few goals and crates, drifting under a still camera. */
@@ -311,40 +332,41 @@ export class PuzzleSprites {
     if (!this.showingMenu) {
       this.showingMenu = true;
       this.puzzle = null;
-      camera.setViewHeight(MENU.viewHeight);
+      PixelCamera.setViewHeight(camera, MENU.viewHeight);
       // The menu dims every tile, and the layer has a level's tiles to fill over.
       tiles.tint.copy(MENU.tint);
-      tiles.invalidate();
+      TileLayer.invalidate(tiles);
     }
-    camera.follow(t * MENU.driftX, t * MENU.driftZ);
+    PixelCamera.follow(camera, t * MENU.driftX, t * MENU.driftZ);
     // The floor is filled again when the drift brings other cells on screen, and when the
     // goal's animation moves on.
-    const goal = frameAt(this.sheet.data, tags.goal, t);
+    const goal = SpriteSheet.frameAt(this.sheet.data, tags.goal, t);
     if (goal !== this.menuGoal) {
       this.menuGoal = goal;
-      tiles.invalidate();
+      TileLayer.invalidate(tiles);
     }
-    const seen = camera.groundOnScreen(this.onScreen);
-    tiles.draw(seen, this.menuFrame);
+    const seen = PixelCamera.groundOnScreen(camera, this.onScreen);
+    TileLayer.draw(tiles, seen, this.menuFrame);
     // The crates are no tiles: over the same cells, in the batch above them.
     const left = Math.floor(seen.minX);
     const right = Math.ceil(seen.maxX);
     const top = Math.floor(seen.minZ);
     const bottom = Math.ceil(seen.maxZ);
-    actors.begin();
+    InstancedSprites.begin(actors);
     for (let row = top; row < bottom; row++) {
       for (let col = left; col < right; col++) {
         const h = ExactMath.hashCell(col, row);
         if ((h >>> 8) % 29 === 0) {
           const crate = h % 31 === 0 ? tags.boxOnGoal : tags.box;
-          actors.setTint(
-            actors.push(col + 0.5, row + 0.5, crate.from),
+          InstancedSprites.setTint(
+            actors,
+            InstancedSprites.push(actors, col + 0.5, row + 0.5, crate.from),
             MENU.tint
           );
         }
       }
     }
-    actors.end();
+    InstancedSprites.end(actors);
   }
 
   /** Fits the camera to this run's board, and puts every slide at rest. */
@@ -358,7 +380,7 @@ export class PuzzleSprites {
     this.bounds.maxX = map.cols;
     this.bounds.minZ = -HUD_ROOM;
     this.bounds.maxZ = map.rows;
-    this.camera.fit(this.bounds, MARGIN);
+    PixelCamera.fit(this.camera, this.bounds, MARGIN);
     // A level's tiles are not dimmed, as the menu's are.
     this.tiles.tint.setRGB(1, 1, 1);
 
@@ -371,7 +393,7 @@ export class PuzzleSprites {
     RingReader.reset(this.seen);
 
     this.playerSlide = this.restingSlide(puzzle.player);
-    this.gait.reset();
+    Gait.reset(this.gait);
     this.facing = "right";
     // Every box that will ever exist in this run is in the pool now, before any hole is filled.
     this.boxSlides = [];
@@ -469,7 +491,7 @@ const facingOf = (delta: number, cols: number, current: Facing): Facing => {
 };
 
 /** Which floor frame a cell gets: mostly the plain one, now and then another. */
-const floorVariant = (seed: number, floor: SpriteTag): number => {
+const floorVariant = (seed: number, floor: SpriteSheet.Tag): number => {
   const count = floor.to - floor.from + 1;
   const h = ExactMath.hashCell(seed, 7);
   const roll = h % 5;

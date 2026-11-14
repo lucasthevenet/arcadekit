@@ -1,31 +1,110 @@
-import { describe, expect, it } from "vitest";
+import type * as THREE from "three";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { drawingBuffer } from "./stage";
+// Stage needs WebGL, which Node hasn't: a stand-in renderer records what the stage does with it.
+const calls: string[] = [];
+/** The camera of each render, in order. */
+const rendered: THREE.Camera[] = [];
 
-describe(drawingBuffer, () => {
-  it("caps the pixel ratio of a 3D stage", () => {
-    expect(drawingBuffer(false, 400, 800, 3, 2)).toStrictEqual({
-      pixelRatio: 2,
-      width: 400,
-      height: 800,
-    });
+const fakeRenderer = () => {
+  let size = { width: 1, height: 1, ratio: 1 };
+  return {
+    domElement: {
+      style: {},
+      remove: () => calls.push("remove canvas"),
+    },
+    setPixelRatio: (ratio: number) => {
+      size = { ...size, ratio };
+    },
+    setSize: (width: number, height: number) => {
+      size = { ...size, width, height };
+    },
+    getDrawingBufferSize: (target: {
+      set: (x: number, y: number) => unknown;
+    }) =>
+      target.set(
+        Math.floor(size.width * size.ratio),
+        Math.floor(size.height * size.ratio)
+      ),
+    render: (_scene: THREE.Scene, camera: THREE.Camera) => {
+      rendered.push(camera);
+    },
+    dispose: () => calls.push("dispose renderer"),
+    forceContextLoss: () => calls.push("lose context"),
+  };
+};
+
+/** A stand-in to call with `new`: each instance gets the fields `fields` makes. */
+const newable = <T extends object>(fields: () => T) =>
+  // oxlint-disable-next-line typescript/no-extraneous-class -- Stage calls these with `new`, which an arrow can't take.
+  class {
+    constructor() {
+      Object.assign(this, fields());
+    }
+  };
+
+vi.mock(import("three"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  WebGLRenderer: newable(fakeRenderer) as never,
+}));
+
+const Stage = await import("./stage");
+const PixelCamera = await import("./pixel-camera");
+
+const container = (width = 100, height = 100) =>
+  ({
+    clientWidth: width,
+    clientHeight: height,
+    append: () => {},
+  }) as unknown as HTMLElement;
+
+describe("Stage", () => {
+  beforeEach(() => {
+    calls.length = 0;
+    rendered.length = 0;
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+    vi.stubGlobal(
+      "ResizeObserver",
+      newable(() => ({ observe: () => {}, disconnect: () => {} }))
+    );
   });
 
-  it("never caps a pixel stage's, so sprite pixels stay whole on a phone's screen", () => {
-    expect({
-      device: drawingBuffer(false, 390, 844, 3, 2, {
-        inlineSize: 1170,
-        blockSize: 2532,
-      }),
-      pixel: drawingBuffer(true, 390, 844, 3, 2, {
-        inlineSize: 1170,
-        blockSize: 2532,
-      }),
-      unreported: drawingBuffer(true, 390, 844, 3, 2),
-    }).toStrictEqual({
-      device: { pixelRatio: 2, width: 390, height: 844 },
-      pixel: { pixelRatio: 1, width: 1170, height: 2532 },
-      unreported: { pixelRatio: 3, width: 390, height: 844 },
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("releases the WebGL context on dispose, so stages made one after another don't pile contexts up", () => {
+    Stage.dispose(Stage.make(container()));
+    expect(calls).toStrictEqual([
+      "dispose renderer",
+      "lose context",
+      "remove canvas",
+    ]);
+  });
+
+  it("tells a pixel camera its drawing buffer, and renders with the camera it places", () => {
+    const stage = Stage.make(container(640, 480), {
+      camera: "pixel",
+      pixelsPerUnit: 16,
+      viewHeight: 15,
     });
+    Stage.render(stage);
+    expect({
+      pixel: PixelCamera.isPixelCamera(stage.camera),
+      // 15 units of 16 px is 240 sprite pixels, in a buffer 480 high.
+      scale: stage.camera.pixelScale,
+      rendered: rendered.length === 1 && rendered[0] === stage.camera.camera,
+    }).toStrictEqual({ pixel: true, scale: 2, rendered: true });
+    Stage.dispose(stage);
+  });
+
+  it("renders a 3D stage with its camera", () => {
+    const stage = Stage.make(container(), { camera: "orthographic" });
+    Stage.render(stage);
+    expect([Stage.isStage(stage), rendered]).toStrictEqual([
+      true,
+      [stage.camera],
+    ]);
+    Stage.dispose(stage);
   });
 });

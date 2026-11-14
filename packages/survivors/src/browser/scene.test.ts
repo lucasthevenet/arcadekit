@@ -1,7 +1,10 @@
 import { EntityPool } from "arcadekit/core";
-import { resolveTags } from "arcadekit/render-three";
-import type { InstancedSprites, TileLayer } from "arcadekit/render-three";
-import { drawnSprites, testSheet } from "arcadekit/render-three/testing";
+import {
+  InstancedSprites,
+  SpriteSheet,
+  TileLayer,
+} from "arcadekit/render-three";
+import { DrawnSprites, TestSpriteSheet } from "arcadekit/render-three/testing";
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -16,7 +19,7 @@ import { SurvivorsScene } from "./scene";
 
 /** Every tag the view uses, and a few of this test's own, with its number of frames. */
 const art = {
-  sheet: testSheet({
+  sheet: TestSpriteSheet.fromTags({
     "hero/walk": 4,
     "hero/idle": 1,
     "hero/down": 1,
@@ -139,18 +142,19 @@ const content = Schema.decodeUnknownSync(GameContent)({
 });
 
 /** Sprite `index` of what a batch shows. */
-const sprite = (sprites: InstancedSprites, index: number) =>
-  drawnSprites(sprites)[index]!;
+const sprite = (sprites: InstancedSprites.InstancedSprites, index: number) =>
+  DrawnSprites.read(sprites)[index]!;
 
 /** How many sprites a batch shows. */
-const count = (sprites: InstancedSprites) => drawnSprites(sprites).length;
+const count = (sprites: InstancedSprites.InstancedSprites) =>
+  DrawnSprites.read(sprites).length;
 
 /**
  * The ground's tiles as drawn, one string per row of cells from `minZ`, each cell by its tag
  * without the folder: `grass`, `void`, or the wall's side. A cell with no tile is `-`.
  */
 const groundPicture = (
-  layer: TileLayer,
+  layer: TileLayer.TileLayer,
   seen: { readonly minX: number; readonly minZ: number },
   cols: number,
   rows: number
@@ -158,7 +162,7 @@ const groundPicture = (
   const cells = Array.from({ length: rows }, () =>
     Array.from({ length: cols }, () => "-")
   );
-  for (const tile of drawnSprites(layer)) {
+  for (const tile of DrawnSprites.read(layer)) {
     const row = cells[Math.floor(tile.z) - seen.minZ];
     if (row !== undefined) {
       row[Math.floor(tile.x) - seen.minX] = tile.tag.split("/")[1]!;
@@ -475,7 +479,7 @@ describe("the survivors ground", () => {
       "void void w grass",
     ]);
     // Every tile is at its cell's centre, in the lowest layer.
-    const tiles = drawnSprites(scene.groundLayer);
+    const tiles = DrawnSprites.read(scene.groundLayer);
     expect([tiles.length, tiles[0]?.x, tiles[0]?.z]).toStrictEqual([
       16, -10.5, -10.5,
     ]);
@@ -489,7 +493,7 @@ describe("the survivors ground", () => {
     /** The frame drawn at each cell of the last fill. */
     const frames = () =>
       new Map(
-        drawnSprites(scene.groundLayer).map((tile) => [
+        DrawnSprites.read(scene.groundLayer).map((tile) => [
           `${tile.x} ${tile.z}`,
           tile.frame,
         ])
@@ -512,13 +516,17 @@ describe("the survivors ground", () => {
 
   it("gives its layer one function for every frame, so a frame makes no closure", () => {
     const scene = new SurvivorsScene(art);
-    const drawn = vi.spyOn(scene.groundLayer, "draw");
+    const drawn = vi.spyOn(TileLayer, "draw");
     scene.draw(null, 0);
     scene.drawGround(CORNER);
     scene.draw(null, 1);
     scene.drawGround(CORNER);
-    expect(drawn).toHaveBeenCalledTimes(2);
-    expect(drawn.mock.calls[1]![1]).toBe(drawn.mock.calls[0]![1]);
+    // Each call is the layer's: (layer, seen, frameOf).
+    expect(drawn.mock.calls.map(([layer]) => layer)).toStrictEqual([
+      scene.groundLayer,
+      scene.groundLayer,
+    ]);
+    expect(drawn.mock.calls[1]![2]).toBe(drawn.mock.calls[0]![2]);
     scene.dispose();
   });
 
@@ -527,7 +535,7 @@ describe("the survivors ground", () => {
     // No run yet: the backdrop's arena, 60 units from its centre to its wall.
     scene.draw(null, 0);
     scene.drawGround(CORNER);
-    const patches = drawnSprites(scene.patchSprites);
+    const patches = DrawnSprites.read(scene.patchSprites);
     // One patch per 420 square units of its 120 by 120, each at a place of its own.
     expect([
       patches.length,
@@ -555,7 +563,10 @@ describe("the survivors ground", () => {
 
   it("fills the patches once for an arena, and the ground and the patches again for another", () => {
     const scene = new SurvivorsScene(art);
-    const filled = vi.spyOn(scene.patchSprites, "end");
+    const ended = vi.spyOn(InstancedSprites, "end");
+    /** The fills of the patches' batch: each batch ends a fill of its own. */
+    const filled = () =>
+      ended.mock.calls.filter(([batch]) => batch === scene.patchSprites);
     scene.draw(null, 0);
     scene.drawGround(CORNER);
     // In the middle of the backdrop's arena, the corner of the content's is grass.
@@ -565,7 +576,7 @@ describe("the survivors ground", () => {
     // The camera moves: the patches are not filled again.
     scene.draw(null, 1);
     scene.drawGround({ minX: 20, maxX: 24, minZ: 6, maxZ: 10 });
-    expect(filled).toHaveBeenCalledOnce();
+    expect(filled()).toHaveLength(1);
 
     // A run in a smaller arena, drawn twice: its wall where the grass was, on the same cells,
     // and an arena too small for a patch.
@@ -573,7 +584,7 @@ describe("the survivors ground", () => {
     scene.draw(world, 2);
     scene.drawGround(CORNER);
     scene.drawGround(CORNER);
-    expect(filled).toHaveBeenCalledTimes(2);
+    expect(filled()).toHaveLength(2);
     expect(count(scene.patchSprites)).toBe(0);
     expect(groundPicture(scene.groundLayer, CORNER, 4, 4)[2]).toBe(
       "s s se void"
@@ -589,13 +600,15 @@ describe(wantedTags, () => {
 
   it("lists every tag the view draws for a content, so a test finds the ones a sheet lacks", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(resolveTags(sheetData, wantedTags(content)).missing).toStrictEqual([
-      "ghost/move",
-    ]);
+    expect(
+      SpriteSheet.resolveTags(sheetData, wantedTags(content)).missing
+    ).toStrictEqual(["ghost/move"]);
     // A sheet with none of them: what the view always draws, then each content entry's own
     // sprite before the generic one it falls back to.
-    const { data } = testSheet({ other: 1 });
-    expect(resolveTags(data, wantedTags(content)).missing).toStrictEqual([
+    const { data } = TestSpriteSheet.fromTags({ other: 1 });
+    expect(
+      SpriteSheet.resolveTags(data, wantedTags(content)).missing
+    ).toStrictEqual([
       "bolt/generic",
       "trail",
       "gem/small",

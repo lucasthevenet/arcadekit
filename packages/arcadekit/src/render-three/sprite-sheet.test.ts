@@ -1,13 +1,15 @@
-import { Effect } from "effect";
-import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-
+import { Effect, Fiber } from "effect";
 import {
-  SpriteSheetError,
-  decodeSpriteSheet,
-  frameAt,
-  resolveTags,
-} from "./index";
-import type { SpriteSheetData, SpriteTag } from "./index";
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from "vitest";
+
+import { SpriteSheet } from "./index";
 
 const frame = (x: number, duration = 100) => ({
   frame: { x, y: 0, w: 16, h: 16 },
@@ -58,12 +60,12 @@ const HASH_FORM = {
 };
 
 const decode = (json: unknown) =>
-  Effect.runSync(decodeSpriteSheet("sprites/sheet.json", json));
+  Effect.runSync(SpriteSheet.decode("sprites/sheet.json", json));
 
-const decodeError = (json: unknown): SpriteSheetError =>
-  Effect.runSync(Effect.flip(decodeSpriteSheet("sprites/sheet.json", json)));
+const decodeError = (json: unknown): SpriteSheet.SpriteSheetError =>
+  Effect.runSync(Effect.flip(SpriteSheet.decode("sprites/sheet.json", json)));
 
-describe(decodeSpriteSheet, () => {
+describe(SpriteSheet.decode, () => {
   it.each([
     { form: "array", json: ARRAY_FORM },
     { form: "hash", json: HASH_FORM },
@@ -224,7 +226,7 @@ describe(decodeSpriteSheet, () => {
     "fails with a SpriteSheetError naming the file when it $problem",
     ({ json, says }) => {
       const error = decodeError(json);
-      expect(error).toBeInstanceOf(SpriteSheetError);
+      expect(error).toBeInstanceOf(SpriteSheet.SpriteSheetError);
       expect(error.file).toBe("sprites/sheet.json");
       expect(error.message).toContain("sprites/sheet.json");
       expect(error.message).toContain(says);
@@ -232,9 +234,9 @@ describe(decodeSpriteSheet, () => {
   );
 });
 
-describe(frameAt, () => {
+describe(SpriteSheet.frameAt, () => {
   // Frames 0 to 3 lasting 0.1, 0.2, 0.1 and 0.3 s, with one tag of each direction over all four.
-  const sheet: SpriteSheetData = decode({
+  const sheet: SpriteSheet.Data = decode({
     frames: [frame(0, 100), frame(16, 200), frame(32, 100), frame(48, 300)],
     meta: {
       image: "a.png",
@@ -263,7 +265,7 @@ describe(frameAt, () => {
   };
   /** The frame shown at each time. */
   const play = (name: string, times: readonly number[]) =>
-    times.map((seconds) => frameAt(sheet, tag(name), seconds));
+    times.map((seconds) => SpriteSheet.frameAt(sheet, tag(name), seconds));
 
   // Times stay off the edges between frames, where rounding could go either way.
   it("plays forward by each frame's duration, looping", () => {
@@ -300,11 +302,11 @@ describe(frameAt, () => {
   });
 
   it("counts a negative time back from the end of a loop", () => {
-    expect(frameAt(sheet, tag("forward"), -0.1)).toBe(3);
+    expect(SpriteSheet.frameAt(sheet, tag("forward"), -0.1)).toBe(3);
   });
 });
 
-describe(resolveTags, () => {
+describe(SpriteSheet.resolveTags, () => {
   // Its tags are "slime/move" (frames 0 and 1) and "bat/fly" (2 and 3), in "sheet.png".
   const sheet = decode(ARRAY_FORM);
 
@@ -314,7 +316,7 @@ describe(resolveTags, () => {
 
   it("gives each name the first of its choices the sheet has, and skips an undefined", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { tags, missing } = resolveTags(sheet, {
+    const { tags, missing } = SpriteSheet.resolveTags(sheet, {
       slime: "slime/move",
       bat: ["bat/fly", "slime/move"],
       // A content entry that names no sprite of its own.
@@ -334,9 +336,9 @@ describe(resolveTags, () => {
       warned: 0,
     });
     expectTypeOf(tags).toEqualTypeOf<{
-      readonly slime: SpriteTag;
-      readonly bat: SpriteTag;
-      readonly ghost: SpriteTag;
+      readonly slime: SpriteSheet.Tag;
+      readonly bat: SpriteSheet.Tag;
+      readonly ghost: SpriteSheet.Tag;
     }>();
     // @ts-expect-error "rat" is no name this view asked for.
     expect(tags.rat).toBeUndefined();
@@ -344,7 +346,7 @@ describe(resolveTags, () => {
 
   it("falls back along a name's choices, and gives a tag that shows frame 0 when none is found", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { tags } = resolveTags(sheet, {
+    const { tags } = SpriteSheet.resolveTags(sheet, {
       ghost: ["ghost/move", "wraith/move", "bat/fly"],
       rat: ["rat/move", undefined, "mouse/move"],
       mole: "mole/move",
@@ -354,7 +356,10 @@ describe(resolveTags, () => {
       rat: tags.rat,
       mole: tags.mole,
       // It plays as any tag does: its one frame, at any time.
-      frames: [frameAt(sheet, tags.rat, 0), frameAt(sheet, tags.rat, 5.3)],
+      frames: [
+        SpriteSheet.frameAt(sheet, tags.rat, 0),
+        SpriteSheet.frameAt(sheet, tags.rat, 5.3),
+      ],
     }).toStrictEqual({
       ghost: "bat/fly",
       rat: { name: "", from: 0, to: 0, direction: "forward", duration: 0 },
@@ -365,7 +370,7 @@ describe(resolveTags, () => {
 
   it("lists each choice tried and not found once, in the order tried", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { missing } = resolveTags(sheet, {
+    const { missing } = SpriteSheet.resolveTags(sheet, {
       ghost: ["ghost/move", "wraith/move", "bat/fly"],
       // "wraith/move" was tried for the ghost: it is listed once.
       wraith: ["wraith/move", "slime/move"],
@@ -378,7 +383,7 @@ describe(resolveTags, () => {
 
   it("warns once in a call that misses, naming the sheet's image and each missing tag", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    resolveTags(sheet, {
+    SpriteSheet.resolveTags(sheet, {
       ghost: ["ghost/move", "bat/fly"],
       rat: "rat/move",
     });
@@ -388,15 +393,15 @@ describe(resolveTags, () => {
       ],
     ]);
     // Each call says what it missed: a view resolves once, and a game once per run.
-    resolveTags(sheet, { rat: "rat/move" });
-    resolveTags(sheet, { slime: "slime/move" });
+    SpriteSheet.resolveTags(sheet, { rat: "rat/move" });
+    SpriteSheet.resolveTags(sheet, { slime: "slime/move" });
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
   it("names in the same warning each name given no tag to try, which draws frame 0", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     // A content entry that names no sprite, in a view with no generic one to draw for it.
-    const { tags, missing } = resolveTags(sheet, {
+    const { tags, missing } = SpriteSheet.resolveTags(sheet, {
       boss: [undefined],
       mole: [],
       slime: "slime/move",
@@ -409,7 +414,10 @@ describe(resolveTags, () => {
       // No tag was tried, so the sheet lacks none.
       { boss: "", mole: "", missing: [] }
     );
-    resolveTags(sheet, { boss: [undefined, undefined], rat: "rat/move" });
+    SpriteSheet.resolveTags(sheet, {
+      boss: [undefined, undefined],
+      rat: "rat/move",
+    });
     expect(warn.mock.calls).toStrictEqual([
       [
         'No tag was given to try for "boss", "mole" in the sprite sheet sheet.png: a name with none draws frame 0.',
@@ -426,12 +434,167 @@ describe(resolveTags, () => {
     const wanted = JSON.parse(
       '{ "__proto__": "bat/fly", "constructor": "rat/move" }'
     ) as Record<string, string>;
-    const { tags } = resolveTags(sheet, wanted);
+    const { tags } = SpriteSheet.resolveTags(sheet, wanted);
     expect(
       Object.entries(tags).map(([key, tag]) => [key, tag.name])
     ).toStrictEqual([
       ["__proto__", "bat/fly"],
       ["constructor", ""],
     ]);
+  });
+});
+
+/** A bitmap as `createImageBitmap` gives one: its size, and how many times it was closed. */
+const bitmap = (width: number, height: number) => ({
+  width,
+  height,
+  closed: 0,
+  close() {
+    this.closed += 1;
+  },
+});
+
+describe(SpriteSheet.fromUrl, () => {
+  /** What the stand-in `fetch` was asked for, in order. */
+  let requested: string[];
+  /** The signal of each request, by its URL. */
+  let signals: Map<string, AbortSignal>;
+
+  /** Serves `files` by URL: JSON as itself, an image as a blob; anything else is a 404. */
+  const serve = (files: Readonly<Record<string, unknown>>) => {
+    vi.stubGlobal("location", { href: "https://game.test/play/" });
+    vi.stubGlobal("fetch", (url: string, init?: { signal?: AbortSignal }) => {
+      requested.push(url);
+      if (init?.signal !== undefined) {
+        signals.set(url, init.signal);
+      }
+      const file = files[url];
+      if (file === "pending") {
+        // oxlint-disable-next-line promise/avoid-new -- a request that never answers, as a stalled server's.
+        return new Promise<never>(() => {});
+      }
+      return Promise.resolve(
+        file === undefined
+          ? { ok: false, status: 404 }
+          : {
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve(file),
+              blob: () => Promise.resolve(file),
+            }
+      );
+    });
+  };
+
+  const IMAGE_URL = "https://game.test/play/sprites/sheet.png";
+
+  beforeEach(() => {
+    requested = [];
+    signals = new Map();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches the JSON, then the image it names beside it, and makes the sheet", async () => {
+    serve({
+      "sprites/sheet.json": ARRAY_FORM,
+      [IMAGE_URL]: "the image's bytes",
+    });
+    const image = bitmap(64, 16);
+    vi.stubGlobal("createImageBitmap", () => Promise.resolve(image));
+    const sheet = await Effect.runPromise(
+      SpriteSheet.fromUrl("sprites/sheet.json")
+    );
+    expect({
+      requested,
+      sheet: SpriteSheet.isSpriteSheet(sheet),
+      frames: sheet.data.frames.length,
+      texture: [sheet.texture.name, sheet.texture.image === image],
+      closed: image.closed,
+    }).toStrictEqual({
+      requested: ["sprites/sheet.json", IMAGE_URL],
+      sheet: true,
+      frames: 4,
+      texture: ["sheet.png", true],
+      closed: 0,
+    });
+  });
+
+  it("fails with a SpriteSheetError naming the file a response isn't a success for", async () => {
+    serve({ "sprites/sheet.json": ARRAY_FORM });
+    const error = await Effect.runPromise(
+      Effect.flip(SpriteSheet.fromUrl("sprites/sheet.json"))
+    );
+    expect([error._tag, error.file, error.message]).toStrictEqual([
+      "SpriteSheetError",
+      IMAGE_URL,
+      `The sprite sheet file ${IMAGE_URL} can't be loaded: HTTP 404`,
+    ]);
+  });
+
+  it("fails with what fetch threw as its cause", async () => {
+    vi.stubGlobal("location", { href: "https://game.test/play/" });
+    const offline = new TypeError("Failed to fetch");
+    vi.stubGlobal("fetch", () => Promise.reject(offline));
+    const error = await Effect.runPromise(
+      Effect.flip(SpriteSheet.fromUrl("sprites/sheet.json"))
+    );
+    expect([error.message, error.cause]).toStrictEqual([
+      "The sprite sheet file sprites/sheet.json can't be loaded: Failed to fetch",
+      offline,
+    ]);
+  });
+
+  it("fails, and closes the image, when the image isn't the size the JSON says", async () => {
+    serve({
+      "sprites/sheet.json": ARRAY_FORM,
+      [IMAGE_URL]: "the image's bytes",
+    });
+    const image = bitmap(32, 16);
+    vi.stubGlobal("createImageBitmap", () => Promise.resolve(image));
+    const error = await Effect.runPromise(
+      Effect.flip(SpriteSheet.fromUrl("sprites/sheet.json"))
+    );
+    expect([error.file, error.message, image.closed]).toStrictEqual([
+      IMAGE_URL,
+      `The sprite sheet image ${IMAGE_URL} is 32x16, but sprites/sheet.json says 64x16`,
+      1,
+    ]);
+  });
+
+  it("aborts the request it has open when interrupted", async () => {
+    serve({ "sprites/sheet.json": "pending" });
+    const fiber = Effect.runFork(SpriteSheet.fromUrl("sprites/sheet.json"));
+    await vi.waitFor(() => expect(requested).toHaveLength(1));
+    const signal = signals.get("sprites/sheet.json");
+    expect(signal?.aborted).toBe(false);
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("closes the image it was decoding when interrupted, once the decode ends", async () => {
+    serve({
+      "sprites/sheet.json": ARRAY_FORM,
+      [IMAGE_URL]: "the image's bytes",
+    });
+    const image = bitmap(64, 16);
+    let decoded = (_image: typeof image) => {};
+    vi.stubGlobal(
+      "createImageBitmap",
+      () =>
+        // oxlint-disable-next-line promise/avoid-new -- a decode that ends when the test says.
+        new Promise((resolve) => {
+          decoded = resolve;
+        })
+    );
+    const fiber = Effect.runFork(SpriteSheet.fromUrl("sprites/sheet.json"));
+    await vi.waitFor(() => expect(requested).toHaveLength(2));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    // A decode can't be stopped: its bitmap comes after the load has ended.
+    expect(image.closed).toBe(0);
+    decoded(image);
+    await vi.waitFor(() => expect(image.closed).toBe(1));
   });
 });

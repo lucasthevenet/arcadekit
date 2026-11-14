@@ -1,4 +1,4 @@
-import type { SpriteSheet, WantedTags } from "arcadekit/render-three";
+import type { SpriteSheet } from "arcadekit/render-three";
 
 import type { GameContent } from "../schema";
 
@@ -8,7 +8,7 @@ import type { GameContent } from "../schema";
 
 /** What a survivors game draws with: the app's loaded sprite sheet. */
 export interface SurvivorsArt {
-  readonly sheet: SpriteSheet;
+  readonly sheet: SpriteSheet.SpriteSheet;
 }
 
 /**
@@ -90,7 +90,7 @@ export const TAG_NAMES = {
  * draws in its place: the `sprite` the content names, then the generic one, which the view
  * tints with the entry's `color`. It picks them once per run.
  */
-export const contentTags = (content: GameContent): WantedTags => {
+export const contentTags = (content: GameContent): SpriteSheet.WantedTags => {
   const wanted: Record<string, readonly (string | undefined)[]> = {};
   const generic = heroTags(SPRITE_TAGS.hero);
   // Of two entries with one id, the rules play the first: so does the view.
@@ -111,12 +111,12 @@ export const contentTags = (content: GameContent): WantedTags => {
 
 /**
  * Every tag the view draws for `content`, each with the tags it falls back to. A test checks
- * a sheet against its content with it: `resolveTags(sheet, wantedTags(content)).missing` lists
+ * a sheet against its content with it: `SpriteSheet.resolveTags(sheet, wantedTags(content)).missing` lists
  * what the sheet lacks, and the view draws the next choice (or frame 0) in place of each. A
  * generic tag is asked of the sheet only for an entry that names no sprite, or one the sheet
  * lacks: a test that wants them all checks the content with no `sprite` named as well.
  */
-export const wantedTags = (content: GameContent): WantedTags => ({
+export const wantedTags = (content: GameContent): SpriteSheet.WantedTags => ({
   ...SCENE_TAGS,
   ...contentTags(content),
 });
