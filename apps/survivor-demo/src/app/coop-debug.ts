@@ -1,6 +1,3 @@
-import type { CoopClient } from "arcadekit/net/browser";
-import { Effect, Layer } from "effect";
-
 /**
  * The co-op run's debug read, on a global in development: what the end-to-end test and a
  * debugging player read of the Co-op client's current seat, with
@@ -11,6 +8,9 @@ import { Effect, Layer } from "effect";
  * The global's `debug` is a plain function, as the client's is, since a script on the page calls
  * it.
  */
+import type { CoopClient } from "arcadekit/net/browser";
+import { Effect, Layer } from "effect";
+
 import type { World } from "#survivors";
 import { SurvivorsCoop } from "#survivors/browser";
 

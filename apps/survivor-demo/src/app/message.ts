@@ -1,15 +1,15 @@
-import { AudioSettings } from "arcadekit/audio";
-import type { AudioSystem } from "arcadekit/audio";
-import { CoopEvent } from "arcadekit/net/browser";
-import { Schema } from "effect";
-import { defineMessageUnion } from "foldkit/message";
-
 /**
  * The app's Messages: Foldkit's contract. The engine's and the Co-op client's events reach the
  * app as Messages (`GotHud`, `GotCoopLobby`), so a Message is not an event.
  *
  * Plain on purpose: a Schema, which `update` matches on (Foldkit's contract).
  */
+import { AudioSettings } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
+import { CoopEvent } from "arcadekit/net/browser";
+import { Schema } from "effect";
+import { defineMessageUnion } from "foldkit/message";
+
 import { Hero, Hud, Offer } from "#survivors";
 
 import * as HeroRecords from "./hero-records";

@@ -1,13 +1,13 @@
-import { AudioSystem } from "arcadekit/audio";
-import { EngineEntry, KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
-import { Effect, Schema, Stream } from "effect";
-import { Subscription } from "foldkit";
-
 /**
  * The app's Subscriptions: Foldkit's contract. Each turns something outside the UI into Messages
  * as a Stream (the engine's events, the Co-op client's, the app's own keys), or keeps something
  * outside it in step with the Model (the audio system).
  */
+import { AudioSystem } from "arcadekit/audio";
+import { EngineEntry, KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
+import { Effect, Schema, Stream } from "effect";
+import { Subscription } from "foldkit";
+
 import { Survivors } from "#survivors";
 import { SurvivorsCoop, SurvivorsEngine } from "#survivors/browser";
 

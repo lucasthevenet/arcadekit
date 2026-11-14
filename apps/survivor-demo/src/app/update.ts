@@ -1,13 +1,13 @@
-import { AudioSettings } from "arcadekit/audio";
-import type { AudioSystem } from "arcadekit/audio";
-import type { Runtime, Update } from "foldkit";
-
 /**
  * The app's `init` and `update`: Foldkit's contract.
  *
  * Plain on purpose: `update` is a pure function, whose side effects are the Commands it returns
  * (Foldkit's contract).
  */
+import { AudioSettings } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
+import type { Runtime, Update } from "foldkit";
+
 import type { SurvivorsContent } from "#survivors";
 import type {
   SurvivorsCoop,

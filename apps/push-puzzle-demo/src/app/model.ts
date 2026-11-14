@@ -1,13 +1,13 @@
-import { AudioSettings } from "arcadekit/audio";
-import { Schema } from "effect";
-import { defineTaggedUnion } from "foldkit/schema";
-
 /**
  * The app's Model: Foldkit's contract, with the Schemas it is made of.
  *
  * Plain on purpose: Schemas, which `update` and `view` read, and `isLoaded`, a pure function the
  * engine entry reads (Foldkit's contract).
  */
+import { AudioSettings } from "arcadekit/audio";
+import { Schema } from "effect";
+import { defineTaggedUnion } from "foldkit/schema";
+
 import { Hud } from "#push-puzzle";
 
 import * as LevelRecords from "./level-records";

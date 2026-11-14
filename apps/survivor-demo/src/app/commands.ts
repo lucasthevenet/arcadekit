@@ -1,7 +1,3 @@
-import { AudioSettings, AudioSystem } from "arcadekit/audio";
-import { Effect, Schema } from "effect";
-import { Command, Dom } from "foldkit";
-
 /**
  * The app's Commands: Foldkit's contract, and the UI's only way to cause side effects. Each one
  * runs an Effect against the app's services and reports back with a Message.
@@ -9,6 +5,10 @@ import { Command, Dom } from "foldkit";
  * A Foldkit Command is not a command of the genre's: `PickUpgrade` and `PickCoopUpgrade` send the
  * genre's `ChooseUpgrade`, and `SetCoopPaused` its `HoldPause`.
  */
+import { AudioSettings, AudioSystem } from "arcadekit/audio";
+import { Effect, Schema } from "effect";
+import { Command, Dom } from "foldkit";
+
 import { ChooseUpgrade, Hero, HoldPause, SurvivorsContent } from "#survivors";
 import {
   SurvivorsCoop,

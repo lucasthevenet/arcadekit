@@ -1,11 +1,11 @@
-import { EngineEntry, KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
-import { Schema, Stream } from "effect";
-import { Subscription } from "foldkit";
-
 /**
  * The app's Subscriptions: Foldkit's contract. Each turns something outside the UI into Messages
  * as a Stream: the engine's events, and the app's own keys.
  */
+import { EngineEntry, KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
+import { Schema, Stream } from "effect";
+import { Subscription } from "foldkit";
+
 import { PushPuzzle } from "#push-puzzle";
 import { PushPuzzleEngine } from "#push-puzzle/browser";
 

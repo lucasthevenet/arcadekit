@@ -1,14 +1,14 @@
-import { AudioSettings } from "arcadekit/audio";
-import type { AudioSystem } from "arcadekit/audio";
-import { Schema } from "effect";
-import { defineMessageUnion } from "foldkit/message";
-
 /**
  * The app's Messages: Foldkit's contract. The engine's events reach the app as Messages
  * (`GotHud`, `GotLevelSolved`), so a Message is not an event.
  *
  * Plain on purpose: a Schema, which `update` matches on (Foldkit's contract).
  */
+import { AudioSettings } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
+import { Schema } from "effect";
+import { defineMessageUnion } from "foldkit/message";
+
 import { Hud } from "#push-puzzle";
 
 import * as LevelRecords from "./level-records";

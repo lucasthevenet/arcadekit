@@ -1,5 +1,3 @@
-import { Schema } from "effect";
-
 /**
  * Hero records: what the app remembers of each hero between sessions, by hero id.
  *
@@ -9,6 +7,8 @@ import { Schema } from "effect";
  *
  * Plain on purpose: Schemas, and the pure function `update` and `SaveRun` call.
  */
+import { Schema } from "effect";
+
 import type { Hero } from "#survivors";
 
 /** One hero's record: the best of all its runs. */

@@ -1,8 +1,3 @@
-import type { AudioSettings, AudioSystem } from "arcadekit/audio";
-import { Viewport } from "arcadekit/foldkit";
-import type { CoopEvent } from "arcadekit/net/browser";
-import type { Document, Html, HtmlBuilder } from "foldkit/html";
-
 /**
  * The app's `view`: Foldkit's contract.
  *
@@ -12,6 +7,11 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html";
  * on co-op's. Moving between the modes detaches one and attaches the other, and a "Try again"
  * after a failure attaches the engine anew.
  */
+import type { AudioSettings, AudioSystem } from "arcadekit/audio";
+import { Viewport } from "arcadekit/foldkit";
+import type { CoopEvent } from "arcadekit/net/browser";
+import type { Document, Html, HtmlBuilder } from "foldkit/html";
+
 import type { Hero, Hud, Offer } from "#survivors";
 
 import type * as HeroRecords from "./hero-records";
