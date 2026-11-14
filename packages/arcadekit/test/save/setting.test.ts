@@ -63,7 +63,6 @@ class ControlsClass extends Schema.Class<ControlsClass>("ControlsClass")({
 
 /** Declares a setting over a Schema class with an instance as its default, or a plain object. */
 const declareOverClass = (instance: boolean) =>
-  // oxlint-disable-next-line declaration/class -- A test declares what a builder must refuse.
   Setting("ClassControls", {
     storageKey: "arcadekit/test-game/class-controls",
     schema: ControlsClass,
@@ -154,7 +153,6 @@ const fast: Controls = { sensitivity: 6, invertY: true };
 
 /** Declares a setting whose default the types can't judge, to reach the builder's throw. */
 const declareWithSensitivity = (sensitivity: number) =>
-  // oxlint-disable-next-line declaration/class -- A test declares what a builder must refuse.
   Setting("LooseControls", {
     storageKey: "arcadekit/test-game/loose-controls",
     schema: Controls,
@@ -163,7 +161,6 @@ const declareWithSensitivity = (sensitivity: number) =>
 
 /** Settings whose definitions show a mistake: each is a type error. */
 const declareMistyped = () => [
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Setting("WrongDefault", {
     storageKey: "arcadekit/test-game/wrong-default",
     schema: Controls,
@@ -171,20 +168,17 @@ const declareMistyped = () => [
     default: { sensitivity: 3, invert: false },
   }),
   // @ts-expect-error -- a setting has a value before the player changes it.
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Setting("NoDefault", {
     storageKey: "arcadekit/test-game/no-default",
     schema: Controls,
   }),
   // @ts-expect-error -- a setting that replaces leaves `merge` out.
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Setting("UndefinedMerge", {
     storageKey: "arcadekit/test-game/undefined-merge",
     schema: Controls,
     default: defaultControls,
     merge: undefined,
   }),
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Setting("PromiseMerge", {
     storageKey: "arcadekit/test-game/promise-merge",
     schema: Controls,

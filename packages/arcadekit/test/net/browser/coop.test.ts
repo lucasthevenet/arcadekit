@@ -953,7 +953,6 @@ describe("declaring a Coop", () => {
       input: () => ({ read: () => ({ n: 1 }), dispose: () => {} }),
     }) {}
     expect(() =>
-      // oxlint-disable-next-line declaration/class -- declares what the builder refuses, to read its message.
       Coop("SoloCoop", {
         // @ts-expect-error -- Solo's input was not declared with Game.PlayerInputs
         engine: SoloEngine,
@@ -987,7 +986,6 @@ describe("declaring a Coop", () => {
       }),
     }) {}
     expect(() =>
-      // oxlint-disable-next-line declaration/class -- declares what the builder refuses, to read its message.
       Coop("ByHandCoop", {
         // @ts-expect-error -- a struct with `players` and `leaving` is not a Game.PlayerInputs
         engine: ByHandEngine,
@@ -1004,7 +1002,6 @@ describe("declaring a Coop", () => {
   });
 
   it("refuses an input source that reads the whole step's input: the engine's does that", () => {
-    // oxlint-disable-next-line declaration/class -- declares what the types refuse; nothing is thrown, since a source is only made on attach.
     const declared = Coop("WholeStep", {
       ...rest,
       engine: SharedEngine,
@@ -1019,7 +1016,6 @@ describe("declaring a Coop", () => {
 
   it("refuses an `ends` entry the simulation doesn't report", () => {
     expect(() =>
-      // oxlint-disable-next-line declaration/class -- declares what the builder refuses, to read its message.
       Coop("EndsElsewhere", {
         ...rest,
         engine: SharedEngine,
@@ -1033,7 +1029,6 @@ describe("declaring a Coop", () => {
 
   it("refuses the simulation's sample in `ends`, which the types take for one of its events", () => {
     expect(() =>
-      // oxlint-disable-next-line declaration/class -- declares what the builder refuses, to read its message.
       Coop("EndsAtOnce", { ...rest, engine: SharedEngine, ends: [Stepped] })
     ).toThrow(
       'Coop "EndsAtOnce" lists "Stepped" in `ends`, which is the sample of the simulation "Shared": a run reports it all the time, so every run would count as over at once. List the event a run ends with, one of the simulation\'s `events`.'
@@ -1044,7 +1039,6 @@ describe("declaring a Coop", () => {
     "refuses maxPlayers %s, a size no room has",
     (maxPlayers) => {
       expect(() =>
-        // oxlint-disable-next-line declaration/class -- declares what the builder refuses, to read its message.
         Coop("Crowd", { ...rest, engine: SharedEngine, maxPlayers })
       ).toThrow(
         `Coop "Crowd" has maxPlayers ${maxPlayers}, a size no room has: a signalling room holds 2 to 16 players. Write a whole number from 2 to 16, or leave it out for 4.`
@@ -1055,7 +1049,6 @@ describe("declaring a Coop", () => {
   it("takes an `ends` entry the simulation reports, and every room size from 2 to 16", () => {
     const sizes = [2, 16].map(
       (maxPlayers) =>
-        // oxlint-disable-next-line declaration/class -- the same definition at each size, which a class statement can't loop over.
         Coop("Sized", {
           ...rest,
           engine: SharedEngine,

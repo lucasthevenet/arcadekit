@@ -44,7 +44,7 @@ pnpm add -D @types/three
 
 ## Entries, genres and apps
 
-The first nine rows are the entries of the `arcadekit` package ([`packages/arcadekit`](packages/arcadekit)); each also has the `./browser` and other subpaths its row names. Lower layers have fewer dependencies, and nothing depends on a layer above it: `oxlint.config.ts` lists which entry may import which, and lint enforces it.
+The first nine rows are the entries of the `arcadekit` package ([`packages/arcadekit`](packages/arcadekit)); each also has the `./browser` and other subpaths its row names. Lower layers have fewer dependencies, and nothing depends on a layer above it.
 
 | Package or entry | What it gives you | Depends on |
 | --- | --- | --- |

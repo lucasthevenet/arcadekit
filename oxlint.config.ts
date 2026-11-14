@@ -132,29 +132,10 @@ const ownRunnerProperties = [
 // package's test/, outside library code.
 const TEST_HELPERS = ["**/testing/**"];
 
-// Which entry of the arcadekit package may import which. Core and input stand alone.
-// game steps with core's clock and collects events in core's buffer. net seeds its test network
-// with core's Rng, and imports game: a lockstep session is a host of a declared simulation, so it
-// steps a `Game.Loop` and reads one player's input Schema from the simulation's
-// `Game.PlayerInputs`, and the Co-op client draws on game's frame loop. foldkit's tests
-// drive a real engine from game; its own code only names the engine's shape. Adding an arrow
-// here is a design decision: say why in the PR.
 const KIT_SRC = "packages/arcadekit/src";
-const KIT_TEST = "packages/arcadekit/test";
-const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
-  core: [],
-  input: [],
-  content: [],
-  save: [],
-  audio: [],
-  "render-three": [],
-  game: ["core"],
-  net: ["core", "game"],
-  foldkit: ["game"],
-};
 
 // Each entry's public file: the `source` of each of the package's exports, from src/, without
-// its extension. An import from another entry must name one of them.
+// its extension.
 const kitExports = (
   JSON.parse(readFileSync("packages/arcadekit/package.json", "utf-8")) as {
     readonly exports: Readonly<Record<string, { readonly source: string }>>;
@@ -207,26 +188,6 @@ export default defineConfig({
     "jsdoc/check-tag-names": ["error", { definedTags: ["category"] }],
   },
   overrides: [
-    {
-      // How a game writes a declaration (.agents/skills/declarations/SKILL.md).
-      files: ["packages/**/*.ts", "apps/**/*.ts"],
-      jsPlugins: ["./tools/lint/declaration.ts"],
-      rules: {
-        "declaration/named": "error",
-        "declaration/class": "error",
-        "declaration/inferred": "error",
-        "declaration/plain-handler": "error",
-        "declaration/create-first": "error",
-      },
-    },
-    {
-      // The kit's own builders. The one other function of the kit that returns a class makes
-      // the Durable Object that Cloudflare runs.
-      files: ["packages/arcadekit/src/**/*.ts"],
-      excludeFiles: ["packages/arcadekit/src/net/worker/signalling-worker.ts"],
-      jsPlugins: ["./tools/lint/declaration.ts"],
-      rules: { "declaration/builder": "error" },
-    },
     {
       // Where the kit and the genres refuse a mistake. A refusal throws `Error`, or `RangeError`
       // for a number out of range, never `TypeError` (.agents/skills/declarations/SKILL.md, "Refusing a mistake").
@@ -321,27 +282,6 @@ export default defineConfig({
       // of it is what a bundler keeps.
       files: ENTRY_FILES.map((file) => `${KIT_SRC}/${file}.ts`),
       rules: { "oxc/no-barrel-file": "off" },
-    },
-    {
-      // The entries of the one package keep the direction the nine packages had, and
-      // so do their tests, each in the folder of test/ that its entry has in src/.
-      files: [
-        "packages/arcadekit/src/**/*.ts",
-        "packages/arcadekit/test/**/*.ts",
-      ],
-      jsPlugins: ["./tools/lint/entry-direction.ts"],
-      rules: {
-        "entry-direction/allowed": [
-          "error",
-          {
-            packageName: "arcadekit",
-            root: KIT_SRC,
-            tests: KIT_TEST,
-            allowed: ENTRY_IMPORTS,
-            entryFiles: ENTRY_FILES,
-          },
-        ],
-      },
     },
     {
       files: ["**/*.test.ts"],

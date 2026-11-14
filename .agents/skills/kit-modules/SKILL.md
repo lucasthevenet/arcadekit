@@ -3,7 +3,7 @@ name: kit-modules
 description: Kit module shape. Use when adding or reshaping a module or an export of arcadekit, or naming one.
 ---
 
-Every module of the kit is shaped and documented as a module of Effect 4 is. [`arcadekit/core`](../../../packages/arcadekit/src/core/index.ts) is the reference: copy it, and read Effect's `MutableRef.ts` and `MutableHashMap.ts` (`node_modules/effect/src/`) beside it. The style test (`packages/arcadekit/test/style.test.ts`) and lint hold most of what follows, and their messages send you to a heading here.
+Every module of the kit is shaped and documented as a module of Effect 4 is. [`arcadekit/core`](../../../packages/arcadekit/src/core/index.ts) is the reference: copy it, and read Effect's `MutableRef.ts` and `MutableHashMap.ts` (`node_modules/effect/src/`) beside it. No test checks this shape, so compare a new module with core's before you finish.
 
 Write the block a game would write before the code that makes it work. A part a game supplies is a declaration (the declarations skill), and its doc comments follow the doc-comments skill. Whether its code is Effect or plain is the effect-or-plain skill's question.
 

@@ -200,7 +200,6 @@ class MedalSave extends Save("MedalSave", {
 
 /** Saves whose definitions show a mistake: each is a type error. */
 const declareMistyped = () => [
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("FieldSave", {
     storageKey: "arcadekit/test-game/field-save",
     // @ts-expect-error -- a save keeps its records under `records`, which no definition names.
@@ -208,14 +207,12 @@ const declareMistyped = () => [
     record: ScoreRecord,
     mergeRecord: (a) => a,
   }),
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("OtherRecordSave", {
     storageKey: "arcadekit/test-game/other-save",
     record: ScoreRecord,
     // @ts-expect-error -- the record's Schema decides the record, not the handler.
     mergeRecord: (a: { readonly lives: number }) => a,
   }),
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("PromiseSave", {
     storageKey: "arcadekit/test-game/promise-save",
     record: ScoreRecord,
@@ -223,26 +220,22 @@ const declareMistyped = () => [
     mergeRecord: (a) => Promise.resolve(a),
   }),
   // @ts-expect-error -- a save says how two records merge.
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("NoMergeSave", {
     storageKey: "arcadekit/test-game/no-merge-save",
     record: ScoreRecord,
   }),
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("KeySave", {
     // @ts-expect-error -- `key` is the class's, its service's key: the storage key is `storageKey`.
     key: "arcadekit/test-game/key-save",
     record: ScoreRecord,
     mergeRecord: (a) => a,
   }),
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("MutableSave", {
     storageKey: "arcadekit/test-game/mutable-save",
     record: Schema.Struct({ ids: Schema.mutable(Schema.Array(Schema.String)) }),
     // @ts-expect-error -- the price of a kept literal: an array written in a merge is read-only.
     mergeRecord: (a, b) => ({ ids: [...a.ids, ...b.ids] }),
   }),
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   Save("NamedSave", {
     storageKey: "arcadekit/test-game/named-save",
     record: Schema.Struct({ ids: Schema.mutable(Schema.Array(Schema.String)) }),

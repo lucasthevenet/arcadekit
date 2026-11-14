@@ -3,7 +3,7 @@ name: declarations
 description: Declaration builders and their hosts. Use when adding or changing a declaration builder (`Game.Event`, `Content`, `Coop`, `Save`…), the definition a game writes for one, or the host that runs it.
 ---
 
-A game writes `class <Name> extends <Builder>("<Name>", { ... }) {}`, and that statement is the whole part: its value, its type and its definition, under one name. The kit's own source is checked with `isolatedDeclarations`, so it names a declaration's base first, with its type written out (`const ScoreBase: Game.EventClass<...> = Game.Event(...)`, then `class Score extends ScoreBase {}`), as [`net/testing/test-game.ts`](../../../packages/arcadekit/src/net/testing/test-game.ts) does. [`content/asset.ts`](../../../packages/arcadekit/src/content/asset.ts) is the builder to copy, and push-puzzle (`packages/push-puzzle`) the game. Lint (`tools/lint/declaration.ts`) holds what one file shows, and the style test what takes several. The module around a builder follows the kit-modules skill.
+A game writes `class <Name> extends <Builder>("<Name>", { ... }) {}`, and that statement is the whole part: its value, its type and its definition, under one name. The kit's own source is checked with `isolatedDeclarations`, so it names a declaration's base first, with its type written out (`const ScoreBase: Game.EventClass<...> = Game.Event(...)`, then `class Score extends ScoreBase {}`), as [`net/testing/test-game.ts`](../../../packages/arcadekit/src/net/testing/test-game.ts) does. [`content/asset.ts`](../../../packages/arcadekit/src/content/asset.ts) is the builder to copy, and push-puzzle (`packages/push-puzzle`) the game. The module around a builder follows the kit-modules skill.
 
 ## Start from the game's side
 
@@ -38,11 +38,12 @@ The class is the service's key:
 
 ## Register it
 
-Add the builder to `DECLARATIONS` in `packages/arcadekit/test/style.test.ts`, to `DECLARATION_BUILDERS` in `tools/lint/declaration.ts` (with its entry in `BUILDER_ENTRIES` there if it is that entry's first), to the sentence of `.agents/AGENTS.md` that begins "They are", and to the glossary's **Declaration** entry. Lint and the style test then say what it still lacks.
+Name the builder in the sentence of `.agents/AGENTS.md` that begins "They are" and in the glossary's **Declaration** entry, and give it a README block, a doc comment and a test that declares one.
 
 ## The definition a game writes
 
-- One object. A field holds data, a Schema, another declaration's class (`simulation: PushPuzzle`, `events: [LevelSolved]`) or a plain function. TypeScript infers a handler's parameters from the fields beside it, but not through a call or a spread. A `create` written in place comes before the other handlers.
+- The class is named as it is declared (`class LevelSolved extends Game.Event("LevelSolved", ...)`), and no second class extends it.
+- One object. A field holds data, a Schema, another declaration's class (`simulation: PushPuzzle`, `events: [LevelSolved]`) or a plain function, never an async function or a generator. TypeScript infers a handler's parameters from the fields beside it, but not through a call or a spread. A `create` written in place comes before the other handlers.
 - An Effect is a field's value, which the host runs. Build it piped (`load.pipe(Effect.map(fn))`), since a data-first call can break the inference of the handlers beside it.
 - A name a game gives is a key of an object (an event's fields, `files`, `uses`, `cues`).
 - A declaration made from another takes its class (`Coop`'s `engine`), and every type from it.

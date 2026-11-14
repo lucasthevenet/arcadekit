@@ -2,11 +2,10 @@
 // the tarball with its peer libraries into a throwaway project outside the workspace, and
 // there:
 // - typechecks a tiny game (scripts/smoke/), every `ts` example in the entries' READMEs
-//   (packages/arcadekit/src/<entry>/README.md), and every `ts` example in the doc comments of the
-//   entries in Effect's module shape (those off NOT_YET_EFFECT_STYLE in
-//   packages/arcadekit/test/style.test.ts), with TypeScript 5.9 and with the workspace's
-//   TypeScript 7, as a package that emits its types is checked (`declaration`): an export whose
-//   type names something no entry exports is an error. arcadekit/net/worker's examples are a
+//   (packages/arcadekit/src/<entry>/README.md), and every `ts` example in the entries' doc
+//   comments, with TypeScript 5.9 and with the workspace's TypeScript 7, as a package that emits
+//   its types is checked (`declaration`): an export whose type names something no entry exports
+//   is an error. arcadekit/net/worker's examples are a
 //   project of their own (tsconfig.worker.json), checked with Cloudflare's Workers types and no
 //   DOM;
 // - builds the game with Vite;
@@ -82,25 +81,6 @@ const examples = (readme) =>
   [...readme.matchAll(/^```ts\n(?<code>[\s\S]*?)^```$/gmu)].map(
     (match) => match.groups.code
   );
-
-/**
- * The entries not yet in Effect's module shape, as the style test lists them, by the first
- * folder under src/. Read from its text: the list is the test's, which holds every entry off it.
- */
-const notYetEffectStyle = () => {
-  const list =
-    /^const NOT_YET_EFFECT_STYLE: readonly string\[\] = \[(?<names>[^\]]*)\];$/mu.exec(
-      readFileSync(path.join(packageDir, "test", "style.test.ts"), "utf-8")
-    )?.groups?.names;
-  if (list === undefined) {
-    throw new Error(
-      "packages/arcadekit/test/style.test.ts has no `const NOT_YET_EFFECT_STYLE: readonly string[] = [...];`, which this script reads to find the entries whose doc comments' examples it compiles"
-    );
-  }
-  return new Set(
-    [...list.matchAll(/"(?<name>[^"]+)"/gu)].map((match) => match.groups.name)
-  );
-};
 
 /** Every source file under `dir` but the entry's own `internal/`. */
 const moduleFiles = (dir) =>
@@ -192,11 +172,10 @@ try {
   }
   console.log(`\n${exampleCount} README examples copied into the project.`);
 
-  // The doc comments' examples of the entries in Effect's module shape. A Worker's go with the
-  // Worker's examples, which are checked with its types.
-  const notYet = notYetEffectStyle();
+  // The doc comments' examples. A Worker's go with the Worker's examples, which are checked with
+  // its types.
   let docCount = 0;
-  for (const dir of ENTRIES.filter((entry) => !notYet.has(entry))) {
+  for (const dir of ENTRIES) {
     for (const file of moduleFiles(path.join(packageDir, "src", dir))) {
       const worker = `${dir}/${file}`.startsWith(`${WORKER_ENTRY}/`);
       for (const [index, code] of docExamples(
@@ -214,7 +193,7 @@ try {
     }
   }
   console.log(
-    `${docCount} doc comment examples copied into the project, from ${ENTRIES.filter((entry) => !notYet.has(entry)).join(", ")}.`
+    `${docCount} doc comment examples copied into the project, from ${ENTRIES.join(", ")}.`
   );
 
   run(

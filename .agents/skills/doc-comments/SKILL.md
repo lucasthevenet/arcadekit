@@ -3,7 +3,7 @@ name: doc-comments
 description: Doc comments. Use when writing or changing a module comment or an export's doc comment in arcadekit, or an example in one.
 ---
 
-Doc comments are written as Effect's are, in the kit's own voice and the glossary's words. Copy those of [`core/ring.ts`](../../../packages/arcadekit/src/core/ring.ts). The style test checks their structure, and `packages/arcadekit/test/doc-examples.test.ts` runs their examples.
+Doc comments are written as Effect's are, in the kit's own voice and the glossary's words. Copy those of [`core/ring.ts`](../../../packages/arcadekit/src/core/ring.ts). `packages/arcadekit/test/doc-examples.test.ts` runs their examples; nothing checks the rest.
 
 ## The module comment
 
@@ -24,7 +24,7 @@ A `dual` function's doc comment is on its export, not on each overload. A field 
 
 ## Categories
 
-One closed list, which the style test's `CATEGORIES` holds. A new category changes both.
+One closed list: add a category here before an export uses it.
 
 | Category | What goes in it |
 | --- | --- |

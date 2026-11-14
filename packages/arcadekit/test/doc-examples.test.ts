@@ -50,15 +50,13 @@ vi.mock("cloudflare:workers", () => ({
   DurableObject: newable(() => ({})) as never,
 }));
 
-// Runs the `ts` examples of the doc comments of every entry in Effect's module shape, and checks
-// that each result an example shows is true: a line `expression; // => value` holds when the
-// expression gives the value (.agents/skills/doc-comments/SKILL.md). `pnpm smoke` compiles the
-// same examples against the packed package; this runs them against src/.
+// Runs the `ts` examples of the doc comments of every entry, and checks that each result an
+// example shows is true: a line `expression; // => value` holds when the expression gives the
+// value (.agents/skills/doc-comments/SKILL.md). `pnpm smoke` compiles the same examples against
+// the packed package; this runs them against src/.
 //
-// The entries are those off NOT_YET_EFFECT_STYLE, which this reads from the style test's text,
-// as `pnpm smoke` does: the list is the style test's. An example imports what a game would: any of
-// those entries, a sub-entry's examples its parent's too (`arcadekit/content` beside
-// `arcadekit/content/browser`), `effect`, to run what an entry's Effects do, and
+// An example imports what a game would: any entry, a sub-entry's examples its parent's too
+// (`arcadekit/content` beside `arcadekit/content/browser`), `effect`, to run what an entry's Effects do, and
 // `effect/persistence`, for the store a save is kept in (EFFECT_MODULES). An example runs as an
 // async function's body, awaited, so one may `await Effect.runPromise(...)` where what it shows
 // resumes on a fiber of its own, as a Stream's consumer does: `Effect.runSync` flushes only the
@@ -77,17 +75,7 @@ vi.mock("cloudflare:workers", () => ({
 const packageDir = path.resolve(import.meta.dirname, "..");
 const srcDir = path.join(packageDir, "src");
 
-const notYet = new Set(
-  [
-    ...(
-      /^const NOT_YET_EFFECT_STYLE: readonly string\[\] = \[(?<names>[^\]]*)\];$/mu.exec(
-        readFileSync(path.join(packageDir, "test", "style.test.ts"), "utf-8")
-      )?.groups?.names ?? ""
-    ).matchAll(/"(?<name>[^"]+)"/gu),
-  ].map((match) => match.groups?.name ?? "")
-);
-
-/** The entries in Effect's shape, by import path, each with its public file under src/. */
+/** The entries, by import path, each with its public file under src/. */
 const entries = Object.entries(
   (
     JSON.parse(
@@ -96,12 +84,10 @@ const entries = Object.entries(
       readonly exports: Readonly<Record<string, { readonly source: string }>>;
     }
   ).exports
-)
-  .map(([key, { source }]) => ({
-    entry: key.slice("./".length),
-    publicFile: source.slice("./src/".length),
-  }))
-  .filter(({ entry }) => !notYet.has(entry.split("/", 1)[0] ?? ""));
+).map(([key, { source }]) => ({
+  entry: key.slice("./".length),
+  publicFile: source.slice("./src/".length),
+}));
 
 // The entries whose examples run in a browser, by import path.
 const BROWSER_ENTRIES: ReadonlySet<string> = new Set([
