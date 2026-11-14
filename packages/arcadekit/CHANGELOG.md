@@ -2,6 +2,926 @@
 
 Versions up to 0.2.3 were published as the nine `@arcadekit/*` packages (core, input, content, save, audio, render-three, runtime, net and foldkit); their entries are merged here.
 
+## 0.7.0
+
+### Minor Changes
+
+- [#97](https://github.com/lucasthevenet/arcadekit/pull/97) [`7f5c65d`](https://github.com/lucasthevenet/arcadekit/commit/7f5c65d962103bf26bad9e26ecc388f56a633117) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `EntityPool.add` and `EntityPool.addWithId` give a slot whose fields are all 0. `arcadekit/core` gains `StateHash`, the FNV-1a both action games hash their state with, and `EntityPool.visit`. **Breaking**: a slot from `add` no longer holds the values of the entity that had it before. (The names are 0.7.0's: see the changeset that gives core Effect's module shape.)
+
+  Two things every game wrote around a pool are the pool's own. A slot came back holding what its last entity left, so each spawn wrote every field, zeros included, and a field added to a layout later was one forgotten write away from carrying a dead entity's value into a new one. And around the list of numbers its state hash covers, each game wrote the same fold and the same walk over a pool's live fields. Both are plain code in `arcadekit/core`, with no Effect and no clock: `add` runs in a step and allocates nothing, and a hash is taken by a host or a test between steps, never by the rules.
+
+  - **`EntityPool.add` and `EntityPool.addWithId`.** Every field of the slot they reserve is 0: after a `remove`, after a `clear` and on the slot's first use. It costs one write per field for each entity added, and nothing in a step that adds none. A spawn writes only the fields that start at something else.
+  - **`StateHash`.** FNV-1a, 32 bits, over each number's eight bytes as a float64, so a change in any bit shows. A NaN is the exception: every NaN has the same digest, since an engine may hold one in any of its bit patterns and no rule can tell them apart. `StateHash.add(hash, value)` folds one number in and allocates nothing; a game's list that takes an `add` is given a function that calls it, made once. `StateHash.digest(hash)` gives an unsigned 32-bit integer, `0x811c9dc5` with nothing folded in, and `StateHash.reset(hash)` starts again from there. `add` and `reset` return the state hash.
+  - **`EntityPool.visit(pool, f)`.** Calls `f` with the pool's `count`, then with each field's live values, one field at a time in the layout's order, and allocates nothing. It does not visit an identified pool's ids: they follow from the order of its adds and removes.
+
+  The game still lists its numbers, in its order: the kit never looks inside a state, and what only a view reads is left out by not being listed.
+
+  ```ts
+  import { EntityPool, StateHash } from "arcadekit/core";
+
+  const cars = EntityPool.make(8, {
+    x: Float32Array,
+    speed: Float32Array,
+    lap: Uint8Array,
+  });
+  const race = { time: 0, metres: 0, cars };
+
+  // Before: every field at every add, zeros included.
+  //   cars.fields.x[i] = 4; cars.fields.speed[i] = 0; cars.fields.lap[i] = 0;
+  const i = EntityPool.add(cars);
+  if (i !== -1) {
+    cars.fields.x[i] = 4;
+  }
+
+  // Before: an FNV-1a of the game's own, and its loop over Object.values(pool.fields).
+  const hash = StateHash.make();
+  const add = (value: number): void => {
+    StateHash.add(hash, value);
+  };
+  const hashRace = (): number => {
+    StateHash.reset(hash).pipe(
+      StateHash.add(race.time),
+      StateHash.add(race.metres)
+    );
+    EntityPool.visit(race.cars, add);
+    return StateHash.digest(hash);
+  };
+  ```
+
+  A view that keeps something per entity keys it on an identified pool's `EntityPool.idOf`, never on the index, which moves when another entity is removed. Survivors' enemies and gems are identified pools for that: its view takes each one's animation phase from its id, where it guessed which entity was which from where each was the frame before.
+
+  **Breaking**
+
+  - A slot from `EntityPool.add` or `EntityPool.addWithId` holds 0 in every field, where it held what the slot's last entity left. Code that read a field of a new entity before writing it reads 0. No signature changes, and every export is new.
+  - A game that wrote every field at every `add` records the same hashes as before, as survivors does: an identified pool hashes as a pool does, since an id is in no field, and `StateHash` and `EntityPool.visit` are the fold and the walk each game wrote, moved. One thing differs: a game's own hasher folded a NaN as whichever bits the engine held it in, so two equal states could have two hashes. A hash recorded over a state that holds a NaN may move; one over a state with none does not.
+
+- [#97](https://github.com/lucasthevenet/arcadekit/pull/97) [`9246aad`](https://github.com/lucasthevenet/arcadekit/commit/9246aadfe705859c6107e90c993eed74d1255d75) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/render-three` gains `SpriteSheet.resolveTags`, `Gait`, batches that grow and `MeshInstances` with a matrix and declared attributes; the new entry `arcadekit/render-three/testing` has `TestSpriteSheet`, `DrawnSprites` and two PNG checks (0.7.0's names: see the changeset that gives render-three Effect's module shape). **Breaking**: `InstancedSprites.set` and `commit` are `push` and `end`, `snap` is one of three words, and `MeshInstances` takes `{ capacity }`.
+
+  Each sprite view wrote the same four things around `InstancedSprites`: a tag lookup with fallbacks, a batch remade when it was too small with a cursor of the view's own, a linger so a walking character does not flicker to idle, and a test that read the batch's shader attributes. And `MeshInstances` took no value for a view's own shader, so a view built its own buffers beside it. All of it is the kit's now, as a view's plain code: no Effect, and no buffer allocated in a frame once a batch has its size. `end` still costs the three small records Three.js keeps of what to upload, as `commit` did.
+
+  - **`SpriteSheet.resolveTags(data, wanted)`.** A view names what it draws once, each name with its tag or the tags to try in order (an `undefined` is skipped). It gives `tags`, with a `SpriteSheet.Tag` under every name: the first choice the sheet has, or a tag named `""` that shows frame 0. And `missing`: every choice tried and not found, once each, in the order tried. A call that misses warns once on the console, naming the sheet's image and each missing tag. The same warning names a name given no tag to try (an empty list, or `undefined`s alone), which draws frame 0 and is in no `missing`.
+  - **`InstancedSprites`: `begin`, `push`, `end`.** `InstancedSprites.push(sprites, x, z, frame, flipX?)` adds a sprite and returns its index for the other setters, and `end` shows the sprites pushed since `begin` and uploads them. `capacity` is the room a batch is made with, 64 unless told, and a frame that pushes more doubles it: the `mesh` and its material stay, and the geometry is replaced and the old one freed. A batch filled once keeps showing its last `end`. `count` is the sprites pushed since `begin`. A `capacity` that is no finite number throws a `RangeError`, where it made a batch that drew nothing.
+  - **`snap`** is `"sprite"` (the default: whole sprite pixels), `"screen"` (whole screen pixels of the pixel camera that draws the batch, for what slides between two cells) or `"none"`. The rounding is the shader's in all three: a view no longer rounds a position itself. A batch says which it was made with, as `snap`, so a view's test can hold it.
+  - **`Gait`.** Whether one character a view draws is walking, from the positions it is shown at: `Gait.update(gait, x, z, time)` once per frame drawn, then `moving`, true from a change of position until `linger` seconds after the last one, and `since`, the time of the update that last changed it. `Gait.reset(gait)` forgets the position, for a new run. It has no facing.
+  - **`MeshInstances`.** `MeshInstances.setMatrix(instances, index, matrix)` gives an instance any transform, and `set` stays as the short form. `attributes` declares floats per instance by the name the material's shader reads each under, `MeshInstances.setAttribute(instances, index, name, x, y?, z?, w?)` writes them, and `commit` uploads them. A name that was not declared is a type error, and a throw. The attributes go on the geometry the instances are given and `dispose` takes them off, so making instances throws for a name the geometry already has (`position`, or what other instances over it declared) and for `instanceMatrix` and `instanceColor`, which Three.js reads first.
+  - **`arcadekit/render-three/testing`**, a new entry that only tests import. `TestSpriteSheet.fromTags(tags)` is a sheet with the tags a test names, each with its number of 16 px frames, and no image. `DrawnSprites.read(batch)` is every sprite a batch shows, as pushed and set, with the tag that holds its frame. `Png.size(png)` and `Png.framesWithSoftAlpha(png, data, blended?)` check the PNG a game ships: its size, and the frames with a pixel neither clear nor opaque. The entry runs in Node and imports `node:zlib`.
+
+  ```ts
+  import { Gait, InstancedSprites, SpriteSheet } from "arcadekit/render-three";
+
+  const TAGS = {
+    slime: ["slime/move", "enemy/move"],
+    walk: ["hero/walk", "hero/idle"],
+    idle: ["hero/idle", "hero/walk"],
+  } as const;
+
+  export const makeDraw = (sheet: SpriteSheet.SpriteSheet) => {
+    // Before: `sheet.data.tags.get(name)` for each tag, a fallback and a guard for each.
+    const { tags } = SpriteSheet.resolveTags(sheet.data, TAGS);
+    // Before: `{ capacity }`, worked out for the run, and a batch made again when it was short.
+    const sprites = InstancedSprites.make(sheet);
+    const gait = Gait.make();
+
+    return (
+      enemies: { count: number; x: Float32Array; z: Float32Array },
+      hero: { x: number; z: number },
+      time: number
+    ) => {
+      // Before: `sprites.set(i, x, z, frame)` at an index the view counted, then
+      // `sprites.commit(count)`.
+      InstancedSprites.begin(sprites);
+      const slime = SpriteSheet.frameAt(sheet.data, tags.slime, time);
+      for (let i = 0; i < enemies.count; i++) {
+        InstancedSprites.push(sprites, enemies.x[i]!, enemies.z[i]!, slime);
+      }
+      // Before: when the hero last moved and where it was, kept by the view.
+      Gait.update(gait, hero.x, hero.z, time);
+      const tag = gait.moving ? tags.walk : tags.idle;
+      const body = InstancedSprites.push(
+        sprites,
+        hero.x,
+        hero.z,
+        SpriteSheet.frameAt(sheet.data, tag, time - gait.since)
+      );
+      InstancedSprites.setLayer(sprites, body, 1);
+      InstancedSprites.end(sprites);
+    };
+  };
+  ```
+
+  Both genres use every part. Survivors' view resolves its tags once when it is made and once per run for the tags its content names, pushes into batches it makes once, keeps a `Gait` for each hero, and draws its aura rings through `MeshInstances` with two declared attributes, its shader unchanged. Push-puzzle's view draws from `PUSH_PUZZLE_TAGS`, slides its boxes and its player in a batch that rounds to screen pixels, and walks its player with a `Gait`. Their tests read `DrawnSprites.read`, and their apps' tests check the shipped sheets with `Png.size` and `Png.framesWithSoftAlpha`.
+
+  **Breaking**
+
+  - `InstancedSprites.set(index, x, z, frame, flipX?)` and `commit(count)` are gone. Write `InstancedSprites.begin(sprites)`, then `const index = InstancedSprites.push(sprites, x, z, frame, flipX?)` for each sprite, then `InstancedSprites.end(sprites)`.
+  - `InstancedSprites.Options`'s `capacity` is optional, and is the room a batch starts with, not the most it draws. `capacity` on a batch grows.
+  - `snap` takes one of three words where it took a boolean: `true` was `"sprite"`, and `false` is `"none"`. A view that rounded positions to screen pixels itself and passed `false` passes `"screen"` and pushes them as they are.
+  - `new MeshInstances(geometry, material, capacity)` becomes `MeshInstances.make(geometry, material, { capacity })`.
+  - A sprite batch's uniform `uSnap` is `uSnapUnit`, the world units a position is rounded to. A test that read a batch's attributes or uniforms reads `DrawnSprites.read(batch)`.
+  - Not in the published package: `@arcadekit/push-puzzle/browser` exports `PUSH_PUZZLE_TAGS`, each name with its tags, in place of the list `PUSH_PUZZLE_SPRITE_TAGS`, and `@arcadekit/survivors/browser` exports `wantedTags(content)`, for `SpriteSheet.resolveTags(data, wantedTags(content)).missing`, in place of `missingSpriteTags(sheet, content)`. A push-puzzle tag missing with all its fallbacks draws frame 0 where it drew nothing.
+
+  No recorded hash moved: only drawing changed.
+
+- [#97](https://github.com/lucasthevenet/arcadekit/pull/97) [`7a3dce6`](https://github.com/lucasthevenet/arcadekit/commit/7a3dce64c0de56c8a092619da66184a70462a8d7) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/core` gains exact math (`ExactMath`), 2D helpers (`Point2`), `ExactMath.hashCell`, timers (`Timer.countDown`, `Timer.takeWhole`), tweens (`Tween.progress` and four eases) and `Rng.pickDistinct`. (The names are 0.7.0's: see the changeset that gives core Effect's module shape.)
+
+  A step may use only exact arithmetic, and core gave it `clamp` alone, so each game wrote the same small functions. They are the kit's now: plain functions a step may call, with no Effect, no clock and no allocation.
+
+  - **Exact math.** `ExactMath.hypot2`, `sin`, `cos` and `powInt`, the replacements for `Math.hypot`, `Math.sin`, `Math.cos` and `**` that give the same bits in every engine, moved from the survivors genre as they were. `ExactMath.lerp(from, to, t)` is `from + (to - from) * t`.
+  - **2D helpers.** `Point2.clampLength(point, x, y, max)` writes (x, y) into `point`, shortened to `max` if longer, and returns the length it had. `Point2.moveToward(point, x, y, targetX, targetY, maxStep)` writes the place at most `maxStep` toward a target, and the target itself once it is that near. Both write into a `Point2` the caller made once and owns: there is no vector class.
+  - **`ExactMath.hashCell(col, row)`.** A well-spread unsigned 32-bit integer from two whole numbers, for a tile's variant: take `% count` of it, or divide it by 2^32.
+  - **Timers.** `Timer.countDown(value, by)` is `Math.max(0, value - by)`: a timer is a number in the state, ready at 0 and armed by writing its length. `Timer.takeWhole(amount)` is the whole units in a budget, for a rate turned into whole spawns.
+  - **Tweens.** `Tween.progress(now, startedAt, duration)` goes from 0 to 1, and `Tween.easeIn`, `easeOut`, `easeOutCubic` and `smoothstep` shape it. A tween is a value a view computes each frame, so no object holds one.
+  - **`Rng.pickDistinct(rng, items, count)`.** Moves `count` items drawn without repeats to the front of `items`, in place, and returns how many. It draws once for each item it picks. `items` is an array or a typed array: a `readonly` list is a type error, since the pick reorders it. A `count` that is not a whole number of 0 or more is a `RangeError`.
+
+  ```ts
+  import { Point2, Rng, Timer } from "arcadekit/core";
+
+  const wish = Point2.make(0, 0);
+  const state = { x: 0, hurtTimer: 0, spawnBudget: 0 };
+  const dt = 1 / 60;
+
+  // Before: const length = Math.sqrt(x * x + y * y); if (length > 1) { x /= length; y /= length; }
+  Point2.clampLength(wish, 0.9, 0.8, 1);
+  state.x += wish.x * 6 * dt;
+
+  // Before: state.hurtTimer = Math.max(0, state.hurtTimer - dt);
+  state.hurtTimer = Timer.countDown(state.hurtTimer, dt);
+
+  // Before: while (state.spawnBudget >= 1) { state.spawnBudget -= 1; spawn(); }
+  state.spawnBudget += 2.5 * dt;
+  const due = Timer.takeWhole(state.spawnBudget);
+  state.spawnBudget -= due;
+
+  // Before: a partial Fisher-Yates shuffle written with Rng.int.
+  const rng = Rng.make(7);
+  const upgrades = ["boost", "magnet", "shield", "tyres"];
+  const count = Rng.pickDistinct(rng, upgrades, 3);
+  const offer = upgrades.slice(0, count);
+  ```
+
+  Every export is new. `Rng.pickDistinct` draws as a hand-written pick would: `j = i + Rng.int(rng, items.length - i)`, then a swap of `i` and `j`, for each item it picks.
+
+- [#97](https://github.com/lucasthevenet/arcadekit/pull/97) [`f32b74f`](https://github.com/lucasthevenet/arcadekit/commit/f32b74f0661f22438bf09157ed5903c9ead23e5e) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/core` gains `Ring`, a fixed ring of records in typed arrays that a step pushes to, and `RingReader`, with which a view takes the records written since it last looked. Nothing breaks. (The names are 0.7.0's: see the changeset that gives core Effect's module shape.)
+
+  A view needs to know what a step did: a hit and where it landed, a hole that was filled, an undo. An event is a rare fact for the app, and a cue counter is a count with no place or amount, so each game found its own way: a ring written by hand, a view that compared the state with last frame, a timer in the rules' state that only the view reads. The ring is the kit's now. Both modules are plain code, with no Effect, no clock and no allocation after they are made.
+
+  - **`Ring.make(capacity, layout)`.** A fixed number of records stored as one typed array per field, as a pool's entities are. Record n, counted from 0, is in slot `n % capacity`, which `Ring.slotOf(ring, n)` gives: a new record overwrites the oldest. `Ring.push` reserves the next record's slot and returns it with every field 0. `Ring.pop` forgets the newest record and returns its slot, or -1 when none is held, and `Ring.clear` forgets them all. `written` counts the records pushed and not popped, and `length` those still held, `capacity` at most. A capacity that is not a whole number of 1 or more is a `RangeError`.
+  - **`RingReader`.** How far one view has read one ring, made with `RingReader.make()`. `RingReader.take(reader, ring)` gives the number of the first record the reader has not taken, and takes every record up to `ring.written`. The first `take` of a ring gives `written`: a view shows what happens from now on. After that it gives where it stopped, or `written - capacity` if the ring has lapped it, and it starts again at `written` for another ring, after `RingReader.reset`, and when it finds `written` below what it took. It follows a ring whose `written` only grows: it is told of no `pop` or `clear`, so a ring the rules pop or clear is not followed. It writes nothing to the ring, so two views read one ring with a reader each.
+
+  A ring is one of two things, and the game says which by what its rules do with it:
+
+  - **A ring only views read** carries what a step did. The step pushes and never reads it back, so it cannot change what a run does, and the game's state hash leaves it out, as it leaves out its cue counters. It is lossy: a view that looks after more than `capacity` pushes has missed the oldest.
+  - **A ring the rules pop or read** is state, like any other field, such as an undo history. A state hash covers it, and no reader follows it.
+
+  ```ts
+  import { Ring, RingReader } from "arcadekit/core";
+
+  const hits = Ring.make(64, {
+    x: Float32Array,
+    z: Float32Array,
+    amount: Uint16Array,
+  });
+
+  // In the step: one record for the hit.
+  const hit = (x: number, z: number, amount: number) => {
+    const i = Ring.push(hits);
+    hits.fields.x[i] = x;
+    hits.fields.z[i] = z;
+    hits.fields.amount[i] = amount;
+  };
+
+  // In a view, on each frame: the hits since its last one.
+  const seen = RingReader.make();
+  const render = (show: (x: number, z: number, amount: number) => void) => {
+    for (let n = RingReader.take(seen, hits); n < hits.written; n++) {
+      const i = Ring.slotOf(hits, n);
+      show(hits.fields.x[i]!, hits.fields.z[i]!, hits.fields.amount[i]!);
+    }
+  };
+  ```
+
+  Push-puzzle uses both kinds. Its undo history is a ring its rules pop, in place of one it wrote by hand, and its rules push what a turn did that the board no longer shows to a ring its view reads: a box that filled a hole, and an undo. The view no longer compares the board with last frame.
+
+  Every export is new, and no recorded hash moved.
+
+- [#97](https://github.com/lucasthevenet/arcadekit/pull/97) [`967fd33`](https://github.com/lucasthevenet/arcadekit/commit/967fd33f7151aa9bfa278f36811ec7bb71d286f9) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/core` gains `TileMap`, a grid of cells in typed arrays with `TileMap.neighbor` and `TileMap.flood` (0.7.0's names: see the changeset that gives core Effect's module shape); `arcadekit/render-three` gains `TileLayer`, which draws the cells on screen from a function of the cell, and `PixelCamera.groundOnScreen` (0.7.0's names: see the changeset that gives render-three Effect's module shape). Nothing breaks.
+
+  Two games kept a grid of cells in typed arrays for their rules, and each wrote the same neighbour lookup and flood fill. Two views drew a floor of tiles around the camera, and each read the camera's edges, worked out which cells show and filled a sprite batch with them. Both are the kit's now, as plain code: no Effect, and nothing allocated in a step or in a frame.
+
+  - **`TileMap.make(cols, rows, layout)`.** A level's static cells, stored as a pool's entities are: one typed array per field, `cells` long, with cell (col, row) at `row * cols + col`. `TileMap.cellAt(map, col, row)` gives the cell or -1 off the map, and `TileMap.colOf` and `TileMap.rowOf` give them back. `TileMap.neighbor(map, cell, side)` gives the cell on a `TileMap.Side` (`west`, `east`, `north`, `south`, numbered 0 to 3, north the row above), or -1 off the map, and the neighbour of a cell off the map is -1. `TileMap.flood(map, start, passes, reached)` marks `start` in `reached` with 1, then every cell joined to it by sides through cells `passes` accepts, and returns how many it marked. It does not enter a cell already marked, so two floods share a mask. The map keeps the queue a flood walks, so `TileMap.neighbor` and `TileMap.flood` allocate nothing and a step may call them. A number of columns or of rows that is not a whole number of 1 or more is a `RangeError`, and so is a `reached` mask shorter than the map.
+  - **`PixelCamera.groundOnScreen(camera, out)`.** Writes the rectangle of ground the camera shows into a `Camera.MutableGroundBounds` the view keeps, and returns it as a `Camera.GroundBounds`. Call it after `follow` or `fit`.
+  - **`TileLayer`.** A grid of cells drawn from a sheet's frames in one draw call. `TileLayer.draw(layer, seen, frameOf)` shows the cells that touch `seen`: cell (col, row) is the square of ground from (col, row) to (col + 1, row + 1), drawn at its centre with the frame `frameOf(col, row)` gives, and left empty for a negative one. It fills a batch of its own, which grows with the window, and fills it again only when `seen` touches other cells or after `TileLayer.invalidate(layer)`. `tint` multiplies every tile's colours, `count` is the tiles of the last fill, and `mesh` goes in the scene. Its options are a batch's `unitsPerPixel` and `layer`. It imports nothing of the rules: a game with a tile map reads it in `frameOf`.
+  - **`DrawnSprites.read`** (`arcadekit/render-three/testing`) takes a `TileLayer` as well as a batch, and gives the tiles of its last fill.
+
+  ```ts
+  import { TileMap } from "arcadekit/core";
+  import { PixelCamera, TileLayer } from "arcadekit/render-three";
+  import type { Camera, SpriteSheet } from "arcadekit/render-three";
+
+  const WALL = 1;
+  const map = TileMap.make(16, 9, { tile: Uint8Array });
+  const { tile } = map.fields;
+
+  // In the rules. Before: the column and the row worked out from the cell, and four bounds.
+  export const canMove = (cell: number, side: TileMap.Side): boolean => {
+    const target = TileMap.neighbor(map, cell, side);
+    return target !== -1 && tile[target] !== WALL;
+  };
+
+  // Before: a stack, a `reached` array and a loop over four offsets. The mask is cleared first:
+  // a flood enters no cell already marked, so one from a cell an earlier flood marked marks none.
+  const reached = new Uint8Array(map.cells);
+  const open = (cell: number): boolean => tile[cell] !== WALL;
+  export const roomFrom = (cell: number): number => {
+    reached.fill(0);
+    return TileMap.flood(map, cell, open, reached);
+  };
+
+  // In the view. Before: the camera's four edges, floored, a loop over the cells between them
+  // and a compare with the window last filled.
+  export const makeGround = (
+    sheet: SpriteSheet.SpriteSheet,
+    camera: PixelCamera.PixelCamera
+  ) => {
+    const ground = TileLayer.make(sheet);
+    const seen: Camera.MutableGroundBounds = {
+      minX: 0,
+      maxX: 0,
+      minZ: 0,
+      maxZ: 0,
+    };
+    const frameOf = (col: number, row: number): number => {
+      const cell = TileMap.cellAt(map, col, row);
+      return cell === -1 ? -1 : tile[cell]!;
+    };
+    return {
+      mesh: ground.mesh,
+      draw: (x: number, z: number): void => {
+        PixelCamera.follow(camera, x, z);
+        TileLayer.draw(
+          ground,
+          PixelCamera.groundOnScreen(camera, seen),
+          frameOf
+        );
+      },
+    };
+  };
+  ```
+
+  Both genres use them. Push-puzzle's level is a tile map: its rules ask `TileMap.neighbor` for the cell a move goes to, and its parser floods from the player to find what is outside the walls. Its view draws the board and the menu's floor with one `TileLayer`, dimmed for the menu with `tint`. Survivors' ground is a `TileLayer` that asks which of the arena's tiles a cell shows, and its dirt patches, which are no cells, are a small batch of their own.
+
+  **Breaking**
+
+  - Nothing in the published package: every export is new, and `DrawnSprites.read` takes what it took.
+  - Not in the published package: `@arcadekit/push-puzzle`'s exported `Puzzle` has `map` in place of `cols`, `rows`, `tiles` and `goals` (`map.fields.tile` and `map.fields.goal`), and its view draws the board with its corner at the origin, a cell's centre at (col + 0.5, row + 0.5), where the board was centred on the origin. It lands on the same pixels: the camera fits the board where it now is.
+
+  No recorded hash moved: survivors' rules are untouched, and push-puzzle's replay ends in the state it recorded.
+
+- [#99](https://github.com/lucasthevenet/arcadekit/pull/99) [`d0985cb`](https://github.com/lucasthevenet/arcadekit/commit/d0985cb23a15d8a273c33b2a50fd038f7d9bf61f) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/core` is written as Effect's modules are: each of its modules is a namespace, with a data type named after it, its `make`, an `isX` guard, `pipe`, a printed form, and functions that take the value first and, given one argument less, return the function a `pipe` applies. **Breaking**: every export of `arcadekit/core` is renamed or reshaped.
+
+  Core stays plain: a step calls it, so it gives the same bits on every peer and finishes in the call, and it runs no Effect. It imports `effect` only for its shape (`Pipeable`, `Inspectable`, `Predicate`, `dual`). The arithmetic is the same, in the same order: no state hash a game recorded moves, and survivors' replay and determinism hashes hold.
+
+  ```ts
+  import { EntityPool, Rng, StateHash } from "arcadekit/core";
+
+  // Before: const rng = makeRng(42); const roll = rng.int(6);
+  const rng = Rng.make(42);
+  const roll = Rng.int(rng, 6);
+
+  // Before: const enemies = createPool(300, { ... }); const i = enemies.add();
+  const enemies = EntityPool.make(300, { x: Float32Array, hp: Float32Array });
+  const i = EntityPool.add(enemies);
+  enemies.fields.hp[i] = roll;
+
+  // Before: new StateHasher().number(roll).digest(), and visitPool(enemies, hasher.number).
+  const hash = StateHash.make().pipe(StateHash.add(roll));
+  EntityPool.visit(enemies, (value) => {
+    StateHash.add(hash, value);
+  });
+  const digest = StateHash.digest(hash);
+  ```
+
+  **Breaking**
+
+  Every export of `arcadekit/core` before, and what a game writes now:
+
+  | Before | Now |
+  | --- | --- |
+  | `createPool(capacity, layout)`, `Pool<L>` | `EntityPool.make(capacity, layout)`, `EntityPool.EntityPool<L>` |
+  | `pool.add()`, `pool.remove(i)`, `pool.clear()` | `EntityPool.add(pool)`, `EntityPool.remove(pool, i)`, `EntityPool.clear(pool)` |
+  | `createIdentifiedPool(capacity, layout)`, `IdentifiedPool<L>` | `EntityPool.makeIdentified(capacity, layout)`, `EntityPool.Identified<L>` |
+  | `pool.idOf(i)`, `pool.indexOf(id)`, `pool.addWithId(id)` | `EntityPool.idOf(pool, i)`, `EntityPool.indexOf(pool, id)`, `EntityPool.addWithId(pool, id)` |
+  | `PoolLayout`, `PoolFields<L>` | `Layout.Layout`, `Layout.Fields<L>` |
+  | `visitPool(pool, visit)` | `EntityPool.visit(pool, f)` |
+  | `createRing(capacity, layout)`, `Ring<L>` | `Ring.make(capacity, layout)`, `Ring.Ring<L>` |
+  | `ring.push()`, `ring.pop()`, `ring.slotOf(n)`, `ring.clear()` | `Ring.push(ring)`, `Ring.pop(ring)`, `Ring.slotOf(ring, n)`, `Ring.clear(ring)` |
+  | `new RingReader()`, `reader.take(ring)`, `reader.reset()` | `RingReader.make()`, `RingReader.take(reader, ring)`, `RingReader.reset(reader)` |
+  | `createTileMap(cols, rows, layout)`, `TileMap<L>`, `Side` | `TileMap.make(cols, rows, layout)`, `TileMap.TileMap<L>`, `TileMap.Side` |
+  | `map.cellAt(col, row)`, `map.colOf(cell)`, `map.rowOf(cell)`, `map.neighbor(cell, side)`, `map.flood(start, passes, reached)` | `TileMap.cellAt(map, col, row)`, `TileMap.colOf(map, cell)`, `TileMap.rowOf(map, cell)`, `TileMap.neighbor(map, cell, side)`, `TileMap.flood(map, start, passes, reached)` |
+  | `new SpatialGrid(options)`, `SpatialGridOptions` | `SpatialGrid.make(options)`, `SpatialGrid.Options` |
+  | `grid.build(xs, ys, count, radii?)`, `grid.query(…)`, `grid.within(…)`, `grid.nearest(…)` | `SpatialGrid.build(grid, xs, ys, count, radii?)`, `SpatialGrid.query(grid, …)`, `SpatialGrid.within(grid, …)`, `SpatialGrid.nearest(grid, …)` |
+  | `new FixedStepClock(stepSeconds?, maxStepsPerFrame?)` | `FixedStepClock.make({ stepSeconds?, maxStepsPerFrame? })` |
+  | `clock.advance(frameSeconds, step)`, `clock.reset()` | `FixedStepClock.advance(clock, frameSeconds, step)`, `FixedStepClock.reset(clock)` |
+  | `makeRng(seed)`, `Rng` | `Rng.make(seed)`, `Rng.Rng` |
+  | `rng.next()`, `rng.int(max)`, `rng.range(min, max)`, `rng.pickDistinct(items, count)` | `Rng.next(rng)`, `Rng.int(rng, max)`, `Rng.range(rng, min, max)`, `Rng.pickDistinct(rng, items, count)` |
+  | `new EventBuffer<E>()`, `events.push(event)`, `events.drain()` | `EventBuffer.make<E>()`, `EventBuffer.push(events, event)`, `EventBuffer.drain(events)` |
+  | `new StateHasher()`, `hasher.number(value)`, `hasher.digest()`, `hasher.reset()` | `StateHash.make()`, `StateHash.add(hash, value)`, `StateHash.digest(hash)`, `StateHash.reset(hash)` |
+  | `clamp`, `lerp`, `hypot2`, `sin`, `cos`, `powInt`, `hashCell` | `ExactMath.clamp`, `ExactMath.lerp`, `ExactMath.hypot2`, `ExactMath.sin`, `ExactMath.cos`, `ExactMath.powInt`, `ExactMath.hashCell` |
+  | `Point2`, a `{ x, y }` the caller writes | `Point2.Point2`, made with `Point2.make(x, y)` |
+  | `clampLength(x, y, max, out)`, `moveToward(x, y, targetX, targetY, maxStep, out)` | `Point2.clampLength(out, x, y, max)`, `Point2.moveToward(out, x, y, targetX, targetY, maxStep)`: the point first |
+  | `countDown`, `takeWhole` | `Timer.countDown`, `Timer.takeWhole` |
+  | `progress`, `easeIn`, `easeOut`, `easeOutCubic`, `smoothstep` | `Tween.progress`, `Tween.easeIn`, `Tween.easeOut`, `Tween.easeOutCubic`, `Tween.smoothstep` |
+
+  And what follows from the shape:
+
+  - **No class and no closure is left**: a pool, a ring, a reader, a tile map, a grid, a clock, an `Rng`, an event buffer and a state hash are values made by their module's `make`, with their state in fields and their behaviour in the module's functions. A function that took one as a method's receiver takes it first.
+  - **A value of a data type comes from its `make`.** An object written to look like one is not one: its guard says so, and its type refuses it. A `Point2` is `Point2.make(0, 0)`, where it was the literal `{ x: 0, y: 0 }`, and an `Rng` can't be written by hand.
+  - **A list a state hash folds takes a function made once**: `(value) => StateHash.add(hash, value)` in place of `hasher.number`.
+  - **Messages name the module's function**: `Ring.make needs a whole capacity of 1 or more`, `TileMap.make needs a whole number of columns and of rows`, `Rng.pickDistinct needs a whole count of 0 or more` and `ExactMath.powInt needs an integer exponent`, where they named `createRing`, `createTileMap`, `pickDistinct` and `powInt`. The other refusals are as they were.
+  - **New**: `Layout`, a namespace for the types of a layout and its fields; each data type's guard (`EntityPool.isEntityPool`, `EntityPool.isIdentified`, `Ring.isRing`, `RingReader.isRingReader`, `TileMap.isTileMap`, `SpatialGrid.isSpatialGrid`, `FixedStepClock.isFixedStepClock`, `Rng.isRng`, `EventBuffer.isEventBuffer`, `StateHash.isStateHash`, `Point2.isPoint2`); `pipe` and a printed form on each; `Rng.Rng`'s `state` and `EventBuffer.EventBuffer`'s `pending`, readonly fields that were hidden in a closure or a private field.
+
+  No other entry changes its exports. `RingReader.take` still takes anything with a ring's `capacity` and `written`.
+
+- [#104](https://github.com/lucasthevenet/arcadekit/pull/104) [`74fc8e7`](https://github.com/lucasthevenet/arcadekit/commit/74fc8e706d179ecf092d0a1e85b63e59afd55e98) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/audio` is written as Effect's modules are. `CueTable` keeps its builder, and a genre declares a cue table as before, with `AudioSystem.SoundId` for each cue. What a game plays through is the namespace `AudioSystem`: `AudioSystem.AudioSystem` is the audio system's type, a value with a `TypeId`, and the key of the service an app provides, as Effect's `KeyValueStore` is a store's. The mixer behind the browser's is `AudioMixer`, the player's settings are `AudioSettings`, and the browser's audio system is `BrowserAudioSystem.layer` in `arcadekit/audio/browser`. **Breaking**: every export but `CueTable` and its types moved into a namespace, and `makeAudioMixer` and `makeBrowserAudio` are gone.
+
+  A sound plays, loops, fades, ducks and is dropped as it was, and `load` decodes and fails as it did, with the same messages. What changed besides the names:
+
+  - **A test makes an audio system with `AudioSystem.make`.** It takes the calls the test cares about, and each one it isn't given does nothing, where a test spread `silentAudio` into an object of its own. `AudioSystem.isAudioSystem` tells one from a look-alike.
+  - **A mixer lives as long as its scope.** `AudioMixer.make` is scoped and stops every voice when its scope closes, where `mixer.dispose()` did; a mixer whose scope has closed can't be unlocked again. Its jitter comes from Effect's `Random`, read once when it is made, so `random` is no option: a test provides its own `Random`.
+  - **Loads are traced** as `AudioSystem.load`, whichever audio system runs them.
+  - **The browser's decode fails a response that isn't a success with an `AudioLoadError`** naming its status, rather than throwing inside the promise, and the browser's layer waits for its AudioContext to close when its scope closes.
+  - **`AudioLoadError` is a `Schema.TaggedError`**, with the same tag and fields, so `Effect.catchTag("AudioLoadError", ...)` is as it was.
+
+  ```ts
+  import { AudioSettings, AudioSystem, CueTable } from "arcadekit/audio";
+  import type { CueSoundsOf } from "arcadekit/audio";
+  import { BrowserAudioSystem } from "arcadekit/audio/browser";
+  import { Setting } from "arcadekit/save";
+  import { Effect, Layer } from "effect";
+
+  // Before: lap: SoundId
+  export class RaceCueTable extends CueTable("RaceCueTable", {
+    cues: { lap: AudioSystem.SoundId },
+  }) {}
+
+  // Before: (audio: AudioSystem, sounds: ...) => audio.play(sounds.lap)
+  export const playLap = (
+    audio: AudioSystem.AudioSystem,
+    sounds: CueSoundsOf<typeof RaceCueTable>
+  ): void => audio.play(sounds.lap);
+
+  // Before: schema: AudioSettings, default: defaultAudioSettings
+  export class RaceAudioSettings extends Setting("RaceAudioSettings", {
+    storageKey: "my-studio/race/settings",
+    schema: AudioSettings.AudioSettings,
+    default: AudioSettings.defaults,
+  }) {}
+
+  // Before: applyAudioSettings(yield* Audio, settings), and Layer.provide(BrowserAudioLayer)
+  export const applyStored = Effect.gen(function* () {
+    const settings = yield* (yield* RaceAudioSettings).read;
+    AudioSystem.applySettings(yield* AudioSystem.AudioSystem, settings);
+  });
+
+  // Before: { ...silentAudio, play: (id) => played.push(id) }, and Layer.succeed(Audio, audio)
+  const played: string[] = [];
+  export const recording = Layer.succeed(
+    AudioSystem.AudioSystem,
+    AudioSystem.make({ play: (id) => played.push(id) })
+  );
+  export const appAudio = BrowserAudioSystem.layer;
+  ```
+
+  **Breaking**
+
+  Every export of `arcadekit/audio` and `arcadekit/audio/browser` before, and what a game writes now:
+
+  | Before | Now |
+  | --- | --- |
+  | `Audio`, a service class keyed `arcadekit/audio/Audio` | `AudioSystem.AudioSystem`, keyed `arcadekit/audio/AudioSystem` (`uses: { audio: AudioSystem.AudioSystem }`, `yield* AudioSystem.AudioSystem`) |
+  | `AudioSystem`, an interface | `AudioSystem.AudioSystem`, the same key's type, with a `TypeId` |
+  | an object of a test's own as an audio system | `AudioSystem.make({ ... })`, which `AudioSystem.isAudioSystem` recognises |
+  | `silentAudio` | `AudioSystem.silent` |
+  | `SilentAudioLayer` | `AudioSystem.layerSilent` |
+  | `applyAudioSettings(audio, settings)` | `AudioSystem.applySettings(audio, settings)`, or `audio.pipe(AudioSystem.applySettings(settings))` |
+  | `AudioBus`, `SoundDef`, `SoundList` | `AudioSystem.Bus`, `AudioSystem.Sound`, `AudioSystem.SoundList` |
+  | `SoundId` | `AudioSystem.SoundId` |
+  | `AudioLoadError`, a `Data.TaggedError` | `AudioSystem.AudioLoadError`, a `Schema.TaggedError` with the same tag and fields |
+  | `AudioSettings`, a Schema and its type | `AudioSettings.AudioSettings`, a Schema and its type |
+  | `defaultAudioSettings` | `AudioSettings.defaults` |
+  | `makeAudioMixer({ decode, random, duckedMusic })`, an `Effect<AudioMixer>` | `AudioMixer.make({ decode, duckedMusic })`, an `Effect<AudioMixer.AudioMixer, never, Scope>`; its jitter comes from Effect's `Random` |
+  | `AudioMixer`, an `AudioSystem` with `unlock`, `setHidden` and `dispose` | `AudioMixer.AudioMixer`, whose `system` is its audio system; `AudioMixer.unlock(mixer, output)`, `AudioMixer.setHidden(mixer, hidden)`, and its scope in place of `dispose()` |
+  | `AudioMixerOptions`, `AudioOutput`, `AudioGain`, `AudioVoice`, `AudioClip` | `AudioMixer.Options`, `AudioMixer.Output`, `AudioMixer.Gain`, `AudioMixer.Voice`, `AudioMixer.Clip` |
+  | `makeBrowserAudio` (`arcadekit/audio/browser`) | gone: `BrowserAudioSystem.layer` is the browser's audio system |
+  | `BrowserAudioLayer` (`arcadekit/audio/browser`) | `BrowserAudioSystem.layer` (`arcadekit/audio/browser`) |
+
+  `CueTable`, `CueTableClass`, `CueTableDefinition`, `CueTableId`, `CueTableService`, `AnyCueTable`, `CueSounds` and `CueSoundsOf` keep their names, and so do a cue table's `kind`, `cueTableName`, `cues` and `layer`, and an audio system's `play`, `setLoop`, `playMusic`, `setVolume`, `setMuted`, `setDucked` and `load`.
+
+- [#101](https://github.com/lucasthevenet/arcadekit/pull/101) [`c93ae44`](https://github.com/lucasthevenet/arcadekit/commit/c93ae443a50efd8cb1e5014881ac1199167e6b19) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/content` is written as Effect's modules are. `Content` and `Asset` keep their builders, and a game declares them as before. Where a content's files come from is the namespace `ContentSource`: a data type with a `TypeId`, its `make`, `fromRecord`, an `isContentSource` guard, `pipe`, a printed form, and `read`, which takes the source first and, given the file alone, returns the function a `pipe` applies. Its error, `ContentSource.ContentError`, is a `Schema.TaggedError`. The browser's source is `FetchContentSource.fromUrl` in `arcadekit/content/browser`. **Breaking**: every export but the two builders and their types is renamed or reshaped.
+
+  A content loads and checks its files as it did: every file at once, then the Schema, then `validate`, with the same messages, and the first success kept for the app. What changed besides the names:
+
+  - **A content source is a value, not a function.** Make one with `ContentSource.make(read)`, and read a file of one with `ContentSource.read(source, file)`. A function of a file's name is no longer a source, and a declaration's `layer` and `read` refuse one as a type error.
+  - **A content error can keep what was thrown.** `ContentError` has an optional `cause` beside its `message`: a source that wraps a throw (a failed `fetch`, a parse) keeps it there. An app still catches it by its tag, `Effect.catchTag("ContentError", ...)`, which didn't change.
+  - **The fetch source aborts what it no longer needs.** An interrupted read aborts its request, where before the request ran on. A response that isn't a success fails with `Could not load levels.json: HTTP 404` (it was `... : Error: HTTP 404`), and a body that isn't JSON with `Could not read levels.json as JSON: ...`. Each failure of a request keeps what `fetch` threw as its `cause`.
+  - **Loads and reads are traced.** A trace shows each `load` as `<Name>.load` (`PushPuzzleContent.load`, `PushPuzzleSheet.load`), each reading of a content's files as `<Name>.read`, and each file a source reads as `ContentSource.read`. A failure from them carries those spans in its cause's annotations, so a test that compares a whole `Exit` with `Exit.fail(error)` now compares the cause's reasons, or the error itself (`Effect.flip`).
+  - **A record source serves only its own keys.** `ContentSource.fromRecord({})` has no file named `"constructor"`, which `memorySource` found on the object's prototype.
+
+  ```ts
+  import { readFileSync } from "node:fs";
+
+  import { ContentSource } from "arcadekit/content";
+  import { FetchContentSource } from "arcadekit/content/browser";
+  import { Effect } from "effect";
+
+  import { RaceContent } from "./content";
+
+  // In the app. Before: RaceContent.layer(fetchJsonSource("/content/"))
+  export const contentLayer = RaceContent.layer(
+    FetchContentSource.fromUrl("/content/")
+  );
+
+  // In a test. Before: const fileSource: ContentSource = (file) => Effect.try({ ... })
+  const fileSource = ContentSource.make((file) =>
+    Effect.try({
+      try: () =>
+        JSON.parse(readFileSync(new URL(file, import.meta.url), "utf-8")),
+      // Before: new ContentError({ message: String(cause) })
+      catch: (cause) =>
+        new ContentSource.ContentError({ message: String(cause), cause }),
+    })
+  );
+  export const shipped = RaceContent.read(fileSource);
+
+  // Before: RaceContent.read(memorySource({ "tracks.json": [] }))
+  export const empty = RaceContent.read(
+    ContentSource.fromRecord({ "tracks.json": [] })
+  );
+  ```
+
+  **Breaking**
+
+  Every export of `arcadekit/content` and `arcadekit/content/browser` before, and what a game writes now:
+
+  | Before | Now |
+  | --- | --- |
+  | `ContentSource`, a function `(file) => Effect<unknown, ContentError>` | `ContentSource.ContentSource`, a value made with `ContentSource.make((file) => ...)` |
+  | calling a source, `source(file)` | `ContentSource.read(source, file)`, or `source.pipe(ContentSource.read(file))` |
+  | `memorySource(files)` | `ContentSource.fromRecord(files)` |
+  | `ContentError`, a `Data.TaggedError` with a `message` | `ContentSource.ContentError`, a `Schema.TaggedError` with a `message` and an optional `cause` |
+  | `fetchJsonSource(baseUrl)` (`arcadekit/content/browser`) | `FetchContentSource.fromUrl(baseUrl)` (`arcadekit/content/browser`) |
+  | `loadOnce(load, release)`, what `Content` and `Asset` are built on | Gone: a declaration's `layer` is the one way to keep a load's first success. Declare an `Asset` for anything an app loads once |
+
+  And what follows from the shape: a source is not a function, so `ContentSource.isContentSource(value)` tells one apart. `Content`, `Asset`, `ContentClass`, `ContentDefinition`, `ContentId`, `ContentService`, `AssetClass`, `AssetId`, `AssetService` and `Loaded` keep their names; `ContentClass`'s `layer` and `read` take a `ContentSource.ContentSource`, and `ContentDefinition` is exported from the same file as `Content`.
+
+- [#107](https://github.com/lucasthevenet/arcadekit/pull/107) [`097602b`](https://github.com/lucasthevenet/arcadekit/commit/097602b8f2a3c8f3a4faa7aeebf3f64447efffa3) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/foldkit` is written as Effect's modules are: its modules are four namespaces, `Viewport`, `EngineEntry`, `KeyPresses` and `ShortcutPresses`, each with a `make`, and every export has Effect's doc comment, with an example that runs. **Breaking**: every export of `arcadekit/foldkit` is renamed.
+
+  What an app sees besides the names:
+
+  - **The viewport and the engine entry work as they did.** `Viewport.make` renders the same `div.viewport`, whose Mount is still named `"GameViewport"`, so a Scene test resolves it as before. `EngineEntry.make` takes the same config (`engine`, `isViewportMounted`, `toMessage`, `onError`, required exactly when the engine can fail), attaches one engine at a time, and sends `onError`'s Message once. A viewport missing from the document still dies; its message now names `Viewport.make`.
+  - **Key presses are Effect's own Stream of a DOM event.** `KeyPresses.make` and `ShortcutPresses.make` are `Stream.fromEventListener` on the window's `keydown`, and report the same presses: no auto-repeat, and for a shortcut no Ctrl, Cmd or Alt and no text field. The window is read when the Stream runs, so an app may make one as its module loads (`Subscription.persistentEntry(ShortcutPresses.make(["KeyM"], ...))`) where a test in Node has no window.
+  - **`toMessage` is given the code as one of the keys listed.** `KeyPresses.make(["KeyR", "Escape"], (code) => ...)` types `code` as `"KeyR" | "Escape"`, so comparing it with a key that isn't listed is a type error.
+
+  ```ts
+  import {
+    EngineEntry,
+    KeyPresses,
+    ShortcutPresses,
+    Viewport,
+  } from "arcadekit/foldkit";
+
+  // Before: gameViewport(h, { mounted, unmounted })
+  Viewport.make(h, { mounted, unmounted });
+
+  // Before: engineEntry({ engine: RaceEngine, isViewportMounted, toMessage, onError })
+  EngineEntry.make({
+    engine: RaceEngine,
+    isViewportMounted,
+    toMessage,
+    onError,
+  });
+
+  // Before: keyPresses(["KeyR"], toMessage) and shortcutPresses(["KeyM"], toMessage)
+  KeyPresses.make(["KeyR"], toMessage);
+  ShortcutPresses.make(["KeyM"], toMessage);
+  ```
+
+  **Breaking**
+
+  Every export of `arcadekit/foldkit` before, and what an app writes now:
+
+  | Before | Now |
+  | --- | --- |
+  | `gameViewport(h, messages)` | `Viewport.make(h, messages)` |
+  | `GameViewportMessages<Message>` | `Viewport.Messages<Message>` |
+  | `engineEntry(config)` | `EngineEntry.make(config)` |
+  | `EngineEntryConfig<Model, Message, Event, R, E, A>` | `EngineEntry.Config<Model, Message, Event, R, E, A>` |
+  | `AttachableEngine<Event, E>` | `EngineEntry.Attachable<Event, E>` |
+  | what `engineEntry` returned, Foldkit's `Subscription.EntryWithoutKeepAlive<…>` | the same type, named `EngineEntry.EngineEntry<Model, Message, R>` |
+  | `keyPresses(codes, toMessage)` | `KeyPresses.make(codes, toMessage)` |
+  | `shortcutPresses(codes, toMessage)` | `ShortcutPresses.make(codes, toMessage)` |
+
+- [#105](https://github.com/lucasthevenet/arcadekit/pull/105) [`78bed96`](https://github.com/lucasthevenet/arcadekit/commit/78bed9609226dbd3e6fd1ab607ec44f1df5be06f) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/game` is written as Effect's modules are, and every export of `arcadekit/game`, `arcadekit/game/browser`, `arcadekit/game/scenario` and `arcadekit/game/testing` has Effect's doc comment, with an example that runs. `Game.Event`, `Game.Command`, `Game.Rejection`, `Game.Simulation` and `Game.Engine` keep their builders, and a game declares its parts as before. **Breaking**: a loop is made with `Game.makeLoop`, the frames a test drives are the namespace `ManualFrames`, and the entry's three errors are `Schema.TaggedError`s.
+
+  What changed besides the names:
+
+  - **A loop is a host with a `TypeId`.** `Game.makeLoop(simulation)` makes a `Game.Loop`, with `pipe` and a printed form, and `Game.isLoop` tells one from a look-alike. Its methods (`start`, `send`, `setPaused`, `stop`, `subscribe`, `frame`) and its `state` and `stepIndex` are as they were, and so is every step it runs: no recorded hash moves.
+  - **The running engine is a value with a `TypeId`.** What `yield* MyEngine` gives has `pipe` and a printed form, and `Game.isEngine` recognises it. Its Effects are traced under the declared name: `MyEngine.attach`, `MyEngine.start`, `MyEngine.send`, `MyEngine.listen`, `MyEngine.setPaused` and `MyEngine.stop`.
+  - **The frame loop waits on each frame on its own.** `Game.frameLoop` asks for each frame with an `Effect.callback` that cancels it when interrupted, and is traced as `Game.frameLoop`. It still asks for the next frame in the call of the one that drew, so a test's `ManualFrames.runFrameAt` has run the whole frame when it returns. A failure of `attach` or of the frame loop carries the span in its cause: a test that compared the whole `Exit` with `Exit.fail(error)` compares the error instead (`Effect.flip`) or the cause's reasons.
+  - **`AttachError`, `GameCrashed` and `CommandDropped` are `Schema.TaggedError`s**, with the fields they had. An app catches each by its tag, as before.
+  - **The kernel under the loop is in the entry's `internal/`**, which no entry exports, as before.
+
+  ```ts
+  import * as Game from "arcadekit/game/browser";
+  import { ManualFrames } from "arcadekit/game/testing";
+  import { Layer } from "effect";
+
+  // Before: const loop = new Game.Loop(Race);
+  const loop = Game.makeLoop(Race);
+
+  // Before: const frames = manualFrames();
+  const frames = ManualFrames.make();
+  const frameSource = Layer.succeed(Game.Frames, frames);
+
+  // Before: frames.runFrameAt(16) and frames.waiting()
+  ManualFrames.runFrameAt(frames, 16);
+  ManualFrames.waiting(frames);
+  ```
+
+  **Breaking**
+
+  Every export that changed, and what a game writes now. The others keep their names and types.
+
+  | Before | Now |
+  | --- | --- |
+  | `new Game.Loop(simulation)` | `Game.makeLoop(simulation)` |
+  | `Game.Loop<...>`, a class | `Game.Loop<...>`, an interface with a `TypeId`; `Game.isLoop` is new |
+  | `Game.Engine<...>`, the running engine, an object of Effects | the same Effects, on a value with a `TypeId`; `Game.isEngine` is new |
+  | `Game.AttachError`, `Game.GameCrashed`, `Game.CommandDropped`, `Data.TaggedError`s | the same names and fields, `Schema.TaggedError`s |
+  | `manualFrames()` (`arcadekit/game/testing`) | `ManualFrames.make()` |
+  | `ReturnType<typeof manualFrames>` | `ManualFrames.ManualFrames`; `ManualFrames.isManualFrames` is new |
+  | `frames.runFrameAt(nowMs)` | `ManualFrames.runFrameAt(frames, nowMs)`, or `frames.pipe(ManualFrames.runFrameAt(nowMs))` |
+  | `frames.waiting()` | `ManualFrames.waiting(frames)` |
+  | `Scenario.ScenarioRunner<...>` | `Scenario.Runner<...>` |
+  | `Scenario.ScenarioStep<Runner>` | `Scenario.Step<Runner>` |
+  | `Scenario.ScenarioSteps<Runner>` | `Scenario.Steps<Runner>` |
+
+  The changelog keeps the old names: read it through this table.
+
+- [#100](https://github.com/lucasthevenet/arcadekit/pull/100) [`76011ba`](https://github.com/lucasthevenet/arcadekit/commit/76011ba6255e9e0d611d5181f4c985e4cbc0ac99) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/input` is written as Effect's modules are: its one module is the namespace `InputController`, with a data type named after it, its `make`, an `isInputController` guard, `pipe`, a printed form, and functions that take the controller first and, given the name alone, return the function a `pipe` applies. **Breaking**: every export of `arcadekit/input` is renamed or reshaped.
+
+  A controller reads its devices as it did: the same keys, sticks, drags and swipes, the same deadzone, the same one press per step. Its reads stay plain, since a step reads its input inside the frame or tick that runs it, and it runs no Effect. It now imports `effect`, for its shape only (`Pipeable`, `Inspectable`, `Predicate`, `dual`). A name the bindings don't give is a type error on every read, as it was.
+
+  ```ts
+  import { InputController } from "arcadekit/input";
+
+  export const raceInput = (surface: HTMLElement) => {
+    // Before: new InputController(surface, { axes: MOVE_AXES, buttons: { ... } })
+    const controller = InputController.make(surface, {
+      axes: InputController.moveAxes,
+      buttons: { dash: { keys: ["Space"] } },
+    });
+    const input = { moveX: 0, dash: false };
+    return {
+      read: () => {
+        // Before: controller.axis("moveX"), controller.wasPressed("dash")
+        input.moveX = InputController.axis(controller, "moveX");
+        input.dash = InputController.wasPressed(controller, "dash");
+        return input;
+      },
+      // Before: controller.consumePresses(), controller.endFrame(), controller.dispose()
+      endStep: () => InputController.consumePresses(controller),
+      endFrame: () => InputController.endFrame(controller),
+      dispose: () => InputController.dispose(controller),
+    };
+  };
+  ```
+
+  **Breaking**
+
+  Every export of `arcadekit/input` before, and what a game writes now:
+
+  | Before | Now |
+  | --- | --- |
+  | `new InputController(surface, bindings)` | `InputController.make(surface, bindings)` |
+  | `InputController<Axis, Button>`, the class as a type | `InputController.InputController<Axis, Button>`, an interface with a readonly `bindings` |
+  | `controller.axis(name)` | `InputController.axis(controller, name)`, or `controller.pipe(InputController.axis(name))` |
+  | `controller.isDown(name)`, `controller.wasPressed(name)` | `InputController.isDown(controller, name)`, `InputController.wasPressed(controller, name)` |
+  | `controller.consumePresses()`, `controller.endFrame()`, `controller.dispose()` | `InputController.consumePresses(controller)`, `InputController.endFrame(controller)`, `InputController.dispose(controller)` |
+  | `InputBindings<Axis, Button>` | `InputController.Bindings<Axis, Button>` |
+  | `AxisBinding`, `ButtonBinding`, `SwipeDirection` | `InputController.AxisBinding`, `InputController.ButtonBinding`, `InputController.SwipeDirection` |
+  | `MOVE_AXES` | `InputController.moveAxes` |
+
+  And what follows from the shape: a controller is not an instance of a class, so `instanceof InputController` is `InputController.isInputController(value)`, and it has no methods but `pipe` and the printing ones (`toJSON`, `toString`).
+
+- [#108](https://github.com/lucasthevenet/arcadekit/pull/108) [`1d6e65b`](https://github.com/lucasthevenet/arcadekit/commit/1d6e65bd0cb86601e7b35ead07209570300d67bb) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/net` is written as Effect's modules are, and every export of `arcadekit/net`, `arcadekit/net/browser`, `arcadekit/net/testing`, `arcadekit/net/signalling` and `arcadekit/net/worker` has Effect's doc comment, with an example that runs. Each entry's public file exports namespaces, and `Coop` keeps its builder: a game declares its Coop as before. **Breaking**: every other export is renamed into a namespace, the entry's errors are `Schema.TaggedError`s, and the test helpers, the in-memory network, a transport, a peer link and a signalling room are data types with a `TypeId`.
+
+  What changed besides the names:
+
+  - **The lockstep protocol is as it was.** A tick decides each step's input and runs the steps in the call that ticks it, on the time it is given, with its resends, its stall timers and its listeners inside it. A session's `tick`, `subscribe`, `send` and `dispose` are its methods, as `Game.Loop`'s are, on a value with a `TypeId`. No recorded hash moves.
+  - **A scoped session's Effects are traced**, as `ScopedLockstepSession.run`, `.listen`, `.send`, and its constructors as `ScopedLockstepSession.host` and `.join`. So are a Co-op client's methods, under the declared name (`SumCoop.host`, `SumCoop.send`, `SumCoop.attach` …), a signalling room's constructors and a peer connector's `connect`. A failure's cause carries the span: compare the error (`Effect.flip`) or the cause's reasons, not a whole `Exit`.
+  - **A co-op host draws its run's seed from Effect's `Random`**, as an engine's run does, where it read `crypto.getRandomValues`. Every guest gets the host's seed in its start message, as before.
+  - **`LockstepError`, `RoomError` and `PeerLinkError` are `Schema.TaggedError`s**, with the fields they had. An app catches each by its tag, as before.
+  - **A transport, a peer link, a signalling room, a peer connector, the Co-op rooms and a Co-op client are made with their module's `make`**, so a test's stand-in for one is `Transport.make({ self, send, listen })`, `PeerLink.make(...)`, `SignallingRoom.make(...)`, `PeerConnector.make({ connect })`, `CoopRooms.make({ host, join })` or `CoopClient.make(...)`, not an object literal.
+  - **A test on fake timers provides `PageTimers.layer`** to each of its Effects, where it wrapped them in `onFakeTimers`: the same Clock and scheduler, as services.
+  - **The signalling protocol is a module per type** (`ClientMessage`, `ServerMessage`, `Signal`, `PeerId`, `JoinCode`, `Room`), its constants camelCase.
+
+  ```ts
+  import {
+    LockstepSession,
+    MemoryNetwork,
+    ScopedLockstepSession,
+  } from "arcadekit/net";
+  import {
+    CoopRooms,
+    RtcPeerConnector,
+    RtcTransport,
+    SignallingRoom,
+  } from "arcadekit/net/browser";
+  import {
+    FakeCoopRooms,
+    ManualTicker,
+    PageTimers,
+    TestGame,
+  } from "arcadekit/net/testing";
+  import { SignallingWorker } from "arcadekit/net/worker";
+  import { Effect, Layer } from "effect";
+
+  // Before: const network = createMemoryNetwork({ seed: 1 }); network.connect("host"); network.advance(4);
+  const network = MemoryNetwork.make({ seed: 1 });
+  const transport = MemoryNetwork.connect(network, "host");
+  MemoryNetwork.advance(network, 4);
+
+  // Before: hostLockstep(options, 0), joinLockstep(options, 0), hostLockstepScoped(options)
+  //   LockstepSession.host(options, 0), LockstepSession.join(options, 0), ScopedLockstepSession.host(options)
+
+  // Before: browserCoopRoomsLayer(() => ({ url, iceServers: DEFAULT_ICE_SERVERS }))
+  const rooms = CoopRooms.layer(() => ({
+    url: "wss://game.example.com",
+    iceServers: RtcPeerConnector.defaultIceServers,
+  }));
+
+  // Before: const hub = fakeCoopRooms(); hub.layer; const timer = manualTicker(); timer.layer; timer.tick();
+  const hub = FakeCoopRooms.make();
+  const timer = ManualTicker.make();
+  const testRooms = Layer.mergeAll(
+    FakeCoopRooms.layer(hub),
+    ManualTicker.layer(timer)
+  );
+  ManualTicker.tick(timer);
+
+  // Before: Effect.runPromise(onFakeTimers(effect))
+  const onPage = <A, E>(effect: Effect.Effect<A, E>) =>
+    Effect.runPromise(effect.pipe(Effect.provide(PageTimers.layer)));
+
+  // Before: export class SignallingRoom extends signallingRoom() {}; export default signallingWorker({ ... });
+  export class Room extends SignallingWorker.room() {}
+  export default SignallingWorker.make({ rooms: "ROOMS", assets: "ASSETS" });
+  ```
+
+  **Breaking**
+
+  Every export that changed, and what a game writes now. `Coop` and its types (`AnyCoop`, `CoopCases`, `CoopClass`, `CoopDefinition`, `CoopId`, `CoopService`, `RunCases`) keep their names and types.
+
+  | Before | Now |
+  | --- | --- |
+  | `hostLockstep(options, nowMs)`, `joinLockstep(options, nowMs)` | `LockstepSession.host(options, nowMs)`, `LockstepSession.join(options, nowMs)` |
+  | `LockstepSession<...>` | `LockstepSession.LockstepSession<...>`, with a `TypeId`; `LockstepSession.isLockstepSession` is new |
+  | `LockstepOptions`, `HostOptions`, `JoinOptions`, `LockstepStatus` | `LockstepSession.Options`, `.HostOptions`, `.JoinOptions`, `.Status` |
+  | `LockstepError`, a `Data.TaggedError`; `StopReason`, `RemovedWhy` | `LockstepSession.LockstepError`, a `Schema.TaggedError`; `LockstepSession.StopReason`, `.RemovedWhy` |
+  | `hostLockstepScoped(options)`, `joinLockstepScoped(options)` | `ScopedLockstepSession.host(options)`, `ScopedLockstepSession.join(options)` |
+  | `ScopedLockstepSession<...>` | `ScopedLockstepSession.ScopedLockstepSession<...>`, with a `TypeId`; `ScopedLockstepSession.isScopedLockstepSession` is new |
+  | `Ticker` | `Ticker.Ticker` |
+  | `createMemoryNetwork(options)`, `MemoryNetwork`, `MemoryNetworkOptions` | `MemoryNetwork.make(options)`, `MemoryNetwork.MemoryNetwork`, `MemoryNetwork.Options`; `MemoryNetwork.isMemoryNetwork` is new |
+  | `network.connect(id)`, `network.advance(nowMs)`, `network.cutOff(id, cut)` | `MemoryNetwork.connect(network, id)`, `MemoryNetwork.advance(network, nowMs)`, `MemoryNetwork.cutOff(network, id, cut)` |
+  | `Transport` (an interface a literal could be), `PeerId` | `Transport.Transport`, made with `Transport.make`; `Transport.PeerId`; `Transport.isTransport` is new |
+  | `linksTransport(self, links)` | `RtcTransport.fromLinks(self, links)` |
+  | `PeerLink`, `TextChannel` | `PeerLink.PeerLink`, made with `PeerLink.make`; `PeerLink.TextChannel`; `PeerLink.isPeerLink` is new |
+  | `PeerLinkError`, a `Data.TaggedError` | `PeerConnector.PeerLinkError`, a `Schema.TaggedError` |
+  | `PeerConnector` (a class), `PeerConnectorApi`, `PeerLinkOptions` | `PeerConnector.PeerConnector` (the key and the shape), made with `PeerConnector.make`; `PeerConnector.ConnectOptions`; `PeerConnector.isPeerConnector` is new |
+  | `rtcPeerConnector(options)`, `RtcOptions`, `DEFAULT_ICE_SERVERS`, `PeerConnectionLike`, `IceCandidateLike`, `DataChannelLike` | `RtcPeerConnector.make(options)`, `RtcPeerConnector.Options`, `.defaultIceServers`, `.PeerConnectionLike`, `.IceCandidateLike`, `.DataChannelLike`; `RtcPeerConnector.layer` is new |
+  | `hostRoom(options)`, `joinRoom(options, code)`, `browserRoomLayer(rtc)` | `SignallingRoom.host(options)`, `SignallingRoom.join(options, code)`, `SignallingRoom.layer(rtc)` |
+  | `SignallingRoom`, `RoomOptions`, `RoomEvent`, `RoomServices` | `SignallingRoom.SignallingRoom`, made with `SignallingRoom.make`; `SignallingRoom.Options`, `.Event`, `.Services`; `SignallingRoom.isSignallingRoom` is new |
+  | `RoomError`, a `Data.TaggedError`; `RoomFailure` | `SignallingRoom.RoomError`, a `Schema.TaggedError`; `SignallingRoom.RoomFailure` |
+  | `CoopRooms` (a class), `Rooms`, `browserCoopRoomsLayer(options)` | `CoopRooms.CoopRooms` (the key and the shape), made with `CoopRooms.make`; `CoopRooms.layer(options)`; `CoopRooms.isCoopRooms` is new |
+  | `CoopTicker` | `CoopTicker.CoopTicker` |
+  | `CoopClient<...>`, `CoopDebug<State>` | `CoopClient.CoopClient<...>`, with a `TypeId`, made with `CoopClient.make`; `CoopClient.Debug<State>`; `CoopClient.isCoopClient` is new |
+  | `LobbyChanged`, `RunStarted`, `WaitingChanged`, `SeatFailed`, `CoopEvent<Event>`, `RunEvent<Event>`, `SeatContext`, `LobbyPlayer`, `CoopFailure` | `CoopEvent.LobbyChanged`, `.RunStarted`, `.WaitingChanged`, `.SeatFailed`, `CoopEvent.CoopEvent<Event>`, `.RunEvent<Event>`, `.SeatContext`, `.LobbyPlayer`, `CoopEvent.Failure` |
+  | `fakeCoopRooms()`, `FakeCoopRooms`, `FAKE_JOIN_CODE` | `FakeCoopRooms.make()`, `FakeCoopRooms.FakeCoopRooms`, `FakeCoopRooms.joinCode`; `FakeCoopRooms.isFakeCoopRooms` is new |
+  | `hub.layer`, `hub.drop(peer)`, `hub.closeHost()` | `FakeCoopRooms.layer(hub)`, `FakeCoopRooms.drop(hub, peer)`, `FakeCoopRooms.closeHost(hub)` |
+  | `manualTicker()`, `timer.layer`, `timer.tick()`, `timer.ticking()` | `ManualTicker.make()`, `ManualTicker.layer(timer)`, `ManualTicker.tick(timer)`, `ManualTicker.ticking(timer)`; `ManualTicker.isManualTicker` is new |
+  | `onFakeTimers(effect)` | `effect.pipe(Effect.provide(PageTimers.layer))` |
+  | `TestGame`, `Score`, `OfferOpened`, `RunEnded`, `NothingOwed`, `AnswerOffer`, `HoldPause` | `TestGame.TestGame`, `TestGame.Score`, `.OfferOpened`, `.RunEnded`, `.NothingOwed`, `.AnswerOffer`, `.HoldPause` |
+  | `TestContent`, `TestConfig`, `TestInput`, `TestState`, `TestEvent`, `TestCommand`, `TestRefusals` | `TestGame.Content`, `.Config`, `.Input`, `.State`, `.Event`, `.Command`, `.Refusals` |
+  | `testContent`, `hashTestState` | `TestGame.content`, `TestGame.hash` |
+  | `PeerId`, `MAX_PEER_ID_LENGTH`, `HOST_ID` (`arcadekit/net/signalling`) | `PeerId.PeerId`, `PeerId.maxLength`, `PeerId.host` |
+  | `JoinCode`, `JOIN_CODE_ALPHABET`, `JOIN_CODE_LENGTH`, `joinCodeFromBytes`, `normalizeJoinCode`, `joinCodeFromPath` | `JoinCode.JoinCode`, `JoinCode.alphabet`, `JoinCode.length`, `JoinCode.fromBytes`, `JoinCode.fromTyped`, `JoinCode.fromPath` |
+  | `Signal`, `MAX_TOKEN_LENGTH` | `Signal.Signal`, `Signal.maxTokenLength` |
+  | `ClientMessage`, `MAX_MESSAGE_LENGTH`, `parseClientMessage` | `ClientMessage.ClientMessage`, `ClientMessage.maxLength`, `ClientMessage.fromJson` |
+  | `ServerMessage`, `ErrorReason`, `parseServerMessage` | `ServerMessage.ServerMessage`, `ServerMessage.ErrorReason`, `ServerMessage.fromJson` |
+  | `DEFAULT_ROOM_SIZE`, `MAX_ROOM_SIZE`, `ROOM_TTL_MS` | `Room.defaultSize`, `Room.maxSize`, `Room.ttlMs` |
+  | `signallingRoom(options)`, `SignallingRoomOptions`, `SignallingRoomClass` (`arcadekit/net/worker`) | `SignallingWorker.room(options)`, `SignallingWorker.RoomOptions`, `SignallingWorker.RoomClass` |
+  | `signallingWorker(options)`, `SignallingWorkerOptions`, `SignallingWorkerEnv`, `SignallingWorker` | `SignallingWorker.make(options)`, `SignallingWorker.Options`, `SignallingWorker.Env`, `SignallingWorker.Handler` |
+
+  The changelog keeps the old names: read it through this table.
+
+- [#106](https://github.com/lucasthevenet/arcadekit/pull/106) [`fd518ae`](https://github.com/lucasthevenet/arcadekit/commit/fd518ae16160aa2a45762e47b0df7bf204125c6a) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/render-three` and `arcadekit/render-three/testing` are written as Effect's modules are. Each module is a namespace: `Stage`, `PixelCamera`, `Camera`, `SpriteSheet`, `InstancedSprites`, `TileLayer`, `Gait` and `MeshInstances`, and in the testing entry `TestSpriteSheet`, `DrawnSprites` and `Png`. A stage, a pixel camera, a sheet, a batch, a tile layer, a gait and mesh instances are values on a prototype, with a `TypeId`, an `isX` guard, `pipe` and a printed form, made with their module's `make` and changed by functions that take them first. **Breaking**: every export is renamed or reshaped, and a pixel stage's camera is no Three.js camera.
+
+  Loading a sheet is an Effect, as it was, and drawing is plain, as it was: a view draws inside the frame the browser shows. What changed besides the names:
+
+  - **A pixel camera holds the Three.js camera it places.** `PixelCamera.PixelCamera` is no `THREE.OrthographicCamera`: its `camera` field is, and only `PixelCamera`'s functions move it (`follow`, `fit`, `setViewHeight`, `setBufferSize`). `Camera.fit` and a Three.js `lookAt`, which undo its snapping, no longer take it. A stage made with `camera: "pixel"` renders with it, and its `viewHeight` is a field.
+  - **Sprite loading is one module with the sheet.** `SpriteSheet.fromUrl` loads, `SpriteSheet.decode` decodes a sheet's JSON, and `SpriteSheet.dispose` frees a sheet, which was a closure on it: a game's asset writes `release: SpriteSheet.dispose`. The sheet's decoded JSON is `SpriteSheet.Data`, its frames and tags `SpriteSheet.Frame` and `SpriteSheet.Tag`.
+  - **A response that isn't a success fails the load with a `SpriteSheetError`, not a throw caught as one.** Its message is as it was. A load is traced as `SpriteSheet.fromUrl`, and a decode as `SpriteSheet.decode`.
+  - **An interrupted load closes the image it was decoding.** A decode can't be stopped, so the bitmap it makes after the load was interrupted is closed when it arrives; it was dropped open.
+  - **`SpriteSheetError` is a `Schema.TaggedError`**, with the same tag, `file`, `message` and `cause`: `SpriteSheet.SpriteSheetError`. An app's `Effect.catchTag("SpriteSheetError", ...)` is as it was.
+  - **A refusal names the function**: `InstancedSprites.make: a capacity of NaN is no number of sprites...`, `MeshInstances.make: the attribute "position"...`, `Png.framesWithSoftAlpha reads an 8-bit RGBA PNG...`.
+
+  ```ts
+  import { Asset } from "arcadekit/content";
+  import {
+    InstancedSprites,
+    PixelCamera,
+    SpriteSheet,
+    Stage,
+  } from "arcadekit/render-three";
+
+  // Before: Asset<SpriteSheet, SpriteSheetError>, and `release: (sheet) => sheet.dispose()`.
+  export class RaceSheet extends Asset<
+    SpriteSheet.SpriteSheet,
+    SpriteSheet.SpriteSheetError
+  >()("RaceSheet", { release: SpriteSheet.dispose }) {}
+
+  // Before: RaceSheet.layer(loadSpriteSheet("/sprites/race.json")).
+  export const sheetLayer = RaceSheet.layer(
+    SpriteSheet.fromUrl("/sprites/race.json")
+  );
+
+  export const drawCar = (
+    container: HTMLElement,
+    sheet: SpriteSheet.SpriteSheet
+  ) => {
+    // Before: new Stage(...) and new InstancedSprites(sheet).
+    const stage = Stage.make(container, { camera: "pixel", pixelsPerUnit: 16 });
+    const sprites = InstancedSprites.make(sheet);
+    stage.scene.add(sprites.mesh);
+    const { tags } = SpriteSheet.resolveTags(sheet.data, { car: "car/drive" });
+    return (x: number, z: number, time: number) => {
+      // Before: sprites.begin(), sprites.push(...), sprites.end(), stage.camera.follow(...)
+      // and stage.render().
+      InstancedSprites.begin(sprites);
+      InstancedSprites.push(
+        sprites,
+        x,
+        z,
+        SpriteSheet.frameAt(sheet.data, tags.car, time)
+      );
+      InstancedSprites.end(sprites);
+      PixelCamera.follow(stage.camera, x, z);
+      Stage.render(stage);
+    };
+  };
+  ```
+
+  **Breaking**
+
+  Every export of `arcadekit/render-three` and `arcadekit/render-three/testing` before, and what a game writes now. A function of a value takes it first, and with one argument less gives the function a `pipe` applies.
+
+  | Before | Now |
+  | --- | --- |
+  | `new Stage(container, options)`, `Stage<K>`, `stage.render()`, `stage.dispose()` | `Stage.make(container, options)`, `Stage.Stage<K>`, `Stage.render(stage)`, `Stage.dispose(stage)`, and `Stage.isStage` |
+  | `StageOptions<K>`, `StageCameraKind`, `StageCamera<K>` | `Stage.Options<K>`, `Stage.CameraKind`, `Stage.CameraOf<K>` |
+  | `disposeObject`, `keepTexture`, `isKeptTexture` | `Stage.disposeObject`, `Stage.keepTexture`, `Stage.isKeptTexture` |
+  | `new PixelCamera(options)`, `PixelCamera`, a `THREE.OrthographicCamera` | `PixelCamera.make(options)`, `PixelCamera.PixelCamera`, which holds the Three.js camera as `camera`, and `PixelCamera.isPixelCamera` |
+  | `camera.follow(x, z)`, `fit(bounds, margin?)`, `setViewHeight(h)`, `setBufferSize(w, h)`, `groundOnScreen(out)` | `PixelCamera.follow(camera, x, z)`, `PixelCamera.fit(camera, bounds, margin?)` and so on |
+  | `camera.position`, `camera.left` and the camera's other Three.js fields | `camera.camera.position`, `camera.camera.left` |
+  | `camera instanceof PixelCamera`, `camera.isPixelCamera` | `PixelCamera.isPixelCamera(camera)` |
+  | `PixelCameraOptions`, `pixelScale`, `fitPixelScale`, `snapToPixel`, `pixelFrustum` | `PixelCamera.Options`, `PixelCamera.pixelScale`, `PixelCamera.fitPixelScale`, `PixelCamera.snapToPixel`, `PixelCamera.pixelFrustum` |
+  | `followTarget`, `orbitAround`, `fitCamera`, `FitCameraOptions` | `Camera.follow`, `Camera.orbit`, `Camera.fit`, `Camera.FitOptions` |
+  | `GroundBounds`, `MutableGroundBounds` | `Camera.GroundBounds`, `Camera.MutableGroundBounds` |
+  | `loadSpriteSheet(url)` | `SpriteSheet.fromUrl(url)` |
+  | `makeSpriteSheet(data, image)`, `SpriteSheet` with a `dispose` field, `sheet.dispose()` | `SpriteSheet.make(data, image)`, `SpriteSheet.SpriteSheet` with no `dispose` field, `SpriteSheet.dispose(sheet)`, and `SpriteSheet.isSpriteSheet` |
+  | `decodeSpriteSheet(file, json)` | `SpriteSheet.decode(file, json)` |
+  | `SpriteSheetError`, a `Data.TaggedError` | `SpriteSheet.SpriteSheetError`, a `Schema.TaggedError` with the same tag and fields |
+  | `SpriteSheetData`, `SpriteFrame`, `SpriteTag`, `SpriteTagDirection` | `SpriteSheet.Data`, `SpriteSheet.Frame`, `SpriteSheet.Tag`, `SpriteSheet.TagDirection` |
+  | `WantedTags`, `ResolvedTags<W>`, `resolveTags(data, wanted)`, `frameAt(data, tag, seconds)` | `SpriteSheet.WantedTags`, `SpriteSheet.ResolvedTags<W>`, `SpriteSheet.resolveTags(data, wanted)`, `SpriteSheet.frameAt(data, tag, seconds)` |
+  | `new InstancedSprites(sheet, options)`, `InstancedSprites`, `InstancedSpritesOptions`, `SpriteSnap` | `InstancedSprites.make(sheet, options)`, `InstancedSprites.InstancedSprites`, `InstancedSprites.Options`, `InstancedSprites.Snap`, and `InstancedSprites.isInstancedSprites` |
+  | `sprites.begin()`, `push(x, z, frame, flipX?)`, `setTint`, `setAlpha`, `setFlash`, `setLift`, `setLayer`, `end()`, `dispose()` | `InstancedSprites.begin(sprites)`, `InstancedSprites.push(sprites, x, z, frame, flipX?)` and so on; `capacity` and `count` are fields |
+  | `new TileLayer(sheet, options)`, `TileLayer`, `TileLayerOptions` | `TileLayer.make(sheet, options)`, `TileLayer.TileLayer`, `TileLayer.Options`, and `TileLayer.isTileLayer` |
+  | `layer.draw(seen, frameOf)`, `invalidate()`, `dispose()` | `TileLayer.draw(layer, seen, frameOf)`, `TileLayer.invalidate(layer)`, `TileLayer.dispose(layer)` |
+  | `new Gait(options)`, `gait.update(x, z, time)`, `gait.reset()` | `Gait.make(options)`, `Gait.update(gait, x, z, time)`, `Gait.reset(gait)`, `Gait.Gait` with `linger` a field, and `Gait.isGait` |
+  | `new MeshInstances(geometry, material, options)`, `MeshInstances<A>`, `InstanceAttributes`, `MeshInstancesOptions<A>` | `MeshInstances.make(geometry, material, options)`, `MeshInstances.MeshInstances<A>` with `attributes` a field, `MeshInstances.Attributes`, `MeshInstances.Options<A>`, and `MeshInstances.isMeshInstances` |
+  | `instances.set(...)`, `setMatrix`, `setColor`, `setAttribute`, `commit(count)`, `dispose()` | `MeshInstances.set(instances, ...)` and so on |
+  | `testSheet(tags)` (`arcadekit/render-three/testing`) | `TestSpriteSheet.fromTags(tags)` |
+  | `drawnSprites(shown)`, `DrawnSprite` | `DrawnSprites.read(shown)`, `DrawnSprites.DrawnSprite` |
+  | `pngSize(png)`, `framesWithSoftAlpha(data, png, blended?)` | `Png.size(png)`, `Png.framesWithSoftAlpha(png, data, blended?)`: the PNG first |
+
+  Not in the published package: push-puzzle's and survivors' views, their tests and both demos are moved, with no change to what they draw. A test that spied on a batch's or a layer's method spies on its module's function (`vi.spyOn(TileLayer, "invalidate")`).
+
+  No recorded hash moved: no simulation file changed.
+
+- [#103](https://github.com/lucasthevenet/arcadekit/pull/103) [`9dfecb5`](https://github.com/lucasthevenet/arcadekit/commit/9dfecb529fdb8179b1646e28985f529f5ca51a63) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `arcadekit/save` is written as Effect's modules are. `Save` and `Setting` keep their builders, and a game declares a setting as before. What their services give is the namespace `Stored`: `Stored.Stored`, a value with a `TypeId`, its `make`, an `isStored` guard, `pipe` and a printed form. The browser's storage is `BrowserSaveStorage.layer` in `arcadekit/save/browser`. **Breaking**: a save's definition has no `field`, its stored format changed, and `Stored` and `BrowserSaveStorage` are namespaces.
+
+  A save and a setting read, write, merge, back up and log as they did, with the same messages. What changed besides the names:
+
+  - **A save is stored as `{ "version": 1, "records": { ... } }`.** Its records sat under a field the game named (`levels`, `heroes`), which kept each app's stored format as it was. A save stored that way no longer decodes: it is copied to `<storageKey>/corrupt`, logged, and read as empty, as a corrupt save is. The storage keys and a setting's format are as they were.
+  - **A declaration's writes run one at a time.** A write re-reads what is stored, merges and stores. Two writes of one save at once could both read the same stored save, and the second stored over the first's record; now the second waits for the first. Over localStorage and `KeyValueStore.layerMemory` nothing waited between the read and the store, so no app lost a record this way.
+  - **Reads and writes are traced.** A trace shows each read as `<Name>.read` (`PushPuzzleSave.read`) and each write as `<Name>.write`, with the read a merge makes inside it.
+  - **A stored value is data.** `Stored.isStored(value)` tells a save's or a setting's service from an object with a `read` and a `write`, and `Stored.make({ read, write })` makes one, for a test of an app's own code that wants the service with no storage under it.
+
+  ```ts
+  import { Save, Stored } from "arcadekit/save";
+  import { BrowserSaveStorage } from "arcadekit/save/browser";
+  import { Effect, Layer, Schema } from "effect";
+
+  // Before: field: "tracks", and the save stored as { version: 1, tracks: { ... } }.
+  export class RaceSave extends Save("RaceSave", {
+    storageKey: "my-studio/race/save",
+    record: Schema.Struct({ bestLap: Schema.Number }),
+    mergeRecord: (a, b) => (a.bestLap <= b.bestLap ? a : b),
+  }) {}
+
+  // Before: Layer.provide(BrowserSaveStorage)
+  export const saveLayer = RaceSave.layer.pipe(
+    Layer.provide(BrowserSaveStorage.layer)
+  );
+
+  // Before: Layer.succeed(RaceSave, { read, write }), an object of the app's own.
+  export const noStorage = Layer.succeed(
+    RaceSave,
+    Stored.make({ read: Effect.succeed({}), write: Effect.succeed })
+  );
+  ```
+
+  **Breaking**
+
+  Every export of `arcadekit/save` and `arcadekit/save/browser` before, and what a game writes now:
+
+  | Before | Now |
+  | --- | --- |
+  | `Save("MySave", { storageKey, field, record, mergeRecord })` | `Save("MySave", { storageKey, record, mergeRecord })`: there is no `field` |
+  | `SaveDefinition<S, Field>` | `SaveDefinition<S>` |
+  | the stored save `{ "version": 1, "<field>": { ... } }` | `{ "version": 1, "records": { ... } }`; one stored the old way is backed up to `<storageKey>/corrupt` and read as empty |
+  | `Stored<A>`, a type | `Stored.Stored<A>`, the interface of the namespace `Stored`, with a `TypeId` |
+  | an object of the app's own as a save's or a setting's service | `Stored.make({ read, write })`, which `Stored.isStored` recognises |
+  | `BrowserSaveStorage`, a Layer (`arcadekit/save/browser`) | `BrowserSaveStorage.layer` (`arcadekit/save/browser`) |
+
+  `Save`, `SaveClass`, `SaveId`, `SaveService`, `Records`, `Setting`, `SettingClass`, `SettingDefinition`, `SettingId` and `SettingService` keep their names, and so do a class's `kind`, `saveName`, `settingName`, `definition`, `merge` and `layer`, and a service's `read` and `write`. Neither `read` nor `write` fails, as before.
+
+- [#97](https://github.com/lucasthevenet/arcadekit/pull/97) [`a38f6b9`](https://github.com/lucasthevenet/arcadekit/commit/a38f6b93d85efbecc6ad94fa1b62bbe5ed023c86) Thanks [@lucasthevenet](https://github.com/lucasthevenet)! - `SpatialGrid` answers with the test done: `SpatialGrid.build` takes radii, `SpatialGrid.within` gives the points whose circle overlaps a circle, and `SpatialGrid.nearest` the nearest point in range, past a `skip` mask. Nothing breaks but the names, which are 0.7.0's: see the changeset that gives core Effect's module shape.
+
+  `query` gives the points of the cells a circle overlaps, so every caller finished it by hand: the length of the offset against the two radii, a radius padded by a guess at the widest point, and for the nearest point a loop with a tie rule of its own. The test, the pad and the tie rule decide what every lockstep peer computes, so the grid does them once. They are plain code a step calls, in `arcadekit/core`: no Effect, no clock, no allocation and no callback.
+
+  - **`SpatialGrid.build(grid, xs, ys, count, radii?)`.** With `radii`, point i is a circle of radius `radii[i]`. The grid keeps the three arrays and reads them when asked, so a step builds once its points have moved and their radii are set, and asks before it moves or removes a point.
+  - **`SpatialGrid.within(grid, x, y, radius, out)`.** Writes into `out` the index of every point whose circle overlaps the circle of `radius` at (x, y), and returns how many. The test is `ExactMath.hypot2(dx, dy) < radius + radii[i]`: strict, so two circles that only touch do not overlap, with 0 for a grid built without radii. It visits the cells of `radius` plus the build's widest radius, so a caller pads nothing. The points come in `query`'s order, and it stops when `out` is full.
+  - **`SpatialGrid.nearest(grid, x, y, range, skip?)`.** The index of the point whose centre is nearest (x, y) and closer than `range`, or -1. A point at exactly `range` is out, a tie goes to the lower index, and a point `i` with `skip[i]` not 0 is passed over: the mask is the caller's, for the dead and for the targets it has taken.
+  - **`SpatialGrid.query` is the broad phase**, unchanged: for a step that tests each pair itself, as one that pushes overlapping bodies apart does.
+
+  ```ts
+  import { ExactMath, SpatialGrid } from "arcadekit/core";
+
+  const HERO_RADIUS = 0.5;
+  const xs = new Float32Array(200);
+  const zs = new Float32Array(200);
+  const radii = new Float32Array(200);
+  const dead = new Uint8Array(200);
+  const found = new Int32Array(64);
+  const grid = SpatialGrid.make({ halfSize: 30, cellSize: 2, capacity: 200 });
+  const hero = { x: 0, z: 0, touches: 0 };
+  const count = 0;
+
+  // Before: a padded query, then the test, by hand.
+  SpatialGrid.build(grid, xs, zs, count);
+  const candidates = SpatialGrid.query(
+    grid,
+    hero.x,
+    hero.z,
+    HERO_RADIUS + 1,
+    found
+  );
+  for (let k = 0; k < candidates; k++) {
+    const i = found[k]!;
+    if (
+      ExactMath.hypot2(xs[i]! - hero.x, zs[i]! - hero.z) <
+      HERO_RADIUS + radii[i]!
+    ) {
+      hero.touches += 1;
+    }
+  }
+
+  // After: the grid has the radii, and what comes back overlaps.
+  SpatialGrid.build(grid, xs, zs, count, radii);
+  hero.touches += SpatialGrid.within(grid, hero.x, hero.z, HERO_RADIUS, found);
+
+  // The nearest living point within 14, or -1.
+  const target = SpatialGrid.nearest(grid, hero.x, hero.z, 14, dead);
+  ```
+
+  Two mistakes that gave a wrong answer in silence are refused, and one accident of `query` is gone. A step that builds its grid from a pool of the grid's capacity, before it asks, meets none of them:
+
+  - `SpatialGrid.build` throws a `RangeError` for more points than the grid's `capacity`, where `query` gave indices that were never built and `within` and `nearest` would never return, and for fewer `radii` than points.
+  - `SpatialGrid.nearest` throws a `RangeError` for a `skip` mask shorter than the build, which would pass over every point past its end.
+  - A grid that was never built has no points. Before its first `build`, `query` filled `out` with index 0.
+
 ## 0.6.0
 
 ### Minor Changes
