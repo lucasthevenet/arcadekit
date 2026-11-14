@@ -60,6 +60,7 @@ const OUTLINE: readonly (Group & {
     label: "Concepts",
     section: "concepts",
     items: [
+      "concepts/domain-driven-design",
       "concepts/declarations",
       "concepts/steps-and-frames",
       "concepts/determinism",
