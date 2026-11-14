@@ -1,6 +1,6 @@
 # arcadekit/foldkit
 
-Connects a game's engine ([`Game.Engine`](../game/README.md#in-the-browser)) to a [Foldkit](https://www.npmjs.com/package/foldkit) app. The view renders `gameViewport`, the element the engine draws into; the Subscription `engineEntry` runs the engine there while it is mounted and turns its events into Messages. `keyPresses` and `shortcutPresses` make Streams of key presses for the app's own keys (pause, restart, mute).
+Connects a game's engine ([`Game.Engine`](../game/README.md#in-the-browser)) to a [Foldkit](https://www.npmjs.com/package/foldkit) app. The view renders the viewport with `Viewport.make`: the element the engine draws into, which reports two Messages as it enters and leaves the document. The Subscription entry `EngineEntry.make` runs the engine there while it is in the document, and turns the engine's events into Messages. `KeyPresses.make` and `ShortcutPresses.make` make Streams of the app's own keys as Messages: pause, restart, mute. Each is a namespace, as Effect's modules are.
 
 An entry of the [`arcadekit`](../../README.md) package. Needs the DOM.
 
@@ -17,7 +17,7 @@ Peer dependencies: `effect` (~4.1), and `foldkit` (~0.170, an optional peer of t
 A whole app around an engine that reports a score: the viewport, its two Messages kept as a Boolean, the engine's events as Messages, and a Command that starts a run (the demo apps do the same with more screens):
 
 ```ts
-import { engineEntry, gameViewport } from "arcadekit/foldkit";
+import { EngineEntry, Viewport } from "arcadekit/foldkit";
 import * as Game from "arcadekit/game/browser";
 import { Effect, Schema } from "effect";
 import { Command, Runtime, Subscription } from "foldkit";
@@ -92,7 +92,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   body: h.div(
     [],
     [
-      gameViewport(h, {
+      Viewport.make(h, {
         mounted: Message.MountedViewport(),
         unmounted: Message.UnmountedViewport(),
       }),
@@ -103,7 +103,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
 
 const subscriptions = Subscription.make<Model, Message, CountingEngine>()(
   () => ({
-    engine: engineEntry({
+    engine: EngineEntry.make({
       // The engine's class is its service's key, so it is the Effect that reaches the engine.
       engine: CountingEngine,
       isViewportMounted: (model) => model.isViewportMounted,
@@ -129,4 +129,46 @@ Runtime.run(
 );
 ```
 
-Style `.viewport` in the app: it needs a size. `onError` turns a failed attach (`AttachError`, such as no WebGL, or what one of the engine's `uses` fails with, such as a sprite sheet that can't be loaded) or a crash while attached (`GameCrashed`, a step or a render that threw) into a Message, sent once; for an engine reached through a load (an `engine` Effect that can fail) it also gets the load's error. `engineEntry` takes anything with an engine's `attach` and `listen` (`AttachableEngine`), so `arcadekit/net/browser`'s Co-op client goes there as it is. The survivors and push-puzzle demos in the [repository](https://github.com/lucasthevenet/arcadekit#readme) are complete apps.
+Style `.viewport` in the app: it needs a size. `onError` turns a failed attach (`AttachError`, such as no WebGL, or what one of the engine's `uses` fails with, such as a sprite sheet that can't be loaded) or a crash while attached (`GameCrashed`, a step or a render that threw) into a Message, sent once; for an engine reached through a load (an `engine` Effect that can fail) it also gets the load's error. `EngineEntry.make` takes anything with an engine's `attach` and `listen` (`EngineEntry.Attachable`), so `arcadekit/net/browser`'s Co-op client goes there as it is. The survivors and push-puzzle demos in the [repository](https://github.com/lucasthevenet/arcadekit#readme) are complete apps.
+
+## The app's own keys
+
+Keys the app answers outside the run's input, each press a Message. `KeyPresses.make` is for keys that mean something on one screen, so its Stream runs while the Model says so; `ShortcutPresses.make` is for a key that works on any screen, such as M to mute, and ignores a press with Ctrl, Cmd or Alt held, or one that goes into a text field. A key is named by its code, the physical key (`"KeyR"`, `"Escape"`), as `arcadekit/input`'s bindings are, and a key held down is one press:
+
+```ts
+import { KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
+import { Schema, Stream } from "effect";
+import { Subscription } from "foldkit";
+import { defineMessageUnion } from "foldkit/message";
+
+const Message = defineMessageUnion({
+  PressedRestart: {},
+  PressedBack: {},
+  PressedMute: {},
+});
+type Message = typeof Message.Type;
+
+interface Model {
+  readonly isRunning: boolean;
+}
+
+const subscriptions = Subscription.make<Model, Message>()((entry) => ({
+  // R restarts and Escape goes back, during a run.
+  runKeys: entry(
+    { isRunning: Schema.Boolean },
+    {
+      modelToDependencies: (model) => ({ isRunning: model.isRunning }),
+      dependenciesToStream: ({ isRunning }) =>
+        isRunning
+          ? KeyPresses.make(["KeyR", "Escape"], (code) =>
+              code === "KeyR" ? Message.PressedRestart() : Message.PressedBack()
+            )
+          : Stream.empty,
+    }
+  ),
+  // M mutes on every screen.
+  muteKey: Subscription.persistentEntry(
+    ShortcutPresses.make(["KeyM"], () => Message.PressedMute())
+  ),
+}));
+```

@@ -351,7 +351,7 @@ export const play = Effect.gen(function* () {
 - **`Game.Frames`** is where an attached engine gets its frames: `requestAnimationFrame` (`Game.animationFrames`), unless the app or a test provides another `Game.FrameSource` ([Testing an engine](#testing-an-engine)).
 - **`Game.frameLoop(frames, frame)`** is the loop an engine draws on, for anything else an app draws on animation frames. It fails with `GameCrashed` when a frame throws.
 
-In a Foldkit app, [`arcadekit/foldkit`](../foldkit/README.md)'s `engineEntry` attaches the engine to the viewport and turns its events into Messages: `engineEntry({ engine: RaceEngine, toMessage: Race.match({ ... }), ... })`.
+In a Foldkit app, [`arcadekit/foldkit`](../foldkit/README.md)'s engine entry attaches the engine to the viewport and turns its events into Messages: `EngineEntry.make({ engine: RaceEngine, toMessage: Race.match({ ... }), ... })`.
 
 ## Testing an engine
 

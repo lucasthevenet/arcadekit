@@ -87,8 +87,8 @@ export interface CoopDebug<State> {
  * decides reaches the run as a command, through `send`: it rides the player's next step, so
  * every peer applies it at that step.
  *
- * `attach` and `listen` have `arcadekit/foldkit`'s `AttachableEngine` shapes, so an app mounts
- * the client as it mounts an engine.
+ * `attach` and `listen` have the shapes of `arcadekit/foldkit`'s `EngineEntry.Attachable`, so an
+ * app mounts the client as it mounts an engine.
  */
 export interface CoopClient<State, Event, Command, E, Refusals> {
   /**
@@ -317,7 +317,7 @@ export interface CoopClass<
    * local player's (`hero === local.slot`). `local` is the seat's own: an event that is kept
    * says whose it was, whatever seat the player takes next. The run's cases have a place of
    * their own, so a game may name an event as it likes: no tag is reserved. Pass it to
-   * `listen`, or to `arcadekit/foldkit`'s `engineEntry` as `toMessage`.
+   * `listen`, or to `arcadekit/foldkit`'s `EngineEntry.make` as `toMessage`.
    *
    * A missing case is a type error. Throws when called, as the app's module loads, for what the
    * types let through: a case for an event that doesn't exist (one left behind by a renamed

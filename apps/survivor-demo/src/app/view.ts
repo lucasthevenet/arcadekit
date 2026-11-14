@@ -1,6 +1,6 @@
 import type { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import type { AudioSettings } from "arcadekit/audio";
-import { gameViewport } from "arcadekit/foldkit";
+import { Viewport } from "arcadekit/foldkit";
 import type { LobbyChanged } from "arcadekit/net/browser";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
@@ -20,7 +20,7 @@ export const view = (model: Model, h: H): Document => ({
     [h.Class("app")],
     [
       // The engine draws here. Rendered on every screen, so the canvas is never recreated.
-      gameViewport(h, {
+      Viewport.make(h, {
         mounted: Message.MountedViewport(),
         unmounted: Message.UnmountedViewport(),
       }),

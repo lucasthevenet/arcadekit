@@ -177,8 +177,8 @@ describe("a sheet that fails to load", () => {
       ),
       Effect.runPromise
     );
-    // The run starts and ends. The viewport's attach is what fails, and `engineEntry`'s onError
-    // reports it.
+    // The run starts and ends. The viewport's attach is what fails, and the engine entry's
+    // onError reports it.
     expect(messages).toStrictEqual([
       Message.StartedRun(),
       Message.CompletedEngineCommand(),

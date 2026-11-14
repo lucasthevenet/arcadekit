@@ -3,7 +3,7 @@
 import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { BrowserAudioSystem } from "arcadekit/audio/browser";
 import { Asset, Content, ContentSource } from "arcadekit/content";
-import type { AttachableEngine } from "arcadekit/foldkit";
+import type { EngineEntry } from "arcadekit/foldkit";
 import * as Game from "arcadekit/game/browser";
 import { InputController } from "arcadekit/input";
 import { createMemoryNetwork, hostLockstep } from "arcadekit/net";
@@ -126,8 +126,8 @@ const program = Effect.gen(function* () {
 
   const engine: Game.EngineOf<typeof Dots, SpriteSheet.SpriteSheetError> =
     yield* DotsEngine;
-  // What a Foldkit app's `engineEntry` takes: the engine's `attach` and `listen`.
-  const attachable: AttachableEngine<
+  // What a Foldkit app's engine entry takes: the engine's `attach` and `listen`.
+  const attachable: EngineEntry.Attachable<
     Game.EventOf<typeof Dots>,
     Game.AttachError | Game.GameCrashed | SpriteSheet.SpriteSheetError
   > = engine;

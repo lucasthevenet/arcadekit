@@ -98,7 +98,7 @@ export const Model = Schema.Struct({
   /** The saved records, by hero id: read at startup, updated when each run ends. */
   records: HeroRecords,
   hud: Hud,
-  /** True while the viewport is in the document: the engine runs only then (see gameViewport). */
+  /** True while the viewport is in the document: the engine runs only then (see Viewport.make). */
   isViewportMounted: Schema.Boolean,
   coop: CoopRun,
   /** The player's volumes and mute: read at startup, saved on each change. */
