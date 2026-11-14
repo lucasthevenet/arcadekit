@@ -23,8 +23,8 @@ import {
   ChooseUpgrade,
   GameContent,
   Survivors,
-} from "../../apps/survivor-demo/src/survivors";
-import type { Hero, World } from "../../apps/survivor-demo/src/survivors";
+} from "../../apps/survivor-demo/src/survivors/index";
+import type { Hero, World } from "../../apps/survivor-demo/src/survivors/index";
 
 declare const gc: () => void;
 

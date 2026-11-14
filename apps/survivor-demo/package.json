@@ -4,10 +4,6 @@
   "private": true,
   "description": "Demo survivors-like game built on arcadekit",
   "type": "module",
-  "imports": {
-    "#survivors": "./src/survivors/index.ts",
-    "#survivors/browser": "./src/survivors/browser/index.ts"
-  },
   "scripts": {
     "dev": "alchemy dev",
     "build": "vite build",

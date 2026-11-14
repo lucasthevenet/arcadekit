@@ -23,7 +23,7 @@ import { AudioSystem, CueTable } from "arcadekit/audio";
  * **Example** (An app's sounds)
  *
  * ```ts
- * import { SurvivorsCueTable } from "#survivors/browser";
+ * import { SurvivorsCueTable } from "../survivors/browser/index";
  * import type { CueSoundsOf } from "arcadekit/audio";
  *
  * const sounds: CueSoundsOf<typeof SurvivorsCueTable> = {

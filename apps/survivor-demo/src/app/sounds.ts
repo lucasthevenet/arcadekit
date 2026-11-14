@@ -10,7 +10,7 @@
  */
 import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
 
-import type { SurvivorsCueTable } from "#survivors/browser";
+import type { SurvivorsCueTable } from "../survivors/browser/index";
 
 const file = (id: string) => `${import.meta.env.BASE_URL}sounds/${id}.wav`;
 

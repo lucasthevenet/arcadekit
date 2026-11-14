@@ -26,7 +26,7 @@ import * as PuzzleContent from "./puzzle-content";
  * **Example** (Reading a game's levels)
  *
  * ```ts
- * import { PushPuzzleContent } from "#push-puzzle";
+ * import { PushPuzzleContent } from "../push-puzzle/index";
  * import { ContentSource } from "arcadekit/content";
  * import { Effect } from "effect";
  *

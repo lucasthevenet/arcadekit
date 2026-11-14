@@ -40,8 +40,8 @@ import { SurvivorsSheet } from "./sheet";
  * **Example** (The engine's key and its rules)
  *
  * ```ts
- * import { Survivors } from "#survivors";
- * import { SurvivorsEngine } from "#survivors/browser";
+ * import { Survivors } from "../survivors/index";
+ * import { SurvivorsEngine } from "../survivors/browser/index";
  *
  * SurvivorsEngine.key; // => "arcadekit/game/Engine/SurvivorsEngine"
  * SurvivorsEngine.simulation === Survivors; // => true

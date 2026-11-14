@@ -20,7 +20,7 @@ import { Schema } from "effect";
  * **Example** (A HUD's values)
  *
  * ```ts
- * import { Hud } from "#push-puzzle";
+ * import { Hud } from "../push-puzzle/index";
  *
  * const hud = new Hud({ moves: 3, boxesLeft: 1 });
  * [hud._tag, hud.moves, hud.boxesLeft]; // => ["Hud", 3, 1]
@@ -50,7 +50,7 @@ export class Hud extends Game.Event("Hud", {
  * **Example** (A solve in twelve moves)
  *
  * ```ts
- * import { LevelSolved } from "#push-puzzle";
+ * import { LevelSolved } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const solved = new LevelSolved({ moves: 12 });

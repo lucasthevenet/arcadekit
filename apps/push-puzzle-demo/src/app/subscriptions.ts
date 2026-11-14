@@ -6,9 +6,8 @@ import { EngineEntry, KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
 import { Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
-import { PushPuzzle } from "#push-puzzle";
-import { PushPuzzleEngine } from "#push-puzzle/browser";
-
+import { PushPuzzleEngine } from "../push-puzzle/browser/index";
+import { PushPuzzle } from "../push-puzzle/index";
 import { Message } from "./message";
 import { isLoaded } from "./model";
 import type { Model } from "./model";

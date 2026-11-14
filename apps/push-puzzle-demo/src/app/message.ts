@@ -9,8 +9,7 @@ import type { AudioSystem } from "arcadekit/audio";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
-import { Hud } from "#push-puzzle";
-
+import { Hud } from "../push-puzzle/index";
 import * as LevelRecords from "./level-records";
 import { LevelSummary } from "./model";
 

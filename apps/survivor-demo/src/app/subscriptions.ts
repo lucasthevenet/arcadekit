@@ -8,9 +8,8 @@ import { EngineEntry, KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
 import { Effect, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
-import { Survivors } from "#survivors";
-import { SurvivorsCoop, SurvivorsEngine } from "#survivors/browser";
-
+import { SurvivorsCoop, SurvivorsEngine } from "../survivors/browser/index";
+import { Survivors } from "../survivors/index";
 import { Message } from "./message";
 import { isCoop, isLoaded } from "./model";
 import type { Model, Phase } from "./model";

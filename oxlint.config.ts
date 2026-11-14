@@ -145,23 +145,18 @@ const ENTRY_FILES = Object.values(kitExports).map(({ source }) =>
   source.replace(/^\.\/src\//u, "").replace(/\.ts$/u, "")
 );
 
-// Each demo's game: its public files, from the demo's `imports` (`#push-puzzle` and
-// `#push-puzzle/browser`), and the folder they are in (`src/push-puzzle/`). A game's public file is
-// a barrel of namespaces too, as an entry's is.
-const DEMOS = ["push-puzzle-demo", "survivor-demo"] as const;
-const GAME_ENTRY_FILES = DEMOS.flatMap((demo) =>
-  Object.values(
-    (
-      JSON.parse(readFileSync(`apps/${demo}/package.json`, "utf-8")) as {
-        readonly imports: Readonly<Record<string, string>>;
-      }
-    ).imports
-  ).map((source) => `apps/${demo}/${source.replace(/^\.\//u, "")}`)
-);
-// Every file of the games' folders: each game's public file without `/browser` is its folder's.
-const GAME_FILES = GAME_ENTRY_FILES.filter(
-  (file) => !file.includes("/browser/")
-).map((file) => file.replace(/index\.ts$/u, "**/*.ts"));
+// Each demo's game, in the folder of its `src/` named for its genre. Its public files are the
+// folder's `index.ts` and `browser/index.ts`, which the app imports by relative path, and each is a
+// barrel of namespaces, as an entry's is.
+const GAMES = [
+  "apps/push-puzzle-demo/src/push-puzzle",
+  "apps/survivor-demo/src/survivors",
+] as const;
+const GAME_ENTRY_FILES = GAMES.flatMap((game) => [
+  `${game}/index.ts`,
+  `${game}/browser/index.ts`,
+]);
+const GAME_FILES = GAMES.map((game) => `${game}/**/*.ts`);
 
 export default defineConfig({
   env: core.env,

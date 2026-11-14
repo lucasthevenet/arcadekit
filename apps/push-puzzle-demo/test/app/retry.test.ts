@@ -7,9 +7,6 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 import { Scene } from "foldkit";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PushPuzzleContent } from "#push-puzzle";
-import { PushPuzzleSheet } from "#push-puzzle/browser";
-
 import {
   FocusRetry,
   LoadAudioSettings,
@@ -24,6 +21,8 @@ import { Message } from "../../src/app/message";
 import type { Model } from "../../src/app/model";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
+import { PushPuzzleSheet } from "../../src/push-puzzle/browser/index";
+import { PushPuzzleContent } from "../../src/push-puzzle/index";
 
 // The load-error screen's "Try again": it runs LoadContent again through the app's real loaders,
 // which fetch again only what failed, and a load that succeeds goes to level select. No WebGL:

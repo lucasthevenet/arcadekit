@@ -4,10 +4,6 @@
   "private": true,
   "description": "Demo push-puzzle game built on arcadekit",
   "type": "module",
-  "imports": {
-    "#push-puzzle": "./src/push-puzzle/index.ts",
-    "#push-puzzle/browser": "./src/push-puzzle/browser/index.ts"
-  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

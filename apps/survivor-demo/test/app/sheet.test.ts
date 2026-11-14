@@ -8,14 +8,6 @@ import { Effect, Layer } from "effect";
 import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { SurvivorsContent } from "#survivors";
-import {
-  Art,
-  SurvivorsCueTable,
-  SurvivorsEngine,
-  SurvivorsSheet,
-} from "#survivors/browser";
-
 import {
   EndRun,
   FocusRetry,
@@ -32,6 +24,13 @@ import { Message } from "../../src/app/message";
 import * as Sounds from "../../src/app/sounds";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
+import {
+  Art,
+  SurvivorsCueTable,
+  SurvivorsEngine,
+  SurvivorsSheet,
+} from "../../src/survivors/browser/index";
+import { SurvivorsContent } from "../../src/survivors/index";
 
 // The sprite sheet in public/sprites, checked against the content that names its tags, and what
 // a sheet that can't load does: the loading screen shows it, and the engine's Commands go on

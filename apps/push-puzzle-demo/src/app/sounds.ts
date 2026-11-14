@@ -9,7 +9,7 @@
  */
 import type { AudioSettings, AudioSystem, CueSoundsOf } from "arcadekit/audio";
 
-import type { PushPuzzleCueTable } from "#push-puzzle/browser";
+import type { PushPuzzleCueTable } from "../push-puzzle/browser/index";
 
 const file = (id: string) => `${import.meta.env.BASE_URL}sounds/${id}.wav`;
 

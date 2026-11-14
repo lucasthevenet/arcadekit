@@ -62,7 +62,7 @@ const HeroDef = Schema.Struct({
  * **Example** (A hero's name and starting weapon)
  *
  * ```ts
- * import type { GameContent } from "#survivors";
+ * import type { GameContent } from "../survivors/index";
  *
  * const knight: GameContent.HeroDef = {
  *   id: "knight",
@@ -111,7 +111,7 @@ const EnemyDef = Schema.Struct({
  * **Example** (An enemy that drops no XP)
  *
  * ```ts
- * import type { GameContent } from "#survivors";
+ * import type { GameContent } from "../survivors/index";
  *
  * const bat: GameContent.EnemyDef = {
  *   id: "bat",
@@ -190,7 +190,7 @@ const WeaponDef = Schema.Struct({
  * **Example** (An aura's reach)
  *
  * ```ts
- * import type { GameContent } from "#survivors";
+ * import type { GameContent } from "../survivors/index";
  *
  * const aura: GameContent.WeaponDef = {
  *   id: "aura",
@@ -282,7 +282,7 @@ const brokenReferences = (content: {
  * **Example** (Decoding a game, and refusing a hero with a weapon it lacks)
  *
  * ```ts
- * import { GameContent } from "#survivors";
+ * import { GameContent } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const game = {
@@ -330,7 +330,7 @@ export const GameContent = Schema.Struct({
  * **Example** (The heroes a player picks from)
  *
  * ```ts
- * import { GameContent } from "#survivors";
+ * import { GameContent } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content: GameContent.GameContent = Schema.decodeUnknownSync(GameContent.GameContent)({

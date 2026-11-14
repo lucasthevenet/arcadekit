@@ -1,6 +1,7 @@
 /**
- * `#push-puzzle/browser`: the push-puzzle genre in the browser. The engine an app runs,
- * and what the app gives it: its sprite sheet, and its sounds for the genre's cue table.
+ * The push-puzzle genre in the browser: the engine an app runs, and what the app gives it, its
+ * sprite sheet and its sounds for the genre's cue table. The demo's app imports them from this
+ * file by relative path (`../push-puzzle/browser/index` from `src/app/`), as the examples do.
  *
  * Its declarations are exported bare under their names (`PushPuzzleEngine`, `PushPuzzleSheet`,
  * `PushPuzzleCueTable`), and the tags the engine draws from the sheet are a namespace (`Art`).

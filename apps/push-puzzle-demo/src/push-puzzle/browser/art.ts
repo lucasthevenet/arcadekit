@@ -27,7 +27,7 @@
  * **Example** (A sheet without a filled hole)
  *
  * ```ts
- * import { Art } from "#push-puzzle/browser";
+ * import { Art } from "../push-puzzle/browser/index";
  * import { SpriteSheet } from "arcadekit/render-three";
  * import { TestSpriteSheet } from "arcadekit/render-three/testing";
  *
@@ -78,7 +78,7 @@ export const tags = {
  * **Example** (The size of a tile)
  *
  * ```ts
- * import { Art } from "#push-puzzle/browser";
+ * import { Art } from "../push-puzzle/browser/index";
  *
  * Art.pixelsPerCell; // => 16
  * ```

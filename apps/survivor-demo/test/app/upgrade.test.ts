@@ -7,11 +7,14 @@ import { Effect, Fiber, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { GameContent, Survivors, SurvivorsContent } from "#survivors";
-import { SurvivorsEngine } from "#survivors/browser";
-
 import { PickUpgrade } from "../../src/app/commands";
 import { Message } from "../../src/app/message";
+import { SurvivorsEngine } from "../../src/survivors/browser/index";
+import {
+  GameContent,
+  Survivors,
+  SurvivorsContent,
+} from "../../src/survivors/index";
 
 // The upgrade pick, from the app's Command to the genre's rules and back. `PickUpgrade` sends the
 // genre's `ChooseUpgrade` and waits for the rules' answer, and however the send ends it reports

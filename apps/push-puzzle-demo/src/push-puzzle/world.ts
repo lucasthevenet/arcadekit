@@ -29,7 +29,7 @@ import type * as PuzzleContent from "./puzzle-content";
  * **Example** (Checking a direction)
  *
  * ```ts
- * import { World } from "#push-puzzle";
+ * import { World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * Schema.is(World.Direction)("up"); // => true
@@ -51,7 +51,7 @@ export const Direction = Schema.Literals(["up", "down", "left", "right"]);
  * **Example** (Turning around)
  *
  * ```ts
- * import type { World } from "#push-puzzle";
+ * import type { World } from "../push-puzzle/index";
  *
  * const back: Record<World.Direction, World.Direction> = {
  *   up: "down",
@@ -84,7 +84,7 @@ export type Direction = typeof Direction.Type;
  * **Example** (A step with nothing pressed)
  *
  * ```ts
- * import { World } from "#push-puzzle";
+ * import { World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * Schema.is(World.Input)({ held: null, pressed: null, undo: false }); // => true
@@ -112,7 +112,7 @@ export const Input = Schema.Struct({
  * **Example** (A script of taps)
  *
  * ```ts
- * import type { World } from "#push-puzzle";
+ * import type { World } from "../push-puzzle/index";
  * import type * as Game from "arcadekit/game";
  *
  * const presses = ["right", "right"] as const;
@@ -138,7 +138,7 @@ export type Input = typeof Input.Type;
  * **Example** (A run with a short undo)
  *
  * ```ts
- * import { PuzzleContent, World } from "#push-puzzle";
+ * import { PuzzleContent, World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
@@ -202,7 +202,7 @@ const HISTORY_LAYOUT = {
  * **Example** (A box that filled a hole)
  *
  * ```ts
- * import { PuzzleContent, World } from "#push-puzzle";
+ * import { PuzzleContent, World } from "../push-puzzle/index";
  * import { Ring } from "arcadekit/core";
  * import { Schema } from "effect";
  *
@@ -236,7 +236,7 @@ export const Change = {
  * **Example** (Naming a kind)
  *
  * ```ts
- * import { World } from "#push-puzzle";
+ * import { World } from "../push-puzzle/index";
  *
  * const kind: World.Change = World.Change.undone;
  * kind; // => 2
@@ -277,7 +277,7 @@ const CHANGES_CAPACITY = 8;
  * **Example** (A move, then a push that solves)
  *
  * ```ts
- * import { PuzzleContent, World } from "#push-puzzle";
+ * import { PuzzleContent, World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
@@ -323,7 +323,7 @@ export interface Cues {
  * **Example** (A run at its start)
  *
  * ```ts
- * import { PuzzleContent, World } from "#push-puzzle";
+ * import { PuzzleContent, World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
@@ -389,7 +389,7 @@ export interface Puzzle {
  * **Example** (A run, and a level the content lacks)
  *
  * ```ts
- * import { PuzzleContent, World } from "#push-puzzle";
+ * import { PuzzleContent, World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
@@ -464,7 +464,7 @@ export const make = ({ content, levelId, historyCapacity }: Config): Puzzle => {
  * **Example** (Two presses that solve a level)
  *
  * ```ts
- * import { PuzzleContent, World } from "#push-puzzle";
+ * import { PuzzleContent, World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
@@ -642,7 +642,7 @@ const undoTurn = (puzzle: Puzzle): void => {
  * **Example** (The one box of a level)
  *
  * ```ts
- * import { PuzzleContent, World } from "#push-puzzle";
+ * import { PuzzleContent, World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
@@ -681,7 +681,7 @@ const boxesLeft = (puzzle: Puzzle): number => {
  * **Example** (A run's first HUD)
  *
  * ```ts
- * import { PuzzleContent, World } from "#push-puzzle";
+ * import { PuzzleContent, World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
@@ -713,7 +713,7 @@ export const hudSample = (
  * **Example** (A push onto the goal)
  *
  * ```ts
- * import { PuzzleContent, World } from "#push-puzzle";
+ * import { PuzzleContent, World } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({

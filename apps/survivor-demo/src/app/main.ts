@@ -10,14 +10,13 @@ import { SpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
-import { SurvivorsContent } from "#survivors";
 import {
   SurvivorsCoop,
   SurvivorsCueTable,
   SurvivorsEngine,
   SurvivorsSheet,
-} from "#survivors/browser";
-
+} from "../survivors/browser/index";
+import { SurvivorsContent } from "../survivors/index";
 import { SurvivorsAudioSettings } from "./audio-settings";
 import * as CoopDebug from "./coop-debug";
 import * as Rooms from "./rooms";

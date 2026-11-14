@@ -12,8 +12,7 @@ import { Viewport } from "arcadekit/foldkit";
 import type { CoopEvent } from "arcadekit/net/browser";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
-import type { Hero, Hud, Offer } from "#survivors";
-
+import type { Hero, Hud, Offer } from "../survivors/index";
 import type * as HeroRecords from "./hero-records";
 import { Message } from "./message";
 import { Phase, isLocalHeroDown } from "./model";

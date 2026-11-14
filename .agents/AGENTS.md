@@ -5,10 +5,10 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 ## Layout
 
 - `packages/arcadekit/src/<entry>/`: an entry's source, and its `README.md`, which is also its page on arcadekit.dev. Its tests, and the helpers only tests import, are in `packages/arcadekit/test/<entry>/`.
-- `apps/push-puzzle-demo` and `apps/survivor-demo`: the demos, each with its genre in `src/<genre>/` (imported as `#push-puzzle` and `#survivors`) beside its Foldkit app in `src/app/`. `apps/docs`: the docs site, built from the entries' READMEs and the glossary.
+- `apps/push-puzzle-demo` and `apps/survivor-demo`: the demos, each with its genre in `src/<genre>/` beside its Foldkit app in `src/app/`. `apps/docs`: the docs site, built from the entries' READMEs and the glossary.
 - `CONTEXT.md`: the glossary. Name things with its words in code, tests and prose, and give a new concept its entry in the same change.
 - `tools/lint/` and `oxlint.config.ts`: the kit's own lint rules. Their messages say what to write.
-- Inside the package, an entry imports another by relative path to its public file (`../core/index`). The apps import `arcadekit/<entry>`.
+- Inside the package, an entry imports another by relative path to its public file (`../core/index`). The apps import `arcadekit/<entry>`, and their genre the same way as an entry: by relative path to its public file (`../push-puzzle/index`, `../push-puzzle/browser/index`).
 
 ## A game is declared
 

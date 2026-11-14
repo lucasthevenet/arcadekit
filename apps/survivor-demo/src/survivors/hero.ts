@@ -33,7 +33,7 @@ import type * as Offer from "./offer";
  * **Example** (Checking one player's input)
  *
  * ```ts
- * import { Hero } from "#survivors";
+ * import { Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * Schema.is(Hero.Input)({ moveX: 1, moveZ: -0.5 }); // => true
@@ -57,7 +57,7 @@ export const Input = Schema.Struct({
  * **Example** (A script that walks right)
  *
  * ```ts
- * import type { Hero } from "#survivors";
+ * import type { Hero } from "../survivors/index";
  * import * as Game from "arcadekit/game";
  *
  * const right: Game.StepInput<Hero.Input> = { read: () => ({ moveX: 1, moveZ: 0 }) };
@@ -84,7 +84,7 @@ export type Input = typeof Input.Type;
  * **Example** (A won run's summary)
  *
  * ```ts
- * import { Hero } from "#survivors";
+ * import { Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const summary = Schema.decodeUnknownSync(Hero.Summary)({
@@ -120,7 +120,7 @@ export const Summary = Schema.Struct({
  * **Example** (The longer of two runs)
  *
  * ```ts
- * import type { Hero } from "#survivors";
+ * import type { Hero } from "../survivors/index";
  *
  * const longer = (a: Hero.Summary, b: Hero.Summary) => (b.time > a.time ? b : a);
  * const first = { won: false, heroId: "bolter", heroName: "Bolter", time: 42, kills: 80, level: 6 };
@@ -141,7 +141,7 @@ export type Summary = typeof Summary.Type;
  * **Example** (The most players)
  *
  * ```ts
- * import { Hero } from "#survivors";
+ * import { Hero } from "../survivors/index";
  *
  * Hero.maxPerRun; // => 4
  * ```
@@ -162,7 +162,7 @@ export const maxPerRun = 4;
  * **Example** (The most weapons)
  *
  * ```ts
- * import { Hero } from "#survivors";
+ * import { Hero } from "../survivors/index";
  *
  * Hero.maxWeapons; // => 4
  * ```
@@ -188,7 +188,7 @@ export const maxWeapons = 4;
  * **Example** (A hero's starting weapon)
  *
  * ```ts
- * import { GameContent, Hero } from "#survivors";
+ * import { GameContent, Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -237,7 +237,7 @@ export interface WeaponSlot {
  * **Example** (A hero's speed)
  *
  * ```ts
- * import { GameContent, Hero } from "#survivors";
+ * import { GameContent, Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -292,7 +292,7 @@ export interface Stats {
  * **Example** (The second player's hero)
  *
  * ```ts
- * import { GameContent, Hero } from "#survivors";
+ * import { GameContent, Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -377,7 +377,7 @@ const START = [
  * **Example** (An unknown id plays the first hero)
  *
  * ```ts
- * import { GameContent, Hero } from "#survivors";
+ * import { GameContent, Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -485,7 +485,7 @@ const recomputeStats = (content: GameContent.GameContent, hero: Hero): void => {
  * **Example** (A bolt at levels 1 and 3)
  *
  * ```ts
- * import { GameContent, Hero } from "#survivors";
+ * import { GameContent, Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -527,7 +527,7 @@ export const weaponDamage = (self: Hero, slot: WeaponSlot): number =>
  * **Example** (A bolt at levels 1 and 2)
  *
  * ```ts
- * import { GameContent, Hero } from "#survivors";
+ * import { GameContent, Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -571,7 +571,7 @@ export const weaponCooldown = (self: Hero, slot: WeaponSlot): number =>
  * **Example** (An aura and a bolt)
  *
  * ```ts
- * import { GameContent, Hero } from "#survivors";
+ * import { GameContent, Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -629,7 +629,7 @@ export const auraRadius = (self: Hero, slot: WeaponSlot): number =>
  * **Example** (A bolt's second level)
  *
  * ```ts
- * import { GameContent, Hero } from "#survivors";
+ * import { GameContent, Hero } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({

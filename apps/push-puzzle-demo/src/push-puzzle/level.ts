@@ -30,7 +30,7 @@ import { TileMap } from "arcadekit/core";
  * **Example** (A hole beside the player)
  *
  * ```ts
- * import { Level } from "#push-puzzle";
+ * import { Level } from "../push-puzzle/index";
  *
  * const level = Level.parse(["####", "#@^#", "####"]);
  * level.map.fields.tile[5] === Level.Tile.floor; // => true
@@ -58,7 +58,7 @@ export const Tile = {
  * **Example** (Naming a cell's tile)
  *
  * ```ts
- * import { Level } from "#push-puzzle";
+ * import { Level } from "../push-puzzle/index";
  *
  * const level = Level.parse(["###", "#@#", "###"]);
  * const corner: Level.Tile = Level.Tile.wall;
@@ -83,7 +83,7 @@ export type Tile = (typeof Tile)[keyof typeof Tile];
  * **Example** (Checking a row's characters)
  *
  * ```ts
- * import { Level } from "#push-puzzle";
+ * import { Level } from "../push-puzzle/index";
  *
  * [..."#@$.^"].every((char) => Level.characters.includes(char)); // => true
  * Level.characters.includes("x"); // => false
@@ -103,7 +103,7 @@ export const characters = "#@+$*. ^";
  * **Example** (The fields of a level's map)
  *
  * ```ts
- * import { Level } from "#push-puzzle";
+ * import { Level } from "../push-puzzle/index";
  *
  * Object.keys(Level.layout); // => ["tile", "goal"]
  * Level.parse(["#####", "#@$.#", "#####"]).map.fields.goal[8]; // => 1
@@ -134,7 +134,7 @@ export const layout = {
  * **Example** (Where things start)
  *
  * ```ts
- * import { Level } from "#push-puzzle";
+ * import { Level } from "../push-puzzle/index";
  *
  * const level = Level.parse(["#####", "#@$.#", "#####"]);
  * [level.players, level.boxes, level.goalCount]; // => [[6], [7], 1]
@@ -170,7 +170,7 @@ export interface Level {
  * **Example** (Floor outside the walls)
  *
  * ```ts
- * import { Level } from "#push-puzzle";
+ * import { Level } from "../push-puzzle/index";
  *
  * const level = Level.parse(["  ###", "  #@#", "  ###"]);
  * [level.map.cols, level.map.rows]; // => [5, 3]

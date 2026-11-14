@@ -8,9 +8,11 @@ import { AudioSettings } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
 
-import type { PushPuzzleContent } from "#push-puzzle";
-import type { PushPuzzleEngine, PushPuzzleSheet } from "#push-puzzle/browser";
-
+import type {
+  PushPuzzleEngine,
+  PushPuzzleSheet,
+} from "../push-puzzle/browser/index";
+import type { PushPuzzleContent } from "../push-puzzle/index";
 import type { PushPuzzleAudioSettings } from "./audio-settings";
 import {
   ChangeAudioSettings,

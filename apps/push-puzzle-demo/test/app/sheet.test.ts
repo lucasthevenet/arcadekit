@@ -8,14 +8,6 @@ import { Effect, Layer, Schema } from "effect";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { PushPuzzleContent, PuzzleContent } from "#push-puzzle";
-import {
-  Art,
-  PushPuzzleCueTable,
-  PushPuzzleEngine,
-  PushPuzzleSheet,
-} from "#push-puzzle/browser";
-
 import {
   EndRun,
   FocusRetry,
@@ -31,6 +23,13 @@ import * as Sheet from "../../src/app/sheet";
 import * as Sounds from "../../src/app/sounds";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
+import {
+  Art,
+  PushPuzzleCueTable,
+  PushPuzzleEngine,
+  PushPuzzleSheet,
+} from "../../src/push-puzzle/browser/index";
+import { PushPuzzleContent, PuzzleContent } from "../../src/push-puzzle/index";
 
 // The sheet this game ships, and what a failed sheet load does to startup. Loading and
 // parsing sheets in general is arcadekit/render-three's tests.

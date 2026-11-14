@@ -5,7 +5,11 @@ import * as Game from "arcadekit/game";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { ChooseUpgrade, Survivors, SurvivorsContent } from "#survivors";
+import {
+  ChooseUpgrade,
+  Survivors,
+  SurvivorsContent,
+} from "../src/survivors/index";
 
 // Checks this game's real content files: they decode, reference each other correctly,
 // and every hero can play a minute of a run, as `Game.Loop` steps it for any declared host.

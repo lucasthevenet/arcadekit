@@ -9,13 +9,17 @@ import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
-import { ChooseUpgrade, Hero, HoldPause, SurvivorsContent } from "#survivors";
 import {
   SurvivorsCoop,
   SurvivorsEngine,
   SurvivorsSheet,
-} from "#survivors/browser";
-
+} from "../survivors/browser/index";
+import {
+  ChooseUpgrade,
+  Hero,
+  HoldPause,
+  SurvivorsContent,
+} from "../survivors/index";
 import { SurvivorsAudioSettings } from "./audio-settings";
 import * as HeroRecords from "./hero-records";
 import { Message } from "./message";

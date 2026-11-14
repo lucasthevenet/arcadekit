@@ -38,8 +38,8 @@ import * as Controls from "./internal/controls";
  * **Example** (What every peer agrees on)
  *
  * ```ts
- * import { Hero } from "#survivors";
- * import { SurvivorsCoop, SurvivorsEngine } from "#survivors/browser";
+ * import { Hero } from "../survivors/index";
+ * import { SurvivorsCoop, SurvivorsEngine } from "../survivors/browser/index";
  *
  * SurvivorsCoop.definition.engine === SurvivorsEngine; // => true
  * SurvivorsCoop.definition.maxPlayers === Hero.maxPerRun; // => true

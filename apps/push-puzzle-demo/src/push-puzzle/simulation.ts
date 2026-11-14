@@ -3,7 +3,7 @@
  * a test.
  *
  * The declaration names the parts the `World` module holds: the step input, how a run starts,
- * the step, and the HUD's sample. `PushPuzzleEngine` (`#push-puzzle/browser`) adds the
+ * the step, and the HUD's sample. `PushPuzzleEngine` (in `browser/`) adds the
  * input, the view and the sound.
  */
 import * as Game from "arcadekit/game";
@@ -29,7 +29,7 @@ import * as World from "./world";
  * **Example** (Hearing a run in a loop)
  *
  * ```ts
- * import { PushPuzzle, PuzzleContent } from "#push-puzzle";
+ * import { PushPuzzle, PuzzleContent } from "../push-puzzle/index";
  * import * as Game from "arcadekit/game";
  * import { Schema } from "effect";
  *

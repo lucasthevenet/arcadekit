@@ -35,8 +35,8 @@ import * as SpriteTags from "./internal/sprite-tags";
  * **Example** (A sheet without a hero's own tags)
  *
  * ```ts
- * import { GameContent } from "#survivors";
- * import { Art } from "#survivors/browser";
+ * import { GameContent } from "../survivors/index";
+ * import { Art } from "../survivors/browser/index";
  * import { SpriteSheet } from "arcadekit/render-three";
  * import { TestSpriteSheet } from "arcadekit/render-three/testing";
  * import { Schema } from "effect";
@@ -87,7 +87,7 @@ export const tags = (
  * **Example** (The size of a tile)
  *
  * ```ts
- * import { Art } from "#survivors/browser";
+ * import { Art } from "../survivors/browser/index";
  *
  * Art.pixelsPerUnit; // => 16
  * ```

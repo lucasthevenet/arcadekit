@@ -4,7 +4,7 @@
  *
  * The declaration names the parts the `World` module holds: the step input, how a run starts,
  * the step, the handlers of the two commands, and the HUD's sample. `SurvivorsEngine`
- * (`#survivors/browser`) adds the input, the view and the sound for one player, and
+ * (in `browser/`) adds the input, the view and the sound for one player, and
  * `SurvivorsCoop` plays that engine for several, in lockstep.
  */
 import * as Game from "arcadekit/game";
@@ -34,7 +34,7 @@ import * as World from "./world";
  * **Example** (Hearing a run in a loop)
  *
  * ```ts
- * import { GameContent, Survivors } from "#survivors";
+ * import { GameContent, Survivors } from "../survivors/index";
  * import * as Game from "arcadekit/game";
  * import { Schema } from "effect";
  *

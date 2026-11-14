@@ -23,7 +23,7 @@ import { SpriteSheet } from "arcadekit/render-three";
  * **Example** (Providing a sheet a test made)
  *
  * ```ts
- * import { SurvivorsSheet } from "#survivors/browser";
+ * import { SurvivorsSheet } from "../survivors/browser/index";
  * import { TestSpriteSheet } from "arcadekit/render-three/testing";
  * import { Effect } from "effect";
  *

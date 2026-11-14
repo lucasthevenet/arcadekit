@@ -9,7 +9,7 @@
  */
 import { Schema } from "effect";
 
-import type { Hero } from "#survivors";
+import type { Hero } from "../survivors/index";
 
 /** One hero's record: the best of all its runs. */
 export const HeroRecord = Schema.Struct({

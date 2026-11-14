@@ -6,9 +6,11 @@ import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Effect, Schema } from "effect";
 import { Command, Dom } from "foldkit";
 
-import { PushPuzzleContent } from "#push-puzzle";
-import { PushPuzzleEngine, PushPuzzleSheet } from "#push-puzzle/browser";
-
+import {
+  PushPuzzleEngine,
+  PushPuzzleSheet,
+} from "../push-puzzle/browser/index";
+import { PushPuzzleContent } from "../push-puzzle/index";
 import { PushPuzzleAudioSettings } from "./audio-settings";
 import * as LevelRecords from "./level-records";
 import { Message } from "./message";

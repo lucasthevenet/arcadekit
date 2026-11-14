@@ -31,7 +31,7 @@ import * as Hero from "./hero";
  * **Example** (Checking a choice)
  *
  * ```ts
- * import { Offer } from "#survivors";
+ * import { Offer } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const choice = { kind: "passive", id: "power", name: "Power", description: "+10% damage", level: 2 };
@@ -60,7 +60,7 @@ export const Choice = Schema.Struct({
  * **Example** (Describing a choice)
  *
  * ```ts
- * import type { Offer } from "#survivors";
+ * import type { Offer } from "../survivors/index";
  *
  * const label = (choice: Offer.Choice) =>
  *   choice.kind === "heal" ? choice.name : `${choice.name} ${choice.level}`;
@@ -81,7 +81,7 @@ export type Choice = typeof Choice.Type;
  * **Example** (The index of a heal)
  *
  * ```ts
- * import type { Offer } from "#survivors";
+ * import type { Offer } from "../survivors/index";
  *
  * const offer: Offer.Offer = [
  *   { kind: "weapon", id: "bolt", name: "Bolt", description: "", level: 2 },
@@ -113,7 +113,7 @@ export type Offer = readonly Choice[];
  * **Example** (A hero whose bolt is at its last level)
  *
  * ```ts
- * import { GameContent, Hero, Offer } from "#survivors";
+ * import { GameContent, Hero, Offer } from "../survivors/index";
  * import { Rng } from "arcadekit/core";
  * import { Schema } from "effect";
  *

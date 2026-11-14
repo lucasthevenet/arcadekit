@@ -67,7 +67,7 @@ const flown = Point2.make(0, 0);
  * **Example** (Two players, the second leaving)
  *
  * ```ts
- * import { World } from "#survivors";
+ * import { World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * Schema.is(World.Input)({ players: [{ moveX: 1, moveZ: 0 }, null], leaving: [1] }); // => true
@@ -89,7 +89,7 @@ export const Input = Game.PlayerInputs(Hero.Input);
  * **Example** (One player walking right)
  *
  * ```ts
- * import type { World } from "#survivors";
+ * import type { World } from "../survivors/index";
  *
  * const right: World.Input = { players: [{ moveX: 1, moveZ: 0 }], leaving: [] };
  * right.players[0]?.moveX; // => 1
@@ -110,7 +110,7 @@ export type Input = typeof Input.Type;
  * **Example** (A run for two players)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -182,7 +182,7 @@ const GEM_LAYOUT = {
  * **Example** (Kills heard and counted)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -252,7 +252,7 @@ export interface Cues {
  * **Example** (A run at its start)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -340,7 +340,7 @@ export interface Arena {
  * **Example** (A run, and one with too many heroes)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -439,7 +439,7 @@ export const make = (
  * **Example** (A run's first HUD)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -492,7 +492,7 @@ export const hudSample = (self: Arena): Omit<Hud, "_tag"> => ({
  * **Example** (A run with no offer open)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -558,7 +558,7 @@ const anyPlaying = (arena: Arena): boolean => {
  * **Example** (A hero walking right for a second)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -1166,7 +1166,7 @@ const closeOffer = (arena: Arena, hero: Hero.Hero) => {
  * **Example** (Picking from the first offer, once)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -1228,7 +1228,7 @@ export const choose = (
  * **Example** (A pick past the offer's end, then the first choice)
  *
  * ```ts
- * import { ChooseUpgrade, GameContent, World } from "#survivors";
+ * import { ChooseUpgrade, GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -1295,7 +1295,7 @@ export const chooseUpgrade = (
  * **Example** (A hold, and one from a slot with no hero)
  *
  * ```ts
- * import { GameContent, HoldPause, World } from "#survivors";
+ * import { GameContent, HoldPause, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -1374,7 +1374,7 @@ const STATUS_CODE = { playing: 0, down: 1, left: 2 } as const;
  * **Example** (The first numbers of a run)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
@@ -1465,7 +1465,7 @@ export const visit = (self: Arena, add: (value: number) => void): void => {
  * **Example** (Two runs from one seed)
  *
  * ```ts
- * import { GameContent, World } from "#survivors";
+ * import { GameContent, World } from "../survivors/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(GameContent.GameContent)({

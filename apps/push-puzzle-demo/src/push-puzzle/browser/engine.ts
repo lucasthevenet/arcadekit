@@ -36,8 +36,8 @@ import { PushPuzzleSheet } from "./sheet";
  * **Example** (The engine's key and its rules)
  *
  * ```ts
- * import { PushPuzzle } from "#push-puzzle";
- * import { PushPuzzleEngine } from "#push-puzzle/browser";
+ * import { PushPuzzle } from "../push-puzzle/index";
+ * import { PushPuzzleEngine } from "../push-puzzle/browser/index";
  *
  * PushPuzzleEngine.key; // => "arcadekit/game/Engine/PushPuzzleEngine"
  * PushPuzzleEngine.simulation === PushPuzzle; // => true

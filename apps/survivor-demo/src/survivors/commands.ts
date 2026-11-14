@@ -23,7 +23,7 @@ import { Schema } from "effect";
  * **Example** (A refusal's offer)
  *
  * ```ts
- * import { OfferClosed } from "#survivors";
+ * import { OfferClosed } from "../survivors/index";
  *
  * const closed = new OfferClosed({ offer: 3 });
  * [closed._tag, closed.offer]; // => ["OfferClosed", 3]
@@ -46,7 +46,7 @@ export class OfferClosed extends Game.Rejection("OfferClosed", {
  * **Example** (A pick past the last choice)
  *
  * ```ts
- * import { NoSuchChoice } from "#survivors";
+ * import { NoSuchChoice } from "../survivors/index";
  *
  * const refused = new NoSuchChoice({ offer: 1, index: 5 });
  * [refused._tag, refused.index]; // => ["NoSuchChoice", 5]
@@ -78,7 +78,7 @@ export class NoSuchChoice extends Game.Rejection("NoSuchChoice", {
  * **Example** (A pick with no offer open)
  *
  * ```ts
- * import { ChooseUpgrade, GameContent, Survivors } from "#survivors";
+ * import { ChooseUpgrade, GameContent, Survivors } from "../survivors/index";
  * import * as Game from "arcadekit/game";
  * import { Schema } from "effect";
  *
@@ -125,7 +125,7 @@ export class ChooseUpgrade extends Game.Command(
  * **Example** (The refusal's tag)
  *
  * ```ts
- * import { NotPlaying } from "#survivors";
+ * import { NotPlaying } from "../survivors/index";
  *
  * new NotPlaying()._tag; // => "NotPlaying"
  * ```
@@ -153,7 +153,7 @@ export class NotPlaying extends Game.Rejection("NotPlaying") {}
  * **Example** (A held pause stops the run's clock)
  *
  * ```ts
- * import { GameContent, HoldPause, Survivors } from "#survivors";
+ * import { GameContent, HoldPause, Survivors } from "../survivors/index";
  * import * as Game from "arcadekit/game";
  * import { Schema } from "effect";
  *

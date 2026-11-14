@@ -46,7 +46,7 @@ const HeroHud = Schema.Struct({
  * **Example** (A HUD for one hero, choosing)
  *
  * ```ts
- * import { Hud } from "#survivors";
+ * import { Hud } from "../survivors/index";
  *
  * const hud = new Hud({
  *   level: 3,
@@ -92,7 +92,7 @@ export class Hud extends Game.Event("Hud", {
  * **Example** (An offer for the first hero)
  *
  * ```ts
- * import { LeveledUp } from "#survivors";
+ * import { LeveledUp } from "../survivors/index";
  *
  * const leveled = new LeveledUp({
  *   hero: 0,
@@ -126,7 +126,7 @@ export class LeveledUp extends Game.Event("LeveledUp", {
  * **Example** (The second player left)
  *
  * ```ts
- * import { HeroLeft } from "#survivors";
+ * import { HeroLeft } from "../survivors/index";
  *
  * new HeroLeft({ hero: 1 }).hero; // => 1
  * ```
@@ -154,7 +154,7 @@ export class HeroLeft extends Game.Event("HeroLeft", {
  * **Example** (A lost run of one hero)
  *
  * ```ts
- * import { RunEnded } from "#survivors";
+ * import { RunEnded } from "../survivors/index";
  *
  * const ended = new RunEnded({
  *   summaries: [{ won: false, heroId: "bolter", heroName: "Bolter", time: 95.5, kills: 140, level: 7 }],

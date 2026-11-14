@@ -14,8 +14,7 @@ import { CoopEvent } from "arcadekit/net/browser";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
-import { Hero, Hud, Offer } from "#survivors";
-
+import { Hero, Hud, Offer } from "../survivors/index";
 import * as HeroRecords from "./hero-records";
 
 /** A hero as the menu and the lobby list it: its id, name, description and colour. */

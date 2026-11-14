@@ -31,7 +31,7 @@ import * as GameContent from "./game-content";
  * **Example** (Reading a game's content)
  *
  * ```ts
- * import { SurvivorsContent } from "#survivors";
+ * import { SurvivorsContent } from "../survivors/index";
  * import { ContentSource } from "arcadekit/content";
  * import { Effect } from "effect";
  *

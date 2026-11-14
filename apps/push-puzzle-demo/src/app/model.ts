@@ -8,8 +8,7 @@ import { AudioSettings } from "arcadekit/audio";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
-import { Hud } from "#push-puzzle";
-
+import { Hud } from "../push-puzzle/index";
 import * as LevelRecords from "./level-records";
 
 /** A level as level select lists it: its id and its name. */

@@ -11,8 +11,8 @@
 import type { CoopClient } from "arcadekit/net/browser";
 import { Effect, Layer } from "effect";
 
-import type { World } from "#survivors";
-import { SurvivorsCoop } from "#survivors/browser";
+import { SurvivorsCoop } from "../survivors/browser/index";
+import type { World } from "../survivors/index";
 
 /** What `globalThis.arcadekitCoop.debug()` gives: the client's debug read, with plain data in place of the arena. */
 export interface CoopDebug {

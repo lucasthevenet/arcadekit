@@ -21,7 +21,7 @@ import { AudioSystem, CueTable } from "arcadekit/audio";
  * **Example** (An app's sounds)
  *
  * ```ts
- * import { PushPuzzleCueTable } from "#push-puzzle/browser";
+ * import { PushPuzzleCueTable } from "../push-puzzle/browser/index";
  * import type { CueSoundsOf } from "arcadekit/audio";
  *
  * const sounds: CueSoundsOf<typeof PushPuzzleCueTable> = {

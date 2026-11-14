@@ -9,8 +9,7 @@ import type { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Viewport } from "arcadekit/foldkit";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
-import type { Hud } from "#push-puzzle";
-
+import type { Hud } from "../push-puzzle/index";
 import { Message } from "./message";
 import { Phase } from "./model";
 import type { Model } from "./model";

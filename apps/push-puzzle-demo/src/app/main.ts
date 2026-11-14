@@ -9,13 +9,12 @@ import { SpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
-import { PushPuzzleContent } from "#push-puzzle";
 import {
   PushPuzzleCueTable,
   PushPuzzleEngine,
   PushPuzzleSheet,
-} from "#push-puzzle/browser";
-
+} from "../push-puzzle/browser/index";
+import { PushPuzzleContent } from "../push-puzzle/index";
 import { PushPuzzleAudioSettings } from "./audio-settings";
 import { PushPuzzleSave } from "./save";
 import * as Sheet from "./sheet";

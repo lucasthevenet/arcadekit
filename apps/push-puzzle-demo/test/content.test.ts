@@ -5,8 +5,12 @@ import * as Scenario from "arcadekit/game/scenario";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { LevelSolved, PushPuzzle, PushPuzzleContent } from "#push-puzzle";
-import type { World } from "#push-puzzle";
+import {
+  LevelSolved,
+  PushPuzzle,
+  PushPuzzleContent,
+} from "../src/push-puzzle/index";
+import type { World } from "../src/push-puzzle/index";
 
 // Checks this game's real level file: it decodes, passes the level checks,
 // and every level can be solved (by a known solution, in the fewest moves found).

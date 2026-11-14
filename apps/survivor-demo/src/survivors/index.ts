@@ -1,8 +1,8 @@
 /**
- * `#survivors`: the survivors-like genre's rules, with no DOM. Heroes, one per player,
- * hold out against waves of enemies with weapons that fire on their own, and pick an upgrade at
- * each level-up of the team. The demo's app imports them here, as its `package.json` `imports`
- * names this file.
+ * The survivors-like genre's rules, with no DOM. Heroes, one per player, hold out against waves
+ * of enemies with weapons that fire on their own, and pick an upgrade at each level-up of the
+ * team. The demo's app imports them from this file by relative path (`../survivors/index` from
+ * `src/app/`), as the examples do.
  *
  * Its declarations are exported bare under their names: the events (`Hud`, `LeveledUp`,
  * `HeroLeft`, `RunEnded`), the commands with their rejections (`ChooseUpgrade`, `HoldPause`,
@@ -11,7 +11,7 @@
  * (`World`), a hero and one player's input (`Hero`), an upgrade offer (`Offer`), and the content's
  * Schema (`GameContent`). This is what co-op needs with no DOM: a lockstep peer steps `Survivors`
  * and compares `World.hash`. No DOM or Three.js here: the demo's `tsconfig.rules.json` checks this
- * file with no DOM types, and the engine and the Coop are in `#survivors/browser`.
+ * file with no DOM types, and the engine and the Coop are in `browser/index.ts`.
  */
 export {
   ChooseUpgrade,

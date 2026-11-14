@@ -7,9 +7,6 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 import { Scene } from "foldkit";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { SurvivorsContent } from "#survivors";
-import { SurvivorsSheet } from "#survivors/browser";
-
 import {
   FocusRetry,
   LoadAudioSettings,
@@ -24,6 +21,8 @@ import { Message } from "../../src/app/message";
 import type { Model } from "../../src/app/model";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
+import { SurvivorsSheet } from "../../src/survivors/browser/index";
+import { SurvivorsContent } from "../../src/survivors/index";
 
 // The load-error screen's "Try again": it runs LoadContent again through the app's real loaders,
 // which fetch again only what failed, and a load that succeeds goes to the menu. No WebGL:

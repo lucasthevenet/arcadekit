@@ -95,7 +95,7 @@ const duplicateIds = (levels: readonly { readonly id: string }[]) => {
  * **Example** (Decoding levels, and refusing one with no goal)
  *
  * ```ts
- * import { PuzzleContent } from "#push-puzzle";
+ * import { PuzzleContent } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content = Schema.decodeUnknownSync(PuzzleContent.PuzzleContent)({
@@ -122,7 +122,7 @@ export const PuzzleContent = Schema.Struct({
  * **Example** (Listing the levels' names)
  *
  * ```ts
- * import { PuzzleContent } from "#push-puzzle";
+ * import { PuzzleContent } from "../push-puzzle/index";
  * import { Schema } from "effect";
  *
  * const content: PuzzleContent.PuzzleContent = Schema.decodeUnknownSync(

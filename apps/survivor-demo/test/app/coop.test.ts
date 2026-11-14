@@ -11,14 +11,6 @@ import { SpriteSheet } from "arcadekit/render-three";
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HeroLeft, LeveledUp, RunEnded, SurvivorsContent } from "#survivors";
-import type { GameContent, Survivors } from "#survivors";
-import {
-  SurvivorsCoop,
-  SurvivorsCueTable,
-  SurvivorsSheet,
-} from "#survivors/browser";
-
 import {
   HostCoop,
   LeaveCoop,
@@ -30,6 +22,18 @@ import { Message } from "../../src/app/message";
 import { emptyHud } from "../../src/app/model";
 import * as Sounds from "../../src/app/sounds";
 import { coopMessage } from "../../src/app/subscriptions";
+import {
+  SurvivorsCoop,
+  SurvivorsCueTable,
+  SurvivorsSheet,
+} from "../../src/survivors/browser/index";
+import {
+  HeroLeft,
+  LeveledUp,
+  RunEnded,
+  SurvivorsContent,
+} from "../../src/survivors/index";
+import type { GameContent, Survivors } from "../../src/survivors/index";
 
 // The app's co-op glue with nothing real behind it: the kit's fake rooms stand in for the
 // signalling worker and WebRTC, the content is the app's own files, and nothing draws. The

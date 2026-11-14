@@ -21,7 +21,7 @@ import { SpriteSheet } from "arcadekit/render-three";
  * **Example** (Providing a sheet a test made)
  *
  * ```ts
- * import { PushPuzzleSheet } from "#push-puzzle/browser";
+ * import { PushPuzzleSheet } from "../push-puzzle/browser/index";
  * import { TestSpriteSheet } from "arcadekit/render-three/testing";
  * import { Effect } from "effect";
  *

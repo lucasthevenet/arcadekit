@@ -8,13 +8,12 @@ import { AudioSettings } from "arcadekit/audio";
 import type { AudioSystem } from "arcadekit/audio";
 import type { Runtime, Update } from "foldkit";
 
-import type { SurvivorsContent } from "#survivors";
 import type {
   SurvivorsCoop,
   SurvivorsEngine,
   SurvivorsSheet,
-} from "#survivors/browser";
-
+} from "../survivors/browser/index";
+import type { SurvivorsContent } from "../survivors/index";
 import type { SurvivorsAudioSettings } from "./audio-settings";
 import {
   ChooseCoopHero,

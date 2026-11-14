@@ -10,8 +10,7 @@ import { CoopEvent } from "arcadekit/net/browser";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
-import { Hero, Hud, Offer } from "#survivors";
-
+import { Hero, Hud, Offer } from "../survivors/index";
 import * as HeroRecords from "./hero-records";
 import { HeroListing } from "./model";
 
