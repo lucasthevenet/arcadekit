@@ -1,0 +1,88 @@
+---
+// The landing page's hero, laid out as polycombo.io's: a line in the monospace face over the title
+// in the display face, then the tagline beside the actions. It replaces Starlight's Hero. The
+// landing page's frontmatter gives the line, `eyebrow` (content.config.ts), and the `hero`.
+import { LinkButton } from "@astrojs/starlight/components";
+
+const { data } = Astro.locals.starlightRoute.entry;
+const { eyebrow } = data as { readonly eyebrow?: string };
+const { title = data.title, tagline, actions = [] } = data.hero ?? {};
+---
+
+<div class="hero not-content">
+  {eyebrow && <p class="eyebrow">{eyebrow}</p>}
+  <h1 id="_top" data-page-title set:html={title} />
+  <div class="row">
+    {tagline && <p class="tagline" set:html={tagline} />}
+    {
+      actions.length > 0 && (
+        <div class="actions">
+          {actions.map(
+            ({
+              attrs: { class: className, ...attrs } = {},
+              icon,
+              link: href,
+              text,
+              variant,
+            }) => (
+              <LinkButton
+                href={href}
+                variant={variant}
+                icon={icon?.name}
+                class:list={[className]}
+                {...attrs}
+              >
+                {text}
+                {icon?.html && <Fragment set:html={icon.html} />}
+              </LinkButton>
+            )
+          )}
+        </div>
+      )
+    }
+  </div>
+</div>
+
+<style>
+  .hero {
+    padding-block: clamp(3rem, 10vh, 7rem) 3rem;
+  }
+
+  .eyebrow {
+    margin: 0 0 1.5rem;
+  }
+
+  h1 {
+    margin: 0;
+    font-family: var(--ak-font-display);
+    font-size: clamp(3.5rem, 12vw, 10rem);
+    font-weight: 700;
+    line-height: 0.86;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    color: var(--sl-color-white);
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem 3rem;
+    margin-top: 2rem;
+  }
+
+  .tagline {
+    max-width: 38rem;
+    margin: 0;
+    font-size: var(--sl-text-lg);
+    color: var(--sl-color-gray-2);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem 1.5rem;
+  }
+</style>

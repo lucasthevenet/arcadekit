@@ -1,0 +1,9 @@
+---
+// The site has one theme, dark, as polycombo.io's, which it is styled after, has: this replaces
+// Starlight's ThemeProvider, which would follow the system's or the reader's choice, and
+// theme-select.astro takes the theme picker out of the header.
+---
+
+<script is:inline>
+  document.documentElement.dataset.theme = "dark";
+</script>

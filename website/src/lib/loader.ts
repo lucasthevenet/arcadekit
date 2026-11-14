@@ -43,6 +43,16 @@ const store = async (context: LoaderContext, page: RepositoryPage) => {
       // The file is outside the site's folder, where Starlight's own edit link would point.
       editUrl: `${REPO_URL}/edit/${BRANCH}/${page.file}`,
       ...(label === undefined ? {} : { sidebar: { label } }),
+      // A reference page says what it documents, for the landing page's numbers
+      // (components/kit-stats.astro).
+      ...("exports" in page
+        ? {
+            api: {
+              kind: "module" in page ? "module" : "entry",
+              exports: page.exports,
+            },
+          }
+        : {}),
     },
     filePath,
   });

@@ -42,6 +42,14 @@ A `ts` block of a page is compiled by the smoke test ([`scripts/smoke-test.mjs`]
 
 So a doc comment is written once, for an editor's hover and for the site, and its examples are typechecked with the rest by the smoke test. A README's table of modules links each to its source file, which on the site is the module's page.
 
+## Its look
+
+The site is styled after [polycombo.io](https://polycombo.io): one dark theme, square panels on hairlines, titles in [Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed) and in capitals, labels in [IBM Plex Mono](https://fonts.google.com/specimen/IBM+Plex+Mono), text in [Inter](https://rsms.me/inter/), and an acid lime accent, with a ramp from lime to pink for what is numbered. The faces are self-hosted from their `@fontsource` packages.
+
+- [`src/styles/custom.css`](src/styles/custom.css) holds the palette, as `--ak-*` variables that Starlight's own (`--sl-*`) are made from, and every rule over Starlight's. Starlight's styles are in CSS layers, so these, in none, win over them.
+- [`src/components/`](src/components) replaces five of Starlight's components: the header's wordmark (`site-title.astro`), the landing page's hero (`hero.astro`, with the line over its title from the page's `eyebrow`), a page's title (`page-title.astro`: a reference page's keeps its case), and the theme's two (`theme-provider.astro`, `theme-select.astro`: one theme, so no picker). The landing page's numbers are `kit-stats.astro`, counted from the reference's pages.
+- Code is drawn with the `vesper` theme on the page's panels (`expressiveCode` in [`astro.config.ts`](astro.config.ts)).
+
 ## How it reads the repository
 
 Starlight serves the entries of its `docs` collection, which its own loader reads from `src/content/docs/`. There the site has its landing page alone. [`src/lib/loader.ts`](src/lib/loader.ts) adds each page `pages.ts` finds as an entry of the same collection, read where it is ([`src/content.config.ts`](src/content.config.ts)):
@@ -88,7 +96,7 @@ The other choice is a site that describes only what is released: deploy it when 
 
 ## Images
 
-`public/favicon.svg` is the site's mark, and its logo. `pnpm --filter @arcadekit/website images` draws `apple-touch-icon.png` and `og.png` (the card a shared link shows) from it, in Playwright's Chromium. Both are committed: run it again after changing the mark.
+`public/favicon.svg` is the site's mark, and its logo. `pnpm --filter @arcadekit/website images` draws `apple-touch-icon.png` and `og.png` (the card a shared link shows, in the site's look and faces) from it, in Playwright's Chromium. Both are committed: run it again after changing the mark or the look.
 
 ## Deploying
 

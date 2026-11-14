@@ -28,6 +28,7 @@ const entry = (name: string): EntryPage => ({
   body: "",
   entry: name,
   readme: true,
+  exports: 0,
 });
 
 const doc = (slug: string): DocPage => ({

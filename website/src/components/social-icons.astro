@@ -1,6 +1,6 @@
 ---
-// The header's links, before Starlight's own (GitHub and npm): GRIMBONK, and the version of the
-// package the pages describe.
+// The header's links, before Starlight's own (GitHub and npm): the version of the package the
+// pages describe, and GRIMBONK.
 //
 // The site is built from the repository as it is, so its pages follow `main`, which may be ahead
 // of the package on npm (lib/version.ts). The version links to the changelog when the pages
@@ -26,21 +26,43 @@ const versionTitle = unreleased
   : "What each release changed";
 ---
 
-<a class="header-link" href={GRIMBONK_URL}>GRIMBONK</a>
-<a class="header-link" href={versionLink} title={versionTitle}>
+<a class="header-link version" href={versionLink} title={versionTitle}>
   {versionLabel(kit.version, unreleased)}
+</a>
+<a class="header-link play" href={GRIMBONK_URL}>
+  Play GRIMBONK <span aria-hidden="true">↗</span>
 </a>
 <Default />
 
 <style>
   .header-link {
-    color: var(--sl-color-gray-2);
-    font-size: var(--sl-text-sm);
     text-decoration: none;
     white-space: nowrap;
   }
 
-  .header-link:hover {
-    color: var(--sl-color-white);
+  /* The version, a label in the monospace face. */
+  .version {
+    color: var(--ak-text-muted);
+    font-family: var(--ak-font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+  }
+
+  .version:hover {
+    color: var(--ak-text);
+  }
+
+  /* GRIMBONK, an outlined button, as polycombo.io's link to its market. */
+  .play {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--ak-border-strong);
+    border-radius: var(--ak-radius);
+    color: var(--ak-text);
+    font-size: var(--sl-text-sm);
+    font-weight: 600;
+  }
+
+  .play:hover {
+    border-color: var(--ak-lime);
   }
 </style>

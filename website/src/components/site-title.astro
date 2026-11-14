@@ -1,0 +1,41 @@
+---
+// The header's mark and wordmark, ARCADE//KIT in the monospace face, as polycombo.io writes its
+// own. It replaces Starlight's SiteTitle; a screen reader reads the site's name.
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title" aria-label={siteTitle}>
+  <img src="/favicon.svg" alt="" width="28" height="28" />
+  <span class="wordmark" aria-hidden="true" translate="no">
+    ARCADE<span class="slashes">//</span>KIT
+  </span>
+</a>
+
+<style>
+  .site-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    color: var(--sl-color-white);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  img {
+    width: 1.75rem;
+    height: 1.75rem;
+    image-rendering: pixelated;
+  }
+
+  .wordmark {
+    font-family: var(--ak-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .slashes {
+    color: var(--ak-lime);
+  }
+</style>

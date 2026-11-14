@@ -1,13 +1,13 @@
 ---
-# The tab's title, before the site's name. The hero's is the site's name alone.
+# The tab's title, before the site's name. The hero's is the same, with its last word in the
+# accent colour (components/hero.astro).
 title: Primitives for browser games
 description: A deterministic simulation, a game loop, input, saves, audio, pixel art and lockstep co-op for browser games. One package, on Effect, Foldkit and Three.js.
 template: splash
+eyebrow: One package · Effect 4 · Foldkit · Three.js
 hero:
-  title: arcadekit
-  tagline: Primitives for browser games. A deterministic simulation, a game loop, input, saves, audio, pixel art and lockstep co-op. One package, on Effect, Foldkit and Three.js.
-  image:
-    html: <img class="hero-mark" src="/favicon.svg" alt="" width="400" height="400" />
+  title: Primitives for browser <span class="accent">games.</span>
+  tagline: A deterministic simulation, a game loop, input, saves, audio, pixel art and lockstep co-op, for games made with Effect, Foldkit and Three.js.
   actions:
     - text: Get started
       link: "#install"
@@ -23,6 +23,7 @@ hero:
 ---
 
 import { Card, CardGrid } from "@astrojs/starlight/components";
+import KitStats from "../../components/kit-stats.astro";
 import { Content as PackageReadme } from "../../../../packages/arcadekit/README.md";
 
 <CardGrid>
@@ -46,6 +47,8 @@ import { Content as PackageReadme } from "../../../../packages/arcadekit/README.
     input are plain code. [Making a game](/making-a-game)
   </Card>
 </CardGrid>
+
+<KitStats />
 
 arcadekit is one package of primitives for browser games made with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org). Install it below, then [make a game](/making-a-game): the concepts say how a game is put together, a guide covers each task, and each entry has a reference page.
 

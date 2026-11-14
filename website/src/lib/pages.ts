@@ -72,6 +72,8 @@ export interface EntryPage extends RepositoryPage {
   readonly entry: string;
   /** Whether its page is its README, or else its public file's module comment. */
   readonly readme: boolean;
+  /** How many exports its page documents: its own, not its modules'. */
+  readonly exports: number;
 }
 
 /** The reference page of a namespace an entry exports. */
@@ -80,6 +82,8 @@ export interface ModulePage extends RepositoryPage {
   readonly entry: string;
   /** Its name in the entry, such as `Rng`. */
   readonly module: string;
+  /** How many exports its page documents. */
+  readonly exports: number;
 }
 
 const toPosix = (file: string) => file.split(path.sep).join("/");
@@ -188,6 +192,9 @@ export const kitEntries = (): Record<string, string> => {
   );
 };
 
+/** The package's API: every entry, with its own exports and its modules' (api.ts). */
+export const kitApi = (): Entry[] => readApi(REPO_ROOT, KIT_DIR, kitEntries());
+
 /** A link from one file of the repository to another, as a page writes it. */
 const linkFrom = (from: string, to: string) =>
   path.posix.relative(path.posix.dirname(from), to);
@@ -258,6 +265,7 @@ const entryPage = (api: Entry, readmes: ReadonlySet<string>): EntryPage => {
         .join("\n\n"),
       entry: api.entry,
       readme: true,
+      exports: api.exports.length,
     };
   }
   return {
@@ -272,6 +280,7 @@ const entryPage = (api: Entry, readmes: ReadonlySet<string>): EntryPage => {
       .join("\n\n"),
     entry: api.entry,
     readme: false,
+    exports: api.exports.length,
   };
 };
 
@@ -291,6 +300,7 @@ const modulePage = (entry: string, module: Module): ModulePage => {
     ].join("\n\n"),
     entry,
     module: module.name,
+    exports: module.exports.length,
   };
 };
 
@@ -301,7 +311,7 @@ const referencePages = () => {
       .map((file) => `${KIT_SRC}/${toPosix(String(file))}`)
       .filter((file) => file.endsWith("/README.md"))
   );
-  const api = readApi(REPO_ROOT, KIT_DIR, kitEntries());
+  const api = kitApi();
   const unknown = [...readmes].filter(
     (readme) =>
       !api.some((entry) => readme === `${KIT_SRC}/${entry.entry}/README.md`)

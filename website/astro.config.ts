@@ -85,7 +85,7 @@ export default defineConfig({
           tag: "link",
           attrs: { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
         },
-        { tag: "meta", attrs: { name: "theme-color", content: "#17151f" } },
+        { tag: "meta", attrs: { name: "theme-color", content: "#090b0e" } },
         // The card a shared link shows (scripts/generate-images.mjs).
         {
           tag: "meta",
@@ -101,10 +101,42 @@ export default defineConfig({
       editLink: { baseUrl: `${REPO_URL}/edit/${BRANCH}/${WEBSITE_DIR}/` },
       // Learn, Guides and Reference, each with a sidebar of its own (sidebar.ts).
       plugins: [starlightSidebarTopics(sidebarTopics(pages))],
-      customCss: ["./src/styles/custom.css"],
+      // The faces, self-hosted, then the site's look over Starlight's (styles/custom.css).
+      customCss: [
+        "@fontsource-variable/inter",
+        "@fontsource/barlow-condensed/600.css",
+        "@fontsource/barlow-condensed/700.css",
+        "@fontsource/ibm-plex-mono/400.css",
+        "@fontsource/ibm-plex-mono/600.css",
+        "./src/styles/custom.css",
+      ],
+      // Code on the page's panels: one dark theme, square, in the monospace face.
+      expressiveCode: {
+        themes: ["vesper"],
+        styleOverrides: {
+          borderRadius: "2px",
+          borderColor: "#2b2f32",
+          codeBackground: "#11151a",
+          codeFontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+          uiFontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+          frames: {
+            editorTabBarBackground: "#0d1014",
+            terminalTitlebarBackground: "#0d1014",
+            terminalBackground: "#11151a",
+            frameBoxShadowCssValue: "none",
+          },
+        },
+      },
       components: {
         // The header's links: the package's version, and GRIMBONK.
         SocialIcons: "./src/components/social-icons.astro",
+        // The look of polycombo.io (styles/custom.css): its wordmark, its hero, titles in
+        // capitals, and one theme, dark.
+        SiteTitle: "./src/components/site-title.astro",
+        Hero: "./src/components/hero.astro",
+        PageTitle: "./src/components/page-title.astro",
+        ThemeProvider: "./src/components/theme-provider.astro",
+        ThemeSelect: "./src/components/theme-select.astro",
       },
       markdown: {
         // Starlight's own transforms, such as a heading's anchor link, apply to the files under
