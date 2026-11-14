@@ -1,6 +1,6 @@
 # A game is declared
 
-A game is written as declarations: each part of it is one named class, such as `class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}`. The class is the part's type, its name in a trace and an error, and, for what an app provides, the key of its service. A declaration runs nothing by itself: a host runs it.
+A game is written as declarations: each part of it is one named class, such as `class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}`. The class is the part's type, its name in a trace and an error, and, for what an app provides, the key of its service. A declaration runs nothing by itself: a host runs it. Together, a genre's declarations are its domain, written as [domain-driven design](domain-driven-design.md) writes one.
 
 ## The declarations
 
