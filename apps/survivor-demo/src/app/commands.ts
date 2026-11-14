@@ -1,6 +1,6 @@
 import {
+  Hero,
   HoldPause,
-  RunSummary,
   // The genre's command. `ChooseUpgrade` here is the Foldkit Command that sends it.
   ChooseUpgrade as SurvivorsChooseUpgrade,
   SurvivorsContent,
@@ -138,7 +138,7 @@ export const LoadSave = Command.define("LoadSave", {
 
 /** Writes a run into the save, merged with what is stored. Never fails: a failed write is logged. */
 export const SaveRun = Command.define("SaveRun", {
-  args: { summary: RunSummary },
+  args: { summary: Hero.Summary },
   messages: [Message.SavedRun],
   execute: ({ summary }) =>
     Effect.gen(function* () {

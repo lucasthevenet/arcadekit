@@ -1,122 +1,97 @@
+/**
+ * Survivors' art: the tags its view draws from the app's sprite sheet, and how many of the
+ * sheet's pixels make one world unit.
+ *
+ * The genre ships no art. The app's sheet (`SurvivorsSheet`) has a tag for each thing the view
+ * draws: the ground and the arena's wall, gems, shadows, markers, the aura's ring and the
+ * projectiles' trails, and for each of the content's heroes, enemies and weapons the `sprite` it
+ * names or a generic one the view tints with its `color`. Which tags those are depends on the
+ * content, so the app's test checks its sheet against `tags(content)`.
+ *
+ * Plain on purpose: it is data, which the view reads when it is made and once per run.
+ */
 import type { SpriteSheet } from "arcadekit/render-three";
 
-import type { GameContent } from "../schema";
-
-// The art a survivors view draws with: one Aseprite sprite sheet, which the app
-// provides as the `SurvivorsSheet` asset (game.ts), loaded once and kept for the app's lifetime.
-// A view draws from it and never frees it.
-
-/** What a survivors game draws with: the app's loaded sprite sheet. */
-export interface SurvivorsArt {
-  readonly sheet: SpriteSheet.SpriteSheet;
-}
+import type * as GameContent from "../game-content";
+import * as SpriteTags from "./internal/sprite-tags";
 
 /**
- * The tags the view draws when content names no `sprite`, or one the sheet lacks, and the
- * tags it always draws. White and grey art is tinted: heroes and enemies with their content
- * `color`, projectiles and trails with their weapon's, the marker with its player slot's.
+ * Every tag the view draws for `content`, by the name it reads each under, with the tags it draws
+ * in its place when the sheet lacks it.
+ *
+ * **When to use**
+ *
+ * In an app's test, to check its sheet against its content:
+ * `SpriteSheet.resolveTags(sheet.data, Art.tags(content)).missing` lists what the sheet lacks.
+ *
+ * **Details**
+ *
+ * A content entry's `sprite` comes first, then the generic tag the view tints with the entry's
+ * `color`: a hero's `hero/walk`, `hero/idle` and `hero/down`, an enemy's `enemy/move`, and a
+ * weapon's projectile `bolt/generic`. A generic tag is asked of the sheet only for an entry that names no sprite, or
+ * one the sheet lacks, so a test that wants them all checks a content that names none as well. A
+ * name the sheet has none of draws frame 0.
+ *
+ * **Example** (A sheet without a hero's own tags)
+ *
+ * ```ts
+ * import { GameContent } from "@arcadekit/survivors";
+ * import { Art } from "@arcadekit/survivors/browser";
+ * import { SpriteSheet } from "arcadekit/render-three";
+ * import { TestSpriteSheet } from "arcadekit/render-three/testing";
+ * import { Schema } from "effect";
+ *
+ * const content = Schema.decodeUnknownSync(GameContent.GameContent)({
+ *   rules: {
+ *     arenaHalfSize: 20, maxEnemies: 50, xpToLevel2: 5, xpGrowth: 1.3,
+ *     baseMoveSpeedScale: 1, basePickupRadius: 2.5, choicesPerLevelUp: 3, runLength: 60,
+ *   },
+ *   heroes: [{ id: "knight", name: "Knight", description: "", color: "#c0c0c0", maxHp: 150, moveSpeed: 4, startingWeapon: "bolt", sprite: "knight" }],
+ *   enemies: [{ id: "grunt", name: "Grunt", color: "#00ff00", hp: 8, speed: 2.5, damage: 10, radius: 0.45, xp: 1 }],
+ *   weapons: [{
+ *     id: "bolt", name: "Bolt", description: "", color: "#ffff00", damage: 10, damagePerLevel: 3,
+ *     cooldown: 0.5, cooldownScalePerLevel: 0.9, maxLevel: 5,
+ *     behavior: { kind: "bolt", projectileSpeed: 20, count: 1, countPerLevel: 0.5, pierce: 0, range: 14 },
+ *   }],
+ *   passives: [],
+ *   waves: [{ from: 0, to: 60, enemy: "grunt", perSecond: 1 }],
+ * });
+ * const { data } = TestSpriteSheet.fromTags({
+ *   "hero/walk": 4, "hero/idle": 1, "hero/down": 1, "enemy/move": 2, "bolt/generic": 2,
+ *   trail: 3, "gem/small": 1, "gem/medium": 1, "gem/large": 1, "aura/ring": 2,
+ *   "marker/ring": 1, shadow: 1, "ground/grass": 4, "ground/patch": 3, "edge/void": 2,
+ *   "edge/n": 1, "edge/e": 1, "edge/s": 1, "edge/w": 1,
+ *   "edge/nw": 1, "edge/ne": 1, "edge/se": 1, "edge/sw": 1,
+ * });
+ * // Warns once that the sheet has no tags "knight/walk", "knight/idle" and "knight/down".
+ * SpriteSheet.resolveTags(data, Art.tags(content)).missing; // => ["knight/walk", "knight/idle", "knight/down"]
+ * ```
+ *
+ * @category getters
  */
-export const SPRITE_TAGS = {
-  /** A hero's tags are `<prefix>/walk`, `<prefix>/idle` and `<prefix>/down`. */
-  hero: "hero",
-  enemy: "enemy/move",
-  bolt: "bolt/generic",
-  /** Fresh to faded: a trail puff's frame is picked by its age. */
-  trail: "trail",
-  /** Small, medium and large: gems worth 1, up to 3, and more. */
-  gems: ["gem/small", "gem/medium", "gem/large"],
-  /** White, drawn at the aura's radius in whole pixels; frame 1 is the ring dealing damage. */
-  aura: "aura/ring",
-  marker: "marker/ring",
-  shadow: "shadow",
-  grass: "ground/grass",
-  patch: "ground/patch",
-  /** The arena wall, by the side of the arena it sits on. */
-  edges: {
-    n: "edge/n",
-    e: "edge/e",
-    s: "edge/s",
-    w: "edge/w",
-    nw: "edge/nw",
-    ne: "edge/ne",
-    se: "edge/se",
-    sw: "edge/sw",
-  },
-  /** The dark drop beyond the wall. */
-  void: "edge/void",
-} as const;
-
-/** The three tags a hero draws from its `sprite` prefix (or the generic `hero`). */
-export const heroTags = (prefix: string) =>
-  ({
-    walk: `${prefix}/walk`,
-    idle: `${prefix}/idle`,
-    down: `${prefix}/down`,
-  }) as const;
-
-/**
- * The tags the view draws whatever the content, by the name it reads each under. It picks
- * them once, when it is made.
- */
-export const SCENE_TAGS = {
-  bolt: SPRITE_TAGS.bolt,
-  trail: SPRITE_TAGS.trail,
-  gemSmall: SPRITE_TAGS.gems[0],
-  gemMedium: SPRITE_TAGS.gems[1],
-  gemLarge: SPRITE_TAGS.gems[2],
-  aura: SPRITE_TAGS.aura,
-  marker: SPRITE_TAGS.marker,
-  shadow: SPRITE_TAGS.shadow,
-  grass: SPRITE_TAGS.grass,
-  patch: SPRITE_TAGS.patch,
-  void: SPRITE_TAGS.void,
-  ...SPRITE_TAGS.edges,
-} as const;
-
-/**
- * The names `contentTags` gives the tags of a content's heroes, enemies and weapons: a hero's
- * and a weapon's by id, as the rules find them, and an enemy's by its place in the content's
- * `enemies`, which is its type in a run.
- */
-export const TAG_NAMES = {
-  hero: (id: string, part: keyof ReturnType<typeof heroTags>) =>
-    `hero ${id} ${part}`,
-  enemy: (type: number) => `enemy ${type}`,
-  weapon: (id: string) => `weapon ${id}`,
-} as const;
-
-/**
- * The tags the view draws for a content's heroes, enemies and weapons, each with what it
- * draws in its place: the `sprite` the content names, then the generic one, which the view
- * tints with the entry's `color`. It picks them once per run.
- */
-export const contentTags = (content: GameContent): SpriteSheet.WantedTags => {
-  const wanted: Record<string, readonly (string | undefined)[]> = {};
-  const generic = heroTags(SPRITE_TAGS.hero);
-  // Of two entries with one id, the rules play the first: so does the view.
-  for (const hero of content.heroes) {
-    const own = hero.sprite === undefined ? undefined : heroTags(hero.sprite);
-    wanted[TAG_NAMES.hero(hero.id, "walk")] ??= [own?.walk, generic.walk];
-    wanted[TAG_NAMES.hero(hero.id, "idle")] ??= [own?.idle, generic.idle];
-    wanted[TAG_NAMES.hero(hero.id, "down")] ??= [own?.down, generic.down];
-  }
-  for (const [type, enemy] of content.enemies.entries()) {
-    wanted[TAG_NAMES.enemy(type)] = [enemy.sprite, SPRITE_TAGS.enemy];
-  }
-  for (const weapon of content.weapons) {
-    wanted[TAG_NAMES.weapon(weapon.id)] ??= [weapon.sprite, SPRITE_TAGS.bolt];
-  }
-  return wanted;
-};
-
-/**
- * Every tag the view draws for `content`, each with the tags it falls back to. A test checks
- * a sheet against its content with it: `SpriteSheet.resolveTags(sheet, wantedTags(content)).missing` lists
- * what the sheet lacks, and the view draws the next choice (or frame 0) in place of each. A
- * generic tag is asked of the sheet only for an entry that names no sprite, or one the sheet
- * lacks: a test that wants them all checks the content with no `sprite` named as well.
- */
-export const wantedTags = (content: GameContent): SpriteSheet.WantedTags => ({
-  ...SCENE_TAGS,
-  ...contentTags(content),
+export const tags = (
+  content: GameContent.GameContent
+): SpriteSheet.WantedTags => ({
+  ...SpriteTags.scene,
+  ...SpriteTags.forContent(content),
 });
+
+/**
+ * The sheet's pixels in one world unit: a tile of the ground is 16 pixels square, and one unit.
+ *
+ * **When to use**
+ *
+ * To size the app's art: a hero's frame is 24 pixels tall and an enemy's 16, so a hero is a unit
+ * and a half and an enemy one.
+ *
+ * **Example** (The size of a tile)
+ *
+ * ```ts
+ * import { Art } from "@arcadekit/survivors/browser";
+ *
+ * Art.pixelsPerUnit; // => 16
+ * ```
+ *
+ * @category models
+ */
+export const pixelsPerUnit = 16;

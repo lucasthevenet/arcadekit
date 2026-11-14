@@ -4,12 +4,10 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { ChooseUpgrade, HoldPause } from "../src/commands";
-import { hashWorld } from "../src/hash-world";
-import type { Hero } from "../src/hero";
-import type { HeroInput, SurvivorsInput } from "../src/input";
-import { GameContent } from "../src/schema";
+import * as GameContent from "../src/game-content";
+import type * as Hero from "../src/hero";
 import { Survivors } from "../src/simulation";
-import type { SurvivorsConfig, World } from "../src/world";
+import * as World from "../src/world";
 
 // Survivors' declared simulation in lockstep, one hero per player: three peers, each driving its
 // own hero, over a lossy, jittery in-memory network. Every peer must step through the same
@@ -18,7 +16,7 @@ import type { SurvivorsConfig, World } from "../src/world";
 // are commands, sent through each peer's session. The peers compare their hashes after every
 // step (`hashEvery: 1`), and the test keeps each peer's to compare them itself.
 
-const decode = Schema.decodeUnknownSync(GameContent);
+const decode = Schema.decodeUnknownSync(GameContent.GameContent);
 
 const content = (xpToLevel2: number) =>
   decode({
@@ -118,7 +116,7 @@ const TURNS = [0.3, -0.4, 0.7] as const;
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 /** Zig-zag movement, a leg every 90 steps; each player turns differently. A pure function of the step. */
-const zigZag = (turn: number, step: number, input: Mutable<HeroInput>) => {
+const zigZag = (turn: number, step: number, input: Mutable<Hero.Input>) => {
   const leg = Math.floor(step / 90) % 4;
   input.moveX = [1, turn, -1, turn][leg]!;
   input.moveZ = leg % 2;
@@ -126,16 +124,16 @@ const zigZag = (turn: number, step: number, input: Mutable<HeroInput>) => {
 };
 
 /** Player `slot`'s device: its zig-zag. One object, refilled. */
-const script = (slot: number): Game.StepInput<HeroInput> => {
-  const input: Mutable<HeroInput> = { moveX: 0, moveZ: 0 };
+const script = (slot: number): Game.StepInput<Hero.Input> => {
+  const input: Mutable<Hero.Input> = { moveX: 0, moveZ: 0 };
   return { read: (step) => zigZag(TURNS[slot]!, step, input) };
 };
 
 /** A session's `hash` that also keeps each hash: with `hashEvery: 1`, the world's after every step. */
 const recorded = () => {
   const hashes: number[] = [];
-  const hash = (world: World) => {
-    const hashed = hashWorld(world);
+  const hash = (world: World.Arena) => {
+    const hashed = World.hash(world);
     hashes.push(hashed);
     return hashed;
   };
@@ -148,7 +146,7 @@ type Refusals = Game.RefusalsOf<
 >;
 
 type Session = LockstepSession.LockstepSession<
-  World,
+  World.Arena,
   Game.EventOf<typeof Survivors>,
   Game.CommandOf<typeof Survivors>,
   Refusals
@@ -178,16 +176,16 @@ const startRun = (
   network: MemoryNetwork.MemoryNetwork,
   run: RunOptions
 ): Peer[] => {
-  const config: SurvivorsConfig = {
+  const config: World.Config = {
     content: content(run.xpToLevel2),
     heroIds: HERO_IDS,
   };
   return PLAYERS.map((id, slot) => {
     const { hashes, hash } = recorded();
     const options: LockstepSession.Options<
-      SurvivorsConfig,
-      World,
-      SurvivorsInput,
+      World.Config,
+      World.Arena,
+      World.Input,
       Game.EventOf<typeof Survivors>,
       Game.CommandOf<typeof Survivors>,
       Refusals
@@ -278,12 +276,12 @@ const commonHashes = (peers: readonly Peer[]) => {
 };
 
 /** How many upgrades a hero has taken: weapon levels past its first weapon's first, and passive levels. */
-const upgrades = (hero: Hero) =>
+const upgrades = (hero: Hero.Hero) =>
   hero.weapons.reduce((sum, slot) => sum + slot.level, -1) +
   [...hero.passiveLevels.values()].reduce((sum, level) => sum + level, 0);
 
 /** A hero's weapons and passives with their levels, as text. */
-const loadout = (hero: Hero) =>
+const loadout = (hero: Hero.Hero) =>
   JSON.stringify([
     hero.weapons.map((slot) => [slot.def.id, slot.level]),
     [...hero.passiveLevels],
@@ -296,8 +294,8 @@ const soloHashes = (steps: number) => {
   loop.start({ content: content(1_000_000), heroIds: HERO_IDS }, SEED, 0);
   const world = loop.state!;
   const players = TURNS.map(() => ({ moveX: 0, moveZ: 0 }));
-  const input: SurvivorsInput = { players, leaving: [] };
-  const source: Game.StepInput<SurvivorsInput> = {
+  const input: World.Input = { players, leaving: [] };
+  const source: Game.StepInput<World.Input> = {
     read: (step) => {
       for (const [slot, turn] of TURNS.entries()) {
         zigZag(turn, step, players[slot]!);
@@ -307,7 +305,7 @@ const soloHashes = (steps: number) => {
   };
   for (let step = 0; step < steps; step++) {
     loop.frame(source, { steps: 1 }, 0);
-    hashes.push(hashWorld(world));
+    hashes.push(World.hash(world));
   }
   return { hashes, world };
 };

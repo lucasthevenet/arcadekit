@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 
 import { SurvivorsContent } from "@arcadekit/survivors";
 import {
+  Art,
   SurvivorsCueTable,
   SurvivorsEngine,
   SurvivorsSheet,
-  wantedTags,
 } from "@arcadekit/survivors/browser";
 import { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
@@ -64,7 +64,7 @@ const sheet = await Effect.runPromise(
 describe("the sprite sheet", () => {
   it("has every tag the view draws for the demo's content", () => {
     expect(
-      SpriteSheet.resolveTags(sheet, wantedTags(content)).missing
+      SpriteSheet.resolveTags(sheet, Art.tags(content)).missing
     ).toStrictEqual([]);
   });
 
@@ -82,7 +82,7 @@ describe("the sprite sheet", () => {
       named: [...unnamed.heroes, ...unnamed.enemies, ...unnamed.weapons].filter(
         (def) => def.sprite !== undefined
       ),
-      missing: SpriteSheet.resolveTags(sheet, wantedTags(unnamed)).missing,
+      missing: SpriteSheet.resolveTags(sheet, Art.tags(unnamed)).missing,
     }).toStrictEqual({ named: [], missing: [] });
   });
 

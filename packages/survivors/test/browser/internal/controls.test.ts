@@ -2,16 +2,16 @@ import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { survivorsInput } from "../../src/browser/game";
-import { GameContent } from "../../src/schema";
-import { Survivors } from "../../src/simulation";
+import * as Controls from "../../../src/browser/internal/controls";
+import * as GameContent from "../../../src/game-content";
+import { Survivors } from "../../../src/simulation";
 
 // Runs survivors' real single-player input source: it reads keys through InputController, and a
 // Game.Loop steps the simulation with it the way the demo's engine does. No view is created.
 // No DOM either: Node's EventTarget stands in for the window and the surface, and
 // navigator.getGamepads reports no pads.
 
-const content = Schema.decodeUnknownSync(GameContent)({
+const content = Schema.decodeUnknownSync(GameContent.GameContent)({
   rules: {
     arenaHalfSize: 30,
     maxEnemies: 50,
@@ -85,7 +85,7 @@ const play = () => {
     style: {},
     setPointerCapture: () => {},
   }) as unknown as HTMLElement;
-  const input = survivorsInput(surface);
+  const input = Controls.makeSolo(surface);
   const loop = Game.makeLoop(Survivors);
   loop.start({ content, heroIds: ["bolter"] }, 1, 0);
   const hero = loop.state!.heroes[0]!;

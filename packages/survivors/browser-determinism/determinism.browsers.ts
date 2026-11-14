@@ -5,8 +5,7 @@ import { build } from "vite";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { sourceCondition } from "../../../scripts/source-condition";
-import { LONG_RUN_RECORDED, LONG_RUN_SEEDS, longRun } from "../src/long-run";
-import type { LongRunResult, LongRunSeed } from "../src/long-run";
+import * as LongRun from "../src/internal/long-run";
 import type { run } from "./page";
 
 // Cross-browser determinism (#25): the long run that determinism.test.ts pins
@@ -14,8 +13,9 @@ import type { run } from "./page";
 // browser must give the recorded final hash and trace for every seed, so Node is the fourth
 // engine. On a mismatch it names the first step whose state differs from Node's.
 //
-// Vite bundles page.ts (survivors' simulation, `Game.Loop` and long-run.ts) into one script, and
-// Playwright serves it from a made-up origin with `route`: nothing touches the network.
+// Vite bundles page.ts (survivors' simulation, `Game.Loop` and src/internal/long-run.ts) into one
+// script, and Playwright serves it from a made-up origin with `route`: nothing touches the
+// network.
 //
 // Run it with `pnpm test:browsers`. A browser Playwright can't launch is skipped with a message,
 // unless CI is set: then it fails, so CI can't pass without all three. Install them with
@@ -78,13 +78,13 @@ const firstDivergence = (
 /** What's wrong with one engine's run of one seed, or null if it matches. */
 const compare = (
   engine: string,
-  seed: LongRunSeed,
-  got: Pick<LongRunResult, "final" | "trace"> & {
+  seed: LongRun.Seed,
+  got: Pick<LongRun.LongRun, "final" | "trace"> & {
     readonly traces: ArrayLike<number>;
   },
-  reference: LongRunResult | null
+  reference: LongRun.LongRun | null
 ): string | null => {
-  const [final, trace] = LONG_RUN_RECORDED[seed];
+  const [final, trace] = LongRun.recorded[seed];
   const diverged =
     reference === null ? -1 : firstDivergence(got.traces, reference.traces);
   if (got.final === final && got.trace === trace && diverged === -1) {
@@ -112,19 +112,19 @@ const launch = async (type: BrowserType): Promise<Browser | string> => {
 
 describe("survivors long-run determinism across browsers", () => {
   let script = "";
-  const node = new Map<LongRunSeed, LongRunResult>();
+  const node = new Map<LongRun.Seed, LongRun.LongRun>();
 
   beforeAll(async () => {
     script = await bundle();
-    for (const seed of LONG_RUN_SEEDS) {
-      node.set(seed, longRun(seed));
+    for (const seed of LongRun.seeds) {
+      node.set(seed, LongRun.play(seed));
     }
   });
 
   it("Node gives the recorded hashes", () => {
-    const mismatches = LONG_RUN_SEEDS.map((seed) =>
-      compare("node", seed, node.get(seed)!, null)
-    ).filter((mismatch) => mismatch !== null);
+    const mismatches = LongRun.seeds
+      .map((seed) => compare("node", seed, node.get(seed)!, null))
+      .filter((mismatch) => mismatch !== null);
     expect(mismatches).toStrictEqual([]);
   });
 
@@ -162,7 +162,7 @@ describe("survivors long-run determinism across browsers", () => {
         await page.goto(`${ORIGIN}/`);
         const engine = `${name} ${browser.version()}`;
         const mismatches: string[] = [];
-        for (const seed of LONG_RUN_SEEDS) {
+        for (const seed of LongRun.seeds) {
           const result = await page.evaluate(
             (s) =>
               (

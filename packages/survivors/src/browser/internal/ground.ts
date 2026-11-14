@@ -1,15 +1,22 @@
+/**
+ * The arena's ground: one-unit tiles from the sheet, calm grass inside, the stone wall around it
+ * and the dark void beyond, with a few dirt patches over the grass.
+ *
+ * Which frame a cell shows is here; the arena's sprites draw the cells on screen with a tile
+ * layer, so a big arena costs no more than a small one. The patches are no cells: three units by
+ * two, at hashed places, in a batch of their own that is filled once for an arena. A cell's
+ * variant and a patch's place come from a hash of whole numbers, so the ground looks the same
+ * wherever the camera is and on every visit.
+ *
+ * Plain on purpose: a frame draws whole before the browser shows it, and these are functions of
+ * numbers it calls.
+ */
 import { ExactMath } from "arcadekit/core";
 import { InstancedSprites } from "arcadekit/render-three";
 import type { SpriteSheet } from "arcadekit/render-three";
 
-// The arena floor as one-unit tiles from the sheet: calm grass inside, the stone wall around it
-// and the dark void beyond, with a few dirt patches over the grass. Which frame a cell shows is
-// here; the scene's tile layer draws the cells on screen, so a big arena costs no more than a
-// small one. The patches are no cells: three units by two, at hashed places, in a batch of their
-// own that is filled once for an arena.
-
-/** The ground's tags, by the sides of the arena the wall's tiles sit on. */
-export interface GroundTags {
+/** The ground's tags, the wall's by the side of the arena its tiles sit on. */
+export interface Tags {
   readonly grass: SpriteSheet.Tag;
   readonly patch: SpriteSheet.Tag;
   readonly void: SpriteSheet.Tag;
@@ -32,7 +39,7 @@ export const fraction = (a: number, b: number): number =>
 
 /** Which tag the tile at (col, row) shows, in an arena from -half to half on both axes. */
 export const tileTag = (
-  tags: GroundTags,
+  tags: Tags,
   half: number,
   col: number,
   row: number
@@ -60,7 +67,7 @@ export const tileTag = (
   return east ? tags.e : tags.grass;
 };
 
-/** A tag's frame for a place: its variants picked evenly by the place's hash. */
+/** A tag's frame for a place: its variants picked evenly by `pick`, the place's hash in [0, 1). */
 export const variant = (tag: SpriteSheet.Tag, pick: number): number =>
   tag.from +
   (Math.floor(pick * (tag.to - tag.from + 1)) % (tag.to - tag.from + 1));

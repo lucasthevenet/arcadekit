@@ -1,4 +1,5 @@
 import { AudioSystem } from "arcadekit/audio";
+import type { CueSoundsOf } from "arcadekit/audio";
 import * as Game from "arcadekit/game";
 import { Frames } from "arcadekit/game/browser";
 import { ManualFrames } from "arcadekit/game/testing";
@@ -8,26 +9,25 @@ import { Context, Effect, Layer, Result, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SurvivorsCoop } from "../../src/browser/coop";
-import { heroDevice } from "../../src/browser/device";
-import { SurvivorsEngine, SurvivorsSheet } from "../../src/browser/game";
-import { SurvivorsCueTable } from "../../src/browser/sound";
-import type { SurvivorsSounds } from "../../src/browser/sound";
+import { SurvivorsCueTable } from "../../src/browser/cue-table";
+import { SurvivorsEngine } from "../../src/browser/engine";
+import * as Controls from "../../src/browser/internal/controls";
+import { SurvivorsSheet } from "../../src/browser/sheet";
 import { SurvivorsContent } from "../../src/content";
 import { RunEnded } from "../../src/events";
-import { hashWorld } from "../../src/hash-world";
-import { HeroInput } from "../../src/input";
-import { GameContent } from "../../src/schema";
+import * as GameContent from "../../src/game-content";
+import * as Hero from "../../src/hero";
 import { Survivors } from "../../src/simulation";
-import { createWorld } from "../../src/world";
+import * as World from "../../src/world";
 
 // Survivors' Coop declaration, in Node: what every peer of a run must agree on, read from the
 // class as plain values and functions, and its input source on an EventTarget that stands in for
 // the window and the surface, so its listeners can be counted. The Co-op client that runs the
 // declaration is tested in arcadekit/net/browser; the rules a run steps in world.test.ts and
-// lockstep.test.ts; the views' live local slot in scene.test.ts and sound.test.ts, and that the
-// engine hands it to both in engine.test.ts.
+// lockstep.test.ts; the views' live local slot in arena-sprites.test.ts and sound-view.test.ts,
+// and that the engine hands it to both in engine.test.ts.
 
-const content = Schema.decodeUnknownSync(GameContent)({
+const content = Schema.decodeUnknownSync(GameContent.GameContent)({
   rules: {
     arenaHalfSize: 30,
     maxEnemies: 50,
@@ -96,7 +96,7 @@ const content = Schema.decodeUnknownSync(GameContent)({
 });
 
 /** The app's sounds, for a silent audio system: each cue plays a sound named after it. */
-const sounds: SurvivorsSounds = {
+const sounds: CueSoundsOf<typeof SurvivorsCueTable> = {
   shot: "shot",
   hit: "hit",
   kill: "kill",
@@ -154,9 +154,9 @@ describe("survivors' Coop", () => {
       simulation: SurvivorsCoop.engine.simulation === Survivors,
       picks: picks(content),
       config: run,
-      heroes: createWorld(run, { seed: 7 }).heroes.map((hero) => hero.def.id),
+      heroes: World.make(run, { seed: 7 }).heroes.map((hero) => hero.def.id),
       maxPlayers,
-      hash: hash === hashWorld,
+      hash: hash === World.hash,
       ends,
     }).toStrictEqual({
       engine: true,
@@ -171,13 +171,13 @@ describe("survivors' Coop", () => {
   });
 
   it("sends one hero's input for each player, as the simulation's players' input declares it", () => {
-    const input: HeroInput = { moveX: 0.5, moveZ: -1 };
+    const input: Hero.Input = { moveX: 0.5, moveZ: -1 };
     // What a lockstep session sends for one player: the one-player Schema of the step input.
     const player = Game.playerInputSchema(Survivors);
     const sent = Schema.encodeSync(player)(input);
     expect({
-      player: player === HeroInput,
-      source: SurvivorsCoop.definition.input === heroDevice,
+      player: player === Hero.Input,
+      source: SurvivorsCoop.definition.input === Controls.make,
       decoded: Schema.decodeUnknownResult(player)(sent),
     }).toStrictEqual({
       player: true,
@@ -187,7 +187,7 @@ describe("survivors' Coop", () => {
   });
 
   it("reads the hero's movement from the surface into one object, and stops listening when disposed", () => {
-    const input = heroDevice(element);
+    const input = Controls.make(element);
     const attached = listening();
     const first = input.read(0);
     const read = { ...first };

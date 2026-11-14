@@ -12,15 +12,13 @@ import {
   OfferClosed,
 } from "../src/commands";
 import { HeroLeft, Hud, LeveledUp, RunEnded } from "../src/events";
-import { hashWorld } from "../src/hash-world";
-import type { HeroInput, SurvivorsInput } from "../src/input";
-import { GameContent } from "../src/schema";
+import * as GameContent from "../src/game-content";
+import type * as Hero from "../src/hero";
 import { Survivors } from "../src/simulation";
-import { choose, createWorld, hudSample, step } from "../src/world";
-import type { World } from "../src/world";
+import * as World from "../src/world";
 
 // Small, self-contained content so these tests don't depend on any particular game.
-const content = Schema.decodeUnknownSync(GameContent)({
+const content = Schema.decodeUnknownSync(GameContent.GameContent)({
   rules: {
     arenaHalfSize: 40,
     maxEnemies: 300,
@@ -126,21 +124,21 @@ const collecting = () => {
   return { events, context: { dt: DT, step: 0, report } };
 };
 
-const STILL: SurvivorsInput = { players: [], leaving: [] };
+const STILL: World.Input = { players: [], leaving: [] };
 
 /** One step's input: each player's, by its hero's slot. */
 const inputs = (
-  ...players: (HeroInput | null)[]
-): { players: (HeroInput | null)[]; leaving: number[] } => ({
+  ...players: (Hero.Input | null)[]
+): { players: (Hero.Input | null)[]; leaving: number[] } => ({
   players,
   leaving: [],
 });
 
-const solo = (moveX: number, moveZ: number): SurvivorsInput =>
+const solo = (moveX: number, moveZ: number): World.Input =>
   inputs({ moveX, moveZ });
 
 /** Plays `seconds` of a run: walks in a slow circle and always takes the first upgrade. Returns all events. */
-const play = (world: World, seconds: number): SurvivorsEvent[] => {
+const play = (world: World.Arena, seconds: number): SurvivorsEvent[] => {
   const { events, context } = collecting();
   for (
     let frame = 0;
@@ -149,16 +147,16 @@ const play = (world: World, seconds: number): SurvivorsEvent[] => {
   ) {
     const hero = world.heroes[0]!;
     if (hero.offer) {
-      choose(world, hero, 0);
+      World.choose(world, hero, 0);
     }
     const angle = frame / 200;
-    step(world, solo(Math.cos(angle), Math.sin(angle)), context);
+    World.step(world, solo(Math.cos(angle), Math.sin(angle)), context);
   }
   return events;
 };
 
 /** Drops a gem worth `value` XP where (x, z) is. */
-const dropGem = (world: World, x: number, z: number, value: number) => {
+const dropGem = (world: World.Arena, x: number, z: number, value: number) => {
   const k = EntityPool.add(world.gems);
   world.gems.fields.x[k] = x;
   world.gems.fields.z[k] = z;
@@ -166,7 +164,7 @@ const dropGem = (world: World, x: number, z: number, value: number) => {
 };
 
 /** Adds one grunt at (x, z). */
-const addEnemy = (world: World, x: number, z: number): number => {
+const addEnemy = (world: World.Arena, x: number, z: number): number => {
   const i = EntityPool.add(world.enemies);
   const e = world.enemies.fields;
   e.x[i] = x;
@@ -176,39 +174,39 @@ const addEnemy = (world: World, x: number, z: number): number => {
   return i;
 };
 
-const offersOpen = (world: World) =>
+const offersOpen = (world: World.Arena) =>
   world.heroes.map((hero) => hero.offer !== null);
 
 /** Where an enemy exactly between heroes at x0 and x1 heads: -1 left, 1 right. */
 const chase = (x0: number, x1: number) => {
-  const world = createWorld(
+  const world = World.make(
     { content, heroIds: ["bolter", "bolter"] },
     { seed: 4 }
   );
   world.heroes[0]!.x = x0;
   world.heroes[1]!.x = x1;
   const i = addEnemy(world, 0, 10);
-  step(world, STILL, STEP);
+  World.step(world, STILL, STEP);
   return Math.sign(world.enemies.fields.x[i]!);
 };
 
 /** A two-hero world one step into a level-up: both heroes have an offer open. */
 const levelUpForTwo = (context: Game.StepContext<SurvivorsEvent> = STEP) => {
-  const world = createWorld(
+  const world = World.make(
     { content, heroIds: ["bolter", "burner"] },
     { seed: 9 }
   );
   const [a, b] = world.heroes;
   dropGem(world, a!.x, a!.z, 2);
   dropGem(world, b!.x, b!.z, 1);
-  step(world, STILL, context);
+  World.step(world, STILL, context);
   return world;
 };
 
 /** Why `input` fails to decode as content, or "" if it decodes. */
 const decodeFailure = (input: unknown): string => {
   try {
-    Schema.decodeUnknownSync(GameContent)(input);
+    Schema.decodeUnknownSync(GameContent.GameContent)(input);
     return "";
   } catch (error) {
     return String(error);
@@ -270,8 +268,8 @@ describe("content", () => {
 
 describe("simulation", () => {
   it("is deterministic for the same seed and inputs", () => {
-    const a = createWorld({ content, heroIds: ["bolter"] }, { seed: 42 });
-    const b = createWorld({ content, heroIds: ["bolter"] }, { seed: 42 });
+    const a = World.make({ content, heroIds: ["bolter"] }, { seed: 42 });
+    const b = World.make({ content, heroIds: ["bolter"] }, { seed: 42 });
     play(a, 60);
     play(b, 60);
     expect(a.kills).toBe(b.kills);
@@ -281,7 +279,7 @@ describe("simulation", () => {
   });
 
   it("spawns enemies, kills them, levels up, and reports each level-up", () => {
-    const world = createWorld({ content, heroIds: ["burner"] }, { seed: 7 });
+    const world = World.make({ content, heroIds: ["burner"] }, { seed: 7 });
     const events = play(world, 45);
     expect(world.enemies.count).toBeGreaterThan(0);
     expect(world.kills).toBeGreaterThan(0);
@@ -292,28 +290,28 @@ describe("simulation", () => {
   });
 
   it("freezes while an upgrade offer is open", () => {
-    const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 3 });
+    const world = World.make({ content, heroIds: ["bolter"] }, { seed: 3 });
     while (!world.heroes[0]!.offer && world.time < 60) {
-      step(world, solo(0, 0), STEP);
+      World.step(world, solo(0, 0), STEP);
     }
     expect(world.heroes[0]!.offer).not.toBeNull();
     const { time } = world;
-    step(world, solo(1, 0), STEP);
+    World.step(world, solo(1, 0), STEP);
     expect(world.time).toBe(time);
-    expect(choose(world, world.heroes[0]!, 0)).toBe(true);
+    expect(World.choose(world, world.heroes[0]!, 0)).toBe(true);
     expect(world.heroes[0]!.offer).toBeNull();
   });
 
   it("reports RunEnded once when the player dies", () => {
-    const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 1 });
+    const world = World.make({ content, heroIds: ["bolter"] }, { seed: 1 });
     const hero = world.heroes[0]!;
     hero.hp = 0.0001;
     const { events, context } = collecting();
     for (let i = 0; i < 60 * 60 && world.status === "running"; i++) {
       if (hero.offer) {
-        choose(world, hero, 0);
+        World.choose(world, hero, 0);
       }
-      step(world, solo(0, 0), context);
+      World.step(world, solo(0, 0), context);
     }
     expect(world.status).toBe("dead");
     const ended = events.filter((e) => e._tag === "RunEnded");
@@ -324,17 +322,17 @@ describe("simulation", () => {
   });
 
   it("rejects a run with no heroes or more than four", () => {
-    expect(() => createWorld({ content, heroIds: [] }, { seed: 1 })).toThrow(
+    expect(() => World.make({ content, heroIds: [] }, { seed: 1 })).toThrow(
       RangeError
     );
     expect(() =>
-      createWorld(
+      World.make(
         { content, heroIds: ["bolter", "a", "b", "c", "d"] },
         { seed: 1 }
       )
     ).toThrow(RangeError);
     expect(
-      createWorld(
+      World.make(
         { content, heroIds: ["bolter", "x", "y", "burner"] },
         { seed: 1 }
       ).heroes.map((hero) => hero.def.id)
@@ -343,14 +341,14 @@ describe("simulation", () => {
 });
 
 /** The test content with a wide enemy: its radius is more than a cell of the horde's grid, which is 2 wide. */
-const wideEnemy = Schema.decodeUnknownSync(GameContent)({
+const wideEnemy = Schema.decodeUnknownSync(GameContent.GameContent)({
   ...content,
   enemies: [{ ...content.enemies[0], radius: 2.5 }],
 });
 
 /** A burner at the centre whose aura fires on its first step. */
-const burnerReady = (): World => {
-  const world = createWorld(
+const burnerReady = (): World.Arena => {
+  const world = World.make(
     { content: wideEnemy, heroIds: ["burner"] },
     { seed: 5 }
   );
@@ -359,8 +357,8 @@ const burnerReady = (): World => {
 };
 
 /** A bolter at the centre whose bolt is at `level` and fires on its first step. */
-const bolterReady = (level: number): World => {
-  const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 5 });
+const bolterReady = (level: number): World.Arena => {
+  const world = World.make({ content, heroIds: ["bolter"] }, { seed: 5 });
   const [slot] = world.heroes[0]!.weapons;
   slot!.level = level;
   slot!.timer = 0;
@@ -368,7 +366,7 @@ const bolterReady = (level: number): World => {
 };
 
 /** Adds a projectile at rest at (x, z), which hits for 1 and is spent by its first hit. */
-const addProjectile = (world: World, x: number, z: number): number => {
+const addProjectile = (world: World.Arena, x: number, z: number): number => {
   const i = EntityPool.add(world.projectiles);
   const pr = world.projectiles.fields;
   pr.x[i] = x;
@@ -383,7 +381,7 @@ const addProjectile = (world: World, x: number, z: number): number => {
 };
 
 /** Where each projectile heads on the x axis: -1 left, 1 right. */
-const headings = (world: World): number[] =>
+const headings = (world: World.Arena): number[] =>
   [...world.projectiles.fields.vx.subarray(0, world.projectiles.count)].map(
     Math.sign
   );
@@ -395,18 +393,18 @@ describe("the horde's circles", () => {
     // 2.8 from a hero of radius 0.5: the two overlap, and the enemy's centre is in the cell
     // past the ones the hero's own circle is in.
     addEnemy(world, 2.8, 0);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect(hero!.hp).toBeLessThan(hero!.maxHp);
     expect([...world.cues.hurt]).toStrictEqual([1]);
   });
 
   it("each hurt a hero they overlap, and it cries out once", () => {
-    const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 5 });
+    const world = World.make({ content, heroIds: ["bolter"] }, { seed: 5 });
     const [hero] = world.heroes;
     // One on each side, each well inside the 0.95 at which a grunt and a hero touch.
     addEnemy(world, 0.5, 0);
     addEnemy(world, -0.5, 0);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     // A grunt's damage is 10 a second, and both dealt a step of it.
     expect(hero!.hp).toBeCloseTo(hero!.maxHp - 2 * 10 * DT, 9);
     expect([...world.cues.hurt]).toStrictEqual([1]);
@@ -416,7 +414,7 @@ describe("the horde's circles", () => {
     const world = burnerReady();
     const [hero] = world.heroes;
     addEnemy(world, 3.2, 0);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect(hero!.hp).toBe(hero!.maxHp);
     expect([...world.cues.hurt]).toStrictEqual([0]);
   });
@@ -426,17 +424,17 @@ describe("the horde's circles", () => {
     // The aura's radius is 2.6, so it reaches a wide enemy's edge to 5.1 from the hero.
     const near = addEnemy(world, 0, 4.9);
     const far = addEnemy(world, 0, -5.5);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect(world.enemies.fields.hp[near]!).toBeLessThan(1000);
     expect(world.enemies.fields.hp[far]!).toBe(1000);
   });
 
   it("are hit by a projectile that overlaps them, and passed by one that only touches", () => {
-    const round = Schema.decodeUnknownSync(GameContent)({
+    const round = Schema.decodeUnknownSync(GameContent.GameContent)({
       ...content,
       enemies: [{ ...content.enemies[0], radius: 0.5 }],
     });
-    const world = createWorld(
+    const world = World.make(
       { content: round, heroIds: ["bolter"] },
       { seed: 5 }
     );
@@ -445,7 +443,7 @@ describe("the horde's circles", () => {
     const enemy = addEnemy(world, 0, 0);
     addProjectile(world, 0.75, 0);
     addProjectile(world, 0, -0.5);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect(world.cues.hits).toBe(1);
     expect(world.enemies.fields.hp[enemy]!).toBe(999);
     // The one that hit is spent; the other flies on.
@@ -456,7 +454,7 @@ describe("the horde's circles", () => {
   });
 
   it("are passed by a projectile once dead, which hits the living one it also overlaps", () => {
-    const world = createWorld({ content, heroIds: ["bolter"] }, { seed: 5 });
+    const world = World.make({ content, heroIds: ["bolter"] }, { seed: 5 });
     // Both in one cell of the grid, whose list starts with the one added last: the dead one,
     // killed earlier in the step as an aura would, and not yet removed.
     const living = addEnemy(world, 4.5, 0);
@@ -464,7 +462,7 @@ describe("the horde's circles", () => {
     world.enemies.fields.hp[dead] = 0;
     // Half a unit from each, give or take their step toward the hero: under 0.25 + 0.45.
     addProjectile(world, 5, 0);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect(world.cues.hits).toBe(1);
     // The dead one is removed at the end of the step, and it was last in the pool.
     expect([world.enemies.count, world.kills]).toStrictEqual([1, 1]);
@@ -480,7 +478,7 @@ describe("a bolt", () => {
     addEnemy(world, 6, 0);
     addEnemy(world, -5, 0);
     addEnemy(world, 4, 0);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     // The nearest first, at 4 to the right, then the one at 5 to the left.
     expect(headings(world)).toStrictEqual([1, -1]);
   });
@@ -489,14 +487,14 @@ describe("a bolt", () => {
     const world = bolterReady(3);
     addEnemy(world, -4, 0);
     addEnemy(world, 20, 0);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect(headings(world)).toStrictEqual([-1, -1]);
   });
 
   it("stays unfired with no enemy in range", () => {
     const world = bolterReady(3);
     addEnemy(world, 20, 0);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect(world.projectiles.count).toBe(0);
   });
 
@@ -504,18 +502,18 @@ describe("a bolt", () => {
     const right = bolterReady(1);
     addEnemy(right, 5, 0);
     addEnemy(right, -5, 0);
-    step(right, STILL, STEP);
+    World.step(right, STILL, STEP);
     expect(headings(right)).toStrictEqual([1]);
 
     const left = bolterReady(1);
     addEnemy(left, -5, 0);
     addEnemy(left, 5, 0);
-    step(left, STILL, STEP);
+    World.step(left, STILL, STEP);
     expect(headings(left)).toStrictEqual([-1]);
   });
 
   it("leaves its targets free for the next bolt", () => {
-    const world = createWorld(
+    const world = World.make(
       { content, heroIds: ["bolter", "bolter"] },
       { seed: 5 }
     );
@@ -523,7 +521,7 @@ describe("a bolt", () => {
       hero.weapons[0]!.timer = 0;
     }
     addEnemy(world, 0, 6);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     // Both heroes fired at the one enemy.
     expect(world.projectiles.count).toBe(2);
     expect([...world.taken].every((taken) => taken === 0)).toBe(true);
@@ -545,7 +543,7 @@ const clockAfter = (steps: number) => {
 };
 
 /** A run that is won on its fourth step, before anything spawns. */
-const brief = Schema.decodeUnknownSync(GameContent)({
+const brief = Schema.decodeUnknownSync(GameContent.GameContent)({
   ...content,
   rules: { ...content.rules, runLength: clockAfter(4) },
 });
@@ -555,7 +553,7 @@ const brief = Schema.decodeUnknownSync(GameContent)({
  * offered that weapon's next level and nothing else. The first kill is a level, the next level is
  * out of reach, and nobody dies.
  */
-const oneChoice = Schema.decodeUnknownSync(GameContent)({
+const oneChoice = Schema.decodeUnknownSync(GameContent.GameContent)({
   ...content,
   rules: { ...content.rules, xpToLevel2: 1, xpGrowth: 1000 },
   heroes: [{ ...content.heroes[1], maxHp: 1e9 }],
@@ -674,7 +672,7 @@ const OFFERED_TO_TWO = [
 ];
 
 /** Each hero's first weapon's level: 2 once it took the one choice. */
-const weaponLevels = (world: World) =>
+const weaponLevels = (world: World.Arena) =>
   world.heroes.map((hero) => hero.weapons[0]!.level);
 
 describe("an upgrade pick", () => {
@@ -806,7 +804,7 @@ describe("an upgrade pick", () => {
     scenario(
       OFFERED_TO_TWO,
       Scenario.state((world) => {
-        before = hashWorld(world);
+        before = World.hash(world);
       }),
       Scenario.send(new ChooseUpgrade({ offer: 2, index: 0 })),
       Scenario.send(new ChooseUpgrade({ offer: 1, index: 5 }), 1),
@@ -818,28 +816,28 @@ describe("an upgrade pick", () => {
         new OfferClosed({ offer: 1 })
       ),
       Scenario.state((world) => {
-        expect(hashWorld(world)).toBe(before);
+        expect(World.hash(world)).toBe(before);
       })
     );
   });
 });
 
 /** Who is choosing as the HUD tells it: what a co-op app shows ("waiting for X to pick"). */
-const choosing = (shown: World) =>
-  hudSample(shown).heroes.map((hero) => hero.choosing);
+const choosing = (shown: World.Arena) =>
+  World.hudSample(shown).heroes.map((hero) => hero.choosing);
 
 describe("co-op", () => {
   it("feeds one team XP pool from any hero's gems", () => {
-    const world = createWorld(
+    const world = World.make(
       { content, heroIds: ["bolter", "burner"] },
       { seed: 2 }
     );
     const [a, b] = world.heroes;
     dropGem(world, b!.x, b!.z, 1);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect(world.xp).toBe(1);
     dropGem(world, a!.x, a!.z, 1);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect([world.xp, world.level]).toStrictEqual([2, 1]);
   });
 
@@ -858,16 +856,16 @@ describe("co-op", () => {
     ]);
     const { time } = world;
 
-    choose(world, world.heroes[0]!, 0);
-    step(world, inputs({ moveX: 1, moveZ: 0 }), STEP);
+    World.choose(world, world.heroes[0]!, 0);
+    World.step(world, inputs({ moveX: 1, moveZ: 0 }), STEP);
     expect([
       offersOpen(world),
       world.time,
       world.pendingLevelUps,
     ]).toStrictEqual([[false, true], time, 1]);
 
-    choose(world, world.heroes[1]!, 0);
-    step(world, STILL, STEP);
+    World.choose(world, world.heroes[1]!, 0);
+    World.step(world, STILL, STEP);
     // The run resumes in the step after the pick that closed the last offer.
     expect([
       offersOpen(world),
@@ -878,15 +876,15 @@ describe("co-op", () => {
 
   it("says in the HUD which heroes the run waits on to pick, while each has its offer open", () => {
     const before = choosing(
-      createWorld({ content, heroIds: ["bolter", "burner"] }, { seed: 9 })
+      World.make({ content, heroIds: ["bolter", "burner"] }, { seed: 9 })
     );
     const world = levelUpForTwo();
     const open = choosing(world);
-    choose(world, world.heroes[0]!, 0);
-    step(world, STILL, STEP);
+    World.choose(world, world.heroes[0]!, 0);
+    World.step(world, STILL, STEP);
     const afterOnePick = choosing(world);
     // The other hero's offer closes without a pick when its player leaves.
-    step(world, { players: [null, null], leaving: [1] }, STEP);
+    World.step(world, { players: [null, null], leaving: [1] }, STEP);
     expect({
       before,
       open,
@@ -903,13 +901,13 @@ describe("co-op", () => {
   it("takes a choice its hero's open offer has, once, and no other", () => {
     const world = levelUpForTwo();
     const a = world.heroes[0]!;
-    expect(choose(world, a, 9)).toBe(false);
+    expect(World.choose(world, a, 9)).toBe(false);
     expect(a.offer).not.toBeNull();
-    expect(choose(world, a, 0)).toBe(true);
+    expect(World.choose(world, a, 0)).toBe(true);
     // Repeated after the offer closed, it does nothing more.
     const weapons = a.weapons.map((slot) => slot.level);
     const passives = [...a.passiveLevels];
-    expect(choose(world, a, 0)).toBe(false);
+    expect(World.choose(world, a, 0)).toBe(false);
     expect([
       a.weapons.map((slot) => slot.level),
       [...a.passiveLevels],
@@ -918,15 +916,15 @@ describe("co-op", () => {
 
   it("lets a leaving player's open offer go, and no longer chases its hero", () => {
     const world = levelUpForTwo();
-    choose(world, world.heroes[0]!, 0);
+    World.choose(world, world.heroes[0]!, 0);
     const { time } = world;
     const b = world.heroes[1]!;
     const i = addEnemy(world, b.x, b.z + 3);
     const x = world.enemies.fields.x[i]!;
     const { events, context } = collecting();
-    step(world, { players: [], leaving: [1] }, context);
+    World.step(world, { players: [], leaving: [1] }, context);
     expect([
-      hudSample(world).heroes[1]!.status,
+      World.hudSample(world).heroes[1]!.status,
       offersOpen(world),
       world.pendingLevelUps,
       world.time,
@@ -942,17 +940,17 @@ describe("co-op", () => {
   });
 
   it("spawns enemies around each playing hero in turn", () => {
-    const busy = Schema.decodeUnknownSync(GameContent)({
+    const busy = Schema.decodeUnknownSync(GameContent.GameContent)({
       ...content,
       waves: [{ from: 0, to: 120, enemy: "grunt", perSecond: 600 }],
     });
-    const world = createWorld(
+    const world = World.make(
       { content: busy, heroIds: ["bolter", "burner"] },
       { seed: 6 }
     );
     world.heroes[0]!.x = -25;
     world.heroes[1]!.x = 25;
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     const sides = (from: number) =>
       [...world.enemies.fields.x.subarray(from, world.enemies.count)].map(
         Math.sign
@@ -962,27 +960,27 @@ describe("co-op", () => {
     expect(first).toStrictEqual(first.map((_, k) => (k % 2 === 0 ? -1 : 1)));
     // Once hero 1 has left, every enemy spawns around hero 0.
     const before = world.enemies.count;
-    step(world, { players: [], leaving: [1] }, STEP);
+    World.step(world, { players: [], leaving: [1] }, STEP);
     expect(new Set(sides(before))).toStrictEqual(new Set([-1]));
   });
 
   it("puts a hero down at 0 HP and ends the run once none is playing", () => {
-    const world = createWorld(
+    const world = World.make(
       { content, heroIds: ["bolter", "burner"] },
       { seed: 8 }
     );
     const [a, b] = world.heroes;
     b!.hp = 0;
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect([b!.status, world.status]).toStrictEqual(["down", "running"]);
     // A downed hero is offered no upgrades.
     dropGem(world, a!.x, a!.z, 3);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect(offersOpen(world)).toStrictEqual([true, false]);
-    choose(world, a!, 0);
+    World.choose(world, a!, 0);
     a!.hp = 0;
     const { events, context } = collecting();
-    step(world, STILL, context);
+    World.step(world, STILL, context);
     expect(world.status).toBe("dead");
     const ended = events.find((e) => e._tag === "RunEnded");
     expect(ended).toMatchObject({
@@ -998,7 +996,7 @@ describe("co-op", () => {
  * Content in which the second hero is sure to go down and the first is not: the horde can't be
  * killed, so it reaches both, and the second hero has hardly a hit point. Nobody levels up.
  */
-const deadly = Schema.decodeUnknownSync(GameContent)({
+const deadly = Schema.decodeUnknownSync(GameContent.GameContent)({
   ...content,
   heroes: [
     { ...content.heroes[0], maxHp: 1e9 },
@@ -1010,13 +1008,14 @@ const deadly = Schema.decodeUnknownSync(GameContent)({
 /** Long enough for the horde to reach the heroes. */
 const UNTIL_TOUCHED = 20 * 60;
 
-const statuses = (world: World) => world.heroes.map((hero) => hero.status);
+const statuses = (world: World.Arena) =>
+  world.heroes.map((hero) => hero.status);
 
-const pauses = (world: World) => world.heroes.map((hero) => hero.paused);
+const pauses = (world: World.Arena) => world.heroes.map((hero) => hero.paused);
 
 /** Who holds the run paused as the HUD tells it: what an app shows ("Paused by ..."). */
-const pausesShown = (world: World) =>
-  hudSample(world).heroes.map((hero) => hero.paused);
+const pausesShown = (world: World.Arena) =>
+  World.hudSample(world).heroes.map((hero) => hero.paused);
 
 describe("the co-op pause", () => {
   it("freezes the run for everyone while a playing hero holds it, and the run plays on in the step that lets go", () => {
@@ -1185,20 +1184,20 @@ describe("the co-op pause", () => {
           ["playing", "down"],
           [true, false],
         ]);
-        before = hashWorld(world);
+        before = World.hash(world);
       }),
       Scenario.send(new HoldPause({ held: true }), 1),
       Scenario.step(STILL),
       Scenario.refused(new NotPlaying()),
       Scenario.state((world) => {
-        expect(hashWorld(world)).toBe(before);
+        expect(World.hash(world)).toBe(before);
       }),
       Scenario.send(new HoldPause({ held: false }), 1),
       Scenario.send(new HoldPause({ held: true }), 5),
       Scenario.step(STILL),
       Scenario.refused(new NotPlaying(), new NotPlaying()),
       Scenario.state((world) => {
-        expect(hashWorld(world)).toBe(before);
+        expect(World.hash(world)).toBe(before);
       })
     );
   });
@@ -1265,7 +1264,7 @@ describe("the co-op pause", () => {
           "won",
           ["playing", "playing"],
         ]);
-        ended = hashWorld(world);
+        ended = World.hash(world);
       }),
       Scenario.send(new HoldPause({ held: true }), 1),
       Scenario.send(new HoldPause({ held: false })),
@@ -1275,7 +1274,7 @@ describe("the co-op pause", () => {
         expect([
           pauses(world),
           pausesShown(world),
-          hashWorld(world),
+          World.hash(world),
         ]).toStrictEqual([[false, false], [false, false], ended]);
       })
     );
@@ -1287,8 +1286,8 @@ describe("the co-op pause", () => {
 /** A scenario step, `now`, that reads the run's hash and clock into `read`. */
 const reading = () => {
   const read = { hash: 0, time: 0 };
-  const now = Scenario.state((world: World) => {
-    read.hash = hashWorld(world);
+  const now = Scenario.state((world: World.Arena) => {
+    read.hash = World.hash(world);
     read.time = world.time;
   });
   return { read, now };
@@ -1349,26 +1348,26 @@ describe("a pick and a leave in one step", () => {
 
 describe("cue counters", () => {
   it("count shots, hits, kills, pickups, hurts, level-ups, downs and the loss", () => {
-    const sturdy = Schema.decodeUnknownSync(GameContent)({
+    const sturdy = Schema.decodeUnknownSync(GameContent.GameContent)({
       ...content,
       heroes: content.heroes.map((hero) => ({ ...hero, maxHp: 1e9 })),
     });
-    const world = createWorld(
+    const world = World.make(
       { content: sturdy, heroIds: ["bolter", "burner"] },
       { seed: 11 }
     );
     const { cues } = world;
     // One tough grunt on hero 1 from the start, so it gets hurt.
     addEnemy(world, world.heroes[1]!.x, world.heroes[1]!.z);
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect([...cues.hurt]).toStrictEqual([0, 1]);
     for (let frame = 0; frame < 30 * 60; frame++) {
       for (const hero of world.heroes) {
         if (hero.offer) {
-          choose(world, hero, 0);
+          World.choose(world, hero, 0);
         }
       }
-      step(world, inputs({ moveX: 0, moveZ: 0 }), STEP);
+      World.step(world, inputs({ moveX: 0, moveZ: 0 }), STEP);
     }
     expect({
       status: world.status,
@@ -1394,36 +1393,36 @@ describe("cue counters", () => {
     expect([...cues.downed, cues.won, cues.lost]).toStrictEqual([0, 0, 0, 0]);
 
     world.heroes[1]!.hp = 0;
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect([...cues.downed, cues.lost]).toStrictEqual([0, 1, 0]);
     world.heroes[0]!.hp = 0;
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect([...cues.downed, cues.won, cues.lost]).toStrictEqual([1, 1, 0, 1]);
   });
 
   it("counts a win", () => {
-    const world = createWorld({ content, heroIds: ["burner"] }, { seed: 5 });
+    const world = World.make({ content, heroIds: ["burner"] }, { seed: 5 });
     world.time = content.rules.runLength - DT / 2;
-    step(world, STILL, STEP);
+    World.step(world, STILL, STEP);
     expect([world.cues.won, world.cues.lost]).toStrictEqual([1, 0]);
   });
 
   it("doesn't count aura damage as hits", () => {
-    const world = createWorld({ content, heroIds: ["burner"] }, { seed: 5 });
+    const world = World.make({ content, heroIds: ["burner"] }, { seed: 5 });
     const i = addEnemy(world, 1.5, 0);
     for (let k = 0; k < 60; k++) {
-      step(world, STILL, STEP);
+      World.step(world, STILL, STEP);
     }
     expect(world.enemies.fields.hp[i]!).toBeLessThan(1000);
     expect([world.cues.hits, ...world.cues.shots]).toStrictEqual([0, 0, 0]);
   });
 
   it("leaves the counters out of the state hash", () => {
-    const a = createWorld(
+    const a = World.make(
       { content, heroIds: ["bolter", "burner"] },
       { seed: 21 }
     );
-    const b = createWorld(
+    const b = World.make(
       { content, heroIds: ["bolter", "burner"] },
       { seed: 21 }
     );
@@ -1436,6 +1435,6 @@ describe("cue counters", () => {
     b.cues.pickups += 5;
     b.cues.levelUps += 5;
     expect(b.cues.hits).not.toBe(a.cues.hits);
-    expect(hashWorld(b)).toBe(hashWorld(a));
+    expect(World.hash(b)).toBe(World.hash(a));
   });
 });

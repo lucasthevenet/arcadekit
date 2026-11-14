@@ -16,4 +16,4 @@ A step must give the same bits on every peer and every replay, or lockstep peers
 
 - A simulation's rules are checked with scenarios (`arcadekit/game/scenario`), which run a script of steps and commands in one call: `packages/push-puzzle/test/world.test.ts`.
 - `packages/survivors/test/determinism.test.ts` and `replay.test.ts` pin hashes of whole runs. Keep them unless changing the rules is the point: then update them in the same change and say so in the changeset.
-- `pnpm test:browsers` runs survivors' long run (`packages/survivors/src/long-run.ts`) in Chromium, Firefox and WebKit, which must give the same hashes.
+- `pnpm test:browsers` runs survivors' long run (`packages/survivors/src/internal/long-run.ts`) in Chromium, Firefox and WebKit, which must give the same hashes.

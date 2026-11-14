@@ -1,4 +1,4 @@
-import type { RunSummary } from "@arcadekit/survivors";
+import type { Hero } from "@arcadekit/survivors";
 import { Save } from "arcadekit/save";
 import { Schema } from "effect";
 
@@ -41,7 +41,7 @@ export class SurvivorsSave extends Save("SurvivorsSave", {
 }) {}
 
 /** One run as records: what a run's end writes into the save. */
-export const run = (summary: RunSummary): HeroRecords => ({
+export const run = (summary: Hero.Summary): HeroRecords => ({
   [summary.heroId]: {
     bestTime: summary.time,
     mostKills: summary.kills,
@@ -52,5 +52,5 @@ export const run = (summary: RunSummary): HeroRecords => ({
 /** The records after the run in `summary`. A worse run keeps the best. */
 export const withRun = (
   records: HeroRecords,
-  summary: RunSummary
+  summary: Hero.Summary
 ): HeroRecords => SurvivorsSave.merge(records, run(summary));

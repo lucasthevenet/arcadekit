@@ -3,10 +3,10 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { ChooseUpgrade } from "../src/commands";
-import { hashWorld } from "../src/hash-world";
-import type { HeroInput } from "../src/input";
-import { GameContent } from "../src/schema";
+import * as GameContent from "../src/game-content";
+import type * as Hero from "../src/hero";
 import { Survivors } from "../src/simulation";
+import * as World from "../src/world";
 
 // Replay check: the same seed, the same input script and the same commands must give the same
 // run, bit for bit. It steps the declared simulation, `Survivors`, with arcadekit/game's Loop, in
@@ -16,7 +16,7 @@ import { Survivors } from "../src/simulation";
 // steps this same `Survivors` through the same loop: lockstep.test.ts holds its peers to one
 // another, and to a run played alone, step for step.
 
-const content = Schema.decodeUnknownSync(GameContent)({
+const content = Schema.decodeUnknownSync(GameContent.GameContent)({
   rules: {
     arenaHalfSize: 30,
     maxEnemies: 200,
@@ -99,7 +99,7 @@ const content = Schema.decodeUnknownSync(GameContent)({
 const LEG_MOVE_X = [1, 0.3, -1, 0.3];
 
 /** Zig-zag movement: a leg every 90 steps. One object, refilled each step, as a device source does. */
-const zigZag = (): Game.StepInput<HeroInput> => {
+const zigZag = (): Game.StepInput<Hero.Input> => {
   const input = { moveX: 0, moveZ: 0 };
   return {
     read: (step) => {
@@ -153,18 +153,18 @@ describe("survivors replay", () => {
     // The script must exercise the run, or the hash proves little.
     expect(a.world.kills).toBeGreaterThan(20);
     expect(a.world.level).toBeGreaterThan(2);
-    expect([hashWorld(b.world), b.events, b.samples]).toStrictEqual([
-      hashWorld(a.world),
+    expect([World.hash(b.world), b.events, b.samples]).toStrictEqual([
+      World.hash(a.world),
       a.events,
       a.samples,
     ]);
     // Recorded before any kit change for push-puzzle. If this changes, survivors plays differently.
-    expect(hashWorld(a.world)).toBe(1_294_328_663);
+    expect(World.hash(a.world)).toBe(1_294_328_663);
   });
 
   it("gives a different hash for a different seed", () => {
-    expect(hashWorld(replay(1234, 600).world)).not.toBe(
-      hashWorld(replay(4321, 600).world)
+    expect(World.hash(replay(1234, 600).world)).not.toBe(
+      World.hash(replay(4321, 600).world)
     );
   });
 });

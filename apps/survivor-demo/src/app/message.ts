@@ -1,4 +1,4 @@
-import { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
+import { Hero, Hud, Offer } from "@arcadekit/survivors";
 import { AudioSettings } from "arcadekit/audio";
 import { CoopEvent } from "arcadekit/net/browser";
 import { Schema } from "effect";
@@ -25,8 +25,8 @@ export const Message = defineMessageUnion({
 
   // From the engine
   GotHud: { hud: Hud },
-  GotLevelUp: { offer: Schema.Int, choices: Schema.Array(UpgradeChoice) },
-  GotRunEnded: { summary: RunSummary },
+  GotLevelUp: { offer: Schema.Int, choices: Schema.Array(Offer.Choice) },
+  GotRunEnded: { summary: Hero.Summary },
   SavedRun: { records: HeroRecords },
 
   // In-run UI
@@ -53,9 +53,9 @@ export const Message = defineMessageUnion({
   GotCoopWaiting: { waitingFor: Schema.Array(Schema.String) },
   GotCoopLevelUp: {
     offer: Schema.Int,
-    choices: Schema.Array(UpgradeChoice),
+    choices: Schema.Array(Offer.Choice),
   },
-  GotCoopRunEnded: { summary: RunSummary },
+  GotCoopRunEnded: { summary: Hero.Summary },
   GotCoopFailed: { error: Schema.String },
 
   // Sound

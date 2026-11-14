@@ -14,7 +14,7 @@ import { getHeapSpaceStatistics } from "node:v8";
 // collected heap, with a young generation too large to collect during it and the engine's
 // compiler on the main thread (run.ts), so the count is the same on every run.
 import { ChooseUpgrade, GameContent, Survivors } from "@arcadekit/survivors";
-import type { HeroInput, SurvivorsConfig } from "@arcadekit/survivors";
+import type { Hero, World } from "@arcadekit/survivors";
 import * as Game from "arcadekit/game/browser";
 import { ManualFrames } from "arcadekit/game/testing";
 import { MemoryNetwork, ScopedLockstepSession } from "arcadekit/net";
@@ -111,7 +111,7 @@ const measure = async (
 
 const SURVIVORS_CAP = 300;
 
-const content = Schema.decodeUnknownSync(GameContent)({
+const content = Schema.decodeUnknownSync(GameContent.GameContent)({
   rules: {
     arenaHalfSize: 40,
     maxEnemies: SURVIVORS_CAP,
@@ -195,14 +195,14 @@ const survivorsStep = async () => {
   const loop = Game.makeLoop(Survivors);
   const move = { moveX: 0, moveZ: 0 };
   // A slow circle, as the world tests walk.
-  const input = Game.soloInput<HeroInput>({
+  const input = Game.soloInput<Hero.Input>({
     read: (step) => {
       move.moveX = Math.cos(step / 200);
       move.moveZ = Math.sin(step / 200);
       return move;
     },
   });
-  const config: SurvivorsConfig = { content, heroIds: ["bolter"] };
+  const config: World.Config = { content, heroIds: ["bolter"] };
   loop.start(config, 1, 0);
   const world = loop.state!;
   const budget = { steps: 1 } as const;

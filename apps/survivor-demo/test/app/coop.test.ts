@@ -50,7 +50,7 @@ const fileSource = ContentSource.make((file) =>
   })
 );
 
-const content: GameContent = await Effect.runPromise(
+const content: GameContent.GameContent = await Effect.runPromise(
   SurvivorsContent.read(fileSource)
 );
 
@@ -84,7 +84,10 @@ const seat = async (
   hub: FakeCoopRooms.FakeCoopRooms,
   parts: {
     readonly sheet?: SheetLoad;
-    readonly load?: Effect.Effect<GameContent, ContentSource.ContentError>;
+    readonly load?: Effect.Effect<
+      GameContent.GameContent,
+      ContentSource.ContentError
+    >;
   } = {}
 ): Promise<Seat> => {
   const layer = CoopLayer.pipe(
@@ -283,7 +286,7 @@ describe("the app's co-op", () => {
     it("open no room when Leave comes while Host waits on the content", async () => {
       const hub = FakeCoopRooms.make();
       const loaded = Effect.runSync(
-        Deferred.make<GameContent, ContentSource.ContentError>()
+        Deferred.make<GameContent.GameContent, ContentSource.ContentError>()
       );
       const { context } = await seat(hub, { load: Deferred.await(loaded) });
       // Foldkit runs each Command in Message order: Host, then Leave.

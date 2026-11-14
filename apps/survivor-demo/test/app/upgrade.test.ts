@@ -30,7 +30,7 @@ const fileSource = ContentSource.make((file) =>
 const shipped = await Effect.runPromise(SurvivorsContent.read(fileSource));
 
 /** The game's content with its first level one kill away and its second out of reach: a run has one offer. */
-const content = Schema.decodeUnknownSync(GameContent)({
+const content = Schema.decodeUnknownSync(GameContent.GameContent)({
   ...shipped,
   rules: { ...shipped.rules, xpToLevel2: 1, xpGrowth: 1000 },
 });

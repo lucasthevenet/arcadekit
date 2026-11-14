@@ -1,12 +1,12 @@
 import { AudioSystem } from "arcadekit/audio";
+import type { CueSoundsOf } from "arcadekit/audio";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { SurvivorsSoundView } from "../../src/browser/sound";
-import type { SurvivorsSounds } from "../../src/browser/sound";
-import { GameContent } from "../../src/schema";
-import { createWorld } from "../../src/world";
-import type { World } from "../../src/world";
+import type { SurvivorsCueTable } from "../../../src/browser/cue-table";
+import * as SoundView from "../../../src/browser/internal/sound-view";
+import * as GameContent from "../../../src/game-content";
+import * as World from "../../../src/world";
 
 const weapon = {
   description: "",
@@ -18,7 +18,7 @@ const weapon = {
   maxLevel: 5,
 };
 
-const content = Schema.decodeUnknownSync(GameContent)({
+const content = Schema.decodeUnknownSync(GameContent.GameContent)({
   rules: {
     arenaHalfSize: 40,
     maxEnemies: 50,
@@ -100,7 +100,7 @@ const content = Schema.decodeUnknownSync(GameContent)({
   waves: [{ from: 0, to: 120, enemy: "grunt", perSecond: 3 }],
 });
 
-const sounds: SurvivorsSounds = {
+const sounds: CueSoundsOf<typeof SurvivorsCueTable> = {
   shot: "shot",
   hit: "hit",
   kill: "kill",
@@ -126,27 +126,27 @@ const fakeAudio = () => {
 
 const ids = (plays: readonly { id: string }[]) => plays.map(({ id }) => id);
 
-const world = (heroIds: readonly string[] = ["bolter"]): World =>
-  createWorld({ content, heroIds }, { seed: 1 });
+const world = (heroIds: readonly string[] = ["bolter"]): World.Arena =>
+  World.make({ content, heroIds }, { seed: 1 });
 
-describe(SurvivorsSoundView, () => {
+describe("the sound view", () => {
   it("only takes note of the counters on a run's first frame", () => {
     const { audio, plays } = fakeAudio();
-    const view = new SurvivorsSoundView({ audio, sounds });
+    const view = SoundView.make(audio, sounds);
     const run = world();
     run.cues.kills = 5;
     run.cues.shots[0] = 3;
 
-    view.render(run);
+    view.render(run, 0);
 
     expect(plays).toStrictEqual([]);
   });
 
   it("plays one sound per counter that rose, however far it rose", () => {
     const { audio, plays } = fakeAudio();
-    const view = new SurvivorsSoundView({ audio, sounds });
+    const view = SoundView.make(audio, sounds);
     const run = world();
-    view.render(run);
+    view.render(run, 0);
 
     run.cues.shots[0] = 4;
     run.cues.shots[1] = 1;
@@ -155,10 +155,10 @@ describe(SurvivorsSoundView, () => {
     run.cues.pickups += 1;
     run.cues.levelUps += 1;
     run.cues.won = 1;
-    view.render(run);
+    view.render(run, 0);
     const firstFrame = ids(plays);
     plays.length = 0;
-    view.render(run);
+    view.render(run, 0);
 
     expect({ firstFrame, secondFrame: ids(plays) }).toStrictEqual({
       firstFrame: [
@@ -176,15 +176,15 @@ describe(SurvivorsSoundView, () => {
 
   it("plays the local hero's hurt and down louder than a teammate's", () => {
     const { audio, plays } = fakeAudio();
-    const view = new SurvivorsSoundView({ audio, sounds, localHero: () => 1 });
+    const view = SoundView.make(audio, sounds, { localHero: () => 1 });
     const run = world(["bolter", "bolter"]);
-    view.render(run);
+    view.render(run, 0);
 
     run.cues.hurt[0] = 1;
     run.cues.hurt[1] = 1;
     run.cues.downed[0] = 1;
     run.cues.lost = 1;
-    view.render(run);
+    view.render(run, 0);
 
     expect(plays).toStrictEqual([
       { id: "hurt", volume: undefined },
@@ -197,19 +197,15 @@ describe(SurvivorsSoundView, () => {
   it("reads the local hero's slot on every render, so it follows a seat that changes", () => {
     const { audio, plays } = fakeAudio();
     let slot = 0;
-    const view = new SurvivorsSoundView({
-      audio,
-      sounds,
-      localHero: () => slot,
-    });
+    const view = SoundView.make(audio, sounds, { localHero: () => slot });
     const run = world(["bolter", "bolter"]);
-    view.render(run);
+    view.render(run, 0);
 
     run.cues.hurt[0] = 1;
-    view.render(run);
+    view.render(run, 0);
     slot = 1;
     run.cues.hurt[0] = 2;
-    view.render(run);
+    view.render(run, 0);
 
     expect(plays).toStrictEqual([
       { id: "hurt", volume: undefined },
@@ -219,19 +215,19 @@ describe(SurvivorsSoundView, () => {
 
   it("starts over when the run changes", () => {
     const { audio, plays } = fakeAudio();
-    const view = new SurvivorsSoundView({ audio, sounds });
+    const view = SoundView.make(audio, sounds);
     const first = world();
-    view.render(first);
+    view.render(first, 0);
     first.cues.kills = 10;
-    view.render(first);
+    view.render(first, 0);
     plays.length = 0;
 
     // A new run's counters are below the old run's: nothing plays, and they count from there.
     const second = world();
-    view.render(second);
+    view.render(second, 0);
     const onNewRun = ids(plays);
     second.cues.kills = 1;
-    view.render(second);
+    view.render(second, 0);
 
     expect({ onNewRun, after: ids(plays) }).toStrictEqual({
       onNewRun: [],
@@ -241,30 +237,30 @@ describe(SurvivorsSoundView, () => {
 
   it("starts over after a frame with no run", () => {
     const { audio, plays } = fakeAudio();
-    const view = new SurvivorsSoundView({ audio, sounds });
+    const view = SoundView.make(audio, sounds);
     const run = world();
-    view.render(run);
-    view.render(null);
+    view.render(run, 0);
+    view.render(null, 0);
     run.cues.kills = 3;
-    view.render(run);
+    view.render(run, 0);
 
     expect(plays).toStrictEqual([]);
   });
 
   it("hums while a playing hero has the aura, and stops otherwise", () => {
     const { audio, loops } = fakeAudio();
-    const view = new SurvivorsSoundView({ audio, sounds, auraVolume: 0.5 });
+    const view = SoundView.make(audio, sounds, { auraVolume: 0.5 });
     const bolter = world();
     const burner = world(["bolter", "burner"]);
 
-    view.render(bolter);
-    view.render(burner);
+    view.render(bolter, 0);
+    view.render(burner, 0);
     burner.heroes[1]!.status = "down";
-    view.render(burner);
+    view.render(burner, 0);
     burner.heroes[1]!.status = "playing";
-    view.render(burner);
-    view.render(null);
-    view.render(burner);
+    view.render(burner, 0);
+    view.render(null, 0);
+    view.render(burner, 0);
     view.dispose();
 
     expect(loops.map(({ volume }) => volume)).toStrictEqual([
@@ -275,7 +271,7 @@ describe(SurvivorsSoundView, () => {
 
   it("stops the hum while the run is frozen", () => {
     const { audio, loops } = fakeAudio();
-    const view = new SurvivorsSoundView({ audio, sounds, auraVolume: 0.5 });
+    const view = SoundView.make(audio, sounds, { auraVolume: 0.5 });
     const run = world(["burner"]);
     const hero = run.heroes[0]!;
 

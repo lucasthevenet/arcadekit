@@ -1,13 +1,13 @@
-import type { AudioSystem } from "arcadekit/audio";
+import type { AudioSystem, CueSoundsOf } from "arcadekit/audio";
 import type { SpriteSheet } from "arcadekit/render-three";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SurvivorsSounds } from "../../src/browser/sound";
+import type { SurvivorsCueTable } from "../../src/browser/cue-table";
 
 // The view `SurvivorsEngine` declares, as both hosts make it: the engine, with its player at
 // slot 0, and `SurvivorsCoop`'s client, at the slot the lobby gave. The two views it combines
 // need WebGL and an audio system, which Node hasn't: stand-ins record what each is made with.
-// What each view does with its local hero is in scene.test.ts and sound.test.ts.
+// What each view does with its local hero is in arena-sprites.test.ts and sound-view.test.ts.
 
 /** What a view is made with, as far as this test reads it. */
 interface Options {
@@ -20,35 +20,30 @@ const made: { sprites?: Options; sounds?: Options; disposed: string[] } = {
 };
 
 /**
- * A stand-in for one of the two views, to call with `new`: it records the options it is made
- * with, the argument at `optionsAt`, and that it was disposed.
+ * A stand-in for one of the two views' `make`: it records the options it is made with, its third
+ * argument, and that its view was disposed.
  */
-const recorder = (name: "sprites" | "sounds", optionsAt: number) =>
-  // oxlint-disable-next-line typescript/no-extraneous-class -- the engine's view calls these with `new`, which an arrow can't take.
-  class {
-    constructor(...given: unknown[]) {
-      made[name] = given[optionsAt] as Options;
-      Object.assign(this, {
-        render: () => {},
-        dispose: () => {
-          made.disposed.push(name);
-        },
-      });
-    }
+const recorder =
+  (name: "sprites" | "sounds") =>
+  (...given: unknown[]) => {
+    made[name] = given[2] as Options;
+    return {
+      render: () => {},
+      dispose: () => {
+        made.disposed.push(name);
+      },
+    };
   };
 
-vi.mock(import("../../src/browser/view"), () => ({
-  SurvivorsView: recorder("sprites", 2) as never,
+vi.mock(import("../../src/browser/internal/sprite-view"), () => ({
+  make: recorder("sprites") as never,
 }));
 
-// The cue table is declared beside the sound view, and the engine uses it: only the view is
-// stood in for.
-vi.mock(import("../../src/browser/sound"), async (importOriginal) => ({
-  ...(await importOriginal()),
-  SurvivorsSoundView: recorder("sounds", 0) as never,
+vi.mock(import("../../src/browser/internal/sound-view"), () => ({
+  make: recorder("sounds") as never,
 }));
 
-const { SurvivorsEngine } = await import("../../src/browser/game");
+const { SurvivorsEngine } = await import("../../src/browser/engine");
 
 describe("survivors' engine", () => {
   it("makes a sprite view and a sound view that both follow the local player's slot, read when they ask", () => {
@@ -58,7 +53,7 @@ describe("survivors' engine", () => {
       {} as HTMLElement,
       {
         audio: {} as AudioSystem.AudioSystem,
-        sounds: {} as SurvivorsSounds,
+        sounds: {} as CueSoundsOf<typeof SurvivorsCueTable>,
         sheet: {} as SpriteSheet.SpriteSheet,
       },
       { local }

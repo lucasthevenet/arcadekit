@@ -1,12 +1,15 @@
-// Browser-only parts of the survivors genre: the engine an app runs for one player and what the
-// app gives it (its sprite sheet, and its sounds for the genre's cue table), the same game for
-// several players (`SurvivorsCoop`), and the art, sound and view pieces.
-export { type SurvivorsArt, wantedTags } from "./art";
+/**
+ * `@arcadekit/survivors/browser`: the survivors genre in the browser. The engine an app runs for
+ * one player, the same game for several (`SurvivorsCoop`), and what the app gives them: its
+ * sprite sheet, and its sounds for the genre's cue table.
+ *
+ * Its declarations are exported bare under their names (`SurvivorsEngine`, `SurvivorsCoop`,
+ * `SurvivorsSheet`, `SurvivorsCueTable`), and the tags the engine draws from the sheet are a
+ * namespace (`Art`). The engine's parts, its controls, its views and the arena's sprites, are in
+ * `internal/`, which this file doesn't export.
+ */
+export * as Art from "./art";
 export { SurvivorsCoop } from "./coop";
-export {
-  SurvivorsEngine,
-  type SurvivorsGameSound,
-  SurvivorsSheet,
-} from "./game";
-export { SurvivorsCueTable, SurvivorsSoundView } from "./sound";
-export { SurvivorsView } from "./view";
+export { SurvivorsCueTable } from "./cue-table";
+export { SurvivorsEngine } from "./engine";
+export { SurvivorsSheet } from "./sheet";

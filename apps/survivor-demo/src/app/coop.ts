@@ -6,7 +6,7 @@ import { Effect, Layer } from "effect";
 // Co-op survivors (#25) as the app runs it: the genre's `SurvivorsCoop`, whose class is the key
 // of the Co-op client the app's Commands and Subscriptions drive, over the app's rooms.
 
-/** What the end-to-end test and a debugging player read of a run: plain data, no World. */
+/** What the end-to-end test and a debugging player read of a run: plain data, no arena. */
 export interface CoopDebugSample {
   readonly stepIndex: number;
   readonly error: string | null;
@@ -17,11 +17,11 @@ export interface CoopDebugSample {
   readonly time: number | null;
 }
 
-/** The client's debug read without the World, which is too big to copy out of the page. */
+/** The client's debug read without the arena, which is too big to copy out of the page. */
 export const debugSample = ({
   state,
   ...rest
-}: CoopClient.Debug<World>): CoopDebugSample => ({
+}: CoopClient.Debug<World.Arena>): CoopDebugSample => ({
   ...rest,
   level: state?.level ?? null,
   time: state?.time ?? null,

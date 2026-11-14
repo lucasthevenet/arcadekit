@@ -1,4 +1,4 @@
-import type { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
+import type { Hero, Hud, Offer } from "@arcadekit/survivors";
 import type { AudioSettings } from "arcadekit/audio";
 import { Viewport } from "arcadekit/foldkit";
 import type { CoopEvent } from "arcadekit/net/browser";
@@ -262,7 +262,7 @@ const bar = (h: H, kind: string, fraction: number, label: string): Html =>
   );
 
 const levelUp = (
-  choices: readonly UpgradeChoice[],
+  choices: readonly Offer.Choice[],
   h: H,
   picked: (index: number) => Message
 ): Html =>
@@ -287,12 +287,12 @@ const levelUp = (
     ),
   ]);
 
-const choiceTag = (choice: UpgradeChoice) =>
+const choiceTag = (choice: Offer.Choice) =>
   choice.kind === "heal"
     ? "Heal"
     : `${choice.kind === "weapon" ? "Weapon" : "Passive"} · ${choice.level === 1 ? "New" : `Level ${choice.level}`}`;
 
-const gameOver = (summary: RunSummary, h: H): Html =>
+const gameOver = (summary: Hero.Summary, h: H): Html =>
   panel(h, [
     h.h2([], [summary.won ? "You survived!" : "Defeated"]),
     h.p(

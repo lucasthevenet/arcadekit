@@ -1,4 +1,4 @@
-import { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
+import { Hero, Hud, Offer } from "@arcadekit/survivors";
 import { AudioSettings } from "arcadekit/audio";
 import { CoopEvent } from "arcadekit/net/browser";
 import { Schema } from "effect";
@@ -8,8 +8,8 @@ import { HeroRecords } from "./save";
 
 // The UI's whole state. Note what is NOT here: enemies, projectiles, positions.
 // Those live in the simulation. The UI only holds what it shows.
-// Hud is the genre's own sample, which is also its Schema, and UpgradeChoice and
-// RunSummary are its Schemas for what its events carry, so a field the genre adds
+// Hud is the genre's own sample, which is also its Schema, and Offer.Choice and
+// Hero.Summary are its Schemas for what its events carry, so a field the genre adds
 // reaches the Model. The co-op lobby is the Co-op client's own event, held the same way.
 
 export const HeroSummary = Schema.Struct({
@@ -28,8 +28,8 @@ export const Phase = defineTaggedUnion({
   Playing: {},
   Paused: {},
   /** `offer` is the number of the offer the choices are from: the pick names it. */
-  LevelUp: { offer: Schema.Int, choices: Schema.Array(UpgradeChoice) },
-  GameOver: { summary: RunSummary },
+  LevelUp: { offer: Schema.Int, choices: Schema.Array(Offer.Choice) },
+  GameOver: { summary: Hero.Summary },
 
   // Co-op (#25): a lobby over the signalling worker, then a lockstep run.
   CoopMenu: { joinCode: Schema.String },
@@ -41,8 +41,8 @@ export const Phase = defineTaggedUnion({
   CoopLobby: { lobby: CoopEvent.LobbyChanged },
   CoopPlaying: {},
   /** `offer` is the number of the offer the choices are from: the pick names it. */
-  CoopLevelUp: { offer: Schema.Int, choices: Schema.Array(UpgradeChoice) },
-  CoopGameOver: { summary: RunSummary },
+  CoopLevelUp: { offer: Schema.Int, choices: Schema.Array(Offer.Choice) },
+  CoopGameOver: { summary: Hero.Summary },
   CoopFailed: { error: Schema.String },
 });
 export type Phase = typeof Phase.Type;

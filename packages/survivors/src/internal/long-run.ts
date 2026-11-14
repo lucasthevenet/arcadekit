@@ -1,45 +1,53 @@
+/**
+ * The long run: 20,000 steps (5.5 minutes) of a full horde under an analog stick, as `Game.Loop`
+ * steps it for any declared host, whose hashes the determinism tests pin.
+ *
+ * `test/determinism.test.ts` plays it in Node and pins its hashes, and `browser-determinism/`
+ * bundles this same module and plays it in Chromium, Firefox and WebKit, which must give the same
+ * hashes (#25). No public file exports it: only those two import it, by path. It is in `src/`, not
+ * `test/`, so that `tsconfig.root.json` checks it with no DOM and lint holds it to the
+ * simulation's rules, since it runs in Node and in each browser.
+ *
+ * The replay test's run is too short to catch a change in the last bits of the simulation's
+ * arithmetic: on V8 and JavaScriptCore, approximated Math made runs like these split after 330
+ * steps while the replay still matched. The step uses only exact operations, so every conforming
+ * engine must give these hashes; any change to the simulation's arithmetic changes them.
+ *
+ * Plain on purpose: it steps the rules, which give the same bits on every peer and every engine,
+ * and its stick reads no random source, so every engine reads the same input.
+ */
 import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 
-import { ChooseUpgrade } from "./commands";
-import { visitWorld, hashWorld } from "./hash-world";
-import type { HeroInput } from "./input";
-import { GameContent } from "./schema";
-import { Survivors } from "./simulation";
-import type { World } from "./world";
+import { ChooseUpgrade } from "../commands";
+import * as GameContent from "../game-content";
+import type * as Hero from "../hero";
+import { Survivors } from "../simulation";
+import * as World from "../world";
 
-// The long run the determinism tests pin: 20,000 steps (5.5 minutes) of a full horde under analog
-// input, as `Game.Loop` steps it for any declared host. `determinism.test.ts` plays it in Node
-// and pins its hashes; `browser-determinism/` bundles this same module and plays it in Chromium,
-// Firefox and WebKit, which must give the same hashes (#25). It isn't part of the package's
-// exports: only those two import it, by path.
-//
-// The pinned replay is too short to catch a change in the last bits of the simulation's
-// arithmetic: on V8 and JavaScriptCore, approximated Math made runs like these split after 330
-// steps while the replay still matched. The step uses
-// only exact operations, so every conforming engine must give these hashes; any change
-// to the simulation's arithmetic changes them.
+/** How many steps a long run plays. */
+export const steps = 20_000;
 
-export const LONG_RUN_STEPS = 20_000;
-// Three seeds keep the Node test near 3 s in CI; each one is about a second.
-export const LONG_RUN_SEEDS = [1, 1234, 2026] as const;
-export type LongRunSeed = (typeof LONG_RUN_SEEDS)[number];
+/** The seeds a long run is played with. Three keep the Node test near 3 s in CI; each is about a second. */
+export const seeds = [1, 1234, 2026] as const;
+
+/** One of `seeds`. */
+export type Seed = (typeof seeds)[number];
 
 /**
- * Each seed's final `hashWorld` and its trace (the whole state folded in after every step),
+ * Each seed's final `World.hash` and its trace (the whole state folded in after every step),
  * recorded from this code in Node. If they change, the simulation's arithmetic changed: lockstep
  * peers on the old code would desync. Re-record only for a deliberate rule change.
  */
-export const LONG_RUN_RECORDED: Record<LongRunSeed, readonly [number, number]> =
-  {
-    1: [2_342_704_773, 3_790_048_561],
-    1234: [3_674_069_050, 3_202_377_843],
-    2026: [3_483_031_454, 257_317_921],
-  };
+export const recorded: Record<Seed, readonly [number, number]> = {
+  1: [2_342_704_773, 3_790_048_561],
+  1234: [3_674_069_050, 3_202_377_843],
+  2026: [3_483_031_454, 257_317_921],
+};
 
 // An unkillable hero and waves for the whole run, so every step has a full horde, projectiles,
 // gems and regular level-ups.
-const content = Schema.decodeUnknownSync(GameContent)({
+const content = Schema.decodeUnknownSync(GameContent.GameContent)({
   rules: {
     arenaHalfSize: 30,
     maxEnemies: 200,
@@ -127,7 +135,7 @@ const axis = (bits: number): number => (bits - 32_767.5) / 32_767.5;
  * step number (no Math.random, so every engine reads the same input). The length can pass 1, so
  * the simulation's own normalisation runs too.
  */
-const wander = (): Game.StepInput<HeroInput> => {
+const wander = (): Game.StepInput<Hero.Input> => {
   const input = { moveX: 0, moveZ: 0 };
   return {
     read: (step) => {
@@ -156,25 +164,25 @@ const mix = (hash: number, value: number): number => {
 };
 
 /**
- * The same state as `hashWorld`, folded into `hash` a word at a time rather than a byte:
+ * The same state as `World.hash`, folded into `hash` a word at a time rather than a byte:
  * several times faster, which keeps a hash after every one of 20,000 steps affordable.
  */
-const mixWorld = (hash: number, world: World): number => {
+const mixArena = (hash: number, arena: World.Arena): number => {
   let h = hash;
-  visitWorld(world, (value) => {
+  World.visit(arena, (value) => {
     h = mix(h, value);
   });
   return h;
 };
 
-/** What a long run ends with. */
-export interface LongRunResult {
-  readonly status: World["status"];
+/** What a long run ends with: how the run stands, its final hash, and its traces. */
+export interface LongRun {
+  readonly status: World.Arena["status"];
   readonly kills: number;
   readonly level: number;
-  /** The final state's `hashWorld`. */
+  /** The final state's `World.hash`. */
   readonly final: number;
-  /** The trace after the last step: `traces[LONG_RUN_STEPS - 1]`. */
+  /** The trace after the last step: `traces[steps - 1]`. */
   readonly trace: number;
   /**
    * The trace after every step. It folds in the whole state after each one, so a divergence
@@ -185,36 +193,37 @@ export interface LongRunResult {
 }
 
 /**
- * Plays LONG_RUN_STEPS steps, one per frame at 60 frames a second, taking the second upgrade
- * when offered: the pick is sent before the frame whose step applies it.
+ * Plays a long run of `steps` steps from `seed`, one per frame at 60 frames a second, taking the
+ * second upgrade when offered: the pick is sent before the frame whose step applies it. It takes
+ * about a second in Node.
  */
-export const longRun = (seed: number): LongRunResult => {
+export const play = (seed: number): LongRun => {
   const loop = Game.makeLoop(Survivors);
   const input = Game.soloInput(wander());
   loop.start({ content, heroIds: ["bolter"] }, seed, 0);
-  const world = loop.state!;
-  const traces = new Uint32Array(LONG_RUN_STEPS);
+  const arena = loop.state!;
+  const traces = new Uint32Array(steps);
   let trace = 0x81_1c_9d_c5;
-  for (let i = 0; i < LONG_RUN_STEPS; i++) {
+  for (let i = 0; i < steps; i++) {
     const nowMs = (i * 1000) / 60;
-    const { offer } = world.heroes[0]!;
+    const { offer } = arena.heroes[0]!;
     if (offer) {
       loop.send(
         new ChooseUpgrade({
-          offer: world.offerSeq,
+          offer: arena.offerSeq,
           index: Math.min(1, offer.length - 1),
         })
       );
     }
     loop.frame(input, { steps: 1 }, nowMs);
-    trace = mixWorld(trace, world);
+    trace = mixArena(trace, arena);
     traces[i] = trace;
   }
   return {
-    status: world.status,
-    kills: world.kills,
-    level: world.level,
-    final: hashWorld(world),
+    status: arena.status,
+    kills: arena.kills,
+    level: arena.level,
+    final: World.hash(arena),
     trace,
     traces,
   };
