@@ -18,8 +18,8 @@ Peer dependency: `effect` (~4.1).
 | --- | --- | --- | --- |
 | `arcadekit/content` | `Content` | A game's content files, declared with the Schema that checks them | [Content and assets](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/content.md) |
 | `arcadekit/content` | `Asset` | Something the app loads once for a game, such as a sprite sheet | [Content and assets](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/content.md) |
-| `arcadekit/content` | `ContentSource` | Where a content's files come from, read one file at a time, with `fromRecord` for tests and the `ContentError` a read fails with | [Content and assets](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/content.md#a-source-of-the-apps-own) |
-| `arcadekit/content/browser` | `FetchContentSource` | `FetchContentSource.fromUrl`, a source that fetches a game's files over HTTP | [Content and assets](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/content.md) |
+| `arcadekit/content` | [`ContentSource`](content-source.ts) | Where a content's files come from, read one file at a time, with `fromRecord` for tests and the `ContentError` a read fails with | [Content and assets](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/content.md#a-source-of-the-apps-own) |
+| `arcadekit/content/browser` | [`FetchContentSource`](browser/fetch-content-source.ts) | `FetchContentSource.fromUrl`, a source that fetches a game's files over HTTP | [Content and assets](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/content.md) |
 
 ## Example
 

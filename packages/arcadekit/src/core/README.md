@@ -18,20 +18,20 @@ Each module is a namespace, written as a module of Effect is: a data type named 
 
 | Namespace | What it holds | Guide |
 | --- | --- | --- |
-| `EntityPool` | A fixed number of entities stored as one typed array per field, and `EntityPool.Identified`, whose entities keep stable ids | [Entity pools](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/entity-pools.md) |
-| `Ring` | A fixed number of records in typed arrays, where a new one overwrites the oldest | [Telling a view what a step did](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/rings.md) |
-| `RingReader` | How far one view has read one ring | [Telling a view what a step did](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/rings.md) |
-| `TileMap` | A level's grid of static cells in typed arrays, with neighbours and a flood fill | [Tile maps](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/tile-maps.md) |
-| `Layout` | What each record of a pool, a ring or a tile map holds: `{ x: Float32Array }` | [Entity pools](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/entity-pools.md) |
-| `SpatialGrid` | A grid that finds the points near a place | [The spatial grid](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/spatial-grid.md) |
-| `FixedStepClock` | Turns a frame's time into whole fixed steps | [Steps and frames](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/steps-and-frames.md) |
-| `Rng` | The run's seeded random number generator | [Determinism](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/determinism.md#picking-with-the-rng) |
-| `EventBuffer` | What a run reports, held until its loop delivers it | [Entity pools](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/entity-pools.md) |
-| `StateHash` | The 32-bit digest peers compare to find a desync | [Determinism](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/determinism.md#the-state-hash) |
-| `ExactMath` | The math a step calls, the same bits in every engine | [Determinism](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/determinism.md#exact-math) |
-| `Point2` | Two numbers a function writes for its caller | [Determinism](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/determinism.md#exact-math) |
-| `Timer` | Timers and rates as numbers in the state | [Timers and tweens](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/timers-and-tweens.md) |
-| `Tween` | A view's values computed from when something started | [Timers and tweens](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/timers-and-tweens.md#tweens) |
+| [`EntityPool`](entity-pool.ts) | A fixed number of entities stored as one typed array per field, and `EntityPool.Identified`, whose entities keep stable ids | [Entity pools](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/entity-pools.md) |
+| [`Ring`](ring.ts) | A fixed number of records in typed arrays, where a new one overwrites the oldest | [Telling a view what a step did](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/rings.md) |
+| [`RingReader`](ring-reader.ts) | How far one view has read one ring | [Telling a view what a step did](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/rings.md) |
+| [`TileMap`](tile-map.ts) | A level's grid of static cells in typed arrays, with neighbours and a flood fill | [Tile maps](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/tile-maps.md) |
+| [`Layout`](layout.ts) | What each record of a pool, a ring or a tile map holds: `{ x: Float32Array }` | [Entity pools](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/entity-pools.md) |
+| [`SpatialGrid`](spatial-grid.ts) | A grid that finds the points near a place | [The spatial grid](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/spatial-grid.md) |
+| [`FixedStepClock`](fixed-step-clock.ts) | Turns a frame's time into whole fixed steps | [Steps and frames](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/steps-and-frames.md) |
+| [`Rng`](rng.ts) | The run's seeded random number generator | [Determinism](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/determinism.md#picking-with-the-rng) |
+| [`EventBuffer`](event-buffer.ts) | What a run reports, held until its loop delivers it | [Entity pools](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/entity-pools.md) |
+| [`StateHash`](state-hash.ts) | The 32-bit digest peers compare to find a desync | [Determinism](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/determinism.md#the-state-hash) |
+| [`ExactMath`](exact-math.ts) | The math a step calls, the same bits in every engine | [Determinism](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/determinism.md#exact-math) |
+| [`Point2`](point2.ts) | Two numbers a function writes for its caller | [Determinism](https://github.com/lucasthevenet/arcadekit/blob/main/docs/concepts/determinism.md#exact-math) |
+| [`Timer`](timer.ts) | Timers and rates as numbers in the state | [Timers and tweens](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/timers-and-tweens.md) |
+| [`Tween`](tween.ts) | A view's values computed from when something started | [Timers and tweens](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/timers-and-tweens.md#tweens) |
 
 ## Example
 

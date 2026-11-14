@@ -1,6 +1,6 @@
 # arcadekit
 
-Reusable primitives for building browser games with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org): a deterministic simulation core, a game loop and engine, input, content loading, saves, audio, pixel-art rendering, lockstep multiplayer and the Foldkit bindings. The docs are at [arcadekit.dev](https://arcadekit.dev): concepts, a guide for each task, and a reference page for each entry.
+Reusable primitives for building browser games with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org): a deterministic simulation core, a game loop and engine, input, content loading, saves, audio, pixel-art rendering, lockstep multiplayer and the Foldkit bindings. The docs are at [arcadekit.dev](https://arcadekit.dev): concepts, a guide for each task, and the API of every entry and module.
 
 **Status: alpha.** Interfaces and stored data change whenever that improves the code, with no compatibility layers. Each release's [changelog](https://github.com/lucasthevenet/arcadekit/blob/main/packages/arcadekit/CHANGELOG.md) says what broke.
 

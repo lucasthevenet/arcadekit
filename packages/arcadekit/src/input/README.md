@@ -18,7 +18,7 @@ pnpm add arcadekit effect
 
 | Namespace | What it holds | Guide |
 | --- | --- | --- |
-| `InputController` | A controller, its bindings, `moveAxes`, and the reads `axis`, `isDown` and `wasPressed` | [Input](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/input.md) |
+| [`InputController`](input-controller.ts) | A controller, its bindings, `moveAxes`, and the reads `axis`, `isDown` and `wasPressed` | [Input](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/input.md) |
 
 ## Example
 

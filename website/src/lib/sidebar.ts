@@ -1,34 +1,52 @@
-// The sidebar, built from the pages found on disk.
+// The sidebar's topics, built from the pages found on disk: Learn, Guides and Reference, each with
+// a sidebar of its own (starlight-sidebar-topics), as Effect's and Alchemy's docs are split.
 //
-// OUTLINE says which group each known page is in and in what order: the guides and concepts of
-// `docs/` by their slug, the entries by their folder under `src/`. It is not the list of pages: a
-// page it doesn't name is still listed, at the end of the group of its folder (a new guide at the
-// end of Guides, a new concept at the end of Concepts), and a new entry at the end of Reference.
-// A name in it that is no page fails the build, so the outline can't keep a page that is gone.
+// OUTLINE says which group each known page of `docs/` is in and in what order. It is not the list
+// of pages: a page it doesn't name is still listed, at the end of the group of its folder (a new
+// concept at the end of Concepts, a new guide in Guides' "More"). A name in it that is no page
+// fails the build, so the outline can't keep a page that is gone. Reference lists every entry of
+// the package, with its modules, from the pages pages.ts made of them.
 import type { StarlightUserConfig } from "@astrojs/starlight/types";
+import type { StarlightSidebarTopicsUserConfig } from "starlight-sidebar-topics";
 
-import type { DocPage, EntryPage, SitePages } from "./pages.ts";
+import type { DocPage, EntryPage, ModulePage, SitePages } from "./pages.ts";
 import { BRANCH, GRIMBONK_URL, REPO_URL } from "./site.ts";
 
+type Topic = StarlightSidebarTopicsUserConfig[number];
 type SidebarItem = NonNullable<StarlightUserConfig["sidebar"]>[number];
 
-/** A link to an address, such as a heading of the landing page. */
+/** A link to an address, such as a heading of the landing page or another site. */
 interface Link {
   readonly label: string;
   readonly link: string;
 }
 
+/** A page by its slug, under another label than its title. */
+interface Labelled {
+  readonly label: string;
+  readonly slug: string;
+}
+
 /** A group of pages by their slug, links and groups, in order. */
 interface Group {
   readonly label: string;
-  readonly items: readonly (string | Link | Group)[];
+  readonly items: readonly (string | Link | Labelled | Group)[];
   /** Shut until opened, unless it holds the page being read. */
   readonly collapsed?: boolean;
 }
 
-/** The guides and concepts, by their slug, and where a page the outline doesn't name goes. */
-const OUTLINE: readonly (Group & { readonly section: string })[] = [
+type TopicId = "learn" | "guides";
+
+/**
+ * The groups of the Learn and Guides topics, with the guides and concepts by their slug. A
+ * `section` is the folder of `docs/` whose pages the outline doesn't name go at the group's end.
+ */
+const OUTLINE: readonly (Group & {
+  readonly topic: TopicId;
+  readonly section?: string;
+})[] = [
   {
+    topic: "learn",
     label: "Get started",
     section: "",
     items: [
@@ -38,6 +56,7 @@ const OUTLINE: readonly (Group & { readonly section: string })[] = [
     ],
   },
   {
+    topic: "learn",
     label: "Concepts",
     section: "concepts",
     items: [
@@ -48,64 +67,71 @@ const OUTLINE: readonly (Group & { readonly section: string })[] = [
     ],
   },
   {
-    label: "Guides",
-    section: "guides",
+    topic: "learn",
+    label: "Examples",
     items: [
+      { label: "GRIMBONK", link: GRIMBONK_URL },
       {
-        label: "The rules",
-        collapsed: true,
-        items: [
-          "guides/simulation",
-          "guides/commands",
-          "guides/several-players",
-        ],
+        label: "The survivors demo",
+        link: `${REPO_URL}/tree/${BRANCH}/examples/survivor-demo`,
       },
       {
-        label: "The world",
-        collapsed: true,
-        items: [
-          "guides/entity-pools",
-          "guides/spatial-grid",
-          "guides/tile-maps",
-          "guides/timers-and-tweens",
-          "guides/rings",
-        ],
-      },
-      {
-        label: "In the browser",
-        collapsed: true,
-        items: [
-          "guides/engine",
-          "guides/input",
-          "guides/content",
-          "guides/saves",
-          "guides/foldkit",
-        ],
-      },
-      {
-        label: "Drawing and sound",
-        collapsed: true,
-        items: [
-          "guides/stages-and-cameras",
-          "guides/sprites",
-          "guides/tile-layers",
-          "guides/mesh-instances",
-          "guides/audio",
-        ],
-      },
-      {
-        label: "Co-op",
-        collapsed: true,
-        items: [
-          "guides/lockstep-sessions",
-          "guides/webrtc",
-          "guides/coop",
-          "guides/signalling-worker",
-        ],
+        label: "The push-puzzle demo",
+        link: `${REPO_URL}/tree/${BRANCH}/examples/push-puzzle-demo`,
       },
     ],
   },
   {
+    topic: "guides",
+    label: "The rules",
+    items: ["guides/simulation", "guides/commands", "guides/several-players"],
+  },
+  {
+    topic: "guides",
+    label: "The world",
+    items: [
+      "guides/entity-pools",
+      "guides/spatial-grid",
+      "guides/tile-maps",
+      "guides/timers-and-tweens",
+      "guides/rings",
+    ],
+  },
+  {
+    topic: "guides",
+    label: "In the browser",
+    items: [
+      "guides/engine",
+      "guides/input",
+      "guides/content",
+      "guides/saves",
+      "guides/foldkit",
+    ],
+  },
+  {
+    topic: "guides",
+    label: "Drawing and sound",
+    items: [
+      "guides/stages-and-cameras",
+      "guides/sprites",
+      "guides/tile-layers",
+      "guides/mesh-instances",
+      "guides/audio",
+    ],
+  },
+  {
+    topic: "guides",
+    label: "Co-op",
+    items: [
+      "guides/lockstep-sessions",
+      "guides/webrtc",
+      "guides/coop",
+      "guides/signalling-worker",
+    ],
+  },
+  { topic: "guides", label: "More", section: "guides", items: [] },
+  {
+    topic: "guides",
     label: "Testing",
     section: "testing",
     items: [
@@ -117,7 +143,7 @@ const OUTLINE: readonly (Group & { readonly section: string })[] = [
   },
 ];
 
-/** The entries' top folders under `src/`, in the order Reference lists them. */
+/** The top-level entries, in the order Reference lists them. Any other follows, by path. */
 const ENTRY_ORDER = [
   "game",
   "core",
@@ -135,14 +161,20 @@ const slugsOf = (items: Group["items"]): string[] =>
     if (typeof item === "string") {
       return [item];
     }
-    return "items" in item ? slugsOf(item.items) : [];
+    if ("items" in item) {
+      return slugsOf(item.items);
+    }
+    return "slug" in item ? [item.slug] : [];
   });
 
 /**
- * The guides and concepts by group: the outline's own order, then each page it doesn't name at
- * the end of its folder's group, by path. A page of a folder no group has goes in Get started.
+ * The groups of the Learn and Guides topics: the outline's own order, then each page it doesn't
+ * name at the end of its folder's group, by path. A page of a folder no group has goes in Get
+ * started. A group left with no page is left out.
  */
-export const outlinedDocs = (docs: readonly DocPage[]): Group[] => {
+export const outlinedDocs = (
+  docs: readonly DocPage[]
+): (Group & { readonly topic: TopicId })[] => {
   const slugs = new Set(docs.map((page) => page.slug));
   const named = new Set(OUTLINE.flatMap((group) => slugsOf(group.items)));
   const missing = [...named].filter((slug) => !slugs.has(slug));
@@ -152,26 +184,28 @@ export const outlinedDocs = (docs: readonly DocPage[]): Group[] => {
     );
   }
   const sections = new Set(OUTLINE.map((group) => group.section));
-  const rest = (section: string) =>
-    docs
-      .filter(
-        (page) =>
-          !named.has(page.slug) &&
-          (page.section === section ||
-            (section === "" && !sections.has(page.section)))
-      )
-      .map((page) => page.slug);
+  const rest = (section: string | undefined) =>
+    section === undefined
+      ? []
+      : docs
+          .filter(
+            (page) =>
+              !named.has(page.slug) &&
+              (page.section === section ||
+                (section === "" && !sections.has(page.section)))
+          )
+          .map((page) => page.slug);
   return OUTLINE.map(({ section, ...group }) => ({
     ...group,
     items: [...group.items, ...rest(section)],
-  }));
+  })).filter((group) => group.items.length > 0);
 };
 
-const topFolder = (page: EntryPage) => page.entry.split("/", 1)[0] ?? "";
+const topFolder = (entry: string) => entry.split("/", 1)[0] ?? "";
 
 /** Where an entry is in Reference: its top folder's place in the order, or after them all. */
-const rankOf = (page: EntryPage) => {
-  const at = ENTRY_ORDER.indexOf(topFolder(page));
+const rankOf = (entry: string) => {
+  const at = ENTRY_ORDER.indexOf(topFolder(entry));
   return at === -1 ? ENTRY_ORDER.length : at;
 };
 
@@ -181,49 +215,94 @@ const rankOf = (page: EntryPage) => {
  */
 export const orderedEntries = (entries: readonly EntryPage[]): EntryPage[] =>
   entries.toSorted(
-    (a, b) => rankOf(a) - rankOf(b) || a.entry.localeCompare(b.entry)
+    (a, b) =>
+      rankOf(a.entry) - rankOf(b.entry) || a.entry.localeCompare(b.entry)
   );
 
-const toItem = (item: string | Link | Group): SidebarItem => {
+/** An entry's page, then its modules' by name. */
+const entryItems = (
+  entry: EntryPage,
+  modules: readonly ModulePage[]
+): Group["items"] => [
+  { label: "Overview", slug: entry.slug },
+  ...modules
+    .filter((module) => module.entry === entry.entry)
+    .toSorted((a, b) => a.module.localeCompare(b.module))
+    .map((module) => module.slug),
+];
+
+/**
+ * Reference's groups: one for each top-level entry, shut until opened, with its page, its modules,
+ * and each sub-entry: one page alone, or a group of it and its modules. Then the glossary.
+ */
+export const referenceGroups = (pages: SitePages): Group["items"] => {
+  const entries = orderedEntries(pages.entries);
+  return [
+    ...entries
+      .filter((page) => !page.entry.includes("/"))
+      .map((top) => ({
+        label: top.title,
+        collapsed: true,
+        items: [
+          ...entryItems(top, pages.modules),
+          ...entries
+            .filter((page) => page.entry.startsWith(`${top.entry}/`))
+            .map((sub) => {
+              const items = entryItems(sub, pages.modules);
+              return items.length === 1
+                ? sub.slug
+                : { label: sub.title, collapsed: true, items };
+            }),
+        ],
+      })),
+    pages.glossary.slug,
+  ];
+};
+
+const toItem = (item: string | Link | Labelled | Group): SidebarItem => {
   if (typeof item === "string") {
     return item;
   }
-  if (!("items" in item)) {
-    return { label: item.label, link: item.link };
+  if ("items" in item) {
+    return {
+      label: item.label,
+      items: item.items.map(toItem),
+      ...(item.collapsed === true ? { collapsed: true } : {}),
+    };
   }
-  return {
-    label: item.label,
-    items: item.items.map(toItem),
-    ...(item.collapsed === true ? { collapsed: true } : {}),
-  };
+  return "slug" in item
+    ? { label: item.label, slug: item.slug }
+    : { label: item.label, link: item.link };
 };
 
-/**
- * Starlight's sidebar: Get started, the concepts, the guides, testing, the reference pages with
- * the glossary, and the games built on the kit. A page is named by its slug, and Starlight labels
- * it with its title: a guide's heading, an entry's import path.
- */
-export const sidebar = (pages: SitePages): SidebarItem[] => [
-  ...outlinedDocs(pages.docs).map(toItem),
-  {
-    label: "Reference",
-    items: [
-      ...orderedEntries(pages.entries).map((page) => page.slug),
-      pages.glossary.slug,
-    ],
-  },
-  {
-    label: "Examples",
-    items: [
-      { label: "GRIMBONK", link: GRIMBONK_URL },
-      {
-        label: "The survivors demo",
-        link: `${REPO_URL}/tree/${BRANCH}/examples/survivor-demo`,
-      },
-      {
-        label: "The push-puzzle demo",
-        link: `${REPO_URL}/tree/${BRANCH}/examples/push-puzzle-demo`,
-      },
-    ],
-  },
-];
+/** The Learn, Guides and Reference topics, each linking to its first page. */
+export const sidebarTopics = (pages: SitePages): Topic[] => {
+  const groups = outlinedDocs(pages.docs);
+  const topic = (id: TopicId) =>
+    groups
+      .filter((group) => group.topic === id)
+      .map(({ topic: _topic, ...group }) => toItem(group));
+  return [
+    {
+      id: "learn",
+      label: "Learn",
+      link: "/making-a-game",
+      icon: "rocket",
+      items: topic("learn"),
+    },
+    {
+      id: "guides",
+      label: "Guides",
+      link: "/guides/simulation",
+      icon: "open-book",
+      items: topic("guides"),
+    },
+    {
+      id: "reference",
+      label: "Reference",
+      link: "/reference/game",
+      icon: "document",
+      items: referenceGroups(pages).map(toItem),
+    },
+  ];
+};

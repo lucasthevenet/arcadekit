@@ -17,9 +17,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { docsLoader } from "@astrojs/starlight/loaders";
 import type { Loader, LoaderContext } from "astro/loaders";
 
-import { discoverPages, readPage } from "./pages.ts";
+import { discoverPages } from "./pages.ts";
 import type { RepositoryPage } from "./pages.ts";
 import { BRANCH, REPO_ROOT, REPO_URL } from "./site.ts";
+
+/** The package's source, whose doc comments are the reference's text. */
+const KIT_SOURCES = "packages/arcadekit/src";
 
 /** The sidebar's label for a page whose title is too long for it. */
 const SIDEBAR_LABELS: Readonly<Record<string, string>> = {
@@ -64,20 +67,35 @@ export const pagesLoader = (): Loader => ({
     const pages = discoverPages();
     await Promise.all(pages.repository.map((page) => store(context, page)));
 
-    // `astro dev` reloads a page as its file changes. A new page is found when the site starts:
-    // restart `pnpm dev:docs` after adding one.
-    const byFile = new Map(
-      pages.repository.map((page) => [path.join(REPO_ROOT, page.file), page])
+    // `astro dev` reloads a page as a file it is made from changes: a page of `docs/`, a README,
+    // the glossary, or a source file of the package, whose doc comments are the reference's. The
+    // pages are read again, and each whose text changed is stored again. A new page is found
+    // when the site starts: restart `pnpm dev:docs` after adding one.
+    const bodies = new Map(
+      pages.repository.map((page) => [page.slug, page.body])
     );
-    context.watcher?.add([...byFile.keys()]);
+    context.watcher?.add([
+      ...pages.repository.map((page) => path.join(REPO_ROOT, page.file)),
+      path.join(REPO_ROOT, KIT_SOURCES),
+    ]);
     context.watcher?.on("change", (changed) => {
-      const page = byFile.get(path.resolve(changed));
-      if (page === undefined) {
+      const file = path.relative(REPO_ROOT, path.resolve(changed));
+      if (file.startsWith("..") || !/\.(?:md|ts)$/u.test(file)) {
         return;
       }
-      store(context, readPage(page.file, page.slug)).catch((error: unknown) => {
+      try {
+        for (const page of discoverPages().repository) {
+          if (bodies.get(page.slug) !== page.body) {
+            bodies.set(page.slug, page.body);
+            store(context, page).catch((error: unknown) => {
+              context.logger.error(String(error));
+            });
+          }
+        }
+      } catch (error) {
+        // A file mid-edit that doesn't parse: the next save reads it again.
         context.logger.error(String(error));
-      });
+      }
     });
   },
 });

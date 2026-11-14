@@ -16,11 +16,11 @@ Peer dependency: `effect` (~4.1).
 
 | Entry | Export | What it holds | Guide |
 | --- | --- | --- | --- |
-| `arcadekit/audio` | `AudioSystem` | What a game plays through and the key of its service, with `layerSilent`, `make` for a test's, and `applySettings` | [Audio](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/audio.md) |
+| `arcadekit/audio` | [`AudioSystem`](audio-system.ts) | What a game plays through and the key of its service, with `layerSilent`, `make` for a test's, and `applySettings` | [Audio](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/audio.md) |
 | `arcadekit/audio` | `CueTable` | A genre's cues, declared for the app to say which of its sounds each plays | [Audio](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/audio.md#a-cue-table) |
-| `arcadekit/audio` | `AudioSettings` | The Schema of the player's volumes and mute, and their defaults | [Audio](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/audio.md#the-audio-settings) |
-| `arcadekit/audio` | `AudioMixer` | The mixer behind the browser's audio system, which plays into whatever output its host unlocks it with | [Audio](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/audio.md#in-a-test) |
-| `arcadekit/audio/browser` | `BrowserAudioSystem` | `BrowserAudioSystem.layer`, the audio system over Web Audio | [Audio](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/audio.md) |
+| `arcadekit/audio` | [`AudioSettings`](audio-settings.ts) | The Schema of the player's volumes and mute, and their defaults | [Audio](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/audio.md#the-audio-settings) |
+| `arcadekit/audio` | [`AudioMixer`](audio-mixer.ts) | The mixer behind the browser's audio system, which plays into whatever output its host unlocks it with | [Audio](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/audio.md#in-a-test) |
+| `arcadekit/audio/browser` | [`BrowserAudioSystem`](browser/browser-audio-system.ts) | `BrowserAudioSystem.layer`, the audio system over Web Audio | [Audio](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/audio.md) |
 
 ## Example
 

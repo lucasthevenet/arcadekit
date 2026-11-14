@@ -24,6 +24,6 @@ Removing or renaming an entry undoes the same places.
 
 ## An entry's README
 
-It is read on GitHub, on npm and as the entry's reference page on arcadekit.dev, and it says what the entry has: its heading and a paragraph, `## Install`, `## Its modules` (a table of each namespace or export, what it holds and the guide that shows it), and `## Example`, one short example. How to use the entry goes in the guides under `docs/`, by task, whichever entries a task takes: a new entry gets a guide there, or a section of one, and a place in the sidebar's outline (`website/src/lib/sidebar.ts`).
+It is read on GitHub, on npm and as the entry's reference page on arcadekit.dev, and it says what the entry has: its heading and a paragraph, `## Install`, `## Its modules` (a table of each namespace or export, what it holds and the guide that shows it), and `## Example`, one short example. The table names each namespace as a link to its source file, as `Rng` links to `rng.ts`, which on the site is the module's page, generated from its doc comments. How to use the entry goes in the guides under `docs/`, by task, whichever entries a task takes: a new entry gets a guide there, or a section of one, and a place in the sidebar's outline (`website/src/lib/sidebar.ts`).
 
 Its `ts` blocks, and those of `docs/`, are small games of their own, which `pnpm smoke` compiles alone. Its links are relative links to the repository's files, or full GitHub URLs for files the npm package doesn't have, such as a guide; the site rewrites both, and `pnpm build:docs` fails on a dead one.

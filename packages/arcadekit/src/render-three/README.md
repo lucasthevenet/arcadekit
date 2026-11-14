@@ -21,14 +21,14 @@ Each module is a namespace, written as a module of Effect is: a data type named 
 
 | Namespace | What it holds | Guide |
 | --- | --- | --- |
-| `Stage` | A renderer, a scene and a camera that fill an element and resize with it | [Stages and cameras](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/stages-and-cameras.md) |
-| `PixelCamera` | A camera that looks straight down and keeps sprite pixels whole, with the arithmetic of its pixel scale | [Stages and cameras](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/stages-and-cameras.md#cameras) |
-| `Camera` | Where a 3D stage's camera goes: following, circling or fitting a rectangle of ground | [Stages and cameras](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/stages-and-cameras.md#cameras) |
-| `SpriteSheet` | A sheet's frames and tags, its image as a texture, its load, and the frame a tag shows at a time | [Sprites](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/sprites.md) |
-| `InstancedSprites` | A batch of sprites from one sheet, drawn in one draw call | [Sprites](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/sprites.md#a-batch-of-sprites) |
-| `TileLayer` | A grid of cells drawn from a sheet, only the cells on screen | [Tile layers](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/tile-layers.md) |
-| `Gait` | Whether a character a view draws is walking | [Sprites](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/sprites.md#walking) |
-| `MeshInstances` | Copies of one mesh, drawn in one draw call | [Mesh instances](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/mesh-instances.md) |
+| [`Stage`](stage.ts) | A renderer, a scene and a camera that fill an element and resize with it | [Stages and cameras](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/stages-and-cameras.md) |
+| [`PixelCamera`](pixel-camera.ts) | A camera that looks straight down and keeps sprite pixels whole, with the arithmetic of its pixel scale | [Stages and cameras](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/stages-and-cameras.md#cameras) |
+| [`Camera`](camera.ts) | Where a 3D stage's camera goes: following, circling or fitting a rectangle of ground | [Stages and cameras](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/stages-and-cameras.md#cameras) |
+| [`SpriteSheet`](sprite-sheet.ts) | A sheet's frames and tags, its image as a texture, its load, and the frame a tag shows at a time | [Sprites](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/sprites.md) |
+| [`InstancedSprites`](instanced-sprites.ts) | A batch of sprites from one sheet, drawn in one draw call | [Sprites](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/sprites.md#a-batch-of-sprites) |
+| [`TileLayer`](tile-layer.ts) | A grid of cells drawn from a sheet, only the cells on screen | [Tile layers](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/tile-layers.md) |
+| [`Gait`](gait.ts) | Whether a character a view draws is walking | [Sprites](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/sprites.md#walking) |
+| [`MeshInstances`](mesh-instances.ts) | Copies of one mesh, drawn in one draw call | [Mesh instances](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/mesh-instances.md) |
 | `TestSpriteSheet`, `DrawnSprites`, `Png` | In `arcadekit/render-three/testing`: a sheet with no image, what a batch or a tile layer shows, and two checks of a sheet's PNG | [Testing a view](https://github.com/lucasthevenet/arcadekit/blob/main/docs/testing/views.md) |
 
 ## Example

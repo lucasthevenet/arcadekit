@@ -4,7 +4,7 @@
 // - A link a page writes to a file of the repository, relative or a full URL to GitHub: as the
 //   page renders, by links.ts, which knows the file it is written in.
 // - A link to a page of the site, as the built site has it: the pages' links once rewritten,
-//   the landing page's, the sidebar's and the redirects'. Its page must exist, and its fragment,
+//   the landing page's and the sidebar's. Its page must exist, and its fragment,
 //   if it has one, must be an anchor on that page: a heading of a page, a term of the glossary.
 //   GitHub gives a heading the same anchor, so a fragment that works here works there too, except
 //   a term's, which is a heading only here.

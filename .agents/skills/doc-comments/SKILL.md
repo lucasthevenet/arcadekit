@@ -3,7 +3,7 @@ name: doc-comments
 description: Doc comments. Use when writing or changing a module comment or an export's doc comment in arcadekit, or an example in one.
 ---
 
-Doc comments are written as Effect's are, in the kit's own voice and the glossary's words. Copy those of [`core/ring.ts`](../../../packages/arcadekit/src/core/ring.ts).
+Doc comments are written as Effect's are, in the kit's own voice and the glossary's words. They are the API reference of arcadekit.dev too: a module's page is its module comment, then each export's signature and doc comment, by category ([`website/README.md`](../../../website/README.md#the-api-reference)). Copy those of [`core/ring.ts`](../../../packages/arcadekit/src/core/ring.ts).
 
 ## The module comment
 

@@ -15,7 +15,7 @@ Peer dependencies: `effect` (~4.1), and `@cloudflare/workers-types` (^5) for the
 
 ## Its module
 
-`SignallingWorker` is the entry's one module:
+[`SignallingWorker`](signalling-worker.ts) is the entry's one module:
 
 - `SignallingWorker.room(options?)` returns the Durable Object class of one room, for the app to extend. `roomSize` is the most players a room holds, host included: a whole number from 2 to `Room.maxSize` (16), and `Room.defaultSize` (4) if left out; both constants are in `arcadekit/net/signalling`. Any other size throws a `RangeError` when the Worker's module loads, so a wrong size fails the deploy and is never changed to another one. A lockstep run has its own limit on the wire, which is not this setting.
 - `SignallingWorker.make({ rooms, assets })` returns the Worker's default export, a `fetch` handler. `rooms` and `assets` are the names of the two bindings in the Worker's `env`.

@@ -18,10 +18,10 @@ Each is a namespace, as Effect's modules are.
 
 | Namespace | What it holds | Guide |
 | --- | --- | --- |
-| `Viewport` | The element an engine draws a run into, which reports two Messages as it enters and leaves the document | [A Foldkit app](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/foldkit.md) |
-| `EngineEntry` | The Subscription entry that runs an engine in the viewport and turns its events into Messages | [A Foldkit app](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/foldkit.md) |
-| `KeyPresses` | A Stream of the app's own keys on one screen, as Messages | [A Foldkit app](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/foldkit.md#the-apps-own-keys) |
-| `ShortcutPresses` | A Stream of a key that works on any screen, such as M to mute | [A Foldkit app](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/foldkit.md#the-apps-own-keys) |
+| [`Viewport`](viewport.ts) | The element an engine draws a run into, which reports two Messages as it enters and leaves the document | [A Foldkit app](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/foldkit.md) |
+| [`EngineEntry`](engine-entry.ts) | The Subscription entry that runs an engine in the viewport and turns its events into Messages | [A Foldkit app](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/foldkit.md) |
+| [`KeyPresses`](key-presses.ts) | A Stream of the app's own keys on one screen, as Messages | [A Foldkit app](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/foldkit.md#the-apps-own-keys) |
+| [`ShortcutPresses`](shortcut-presses.ts) | A Stream of a key that works on any screen, such as M to mute | [A Foldkit app](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/foldkit.md#the-apps-own-keys) |
 
 ## Example
 

@@ -9,17 +9,14 @@
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
+import starlightSidebarTopics from "starlight-sidebar-topics";
 
 import { deadLinks } from "./src/lib/dead-links.ts";
 import { createGlossaryPlugins } from "./src/lib/glossary.ts";
 import { createLandingPlugin } from "./src/lib/landing.ts";
 import { createLinkRewriter } from "./src/lib/links.ts";
-import {
-  discoverPages,
-  entryRedirects,
-  PACKAGE_README,
-} from "./src/lib/pages.ts";
-import { sidebar } from "./src/lib/sidebar.ts";
+import { discoverPages, PACKAGE_README } from "./src/lib/pages.ts";
+import { sidebarTopics } from "./src/lib/sidebar.ts";
 import {
   BRANCH,
   NPM_URL,
@@ -41,7 +38,9 @@ const links = createLinkRewriter({
   repoUrl: REPO_URL,
   branch: BRANCH,
   pageLinks: new Map([
-    ...pages.all.map((page) => [page.file, page.link] as const),
+    ...pages.all.flatMap((page) =>
+      page.files.map((file) => [file, page.link] as const)
+    ),
     // The package's README has no page of its own: the landing page includes it.
     [PACKAGE_README, pages.home.link],
   ]),
@@ -61,17 +60,6 @@ export default defineConfig({
   // slash at its end (alchemy.run.ts), which its canonical link names.
   trailingSlash: "never",
   build: { format: "directory" },
-
-  // An entry with no README has no page: its address goes to the page that documents it
-  // (pages.ts). The build writes a page there that sends the browser on, which the preview and
-  // Cloudflare serve, and the dev server answers it with the status. A 302, not a 301 a browser
-  // would remember, since the entry's own README would take the address over.
-  redirects: Object.fromEntries(
-    entryRedirects(pages).map(({ from, to }) => [
-      from,
-      { status: 302, destination: to },
-    ])
-  ),
 
   markdown: {
     processor: satteri({
@@ -111,7 +99,8 @@ export default defineConfig({
       // The landing page's file. The other pages' files are elsewhere in the repository, and
       // each names its own (loader.ts).
       editLink: { baseUrl: `${REPO_URL}/edit/${BRANCH}/${WEBSITE_DIR}/` },
-      sidebar: sidebar(pages),
+      // Learn, Guides and Reference, each with a sidebar of its own (sidebar.ts).
+      plugins: [starlightSidebarTopics(sidebarTopics(pages))],
       customCss: ["./src/styles/custom.css"],
       components: {
         // The header's links: the package's version, and GRIMBONK.

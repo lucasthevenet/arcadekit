@@ -18,8 +18,8 @@ Peer dependencies: `effect` (~4.1), and `@effect/platform-browser` (~4.1, an opt
 | --- | --- | --- | --- |
 | `arcadekit/save` | `Save` | A game's records by id, under one versioned storage key | [Saves and settings](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/saves.md) |
 | `arcadekit/save` | `Setting` | One value kept apart from the save, under its own key | [Saves and settings](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/saves.md) |
-| `arcadekit/save` | `Stored` | What a save's or a setting's service gives: `read` and `write` | [Saves and settings](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/saves.md) |
-| `arcadekit/save/browser` | `BrowserSaveStorage` | `BrowserSaveStorage.layer`: localStorage, or memory if the browser refuses | [Saves and settings](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/saves.md) |
+| `arcadekit/save` | [`Stored`](stored.ts) | What a save's or a setting's service gives: `read` and `write` | [Saves and settings](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/saves.md) |
+| `arcadekit/save/browser` | [`BrowserSaveStorage`](browser/browser-save-storage.ts) | `BrowserSaveStorage.layer`: localStorage, or memory if the browser refuses | [Saves and settings](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/saves.md) |
 
 ## Example
 

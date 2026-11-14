@@ -12,7 +12,7 @@ pnpm add arcadekit effect
 
 Peer dependency: `effect` (~4.1).
 
-## Its modules
+## Its exports
 
 Each export is reached through the entry's namespace, `Game.Event`, and `arcadekit/game/browser` has everything `arcadekit/game` has.
 
@@ -30,7 +30,7 @@ Each export is reached through the entry's namespace, `Game.Event`, and `arcadek
 | `arcadekit/game/browser` | `Game.Frames`, `Game.animationFrames`, `Game.frameLoop` | Where an attached engine gets its frames | [The engine](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/engine.md) |
 | `arcadekit/game/browser` | `Game.AttachError`, `Game.GameCrashed` | How an attach fails | [The engine](https://github.com/lucasthevenet/arcadekit/blob/main/docs/guides/engine.md) |
 | `arcadekit/game/scenario` | `Scenario.make`, `given`, `step`, `send`, `reported`, `refused`, `sampled`, `state` | A specification of the rules you can run | [Scenarios](https://github.com/lucasthevenet/arcadekit/blob/main/docs/testing/scenarios.md) |
-| `arcadekit/game/testing` | `ManualFrames` | A frame source a test drives | [Testing an engine](https://github.com/lucasthevenet/arcadekit/blob/main/docs/testing/engines.md) |
+| `arcadekit/game/testing` | [`ManualFrames`](testing/manual-frames.ts) | A frame source a test drives | [Testing an engine](https://github.com/lucasthevenet/arcadekit/blob/main/docs/testing/engines.md) |
 
 ## Example
 
