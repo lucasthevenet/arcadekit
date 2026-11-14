@@ -1,6 +1,6 @@
 name: Package checks
 
-# The published shape of the kit packages (ADR-0016): publint and
+# The published shape of the kit packages: publint and
 # @arethetypeswrong/cli on each packed package, then the pack-and-install smoke test
 # (tarballs installed outside the workspace, type-checked with TypeScript 5.9 and 7,
 # a small game built with Vite, one copy of effect and three).

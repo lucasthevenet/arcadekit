@@ -22,5 +22,4 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm test
-      # build runs typecheck first, then the demo's production build.
       - run: pnpm build

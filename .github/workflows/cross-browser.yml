@@ -1,6 +1,6 @@
 name: Cross-browser determinism
 
-# Survivors' long-run determinism scenario in Chromium, Firefox and WebKit (#25, ADR-0011):
+# Survivors' long-run determinism scenario in Chromium, Firefox and WebKit:
 # every browser must give the hashes pinned in packages/survivors/src/long-run.ts at every step.
 
 on:
