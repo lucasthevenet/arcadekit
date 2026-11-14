@@ -29,24 +29,25 @@ import { Content as PackageReadme } from "../../../../packages/arcadekit/README.
   <Card title="The same run on every peer" icon="random">
     A fixed-step clock, a seeded random generator and pools that allocate
     nothing per step. The same seed and inputs give the same run.
-    [arcadekit/core](/core)
+    [Determinism](/concepts/determinism)
   </Card>
   <Card title="A game is declared" icon="puzzle">
     Each part is one named class. The rules have no DOM, and the engine adds the
     view and input that present them. A loop steps the rules anywhere, and the
-    engine draws them in a browser. [arcadekit/game](/game)
+    engine draws them in a browser. [A game is declared](/concepts/declarations)
   </Card>
   <Card title="Co-op in lockstep" icon="laptop">
     Two to four players run one simulation over WebRTC, joined by a code. The
-    signalling worker for Cloudflare is an entry too. [arcadekit/net](/net)
+    signalling worker for Cloudflare is an entry too.
+    [Lockstep](/concepts/lockstep)
   </Card>
   <Card title="Effect at the edges" icon="setting">
     Loading, engines, saves and connections are Effect. The step, the views and
-    input are plain code.
+    input are plain code. [Making a game](/making-a-game)
   </Card>
 </CardGrid>
 
-arcadekit is one package of primitives for browser games made with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org). Each of its entries has a page here.
+arcadekit is one package of primitives for browser games made with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org). Install it below, then [make a game](/making-a-game): the concepts say how a game is put together, a guide covers each task, and each entry has a reference page.
 
 {/* The package's README, after its title and first paragraph (src/lib/landing.ts). */}
 

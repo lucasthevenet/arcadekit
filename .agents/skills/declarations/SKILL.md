@@ -7,7 +7,7 @@ A game writes `class <Name> extends <Builder>("<Name>", { ... }) {}`, and that s
 
 ## Start from the game's side
 
-Write the block a game would write before the code that makes it work: the `ts` example for the entry's README, as a small game of its own (`Race`), since `pnpm smoke` compiles each block alone. The design is done when that block needs no type argument but the types given first, no annotation on a handler's parameter but `create`'s config, no cast, no second statement to finish declaring the part, and nothing for a part the game doesn't use. If it needs one, change the builder, not the example.
+Write the block a game would write before the code that makes it work: the `ts` example of its guide under `docs/guides/`, as a small game of its own (`Race`), since `pnpm smoke` compiles each block alone. The design is done when that block needs no type argument but the types given first, no annotation on a handler's parameter but `create`'s config, no cast, no second statement to finish declaring the part, and nothing for a part the game doesn't use. If it needs one, change the builder, not the example.
 
 ## The builder's file
 
@@ -38,7 +38,7 @@ The class is the service's key:
 
 ## Register it
 
-Name the builder in the sentence of `.agents/AGENTS.md` that begins "They are" and in the glossary's **Declaration** entry, and give it a README block, a doc comment and a test that declares one.
+Name the builder in the sentence of `.agents/AGENTS.md` that begins "They are" and in the glossary's **Declaration** entry, in the table of [`docs/concepts/declarations.md`](../../../docs/concepts/declarations.md), and in its entry's README, and give it a block in its guide, a doc comment and a test that declares one.
 
 ## The definition a game writes
 

@@ -1,13 +1,16 @@
 // Which files of the repository are pages of the site, and where each one is served.
 //
 // The site has one page of its own, the landing page (src/content/docs/index.mdx). Every other
-// page is a file that already exists for GitHub and npm, read where it is (loader.ts):
-// - each entry's README, `packages/arcadekit/src/<entry>/README.md`, at `/<entry>`, so a page's
-//   address is its import path (`arcadekit/net/worker` is `/net/worker`);
+// page is a markdown file of the repository, read where it is (loader.ts):
+// - each file under `docs/`, at its path there: `docs/guides/sprites.md` at `/guides/sprites`.
+//   These are the guides, the concepts and the walkthrough, read on GitHub and here;
+// - each entry's README, `packages/arcadekit/src/<entry>/README.md`, at `/reference/<entry>`, so
+//   a reference page's address ends with its import path (`arcadekit/net/worker` is
+//   `/reference/net/worker`). The READMEs are also read on npm;
 // - the glossary, `CONTEXT.md`, at `/glossary`.
-// READMEs are found by walking `src/`, so a new entry's README is a page without a change here.
+// Both folders are walked, so a new page or a new entry's README is a page without a change here.
 // An entry with no README has no page: its address goes to the page of the folder above it
-// (`/net/browser` to `/net`), until it gets a README.
+// (`/reference/net/browser` to `/reference/net`), until it gets a README.
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -15,6 +18,9 @@ import { REPO_ROOT, WEBSITE_DIR } from "./site.ts";
 
 const KIT_MANIFEST = "packages/arcadekit/package.json";
 const KIT_SRC = "packages/arcadekit/src";
+const DOCS = "docs";
+/** Where the entries' reference pages are served: an entry's page is this, then its import path. */
+const REFERENCE = "reference";
 const GLOSSARY = "CONTEXT.md";
 const HOME = `${WEBSITE_DIR}/src/content/docs/index.mdx`;
 
@@ -42,6 +48,12 @@ export interface RepositoryPage extends SitePage {
   readonly description: string;
   /** Its markdown after the title, which the page renders below the title Starlight writes. */
   readonly body: string;
+}
+
+/** A page of `docs/`: a guide, a concept or the walkthrough. */
+export interface DocPage extends RepositoryPage {
+  /** Its top folder under `docs/`, such as `guides`, or `""` for a file directly in it. */
+  readonly section: string;
 }
 
 export interface EntryPage extends RepositoryPage {
@@ -132,19 +144,37 @@ const readmesUnder = (dir: string): string[] =>
     .filter((file) => file.endsWith("/README.md"))
     .toSorted();
 
+/** Every markdown file under a folder of the repository, however deep. */
+const markdownUnder = (dir: string): string[] =>
+  readdirSync(path.join(REPO_ROOT, dir), { recursive: true })
+    .map((file) => toPosix(String(file)))
+    .filter((file) => file.endsWith(".md"))
+    .toSorted();
+
+const docPages = (): DocPage[] =>
+  markdownUnder(DOCS).map((file) => {
+    const slug = file.replace(/\.md$/u, "");
+    const section = file.includes("/") ? (file.split("/", 1)[0] ?? "") : "";
+    return { ...readPage(`${DOCS}/${file}`, slug), section };
+  });
+
 const entryPages = (): EntryPage[] =>
   readmesUnder(KIT_SRC).map((readme) => {
     const entry = path.posix.dirname(readme);
-    return { ...readPage(`${KIT_SRC}/${readme}`, entry), entry };
+    return {
+      ...readPage(`${KIT_SRC}/${readme}`, `${REFERENCE}/${entry}`),
+      entry,
+    };
   });
 
 /** Every page of the site, found on disk. */
 export const discoverPages = () => {
   const home: SitePage = { file: HOME, slug: "index", link: "/" };
+  const docs = docPages();
   const entries = entryPages();
   const glossary = readPage(GLOSSARY, "glossary");
   /** The pages read from the repository's own markdown, which loader.ts adds to the site. */
-  const repository: readonly RepositoryPage[] = [...entries, glossary];
+  const repository: readonly RepositoryPage[] = [...docs, ...entries, glossary];
   const all: readonly SitePage[] = [home, ...repository];
 
   const files = new Map<string, string>();
@@ -158,7 +188,7 @@ export const discoverPages = () => {
     files.set(page.slug, page.file);
   }
 
-  return { home, entries, glossary, repository, all };
+  return { home, docs, entries, glossary, repository, all };
 };
 
 export type SitePages = ReturnType<typeof discoverPages>;
@@ -170,11 +200,11 @@ export interface Redirect {
 }
 
 /**
- * Where the address of each entry with no README goes. A page's address is its import path, so
- * a reader may type `/net/browser` for `arcadekit/net/browser`, which `src/net/README.md`
- * documents: it goes to `/net`, the page of the nearest folder above that has one, or to the
- * landing page, which lists every entry. The entries are the package's `exports`, so an entry
- * that gets a README of its own stops being redirected.
+ * Where the address of each entry with no README goes. A reference page's address ends with its
+ * import path, so a reader may type `/reference/net/browser` for `arcadekit/net/browser`, which
+ * `src/net/README.md` documents: it goes to `/reference/net`, the page of the nearest folder
+ * above that has one, or to the landing page, which lists every entry. The entries are the
+ * package's `exports`, so an entry that gets a README of its own stops being redirected.
  */
 export const entryRedirects = (pages: SitePages): Redirect[] => {
   const { exports } = JSON.parse(read(KIT_MANIFEST)) as {
@@ -184,15 +214,18 @@ export const entryRedirects = (pages: SitePages): Redirect[] => {
   const redirects: Redirect[] = [];
   for (const subpath of Object.keys(exports)) {
     // An entry is `./net/browser`. `.`, `./package.json` and a pattern are not.
-    const from = subpath.slice(1);
-    if (!/^(?:\/[\w-]+)+$/u.test(from) || links.has(from)) {
+    if (!/^\.(?:\/[\w-]+)+$/u.test(subpath)) {
+      continue;
+    }
+    const from = `/${REFERENCE}${subpath.slice(1)}`;
+    if (links.has(from)) {
       continue;
     }
     let to = path.posix.dirname(from);
-    while (to !== "/" && !links.has(to)) {
+    while (to !== `/${REFERENCE}` && !links.has(to)) {
       to = path.posix.dirname(to);
     }
-    redirects.push({ from, to });
+    redirects.push({ from, to: links.has(to) ? to : "/" });
   }
   return redirects;
 };

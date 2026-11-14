@@ -9,31 +9,52 @@ import {
   firstParagraph,
   splitTitle,
 } from "./pages.ts";
-import type { EntryPage } from "./pages.ts";
-import { sidebar } from "./sidebar.ts";
+import type { DocPage, EntryPage } from "./pages.ts";
+import { orderedEntries, outlinedDocs, sidebar } from "./sidebar.ts";
 import { REPO_ROOT } from "./site.ts";
 
 const entry = (name: string): EntryPage => ({
   file: `packages/arcadekit/src/${name}/README.md`,
-  slug: name,
-  link: `/${name}`,
+  slug: `reference/${name}`,
+  link: `/reference/${name}`,
   title: `arcadekit/${name}`,
   description: "",
   body: "",
   entry: name,
 });
 
+const doc = (slug: string): DocPage => ({
+  file: `docs/${slug}.md`,
+  slug,
+  link: `/${slug}`,
+  title: slug,
+  description: "",
+  body: "",
+  section: slug.includes("/") ? (slug.split("/", 1)[0] ?? "") : "",
+});
+
 describe("the site's pages", () => {
   const pages = discoverPages();
 
-  it("has a page for each entry's README, at its import path", () => {
+  it("has a page for each file under docs/, at its path there", () => {
+    const links = pages.docs.map((page) => page.link);
+    expect(links).toContain("/making-a-game");
+    expect(links).toContain("/guides/sprites");
+    expect(links).toContain("/concepts/determinism");
+    for (const page of pages.docs) {
+      expect(page.file).toBe(`docs/${page.slug}.md`);
+      expect(page.link).toBe(`/${page.slug}`);
+    }
+  });
+
+  it("has a reference page for each entry's README, at its import path", () => {
     const links = pages.entries.map((page) => page.link);
-    expect(links).toContain("/core");
-    expect(links).toContain("/net");
-    expect(links).toContain("/net/worker");
+    expect(links).toContain("/reference/core");
+    expect(links).toContain("/reference/net");
+    expect(links).toContain("/reference/net/worker");
     for (const page of pages.entries) {
       expect(page.file).toBe(`packages/arcadekit/src/${page.entry}/README.md`);
-      expect(page.link).toBe(`/${page.entry}`);
+      expect(page.link).toBe(`/reference/${page.entry}`);
     }
   });
 
@@ -54,15 +75,23 @@ describe("the site's pages", () => {
 
   it("sends the address of an entry with no README to the page that documents it", () => {
     const redirects = entryRedirects(pages);
-    expect(redirects).toContainEqual({ from: "/game/testing", to: "/game" });
-    expect(redirects).toContainEqual({ from: "/net/signalling", to: "/net" });
+    expect(redirects).toContainEqual({
+      from: "/reference/game/testing",
+      to: "/reference/game",
+    });
+    expect(redirects).toContainEqual({
+      from: "/reference/net/signalling",
+      to: "/reference/net",
+    });
     const links = new Set(pages.all.map((page) => page.link));
     for (const { from, to } of redirects) {
       expect(links.has(from)).toBe(false);
       expect(links.has(to)).toBe(true);
     }
     // An entry with a README of its own keeps its address.
-    expect(redirects.map(({ from }) => from)).not.toContain("/net/worker");
+    expect(redirects.map(({ from }) => from)).not.toContain(
+      "/reference/net/worker"
+    );
   });
 
   it("stops redirecting an entry once it has a README", () => {
@@ -71,14 +100,17 @@ describe("the site's pages", () => {
       entries: [...pages.entries, entry("net/browser")],
     };
     const from = entryRedirects(withBrowser).map((redirect) => redirect.from);
-    expect(from).not.toContain("/net/browser");
-    expect(from).toContain("/net/signalling");
+    expect(from).not.toContain("/reference/net/browser");
+    expect(from).toContain("/reference/net/signalling");
   });
 
   it("sends an entry with no page above it to the landing page", () => {
     const redirects = entryRedirects({ ...pages, entries: [] });
-    expect(redirects).toContainEqual({ from: "/core", to: "/" });
-    expect(redirects).toContainEqual({ from: "/net/browser", to: "/" });
+    expect(redirects).toContainEqual({ from: "/reference/core", to: "/" });
+    expect(redirects).toContainEqual({
+      from: "/reference/net/browser",
+      to: "/",
+    });
   });
 
   it("has the glossary", () => {
@@ -102,39 +134,68 @@ describe("the site's pages", () => {
   });
 });
 
+const labelled = (groups: { label: string; items: readonly unknown[] }[]) =>
+  Object.fromEntries(groups.map((group) => [group.label, group.items]));
+
 describe("the sidebar", () => {
-  it("lists an entry no group names, under its top folder's group or under More", () => {
-    const groups = sidebar({
-      ...discoverPages(),
-      // In the order they are found on disk: by path.
-      entries: [
-        "core",
-        "input",
-        "net",
-        "net/browser",
-        "net/testing",
-        "net/worker",
-        "physics",
-      ].map(entry),
-    });
-    const items = Object.fromEntries(
-      groups.flatMap((group) =>
-        typeof group === "object" && "items" in group
-          ? [[group.label, group.items]]
-          : []
-      )
+  it("lists a page the outline doesn't name at the end of its folder's group", () => {
+    const pages = discoverPages();
+    const groups = labelled(
+      outlinedDocs([
+        ...pages.docs,
+        doc("concepts/rollback"),
+        doc("testing/replays"),
+        doc("changelog"),
+        doc("recipes/menus"),
+      ])
     );
-    expect(items.Simulation).toStrictEqual(["core", "input"]);
-    expect(items["Co-op"]).toStrictEqual([
+    expect(groups.Concepts?.at(-1)).toBe("concepts/rollback");
+    expect(groups.Testing?.at(-1)).toBe("testing/replays");
+    // A file directly in docs/, or in a folder no group has, goes in Get started.
+    expect(groups["Get started"]?.slice(-2)).toStrictEqual([
+      "changelog",
+      "recipes/menus",
+    ]);
+  });
+
+  it("names only pages that exist", () => {
+    const pages = discoverPages();
+    const without = pages.docs.filter((page) => page.slug !== "guides/sprites");
+    expect(() => outlinedDocs(without)).toThrow("guides/sprites");
+  });
+
+  it("lists every page of docs/", () => {
+    const pages = discoverPages();
+    const listed = JSON.stringify(sidebar(pages));
+    for (const page of pages.docs) {
+      expect(listed).toContain(`"${page.slug}"`);
+    }
+  });
+
+  it("lists the entries by group, then any other, each with its sub-entries", () => {
+    const ordered = orderedEntries(
+      ["core", "game", "net", "net/worker", "physics", "net/browser"].map(entry)
+    ).map((page) => page.entry);
+    expect(ordered).toStrictEqual([
+      "game",
+      "core",
       "net",
       "net/browser",
-      "net/testing",
       "net/worker",
+      "physics",
     ]);
-    expect(items.More).toStrictEqual(["physics"]);
-    // A group with no entry is left out.
-    expect(items.Data).toBeUndefined();
-    expect(items.Reference).toStrictEqual(["glossary"]);
+  });
+
+  it("ends with the reference pages and the glossary, then the games", () => {
+    const groups = sidebar(discoverPages());
+    const reference = groups.at(-2);
+    expect(reference).toMatchObject({ label: "Reference" });
+    expect(
+      typeof reference === "object" && "items" in reference
+        ? reference.items.at(-1)
+        : undefined
+    ).toBe("glossary");
+    expect(groups.at(-1)).toMatchObject({ label: "Examples" });
   });
 });
 

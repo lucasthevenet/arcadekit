@@ -4,7 +4,7 @@
 
 **Status: alpha.** Interfaces, stored data and the package's entries change whenever that improves the code, with no compatibility layers or migrations. Each release's changelog says what broke.
 
-**Docs:** [arcadekit.dev](https://arcadekit.dev) has a page for each entry of the package, and the glossary.
+**Docs:** [arcadekit.dev](https://arcadekit.dev): getting started, the concepts, a guide for each task, and a reference page for each entry of the package. The site is built from [`docs/`](docs) and the entries' READMEs.
 
 ```bash
 pnpm install
@@ -17,7 +17,7 @@ pnpm typecheck   # every package, each against its own rules
 pnpm check       # lint + format check (Ultracite: Oxlint + Oxfmt)
 pnpm fix         # apply lint fixes and formatting
 pnpm build       # typecheck + production build of both demos and the docs site
-pnpm build:docs  # build the docs site alone; it fails on a dead link in a README
+pnpm build:docs  # build the docs site alone; it fails on a dead link in a page
 pnpm build:packages  # build the arcadekit package to dist/ (dev, test and typecheck don't need it)
 pnpm lint:packages   # publint and arethetypeswrong on the packed arcadekit package
 pnpm smoke       # build, pack and install the kit outside the workspace, then typecheck and build a game with it
@@ -59,88 +59,13 @@ The first nine rows are the entries of the `arcadekit` package ([`packages/arcad
 | [`arcadekit/net`](packages/arcadekit/src/net) | Lockstep multiplayer: `LockstepSession.host` / `LockstepSession.join` run one declared `Game.Simulation` on 2 to 4 peers, stepping each step once the host has confirmed every player's input for it, comparing state hashes and removing a player who stalls the run. The simulation's step input is a `Game.PlayerInputs`: the session sends each player's own input, as its one-player Schema encodes it, and puts each at its slot. A player's command (`session.send`) rides that player's next step, so every peer's rules take or refuse it at one step, and its sender hears which. `arcadekit/net/browser` has the `Coop` declaration, a game's engine played by several players from a lobby: its class is the key of the Co-op client, which runs the lobby, the run and its drawing for one player, over the app's rooms (`CoopRooms`, from `CoopRooms.layer`), and its `match` turns what a seat reports into an app's Messages. `arcadekit/net/testing` has what a game's own tests need: `FakeCoopRooms`, `ManualTicker`, `PageTimers` (the Clock and scheduler of a test on fake timers) and a small `TestGame`. `ScopedLockstepSession.host` / `ScopedLockstepSession.join` make the same session owned by a scope, run on Effect's `Clock` or a `Ticker` until it fails with its `LockstepError`. They talk through a `Transport`; a `MemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. In `arcadekit/net/browser`: `SignallingRoom.host` / `SignallingRoom.join`, the signalling client that turns a join code into WebRTC links (host to each guest), and `RtcTransport.fromLinks`, the WebRTC `Transport` over them. `arcadekit/net/signalling` is the protocol they speak with a signalling worker, as Effect Schemas (`ClientMessage`, `ServerMessage`, `Signal`, `JoinCode`). [`arcadekit/net/worker`](packages/arcadekit/src/net/worker) is that signalling worker, for Cloudflare: `SignallingWorker.room` (the Durable Object class of a room, with its room size) and `SignallingWorker.make` (the Worker's `fetch`), so an app's Worker is a few lines | Effect, core, game (Workers types for `net/worker`) |
 | [`examples/survivor-demo`](examples/survivor-demo) | The survivors demo. Its genre, in `src/survivors/`, as declarations: its events (`Hud`, `LeveledUp`, `HeroLeft`, `RunEnded`), its upgrade pick (the command `ChooseUpgrade`, refused with `OfferClosed` or `NoSuchChoice`), its co-op pause (`HoldPause`, refused with `NotPlaying`), its rules (`Survivors`, for one hero or several), its content (`SurvivorsContent`) and, in `src/survivors/browser/`, its engine for one player (`SurvivorsEngine`: a pixel-art sprite view, a sound view and its input), which uses the app's sheet (`SurvivorsSheet`), its sounds for the genre's cue table (`SurvivorsCueTable`) and its audio. Cue counters for sound in a `World.Arena`'s `cues`, played by the engine's sound view. Co-op for 2 to 4 players: one hero per player, shared team XP, a level-up that waits for every player's pick. It is declared in `src/survivors/browser/` as `SurvivorsCoop`, a `Coop` made from `SurvivorsEngine`, which `arcadekit/net/browser`'s Co-op client runs in lockstep: the run steps the same `Survivors`, whose step input is `World.Input`, a `Game.PlayerInputs` of `Hero.Input` (`Game.soloInput` fills it for one player, and a lockstep session from each confirmed step). A co-op pick is the same `ChooseUpgrade` one player sends, and the pause a player holds for everyone is `HoldPause`: each rides its sender's step to every peer. The HUD says which heroes are choosing and which hold the pause; the engine's view reads the local player's slot on every frame, for one player and in co-op, and draws from the same sheet. Its app, in `src/app/`: JSON content, Foldkit screens, a save of each hero's best run, sound and music with a volume panel, and co-op for 2 to 4 players: a lobby by join code, then a lockstep run over WebRTC. Deployed with Alchemy as one Cloudflare Worker that serves the site and is the kit's [signalling worker](packages/arcadekit/src/net/worker) (a Durable Object per join code) | audio, content, save, foldkit, net, render-three, game, input, core (Alchemy and Workers types to run, deploy and check its Worker) |
 | [`examples/push-puzzle-demo`](examples/push-puzzle-demo) | The push-puzzle demo. Its genre, in `src/push-puzzle/`, as declarations: its events (`Hud`, `LevelSolved`), its rules (`PushPuzzle`: a turn-based simulation with undo, holes and cue counters), its levels (`PushPuzzleContent`) and, in `src/push-puzzle/browser/`, its engine (`PushPuzzleEngine`: a pixel-art sprite view, a sound view and its input), which uses the app's sheet (`PushPuzzleSheet`, with the tags in `Art.tags`), its sounds for the genre's cue table (`PushPuzzleCueTable`) and its audio. Its other modules are namespaces: a run's state and step (`World`, whose state is `World.Puzzle`), a level read from its text (`Level`) and the levels' Schema (`PuzzleContent`). Its app, in `src/app/`: three levels, level select, HUD, solved screen, a save of solved levels, sound with a volume panel, and pixel art from a sprite sheet it loads at startup | audio, content, save, foldkit, render-three, game, input, core |
-| [`website`](website) | The docs site, [arcadekit.dev](https://arcadekit.dev): each entry's README and the glossary as pages, read where they are, so nothing is copied. A new entry's README is a page as soon as it exists, and a dead link in one fails `pnpm build`. Deployed with Alchemy as static files on Cloudflare | Astro and Starlight (Alchemy to deploy) |
+| [`website`](website) | The docs site, [arcadekit.dev](https://arcadekit.dev): the pages in [`docs/`](docs), each entry's README as its reference page, and the glossary, read where they are, so nothing is copied. A new page is listed as soon as it exists, and a dead link in one fails `pnpm build`. Deployed with Alchemy as static files on Cloudflare | Astro and Starlight (Alchemy to deploy) |
 
 The typecheck sets which environment each entry may use. `packages/arcadekit/tsconfig.root.json` compiles `core` and the root entries of `content`, `save`, `audio`, `game` (with `game/scenario`) and `net` (and `net/signalling`) without DOM types, so browser code there fails the typecheck; only their `./browser` entries may use the DOM. `tsconfig.worker.json` compiles `net/worker` with Cloudflare's Workers types and no DOM, and `tsconfig.json` leaves it out, so Workers globals reach no other entry. `tsconfig.node.json` compiles `render-three/testing`, which only a test or a script imports, with Node's types beside the DOM's, and `tsconfig.json` leaves it out too, so Node's built-ins reach no other entry. Each demo checks its genre's rules the same way: `tsconfig.rules.json` compiles `src/<genre>/index.ts` without DOM types. That keeps the simulation runnable in a Web Worker or on a game server.
 
 ## Making a new game
 
-### In an existing genre
-
-Copy the demo app closest to your game (`examples/survivor-demo` or `examples/push-puzzle-demo`), then change the JSON in `public/content/` and the screens in `src/app/`.
-
-### In a new genre
-
-Write the genre inside your app, in a folder of its own beside the Foldkit app (`src/<genre>/`, which the app imports by relative path to its public files, `../<genre>/index` and `../<genre>/browser/index`), in two halves, as declarations ([`arcadekit/game`](packages/arcadekit/src/game/README.md)). The push-puzzle demo is the example to copy: its genre's declarations are exported bare, and its other modules are namespaces. Its public file, `src/push-puzzle/index.ts`, declares the rules, with no DOM:
-
-```ts
-import { Content } from "arcadekit/content";
-import * as Game from "arcadekit/game";
-
-export class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}
-export class Hud extends Game.Event("Hud", { moves: Schema.Int }) {}
-
-export class MyGame extends Game.Simulation("MyGame", {
-  input: MyInput,                                  // one step's input, as a Schema
-  events: [LevelSolved],
-  create: (config: MyConfig, { seed }) => /* new State */,
-  step: (state, input, { dt, report }) => /* advance; deterministic */,
-  sample: { event: Hud, every: "100 millis", read: (state) => /* the HUD */ },   // or `version: (state) => state.turns` for a turn-based HUD
-}) {}
-
-export class MyContent extends Content("MyContent", { schema: MyContentSchema, files: { levels: "levels.json" } }) {}
-```
-
-Its `browser/` public file declares the engine: the view, the input, and what they are made from. A sprite sheet the app loads is an `Asset` the genre declares:
-
-```ts
-import { AudioSystem } from "arcadekit/audio";
-import { Asset } from "arcadekit/content";
-import * as Game from "arcadekit/game/browser";
-import { SpriteSheet } from "arcadekit/render-three";
-
-export class MySheet extends Asset<SpriteSheet.SpriteSheet, SpriteSheet.SpriteSheetError>()("MySheet", { release: SpriteSheet.dispose }) {}
-
-export class MyEngine extends Game.Engine("MyEngine", {
-  simulation: MyGame,
-  uses: { sheet: MySheet.load, audio: AudioSystem.AudioSystem },     // Effects run on each attach
-  view: (container, { sheet, audio }) => /* a view using Stage, InstancedSprites or MeshInstances… */,
-  input: (surface) => /* wrap an InputController.make(surface, bindings); `endStep: () => InputController.consumePresses(controller)` if one press must make one turn */,
-}) {}
-```
-
-The app provides them, `MyEngine.layer`, `MyContent.layer(FetchContentSource.fromUrl(url))` and `MySheet.layer(SpriteSheet.fromUrl(url))`, and drives the engine: `const engine = yield* MyEngine`, then `engine.start(config)`, `engine.send(command)`, `engine.setPaused(paused)`, `engine.stop`. A command the rules may refuse declares how (`Game.Rejection`), and `engine.send` then fails with it.
-
-Tests state the rules as scenarios, with no browser ([`arcadekit/game/scenario`](packages/arcadekit/src/game/README.md)), stepping the simulation in the same step order as the demo:
-
-```ts
-const scenario = Scenario.make(MyGame);
-
-it("reports the solve on the move that fills the last goal", () =>
-  scenario(
-    Scenario.given({ content, levelId: "one-push" }),
-    Scenario.step({ held: "right", pressed: "right", undo: false }),
-    Scenario.reported(new LevelSolved({ moves: 1 }))
-  ));
-```
-
-A replay steps a `Game.Loop` itself: `const loop = Game.makeLoop(MyGame)`, `loop.start(config, seed, 0)`, then `loop.frame({ read: (step) => inputs[step] }, { steps: 1 }, nowMs)` per step (`examples/push-puzzle-demo/test/push-puzzle/world.test.ts` does this).
-
-Then connect it to a Foldkit app with `arcadekit/foldkit`, as `examples/push-puzzle-demo/src/app/` does:
-
-1. The view renders `Viewport.make(h, { mounted, unmounted })`; the Model keeps those Messages as a Boolean, and the Subscription entry `EngineEntry.make` runs the engine while it is true, turning its events into Messages with the simulation's `match` (`toMessage: MyGame.match({ Hud: (hud) => Message.GotHud({ hud }), ... })`). It takes `onError`, the Message sent if the engine can't attach (its sheet can't be loaded, or there is no WebGL) or crashes (a step or a render threw). The Messages and the Model use the genre's event classes, which are their own Schemas, so a field the genre adds reaches the app.
-2. **Commands** call the engine: `start`, `send` (a player's decision, such as picking an upgrade, which waits for the rules to take or refuse it), `setPaused`, `stop`. The app's loading Command runs `MyContent.load` and `MySheet.load` side by side, so a failure of either shows on the loading screen and "Try again" loads again only what failed.
-
-Survivors' single-player path is written this way too, with a command: its genre (`examples/survivor-demo/src/survivors/`) declares the upgrade pick (`ChooseUpgrade`, with the rejections `OfferClosed` and `NoSuchChoice`), and `examples/survivor-demo/src/app/` sends it. Its co-op is declared too: `SurvivorsCoop` is a `Coop` made from the same engine ([`arcadekit/net`](packages/arcadekit/src/net/README.md#co-op)), its lockstep run steps `Survivors` through `Game.Loop`, a co-op pick is the same command, sent through the Co-op client's `send`, as the co-op pause is (`HoldPause`), and the app hears a co-op run through `SurvivorsCoop.match` as it hears the engine through `Survivors.match`.
-
-Rules of thumb for the simulation (see `examples/push-puzzle-demo/src/push-puzzle/world.ts` for a turn-based genre and `examples/survivor-demo/src/survivors/world.ts` for a real-time one):
-
-- Keep large collections in an `EntityPool`, and don't allocate per entity inside `step`.
-- Write the step as plain code: it runs no Effect and reads no clock of its own, so its time comes in as an argument. Effect is for what has a lifecycle: loading, the engine, connections. The effect-or-plain skill (`.agents/skills/effect-or-plain/SKILL.md`) says where the line is.
-- Use the run's `Rng` (`Rng.make(seed)`) for every random choice, so the same seed and inputs give the same run.
-- Report rare, meaningful facts with `report`. Never send per-entity data to the UI.
-
-`CONTEXT.md` is the glossary (step vs turn, SpatialGrid vs tile map). `.agents/AGENTS.md` and the skills beside it in `.agents/skills/` say how a change to the kit is written and checked.
+Copy the demo app closest to your game (`examples/survivor-demo` or `examples/push-puzzle-demo`), then change the JSON in `public/content/` and the screens in `src/app/`. For a new genre, [Making a game](docs/making-a-game.md) walks through its declarations and the app around them, as the push-puzzle demo writes them.
 
 ## The survivors demo
 
@@ -158,7 +83,7 @@ With about 750 enemies, three maxed weapons and 480 XP gems on screen, one simul
 
 2 to 4 players, each in their own browser, play one run in lockstep. `pnpm dev` runs the demo under `alchemy dev`, which serves the site and the signalling worker together, with no Cloudflare account ([the demo's README](examples/survivor-demo/README.md) has the details, and how to deploy). Pick **Co-op** in two windows. One player hosts and reads out the join code; the others join with it. Everyone picks a hero, and the host starts. The host sends the run's seed and content hash at the start; a player whose content differs refuses to start, with a message naming both hashes, and the host's run goes on without them. The view follows your own hero. A level-up freezes the run until every player has picked; Escape pauses it for everyone until you resume, while your hero is playing: a hero that is down holds no pause. If a player's input stops arriving, everyone sees "Waiting for …", and the host removes that player after about 10 s. A desync, being removed or losing the host stops the run with a message saying which. Co-op runs aren't saved as records.
 
-The kit's Co-op client ([`arcadekit/net/browser`](packages/arcadekit/src/net/README.md#co-op)) runs co-op: the lobby over the signalling worker, then a lockstep session it ticks on a worker's timer and draws on animation frames. The genre declares it: `SurvivorsCoop` in `src/survivors/browser/` is a `Coop` made from `SurvivorsEngine` (a lobby pick is a hero id), so the engine's view follows the local player's hero in both. The app keeps the screens and the Foldkit glue: `SurvivorsCoop.layer` provides the client over the app's rooms (`src/app/main.ts`), Commands call it, and a Subscription turns what it reports into Messages with `SurvivorsCoop.match`. The banner over a frozen run names who it waits on from the HUD's flags: who is choosing an upgrade, and who holds the pause. A player's pick and pause are the genre's commands, `ChooseUpgrade` and `HoldPause`, sent with the client's `send`: each rides the player's next step, and every peer's rules take or refuse it there. Escape opens the run's menu, which asks the run for the pause and follows the rules' answer: it says the run is paused only while they hold the pause for this player, and it stays up either way, since it is the way to leave the run (a player whose hero is down gets it without a pause). A guest whose game lacks a hero the host started with refuses the start, with a message. The app's rooms are on the signalling worker at the page's own origin, since one Worker serves both (`src/app/rooms.ts`); `VITE_STUN_URLS` sets the STUN servers (default `stun:stun.l.google.com:19302`; comma-separated, or empty for none).
+The kit's Co-op client ([`arcadekit/net/browser`](docs/guides/coop.md)) runs co-op: the lobby over the signalling worker, then a lockstep session it ticks on a worker's timer and draws on animation frames. The genre declares it: `SurvivorsCoop` in `src/survivors/browser/` is a `Coop` made from `SurvivorsEngine` (a lobby pick is a hero id), so the engine's view follows the local player's hero in both. The app keeps the screens and the Foldkit glue: `SurvivorsCoop.layer` provides the client over the app's rooms (`src/app/main.ts`), Commands call it, and a Subscription turns what it reports into Messages with `SurvivorsCoop.match`. The banner over a frozen run names who it waits on from the HUD's flags: who is choosing an upgrade, and who holds the pause. A player's pick and pause are the genre's commands, `ChooseUpgrade` and `HoldPause`, sent with the client's `send`: each rides the player's next step, and every peer's rules take or refuse it there. Escape opens the run's menu, which asks the run for the pause and follows the rules' answer: it says the run is paused only while they hold the pause for this player, and it stays up either way, since it is the way to leave the run (a player whose hero is down gets it without a pause). A guest whose game lacks a hero the host started with refuses the start, with a message. The app's rooms are on the signalling worker at the page's own origin, since one Worker serves both (`src/app/rooms.ts`); `VITE_STUN_URLS` sets the STUN servers (default `stun:stun.l.google.com:19302`; comma-separated, or empty for none).
 
 `pnpm test:e2e` checks co-op end to end: it starts the demo under `alchemy dev` (in a stage of its own, `e2e`), opens two Chromium pages that host and join, plays with different inputs on each until both have picked an upgrade, has each hold the co-op pause in turn (the other page says who paused, and the run's clock stands on both), and checks that both report the same state hashes at the same steps with no error (each page's run, as the app puts it on a global in development: `CoopDebug`, in `src/app/coop-debug.ts`). Then it hides the guest's tab for real (a Chromium of its own, with a second tab in front, so its main-thread timers drop to about once a second) and checks that the run keeps stepping at full rate past the host's 10 s drop-out, with no one removed. It isn't part of `pnpm test`, since it needs Chromium and workerd and takes about a minute. It skips itself when Playwright or Chromium is missing, or when `alchemy dev` doesn't start.
 

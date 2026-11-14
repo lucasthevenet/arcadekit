@@ -2,7 +2,7 @@
 //
 // A Starlight site whose pages are the repository's own markdown, read in place: src/lib/pages.ts
 // finds them, src/lib/loader.ts adds them to Starlight's `docs` collection, and src/lib/sidebar.ts
-// groups them. As a page renders, the Markdown processor's plugins make the links the READMEs
+// groups them. As a page renders, the Markdown processor's plugins make the links the pages
 // already have work here (links.ts), give the glossary's terms headings of their own
 // (glossary.ts), let a table fit a phone (tables.ts), and leave out of the package's README what
 // the landing page replaces (landing.ts). The build fails on a dead link (dead-links.ts).

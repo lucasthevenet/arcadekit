@@ -1,11 +1,11 @@
 // Fails the build on a dead link.
 //
 // Two kinds of link are checked, each where it can be:
-// - A link a README writes to a file of the repository, relative or a full URL to GitHub: as the
+// - A link a page writes to a file of the repository, relative or a full URL to GitHub: as the
 //   page renders, by links.ts, which knows the file it is written in.
-// - A link to a page of the site, as the built site has it: the README's links once rewritten,
+// - A link to a page of the site, as the built site has it: the pages' links once rewritten,
 //   the landing page's, the sidebar's and the redirects'. Its page must exist, and its fragment,
-//   if it has one, must be an anchor on that page: a heading of a README, a term of the glossary.
+//   if it has one, must be an anchor on that page: a heading of a page, a term of the glossary.
 //   GitHub gives a heading the same anchor, so a fragment that works here works there too, except
 //   a term's, which is a heading only here.
 import { readdirSync, readFileSync, statSync } from "node:fs";

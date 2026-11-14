@@ -6,11 +6,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 //
 // Starlight serves the entries of its `docs` collection. Its own loader reads them from
 // src/content/docs/, which holds the landing page alone. This loader adds each file of the
-// repository pages.ts names as an entry: the README stays where GitHub and npm read it, and no
+// repository pages.ts names as an entry: the file stays where GitHub and npm read it, and no
 // copy is made, so there is one text to keep right.
 //
-// Starlight writes a page's title from its frontmatter, and a README has none: its title is its
-// first line, the `# ` heading. So the entry's title is that heading, its description the README's
+// Starlight writes a page's title from its frontmatter, and the files have none: a file's title is
+// its first line, the `# ` heading. So the entry's title is that heading, its description the file's
 // first paragraph, and its content the rest of the file, rendered by the same Markdown processor
 // as any other page (astro.config.ts), so the links, the glossary and the tables get what the
 // site adds to them.
@@ -64,7 +64,7 @@ export const pagesLoader = (): Loader => ({
     const pages = discoverPages();
     await Promise.all(pages.repository.map((page) => store(context, page)));
 
-    // `astro dev` reloads a page as its file changes. A new README is found when the site starts:
+    // `astro dev` reloads a page as its file changes. A new page is found when the site starts:
     // restart `pnpm dev:docs` after adding one.
     const byFile = new Map(
       pages.repository.map((page) => [path.join(REPO_ROOT, page.file), page])

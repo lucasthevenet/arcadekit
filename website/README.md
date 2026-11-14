@@ -1,11 +1,14 @@
 # Docs site
 
-The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose pages are the repository's own markdown, read where it is. No README is copied, so there is one text to keep right.
+The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose pages are the repository's own markdown, read where it is. No file is copied, so there is one text to keep right.
+
+The docs are laid out as other libraries' are: getting started, the concepts, a guide for each task, testing, and a reference page for each entry. The concepts and the guides say how to do something, whichever entries it takes, and the reference pages say what each entry has.
 
 | Address | File |
 | --- | --- |
 | `/` | [`src/content/docs/index.mdx`](src/content/docs/index.mdx), which includes [the package's README](../packages/arcadekit/README.md) after its title and first paragraph |
-| `/<entry>`, such as `/core` and `/net/worker` | `packages/arcadekit/src/<entry>/README.md` |
+| `/<path>`, such as `/making-a-game`, `/concepts/lockstep` and `/guides/sprites` | `docs/<path>.md`: the walkthrough, the concepts, the guides and testing |
+| `/reference/<entry>`, such as `/reference/core` and `/reference/net/worker` | `packages/arcadekit/src/<entry>/README.md`, which npm shows too |
 | `/glossary` | [`CONTEXT.md`](../CONTEXT.md), with each term as a heading |
 
 ```bash
@@ -14,32 +17,31 @@ pnpm build:docs   # build the site to website/dist; `pnpm build` runs it too
 pnpm --filter @arcadekit/website preview   # serve the built site
 ```
 
-## A new entry's README
+## A new page
 
-It is a page as soon as it exists: [`src/lib/pages.ts`](src/lib/pages.ts) finds every `README.md` under `packages/arcadekit/src/`, and serves `src/net/testing/README.md` at `/net/testing`. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
+A file under [`docs/`](../docs) is a page as soon as it exists, and so is a new entry's README: [`src/lib/pages.ts`](src/lib/pages.ts) finds every markdown file under `docs/` and every `README.md` under `packages/arcadekit/src/`, and serves `docs/guides/sprites.md` at `/guides/sprites` and `src/net/testing/README.md` at `/reference/net/testing`. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
 
-Two things are still yours to do:
+Every page starts with a `# ` heading, its title, then a paragraph. The sidebar lists the page by its title, and the paragraph is its description under a shared link. A file that doesn't start with a `# ` heading fails the build. An entry's README is titled with its import path, `# arcadekit/net/testing`, or `pnpm test` fails ([`src/lib/pages.test.ts`](src/lib/pages.test.ts)).
 
-- Start it with its import path as the heading, `# arcadekit/net/testing`, then a paragraph. The heading is the page's title, and the sidebar lists the page by it. The paragraph is its description under a shared link. A README that doesn't start with a `# ` heading fails the build, and one whose heading isn't its import path fails `pnpm test` ([`src/lib/pages.test.ts`](src/lib/pages.test.ts)).
-- Add its folder to `ENTRIES` in [`scripts/smoke-test.mjs`](../scripts/smoke-test.mjs). The smoke test typechecks the `ts` examples of the READMEs in that list and of no other, so without the line the site shows examples that nothing checks.
+A `ts` block of a page is compiled by the smoke test ([`scripts/smoke-test.mjs`](../scripts/smoke-test.mjs)), alone, as a small program of its own: every block under `docs/`, and those of the READMEs in its `ENTRIES`, so add a new entry's folder there. A sketch, with `/* … */` where a game's own code goes, is fenced ` ```ts sketch `: it is highlighted as TypeScript and nothing compiles it.
 
-[`src/lib/sidebar.ts`](src/lib/sidebar.ts) lists it in its top folder's group, so `net/testing` goes beside `net`. A README in a top folder no group names goes under "More": add the folder to `GROUPS` there to place it.
+[`src/lib/sidebar.ts`](src/lib/sidebar.ts) places each page. Its `OUTLINE` names the guides and concepts in order, in groups: a page it doesn't name goes at the end of its folder's group, so a new guide is listed at the end of Guides until the outline places it, and a page the outline names that doesn't exist fails the build. The entries are listed under Reference in the order of `ENTRY_ORDER`, each with its sub-entries after it, and a new top folder at the end.
 
-An entry with no README has no page, but its address still answers: `/net/browser` goes to `/net`, the page that documents it. The build writes a page at each such address that sends the browser on, from the package's `exports` (Astro's `redirects` in [`astro.config.ts`](astro.config.ts)), so an entry that gets a README takes its address over. The dev server, the preview and Cloudflare all serve them.
+An entry with no README has no page, but its address still answers: `/reference/net/browser` goes to `/reference/net`, the page that documents it. The build writes a page at each such address that sends the browser on, from the package's `exports` (Astro's `redirects` in [`astro.config.ts`](astro.config.ts)), so an entry that gets a README takes its address over. The dev server, the preview and Cloudflare all serve them.
 
 ## How it reads the repository
 
 Starlight serves the entries of its `docs` collection, which its own loader reads from `src/content/docs/`. There the site has its landing page alone. [`src/lib/loader.ts`](src/lib/loader.ts) adds each page `pages.ts` finds as an entry of the same collection, read where it is ([`src/content.config.ts`](src/content.config.ts)):
 
-- Starlight writes a page's title from its frontmatter, and a README has none. The entry's title is the README's first line, its `# ` heading, and its content is the rest of the file, so the page has one title.
-- Its description is the README's first paragraph, which the page's `<meta>` tags give a shared link.
-- Its edit link goes to the README on GitHub.
+- Starlight writes a page's title from its frontmatter, and the files have none, since GitHub would show it. The entry's title is the file's first line, its `# ` heading, and its content is the rest of the file, so the page has one title.
+- Its description is the file's first paragraph, which the page's `<meta>` tags give a shared link.
+- Its edit link goes to the file on GitHub.
 
-The loader renders each README with the site's Markdown processor, [Sätteri](https://satteri.bruits.org), Astro's own, with the plugins in `src/lib/` that [What it adds to a page](#what-it-adds-to-a-page) lists. The landing page is MDX, and imports the package's README as a component: the same processor renders both. Starlight's own transforms, such as a heading's anchor link, apply only to the folders its `markdown.processedDirs` names: here the repository's root.
+The loader renders each file with the site's Markdown processor, [Sätteri](https://satteri.bruits.org), Astro's own, with the plugins in `src/lib/` that [What it adds to a page](#what-it-adds-to-a-page) lists. The landing page is MDX, and imports the package's README as a component: the same processor renders both. Starlight's own transforms, such as a heading's anchor link, apply only to the folders its `markdown.processedDirs` names: here the repository's root.
 
 ## Links
 
-The READMEs are also read on GitHub and on npm, so their links stay written for those two: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as the glossary. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
+The pages are also read on GitHub, and the READMEs on npm, so their links stay written for those: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as the glossary and every file under `docs/`. So a page under `docs/` links to a README or another page by its relative path, and a README links to a guide by its GitHub URL. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
 
 - a link to a file that is a page goes to that page;
 - a link to any other file or folder of the repository goes to it on GitHub.
@@ -47,14 +49,14 @@ The READMEs are also read on GitHub and on npm, so their links stay written for 
 `pnpm build` fails on a dead link, so CI does too ([`src/lib/dead-links.ts`](src/lib/dead-links.ts)). It lists every one, of two kinds:
 
 - A link a page's file writes to the repository, in either form: a relative link, and a full URL to `main` on GitHub. It must name a file or folder that exists. A dead link on the landing page may be written in the package's README, which it includes: the message names the file.
-- A link of the built site to one of its own pages, from a README once rewritten, from the landing page, the sidebar or a redirect. Its page must exist, and its fragment, such as `#commands`, must be a heading or an anchor on that page. GitHub gives a heading the same anchor, so a fragment that works here works there too, except a glossary term's: a term is a heading only here.
+- A link of the built site to one of its own pages, from a page once rewritten, from the landing page, the sidebar or a redirect. Its page must exist, and its fragment, such as `#commands`, must be a heading or an anchor on that page. GitHub gives a heading the same anchor, so a fragment that works here works there too, except a glossary term's: a term is a heading only here.
 
 Two kinds of link are not checked:
 
 - A link written as HTML, `<a href="...">`. It is not rewritten either, so a relative one is broken on the site. Write links as markdown.
 - A link to another site.
 
-A bare issue number in a page's text, such as `#25`, becomes a link to that issue on GitHub. GitHub doesn't link one in a file, so the READMEs and the glossary keep writing them plain.
+A bare issue number in a page's text, such as `#25`, becomes a link to that issue on GitHub. GitHub doesn't link one in a file, so the pages keep writing them plain.
 
 ## What it adds to a page
 
@@ -69,7 +71,7 @@ The files are written for GitHub, so the site adds a little as it renders them, 
 
 The site is built from the repository as it is, so its pages follow `main`. Between releases they can describe an export, or a whole entry, that the package on npm doesn't have yet. The header says so: it shows the package's version alone, such as "v0.7.0", linked to the changelog, only when no changeset for `arcadekit` waits in `.changeset/`. When one does, it shows "v0.7.0 + unreleased", linked to the waiting changesets ([`src/lib/version.ts`](src/lib/version.ts), and the header's [`src/components/social-icons.astro`](src/components/social-icons.astro), which replaces Starlight's `SocialIcons`).
 
-The other choice is a site that describes only what is released: deploy it when a release is published, not after each push to `main`. Then a fix to a README waits for the next release too. The workflow below deploys from `main`.
+The other choice is a site that describes only what is released: deploy it when a release is published, not after each push to `main`. Then a fix to a page waits for the next release too. The workflow below deploys from `main`.
 
 ## Images
 
