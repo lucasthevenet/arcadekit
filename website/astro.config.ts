@@ -120,7 +120,7 @@ export default defineConfig({
         },
       },
       components: {
-        // The header's links: the package's version, and GRIMBONK.
+        // The header's link to the package's version.
         SocialIcons: "./src/components/social-icons.astro",
         // The look of polycombo.io (styles/custom.css): its wordmark, its hero, titles in
         // capitals, and one theme, dark.
