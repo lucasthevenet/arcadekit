@@ -27,7 +27,7 @@ const shared = {
   simulation: Sum,
   config: null,
   contentHash: "content-v1",
-  hash: (state: Game.StateOf<typeof Sum>) => state.total,
+  hash: (state: Game.ReadonlyState<Game.StateOf<typeof Sum>>) => state.total,
   inputDelay: 3,
   hashEvery: 30,
 };
@@ -113,7 +113,7 @@ const shared = {
   config: null,
   contentHash: "content-v1",
   local: { read: () => 0 },
-  hash: (jar: Game.StateOf<typeof Jar>) => jar.coins,
+  hash: (jar: Game.ReadonlyState<Game.StateOf<typeof Jar>>) => jar.coins,
   inputDelay: 3,
   hashEvery: 30,
 };
@@ -249,7 +249,7 @@ const shared = {
   simulation: Sum,
   config: null,
   contentHash: "content-v1",
-  hash: (state: Game.StateOf<typeof Sum>) => state.total,
+  hash: (state: Game.ReadonlyState<Game.StateOf<typeof Sum>>) => state.total,
   inputDelay: 3,
   hashEvery: 30,
 };

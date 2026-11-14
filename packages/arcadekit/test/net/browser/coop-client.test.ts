@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AttachError, GameCrashed } from "../../../src/game/browser";
 import { CommandDropped } from "../../../src/game/index";
+import type { ReadonlyState } from "../../../src/game/index";
 import { ManualFrames } from "../../../src/game/testing/index";
 import {
   CoopEvent,
@@ -1636,7 +1637,7 @@ describe("drawing a co-op run", () => {
       presentation: Effect.succeed(
         testPresentation({
           view: () => ({
-            render: (state: TestGame.State | null) => {
+            render: (state: ReadonlyState<TestGame.State> | null) => {
               if (state !== null) {
                 throw bug;
               }

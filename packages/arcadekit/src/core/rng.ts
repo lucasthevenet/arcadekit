@@ -41,7 +41,39 @@ const TypeId = "~arcadekit/core/Rng";
  * @category models
  * @since 0.7.0
  */
-export interface Rng extends Pipeable.Pipeable, Inspectable.Inspectable {
+export interface Rng
+  extends ReadonlyRng, Pipeable.Pipeable, Inspectable.Inspectable {}
+
+/**
+ * A run's generator as the code that only reads the run sees it: its `state`, and no draw.
+ *
+ * **When to use**
+ *
+ * Rarely by name: it is what `Game.ReadonlyState` makes of the `Rng` in a run's state, so a view,
+ * a sample or a state hash can read where the generator is and can't move it.
+ *
+ * **Details**
+ *
+ * Every generator is one. No function of the module takes it: each one draws, and a draw outside
+ * a step would give one peer a different run. A state hash folds its `state` in.
+ *
+ * **Example** (A hash reads the generator's state)
+ *
+ * ```ts
+ * import { Rng } from "arcadekit/core";
+ *
+ * const stateOf = (rng: Rng.ReadonlyRng): number => rng.state;
+ *
+ * const rng = Rng.make(42);
+ * const before = stateOf(rng);
+ * Rng.next(rng);
+ * stateOf(rng) === before; // => false
+ * ```
+ *
+ * @category models
+ * @since 0.8.0
+ */
+export interface ReadonlyRng {
   readonly [TypeId]: typeof TypeId;
   /** The generator's state, a 32-bit unsigned integer: every later draw follows from it alone. */
   readonly state: number;

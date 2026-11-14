@@ -38,7 +38,7 @@ export const make = (
   sounds: CueSoundsOf<typeof PushPuzzleCueTable>
 ): Game.View<World.Puzzle> => {
   /** The run heard last frame. */
-  let heard: World.Puzzle | null = null;
+  let heard: Game.ReadonlyState<World.Puzzle> | null = null;
   const seen: World.Cues = {
     moves: 0,
     pushes: 0,

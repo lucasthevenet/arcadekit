@@ -463,7 +463,9 @@ export const make = (
  *
  * @category getters
  */
-export const hudSample = (self: Arena): Omit<Hud, "_tag"> => ({
+export const hudSample = (
+  self: Game.ReadonlyState<Arena>
+): Omit<Hud, "_tag"> => ({
   level: self.level,
   xp: self.xp,
   xpNext: self.xpNext,
@@ -515,7 +517,7 @@ export const hudSample = (self: Arena): Omit<Hud, "_tag"> => ({
  *
  * @category getters
  */
-export const isChoosing = (self: Arena): boolean => {
+export const isChoosing = (self: Game.ReadonlyState<Arena>): boolean => {
   for (const hero of self.heroes) {
     if (hero.offer !== null) {
       return true;
@@ -524,7 +526,7 @@ export const isChoosing = (self: Arena): boolean => {
   return false;
 };
 
-const anyPlaying = (arena: Arena): boolean => {
+const anyPlaying = (arena: Game.ReadonlyState<Arena>): boolean => {
   for (const hero of arena.heroes) {
     if (hero.status === "playing") {
       return true;
@@ -1399,7 +1401,10 @@ const STATUS_CODE = { playing: 0, down: 1, left: 2 } as const;
  *
  * @category getters
  */
-export const visit = (self: Arena, add: (value: number) => void): void => {
+export const visit = (
+  self: Game.ReadonlyState<Arena>,
+  add: (value: number) => void
+): void => {
   add(self.time);
   add(self.kills);
   const first = self.heroes[0]!;
@@ -1497,7 +1502,7 @@ export const visit = (self: Arena, add: (value: number) => void): void => {
  *
  * @category getters
  */
-export const hash = (self: Arena): number => {
+export const hash = (self: Game.ReadonlyState<Arena>): number => {
   StateHash.reset(stateHash);
   visit(self, fold);
   return StateHash.digest(stateHash);

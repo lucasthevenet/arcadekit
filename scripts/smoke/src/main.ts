@@ -50,7 +50,7 @@ class DotsView implements Game.View<Field> {
     this.stage.scene.add(this.sprites.mesh);
   }
 
-  render(field: Field | null, timeSeconds: number): void {
+  render(field: Game.ReadonlyState<Field> | null, timeSeconds: number): void {
     const tag = this.sprites.sheet.data.tags.get("dot");
     if (field !== null && tag !== undefined) {
       const frame = SpriteSheet.frameAt(

@@ -132,7 +132,7 @@ const script = (slot: number): Game.StepInput<Hero.Input> => {
 /** A session's `hash` that also keeps each hash: with `hashEvery: 1`, the world's after every step. */
 const recorded = () => {
   const hashes: number[] = [];
-  const hash = (world: World.Arena) => {
+  const hash = (world: Game.ReadonlyState<World.Arena>) => {
     const hashed = World.hash(world);
     hashes.push(hashed);
     return hashed;

@@ -5,7 +5,8 @@
  * A grid indexes the points of a pool by the cell each is in, with linked lists in flat typed
  * arrays, so building it and asking it allocate nothing. Its answers that test a distance do it
  * with exact arithmetic (`ExactMath.hypot2`), so every lockstep peer finds the same points.
- * Not a tile map, which describes a level's static cells.
+ * Not a tile map, which describes a level's static cells. Asking a grid only reads it, so a view
+ * given a run's grid read-only may ask it, and only a step builds it.
  *
  * @since 0.7.0
  */
@@ -53,7 +54,40 @@ const TypeId = "~arcadekit/core/SpatialGrid";
  * @since 0.7.0
  */
 export interface SpatialGrid
-  extends Pipeable.Pipeable, Inspectable.Inspectable {
+  extends ReadonlySpatialGrid, Pipeable.Pipeable, Inspectable.Inspectable {}
+
+/**
+ * A spatial grid as the code that only reads a run sees it: one it may ask, and can't build.
+ *
+ * **When to use**
+ *
+ * Rarely by name: it is what `Game.ReadonlyState` makes of a grid in a run's state.
+ *
+ * **Details**
+ *
+ * Every spatial grid is one, so a function that takes it takes either. `query`, `within` and
+ * `nearest` take it, since they write only into the array they are handed, and `build` refuses
+ * it, at compile time. It is not `Pipeable`: a reader calls the module's functions with the grid
+ * first.
+ *
+ * **Example** (A view asks the run's grid)
+ *
+ * ```ts
+ * import { SpatialGrid } from "arcadekit/core";
+ *
+ * const out = new Int32Array(4);
+ * const crowdAt = (grid: SpatialGrid.ReadonlySpatialGrid, x: number, y: number): number =>
+ *   SpatialGrid.query(grid, x, y, 1, out);
+ *
+ * const grid = SpatialGrid.make({ halfSize: 10, cellSize: 2, capacity: 4 });
+ * SpatialGrid.build(grid, new Float32Array([0, 0.5, 8]), new Float32Array([0, 0, 8]), 3);
+ * crowdAt(grid, 0, 0); // => 2
+ * ```
+ *
+ * @category models
+ * @since 0.8.0
+ */
+export interface ReadonlySpatialGrid {
   readonly [TypeId]: typeof TypeId;
   /** The number of cells on each axis. */
   readonly cols: number;
@@ -336,9 +370,9 @@ export const query: {
     y: number,
     radius: number,
     out: Int32Array
-  ): (self: SpatialGrid) => number;
+  ): (self: ReadonlySpatialGrid) => number;
   (
-    self: SpatialGrid,
+    self: ReadonlySpatialGrid,
     x: number,
     y: number,
     radius: number,
@@ -347,7 +381,7 @@ export const query: {
 } = dual(
   5,
   (
-    self: SpatialGrid,
+    self: ReadonlySpatialGrid,
     x: number,
     y: number,
     radius: number,
@@ -417,9 +451,9 @@ export const within: {
     y: number,
     radius: number,
     out: Int32Array
-  ): (self: SpatialGrid) => number;
+  ): (self: ReadonlySpatialGrid) => number;
   (
-    self: SpatialGrid,
+    self: ReadonlySpatialGrid,
     x: number,
     y: number,
     radius: number,
@@ -428,7 +462,7 @@ export const within: {
 } = dual(
   5,
   (
-    self: SpatialGrid,
+    self: ReadonlySpatialGrid,
     x: number,
     y: number,
     radius: number,
@@ -504,9 +538,9 @@ export const nearest: {
     y: number,
     range: number,
     skip?: ArrayLike<number>
-  ): (self: SpatialGrid) => number;
+  ): (self: ReadonlySpatialGrid) => number;
   (
-    self: SpatialGrid,
+    self: ReadonlySpatialGrid,
     x: number,
     y: number,
     range: number,
@@ -515,7 +549,7 @@ export const nearest: {
 } = dual(
   gridFirst,
   (
-    self: SpatialGrid,
+    self: ReadonlySpatialGrid,
     x: number,
     y: number,
     range: number,

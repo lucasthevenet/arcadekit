@@ -5,6 +5,7 @@
 // game names it or makes one.
 
 import { FixedStepClock } from "../../core/index";
+import type { ReadonlyState } from "../readonly-state";
 import type { FrameBudget, StepInput } from "../step-input";
 
 /** Longest frame gap counted, so a hidden tab or a debugger pause doesn't fast-forward the game. */
@@ -45,8 +46,8 @@ export interface KernelSimulation<Config, State, Input, Event> {
    */
   readonly sample?: {
     readonly everyMs?: number;
-    readonly version?: (state: State) => number;
-    readonly read: (state: State) => Event;
+    readonly version?: (state: ReadonlyState<State>) => number;
+    readonly read: (state: ReadonlyState<State>) => Event;
   };
 }
 
@@ -177,14 +178,19 @@ export class Kernel<Config, State, Input, Event> {
   private emitSample(state: State, nowMs: number) {
     const sample = this.simulation.sample!;
     this.lastSample = nowMs;
-    this.lastVersion = sample.version?.(state) ?? 0;
-    this.emit(sample.read(state));
+    // A sample is given the run's own state, read-only.
+    const read = state as ReadonlyState<State>;
+    this.lastVersion = sample.version?.(read) ?? 0;
+    this.emit(sample.read(read));
   }
 
   /** Emits a sample if the game's `version` moved since the last one. */
   private emitSampleIfChanged(state: State, nowMs: number) {
     const version = this.simulation.sample?.version;
-    if (version && version(state) !== this.lastVersion) {
+    if (
+      version &&
+      version(state as ReadonlyState<State>) !== this.lastVersion
+    ) {
       this.emitSample(state, nowMs);
     }
   }

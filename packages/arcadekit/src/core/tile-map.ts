@@ -4,7 +4,8 @@
  *
  * A tile map says what the level is, not where entities are: those are in entity pools, and a
  * spatial grid finds them. A tile is a number in a field, not an object, so a state hash can walk
- * it, and `neighbor` and `flood` allocate nothing, so a step may call them.
+ * it, and `neighbor` and `flood` allocate nothing, so a step may call them. Every function of the
+ * module only reads a map, so a view given a run's map read-only calls them all.
  *
  * @since 0.7.0
  */
@@ -107,14 +108,60 @@ const ROW_DELTA = [0, 0, -1, 1] as const;
  * @since 0.7.0
  */
 export interface TileMap<L extends Layout.Layout>
-  extends Pipeable.Pipeable, Inspectable.Inspectable {
+  extends ReadonlyTileMap<L>, Pipeable.Pipeable, Inspectable.Inspectable {
+  /** One typed array per field of the layout, under the layout's names. */
+  readonly fields: Layout.Fields<L>;
+}
+
+/**
+ * A tile map as the code that only reads a run sees it: its size, and fields whose elements can be
+ * read and not written.
+ *
+ * **When to use**
+ *
+ * Rarely by name: it is what `Game.ReadonlyState` makes of a tile map in a run's state, which a
+ * view draws a level from.
+ *
+ * **Details**
+ *
+ * Every tile map is one, so a function that takes it takes either. Each function of the module
+ * takes it, `flood` too: the queue it keeps in the map is its own, and no result depends on what
+ * an earlier flood left there. It is not `Pipeable`: a reader calls the module's functions with
+ * the map first.
+ *
+ * **Example** (A view counts the walls)
+ *
+ * ```ts
+ * import { TileMap } from "arcadekit/core";
+ *
+ * const LEVEL = { tile: Uint8Array } as const;
+ * const WALL = 1;
+ *
+ * const walls = (map: TileMap.ReadonlyTileMap<typeof LEVEL>): number => {
+ *   let count = 0;
+ *   for (let cell = 0; cell < map.cells; cell++) {
+ *     count += map.fields.tile[cell] === WALL ? 1 : 0;
+ *   }
+ *   return count;
+ * };
+ *
+ * const map = TileMap.make(3, 2, LEVEL);
+ * map.fields.tile[TileMap.cellAt(map, 0, 0)] = WALL;
+ * map.fields.tile[TileMap.cellAt(map, 2, 1)] = WALL;
+ * walls(map); // => 2
+ * ```
+ *
+ * @category models
+ * @since 0.8.0
+ */
+export interface ReadonlyTileMap<L extends Layout.Layout> {
   readonly [TypeId]: typeof TypeId;
   readonly cols: number;
   readonly rows: number;
   /** `cols * rows`: the length of every field. */
   readonly cells: number;
-  /** One typed array per field of the layout, under the layout's names. */
-  readonly fields: Layout.Fields<L>;
+  /** One typed array per field of the layout, under the layout's names, read-only. */
+  readonly fields: Layout.ReadonlyFields<L>;
 }
 
 /** What the module's functions keep, which no caller reads. */
@@ -244,12 +291,16 @@ export const cellAt: {
   (
     col: number,
     row: number
-  ): <L extends Layout.Layout>(self: TileMap<L>) => number;
-  <L extends Layout.Layout>(self: TileMap<L>, col: number, row: number): number;
+  ): <L extends Layout.Layout>(self: ReadonlyTileMap<L>) => number;
+  <L extends Layout.Layout>(
+    self: ReadonlyTileMap<L>,
+    col: number,
+    row: number
+  ): number;
 } = dual(
   3,
   <L extends Layout.Layout>(
-    self: TileMap<L>,
+    self: ReadonlyTileMap<L>,
     col: number,
     row: number
   ): number =>
@@ -278,11 +329,11 @@ export const cellAt: {
  * @since 0.7.0
  */
 export const colOf: {
-  (cell: number): <L extends Layout.Layout>(self: TileMap<L>) => number;
-  <L extends Layout.Layout>(self: TileMap<L>, cell: number): number;
+  (cell: number): <L extends Layout.Layout>(self: ReadonlyTileMap<L>) => number;
+  <L extends Layout.Layout>(self: ReadonlyTileMap<L>, cell: number): number;
 } = dual(
   2,
-  <L extends Layout.Layout>(self: TileMap<L>, cell: number): number =>
+  <L extends Layout.Layout>(self: ReadonlyTileMap<L>, cell: number): number =>
     cell % self.cols
 );
 
@@ -306,15 +357,17 @@ export const colOf: {
  * @since 0.7.0
  */
 export const rowOf: {
-  (cell: number): <L extends Layout.Layout>(self: TileMap<L>) => number;
-  <L extends Layout.Layout>(self: TileMap<L>, cell: number): number;
-} = dual(2, <L extends Layout.Layout>(self: TileMap<L>, cell: number): number =>
-  Math.floor(cell / self.cols)
+  (cell: number): <L extends Layout.Layout>(self: ReadonlyTileMap<L>) => number;
+  <L extends Layout.Layout>(self: ReadonlyTileMap<L>, cell: number): number;
+} = dual(
+  2,
+  <L extends Layout.Layout>(self: ReadonlyTileMap<L>, cell: number): number =>
+    Math.floor(cell / self.cols)
 );
 
 /** The neighbour of `cell` on `side`, or -1: the work of `neighbor`, with nothing to dispatch. */
 const neighborOf = <L extends Layout.Layout>(
-  self: TileMap<L>,
+  self: ReadonlyTileMap<L>,
   cell: number,
   side: Side
 ): number => {
@@ -360,8 +413,12 @@ export const neighbor: {
   (
     cell: number,
     side: Side
-  ): <L extends Layout.Layout>(self: TileMap<L>) => number;
-  <L extends Layout.Layout>(self: TileMap<L>, cell: number, side: Side): number;
+  ): <L extends Layout.Layout>(self: ReadonlyTileMap<L>) => number;
+  <L extends Layout.Layout>(
+    self: ReadonlyTileMap<L>,
+    cell: number,
+    side: Side
+  ): number;
 } = dual(3, neighborOf);
 
 /**
@@ -412,9 +469,9 @@ export const flood: {
     start: number,
     passes: (cell: number) => boolean,
     reached: Uint8Array
-  ): <L extends Layout.Layout>(self: TileMap<L>) => number;
+  ): <L extends Layout.Layout>(self: ReadonlyTileMap<L>) => number;
   <L extends Layout.Layout>(
-    self: TileMap<L>,
+    self: ReadonlyTileMap<L>,
     start: number,
     passes: (cell: number) => boolean,
     reached: Uint8Array
@@ -422,13 +479,13 @@ export const flood: {
 } = dual(
   4,
   <L extends Layout.Layout>(
-    self: TileMap<L>,
+    self: ReadonlyTileMap<L>,
     start: number,
     passes: (cell: number) => boolean,
     reached: Uint8Array
   ): number => {
     const { cells } = self;
-    const { queue } = self as Internal<L>;
+    const { queue } = self as unknown as Internal<L>;
     // Past its end, a typed array reads `undefined` and drops a write: a flood would stop there
     // and count too few, and say nothing.
     if (reached.length < cells) {

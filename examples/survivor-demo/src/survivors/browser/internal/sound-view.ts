@@ -22,7 +22,7 @@ const firstHero = () => 0;
 
 /** What the view saw of one run: the run, its counters last frame and each weapon's shot sound. */
 interface Seen {
-  readonly arena: World.Arena;
+  readonly arena: Game.ReadonlyState<World.Arena>;
   readonly shots: Float64Array;
   readonly shotSounds: readonly string[];
   readonly hurt: Float64Array;
@@ -36,7 +36,7 @@ interface Seen {
 }
 
 const see = (
-  arena: World.Arena,
+  arena: Game.ReadonlyState<World.Arena>,
   sounds: CueSoundsOf<typeof SurvivorsCueTable>
 ): Seen => {
   const { cues } = arena;
@@ -65,7 +65,7 @@ const STALL_SECONDS = 0.25;
  * Whether a playing hero carries an aura weapon while the run is on and not frozen: no upgrade
  * offer open and no player holding it paused.
  */
-const auraPlaying = (arena: World.Arena): boolean =>
+const auraPlaying = (arena: Game.ReadonlyState<World.Arena>): boolean =>
   arena.status === "running" &&
   !World.isChoosing(arena) &&
   !arena.heroes.some((hero) => hero.paused) &&
@@ -107,7 +107,7 @@ export const make = (
    * play that same frame may then be dropped by the sound's minimum gap, never the local one.
    */
   const playByHero = (
-    counts: Uint32Array,
+    counts: ArrayLike<number>,
     saw: Float64Array,
     sound: string
   ) => {

@@ -5,6 +5,7 @@ import type { Duration, Schema } from "effect";
 
 import type { AnyCommand } from "../command";
 import type { AnyEvent } from "../event";
+import type { ReadonlyState } from "../readonly-state";
 import type {
   CommandContext,
   RunContext,
@@ -43,8 +44,8 @@ export interface Resolved<Config, State, Input, Event, Command> {
         readonly make: (payload: unknown) => Event;
         readonly tag: string;
         readonly every: Duration.Input | undefined;
-        readonly version: ((state: State) => number) | undefined;
-        readonly read: (state: State) => unknown;
+        readonly version: ((state: ReadonlyState<State>) => number) | undefined;
+        readonly read: (state: ReadonlyState<State>) => unknown;
       }
     | undefined;
 }

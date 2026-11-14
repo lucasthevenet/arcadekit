@@ -9,8 +9,29 @@
  * @since 0.7.0
  */
 
-/** A typed array a field is stored in. */
-type TypedArray =
+/**
+ * A typed array a field is stored in: one of the eight a layout may name.
+ *
+ * **When to use**
+ *
+ * To recognise a field's array in a type computed from a run's state, as `Game.ReadonlyState`
+ * does.
+ *
+ * **Example** (A field is one)
+ *
+ * ```ts
+ * import { EntityPool } from "arcadekit/core";
+ * import type { Layout } from "arcadekit/core";
+ *
+ * const enemies = EntityPool.make(8, { hp: Float32Array });
+ * const hp: Layout.TypedArray = enemies.fields.hp;
+ * hp.length; // => 8
+ * ```
+ *
+ * @category models
+ * @since 0.8.0
+ */
+export type TypedArray =
   | Float32Array
   | Float64Array
   | Int8Array
@@ -19,6 +40,54 @@ type TypedArray =
   | Uint8Array
   | Uint16Array
   | Uint32Array;
+
+/** The methods of a typed array that write it, or give a view of it that could. */
+type Writers = "copyWithin" | "fill" | "reverse" | "set" | "sort" | "subarray";
+
+/**
+ * A typed array that can be read and not written: its elements are read-only, and it has none of
+ * the methods that write it in place.
+ *
+ * **When to use**
+ *
+ * Rarely by name: it is what a field of a read-only pool, ring or tile map is, and what
+ * `Game.ReadonlyState` makes of a typed array in a run's state. Name it for a function of a
+ * view that takes one field.
+ *
+ * **Details**
+ *
+ * It keeps every method that reads, and those that copy (`slice`, `map`, `toSorted`), and drops
+ * `copyWithin`, `fill`, `reverse`, `set`, `sort` and `subarray`, which writes through the view it
+ * gives. A writable array of the same kind is one, so a function that takes it takes either.
+ *
+ * **Example** (A view's sum of a field)
+ *
+ * ```ts
+ * import { EntityPool } from "arcadekit/core";
+ * import type { Layout } from "arcadekit/core";
+ *
+ * const total = (field: Layout.ReadonlyTypedArray<Float32Array>, count: number): number => {
+ *   let sum = 0;
+ *   for (let i = 0; i < count; i++) {
+ *     sum += field[i]!;
+ *   }
+ *   return sum;
+ * };
+ *
+ * const enemies = EntityPool.make(8, { hp: Float32Array });
+ * enemies.fields.hp[EntityPool.add(enemies)] = 3;
+ * enemies.fields.hp[EntityPool.add(enemies)] = 4;
+ * total(enemies.fields.hp, enemies.count); // => 7
+ * ```
+ *
+ * @category utility types
+ * @since 0.8.0
+ */
+export type ReadonlyTypedArray<A extends TypedArray> = Omit<
+  A,
+  Writers | number
+> &
+  Readonly<Record<number, number>>;
 
 /**
  * The fields of a record, each named for what it holds and given the typed array it is stored
@@ -99,4 +168,46 @@ export type Layout = Record<string, new (length: number) => TypedArray>;
  */
 export type Fields<L extends Layout> = {
   readonly [K in keyof L]: InstanceType<L[K]>;
+};
+
+/**
+ * The fields of a layout as a reader of a run sees them: each a typed array that can be read and
+ * not written.
+ *
+ * **When to use**
+ *
+ * Name it when a view's or a sample's function takes the fields of a structure rather than the
+ * structure. It is what a read-only pool's, ring's or tile map's `fields` is.
+ *
+ * **Details**
+ *
+ * A structure's writable `fields` is one too, so a function that takes it takes either.
+ *
+ * **Example** (A view's count of the living)
+ *
+ * ```ts
+ * import { EntityPool } from "arcadekit/core";
+ * import type { Layout } from "arcadekit/core";
+ *
+ * const BODY = { hp: Float32Array } as const;
+ *
+ * const living = (fields: Layout.ReadonlyFields<typeof BODY>, count: number): number => {
+ *   let alive = 0;
+ *   for (let i = 0; i < count; i++) {
+ *     alive += fields.hp[i]! > 0 ? 1 : 0;
+ *   }
+ *   return alive;
+ * };
+ *
+ * const bodies = EntityPool.make(4, BODY);
+ * bodies.fields.hp[EntityPool.add(bodies)] = 5;
+ * EntityPool.add(bodies);
+ * living(bodies.fields, bodies.count); // => 1
+ * ```
+ *
+ * @category utility types
+ * @since 0.8.0
+ */
+export type ReadonlyFields<L extends Layout> = {
+  readonly [K in keyof L]: ReadonlyTypedArray<InstanceType<L[K]>>;
 };

@@ -20,7 +20,11 @@ import type {
   ViewContext,
 } from "../../../game/browser";
 import { CommandDropped } from "../../../game/index";
-import type { PlayerInputOf, PlayersSimulation } from "../../../game/index";
+import type {
+  PlayerInputOf,
+  PlayersSimulation,
+  ReadonlyState,
+} from "../../../game/index";
 import { contentHash } from "../../internal/content-hash";
 import {
   canStart,
@@ -113,7 +117,7 @@ export interface CoopParts<
     E,
     Scope.Scope
   >;
-  readonly hash: (state: State) => number;
+  readonly hash: (state: ReadonlyState<State>) => number;
   readonly picks: (content: Content) => readonly string[];
   readonly config: (content: Content, picks: readonly string[]) => Config;
   /** A signalling room's default size (4) if left out. */
@@ -625,7 +629,7 @@ export const coopClient = <
       endFrame: () => device?.endFrame?.(),
     };
 
-    const recordHash = (seat: Seated, state: State): number => {
+    const recordHash = (seat: Seated, state: ReadonlyState<State>): number => {
       const hash = parts.hash(state);
       seat.hashes.set(seat.run?.stepIndex ?? 0, hash);
       if (seat.hashes.size > KEPT_HASHES) {
@@ -940,7 +944,11 @@ export const coopClient = <
               const seat = current;
               // The frame's tick, before drawing.
               seat?.frameTick?.();
-              view.render(seat?.run?.state ?? null, nowMs / 1000);
+              // A view is given the run's own state, read-only.
+              view.render(
+                (seat?.run?.state ?? null) as ReadonlyState<State> | null,
+                nowMs / 1000
+              );
             });
           })
         ).pipe(

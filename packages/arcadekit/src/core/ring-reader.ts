@@ -2,7 +2,8 @@
  * Ring readers: how far one view has read one ring.
  *
  * A view keeps one reader for each ring it reads, and two views read one ring with a reader
- * each. A reader writes nothing to the ring, so a view still never changes a run's state.
+ * each. A reader writes nothing to the ring, and takes it read-only, so a view still never changes a
+ * run's state.
  *
  * @since 0.7.0
  */
@@ -56,7 +57,7 @@ export interface RingReader extends Pipeable.Pipeable, Inspectable.Inspectable {
 }
 
 /** What a reader is handed: a ring's two counts, which are all it reads. */
-type Counted = Pick<Ring.Ring<Layout.Layout>, "capacity" | "written">;
+type Counted = Pick<Ring.ReadonlyRing<Layout.Layout>, "capacity" | "written">;
 
 /** What the module's functions keep, which no caller reads. */
 type Internal = Types.Mutable<RingReader> & {

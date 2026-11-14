@@ -2,6 +2,8 @@
 
 The DOM-free building blocks of a game's simulation: a fixed-step clock, a seeded random generator, struct-of-arrays entity pools, rings of records, a tile map, a spatial grid and an event buffer, with the exact math, the timers and the tweens a step or a view calls, and the state hash. Nothing in it allocates per step, and nothing touches the DOM, so it runs in a browser, a Web Worker or on a server.
 
+Each structure a run's state keeps has a read-only form, `EntityPool.ReadonlyEntityPool`, `Ring.ReadonlyRing`, `TileMap.ReadonlyTileMap`, `SpatialGrid.ReadonlySpatialGrid` and `Rng.ReadonlyRng`, with `Layout.ReadonlyTypedArray` for a field: what a view, a sample and a state hash are given ([`Game.ReadonlyState`](../game/readonly-state.ts)). The functions that only read take it, and those that write refuse it.
+
 An entry of the [`arcadekit`](../../README.md) package.
 
 ## Install

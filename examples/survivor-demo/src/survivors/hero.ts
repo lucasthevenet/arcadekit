@@ -11,6 +11,7 @@
  * peer and every replay, and finish in the call.
  */
 import { ExactMath } from "arcadekit/core";
+import type * as Game from "arcadekit/game";
 import { Schema } from "effect";
 
 import type * as GameContent from "./game-content";
@@ -512,7 +513,10 @@ const recomputeStats = (content: GameContent.GameContent, hero: Hero): void => {
  *
  * @category getters
  */
-export const weaponDamage = (self: Hero, slot: WeaponSlot): number =>
+export const weaponDamage = (
+  self: Game.ReadonlyState<Hero>,
+  slot: Game.ReadonlyState<WeaponSlot>
+): number =>
   (slot.def.damage + slot.def.damagePerLevel * (slot.level - 1)) *
   self.stats.damageMult;
 
@@ -554,7 +558,10 @@ export const weaponDamage = (self: Hero, slot: WeaponSlot): number =>
  *
  * @category getters
  */
-export const weaponCooldown = (self: Hero, slot: WeaponSlot): number =>
+export const weaponCooldown = (
+  self: Game.ReadonlyState<Hero>,
+  slot: Game.ReadonlyState<WeaponSlot>
+): number =>
   slot.def.cooldown *
   ExactMath.powInt(slot.def.cooldownScalePerLevel, slot.level - 1) *
   self.stats.cooldownMult;
@@ -603,7 +610,10 @@ export const weaponCooldown = (self: Hero, slot: WeaponSlot): number =>
  *
  * @category getters
  */
-export const auraRadius = (self: Hero, slot: WeaponSlot): number =>
+export const auraRadius = (
+  self: Game.ReadonlyState<Hero>,
+  slot: Game.ReadonlyState<WeaponSlot>
+): number =>
   slot.def.behavior.kind === "aura"
     ? (slot.def.behavior.radius +
         slot.def.behavior.radiusPerLevel * (slot.level - 1)) *
