@@ -1,0 +1,63 @@
+/* The site's colours over Starlight's theme: the mark's violet and yellow. */
+:root {
+  --sl-color-accent-low: #1f1745;
+  --sl-color-accent: #6d4aff;
+  --sl-color-accent-high: #cfc4ff;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #ddd5ff;
+  --sl-color-accent: #5a37f0;
+  --sl-color-accent-high: #2a1880;
+}
+
+/* The mark is pixel art: keep its pixels whole at any size. */
+.hero-mark,
+.site-title img {
+  image-rendering: pixelated;
+}
+
+/* The landing page's mark sits on a blurred glow of its two colours. */
+.hero .hero-html {
+  position: relative;
+  isolation: isolate;
+}
+
+.hero .hero-html::before {
+  content: "";
+  position: absolute;
+  inset: 15%;
+  z-index: -1;
+  background: linear-gradient(-45deg, #6d4aff 50%, #ffd23f 50%);
+  border-radius: 50%;
+  filter: blur(56px);
+  opacity: 0.6;
+}
+
+.hero-mark {
+  width: min(45vw, 16rem);
+  height: auto;
+  border-radius: 12%;
+}
+
+/* The landing page's text starts a little below its cards. */
+.sl-markdown-content .card-grid {
+  margin-bottom: 2rem;
+}
+
+/*
+ * On a phone a table was wider than the page and scrolled inside itself. There its cells are
+ * closer and their text a step smaller, and a name in a cell wraps: after a slash
+ * (src/lib/tables.ts), and anywhere when even that doesn't fit its line. Not anywhere in the
+ * first column: a column of names that may break anywhere is given almost no width.
+ */
+@media (max-width: 639px) {
+  .sl-markdown-content :is(th, td) {
+    padding: 0.375rem 0.625rem;
+    font-size: var(--sl-text-xs);
+  }
+
+  .sl-markdown-content td:not(:first-child) code {
+    overflow-wrap: anywhere;
+  }
+}

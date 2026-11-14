@@ -6,14 +6,14 @@
   "scripts": {
     "dev": "pnpm --filter @arcadekit/survivor-demo dev",
     "dev:puzzle": "pnpm --filter @arcadekit/push-puzzle-demo dev",
-    "dev:docs": "pnpm --filter @arcadekit/docs dev",
-    "build": "pnpm typecheck && pnpm --filter @arcadekit/survivor-demo --filter @arcadekit/push-puzzle-demo --filter @arcadekit/docs build",
+    "dev:docs": "pnpm --filter @arcadekit/website dev",
+    "build": "pnpm typecheck && pnpm --filter @arcadekit/survivor-demo --filter @arcadekit/push-puzzle-demo --filter @arcadekit/website build",
     "build:packages": "pnpm --filter arcadekit run build",
-    "build:docs": "pnpm --filter @arcadekit/docs build",
+    "build:docs": "pnpm --filter @arcadekit/website build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
-    "test:e2e": "vitest run --config apps/survivor-demo/vitest.e2e.config.ts",
-    "test:browsers": "vitest run --config apps/survivor-demo/browser-determinism/vitest.config.ts",
+    "test:e2e": "vitest run --config examples/survivor-demo/vitest.e2e.config.ts",
+    "test:browsers": "vitest run --config examples/survivor-demo/browser-determinism/vitest.config.ts",
     "lint:packages": "bash scripts/lint-packages.sh",
     "smoke": "node scripts/smoke-test.mjs",
     "bench": "pnpm --filter @arcadekit/bench bench",
@@ -39,7 +39,6 @@
     "typescript": "^7.0.2",
     "ultracite": "8.1.1",
     "vite": "^8.3.5",
-    "vitepress": "^1.6.4",
     "vitest": "^5.1.0"
   },
   "packageManager": "pnpm@10.28.0"

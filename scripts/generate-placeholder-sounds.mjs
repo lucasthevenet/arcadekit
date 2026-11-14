@@ -7,8 +7,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = path.join(import.meta.dirname, "..");
-const SURVIVOR_DIR = path.join(ROOT, "apps/survivor-demo/public/sounds");
-const PUZZLE_DIR = path.join(ROOT, "apps/push-puzzle-demo/public/sounds");
+const SURVIVOR_DIR = path.join(ROOT, "examples/survivor-demo/public/sounds");
+const PUZZLE_DIR = path.join(ROOT, "examples/push-puzzle-demo/public/sounds");
 
 const SFX_RATE = 22_050;
 // Music is 16 s per loop; a lower rate keeps the three loops near 500 KB each.
@@ -823,5 +823,5 @@ for (const [dir, id, make] of SOUNDS) {
   total += bytes.length;
 }
 console.log(
-  `Wrote ${SOUNDS.length} sounds (${(total / 1024).toFixed(0)} KB) to apps/*/public/sounds.`
+  `Wrote ${SOUNDS.length} sounds (${(total / 1024).toFixed(0)} KB) to examples/*/public/sounds.`
 );

@@ -1,0 +1,46 @@
+---
+// The header's links, before Starlight's own (GitHub and npm): GRIMBONK, and the version of the
+// package the pages describe.
+//
+// The site is built from the repository as it is, so its pages follow `main`, which may be ahead
+// of the package on npm (lib/version.ts). The version links to the changelog when the pages
+// describe the release, and to the waiting changesets when they describe more. Vite reads the
+// package's manifest and the changesets as it builds the site.
+import Default from "@astrojs/starlight/components/SocialIcons.astro";
+
+import kit from "../../../packages/arcadekit/package.json";
+import { BRANCH, GRIMBONK_URL, REPO_URL } from "../lib/site.ts";
+import { hasUnreleased, versionLabel } from "../lib/version.ts";
+
+const changesets = import.meta.glob<string>("../../../.changeset/*.md", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+const unreleased = hasUnreleased(changesets, kit.name);
+const versionLink = unreleased
+  ? `${REPO_URL}/tree/${BRANCH}/.changeset`
+  : `${REPO_URL}/blob/${BRANCH}/packages/arcadekit/CHANGELOG.md`;
+const versionTitle = unreleased
+  ? "The pages describe changes not released yet: see the changesets that wait for the next release"
+  : "What each release changed";
+---
+
+<a class="header-link" href={GRIMBONK_URL}>GRIMBONK</a>
+<a class="header-link" href={versionLink} title={versionTitle}>
+  {versionLabel(kit.version, unreleased)}
+</a>
+<Default />
+
+<style>
+  .header-link {
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .header-link:hover {
+    color: var(--sl-color-white);
+  }
+</style>

@@ -9,8 +9,8 @@ import path from "node:path";
 import { deflateSync } from "node:zlib";
 
 const ROOT = path.join(import.meta.dirname, "..");
-const SURVIVOR_DIR = path.join(ROOT, "apps/survivor-demo/public/sprites");
-const PUZZLE_DIR = path.join(ROOT, "apps/push-puzzle-demo/public/sprites");
+const SURVIVOR_DIR = path.join(ROOT, "examples/survivor-demo/public/sprites");
+const PUZZLE_DIR = path.join(ROOT, "examples/push-puzzle-demo/public/sprites");
 
 // ---------------------------------------------------------------------------------------------
 // Colours
