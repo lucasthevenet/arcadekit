@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 
 import { AudioSettings } from "arcadekit/audio";
-import { LobbyChanged } from "arcadekit/net/browser";
+import { CoopEvent } from "arcadekit/net/browser";
 import { Effect, Layer } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
@@ -87,7 +87,7 @@ describe("music and ducking", () => {
       ),
       at(
         Phase.CoopLobby({
-          lobby: new LobbyChanged({
+          lobby: new CoopEvent.LobbyChanged({
             role: "host",
             code: "",
             self: "",

@@ -1,6 +1,6 @@
 import type { World } from "@arcadekit/survivors";
 import { SurvivorsCoop } from "@arcadekit/survivors/browser";
-import type { CoopDebug } from "arcadekit/net/browser";
+import type { CoopClient } from "arcadekit/net/browser";
 import { Effect, Layer } from "effect";
 
 // Co-op survivors (#25) as the app runs it: the genre's `SurvivorsCoop`, whose class is the key
@@ -21,7 +21,7 @@ export interface CoopDebugSample {
 export const debugSample = ({
   state,
   ...rest
-}: CoopDebug<World>): CoopDebugSample => ({
+}: CoopClient.Debug<World>): CoopDebugSample => ({
   ...rest,
   level: state?.level ?? null,
   time: state?.time ?? null,

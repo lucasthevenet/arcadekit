@@ -17,19 +17,8 @@ import { ContentSource } from "arcadekit/content";
 import type * as Game from "arcadekit/game";
 import { Frames } from "arcadekit/game/browser";
 import { ManualFrames } from "arcadekit/game/testing";
-import {
-  LobbyChanged,
-  RunStarted,
-  SeatFailed,
-  WaitingChanged,
-} from "arcadekit/net/browser";
-import type { CoopEvent } from "arcadekit/net/browser";
-import {
-  FAKE_JOIN_CODE,
-  fakeCoopRooms,
-  onFakeTimers,
-} from "arcadekit/net/testing";
-import type { FakeCoopRooms } from "arcadekit/net/testing";
+import { CoopEvent } from "arcadekit/net/browser";
+import { FakeCoopRooms, PageTimers } from "arcadekit/net/testing";
 import { SpriteSheet } from "arcadekit/render-three";
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -83,7 +72,7 @@ let scope: Scope.Closeable;
  * on microtasks.
  */
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>
-  Effect.runPromise(onFakeTimers(effect));
+  Effect.runPromise(effect.pipe(Effect.provide(PageTimers.layer)));
 
 interface Seat {
   readonly coop: Context.Service.Shape<typeof SurvivorsCoop>;
@@ -92,14 +81,14 @@ interface Seat {
 
 /** The app's co-op layer over `hub`, in the test's scope. */
 const seat = async (
-  hub: FakeCoopRooms,
+  hub: FakeCoopRooms.FakeCoopRooms,
   parts: {
     readonly sheet?: SheetLoad;
     readonly load?: Effect.Effect<GameContent, ContentSource.ContentError>;
   } = {}
 ): Promise<Seat> => {
   const layer = CoopLayer.pipe(
-    Layer.provide(hub.layer),
+    Layer.provide(FakeCoopRooms.layer(hub)),
     Layer.provide(Layer.succeed(Frames, ManualFrames.make())),
     Layer.provide(AudioSystem.layerSilent),
     Layer.provide(SurvivorsCueTable.layer(survivorsSounds)),
@@ -116,7 +105,7 @@ const seat = async (
   return { coop: Context.get(context, SurvivorsCoop), context };
 };
 
-type Event = CoopEvent<Game.EventOf<typeof Survivors>>;
+type Event = CoopEvent.CoopEvent<Game.EventOf<typeof Survivors>>;
 
 const listen = async ({ coop }: Seat): Promise<Event[]> => {
   const events: Event[] = [];
@@ -167,7 +156,7 @@ describe("the app's co-op", () => {
 
   describe("the co-op layer", () => {
     it("leaves the room and removes its debug global when the app's scope closes", async () => {
-      const hub = fakeCoopRooms();
+      const hub = FakeCoopRooms.make();
       const { coop } = await seat(hub);
       await run(coop.host("spark"));
       await settle();
@@ -183,14 +172,14 @@ describe("the app's co-op", () => {
     });
 
     it("plays survivors for two: a lobby of heroes, the same run on both, and a debug read that is plain data", async () => {
-      const hub = fakeCoopRooms();
+      const hub = FakeCoopRooms.make();
       const host = await seat(hub);
       const hostEvents = await listen(host);
       const guest = await seat(hub);
       const guestEvents = await listen(guest);
       await run(host.coop.host("spark"));
       await settle();
-      await run(guest.coop.join(FAKE_JOIN_CODE, "ember"));
+      await run(guest.coop.join(FakeCoopRooms.joinCode, "ember"));
       await settle();
       await run(guest.coop.choose("tide"));
       await settle();
@@ -199,7 +188,7 @@ describe("the app's co-op", () => {
         { id: "guest-1", name: "Guest 1", pick: "tide" },
       ];
       const lobby = {
-        code: FAKE_JOIN_CODE,
+        code: FakeCoopRooms.joinCode,
         players,
         maxPlayers: 4,
         canStart: true,
@@ -208,8 +197,12 @@ describe("the app's co-op", () => {
         hostEvents.findLast((event) => event._tag === "LobbyChanged"),
         guestEvents.findLast((event) => event._tag === "LobbyChanged"),
       ]).toStrictEqual([
-        new LobbyChanged({ ...lobby, role: "host", self: "host" }),
-        new LobbyChanged({ ...lobby, role: "guest", self: "guest-1" }),
+        new CoopEvent.LobbyChanged({ ...lobby, role: "host", self: "host" }),
+        new CoopEvent.LobbyChanged({
+          ...lobby,
+          role: "guest",
+          self: "guest-1",
+        }),
       ]);
 
       await run(host.coop.start);
@@ -235,8 +228,8 @@ describe("the app's co-op", () => {
         sample: structuredClone(sample),
       }).toStrictEqual({
         started: [
-          new RunStarted({ slot: 0, names: ["Host", "Guest 1"] }),
-          new RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
+          new CoopEvent.RunStarted({ slot: 0, names: ["Host", "Guest 1"] }),
+          new CoopEvent.RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
         ],
         heroes: ["spark", "tide"],
         errors: [null, null],
@@ -256,7 +249,7 @@ describe("the app's co-op", () => {
     });
 
     it("refuses a start whose hero the guest's content doesn't have", async () => {
-      const hub = fakeCoopRooms();
+      const hub = FakeCoopRooms.make();
       const host = await seat(hub);
       // The guest's game lacks the host's hero: an older build's content, say.
       const guest = await seat(hub, {
@@ -269,7 +262,7 @@ describe("the app's co-op", () => {
       const guestEvents = await listen(guest);
       await run(host.coop.host("spark"));
       await settle();
-      await run(guest.coop.join(FAKE_JOIN_CODE, "ember"));
+      await run(guest.coop.join(FakeCoopRooms.joinCode, "ember"));
       await settle();
       await run(host.coop.start);
       await vi.advanceTimersByTimeAsync(100);
@@ -288,7 +281,7 @@ describe("the app's co-op", () => {
 
   describe("the co-op Commands", () => {
     it("open no room when Leave comes while Host waits on the content", async () => {
-      const hub = fakeCoopRooms();
+      const hub = FakeCoopRooms.make();
       const loaded = Effect.runSync(
         Deferred.make<GameContent, ContentSource.ContentError>()
       );
@@ -305,7 +298,7 @@ describe("the app's co-op", () => {
     });
 
     it("hold the run paused on every page with the genre's command, and say when the run holds no pause", async () => {
-      const hub = fakeCoopRooms();
+      const hub = FakeCoopRooms.make();
       const host = await seat(hub);
       const guest = await seat(hub);
       const command = <A>(
@@ -320,7 +313,7 @@ describe("the app's co-op", () => {
       const early = await pause(host, true);
       await run(host.coop.host("spark"));
       await settle();
-      await run(guest.coop.join(FAKE_JOIN_CODE, "ember"));
+      await run(guest.coop.join(FakeCoopRooms.joinCode, "ember"));
       await settle();
       await run(host.coop.start);
       await vi.advanceTimersByTimeAsync(1000);
@@ -362,7 +355,7 @@ describe("the app's co-op", () => {
     });
 
     it("end a pick the same way however the run answers it: with no run, and for an offer that isn't open", async () => {
-      const hub = fakeCoopRooms();
+      const hub = FakeCoopRooms.make();
       const host = await seat(hub);
       const guest = await seat(hub);
       const pick = (player: Seat) =>
@@ -375,7 +368,7 @@ describe("the app's co-op", () => {
       const noRun = await pick(host);
       await run(host.coop.host("spark"));
       await settle();
-      await run(guest.coop.join(FAKE_JOIN_CODE, "ember"));
+      await run(guest.coop.join(FakeCoopRooms.joinCode, "ember"));
       await settle();
       await run(host.coop.start);
       await vi.advanceTimersByTimeAsync(1000);
@@ -404,7 +397,7 @@ describe("the app's co-op", () => {
     });
 
     it("fails with an AttachError where it can't draw, as here with no WebGL, after leaving its room", async () => {
-      const hub = fakeCoopRooms();
+      const hub = FakeCoopRooms.make();
       const { coop } = await seat(hub, { sheet: loadedSheet });
       await run(coop.host("spark"));
       await settle();
@@ -420,7 +413,7 @@ describe("the app's co-op", () => {
         file: "sprites/survivors.json",
         message: "The sheet can't be loaded",
       });
-      const { coop } = await seat(fakeCoopRooms(), {
+      const { coop } = await seat(FakeCoopRooms.make(), {
         sheet: Effect.fail(missing),
       });
       const error = await run(Effect.flip(coop.attach(element)));
@@ -438,9 +431,9 @@ describe("the app's co-op", () => {
     });
 
     it("passes the client's own events on: the lobby as it is, the start, who it waits for, a failure's text", () => {
-      const lobby = new LobbyChanged({
+      const lobby = new CoopEvent.LobbyChanged({
         role: "host",
-        code: FAKE_JOIN_CODE,
+        code: FakeCoopRooms.joinCode,
         self: "host",
         players: [{ id: "host", name: "Host", pick: "spark" }],
         maxPlayers: 4,
@@ -448,9 +441,12 @@ describe("the app's co-op", () => {
       });
       const events: Event[] = [
         lobby,
-        new RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
-        new WaitingChanged({ waitingFor: ["Host"] }),
-        new SeatFailed({ reason: "hostLost", message: "Lost the host." }),
+        new CoopEvent.RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
+        new CoopEvent.WaitingChanged({ waitingFor: ["Host"] }),
+        new CoopEvent.SeatFailed({
+          reason: "hostLost",
+          message: "Lost the host.",
+        }),
       ];
       expect(events.map(coopMessage)).toStrictEqual([
         Message.GotCoopLobby({ lobby }),

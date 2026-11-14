@@ -20,25 +20,19 @@ import {
 
 import * as Game from "../../game/browser";
 import { ManualFrames } from "../../game/testing/index";
-import type { Ticker } from "../scoped";
+import type { Ticker } from "../index";
 import {
-  AnswerOffer,
-  HoldPause,
-  NothingOwed,
-  OfferOpened,
-  RunEnded,
-  Score,
+  FakeCoopRooms,
+  ManualTicker,
+  PageTimers,
   TestGame,
-  fakeCoopRooms,
-  hashTestState,
-  manualTicker,
-  onFakeTimers,
-  testContent,
 } from "../testing/index";
-import type { FakeCoopRooms, TestEvent } from "../testing/index";
-import { Coop, CoopTicker } from "./coop";
-import * as Seat from "./coop-events";
-import type { CoopRooms } from "./coop-rooms";
+import { Coop, CoopEvent, CoopTicker } from "./index";
+import type { CoopRooms } from "./index";
+
+/** `effect` on the page's timers, as a test on fake timers runs each of its Effects. */
+const onPage = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.provide(PageTimers.layer));
 
 // A `Coop` declared the way a genre declares one, over an engine for the test game
 // (`arcadekit/net/testing`), and played through its layer: fake rooms link a host and a guest,
@@ -69,7 +63,7 @@ const lamp = Effect.acquireRelease(
 );
 
 class TestEngine extends Game.Engine("TestEngine", {
-  simulation: TestGame,
+  simulation: TestGame.TestGame,
   uses: { log: Log, lamp },
   view: (_container, { log }, { local }) => ({
     render: (state) => {
@@ -90,7 +84,7 @@ class TestEngine extends Game.Engine("TestEngine", {
 const levels = Levels.pipe(
   Effect.map((app) => {
     app.loads += 1;
-    return { ...testContent, length: app.length };
+    return { ...TestGame.content, length: app.length };
   })
 );
 
@@ -107,8 +101,8 @@ class TestCoop extends Coop("TestCoop", {
   picks: (content) => content.picks,
   config: (content, picks) => ({ content, picks }),
   maxPlayers: 2,
-  hash: hashTestState,
-  ends: [RunEnded],
+  hash: TestGame.hash,
+  ends: [TestGame.RunEnded],
 }) {}
 
 /**
@@ -125,12 +119,12 @@ class PacedCoop extends Coop("PacedCoop", {
   lockstep: { inputDelay: 2, hashEvery: 2 },
 }) {}
 
-type Event = Seat.CoopEvent<TestEvent>;
+type Event = CoopEvent.CoopEvent<TestGame.Event>;
 
 const element = {} as HTMLElement;
 
 /** A ticker on the page's timer, which the tests fake. */
-const pageTicker: Ticker = (onTick) => {
+const pageTicker: Ticker.Ticker = (onTick) => {
   const timer = setInterval(onTick, 4);
   return () => clearInterval(timer);
 };
@@ -139,7 +133,7 @@ let scope: Scope.Closeable;
 
 /** Runs `effect` as the app does: in the app's scope, on the test's Clock and Scheduler. */
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): Promise<A> =>
-  Effect.runPromise(effect.pipe(Scope.provide(scope), onFakeTimers));
+  Effect.runPromise(effect.pipe(Scope.provide(scope), onPage));
 
 /** As `run`, but on Effect's own Clock and scheduler, which fake timers don't reach. */
 const plain: typeof run = (effect) =>
@@ -166,7 +160,7 @@ const settledUntil = async (
  * the Effect that builds the layer: `run`, unless a test says.
  */
 const seat = async (
-  hub: FakeCoopRooms,
+  hub: FakeCoopRooms.FakeCoopRooms,
   length = 1_000_000,
   build: typeof run = run
 ) => {
@@ -178,8 +172,10 @@ const seat = async (
     Effect.gen(function* () {
       const context = yield* Layer.build(
         TestCoop.layer.pipe(
-          Layer.provide(hub.layer),
-          Layer.provide(Layer.succeed(CoopTicker, Effect.succeed(pageTicker))),
+          Layer.provide(FakeCoopRooms.layer(hub)),
+          Layer.provide(
+            Layer.succeed(CoopTicker.CoopTicker, Effect.succeed(pageTicker))
+          ),
           Layer.provide(Layer.succeed(Game.Frames, frames)),
           Layer.provide(Layer.succeed(Log, log)),
           Layer.provide(Layer.succeed(Levels, app))
@@ -194,7 +190,10 @@ const seat = async (
 };
 
 /** A host and a guest in one lobby, with their picks. */
-const lobbyOfTwo = async (hub: FakeCoopRooms, length?: number) => {
+const lobbyOfTwo = async (
+  hub: FakeCoopRooms.FakeCoopRooms,
+  length?: number
+) => {
   const host = await seat(hub, length);
   const guest = await seat(hub, length);
   await run(host.coop.host("red"));
@@ -205,7 +204,7 @@ const lobbyOfTwo = async (hub: FakeCoopRooms, length?: number) => {
 };
 
 /** The run's own events a seat heard, without its samples. */
-const reported = (events: readonly Event[]): TestEvent[] =>
+const reported = (events: readonly Event[]): TestGame.Event[] =>
   events.flatMap((event) =>
     event._tag === "RunEvent" && event.event._tag !== "Score"
       ? [event.event]
@@ -235,7 +234,7 @@ describe("a declared Coop", () => {
   });
 
   it("plays its engine's simulation from a lobby, and hears the run's own events", async () => {
-    const hub = fakeCoopRooms();
+    const hub = FakeCoopRooms.make();
     const { host, guest } = await lobbyOfTwo(hub, 60);
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(3000);
@@ -252,7 +251,8 @@ describe("a declared Coop", () => {
       common.map((step) => hostRun.hashes[Number(step)]),
       // The simulation's events, as it reported them: its sample, and the end of the run.
       guest.events.some(
-        (event) => event._tag === "RunEvent" && event.event instanceof Score
+        (event) =>
+          event._tag === "RunEvent" && event.event instanceof TestGame.Score
       ),
       reported(host.events),
       reported(guest.events),
@@ -262,15 +262,15 @@ describe("a declared Coop", () => {
         return heard && [heard.local.slot, heard.local.names];
       }),
     ]).toStrictEqual([
-      new Seat.RunStarted({ slot: 0, names: ["Host", "Guest 1"] }),
-      new Seat.RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
+      new CoopEvent.RunStarted({ slot: 0, names: ["Host", "Guest 1"] }),
+      new CoopEvent.RunStarted({ slot: 1, names: ["Host", "Guest 1"] }),
       [null, null],
       ["red", "green"],
       true,
       common.map((step) => guestRun.hashes[Number(step)]),
       true,
-      [new RunEnded({ totals: [0, 0] })],
-      [new RunEnded({ totals: [0, 0] })],
+      [new TestGame.RunEnded({ totals: [0, 0] })],
+      [new TestGame.RunEnded({ totals: [0, 0] })],
       [
         [0, ["Host", "Guest 1"]],
         [1, ["Host", "Guest 1"]],
@@ -281,7 +281,7 @@ describe("a declared Coop", () => {
   // An app may keep an event and match it later (a queue, a log): by then the player may have
   // left, or taken another seat, and the event must still say whose it was.
   it("gives a seat's run events the seat's own local player, which a later seat doesn't change", async () => {
-    const hub = fakeCoopRooms();
+    const hub = FakeCoopRooms.make();
     const { host, guest } = await lobbyOfTwo(hub);
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(500);
@@ -301,15 +301,15 @@ describe("a declared Coop", () => {
   });
 
   it("ticks a run on a worker's timer unless a test provides its own, as it draws on Game.Frames", async () => {
-    const hub = fakeCoopRooms();
-    const ticks = manualTicker();
+    const hub = FakeCoopRooms.make();
+    const ticks = ManualTicker.make();
     const manual = () =>
       run(
         Effect.gen(function* () {
           const context = yield* Layer.build(
             TestCoop.layer.pipe(
-              Layer.provide(hub.layer),
-              Layer.provide(ticks.layer),
+              Layer.provide(FakeCoopRooms.layer(hub)),
+              Layer.provide(ManualTicker.layer(ticks)),
               Layer.provide(Layer.succeed(Log, [])),
               Layer.provide(
                 Layer.succeed(Levels, { length: 1_000_000, loads: 0 })
@@ -327,9 +327,9 @@ describe("a declared Coop", () => {
     await run(host.start);
     await vi.advanceTimersByTimeAsync(1000);
     // No timer ticks these runs: they step when the test's ticker says so.
-    const untouched = [ticks.ticking(), host.debug().stepIndex];
+    const untouched = [ManualTicker.ticking(ticks), host.debug().stepIndex];
     for (let i = 0; i < 50; i++) {
-      ticks.tick();
+      ManualTicker.tick(ticks);
       // oxlint-disable-next-line no-await-in-loop -- each tick's messages cross before the next.
       await vi.advanceTimersByTimeAsync(20);
     }
@@ -339,7 +339,7 @@ describe("a declared Coop", () => {
     ]);
   });
 
-  // Why a test on fake timers runs the Effect that builds the layer through `onFakeTimers`: the
+  // Why a test on fake timers runs the Effect that builds the layer through `PageTimers.layer`: the
   // client reads its time there, and what it forks later runs as that Effect did.
   it("runs on the Clock and the scheduler of the Effect that built its layer, whatever its calls run on", async () => {
     /**
@@ -347,7 +347,7 @@ describe("a declared Coop", () => {
      * run start, the steps that run took, and the steps the real time since had room for.
      */
     const play = async (build: typeof run, call: typeof run) => {
-      const hub = fakeCoopRooms();
+      const hub = FakeCoopRooms.make();
       const host = await seat(hub, undefined, build);
       const guest = await seat(hub, undefined, build);
       const heard = (isIt: (event: Event) => boolean) => () =>
@@ -371,7 +371,8 @@ describe("a declared Coop", () => {
         started: started(),
         steps: host.coop.debug().stepIndex,
         realSteps:
-          (Date.now() - realFromMs) / (TestGame.definition.stepSeconds * 1000),
+          (Date.now() - realFromMs) /
+          (TestGame.TestGame.definition.stepSeconds * 1000),
       };
     };
     const builtOnFakeTimers = await play(run, plain);
@@ -392,9 +393,9 @@ describe("a declared Coop", () => {
   });
 
   it("makes the engine's view for the seat the lobby gave, and its own input source for one player", async () => {
-    const hub = fakeCoopRooms();
+    const hub = FakeCoopRooms.make();
     const { host, guest } = await lobbyOfTwo(hub);
-    const attach = Effect.runFork(onFakeTimers(guest.coop.attach(element)));
+    const attach = Effect.runFork(onPage(guest.coop.attach(element)));
     await settle();
     ManualFrames.runFrameAt(guest.frames, 100);
     await run(host.coop.start);
@@ -424,9 +425,9 @@ describe("a declared Coop", () => {
   // What the engine uses is run in each attach's own scope, not in the layer's, which is the
   // app's: a view's listeners and what it loaded for one mount go when it is unmounted.
   it("gives back what an attach acquired when it detaches, and acquires it again for the next", async () => {
-    const hub = fakeCoopRooms();
+    const hub = FakeCoopRooms.make();
     const { coop, log, frames } = await seat(hub);
-    const attach = () => Effect.runFork(onFakeTimers(coop.attach(element)));
+    const attach = () => Effect.runFork(onPage(coop.attach(element)));
     const first = attach();
     await settle();
     ManualFrames.runFrameAt(frames, 100);
@@ -450,10 +451,10 @@ describe("a declared Coop", () => {
   });
 
   it("tells the lobby the most players it declares, and takes no start above it", async () => {
-    const hub = fakeCoopRooms();
+    const hub = FakeCoopRooms.make();
     const { host } = await lobbyOfTwo(hub);
     const lobby = (canStart: boolean, guests: number) =>
-      new Seat.LobbyChanged({
+      new CoopEvent.LobbyChanged({
         role: "host",
         code: hub.code,
         self: "host",
@@ -483,7 +484,7 @@ describe("a declared Coop", () => {
   });
 
   it("loads its content again for each seat", async () => {
-    const hub = fakeCoopRooms();
+    const hub = FakeCoopRooms.make();
     const { coop, app } = await seat(hub);
     const built = app.loads;
     await run(coop.host("red"));
@@ -496,15 +497,15 @@ describe("a declared Coop", () => {
   });
 
   it("runs on the lockstep numbers it declares, and compares the hash it declares", async () => {
-    const hub = fakeCoopRooms();
+    const hub = FakeCoopRooms.make();
     const paced = () =>
       run(
         Effect.gen(function* () {
           const context = yield* Layer.build(
             PacedCoop.layer.pipe(
-              Layer.provide(hub.layer),
+              Layer.provide(FakeCoopRooms.layer(hub)),
               Layer.provide(
-                Layer.succeed(CoopTicker, Effect.succeed(pageTicker))
+                Layer.succeed(CoopTicker.CoopTicker, Effect.succeed(pageTicker))
               ),
               Layer.provide(Layer.succeed(Log, [])),
               Layer.provide(
@@ -546,15 +547,17 @@ describe("a declared Coop", () => {
   });
 
   it("sends a command of the engine's simulation, and fails with the rejection the rules refused it with", async () => {
-    const hub = fakeCoopRooms();
+    const hub = FakeCoopRooms.make();
     const { host } = await lobbyOfTwo(hub);
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(200);
     const held = Effect.runFork(
-      Effect.result(host.coop.send(new HoldPause({ held: true })))
+      Effect.result(host.coop.send(new TestGame.HoldPause({ held: true })))
     );
     const answered = Effect.runFork(
-      Effect.result(host.coop.send(new AnswerOffer({ offer: 1, value: 3 })))
+      Effect.result(
+        host.coop.send(new TestGame.AnswerOffer({ offer: 1, value: 3 }))
+      )
     );
     await vi.advanceTimersByTimeAsync(500);
     expect([
@@ -563,13 +566,13 @@ describe("a declared Coop", () => {
       host.coop.debug().state?.held,
     ]).toStrictEqual([
       Result.succeed(undefined),
-      Result.fail(new NothingOwed({ offer: 1 })),
+      Result.fail(new TestGame.NothingOwed({ offer: 1 })),
       [true, false],
     ]);
   });
 
   it("stops quietly when the others leave a run that one of its `ends` events ended", async () => {
-    const hub = fakeCoopRooms();
+    const hub = FakeCoopRooms.make();
     const { host, guest } = await lobbyOfTwo(hub, 30);
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(2000);
@@ -578,26 +581,28 @@ describe("a declared Coop", () => {
     expect([
       reported(guest.events),
       guest.events.filter((event) => event._tag === "SeatFailed"),
-    ]).toStrictEqual([[new RunEnded({ totals: [0, 0] })], []]);
+    ]).toStrictEqual([[new TestGame.RunEnded({ totals: [0, 0] })], []]);
   });
 
   it("takes its types from the engine's simulation and from what it uses", () => {
     expectTypeOf(TestCoop.layer).toEqualTypeOf<
-      Layer.Layer<TestCoop, never, CoopRooms | Log | Levels>
+      Layer.Layer<TestCoop, never, CoopRooms.CoopRooms | Log | Levels>
     >();
     const program = Effect.gen(function* () {
       const coop = yield* TestCoop;
       expectTypeOf(
-        coop.send(new AnswerOffer({ offer: 1, value: 3 }))
-      ).toEqualTypeOf<Effect.Effect<void, NothingOwed | Game.CommandDropped>>();
-      expectTypeOf(coop.send(new HoldPause({ held: true }))).toEqualTypeOf<
-        Effect.Effect<void, Game.CommandDropped>
+        coop.send(new TestGame.AnswerOffer({ offer: 1, value: 3 }))
+      ).toEqualTypeOf<
+        Effect.Effect<void, TestGame.NothingOwed | Game.CommandDropped>
       >();
+      expectTypeOf(
+        coop.send(new TestGame.HoldPause({ held: true }))
+      ).toEqualTypeOf<Effect.Effect<void, Game.CommandDropped>>();
       expectTypeOf(coop.debug().state).toEqualTypeOf<Game.StateOf<
-        typeof TestGame
+        typeof TestGame.TestGame
       > | null>();
       // @ts-expect-error -- not a command of the engine's simulation
-      void coop.send(new RunEnded({ totals: [] }));
+      void coop.send(new TestGame.RunEnded({ totals: [] }));
     });
     expect(Effect.isEffect(program)).toBe(true);
   });
@@ -612,32 +617,35 @@ describe("a declared Coop", () => {
       engine: TestEngine,
       input: () => ({ read: () => ({ add: 2 }), dispose: () => {} }),
       content: Levels.pipe(
-        Effect.map(({ length }) => ({ ...testContent, length }))
+        Effect.map(({ length }) => ({ ...TestGame.content, length }))
       ),
       picks: (content) => content.picks,
       config: (content, picks) => ({ content, picks }),
-      hash: hashTestState,
+      hash: TestGame.hash,
     }) {}
     class DataFirst extends Coop("DataFirst", {
       engine: TestEngine,
       input: () => ({ read: () => ({ add: 2 }), dispose: () => {} }),
       // oxlint-disable-next-line unicorn/no-array-method-this-argument -- no array's map: Effect.map given the Effect and the function together, the form this test is about.
-      content: Effect.map(Levels, ({ length }) => ({ ...testContent, length })),
+      content: Effect.map(Levels, ({ length }) => ({
+        ...TestGame.content,
+        length,
+      })),
       // @ts-expect-error -- `content` is unknown here
       picks: (content) => content.picks,
       // @ts-expect-error -- and here, so this is no config of the test game
       config: (content, picks) => ({ content, picks }),
-      hash: hashTestState,
+      hash: TestGame.hash,
     }) {}
     // The piped Effect told the declaration its content, and what loading it needs.
     expectTypeOf(Piped.layer).toEqualTypeOf<
-      Layer.Layer<Piped, never, CoopRooms | Log | Levels>
+      Layer.Layer<Piped, never, CoopRooms.CoopRooms | Log | Levels>
     >();
     // Only the types differ: both are declared, and would play.
     expect([
-      Piped.definition.picks({ ...testContent, length: 1 }),
+      Piped.definition.picks({ ...TestGame.content, length: 1 }),
       DataFirst.coopName,
-    ]).toStrictEqual([testContent.picks, "DataFirst"]);
+    ]).toStrictEqual([TestGame.content.picks, "DataFirst"]);
   });
 });
 
@@ -658,7 +666,7 @@ describe("a Coop's match", () => {
     },
   });
   const local = { slot: 1, names: ["Host", "Guest 1"] };
-  const heard = (event: TestEvent): Event => ({
+  const heard = (event: TestGame.Event): Event => ({
     _tag: "RunEvent",
     event,
     local,
@@ -667,7 +675,7 @@ describe("a Coop's match", () => {
   it("handles the client's own events by their tags", () => {
     expect(
       [
-        new Seat.LobbyChanged({
+        new CoopEvent.LobbyChanged({
           role: "host",
           code: "K7MQ2X",
           self: "host",
@@ -675,9 +683,12 @@ describe("a Coop's match", () => {
           maxPlayers: 2,
           canStart: false,
         }),
-        new Seat.RunStarted({ slot: 1, names: local.names }),
-        new Seat.WaitingChanged({ waitingFor: ["Host"] }),
-        new Seat.SeatFailed({ reason: "hostLost", message: "Lost the host." }),
+        new CoopEvent.RunStarted({ slot: 1, names: local.names }),
+        new CoopEvent.WaitingChanged({ waitingFor: ["Host"] }),
+        new CoopEvent.SeatFailed({
+          reason: "hostLost",
+          message: "Lost the host.",
+        }),
       ].map(toLine)
     ).toStrictEqual([
       "lobby K7MQ2X: 1",
@@ -690,10 +701,12 @@ describe("a Coop's match", () => {
   it("handles the run's events under `run`, each with the local player", () => {
     expect(
       [
-        heard(new Score({ steps: 3, totals: [1, 2], owes: [false, false] })),
-        heard(new OfferOpened({ offer: 1, slot: 0 })),
-        heard(new OfferOpened({ offer: 1, slot: 1 })),
-        heard(new RunEnded({ totals: [5, 6] })),
+        heard(
+          new TestGame.Score({ steps: 3, totals: [1, 2], owes: [false, false] })
+        ),
+        heard(new TestGame.OfferOpened({ offer: 1, slot: 0 })),
+        heard(new TestGame.OfferOpened({ offer: 1, slot: 1 })),
+        heard(new TestGame.RunEnded({ totals: [5, 6] })),
       ].map(toLine)
     ).toStrictEqual([
       undefined,
@@ -702,7 +715,7 @@ describe("a Coop's match", () => {
       "ended with 6 for Guest 1",
     ]);
     expectTypeOf(toLine).toEqualTypeOf<
-      (event: Seat.CoopEvent<TestEvent>) => string | undefined
+      (event: CoopEvent.CoopEvent<TestGame.Event>) => string | undefined
     >();
   });
 
@@ -745,7 +758,7 @@ describe("a Coop's match", () => {
     });
     expect([
       toDoor(
-        new Seat.LobbyChanged({
+        new CoopEvent.LobbyChanged({
           role: "guest",
           code: "K7MQ2X",
           self: "guest-1",
@@ -843,7 +856,7 @@ describe("a Coop's match", () => {
       hash: (state) => state.steps,
     }) {}
     const toNumber = QuietCoop.match({ ...own, run: {} });
-    expect(toNumber(new Seat.RunStarted({ slot: 0, names: [] }))).toBe(2);
+    expect(toNumber(new CoopEvent.RunStarted({ slot: 0, names: [] }))).toBe(2);
     expect(() =>
       QuietCoop.match({ ...own, run: { Stepped: () => 5 } })
     ).toThrow(
@@ -879,12 +892,12 @@ describe("a Coop's match", () => {
 
   it("still refuses an event its cases don't cover when one comes: one the simulation never declared", () => {
     const toNumber = TestCoop.match({ ...own, run: everyRun });
-    const undeclared = { _tag: "Undeclared" } as unknown as TestEvent;
+    const undeclared = { _tag: "Undeclared" } as unknown as TestGame.Event;
     expect(() => toNumber(heard(undeclared))).toThrow(
       'Coop "TestCoop" has no case under `run` for the run\'s event "Undeclared".'
     );
     expect(() =>
-      toNumber({ _tag: "SeatMoved" } as unknown as Seat.SeatFailed)
+      toNumber({ _tag: "SeatMoved" } as unknown as CoopEvent.SeatFailed)
     ).toThrow('Coop "TestCoop" has no case for the event "SeatMoved".');
   });
 });
@@ -1040,9 +1053,9 @@ describe("declaring a Coop", () => {
   );
 
   it("takes an `ends` entry the simulation reports, and every room size from 2 to 16", () => {
-    // oxlint-disable-next-line declaration/class -- the same definition at each size, which a class statement can't loop over.
     const sizes = [2, 16].map(
       (maxPlayers) =>
+        // oxlint-disable-next-line declaration/class -- the same definition at each size, which a class statement can't loop over.
         Coop("Sized", {
           ...rest,
           engine: SharedEngine,

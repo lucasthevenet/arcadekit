@@ -1,7 +1,4 @@
-import {
-  DEFAULT_ICE_SERVERS,
-  browserCoopRoomsLayer,
-} from "arcadekit/net/browser";
+import { CoopRooms, RtcPeerConnector } from "arcadekit/net/browser";
 
 // Where co-op finds the signalling worker and STUN.
 //
@@ -17,7 +14,7 @@ export const signallingUrl = (): string =>
 
 export const iceServers = (): readonly RTCIceServer[] =>
   import.meta.env.VITE_STUN_URLS === undefined
-    ? DEFAULT_ICE_SERVERS
+    ? RtcPeerConnector.defaultIceServers
     : import.meta.env.VITE_STUN_URLS.split(",")
         .map((url) => url.trim())
         .filter((url) => url !== "")
@@ -27,7 +24,7 @@ export const iceServers = (): readonly RTCIceServer[] =>
  * The app's rooms: the signalling worker on the page's origin, and WebRTC links with
  * `iceServers()`. The page's location is read when the layer is built, not at import.
  */
-export const BrowserRoomsLayer = browserCoopRoomsLayer(() => ({
+export const BrowserRoomsLayer = CoopRooms.layer(() => ({
   url: signallingUrl(),
   iceServers: iceServers(),
 }));

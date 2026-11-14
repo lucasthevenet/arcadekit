@@ -11,23 +11,9 @@ import {
 
 import * as Game from "../../game/index";
 import * as Scenario from "../../game/scenario";
-import { createMemoryNetwork } from "../memory-network";
-import { hostLockstepScoped } from "../scoped";
+import { MemoryNetwork, ScopedLockstepSession } from "../index";
 import * as Testing from "./index";
-import {
-  AnswerOffer,
-  HoldPause,
-  NothingOwed,
-  OfferOpened,
-  RunEnded,
-  Score,
-  TestGame,
-  hashTestState,
-  manualTicker,
-  onFakeTimers,
-  testContent,
-} from "./index";
-import type { TestConfig, TestEvent, TestInput } from "./index";
+import { ManualTicker, PageTimers, TestGame } from "./index";
 
 // The test helpers' own rules: what the entry holds, the test game on a loop, its commands as
 // scenarios, the manual ticker, and an Effect on a test's fake timers.
@@ -38,19 +24,10 @@ describe("arcadekit/net/testing", () => {
   // stay the kit's (browser/test-client.ts): a second way here would be public API.
   it("holds a test's rooms, its ticker, its fake timers and a game to run, and no Co-op client of its own", () => {
     expect(Object.keys(Testing).toSorted()).toStrictEqual([
-      "AnswerOffer",
-      "FAKE_JOIN_CODE",
-      "HoldPause",
-      "NothingOwed",
-      "OfferOpened",
-      "RunEnded",
-      "Score",
+      "FakeCoopRooms",
+      "ManualTicker",
+      "PageTimers",
       "TestGame",
-      "fakeCoopRooms",
-      "hashTestState",
-      "manualTicker",
-      "onFakeTimers",
-      "testContent",
     ]);
   });
 });
@@ -59,10 +36,10 @@ describe("arcadekit/net/testing", () => {
  * A run of the test game on a loop: its state, what it reported but its samples, its last
  * sample, and a step, which takes the 100 ms a sample is due after.
  */
-const startRun = (config: TestConfig) => {
-  const loop = Game.makeLoop(TestGame);
-  const reported: TestEvent[] = [];
-  let sampled: Score | undefined;
+const startRun = (config: TestGame.Config) => {
+  const loop = Game.makeLoop(TestGame.TestGame);
+  const reported: TestGame.Event[] = [];
+  let sampled: TestGame.Score | undefined;
   let nowMs = 0;
   loop.subscribe((event) => {
     if (event._tag === "Score") {
@@ -78,7 +55,7 @@ const startRun = (config: TestConfig) => {
     /** Who still owes the open offer an answer, by slot, as the run's last sample says. */
     owes: () => sampled?.owes,
     stepAll: (
-      players: readonly (TestInput | null)[],
+      players: readonly (TestGame.Input | null)[],
       leaving: readonly number[] = []
     ) => {
       nowMs += 100;
@@ -86,19 +63,21 @@ const startRun = (config: TestConfig) => {
     },
     /** `slot`'s player answers offer 1: the next step applies it. */
     answer: (slot: number, value: number) => {
-      loop.send(new AnswerOffer({ offer: 1, value }), slot);
+      loop.send(new TestGame.AnswerOffer({ offer: 1, value }), slot);
     },
   };
 };
 
 describe("the test game", () => {
-  const content = { ...testContent, length: 5, offerEvery: 2 };
+  const content = { ...TestGame.content, length: 5, offerEvery: 2 };
   const start = () => startRun({ content, picks: ["red", "blue"] });
 
   it("is a declared simulation several players play, with one player's input to send", () => {
-    const decode = Schema.decodeUnknownResult(Game.playerInputSchema(TestGame));
+    const decode = Schema.decodeUnknownResult(
+      Game.playerInputSchema(TestGame.TestGame)
+    );
     expect([
-      TestGame.kind,
+      TestGame.TestGame.kind,
       decode({ add: 1 }),
       Result.isFailure(decode({ add: "1" })),
     ]).toStrictEqual(["Simulation", Result.succeed({ add: 1 }), true]);
@@ -123,8 +102,8 @@ describe("the test game", () => {
       owes(),
     ]).toStrictEqual([
       [
-        new OfferOpened({ offer: 1, slot: 0 }),
-        new OfferOpened({ offer: 1, slot: 1 }),
+        new TestGame.OfferOpened({ offer: 1, slot: 0 }),
+        new TestGame.OfferOpened({ offer: 1, slot: 1 }),
       ],
       [2, [true, false]],
       // The step that took the last answer played.
@@ -145,14 +124,14 @@ describe("the test game", () => {
     }
     expect([state.steps, reported]).toStrictEqual([
       5,
-      [new RunEnded({ totals: [5, 6] })],
+      [new TestGame.RunEnded({ totals: [5, 6] })],
     ]);
   });
 });
 
 describe("the test game's commands", () => {
-  const scenario = Scenario.make(TestGame);
-  const content = { ...testContent, length: 100, offerEvery: 2 };
+  const scenario = Scenario.make(TestGame.TestGame);
+  const content = { ...TestGame.content, length: 100, offerEvery: 2 };
   const config = { content, picks: ["red", "blue"] };
   const ones = { players: [{ add: 1 }, { add: 1 }], leaving: [] };
 
@@ -161,15 +140,15 @@ describe("the test game's commands", () => {
     Scenario.given(config),
     Scenario.step(ones, 2),
     Scenario.reported(
-      new OfferOpened({ offer: 1, slot: 0 }),
-      new OfferOpened({ offer: 1, slot: 1 })
+      new TestGame.OfferOpened({ offer: 1, slot: 0 }),
+      new TestGame.OfferOpened({ offer: 1, slot: 1 })
     ),
   ];
 
   it("takes each player's answer to the open offer, and plays on once both have answered", () =>
     scenario(
       untilOffered,
-      Scenario.send(new AnswerOffer({ offer: 1, value: 4 })),
+      Scenario.send(new TestGame.AnswerOffer({ offer: 1, value: 4 })),
       Scenario.step(ones),
       Scenario.state((state) =>
         expect([state.bonus, state.owes, state.steps]).toStrictEqual([
@@ -178,7 +157,7 @@ describe("the test game's commands", () => {
           2,
         ])
       ),
-      Scenario.send(new AnswerOffer({ offer: 1, value: 9 }), 1),
+      Scenario.send(new TestGame.AnswerOffer({ offer: 1, value: 9 }), 1),
       // Applied before the step, so the step that takes the last answer plays.
       Scenario.step(ones),
       Scenario.state((state) =>
@@ -194,20 +173,20 @@ describe("the test game's commands", () => {
   it("refuses an answer to an offer its sender doesn't owe: another offer, none open, or answered already", () =>
     scenario(
       Scenario.given(config),
-      Scenario.send(new AnswerOffer({ offer: 1, value: 1 })),
+      Scenario.send(new TestGame.AnswerOffer({ offer: 1, value: 1 })),
       Scenario.step(ones, 2),
-      Scenario.refused(new NothingOwed({ offer: 1 })),
+      Scenario.refused(new TestGame.NothingOwed({ offer: 1 })),
       Scenario.reported(
-        new OfferOpened({ offer: 1, slot: 0 }),
-        new OfferOpened({ offer: 1, slot: 1 })
+        new TestGame.OfferOpened({ offer: 1, slot: 0 }),
+        new TestGame.OfferOpened({ offer: 1, slot: 1 })
       ),
-      Scenario.send(new AnswerOffer({ offer: 2, value: 1 })),
-      Scenario.send(new AnswerOffer({ offer: 1, value: 3 })),
-      Scenario.send(new AnswerOffer({ offer: 1, value: 5 })),
+      Scenario.send(new TestGame.AnswerOffer({ offer: 2, value: 1 })),
+      Scenario.send(new TestGame.AnswerOffer({ offer: 1, value: 3 })),
+      Scenario.send(new TestGame.AnswerOffer({ offer: 1, value: 5 })),
       Scenario.step(ones),
       Scenario.refused(
-        new NothingOwed({ offer: 2 }),
-        new NothingOwed({ offer: 1 })
+        new TestGame.NothingOwed({ offer: 2 }),
+        new TestGame.NothingOwed({ offer: 1 })
       ),
       Scenario.state((state) => expect(state.bonus).toStrictEqual([3, 0]))
     ));
@@ -219,16 +198,16 @@ describe("the test game's commands", () => {
         picks: config.picks,
       }),
       Scenario.reported(
-        new OfferOpened({ offer: 1, slot: 0 }),
-        new OfferOpened({ offer: 1, slot: 1 })
+        new TestGame.OfferOpened({ offer: 1, slot: 0 }),
+        new TestGame.OfferOpened({ offer: 1, slot: 1 })
       ),
       Scenario.sampled(
-        new Score({ steps: 0, totals: [0, 0], owes: [true, true] })
+        new TestGame.Score({ steps: 0, totals: [0, 0], owes: [true, true] })
       ),
       Scenario.step(ones, 2),
       Scenario.state((state) => expect(state.steps).toBe(0)),
-      Scenario.send(new AnswerOffer({ offer: 1, value: 4 })),
-      Scenario.send(new AnswerOffer({ offer: 1, value: 9 }), 1),
+      Scenario.send(new TestGame.AnswerOffer({ offer: 1, value: 4 })),
+      Scenario.send(new TestGame.AnswerOffer({ offer: 1, value: 9 }), 1),
       Scenario.step(ones),
       Scenario.state((state) =>
         expect([state.bonus, state.owes, state.steps]).toStrictEqual([
@@ -246,15 +225,15 @@ describe("the test game's commands", () => {
         content: { ...content, offerEvery: 0 },
         picks: config.picks,
       }),
-      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.send(new TestGame.HoldPause({ held: true }), 1),
       Scenario.step(ones, 3),
       Scenario.state((state) =>
         expect([state.steps, state.held]).toStrictEqual([0, [false, true]])
       ),
-      Scenario.send(new HoldPause({ held: false }), 1),
+      Scenario.send(new TestGame.HoldPause({ held: false }), 1),
       Scenario.step(ones),
       Scenario.state((state) => expect(state.steps).toBe(1)),
-      Scenario.send(new HoldPause({ held: true }), 1),
+      Scenario.send(new TestGame.HoldPause({ held: true }), 1),
       Scenario.step(ones),
       // A player who leaves lets go of it in the step it leaves at.
       Scenario.step({ players: [{ add: 1 }, null], leaving: [1] }),
@@ -264,19 +243,19 @@ describe("the test game's commands", () => {
     ));
 });
 
-describe(manualTicker, () => {
+describe(ManualTicker.make, () => {
   it("ticks each run it was started for, until that run stops", () => {
-    const manual = manualTicker();
+    const manual = ManualTicker.make();
     const ticks: string[] = [];
     const stopA = manual.ticker(() => ticks.push("a"));
     const stopB = manual.ticker(() => ticks.push("b"));
-    manual.tick();
+    ManualTicker.tick(manual);
     stopA();
-    manual.tick();
-    const ticking = manual.ticking();
+    ManualTicker.tick(manual);
+    const ticking = ManualTicker.ticking(manual);
     stopB();
-    manual.tick();
-    expect([ticks, ticking, manual.ticking()]).toStrictEqual([
+    ManualTicker.tick(manual);
+    expect([ticks, ticking, ManualTicker.ticking(manual)]).toStrictEqual([
       ["a", "b", "b"],
       1,
       0,
@@ -292,20 +271,27 @@ const microtaskTurns = async (turns: number): Promise<void> => {
   }
 };
 
-describe(onFakeTimers, () => {
+/** `effect` on the page's timers, as a test on fake timers runs each of its Effects. */
+const onPage = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.provide(PageTimers.layer));
+
+describe("PageTimers.layer", () => {
   let scope: Scope.Closeable;
 
   /** A lone host's session of the test game, in the test's scope, made by `on`'s Effect. */
-  const hostAlone = (on: typeof onFakeTimers) =>
+  const hostAlone = (on: typeof onPage) =>
     Effect.runPromise(
       on(
-        hostLockstepScoped({
-          simulation: TestGame,
-          config: { content: testContent, picks: ["red"] },
+        ScopedLockstepSession.host({
+          simulation: TestGame.TestGame,
+          config: { content: TestGame.content, picks: ["red"] },
           contentHash: "content-1",
-          transport: createMemoryNetwork({ seed: 1 }).connect("host"),
+          transport: MemoryNetwork.connect(
+            MemoryNetwork.make({ seed: 1 }),
+            "host"
+          ),
           local: { read: () => ({ add: 1 }) },
-          hash: hashTestState,
+          hash: TestGame.hash,
           inputDelay: 2,
           hashEvery: 30,
           peers: [],
@@ -327,7 +313,7 @@ describe(onFakeTimers, () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     const log: string[] = [];
     const slept = Effect.runPromise(
-      onFakeTimers(
+      onPage(
         Effect.gen(function* () {
           const clock = yield* Effect.clockWith(Effect.succeed);
           const fromMs = Number(clock.monotonicTimeNanosUnsafe()) / 1_000_000;
@@ -347,19 +333,20 @@ describe(onFakeTimers, () => {
   // helper the two move together, as a page's do.
   it("steps a lockstep session by the faked time, which Effect's own Clock doesn't read", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
-    const faked = await hostAlone(onFakeTimers);
+    const faked = await hostAlone(onPage);
     // Effect's own Clock is on the real time, and how much of that passes here is the machine's
     // to say: a busy one takes long over a faked second. `Date` is not faked, so it measures it.
     const realFromMs = Date.now();
     const real = await hostAlone((effect) => effect);
     const runs = [
-      Effect.runFork(onFakeTimers(faked.run())),
+      Effect.runFork(onPage(faked.run())),
       // Its sleeps are on the faked `setTimeout` too, so it ticks as often; its time is not.
       Effect.runFork(real.run()),
     ];
     await vi.advanceTimersByTimeAsync(1000);
     const realSteps =
-      (Date.now() - realFromMs) / (TestGame.definition.stepSeconds * 1000);
+      (Date.now() - realFromMs) /
+      (TestGame.TestGame.definition.stepSeconds * 1000);
     expect([
       // A second of 60 Hz steps, to the rounding of a step's length.
       faked.stepIndex >= 59 && faked.stepIndex <= 60,
@@ -380,7 +367,7 @@ describe(onFakeTimers, () => {
         Effect.andThen(Effect.sync(() => done.push(name)))
       );
     const fibers = [
-      Effect.runFork(onFakeTimers(yielding("on the helper"))),
+      Effect.runFork(onPage(yielding("on the helper"))),
       Effect.runFork(yielding("on Effect's own scheduler")),
     ];
     // Microtasks alone: no timer is advanced.
@@ -395,11 +382,11 @@ describe(onFakeTimers, () => {
       yield* Effect.addFinalizer(() => Effect.void);
       return yield* Effect.fail("no" as const);
     });
-    expectTypeOf(onFakeTimers(effect)).toEqualTypeOf<
+    expectTypeOf(onPage(effect)).toEqualTypeOf<
       Effect.Effect<never, "no", Scope.Scope>
     >();
-    expect(
-      Effect.runSyncExit(onFakeTimers(Effect.scoped(effect)))
-    ).toStrictEqual(Exit.fail("no"));
+    expect(Effect.runSyncExit(onPage(Effect.scoped(effect)))).toStrictEqual(
+      Exit.fail("no")
+    );
   });
 });

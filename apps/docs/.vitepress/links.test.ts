@@ -82,8 +82,8 @@ describe("a relative link in a README", () => {
     expect(
       rewrite("../../../../../apps/survivor-demo/alchemy.run.ts", WORKER)
     ).toBe(`${REPO_URL}/blob/main/apps/survivor-demo/alchemy.run.ts`);
-    expect(rewrite("../signalling/protocol.ts#L10", WORKER)).toBe(
-      `${REPO_URL}/blob/main/packages/arcadekit/src/net/signalling/protocol.ts#L10`
+    expect(rewrite("../signalling/join-code.ts#L10", WORKER)).toBe(
+      `${REPO_URL}/blob/main/packages/arcadekit/src/net/signalling/join-code.ts#L10`
     );
     expect(rewrite("../../../../../apps/survivor-demo", WORKER)).toBe(
       `${REPO_URL}/tree/main/apps/survivor-demo`

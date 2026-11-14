@@ -7,7 +7,7 @@ import { getHeapSpaceStatistics } from "node:v8";
 //   tests cap it at, stepped by `Game.Loop`;
 // - an engine's frames, each of which steps and draws, run on `ManualFrames`;
 // - a lockstep run's ticks: two peers' scoped sessions over the in-memory network, ticked by
-//   `manualTicker` on a Clock the bench moves.
+//   `ManualTicker` on a Clock the bench moves.
 //
 // Each workload is the same on every run: seeded, with time given by the bench. Only the timings
 // move. The time is the median of several rounds. The heap is counted over one more round, from a
@@ -17,17 +17,8 @@ import { ChooseUpgrade, GameContent, Survivors } from "@arcadekit/survivors";
 import type { HeroInput, SurvivorsConfig } from "@arcadekit/survivors";
 import * as Game from "arcadekit/game/browser";
 import { ManualFrames } from "arcadekit/game/testing";
-import {
-  createMemoryNetwork,
-  hostLockstepScoped,
-  joinLockstepScoped,
-} from "arcadekit/net";
-import {
-  TestGame,
-  hashTestState,
-  manualTicker,
-  testContent,
-} from "arcadekit/net/testing";
+import { MemoryNetwork, ScopedLockstepSession } from "arcadekit/net";
+import { ManualTicker, TestGame } from "arcadekit/net/testing";
 import { Clock, Effect, Layer, Schema } from "effect";
 
 declare const gc: () => void;
@@ -320,32 +311,32 @@ const lockstepTicks = () => {
     monotonicTimeNanos: Effect.sync(() => BigInt(nowMs) * 1_000_000n),
     sleep: () => Effect.never,
   };
-  const network = createMemoryNetwork({ seed: 1 });
-  const ticks = manualTicker();
+  const network = MemoryNetwork.make({ seed: 1 });
+  const ticks = ManualTicker.make();
   const operate = () => {
     nowMs += TICK_MS;
-    network.advance(nowMs);
-    ticks.tick();
+    MemoryNetwork.advance(network, nowMs);
+    ManualTicker.tick(ticks);
   };
   const shared = {
-    simulation: TestGame,
-    config: { content: testContent, picks: ["red", "green"] },
+    simulation: TestGame.TestGame,
+    config: { content: TestGame.content, picks: ["red", "green"] },
     contentHash: "bench",
     local: { read: (step: number) => ({ add: step % 3 }) },
-    hash: hashTestState,
+    hash: TestGame.hash,
     inputDelay: 3,
     hashEvery: 10,
   };
   return Effect.gen(function* () {
-    const host = yield* hostLockstepScoped({
+    const host = yield* ScopedLockstepSession.host({
       ...shared,
-      transport: network.connect("host"),
+      transport: MemoryNetwork.connect(network, "host"),
       peers: ["guest"],
       seed: 1,
     });
-    const guest = yield* joinLockstepScoped({
+    const guest = yield* ScopedLockstepSession.join({
       ...shared,
-      transport: network.connect("guest"),
+      transport: MemoryNetwork.connect(network, "guest"),
       host: "host",
       players: ["host", "guest"],
     });

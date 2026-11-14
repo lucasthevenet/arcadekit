@@ -5,6 +5,8 @@ status: accepted
 # The kit is written as Effect's modules are, and is plain only where correctness needs it
 
 > Amended on 2026-11-13, by what [`arcadekit/input`'s rework](https://github.com/lucasthevenet/arcadekit/pull/100) found, and the text below says so where it changed. Host events a frame or a step reads as state keep plain listeners; a resource that a plain handler makes has its host's lifecycle; every rework's records keep their wording, as core's did; and a module's constants are camelCase.
+>
+> Amended on 2026-11-14, when `arcadekit/net` took Effect's shape: the WebRTC transport the table below names is `RtcTransport.fromLinks`, and `dataChannelText` is in `net/browser/internal/`.
 
 The kit is an Effect library: `effect` is its one required peer, and every game on it is an Effect program. Its modules were not written as Effect's are. Each took a shape of its own: a class with methods (`StateHasher`, `SpatialGrid`, `FixedStepClock`, `RingReader`), a factory that returns an object of closures (`createPool`, `makeRng`), loose functions (`clamp`, `hypot2`), each documented its own way. A reader who knows `MutableRef` or `Option` learned the kit module by module, and an agent writing a new module had nothing to copy but the module beside it.
 
@@ -66,7 +68,7 @@ These are the kinds `AGENTS.md` listed as plain on purpose before this decision.
 | Input reads (a `Game.Engine`'s `input`, `InputController`'s reads, a `Coop`'s `input`) | Plain | A step reads its input inside the frame or tick that runs it (2). The listeners that fill a controller were plain for cost, and stay plain for (2): they write what they hear during the event's dispatch, where a stream would write it a task later, after a frame may have read the controller. Adding and removing them is the host's `acquireRelease` around the input source, since the `input` handler that makes the controller can run no Effect. |
 | The `FrameSource` adapter | Plain | It is the bridge: the host's callback, which `Effect.callback` waits on. |
 | The audio mixer's play calls | Plain | A sound view calls them inside its frame (2). The mixer's lifecycle is Effect. |
-| Per-message channel code (`dataChannelText`, `linksTransport`) | Effect | Plain for cost (a fiber per message). Messages become a stream or a queue where that buys a lifecycle or interruption. What a plain tick calls stays a plain call while the tick is plain. |
+| Per-message channel code (`dataChannelText`, `RtcTransport.fromLinks`) | Effect | Plain for cost (a fiber per message). Messages become a stream or a queue where that buys a lifecycle or interruption. What a plain tick calls stays a plain call while the tick is plain. |
 | Rules behind an Effect shell: `room-state.ts` and the worker's `room.ts` | Plain | Reducers: inputs in, outputs out, a rejection as a value (3). |
 | The worker's `sockets.ts`, which carries out a room's outputs on its sockets | Effect | It does I/O, plain for cost; Effect buys a typed failure and a span. |
 | Foldkit's `update` and `view` | Plain | (4). |

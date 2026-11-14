@@ -1,6 +1,6 @@
 import { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import { AudioSettings } from "arcadekit/audio";
-import { LobbyChanged } from "arcadekit/net/browser";
+import { CoopEvent } from "arcadekit/net/browser";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
@@ -38,7 +38,7 @@ export const Phase = defineTaggedUnion({
    * The lobby as the Co-op client last reported it: the local player's role, the join code,
    * who is in it with their picks, and whether the host can start.
    */
-  CoopLobby: { lobby: LobbyChanged },
+  CoopLobby: { lobby: CoopEvent.LobbyChanged },
   CoopPlaying: {},
   /** `offer` is the number of the offer the choices are from: the pick names it. */
   CoopLevelUp: { offer: Schema.Int, choices: Schema.Array(UpgradeChoice) },

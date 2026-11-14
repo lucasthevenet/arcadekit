@@ -150,7 +150,7 @@ type DeclaredPlayerInputs<Input> = typeof declared extends keyof Input
  *
  * A simulation with any other step input, a struct written by hand with `players` and `leaving`
  * included, is a type error that names `Game.PlayerInputs` where a host infers `Input` from the
- * simulation it is handed: `hostLockstep`, `playerInputSchema`, and the `Coop` builder, which
+ * simulation it is handed: `LockstepSession.host`, `playerInputSchema`, and the `Coop` builder, which
  * infers it from its engine's. Where `Input` is named
  * (`PlayersSimulation<Config, State, PlayerInputs<P>, ...>`), the types can't tell: such a
  * struct's type is a players' input's too, since the mark is optional, and the host's throw is

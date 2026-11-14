@@ -46,12 +46,12 @@ const SECTIONS = {
 } as const;
 
 // The entries not yet in Effect's module shape (ADR-0024, "An Effect module" in the guide), each
-// by its first folder under src/, which covers its sub-entries: "net" is arcadekit/net and
+// by its first folder under src/, which covers its sub-entries: "net" was arcadekit/net and
 // arcadekit/net/browser, net/testing, net/signalling and net/worker. Every other entry is held
 // to the shape by the tests below, so an entry leaves this list in the change that reworks it,
 // and joins it never. `pnpm smoke` reads the list here (scripts/smoke-test.mjs), to compile the
 // doc comments' examples of every entry off it.
-const NOT_YET_EFFECT_STYLE: readonly string[] = ["net"];
+const NOT_YET_EFFECT_STYLE: readonly string[] = [];
 
 // The categories a doc comment's `@category` takes: one closed list, which the guide's table
 // under "The doc comment" explains. A new one is a change to both.
@@ -132,7 +132,7 @@ const listed = (builders: readonly string[]): string =>
 // The files that return a class and build no declaration.
 const OTHER_CLASS_FACTORIES: readonly string[] = [
   // The Durable Object class Cloudflare makes, sized by the Worker's module.
-  "net/worker/index.ts",
+  "net/worker/signalling-worker.ts",
 ];
 
 // The exported factories that stay, in the entries not yet in Effect's shape: a plain module of
@@ -140,12 +140,7 @@ const OTHER_CLASS_FACTORIES: readonly string[] = [
 // a part each game supplies. In an entry with Effect's shape a constructor is its module's
 // `make`, so an entry's factories leave this list in the change that reworks it. Adding a name
 // here is a design decision: say in the PR why the new thing is not a declaration.
-const FACTORIES: readonly string[] = [
-  "createMemoryNetwork",
-  "createRoom",
-  "createRoomState",
-  "createSocketRoom",
-];
+const FACTORIES: readonly string[] = [];
 
 // The factories a game still calls to supply one of its parts, for want of a declaration. None
 // is left (ADR-0020). A name is listed here only until the change that adds its declaration,

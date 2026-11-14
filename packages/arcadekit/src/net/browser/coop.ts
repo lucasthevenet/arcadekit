@@ -1,10 +1,20 @@
+/**
+ * Coops: a game as several players play it, each in their own browser (ADR-0019, ADR-0021).
+ *
+ * `Coop` is a declaration with a service. A game declares one from its engine, and what only a run
+ * that several players share needs besides: one player's input source, the content every peer
+ * loads, the lobby picks and the config they make, the state hash the peers compare, the most
+ * players, and the events that end a run. The class is the key of the Co-op client an app drives
+ * (`CoopClient`), its `layer` provides it over the app's rooms (`CoopRooms`), and its `match`
+ * turns what a seat reports into an app's Messages. What a seat runs is in `internal/`.
+ *
+ * @since 0.7.0
+ */
 import { Context, Effect, Layer, Scope } from "effect";
 
 import { Frames } from "../../game/browser";
 import type {
-  AttachError,
   EngineClass,
-  GameCrashed,
   InputSource,
   Used,
   Uses,
@@ -14,46 +24,134 @@ import { playerInputSchema } from "../../game/index";
 import type {
   AnyEvent,
   AnySimulation,
-  CommandDropped,
   EventOf,
   PlayerInputOf,
   PlayersSimulation,
-  RefusalFor,
 } from "../../game/index";
-import type { Ticker } from "../scoped";
-import { DEFAULT_ROOM_SIZE, MAX_ROOM_SIZE } from "../signalling/protocol";
-import { coopClient } from "./coop-client";
-import type { CoopPresented } from "./coop-client";
-import type {
-  CoopEvent,
-  LobbyChanged,
-  RunStarted,
-  SeatContext,
-  SeatFailed,
-  WaitingChanged,
-} from "./coop-events";
+import { Room } from "../signalling/index";
+import type * as CoopClient from "./coop-client";
+import type * as CoopEvent from "./coop-event";
 import { CoopRooms } from "./coop-rooms";
-import { workerTicker } from "./ticker";
+import { CoopTicker } from "./coop-ticker";
+import { coopClient } from "./internal/coop-client";
+import type { CoopPresented } from "./internal/coop-client";
 
-// A game for several players, each in their own browser: the `Coop` declaration, and the Co-op
-// client its class is the key of (ADR-0019, ADR-0021). The client's implementation is in
-// coop-client.ts.
-
-/** One handler per event or sample of a run, by its tag, each given the local player. */
+/**
+ * What a `Coop`'s `match` takes under `run`: one handler per event or sample of the run, by its
+ * tag, each given the event and the local player of the seat that heard it.
+ *
+ * **When to use**
+ *
+ * Rarely by name: `match` checks the cases it is given against it.
+ *
+ * **Example** (A run's cases)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game/browser";
+ * import { Coop } from "arcadekit/net/browser";
+ * import type { RunCases } from "arcadekit/net/browser";
+ * import { Effect, Schema } from "effect";
+ *
+ * class Sum extends Game.Simulation("Sum", {
+ *   input: Game.PlayerInputs(Schema.Int),
+ *   create: () => ({ total: 0 }),
+ *   step: (state, input) => {
+ *     for (const add of input.players) {
+ *       state.total += add ?? 0;
+ *     }
+ *   },
+ * }) {}
+ * class SumEngine extends Game.Engine("SumEngine", {
+ *   simulation: Sum,
+ *   view: () => ({ render: () => {}, dispose: () => {} }),
+ *   input: () => ({ read: () => ({ players: [1], leaving: [] }), dispose: () => {} }),
+ * }) {}
+ * class SumCoop extends Coop("SumCoop", {
+ *   engine: SumEngine,
+ *   input: () => ({ read: () => 1, dispose: () => {} }),
+ *   content: Effect.succeed({ colours: ["red", "blue"] }),
+ *   picks: (content) => content.colours,
+ *   config: () => null,
+ *   hash: (state) => state.total,
+ * }) {}
+ *
+ * class Filled extends Game.Event("Filled", { total: Schema.Int }) {}
+ * const cases: RunCases<Filled> = {
+ *   Filled: ({ total }, { local }) => `slot ${local.slot} saw ${total}`,
+ * };
+ * cases.Filled(new Filled({ total: 100 }), { local: { slot: 1, names: [] } }); // => "slot 1 saw 100"
+ * SumCoop.coopName; // => "SumCoop"
+ * ```
+ *
+ * @category utility types
+ * @since 0.7.0
+ */
 export type RunCases<Event> = {
   readonly [
     E in Event as E extends { readonly _tag: infer Tag extends string }
       ? Tag
       : never
-  ]: (event: E, context: SeatContext) => unknown;
+  ]: (event: E, context: CoopEvent.SeatContext) => unknown;
 };
 
-/** What a `Coop`'s `match` takes: a handler for each of the client's own events, and `run`'s for the run's. */
+/**
+ * What a `Coop`'s `match` takes: a handler for each of the Co-op client's own events, by its tag,
+ * and under `run` the run's.
+ *
+ * **When to use**
+ *
+ * Rarely by name: `match` checks the cases it is given against it, so a missing case is a type
+ * error.
+ *
+ * **Example** (Every case of a co-op game with no events)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game/browser";
+ * import { Coop } from "arcadekit/net/browser";
+ * import { CoopEvent } from "arcadekit/net/browser";
+ * import { Effect, Schema } from "effect";
+ *
+ * class Sum extends Game.Simulation("Sum", {
+ *   input: Game.PlayerInputs(Schema.Int),
+ *   create: () => ({ total: 0 }),
+ *   step: (state, input) => {
+ *     for (const add of input.players) {
+ *       state.total += add ?? 0;
+ *     }
+ *   },
+ * }) {}
+ * class SumEngine extends Game.Engine("SumEngine", {
+ *   simulation: Sum,
+ *   view: () => ({ render: () => {}, dispose: () => {} }),
+ *   input: () => ({ read: () => ({ players: [1], leaving: [] }), dispose: () => {} }),
+ * }) {}
+ * class SumCoop extends Coop("SumCoop", {
+ *   engine: SumEngine,
+ *   input: () => ({ read: () => 1, dispose: () => {} }),
+ *   content: Effect.succeed({ colours: ["red", "blue"] }),
+ *   picks: (content) => content.colours,
+ *   config: () => null,
+ *   hash: (state) => state.total,
+ * }) {}
+ *
+ * const toText = SumCoop.match({
+ *   LobbyChanged: ({ code }) => `lobby ${code}`,
+ *   RunStarted: ({ slot }) => `slot ${slot}`,
+ *   WaitingChanged: ({ waitingFor }) => `waiting ${waitingFor.length}`,
+ *   SeatFailed: ({ reason }) => reason,
+ *   run: {},
+ * });
+ * toText(new CoopEvent.RunStarted({ slot: 1, names: ["Host", "Guest 1"] })); // => "slot 1"
+ * ```
+ *
+ * @category utility types
+ * @since 0.7.0
+ */
 export interface CoopCases<Event> {
-  readonly LobbyChanged: (event: LobbyChanged) => unknown;
-  readonly RunStarted: (event: RunStarted) => unknown;
-  readonly WaitingChanged: (event: WaitingChanged) => unknown;
-  readonly SeatFailed: (event: SeatFailed) => unknown;
+  readonly LobbyChanged: (event: CoopEvent.LobbyChanged) => unknown;
+  readonly RunStarted: (event: CoopEvent.RunStarted) => unknown;
+  readonly WaitingChanged: (event: CoopEvent.WaitingChanged) => unknown;
+  readonly SeatFailed: (event: CoopEvent.SeatFailed) => unknown;
   /** The run's own events and its sample, each by its tag. */
   readonly run: RunCases<Event>;
 }
@@ -65,135 +163,102 @@ type Returned<Handlers> = Handlers[keyof Handlers] extends (
   ? Result
   : never;
 
-/** For tests and debugging: a read of the current seat's run. */
-export interface CoopDebug<State> {
-  readonly stepIndex: number;
-  /** The lockstep session's stop error, or null. */
-  readonly error: string | null;
-  /** The last 32 state hashes, by step. */
-  readonly hashes: Readonly<Record<number, number>>;
-  /** The local player's slot; -1 with no seat. */
-  readonly slot: number;
-  /** The run's state, or null with no run. Read it; never change it. */
-  readonly state: State | null;
-}
-
 /**
- * The Co-op client: one player's side of a co-op game in the browser, as an app drives it. Each
- * `Coop` class is the service key of one: `yield* MyCoop`. It runs the lobby over the signalling
- * worker and WebRTC, then a lockstep session stepped on a worker's timer, and a view drawn on
- * animation frames while attached. A hidden tab keeps stepping at full rate, so it holds no one up, and
- * draws nothing, since the browser runs no animation frames for it (ADR-0012). What a player
- * decides reaches the run as a command, through `send`: it rides the player's next step, so
- * every peer applies it at that step.
+ * The key string of the Co-op client of the declaration named `Name`.
  *
- * `attach` and `listen` have the shapes of `arcadekit/foldkit`'s `EngineEntry.Attachable`, so an
- * app mounts the client as it mounts an engine.
- */
-export interface CoopClient<State, Event, Command, E, Refusals> {
-  /**
-   * Hosts a room with lobby pick `pick`, after interrupting the seat before it. Returns at once:
-   * the lobby, the run and any failure are reported through `listen`, and none of them before
-   * every earlier seat has closed.
-   */
-  readonly host: (pick: string) => Effect.Effect<void>;
-  /** Joins the room with join code `code`, with lobby pick `pick`, as `host` opens one. */
-  readonly join: (code: string, pick: string) => Effect.Effect<void>;
-  /** Changes the local player's lobby pick. Does nothing once the run has started. */
-  readonly choose: (pick: string) => Effect.Effect<void>;
-  /**
-   * Host: starts the run with everyone linked, if the lobby's `canStart` is true. Does nothing
-   * otherwise, or for a guest. The worker confirms, then each guest is told the players and
-   * their picks. A guest that links in between can't make the run larger than the game's
-   * `maxPlayers`: the last to join fail with `leftOut`.
-   */
-  readonly start: Effect.Effect<void>;
-  /**
-   * Sends a command to the run as the local player and waits for the rules' answer, as
-   * `Game.Engine`'s `send` does. The command rides the player's next step, and every peer's
-   * rules take or refuse it alike at that step. It succeeds when this player's own took it. It
-   * fails with the rejection they refused it with, one of those the command declares, and with
-   * `CommandDropped` when they gave no answer: there is no run (`noRun`: no seat, or still its
-   * lobby), or the run stopped, or this player left, first (`runEnded`).
-   *
-   * ```ts
-   * yield* coop
-   *   .send(new ChooseUpgrade({ offer, index }))
-   *   .pipe(Effect.catchTag(["OfferClosed", "CommandDropped"], () => Effect.void));
-   * ```
-   *
-   * It completes a few steps after it is sent (the run's `inputDelay`, and the network), never
-   * inside a step, and waits for as long as the run waits on a player. Interrupt it to take the
-   * command back while it has no step yet, which is about one step's time; after that every
-   * peer applies it. A player the host removes after its command's step was confirmed is told
-   * `runEnded`, though the others applied the command.
-   *
-   * When it succeeds, or fails with a rejection, a listener (`listen`) has been called with
-   * what the command's step reported, as an engine's has: an Effect that listens and then sends
-   * knows, on the line after the send, what that step did. Here nothing is excepted: a run that
-   * throws in that step answers `CommandDropped`. The order is that of the two calls, not of
-   * the Messages an app makes of them.
-   */
-  readonly send: <C extends Command>(
-    command: C
-  ) => Effect.Effect<void, RefusalFor<Refusals, C> | CommandDropped>;
-  /**
-   * Leaves the lobby or the run, and returns once its room, links, session and ticker have
-   * closed, with those of any earlier seat still closing. No event of that seat follows. The
-   * others see this player stop sending (ADR-0012's drop-out).
-   */
-  readonly leave: Effect.Effect<void>;
-  /**
-   * Draws the run into `element` on every frame, and reads input from it, for as long as it
-   * runs. With no run it draws `render(null, t)`. Fails with what one of the engine's `uses`
-   * fails with (`E`: an asset that can't be loaded), with `AttachError` if the view or the input
-   * source can't be made, and with `GameCrashed` if a frame throws (that frame is the last),
-   * each with nothing left attached and after leaving: a seat left running undrawn would hold
-   * the others up. Interrupt it to detach, which doesn't leave. One attach at a time: a second
-   * dies.
-   */
-  readonly attach: (
-    element: HTMLElement
-  ) => Effect.Effect<never, AttachError | GameCrashed | E>;
-  /**
-   * Calls `onEvent` with everything the current seat reports while the scope is open: the
-   * client's own events and the run's, in one order. A seat hears its run from the start, the
-   * host's as a guest's: after its `RunStarted`, what the simulation's `create` reports, then
-   * the first sample, then what each step reports, each once. The class's `match` makes the
-   * handler.
-   */
-  readonly listen: (
-    onEvent: (event: CoopEvent<Event>) => void
-  ) => Effect.Effect<void, never, Scope.Scope>;
-  readonly debug: () => CoopDebug<State>;
-}
-
-/** How often a run ticks on the default ticker. Browsers clamp shorter timers to about 4 ms anyway. */
-const TICK_MS = 4;
-
-/**
- * What ticks a co-op run, every few milliseconds: made when a run starts, in the run's scope,
- * and stopped with it. A timer in a dedicated worker, which a hidden tab doesn't throttle,
- * unless a test provides its own: `manualTicker().layer` (`arcadekit/net/testing`).
+ * **When to use**
+ *
+ * Rarely: it is part of the Coop's type, which a game names by its class.
+ *
+ * **Example** (A Coop's key)
  *
  * ```ts
- * MyCoop.layer.pipe(
- *   Layer.provide(Layer.succeed(CoopTicker, Effect.succeed(ticker)))
- * );
+ * import * as Game from "arcadekit/game/browser";
+ * import { Coop } from "arcadekit/net/browser";
+ * import type { CoopId } from "arcadekit/net/browser";
+ * import { Effect, Schema } from "effect";
+ *
+ * class Sum extends Game.Simulation("Sum", {
+ *   input: Game.PlayerInputs(Schema.Int),
+ *   create: () => ({ total: 0 }),
+ *   step: (state, input) => {
+ *     for (const add of input.players) {
+ *       state.total += add ?? 0;
+ *     }
+ *   },
+ * }) {}
+ * class SumEngine extends Game.Engine("SumEngine", {
+ *   simulation: Sum,
+ *   view: () => ({ render: () => {}, dispose: () => {} }),
+ *   input: () => ({ read: () => ({ players: [1], leaving: [] }), dispose: () => {} }),
+ * }) {}
+ * class SumCoop extends Coop("SumCoop", {
+ *   engine: SumEngine,
+ *   input: () => ({ read: () => 1, dispose: () => {} }),
+ *   content: Effect.succeed({ colours: ["red", "blue"] }),
+ *   picks: (content) => content.colours,
+ *   config: () => null,
+ *   hash: (state) => state.total,
+ * }) {}
+ *
+ * const key: CoopId<"SumCoop"> = SumCoop.key;
+ * key; // => "arcadekit/net/Coop/SumCoop"
  * ```
+ *
+ * @category utility types
+ * @since 0.7.0
  */
-export const CoopTicker: Context.Reference<
-  Effect.Effect<Ticker, never, Scope.Scope>
-> = Context.Reference("arcadekit/net/CoopTicker", {
-  defaultValue: () => workerTicker({ everyMs: TICK_MS }),
-});
-
-/** The key string of the Co-op client of the declaration named `Name`. */
 export type CoopId<Name extends string> = `arcadekit/net/Coop/${Name}`;
 
 /**
  * The type-level identity of a Co-op client's service: what `yield* MyCoop` requires. It is the
  * type of the class's own values, so the class names it: `Layer.Layer<MyCoop>`.
+ *
+ * **When to use**
+ *
+ * Rarely: name the class instead, as `Layer.Layer<SumCoop>` does.
+ *
+ * **Example** (The client a Coop's layer provides)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game/browser";
+ * import { Coop } from "arcadekit/net/browser";
+ * import { CoopClient } from "arcadekit/net/browser";
+ * import { FakeCoopRooms } from "arcadekit/net/testing";
+ * import { Effect, Schema } from "effect";
+ *
+ * class Sum extends Game.Simulation("Sum", {
+ *   input: Game.PlayerInputs(Schema.Int),
+ *   create: () => ({ total: 0 }),
+ *   step: (state, input) => {
+ *     for (const add of input.players) {
+ *       state.total += add ?? 0;
+ *     }
+ *   },
+ * }) {}
+ * class SumEngine extends Game.Engine("SumEngine", {
+ *   simulation: Sum,
+ *   view: () => ({ render: () => {}, dispose: () => {} }),
+ *   input: () => ({ read: () => ({ players: [1], leaving: [] }), dispose: () => {} }),
+ * }) {}
+ * class SumCoop extends Coop("SumCoop", {
+ *   engine: SumEngine,
+ *   input: () => ({ read: () => 1, dispose: () => {} }),
+ *   content: Effect.succeed({ colours: ["red", "blue"] }),
+ *   picks: (content) => content.colours,
+ *   config: () => null,
+ *   hash: (state) => state.total,
+ * }) {}
+ *
+ * const program = Effect.gen(function* () {
+ *   return CoopClient.isCoopClient(yield* SumCoop);
+ * });
+ * const rooms = FakeCoopRooms.layer(FakeCoopRooms.make());
+ * Effect.runSync(program.pipe(Effect.provide(SumCoop.layer), Effect.provide(rooms))); // => true
+ * ```
+ *
+ * @category utility types
+ * @since 0.7.0
  */
 export type CoopService<
   Name extends string,
@@ -204,19 +269,109 @@ export type CoopService<
   Refusals,
 > = Context.ServiceClass.Shape<
   CoopId<Name>,
-  CoopClient<State, Event, Command, E, Refusals>
+  CoopClient.CoopClient<State, Event, Command, E, Refusals>
 >;
 
-/** Any class made by `Coop`, as far as its `match` reads it. */
+/**
+ * Any class made by `Coop`, as far as its `match` reads it.
+ *
+ * **When to use**
+ *
+ * To take any Coop in a function of the app's own, such as one that names its game.
+ *
+ * **Example** (The game a Coop plays)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game/browser";
+ * import { Coop } from "arcadekit/net/browser";
+ * import type { AnyCoop } from "arcadekit/net/browser";
+ * import { Effect, Schema } from "effect";
+ *
+ * class Sum extends Game.Simulation("Sum", {
+ *   input: Game.PlayerInputs(Schema.Int),
+ *   create: () => ({ total: 0 }),
+ *   step: (state, input) => {
+ *     for (const add of input.players) {
+ *       state.total += add ?? 0;
+ *     }
+ *   },
+ * }) {}
+ * class SumEngine extends Game.Engine("SumEngine", {
+ *   simulation: Sum,
+ *   view: () => ({ render: () => {}, dispose: () => {} }),
+ *   input: () => ({ read: () => ({ players: [1], leaving: [] }), dispose: () => {} }),
+ * }) {}
+ * class SumCoop extends Coop("SumCoop", {
+ *   engine: SumEngine,
+ *   input: () => ({ read: () => 1, dispose: () => {} }),
+ *   content: Effect.succeed({ colours: ["red", "blue"] }),
+ *   picks: (content) => content.colours,
+ *   config: () => null,
+ *   hash: (state) => state.total,
+ * }) {}
+ *
+ * const gameOf = (coop: AnyCoop) => coop.engine.simulation.simulationName;
+ * gameOf(SumCoop); // => "Sum"
+ * ```
+ *
+ * @category models
+ * @since 0.7.0
+ */
 export interface AnyCoop {
   readonly kind: "Coop";
   readonly engine: { readonly simulation: AnySimulation };
 }
 
 /**
- * The class `Coop` returns: the key of its Co-op client, and the Layer that provides it. Its
- * types are the engine's and the content's: `U` is what the engine uses, `Content` what
- * `content` loads and `R` what that load needs.
+ * The class `Coop` returns: the key of its Co-op client, and the Layer that provides it.
+ *
+ * **When to use**
+ *
+ * Rarely by name: a game extends the class `Coop` returns, and its types come from the engine
+ * and the content.
+ *
+ * **Details**
+ *
+ * Its types are the engine's and the content's: `U` is what the engine uses, `Content` what
+ * `content` loads and `R` what that load needs. Its statics are `kind`, `coopName`, the
+ * `engine`, the `definition` every peer must agree on, the `layer` and `match`.
+ *
+ * **Example** (A Coop's statics)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game/browser";
+ * import { Coop } from "arcadekit/net/browser";
+ * import { Effect, Schema } from "effect";
+ *
+ * class Sum extends Game.Simulation("Sum", {
+ *   input: Game.PlayerInputs(Schema.Int),
+ *   create: () => ({ total: 0 }),
+ *   step: (state, input) => {
+ *     for (const add of input.players) {
+ *       state.total += add ?? 0;
+ *     }
+ *   },
+ * }) {}
+ * class SumEngine extends Game.Engine("SumEngine", {
+ *   simulation: Sum,
+ *   view: () => ({ render: () => {}, dispose: () => {} }),
+ *   input: () => ({ read: () => ({ players: [1], leaving: [] }), dispose: () => {} }),
+ * }) {}
+ * class SumCoop extends Coop("SumCoop", {
+ *   engine: SumEngine,
+ *   input: () => ({ read: () => 1, dispose: () => {} }),
+ *   content: Effect.succeed({ colours: ["red", "blue"] }),
+ *   picks: (content) => content.colours,
+ *   config: () => null,
+ *   hash: (state) => state.total,
+ * }) {}
+ *
+ * SumCoop.kind; // => "Coop"
+ * SumCoop.engine === SumEngine; // => true
+ * ```
+ *
+ * @category models
+ * @since 0.7.0
  */
 export interface CoopClass<
   Name extends string,
@@ -233,7 +388,13 @@ export interface CoopClass<
 > extends Context.ServiceClass<
   CoopService<Name, State, Event, Command, Effect.Error<U[keyof U]>, Refusals>,
   CoopId<Name>,
-  CoopClient<State, Event, Command, Effect.Error<U[keyof U]>, Refusals>
+  CoopClient.CoopClient<
+    State,
+    Event,
+    Command,
+    Effect.Error<U[keyof U]>,
+    Refusals
+  >
 > {
   readonly kind: "Coop";
   readonly coopName: Name;
@@ -291,24 +452,38 @@ export interface CoopClass<
    * run's events and sample under `run`, by theirs, each with the local player beside it.
    *
    * ```ts
-   * const toMessage = SurvivorsCoop.match({
-   *   LobbyChanged: (lobby) => Message.GotCoopLobby({ lobby }),
-   *   RunStarted: ({ slot, names }) => Message.GotCoopStarted({ slot, names }),
-   *   WaitingChanged: ({ waitingFor }) => Message.GotCoopWaiting({ waitingFor }),
-   *   SeatFailed: ({ message }) => Message.GotCoopFailed({ error: message }),
+   * import * as Game from "arcadekit/game/browser";
+   * import { Coop } from "arcadekit/net/browser";
+   * import { Effect, Schema } from "effect";
+   *
+   * class Filled extends Game.Event("Filled", { by: Schema.Int }) {}
+   * class Sum extends Game.Simulation("Sum", {
+   *   input: Game.PlayerInputs(Schema.Int),
+   *   events: [Filled],
+   *   create: () => ({ total: 0 }),
+   *   step: () => {},
+   * }) {}
+   * class SumEngine extends Game.Engine("SumEngine", {
+   *   simulation: Sum,
+   *   view: () => ({ render: () => {}, dispose: () => {} }),
+   *   input: () => ({ read: () => ({ players: [], leaving: [] }), dispose: () => {} }),
+   * }) {}
+   * class SumCoop extends Coop("SumCoop", {
+   *   engine: SumEngine,
+   *   input: () => ({ read: () => 1, dispose: () => {} }),
+   *   content: Effect.succeed({ colours: ["red", "blue"] }),
+   *   picks: (content) => content.colours,
+   *   config: () => null,
+   *   hash: (state) => state.total,
+   * }) {}
+   *
+   * const toText = SumCoop.match({
+   *   LobbyChanged: ({ code }) => `lobby ${code}`,
+   *   RunStarted: ({ slot, names }) => `you are ${names[slot]}`,
+   *   WaitingChanged: ({ waitingFor }) => `waiting for ${waitingFor.join(", ")}`,
+   *   SeatFailed: ({ message }) => message,
    *   run: {
-   *     Hud: (hud) => Message.GotHud({ hud }),
-   *     LeveledUp: ({ hero, offer, choices }, { local }) =>
-   *       hero === local.slot
-   *         ? Message.GotCoopLevelUp({ offer, choices })
-   *         : undefined,
-   *     HeroLeft: () => undefined,
-   *     RunEnded: ({ summaries }, { local }) => {
-   *       const summary = summaries[local.slot];
-   *       return summary === undefined
-   *         ? undefined
-   *         : Message.GotCoopRunEnded({ summary });
-   *     },
+   *     Filled: ({ by }, { local }) => (by === local.slot ? "you filled it" : undefined),
    *   },
    * });
    * ```
@@ -330,13 +505,69 @@ export interface CoopClass<
     this: Self,
     cases: Cases
   ) => (
-    event: CoopEvent<EventOf<Self["engine"]["simulation"]>>
+    event: CoopEvent.CoopEvent<EventOf<Self["engine"]["simulation"]>>
   ) => Returned<Omit<Cases, "run">> | Returned<Cases["run"]>;
 }
 
 /**
  * What `Coop` takes: the game's engine, and what only a run that several players share needs.
  * Every type comes from the engine's simulation and from `content`.
+ *
+ * **When to use**
+ *
+ * Rarely by name: a game writes it in place, as `Coop`'s second argument, and reads it back from
+ * the class's `definition` in a test.
+ *
+ * **Details**
+ *
+ * - `engine` is the game: its simulation, what its view is made from and the view. Its
+ *   simulation's `input` is a `Game.PlayerInputs`.
+ * - `input` makes one player's input source, where the engine's reads the whole step's. It is made
+ *   on each attach, after the view, with what the engine uses.
+ * - `content` loads what a run is played with, once per seat: JSON data, whose hash every peer
+ *   compares. `picks` lists the valid lobby picks, and `config` makes the run's config from the
+ *   content and the players' picks, by slot.
+ * - `hash` digests the whole state, compared every `lockstep.hashEvery` steps (60).
+ * - `maxPlayers` is the most players a run takes: a room's 4 unless it says.
+ * - `ends` lists the events that end a run, after which the others leaving is no failure.
+ * - `lockstep.inputDelay` is the steps ahead input is scheduled (4).
+ *
+ * **Example** (What every peer agrees on, read in Node)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game/browser";
+ * import { Coop } from "arcadekit/net/browser";
+ * import { Effect, Schema } from "effect";
+ *
+ * class Sum extends Game.Simulation("Sum", {
+ *   input: Game.PlayerInputs(Schema.Int),
+ *   create: () => ({ total: 0 }),
+ *   step: (state, input) => {
+ *     for (const add of input.players) {
+ *       state.total += add ?? 0;
+ *     }
+ *   },
+ * }) {}
+ * class SumEngine extends Game.Engine("SumEngine", {
+ *   simulation: Sum,
+ *   view: () => ({ render: () => {}, dispose: () => {} }),
+ *   input: () => ({ read: () => ({ players: [1], leaving: [] }), dispose: () => {} }),
+ * }) {}
+ * class SumCoop extends Coop("SumCoop", {
+ *   engine: SumEngine,
+ *   input: () => ({ read: () => 1, dispose: () => {} }),
+ *   content: Effect.succeed({ colours: ["red", "blue"] }),
+ *   picks: (content) => content.colours,
+ *   config: () => null,
+ *   hash: (state) => state.total,
+ * }) {}
+ *
+ * SumCoop.definition.picks({ colours: ["red", "blue"] }); // => ["red", "blue"]
+ * SumCoop.definition.hash({ total: 12 }); // => 12
+ * ```
+ *
+ * @category models
+ * @since 0.7.0
  */
 export interface CoopDefinition<
   EngineName extends string,
@@ -441,32 +672,21 @@ const SEAT_EVENTS: readonly string[] = [
 /** What `match` is handed, as far as it reads it: the types have checked the rest. */
 type GivenCases = Readonly<Record<string, (event: unknown) => unknown>> & {
   readonly run?: Readonly<
-    Record<string, (event: unknown, context: SeatContext) => unknown>
+    Record<string, (event: unknown, context: CoopEvent.SeatContext) => unknown>
   >;
 };
 
 /**
- * A game as several players play it, each in their own browser: the game's engine, played in
- * lockstep from a lobby. The class is the key of the Co-op client an app drives, and its `layer`
- * provides it.
+ * Declares a Coop: a game as several players play it, each in their own browser, the game's
+ * engine played in lockstep from a lobby. The class is the key of the Co-op client an app drives,
+ * and its `layer` provides it.
  *
- * ```ts
- * export class SurvivorsCoop extends Coop("SurvivorsCoop", {
- *   engine: SurvivorsEngine,
- *   input: heroDevice,
- *   content: SurvivorsContent.load,
- *   picks: (content) => content.heroes.map((hero) => hero.id),
- *   config: (content, heroIds) => ({ content, heroIds }),
- *   maxPlayers: MAX_HEROES,
- *   hash: hashWorld,
- *   ends: [RunEnded],
- * }) {}
+ * **When to use**
  *
- * // In the app:
- * const coop = yield* SurvivorsCoop;
- * yield* coop.host(heroId);
- * yield* coop.send(new ChooseUpgrade({ offer, index }));
- * ```
+ * Once per game that several players play together, from the engine the game already declares
+ * for one player, in the game's `./browser` entry.
+ *
+ * **Details**
  *
  * The engine's simulation, what its view is made from and the view serve both hosts, and the
  * view is told the local player, whose slot it reads when it draws. What a co-op run needs
@@ -476,9 +696,46 @@ type GivenCases = Readonly<Record<string, (event: unknown) => unknown>> & {
  * hears its run from the start, the host's as a guest's: what the simulation's `create` reports
  * (a first stage's banner, say) follows the seat's `RunStarted`, then the first sample.
  *
+ * **Example** (A game for two to four players)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game/browser";
+ * import { Coop } from "arcadekit/net/browser";
+ * import { Effect, Schema } from "effect";
+ *
+ * class Sum extends Game.Simulation("Sum", {
+ *   input: Game.PlayerInputs(Schema.Int),
+ *   create: () => ({ total: 0 }),
+ *   step: (state, input) => {
+ *     for (const add of input.players) {
+ *       state.total += add ?? 0;
+ *     }
+ *   },
+ * }) {}
+ * class SumEngine extends Game.Engine("SumEngine", {
+ *   simulation: Sum,
+ *   view: () => ({ render: () => {}, dispose: () => {} }),
+ *   input: () => ({ read: () => ({ players: [1], leaving: [] }), dispose: () => {} }),
+ * }) {}
+ * class SumCoop extends Coop("SumCoop", {
+ *   engine: SumEngine,
+ *   input: () => ({ read: () => 1, dispose: () => {} }),
+ *   content: Effect.succeed({ colours: ["red", "blue"] }),
+ *   picks: (content) => content.colours,
+ *   config: () => null,
+ *   hash: (state) => state.total,
+ * }) {}
+ *
+ * SumCoop.key; // => "arcadekit/net/Coop/SumCoop"
+ * SumCoop.definition.config({ colours: [] }, ["red", "blue"]); // => null
+ * ```
+ *
  * Throws when declared, for what the types let through: an engine whose simulation's `input`
  * was not declared with `Game.PlayerInputs`, an `ends` entry the simulation doesn't report, and
  * a `maxPlayers` no room can have.
+ *
+ * @category declarations
+ * @since 0.7.0
  */
 export const Coop = <
   const Name extends string,
@@ -550,14 +807,14 @@ export const Coop = <
     }
     ends.add(tag);
   }
-  const maxPlayers = definition.maxPlayers ?? DEFAULT_ROOM_SIZE;
+  const maxPlayers = definition.maxPlayers ?? Room.defaultSize;
   if (
     !Number.isInteger(maxPlayers) ||
     maxPlayers < 2 ||
-    maxPlayers > MAX_ROOM_SIZE
+    maxPlayers > Room.maxSize
   ) {
     throw new Error(
-      `Coop "${name}" has maxPlayers ${maxPlayers}, a size no room has: a signalling room holds 2 to ${MAX_ROOM_SIZE} players. Write a whole number from 2 to ${MAX_ROOM_SIZE}, or leave it out for ${DEFAULT_ROOM_SIZE}.`
+      `Coop "${name}" has maxPlayers ${maxPlayers}, a size no room has: a signalling room holds 2 to ${Room.maxSize} players. Write a whole number from 2 to ${Room.maxSize}, or leave it out for ${Room.defaultSize}.`
     );
   }
   /** What a run reports, by tag: its events, then its sample. Each has a case under `run`. */
@@ -609,7 +866,7 @@ export const Coop = <
   };
   const Key = Context.Service<
     CoopService<Name, State, Event, Command, E, Refusals>,
-    CoopClient<State, Event, Command, E, Refusals>
+    CoopClient.CoopClient<State, Event, Command, E, Refusals>
   >()(`arcadekit/net/Coop/${name}` as CoopId<Name>);
   const uses = Effect.all(
     engine.definition.uses ?? {}
@@ -659,7 +916,7 @@ export const Coop = <
     static readonly layer = layer;
     static readonly match = (cases: GivenCases) => {
       checkCases(cases);
-      return (heard: CoopEvent<{ readonly _tag: string }>) => {
+      return (heard: CoopEvent.CoopEvent<{ readonly _tag: string }>) => {
         // One of the run's events is handled by its own tag, under `run`.
         if (heard._tag === "RunEvent") {
           const handle = cases.run?.[heard.event._tag];
