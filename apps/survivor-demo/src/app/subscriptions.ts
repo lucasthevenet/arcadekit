@@ -1,7 +1,7 @@
 import { Survivors } from "@arcadekit/survivors";
 import { SurvivorsCoop, SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { AudioSystem } from "arcadekit/audio";
-import { engineEntry, keyPresses, shortcutPresses } from "arcadekit/foldkit";
+import { EngineEntry, KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
 import { Effect, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
@@ -85,7 +85,7 @@ export const subscriptions = Subscription.make<
    * loaded, a view that can't be made and a crash are shown like LoadContent's failure. Co-op's
    * screens hand the viewport to the co-op client instead.
    */
-  engine: engineEntry({
+  engine: EngineEntry.make({
     engine: SurvivorsEngine,
     isViewportMounted: (model) =>
       model.isViewportMounted && isLoaded(model.phase) && !isCoop(model.phase),
@@ -107,7 +107,7 @@ export const subscriptions = Subscription.make<
    * screens are reached from the menu, after the sheet has loaded. An attach that fails (the
    * sheet, no WebGL, a frame that throws) ends co-op: the client has left by then.
    */
-  coop: engineEntry({
+  coop: EngineEntry.make({
     engine: SurvivorsCoop,
     isViewportMounted: (model) =>
       model.isViewportMounted && isCoop(model.phase),
@@ -130,7 +130,7 @@ export const subscriptions = Subscription.make<
       }),
       dependenciesToStream: ({ canPause }) =>
         canPause
-          ? keyPresses(["Escape", "KeyP"], () => Message.PressedEscape())
+          ? KeyPresses.make(["Escape", "KeyP"], () => Message.PressedEscape())
           : Stream.empty,
     }
   ),
@@ -165,7 +165,7 @@ export const subscriptions = Subscription.make<
     {
       modelToDependencies: () => ({}),
       dependenciesToStream: () =>
-        shortcutPresses(["KeyM"], () => Message.PressedMute()),
+        ShortcutPresses.make(["KeyM"], () => Message.PressedMute()),
     }
   ),
 }));

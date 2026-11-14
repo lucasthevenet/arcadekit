@@ -11,7 +11,7 @@ describe("a name in a table's cell", () => {
       "net/",
       "worker",
     ]);
-    expect(namePieces("engineEntry")).toStrictEqual(["engineEntry"]);
+    expect(namePieces("EngineEntry.make")).toStrictEqual(["EngineEntry.make"]);
   });
 
   it("is rendered with its breaks, and escaped", async () => {

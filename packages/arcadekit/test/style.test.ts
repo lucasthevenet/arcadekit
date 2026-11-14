@@ -51,7 +51,7 @@ const SECTIONS = {
 // to the shape by the tests below, so an entry leaves this list in the change that reworks it,
 // and joins it never. `pnpm smoke` reads the list here (scripts/smoke-test.mjs), to compile the
 // doc comments' examples of every entry off it.
-const NOT_YET_EFFECT_STYLE: readonly string[] = ["net", "foldkit"];
+const NOT_YET_EFFECT_STYLE: readonly string[] = ["net"];
 
 // The categories a doc comment's `@category` takes: one closed list, which the guide's table
 // under "The doc comment" explains. A new one is a change to both.

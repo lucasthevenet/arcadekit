@@ -51,6 +51,6 @@ Each entry's README has an example. An entry imports only the entries under "Use
 | [`arcadekit/net/testing`](src/net/README.md) | `fakeCoopRooms`, `manualTicker`, `onFakeTimers` and a test game (`TestGame`): the rooms, the ticker, the Clock and scheduler of a test on fake timers, and a game for a `Coop`'s tests, with no browser | Effect, core, game, DOM types |
 | [`arcadekit/net/signalling`](src/net/README.md) | The protocol a signalling server speaks, as Effect Schemas | Effect |
 | [`arcadekit/net/worker`](src/net/worker/README.md) | The signalling worker, for Cloudflare: `signallingRoom` (a room's Durable Object class) and `signallingWorker` (the Worker's `fetch`) | Effect, Cloudflare Workers |
-| [`arcadekit/foldkit`](src/foldkit/README.md) | `gameViewport`, `engineEntry`, `keyPresses`, `shortcutPresses` | Effect, Foldkit, game, DOM |
+| [`arcadekit/foldkit`](src/foldkit/README.md) | `Viewport`, `EngineEntry`, `KeyPresses`, `ShortcutPresses`, each a namespace in Effect's shape | Effect, Foldkit, game, DOM |
 
 The source is in [the arcadekit repository](https://github.com/lucasthevenet/arcadekit), with two genre packages and two demo games built on these entries. [ADR-0018](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0018-one-package-with-entries.md) records why the kit is one package.

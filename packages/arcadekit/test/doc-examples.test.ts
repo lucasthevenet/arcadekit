@@ -51,14 +51,18 @@ vi.mock(import("three"), async (importOriginal) => ({
 // as `pnpm smoke` does: the list is the style test's. An example imports what a game would: any of
 // those entries, a sub-entry's examples its parent's too (`arcadekit/content` beside
 // `arcadekit/content/browser`), `effect`, to run what an entry's Effects do, and
-// `effect/persistence`, for the store a save is kept in (EFFECT_MODULES).
+// `effect/persistence`, for the store a save is kept in (EFFECT_MODULES). An example runs as an
+// async function's body, awaited, so one may `await Effect.runPromise(...)` where what it shows
+// resumes on a fiber of its own, as a Stream's consumer does: `Effect.runSync` flushes only the
+// fiber it runs.
 //
 // An entry that needs the DOM has examples written as a browser runs them. They run here on a
 // stand-in of the few globals they use (BROWSER_ENTRIES), made again for each example. An entry
 // joins the list with what it uses: the stand-in grows only as far as an example needs. An
 // example of `arcadekit/render-three` may import `three` (PEER_MODULES), whose renderer needs
 // WebGL, which Node hasn't: it runs on a stand-in renderer that draws nothing and keeps the
-// size it is given.
+// size it is given. An example of `arcadekit/foldkit` may import `foldkit` and `foldkit/message`,
+// for the app a viewport and an engine entry are part of.
 
 const packageDir = path.resolve(import.meta.dirname, "..");
 const srcDir = path.join(packageDir, "src");
@@ -91,6 +95,7 @@ const entries = Object.entries(
 
 // The entries whose examples run in a browser, by import path.
 const BROWSER_ENTRIES: ReadonlySet<string> = new Set([
+  "foldkit",
   "input",
   "render-three",
   "save/browser",
@@ -100,20 +105,32 @@ const BROWSER_ENTRIES: ReadonlySet<string> = new Set([
 const EFFECT_MODULES: readonly string[] = ["effect", "effect/persistence"];
 
 // The peer libraries an example may import, each by its import path: `three`, which
-// `arcadekit/render-three` draws with.
-const PEER_MODULES: readonly string[] = ["three"];
+// `arcadekit/render-three` draws with, and Foldkit's modules, which `arcadekit/foldkit` binds to.
+const PEER_MODULES: readonly string[] = ["three", "foldkit", "foldkit/message"];
 
-/** A key event, as a browser makes one: the fields `arcadekit/input` reads. */
+/** A key event, as a browser makes one: the fields `arcadekit/input` and `arcadekit/foldkit` read. */
 class StandInKeyboardEvent extends Event {
   readonly code: string;
   readonly repeat: boolean;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  readonly altKey: boolean;
   constructor(
     type: string,
-    init?: { readonly code?: string; readonly repeat?: boolean }
+    init?: {
+      readonly code?: string;
+      readonly repeat?: boolean;
+      readonly ctrlKey?: boolean;
+      readonly metaKey?: boolean;
+      readonly altKey?: boolean;
+    }
   ) {
     super(type);
     this.code = init?.code ?? "";
     this.repeat = init?.repeat ?? false;
+    this.ctrlKey = init?.ctrlKey ?? false;
+    this.metaKey = init?.metaKey ?? false;
+    this.altKey = init?.altKey ?? false;
   }
 }
 
@@ -174,6 +191,11 @@ const browserStandIn = (): Readonly<Record<string, unknown>> => {
   };
 };
 
+/** The constructor of async functions, which an example's body is made with, so it may `await`. */
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
+  ...parameters: string[]
+) => (...values: unknown[]) => Promise<void>;
+
 /** One example of a doc comment: where it is, its title and its code. */
 interface Example {
   readonly name: string;
@@ -216,7 +238,7 @@ const runnable = (code: string): string =>
     code
       .replaceAll(/^import type [\s\S]*?;$/gmu, "")
       .replaceAll(
-        /^import (?<names>\{[\s\S]*?\}) from "(?<from>arcadekit\/[\w/-]+|effect(?:\/[\w-]+)?)";$/gmu,
+        /^import (?<names>\{[\s\S]*?\}) from "(?<from>arcadekit\/[\w/-]+|effect(?:\/[\w-]+)?|foldkit(?:\/[\w-]+)?)";$/gmu,
         (_whole, names: string, from: string) =>
           `const ${names} = kit[${JSON.stringify(from)}];`
       )
@@ -281,7 +303,7 @@ describe.each(entries)("arcadekit/$entry", ({ entry, publicFile }) => {
       expect(got, `${expression} // => ${String(want)}`).toStrictEqual(want);
     };
     // oxlint-disable-next-line eslint/no-new-func -- the example is the kit's own doc comment, run as its reader would.
-    new Function("kit", "check", runnable(code))(kit, check);
+    await new AsyncFunction("kit", "check", runnable(code))(kit, check);
     expect(
       shown,
       "The example shows no result as `// =>`: show what a reader should see."

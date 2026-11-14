@@ -1,6 +1,6 @@
 import { PushPuzzle } from "@arcadekit/push-puzzle";
 import { PushPuzzleEngine } from "@arcadekit/push-puzzle/browser";
-import { engineEntry, keyPresses, shortcutPresses } from "arcadekit/foldkit";
+import { EngineEntry, KeyPresses, ShortcutPresses } from "arcadekit/foldkit";
 import { Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 
@@ -19,7 +19,7 @@ export const subscriptions = Subscription.make<
    * entry that reported a failed load wouldn't run again after a retry. A sheet that can't be
    * loaded, a view that can't be made and a crash are shown like LoadContent's failure.
    */
-  engine: engineEntry({
+  engine: EngineEntry.make({
     engine: PushPuzzleEngine,
     isViewportMounted: (model) =>
       model.isViewportMounted && isLoaded(model.phase),
@@ -36,7 +36,7 @@ export const subscriptions = Subscription.make<
     {
       modelToDependencies: () => ({}),
       dependenciesToStream: () =>
-        shortcutPresses(["KeyM"], () => Message.PressedMuteKey()),
+        ShortcutPresses.make(["KeyM"], () => Message.PressedMuteKey()),
     }
   ),
 
@@ -49,7 +49,7 @@ export const subscriptions = Subscription.make<
       }),
       dependenciesToStream: ({ inRun }) =>
         inRun
-          ? keyPresses(["KeyR", "Escape"], (code) =>
+          ? KeyPresses.make(["KeyR", "Escape"], (code) =>
               code === "KeyR"
                 ? Message.PressedRestart()
                 : Message.PressedEscape()

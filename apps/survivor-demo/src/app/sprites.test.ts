@@ -210,7 +210,7 @@ describe("loading", () => {
       Effect.runPromise
     );
     // The run starts, pauses, resumes and ends. The viewport's attach is what fails, and
-    // `engineEntry`'s onError reports it.
+    // the engine entry's onError reports it.
     expect(messages).toStrictEqual([
       Message.StartedRun(),
       done,

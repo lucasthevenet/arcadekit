@@ -44,7 +44,7 @@ export const Model = Schema.Struct({
   hud: Hud,
   /** The player's volume and mute: the defaults until the saved ones are read at startup. */
   audio: AudioSettings.AudioSettings,
-  /** True while the viewport is in the document: the engine runs only then (see gameViewport). */
+  /** True while the viewport is in the document: the engine runs only then (see Viewport.make). */
   isViewportMounted: Schema.Boolean,
 });
 export type Model = typeof Model.Type;

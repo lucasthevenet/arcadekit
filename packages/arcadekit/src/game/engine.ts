@@ -721,7 +721,7 @@ const makeEngine = <Config, State, Input, Event, Command, E, Refusals>(
  * **When to use**
  *
  * Once per game that runs in the browser. An app's Foldkit Subscription attaches it to the
- * viewport (`arcadekit/foldkit`'s `engineEntry`). To step a simulation with nothing drawn, use a
+ * viewport (`arcadekit/foldkit`'s `EngineEntry.make`). To step a simulation with nothing drawn, use a
  * loop or a scenario.
  *
  * **Details**

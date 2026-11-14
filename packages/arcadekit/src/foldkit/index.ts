@@ -1,12 +1,10 @@
-// Connects a game's engine to a Foldkit app: `gameViewport` renders the element the engine
-// draws into, and `engineEntry` runs the engine there and turns its events into Messages.
-// `keyPresses` is for an app's own keys (pause, restart), and `shortcutPresses` for one that
-// works on any screen (mute).
-export {
-  type AttachableEngine,
-  engineEntry,
-  gameViewport,
-  type EngineEntryConfig,
-  type GameViewportMessages,
-} from "./viewport";
-export { keyPresses, shortcutPresses } from "./keys";
+// arcadekit/foldkit: a game's engine in a Foldkit app. The view renders the viewport (`Viewport`),
+// the engine entry keeps the engine attached to it and turns its events into Messages
+// (`EngineEntry`), and the app's own keys are Streams of Messages (`KeyPresses`, and
+// `ShortcutPresses` for a key that works on any screen). Each module is a namespace. The view's
+// part is plain, as Foldkit's `view` is; what runs the engine is Effect (ADR-0024).
+
+export * as EngineEntry from "./engine-entry";
+export * as KeyPresses from "./key-presses";
+export * as ShortcutPresses from "./shortcut-presses";
+export * as Viewport from "./viewport";

@@ -10,6 +10,8 @@ Superseded by [ADR-0018](0018-one-package-with-entries.md): the nine packages ar
 
 > Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-14: `arcadekit/render-three` is a set of namespaces in Effect's shape, and the text below uses its names for the camera helpers: `Camera.fit`, `Camera.follow` and `Camera.orbit`.
 
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-14: `arcadekit/foldkit` is a set of namespaces in Effect's shape, and the text below uses its names: the viewport is rendered with `Viewport.make`.
+
 #26 asked how the kit becomes usable from outside this workspace. Until now every package was `"private": true` and exported its TypeScript source directly. The decisions below came from a grilling session.
 
 ## Decision
@@ -47,7 +49,7 @@ Superseded by [ADR-0018](0018-one-package-with-entries.md): the nine packages ar
 **What users need.**
 
 - ESM.
-- TypeScript 5.4 or later, for `NoInfer` in `gameViewport`. Effect 4.1's own type files need 5.7, so 5.4 to 5.6 work only with `skipLibCheck`.
+- TypeScript 5.4 or later, for `NoInfer` in `Viewport.make`. Effect 4.1's own type files need 5.7, so 5.4 to 5.6 work only with `skipLibCheck`.
 - Node 22 or later for tooling.
 
 **Checks.** CI runs `publint` and `@arethetypeswrong/cli` on every package, plus a pack-and-install smoke test. The smoke test packs every package and installs the tarballs into a throwaway project outside the workspace. There it type-checks with TypeScript 5.9 and 7, builds a small game with Vite, and checks that only one copy of `effect` and `three` is installed.
