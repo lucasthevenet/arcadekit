@@ -4,8 +4,8 @@
 // finds them, src/lib/loader.ts adds them to Starlight's `docs` collection, and src/lib/sidebar.ts
 // groups them. As a page renders, the Markdown processor's plugins make the links the pages
 // already have work here (links.ts), give the glossary's terms headings of their own
-// (glossary.ts), let a table fit a phone (tables.ts), and leave out of the package's README what
-// the landing page replaces (landing.ts). The build fails on a dead link (dead-links.ts).
+// (glossary.ts), and let a table fit a phone (tables.ts). The build fails on a dead link
+// (dead-links.ts).
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
@@ -13,9 +13,8 @@ import starlightSidebarTopics from "starlight-sidebar-topics";
 
 import { deadLinks } from "./src/lib/dead-links.ts";
 import { createGlossaryPlugins } from "./src/lib/glossary.ts";
-import { createLandingPlugin } from "./src/lib/landing.ts";
 import { createLinkRewriter } from "./src/lib/links.ts";
-import { discoverPages, PACKAGE_README } from "./src/lib/pages.ts";
+import { discoverPages } from "./src/lib/pages.ts";
 import { sidebarTopics } from "./src/lib/sidebar.ts";
 import {
   BRANCH,
@@ -28,7 +27,7 @@ import {
 import { tableNames } from "./src/lib/tables.ts";
 
 const DESCRIPTION =
-  "Reusable primitives for building browser games with Effect, Foldkit and Three.js: a deterministic simulation core, a game loop and engine, input, content loading, saves, audio, pixel-art rendering and lockstep multiplayer.";
+  "A toolkit for browser games built on Effect: a deterministic simulation, a game loop and engine, input, content loading, saves, audio, pixel art and lockstep co-op.";
 
 // The pages are found when this config is read: restart `astro dev` after adding one.
 const pages = discoverPages();
@@ -37,13 +36,11 @@ const links = createLinkRewriter({
   repoRoot: REPO_ROOT,
   repoUrl: REPO_URL,
   branch: BRANCH,
-  pageLinks: new Map([
-    ...pages.all.flatMap((page) =>
+  pageLinks: new Map(
+    pages.all.flatMap((page) =>
       page.files.map((file) => [file, page.link] as const)
-    ),
-    // The package's README has no page of its own: the landing page includes it.
-    [PACKAGE_README, pages.home.link],
-  ]),
+    )
+  ),
   onDeadLink: ({ href, file }) => {
     console.warn(`(!) Found dead link ${href} in ${file}`);
   },
@@ -65,11 +62,7 @@ export default defineConfig({
     processor: satteri({
       // In order: the glossary's terms become headings before the links plugin leaves the text
       // of every heading alone.
-      mdastPlugins: [
-        createLandingPlugin({ repoRoot: REPO_ROOT, readme: PACKAGE_README }),
-        glossary.terms,
-        links.plugin,
-      ],
+      mdastPlugins: [glossary.terms, links.plugin],
       hastPlugins: [glossary.searchWeight, tableNames],
     }),
   },

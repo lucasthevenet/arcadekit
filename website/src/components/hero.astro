@@ -1,19 +1,34 @@
 ---
-// The landing page's hero, laid out as polycombo.io's: a line in the monospace face over the title
-// in the display face, then the tagline beside the actions. It replaces Starlight's Hero. The
-// landing page's frontmatter gives the line, `eyebrow` (content.config.ts), and the `hero`.
+// The landing page's hero, laid out as foldkit.dev's and in polycombo.io's look: a line in the
+// monospace face over the title in the display face, the tagline, then the command that installs
+// the package beside the actions. It replaces Starlight's Hero. The landing page's frontmatter
+// gives the line and the command, `eyebrow` and `command` (content.config.ts), and the `hero`.
 import { LinkButton } from "@astrojs/starlight/components";
 
 const { data } = Astro.locals.starlightRoute.entry;
-const { eyebrow } = data as { readonly eyebrow?: string };
+const { eyebrow, command } = data as {
+  readonly eyebrow?: string;
+  readonly command?: string;
+};
 const { title = data.title, tagline, actions = [] } = data.hero ?? {};
 ---
 
 <div class="hero not-content">
   {eyebrow && <p class="eyebrow">{eyebrow}</p>}
   <h1 id="_top" data-page-title set:html={title} />
+  {tagline && <p class="tagline" set:html={tagline} />}
   <div class="row">
-    {tagline && <p class="tagline" set:html={tagline} />}
+    {
+      command && (
+        <div class="command">
+          <span aria-hidden="true">$</span>
+          <code>{command}</code>
+          <button type="button" data-copy={command} aria-label="Copy the command">
+            Copy
+          </button>
+        </div>
+      )
+    }
     {
       actions.length > 0 && (
         <div class="actions">
@@ -43,6 +58,28 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {};
   </div>
 </div>
 
+<script>
+  // The command's button copies it, and says for a moment whether it could: a browser can refuse
+  // the clipboard to a page.
+  const copy = async (button: HTMLButtonElement) => {
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy ?? "");
+      button.textContent = "Copied";
+    } catch {
+      button.textContent = "Select it";
+    }
+    setTimeout(() => {
+      button.textContent = "Copy";
+    }, 1500);
+  };
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>(
+    "[data-copy]"
+  )) {
+    button.addEventListener("click", () => copy(button));
+  }
+</script>
+
 <style>
   .hero {
     padding-block: clamp(3rem, 10vh, 7rem) 3rem;
@@ -63,20 +100,58 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {};
     color: var(--sl-color-white);
   }
 
+  .tagline {
+    max-width: 44rem;
+    margin: 2rem 0 0;
+    font-size: var(--sl-text-xl);
+    line-height: 1.5;
+    color: var(--sl-color-gray-2);
+  }
+
   .row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 1.5rem 3rem;
-    margin-top: 2rem;
+    gap: 1rem 1.5rem;
+    margin-top: 2.5rem;
   }
 
-  .tagline {
-    max-width: 38rem;
-    margin: 0;
-    font-size: var(--sl-text-lg);
-    color: var(--sl-color-gray-2);
+  .command {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.5rem 0.5rem 1rem;
+    border: 1px solid var(--ak-border-strong);
+    border-radius: var(--ak-radius);
+    background: var(--ak-panel);
+    font-family: var(--ak-font-mono);
+    font-size: var(--sl-text-sm);
+  }
+
+  .command span {
+    color: var(--ak-lime);
+  }
+
+  .command code {
+    color: var(--ak-text);
+  }
+
+  .command button {
+    padding: 0.375rem 0.625rem;
+    border: 1px solid var(--ak-border);
+    border-radius: var(--ak-radius);
+    background: var(--ak-raised);
+    color: var(--ak-text-muted);
+    font: inherit;
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .command button:hover {
+    border-color: var(--ak-lime);
+    color: var(--ak-text);
   }
 
   .actions {

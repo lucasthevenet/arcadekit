@@ -470,20 +470,125 @@ starlight-toc a[aria-current="true"] {
   color: var(--ak-pink);
 }
 
+/*
+ * The landing page's sections, as foldkit.dev's: each a label in the monospace face over a title
+ * in the display face, well apart from the section before it.
+ */
 [data-has-hero] .sl-markdown-content h2 {
+  margin-top: 0.75rem;
   font-size: clamp(2.5rem, 1.5rem + 4vw, 4.5rem);
+}
+
+[data-has-hero] .sl-markdown-content > .eyebrow,
+[data-has-hero] .sl-markdown-content .start > .eyebrow {
+  margin-top: clamp(4rem, 8vw, 7rem);
+  margin-bottom: 0;
+}
+
+[data-has-hero] .sl-markdown-content > .eyebrow:first-child {
+  margin-top: 2rem;
+}
+
+[data-has-hero]
+  .sl-markdown-content
+  :is(.eyebrow + .sl-heading-wrapper, .eyebrow + h2) {
+  margin-top: 0.5rem;
+}
+
+[data-has-hero] .sl-markdown-content .sl-heading-wrapper + p {
+  max-width: 42rem;
+  font-size: var(--sl-text-lg);
+}
+
+/* A row of links under a section. */
+.sl-markdown-content .links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  margin-top: 1.5rem;
+}
+
+/* Who the kit fits, and who should think twice: two panels side by side. */
+.sl-markdown-content .fit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1px;
+  margin-top: 2rem;
+  border: 1px solid var(--ak-border-strong);
+  background: var(--ak-border-strong);
+}
+
+.sl-markdown-content .fit > div {
+  margin: 0;
+  padding: 1.5rem;
+  background: var(--ak-panel);
+}
+
+.sl-markdown-content .fit > div:last-child h3 {
+  color: var(--ak-orange);
+}
+
+.sl-markdown-content .fit h3 {
+  margin-top: 0;
+  text-transform: uppercase;
+  color: var(--ak-lime);
+}
+
+.sl-markdown-content .fit ul {
+  padding-inline-start: 0;
+  list-style: none;
+}
+
+.sl-markdown-content .fit li + li {
+  margin-top: 1rem;
+}
+
+/* The last section, to start building: one panel, over the page's glow. */
+.sl-markdown-content .start {
+  margin-top: clamp(4rem, 8vw, 7rem);
+  padding: clamp(1.5rem, 4vw, 3rem);
+  border: 1px solid var(--ak-border-strong);
+  background:
+    radial-gradient(
+      40rem 20rem at 100% 0%,
+      rgb(255 63 104 / 12%),
+      transparent 70%
+    ),
+    radial-gradient(
+      30rem 18rem at 0% 100%,
+      rgb(201 255 61 / 6%),
+      transparent 70%
+    ),
+    var(--ak-panel);
+}
+
+[data-has-hero] .sl-markdown-content .start > .eyebrow {
+  margin-top: 0;
 }
 
 /*
  * The landing page's cards, as polycombo.io's six levels: cells of one bordered grid, each
- * numbered in the monospace face under a bar of its colour, its title in the display face.
+ * numbered in the monospace face under a bar of its colour, from lime to pink, its title in the
+ * display face.
  */
 .sl-markdown-content .card-grid {
   counter-reset: card;
   gap: 1px;
+  margin-top: 2rem;
   margin-bottom: 0;
   border: 1px solid var(--ak-border-strong);
   background: var(--ak-border-strong);
+}
+
+/* Three cells to a row where they fit, and one to a row where they don't: a row is never short. */
+.sl-markdown-content .card-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 64rem) {
+  .sl-markdown-content .card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .sl-markdown-content .card-grid .card {
@@ -500,14 +605,22 @@ starlight-toc a[aria-current="true"] {
 }
 
 .sl-markdown-content .card-grid .card:nth-child(2) {
-  --ak-card-color: var(--ak-yellow);
+  --ak-card-color: var(--ak-green);
 }
 
 .sl-markdown-content .card-grid .card:nth-child(3) {
-  --ak-card-color: var(--ak-orange);
+  --ak-card-color: var(--ak-yellow);
 }
 
 .sl-markdown-content .card-grid .card:nth-child(4) {
+  --ak-card-color: var(--ak-orange);
+}
+
+.sl-markdown-content .card-grid .card:nth-child(5) {
+  --ak-card-color: var(--ak-coral);
+}
+
+.sl-markdown-content .card-grid .card:nth-child(6) {
   --ak-card-color: var(--ak-pink);
 }
 
@@ -549,14 +662,13 @@ starlight-toc a[aria-current="true"] {
   color: var(--ak-text-body);
 }
 
-/* The kit in numbers (components/kit-stats.astro): cells under the cards, labelled. */
+/* The kit in numbers (components/kit-stats.astro): labelled cells of one bordered row. */
 .kit-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: 1px;
-  margin: 0 0 3rem;
+  margin: 2rem 0 0;
   border: 1px solid var(--ak-border-strong);
-  border-top: 0;
   background: var(--ak-border-strong);
 }
 

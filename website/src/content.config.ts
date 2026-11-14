@@ -12,11 +12,13 @@ import { pagesLoader } from "./lib/loader.ts";
 export const collections = {
   docs: defineCollection({
     loader: pagesLoader(),
-    // `eyebrow`: the line in the monospace face over the landing page's title
-    // (components/hero.astro). `api`: what a reference page documents (lib/loader.ts).
+    // `eyebrow` and `command`: the line in the monospace face over the landing page's title, and
+    // the command its hero shows to install the package (components/hero.astro). `api`: what a
+    // reference page documents (lib/loader.ts).
     schema: docsSchema({
       extend: z.object({
         eyebrow: z.string().optional(),
+        command: z.string().optional(),
         api: z
           .object({
             kind: z.enum(["entry", "module"]),

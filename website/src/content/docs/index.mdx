@@ -1,16 +1,23 @@
 ---
 # The tab's title, before the site's name. The hero's is the same, with its last word in the
-# accent colour (components/hero.astro).
+# accent colour (components/hero.astro). The page is laid out as foldkit.dev's: a section for each
+# thing the kit is, each a line in the monospace face over its title, and the reasons to pick it
+# or not.
 title: Effect for browser games
-description: A deterministic simulation, a game loop, input, saves, audio, pixel art and lockstep co-op for browser games. One package, on Effect, Foldkit and Three.js.
+description: A toolkit for browser games built on Effect. Deterministic rules you can replay, test without a browser and play in co-op, with input, pixel art, sound, content and saves.
 template: splash
-eyebrow: One package · Effect 4 · Foldkit · Three.js
+# The landing page is no page of a sequence, and its text is the site's own, not a file to edit.
+prev: false
+next: false
+editUrl: false
+eyebrow: A TypeScript game toolkit · Alpha
+command: pnpm add arcadekit effect
 hero:
   title: Effect for browser <span class="accent">games.</span>
-  tagline: A deterministic simulation, a game loop, input, saves, audio, pixel art and lockstep co-op, for games made with Effect, Foldkit and Three.js.
+  tagline: arcadekit is a toolkit for browser games built on Effect. Your rules are a deterministic simulation that runs the same on every machine, so a game can be replayed, tested without a browser, and played in co-op.
   actions:
     - text: Get started
-      link: "#install"
+      link: /making-a-game
       icon: right-arrow
     - text: Play GRIMBONK
       link: https://grimbonk.arcadekit.dev
@@ -22,44 +29,218 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+import { Card, CardGrid, LinkButton } from "@astrojs/starlight/components";
 import KitStats from "../../components/kit-stats.astro";
-import { Content as PackageReadme } from "../../../../packages/arcadekit/README.md";
+
+<p class="eyebrow">The shape of a game</p>
+
+## Declare the rules. Step them. Ship.
+
+Most game libraries give you a renderer and a loop, and leave the rules to callbacks on objects. arcadekit gives a game its shape, so you can spend your time on how it plays.
 
 <CardGrid>
-  <Card title="The same run on every peer" icon="random">
-    A fixed-step clock, a seeded random generator and pools that allocate
-    nothing per step. The same seed and inputs give the same run.
-    [Determinism](/concepts/determinism)
+  <Card title="The same run, everywhere">
+    A fixed-step clock, a seeded random generator and exact math. The same seed
+    and inputs give the same run on every peer, in every replay and in every
+    test. [Explore determinism](/concepts/determinism)
   </Card>
-  <Card title="A game is declared" icon="puzzle">
-    Each part is one named class. The rules have no DOM, and the engine adds the
-    view and input that present them. A loop steps the rules anywhere, and the
-    engine draws them in a browser. [A game is declared](/concepts/declarations)
+  <Card title="A game is declared">
+    Each part of a game is one named class: its events, its commands, its rules
+    and its engine. The rules have no DOM, so they run in a test, a worker or on
+    a server. [Explore declarations](/concepts/declarations)
   </Card>
-  <Card title="Co-op in lockstep" icon="laptop">
-    Two to four players run one simulation over WebRTC, joined by a code. The
-    signalling worker for Cloudflare is an entry too.
-    [Lockstep](/concepts/lockstep)
-  </Card>
-  <Card title="Effect at the edges" icon="setting">
-    Loading, engines, saves and connections are Effect. The step, the views and
-    input are plain code. [Making a game](/making-a-game)
+  <Card title="Fast where it counts">
+    A step is plain code over typed arrays, and allocates nothing per entity.
+    Loading, saves, sound and connections are Effect, with typed errors and
+    scopes. [Explore steps and frames](/concepts/steps-and-frames)
   </Card>
 </CardGrid>
 
-<KitStats />
+<p class="eyebrow">Testing</p>
 
-arcadekit is one package of primitives for browser games made with [Effect](https://effect.website) 4, [Foldkit](https://foldkit.dev) and [Three.js](https://threejs.org). Install it below, then [make a game](/making-a-game): the concepts say how a game is put together, a guide covers each task, and each entry has a reference page.
+## Tests that read like the rules.
 
-{/* The package's README, after its title and first paragraph (src/lib/landing.ts). */}
+A scenario steps the real simulation: given a run, after these steps and commands, it reported these events. No browser, no mocks, no waiting on frames.
 
-<PackageReadme />
+```ts
+import * as Game from "arcadekit/game";
+import * as Scenario from "arcadekit/game/scenario";
+import { Schema } from "effect";
+import { it } from "vitest";
 
-## Games built on it
+class DoorOpened extends Game.Event("DoorOpened", { atStep: Schema.Int }) {}
+
+class Door extends Game.Simulation("Door", {
+  input: Schema.Struct({ lever: Schema.Boolean }),
+  events: [DoorOpened],
+  create: (config: { readonly needed: number }) => ({
+    needed: config.needed,
+    held: 0,
+    open: false,
+  }),
+  step: (door, input, { report, step }) => {
+    door.held = input.lever ? door.held + 1 : 0;
+    if (!door.open && door.held === door.needed) {
+      door.open = true;
+      report(new DoorOpened({ atStep: step }));
+    }
+  },
+}) {}
+
+const scenario = Scenario.make(Door);
+
+it("opens once the lever has been held long enough", () =>
+  scenario(
+    Scenario.given({ needed: 3 }),
+    Scenario.step({ lever: true }, 2),
+    Scenario.reported(),
+    Scenario.step({ lever: true }),
+    Scenario.reported(new DoorOpened({ atStep: 2 }))
+  ));
+```
+
+<div class="links">
+  <LinkButton href="/testing/scenarios" variant="minimal" icon="right-arrow">
+    Learn about scenarios
+  </LinkButton>
+</div>
+
+<p class="eyebrow">Multiplayer</p>
+
+## Co-op in lockstep.
+
+Two to four players, each in their own browser, play one run. Peers send each other nothing but their inputs: a step runs once every player's input for it is in, and state hashes catch a desync at the step it happens. Players join with a code, through a signalling worker you deploy beside your site.
+
+<div class="links">
+  <LinkButton href="/concepts/lockstep" variant="minimal" icon="right-arrow">
+    Learn about lockstep
+  </LinkButton>
+  <LinkButton href="/guides/coop" variant="minimal" icon="right-arrow">
+    Make a co-op game
+  </LinkButton>
+</div>
+
+<p class="eyebrow">Batteries included</p>
+
+## Everything a game needs.
+
+Input, drawing, sound, content and saves, each in the same shape: declared once, provided by a Layer, and plain where a frame runs.
+
+<CardGrid>
+  <Card title="Input">
+    Keyboard, gamepad, touch drags and swipes, read as your game's named axes
+    and buttons. A step never sees a device. [Explore input](/guides/input)
+  </Card>
+  <Card title="Pixel art">
+    Sprite sheets with animated tags, tile layers that draw only what is on
+    screen, and thousands of sprites in one draw call. [Explore
+    sprites](/guides/sprites)
+  </Card>
+  <Card title="Sound">
+    One-shots with pitch and volume jitter, loops held from state, music with
+    crossfades, and buses for the player's volumes. [Explore
+    audio](/guides/audio)
+  </Card>
+  <Card title="Content">
+    Levels, waves and heroes as JSON, checked by a Schema as they load, and
+    loaded once with the sheets they are drawn from. [Explore
+    content](/guides/content)
+  </Card>
+  <Card title="Saves">
+    Records by id under one versioned key, merged across tabs, and settings kept
+    apart. A save that can't be read never stops play. [Explore
+    saves](/guides/saves)
+  </Card>
+  <Card title="The world">
+    Entity pools, a spatial grid, tile maps, timers and tweens: the data a step
+    keeps, in typed arrays. [Explore the world](/guides/entity-pools)
+  </Card>
+</CardGrid>
+
+<p class="eyebrow">Examples</p>
+
+## Games built on it.
+
+One kit, three games. Play one, or read how it is put together: each demo keeps its genre beside its app, to copy from.
 
 - [GRIMBONK](https://grimbonk.arcadekit.dev) is a grimdark third-person survivors-like, built on the published package. Play it in the browser.
-- [The survivors demo](https://github.com/lucasthevenet/arcadekit/tree/main/examples/survivor-demo) is a survivors-like with co-op for two to four players. Its genre is in [`src/survivors`](https://github.com/lucasthevenet/arcadekit/tree/main/examples/survivor-demo/src/survivors).
-- [The push-puzzle demo](https://github.com/lucasthevenet/arcadekit/tree/main/examples/push-puzzle-demo) is a Sokoban-like with undo. Its genre is in [`src/push-puzzle`](https://github.com/lucasthevenet/arcadekit/tree/main/examples/push-puzzle-demo/src/push-puzzle).
+- [The survivors demo](https://github.com/lucasthevenet/arcadekit/tree/main/examples/survivor-demo) is a survivors-like with co-op for two to four players.
+- [The push-puzzle demo](https://github.com/lucasthevenet/arcadekit/tree/main/examples/push-puzzle-demo) is a Sokoban-like with undo, and the example to copy for a genre of your own.
 
-The demos don't publish: copy from them. [The repository's README](https://github.com/lucasthevenet/arcadekit#making-a-new-game) says how to make a new game, in an existing genre or a new one.
+<p class="eyebrow">Built on Effect</p>
+
+## Effect, inside and out.
+
+If your app already uses Effect, arcadekit carries the same tools into the game. If Effect is new to you, it is part of the learning curve.
+
+- Every load, save, attach and connection is an Effect, with its errors in its type.
+- Events, commands, content and saves are Schemas, so what crosses a boundary is checked.
+- A game's parts are services, provided by Layers and closed with their scope.
+
+<p class="eyebrow">Fit</p>
+
+## Is it a fit?
+
+arcadekit asks for a shape: the rules as a deterministic simulation, and Effect around them. That is a real commitment.
+
+<div class="fit">
+<div>
+
+### A strong fit
+
+- **Effect developers who want to make games.** The services, Schemas and Layers you know carry into the game.
+- **Games that need replays, tests or co-op.** Determinism is the default, so all three come with the shape.
+- **Arcade, action and puzzle games for the web.** Games that load fast in a tab and step at a fixed rate.
+
+</div>
+<div>
+
+### Think twice when
+
+- **You want a visual editor.** arcadekit is code first: there is no scene editor and no asset pipeline.
+- **Your game needs physics.** There is no physics engine: a collision is what your step computes over a spatial grid.
+- **You would rather not use Effect.** It is throughout: its services, Schemas and Layers hold a game together.
+
+</div>
+</div>
+
+<p class="eyebrow">Status</p>
+
+## Project status.
+
+arcadekit is alpha: its interfaces and stored data change whenever that improves the code, and each release's changelog says what broke.
+
+<KitStats />
+
+<div class="links">
+  <LinkButton
+    href="https://github.com/lucasthevenet/arcadekit/blob/main/packages/arcadekit/CHANGELOG.md"
+    variant="minimal"
+    icon="external"
+  >
+    Read the changelog
+  </LinkButton>
+</div>
+
+<div class="start">
+
+<p class="eyebrow">Your first game</p>
+
+## Start building.
+
+Install the package, declare your first simulation, and step it in a test.
+
+<div class="links">
+  <LinkButton href="/making-a-game" icon="right-arrow">
+    Get started
+  </LinkButton>
+  <LinkButton
+    href="https://github.com/lucasthevenet/arcadekit"
+    variant="secondary"
+    icon="github"
+  >
+    View on GitHub
+  </LinkButton>
+</div>
+
+</div>

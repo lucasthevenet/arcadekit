@@ -4,6 +4,8 @@
 // page is the repository's own text, read where it is (loader.ts):
 // - each file under `docs/`, at its path there: `docs/guides/sprites.md` at `/guides/sprites`.
 //   These are the guides, the concepts and the walkthrough, read on GitHub and here;
+// - the package's README, `packages/arcadekit/README.md`, at `/reference`: how to install the
+//   package and its entries, as npm shows it;
 // - each entry of the package's `exports`, at `/reference/<entry>`, so a reference page's address
 //   ends with its import path (`arcadekit/net/worker` is `/reference/net/worker`). Its page is its
 //   README, `packages/arcadekit/src/<entry>/README.md`, which npm shows too, then the API of its
@@ -29,10 +31,7 @@ const REFERENCE = "reference";
 const GLOSSARY = "CONTEXT.md";
 const HOME = `${WEBSITE_DIR}/src/content/docs/index.mdx`;
 
-/**
- * The package's README. It has no page of its own: the landing page includes it, after its title
- * and first paragraph (landing.ts).
- */
+/** The package's README: the reference's first page, the package as npm shows it. */
 export const PACKAGE_README = "packages/arcadekit/README.md";
 
 /** A page of the site. Paths are relative to the repository's root. */
@@ -338,11 +337,13 @@ export const discoverPages = () => {
     link: "/",
   };
   const docs = docPages();
+  const kit = readPage(PACKAGE_README, REFERENCE);
   const { entries, modules } = referencePages();
   const glossary = readPage(GLOSSARY, "glossary");
   /** The pages read from the repository, which loader.ts adds to the site. */
   const repository: readonly RepositoryPage[] = [
     ...docs,
+    kit,
     ...entries,
     ...modules,
     glossary,
@@ -360,7 +361,7 @@ export const discoverPages = () => {
     files.set(page.slug, page.file);
   }
 
-  return { home, docs, entries, modules, glossary, repository, all };
+  return { home, docs, kit, entries, modules, glossary, repository, all };
 };
 
 export type SitePages = ReturnType<typeof discoverPages>;

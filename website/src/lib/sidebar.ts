@@ -51,7 +51,7 @@ const OUTLINE: readonly (Group & {
     section: "",
     items: [
       { label: "Overview", link: "/" },
-      { label: "Install", link: "/#install" },
+      { label: "Install", link: "/reference#install" },
       "making-a-game",
     ],
   },
@@ -232,12 +232,14 @@ const entryItems = (
 ];
 
 /**
- * Reference's groups: one for each top-level entry, shut until opened, with its page, its modules,
- * and each sub-entry: one page alone, or a group of it and its modules. Then the glossary.
+ * Reference's groups: the package's page, how to install it and its entries, then one for each
+ * top-level entry, shut until opened, with its page, its modules, and each sub-entry: one page
+ * alone, or a group of it and its modules. Then the glossary.
  */
 export const referenceGroups = (pages: SitePages): Group["items"] => {
   const entries = orderedEntries(pages.entries);
   return [
+    { label: "The package", slug: pages.kit.slug },
     ...entries
       .filter((page) => !page.entry.includes("/"))
       .map((top) => ({
@@ -300,7 +302,7 @@ export const sidebarTopics = (pages: SitePages): Topic[] => {
     {
       id: "reference",
       label: "Reference",
-      link: "/reference/game",
+      link: "/reference",
       icon: "document",
       items: referenceGroups(pages).map(toItem),
     },
