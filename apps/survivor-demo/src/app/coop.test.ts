@@ -16,7 +16,7 @@ import { AudioSystem } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
 import type * as Game from "arcadekit/game";
 import { Frames } from "arcadekit/game/browser";
-import { manualFrames } from "arcadekit/game/testing";
+import { ManualFrames } from "arcadekit/game/testing";
 import {
   LobbyChanged,
   RunStarted,
@@ -98,7 +98,7 @@ const seat = async (
 ): Promise<Seat> => {
   const layer = CoopLayer.pipe(
     Layer.provide(hub.layer),
-    Layer.provide(Layer.succeed(Frames, manualFrames())),
+    Layer.provide(Layer.succeed(Frames, ManualFrames.make())),
     Layer.provide(AudioSystem.layerSilent),
     Layer.provide(SurvivorsCueTable.layer(survivorsSounds)),
     Layer.provide(

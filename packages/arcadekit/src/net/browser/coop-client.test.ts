@@ -1,4 +1,5 @@
 import {
+  Cause,
   Deferred,
   Duration,
   Effect,
@@ -13,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AttachError, GameCrashed } from "../../game/browser";
 import { CommandDropped } from "../../game/index";
-import { manualFrames } from "../../game/testing";
+import { ManualFrames } from "../../game/testing/index";
 import { encodeLobbyMessage } from "../lobby";
 import type { Ticker } from "../scoped";
 import {
@@ -52,6 +53,17 @@ import type {
   TestCoopOptions,
   TestCoopParts,
 } from "./test-client";
+
+/**
+ * The reasons an exit failed with, each a `Fail`'s error or the reason itself. The frame loop the
+ * client draws on is traced, so a crash carries its span as an annotation, which this leaves out.
+ */
+const failures = <A, E>(exit: Exit.Exit<A, E>) =>
+  Exit.isSuccess(exit)
+    ? "succeeded"
+    : exit.cause.reasons.map((reason) =>
+        Cause.isFailReason(reason) ? reason.error : reason
+      );
 
 // The Co-op client in Node, with no browser, playing the test game (`arcadekit/net/testing`)
 // from plain parts (test-client.ts), so a test can replace any of them: a fake signalling hub
@@ -1499,7 +1511,7 @@ describe("drawing a co-op run", () => {
   const element = {} as HTMLElement;
 
   it("draws from the guest's own slot once the run starts, with the one view it made, and reads its input", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const hub = fakeCoopRooms();
     const made: string[] = [];
     const drawn: [number, readonly string[], number | undefined][] = [];
@@ -1532,10 +1544,10 @@ describe("drawing a co-op run", () => {
     );
     const attach = fork(guest.coop.attach(element));
     await settle();
-    frames.runFrameAt(100);
+    ManualFrames.runFrameAt(frames, 100);
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(500);
-    frames.runFrameAt(600);
+    ManualFrames.runFrameAt(frames, 600);
     await Effect.runPromise(Fiber.interrupt(attach));
     const totals = host.coop.debug().state?.totals ?? [];
     await vi.advanceTimersByTimeAsync(500);
@@ -1560,7 +1572,7 @@ describe("drawing a co-op run", () => {
   });
 
   it("sends null for its player while nothing is attached, and what its devices hold once something is", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const hub = fakeCoopRooms();
     /** Each payload the guest sent, by step, as it was on the wire. */
     const sent = new Map<number, string>();
@@ -1599,7 +1611,7 @@ describe("drawing a co-op run", () => {
   });
 
   it("leaves when a frame crashes, with nothing left attached", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const hub = fakeCoopRooms();
     const bug = new Error("lost context");
     const guestGame = testCoopParts({
@@ -1625,16 +1637,16 @@ describe("drawing a co-op run", () => {
     await settle();
     await run(host.coop.start);
     await vi.advanceTimersByTimeAsync(500);
-    frames.runFrameAt(600);
+    ManualFrames.runFrameAt(frames, 600);
     const exit = await Effect.runPromise(Fiber.await(attach));
     expect([
-      frames.waiting(),
+      ManualFrames.waiting(frames),
       guest.coop.debug().slot,
       hub.log.filter((line) => line.endsWith("guest-1")),
     ]).toStrictEqual([false, -1, ["open guest-1", "release guest-1"]]);
-    expect(exit).toStrictEqual(
-      Exit.fail(new GameCrashed({ message: "lost context", cause: bug }))
-    );
+    expect(failures(exit)).toStrictEqual([
+      new GameCrashed({ message: "lost context", cause: bug }),
+    ]);
     // A tagged error's `message` and `cause` aren't enumerable, so the comparison above holds
     // the error's class and neither of them.
     const crash = Option.getOrUndefined(Exit.findErrorOption(exit));

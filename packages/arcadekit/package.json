@@ -113,7 +113,7 @@
       "default": "./dist/game/scenario.js"
     },
     "./game/testing": {
-      "source": "./src/game/testing.ts",
+      "source": "./src/game/testing/index.ts",
       "types": "./dist/game/testing.d.ts",
       "default": "./dist/game/testing.js"
     },

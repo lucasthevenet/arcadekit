@@ -288,7 +288,7 @@ const loadout = (hero: Hero) =>
 /** The run played alone through `Game.Loop`, every player's zig-zag in one step input: what every peer must match. */
 const soloHashes = (steps: number) => {
   const hashes: number[] = [];
-  const loop = new Game.Loop(Survivors);
+  const loop = Game.makeLoop(Survivors);
   loop.start({ content: content(1_000_000), heroIds: HERO_IDS }, SEED, 0);
   const world = loop.state!;
   const players = TURNS.map(() => ({ moveX: 0, moveZ: 0 }));

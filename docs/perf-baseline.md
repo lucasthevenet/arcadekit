@@ -7,7 +7,7 @@ What the kit's hot paths cost before the Effect-style rework ([ADR-0024](adr/002
 The hot paths [ADR-0017](adr/0017-effect-at-the-edges-plain-code-inside.md) measured, each as a game runs it:
 
 - **survivors step**: survivors' step at its largest test population, a horde held at the 300 enemies its world tests cap it at (`world.test.ts`), with one hero that the horde can't kill, stepped by `Game.Loop` one step per frame. The unit is one step.
-- **engine frame**: a declared engine attached on `manualFrames` (`arcadekit/game/testing`), whose every frame steps a small run once and draws it: the frame loop's fiber, its `Effect.try`, the loop and the view. The unit is one frame.
+- **engine frame**: a declared engine attached on `ManualFrames` (`arcadekit/game/testing`), whose every frame steps a small run once and draws it: the frame loop's fiber, its `Effect.try`, the loop and the view. The unit is one frame.
 - **lockstep tick**: a host and a guest of the test game (`arcadekit/net/testing`) over the in-memory network, as scoped sessions run on `manualTicker`, on a Clock the bench moves 4 ms a tick. The unit is one tick of both peers and the network's delivery.
 
 Each workload is the same on every run: seeded, with its time given by the bench. The wall time is the median of five rounds, after a warm-up. The heap allocated is counted over one more round, from a collected heap, with a young generation too large to collect during it and the engine's compiler on the main thread (`--single-threaded`), so it is the same on every run of one machine and Node version. It counts the spaces that hold a program's objects, not compiled code.
@@ -21,7 +21,7 @@ Measured at `f4c91e8`, before any of the rework, on:
 | Hot path | Wall time (three runs) | Heap allocated |
 | --- | --- | --- |
 | survivors step (297 enemies on average) | 131.44, 151.35, 127.13 µs/step | 662 B/step |
-| engine frame (`manualFrames`) | 0.86, 0.80, 1.37 µs/frame | 259 B/frame |
+| engine frame (`ManualFrames`) | 0.86, 0.80, 1.37 µs/frame | 259 B/frame |
 | lockstep tick (2 peers, 9,119 steps) | 11.21, 11.97, 12.33 µs/tick | 479 B/tick |
 
 The wall time moves from run to run by up to a fifth on this machine, a VM shared with other work: compare a change against several runs, on one machine. The heap allocated did not move at all across runs.
@@ -46,6 +46,8 @@ Each rework adds a row. Its numbers come from five runs of `pnpm bench` on its b
 | `arcadekit/save` in Effect's shape | 158.5 µs (150.7–166.8), 1,187 B | 0.82 µs (0.80–1.20), 609 B | 12.5 µs (12.3–14.2), 285 B |
 | The baseline, run beside the row below | 93.1 µs (91.0–96.3), 662 B | 0.70 µs (0.65–0.93), 259 B | 8.8 µs (8.7–9.2), 479 B |
 | `arcadekit/audio` in Effect's shape | 119.7 µs (112.0–137.6), 1,187 B | 0.64 µs (0.62–0.73), 609 B | 9.1 µs (8.7–9.2), 285 B |
+| The baseline, run beside the row below | 100.0 µs (92.7–103.2), 662 B | 0.73 µs (0.67–1.04), 259 B | 8.8 µs (8.6–9.1), 479 B |
+| `arcadekit/game` in Effect's shape | 111.8 µs (111.7–118.5), 1,187 B | 0.74 µs (0.71–0.77), 1,124 B | 8.9 µs (8.8–9.3), 285–286 B |
 
 Core stayed plain; what moved is its shape. A step calls core through `dual` functions and reads state from fields on a prototype, where it called closures and class methods. Survivors' step runs about a quarter slower and allocates 525 B more; an engine frame, whose loop advances a `FixedStepClock` and drains an `EventBuffer` through them, allocates 350 B more in the same time; a lockstep tick allocates 194 B less, for a reason not yet found. The performance work starts from these.
 
@@ -56,3 +58,5 @@ No workload loads a content or an asset: survivors' step is given content its Sc
 No workload reads or writes a save or a setting: what a game keeps between sessions is read at startup and written when a run ends, never in a step or a frame. So save's row is content's, within the wall time's noise, and allocates the same to the byte. Content's commit, run in the same rounds, gave 177.6 µs (150.8–186.1), 0.83 µs (0.80–1.16) and 14.5 µs (12.0–20.7). The baseline ran as `3df4d41`, the baseline commit with `pnpm bench` added and nothing else.
 
 No workload plays a sound: survivors' step and the lockstep peers draw nothing, and the engine's run draws with a view that plays nothing, so no audio system is made. So audio's row is save's, within the wall time's noise, and allocates the same to the byte. Save's commit, run in the same rounds, gave 122.1 µs (111.5–127.4), 0.61 µs (0.58–0.64) and 8.8 µs (8.6–9.4). The baseline ran as `3df4d41`, on an Intel(R) Xeon(R) Processor @ 2.30GHz with the same Node.
+
+Game's rework moves the frame loop's wait to Effect: each frame is an `Effect.callback` of its own, which succeeds with the frame's time and gives back its canceller, and its `Effect.try` is made around that time, where one wait and one `Effect.try` were shared by every frame. So an engine frame allocates 515 B more, and takes about a seventh of a microsecond longer than on audio's commit. The engine's methods are traced too, but the engine's workload starts and attaches before its timed rounds and sends nothing. Survivors' step and the lockstep tick run the same loop, made with `Game.makeLoop`, and are audio's row within the wall time's noise. The lockstep tick allocated 286 B in some rounds and 285 B in the others, the first heap count of the bench that moved between runs of one commit; its cause is not yet found. Audio's commit (`16c7646`), run in the same rounds, gave 118.8 µs (114.5–137.7), 0.60 µs (0.58–0.77) and 9.0 µs (8.5–10.8), with the heap of save's row.

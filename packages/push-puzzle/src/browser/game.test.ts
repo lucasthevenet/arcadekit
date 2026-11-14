@@ -47,7 +47,7 @@ const play = () => {
     setPointerCapture: () => {},
   }) as unknown as HTMLElement;
   const input = pushPuzzleInput(surface);
-  const loop = new Game.Loop(PushPuzzle);
+  const loop = Game.makeLoop(PushPuzzle);
   const samples: number[] = [];
   loop.subscribe((event) => {
     if (event._tag === "Hud") {

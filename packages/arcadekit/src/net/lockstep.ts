@@ -1,7 +1,8 @@
 import { Option, Result, Schema } from "effect";
 
-import { CommandDropped, Loop } from "../game/index";
+import { CommandDropped, makeLoop } from "../game/index";
 import type {
+  Loop,
   PlayerInputOf,
   PlayersSimulation,
   RefusalFor,
@@ -569,7 +570,7 @@ class Session<
     this.combine = combinePlayerInputs<PlayerInputOf<Input>>(order) as (
       step: ConfirmedStep<PlayerInputOf<Input>, unknown>
     ) => Input;
-    this.loop = new Loop<Config, State, Input, Event, Command, Refusals>(
+    this.loop = makeLoop<Config, State, Input, Event, Command, Refusals>(
       options.simulation
     );
     this.loop.subscribe((event) => this.emit(event));

@@ -117,7 +117,7 @@ const zigZag = (): Game.StepInput<HeroInput> => {
  * events and the HUD samples the run reported.
  */
 const replay = (seed: number, steps: number) => {
-  const loop = new Game.Loop(Survivors);
+  const loop = Game.makeLoop(Survivors);
   const script = Game.soloInput(zigZag());
   let events = 0;
   let samples = 0;

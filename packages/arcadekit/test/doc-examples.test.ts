@@ -160,6 +160,12 @@ const runnable = (code: string): string =>
         (_whole, names: string, from: string) =>
           `const ${names} = kit[${JSON.stringify(from)}];`
       )
+      // An entry a game imports whole, such as `import * as Game from "arcadekit/game"`.
+      .replaceAll(
+        /^import \* as (?<name>\w+) from "(?<from>arcadekit\/[\w/-]+|effect(?:\/[\w-]+)?)";$/gmu,
+        (_whole, name: string, from: string) =>
+          `const ${name} = kit[${JSON.stringify(from)}];`
+      )
       .replaceAll(
         /^(?<indent>\s*)(?<expression>.+?);\s*\/\/ => (?<value>.+)$/gmu,
         (_whole, indent: string, expression: string, value: string) =>

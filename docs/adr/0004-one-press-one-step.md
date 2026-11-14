@@ -10,9 +10,11 @@ status: accepted
 
 > Amended on 2026-11-06: `GameDriver` is gone; `makeGameEngine`'s `attach` is the `requestAnimationFrame` adapter, see the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
 
-> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: `makeGameEngine` and the `runtime` entries are gone. `Game.Loop` (`arcadekit/game`) runs this step order for every host, on the same `GameLoop`, now its kernel (`Kernel`); the test that checks the order is `packages/arcadekit/src/game/kernel.test.ts`, and `StepInput` and `InputSource` are `arcadekit/game`'s. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
+> Amended by [ADR-0020](0020-a-game-is-declared.md) on 2026-11-11: `makeGameEngine` and the `runtime` entries are gone. `Game.Loop` (`arcadekit/game`) runs this step order for every host, on the same `GameLoop`, now its kernel (`Kernel`); the test that checks the order is `packages/arcadekit/src/game/internal/kernel.test.ts`, and `StepInput` and `InputSource` are `arcadekit/game`'s. See the note on [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md).
 
 > Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-13: `arcadekit/input`'s controller is a namespace in Effect's shape, and the text below uses its names: a press is forgotten with `InputController.consumePresses(controller)`, and gamepads are polled by `InputController.endFrame(controller)`.
+
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-14: `arcadekit/game` is in Effect's shape, and the text below uses its names: the kernel and the test that checks the order are in `arcadekit/game`'s `internal/` (`internal/kernel.ts`, `internal/kernel.test.ts`), and a loop is made with `Game.makeLoop`.
 
 A slow frame runs up to five catch-up steps, and presses used to be reset once per frame, so one press moved push-puzzle's player up to five cells and one undo undid up to five turns (#15, finding 1). `GameDriver` now calls `InputSource.endStep` after every step, and `endFrame` once per frame that ran a step. A source that needs one press to reach one step resets its presses in `endStep`, as push-puzzle does with `InputController.consumePresses(controller)`.
 

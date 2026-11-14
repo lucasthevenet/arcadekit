@@ -157,7 +157,7 @@ export class DotsTogether extends Game.Simulation("DotsTogether", {
 
 /** Steps a run without a browser, as tests and replays do: a script for the input, and `Game.Loop`. */
 export const replay = (seed: number, steps: number): number => {
-  const loop = new Game.Loop(Dots);
+  const loop = Game.makeLoop(Dots);
   loop.start({ dots: 64, speed: 4 }, seed, 0);
   const script: Game.StepInput<DotsInput> = {
     read: () => ({ moveX: 1, moveY: 0 }),

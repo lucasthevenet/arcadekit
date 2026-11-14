@@ -1,13 +1,24 @@
-import { Effect, Exit, Fiber, Option, Result, Scope } from "effect";
+import { Cause, Effect, Exit, Fiber, Option, Result, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { AttachError, GameCrashed } from "../../game/browser";
 import type { View as GameView } from "../../game/browser";
-import { manualFrames } from "../../game/testing";
+import { ManualFrames } from "../../game/testing/index";
 import type { TestState } from "../testing/index";
 import type { CoopPresented } from "./coop-client";
 import { testCoopClient, testCoopParts, testPresentation } from "./test-client";
 import type { TestCoopClient } from "./test-client";
+
+/**
+ * The reasons an exit failed with, each a `Fail`'s error or the reason itself. The frame loop the
+ * client draws on is traced, so a crash carries its span as an annotation, which this leaves out.
+ */
+const failures = <A, E>(exit: Exit.Exit<A, E>) =>
+  Exit.isSuccess(exit)
+    ? "succeeded"
+    : exit.cause.reasons.map((reason) =>
+        Cause.isFailReason(reason) ? reason.error : reason
+      );
 
 // Attaching and detaching in Node, with no browser, no room and no seat: the input and the view
 // are fakes that count what is made and disposed, and the test runs the frames.
@@ -34,7 +45,7 @@ let inputs: number;
 let presentations: number;
 
 const client = (
-  frames: ReturnType<typeof manualFrames>,
+  frames: ManualFrames.ManualFrames,
   view: CoopPresented<TestState, unknown>["view"]
 ): TestCoopClient =>
   Effect.runSync(
@@ -76,7 +87,7 @@ describe("attaching a co-op client", () => {
 
   it("fails with an AttachError, leaving no input, when the view can't be made", async () => {
     const noWebGl = new Error("no WebGL");
-    const coop = client(manualFrames(), () => {
+    const coop = client(ManualFrames.make(), () => {
       throw noWebGl;
     });
     const error = await Effect.runPromise(Effect.flip(coop.attach(element)));
@@ -113,7 +124,7 @@ describe("attaching a co-op client", () => {
               })
             ),
           }),
-          { rooms: noRooms, frames: manualFrames() }
+          { rooms: noRooms, frames: ManualFrames.make() }
         ),
         scope
       )
@@ -132,7 +143,7 @@ describe("attaching a co-op client", () => {
   });
 
   it("draws no run on each frame until detached, then cancels its frame and releases the input", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const drawn: [TestState | null, number][] = [];
     const coop = client(frames, (_container, { local }) =>
       fakeView({
@@ -142,10 +153,15 @@ describe("attaching a co-op client", () => {
     const attach = Effect.runFork(coop.attach(element));
     await Effect.runPromise(Effect.yieldNow);
     const attached = inputs;
-    frames.runFrameAt(500);
-    frames.runFrameAt(1000);
+    ManualFrames.runFrameAt(frames, 500);
+    ManualFrames.runFrameAt(frames, 1000);
     await Effect.runPromise(Fiber.interrupt(attach));
-    expect([attached, drawn, frames.waiting(), inputs]).toStrictEqual([
+    expect([
+      attached,
+      drawn,
+      ManualFrames.waiting(frames),
+      inputs,
+    ]).toStrictEqual([
       1,
       [
         [null, 0.5],
@@ -158,7 +174,7 @@ describe("attaching a co-op client", () => {
 
   it("runs the presentation once per attach, then makes the view, then the input, as an engine does", async () => {
     const order: string[] = [];
-    const coop = client(manualFrames(), () => {
+    const coop = client(ManualFrames.make(), () => {
       order.push(`view after ${presentations} presentation, ${inputs} input`);
       return fakeView();
     });
@@ -177,7 +193,7 @@ describe("attaching a co-op client", () => {
 
   it("releases the input and can attach again when the view's dispose throws", async () => {
     const views: GameView<TestState>[] = [];
-    const coop = client(manualFrames(), () => {
+    const coop = client(ManualFrames.make(), () => {
       const view = fakeView(
         views.length === 0
           ? {
@@ -208,7 +224,7 @@ describe("attaching a co-op client", () => {
   });
 
   it("crashes with GameCrashed when a frame throws, asking for no other frame, with nothing left attached", async () => {
-    const frames = manualFrames();
+    const frames = ManualFrames.make();
     const bug = new Error("lost context");
     let renders = 0;
     const coop = client(frames, () =>
@@ -223,12 +239,17 @@ describe("attaching a co-op client", () => {
     );
     const attach = Effect.runFork(coop.attach(element));
     await Effect.runPromise(Effect.yieldNow);
-    frames.runFrameAt(16);
-    frames.runFrameAt(33);
-    frames.runFrameAt(50);
+    ManualFrames.runFrameAt(frames, 16);
+    ManualFrames.runFrameAt(frames, 33);
+    ManualFrames.runFrameAt(frames, 50);
     const exit = await Effect.runPromise(Fiber.await(attach));
-    expect([exit, renders, frames.waiting(), inputs]).toStrictEqual([
-      Exit.fail(new GameCrashed({ message: "lost context", cause: bug })),
+    expect([
+      failures(exit),
+      renders,
+      ManualFrames.waiting(frames),
+      inputs,
+    ]).toStrictEqual([
+      [new GameCrashed({ message: "lost context", cause: bug })],
       2,
       false,
       0,
@@ -243,7 +264,7 @@ describe("attaching a co-op client", () => {
   });
 
   it("dies when attached twice at once", async () => {
-    const coop = client(manualFrames(), () => fakeView());
+    const coop = client(ManualFrames.make(), () => fakeView());
     const first = Effect.runFork(coop.attach(element));
     await Effect.runPromise(Effect.yieldNow);
     const second = await Effect.runPromise(Effect.exit(coop.attach(element)));

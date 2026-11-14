@@ -1,22 +1,251 @@
-import { Duration, Effect, Function } from "effect";
+/**
+ * Loops: what steps a simulation, one run at a time, with its fixed clock, its commands, its
+ * events and its sample (ADR-0010, ADR-0020).
+ *
+ * A loop is a host: `Game.makeLoop(simulation)` makes one from a declared simulation, and its
+ * caller runs its frames. It is plain code on purpose (ADR-0024), like the step it runs: it runs
+ * the steps in its caller's frame or tick, so a frame's steps are over when `frame` returns, and
+ * it reads no clock, since its time comes in with each call. A test, a replay, the browser engine
+ * and a lockstep peer all step a game through one, in one order. Its capabilities are its
+ * methods, as a host's are, and it has a `TypeId`, as Effect's own runtime objects do.
+ *
+ * @since 0.7.0
+ */
+import { Duration, Effect, Function, Inspectable, Predicate } from "effect";
+import type { Pipeable } from "effect";
+import { pipeArguments } from "effect/Pipeable";
 
 import { EventBuffer } from "../core/index";
 import { CommandDropped } from "./command";
 import type { AnyCommand, Settled } from "./command";
-import { Kernel } from "./kernel";
-import type { FrameBudget, KernelSimulation } from "./kernel";
-import { resolve } from "./simulation";
+import { Kernel } from "./internal/kernel";
+import type { KernelSimulation } from "./internal/kernel";
+import { resolve } from "./internal/resolved";
+import type { Resolved } from "./internal/resolved";
 import type {
   CommandContext,
   RefusalFor,
-  Resolved,
   SimulationClass,
   StepContext,
 } from "./simulation";
-import type { StepInput } from "./step-input";
+import type { FrameBudget, StepInput } from "./step-input";
 
-// Plain code, like the step it runs (ADR-0017): no Effect, no clock of its own. Time comes in
-// with each call.
+const TypeId = "~arcadekit/game/Loop";
+
+/**
+ * A loop: one run of a simulation at a time, which its caller steps in frames. A frame is one
+ * `frame(input, budget, nowMs)` call: the caller says where each step's input comes from, how
+ * much the frame steps and what time it is.
+ *
+ * **When to use**
+ *
+ * To step a simulation with nothing drawn: a test, a replay, a server, a bench. The browser
+ * engine and a lockstep session each keep one; a scenario is the way to check rules with one.
+ *
+ * **Details**
+ *
+ * It owns the step order:
+ *
+ * - for each step a frame owes: the input source's `read`, then the commands sent since the last
+ *   step, in order, then `step`, then the source's `endStep`;
+ * - then the source's `endFrame`, once, if any step ran;
+ * - then the events those steps reported;
+ * - then a sample, if one is due.
+ *
+ * The source's `read(step)` may call `send`: a command sent there is applied in that same step,
+ * before `step`, after the commands that were already waiting. That is how a host that knows which
+ * step a command belongs to gives it to the rules at exactly that step.
+ *
+ * A listener must not call `frame`, `start`, `stop` or `send` while it is being called: it runs in
+ * the middle of one of them. A sender is told how its command ended once the loop is out of the
+ * call that ended it, so a `settled` callback may send, start or stop. A call that throws tells
+ * nobody: the answers it owes are kept, and the next `stop`, `start` or `frame` that returns gives
+ * them.
+ *
+ * When `frame` returns, its steps are over: a step is one plain call. The loop holds a game to
+ * that by refusing a `step` or an `apply` handler that returns anything it shouldn't (a promise,
+ * an Effect, the next state, a list of events), which a cast would otherwise let through.
+ *
+ * **Example** (Stepping a run with nothing drawn)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game";
+ * import { Schema } from "effect";
+ *
+ * class Boost extends Game.Command("Boost", { by: Schema.Number }) {}
+ * class Race extends Game.Simulation("Race", {
+ *   input: Schema.Struct({ moveX: Schema.Number }),
+ *   commands: [Boost],
+ *   create: () => ({ x: 0, speed: 1 }),
+ *   step: (runner, input, { dt }) => {
+ *     runner.x += input.moveX * runner.speed * dt;
+ *   },
+ *   apply: {
+ *     Boost: (runner, boost) => {
+ *       runner.speed += boost.by;
+ *     },
+ *   },
+ * }) {}
+ *
+ * const loop = Game.makeLoop(Race);
+ * loop.start(null, 1234, 0);
+ * loop.send(new Boost({ by: 1 }));
+ * loop.frame({ read: () => ({ moveX: 1 }) }, { steps: 60 }, 1000);
+ * loop.stepIndex; // => 60
+ * Math.round(loop.state?.x ?? 0); // => 2
+ * ```
+ *
+ * @category models
+ * @since 0.7.0
+ */
+export interface Loop<Config, State, Input, Event, Command, Refusals>
+  extends Pipeable.Pipeable, Inspectable.Inspectable {
+  readonly [TypeId]: typeof TypeId;
+  /** The current run's state, or null between runs. Read it; change it only through a step. */
+  readonly state: State | null;
+  /** Steps run since `start`: the number of the next step. 0 with no run. */
+  readonly stepIndex: number;
+  /**
+   * Starts a new run, replacing any current one: makes the new state, unpauses, reports the
+   * events `create` produced, then the first sample, and then drops the commands the run before
+   * hadn't applied and tells their senders.
+   *
+   * If `create` throws there is no new run: the run before goes on with its commands, and what
+   * `create` had reported is discarded.
+   */
+  readonly start: (config: Config, seed: number, nowMs: number) => void;
+  /**
+   * Sends a command to the current run. The rules get it at the start of the next step, after
+   * the commands sent before it: sent from the input source's `read(step)`, that is the step
+   * being read. `player` is the sender's slot: 0 unless several players share the run.
+   *
+   * `settled` is called once with how it ended: `undefined` when its `apply` handler took it, the
+   * rejection the handler refused it with, or a `CommandDropped` if the rules gave no answer.
+   * That is at once with no run, and otherwise when the run ends first (`stop`, a new `start`) or
+   * its handler threw. It is called once the loop is out of the call that ended the command,
+   * never between two handlers, so it may send, start or stop.
+   *
+   * Returns a function that takes the command back: if it hasn't been applied yet it never is,
+   * and `settled` is not called after it.
+   */
+  readonly send: <C extends Command>(
+    command: C,
+    player?: number,
+    settled?: (outcome: Settled<RefusalFor<Refusals, C>>) => void
+  ) => () => void;
+  /** While paused, frames run nothing and their time is discarded. Commands wait. */
+  readonly setPaused: (paused: boolean) => void;
+  /**
+   * Ends the current run. Commands it hadn't applied are dropped, and their senders told. What a
+   * frame that threw had left unreported is discarded.
+   */
+  readonly stop: () => void;
+  /**
+   * Calls `listener` for every event and sample, in order, inside the `start` or the `frame` that
+   * reports it: so before the sender of a command that call answered is told. Returns a function
+   * that stops it.
+   */
+  readonly subscribe: (listener: (event: Event) => void) => () => void;
+  /**
+   * Runs one frame. `budget` is `{ seconds }` of time passed (the browser's frames) or exactly
+   * `{ steps }` (tests, replays, lockstep). Returns the number of steps run: 0 with no run, while
+   * paused, or while a `{ seconds }` frame's time is still short of a step.
+   *
+   * A frame that throws (a bug in a step, or a handler that returns what it shouldn't) leaves
+   * the run where the throw left it, and tells nobody. Whoever catches the throw ends the run with
+   * `stop`, as the engine does, and the senders hear then. A command whose handler threw is told
+   * it was dropped, though the handler may have changed the state first; those sent after it
+   * still wait. One the frame had applied before the throw is told the rules' answer, the one
+   * case where a sender hears of a step no listener heard: `stop` discards what that frame
+   * reported.
+   */
+  readonly frame: (
+    input: StepInput<Input>,
+    budget: FrameBudget,
+    nowMs: number
+  ) => number;
+}
+
+/**
+ * Checks whether a value is a loop.
+ *
+ * **When to use**
+ *
+ * Narrow an unknown value before running a frame on it.
+ *
+ * **Example** (Recognising a loop)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game";
+ * import { Schema } from "effect";
+ *
+ * class Count extends Game.Simulation("Count", {
+ *   input: Schema.Null,
+ *   create: () => ({ steps: 0 }),
+ *   step: () => {},
+ * }) {}
+ *
+ * Game.isLoop(Game.makeLoop(Count)); // => true
+ * Game.isLoop({ frame: () => 0 }); // => false
+ * ```
+ *
+ * @category guards
+ * @since 0.7.0
+ */
+export const isLoop = (
+  value: unknown
+): value is Loop<unknown, unknown, unknown, unknown, unknown, unknown> =>
+  Predicate.hasProperty(value, TypeId);
+
+/**
+ * Makes a loop for `simulation`, with no run: `start` begins one.
+ *
+ * **When to use**
+ *
+ * Once per host of a simulation: a test, a replay, a server. It takes the declaration, and
+ * nothing a game would repeat.
+ *
+ * **Details**
+ *
+ * The loop makes nothing of the game's until `start`, which calls the simulation's `create`. Its
+ * fixed clock steps by the simulation's `stepSeconds`.
+ *
+ * **Example** (A loop before and after its run starts)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game";
+ * import { Schema } from "effect";
+ *
+ * class Count extends Game.Simulation("Count", {
+ *   input: Schema.Null,
+ *   create: (config: { readonly from: number }) => ({ steps: config.from }),
+ *   step: (count) => {
+ *     count.steps += 1;
+ *   },
+ * }) {}
+ *
+ * const loop = Game.makeLoop(Count);
+ * loop.state; // => null
+ * loop.start({ from: 10 }, 1, 0);
+ * loop.frame({ read: () => null }, { steps: 2 }, 0); // => 2
+ * loop.state; // => { steps: 12 }
+ * ```
+ *
+ * @category constructors
+ * @since 0.7.0
+ */
+export const makeLoop = <Config, State, Input, Event, Command, Refusals>(
+  simulation: SimulationClass<
+    string,
+    Config,
+    State,
+    Input,
+    Event,
+    Command,
+    Refusals
+  >
+): Loop<Config, State, Input, Event, Command, Refusals> =>
+  new LoopImpl(simulation);
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
@@ -87,36 +316,15 @@ const tagOf = (command: unknown): string =>
   (command as { readonly _tag: string })._tag;
 
 /**
- * Steps a `Game.Simulation`: one run at a time, its fixed clock, its commands, its events and
- * its samples. It owns the step order, so a test, a replay, the browser engine and a lockstep
- * peer all run a game the same way:
- *
- * - for each step a frame owes: the input source's `read`, then the commands sent since the last
- *   step, in order, then `step`, then the source's `endStep`;
- * - then the source's `endFrame`, once, if any step ran;
- * - then the events those steps reported;
- * - then a sample, if one is due.
- *
- * The source's `read(step)` may call `send`: a command sent there is applied in that same step,
- * before `step`, after the commands that were already waiting. That is how a host that knows
- * which step a command belongs to gives it to the rules at exactly that step: a script that
- * replays a run, or a lockstep session, whose source reads a step every peer has agreed on.
- *
- * It needs no DOM and reads no clock: the caller passes the time, and decides when a frame runs
- * and how much it steps. A listener must not call `frame`, `start`, `stop` or `send` while it is
- * being called: it runs in the middle of one of them.
- *
- * A sender is told how its command ended once the loop is out of the call that ended it: after
- * the frame's steps, events and sample, or after `start` or `stop` has done its work. So a
- * `settled` callback may send, start or stop. A call that throws tells nobody: the answers it
- * owes are kept, and the next `stop`, `start` or `frame` that returns gives them.
- *
- * When `frame` returns, its steps are over: a step is one plain call. The loop holds a game to
- * that by refusing a `step` or an `apply` handler that returns anything it shouldn't (a promise,
- * an Effect, the next state, a list of events), which a cast would otherwise let through and the
- * loop would drop.
+ * The loop `makeLoop` makes. A class, as Effect's own runtime objects are (`FiberImpl`): no game
+ * names it or calls `new` on it, and its value is a `Loop`, with a `TypeId`, `pipe` and a printed
+ * form.
  */
-export class Loop<Config, State, Input, Event, Command, Refusals> {
+class LoopImpl<Config, State, Input, Event, Command, Refusals>
+  extends Inspectable.Class
+  implements Loop<Config, State, Input, Event, Command, Refusals>
+{
+  readonly [TypeId]: typeof TypeId = TypeId;
   private readonly name: string;
   private readonly definition: Resolved<Config, State, Input, Event, Command>;
   private readonly commands: ReadonlyMap<string, AnyCommand>;
@@ -144,6 +352,7 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
       Refusals
     >
   ) {
+    super();
     this.name = simulation.simulationName;
     this.definition = resolve(simulation);
     this.commands = new Map(
@@ -152,24 +361,29 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
     this.kernel = new Kernel(this.compile());
   }
 
-  /** The current run's state, or null between runs. Read it; change it only through a step. */
   get state(): State | null {
     return this.kernel.state;
   }
 
-  /** Steps run since `start`: the number of the next step. 0 with no run. */
   get stepIndex(): number {
     return this.kernel.stepIndex;
   }
 
-  /**
-   * Starts a new run, replacing any current one: makes the new state, unpauses, reports the
-   * events `create` produced, then the first sample, and then drops the commands the run before
-   * hadn't applied and tells their senders.
-   *
-   * If `create` throws there is no new run: the run before goes on with its commands, and what
-   * `create` had reported is discarded.
-   */
+  pipe() {
+    // oxlint-disable-next-line prefer-rest-params -- Effect's own `pipe` reads its arguments so, with no array made per call.
+    return pipeArguments(this, arguments);
+  }
+
+  toJSON(): unknown {
+    return {
+      _id: "Loop",
+      simulation: this.name,
+      running: this.kernel.state !== null,
+      stepIndex: this.kernel.stepIndex,
+      waiting: this.pending.map((sent) => tagOf(sent.command)),
+    };
+  }
+
   start(config: Config, seed: number, nowMs: number): void {
     // What a frame that threw left unreported is not the new run's to report.
     EventBuffer.drain(this.events);
@@ -183,20 +397,6 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
     this.tell();
   }
 
-  /**
-   * Sends a command to the current run. The rules get it at the start of the next step, after
-   * the commands sent before it: sent from the input source's `read(step)`, that is the step
-   * being read. `player` is the sender's slot: 0 unless several players share the run.
-   *
-   * `settled` is called once with how it ended: `undefined` when its `apply` handler took it,
-   * the rejection the handler refused it with, or a `CommandDropped` if the rules gave no
-   * answer. That is at once with no run, and otherwise when the run ends first (`stop`, a new
-   * `start`) or its handler threw. It is called once the loop is out of the call that ended the
-   * command, never between two handlers, so it may send, start or stop.
-   *
-   * Returns a function that takes the command back: if it hasn't been applied yet it never is,
-   * and `settled` is not called after it.
-   */
   send<C extends Command>(
     command: C,
     player = 0,
@@ -229,15 +429,10 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
     };
   }
 
-  /** While paused, frames run nothing and their time is discarded. Commands wait. */
   setPaused(paused: boolean): void {
     this.kernel.setPaused(paused);
   }
 
-  /**
-   * Ends the current run. Commands it hadn't applied are dropped, and their senders told. What a
-   * frame that threw had left unreported is discarded.
-   */
   stop(): void {
     this.kernel.stop();
     EventBuffer.drain(this.events);
@@ -245,28 +440,10 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
     this.tell();
   }
 
-  /**
-   * Calls `listener` for every event and sample, in order, inside the `start` or the `frame`
-   * that reports it: so before the sender of a command that call answered is told. Returns a
-   * function that stops it.
-   */
   subscribe(listener: (event: Event) => void): () => void {
     return this.kernel.subscribe(listener);
   }
 
-  /**
-   * Runs one frame. `budget` is `{ seconds }` of time passed (the browser's frames) or exactly
-   * `{ steps }` (tests, replays, lockstep). Returns the number of steps run; 0 with no run, while
-   * paused, or while a `{ seconds }` frame's time is still short of a step.
-   *
-   * A frame that throws (a bug in a step, or a handler that returns what it shouldn't) leaves
-   * the run where the throw left it, and tells nobody. Whoever catches the throw ends the run
-   * with `stop`, as the engine does, and the senders hear then. A command whose handler threw is
-   * told it was dropped, though the handler may have changed the state first; those sent after
-   * it still wait. One the frame had applied before the throw is told the rules' answer, the
-   * one case where a sender hears of a step no listener heard: `stop` discards what that frame
-   * reported.
-   */
   frame(input: StepInput<Input>, budget: FrameBudget, nowMs: number): number {
     const steps = this.kernel.frame(input, budget, nowMs);
     if (this.answers.length > 0) {
@@ -423,9 +600,9 @@ export class Loop<Config, State, Input, Event, Command, Refusals> {
   }
 
   /**
-   * Tells each sender how its command ended, in the order they ended. The loop is out of its
-   * own work by now, so a sender may send, start or stop from here. One that throws doesn't keep
-   * the others from hearing: the first throw is rethrown once all were told.
+   * Tells each sender how its command ended, in the order they ended. The loop is out of its own
+   * work by now, so a sender may send, start or stop from here. One that throws doesn't keep the
+   * others from hearing: the first throw is rethrown once all were told.
    */
   private tell(): void {
     const { answers } = this;

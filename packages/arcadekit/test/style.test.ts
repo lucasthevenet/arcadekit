@@ -53,7 +53,6 @@ const SECTIONS = {
 // doc comments' examples of every entry off it.
 const NOT_YET_EFFECT_STYLE: readonly string[] = [
   "render-three",
-  "game",
   "net",
   "foldkit",
 ];
@@ -80,7 +79,11 @@ const CATEGORIES: readonly string[] = [
 
 // The entries a game imports whole, as one module (`import * as Game from "arcadekit/game"`):
 // their public file is the module, whose members are what it exports, its declarations
-// included.
+// included. The public file assembles the module from the entry's files, so it may re-export
+// them, and each of those files is held to the shape as a module is. A file of such an entry is
+// no namespace: it is a data type's module when it declares a `TypeId`. One whole module may be
+// another and more (`arcadekit/game/browser` is `arcadekit/game` and the engine): it re-exports
+// the other's public file, and leaves that entry's files to that entry's checks.
 const WHOLE_MODULES: ReadonlySet<string> = new Set([
   "game",
   "game/browser",
@@ -571,10 +574,17 @@ const strayExports = (publicFile: string): readonly string[] => {
  * The files that are an entry's modules: every file its public file exports from, which in
  * Effect's shape is a namespace's, and for an entry imported whole, the public file too. An
  * entry that only re-exports names is checked by what it re-exports, so each of those files
- * shows what it lacks.
+ * shows what it lacks. An entry imported whole that re-exports another such entry's public file
+ * leaves that entry's modules to it: they are checked once, under the entry that owns them.
  */
 const modulesOf = (entry: string, publicFile: string): readonly string[] => {
   const dir = path.posix.dirname(publicFile);
+  const extended = kitEntries().filter(
+    (other) =>
+      other.entry !== entry &&
+      WHOLE_MODULES.has(entry) &&
+      WHOLE_MODULES.has(other.entry)
+  );
   const exportedFrom = [
     ...code(read(path.join(srcDir, publicFile))).matchAll(
       /^export\b[^;]*?\bfrom "(?<from>\.\/[\w/.-]+)";$/gmsu
@@ -585,10 +595,15 @@ const modulesOf = (entry: string, publicFile: string): readonly string[] => {
       ? `${target}.ts`
       : `${target}/index.ts`;
   });
+  const theirs = new Set(
+    extended
+      .filter((other) => exportedFrom.includes(other.publicFile))
+      .flatMap((other) => modulesOf(other.entry, other.publicFile))
+  );
   return [
     ...new Set([
       ...(WHOLE_MODULES.has(entry) ? [publicFile] : []),
-      ...exportedFrom,
+      ...exportedFrom.filter((file) => !theirs.has(file)),
     ]),
   ];
 };
@@ -719,7 +734,21 @@ const shapeProblems = (file: string, entry: string): readonly string[] => {
   const source = read(path.join(srcDir, file));
   const exported = exportsOf(source);
   const names = new Set(exported.map(({ name }) => name));
-  const namespace = pascal(path.posix.basename(file, ".ts"));
+  const whole = WHOLE_MODULES.has(entry);
+  // The public file of an entry imported whole assembles its module, so it may re-export.
+  const assembles =
+    whole &&
+    kitEntries().some(
+      (other) => other.entry === entry && other.publicFile === file
+    );
+  // A namespace's module is a data type's when it exports an interface by the namespace's name.
+  // A file of an entry imported whole is no namespace: it is a data type's module when it
+  // declares a `TypeId`, and the type is the one that `TypeId` names.
+  const declaredTypeId = /^const TypeId = "(?<id>[^"]+)";$/mu.exec(source)
+    ?.groups?.id;
+  const namespace = whole
+    ? (declaredTypeId?.split("/").at(-1) ?? "")
+    : pascal(path.posix.basename(file, ".ts"));
   const moduleComment = /^\/\*\*[\s\S]*?\*\//u.exec(source.trimStart())?.[0];
   const typeId = `~arcadekit/${entry}/${namespace}`;
   const guard = exported.find(({ name }) => name === `is${namespace}`);
@@ -735,8 +764,11 @@ const shapeProblems = (file: string, entry: string): readonly string[] => {
             (part) => `${name}: its doc comment lacks ${part}`
           )
     ),
-    ...(/^export (?:\*|\{)/mu.test(code(source))
+    ...(!assembles && /^export (?:\*|\{)/mu.test(code(source))
       ? ["re-exports: a module exports what it defines"]
+      : []),
+    ...(whole && declaredTypeId !== undefined && !names.has(namespace)
+      ? [`${declaredTypeId}: its TypeId names no interface the file exports`]
       : []),
     ...exported
       .filter(

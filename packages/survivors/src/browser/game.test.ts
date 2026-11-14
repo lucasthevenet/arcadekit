@@ -86,7 +86,7 @@ const play = () => {
     setPointerCapture: () => {},
   }) as unknown as HTMLElement;
   const input = survivorsInput(surface);
-  const loop = new Game.Loop(Survivors);
+  const loop = Game.makeLoop(Survivors);
   loop.start({ content, heroIds: ["bolter"] }, 1, 0);
   const hero = loop.state!.heroes[0]!;
   return {

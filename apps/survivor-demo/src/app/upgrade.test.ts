@@ -4,7 +4,7 @@ import { GameContent, Survivors, SurvivorsContent } from "@arcadekit/survivors";
 import { SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { ContentSource } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
-import { manualFrames } from "arcadekit/game/testing";
+import { ManualFrames } from "arcadekit/game/testing";
 import { Effect, Fiber, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
@@ -74,7 +74,7 @@ interface Offered {
 const offered = async (
   drive: (run: Offered) => Effect.Effect<void, never, Scope.Scope>
 ) => {
-  const frames = manualFrames();
+  const frames = ManualFrames.make();
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -103,7 +103,7 @@ const offered = async (
         const play = (ms: number) => {
           const until = frames.now() + ms;
           while (frames.now() < until) {
-            frames.runFrameAt(frames.now() + 1000 / 60);
+            ManualFrames.runFrameAt(frames, frames.now() + 1000 / 60);
           }
         };
         while (offers.length === 0 && frames.now() < 60_000) {

@@ -558,11 +558,11 @@ What every peer of a run must agree on is on the class as plain values and funct
 
 ### Testing a Co-op game
 
-`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links) and `manualTicker()` a ticker the test drives, each with the `layer` a `Coop`'s layer takes. `onFakeTimers(effect)` has an Effect run on the timers a test fakes ([below](#on-fake-timers)). Frames come from `manualFrames()` in [`arcadekit/game/testing`](../game/README.md#testing-an-engine), provided as `Game.Frames`. It also has a small game to run: `TestGame`, a declared simulation with lobby picks, an offer each player answers with a command the rules may refuse (`AnswerOffer`, `NothingOwed`), a pause a player holds with another (`HoldPause`) and an end (`RunEnded`), with its content (`testContent`) and its state hash (`hashTestState`). Content with `offerAtStart: true` starts the run on an offer that its `create` reports: a start that reports, for a test of what a seat hears first. It has no Co-op client of its own: a test makes one as an app does, from a `Coop`'s `layer`, its own game's or one declared over `TestGame`.
+`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links) and `manualTicker()` a ticker the test drives, each with the `layer` a `Coop`'s layer takes. `onFakeTimers(effect)` has an Effect run on the timers a test fakes ([below](#on-fake-timers)). Frames come from `ManualFrames.make()` in [`arcadekit/game/testing`](../game/README.md#testing-an-engine), provided as `Game.Frames`. It also has a small game to run: `TestGame`, a declared simulation with lobby picks, an offer each player answers with a command the rules may refuse (`AnswerOffer`, `NothingOwed`), a pause a player holds with another (`HoldPause`) and an end (`RunEnded`), with its content (`testContent`) and its state hash (`hashTestState`). Content with `offerAtStart: true` starts the run on an offer that its `create` reports: a start that reports, for a test of what a seat hears first. It has no Co-op client of its own: a test makes one as an app does, from a `Coop`'s `layer`, its own game's or one declared over `TestGame`.
 
 ```ts
 import * as Game from "arcadekit/game/browser";
-import { manualFrames } from "arcadekit/game/testing";
+import { ManualFrames } from "arcadekit/game/testing";
 import { Coop } from "arcadekit/net/browser";
 import {
   RunEnded,
@@ -602,7 +602,7 @@ const player = Layer.build(
   TestCoop.layer.pipe(
     Layer.provide(hub.layer),
     Layer.provide(timer.layer),
-    Layer.provide(Layer.succeed(Game.Frames, manualFrames()))
+    Layer.provide(Layer.succeed(Game.Frames, ManualFrames.make()))
   )
 ).pipe(Effect.map((context) => Context.get(context, TestCoop)));
 

@@ -123,7 +123,7 @@ const runOneStep = <Input>(
   >,
   input: { readonly read: () => Input }
 ) => {
-  const loop = new Game.Loop(simulation);
+  const loop = Game.makeLoop(simulation);
   loop.start(undefined, 1, 0);
   loop.frame(input, { steps: 1 }, 0);
 };
@@ -175,7 +175,7 @@ class Ordered extends Game.Simulation("Ordered", {
 
 /** A started loop of the counter game, and every event it reports. */
 const startCounter = (target = 3) => {
-  const loop = new Game.Loop(Counter);
+  const loop = Game.makeLoop(Counter);
   const heard: Game.EventOf<typeof Counter>[] = [];
   loop.subscribe((event) => heard.push(event));
   loop.start({ target }, 7, 0);
@@ -232,7 +232,7 @@ describe("Game.Simulation", () => {
     expectTypeOf<Game.StateOf<typeof Ordered>>().toEqualTypeOf<{
       total: number;
     }>();
-    const loop = new Game.Loop(Ordered);
+    const loop = Game.makeLoop(Ordered);
     loop.start({ start: 1 }, 2, 0);
     loop.send(new AddBonus({ amount: 4 }));
     loop.frame({ read: () => null }, { steps: 1 }, 0);
@@ -255,7 +255,7 @@ describe("Game.Simulation", () => {
       },
     }) {}
     expectTypeOf(Nudge.tag).toEqualTypeOf<string>();
-    const loop = new Game.Loop(Loose);
+    const loop = Game.makeLoop(Loose);
     loop.start(undefined, 1, 0);
     loop.send(new Nudge({ by: 3 }));
     loop.frame({ read: () => null }, { steps: 1 }, 0);
@@ -443,7 +443,7 @@ describe("Game.Loop", () => {
   });
 
   it("drops a command sent with no run, and the commands a stopped run hadn't applied", () => {
-    const loop = new Game.Loop(Counter);
+    const loop = Game.makeLoop(Counter);
     loop.send(new AddBonus({ amount: 5 }));
     loop.start({ target: 100 }, 1, 0);
     loop.send(new AddBonus({ amount: 3 }));
@@ -477,7 +477,7 @@ describe("Game.Loop", () => {
         read: (state) => ({ steps: state.steps }),
       },
     }) {}
-    const loop = new Game.Loop(Ticker);
+    const loop = Game.makeLoop(Ticker);
     const heard: Ticked[] = [];
     loop.subscribe((event) => heard.push(event));
     loop.start(undefined, 1, 0);
@@ -552,7 +552,7 @@ describe("Game.Loop", () => {
         ]),
       },
     }) {}
-    const loop = new Game.Loop(Decided);
+    const loop = Game.makeLoop(Decided);
     loop.start(undefined, 1, 0);
     loop.send(new AddBonus({ amount: 2 }));
     expect(() => loop.frame({ read: () => null }, { steps: 1 }, 0)).toThrow(
@@ -570,7 +570,7 @@ describe("Game.Loop", () => {
       },
       step: () => {},
     }) {}
-    const loop = new Game.Loop(Loading);
+    const loop = Game.makeLoop(Loading);
     expect(() => loop.start(undefined, 1, 0)).toThrow(
       'Simulation "Loading": create returned a promise.'
     );
@@ -629,7 +629,7 @@ const IDLE = { read: () => null };
 
 /** A started jar, and how each command sent through `send` ended, in order. */
 const startJar = () => {
-  const loop = new Game.Loop(Jar);
+  const loop = Game.makeLoop(Jar);
   loop.start(undefined, 1, 0);
   const outcomes: unknown[] = [];
   return {
@@ -680,7 +680,7 @@ describe("a command the rules may refuse", () => {
   });
 
   it("drops a command sent with no run, at once", () => {
-    const loop = new Game.Loop(Jar);
+    const loop = Game.makeLoop(Jar);
     const outcomes: unknown[] = [];
     loop.send(new Empty(), 0, (outcome) => outcomes.push(outcome));
     expect(outcomes).toStrictEqual([
@@ -730,7 +730,7 @@ describe("a command the rules may refuse", () => {
       },
     }) {}
     const start = () => {
-      const loop = new Game.Loop(Undeclared);
+      const loop = Game.makeLoop(Undeclared);
       loop.start(undefined, 1, 0);
       const outcomes: unknown[] = [];
       loop.send(new Empty(), 0, (outcome) => outcomes.push(outcome));
@@ -774,7 +774,7 @@ describe("a command the rules may refuse", () => {
       step: () => {},
       apply: { Deposit: unchecked(() => new Impostor({ room: 0 })) },
     }) {}
-    const loop = new Game.Loop(Mixed);
+    const loop = Game.makeLoop(Mixed);
     loop.start(undefined, 1, 0);
     loop.send(new Deposit({ coins: 1 }));
     expect(() => loop.frame(IDLE, { steps: 1 }, 0)).toThrow(
@@ -797,7 +797,7 @@ describe("a command the rules may refuse", () => {
         },
       },
     }) {}
-    const loop = new Game.Loop(Telling);
+    const loop = Game.makeLoop(Telling);
     loop.start(undefined, 1, 0);
     loop.send(new Deposit({ coins: 1 }));
     expect(() => loop.frame(IDLE, { steps: 1 }, 0)).toThrow(
@@ -948,7 +948,7 @@ describe("a command the rules may refuse", () => {
         },
       },
     }) {}
-    const loop = new Game.Loop(Fragile);
+    const loop = Game.makeLoop(Fragile);
     const heard: string[] = [];
     loop.subscribe((event) => heard.push(event.name));
     loop.start("first", 1, 0);
@@ -981,7 +981,7 @@ describe("a command the rules may refuse", () => {
         },
       },
     }) {}
-    const loop = new Game.Loop(Crashing);
+    const loop = Game.makeLoop(Crashing);
     const heard: number[] = [];
     loop.subscribe((event) => heard.push(event.coins));
     loop.start(undefined, 1, 0);
@@ -1013,7 +1013,7 @@ describe("a command the rules may refuse", () => {
         },
       },
     }) {}
-    const loop = new Game.Loop(Tripping);
+    const loop = Game.makeLoop(Tripping);
     const order: string[] = [];
     loop.subscribe((event) => order.push(`heard ${event.coins}`));
     loop.start(undefined, 1, 0);
@@ -1027,7 +1027,7 @@ describe("a command the rules may refuse", () => {
   });
 
   it("refuses a command the simulation doesn't declare, where it is sent", () => {
-    const loop = new Game.Loop(Jar);
+    const loop = Game.makeLoop(Jar);
     loop.start(undefined, 1, 0);
     expect(() =>
       // @ts-expect-error -- AddBonus is no command of Jar.
@@ -1036,7 +1036,7 @@ describe("a command the rules may refuse", () => {
   });
 
   it("types what each command can be refused with", () => {
-    const loop = new Game.Loop(Jar);
+    const loop = Game.makeLoop(Jar);
     // A rejection's type is its class, so what a sender gets is the error it is.
     loop.send(new Deposit({ coins: 1 }), 0, (outcome) => {
       expectTypeOf(outcome).toEqualTypeOf<
