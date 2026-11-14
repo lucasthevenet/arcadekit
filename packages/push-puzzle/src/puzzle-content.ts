@@ -1,9 +1,10 @@
 /**
  * Push-puzzle's content as a Schema: its levels, each one checked that it can be played.
  *
- * A level is an id, a name and its rows of text (`Level`). Decoding refuses a level that a run
- * couldn't start on or couldn't finish, and names the level and what is wrong with it, so a run
- * trusts every level it is handed: it has one player, and boxes for every goal. `PushPuzzleContent`
+ * A level is an id, a name and its rows of text (`Level`). Decoding refuses a level a run couldn't
+ * start on, and one with no goal or too few boxes for its goals, and names the level and what is
+ * wrong with it, so a run trusts every level it is handed: it has one player, and a box for every
+ * goal. It counts; it doesn't check that a level can be solved. `PushPuzzleContent`
  * loads its file with this Schema.
  *
  * Plain on purpose: the checks are plain functions the Schema calls, pure data work.

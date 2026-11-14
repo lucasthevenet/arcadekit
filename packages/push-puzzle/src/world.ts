@@ -8,7 +8,8 @@
  * needs no seed.
  *
  * Plain on purpose: a step gives the same bits on every peer and every replay, and finishes in
- * the call. Nothing is allocated per step or per turn, but the one event a solve reports.
+ * the call. A step allocates nothing but the one event a solve reports; the HUD's sample after a
+ * turn is the loop's, and allocates its event.
  */
 import { EntityPool, Ring, TileMap } from "arcadekit/core";
 import type * as Game from "arcadekit/game";
@@ -75,9 +76,10 @@ export type Direction = typeof Direction.Type;
  *
  * **Details**
  *
- * A press moves at once. Holding the direction pressed last moves again after 12 steps, then
- * every 6 steps; holding one that wasn't pressed in this run moves nothing. Undo takes back one
- * turn per press, and never repeats.
+ * A press moves at once. Holding the direction pressed last, with no release since its press,
+ * moves again after 12 steps, then every 6 steps. Holding any other direction moves nothing, and
+ * so does the same direction held again after a release or an undo, until it is pressed. Undo
+ * takes back one turn per press, never repeats, and wins over a press in the same step.
  *
  * **Example** (A step with nothing pressed)
  *
@@ -94,7 +96,7 @@ export type Direction = typeof Direction.Type;
 export const Input = Schema.Struct({
   /** The direction held down now, if any. Holding it repeats the move. */
   held: Schema.NullOr(Direction),
-  /** The direction pressed during this step, if any. Starts a move right away. */
+  /** The direction pressed during this step, if any. Starts a move right away, unless `undo` is set. */
   pressed: Schema.NullOr(Direction),
   /** Whether undo was pressed during this step. Fires once per press, never repeats. */
   undo: Schema.Boolean,
@@ -364,7 +366,7 @@ export interface Puzzle {
   readonly changes: Ring.Ring<typeof CHANGE_LAYOUT>;
   /** The pressed direction that is still held, and steps until it moves again. Timed in steps, so replays are exact. */
   readonly repeat: { direction: Direction | null; stepsLeft: number };
-  /** Sound triggers, read by the presentation only. Not part of the replay's end state. */
+  /** The cue counters, which only the sound view reads. Not part of the replay's end state. */
   readonly cues: Cues;
 }
 
@@ -454,9 +456,10 @@ export const make = ({ content, levelId, historyCapacity }: Config): Puzzle => {
  *
  * **Details**
  *
- * The step's `dt` is unused: a held direction is timed in steps. A move into a wall, into a box
- * with a wall, a hole or another box behind it, or into a hole moves nothing and is no turn; an
- * undo with no history left is none either. Once the level is solved, no step takes a turn.
+ * The step's `dt` is unused: a held direction is timed in steps. A move into a wall or a hole,
+ * and a push of a box into a wall or another box, moves nothing and is no turn; an undo with no
+ * history left is none either. A box pushed into a hole fills it, and the cell is floor from then
+ * on, until an undo opens it again. Once the level is solved, no step takes a turn.
  *
  * **Example** (Two presses that solve a level)
  *

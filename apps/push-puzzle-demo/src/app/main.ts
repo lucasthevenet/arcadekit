@@ -31,7 +31,7 @@ export { subscriptions } from "./subscriptions";
  */
 const assets = Layer.mergeAll(
   PushPuzzleSheet.layer(SpriteSheet.fromUrl(Sheet.url)),
-  PushPuzzleCueTable.layer(Sounds.cues),
+  PushPuzzleCueTable.layer(Sounds.byCue),
   BrowserAudioSystem.layer
 );
 

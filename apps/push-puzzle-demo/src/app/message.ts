@@ -6,6 +6,7 @@
  */
 import { Hud } from "@arcadekit/push-puzzle";
 import { AudioSettings } from "arcadekit/audio";
+import type { AudioSystem } from "arcadekit/audio";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
@@ -41,7 +42,12 @@ export const Message = defineMessageUnion({
 
   // Sound panel and the M key, on any screen
   ChangedVolume: {
-    bus: Schema.Literals(["master", "sfx", "music"]),
+    // The kit's `AudioSystem.Bus` is a type with no Schema: `satisfies` ties these to it.
+    bus: Schema.Literals([
+      "master",
+      "sfx",
+      "music",
+    ] as const satisfies readonly AudioSystem.Bus[]),
     volume: Schema.Number,
   },
   ToggledMute: {},

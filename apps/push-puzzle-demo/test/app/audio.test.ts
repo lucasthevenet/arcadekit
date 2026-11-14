@@ -29,7 +29,7 @@ const SETTINGS_KEY = "arcadekit/push-puzzle/settings";
 
 describe("the sounds", () => {
   it("plays every cue with a sound from the list, each a file in public/sounds", () => {
-    const ids = Object.values(Sounds.cues);
+    const ids = Object.values(Sounds.byCue);
     expect({
       missing: ids.filter((id) => !Object.hasOwn(Sounds.list, id)),
       files: Object.entries(Sounds.list).every(

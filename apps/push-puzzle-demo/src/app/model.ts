@@ -1,8 +1,8 @@
 /**
  * The app's Model: Foldkit's contract, with the Schemas it is made of.
  *
- * Plain on purpose: Schemas and a pure function, which `update` and `view` read (Foldkit's
- * contract).
+ * Plain on purpose: Schemas, which `update` and `view` read, and `isLoaded`, a pure function the
+ * engine entry reads (Foldkit's contract).
  */
 import { Hud } from "@arcadekit/push-puzzle";
 import { AudioSettings } from "arcadekit/audio";
@@ -33,7 +33,7 @@ export const Phase = defineTaggedUnion({
 export type Phase = typeof Phase.Type;
 
 /**
- * Whether the levels and the sprite sheet have loaded, so the engine exists: every phase but
+ * Whether the levels and the sprite sheet have loaded, so the engine can attach: every phase but
  * `Loading` and `LoadFailed`. The engine entry attaches only then.
  */
 export const isLoaded = (phase: Phase): boolean =>

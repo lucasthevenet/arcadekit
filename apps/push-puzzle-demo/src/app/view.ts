@@ -2,7 +2,8 @@
  * The app's `view`: Foldkit's contract.
  *
  * Plain on purpose: `view` is a pure function of the Model (Foldkit's contract). The viewport is
- * rendered on every screen, so the engine's canvas is never made again.
+ * rendered on every screen, so changing screens never detaches the engine or makes its canvas
+ * again; only a "Try again" after a failure attaches it anew.
  */
 import type { Hud } from "@arcadekit/push-puzzle";
 import type { AudioSettings, AudioSystem } from "arcadekit/audio";
@@ -24,7 +25,7 @@ export const view = (model: Model, h: H): Document => ({
   body: h.div(
     [h.Class("app")],
     [
-      // The engine draws here. Rendered on every screen, so the canvas is never recreated.
+      // The engine draws here. Rendered on every screen, so changing screens keeps its canvas.
       Viewport.make(h, {
         mounted: Message.MountedViewport(),
         unmounted: Message.UnmountedViewport(),

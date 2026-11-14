@@ -1,5 +1,5 @@
 /**
- * The app's sounds: the files it ships, which sound each of the genre's cues plays, and the
+ * The app's sounds: the files it ships, which of them each of the genre's cues plays, and the
  * volume a slider sets.
  *
  * The files are in `public/sounds`, and each sound's id is its file name. Where the player's
@@ -29,8 +29,8 @@ export const list: AudioSystem.SoundList = {
   [music]: { file: file(music), bus: "music" },
 };
 
-/** Which sound each of push-puzzle's cues plays: what the app gives `PushPuzzleCueTable`. */
-export const cues: CueSoundsOf<typeof PushPuzzleCueTable> = {
+/** The sounds the app gives `PushPuzzleCueTable`, by cue: which of its sounds each cue plays. */
+export const byCue: CueSoundsOf<typeof PushPuzzleCueTable> = {
   move: "move",
   push: "push",
   hole: "hole",

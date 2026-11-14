@@ -28,10 +28,10 @@ import { PushPuzzleSheet } from "./sheet";
  *
  * **Details**
  *
- * Building the layer loads nothing. Each attach loads the sheet, or takes the one already loaded,
- * and needs the app's `AudioSystem.AudioSystem` and `PushPuzzleCueTable` (a test provides
- * `AudioSystem.layerSilent`). An attach fails when the sheet can't be loaded or the browser has no
- * WebGL.
+ * Its layer needs the app's `PushPuzzleSheet`, `AudioSystem.AudioSystem` and `PushPuzzleCueTable`
+ * (a test provides `AudioSystem.layerSilent` and a test sheet), and building it loads nothing.
+ * Each attach loads the sheet, or takes the one already loaded. An attach fails when the sheet
+ * can't be loaded or the browser has no WebGL.
  *
  * **Example** (The engine's key and its rules)
  *

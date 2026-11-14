@@ -169,7 +169,7 @@ describe("a sheet that fails to load", () => {
           Layer.provide(
             Layer.mergeAll(
               PushPuzzleSheet.layer(Effect.fail(failed)),
-              PushPuzzleCueTable.layer(Sounds.cues),
+              PushPuzzleCueTable.layer(Sounds.byCue),
               AudioSystem.layerSilent
             )
           )
