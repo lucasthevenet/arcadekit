@@ -1,54 +1,13 @@
-export {
-  type FitCameraOptions,
-  type GroundBounds,
-  type MutableGroundBounds,
-  fitCamera,
-  followTarget,
-  orbitAround,
-} from "./camera";
-export { Gait } from "./gait";
-export {
-  InstancedSprites,
-  type InstancedSpritesOptions,
-  type SpriteSnap,
-} from "./instanced-sprites";
-export {
-  type InstanceAttributes,
-  MeshInstances,
-  type MeshInstancesOptions,
-} from "./mesh-instances";
-export {
-  PixelCamera,
-  type PixelCameraOptions,
-  fitPixelScale,
-  pixelFrustum,
-  pixelScale,
-  snapToPixel,
-} from "./pixel-camera";
-export {
-  type SpriteSheet,
-  loadSpriteSheet,
-  makeSpriteSheet,
-} from "./sprite-loader";
-export {
-  type ResolvedTags,
-  type SpriteFrame,
-  type SpriteSheetData,
-  SpriteSheetError,
-  type SpriteTag,
-  type SpriteTagDirection,
-  type WantedTags,
-  decodeSpriteSheet,
-  frameAt,
-  resolveTags,
-} from "./sprite-sheet";
-export { TileLayer, type TileLayerOptions } from "./tile-layer";
-export {
-  Stage,
-  type StageCamera,
-  type StageCameraKind,
-  type StageOptions,
-  disposeObject,
-  isKeptTexture,
-  keepTexture,
-} from "./stage";
+// arcadekit/render-three: Three.js drawing for arcadekit games. Loading a sprite sheet is an
+// Effect, with a typed error; drawing is plain (ADR-0024), since a view draws inside the frame the
+// browser shows, and what it makes has the view's lifecycle, which the engine's acquireRelease
+// holds. Each module is a namespace.
+
+export * as Camera from "./camera";
+export * as Gait from "./gait";
+export * as InstancedSprites from "./instanced-sprites";
+export * as MeshInstances from "./mesh-instances";
+export * as PixelCamera from "./pixel-camera";
+export * as SpriteSheet from "./sprite-sheet";
+export * as Stage from "./stage";
+export * as TileLayer from "./tile-layer";

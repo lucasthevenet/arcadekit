@@ -1,5 +1,5 @@
 import { MeshInstances } from "arcadekit/render-three";
-import type { SpriteSheet, SpriteTag } from "arcadekit/render-three";
+import type { SpriteSheet } from "arcadekit/render-three";
 import * as THREE from "three";
 
 // Aura rings, drawn from the sheet's aura art (`aura/ring`) at any radius. A sprite scaled by a
@@ -59,15 +59,15 @@ const ATTRIBUTES = { aAura: 4, aColor: 3 } as const;
 /** Up to `capacity` aura rings in one draw call, blended over the ground. */
 export class AuraRings {
   readonly material: THREE.ShaderMaterial;
-  private readonly rings: MeshInstances<typeof ATTRIBUTES>;
+  private readonly rings: MeshInstances.MeshInstances<typeof ATTRIBUTES>;
 
   /**
    * Rings from `tag` in `sheet` (frame 0 at rest, frame 1 pulsing). `depth` is the world
    * height they draw at: above the ground, below what stands on it.
    */
   constructor(
-    sheet: SpriteSheet,
-    tag: SpriteTag,
+    sheet: SpriteSheet.SpriteSheet,
+    tag: SpriteSheet.Tag,
     capacity: number,
     pixelsPerUnit: number,
     depth: number
@@ -101,7 +101,7 @@ export class AuraRings {
       transparent: true,
       depthWrite: false,
     });
-    this.rings = new MeshInstances(quad, this.material, {
+    this.rings = MeshInstances.make(quad, this.material, {
       capacity,
       attributes: ATTRIBUTES,
     });
@@ -121,16 +121,23 @@ export class AuraRings {
     pulse: number,
     color: THREE.Color
   ) {
-    this.rings.setAttribute(index, "aAura", x, z, radius, pulse);
-    this.rings.setAttribute(index, "aColor", color.r, color.g, color.b);
+    MeshInstances.setAttribute(this.rings, index, "aAura", x, z, radius, pulse);
+    MeshInstances.setAttribute(
+      this.rings,
+      index,
+      "aColor",
+      color.r,
+      color.g,
+      color.b
+    );
   }
 
   /** Shows the first `count` rings. */
   commit(count: number) {
-    this.rings.commit(count);
+    MeshInstances.commit(this.rings, count);
   }
 
   dispose() {
-    this.rings.dispose();
+    MeshInstances.dispose(this.rings);
   }
 }

@@ -2,7 +2,7 @@ import { AudioSystem } from "arcadekit/audio";
 import { Asset } from "arcadekit/content";
 import * as Game from "arcadekit/game/browser";
 import { InputController } from "arcadekit/input";
-import type { SpriteSheet, SpriteSheetError } from "arcadekit/render-three";
+import { SpriteSheet } from "arcadekit/render-three";
 
 import { PushPuzzle } from "../simulation";
 import type { Direction, PushPuzzleInput } from "../world";
@@ -64,13 +64,13 @@ export const pushPuzzleInput = (
 
 /**
  * The app's push-puzzle sheet, with the first tag of each name in `PUSH_PUZZLE_TAGS` (ADR-0015). The app
- * says where it comes from, `PushPuzzleSheet.layer(loadSpriteSheet(url))`, and loads it on its
+ * says where it comes from, `PushPuzzleSheet.layer(SpriteSheet.fromUrl(url))`, and loads it on its
  * loading screen; the engine draws from it and never frees it. The app's end does.
  */
-export class PushPuzzleSheet extends Asset<SpriteSheet, SpriteSheetError>()(
-  "PushPuzzleSheet",
-  { release: (sheet) => sheet.dispose() }
-) {}
+export class PushPuzzleSheet extends Asset<
+  SpriteSheet.SpriteSheet,
+  SpriteSheet.SpriteSheetError
+>()("PushPuzzleSheet", { release: SpriteSheet.dispose }) {}
 
 /**
  * The push-puzzle genre in the browser: its rules, a view that draws them from the app's sheet

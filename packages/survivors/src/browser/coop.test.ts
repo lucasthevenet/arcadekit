@@ -3,7 +3,7 @@ import * as Game from "arcadekit/game";
 import { Frames } from "arcadekit/game/browser";
 import { ManualFrames } from "arcadekit/game/testing";
 import { fakeCoopRooms } from "arcadekit/net/testing";
-import { SpriteSheetError } from "arcadekit/render-three";
+import { SpriteSheet } from "arcadekit/render-three";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -202,7 +202,7 @@ describe("survivors' Coop", () => {
   });
 
   it("fails to attach with the sheet's error, as the engine does, before any input is made", async () => {
-    const error = new SpriteSheetError({
+    const error = new SpriteSheet.SpriteSheetError({
       file: "sprites/survivors.json",
       message: "no sheet",
     });

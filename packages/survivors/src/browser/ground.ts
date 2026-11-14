@@ -1,5 +1,6 @@
 import { ExactMath } from "arcadekit/core";
-import type { InstancedSprites, SpriteTag } from "arcadekit/render-three";
+import { InstancedSprites } from "arcadekit/render-three";
+import type { SpriteSheet } from "arcadekit/render-three";
 
 // The arena floor as one-unit tiles from the sheet: calm grass inside, the stone wall around it
 // and the dark void beyond, with a few dirt patches over the grass. Which frame a cell shows is
@@ -9,17 +10,17 @@ import type { InstancedSprites, SpriteTag } from "arcadekit/render-three";
 
 /** The ground's tags, by the sides of the arena the wall's tiles sit on. */
 export interface GroundTags {
-  readonly grass: SpriteTag;
-  readonly patch: SpriteTag;
-  readonly void: SpriteTag;
-  readonly n: SpriteTag;
-  readonly e: SpriteTag;
-  readonly s: SpriteTag;
-  readonly w: SpriteTag;
-  readonly nw: SpriteTag;
-  readonly ne: SpriteTag;
-  readonly se: SpriteTag;
-  readonly sw: SpriteTag;
+  readonly grass: SpriteSheet.Tag;
+  readonly patch: SpriteSheet.Tag;
+  readonly void: SpriteSheet.Tag;
+  readonly n: SpriteSheet.Tag;
+  readonly e: SpriteSheet.Tag;
+  readonly s: SpriteSheet.Tag;
+  readonly w: SpriteSheet.Tag;
+  readonly nw: SpriteSheet.Tag;
+  readonly ne: SpriteSheet.Tag;
+  readonly se: SpriteSheet.Tag;
+  readonly sw: SpriteSheet.Tag;
 }
 
 /** One dirt patch per this many square world units of arena. */
@@ -35,7 +36,7 @@ export const tileTag = (
   half: number,
   col: number,
   row: number
-): SpriteTag => {
+): SpriteSheet.Tag => {
   if (col < -half - 1 || col > half || row < -half - 1 || row > half) {
     return tags.void;
   }
@@ -60,7 +61,7 @@ export const tileTag = (
 };
 
 /** A tag's frame for a place: its variants picked evenly by the place's hash. */
-export const variant = (tag: SpriteTag, pick: number): number =>
+export const variant = (tag: SpriteSheet.Tag, pick: number): number =>
   tag.from +
   (Math.floor(pick * (tag.to - tag.from + 1)) % (tag.to - tag.from + 1));
 
@@ -70,17 +71,17 @@ export const variant = (tag: SpriteTag, pick: number): number =>
  * most, so the batch needs no window: call it when the arena changes, and it keeps showing.
  */
 export const fillPatches = (
-  batch: InstancedSprites,
-  patch: SpriteTag,
+  batch: InstancedSprites.InstancedSprites,
+  patch: SpriteSheet.Tag,
   half: number
 ): void => {
   const patches = Math.floor((4 * half * half) / PATCH_AREA);
   const reach = half - 3;
-  batch.begin();
+  InstancedSprites.begin(batch);
   for (let k = 0; k < patches; k++) {
     const px = Math.round((fraction(k, 7919) * 2 - 1) * reach);
     const pz = Math.round((fraction(k, 104_729) * 2 - 1) * reach);
-    batch.push(px, pz, variant(patch, fraction(k, 3)));
+    InstancedSprites.push(batch, px, pz, variant(patch, fraction(k, 3)));
   }
-  batch.end();
+  InstancedSprites.end(batch);
 };

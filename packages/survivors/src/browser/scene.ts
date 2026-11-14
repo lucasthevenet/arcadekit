@@ -2,16 +2,11 @@ import { EntityPool } from "arcadekit/core";
 import {
   Gait,
   InstancedSprites,
+  PixelCamera,
+  SpriteSheet,
   TileLayer,
-  frameAt,
-  resolveTags,
-  snapToPixel,
 } from "arcadekit/render-three";
-import type {
-  GroundBounds,
-  ResolvedTags,
-  SpriteTag,
-} from "arcadekit/render-three";
+import type { Camera } from "arcadekit/render-three";
 import * as THREE from "three";
 
 import { MAX_HEROES, MAX_WEAPONS, auraRadius } from "../hero";
@@ -76,21 +71,21 @@ const DOWN_TINT = new THREE.Color("#8a90a8");
 const WHITE = new THREE.Color("#ffffff");
 
 interface HeroLook {
-  readonly walk: SpriteTag;
-  readonly idle: SpriteTag;
-  readonly down: SpriteTag;
+  readonly walk: SpriteSheet.Tag;
+  readonly idle: SpriteSheet.Tag;
+  readonly down: SpriteSheet.Tag;
   readonly tint: THREE.Color;
 }
 
 interface EnemyLook {
-  readonly tag: SpriteTag;
+  readonly tag: SpriteSheet.Tag;
   readonly tint: THREE.Color;
   /** World units above its shadow. */
   readonly float: number;
 }
 
 interface WeaponLook {
-  readonly tag: SpriteTag;
+  readonly tag: SpriteSheet.Tag;
   readonly tint: THREE.Color;
   /** The weapon's colour, for its trail and aura. */
   readonly color: THREE.Color;
@@ -100,7 +95,9 @@ interface WeaponLook {
 interface Looks {
   readonly world: World;
   /** The content's tags as the sheet has them, by their `TAG_NAMES`. */
-  readonly tags: ResolvedTags<ReturnType<typeof contentTags>>["tags"];
+  readonly tags: SpriteSheet.ResolvedTags<
+    ReturnType<typeof contentTags>
+  >["tags"];
   readonly heroes: readonly HeroLook[];
   readonly enemies: readonly EnemyLook[];
   /** Indexed like projectiles' `weapon` field: slot * MAX_WEAPONS + weapon index. */
@@ -125,7 +122,7 @@ const heroLook = (tags: Looks["tags"], hero: Hero): HeroLook => {
 };
 
 /** Frame `age` (0 the first) of a tag, held on its last. */
-const frameOf = (tag: SpriteTag, age: number) =>
+const frameOf = (tag: SpriteSheet.Tag, age: number) =>
   Math.min(tag.from + age, tag.to);
 
 /** The x of the playing hero nearest (x, z), or x itself with none. */
@@ -170,7 +167,7 @@ interface SurvivorsSceneOptions {
 
 /**
  * Draws a survivors World, or the menu backdrop, as sprites under `root`. Add `root` to a scene
- * seen by a `PixelCamera`; each frame, `draw`, centre the camera on `focus`, then `drawGround`
+ * seen by a pixel camera; each frame, `draw`, centre the camera on `focus`, then `drawGround`
  * with the ground the camera shows. Once a run's looks are made and its batches have grown to
  * hold it, a frame allocates nothing of the view's own, only what each batch's `end` costs.
  * `dispose` frees what it made, never the sheet.
@@ -185,29 +182,28 @@ export class SurvivorsScene {
   private readonly art: SurvivorsArt;
   private readonly localHero: () => number;
   /** The ground's tiles: the cells on screen. */
-  private readonly ground: TileLayer;
+  private readonly ground: TileLayer.TileLayer;
   /** The dirt patches over the grass: all of an arena's, filled when the arena changes. */
-  private readonly patches: InstancedSprites;
+  private readonly patches: InstancedSprites.InstancedSprites;
   private readonly groundTags: GroundTags;
   private readonly auras: AuraRings;
   /** The tags every run draws. */
-  private readonly common: ResolvedTags<typeof SCENE_TAGS>["tags"];
+  private readonly common: SpriteSheet.ResolvedTags<typeof SCENE_TAGS>["tags"];
   /** By a gem's tier: small, medium, large. */
-  private readonly gems: readonly SpriteTag[];
+  private readonly gems: readonly SpriteSheet.Tag[];
   private readonly slotColors = SLOT_COLORS.map((c) => new THREE.Color(c));
   /** Everything standing on the ground. */
-  private readonly actors: InstancedSprites;
+  private readonly actors: InstancedSprites.InstancedSprites;
   /** The soft shadows under heroes and enemies, blended over the ground. */
-  private readonly shadows: InstancedSprites;
+  private readonly shadows: InstancedSprites.InstancedSprites;
   private looks: Looks | null = null;
   /** The last run's arena, for the backdrop. */
   private halfSize = MENU_HALF_SIZE;
   /** The arena the ground was last drawn for, in whole units from its centre to its wall. */
   private half = -1;
   /** Per hero slot: whether it is walking, and whether it faces left. */
-  private readonly gaits = Array.from(
-    { length: MAX_HEROES },
-    () => new Gait({ linger: WALK_GRACE })
+  private readonly gaits = Array.from({ length: MAX_HEROES }, () =>
+    Gait.make({ linger: WALK_GRACE })
   );
   private readonly facingLeft = new Uint8Array(MAX_HEROES);
   /** The frame the ground shows at a cell. Kept, so a frame makes no closure for the layer. */
@@ -217,13 +213,13 @@ export class SurvivorsScene {
   constructor(art: SurvivorsArt, options: SurvivorsSceneOptions = {}) {
     this.art = art;
     this.localHero = options.localHero ?? firstHero;
-    this.common = resolveTags(art.sheet.data, SCENE_TAGS).tags;
+    this.common = SpriteSheet.resolveTags(art.sheet.data, SCENE_TAGS).tags;
     const { gemSmall, gemMedium, gemLarge } = this.common;
     this.gems = [gemSmall, gemMedium, gemLarge];
     this.groundTags = this.common;
-    this.ground = new TileLayer(art.sheet);
+    this.ground = TileLayer.make(art.sheet);
     this.root.add(this.ground.mesh);
-    this.patches = new InstancedSprites(art.sheet, { layer: LAYER.patches });
+    this.patches = InstancedSprites.make(art.sheet, { layer: LAYER.patches });
     this.root.add(this.patches.mesh);
     this.auras = new AuraRings(
       art.sheet,
@@ -233,12 +229,12 @@ export class SurvivorsScene {
       LAYER.aura
     );
     this.root.add(this.auras.mesh);
-    this.actors = new InstancedSprites(art.sheet, {
+    this.actors = InstancedSprites.make(art.sheet, {
       // Characters stand on the frame's bottom row; centred art is placed half a frame lower.
       anchor: { x: 0.5, y: 1 },
     });
     this.root.add(this.actors.mesh);
-    this.shadows = new InstancedSprites(art.sheet, {
+    this.shadows = InstancedSprites.make(art.sheet, {
       transparent: true,
       layer: LAYER.shadows,
     });
@@ -248,22 +244,22 @@ export class SurvivorsScene {
   }
 
   /** The batch everything standing on the ground is drawn in, for tests. */
-  get actorSprites(): InstancedSprites {
+  get actorSprites(): InstancedSprites.InstancedSprites {
     return this.actors;
   }
 
   /** The shadow batch, for tests. */
-  get shadowSprites(): InstancedSprites {
+  get shadowSprites(): InstancedSprites.InstancedSprites {
     return this.shadows;
   }
 
   /** The ground's tile layer, for tests. */
-  get groundLayer(): TileLayer {
+  get groundLayer(): TileLayer.TileLayer {
     return this.ground;
   }
 
   /** The dirt patch batch, for tests. */
-  get patchSprites(): InstancedSprites {
+  get patchSprites(): InstancedSprites.InstancedSprites {
     return this.patches;
   }
 
@@ -285,31 +281,31 @@ export class SurvivorsScene {
    * camera shows: call it after `draw`, once the camera is on `focus`. The tiles are filled
    * again only when `seen` touches other cells, and the patches only for another arena.
    */
-  drawGround(seen: GroundBounds): void {
+  drawGround(seen: Camera.GroundBounds): void {
     const half = Math.ceil(this.halfSize);
     if (half !== this.half) {
       this.half = half;
-      this.ground.invalidate();
+      TileLayer.invalidate(this.ground);
       fillPatches(this.patches, this.groundTags.patch, half);
     }
-    this.ground.draw(seen, this.groundFrame);
+    TileLayer.draw(this.ground, seen, this.groundFrame);
   }
 
   dispose(): void {
-    this.ground.dispose();
-    this.patches.dispose();
-    this.actors.dispose();
-    this.shadows.dispose();
+    TileLayer.dispose(this.ground);
+    InstancedSprites.dispose(this.patches);
+    InstancedSprites.dispose(this.actors);
+    InstancedSprites.dispose(this.shadows);
     this.auras.dispose();
     this.root.removeFromParent();
   }
 
   /** No run: a slow loop over the arena. */
   private drawBackdrop(time: number) {
-    this.actors.begin();
-    this.actors.end();
-    this.shadows.begin();
-    this.shadows.end();
+    InstancedSprites.begin(this.actors);
+    InstancedSprites.end(this.actors);
+    InstancedSprites.begin(this.shadows);
+    InstancedSprites.end(this.shadows);
     this.auras.commit(0);
     const reach = this.halfSize * 0.5;
     this.focus.x = Math.sin(time * 0.025) * reach;
@@ -320,28 +316,28 @@ export class SurvivorsScene {
     const looks = this.looksFor(world);
     this.halfSize = world.content.rules.arenaHalfSize;
     const { actors, shadows } = this;
-    actors.begin();
-    shadows.begin();
+    InstancedSprites.begin(actors);
+    InstancedSprites.begin(shadows);
     const auras = this.drawHeroes(world, looks, actors, shadows, time);
     this.drawEnemies(world, looks, actors, shadows, time);
     this.drawGems(world, actors, time);
     this.drawShots(world, looks, actors, time);
-    actors.end();
-    shadows.end();
+    InstancedSprites.end(actors);
+    InstancedSprites.end(shadows);
     this.auras.commit(auras);
     // On the sprite-pixel grid the hero is drawn on, so the camera moves in the same steps as
     // the hero and it stays still on screen.
     const followed = world.heroes[this.localHero()] ?? world.heroes[0]!;
-    this.focus.x = snapToPixel(followed.x, PIXELS_PER_UNIT);
-    this.focus.z = snapToPixel(followed.z, PIXELS_PER_UNIT);
+    this.focus.x = PixelCamera.snapToPixel(followed.x, PIXELS_PER_UNIT);
+    this.focus.z = PixelCamera.snapToPixel(followed.z, PIXELS_PER_UNIT);
   }
 
   /** Heroes, their slot markers and shadows, and their aura rings. Returns how many rings. */
   private drawHeroes(
     world: World,
     looks: Looks,
-    actors: InstancedSprites,
-    shadows: InstancedSprites,
+    actors: InstancedSprites.InstancedSprites,
+    shadows: InstancedSprites.InstancedSprites,
     time: number
   ): number {
     const { data } = this.art.sheet;
@@ -358,30 +354,46 @@ export class SurvivorsScene {
       if (hero.status === "down") {
         tag = look.down;
       }
-      const a = actors.push(
+      const a = InstancedSprites.push(
+        actors,
         hero.x,
         feet,
-        frameAt(data, tag, time + hero.slot * 0.13),
+        SpriteSheet.frameAt(data, tag, time + hero.slot * 0.13),
         this.facingLeft[hero.slot] === 1
       );
-      actors.setLayer(a, LAYER.bodies);
+      InstancedSprites.setLayer(actors, a, LAYER.bodies);
       // A downed hero is greyed only in co-op; a lone hero's run is over.
       if (hero.status === "down" && coop) {
-        actors.setTint(a, DOWN_TINT);
-        actors.setFlash(a, 0.15);
+        InstancedSprites.setTint(actors, a, DOWN_TINT);
+        InstancedSprites.setFlash(actors, a, 0.15);
       } else {
-        actors.setTint(a, look.tint);
+        InstancedSprites.setTint(actors, a, look.tint);
         if (hero.hurtTimer > 0) {
-          actors.setFlash(a, Math.floor(time * 20) % 2 === 0 ? 0.85 : 0.35);
+          InstancedSprites.setFlash(
+            actors,
+            a,
+            Math.floor(time * 20) % 2 === 0 ? 0.85 : 0.35
+          );
         }
       }
-      const mark = actors.push(hero.x, feet + 3 * PX, this.common.marker.from);
-      actors.setLayer(mark, LAYER.marks);
-      actors.setTint(
+      const mark = InstancedSprites.push(
+        actors,
+        hero.x,
+        feet + 3 * PX,
+        this.common.marker.from
+      );
+      InstancedSprites.setLayer(actors, mark, LAYER.marks);
+      InstancedSprites.setTint(
+        actors,
         mark,
         this.slotColors[hero.slot % this.slotColors.length]!
       );
-      shadows.push(hero.x, feet - PX, this.common.shadow.from);
+      InstancedSprites.push(
+        shadows,
+        hero.x,
+        feet - PX,
+        this.common.shadow.from
+      );
       if (hero.status === "playing") {
         rings = this.drawAuras(hero, looks, rings);
       }
@@ -413,8 +425,8 @@ export class SurvivorsScene {
   private drawEnemies(
     world: World,
     looks: Looks,
-    actors: InstancedSprites,
-    shadows: InstancedSprites,
+    actors: InstancedSprites.InstancedSprites,
+    shadows: InstancedSprites.InstancedSprites,
     time: number
   ) {
     const { data } = this.art.sheet;
@@ -424,36 +436,50 @@ export class SurvivorsScene {
       const ex = x[i]!;
       const feet = z[i]! + ENEMY_FEET;
       const phase = phaseOf(EntityPool.idOf(world.enemies, i)) * 4;
-      const a = actors.push(
+      const a = InstancedSprites.push(
+        actors,
         ex,
         feet,
-        frameAt(data, look.tag, time + phase),
+        SpriteSheet.frameAt(data, look.tag, time + phase),
         nearestHeroX(world, ex, z[i]!) < ex
       );
-      actors.setLayer(a, LAYER.bodies);
-      actors.setTint(a, look.tint);
+      InstancedSprites.setLayer(actors, a, LAYER.bodies);
+      InstancedSprites.setTint(actors, a, look.tint);
       if (look.float > 0) {
-        actors.setLift(a, look.float + Math.sin(time * 5 + phase * 1.6) * 0.06);
+        InstancedSprites.setLift(
+          actors,
+          a,
+          look.float + Math.sin(time * 5 + phase * 1.6) * 0.06
+        );
       }
       if (hitFlash[i]! > 0) {
-        actors.setFlash(a, Math.min(1, hitFlash[i]! * 10));
+        InstancedSprites.setFlash(actors, a, Math.min(1, hitFlash[i]! * 10));
       }
-      shadows.push(ex, feet - PX, this.common.shadow.from);
+      InstancedSprites.push(shadows, ex, feet - PX, this.common.shadow.from);
     }
   }
 
   /** Gems by value, glinting now and then. */
-  private drawGems(world: World, actors: InstancedSprites, time: number) {
+  private drawGems(
+    world: World,
+    actors: InstancedSprites.InstancedSprites,
+    time: number
+  ) {
     const { data } = this.art.sheet;
     const { x, z, value } = world.gems.fields;
     for (let i = 0; i < world.gems.count; i++) {
       const tag = this.gems[gemTier(value[i]!)]!;
-      const gem = actors.push(
+      const gem = InstancedSprites.push(
+        actors,
         x[i]!,
         z[i]! + 0.5,
-        frameAt(data, tag, time + phaseOf(EntityPool.idOf(world.gems, i)) * 3)
+        SpriteSheet.frameAt(
+          data,
+          tag,
+          time + phaseOf(EntityPool.idOf(world.gems, i)) * 3
+        )
       );
-      actors.setLayer(gem, LAYER.marks);
+      InstancedSprites.setLayer(actors, gem, LAYER.marks);
     }
   }
 
@@ -461,7 +487,7 @@ export class SurvivorsScene {
   private drawShots(
     world: World,
     looks: Looks,
-    actors: InstancedSprites,
+    actors: InstancedSprites.InstancedSprites,
     time: number
   ) {
     const { data } = this.art.sheet;
@@ -473,22 +499,24 @@ export class SurvivorsScene {
       // Puffs a few pixels apart, closer for slow shots.
       const spacing = Math.min(0.28, Math.max(0.16, speed * 0.015)) / speed;
       for (let k = TRAIL; k >= 1; k--) {
-        const puff = actors.push(
+        const puff = InstancedSprites.push(
+          actors,
           x[i]! - vx[i]! * spacing * k,
           z[i]! - vz[i]! * spacing * k + 2 * PX,
           frameOf(trail, k - 1)
         );
-        actors.setLayer(puff, LAYER.shots);
-        actors.setTint(puff, look?.color ?? WHITE);
+        InstancedSprites.setLayer(actors, puff, LAYER.shots);
+        InstancedSprites.setTint(actors, puff, look?.color ?? WHITE);
       }
-      const shot = actors.push(
+      const shot = InstancedSprites.push(
+        actors,
         x[i]!,
         z[i]! + 6 * PX,
-        frameAt(data, look?.tag ?? bolt, time + i * 0.05),
+        SpriteSheet.frameAt(data, look?.tag ?? bolt, time + i * 0.05),
         vx[i]! < 0
       );
-      actors.setLayer(shot, LAYER.shots);
-      actors.setTint(shot, look?.tint ?? WHITE);
+      InstancedSprites.setLayer(actors, shot, LAYER.shots);
+      InstancedSprites.setTint(actors, shot, look?.tint ?? WHITE);
     }
   }
 
@@ -496,7 +524,7 @@ export class SurvivorsScene {
   private walking(hero: Hero, time: number): boolean {
     const { slot } = hero;
     const gait = this.gaits[slot]!;
-    gait.update(hero.x, hero.z, time);
+    Gait.update(gait, hero.x, hero.z, time);
     if (hero.faceX < -0.1) {
       this.facingLeft[slot] = 1;
     } else if (hero.faceX > 0.1) {
@@ -508,7 +536,7 @@ export class SurvivorsScene {
   /** The looks for a run's content, made once per run; weapons picked up mid-run join here. */
   private looksFor(world: World): Looks {
     if (this.looks?.world !== world) {
-      const { tags } = resolveTags(
+      const { tags } = SpriteSheet.resolveTags(
         this.art.sheet.data,
         contentTags(world.content)
       );
@@ -527,7 +555,7 @@ export class SurvivorsScene {
         weapons: [],
       };
       for (const gait of this.gaits) {
-        gait.reset();
+        Gait.reset(gait);
       }
       this.facingLeft.fill(0);
     }

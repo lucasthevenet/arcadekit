@@ -2,23 +2,19 @@
 "arcadekit": minor
 ---
 
-`arcadekit/core` gains `TileMap`, a grid of cells in typed arrays with `TileMap.neighbor` and `TileMap.flood` (0.7.0's names: see the changeset that gives core Effect's module shape); `arcadekit/render-three` gains `TileLayer`, which draws the cells on screen from a function of the cell, and `PixelCamera.groundOnScreen`. Nothing breaks.
+`arcadekit/core` gains `TileMap`, a grid of cells in typed arrays with `TileMap.neighbor` and `TileMap.flood` (0.7.0's names: see the changeset that gives core Effect's module shape); `arcadekit/render-three` gains `TileLayer`, which draws the cells on screen from a function of the cell, and `PixelCamera.groundOnScreen` (0.7.0's names: see the changeset that gives render-three Effect's module shape). Nothing breaks.
 
 Two games kept a grid of cells in typed arrays for their rules, and each wrote the same neighbour lookup and flood fill. Two views drew a floor of tiles around the camera, and each read the camera's edges, worked out which cells show and filled a sprite batch with them. Both are the kit's now, as plain code: no Effect, and nothing allocated in a step or in a frame.
 
 - **`TileMap.make(cols, rows, layout)`.** A level's static cells, stored as a pool's entities are: one typed array per field, `cells` long, with cell (col, row) at `row * cols + col`. `TileMap.cellAt(map, col, row)` gives the cell or -1 off the map, and `TileMap.colOf` and `TileMap.rowOf` give them back. `TileMap.neighbor(map, cell, side)` gives the cell on a `TileMap.Side` (`west`, `east`, `north`, `south`, numbered 0 to 3, north the row above), or -1 off the map, and the neighbour of a cell off the map is -1. `TileMap.flood(map, start, passes, reached)` marks `start` in `reached` with 1, then every cell joined to it by sides through cells `passes` accepts, and returns how many it marked. It does not enter a cell already marked, so two floods share a mask. The map keeps the queue a flood walks, so `TileMap.neighbor` and `TileMap.flood` allocate nothing and a step may call them. A number of columns or of rows that is not a whole number of 1 or more is a `RangeError`, and so is a `reached` mask shorter than the map.
-- **`PixelCamera.groundOnScreen(out)`.** Writes the rectangle of ground the camera shows into a `MutableGroundBounds` the view keeps, and returns it as a `GroundBounds`. Call it after `follow` or `fit`.
-- **`TileLayer`.** A grid of cells drawn from a sheet's frames in one draw call. `draw(seen, frameOf)` shows the cells that touch `seen`: cell (col, row) is the square of ground from (col, row) to (col + 1, row + 1), drawn at its centre with the frame `frameOf(col, row)` gives, and left empty for a negative one. It fills a batch of its own, which grows with the window, and fills it again only when `seen` touches other cells or after `invalidate()`. `tint` multiplies every tile's colours, `count` is the tiles of the last fill, and `mesh` goes in the scene. Its options are a batch's `unitsPerPixel` and `layer`. It imports nothing of the rules: a game with a tile map reads it in `frameOf`.
-- **`drawnSprites`** (`arcadekit/render-three/testing`) takes a `TileLayer` as well as a batch, and gives the tiles of its last fill.
+- **`PixelCamera.groundOnScreen(camera, out)`.** Writes the rectangle of ground the camera shows into a `Camera.MutableGroundBounds` the view keeps, and returns it as a `Camera.GroundBounds`. Call it after `follow` or `fit`.
+- **`TileLayer`.** A grid of cells drawn from a sheet's frames in one draw call. `TileLayer.draw(layer, seen, frameOf)` shows the cells that touch `seen`: cell (col, row) is the square of ground from (col, row) to (col + 1, row + 1), drawn at its centre with the frame `frameOf(col, row)` gives, and left empty for a negative one. It fills a batch of its own, which grows with the window, and fills it again only when `seen` touches other cells or after `TileLayer.invalidate(layer)`. `tint` multiplies every tile's colours, `count` is the tiles of the last fill, and `mesh` goes in the scene. Its options are a batch's `unitsPerPixel` and `layer`. It imports nothing of the rules: a game with a tile map reads it in `frameOf`.
+- **`DrawnSprites.read`** (`arcadekit/render-three/testing`) takes a `TileLayer` as well as a batch, and gives the tiles of its last fill.
 
 ```ts
 import { TileMap } from "arcadekit/core";
-import { TileLayer } from "arcadekit/render-three";
-import type {
-  MutableGroundBounds,
-  PixelCamera,
-  SpriteSheet,
-} from "arcadekit/render-three";
+import { PixelCamera, TileLayer } from "arcadekit/render-three";
+import type { Camera, SpriteSheet } from "arcadekit/render-three";
 
 const WALL = 1;
 const map = TileMap.make(16, 9, { tile: Uint8Array });
@@ -41,9 +37,17 @@ export const roomFrom = (cell: number): number => {
 
 // In the view. Before: the camera's four edges, floored, a loop over the cells between them
 // and a compare with the window last filled.
-export const makeGround = (sheet: SpriteSheet, camera: PixelCamera) => {
-  const ground = new TileLayer(sheet);
-  const seen: MutableGroundBounds = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+export const makeGround = (
+  sheet: SpriteSheet.SpriteSheet,
+  camera: PixelCamera.PixelCamera
+) => {
+  const ground = TileLayer.make(sheet);
+  const seen: Camera.MutableGroundBounds = {
+    minX: 0,
+    maxX: 0,
+    minZ: 0,
+    maxZ: 0,
+  };
   const frameOf = (col: number, row: number): number => {
     const cell = TileMap.cellAt(map, col, row);
     return cell === -1 ? -1 : tile[cell]!;
@@ -51,8 +55,8 @@ export const makeGround = (sheet: SpriteSheet, camera: PixelCamera) => {
   return {
     mesh: ground.mesh,
     draw: (x: number, z: number): void => {
-      camera.follow(x, z);
-      ground.draw(camera.groundOnScreen(seen), frameOf);
+      PixelCamera.follow(camera, x, z);
+      TileLayer.draw(ground, PixelCamera.groundOnScreen(camera, seen), frameOf);
     },
   };
 };
@@ -62,7 +66,7 @@ Both genres use them. Push-puzzle's level is a tile map: its rules ask `TileMap.
 
 **Breaking**
 
-- Nothing in the published package: every export is new, and `drawnSprites` takes what it took.
+- Nothing in the published package: every export is new, and `DrawnSprites.read` takes what it took.
 - Not in the published package: `@arcadekit/push-puzzle`'s exported `Puzzle` has `map` in place of `cols`, `rows`, `tiles` and `goals` (`map.fields.tile` and `map.fields.goal`), and its view draws the board with its corner at the origin, a cell's centre at (col + 0.5, row + 0.5), where the board was centred on the origin. It lands on the same pixels: the camera fits the board where it now is.
 
 No recorded hash moved: survivors' rules are untouched, and push-puzzle's replay ends in the state it recorded.

@@ -1,20 +1,48 @@
-// Two checks of the PNG a game ships as its sprite sheet, for the game's own tests: they run
-// in Node, on the file's bytes, with no canvas to decode it.
-
+/**
+ * PNG checks: two checks of the PNG a game ships as its sprite sheet, read from the file's bytes
+ * in Node, with no canvas to decode it.
+ *
+ * A game's test reads its sheet's image with `readFileSync` and checks it against the sheet's
+ * JSON: its size, and the frames whose edges would not draw as they were painted. The pixels are
+ * inflated with `node:zlib`, so only a test or a script can import this module.
+ *
+ * @since 0.7.0
+ */
 import { inflateSync } from "node:zlib";
 
-import type { SpriteSheetData } from "../sprite-sheet";
+import { dual } from "effect/Function";
+
+import type * as SpriteSheet from "../sprite-sheet";
 
 /**
- * A PNG's width and height, from its IHDR chunk: what a sheet's JSON says under `meta.size`
- * must match.
+ * A PNG's width and height, from its IHDR chunk.
+ *
+ * **When to use**
+ *
+ * In a game's test, on its sheet's image file: the sheet's JSON must say the same size under
+ * `meta.size`, or the sheet's load fails.
+ *
+ * **Details**
+ *
+ * It reads only the header, and checks nothing else of the file.
+ *
+ * **Example** (The size of a sheet's image)
  *
  * ```ts
- * const png = readFileSync(new URL(sheet.image, spritesDir));
- * expect(pngSize(png)).toStrictEqual({ width: sheet.width, height: sheet.height });
+ * import { Png } from "arcadekit/render-three/testing";
+ * import { Schema } from "effect";
+ *
+ * // A 2 by 1 PNG, as `readFileSync` would give its bytes.
+ * const png = Schema.decodeUnknownSync(Schema.Uint8ArrayFromBase64)(
+ *   "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR42mP4z8AAQg0AD3oDfmqBMeEAAAAASUVORK5CYII="
+ * );
+ * Png.size(png); // => { width: 2, height: 1 }
  * ```
+ *
+ * @category testing
+ * @since 0.7.0
  */
-export const pngSize = (
+export const size = (
   png: Uint8Array
 ): { readonly width: number; readonly height: number } => {
   const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
@@ -44,23 +72,23 @@ const pngAlpha = (
   png: Uint8Array
 ): { readonly width: number; readonly alpha: Uint8Array } => {
   const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
-  const { width, height } = pngSize(png);
+  const { width, height } = size(png);
   if (png[24] !== 8 || png[25] !== 6 || png[28] !== 0) {
     throw new Error(
-      `framesWithSoftAlpha reads an 8-bit RGBA PNG without interlacing, and this one has bit depth ${png[24]}, colour type ${png[25]} and interlace method ${png[28]}: export the sheet as RGBA, 8 bits a channel`
+      `Png.framesWithSoftAlpha reads an 8-bit RGBA PNG without interlacing, and this one has bit depth ${png[24]}, colour type ${png[25]} and interlace method ${png[28]}: export the sheet as RGBA, 8 bits a channel`
     );
   }
   const chunks: Uint8Array[] = [];
-  let size = 0;
+  let bytes = 0;
   for (let at = 8; at < png.length;) {
     const length = view.getUint32(at);
     if (IDAT.every((byte, i) => png[at + 4 + i] === byte)) {
       chunks.push(png.subarray(at + 8, at + 8 + length));
-      size += length;
+      bytes += length;
     }
     at += 12 + length;
   }
-  const data = new Uint8Array(size);
+  const data = new Uint8Array(bytes);
   let filled = 0;
   for (const chunk of chunks) {
     data.set(chunk, filled);
@@ -88,48 +116,96 @@ const pngAlpha = (
 };
 
 /**
- * The frames with a pixel neither clear nor opaque, but for those of the tags in `blended`.
+ * The frames of a sheet with a pixel neither clear nor opaque in its PNG, but for those of the
+ * tags in `blended`.
  *
- * A batch draws its sprites opaque unless it is made `transparent`: a pixel below half alpha
- * is cut out and the rest is drawn solid. So art drawn that way should be fully opaque or
- * fully clear, and a frame named here has an edge that will not look as it was painted. The
- * tags a view draws blended, such as a soft shadow, go in `blended`. `png` is the sheet's
- * image file, and the result is each such frame's name, in the sheet's order.
+ * **When to use**
+ *
+ * In a game's test, on the sheet it ships: a batch draws its sprites opaque unless it is made
+ * `transparent`, cutting out pixels below half alpha and drawing the rest solid, so art drawn
+ * that way should be fully opaque or fully clear. A frame it names has an edge that will not
+ * look as it was painted.
+ *
+ * **Details**
+ *
+ * `png` is the sheet's image file, and `data` its decoded JSON. The tags a view draws blended,
+ * such as a soft shadow, go in `blended`; a tag the sheet lacks leaves nothing out. The result is
+ * each such frame's name, in the sheet's order. It reads an 8-bit RGBA PNG without interlacing,
+ * which a pixel-art tool exports, and throws an `Error` for any other.
+ *
+ * **Example** (A sheet whose second frame has a soft pixel)
  *
  * ```ts
- * const png = readFileSync(new URL(sheet.image, spritesDir));
- * expect(framesWithSoftAlpha(sheet, png, ["shadow"])).toStrictEqual([]);
+ * import { SpriteSheet } from "arcadekit/render-three";
+ * import { Png } from "arcadekit/render-three/testing";
+ * import { Effect, Schema } from "effect";
+ *
+ * // A 2 by 1 PNG: an opaque pixel, then one at half alpha.
+ * const png = Schema.decodeUnknownSync(Schema.Uint8ArrayFromBase64)(
+ *   "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR42mP4z8AAQg0AD3oDfmqBMeEAAAAASUVORK5CYII="
+ * );
+ * // Two frames of one pixel each: "solid", then "glow".
+ * const data = Effect.runSync(
+ *   SpriteSheet.decode("tiny.json", {
+ *     frames: [
+ *       { filename: "solid", frame: { x: 0, y: 0, w: 1, h: 1 } },
+ *       { filename: "glow", frame: { x: 1, y: 0, w: 1, h: 1 } },
+ *     ],
+ *     meta: {
+ *       image: "tiny.png",
+ *       size: { w: 2, h: 1 },
+ *       frameTags: [{ name: "glow", from: 1, to: 1 }],
+ *     },
+ *   })
+ * );
+ * Png.framesWithSoftAlpha(png, data); // => ["glow"]
+ * // The glow is drawn blended, so its soft pixel is meant.
+ * Png.framesWithSoftAlpha(png, data, ["glow"]); // => []
  * ```
  *
- * Throws for a PNG that is not 8-bit RGBA without interlacing.
+ * @category testing
+ * @since 0.7.0
  */
-export const framesWithSoftAlpha = (
-  sheet: SpriteSheetData,
-  png: Uint8Array,
-  blended: readonly string[] = []
-): readonly string[] => {
-  const { width, alpha } = pngAlpha(png);
-  const skip = new Set<number>();
-  for (const name of blended) {
-    const tag = sheet.tags.get(name);
-    if (tag !== undefined) {
-      for (let f = tag.from; f <= tag.to; f++) {
-        skip.add(f);
-      }
-    }
-  }
-  return sheet.frames.flatMap((frame, index) => {
-    if (skip.has(index)) {
-      return [];
-    }
-    for (let { y } = frame; y < frame.y + frame.height; y++) {
-      for (let { x } = frame; x < frame.x + frame.width; x++) {
-        const a = alpha[y * width + x]!;
-        if (a !== 0 && a !== 255) {
-          return [frame.name];
+export const framesWithSoftAlpha: {
+  (
+    data: SpriteSheet.Data,
+    blended?: readonly string[]
+  ): (png: Uint8Array) => readonly string[];
+  (
+    png: Uint8Array,
+    data: SpriteSheet.Data,
+    blended?: readonly string[]
+  ): readonly string[];
+} = dual(
+  (args) => args[0] instanceof Uint8Array,
+  (
+    png: Uint8Array,
+    data: SpriteSheet.Data,
+    blended: readonly string[] = []
+  ): readonly string[] => {
+    const { width, alpha } = pngAlpha(png);
+    const skip = new Set<number>();
+    for (const name of blended) {
+      const tag = data.tags.get(name);
+      if (tag !== undefined) {
+        for (let f = tag.from; f <= tag.to; f++) {
+          skip.add(f);
         }
       }
     }
-    return [];
-  });
-};
+    return data.frames.flatMap((frame, index) => {
+      if (skip.has(index)) {
+        return [];
+      }
+      for (let { y } = frame; y < frame.y + frame.height; y++) {
+        for (let { x } = frame; x < frame.x + frame.width; x++) {
+          const a = alpha[y * width + x]!;
+          if (a !== 0 && a !== 255) {
+            return [frame.name];
+          }
+        }
+      }
+      return [];
+    });
+  }
+);

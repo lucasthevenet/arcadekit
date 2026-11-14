@@ -4,6 +4,44 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+/** A stand-in to call with `new`: each instance gets the fields `fields` makes. */
+const newable = <T extends object>(fields: () => T) =>
+  // oxlint-disable-next-line typescript/no-extraneous-class -- the kit calls these with `new`, which an arrow can't take.
+  class {
+    constructor() {
+      Object.assign(this, fields());
+    }
+  };
+
+/** A WebGL renderer as far as a stage calls one: it keeps the size it is given, and draws nothing. */
+const standInRenderer = () => {
+  let size = { width: 1, height: 1, ratio: 1 };
+  return {
+    domElement: { style: {}, remove: () => undefined },
+    setPixelRatio: (ratio: number) => {
+      size = { ...size, ratio };
+    },
+    setSize: (width: number, height: number) => {
+      size = { ...size, width, height };
+    },
+    getDrawingBufferSize: <T extends { set: (x: number, y: number) => T }>(
+      target: T
+    ): T =>
+      target.set(
+        Math.floor(size.width * size.ratio),
+        Math.floor(size.height * size.ratio)
+      ),
+    render: () => undefined,
+    dispose: () => undefined,
+    forceContextLoss: () => undefined,
+  };
+};
+
+vi.mock(import("three"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  WebGLRenderer: newable(standInRenderer) as never,
+}));
+
 // Runs the `ts` examples of the doc comments of every entry in Effect's module shape, and checks
 // that each result an example shows is true: a line `expression; // => value` holds when the
 // expression gives the value (docs/code-style.md, "The doc comment"). `pnpm smoke` compiles the
@@ -17,7 +55,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 //
 // An entry that needs the DOM has examples written as a browser runs them. They run here on a
 // stand-in of the few globals they use (BROWSER_ENTRIES), made again for each example. An entry
-// joins the list with what it uses: the stand-in grows only as far as an example needs.
+// joins the list with what it uses: the stand-in grows only as far as an example needs. An
+// example of `arcadekit/render-three` may import `three` (PEER_MODULES), whose renderer needs
+// WebGL, which Node hasn't: it runs on a stand-in renderer that draws nothing and keeps the
+// size it is given.
 
 const packageDir = path.resolve(import.meta.dirname, "..");
 const srcDir = path.join(packageDir, "src");
@@ -49,10 +90,18 @@ const entries = Object.entries(
   .filter(({ entry }) => !notYet.has(entry.split("/", 1)[0] ?? ""));
 
 // The entries whose examples run in a browser, by import path.
-const BROWSER_ENTRIES: ReadonlySet<string> = new Set(["input", "save/browser"]);
+const BROWSER_ENTRIES: ReadonlySet<string> = new Set([
+  "input",
+  "render-three",
+  "save/browser",
+]);
 
 // The modules of Effect an example may import, each by its import path.
 const EFFECT_MODULES: readonly string[] = ["effect", "effect/persistence"];
+
+// The peer libraries an example may import, each by its import path: `three`, which
+// `arcadekit/render-three` draws with.
+const PEER_MODULES: readonly string[] = ["three"];
 
 /** A key event, as a browser makes one: the fields `arcadekit/input` reads. */
 class StandInKeyboardEvent extends Event {
@@ -89,10 +138,17 @@ const storageStandIn = () => {
   };
 };
 
+/** A `ResizeObserver` that never calls back: an element's size is what it was laid out at. */
+const StandInResizeObserver = newable(() => ({
+  observe: () => undefined,
+  disconnect: () => undefined,
+}));
+
 /**
- * What a browser gives the examples of BROWSER_ENTRIES: a window to dispatch key events on, a
- * document that makes elements to listen on, no gamepad, and a localStorage that starts empty.
- * Node's EventTarget and Event do the dispatching.
+ * What a browser gives the examples of BROWSER_ENTRIES: a window to dispatch key events on, with
+ * one device pixel to a CSS pixel, a document that makes elements to listen on, each laid out
+ * 640 by 480, no gamepad, a localStorage that starts empty, and a ResizeObserver that never
+ * calls back. Node's EventTarget and Event do the dispatching.
  */
 const browserStandIn = (): Readonly<Record<string, unknown>> => {
   const document = {
@@ -102,15 +158,19 @@ const browserStandIn = (): Readonly<Record<string, unknown>> => {
         tagName: tagName.toUpperCase(),
         style: {},
         ownerDocument: document,
+        clientWidth: 640,
+        clientHeight: 480,
+        append: () => undefined,
         setPointerCapture: () => undefined,
       }),
   };
   return {
-    window: new EventTarget(),
+    window: Object.assign(new EventTarget(), { devicePixelRatio: 1 }),
     document,
     navigator: { getGamepads: () => [] },
     KeyboardEvent: StandInKeyboardEvent,
     localStorage: storageStandIn(),
+    ResizeObserver: StandInResizeObserver,
   };
 };
 
@@ -167,6 +227,11 @@ const runnable = (code: string): string =>
           `const ${name} = kit[${JSON.stringify(from)}];`
       )
       .replaceAll(
+        /^import \* as (?<name>\w+) from "(?<from>three)";$/gmu,
+        (_whole, name: string, from: string) =>
+          `const ${name} = kit[${JSON.stringify(from)}];`
+      )
+      .replaceAll(
         /^(?<indent>\s*)(?<expression>.+?);\s*\/\/ => (?<value>.+)$/gmu,
         (_whole, indent: string, expression: string, value: string) =>
           `${indent}check((${expression}), (${value}), ${JSON.stringify(expression)});`
@@ -191,7 +256,7 @@ describe.each(entries)("arcadekit/$entry", ({ entry, publicFile }) => {
     ).toStrictEqual([]);
     const kit: Readonly<Record<string, unknown>> = Object.fromEntries([
       ...(await Promise.all(
-        EFFECT_MODULES.map(
+        [...EFFECT_MODULES, ...PEER_MODULES].map(
           async (module) => [module, await import(module)] as const
         )
       )),

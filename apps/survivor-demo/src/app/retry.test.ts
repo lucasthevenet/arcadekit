@@ -4,11 +4,7 @@ import { SurvivorsContent } from "@arcadekit/survivors";
 import { SurvivorsSheet } from "@arcadekit/survivors/browser";
 import { AudioSettings } from "arcadekit/audio";
 import { ContentSource } from "arcadekit/content";
-import {
-  SpriteSheetError,
-  decodeSpriteSheet,
-  makeSpriteSheet,
-} from "arcadekit/render-three";
+import { SpriteSheet } from "arcadekit/render-three";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { Scene } from "foldkit";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,7 +32,7 @@ const publicDir = new URL("../../public/", import.meta.url);
 const read = (file: string) => readFileSync(new URL(file, publicDir), "utf-8");
 
 const sheetData = await Effect.runPromise(
-  decodeSpriteSheet(
+  SpriteSheet.decode(
     "survivors.json",
     JSON.parse(read("sprites/survivors.json")) as unknown
   )
@@ -72,13 +68,13 @@ const flakyResources = (failures: {
     runs.sheet += 1;
     return runs.sheet <= failures.sheet
       ? Effect.fail(
-          new SpriteSheetError({
+          new SpriteSheet.SpriteSheetError({
             file: "sprites/survivors.json",
             message: `The sheet can't be loaded (try ${runs.sheet})`,
           })
         )
       : Effect.sleep("5 millis").pipe(
-          Effect.as(makeSpriteSheet(sheetData, image))
+          Effect.as(SpriteSheet.make(sheetData, image))
         );
   });
   // A content load reads every file; heroes.json stands for the load, and fails.

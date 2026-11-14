@@ -8,6 +8,8 @@ status: superseded by ADR-0018
 
 Superseded by [ADR-0018](0018-one-package-with-entries.md): the nine packages are now one package, `arcadekit`, with the same entries. The name, the build, the peer ranges, the checks and the release process below carry over.
 
+> Amended by [ADR-0024](0024-the-kit-is-written-as-effect-modules.md) on 2026-11-14: `arcadekit/render-three` is a set of namespaces in Effect's shape, and the text below uses its names for the camera helpers: `Camera.fit`, `Camera.follow` and `Camera.orbit`.
+
 #26 asked how the kit becomes usable from outside this workspace. Until now every package was `"private": true` and exported its TypeScript source directly. The decisions below came from a grilling session.
 
 ## Decision
@@ -26,7 +28,7 @@ Superseded by [ADR-0018](0018-one-package-with-entries.md): the nine packages ar
 - `InputController`'s options;
 - `GameEngine.start`'s seed and `alpha`.
 
-`Stage` lost `fov`, `near`, `far`, `maxPixelRatio`, `antialias` and `fog`: its camera, scene and renderer are public, so a game sets those itself. Its "perspective" and "orthographic" cameras stay, with `fitCamera`, `followTarget` and `orbitAround`, though both genres use the pixel camera: they are how a game that isn't pixel art uses the stage, and dropping them would make `render-three` a pixel-art package. `InputController` lost its options, and `GameEngine.start` its seed (`alpha` was already gone).
+`Stage` lost `fov`, `near`, `far`, `maxPixelRatio`, `antialias` and `fog`: its camera, scene and renderer are public, so a game sets those itself. Its "perspective" and "orthographic" cameras stay, with `Camera.fit`, `Camera.follow` and `Camera.orbit`, though both genres use the pixel camera: they are how a game that isn't pixel art uses the stage, and dropping them would make `render-three` a pixel-art package. `InputController` lost its options, and `GameEngine.start` its seed (`alpha` was already gone).
 
 `@arcadekit/runtime/testing` publishes, as a test helper: `ManualFrames.make()` lets a game's own tests drive an engine frame by frame. [ADR-0010](0010-a-game-is-a-simulation-and-a-presentation.md) left this to #26.
 

@@ -6,7 +6,7 @@ import {
 } from "@arcadekit/push-puzzle/browser";
 import { BrowserAudioSystem } from "arcadekit/audio/browser";
 import { FetchContentSource } from "arcadekit/content/browser";
-import { loadSpriteSheet } from "arcadekit/render-three";
+import { SpriteSheet } from "arcadekit/render-three";
 import { BrowserSaveStorage } from "arcadekit/save/browser";
 import { Layer } from "effect";
 
@@ -25,7 +25,7 @@ export { subscriptions } from "./subscriptions";
  * (ADR-0015).
  */
 const assets = Layer.mergeAll(
-  PushPuzzleSheet.layer(loadSpriteSheet(SHEET_URL)),
+  PushPuzzleSheet.layer(SpriteSheet.fromUrl(SHEET_URL)),
   PushPuzzleCueTable.layer(CUE_SOUNDS),
   BrowserAudioSystem.layer
 );
