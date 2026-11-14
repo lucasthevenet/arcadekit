@@ -8,11 +8,11 @@ import { DrawnSprites, TestSpriteSheet } from "arcadekit/render-three/testing";
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GameContent } from "../schema";
-import { createWorld } from "../world";
-import type { World } from "../world";
-import { SPRITE_TAGS, wantedTags } from "./art";
-import { SurvivorsScene } from "./scene";
+import { SPRITE_TAGS, wantedTags } from "../../src/browser/art";
+import { SurvivorsScene } from "../../src/browser/scene";
+import { GameContent } from "../../src/schema";
+import { createWorld } from "../../src/world";
+import type { World } from "../../src/world";
 
 // Draws Worlds into the sprite batches with a sheet that has no image: no WebGL, only what
 // each batch shows.

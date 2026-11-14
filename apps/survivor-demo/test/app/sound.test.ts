@@ -12,13 +12,17 @@ import {
   LoadAudioSettings,
   PlayClick,
   SaveAudioSettings,
-} from "./commands";
-import { Message } from "./message";
-import { Phase } from "./model";
-import type { Model } from "./model";
-import { SurvivorsAudioSettings, soundList, survivorsSounds } from "./sound";
-import { subscriptions } from "./subscriptions";
-import { init, update } from "./update";
+} from "../../src/app/commands";
+import { Message } from "../../src/app/message";
+import { Phase } from "../../src/app/model";
+import type { Model } from "../../src/app/model";
+import {
+  SurvivorsAudioSettings,
+  soundList,
+  survivorsSounds,
+} from "../../src/app/sound";
+import { subscriptions } from "../../src/app/subscriptions";
+import { init, update } from "../../src/app/update";
 
 /** The audio settings' storage key, written out: moving it would leave what is stored behind. */
 const SETTINGS_KEY = "arcadekit/survivors/settings";

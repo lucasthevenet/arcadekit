@@ -1,11 +1,10 @@
 {
-  // The package's code, with the DOM's types and no others. Its tests run in Node, and
-  // tsconfig.test.json checks them with Node's types.
+  // The package's code, with the DOM's types and no others. Its tests, in test/, run in Node,
+  // and tsconfig.test.json checks them with Node's types.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": []
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src"]
 }

@@ -28,13 +28,13 @@ import {
   HostCoop,
   LeaveCoop,
   SetCoopPaused,
-} from "./commands";
-import { CoopLayer } from "./coop";
-import type { CoopDebugSample } from "./coop";
-import { Message } from "./message";
-import { emptyHud } from "./model";
-import { survivorsSounds } from "./sound";
-import { coopMessage } from "./subscriptions";
+} from "../../src/app/commands";
+import { CoopLayer } from "../../src/app/coop";
+import type { CoopDebugSample } from "../../src/app/coop";
+import { Message } from "../../src/app/message";
+import { emptyHud } from "../../src/app/model";
+import { survivorsSounds } from "../../src/app/sound";
+import { coopMessage } from "../../src/app/subscriptions";
 
 // The app's co-op glue with nothing real behind it: the kit's fake rooms stand in for the
 // signalling worker and WebRTC, the content is the app's own files, and nothing draws. The

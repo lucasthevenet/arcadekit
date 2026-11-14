@@ -15,7 +15,7 @@ import { Effect, Layer, Schema } from "effect";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { CUE_SOUNDS } from "./audio";
+import { CUE_SOUNDS } from "../../src/app/audio";
 import {
   EndRun,
   FocusRetry,
@@ -24,12 +24,12 @@ import {
   LoadSave,
   LoadSounds,
   StartLevel,
-} from "./commands";
-import { Message } from "./message";
-import { emptyRecords } from "./save";
-import { SHEET_URL } from "./sprites";
-import { init, update } from "./update";
-import { view } from "./view";
+} from "../../src/app/commands";
+import { Message } from "../../src/app/message";
+import { emptyRecords } from "../../src/app/save";
+import { SHEET_URL } from "../../src/app/sprites";
+import { init, update } from "../../src/app/update";
+import { view } from "../../src/app/view";
 
 // The sheet this game ships, and what a failed sheet load does to startup. Loading and
 // parsing sheets in general is arcadekit/render-three's tests.

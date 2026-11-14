@@ -25,12 +25,12 @@ import {
   LoadSounds,
   SetPaused,
   StartRun,
-} from "./commands";
-import { Message } from "./message";
-import { emptyRecords } from "./save";
-import { survivorsSounds } from "./sound";
-import { init, update } from "./update";
-import { view } from "./view";
+} from "../../src/app/commands";
+import { Message } from "../../src/app/message";
+import { emptyRecords } from "../../src/app/save";
+import { survivorsSounds } from "../../src/app/sound";
+import { init, update } from "../../src/app/update";
+import { view } from "../../src/app/view";
 
 // The sprite sheet in public/sprites, checked against the content that names its tags, and what
 // a sheet that can't load does: the loading screen shows it, and the engine's Commands go on

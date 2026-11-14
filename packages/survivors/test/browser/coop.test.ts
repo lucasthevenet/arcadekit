@@ -7,18 +7,18 @@ import { SpriteSheet } from "arcadekit/render-three";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SurvivorsContent } from "../content";
-import { RunEnded } from "../events";
-import { hashWorld } from "../hash-world";
-import { HeroInput } from "../input";
-import { GameContent } from "../schema";
-import { Survivors } from "../simulation";
-import { createWorld } from "../world";
-import { SurvivorsCoop } from "./coop";
-import { heroDevice } from "./device";
-import { SurvivorsEngine, SurvivorsSheet } from "./game";
-import { SurvivorsCueTable } from "./sound";
-import type { SurvivorsSounds } from "./sound";
+import { SurvivorsCoop } from "../../src/browser/coop";
+import { heroDevice } from "../../src/browser/device";
+import { SurvivorsEngine, SurvivorsSheet } from "../../src/browser/game";
+import { SurvivorsCueTable } from "../../src/browser/sound";
+import type { SurvivorsSounds } from "../../src/browser/sound";
+import { SurvivorsContent } from "../../src/content";
+import { RunEnded } from "../../src/events";
+import { hashWorld } from "../../src/hash-world";
+import { HeroInput } from "../../src/input";
+import { GameContent } from "../../src/schema";
+import { Survivors } from "../../src/simulation";
+import { createWorld } from "../../src/world";
 
 // Survivors' Coop declaration, in Node: what every peer of a run must agree on, read from the
 // class as plain values and functions, and its input source on an EventTarget that stands in for

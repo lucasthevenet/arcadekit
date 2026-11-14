@@ -128,8 +128,8 @@ const ownRunnerProperties = [
 ];
 
 // What a test imports, in the folders of library code: a helper may run an Effect to build its
-// fixture.
-const TEST_HELPERS = ["**/*.test.ts", "**/testing/**", "**/test-*.ts"];
+// fixture. The tests themselves are in each package's test/, outside library code.
+const TEST_HELPERS = ["**/testing/**", "**/test-*.ts"];
 
 // Which entry of the arcadekit package may import which (ADR-0018). Core and input stand alone.
 // game steps with core's clock and collects events in core's buffer. net seeds its test network

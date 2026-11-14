@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LONG_RUN_RECORDED, LONG_RUN_SEEDS, longRun } from "./long-run";
+import { LONG_RUN_RECORDED, LONG_RUN_SEEDS, longRun } from "../src/long-run";
 
 // Long-run determinism in Node: the long run in long-run.ts (20,000 steps of a full horde under
 // analog input, stepped by `Game.Loop`) must give the recorded hashes. `pnpm test:browsers` plays

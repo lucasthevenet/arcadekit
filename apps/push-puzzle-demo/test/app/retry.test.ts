@@ -17,12 +17,12 @@ import {
   LoadSounds,
   PlayClick,
   StartLevel,
-} from "./commands";
-import { Message } from "./message";
-import type { Model } from "./model";
-import { emptyRecords } from "./save";
-import { init, update } from "./update";
-import { view } from "./view";
+} from "../../src/app/commands";
+import { Message } from "../../src/app/message";
+import type { Model } from "../../src/app/model";
+import { emptyRecords } from "../../src/app/save";
+import { init, update } from "../../src/app/update";
+import { view } from "../../src/app/view";
 
 // The load-error screen's "Try again": it runs LoadContent again through the app's real loaders,
 // which fetch again only what failed, and a load that succeeds goes to level select. No WebGL:

@@ -2,11 +2,11 @@ import { AudioSystem } from "arcadekit/audio";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { GameContent } from "../schema";
-import { createWorld } from "../world";
-import type { World } from "../world";
-import { SurvivorsSoundView } from "./sound";
-import type { SurvivorsSounds } from "./sound";
+import { SurvivorsSoundView } from "../../src/browser/sound";
+import type { SurvivorsSounds } from "../../src/browser/sound";
+import { GameContent } from "../../src/schema";
+import { createWorld } from "../../src/world";
+import type { World } from "../../src/world";
 
 const weapon = {
   description: "",

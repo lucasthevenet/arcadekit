@@ -2,9 +2,9 @@ import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { GameContent } from "../schema";
-import { Survivors } from "../simulation";
-import { survivorsInput } from "./game";
+import { survivorsInput } from "../../src/browser/game";
+import { GameContent } from "../../src/schema";
+import { Survivors } from "../../src/simulation";
 
 // Runs survivors' real single-player input source: it reads keys through InputController, and a
 // Game.Loop steps the simulation with it the way the demo's engine does. No view is created.

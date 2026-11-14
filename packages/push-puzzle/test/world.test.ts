@@ -4,16 +4,16 @@ import * as Scenario from "arcadekit/game/scenario";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { Hud, LevelSolved } from "./events";
-import { PuzzleContent } from "./schema";
-import { PushPuzzle } from "./simulation";
-import { Change, boardText, boxIdAt, createPuzzle, step } from "./world";
+import { Hud, LevelSolved } from "../src/events";
+import { PuzzleContent } from "../src/schema";
+import { PushPuzzle } from "../src/simulation";
+import { Change, boardText, boxIdAt, createPuzzle, step } from "../src/world";
 import type {
   Direction,
   Puzzle,
   PushPuzzleConfig,
   PushPuzzleInput,
-} from "./world";
+} from "../src/world";
 
 // Tests drive a run the way the loop does: one input per step.
 // Boards are written and read back in level text, so each case reads like a picture.

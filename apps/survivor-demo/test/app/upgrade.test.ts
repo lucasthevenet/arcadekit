@@ -9,8 +9,8 @@ import { Effect, Fiber, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { ChooseUpgrade } from "./commands";
-import { Message } from "./message";
+import { ChooseUpgrade } from "../../src/app/commands";
+import { Message } from "../../src/app/message";
 
 // The upgrade pick, from the app's Command to the genre's rules and back. The Command sends the
 // genre's `ChooseUpgrade` and waits for the rules' answer, and however the send ends it reports

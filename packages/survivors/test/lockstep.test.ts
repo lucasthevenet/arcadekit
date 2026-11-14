@@ -3,13 +3,13 @@ import { LockstepSession, MemoryNetwork } from "arcadekit/net";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { ChooseUpgrade, HoldPause } from "./commands";
-import { hashWorld } from "./hash-world";
-import type { Hero } from "./hero";
-import type { HeroInput, SurvivorsInput } from "./input";
-import { GameContent } from "./schema";
-import { Survivors } from "./simulation";
-import type { SurvivorsConfig, World } from "./world";
+import { ChooseUpgrade, HoldPause } from "../src/commands";
+import { hashWorld } from "../src/hash-world";
+import type { Hero } from "../src/hero";
+import type { HeroInput, SurvivorsInput } from "../src/input";
+import { GameContent } from "../src/schema";
+import { Survivors } from "../src/simulation";
+import type { SurvivorsConfig, World } from "../src/world";
 
 // Survivors' declared simulation in lockstep, one hero per player: three peers, each driving its
 // own hero, over a lossy, jittery in-memory network. Every peer must step through the same

@@ -10,14 +10,14 @@ import {
   NoSuchChoice,
   NotPlaying,
   OfferClosed,
-} from "./commands";
-import { HeroLeft, Hud, LeveledUp, RunEnded } from "./events";
-import { hashWorld } from "./hash-world";
-import type { HeroInput, SurvivorsInput } from "./input";
-import { GameContent } from "./schema";
-import { Survivors } from "./simulation";
-import { choose, createWorld, hudSample, step } from "./world";
-import type { World } from "./world";
+} from "../src/commands";
+import { HeroLeft, Hud, LeveledUp, RunEnded } from "../src/events";
+import { hashWorld } from "../src/hash-world";
+import type { HeroInput, SurvivorsInput } from "../src/input";
+import { GameContent } from "../src/schema";
+import { Survivors } from "../src/simulation";
+import { choose, createWorld, hudSample, step } from "../src/world";
+import type { World } from "../src/world";
 
 // Small, self-contained content so these tests don't depend on any particular game.
 const content = Schema.decodeUnknownSync(GameContent)({

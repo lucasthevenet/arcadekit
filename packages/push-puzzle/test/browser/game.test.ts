@@ -2,10 +2,10 @@ import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PuzzleContent } from "../schema";
-import { PushPuzzle } from "../simulation";
-import { boardText } from "../world";
-import { pushPuzzleInput } from "./game";
+import { pushPuzzleInput } from "../../src/browser/game";
+import { PuzzleContent } from "../../src/schema";
+import { PushPuzzle } from "../../src/simulation";
+import { boardText } from "../../src/world";
 
 // Runs push-puzzle's real input source: it reads keys through InputController, and a Game.Loop
 // steps the simulation with it the way the demo's engine does. No view is created.

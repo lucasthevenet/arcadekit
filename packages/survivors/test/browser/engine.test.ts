@@ -2,7 +2,7 @@ import type { AudioSystem } from "arcadekit/audio";
 import type { SpriteSheet } from "arcadekit/render-three";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SurvivorsSounds } from "./sound";
+import type { SurvivorsSounds } from "../../src/browser/sound";
 
 // The view `SurvivorsEngine` declares, as both hosts make it: the engine, with its player at
 // slot 0, and `SurvivorsCoop`'s client, at the slot the lobby gave. The two views it combines
@@ -37,18 +37,18 @@ const recorder = (name: "sprites" | "sounds", optionsAt: number) =>
     }
   };
 
-vi.mock(import("./view"), () => ({
+vi.mock(import("../../src/browser/view"), () => ({
   SurvivorsView: recorder("sprites", 2) as never,
 }));
 
 // The cue table is declared beside the sound view, and the engine uses it: only the view is
 // stood in for.
-vi.mock(import("./sound"), async (importOriginal) => ({
+vi.mock(import("../../src/browser/sound"), async (importOriginal) => ({
   ...(await importOriginal()),
   SurvivorsSoundView: recorder("sounds", 0) as never,
 }));
 
-const { SurvivorsEngine } = await import("./game");
+const { SurvivorsEngine } = await import("../../src/browser/game");
 
 describe("survivors' engine", () => {
   it("makes a sprite view and a sound view that both follow the local player's slot, read when they ask", () => {

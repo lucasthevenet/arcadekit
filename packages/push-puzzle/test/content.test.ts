@@ -2,8 +2,8 @@ import { ContentSource } from "arcadekit/content";
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { PushPuzzleContent } from "./content";
-import { PuzzleContent } from "./schema";
+import { PushPuzzleContent } from "../src/content";
+import { PuzzleContent } from "../src/schema";
 
 const load = (levels: unknown) =>
   Effect.runPromiseExit(

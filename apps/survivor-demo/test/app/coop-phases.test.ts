@@ -8,12 +8,12 @@ import {
   LeaveCoop,
   PlayClick,
   SetCoopPaused,
-} from "./commands";
-import { Message } from "./message";
-import { Phase, emptyCoopRun, emptyHud } from "./model";
-import type { Model } from "./model";
-import { init, update } from "./update";
-import { view } from "./view";
+} from "../../src/app/commands";
+import { Message } from "../../src/app/message";
+import { Phase, emptyCoopRun, emptyHud } from "../../src/app/model";
+import type { Model } from "../../src/app/model";
+import { init, update } from "../../src/app/update";
+import { view } from "../../src/app/view";
 
 // What the co-op client reports counts only on the screen it belongs to. Its events can still be
 // queued when the player leaves, so one that arrives on another screen changes nothing.

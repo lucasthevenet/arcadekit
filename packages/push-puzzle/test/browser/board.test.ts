@@ -4,10 +4,10 @@ import { DrawnSprites, TestSpriteSheet } from "arcadekit/render-three/testing";
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PuzzleContent } from "../schema";
-import { createPuzzle, step } from "../world";
-import type { Direction, Puzzle } from "../world";
-import { PUSH_PUZZLE_TAGS, PuzzleSprites } from "./board";
+import { PUSH_PUZZLE_TAGS, PuzzleSprites } from "../../src/browser/board";
+import { PuzzleContent } from "../../src/schema";
+import { createPuzzle, step } from "../../src/world";
+import type { Direction, Puzzle } from "../../src/world";
 
 // The view's drawing, without WebGL: each test reads back what the view's tile layer and its
 // sprite batch show. Boards are read back as pictures, like the simulation's tests: `#` wall,

@@ -4,11 +4,11 @@ import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { LoadSave, SaveRun } from "./commands";
-import { Message } from "./message";
-import type { Model } from "./model";
-import { SurvivorsSave } from "./save";
-import { init, update } from "./update";
+import { LoadSave, SaveRun } from "../../src/app/commands";
+import { Message } from "../../src/app/message";
+import type { Model } from "../../src/app/model";
+import { SurvivorsSave } from "../../src/app/save";
+import { init, update } from "../../src/app/update";
 
 // The app's save over an in-memory KeyValueStore, never real localStorage, read
 // and written by the Commands the app runs. Missing, corrupt and unknown-version

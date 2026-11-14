@@ -1,8 +1,8 @@
 import { AudioSystem } from "arcadekit/audio";
 import { describe, expect, it } from "vitest";
 
-import type { Puzzle, PushPuzzleCues } from "../world";
-import { PushPuzzleSoundView } from "./sound";
+import { PushPuzzleSoundView } from "../../src/browser/sound";
+import type { Puzzle, PushPuzzleCues } from "../../src/world";
 
 // The sound view only reads `puzzle.cues`, so each run here is a Puzzle with just its counters,
 // bumped by hand the way steps would.

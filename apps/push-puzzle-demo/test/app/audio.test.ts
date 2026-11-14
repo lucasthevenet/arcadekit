@@ -6,18 +6,22 @@ import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
-import { CUE_SOUNDS, PushPuzzleAudioSettings, SOUND_LIST } from "./audio";
+import {
+  CUE_SOUNDS,
+  PushPuzzleAudioSettings,
+  SOUND_LIST,
+} from "../../src/app/audio";
 import {
   ChangeAudioSettings,
   EndRun,
   LoadAudioSettings,
   PlayClick,
   StartLevel,
-} from "./commands";
-import { Message } from "./message";
-import { Phase } from "./model";
-import type { Model } from "./model";
-import { init, update } from "./update";
+} from "../../src/app/commands";
+import { Message } from "../../src/app/message";
+import { Phase } from "../../src/app/model";
+import type { Model } from "../../src/app/model";
+import { init, update } from "../../src/app/update";
 
 // The sounds the app gives the cue table, its audio settings under their own key (over
 // an in-memory KeyValueStore, through the Commands the app runs), and the UI that changes

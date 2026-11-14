@@ -2,11 +2,11 @@ import * as Game from "arcadekit/game";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { ChooseUpgrade } from "./commands";
-import { hashWorld } from "./hash-world";
-import type { HeroInput } from "./input";
-import { GameContent } from "./schema";
-import { Survivors } from "./simulation";
+import { ChooseUpgrade } from "../src/commands";
+import { hashWorld } from "../src/hash-world";
+import type { HeroInput } from "../src/input";
+import { GameContent } from "../src/schema";
+import { Survivors } from "../src/simulation";
 
 // Replay check: the same seed, the same input script and the same commands must give the same
 // run, bit for bit. It steps the declared simulation, `Survivors`, with arcadekit/game's Loop, in
