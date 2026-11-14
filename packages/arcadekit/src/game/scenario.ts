@@ -4,7 +4,7 @@
  *
  * A scenario steps the real simulation through a loop, the loop the browser engine runs, so what
  * it describes is what the game does. The entry is one module, which a test imports whole as
- * `Scenario`, so a step reads `Scenario.given(...)`. Plain code, like the loop (ADR-0024): a
+ * `Scenario`, so a step reads `Scenario.given(...)`. Plain code, like the loop: a
  * scenario runs its script in one call, and a failed expectation is a test's throw.
  *
  * @since 0.7.0

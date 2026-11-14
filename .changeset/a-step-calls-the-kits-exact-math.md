@@ -4,7 +4,7 @@
 
 `arcadekit/core` gains exact math (`ExactMath`), 2D helpers (`Point2`), `ExactMath.hashCell`, timers (`Timer.countDown`, `Timer.takeWhole`), tweens (`Tween.progress` and four eases) and `Rng.pickDistinct`. (The names are 0.7.0's: see the changeset that gives core Effect's module shape.)
 
-A step may use only exact arithmetic ([ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md)), and core gave it `clamp` alone, so each game wrote the same small functions. They are the kit's now: plain functions a step may call, with no Effect, no clock and no allocation.
+A step may use only exact arithmetic, and core gave it `clamp` alone, so each game wrote the same small functions. They are the kit's now: plain functions a step may call, with no Effect, no clock and no allocation.
 
 - **Exact math.** `ExactMath.hypot2`, `sin`, `cos` and `powInt`, the replacements for `Math.hypot`, `Math.sin`, `Math.cos` and `**` that give the same bits in every engine, moved from the survivors genre as they were. `ExactMath.lerp(from, to, t)` is `from + (to - from) * t`.
 - **2D helpers.** `Point2.clampLength(point, x, y, max)` writes (x, y) into `point`, shortened to `max` if longer, and returns the length it had. `Point2.moveToward(point, x, y, targetX, targetY, maxStep)` writes the place at most `maxStep` toward a target, and the target itself once it is that near. Both write into a `Point2` the caller made once and owns: there is no vector class.

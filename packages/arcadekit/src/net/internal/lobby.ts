@@ -7,7 +7,7 @@ import type { PeerId } from "../transport";
 // run, and the host's lobby as plain values. The lockstep session's own messages travel on the
 // `lockstep` channel. In the host star, a guest talks only to the host, and the host tells each
 // guest the whole lobby. The Co-op client (`arcadekit/net/browser`) is the shell that sends and
-// hears these. Plain on purpose (ADR-0024): untrusted messages decoded with Schema where they
+// hears these. Plain on purpose: untrusted messages decoded with Schema where they
 // arrive, and the lobby's values, which are data work.
 
 /** One player in the lobby: its peer id and its lobby pick ("" until it says). */

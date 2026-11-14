@@ -92,7 +92,7 @@ const CHANGES_CAPACITY = 8;
 /**
  * Sound triggers: running totals of the moments that make a sound. The step bumps them and
  * never reads them, and undo leaves them alone, so they only go up during a run. A sound view
- * plays a sound for each one that rose since its last frame (ADR-0014).
+ * plays a sound for each one that rose since its last frame.
  */
 export interface PushPuzzleCues {
   /** Turns that moved the player without pushing a box. */

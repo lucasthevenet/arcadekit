@@ -15,9 +15,9 @@ import type { World } from "./world";
 // exports: only those two import it, by path.
 //
 // The pinned replay is too short to catch a change in the last bits of the simulation's
-// arithmetic: on the engines measured in docs/research/cross-engine-determinism.md, approximated
-// Math made runs like these split after 330 steps while the replay still matched. The step uses
-// only exact operations (ADR-0011), so every conforming engine must give these hashes; any change
+// arithmetic: on V8 and JavaScriptCore, approximated Math made runs like these split after 330
+// steps while the replay still matched. The step uses
+// only exact operations, so every conforming engine must give these hashes; any change
 // to the simulation's arithmetic changes them.
 
 export const LONG_RUN_STEPS = 20_000;

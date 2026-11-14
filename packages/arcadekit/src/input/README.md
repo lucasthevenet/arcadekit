@@ -10,7 +10,7 @@ An entry of the [`arcadekit`](../../README.md) package. Needs the DOM.
 pnpm add arcadekit effect
 ```
 
-`effect` (~4.1) is the package's one required peer dependency. This entry imports it only for its module's shape (`pipe`, the guard, `dual`): reading input runs no Effect, since a step reads its input inside the frame or tick that runs it ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)).
+`effect` (~4.1) is the package's one required peer dependency. This entry imports it only for its module's shape (`pipe`, the guard, `dual`): reading input runs no Effect, since a step reads its input inside the frame or tick that runs it.
 
 ## Its module
 
@@ -44,7 +44,7 @@ export const raceInput = (surface: HTMLElement) => {
 };
 ```
 
-The engine calls `input` once per attach and the source's `dispose` when it detaches, so the controller listens for exactly as long as the engine is attached. Key names are `KeyboardEvent.code` values, so they don't move with the keyboard layout, and a name the bindings don't have is a type error. See [ADR-0004](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0004-one-press-one-step.md) (one press, one step).
+The engine calls `input` once per attach and the source's `dispose` when it detaches, so the controller listens for exactly as long as the engine is attached. Key names are `KeyboardEvent.code` values, so they don't move with the keyboard layout, and a name the bindings don't have is a type error.
 
 A function of a controller and a name also takes the name alone, and gives the function a `pipe` applies:
 

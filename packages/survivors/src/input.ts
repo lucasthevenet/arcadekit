@@ -5,7 +5,7 @@ import { Schema } from "effect";
 // It holds what a player's devices hold and nothing else. What a player decides outside them
 // (an upgrade pick, the co-op pause) is a command (commands.ts), which every host applies at a
 // step: the single-player engine at its next one, and a lockstep run at the step the command
-// rides, on every peer (ADR-0012, ADR-0020).
+// rides, on every peer.
 
 /**
  * One player's input for one step: what its devices hold, and what crosses the network for that

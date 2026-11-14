@@ -5,7 +5,7 @@
  * A simulation declares it as its `input` with `Game.PlayerInputs(OnePlayersInput)`, and every
  * host then seats players the same way: `soloInput` puts one player's source at slot 0, and a
  * lockstep session sends each player's own input and puts each at its slot. Plain code, like the
- * step that reads it (ADR-0024): every peer steps on it, and whoever fills it keeps one object
+ * step that reads it: every peer steps on it, and whoever fills it keeps one object
  * and refills it each step.
  *
  * @since 0.7.0

@@ -5,8 +5,8 @@
  * A controller listens on the window for keys and on its surface for pointers, and polls the
  * gamepads when it is read. Its listeners write what they hear into the controller while the
  * browser dispatches each event, so a press made before a frame is in that frame's reads; its
- * reads are plain calls, since a step reads its input inside the frame or tick that runs it
- * (ADR-0024). A `Game.Engine`'s or a `Coop`'s `input` makes one, and the engine or the Co-op
+ * reads are plain calls, since a step reads its input inside the frame or tick that runs it.
+ * A `Game.Engine`'s or a `Coop`'s `input` makes one, and the engine or the Co-op
  * client that acquired that input source disposes it when it detaches.
  *
  * @since 0.7.0
@@ -730,7 +730,7 @@ export const wasPressed: {
  * **When to use**
  *
  * In an input source's `endStep`, after every step, so one press reaches exactly one step, even
- * on a slow frame that runs several (ADR-0004).
+ * on a slow frame that runs several.
  *
  * **Details**
  *

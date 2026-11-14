@@ -1,5 +1,5 @@
 /**
- * Cue tables: which of the app's sounds each of a genre's cues plays (ADR-0014).
+ * Cue tables: which of the app's sounds each of a genre's cues plays.
  *
  * `CueTable` is a declaration with a service: the genre declares its cues and ships no sound; the
  * app, which owns the sound files, gives the table its sounds with the class's `layer`; and the

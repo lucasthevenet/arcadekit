@@ -5,7 +5,7 @@ import type * as Game from "arcadekit/game/browser";
 import type { Puzzle, PushPuzzleCues } from "../world";
 
 /**
- * Push-puzzle's cue table: which of the app's sounds each of its cues plays (ADR-0014). The app
+ * Push-puzzle's cue table: which of the app's sounds each of its cues plays. The app
  * gives the sounds, `PushPuzzleCueTable.layer({ move: "move", ... })`: it owns the sound files,
  * and the genre ships none.
  */
@@ -38,7 +38,7 @@ const CUES: readonly (readonly [
 ];
 
 /**
- * Plays a Puzzle's sounds (ADR-0014). Each frame it compares the cue counters with what it
+ * Plays a Puzzle's sounds. Each frame it compares the cue counters with what it
  * saw last frame and plays one sound per counter that went up, however far it went. The first
  * frame of a run only takes the counts, so mounting mid-run plays nothing. Reads the
  * simulation; never changes it.

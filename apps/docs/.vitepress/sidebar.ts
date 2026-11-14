@@ -63,17 +63,6 @@ export const sidebar = (pages: SitePages): DefaultTheme.SidebarItem[] => [
   ...entryItems(pages),
   {
     text: "Reference",
-    items: [
-      { text: "Glossary", link: pages.glossary.link },
-      {
-        text: "Decisions",
-        link: pages.adrIndex.link,
-        collapsed: true,
-        items: pages.adrs.map((adr) => ({
-          text: `${adr.number}: ${adr.title}`,
-          link: adr.link,
-        })),
-      },
-    ],
+    items: [{ text: "Glossary", link: pages.glossary.link }],
   },
 ];

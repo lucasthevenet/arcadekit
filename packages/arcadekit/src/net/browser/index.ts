@@ -1,4 +1,4 @@
-// arcadekit/net/browser: lockstep over WebRTC in the browser (#25, ADR-0012), and co-op. A
+// arcadekit/net/browser: lockstep over WebRTC in the browser (#25), and co-op. A
 // `SignallingRoom` turns a join code into WebRTC links (host to every guest, guest to the host)
 // through the signalling worker, made by a `PeerConnector` (`RtcPeerConnector`, WebRTC's), and
 // `RtcTransport` carries a lockstep session over those links. A room is a scoped Effect: its scope
@@ -8,7 +8,7 @@
 // a lobby. Its class is the key of the `CoopClient` an app drives, one player's side of a run,
 // over the app's `CoopRooms`, ticked by `CoopTicker`, and heard as `CoopEvent`s. `Coop` is a
 // builder a game writes bare, with its types; every other module is a namespace. Plain where a
-// tick or a frame runs (ADR-0024); the lobby, the links and the run's lifecycle are Effect.
+// tick or a frame runs; the lobby, the links and the run's lifecycle are Effect.
 
 export {
   type AnyCoop,

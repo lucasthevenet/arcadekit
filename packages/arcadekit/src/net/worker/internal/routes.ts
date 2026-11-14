@@ -4,7 +4,7 @@ import type { Cause } from "effect";
 import { JoinCode } from "../../signalling/index";
 
 /**
- * The Worker's routes (#25, ADR-0012):
+ * The Worker's routes (#25):
  *
  * - `GET /host` (a WebSocket upgrade) picks a fresh join code and opens its room as the host.
  * - `GET /join/<code>` (a WebSocket upgrade) joins that room as a guest.

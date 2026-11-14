@@ -1,9 +1,9 @@
 /**
- * Simulations: the DOM-free half of a game, its rules (ADR-0010, ADR-0020).
+ * Simulations: the DOM-free half of a game, its rules.
  *
  * `Game.Simulation` is a declaration: a game writes `class Race extends Game.Simulation(...) {}`,
  * and the class carries the rules and their types. Its `create`, `step` and `apply` are plain
- * functions, for correctness (ADR-0024): a step gives the same bits on every peer and every
+ * functions, for correctness: a step gives the same bits on every peer and every
  * replay, finishes in the call that runs it, and reads no clock or random source of its own. The
  * types here are what a handler is given and what a game reads off the class.
  *
@@ -885,7 +885,7 @@ export type RejectionOf<S extends AnySimulation> = RefusalOf<
  *
  * `create`, `step` and each `apply` handler are plain functions: a step runs no Effect and reads
  * no clock or random source of its own, so the same seed, input and commands always give the same
- * run (ADR-0017, ADR-0024). `step` and `apply` change the state in place and return nothing; an
+ * run. `step` and `apply` change the state in place and return nothing; an
  * `apply` handler may instead refuse its command by returning one of the rejections the command
  * declares (`Game.Rejection`). A `create` written in place comes before the other handlers, since
  * TypeScript types the state from what it returns.

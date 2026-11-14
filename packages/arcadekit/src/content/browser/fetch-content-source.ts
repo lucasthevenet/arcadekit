@@ -3,7 +3,7 @@
  * files an app ships beside its code.
  *
  * It is a `ContentSource` like any other, in an entry of its own: `fetch` is a browser's (or
- * another runtime's), and the root entry is checked with no DOM types (ADR-0002).
+ * another runtime's), and the root entry is checked with no DOM types.
  *
  * @since 0.7.0
  */

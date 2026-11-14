@@ -1,4 +1,4 @@
-// arcadekit/core: the data a step keeps and the arithmetic it calls. Plain on purpose (ADR-0024):
+// arcadekit/core: the data a step keeps and the arithmetic it calls. Plain on purpose:
 // a step calls all of it, so it gives the same bits on every peer and finishes in the call, and
 // it is data work, as Effect's own Array and MutableRef are. Each module is a namespace.
 

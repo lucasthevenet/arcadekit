@@ -1,4 +1,4 @@
-// The kit's tsdown build (ADR-0018).
+// The kit's tsdown build.
 //
 // The entries come from the package's `exports`: every subpath has a `source` condition naming
 // its file in src/, and `types` and `default` naming what this build writes to dist/. The entry

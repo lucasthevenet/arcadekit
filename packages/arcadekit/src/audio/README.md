@@ -50,7 +50,7 @@ export const loadSounds = Effect.gen(function* () {
 
 ## A cue table
 
-A game's view plays its sounds from cue counters in the state, as [ADR-0014](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0014-sounds-come-from-cue-counters-read-by-the-presentation.md) describes. A genre package ships no sound, so it declares a `CueTable`: its cues by name, each with the Schema of what the app gives for it (`AudioSystem.SoundId`, a sound id of the app's sound list). The app gives the table its sounds, and the genre's sound view plays from them:
+A game's view plays its sounds from cue counters in the state. A genre package ships no sound, so it declares a `CueTable`: its cues by name, each with the Schema of what the app gives for it (`AudioSystem.SoundId`, a sound id of the app's sound list). The app gives the table its sounds, and the genre's sound view plays from them:
 
 ```ts
 import { AudioSystem, CueTable } from "arcadekit/audio";

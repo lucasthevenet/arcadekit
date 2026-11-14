@@ -2,7 +2,7 @@
  * The frame loop: what an attached engine or Co-op client draws on, and how a frame that throws
  * ends it.
  *
- * Effect where it waits, plain where it draws (ADR-0024). Each frame is an `Effect.callback` that
+ * Effect where it waits, plain where it draws. Each frame is an `Effect.callback` that
  * asks the frame source for the next frame and gives back its canceller, so interrupting the loop
  * cancels the frame it asked for. The frame's work is one plain call inside one `Effect.try`, so
  * the fiber can't yield in the middle of it: a frame draws whole before the browser shows it, and

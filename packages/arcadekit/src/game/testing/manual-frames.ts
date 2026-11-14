@@ -4,7 +4,7 @@
  *
  * No frame runs until the test runs it, at a time it chooses, and the frame runs inside that
  * call: what an attached engine does on it has happened when `runFrameAt` returns. It is a
- * `Game.FrameSource`, so a test provides it as `Game.Frames`. Plain on purpose (ADR-0024): it is
+ * `Game.FrameSource`, so a test provides it as `Game.Frames`. Plain on purpose: it is
  * the host's callback, run by a test.
  *
  * @since 0.7.0

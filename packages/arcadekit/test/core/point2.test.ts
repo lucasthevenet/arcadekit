@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ExactMath, Point2 } from "../../src/core/index";
 
-// A point's functions write two numbers a step reads back (ADR-0011). A run's hashes depend on
+// A point's functions write two numbers a step reads back. A run's hashes depend on
 // the order of their operations, so the bits are pinned where another order gives other bits.
 
 describe("Point2.clampLength", () => {

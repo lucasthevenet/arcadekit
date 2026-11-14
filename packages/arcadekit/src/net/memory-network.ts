@@ -4,8 +4,8 @@
  * A memory network is the in-memory adapter of the `Transport` seam. Its time is the test's: a
  * message sent at time t is due at t + latency + jitter, unless it is lost, and `advance(nowMs)`
  * delivers every message due by then. Its latency, jitter and loss are drawn from an `Rng` of its
- * own, so a seeded network loses and reorders the same messages on every run. Plain on purpose
- * (ADR-0024): it is a test's data, whose time comes in as an argument, as a lockstep session's
+ * own, so a seeded network loses and reorders the same messages on every run. Plain on purpose:
+ * it is a test's data, whose time comes in as an argument, as a lockstep session's
  * does.
  *
  * @since 0.7.0

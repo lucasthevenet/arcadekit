@@ -2,7 +2,7 @@
   "name": "@arcadekit/bench",
   "version": "0.0.0",
   "private": true,
-  "description": "`pnpm bench`: wall time and heap allocated on the hot paths ADR-0017 measured",
+  "description": "`pnpm bench`: wall time and heap allocated on the kit's hot paths",
   "type": "module",
   "scripts": {
     "bench": "node run.ts",

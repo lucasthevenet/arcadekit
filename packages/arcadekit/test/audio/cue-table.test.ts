@@ -66,7 +66,6 @@ const cuesOfLookAlike = (
 
 /** Declares a cue with the app's sound, where its Schema goes: a type error. */
 const declareWithSound = () =>
-  // oxlint-disable-next-line declaration/class -- A test declares what the types must refuse.
   CueTable("SoundCueTable", {
     cues: {
       // @ts-expect-error -- a cue is declared with a Schema: the sound is the app's to give.

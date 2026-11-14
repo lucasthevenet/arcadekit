@@ -3,7 +3,7 @@
 // Its pages are the repository's own markdown, read in place: `srcDir` is the repository's root,
 // `rewrites` gives each page its address, and `srcExclude` leaves every other markdown file out.
 // pages.ts finds the pages, sidebar.ts groups them, links.ts makes the links the READMEs
-// already have work here, reference.ts gives the glossary and the decisions what a page needs,
+// already have work here, reference.ts gives the glossary's terms headings of their own,
 // tables.ts lets a table fit a phone, and version.ts says which version the pages describe.
 import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -40,7 +40,6 @@ const VITEPRESS = createRequire(import.meta.url).resolve("vitepress");
 const pages = discoverPages();
 const servedAs = new Map(pages.all.map((page) => [page.file, page.servedAs]));
 const pageByFile = new Map(pages.all.map((page) => [page.file, page]));
-const adrByFile = new Map(pages.adrs.map((page) => [page.file, page]));
 
 const links = createLinkRewriter({
   repoRoot: REPO_ROOT,
@@ -61,7 +60,6 @@ const links = createLinkRewriter({
 const reference = createReferencePlugin({
   repoRoot: REPO_ROOT,
   glossary: pages.glossary.file,
-  adrs: adrByFile,
 });
 
 const { version, unreleased } = packageVersion(REPO_ROOT);
@@ -112,9 +110,7 @@ export default defineConfig({
   // Each page's address and description: the canonical link and the tags a shared link shows.
   transformPageData: (pageData) => {
     const page = pageByFile.get(pageData.filePath);
-    const adr = adrByFile.get(pageData.filePath);
-    const title =
-      adr === undefined ? pageData.title : `ADR-${adr.number}: ${adr.title}`;
+    const { title } = pageData;
     const description =
       pageData.description || page?.description || DESCRIPTION;
     const url = `${SITE_URL}${page?.link ?? `/${pageData.relativePath.replace(/\.md$/u, "")}`}`;
@@ -191,18 +187,7 @@ export default defineConfig({
     logo: { src: "/favicon.svg", alt: "" },
     nav: [
       { text: "Entries", items: entriesNav(pages) },
-      {
-        text: "Reference",
-        activeMatch: "^/(?:glossary|adr)",
-        items: [
-          { text: "Glossary", link: pages.glossary.link },
-          {
-            text: "Decisions",
-            link: pages.adrIndex.link,
-            activeMatch: "^/adr",
-          },
-        ],
-      },
+      { text: "Glossary", link: pages.glossary.link },
       { text: "GRIMBONK", link: GRIMBONK_URL },
       {
         // The pages follow `main`, which may be ahead of the package on npm (version.ts).
@@ -231,17 +216,13 @@ export default defineConfig({
       options: {
         miniSearch: {
           searchOptions: {
-            // An entry's page says how to use an export. A decision says why it is so, and the
-            // glossary what a word means. A search for an export's name matches all three, and
-            // the reader most often wants the first: rank the other two lower. A term's own
-            // line of the glossary still comes first for the term. VitePress sends this
-            // function to the browser as text, so it names nothing outside itself.
-            boostDocument: (id: string) => {
-              if (id.startsWith("/adr/")) {
-                return 0.3;
-              }
-              return id.startsWith("/glossary") ? 0.5 : 1;
-            },
+            // An entry's page says how to use an export, and the glossary what a word means. A
+            // search for an export's name matches both, and the reader most often wants the
+            // first: rank the glossary lower. A term's own line of the glossary still comes
+            // first for the term. VitePress sends this function to the browser as text, so it
+            // names nothing outside itself.
+            boostDocument: (id: string) =>
+              id.startsWith("/glossary") ? 0.5 : 1,
           },
         },
       },

@@ -26,10 +26,7 @@ const makeRewriter = () => {
       [CORE, "/core"],
       [NET, "/net"],
       [WORKER, "/net/worker"],
-      [
-        "docs/adr/0012-delay-based-lockstep-over-a-host-star.md",
-        "/adr/0012-delay-based-lockstep-over-a-host-star",
-      ],
+      ["CONTEXT.md", "/glossary"],
     ]),
     includes: new Map([[HOME, "packages/arcadekit/README.md"]]),
     onDeadLink: (link) => reported.push(link),
@@ -54,12 +51,7 @@ describe("a relative link in a README", () => {
     expect(rewrite("../../README.md", CORE)).toBe("/");
     expect(rewrite("worker/README.md", NET)).toBe("/net/worker");
     expect(rewrite("../README.md", WORKER)).toBe("/net");
-    expect(
-      rewrite(
-        "../../../../../docs/adr/0012-delay-based-lockstep-over-a-host-star.md",
-        WORKER
-      )
-    ).toBe("/adr/0012-delay-based-lockstep-over-a-host-star");
+    expect(rewrite("../../../../../CONTEXT.md", WORKER)).toBe("/glossary");
     expect(deadLinks()).toStrictEqual([]);
   });
 
@@ -133,12 +125,9 @@ describe("a relative link in a README", () => {
 describe("a full link", () => {
   it("goes to the page when it names a page's file on GitHub", () => {
     const { rewrite } = makeRewriter();
-    expect(
-      rewrite(
-        `${REPO_URL}/blob/main/docs/adr/0012-delay-based-lockstep-over-a-host-star.md#consequences`,
-        CORE
-      )
-    ).toBe("/adr/0012-delay-based-lockstep-over-a-host-star#consequences");
+    expect(rewrite(`${REPO_URL}/blob/main/CONTEXT.md#lockstep`, CORE)).toBe(
+      "/glossary#lockstep"
+    );
     expect(
       rewrite(`${REPO_URL}/tree/main/packages/arcadekit/src/net/worker`, CORE)
     ).toBe("/net/worker");
@@ -146,7 +135,7 @@ describe("a full link", () => {
 
   it("is dead when it names a file the repository doesn't have", () => {
     const { rewrite, deadLinks } = makeRewriter();
-    const renamed = `${REPO_URL}/blob/main/docs/adr/0012-this-was-renamed.md`;
+    const renamed = `${REPO_URL}/blob/main/packages/arcadekit/src/core/RENAMED.md`;
     const missing = `${REPO_URL}/tree/main/packages/arcadekit/src/nope`;
     const outside = `${REPO_URL}/blob/main/../other/README.md`;
     for (const href of [renamed, missing, outside]) {
@@ -163,7 +152,7 @@ describe("a full link", () => {
       `${REPO_URL}/blob/main/packages/arcadekit/CHANGELOG.md`,
       `${REPO_URL}/tree/main/.changeset`,
       // Another branch, which this checkout can't check.
-      `${REPO_URL}/blob/next/docs/adr/0099-not-written-yet.md`,
+      `${REPO_URL}/blob/next/packages/arcadekit/src/not-written-yet/README.md`,
       `${REPO_URL}/issues/25`,
       `${REPO_URL}#readme`,
       "https://effect.website",

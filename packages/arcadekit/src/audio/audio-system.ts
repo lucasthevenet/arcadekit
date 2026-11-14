@@ -5,7 +5,7 @@
  * An audio system is a value with its calls as fields, as Effect's `KeyValueStore` is, since a
  * sound view calls them on whatever system it was given: the browser's, which
  * `arcadekit/audio/browser` makes over an `AudioMixer`, the silent one, or a test's. Every call but
- * `load` is plain, and none throws: a sound view plays inside the frame that draws (ADR-0024), and
+ * `load` is plain, and none throws: a sound view plays inside the frame that draws, and
  * whatever can't play is dropped. The module also has what the calls take: a sound list, the
  * Schema of a sound id, and the error a load fails with.
  *
@@ -64,7 +64,7 @@ export type Bus = "master" | "sfx" | "music";
  * **Details**
  *
  * A play past the voice cap, or sooner after the last start than the minimum gap, is dropped, so a
- * moment a game counts hundreds of times a second doesn't play as a burst (ADR-0014).
+ * moment a game counts hundreds of times a second doesn't play as a burst.
  *
  * **Example** (A shot that may play four at once)
  *

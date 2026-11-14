@@ -6,7 +6,7 @@
  * Guests are `guest-1`, `guest-2`, … in join order. Its channels keep what arrives until something
  * listens, as the WebRTC ones do, and deliver a microtask later, as a network would. It is named
  * for its mechanism and the service it provides, `CoopRooms`. Its rooms are a test's data, plain on
- * purpose (ADR-0024); each room's lifecycle is the scope of whoever opened it.
+ * purpose; each room's lifecycle is the scope of whoever opened it.
  *
  * @since 0.7.0
  */

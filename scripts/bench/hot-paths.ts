@@ -1,7 +1,7 @@
 import { setImmediate as settle } from "node:timers/promises";
 import { getHeapSpaceStatistics } from "node:v8";
 
-// The hot paths ADR-0017 measured, each timed and its allocations counted:
+// The kit's hot paths, each timed and its allocations counted:
 //
 // - survivors' step at its largest test population, a horde held at the 300 enemies its world
 //   tests cap it at, stepped by `Game.Loop`;

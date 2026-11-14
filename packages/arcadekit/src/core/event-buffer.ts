@@ -1,6 +1,5 @@
 /**
- * Event buffers: what a run reports during its steps, held until its loop delivers it
- * (ADR-0008).
+ * Event buffers: what a run reports during its steps, held until its loop delivers it.
  *
  * An event is a rare, meaningful fact ("leveled up", "boss spawned"), and it crosses into the
  * UI, so a step reports few. `arcadekit/game`'s loop keeps one buffer for a run and drains it

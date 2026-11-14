@@ -5,14 +5,14 @@ import type * as Ticker from "../../ticker";
 
 // What ticks a co-op run's lockstep session in the browser: `CoopTicker`'s default.
 //
-// A co-op run must keep stepping while its tab is hidden (#25, ADR-0012). Browsers throttle a
+// A co-op run must keep stepping while its tab is hidden (#25). Browsers throttle a
 // hidden tab's main-thread timers to about once a second (an open data channel spares the page
 // Chrome's harsher intensive throttling) and stop `requestAnimationFrame`, so a lockstep session
 // ticked by them falls behind and stalls everyone. A dedicated worker's timers aren't throttled
 // that way, and the messages it posts reach the main thread at its rate, so the run's ticker
 // runs its timer in one.
 //
-// The ticker is plain on purpose (ADR-0024): it is the host's callback a scoped session's `run`
+// The ticker is plain on purpose: it is the host's callback a scoped session's `run`
 // waits on, as a frame source is an engine's, and its `onTick` runs the session inside the
 // worker's message. The worker's lifecycle is Effect: the run's scope terminates it.
 

@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-`arcadekit/foldkit` is written as Effect's modules are ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)): its modules are four namespaces, `Viewport`, `EngineEntry`, `KeyPresses` and `ShortcutPresses`, each with a `make`, and every export has Effect's doc comment, with an example that runs. **Breaking**: every export of `arcadekit/foldkit` is renamed.
+`arcadekit/foldkit` is written as Effect's modules are: its modules are four namespaces, `Viewport`, `EngineEntry`, `KeyPresses` and `ShortcutPresses`, each with a `make`, and every export has Effect's doc comment, with an example that runs. **Breaking**: every export of `arcadekit/foldkit` is renamed.
 
 What an app sees besides the names:
 

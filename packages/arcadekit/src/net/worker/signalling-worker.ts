@@ -1,5 +1,5 @@
 /**
- * The signalling worker, for Cloudflare (#25, ADR-0012): it introduces the peers of a lockstep run
+ * The signalling worker, for Cloudflare (#25): it introduces the peers of a lockstep run
  * so they can open WebRTC data channels to each other, then gets out of the way. It never sees
  * game input.
  *
@@ -7,8 +7,8 @@
  * since Cloudflare binds a class by its exported name, and it says which of its bindings are the
  * rooms and the site's files. Each join code is one Durable Object of that class.
  *
- * This file is Cloudflare's entry points, and the one file of the kit that runs an Effect itself
- * (ADR-0024): Cloudflare owns the entry points, so each runs its Effect there. The Worker's
+ * This file is Cloudflare's entry points, and the one file of the kit that runs an Effect itself:
+ * Cloudflare owns the entry points, so each runs its Effect there. The Worker's
  * `fetch` runs each request with `Effect.runPromise`, since nothing outlives a request; the
  * Durable Object builds one `ManagedRuntime` with the object, since its connections outlive the
  * request that opened them. Cloudflare's own objects (`WebSocketPair`, the 101 response) are made

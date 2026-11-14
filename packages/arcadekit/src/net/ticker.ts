@@ -4,7 +4,7 @@
  * A ticker calls back on every tick until it is stopped: a timer, a dedicated worker's timer
  * (which a hidden tab doesn't throttle), animation frames, or all of those. It is a host's
  * callback, the bridge a scoped session's `run` waits on with one `Effect.callback`, and a type a
- * game writes as a function, so it is no data type. Plain on purpose (ADR-0024): a tick runs the
+ * game writes as a function, so it is no data type. Plain on purpose: a tick runs the
  * session inside the call that ticks it, so a ticker that draws can tick and then draw in one
  * frame.
  *

@@ -13,7 +13,7 @@ pnpm add -D @types/three
 
 Peer dependencies: `effect` (~4.1), and `three` (^0.187, an optional peer of the package that this entry needs). `@types/three` (^0.187, also optional) gives Three.js its types.
 
-Loading a sheet is an Effect, with a typed error. Drawing runs none: a view draws inside the frame the browser shows, so its calls are plain, and the engine makes and disposes the view around them ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)).
+Loading a sheet is an Effect, with a typed error. Drawing runs none: a view draws inside the frame the browser shows, so its calls are plain, and the engine makes and disposes the view around them.
 
 ## Its modules
 
@@ -439,5 +439,3 @@ export const checkSheet = (data: SpriteSheet.Data, png: Uint8Array) => ({
   soft: Png.framesWithSoftAlpha(png, data, ["shadow"]),
 });
 ```
-
-See [ADR-0015](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0015-pixel-art-sprites-loaded-by-the-app.md) (pixel-art sprites loaded by the app).

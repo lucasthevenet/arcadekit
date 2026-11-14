@@ -1,5 +1,5 @@
 // arcadekit/content: what a game is played with and drawn from, each declared and loaded once per
-// app (ADR-0020). `Content` and `Asset` are builders a game writes bare, with their types; where
+// app. `Content` and `Asset` are builders a game writes bare, with their types; where
 // a content's files come from is the namespace `ContentSource`. Effect, but for what a game hands
 // a declaration: its `validate` and its `release` are plain functions, called inside a load.
 

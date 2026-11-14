@@ -6,8 +6,8 @@
  * refuse, players choosing, a pause, a run's end, and a start that reports (\`offerAtStart\`), as a
  * game's does whose \`create\` begins its first stage. An event says whose it is by slot
  * (\`OfferOpened.slot\`, \`RunEnded.totals\`), as a genre's do. Its rules are declared as a genre's
- * are, events, commands with their rejections, then the simulation, and are plain on purpose
- * (ADR-0024): a step gives the same bits on every peer. Each declaration's base is named first,
+ * are, events, commands with their rejections, then the simulation, and are plain on purpose:
+ * a step gives the same bits on every peer. Each declaration's base is named first,
  * with its type, since the kit's type files are made one file at a time (isolatedDeclarations).
  *
  * @since 0.7.0

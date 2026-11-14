@@ -60,7 +60,7 @@ import type * as SignallingRoom from "../signalling-room";
 // The Co-op client's implementation. Its lifecycles are Effect: a seat is a fiber whose scope
 // owns the room, the lobby, the session and the ticker; an attach is a scope that owns the view
 // and the input; and the client's methods are traced under the declared name. What runs inside
-// a tick and a frame is plain on purpose (ADR-0024): the local player's input source, the state
+// a tick and a frame is plain on purpose: the local player's input source, the state
 // hash and who stepping waits on are read in the tick that steps, and a frame ticks and then
 // draws in one call. A listener is called inside the tick that reports, as an engine's is, so it
 // has heard a step before the send that step answered completes.
@@ -118,7 +118,7 @@ export interface CoopParts<
   readonly config: (content: Content, picks: readonly string[]) => Config;
   /** A signalling room's default size (4) if left out. */
   readonly maxPlayers?: number;
-  /** Defaults 4 steps ahead (67 ms at 60 Hz, ADR-0012) and a hash every 60 steps. */
+  /** Defaults 4 steps ahead (67 ms at 60 Hz) and a hash every 60 steps. */
   readonly lockstep?: {
     readonly inputDelay?: number;
     readonly hashEvery?: number;
@@ -209,7 +209,7 @@ interface Seat<State, Event, Command, Refusals> {
 const WAITING_SHOWN_MS = 300;
 /** How many recent state hashes `debug` keeps. */
 const KEPT_HASHES = 32;
-/** Steps ahead local input is scheduled, without the game's own number (ADR-0012). */
+/** Steps ahead local input is scheduled, without the game's own number. */
 const INPUT_DELAY = 4;
 /** Steps between state hash comparisons, without the game's own number. */
 const HASH_EVERY = 60;
@@ -938,7 +938,7 @@ export const coopClient = <
             );
             return yield* frameLoop(frames, (nowMs) => {
               const seat = current;
-              // The frame's tick, before drawing (ADR-0012).
+              // The frame's tick, before drawing.
               seat?.frameTick?.();
               view.render(seat?.run?.state ?? null, nowMs / 1000);
             });

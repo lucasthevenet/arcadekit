@@ -1,12 +1,10 @@
-// What the site adds to its reference pages as it renders them. Their files stay as they are,
-// written for GitHub.
+// What the site adds to the glossary as it renders it. Its file stays as it is, written for
+// GitHub.
 //
-// - The glossary (CONTEXT.md) is a list of paragraphs, each starting with its term in bold:
-//   `**Step**: one fixed-length tick of the simulation`. Here the term is a heading above its
-//   definition, so each term has an address (`/glossary#step`), a line in the page's outline and
-//   a search result of its own.
-// - A decision (docs/adr/<name>.md) is headed by its sentence. Here a line above the heading
-//   gives its number and its status, "ADR-0012 · accepted", which a link to it names.
+// The glossary (CONTEXT.md) is a list of paragraphs, each starting with its term in bold:
+// `**Step**: one fixed-length tick of the simulation`. Here the term is a heading above its
+// definition, so each term has an address (`/glossary#step`), a line in the page's outline and a
+// search result of its own.
 import path from "node:path";
 
 import type { MarkdownRenderer } from "vitepress";
@@ -18,11 +16,6 @@ export interface ReferenceOptions {
   readonly repoRoot: string;
   /** The glossary's file, relative to the repository's root. */
   readonly glossary: string;
-  /** Each decision's number, status and address, by its file relative to the repository's root. */
-  readonly adrs: ReadonlyMap<
-    string,
-    { readonly number: string; readonly status: string; readonly link: string }
-  >;
 }
 
 /** What markdown-it's `env` holds when VitePress renders a page. */
@@ -35,9 +28,6 @@ interface PageEnv {
 
 /** The heading a glossary term becomes. The outline lists levels 2 and 3. */
 const TERM_HEADING = "h3";
-
-/** A decision named in a status, as in "superseded by ADR-0018". */
-const ADR_NAME = /ADR-(?<number>\d{4})/gu;
 
 /** A glossary paragraph's parts: what is inside its leading bold run, and what follows the colon. */
 interface TermParagraph {
@@ -70,10 +60,7 @@ const termParagraph = (
 };
 
 export const createReferencePlugin = (options: ReferenceOptions) => {
-  const { repoRoot, glossary, adrs } = options;
-  const adrLinks = new Map(
-    [...adrs.values()].map((adr) => [adr.number, adr.link])
-  );
+  const { repoRoot, glossary } = options;
 
   const pageFile = (env: PageEnv): string | undefined => {
     const absolute = env.realPath ?? env.path;
@@ -117,26 +104,6 @@ export const createReferencePlugin = (options: ReferenceOptions) => {
         tokens.push(token);
       }
       state.tokens = tokens;
-    });
-
-    md.core.ruler.push("adr-record-line", (state) => {
-      const adr = adrs.get(pageFile(state.env as PageEnv) ?? "");
-      const title = state.tokens.findIndex(
-        (token) => token.type === "heading_open" && token.tag === "h1"
-      );
-      if (adr === undefined || title === -1) {
-        return;
-      }
-      // A status may name the decision that replaced this one: link it.
-      const status = md.utils
-        .escapeHtml(adr.status)
-        .replaceAll(ADR_NAME, (name, number: string) => {
-          const link = adrLinks.get(number);
-          return link === undefined ? name : `<a href="${link}">${name}</a>`;
-        });
-      const line = new state.Token("html_block", "", 0);
-      line.content = `<p class="adr-record">ADR-${adr.number} · ${status}</p>\n`;
-      state.tokens.splice(title, 0, line);
     });
   };
 };

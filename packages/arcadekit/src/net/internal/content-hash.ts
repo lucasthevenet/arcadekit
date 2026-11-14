@@ -1,8 +1,8 @@
 /**
  * A digest of the content a run is played with, as 8 hex digits: FNV-1a over its JSON. Every
  * peer of a co-op run must play the same content; the lockstep session compares this with the
- * host's at the start and refuses a mismatch (ADR-0012). The content must be JSON data, and the
- * order of its keys counts. Plain on purpose (ADR-0024): every peer compares it, and it is data
+ * host's at the start and refuses a mismatch. The content must be JSON data, and the
+ * order of its keys counts. Plain on purpose: every peer compares it, and it is data
  * work.
  */
 export const contentHash = (content: unknown): string => {

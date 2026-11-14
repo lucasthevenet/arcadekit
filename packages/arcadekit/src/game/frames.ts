@@ -5,7 +5,7 @@
  * adapters plug in: a test, a replay or a lockstep session calls a loop's `frame` instead, so it
  * can step without drawing. `animationFrames` is the browser's, and the `Frames` reference gives
  * it to an engine unless an app or a test provides another, such as `arcadekit/game/testing`'s
- * `ManualFrames`. Plain on purpose (ADR-0024): a frame source is the host's callback, the bridge
+ * `ManualFrames`. Plain on purpose: a frame source is the host's callback, the bridge
  * that `Effect.callback` waits on.
  *
  * @since 0.7.0

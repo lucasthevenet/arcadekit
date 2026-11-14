@@ -1,6 +1,6 @@
 /**
  * `arcadekit/game`: a game's building blocks, DOM-free. What a game's rules are declared with, and
- * the loop that steps them anywhere: a browser, a Web Worker, a server, a test (ADR-0020).
+ * the loop that steps them anywhere: a browser, a Web Worker, a server, a test.
  *
  * The entry is one module, which a game imports whole as `Game`: its declarations are its
  * callable members (`class LevelSolved extends Game.Event(...) {}`), beside the loop and the
@@ -9,7 +9,7 @@
  * simulation in a test, are `arcadekit/game/scenario`; and the frames a test drives an engine on
  * are `arcadekit/game/testing`.
  *
- * Plain on purpose, where a step runs (ADR-0024): a simulation's handlers and the loop that runs
+ * Plain on purpose, where a step runs: a simulation's handlers and the loop that runs
  * them give the same bits on every peer and finish in the call.
  *
  * @since 0.7.0

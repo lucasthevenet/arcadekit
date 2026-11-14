@@ -6,7 +6,7 @@
  * the app keeps them as a Boolean in its Model. The engine entry (`EngineEntry`) reads that
  * Boolean and finds the element by its id: a Mount can't use the app's services, and a
  * Subscription can't see the element, so the Mount's report travels through the Model. Plain on
- * purpose (ADR-0024): this is part of the app's Foldkit `view`, a pure function, and its effect
+ * purpose: this is part of the app's Foldkit `view`, a pure function, and its effect
  * is a Mount.
  *
  * @since 0.7.0

@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-`arcadekit/save` is written as Effect's modules are ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)). `Save` and `Setting` keep their builders, and a game declares a setting as before. What their services give is the namespace `Stored`: `Stored.Stored`, a value with a `TypeId`, its `make`, an `isStored` guard, `pipe` and a printed form. The browser's storage is `BrowserSaveStorage.layer` in `arcadekit/save/browser`. **Breaking**: a save's definition has no `field`, its stored format changed, and `Stored` and `BrowserSaveStorage` are namespaces.
+`arcadekit/save` is written as Effect's modules are. `Save` and `Setting` keep their builders, and a game declares a setting as before. What their services give is the namespace `Stored`: `Stored.Stored`, a value with a `TypeId`, its `make`, an `isStored` guard, `pipe` and a printed form. The browser's storage is `BrowserSaveStorage.layer` in `arcadekit/save/browser`. **Breaking**: a save's definition has no `field`, its stored format changed, and `Stored` and `BrowserSaveStorage` are namespaces.
 
 A save and a setting read, write, merge, back up and log as they did, with the same messages. What changed besides the names:
 

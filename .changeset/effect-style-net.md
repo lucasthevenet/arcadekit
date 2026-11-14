@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-`arcadekit/net` is written as Effect's modules are ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)), and every export of `arcadekit/net`, `arcadekit/net/browser`, `arcadekit/net/testing`, `arcadekit/net/signalling` and `arcadekit/net/worker` has Effect's doc comment, with an example that runs. Each entry's public file exports namespaces, and `Coop` keeps its builder: a game declares its Coop as before. **Breaking**: every other export is renamed into a namespace, the entry's errors are `Schema.TaggedError`s, and the test helpers, the in-memory network, a transport, a peer link and a signalling room are data types with a `TypeId`.
+`arcadekit/net` is written as Effect's modules are, and every export of `arcadekit/net`, `arcadekit/net/browser`, `arcadekit/net/testing`, `arcadekit/net/signalling` and `arcadekit/net/worker` has Effect's doc comment, with an example that runs. Each entry's public file exports namespaces, and `Coop` keeps its builder: a game declares its Coop as before. **Breaking**: every other export is renamed into a namespace, the entry's errors are `Schema.TaggedError`s, and the test helpers, the in-memory network, a transport, a peer link and a signalling room are data types with a `TypeId`.
 
 What changed besides the names:
 
@@ -111,4 +111,4 @@ Every export that changed, and what a game writes now. `Coop` and its types (`An
 | `signallingRoom(options)`, `SignallingRoomOptions`, `SignallingRoomClass` (`arcadekit/net/worker`) | `SignallingWorker.room(options)`, `SignallingWorker.RoomOptions`, `SignallingWorker.RoomClass` |
 | `signallingWorker(options)`, `SignallingWorkerOptions`, `SignallingWorkerEnv`, `SignallingWorker` | `SignallingWorker.make(options)`, `SignallingWorker.Options`, `SignallingWorker.Env`, `SignallingWorker.Handler` |
 
-The kit's findings, research notes and changelog keep the old names: read them through this table.
+The changelog keeps the old names: read it through this table.

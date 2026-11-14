@@ -1,7 +1,7 @@
 /**
  * Views: what draws a run into the viewport, once per browser frame, after the frame's steps.
  *
- * Plain on purpose (ADR-0024): a frame draws whole before the browser shows it, so `render` is a
+ * Plain on purpose: a frame draws whole before the browser shows it, so `render` is a
  * plain call inside the frame's one `Effect.try`. A view's lifecycle is its engine's: the engine
  * makes it in an `acquireRelease` on each attach and calls its `dispose` in the release.
  *

@@ -4,7 +4,7 @@
  * A timer is a number in the state, so it pauses, replays and hashes with the run, and nothing
  * calls back: a step lowers it with `countDown`, reads it, and arms it by writing its length. A
  * rate is a budget the step adds to, and `takeWhole` says how many whole units it holds. Exact
- * operations only (ADR-0011).
+ * operations only.
  *
  * @since 0.7.0
  */

@@ -73,7 +73,7 @@ export const CLICK_SOUND = "click";
 /** The music on the menus and during a run. Starting or ending a run crossfades between them. */
 export const MUSIC = { menu: "music-menu", run: "music-run" } as const;
 
-/** The player's volume and mute: app settings, kept apart from the save, where the last write wins (ADR-0009). */
+/** The player's volume and mute: app settings, kept apart from the save, where the last write wins. */
 export class SurvivorsAudioSettings extends Setting("SurvivorsAudioSettings", {
   storageKey: "arcadekit/survivors/settings",
   schema: AudioSettings.AudioSettings,

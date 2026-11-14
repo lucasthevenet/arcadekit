@@ -6,7 +6,7 @@ import { failureMessage } from "./room-failure";
 import type { RoomFailure } from "./room-failure";
 
 // The signalling client's rules as plain inputs and outputs, so they are tested without sockets,
-// WebRTC or fibers. Plain on purpose (ADR-0024): a reducer, whose refusal is a value. The room's
+// WebRTC or fibers. Plain on purpose: a reducer, whose refusal is a value. The room's
 // Effect shell (signalling-room.ts) turns what happens into inputs, one at a time, and carries
 // out the outputs in order.
 

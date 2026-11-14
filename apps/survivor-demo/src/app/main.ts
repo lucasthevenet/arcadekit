@@ -23,7 +23,7 @@ export { subscriptions } from "./subscriptions";
 /**
  * What the genre's engine is made from, which this app owns: its sprite sheet, its sounds for
  * the genre's cue table and its audio, which makes no AudioContext until the player's first
- * gesture (ADR-0015). Co-op plays the same engine, so it takes them from here too: one Layer
+ * gesture. Co-op plays the same engine, so it takes them from here too: one Layer
  * value, so both draw from one sheet, loaded once.
  */
 const assets = Layer.mergeAll(

@@ -5,7 +5,7 @@
  * A layer belongs to the view: each frame the view gives it the rectangle of ground its camera
  * shows and a function that says which frame a cell shows. It knows no tile map: a game's view
  * reads its own, or works a cell's frame out from the cell alone. Its functions are plain calls,
- * made inside the frame the browser shows (ADR-0024), and once its batch has grown to the
+ * made inside the frame the browser shows, and once its batch has grown to the
  * window, a frame allocates nothing.
  *
  * @since 0.7.0

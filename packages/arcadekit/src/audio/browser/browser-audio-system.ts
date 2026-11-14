@@ -3,10 +3,9 @@
  * gesture that lets audio start, and silent while the tab is hidden.
  *
  * The browser lets audio start only during a gesture's own dispatch, so the listener that makes
- * the AudioContext and resumes it is plain, as one that writes what a frame reads is (ADR-0024);
+ * the AudioContext and resumes it is plain, as one that writes what a frame reads is;
  * adding and removing it is the layer's. Decoding and closing the context are Effect. It is in an
- * entry of its own, since Web Audio is a browser's and the root entry is checked with no DOM types
- * (ADR-0002).
+ * entry of its own, since Web Audio is a browser's and the root entry is checked with no DOM types.
  *
  * @since 0.7.0
  */

@@ -5,8 +5,7 @@
  * Whether a character walks is a view's question: the rules hold a position and no animation. A
  * view answers it from the positions it draws, with a little time after the last move, so a
  * frame with no step, or the gap between two turns of a held key, doesn't flicker the character
- * back to standing. A gait is data work a view does in its frame, so its functions are plain
- * (ADR-0024).
+ * back to standing. A gait is data work a view does in its frame, so its functions are plain.
  *
  * @since 0.7.0
  */

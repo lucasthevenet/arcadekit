@@ -8,8 +8,8 @@ import { heroDevice } from "./device";
 import { SurvivorsEngine } from "./game";
 
 /**
- * Survivors for several players, each in their own browser, one hero per player by slot
- * (ADR-0013): the genre's engine, played in lockstep from a lobby. A lobby pick is a hero id, and
+ * Survivors for several players, each in their own browser, one hero per player by slot:
+ * the genre's engine, played in lockstep from a lobby. A lobby pick is a hero id, and
  * the picks, in player order, are the run's heroes. Each player's view follows its own hero, and
  * draws from the app's sheet as the single-player engine's does. `SurvivorsCoop.layer` provides
  * the Co-op client an app drives; a pick is the `ChooseUpgrade` command and the pause

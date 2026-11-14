@@ -4,7 +4,7 @@
  * Each `Coop` class is the key of one: `yield* MyCoop` gives it. It runs the lobby over the
  * signalling worker and WebRTC, then a lockstep run stepped on a worker's timer, and a view drawn
  * on animation frames while attached. A hidden tab keeps stepping at full rate, so it holds no one
- * up, and draws nothing, since the browser runs no animation frames for it (ADR-0012). Its
+ * up, and draws nothing, since the browser runs no animation frames for it. Its
  * methods are traced under the declared name (`SumCoop.host`, `SumCoop.send` and so on), as an
  * engine's are. `attach` and `listen` have the shapes of `arcadekit/foldkit`'s
  * `EngineEntry.Attachable`, so an app mounts the client as it mounts an engine.

@@ -1,5 +1,5 @@
 /**
- * Events: the rare, meaningful facts a run reports to the outside (ADR-0008).
+ * Events: the rare, meaningful facts a run reports to the outside.
  *
  * `Game.Event` is a declaration: a game writes `class LevelSolved extends Game.Event(...) {}`, and
  * the class is the event's constructor and its Schema, so a value goes into a Foldkit Message as

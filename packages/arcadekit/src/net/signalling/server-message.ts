@@ -5,7 +5,7 @@
  * relays signals, confirms the start, and says why it turned a peer away or ended its room. Each
  * message is JSON of its Schema's type, which transforms nothing, so a message on the wire is
  * `JSON.stringify` of its value; `fromJson` reads one back. What arrives at a peer is untrusted,
- * so it is decoded where it arrives. Plain on purpose (ADR-0024): a Schema and the data work that
+ * so it is decoded where it arrives. Plain on purpose: a Schema and the data work that
  * reads it.
  *
  * @since 0.7.0

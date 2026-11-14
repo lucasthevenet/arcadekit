@@ -72,7 +72,7 @@ export const visitWorld = (world: World, add: (value: number) => void) => {
   }
 };
 
-/** Hashes everything `visitWorld` visits. The cue counters (`World.cues`) aren't visited: they only drive sound (ADR-0014). */
+/** Hashes everything `visitWorld` visits. The cue counters (`World.cues`) aren't visited: they only drive sound. */
 export const hashWorld = (world: World): number => {
   StateHash.reset(hash);
   visitWorld(world, fold);

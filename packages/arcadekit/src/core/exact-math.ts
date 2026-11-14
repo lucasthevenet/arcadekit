@@ -1,11 +1,10 @@
 /**
  * Exact math for a step: deterministic replacements for the `Math` functions a simulation needs,
- * and the small helpers built on them (ADR-0011).
+ * and the small helpers built on them.
  *
  * ECMA-262 lets engines approximate `Math.hypot`, `sin`, `cos` and `**` however they like, and
- * V8, JavaScriptCore and two V8 versions give different last bits for them
- * (docs/research/cross-engine-determinism.md). A lockstep peer that steps on another engine
- * would drift. Everything here uses only what the spec defines exactly: `+ - * /`, `Math.sqrt`,
+ * V8, JavaScriptCore and two V8 versions give different last bits for them. A lockstep peer that
+ * steps on another engine would drift. Everything here uses only what the spec defines exactly: `+ - * /`, `Math.sqrt`,
  * `Math.round`, `Math.floor`, `Math.min` and `Math.max` (IEEE 754, rounded ties-to-even, never
  * fused), and for the hash `Math.imul` and bit operations. So every conforming engine returns
  * the same bits.

@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-`arcadekit/input` is written as Effect's modules are ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)): its one module is the namespace `InputController`, with a data type named after it, its `make`, an `isInputController` guard, `pipe`, a printed form, and functions that take the controller first and, given the name alone, return the function a `pipe` applies. **Breaking**: every export of `arcadekit/input` is renamed or reshaped.
+`arcadekit/input` is written as Effect's modules are: its one module is the namespace `InputController`, with a data type named after it, its `make`, an `isInputController` guard, `pipe`, a printed form, and functions that take the controller first and, given the name alone, return the function a `pipe` applies. **Breaking**: every export of `arcadekit/input` is renamed or reshaped.
 
 A controller reads its devices as it did: the same keys, sticks, drags and swipes, the same deadzone, the same one press per step. Its reads stay plain, since a step reads its input inside the frame or tick that runs it, and it runs no Effect. It now imports `effect`, for its shape only (`Pipeable`, `Inspectable`, `Predicate`, `dual`). A name the bindings don't give is a type error on every read, as it was.
 

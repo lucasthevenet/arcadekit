@@ -1,5 +1,5 @@
 /**
- * Ring readers: how far one view has read one ring (ADR-0023).
+ * Ring readers: how far one view has read one ring.
  *
  * A view keeps one reader for each ring it reads, and two views read one ring with a reader
  * each. A reader writes nothing to the ring, so a view still never changes a run's state.

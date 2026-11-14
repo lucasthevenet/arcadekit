@@ -56,15 +56,6 @@
   }
 }
 
-/* A decision's number and status, above its heading (.vitepress/reference.ts). */
-.vp-doc .adr-record {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-  color: var(--vp-c-text-2);
-}
-
 /*
  * On a phone a table was wider than the page and scrolled inside itself. There its cells are
  * closer and their text a step smaller, and a name in a cell wraps: after a slash

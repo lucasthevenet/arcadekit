@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-`arcadekit/core` is written as Effect's modules are ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)): each of its modules is a namespace, with a data type named after it, its `make`, an `isX` guard, `pipe`, a printed form, and functions that take the value first and, given one argument less, return the function a `pipe` applies. **Breaking**: every export of `arcadekit/core` is renamed or reshaped.
+`arcadekit/core` is written as Effect's modules are: each of its modules is a namespace, with a data type named after it, its `make`, an `isX` guard, `pipe`, a printed form, and functions that take the value first and, given one argument less, return the function a `pipe` applies. **Breaking**: every export of `arcadekit/core` is renamed or reshaped.
 
 Core stays plain: a step calls it, so it gives the same bits on every peer and finishes in the call, and it runs no Effect. It imports `effect` only for its shape (`Pipeable`, `Inspectable`, `Predicate`, `dual`). The arithmetic is the same, in the same order: no state hash a game recorded moves, and survivors' replay and determinism hashes hold.
 

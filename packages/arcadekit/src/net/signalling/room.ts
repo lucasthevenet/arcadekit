@@ -5,14 +5,14 @@
  * A room holds at most its room size, host included, which an app sets where it sets up its
  * worker, and lives for minutes. Its numbers are here, in the protocol both sides read, so a
  * `Coop` refuses a `maxPlayers` no room can hold and the worker refuses a room size no room can
- * have. Plain on purpose (ADR-0024): constants.
+ * have. Plain on purpose: constants.
  *
  * @since 0.7.0
  */
 
 /**
  * The players a room holds, host included, unless the worker is set up with another room size
- * (ADR-0012: 2 to 4 players).
+ * (2 to 4 players).
  *
  * **When to use**
  *

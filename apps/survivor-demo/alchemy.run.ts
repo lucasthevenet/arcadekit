@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer";
 import type { SignallingRoom } from "./worker/worker";
 
 /**
- * The survivors demo on Cloudflare (#25, ADR-0012): one Worker that serves the Vite build as
+ * The survivors demo on Cloudflare (#25): one Worker that serves the Vite build as
  * static assets and answers the signalling routes, with a Durable Object namespace whose objects
  * are the co-op rooms, one per join code. The site and the signalling worker share one origin,
  * so the game opens its signalling sockets on the page's own host, with nothing to configure.

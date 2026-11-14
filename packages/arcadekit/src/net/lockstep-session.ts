@@ -1,13 +1,13 @@
 /**
  * Lockstep sessions: one peer's side of a lockstep run, as plain code a caller ticks.
  *
- * Every peer steps the same `Game.Simulation` on the inputs the host confirms for each step
- * (ADR-0012). A session is a host of the declared simulation, as `Game.Loop` is: it steps it
+ * Every peer steps the same `Game.Simulation` on the inputs the host confirms for each step.
+ * A session is a host of the declared simulation, as `Game.Loop` is: it steps it
  * through a loop of its own, reads from its declared `Game.PlayerInputs` what one player sends,
  * and carries a player's commands to every peer's rules at one step. It knows no network: it talks
  * through a `Transport`. In an Effect program, `ScopedLockstepSession` makes one its scope owns.
  *
- * Plain on purpose (ADR-0024): a tick decides each step's input and runs the steps, so it gives
+ * Plain on purpose: a tick decides each step's input and runs the steps, so it gives
  * the same bits on every peer and finishes in the call that ticks it, and its time comes in as an
  * argument, so it reads no clock of its own. Its resends and its stall timers are the tick's own
  * work, and its listeners are called inside the tick, before the senders it answered.
@@ -266,7 +266,7 @@ export class LockstepError extends LockstepErrorBase {}
  *   what the one-player Schema encodes: a tick throws on a value it refuses.
  * - `hash` digests the whole state, the same on every peer for the same run, compared every
  *   `hashEvery` steps.
- * - `inputDelay` is how many steps ahead local input is scheduled (ADR-0012): 2 to 6 at 60 Hz.
+ * - `inputDelay` is how many steps ahead local input is scheduled: 2 to 6 at 60 Hz.
  * - `dropAfterMs` is how long the host lets stepping stall on a player before removing it, and a
  *   guest waits on a silent host before giving up: 10 000 ms if left out. A stall is a wait on a
  *   player's input of 250 ms or more, and it goes on until a second passes without one, so a peer
@@ -324,7 +324,7 @@ export interface Options<Config, State, Input, Event, Command, Refusals> {
   readonly local: StepInput<PlayerInputOf<Input> | null>;
   /** A digest of the whole state, the same on every peer for the same run. Compared every `hashEvery` steps. */
   readonly hash: (state: State) => number;
-  /** How many steps ahead local input is scheduled (ADR-0012). 2 to 6 at 60 Hz. */
+  /** How many steps ahead local input is scheduled. 2 to 6 at 60 Hz. */
   readonly inputDelay: number;
   /** Peers compare state hashes after every this many steps. */
   readonly hashEvery: number;
@@ -465,7 +465,7 @@ export type Status = "joining" | "running" | "waiting" | "stopped";
  * - `subscribe(listener)` hears the run's events and samples, as `Game.Loop`'s does, and returns
  *   a function that stops it. A session reports from its ticks and from nowhere else, so a
  *   listener in place before the first tick hears the run from its start: what `create`
- *   reports, then the first sample (ADR-0022). A host's run starts as the session is made, and
+ *   reports, then the first sample. A host's run starts as the session is made, and
  *   the session tells what that start reported at its first tick, before the tick does anything
  *   else. A listener that comes later hears what comes after it: nothing is told twice. A
  *   listener is called inside the tick, before the senders whose commands that tick's steps
@@ -1337,7 +1337,7 @@ class SessionImpl<Config, State, Input, Event, Command, Refusals>
     // throws is thrown with nothing left listening, and the run's first steps are scheduled
     // before anyone can send: started at the first tick, a command sent before it would ride
     // step 0 on every peer, where it rides the step after those. Only the telling waits for
-    // that tick, since the caller has no session to listen to until this returns (ADR-0022).
+    // that tick, since the caller has no session to listen to until this returns.
     this.startReport = [];
     this.begin(players, seed, nowMs);
   }

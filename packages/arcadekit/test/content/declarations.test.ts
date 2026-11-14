@@ -374,7 +374,6 @@ describe(Content, () => {
     expectTypeOf(
       GameContent.layer(ContentSource.fromRecord(good))
     ).toEqualTypeOf<Layer.Layer<GameContent>>();
-    // oxlint-disable-next-line declaration/class -- a test of what the builder refuses.
     Content("Misfiled", {
       schema: Schema.Struct({ title: Schema.String }),
       // @ts-expect-error -- each field of the Schema names its file.

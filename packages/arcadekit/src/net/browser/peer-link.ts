@@ -7,7 +7,7 @@
  * signalling room makes its links through a `PeerConnector`, and the scope that connector ran in
  * owns each: closing it closes both channels and the connection.
  *
- * A channel's calls are plain on purpose (ADR-0024): a lockstep session sends from inside its
+ * A channel's calls are plain on purpose: a lockstep session sends from inside its
  * tick, and what arrives is written while the browser dispatches the message, as host events a
  * tick reads as state are. A lobby feeds a `Queue` from a channel's listener, which is the bridge
  * for events an Effect reacts to. A link's lifecycle is its connector's scope.

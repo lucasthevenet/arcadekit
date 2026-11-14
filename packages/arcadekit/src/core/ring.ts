@@ -1,6 +1,6 @@
 /**
  * Rings of records: a fixed number of records stored as one typed array per field, where a new
- * record overwrites the oldest (ADR-0023).
+ * record overwrites the oldest.
  *
  * A ring is one of two things, and the game says which by where it keeps it and what its rules
  * do with it. A ring only views read carries what a step did: a hit and where it landed, a hole

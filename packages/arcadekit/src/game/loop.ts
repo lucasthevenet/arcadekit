@@ -1,9 +1,9 @@
 /**
  * Loops: what steps a simulation, one run at a time, with its fixed clock, its commands, its
- * events and its sample (ADR-0010, ADR-0020).
+ * events and its sample.
  *
  * A loop is a host: `Game.makeLoop(simulation)` makes one from a declared simulation, and its
- * caller runs its frames. It is plain code on purpose (ADR-0024), like the step it runs: it runs
+ * caller runs its frames. It is plain code on purpose, like the step it runs: it runs
  * the steps in its caller's frame or tick, so a frame's steps are over when `frame` returns, and
  * it reads no clock, since its time comes in with each call. A test, a replay, the browser engine
  * and a lockstep peer all step a game through one, in one order. Its capabilities are its

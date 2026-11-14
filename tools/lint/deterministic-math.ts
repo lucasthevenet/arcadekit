@@ -1,6 +1,6 @@
 // An oxlint JS plugin (ESLint's plugin shape) for what oxlint's built-in rules can't express.
 // `**` is Number::exponentiate, the same implementation-approximated operation as `Math.pow`,
-// so a step that uses it can give different bits in different engines (ADR-0011).
+// so a step that uses it can give different bits in different engines.
 
 interface Node {
   readonly type: string;
@@ -12,7 +12,7 @@ interface RuleContext {
 }
 
 const message =
-  "`**` is approximated differently by each engine, so a step that uses it can desync lockstep peers. Use exact operations, such as ExactMath.powInt in arcadekit/core. See docs/adr/0011-a-step-uses-only-exact-math.md.";
+  "`**` is approximated differently by each engine, so a step that uses it can desync lockstep peers. Use exact operations, such as ExactMath.powInt in arcadekit/core. See .agents/skills/simulation/SKILL.md.";
 
 const noExponentiation = {
   meta: {

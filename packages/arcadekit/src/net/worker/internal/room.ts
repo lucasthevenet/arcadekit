@@ -5,7 +5,7 @@ import {
 } from "../../signalling/index";
 import type { ServerMessage } from "../../signalling/index";
 
-// One room's rules, plain on purpose (ADR-0024): inputs in, outputs out, and a refusal is a value.
+// One room's rules, plain on purpose: inputs in, outputs out, and a refusal is a value.
 // The Durable Object's Effects (connections.ts) carry the outputs out on its sockets.
 
 /**

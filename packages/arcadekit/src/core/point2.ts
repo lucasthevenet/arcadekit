@@ -4,7 +4,7 @@
  * A function that gives two numbers writes them into a point it is handed, so a step that calls
  * it for every entity allocates nothing: the step makes its points once and reads them back
  * after each call. The axes are x and y, as a spatial grid's are: a 3D game on a ground plane
- * passes z as y. The arithmetic is exact (ADR-0011).
+ * passes z as y. The arithmetic is exact.
  *
  * @since 0.7.0
  */

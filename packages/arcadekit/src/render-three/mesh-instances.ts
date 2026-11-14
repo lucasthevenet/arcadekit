@@ -3,7 +3,7 @@
  * and the attributes its view declares for a shader of its own.
  *
  * They belong to the view and hold only what it draws: a view sets them from the state it
- * reads, each frame, with plain calls made inside the frame the browser shows (ADR-0024). The
+ * reads, each frame, with plain calls made inside the frame the browser shows. The
  * declared attributes go on the geometry the instances are given, and come off it when they are
  * disposed.
  *

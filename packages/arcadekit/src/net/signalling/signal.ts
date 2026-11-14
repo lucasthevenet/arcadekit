@@ -5,7 +5,7 @@
  * A host's connection makes an offer, a guest's an answer, and both make ICE candidates; each is
  * a signal, sent to the worker in a `ClientMessage` and relayed in a `ServerMessage`. Every field
  * is bounded, so a forged signal can't make the worker relay more than a message holds. Plain on
- * purpose (ADR-0024): a Schema.
+ * purpose: a Schema.
  *
  * @since 0.7.0
  */

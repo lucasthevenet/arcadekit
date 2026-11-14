@@ -1,7 +1,7 @@
 import { SignallingWorker } from "arcadekit/net/worker";
 
 /**
- * The survivors demo's Worker (#25, ADR-0012): it serves the site's files and is co-op's
+ * The survivors demo's Worker (#25): it serves the site's files and is co-op's
  * signalling worker, which is the kit's (`arcadekit/net/worker`). `alchemy.run.ts` declares the
  * Worker, routes only the signalling paths to it ahead of the assets, and binds `ROOMS`; Alchemy
  * supplies `ASSETS`.

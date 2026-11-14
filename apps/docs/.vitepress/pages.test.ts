@@ -80,14 +80,9 @@ describe("the site's pages", () => {
     expect(redirects).toContainEqual({ from: "/net/browser", to: "/" });
   });
 
-  it("has the glossary and every decision", () => {
+  it("has the glossary", () => {
     expect(pages.glossary.file).toBe("CONTEXT.md");
-    expect(pages.adrs.length).toBeGreaterThan(0);
-    for (const adr of pages.adrs) {
-      expect(adr.link).toBe(`/adr/${path.basename(adr.file, ".md")}`);
-      expect(adr.title).not.toBe("");
-      expect(adr.status).not.toBe("");
-    }
+    expect(pages.glossary.link).toBe("/glossary");
   });
 
   it("names files that exist, each served at an address of its own", () => {
@@ -102,7 +97,7 @@ describe("the site's pages", () => {
     const left = markdownThatIsNotAPage(pages);
     for (const file of [
       "README.md",
-      "AGENTS.md",
+      "CLAUDE.md",
       "apps/survivor-demo/README.md",
       "packages/arcadekit/README.md",
       "packages/arcadekit/CHANGELOG.md",
@@ -158,28 +153,17 @@ describe("a page's description", () => {
   it("starts at a paragraph that opens with an issue number, not at a heading", () => {
     expect(
       firstParagraph(
-        "# A decision\n\n## Context\n\n#24 asked what a sound is.\n\n**The look.** Pixel art.\n"
+        "# A page\n\n## Context\n\n#24 asked what a sound is.\n\n**The look.** Pixel art.\n"
       )
     ).toBe("#24 asked what a sound is.");
   });
 
-  it("is the decision's first paragraph for the records that open with an issue number", () => {
-    const starts = new Map(
-      discoverPages().adrs.map((adr) => [
-        adr.number,
-        adr.description.split(" ").slice(0, 2).join(" "),
-      ])
-    );
-    expect(starts.get("0009")).toBe("#23 gave");
-    expect(starts.get("0012")).toBe("#25 makes");
-    expect(starts.get("0014")).toBe("#24 adds");
-    expect(starts.get("0015")).toBe("#24 asked");
-  });
-
   it("skips frontmatter, and stops at a sentence when the paragraph is long", () => {
-    const long = `${"A first sentence that says what was decided. ".repeat(4)}And one more that would make it too long to show under a shared link.`;
+    const long = `${"A first sentence that says what the page is for. ".repeat(4)}And one more that would make it too long to show under a shared link.`;
     expect(
-      firstParagraph(`---\nstatus: accepted\n---\n\n# A decision\n\n${long}\n`)
-    ).toBe("A first sentence that says what was decided. ".repeat(4).trim());
+      firstParagraph(`---\ntitle: A page\n---\n\n# A page\n\n${long}\n`)
+    ).toBe(
+      "A first sentence that says what the page is for. ".repeat(4).trim()
+    );
   });
 });

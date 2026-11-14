@@ -8,7 +8,8 @@
 //   a hot path counts the same bytes each time. On background threads, an optimization that
 //   lands during the count moved it by a hundred bytes or more.
 //
-// The baseline it is compared against is docs/perf-baseline.md.
+// A number means something only beside another taken on the same machine: run it on the base
+// and on the change, and compare the two.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";

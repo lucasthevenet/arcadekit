@@ -7,8 +7,6 @@ The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): a [VitePress](https:
 | `/` | [`index.md`](index.md), which includes [the package's README](../../packages/arcadekit/README.md) after its title and first paragraph |
 | `/<entry>`, such as `/core` and `/net/worker` | `packages/arcadekit/src/<entry>/README.md` |
 | `/glossary` | [`CONTEXT.md`](../../CONTEXT.md), with each term as a heading |
-| `/adr` | [`adr.md`](adr.md), which lists the decisions |
-| `/adr/<name>` | `docs/adr/<name>.md`, under its number and status |
 
 ```bash
 pnpm dev:docs     # from the repo root: VitePress's dev server, which reloads a page as its file changes
@@ -32,7 +30,7 @@ An entry with no README has no page, but its address still answers: `/net/browse
 
 ## Links
 
-The READMEs are also read on GitHub and on npm, so their links stay written for those two: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as a decision in `docs/adr/`. [`.vitepress/links.ts`](.vitepress/links.ts) rewrites them as a page is rendered:
+The READMEs are also read on GitHub and on npm, so their links stay written for those two: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as the glossary. [`.vitepress/links.ts`](.vitepress/links.ts) rewrites them as a page is rendered:
 
 - a link to a file that is a page goes to that page;
 - a link to any other file or folder of the repository goes to it on GitHub.
@@ -45,7 +43,7 @@ Three kinds of link are not checked:
 - A fragment, such as `#example`. The one exception is `#install`, where the landing page's "Get started" button goes: the build fails if the package's README loses its "Install" heading.
 - A link to another site.
 
-A bare issue number in a page's text, such as `#25`, becomes a link to that issue on GitHub. GitHub doesn't link one in a file, so the READMEs, the glossary and the decisions keep writing them plain.
+A bare issue number in a page's text, such as `#25`, becomes a link to that issue on GitHub. GitHub doesn't link one in a file, so the READMEs and the glossary keep writing them plain.
 
 ## How it reads the repository
 
@@ -62,9 +60,8 @@ VitePress 1 builds with a Vite of its own. The rest of the workspace is on Vite 
 The files are written for GitHub, so the site adds a little as it renders them, and changes no file:
 
 - **The glossary.** `CONTEXT.md` is a list of paragraphs that each start with a term in bold. [`.vitepress/reference.ts`](.vitepress/reference.ts) renders the term as a heading above its definition, so each term has an address (`/glossary#lockstep`), a line in the page's outline and a search result of its own.
-- **A decision.** The same file puts the record's number and status above its heading, such as "ADR-0012 · accepted", from the file's name and its `status`.
 - **Tables on a phone.** [`.vitepress/tables.ts`](.vitepress/tables.ts) lets a path in a table's cell wrap after a slash, and [`.vitepress/theme/custom.css`](.vitepress/theme/custom.css) tightens the cells, so a table fits the page.
-- **Search.** A decision and the glossary rank below an entry's page for the same words (`boostDocument` in [`.vitepress/config.ts`](.vitepress/config.ts)): a search for an export should find how to use it first. A term's own line of the glossary still comes first for the term.
+- **Search.** The glossary ranks below an entry's page for the same words (`boostDocument` in [`.vitepress/config.ts`](.vitepress/config.ts)): a search for an export should find how to use it first. A term's own line of the glossary still comes first for the term.
 
 ## Which version it describes
 

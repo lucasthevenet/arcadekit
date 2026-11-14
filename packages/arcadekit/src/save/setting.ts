@@ -1,6 +1,6 @@
 /**
  * Settings: one value an app keeps between sessions under its own storage key, apart from its
- * save (ADR-0009), such as the player's volume and mute, their controls, or whether they were
+ * save, such as the player's volume and mute, their controls, or whether they were
  * offered the tutorial.
  *
  * `Setting` is a declaration with a service, as `Save` is: the class is the service's key, its

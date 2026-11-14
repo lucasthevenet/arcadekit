@@ -86,7 +86,7 @@ const GEM_LAYOUT = {
 };
 
 /**
- * Cue counters (ADR-0014): running totals of the moments that make a sound. The step bumps them
+ * Cue counters: running totals of the moments that make a sound. The step bumps them
  * and never reads them, they only go up during a run, and `hashWorld` leaves them out. A sound
  * view compares them with what it saw last frame and plays a sound for each one that rose.
  * All preallocated by `createWorld`, so bumping one never allocates.

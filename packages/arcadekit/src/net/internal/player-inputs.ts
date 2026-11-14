@@ -13,7 +13,7 @@ const ascending = (a: number, b: number) => a - b;
  * A player's slot is its index there, so the run's config must list what each player plays in
  * the same order. A player who is not in `players` is skipped, and one whose peer has nothing
  * attached has null at its slot, as one with no input has. The step's commands are not its
- * business: the session hands them to the loop. Plain on purpose (ADR-0024): every peer steps on
+ * business: the session hands them to the loop. Plain on purpose: every peer steps on
  * what it makes, and it is data work. It returns one object, refilled each step.
  */
 export const combinePlayerInputs = <PlayerInput>(
