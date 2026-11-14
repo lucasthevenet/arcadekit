@@ -1,48 +1,710 @@
-/* The site's colours over Starlight's theme: the mark's violet and yellow. */
+/*
+ * The site's look, after polycombo.io: a near-black page of square, hairline-bordered panels;
+ * titles in a condensed display face, in capitals; small labels in a monospace face; and an acid
+ * lime accent, with a ramp from lime to pink for what is numbered. One theme, dark
+ * (components/theme-provider.astro). Starlight's own styles are in CSS layers, so these, which are
+ * in none, win over them.
+ */
+
 :root {
-  --sl-color-accent-low: #1f1745;
-  --sl-color-accent: #6d4aff;
-  --sl-color-accent-high: #cfc4ff;
+  /* The palette. */
+  --ak-bg: #090b0e;
+  --ak-bg-header: #080a0d;
+  --ak-panel: #11151a;
+  --ak-raised: #15171a;
+  --ak-hairline: #242527;
+  --ak-border: #2b2f32;
+  --ak-border-strong: #424547;
+  --ak-text: #f2f0e8;
+  --ak-text-body: #b6bec5;
+  --ak-text-muted: #8e99a4;
+  --ak-lime: #c9ff3d;
+  --ak-green: #9fe557;
+  --ak-yellow: #e6cf48;
+  --ak-orange: #ff9b45;
+  --ak-coral: #ff684f;
+  --ak-pink: #ff3f68;
+
+  /* The faces, self-hosted (astro.config.ts). */
+  --ak-font-display: "Barlow Condensed", "Arial Narrow", Impact, sans-serif;
+  --ak-font-body: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --ak-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --ak-radius: 2px;
+
+  /* Starlight's variables, from the palette. */
+  color-scheme: dark;
+  --sl-font: var(--ak-font-body);
+  --sl-font-mono: var(--ak-font-mono);
+  --sl-color-white: var(--ak-text);
+  --sl-color-gray-1: #e2e1da;
+  --sl-color-gray-2: var(--ak-text-body);
+  --sl-color-gray-3: var(--ak-text-muted);
+  --sl-color-gray-4: #5d646b;
+  --sl-color-gray-5: var(--ak-border);
+  --sl-color-gray-6: var(--ak-raised);
+  --sl-color-gray-7: var(--ak-panel);
+  --sl-color-black: var(--ak-bg);
+  --sl-color-accent-low: #1d2410;
+  --sl-color-accent: var(--ak-lime);
+  --sl-color-accent-high: var(--ak-lime);
+  --sl-color-text-accent: var(--ak-lime);
+  --sl-color-text-invert: var(--ak-bg);
+  --sl-color-bg-nav: var(--ak-bg-header);
+  --sl-color-bg-sidebar: var(--ak-bg);
+  --sl-color-bg-inline-code: var(--ak-raised);
+  --sl-color-hairline: var(--ak-hairline);
+  --sl-color-hairline-light: var(--ak-border);
+  --sl-color-hairline-shade: var(--ak-hairline);
+  --sl-color-backdrop-overlay: rgb(9 11 14 / 80%);
+
+  /* The asides' and badges' colours, from the ramp: a note is lime, a tip green. */
+  --sl-color-blue-low: #1d2410;
+  --sl-color-blue: var(--ak-lime);
+  --sl-color-blue-high: #e4ffa0;
+  --sl-color-purple-low: #18220f;
+  --sl-color-purple: var(--ak-green);
+  --sl-color-purple-high: #d3f5b0;
+  --sl-color-green-low: #18220f;
+  --sl-color-green: var(--ak-green);
+  --sl-color-green-high: #d3f5b0;
+  --sl-color-orange-low: #2a1a0c;
+  --sl-color-orange: var(--ak-orange);
+  --sl-color-orange-high: #ffcb9e;
+  --sl-color-red-low: #2a0e16;
+  --sl-color-red: var(--ak-pink);
+  --sl-color-red-high: #ffb3c3;
+
+  --sl-nav-height: 4rem;
+  --sl-text-h1: clamp(2.75rem, 2rem + 3vw, 4.5rem);
+  --sl-text-h2: 2.25rem;
+  --sl-text-h3: 1.625rem;
+  --sl-text-h4: 1.1875rem;
+  --sl-line-height-headings: 1;
 }
 
-:root[data-theme="light"] {
-  --sl-color-accent-low: #ddd5ff;
-  --sl-color-accent: #5a37f0;
-  --sl-color-accent-high: #2a1880;
+body {
+  background: var(--ak-bg);
+  color: var(--ak-text-body);
+  font-feature-settings: "cv11", "ss01";
 }
 
-/* The mark is pixel art: keep its pixels whole at any size. */
-.hero-mark,
-.site-title img {
-  image-rendering: pixelated;
+::selection {
+  background: var(--ak-lime);
+  color: var(--ak-bg);
 }
 
-/* The landing page's mark sits on a blurred glow of its two colours. */
-.hero .hero-html {
+:focus-visible {
+  outline-color: var(--ak-lime);
+}
+
+/* A small label in the monospace face, in capitals: the landing page's line over its title. */
+.eyebrow {
+  font-family: var(--ak-font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ak-lime);
+}
+
+/* The header: a darker bar over a hairline. Starlight's inner `div.header` takes neither. */
+header.header {
+  background: var(--ak-bg-header);
+  border-bottom: 1px solid var(--ak-hairline);
+}
+
+/* No divider after the header's icons: the theme picker it set apart is gone. */
+.social-icons::after {
+  display: none;
+}
+
+site-search button[data-open-modal] {
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius);
+  background: var(--ak-panel);
+  color: var(--ak-text-muted);
+}
+
+site-search button[data-open-modal]:hover {
+  border-color: var(--ak-border-strong);
+  color: var(--ak-text);
+}
+
+/* The search dialog (Pagefind's, in Starlight's), square as the rest. */
+site-search dialog {
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius);
+  background: var(--ak-bg-header);
+}
+
+#starlight__search {
+  --pagefind-ui-border-radius: var(--ak-radius);
+  --pagefind-ui-font: var(--ak-font-body);
+}
+
+/* The menu's button on a phone, square as the rest. */
+button.sl-menu-button {
+  border-radius: var(--ak-radius);
+}
+
+site-search kbd {
+  border-radius: var(--ak-radius);
+  background: var(--ak-raised);
+  font-family: var(--ak-font-mono);
+}
+
+.social-icons a {
+  color: var(--ak-text-muted);
+}
+
+.social-icons a:hover {
+  color: var(--ak-text);
+}
+
+/*
+ * The sidebar's topics, Learn, Guides and Reference (starlight-sidebar-topics), as polycombo.io's
+ * nav: the current one on a raised panel, its icon in lime. The plugin's styles are scoped to
+ * its component and in no layer, so these name the list to outweigh them.
+ */
+ul.starlight-sidebar-topics a {
+  border: 1px solid transparent;
+  border-radius: var(--ak-radius);
+  color: var(--ak-text-body);
+  font-size: var(--sl-text-sm);
+  font-weight: 600;
+  padding: 0.375rem 0.5rem;
+}
+
+ul.starlight-sidebar-topics
+  a:is(.starlight-sidebar-topics-current, :hover, :focus-visible) {
+  color: var(--ak-text);
+  background: var(--ak-raised);
+}
+
+ul.starlight-sidebar-topics a.starlight-sidebar-topics-current {
+  border-color: var(--ak-border);
+}
+
+ul.starlight-sidebar-topics .starlight-sidebar-topics-icon {
+  border-color: var(--ak-border-strong);
+  border-radius: var(--ak-radius);
+  color: var(--ak-text-muted);
+}
+
+ul.starlight-sidebar-topics
+  a:is(.starlight-sidebar-topics-current, :hover, :focus-visible)
+  .starlight-sidebar-topics-icon {
+  border-color: var(--ak-lime);
+  background: var(--ak-lime);
+  color: var(--ak-bg);
+}
+
+ul.starlight-sidebar-topics::after {
+  border-top-color: var(--ak-hairline);
+}
+
+/* The sidebar: a group's name is a label in the monospace face; the current page has a lime edge. */
+.sidebar-content summary .group-label .large {
+  font-family: var(--ak-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ak-text-muted);
+}
+
+.sidebar-content summary:hover .group-label .large {
+  color: var(--ak-text);
+}
+
+.sidebar-content a {
+  border-radius: var(--ak-radius);
+  color: var(--ak-text-body);
+}
+
+.sidebar-content a:is(:hover, :focus) {
+  color: var(--ak-text);
+}
+
+.sidebar-content a.large {
+  font-size: var(--sl-text-sm);
+  color: var(--ak-text);
+}
+
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:is(:hover, :focus) {
+  background: var(--ak-raised);
+  color: var(--ak-text);
+  box-shadow: inset 2px 0 0 var(--ak-lime);
+}
+
+/* The table of contents: its heading a label, the current heading in lime. */
+starlight-toc h2,
+mobile-starlight-toc .toggle {
+  font-family: var(--ak-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ak-text-muted);
+}
+
+mobile-starlight-toc .toggle {
+  border-radius: var(--ak-radius);
+}
+
+starlight-toc a {
+  color: var(--ak-text-muted);
+}
+
+starlight-toc a:hover {
+  color: var(--ak-text);
+}
+
+starlight-toc a[aria-current="true"] {
+  color: var(--ak-lime);
+}
+
+/*
+ * Titles in the display face, in capitals: a page's and its sections'. A reference page's title
+ * and a section's code keep their case (components/page-title.astro). Smaller headings, such as an
+ * export's name in the reference, keep theirs too.
+ */
+.page-title,
+.sl-markdown-content :is(h1, h2, h3) {
+  font-family: var(--ak-font-display);
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  color: var(--ak-text);
+}
+
+.page-title {
+  font-size: var(--sl-text-h1);
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+.page-title.as-written {
+  text-transform: none;
+}
+
+.sl-markdown-content h2 {
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.sl-markdown-content h3 {
+  font-weight: 600;
+}
+
+.sl-markdown-content :is(h1, h2, h3) code {
+  text-transform: none;
+}
+
+.sl-markdown-content h4 {
+  font-weight: 600;
+  color: var(--ak-text);
+}
+
+/* Text: links in lime, strong words white. */
+.sl-markdown-content a:not(.sl-link-button) {
+  color: var(--ak-lime);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+.sl-markdown-content a:not(.sl-link-button):hover {
+  color: var(--ak-text);
+}
+
+.sl-markdown-content strong {
+  color: var(--ak-text);
+}
+
+.sl-markdown-content :not(pre) > code {
+  padding: 0.125em 0.375em;
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius);
+  background: var(--ak-raised);
+  color: var(--ak-text);
+  font-size: 0.875em;
+}
+
+.sl-markdown-content hr {
+  border-color: var(--ak-hairline);
+}
+
+/*
+ * Tables: hairlines round every cell, and a header of labels in the monospace face. Starlight
+ * makes a table a block that scrolls, so the lines are the cells', which end where the columns do.
+ */
+.sl-markdown-content table {
+  border-collapse: collapse;
+}
+
+.sl-markdown-content :is(th, td) {
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--ak-border);
+  background: transparent;
+}
+
+.sl-markdown-content th {
+  background: var(--ak-panel);
+  font-family: var(--ak-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ak-text-muted);
+}
+
+.sl-markdown-content tr:nth-child(2n) {
+  background: transparent;
+}
+
+/* Asides: square panels, edged in their colour. */
+.starlight-aside {
+  border-radius: var(--ak-radius);
+  background: var(--ak-panel);
+}
+
+.starlight-aside__title {
+  font-family: var(--ak-font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Buttons: lime, outlined, or a line under a word, each square, with no pill. */
+.sl-link-button {
+  border-radius: var(--ak-radius);
+  font-weight: 600;
+  padding: 0.75rem 1.125rem;
+}
+
+.sl-link-button.primary {
+  border-color: var(--ak-lime);
+  background: var(--ak-lime);
+  color: var(--ak-bg);
+}
+
+.sl-link-button.primary:hover {
+  border-color: var(--ak-text);
+  background: var(--ak-text);
+}
+
+.sl-link-button.secondary {
+  border-color: var(--ak-border-strong);
+  background: transparent;
+  color: var(--ak-text);
+}
+
+.sl-link-button.secondary:hover {
+  border-color: var(--ak-lime);
+}
+
+.sl-link-button.minimal {
+  padding-inline: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ak-border-strong);
+  color: var(--ak-text-body);
+}
+
+.sl-link-button.minimal:hover {
+  border-bottom-color: var(--ak-lime);
+  color: var(--ak-text);
+}
+
+/* The previous and next pages: square panels, labelled in the monospace face. */
+.pagination-links a {
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius);
+  background: var(--ak-panel);
+  box-shadow: none;
+  color: var(--ak-text-muted);
+  font-family: var(--ak-font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.pagination-links a:hover {
+  border-color: var(--ak-lime);
+}
+
+/* A page's title, in its own case: a reference page's is a name the code writes. */
+.pagination-links .link-title {
+  font-family: var(--ak-font-display);
+  font-size: var(--sl-text-2xl);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ak-text);
+}
+
+.content-panel + .content-panel {
+  border-top-color: var(--ak-hairline);
+}
+
+/*
+ * The landing page: a lime and a pink glow behind its hero, as polycombo.io's has, and the
+ * hero's last word in pink (components/hero.astro).
+ */
+[data-has-hero] body {
+  background:
+    radial-gradient(
+      60rem 32rem at 95% -5%,
+      rgb(255 63 104 / 10%),
+      transparent 70%
+    ),
+    radial-gradient(
+      48rem 28rem at 0% 10%,
+      rgb(201 255 61 / 5%),
+      transparent 70%
+    ),
+    var(--ak-bg);
+  background-repeat: no-repeat;
+}
+
+.hero .accent {
+  color: var(--ak-pink);
+}
+
+/*
+ * The landing page's sections, as foldkit.dev's: each a label in the monospace face over a title
+ * in the display face, well apart from the section before it.
+ */
+[data-has-hero] .sl-markdown-content h2 {
+  margin-top: 0.75rem;
+  font-size: clamp(2.5rem, 1.5rem + 4vw, 4.5rem);
+}
+
+[data-has-hero] .sl-markdown-content > .eyebrow,
+[data-has-hero] .sl-markdown-content .start > .eyebrow {
+  margin-top: clamp(4rem, 8vw, 7rem);
+  margin-bottom: 0;
+}
+
+[data-has-hero] .sl-markdown-content > .eyebrow:first-child {
+  margin-top: 2rem;
+}
+
+[data-has-hero]
+  .sl-markdown-content
+  :is(.eyebrow + .sl-heading-wrapper, .eyebrow + h2) {
+  margin-top: 0.5rem;
+}
+
+[data-has-hero] .sl-markdown-content .sl-heading-wrapper + p {
+  max-width: 42rem;
+  font-size: var(--sl-text-lg);
+}
+
+/* A list keeps to a line that reads well. */
+[data-has-hero] .sl-markdown-content > ul {
+  max-width: 52rem;
+}
+
+/* A table spans the page as the card grids do, where it has the room to; on a phone it scrolls. */
+@media (min-width: 50rem) {
+  [data-has-hero] .sl-markdown-content table {
+    display: table;
+    width: 100%;
+  }
+}
+
+/* A row of links under a section. */
+.sl-markdown-content .links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  margin-top: 1.5rem;
+}
+
+/* Who the kit fits, and who should think twice: two panels side by side. */
+.sl-markdown-content .fit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1px;
+  margin-top: 2rem;
+  border: 1px solid var(--ak-border-strong);
+  background: var(--ak-border-strong);
+}
+
+.sl-markdown-content .fit > div {
+  margin: 0;
+  padding: 1.5rem;
+  background: var(--ak-panel);
+}
+
+.sl-markdown-content .fit > div:last-child h3 {
+  color: var(--ak-orange);
+}
+
+.sl-markdown-content .fit h3 {
+  margin-top: 0;
+  text-transform: uppercase;
+  color: var(--ak-lime);
+}
+
+.sl-markdown-content .fit ul {
+  padding-inline-start: 0;
+  list-style: none;
+}
+
+.sl-markdown-content .fit li + li {
+  margin-top: 1rem;
+}
+
+/* The last section, to start building: one panel, over the page's glow. */
+.sl-markdown-content .start {
+  margin-top: clamp(4rem, 8vw, 7rem);
+  padding: clamp(1.5rem, 4vw, 3rem);
+  border: 1px solid var(--ak-border-strong);
+  background:
+    radial-gradient(
+      40rem 20rem at 100% 0%,
+      rgb(255 63 104 / 12%),
+      transparent 70%
+    ),
+    radial-gradient(
+      30rem 18rem at 0% 100%,
+      rgb(201 255 61 / 6%),
+      transparent 70%
+    ),
+    var(--ak-panel);
+}
+
+[data-has-hero] .sl-markdown-content .start > .eyebrow {
+  margin-top: 0;
+}
+
+/*
+ * The landing page's cards, as polycombo.io's six levels: cells of one bordered grid, each
+ * numbered in the monospace face under a bar of its colour, from lime to pink, its title in the
+ * display face.
+ */
+.sl-markdown-content .card-grid {
+  counter-reset: card;
+  gap: 1px;
+  margin-top: 2rem;
+  margin-bottom: 0;
+  border: 1px solid var(--ak-border-strong);
+  background: var(--ak-border-strong);
+}
+
+/* Three cells to a row where they fit, and one to a row where they don't: a row is never short. */
+.sl-markdown-content .card-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 64rem) {
+  .sl-markdown-content .card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.sl-markdown-content .card-grid .card {
+  --ak-card-color: var(--ak-lime);
   position: relative;
-  isolation: isolate;
+  counter-increment: card;
+  margin: 0;
+  padding: 3rem 1.5rem 1.5rem;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(160deg, rgb(255 255 255 / 3%), transparent 60%),
+    var(--ak-panel);
 }
 
-.hero .hero-html::before {
+.sl-markdown-content .card-grid .card:nth-child(2) {
+  --ak-card-color: var(--ak-green);
+}
+
+.sl-markdown-content .card-grid .card:nth-child(3) {
+  --ak-card-color: var(--ak-yellow);
+}
+
+.sl-markdown-content .card-grid .card:nth-child(4) {
+  --ak-card-color: var(--ak-orange);
+}
+
+.sl-markdown-content .card-grid .card:nth-child(5) {
+  --ak-card-color: var(--ak-coral);
+}
+
+.sl-markdown-content .card-grid .card:nth-child(6) {
+  --ak-card-color: var(--ak-pink);
+}
+
+.sl-markdown-content .card-grid .card::before {
+  content: counter(card, decimal-leading-zero);
+  position: absolute;
+  top: 1.25rem;
+  left: 1.5rem;
+  font-family: var(--ak-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  color: var(--ak-text-muted);
+}
+
+.sl-markdown-content .card-grid .card::after {
   content: "";
   position: absolute;
-  inset: 15%;
-  z-index: -1;
-  background: linear-gradient(-45deg, #6d4aff 50%, #ffd23f 50%);
-  border-radius: 50%;
-  filter: blur(56px);
-  opacity: 0.6;
+  top: -1px;
+  left: 0;
+  width: min(7rem, 50%);
+  height: 2px;
+  background: var(--ak-card-color);
 }
 
-.hero-mark {
-  width: min(45vw, 16rem);
-  height: auto;
-  border-radius: 12%;
+.sl-markdown-content .card-grid .card .icon {
+  display: none;
 }
 
-/* The landing page's text starts a little below its cards. */
-.sl-markdown-content .card-grid {
-  margin-bottom: 2rem;
+.sl-markdown-content .card-grid .card .title {
+  font-family: var(--ak-font-display);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--ak-card-color);
+}
+
+.sl-markdown-content .card-grid .card .body {
+  color: var(--ak-text-body);
+}
+
+/* The kit in numbers (components/kit-stats.astro): labelled cells of one bordered row. */
+.kit-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  margin: 2rem 0 0;
+  border: 1px solid var(--ak-border-strong);
+  background: var(--ak-border-strong);
+}
+
+.kit-stats > div {
+  padding: 1.25rem 1.5rem;
+  background: var(--ak-bg);
+}
+
+.kit-stats dt {
+  font-family: var(--ak-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ak-text-muted);
+}
+
+.kit-stats dd {
+  margin: 0.5rem 0 0;
+  font-family: var(--ak-font-display);
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ak-text);
 }
 
 /*

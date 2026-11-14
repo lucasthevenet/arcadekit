@@ -6,12 +6,13 @@ The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's]
 
 - **Learn**: getting started, the walkthrough, the concepts and the games built on the kit.
 - **Guides**: a guide for each task, whichever entries it takes, and testing.
-- **Reference**: a page for each entry, and one for each of its modules, with every export's signature and doc comment, generated from the source.
+- **Reference**: the package's page, then a page for each entry and one for each of its modules, with every export's signature and doc comment, generated from the source.
 
 | Address | File |
 | --- | --- |
-| `/` | [`src/content/docs/index.mdx`](src/content/docs/index.mdx), which includes [the package's README](../packages/arcadekit/README.md) after its title and first paragraph |
+| `/` | [`src/content/docs/index.mdx`](src/content/docs/index.mdx), the landing page, whose text is the site's own |
 | `/<path>`, such as `/making-a-game`, `/concepts/lockstep` and `/guides/sprites` | `docs/<path>.md`: the walkthrough, the concepts, the guides and testing |
+| `/reference` | [The package's README](../packages/arcadekit/README.md), which npm shows too: how to install it, and its entries |
 | `/reference/<entry>`, such as `/reference/core` and `/reference/net/browser` | `packages/arcadekit/src/<entry>/README.md`, which npm shows too, then the entry's own exports. An entry with no README has its public file's module comment instead |
 | `/reference/<entry>/<module>`, such as `/reference/core/rng` | The module the entry exports as a namespace, `packages/arcadekit/src/core/rng.ts`: its module comment, then its exports |
 | `/glossary` | [`CONTEXT.md`](../CONTEXT.md), with each term as a heading |
@@ -42,6 +43,15 @@ A `ts` block of a page is compiled by the smoke test ([`scripts/smoke-test.mjs`]
 
 So a doc comment is written once, for an editor's hover and for the site, and its examples are typechecked with the rest by the smoke test. A README's table of modules links each to its source file, which on the site is the module's page.
 
+## Its look
+
+The site is styled after [polycombo.io](https://polycombo.io): one dark theme, square panels on hairlines, titles in [Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed) and in capitals, labels in [IBM Plex Mono](https://fonts.google.com/specimen/IBM+Plex+Mono), text in [Inter](https://rsms.me/inter/), and an acid lime accent, with a ramp from lime to pink for what is numbered. The faces are self-hosted from their `@fontsource` packages.
+
+- [`src/styles/custom.css`](src/styles/custom.css) holds the palette, as `--ak-*` variables that Starlight's own (`--sl-*`) are made from, and every rule over Starlight's. Starlight's styles are in CSS layers, so these, in none, win over them.
+- [`src/components/`](src/components) replaces five of Starlight's components: the header's mark and name (`site-title.astro`: the D-pad in lime, then "arcadekit" in the text face, as Foldkit and Effect set theirs), the landing page's hero (`hero.astro`, with the line over its title from the page's `eyebrow`), a page's title (`page-title.astro`: a reference page's keeps its case), and the theme's two (`theme-provider.astro`, `theme-select.astro`: one theme, so no picker). The landing page's numbers are `kit-stats.astro`, counted from the reference's pages.
+- The landing page is laid out as [foldkit.dev](https://foldkit.dev) is: a section for each thing the kit is, each a line in the monospace face (`<p class="eyebrow">`) over its title, then who it is and isn't a fit for. Its card grids are three to a row, or one on a narrow screen.
+- Code is drawn with the `vesper` theme on the page's panels (`expressiveCode` in [`astro.config.ts`](astro.config.ts)).
+
 ## How it reads the repository
 
 Starlight serves the entries of its `docs` collection, which its own loader reads from `src/content/docs/`. There the site has its landing page alone. [`src/lib/loader.ts`](src/lib/loader.ts) adds each page `pages.ts` finds as an entry of the same collection, read where it is ([`src/content.config.ts`](src/content.config.ts)):
@@ -50,7 +60,7 @@ Starlight serves the entries of its `docs` collection, which its own loader read
 - Its description is the file's first paragraph, which the page's `<meta>` tags give a shared link.
 - Its edit link goes to the file on GitHub: for a module's page, its source file, whose doc comments are its text.
 
-The loader renders each file with the site's Markdown processor, [Sätteri](https://satteri.bruits.org), Astro's own, with the plugins in `src/lib/` that [What it adds to a page](#what-it-adds-to-a-page) lists. The landing page is MDX, and imports the package's README as a component: the same processor renders both. Starlight's own transforms, such as a heading's anchor link, apply only to the folders its `markdown.processedDirs` names: here the repository's root.
+The loader renders each file with the site's Markdown processor, [Sätteri](https://satteri.bruits.org), Astro's own, with the plugins in `src/lib/` that [What it adds to a page](#what-it-adds-to-a-page) lists. Starlight's own transforms, such as a heading's anchor link, apply only to the folders its `markdown.processedDirs` names: here the repository's root.
 
 ## Links
 
@@ -61,7 +71,7 @@ The pages are also read on GitHub, and the READMEs on npm, so their links stay w
 
 `pnpm build` fails on a dead link, so CI does too ([`src/lib/dead-links.ts`](src/lib/dead-links.ts)). It lists every one, of two kinds:
 
-- A link a page's file writes to the repository, in either form: a relative link, and a full URL to `main` on GitHub. It must name a file or folder that exists. A dead link on the landing page may be written in the package's README, which it includes: the message names the file.
+- A link a page's file writes to the repository, in either form: a relative link, and a full URL to `main` on GitHub. It must name a file or folder that exists.
 - A link of the built site to one of its own pages, from a page once rewritten, from the landing page or the sidebar. Its page must exist, and its fragment, such as `#commands`, must be a heading or an anchor on that page. GitHub gives a heading the same anchor, so a fragment that works here works there too, except a glossary term's: a term is a heading only here.
 
 Two kinds of link are not checked:
@@ -75,7 +85,6 @@ A bare issue number in a page's text, such as `#25`, becomes a link to that issu
 
 The files are written for GitHub, so the site adds a little as it renders them, and changes no file:
 
-- **The landing page.** It includes the package's README after its title and first paragraph, which its hero replaces ([`src/lib/landing.ts`](src/lib/landing.ts)). The build fails if the README no longer starts with a `# ` heading and a paragraph. The hero's "Get started" button goes to the README's "Install" heading, which the link check holds to.
 - **The glossary.** `CONTEXT.md` is a list of paragraphs that each start with a term in bold. [`src/lib/glossary.ts`](src/lib/glossary.ts) renders the term as a heading above its definition, so each term has an address (`/glossary#lockstep`), a line in the page's table of contents and a search result of its own.
 - **Search.** Starlight's search is [Pagefind](https://pagefind.app), which indexes the built site. The glossary's prose counts for half in a search (`data-pagefind-weight`, also in `glossary.ts`): a search for an export should find how to use it first. A term's heading keeps its weight, so it still comes first for the term.
 - **Tables on a phone.** [`src/lib/tables.ts`](src/lib/tables.ts) lets a path in a table's cell wrap after a slash, and [`src/styles/custom.css`](src/styles/custom.css) tightens the cells, so a table fits the page.
@@ -88,7 +97,7 @@ The other choice is a site that describes only what is released: deploy it when 
 
 ## Images
 
-`public/favicon.svg` is the site's mark, and its logo. `pnpm --filter @arcadekit/website images` draws `apple-touch-icon.png` and `og.png` (the card a shared link shows) from it, in Playwright's Chromium. Both are committed: run it again after changing the mark.
+The site's mark is a D-pad, an arrow cut in each arm, and `public/favicon.svg` is the one file that holds its shape. As the favicon it is near-black in a light browser tab and lime in a dark one. The header draws the same shape inline, in lime (`src/components/site-title.astro`), and `pnpm --filter @arcadekit/website images` draws `apple-touch-icon.png` (the mark in lime on the page's near-black) and `og.png` (the card a shared link shows, in the site's look and faces) from it, in Playwright's Chromium. Both PNGs are committed: run it again after changing the mark or the look.
 
 ## Deploying
 

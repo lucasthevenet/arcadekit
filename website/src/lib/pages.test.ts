@@ -28,6 +28,7 @@ const entry = (name: string): EntryPage => ({
   body: "",
   entry: name,
   readme: true,
+  exports: 0,
 });
 
 const doc = (slug: string): DocPage => ({
@@ -123,6 +124,12 @@ describe("the site's pages", () => {
     );
   });
 
+  it("has the package's README at /reference, the reference's first page", () => {
+    expect(pages.kit.file).toBe("packages/arcadekit/README.md");
+    expect(pages.kit.link).toBe("/reference");
+    expect(pages.kit.title).toBe("arcadekit");
+  });
+
   it("has the glossary", () => {
     expect(pages.glossary.file).toBe("CONTEXT.md");
     expect(pages.glossary.link).toBe("/glossary");
@@ -210,8 +217,12 @@ describe("the sidebar", () => {
     ]);
   });
 
-  it("lists each entry's page and modules in Reference, then the glossary", () => {
+  it("lists the package, each entry's page and modules in Reference, then the glossary", () => {
     const groups = referenceGroups(discoverPages());
+    expect(groups[0]).toStrictEqual({
+      label: "The package",
+      slug: "reference",
+    });
     expect(groups.at(-1)).toBe("glossary");
     const core = groups.find(
       (group) => typeof group === "object" && group.label === "arcadekit/core"

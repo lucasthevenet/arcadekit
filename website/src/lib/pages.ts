@@ -4,6 +4,8 @@
 // page is the repository's own text, read where it is (loader.ts):
 // - each file under `docs/`, at its path there: `docs/guides/sprites.md` at `/guides/sprites`.
 //   These are the guides, the concepts and the walkthrough, read on GitHub and here;
+// - the package's README, `packages/arcadekit/README.md`, at `/reference`: how to install the
+//   package and its entries, as npm shows it;
 // - each entry of the package's `exports`, at `/reference/<entry>`, so a reference page's address
 //   ends with its import path (`arcadekit/net/worker` is `/reference/net/worker`). Its page is its
 //   README, `packages/arcadekit/src/<entry>/README.md`, which npm shows too, then the API of its
@@ -29,10 +31,7 @@ const REFERENCE = "reference";
 const GLOSSARY = "CONTEXT.md";
 const HOME = `${WEBSITE_DIR}/src/content/docs/index.mdx`;
 
-/**
- * The package's README. It has no page of its own: the landing page includes it, after its title
- * and first paragraph (landing.ts).
- */
+/** The package's README: the reference's first page, the package as npm shows it. */
 export const PACKAGE_README = "packages/arcadekit/README.md";
 
 /** A page of the site. Paths are relative to the repository's root. */
@@ -72,6 +71,8 @@ export interface EntryPage extends RepositoryPage {
   readonly entry: string;
   /** Whether its page is its README, or else its public file's module comment. */
   readonly readme: boolean;
+  /** How many exports its page documents: its own, not its modules'. */
+  readonly exports: number;
 }
 
 /** The reference page of a namespace an entry exports. */
@@ -80,6 +81,8 @@ export interface ModulePage extends RepositoryPage {
   readonly entry: string;
   /** Its name in the entry, such as `Rng`. */
   readonly module: string;
+  /** How many exports its page documents. */
+  readonly exports: number;
 }
 
 const toPosix = (file: string) => file.split(path.sep).join("/");
@@ -188,6 +191,9 @@ export const kitEntries = (): Record<string, string> => {
   );
 };
 
+/** The package's API: every entry, with its own exports and its modules' (api.ts). */
+export const kitApi = (): Entry[] => readApi(REPO_ROOT, KIT_DIR, kitEntries());
+
 /** A link from one file of the repository to another, as a page writes it. */
 const linkFrom = (from: string, to: string) =>
   path.posix.relative(path.posix.dirname(from), to);
@@ -258,6 +264,7 @@ const entryPage = (api: Entry, readmes: ReadonlySet<string>): EntryPage => {
         .join("\n\n"),
       entry: api.entry,
       readme: true,
+      exports: api.exports.length,
     };
   }
   return {
@@ -272,6 +279,7 @@ const entryPage = (api: Entry, readmes: ReadonlySet<string>): EntryPage => {
       .join("\n\n"),
     entry: api.entry,
     readme: false,
+    exports: api.exports.length,
   };
 };
 
@@ -291,6 +299,7 @@ const modulePage = (entry: string, module: Module): ModulePage => {
     ].join("\n\n"),
     entry,
     module: module.name,
+    exports: module.exports.length,
   };
 };
 
@@ -301,7 +310,7 @@ const referencePages = () => {
       .map((file) => `${KIT_SRC}/${toPosix(String(file))}`)
       .filter((file) => file.endsWith("/README.md"))
   );
-  const api = readApi(REPO_ROOT, KIT_DIR, kitEntries());
+  const api = kitApi();
   const unknown = [...readmes].filter(
     (readme) =>
       !api.some((entry) => readme === `${KIT_SRC}/${entry.entry}/README.md`)
@@ -328,11 +337,13 @@ export const discoverPages = () => {
     link: "/",
   };
   const docs = docPages();
+  const kit = readPage(PACKAGE_README, REFERENCE);
   const { entries, modules } = referencePages();
   const glossary = readPage(GLOSSARY, "glossary");
   /** The pages read from the repository, which loader.ts adds to the site. */
   const repository: readonly RepositoryPage[] = [
     ...docs,
+    kit,
     ...entries,
     ...modules,
     glossary,
@@ -350,7 +361,7 @@ export const discoverPages = () => {
     files.set(page.slug, page.file);
   }
 
-  return { home, docs, entries, modules, glossary, repository, all };
+  return { home, docs, kit, entries, modules, glossary, repository, all };
 };
 
 export type SitePages = ReturnType<typeof discoverPages>;
