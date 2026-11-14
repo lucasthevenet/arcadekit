@@ -257,8 +257,8 @@ Never drop it in silence. A refusal throws `Error`, or `RangeError` for a number
 - [ ] The module has [Effect's shape](#an-effect-module), and its entry is off `NOT_YET_EFFECT_STYLE`, so the style test holds it there. Every export has its doc comment, every example's `// =>` is true, and `pnpm build:packages && pnpm smoke --no-build` compiles the examples.
 - [ ] The README block from [the first step](#start-from-the-games-side) is in the entry's README, and `pnpm build:packages && pnpm smoke --no-build` compiles it.
 - [ ] A game uses the module as that block shows: push-puzzle or its demo, or a small game declared in the module's test.
-- [ ] A simulation's rules are checked by scenarios, anything else by tests beside it; its types by `expectTypeOf` and `@ts-expect-error`, and every refusal's message by a test.
-- [ ] A test of an Effect that can fail compares the error (`Effect.flip`) or its cause's reasons, not the whole `Exit`: an `Effect.fn` or a span annotates the cause with its stack, so `Exit.fail(error)` doesn't equal it. [`content/declarations.test.ts`](../packages/arcadekit/src/content/declarations.test.ts) has a `failures(exit)` that lists the reasons.
+- [ ] A simulation's rules are checked by scenarios, anything else by tests in the package's `test/`, in the folder the module has in `src/`; its types by `expectTypeOf` and `@ts-expect-error`, and every refusal's message by a test.
+- [ ] A test of an Effect that can fail compares the error (`Effect.flip`) or its cause's reasons, not the whole `Exit`: an `Effect.fn` or a span annotates the cause with its stack, so `Exit.fail(error)` doesn't equal it. [`content/declarations.test.ts`](../packages/arcadekit/test/content/declarations.test.ts) has a `failures(exit)` that lists the reasons.
 - [ ] The glossary has its term. A choice that was hard to make, or that the next reader would otherwise undo, has an ADR. Both tables of entries (`README.md`, `packages/arcadekit/README.md`) follow an entry's exports.
 - [ ] A change that moves code to Effect, or that touches a step, a frame or a lockstep tick, gives `pnpm bench`'s numbers against [`docs/perf-baseline.md`](perf-baseline.md) in its PR.
 - [ ] A changeset says what breaks, or that nothing does (`minor` either way). [`.changeset/README.md`](../.changeset/README.md) has the file's format.
@@ -284,6 +284,7 @@ What one file shows is a lint rule, in [`tools/lint/declaration.ts`](../tools/li
 | Library code runs no Effect itself | lint: `Effect.run…` and `ManagedRuntime.make` are refused in `packages/*/src`, outside what a test imports and the worker's entry points. The `…With` forms pass |
 | The simulation reads no clock or random source, and a genre's uses only exact math | lint, on the root entry of every genre package and on `arcadekit/core`, whose functions a step calls. The first also on `arcadekit/game` but its engine and its frame clock: `oxlint.config.ts` lists the other plain files of the kit, so add a new one there |
 | A module exports no `then` | lint: `unicorn/no-thenable` |
+| An entry's tests are in `test/`, in the folder the entry has in `src/`, and none is in `src/` | the style test |
 | Which entry may import which, and which packages | lint's `ENTRY_IMPORTS`, [`packages/arcadekit/test/entry-packages.test.ts`](../packages/arcadekit/test/entry-packages.test.ts) |
 | A README's examples compile | `pnpm smoke` |
 | Whether the hot paths got slower | `pnpm bench`, read against [`docs/perf-baseline.md`](perf-baseline.md) in review |

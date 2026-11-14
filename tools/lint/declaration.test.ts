@@ -19,8 +19,8 @@ import { BUILDER_ENTRIES, entryBuilders } from "./declaration";
 // cases the one rule for the kit's own builders, as oxlint.config.ts gives them.
 //
 // A new rule gets its cases in WRITTEN. A new builder gets its cases by being registered: FOUND
-// has one for each builder of each entry in BUILDER_ENTRIES, in a game's file and in a file of
-// the kit.
+// has one for each builder of each entry in BUILDER_ENTRIES, in a game's file, in a file of the
+// kit's src/ and in a test in the kit's test/.
 
 const repoDir = path.resolve(import.meta.dirname, "../..");
 
@@ -33,8 +33,8 @@ const GAME_RULES = [
 ];
 const KIT_RULES = ["builder"];
 
-/** Where the kit's source is, as tools/lint/declaration.ts finds a file of the kit. */
-const KIT_SRC = "packages/arcadekit/src";
+/** Where the kit's package is, as tools/lint/declaration.ts finds a file of the kit. */
+const KIT_DIR = "packages/arcadekit";
 
 const gameHeader = `import { Asset, Content } from "arcadekit/content";
 import * as Game from "arcadekit/game";
@@ -48,8 +48,9 @@ interface Case {
    */
   readonly of: "game" | "kit";
   /**
-   * For a file of the kit that declares a part: its folder, from the kit's src/. It imports an
-   * entry by the relative path of the entry's public file.
+   * For a file of the kit that declares a part: its folder, from the kit's package (`src/declared`,
+   * or `test/declared` for a test). It imports an entry by the relative path of the entry's public
+   * file.
    */
   readonly at?: string;
   /** What the file imports, when it is not a game's usual imports of the kit. */
@@ -730,9 +731,10 @@ const publicFileOf = (entry: string): string => {
 
 /**
  * For each entry lint reads builders from and each builder it gives: a class declared under
- * another name, in a game's file, which imports the entry by its name, and in a file of the kit,
- * which imports the entry's public file by its relative path. Each is reported under the
- * builder's own name, so a builder that is registered is one the rules see, from both.
+ * another name, in a game's file, which imports the entry by its name, and in a file of the kit's
+ * src/ and a test in its test/, which import the entry's public file by its relative path. Each is
+ * reported under the builder's own name, so a builder that is registered is one the rules see,
+ * from all three.
  */
 const FOUND: Readonly<Record<string, Case>> = Object.fromEntries(
   Object.keys(BUILDER_ENTRIES).flatMap((entry) =>
@@ -756,8 +758,16 @@ const FOUND: Readonly<Record<string, Case>> = Object.fromEntries(
           `${builder} from ${entry}, in a file of the kit`,
           {
             ...misnamed,
-            at: "declared",
+            at: "src/declared",
             imports: importOf(entry, `../${publicFileOf(entry)}`),
+          },
+        ],
+        [
+          `${builder} from ${entry}, in a test of the kit`,
+          {
+            ...misnamed,
+            at: "test/declared",
+            imports: importOf(entry, `../../src/${publicFileOf(entry)}`),
           },
         ],
       ];
@@ -773,7 +783,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "declaration-lint-"));
 const fileOf = (name: string): string => {
   const { of, at } = CASES[name] ?? {};
   const file = `${of}-${Object.keys(CASES).indexOf(name)}.ts`;
-  return at === undefined ? file : `${KIT_SRC}/${at}/${file}`;
+  return at === undefined ? file : `${KIT_DIR}/${at}/${file}`;
 };
 
 interface Diagnostic {
@@ -834,7 +844,7 @@ describe("the declaration lint rules", () => {
     ).toStrictEqual([...GAME_RULES, ...KIT_RULES].toSorted());
   });
 
-  it("have a case for every builder of every entry, from a game and from the kit", () => {
+  it("have a case for every builder of every entry, from a game, from the kit and from its tests", () => {
     const builders = Object.keys(BUILDER_ENTRIES).flatMap((entry) => [
       ...(entryBuilders(entry)?.values() ?? []),
     ]);
@@ -844,8 +854,8 @@ describe("the declaration lint rules", () => {
     ).toBeGreaterThan(0);
     expect(
       Object.keys(FOUND),
-      "FOUND has two cases for each builder of each entry, one in a game's file and one in a file of the kit, and two of them have the same name"
-    ).toHaveLength(builders.length * 2);
+      "FOUND has three cases for each builder of each entry, one in a game's file, one in a file of the kit and one in a test of the kit, and two of them have the same name"
+    ).toHaveLength(builders.length * 3);
   });
 
   it.each(Object.entries(CASES))("%s", (name, { reports }) => {

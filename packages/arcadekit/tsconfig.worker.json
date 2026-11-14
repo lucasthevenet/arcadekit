@@ -1,6 +1,7 @@
 {
   // arcadekit/net/worker runs on Cloudflare's runtime, not in a browser: Workers types, no DOM.
-  // It is the only entry checked with them; tsconfig.json leaves its folder out.
+  // It is the only entry checked with them, with its tests in test/net/worker; tsconfig.json leaves
+  // both folders out.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],
@@ -8,5 +9,5 @@
     "declaration": true,
     "isolatedDeclarations": true
   },
-  "include": ["src/net/worker"]
+  "include": ["src/net/worker", "test/net/worker"]
 }

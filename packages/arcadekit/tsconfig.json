@@ -1,8 +1,10 @@
 {
-  // Every entry but two. tsconfig.worker.json checks arcadekit/net/worker with Cloudflare's
-  // Workers types in place of the DOM's, and tsconfig.node.json checks the entries that run in
-  // Node (arcadekit/render-three/testing) with Node's types beside the DOM's. So a file here
-  // that imports one of those entries' public files fails: Node's built-ins have no types here.
+  // Every entry but two, and their tests, which test/ keeps in the same folders as src/ has the
+  // entries. tsconfig.worker.json checks arcadekit/net/worker with Cloudflare's Workers types in
+  // place of the DOM's, and tsconfig.node.json checks the entries that run in Node
+  // (arcadekit/render-three/testing) with Node's types beside the DOM's. So a file here that
+  // imports one of those entries' public files fails: Node's built-ins have no types here. The
+  // package's own checks, the files directly in test/, are tsconfig.test.json's.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
@@ -10,6 +12,12 @@
     "declaration": true,
     "isolatedDeclarations": true
   },
-  "include": ["src"],
-  "exclude": ["src/net/worker", "src/render-three/testing"]
+  "include": ["src", "test"],
+  "exclude": [
+    "src/net/worker",
+    "src/render-three/testing",
+    "test/net/worker",
+    "test/render-three/testing",
+    "test/*.ts"
+  ]
 }

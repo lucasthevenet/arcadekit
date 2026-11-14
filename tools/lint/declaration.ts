@@ -77,8 +77,9 @@ export const BUILDER_ENTRIES: Readonly<Record<string, "namespace" | "bare">> = {
   "arcadekit/audio": "bare",
 };
 
-const KIT_PACKAGE = "packages/arcadekit/package.json";
-const KIT_SRC = "packages/arcadekit/src/";
+const KIT_DIR = "packages/arcadekit/";
+const KIT_PACKAGE = `${KIT_DIR}package.json`;
+const KIT_SRC = `${KIT_DIR}src/`;
 
 /**
  * The same entries by their public file from the kit's src/, as the kit's own files import them:
@@ -243,17 +244,21 @@ const buildersOf = (
   if (!specifier.startsWith(".")) {
     return entryBuilders(specifier);
   }
-  // A file of the kit imports an entry by the relative path of its public file.
+  // A file of the kit, in its src/ or a test in its test/, imports an entry by the relative path
+  // of its public file.
   const file = filename.split(path.sep).join("/");
-  const at = file.lastIndexOf(KIT_SRC);
+  if (!file.includes(KIT_DIR)) {
+    return undefined;
+  }
+  const target = path.posix.normalize(
+    path.posix.join(path.posix.dirname(file), specifier)
+  );
+  const at = target.lastIndexOf(KIT_SRC);
   if (at === -1) {
     return undefined;
   }
-  const from = path.posix.dirname(file.slice(at + KIT_SRC.length));
-  const target = path.posix
-    .normalize(path.posix.join(from, specifier))
-    .replace(/\.ts$/u, "");
-  return entryBuilders(KIT_ENTRY_FILES[target] ?? "");
+  const entryFile = target.slice(at + KIT_SRC.length).replace(/\.ts$/u, "");
+  return entryBuilders(KIT_ENTRY_FILES[entryFile] ?? "");
 };
 
 /** The builders a file can call, by the local name it gave each. */

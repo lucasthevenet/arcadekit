@@ -127,9 +127,10 @@ const ownRunnerProperties = [
   },
 ];
 
-// What a test imports, in the folders of library code: a helper may run an Effect to build its
-// fixture.
-const TEST_HELPERS = ["**/*.test.ts", "**/testing/**", "**/test-*.ts"];
+// What a test imports, in the folders of library code: the kit's testing entries, whose helpers
+// may run an Effect to build a fixture. The tests and the helpers only they import are in each
+// package's test/, outside library code.
+const TEST_HELPERS = ["**/testing/**"];
 
 // Which entry of the arcadekit package may import which (ADR-0018). Core and input stand alone.
 // game steps with core's clock and collects events in core's buffer. net seeds its test network
@@ -139,6 +140,7 @@ const TEST_HELPERS = ["**/*.test.ts", "**/testing/**", "**/test-*.ts"];
 // drive a real engine from game; its own code only names the engine's shape. Adding an arrow
 // here is a design decision: say why in the PR.
 const KIT_SRC = "packages/arcadekit/src";
+const KIT_TEST = "packages/arcadekit/test";
 const ENTRY_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   core: [],
   input: [],
@@ -221,10 +223,7 @@ export default defineConfig({
       // The kit's own builders. The one other function of the kit that returns a class makes
       // the Durable Object that Cloudflare runs.
       files: ["packages/arcadekit/src/**/*.ts"],
-      excludeFiles: [
-        "**/*.test.ts",
-        "packages/arcadekit/src/net/worker/signalling-worker.ts",
-      ],
+      excludeFiles: ["packages/arcadekit/src/net/worker/signalling-worker.ts"],
       jsPlugins: ["./tools/lint/declaration.ts"],
       rules: { "declaration/builder": "error" },
     },
@@ -285,7 +284,6 @@ export default defineConfig({
         "packages/arcadekit/src/net/testing/test-game.ts",
       ],
       excludeFiles: [
-        "**/*.test.ts",
         "packages/arcadekit/src/game/engine.ts",
         "packages/arcadekit/src/game/frames.ts",
       ],
@@ -302,10 +300,9 @@ export default defineConfig({
       // Core holds the exact math a step calls (core/exact-math.ts, ADR-0011), and its timers, eases
       // and Rng are a step's too. So core is held to exact math as a genre's root entry is: no
       // approximated `Math` function and no `**`. It comes after the override above, whose
-      // options for this rule it replaces, so it repeats that list. Not its tests: they compare
-      // the replacements with the engine's `Math`.
+      // options for this rule it replaces, so it repeats that list. Not its tests, in test/core:
+      // they compare the replacements with the engine's `Math`.
       files: ["packages/arcadekit/src/core/**/*.ts"],
-      excludeFiles: ["**/*.test.ts"],
       jsPlugins: ["./tools/lint/deterministic-math.ts"],
       rules: {
         "eslint/no-restricted-properties": [
@@ -326,8 +323,12 @@ export default defineConfig({
       rules: { "oxc/no-barrel-file": "off" },
     },
     {
-      // The entries of the one package keep the direction the nine packages had (ADR-0018).
-      files: ["packages/arcadekit/src/**/*.ts"],
+      // The entries of the one package keep the direction the nine packages had (ADR-0018), and
+      // so do their tests, each in the folder of test/ that its entry has in src/.
+      files: [
+        "packages/arcadekit/src/**/*.ts",
+        "packages/arcadekit/test/**/*.ts",
+      ],
       jsPlugins: ["./tools/lint/entry-direction.ts"],
       rules: {
         "entry-direction/allowed": [
@@ -335,6 +336,7 @@ export default defineConfig({
           {
             packageName: "arcadekit",
             root: KIT_SRC,
+            tests: KIT_TEST,
             allowed: ENTRY_IMPORTS,
             entryFiles: ENTRY_FILES,
           },

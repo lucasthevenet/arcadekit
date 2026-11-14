@@ -39,10 +39,7 @@
   },
   "files": [
     "dist",
-    "src",
-    "!src/**/*.test.ts",
-    "!src/net/internal/test-harness.ts",
-    "!src/net/browser/internal/test-client.ts"
+    "src"
   ],
   "type": "module",
   "sideEffects": false,
