@@ -500,6 +500,19 @@ starlight-toc a[aria-current="true"] {
   font-size: var(--sl-text-lg);
 }
 
+/* A list keeps to a line that reads well. */
+[data-has-hero] .sl-markdown-content > ul {
+  max-width: 52rem;
+}
+
+/* A table spans the page as the card grids do, where it has the room to; on a phone it scrolls. */
+@media (min-width: 50rem) {
+  [data-has-hero] .sl-markdown-content table {
+    display: table;
+    width: 100%;
+  }
+}
+
 /* A row of links under a section. */
 .sl-markdown-content .links {
   display: flex;

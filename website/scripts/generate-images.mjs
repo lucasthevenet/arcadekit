@@ -90,7 +90,7 @@ const IMAGES = [
       `<main>
         <header>${mark(LIME)}<span>arcadekit</span></header>
         <h1>Effect for browser <em>games.</em></h1>
-        <footer><span>Replays · Tests · Co-op</span><span>arcadekit.dev</span></footer>
+        <footer><span>Design · Build · Test</span><span>arcadekit.dev</span></footer>
         <div class="ramp">${RAMP.map((colour) => `<i style="background: ${colour}"></i>`).join("")}</div>
       </main>`,
       `${FONTS}

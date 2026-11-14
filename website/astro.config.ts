@@ -27,7 +27,7 @@ import {
 import { tableNames } from "./src/lib/tables.ts";
 
 const DESCRIPTION =
-  "A toolkit for browser games built on Effect: a deterministic simulation, a game loop and engine, input, content loading, saves, audio, pixel art and lockstep co-op.";
+  "Domain-driven design for browser games, on Effect: a game's rules as a deterministic model in its own words, apart from the browser, with specs that run in Node, so an agent can design, build and test a game with you.";
 
 // The pages are found when this config is read: restart `astro dev` after adding one.
 const pages = discoverPages();
