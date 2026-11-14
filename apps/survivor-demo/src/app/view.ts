@@ -1,25 +1,35 @@
+/**
+ * The app's `view`: Foldkit's contract.
+ *
+ * Plain on purpose: `view` is a pure function of the Model (Foldkit's contract). The viewport is
+ * rendered on every screen, so moving between the screens of one mode keeps what is attached to
+ * it, and its canvas: the engine on the menu and a single-player run's screens, the co-op client
+ * on co-op's. Moving between the modes detaches one and attaches the other, and a "Try again"
+ * after a failure attaches the engine anew.
+ */
 import type { Hero, Hud, Offer } from "@arcadekit/survivors";
-import type { AudioSettings } from "arcadekit/audio";
+import type { AudioSettings, AudioSystem } from "arcadekit/audio";
 import { Viewport } from "arcadekit/foldkit";
 import type { CoopEvent } from "arcadekit/net/browser";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
+import type * as HeroRecords from "./hero-records";
 import { Message } from "./message";
 import { Phase, isLocalHeroDown } from "./model";
 import type { Model } from "./model";
-import type { HeroRecord } from "./save";
 
 type H = HtmlBuilder<Message>;
 
-/** The load-error screen's "Try again" button, which FocusRetry focuses so Enter retries. */
-export const RETRY_BUTTON_ID = "retry";
+/** The id of the load-error screen's "Try again" button, which FocusRetry focuses so Enter retries. */
+export const retryButtonId = "retry";
 
+/** The page for a Model: the viewport the engine or the co-op client draws in, and the screen over it. */
 export const view = (model: Model, h: H): Document => ({
   title: "Survivor Kit",
   body: h.div(
     [h.Class("app")],
     [
-      // The engine draws here. Rendered on every screen, so the canvas is never recreated.
+      // The engine or the co-op client draws here. Rendered on every screen, so it stays.
       Viewport.make(h, {
         mounted: Message.MountedViewport(),
         unmounted: Message.UnmountedViewport(),
@@ -38,7 +48,7 @@ const overlay = (model: Model, h: H): Html =>
         h.p([h.Class("error")], [error]),
         h.button(
           [
-            h.Id(RETRY_BUTTON_ID),
+            h.Id(retryButtonId),
             h.Class("primary"),
             h.OnClick(Message.ClickedRetry()),
           ],
@@ -126,7 +136,7 @@ const panel = (h: H, children: readonly (Html | string)[]): Html =>
 const savedRecord = (model: Model, heroId: string) =>
   Object.hasOwn(model.records, heroId) ? model.records[heroId] : undefined;
 
-const recordText = (record: HeroRecord) =>
+const recordText = (record: HeroRecords.HeroRecord) =>
   `${record.won ? "Won · " : ""}Best ${formatTime(record.bestTime)} · ${record.mostKills} defeated`;
 
 const heroPicker = (model: Model, h: H, withRecords: boolean): Html =>
@@ -173,11 +183,14 @@ const menu = (model: Model, h: H): Html =>
     soundPanel(model.audio, h),
   ]);
 
-const BUSES = [
+const BUSES: readonly {
+  readonly bus: AudioSystem.Bus;
+  readonly label: string;
+}[] = [
   { bus: "master", label: "Volume" },
   { bus: "sfx", label: "Effects" },
   { bus: "music", label: "Music" },
-] as const;
+];
 
 /** The volume sliders and mute, on the menu and pause screens. M toggles mute anywhere. */
 const soundPanel = (audio: AudioSettings.AudioSettings, h: H): Html =>

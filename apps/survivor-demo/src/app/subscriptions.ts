@@ -1,3 +1,8 @@
+/**
+ * The app's Subscriptions: Foldkit's contract. Each turns something outside the UI into Messages
+ * as a Stream (the engine's events, the Co-op client's, the app's own keys), or keeps something
+ * outside it in step with the Model (the audio system).
+ */
 import { Survivors } from "@arcadekit/survivors";
 import { SurvivorsCoop, SurvivorsEngine } from "@arcadekit/survivors/browser";
 import { AudioSystem } from "arcadekit/audio";
@@ -8,7 +13,7 @@ import { Subscription } from "foldkit";
 import { Message } from "./message";
 import { isCoop, isLoaded } from "./model";
 import type { Model, Phase } from "./model";
-import { MUSIC } from "./sound";
+import * as Sounds from "./sounds";
 
 /** A single-player run's one hero is slot 0. */
 const LOCAL_HERO = 0;
@@ -17,7 +22,7 @@ const LOCAL_HERO = 0;
  * Everything a co-op seat reports, as Messages: the Co-op client's own events, and under `run`
  * the genre's, as the single-player engine reports them, with the local player in the engine's
  * `LOCAL_HERO`'s place. The lobby goes into its Message as it is; a player's offer and summary
- * are its own hero's.
+ * are its own hero's, and another hero's offer, or a hero leaving, is no Message (`undefined`).
  */
 export const coopMessage = SurvivorsCoop.match({
   LobbyChanged: (lobby) => Message.GotCoopLobby({ lobby }),
@@ -42,7 +47,7 @@ export const coopMessage = SurvivorsCoop.match({
 });
 
 /** The run's music from the start of a run to its end; the menu's everywhere else. */
-const musicFor = (phase: Phase): keyof typeof MUSIC => {
+const musicFor = (phase: Phase): keyof typeof Sounds.music => {
   switch (phase._tag) {
     case "Starting":
     case "Playing":
@@ -64,6 +69,7 @@ const isPaused = (model: Model): boolean =>
   (model.phase._tag === "CoopPlaying" &&
     (model.coop.paused || model.hud.heroes.some((hero) => hero.paused)));
 
+/** What the `sound` Subscription follows: the music and the ducking for the screen, and the player's settings. */
 const SoundDependencies = {
   music: Schema.Literals(["menu", "run"]),
   ducked: Schema.Boolean,
@@ -73,6 +79,10 @@ const SoundDependencies = {
   muted: Schema.Boolean,
 };
 
+/**
+ * The app's Subscriptions: the engine's entry and the Co-op client's, the keys that work outside
+ * a run's input, and the audio system kept in step with the Model.
+ */
 export const subscriptions = Subscription.make<
   Model,
   Message,
@@ -116,8 +126,9 @@ export const subscriptions = Subscription.make<
   }),
 
   /**
-   * Escape (or P) toggles pause, but only during a run. In co-op it opens and closes the run's
-   * menu, which holds the co-op pause while it is up.
+   * Escape (or P) toggles pause, but only while a run plays or is paused, not over an offer. In
+   * co-op it opens and closes the run's menu, which asks for the co-op pause while it is up,
+   * unless the local hero is down. Not simulation input.
    */
   pauseKey: entry(
     { canPause: Schema.Boolean },
@@ -153,13 +164,13 @@ export const subscriptions = Subscription.make<
         Effect.gen(function* () {
           const audio = yield* AudioSystem.AudioSystem;
           AudioSystem.applySettings(audio, { ...settings, music: musicVolume });
-          audio.playMusic(MUSIC[music]);
+          audio.playMusic(Sounds.music[music]);
           audio.setDucked(ducked);
         })
       ).pipe(Stream.drain),
   }),
 
-  /** M toggles mute on any screen, except while typing (the join code). */
+  /** M toggles mute on any screen, but not with Ctrl, Cmd or Alt held, or while typing (the join code). */
   muteKey: entry(
     {},
     {

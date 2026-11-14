@@ -1,25 +1,33 @@
+/**
+ * The app's Model: Foldkit's contract, with the Schemas it is made of.
+ *
+ * It holds what the UI shows, and nothing of the arena: enemies, projectiles and positions live
+ * in the run, which the engine or the co-op client draws. The genre's sample (`Hud`) and the
+ * Schemas of what its events carry (`Offer.Choice`, `Hero.Summary`) are held as they are, as is
+ * the Co-op client's own `LobbyChanged`, so a field the genre or the kit adds reaches the Model.
+ *
+ * Plain on purpose: Schemas, which `update` and `view` read, and pure functions over them that
+ * `update`, `view` and the Subscriptions read (Foldkit's contract).
+ */
 import { Hero, Hud, Offer } from "@arcadekit/survivors";
 import { AudioSettings } from "arcadekit/audio";
 import { CoopEvent } from "arcadekit/net/browser";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
-import { HeroRecords } from "./save";
+import * as HeroRecords from "./hero-records";
 
-// The UI's whole state. Note what is NOT here: enemies, projectiles, positions.
-// Those live in the simulation. The UI only holds what it shows.
-// Hud is the genre's own sample, which is also its Schema, and Offer.Choice and
-// Hero.Summary are its Schemas for what its events carry, so a field the genre adds
-// reaches the Model. The co-op lobby is the Co-op client's own event, held the same way.
-
-export const HeroSummary = Schema.Struct({
+/** A hero as the menu and the lobby list it: its id, name, description and colour. */
+export const HeroListing = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   description: Schema.String,
   color: Schema.String,
 });
-export type HeroSummary = typeof HeroSummary.Type;
+/** A hero as the menu and the lobby list it, decoded. */
+export type HeroListing = typeof HeroListing.Type;
 
+/** Which screen the app is on: loading, a single-player run's screens, then co-op's. */
 export const Phase = defineTaggedUnion({
   Loading: {},
   LoadFailed: { error: Schema.String },
@@ -45,11 +53,12 @@ export const Phase = defineTaggedUnion({
   CoopGameOver: { summary: Hero.Summary },
   CoopFailed: { error: Schema.String },
 });
+/** Which screen the app is on, decoded. */
 export type Phase = typeof Phase.Type;
 
 /**
  * Whether the content and the sprite sheet have loaded, so a run can be played and drawn: every
- * phase but `Loading` and `LoadFailed`. The engine entries attach only then.
+ * phase but `Loading` and `LoadFailed`. The single-player engine entry attaches only then.
  */
 export const isLoaded = (phase: Phase): boolean =>
   phase._tag !== "Loading" && phase._tag !== "LoadFailed";
@@ -81,8 +90,10 @@ export const CoopRun = Schema.Struct({
    */
   paused: Schema.Boolean,
 });
+/** A co-op run as the UI shows it, decoded. */
 export type CoopRun = typeof CoopRun.Type;
 
+/** The co-op run before one starts: slot 0, no players, no menu and no pause. */
 export const emptyCoopRun: CoopRun = {
   slot: 0,
   names: [],
@@ -91,31 +102,39 @@ export const emptyCoopRun: CoopRun = {
   paused: false,
 };
 
+/**
+ * The UI's whole state: what it shows. `hud` is the genre's own sample, which is also its
+ * Schema, so a field the genre adds reaches the Model.
+ */
 export const Model = Schema.Struct({
   phase: Phase,
-  heroes: Schema.Array(HeroSummary),
+  /** The content's heroes, as the menu lists them. */
+  heroes: Schema.Array(HeroListing),
+  /** The hero picked on the menu or in the lobby (the first, until one is): the next run's, and the lobby pick. */
   selectedHeroId: Schema.String,
   /** The saved records, by hero id: read at startup, updated when each run ends. */
-  records: HeroRecords,
+  records: HeroRecords.HeroRecords,
   hud: Hud,
-  /** True while the viewport is in the document: the engine runs only then (see Viewport.make). */
+  /** True while the viewport is in the document: the engine or the co-op client runs only then (see Viewport.make). */
   isViewportMounted: Schema.Boolean,
   coop: CoopRun,
   /** The player's volumes and mute: read at startup, saved on each change. */
   audio: AudioSettings.AudioSettings,
 });
+/** The UI's whole state, decoded. */
 export type Model = typeof Model.Type;
 
 /**
  * Whether the local player's hero is out of a co-op run's play, by the HUD's last sample: it is
- * down. The rules take no pause from such a hero (`NotPlaying`), so the app asks for none. False
- * until the HUD has a sample of the hero.
+ * down, or has left. The rules take no pause from such a hero (`NotPlaying`), so the app asks for
+ * none. False until the HUD has a sample of the hero.
  */
 export const isLocalHeroDown = (model: Model): boolean => {
   const hero = model.hud.heroes[model.coop.slot];
   return hero !== undefined && hero.status !== "playing";
 };
 
+/** The HUD before a run's first sample: level 1, no time, no kills, and one hero at 0 HP. */
 export const emptyHud = new Hud({
   level: 1,
   xp: 0,

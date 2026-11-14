@@ -4,8 +4,8 @@ import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
 import {
-  ChooseCoopUpgrade,
   LeaveCoop,
+  PickCoopUpgrade,
   PlayClick,
   SetCoopPaused,
 } from "../../src/app/commands";
@@ -126,13 +126,10 @@ describe("co-op commands", () => {
       Story.given(at(Phase.CoopLevelUp({ offer: 3, choices: [] }))),
       Story.message(Message.ClickedCoopUpgrade({ index: 1 })),
       Story.Command.expectExact(
-        ChooseCoopUpgrade({ offer: 3, index: 1 }),
+        PickCoopUpgrade({ offer: 3, index: 1 }),
         PlayClick()
       ),
-      Story.Command.resolve(
-        ChooseCoopUpgrade,
-        Message.CompletedEngineCommand()
-      ),
+      Story.Command.resolve(PickCoopUpgrade, Message.CompletedEngineCommand()),
       Story.Command.resolve(PlayClick, Message.CompletedAudioCommand()),
       Story.model((model) => expect(model.phase._tag).toBe("CoopPlaying"))
     );

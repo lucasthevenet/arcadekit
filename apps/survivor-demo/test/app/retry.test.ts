@@ -18,9 +18,9 @@ import {
   PlayClick,
   StartRun,
 } from "../../src/app/commands";
+import * as HeroRecords from "../../src/app/hero-records";
 import { Message } from "../../src/app/message";
 import type { Model } from "../../src/app/model";
-import { emptyRecords } from "../../src/app/save";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
 
@@ -121,7 +121,7 @@ const startup = (
   Scene.Command.resolve(LoadContent, loaded),
   Scene.Command.resolve(
     LoadSave,
-    Message.LoadedSave({ records: emptyRecords })
+    Message.LoadedSave({ records: HeroRecords.empty })
   ),
   Scene.Command.resolve(
     LoadAudioSettings,

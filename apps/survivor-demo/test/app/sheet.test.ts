@@ -16,19 +16,19 @@ import { Scene } from "foldkit";
 import { describe, expect, it } from "vitest";
 
 import {
-  ChooseUpgrade,
   EndRun,
   FocusRetry,
   LoadAudioSettings,
   LoadContent,
   LoadSave,
   LoadSounds,
+  PickUpgrade,
   SetPaused,
   StartRun,
 } from "../../src/app/commands";
+import * as HeroRecords from "../../src/app/hero-records";
 import { Message } from "../../src/app/message";
-import { emptyRecords } from "../../src/app/save";
-import { survivorsSounds } from "../../src/app/sound";
+import * as Sounds from "../../src/app/sounds";
 import { init, update } from "../../src/app/update";
 import { view } from "../../src/app/view";
 
@@ -172,7 +172,7 @@ describe("loading", () => {
         Scene.Command.resolve(FocusRetry, Message.CompletedFocusCommand()),
         Scene.Command.resolve(
           LoadSave,
-          Message.LoadedSave({ records: emptyRecords })
+          Message.LoadedSave({ records: HeroRecords.empty })
         ),
         Scene.Command.resolve(
           LoadAudioSettings,
@@ -191,7 +191,7 @@ describe("loading", () => {
       SetPaused({ paused: false }).effect,
       EndRun().effect,
       // With no run, the pick is dropped at once.
-      ChooseUpgrade({ offer: 1, index: 0 }).effect,
+      PickUpgrade({ offer: 1, index: 0 }).effect,
     ]).pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -201,7 +201,7 @@ describe("loading", () => {
           Layer.provide(
             Layer.mergeAll(
               SurvivorsSheet.layer(Effect.fail(sheetError)),
-              SurvivorsCueTable.layer(survivorsSounds),
+              SurvivorsCueTable.layer(Sounds.byCue),
               AudioSystem.layerSilent
             )
           )

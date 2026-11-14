@@ -7,20 +7,17 @@ import { KeyValueStore } from "effect/persistence";
 import { Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
+import { SurvivorsAudioSettings } from "../../src/app/audio-settings";
 import {
-  ChooseUpgrade,
   LoadAudioSettings,
+  PickUpgrade,
   PlayClick,
   SaveAudioSettings,
 } from "../../src/app/commands";
 import { Message } from "../../src/app/message";
 import { Phase } from "../../src/app/model";
 import type { Model } from "../../src/app/model";
-import {
-  SurvivorsAudioSettings,
-  soundList,
-  survivorsSounds,
-} from "../../src/app/sound";
+import * as Sounds from "../../src/app/sounds";
 import { subscriptions } from "../../src/app/subscriptions";
 import { init, update } from "../../src/app/update";
 
@@ -40,10 +37,12 @@ describe("the sound list", () => {
     const files = readdirSync(soundsDir).filter((name) =>
       name.endsWith(".wav")
     );
-    const ids = Object.keys(soundList);
+    const ids = Object.keys(Sounds.list);
     expect({
       ids: ids.toSorted(),
-      files: ids.map((id) => soundList[id]!.file.split("/").at(-1)).toSorted(),
+      files: ids
+        .map((id) => Sounds.list[id]!.file.split("/").at(-1))
+        .toSorted(),
     }).toStrictEqual({
       ids: files.map((name) => name.replace(/\.wav$/u, "")).toSorted(),
       files: files.toSorted(),
@@ -52,10 +51,10 @@ describe("the sound list", () => {
 
   it("has every sound the app gives the cue table and the weapons name", () => {
     const named = [
-      ...Object.values(survivorsSounds),
+      ...Object.values(Sounds.byCue),
       ...weapons.flatMap((weapon) => weapon.sound ?? []),
     ];
-    expect(named.filter((id) => !Object.hasOwn(soundList, id))).toStrictEqual(
+    expect(named.filter((id) => !Object.hasOwn(Sounds.list, id))).toStrictEqual(
       []
     );
   });
@@ -210,11 +209,11 @@ describe("clicks", () => {
       Story.message(Message.ClickedUpgrade({ index: 0 })),
       // The pick names the offer on screen.
       Story.Command.expectExact(
-        ChooseUpgrade({ offer: 1, index: 0 }),
+        PickUpgrade({ offer: 1, index: 0 }),
         PlayClick()
       ),
       Story.Command.resolve(PlayClick, Message.CompletedAudioCommand()),
-      Story.Command.resolve(ChooseUpgrade, Message.CompletedEngineCommand()),
+      Story.Command.resolve(PickUpgrade, Message.CompletedEngineCommand()),
       Story.model((model) => expect(model.phase._tag).toBe("Playing"))
     );
   });

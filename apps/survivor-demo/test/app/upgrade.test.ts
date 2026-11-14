@@ -9,10 +9,10 @@ import { Effect, Fiber, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { ChooseUpgrade } from "../../src/app/commands";
+import { PickUpgrade } from "../../src/app/commands";
 import { Message } from "../../src/app/message";
 
-// The upgrade pick, from the app's Command to the genre's rules and back. The Command sends the
+// The upgrade pick, from the app's Command to the genre's rules and back. `PickUpgrade` sends the
 // genre's `ChooseUpgrade` and waits for the rules' answer, and however the send ends it reports
 // that it is done. The rules and the content are the game's own; nothing is drawn, and a frame
 // runs when the test runs it.
@@ -116,7 +116,7 @@ const offered = async (
         // The HUD is read every 100 ms: let it catch up with the frozen run.
         play(200);
         const send = (index: number, numbered: number) =>
-          ChooseUpgrade({ offer: numbered, index }).effect.pipe(
+          PickUpgrade({ offer: numbered, index }).effect.pipe(
             Effect.provideService(SurvivorsEngine, engine)
           );
         return yield* drive({
