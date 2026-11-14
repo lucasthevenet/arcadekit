@@ -1,9 +1,10 @@
 {
-  // The package's own checks in test/ run in Node, so they get Node's types. src/ does not.
+  // The package's own checks, the files directly in test/, run in Node, so they get Node's types.
+  // src/ does not, nor the entries' tests in test/'s folders, which the entries' tsconfigs check.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],
     "types": ["node"]
   },
-  "include": ["test"]
+  "include": ["test/*.ts"]
 }

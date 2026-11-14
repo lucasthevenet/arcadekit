@@ -4,7 +4,7 @@
   // that steps them, and ./game/scenario) and net, with net's signalling protocol
   // (./net/signalling), which the signalling worker shares. The worker itself (./net/worker) is
   // checked by tsconfig.worker.json. Only the ./browser entries, input, render-three and foldkit
-  // may use the DOM.
+  // may use the DOM. Core's tests, in test/core, are checked here too.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],
@@ -21,5 +21,5 @@
     "src/net/index.ts",
     "src/net/signalling/index.ts"
   ],
-  "include": ["src/core"]
+  "include": ["src/core", "test/core"]
 }

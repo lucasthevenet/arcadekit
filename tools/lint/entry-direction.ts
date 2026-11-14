@@ -6,6 +6,11 @@
 // entry's folder or name another entry's public file (the `source` of one of the package's
 // `exports`), and only an entry its own is allowed to import. A dynamic import must name its
 // module in a plain string, since neither this rule nor the import bans can read anything else.
+//
+// The entries' tests are in test/, each in the folder its entry has under src/
+// (test/net/browser/coop.test.ts tests src/net/browser/). A test is held to the same rule as a
+// file of its entry: it may import anything of its own entry, from src/ or from beside it in
+// test/, and another entry only by a public file. A file of src/ may import nothing of test/.
 import path from "node:path";
 
 interface Node {
@@ -18,6 +23,8 @@ interface Options {
   readonly packageName: string;
   /** The folder that holds one folder per entry, from the repository root. */
   readonly root: string;
+  /** The folder of the entries' tests, from the repository root, with a folder per entry as `root`. */
+  readonly tests?: string;
   /** For each entry folder, the other entry folders it may import. */
   readonly allowed: Readonly<Record<string, readonly string[]>>;
   /** Each entry's public files, from `root`, without extension ("net/browser/index"). */
@@ -35,6 +42,43 @@ const adr = "See docs/adr/0018-one-package-with-entries.md.";
 const withoutExtension = (file: string): string =>
   file.replace(/\.(?:ts|tsx|js|mjs)$/u, "");
 
+interface Place {
+  /** The file's path from the repository root. */
+  readonly at: string;
+  /** The entry folder the file is in, under `root` or `tests`. */
+  readonly own: string;
+  /** The folders, from the repository root, whose files are the file's own entry's. */
+  readonly ownFolders: readonly string[];
+}
+
+/** Where a file is: in an entry's folder of `root`, in one of `tests`, or in neither. */
+const placeOf = (file: string, options: Options): Place | undefined => {
+  for (const folder of [options.root, options.tests]) {
+    if (folder === undefined) {
+      continue;
+    }
+    const marker = `${folder}/`;
+    const index = file.lastIndexOf(marker);
+    if (index === -1) {
+      continue;
+    }
+    const fromFolder = file.slice(index + marker.length);
+    const [own] = fromFolder.split("/");
+    if (own === undefined || !fromFolder.includes("/")) {
+      return undefined;
+    }
+    return {
+      at: file.slice(index),
+      own,
+      ownFolders:
+        folder === options.root
+          ? [`${options.root}/${own}`]
+          : [`${options.root}/${own}`, `${folder}/${own}`],
+    };
+  }
+  return undefined;
+};
+
 const allowed = {
   meta: {
     type: "problem",
@@ -49,17 +93,11 @@ const allowed = {
     if (options === undefined) {
       return {};
     }
-    const file = context.filename.split(path.sep).join("/");
-    const marker = `${options.root}/`;
-    const at = file.lastIndexOf(marker);
-    if (at === -1) {
+    const place = placeOf(context.filename.split(path.sep).join("/"), options);
+    if (place === undefined) {
       return {};
     }
-    const fromRoot = file.slice(at + marker.length);
-    const [own] = fromRoot.split("/");
-    if (own === undefined || !fromRoot.includes("/")) {
-      return {};
-    }
+    const { at, own, ownFolders } = place;
     const mayImport = options.allowed[own];
     const entryFiles = new Set(options.entryFiles);
 
@@ -82,14 +120,21 @@ const allowed = {
         return;
       }
       const target = path.posix.normalize(
-        path.posix.join(path.posix.dirname(fromRoot), specifier)
+        path.posix.join(path.posix.dirname(at), specifier)
       );
-      const [entry] = target.split("/");
-      if (entry === own) {
+      if (
+        ownFolders.some(
+          (folder) => target === folder || target.startsWith(`${folder}/`)
+        )
+      ) {
         return;
       }
+      const fromRoot = target.startsWith(`${options.root}/`)
+        ? target.slice(options.root.length + 1)
+        : undefined;
+      const [entry] = fromRoot?.split("/") ?? [];
       if (
-        target.startsWith("..") ||
+        fromRoot === undefined ||
         entry === undefined ||
         options.allowed[entry] === undefined
       ) {
@@ -110,7 +155,7 @@ const allowed = {
         });
         return;
       }
-      if (!entryFiles.has(withoutExtension(target))) {
+      if (!entryFiles.has(withoutExtension(fromRoot))) {
         context.report({
           node,
           message: `"${specifier}" reaches inside arcadekit/${entry}. Import one of its public files (the sources of the package's exports), as a game would. ${adr}`,

@@ -182,14 +182,18 @@ describe("the table of entries", () => {
       .filter(([, names]) => names.some((name) => name.startsWith("node:")))
       .map(([entry]) => entry);
     expect(entries).toStrictEqual(NODE_ENTRIES);
-    // What tsconfig.node.json checks with Node's types, tsconfig.json leaves out.
-    for (const entry of NODE_ENTRIES) {
+    // What tsconfig.node.json checks with Node's types, each such entry and its tests,
+    // tsconfig.json leaves out.
+    for (const folder of NODE_ENTRIES.flatMap((entry) => [
+      `src/${entry}`,
+      `test/${entry}`,
+    ])) {
       expect(
         foldersOf("tsconfig.node.json", /"include": \[(?<list>[^\]]*)\]/u)
-      ).toContain(`src/${entry}`);
+      ).toContain(folder);
       expect(
         foldersOf("tsconfig.json", /"exclude": \[(?<list>[^\]]*)\]/u)
-      ).toContain(`src/${entry}`);
+      ).toContain(folder);
     }
   });
 

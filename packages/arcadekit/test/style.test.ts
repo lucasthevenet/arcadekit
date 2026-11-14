@@ -24,10 +24,12 @@ import {
 // - The guide's links, so it keeps naming files that exist.
 //
 // It reads text and runs nothing, as test/entry-packages.test.ts does: a builder's behaviour is
-// tested beside it, in src/. Each check fails with a message that says what to write.
+// tested in test/, in the folder its entry has in src/. Each check fails with a message that
+// says what to write.
 
 const packageDir = path.resolve(import.meta.dirname, "..");
 const srcDir = path.join(packageDir, "src");
+const testDir = path.join(packageDir, "test");
 const repoDir = path.resolve(packageDir, "../..");
 const guide = "docs/code-style.md";
 
@@ -160,11 +162,11 @@ const read = (file: string): string => {
 const code = (source: string): string =>
   source.replaceAll(/\/\*[\s\S]*?\*\/|\/\/.*$/gmu, "");
 
-/** Every source file under `dir` that is not a test, from `dir`. */
+/** Every source file under `dir`, from `dir`. */
 const sourceFiles = (dir: string): readonly string[] =>
   readdirSync(dir, { recursive: true, encoding: "utf-8" })
     .map((file) => file.split(path.sep).join("/"))
-    .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+    .filter((file) => file.endsWith(".ts"))
     .toSorted();
 
 const escaped = (text: string): string =>
@@ -310,8 +312,8 @@ describe.each(Object.entries(DECLARATIONS))(
   "%s",
   (builder, { file, service }) => {
     const noun = nounOf(builder);
-    // The entry's first folder under src/: where its README and its tests are, and what the key
-    // of its service starts with.
+    // The entry's first folder under src/: where its README is, where its tests are under test/,
+    // and what the key of its service starts with.
     const entry = file.split("/", 1)[0] ?? "";
     // Read when a test runs, so a file that moved fails a test and not the whole file.
     const source = (): string => read(path.join(srcDir, file));
@@ -347,16 +349,16 @@ describe.each(Object.entries(DECLARATIONS))(
     });
 
     it("is declared by a test of its entry", () => {
-      const tests = readdirSync(path.join(srcDir, entry), {
+      const tests = readdirSync(path.join(testDir, entry), {
         recursive: true,
         encoding: "utf-8",
       }).filter((test) => test.endsWith(".test.ts"));
       const declared = tests.some((test) =>
-        declares(builder).test(code(read(path.join(srcDir, entry, test))))
+        declares(builder).test(code(read(path.join(testDir, entry, test))))
       );
       expect(
         declared,
-        `no test under src/${entry}/ declares a \`class X extends ${builder}(...)\``
+        `no test under test/${entry}/ declares a \`class X extends ${builder}(...)\``
       ).toBe(true);
     });
 
@@ -899,6 +901,15 @@ describe("the entries in Effect's module shape", () => {
       });
     }
   );
+});
+
+describe("the entries' tests", () => {
+  it("are in test/, none in src/", () => {
+    expect(
+      sourceFiles(srcDir).filter((file) => file.endsWith(".test.ts")),
+      "A test of an entry is in test/, in the folder its entry has in src/, so src/ holds what the package publishes and the entries' tsconfigs check each test with its entry's types. Move these there."
+    ).toStrictEqual([]);
+  });
 });
 
 describe("the guide", () => {

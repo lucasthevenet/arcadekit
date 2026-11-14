@@ -102,15 +102,12 @@ const notYetEffectStyle = () => {
   );
 };
 
-/** Every source file under `dir` that is not a test, nor the entry's own `internal/`. */
+/** Every source file under `dir` but the entry's own `internal/`. */
 const moduleFiles = (dir) =>
   readdirSync(dir, { recursive: true, encoding: "utf-8" })
     .map((file) => file.split(path.sep).join("/"))
     .filter(
-      (file) =>
-        file.endsWith(".ts") &&
-        !file.endsWith(".test.ts") &&
-        !file.split("/").includes("internal")
+      (file) => file.endsWith(".ts") && !file.split("/").includes("internal")
     )
     .toSorted();
 

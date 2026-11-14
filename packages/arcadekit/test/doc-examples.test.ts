@@ -231,11 +231,11 @@ const examplesOf = (file: string): readonly Example[] =>
       }))
     );
 
-/** The modules of an entry: every source file of its folder but tests, internals and other entries'. */
+/** The modules of an entry: every source file of its folder but internals and other entries'. */
 const modulesOf = (publicFile: string): readonly string[] => {
   const dir = path.posix.dirname(publicFile);
   return readdirSync(path.join(srcDir, dir), { encoding: "utf-8" })
-    .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+    .filter((file) => file.endsWith(".ts"))
     .map((file) => path.posix.join(dir, file));
 };
 
