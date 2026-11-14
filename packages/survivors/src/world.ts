@@ -318,7 +318,7 @@ export interface Arena {
   readonly radii: Float64Array;
   /** 1 for an enemy a bolt already aims at, while its targets are picked, and all 0 otherwise. Scratch, as `radii` is. */
   readonly taken: Uint8Array;
-  /** Sound triggers, read by the presentation only. Not part of the state hash. */
+  /** The cue counters, which only the sound view reads. Not part of the state hash. */
   readonly cues: Cues;
 }
 
