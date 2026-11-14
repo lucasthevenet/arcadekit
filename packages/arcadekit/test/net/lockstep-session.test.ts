@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { StateHash } from "../../src/core/index";
 import * as Game from "../../src/game/index";
 import { LockstepSession, MemoryNetwork, Transport } from "../../src/net/index";
-import { runNetwork } from "../../src/net/internal/test-harness";
+import { runNetwork } from "./internal/test-harness";
 
 // A tiny deterministic game: its state is a running digest of every input it has stepped on, and
 // it keeps that digest after each step so tests can compare runs step by step.

@@ -6,13 +6,13 @@ import type { View as GameView } from "../../../src/game/browser";
 import { ManualFrames } from "../../../src/game/testing/index";
 import { CoopRooms } from "../../../src/net/browser/index";
 import type { CoopPresented } from "../../../src/net/browser/internal/coop-client";
+import type { TestGame } from "../../../src/net/testing/index";
 import {
   testCoopClient,
   testCoopParts,
   testPresentation,
-} from "../../../src/net/browser/internal/test-client";
-import type { TestCoopClient } from "../../../src/net/browser/internal/test-client";
-import type { TestGame } from "../../../src/net/testing/index";
+} from "./internal/test-client";
+import type { TestCoopClient } from "./internal/test-client";
 
 /**
  * The reasons an exit failed with, each a `Fail`'s error or the reason itself. The frame loop the

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { StateHash } from "../../src/core/index";
 import * as Game from "../../src/game/index";
 import { LockstepSession, MemoryNetwork, Transport } from "../../src/net/index";
-import { runNetwork } from "../../src/net/internal/test-harness";
+import { runNetwork } from "./internal/test-harness";
 
 // A command in a lockstep run: it rides its sender's payload for one step, every peer's rules
 // take or refuse it alike at that step, and only the sender's peer has a sender to answer.

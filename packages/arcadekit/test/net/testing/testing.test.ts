@@ -25,7 +25,8 @@ import {
 describe("arcadekit/net/testing", () => {
   // A game makes a Co-op client one way, from its `Coop`'s `layer`, and so does its test, over
   // these rooms and this ticker. The kit's own client tests make theirs from plain parts, which
-  // stay the kit's (browser/test-client.ts): a second way here would be public API.
+  // stay in its tests (test/net/browser/internal/test-client.ts): a second way here would be
+  // public API.
   it("holds a test's rooms, its ticker, its fake timers and a game to run, and no Co-op client of its own", () => {
     expect(Object.keys(Testing).toSorted()).toStrictEqual([
       "FakeCoopRooms",

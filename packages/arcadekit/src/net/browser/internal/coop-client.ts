@@ -83,7 +83,7 @@ export interface CoopPresented<State, PlayerInput> {
  * What the Co-op client is made from: a `Coop` declaration with nothing left to resolve. What
  * it uses has its services, and the app's rooms, the ticker and the frame clock are beside it.
  * Only the kit builds one: the `Coop` builder's `layer`, and the kit's own client tests
- * (test-client.ts).
+ * (test/net/browser/internal/test-client.ts).
  */
 export interface CoopParts<
   Config,

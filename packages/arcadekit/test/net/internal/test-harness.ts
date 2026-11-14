@@ -1,4 +1,4 @@
-import { MemoryNetwork } from "../index";
+import { MemoryNetwork } from "../../../src/net/index";
 
 // Test support, not exported from the root entry: drives sessions and their network on one
 // simulated clock. What a Co-op client's tests run their Effects on, under fake timers, is the

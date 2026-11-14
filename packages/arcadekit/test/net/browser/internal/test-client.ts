@@ -1,20 +1,23 @@
 import { Effect } from "effect";
 import type { Scope } from "effect";
 
-import { Frames } from "../../../game/browser";
+import { Frames } from "../../../../src/game/browser";
 import type {
   FrameSource,
   View as GameView,
   InputSource,
-} from "../../../game/browser";
-import type * as Game from "../../../game/index";
-import { TestGame } from "../../testing/index";
-import type * as Ticker from "../../ticker";
-import type * as CoopClient from "../coop-client";
-import type * as CoopRooms from "../coop-rooms";
-import { CoopTicker } from "../coop-ticker";
-import { coopClient } from "./coop-client";
-import type { CoopParts, CoopPresented } from "./coop-client";
+} from "../../../../src/game/browser";
+import type * as Game from "../../../../src/game/index";
+import type * as CoopClient from "../../../../src/net/browser/coop-client";
+import type * as CoopRooms from "../../../../src/net/browser/coop-rooms";
+import { CoopTicker } from "../../../../src/net/browser/coop-ticker";
+import { coopClient } from "../../../../src/net/browser/internal/coop-client";
+import type {
+  CoopParts,
+  CoopPresented,
+} from "../../../../src/net/browser/internal/coop-client";
+import { TestGame } from "../../../../src/net/testing/index";
+import type * as Ticker from "../../../../src/net/ticker";
 
 // The Co-op client of the test game (`arcadekit/net/testing`'s `TestGame`) from plain parts, with no
 // declaration and no Layer: the kit's own client tests build many variants of one game, each

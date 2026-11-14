@@ -21,16 +21,6 @@ import {
   PeerLink,
   SignallingRoom,
 } from "../../../src/net/browser/index";
-import {
-  testCoopClient,
-  testCoopParts,
-  testPresentation,
-} from "../../../src/net/browser/internal/test-client";
-import type {
-  TestCoopClient,
-  TestCoopOptions,
-  TestCoopParts,
-} from "../../../src/net/browser/internal/test-client";
 import type { Ticker } from "../../../src/net/index";
 import { encodeLobbyMessage } from "../../../src/net/internal/lobby";
 import {
@@ -39,6 +29,16 @@ import {
   PageTimers,
   TestGame,
 } from "../../../src/net/testing/index";
+import {
+  testCoopClient,
+  testCoopParts,
+  testPresentation,
+} from "./internal/test-client";
+import type {
+  TestCoopClient,
+  TestCoopOptions,
+  TestCoopParts,
+} from "./internal/test-client";
 
 /** `effect` on the page's timers, as a test on fake timers runs each of its Effects. */
 const onPage = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
