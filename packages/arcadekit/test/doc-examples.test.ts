@@ -42,6 +42,14 @@ vi.mock(import("three"), async (importOriginal) => ({
   WebGLRenderer: newable(standInRenderer) as never,
 }));
 
+// `arcadekit/net/worker` extends Cloudflare's `DurableObject`, which only Cloudflare's runtime
+// has. Its examples make the Worker's handler and its room's class, and run no request into a
+// room, so a base class that keeps what Cloudflare would hand it is enough.
+// oxlint-disable-next-line vitest/prefer-import-in-mock -- `cloudflare:workers` has types only under tsconfig.worker.json, and this test is checked without them.
+vi.mock("cloudflare:workers", () => ({
+  DurableObject: newable(() => ({})) as never,
+}));
+
 // Runs the `ts` examples of the doc comments of every entry in Effect's module shape, and checks
 // that each result an example shows is true: a line `expression; // => value` holds when the
 // expression gives the value (docs/code-style.md, "The doc comment"). `pnpm smoke` compiles the
@@ -62,7 +70,9 @@ vi.mock(import("three"), async (importOriginal) => ({
 // example of `arcadekit/render-three` may import `three` (PEER_MODULES), whose renderer needs
 // WebGL, which Node hasn't: it runs on a stand-in renderer that draws nothing and keeps the
 // size it is given. An example of `arcadekit/foldkit` may import `foldkit` and `foldkit/message`,
-// for the app a viewport and an engine entry are part of.
+// for the app a viewport and an engine entry are part of. `arcadekit/net/worker` runs on
+// Cloudflare, whose `cloudflare:workers` Node hasn't: its examples run on a stand-in of the
+// `DurableObject` base class.
 
 const packageDir = path.resolve(import.meta.dirname, "..");
 const srcDir = path.join(packageDir, "src");

@@ -1,10 +1,5 @@
 import * as Game from "arcadekit/game";
-import { createMemoryNetwork, hostLockstep, joinLockstep } from "arcadekit/net";
-import type {
-  LockstepOptions,
-  LockstepSession,
-  MemoryNetwork,
-} from "arcadekit/net";
+import { LockstepSession, MemoryNetwork } from "arcadekit/net";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -152,7 +147,7 @@ type Refusals = Game.RefusalsOf<
   readonly [typeof ChooseUpgrade, typeof HoldPause]
 >;
 
-type Session = LockstepSession<
+type Session = LockstepSession.LockstepSession<
   World,
   Game.EventOf<typeof Survivors>,
   Game.CommandOf<typeof Survivors>,
@@ -179,14 +174,17 @@ interface RunOptions {
 }
 
 /** Starts a three-player run: the host and two peers, each on its own network connection. */
-const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
+const startRun = (
+  network: MemoryNetwork.MemoryNetwork,
+  run: RunOptions
+): Peer[] => {
   const config: SurvivorsConfig = {
     content: content(run.xpToLevel2),
     heroIds: HERO_IDS,
   };
   return PLAYERS.map((id, slot) => {
     const { hashes, hash } = recorded();
-    const options: LockstepOptions<
+    const options: LockstepSession.Options<
       SurvivorsConfig,
       World,
       SurvivorsInput,
@@ -197,7 +195,7 @@ const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
       simulation: Survivors,
       config,
       contentHash: "survivors-test-content",
-      transport: network.connect(id),
+      transport: MemoryNetwork.connect(network, id),
       local: script(slot),
       hash,
       inputDelay: 4,
@@ -208,8 +206,14 @@ const startRun = (network: MemoryNetwork, run: RunOptions): Peer[] => {
     };
     const session =
       slot === 0
-        ? hostLockstep({ ...options, peers: ["p1", "p2"], seed: SEED }, 0)
-        : joinLockstep({ ...options, host: "host", players: PLAYERS }, 0);
+        ? LockstepSession.host(
+            { ...options, peers: ["p1", "p2"], seed: SEED },
+            0
+          )
+        : LockstepSession.join(
+            { ...options, host: "host", players: PLAYERS },
+            0
+          );
     return {
       slot,
       session,
@@ -248,13 +252,13 @@ const pick = (peer: Peer) => {
 
 /** Advances the network and ticks each session on its own timer, as arcadekit/net's tests do. */
 const runNetwork = (
-  network: MemoryNetwork,
+  network: MemoryNetwork.MemoryNetwork,
   peers: readonly Peer[],
   fromMs: number,
   toMs: number
 ) => {
   for (let nowMs = fromMs; nowMs <= toMs; nowMs++) {
-    network.advance(nowMs);
+    MemoryNetwork.advance(network, nowMs);
     for (let i = 0; i < peers.length; i++) {
       if (nowMs % (4 + i) === 0) {
         peers[i]!.session.tick(nowMs);
@@ -265,7 +269,7 @@ const runNetwork = (
 };
 
 const lossy = () =>
-  createMemoryNetwork({ seed: 5, latencyMs: 25, jitterMs: 20, loss: 0.1 });
+  MemoryNetwork.make({ seed: 5, latencyMs: 25, jitterMs: 20, loss: 0.1 });
 
 /** The hashes each peer recorded, cut to the steps every one of `peers` has run. */
 const commonHashes = (peers: readonly Peer[]) => {
@@ -428,7 +432,7 @@ describe("survivors in lockstep", () => {
     runNetwork(network, peers, 0, 8000);
     const frozen = peers[0]!.session.state!;
     expect(frozen.heroes[2]!.offer).not.toBeNull();
-    network.cutOff("p2", true);
+    MemoryNetwork.cutOff(network, "p2", true);
     runNetwork(network, peers, 8001, 20_000);
     const [host, p1] = peers;
     expect([host!.session.error, p1!.session.error]).toStrictEqual([

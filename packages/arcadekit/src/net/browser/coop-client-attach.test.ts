@@ -4,10 +4,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AttachError, GameCrashed } from "../../game/browser";
 import type { View as GameView } from "../../game/browser";
 import { ManualFrames } from "../../game/testing/index";
-import type { TestState } from "../testing/index";
-import type { CoopPresented } from "./coop-client";
-import { testCoopClient, testCoopParts, testPresentation } from "./test-client";
-import type { TestCoopClient } from "./test-client";
+import type { TestGame } from "../testing/index";
+import { CoopRooms } from "./index";
+import type { CoopPresented } from "./internal/coop-client";
+import {
+  testCoopClient,
+  testCoopParts,
+  testPresentation,
+} from "./internal/test-client";
+import type { TestCoopClient } from "./internal/test-client";
 
 /**
  * The reasons an exit failed with, each a `Fail`'s error or the reason itself. The frame loop the
@@ -26,17 +31,17 @@ const failures = <A, E>(exit: Exit.Exit<A, E>) =>
 const element = {} as HTMLElement;
 
 const fakeView = (
-  parts: Partial<GameView<TestState>> = {}
-): GameView<TestState> => ({
+  parts: Partial<GameView<TestGame.State>> = {}
+): GameView<TestGame.State> => ({
   render: () => {},
   dispose: () => {},
   ...parts,
 });
 
-const noRooms = {
+const noRooms = CoopRooms.make({
   host: Effect.never,
   join: () => Effect.never,
-};
+});
 
 let scope: Scope.Closeable;
 /** How many inputs are made and not disposed. */
@@ -46,7 +51,7 @@ let presentations: number;
 
 const client = (
   frames: ManualFrames.ManualFrames,
-  view: CoopPresented<TestState, unknown>["view"]
+  view: CoopPresented<TestGame.State, unknown>["view"]
 ): TestCoopClient =>
   Effect.runSync(
     Scope.provide(
@@ -144,7 +149,7 @@ describe("attaching a co-op client", () => {
 
   it("draws no run on each frame until detached, then cancels its frame and releases the input", async () => {
     const frames = ManualFrames.make();
-    const drawn: [TestState | null, number][] = [];
+    const drawn: [TestGame.State | null, number][] = [];
     const coop = client(frames, (_container, { local }) =>
       fakeView({
         render: (state, seconds) => drawn.push([state, seconds + local.slot]),
@@ -192,7 +197,7 @@ describe("attaching a co-op client", () => {
   });
 
   it("releases the input and can attach again when the view's dispose throws", async () => {
-    const views: GameView<TestState>[] = [];
+    const views: GameView<TestGame.State>[] = [];
     const coop = client(ManualFrames.make(), () => {
       const view = fakeView(
         views.length === 0

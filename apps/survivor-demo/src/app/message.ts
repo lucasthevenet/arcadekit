@@ -1,6 +1,6 @@
 import { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import { AudioSettings } from "arcadekit/audio";
-import { LobbyChanged } from "arcadekit/net/browser";
+import { CoopEvent } from "arcadekit/net/browser";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
@@ -48,7 +48,7 @@ export const Message = defineMessageUnion({
   /** The run didn't take the local player's pause, or its letting go: it holds none. */
   FailedToHoldCoopPause: {},
   /** The Co-op client's own event, as it reports it: who is in the lobby, and whether it can start. */
-  GotCoopLobby: { lobby: LobbyChanged },
+  GotCoopLobby: { lobby: CoopEvent.LobbyChanged },
   GotCoopStarted: { slot: Schema.Int, names: Schema.Array(Schema.String) },
   GotCoopWaiting: { waitingFor: Schema.Array(Schema.String) },
   GotCoopLevelUp: {

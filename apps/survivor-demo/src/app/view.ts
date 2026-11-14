@@ -1,7 +1,7 @@
 import type { Hud, RunSummary, UpgradeChoice } from "@arcadekit/survivors";
 import type { AudioSettings } from "arcadekit/audio";
 import { Viewport } from "arcadekit/foldkit";
-import type { LobbyChanged } from "arcadekit/net/browser";
+import type { CoopEvent } from "arcadekit/net/browser";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "./message";
@@ -350,7 +350,7 @@ const coopMenu = (joinCode: string, h: H): Html =>
 const heroName = (model: Model, heroId: string) =>
   model.heroes.find((hero) => hero.id === heroId)?.name ?? "choosing…";
 
-const coopLobby = (model: Model, lobby: LobbyChanged, h: H): Html => {
+const coopLobby = (model: Model, lobby: CoopEvent.LobbyChanged, h: H): Html => {
   const startable = lobby.canStart;
   return panel(h, [
     lobby.role === "host"

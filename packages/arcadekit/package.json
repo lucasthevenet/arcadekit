@@ -41,8 +41,8 @@
     "dist",
     "src",
     "!src/**/*.test.ts",
-    "!src/net/test-harness.ts",
-    "!src/net/browser/test-client.ts"
+    "!src/net/internal/test-harness.ts",
+    "!src/net/browser/internal/test-client.ts"
   ],
   "type": "module",
   "sideEffects": false,
@@ -133,7 +133,7 @@
       "default": "./dist/net/testing.js"
     },
     "./net/signalling": {
-      "source": "./src/net/signalling/protocol.ts",
+      "source": "./src/net/signalling/index.ts",
       "types": "./dist/net/signalling.d.ts",
       "default": "./dist/net/signalling.js"
     },

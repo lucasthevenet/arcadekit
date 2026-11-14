@@ -223,7 +223,7 @@ export default defineConfig({
       files: ["packages/arcadekit/src/**/*.ts"],
       excludeFiles: [
         "**/*.test.ts",
-        "packages/arcadekit/src/net/worker/index.ts",
+        "packages/arcadekit/src/net/worker/signalling-worker.ts",
       ],
       jsPlugins: ["./tools/lint/declaration.ts"],
       rules: { "declaration/builder": "error" },
@@ -243,7 +243,7 @@ export default defineConfig({
       files: ["packages/*/src/**/*.ts"],
       excludeFiles: [
         ...TEST_HELPERS,
-        "packages/arcadekit/src/net/worker/index.ts",
+        "packages/arcadekit/src/net/worker/signalling-worker.ts",
       ],
       rules: {
         "eslint/no-restricted-properties": ["error", ...ownRunnerProperties],
@@ -279,9 +279,9 @@ export default defineConfig({
       files: [
         "packages/arcadekit/src/core/**/*.ts",
         "packages/arcadekit/src/game/**/*.ts",
-        "packages/arcadekit/src/net/lockstep.ts",
-        "packages/arcadekit/src/net/codec.ts",
-        "packages/arcadekit/src/net/player-inputs.ts",
+        "packages/arcadekit/src/net/lockstep-session.ts",
+        "packages/arcadekit/src/net/internal/codec.ts",
+        "packages/arcadekit/src/net/internal/player-inputs.ts",
         "packages/arcadekit/src/net/testing/test-game.ts",
       ],
       excludeFiles: [

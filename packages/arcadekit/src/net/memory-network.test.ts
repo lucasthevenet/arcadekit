@@ -1,36 +1,35 @@
 import { describe, expect, it } from "vitest";
 
-import { createMemoryNetwork } from "./memory-network";
+import { MemoryNetwork } from "./index";
 
-const collect = (
-  network: ReturnType<typeof createMemoryNetwork>,
-  id: string
-) => {
+const collect = (network: MemoryNetwork.MemoryNetwork, id: string) => {
   const received: string[] = [];
-  network.connect(id).listen((_from, message) => received.push(message));
+  MemoryNetwork.connect(network, id).listen((_from, message) =>
+    received.push(message)
+  );
   return received;
 };
 
 const sendThousandLossy = () => {
-  const network = createMemoryNetwork({ seed: 7, loss: 0.25 });
-  const a = network.connect("a");
+  const network = MemoryNetwork.make({ seed: 7, loss: 0.25 });
+  const a = MemoryNetwork.connect(network, "a");
   const received = collect(network, "b");
   for (let i = 0; i < 1000; i++) {
     a.send("b", String(i));
   }
-  network.advance(0);
+  MemoryNetwork.advance(network, 0);
   return received;
 };
 
-describe(createMemoryNetwork, () => {
+describe(MemoryNetwork.make, () => {
   it("delivers a message after its latency, not before", () => {
-    const network = createMemoryNetwork({ seed: 1, latencyMs: 50 });
-    const a = network.connect("a");
+    const network = MemoryNetwork.make({ seed: 1, latencyMs: 50 });
+    const a = MemoryNetwork.connect(network, "a");
     const received = collect(network, "b");
     a.send("b", "hello");
-    network.advance(49);
+    MemoryNetwork.advance(network, 49);
     expect(received).toStrictEqual([]);
-    network.advance(50);
+    MemoryNetwork.advance(network, 50);
     expect(received).toStrictEqual(["hello"]);
   });
 
@@ -42,17 +41,17 @@ describe(createMemoryNetwork, () => {
   });
 
   it("reorders messages with jitter", () => {
-    const network = createMemoryNetwork({
+    const network = MemoryNetwork.make({
       seed: 3,
       latencyMs: 10,
       jitterMs: 40,
     });
-    const a = network.connect("a");
+    const a = MemoryNetwork.connect(network, "a");
     const received = collect(network, "b");
     for (let i = 0; i < 50; i++) {
       a.send("b", String(i));
     }
-    network.advance(100);
+    MemoryNetwork.advance(network, 100);
     expect(received).toHaveLength(50);
     expect(received).not.toStrictEqual(
       received.toSorted((x, y) => Number(x) - Number(y))
@@ -60,20 +59,20 @@ describe(createMemoryNetwork, () => {
   });
 
   it("loses everything to and from a cut-off peer, including messages in flight", () => {
-    const network = createMemoryNetwork({ seed: 1, latencyMs: 10 });
-    const a = network.connect("a");
+    const network = MemoryNetwork.make({ seed: 1, latencyMs: 10 });
+    const a = MemoryNetwork.connect(network, "a");
     const toB = collect(network, "b");
-    const c = network.connect("c");
+    const c = MemoryNetwork.connect(network, "c");
     const toD = collect(network, "d");
     a.send("b", "in flight");
-    network.cutOff("b", true);
+    MemoryNetwork.cutOff(network, "b", true);
     a.send("b", "while cut");
-    network.advance(20);
+    MemoryNetwork.advance(network, 20);
     expect(toB).toStrictEqual([]);
-    network.cutOff("b", false);
+    MemoryNetwork.cutOff(network, "b", false);
     a.send("b", "after");
     c.send("d", "others unaffected");
-    network.advance(40);
+    MemoryNetwork.advance(network, 40);
     expect(toB).toStrictEqual(["after"]);
     expect(toD).toStrictEqual(["others unaffected"]);
   });

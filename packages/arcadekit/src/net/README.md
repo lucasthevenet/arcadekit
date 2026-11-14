@@ -1,8 +1,10 @@
 # arcadekit/net
 
-Lockstep multiplayer for 2 to 4 players. `hostLockstep` and `joinLockstep` run one `Game.Simulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. A session is a host of the declared simulation, as `Game.Engine` is: it steps it through a `Game.Loop`, takes from its `Game.PlayerInputs` step input ([`arcadekit/game`](../game/README.md#several-players)) what one player sends and how the players' inputs make a step's, and carries a player's [commands](#commands) to every peer's rules at one step. In an Effect program, `hostLockstepScoped` and `joinLockstepScoped` make the same session, owned by a scope and run on Effect's `Clock` until it fails with its `LockstepError`. A session talks through a `Transport`: `createMemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `arcadekit/net/browser` has the WebRTC one (`hostRoom` / `joinRoom`, the scoped signalling client that turns a join code into peer links, and `linksTransport`), and `arcadekit/net/signalling` the protocol a signalling server speaks, each message an Effect Schema with bounded fields. [`arcadekit/net/worker`](worker/README.md) is that server for Cloudflare, with a README of its own. For a whole co-op game, a `Coop` declaration in `arcadekit/net/browser` runs all of this for one player from the game's engine, and `arcadekit/net/testing` has its test helpers: see [Co-op](#co-op).
+Lockstep multiplayer for 2 to 4 players. `LockstepSession.host` and `LockstepSession.join` run one `Game.Simulation` on every peer: each step runs once the host has confirmed every player's input for it, peers compare state hashes, and the host removes a player who stalls the run. A session is a host of the declared simulation, as `Game.Engine` is: it steps it through a `Game.Loop`, takes from its `Game.PlayerInputs` step input ([`arcadekit/game`](../game/README.md#several-players)) what one player sends and how the players' inputs make a step's, and carries a player's [commands](#commands) to every peer's rules at one step. In an Effect program, `ScopedLockstepSession.host` and `ScopedLockstepSession.join` make the same session, owned by a scope and run on Effect's `Clock` until it fails with its `LockstepError`. A session talks through a `Transport`: a `MemoryNetwork` is the in-memory one for tests, with seeded latency, jitter and loss. `arcadekit/net/browser` has the WebRTC one (`SignallingRoom.host` / `SignallingRoom.join`, the scoped signalling client that turns a join code into peer links, and `RtcTransport.fromLinks`), and `arcadekit/net/signalling` the protocol a signalling server speaks, each message an Effect Schema with bounded fields. [`arcadekit/net/worker`](worker/README.md) is that server for Cloudflare, with a README of its own. For a whole co-op game, a `Coop` declaration in `arcadekit/net/browser` runs all of this for one player from the game's engine, and `arcadekit/net/testing` has its test helpers: see [Co-op](#co-op).
 
-An entry of the [`arcadekit`](../../README.md) package. The root entry is DOM-free.
+An entry of the [`arcadekit`](../../README.md) package. The root entry is DOM-free. Each entry's modules are namespaces, as Effect's are (`import { LockstepSession, MemoryNetwork } from "arcadekit/net"`), and `Coop` is a builder a game writes bare.
+
+Plain where a tick runs, on purpose ([ADR-0024](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0024-the-kit-is-written-as-effect-modules.md)): a tick decides each step's input and runs the steps, so it gives the same bits on every peer and finishes in the call that ticks it, and its time comes in as an argument. What has a lifecycle is Effect: a scoped session, a room and its links, a Co-op client's seats and attaches.
 
 ## Install
 
@@ -18,7 +20,7 @@ Two peers on the in-memory network play one run. Each player's input is a number
 
 ```ts
 import * as Game from "arcadekit/game";
-import { createMemoryNetwork, hostLockstep, joinLockstep } from "arcadekit/net";
+import { LockstepSession, MemoryNetwork } from "arcadekit/net";
 import { Schema } from "effect";
 
 // The step input is every player's number, by slot: a session sends each player's own.
@@ -32,7 +34,7 @@ class Sum extends Game.Simulation("Sum", {
   },
 }) {}
 
-const network = createMemoryNetwork({ seed: 1, latencyMs: 30, jitterMs: 10 });
+const network = MemoryNetwork.make({ seed: 1, latencyMs: 30, jitterMs: 10 });
 const shared = {
   simulation: Sum,
   config: null,
@@ -42,20 +44,20 @@ const shared = {
   hashEvery: 30,
 };
 
-const host = hostLockstep(
+const host = LockstepSession.host(
   {
     ...shared,
-    transport: network.connect("host"),
+    transport: MemoryNetwork.connect(network, "host"),
     local: { read: () => 1 },
     peers: ["guest"],
     seed: 7,
   },
   0
 );
-const guest = joinLockstep(
+const guest = LockstepSession.join(
   {
     ...shared,
-    transport: network.connect("guest"),
+    transport: MemoryNetwork.connect(network, "guest"),
     local: { read: () => 2 },
     host: "host",
     // The run's player order, host first: the host, then its `peers`.
@@ -66,7 +68,7 @@ const guest = joinLockstep(
 
 // Tick both sessions from a timer; here, 10 simulated seconds.
 for (let now = 0; now < 10_000; now += 4) {
-  network.advance(now);
+  MemoryNetwork.advance(network, now);
   host.tick(now);
   guest.tick(now);
 }
@@ -82,7 +84,7 @@ The simulation declares its step input with `Game.PlayerInputs(OnePlayersInput)`
 - **A player with nothing to read** has null for its input: a `local` source may return null for a step, as the Co-op client's does while nothing is attached. Its payload is `[null]`, and every peer's rules see null at that player's slot.
 - **A step's input** is made from the step the host confirmed: each player's input goes to `players[slot]`, and each player removed at that step is in `leaving`, in ascending order. The player order is the run's, host first, as the lobby agreed it: the host, then the `peers` the host passes, which is the list a guest passes as `players`. A player's slot is its index there for the whole run, whoever leaves. It is not `session.players`, which lists who is still in the run: the host's start message says only that, so a guest that first hears it after a player was removed still needs the whole order. So the run's config lists what each player plays in the same order. One object is refilled each step, so combining allocates nothing.
 - **A payload that doesn't decode** is handled where it arrives, never in a step: an input that is no input, a command the simulation doesn't declare, more commands than a step carries, or anything that is not a list. The host removes a peer whose payload fails (its session stops with a `removed` error whose `why` is `badInput`), and a peer that can't decode a step from the host stops with a `badInput` error. So does a host whose own input doesn't survive the wire, such as a NaN, which JSON carries as null. A message that isn't one the protocol knows is dropped. A run holds at most 16 players.
-- **A simulation whose step input is not a `Game.PlayerInputs`** has nothing to send for one player. `hostLockstep` and `joinLockstep` refuse it, a struct with `players` and `leaving` written by hand included: they throw, with nothing left listening. Before that it is a type error on `simulation` that names `Game.PlayerInputs`, when the call infers its types from the simulation. Options typed ahead with the step input's type named get the throw alone. A [`Coop`](#co-op) refuses such an engine the same two ways, when it is declared.
+- **A simulation whose step input is not a `Game.PlayerInputs`** has nothing to send for one player. `LockstepSession.host` and `LockstepSession.join` refuse it, a struct with `players` and `leaving` written by hand included: they throw, with nothing left listening. Before that it is a type error on `simulation` that names `Game.PlayerInputs`, when the call infers its types from the simulation. Options typed ahead with the step input's type named get the throw alone. A [`Coop`](#co-op) refuses such an engine the same two ways, when it is declared.
 
 ## Commands
 
@@ -99,7 +101,7 @@ What a player decides outside what its devices hold, such as an upgrade to pick 
 
 ```ts
 import * as Game from "arcadekit/game";
-import { createMemoryNetwork, hostLockstep, joinLockstep } from "arcadekit/net";
+import { LockstepSession, MemoryNetwork } from "arcadekit/net";
 import { Schema } from "effect";
 
 // The jar has room for `room` more coins: fewer than the deposit.
@@ -127,7 +129,7 @@ class Jar extends Game.Simulation("Jar", {
   },
 }) {}
 
-const network = createMemoryNetwork({ seed: 1, latencyMs: 30, jitterMs: 10 });
+const network = MemoryNetwork.make({ seed: 1, latencyMs: 30, jitterMs: 10 });
 const shared = {
   simulation: Jar,
   config: null,
@@ -137,14 +139,19 @@ const shared = {
   inputDelay: 3,
   hashEvery: 30,
 };
-const host = hostLockstep(
-  { ...shared, transport: network.connect("host"), peers: ["guest"], seed: 7 },
-  0
-);
-const guest = joinLockstep(
+const host = LockstepSession.host(
   {
     ...shared,
-    transport: network.connect("guest"),
+    transport: MemoryNetwork.connect(network, "host"),
+    peers: ["guest"],
+    seed: 7,
+  },
+  0
+);
+const guest = LockstepSession.join(
+  {
+    ...shared,
+    transport: MemoryNetwork.connect(network, "guest"),
     host: "host",
     players: ["host", "guest"],
   },
@@ -163,7 +170,7 @@ guest.send(new Deposit({ amount: 7 }), (outcome) => {
 });
 
 for (let now = 0; now < 1000; now += 4) {
-  network.advance(now);
+  MemoryNetwork.advance(network, now);
   host.tick(now);
   guest.tick(now);
 }
@@ -175,13 +182,13 @@ console.log(host.state?.coins, guest.state?.coins); // 7 7
 `session.subscribe(listener)` hears what the run reports, its events and its samples, as `Game.Loop`'s `subscribe` does, and returns a function that stops it.
 
 - **A session reports from its ticks, and from nowhere else.** A listener is called inside a tick, with what that tick's steps reported.
-- **A listener in place before the first tick hears the run from its start**: what the simulation's `create` reports, then the first sample. A guest's run starts in a tick, the one that has the host's start message. A host's has started by the time `hostLockstep` returns, with its state there to draw, and nothing can have subscribed by then: the session keeps what that start reported and tells it at its first tick, before the tick does anything else. So a host's listener and a guest's hear one run alike.
+- **A listener in place before the first tick hears the run from its start**: what the simulation's `create` reports, then the first sample. A guest's run starts in a tick, the one that has the host's start message. A host's has started by the time `LockstepSession.host` returns, with its state there to draw, and nothing can have subscribed by then: the session keeps what that start reported and tells it at its first tick, before the tick does anything else. So a host's listener and a guest's hear one run alike.
 - **Nothing is told twice.** A listener that comes after the first tick hears what comes after it.
 - **A listener hears a tick before a sender does.** What a tick's steps reported is told inside the tick, a step's events and then a sample if one is due, and the senders whose commands those steps answered are told once the tick's work is over ([Commands](#commands)).
 
 ```ts
 import * as Game from "arcadekit/game";
-import { createMemoryNetwork, hostLockstep } from "arcadekit/net";
+import { LockstepSession, MemoryNetwork } from "arcadekit/net";
 import { Schema } from "effect";
 
 class RaceBegan extends Game.Event("RaceBegan", { laps: Schema.Int }) {}
@@ -207,13 +214,13 @@ class Race extends Game.Simulation("Race", {
   },
 }) {}
 
-const network = createMemoryNetwork({ seed: 1 });
-const host = hostLockstep(
+const network = MemoryNetwork.make({ seed: 1 });
+const host = LockstepSession.host(
   {
     simulation: Race,
     config: { laps: 3 },
     contentHash: "content-v1",
-    transport: network.connect("host"),
+    transport: MemoryNetwork.connect(network, "host"),
     local: { read: () => 1 },
     hash: (state) => state.metres,
     inputDelay: 3,
@@ -237,19 +244,15 @@ host.tick(4); // 3 laps, then 0 m
 
 ## In an Effect program
 
-`hostLockstepScoped(options)` and `joinLockstepScoped(options)` take the same options and return `Effect<ScopedLockstepSession, never, Scope>`. Closing the scope stops the session listening to its transport, and so does starting when it throws (the Effect dies with what was thrown). The session's time is Effect's `Clock` (its monotonic time; a `TestClock` in tests): the start and every tick read it.
+`ScopedLockstepSession.host(options)` and `ScopedLockstepSession.join(options)` take the same options and return `Effect<ScopedLockstepSession.ScopedLockstepSession, never, Scope>`. Closing the scope stops the session listening to its transport, and so does starting when it throws (the Effect dies with what was thrown). The session's time is Effect's `Clock` (its monotonic time; a `TestClock` in tests): the start and every tick read it.
 
-`session.run(ticker?)` ticks the session until it stops, then fails with its `LockstepError`; interrupting it stops the ticking. After a desync it fails a second after the stop, which `status` and `error` show at once: until then its ticks resend the desync, which the transport may lose, so that every peer stops with it. Run it in the session's scope: a run still going once that closes dies on its next tick. Without a ticker it ticks every 4 ms of the Clock, for tests and servers. A `Ticker` is `(onTick) => stop`: a timer, a dedicated worker's timer (a hidden tab throttles the main thread's to about once a second, which stalls the others), animation frames, or all of those. `onTick` ticks the session before it returns, so the ticker can read the session right after, or tick before drawing, and no Effect runs per tick: the run ends once the `onTick` it stops in has returned, so the rest of that tick runs before the program's handlers and finalizers. `session.listen(onEvent)` hears the run's events and samples until its scope closes, each call on its own, even with the same `onEvent`: it is the plain session's `subscribe`, so listen before `run`, whose first tick tells what the run's start reported, to hear the run [from its start](#listening-to-a-run). `session.send(command)` is the plain session's `send` as an Effect, in the shape of an engine's: it succeeds when this peer's rules took the command, fails with the rejection they refused it with, and fails with `CommandDropped` when they gave no answer, which closing the session's scope makes sure of. It completes after the tick of the command's step, when a `listen` callback has heard what that tick reported, and interrupting it takes the command back while it has no step yet. Its `status`, `error`, `waitingFor`, `players`, `state` and `stepIndex` are plain reads, as on the plain session.
+`session.run(ticker?)` ticks the session until it stops, then fails with its `LockstepError`; interrupting it stops the ticking. After a desync it fails a second after the stop, which `status` and `error` show at once: until then its ticks resend the desync, which the transport may lose, so that every peer stops with it. Run it in the session's scope: a run still going once that closes dies on its next tick. Without a ticker it ticks every 4 ms of the Clock, for tests and servers. A `Ticker.Ticker` is `(onTick) => stop`: a timer, a dedicated worker's timer (a hidden tab throttles the main thread's to about once a second, which stalls the others), animation frames, or all of those. `onTick` ticks the session before it returns, so the ticker can read the session right after, or tick before drawing, and no Effect runs per tick: the run ends once the `onTick` it stops in has returned, so the rest of that tick runs before the program's handlers and finalizers. `session.listen(onEvent)` hears the run's events and samples until its scope closes, each call on its own, even with the same `onEvent`: it is the plain session's `subscribe`, so listen before `run`, whose first tick tells what the run's start reported, to hear the run [from its start](#listening-to-a-run). `session.send(command)` is the plain session's `send` as an Effect, in the shape of an engine's: it succeeds when this peer's rules took the command, fails with the rejection they refused it with, and fails with `CommandDropped` when they gave no answer, which closing the session's scope makes sure of. It completes after the tick of the command's step, when a `listen` callback has heard what that tick reported, and interrupting it takes the command back while it has no step yet. Its `status`, `error`, `waitingFor`, `players`, `state` and `stepIndex` are plain reads, as on the plain session.
 
 The example's two peers again, as one Effect program:
 
 ```ts
 import * as Game from "arcadekit/game";
-import {
-  createMemoryNetwork,
-  hostLockstepScoped,
-  joinLockstepScoped,
-} from "arcadekit/net";
+import { MemoryNetwork, ScopedLockstepSession } from "arcadekit/net";
 import type { Ticker } from "arcadekit/net";
 import { Effect, Schema } from "effect";
 
@@ -263,7 +266,7 @@ class Sum extends Game.Simulation("Sum", {
   },
 }) {}
 
-const network = createMemoryNetwork({ seed: 1, latencyMs: 30, jitterMs: 10 });
+const network = MemoryNetwork.make({ seed: 1, latencyMs: 30, jitterMs: 10 });
 const shared = {
   simulation: Sum,
   config: null,
@@ -275,25 +278,25 @@ const shared = {
 
 // A main-thread timer; in the browser, time it in a dedicated worker. The in-memory network
 // delivers what is due when advanced; a WebRTC transport needs nothing of the kind.
-const every4ms: Ticker = (onTick) => {
+const every4ms: Ticker.Ticker = (onTick) => {
   const timer = setInterval(() => {
-    network.advance(performance.now());
+    MemoryNetwork.advance(network, performance.now());
     onTick();
   }, 4);
   return () => clearInterval(timer);
 };
 
 const play = Effect.gen(function* () {
-  const host = yield* hostLockstepScoped({
+  const host = yield* ScopedLockstepSession.host({
     ...shared,
-    transport: network.connect("host"),
+    transport: MemoryNetwork.connect(network, "host"),
     local: { read: () => 1 },
     peers: ["guest"],
     seed: 7,
   });
-  const guest = yield* joinLockstepScoped({
+  const guest = yield* ScopedLockstepSession.join({
     ...shared,
-    transport: network.connect("guest"),
+    transport: MemoryNetwork.connect(network, "guest"),
     local: { read: () => 2 },
     host: "host",
     players: ["host", "guest"],
@@ -314,22 +317,18 @@ The plain session is the protocol, and the scoped one a shell around it. Test th
 
 ## In the browser
 
-`hostRoom` and `joinRoom` connect peers by join code through a signalling server, and `linksTransport` carries the session over the WebRTC links they open. Each is a scoped Effect that succeeds once the server welcomes the peer, with its join `code` and its own id (`self`). Its scope owns the socket until the start and every peer link after it, so closing the scope is leaving, and a room that fails has already closed what it opened.
+`SignallingRoom.host` and `SignallingRoom.join` connect peers by join code through a signalling server, and `RtcTransport.fromLinks` carries the session over the WebRTC links they open. Each is a scoped Effect that succeeds once the server welcomes the peer, with its join `code` and its own id (`self`). Its scope owns the socket until the start and every peer link after it, so closing the scope is leaving, and a room that fails has already closed what it opened.
 
-- `room.events` is a `Stream` of who joins, links and leaves. It ends with `started`. A room that fails before the start fails the stream, or the acquire, with a `RoomError` whose `reason` says why: `no-welcome` when the server doesn't answer in time, `bad-server-message` when it speaks another version of the protocol, and so on. Events wait until they are read, and leaving interrupts a reader that is still reading.
-- `room.start` asks the server to start the run (host only). At the start, `linksTransport(room.self, room.links())` is the session's `Transport`.
-- A `PeerLink` has two channels: `lockstep`, unordered and unreliable, for the session, and `messages`, reliable and ordered, for what the app says around a run. Its `closed` succeeds once either channel closes, the connection fails or the link's scope closes.
-- `browserRoomLayer(rtc)` provides what a room needs: WebRTC links (`PeerConnector`, from `rtcPeerConnector`) and the global WebSocket (`Socket.WebSocketConstructor` from `effect/socket`). Tests provide fakes of both.
+- `room.events` is a `Stream` of who joins, links and leaves. It ends with `started`. A room that fails before the start fails the stream, or the acquire, with a `SignallingRoom.RoomError` whose `reason` says why: `no-welcome` when the server doesn't answer in time, `bad-server-message` when it speaks another version of the protocol, and so on. Events wait until they are read, and leaving interrupts a reader that is still reading.
+- `room.start` asks the server to start the run (host only). At the start, `RtcTransport.fromLinks(room.self, room.links())` is the session's `Transport`.
+- A `PeerLink.PeerLink` has two channels: `lockstep`, unordered and unreliable, for the session, and `messages`, reliable and ordered, for what the app says around a run. Its `closed` succeeds once either channel closes, the connection fails or the link's scope closes.
+- `SignallingRoom.layer(rtc)` provides what a room needs: WebRTC links (`PeerConnector`, from `RtcPeerConnector`) and the global WebSocket (`Socket.WebSocketConstructor` from `effect/socket`). Tests provide fakes of both.
 
 ```ts
 import * as Game from "arcadekit/game";
-import { hostLockstepScoped } from "arcadekit/net";
+import { ScopedLockstepSession } from "arcadekit/net";
 import type { Ticker } from "arcadekit/net";
-import {
-  browserRoomLayer,
-  hostRoom,
-  linksTransport,
-} from "arcadekit/net/browser";
+import { RtcTransport, SignallingRoom } from "arcadekit/net/browser";
 import { Effect, Schema, Stream } from "effect";
 
 class Sum extends Game.Simulation("Sum", {
@@ -343,27 +342,27 @@ class Sum extends Game.Simulation("Sum", {
 }) {}
 
 // Time it in a dedicated worker in a real game: a hidden tab throttles the main thread's timers.
-const every4ms: Ticker = (onTick) => {
+const every4ms: Ticker.Ticker = (onTick) => {
   const timer = setInterval(onTick, 4);
   return () => clearInterval(timer);
 };
 
 const host = Effect.gen(function* () {
   // Succeeds once the signalling server welcomes this peer. The scope owns the room and its links.
-  const room = yield* hostRoom({ url: "wss://game.example.com" });
+  const room = yield* SignallingRoom.host({ url: "wss://game.example.com" });
   console.log(`Join code: ${room.code}`);
   // Start once a guest's link is open. The events end with `started`.
   yield* Stream.runForEach(room.events, (event) =>
     event.type === "peer-connected" ? room.start : Effect.void
   );
-  const session = yield* hostLockstepScoped({
+  const session = yield* ScopedLockstepSession.host({
     simulation: Sum,
     config: null,
     contentHash: "content-v1",
     hash: (state) => state.total,
     inputDelay: 3,
     hashEvery: 30,
-    transport: linksTransport(room.self, room.links()),
+    transport: RtcTransport.fromLinks(room.self, room.links()),
     local: { read: () => 1 },
     peers: room.links().map((link) => link.peer),
     seed: 7,
@@ -373,7 +372,7 @@ const host = Effect.gen(function* () {
   Effect.catchTag("RoomError", (error) => Effect.logError(error.message)),
   Effect.catchTag("LockstepError", (error) => Effect.logError(error.message)),
   Effect.scoped,
-  Effect.provide(browserRoomLayer())
+  Effect.provide(SignallingRoom.layer())
 );
 
 Effect.runFork(host);
@@ -385,7 +384,7 @@ A game for several players, each in their own browser, is declared with **`Coop`
 
 ```ts
 import * as Game from "arcadekit/game/browser";
-import { Coop, browserCoopRoomsLayer } from "arcadekit/net/browser";
+import { Coop, CoopRooms } from "arcadekit/net/browser";
 import { Effect, Schema } from "effect";
 
 interface Palette {
@@ -519,7 +518,7 @@ const play = Effect.gen(function* () {
   Effect.provide(SumCoop.layer),
   // The app's rooms: the signalling worker and its STUN servers.
   Effect.provide(
-    browserCoopRoomsLayer(() => ({
+    CoopRooms.layer(() => ({
       url: "wss://signalling.example.com",
       iceServers: [{ urls: "stun:stun.example.com:3478" }],
     }))
@@ -541,8 +540,8 @@ A `Coop` refuses what can't work when it is declared: an engine whose simulation
 
 `SumCoop.layer` provides the client. It needs what the engine uses, what `content` needs, and the app's rooms:
 
-- **`CoopRooms`** is the service a lobby is opened through. `browserCoopRoomsLayer(() => ({ url, iceServers }))` provides the browser's, over the signalling worker and WebRTC; the kit reads no environment, so the app says the worker's URL and its STUN servers, in a function the layer calls when it is built. `fakeCoopRooms().layer` provides a test's.
-- **`CoopTicker`** is what ticks a run: a reference, whose default is a timer in a dedicated worker, made and stopped with each run. A test provides `manualTicker().layer`.
+- **`CoopRooms.CoopRooms`** is the service a lobby is opened through. `CoopRooms.layer(() => ({ url, iceServers }))` provides the browser's, over the signalling worker and WebRTC; the kit reads no environment, so the app says the worker's URL and its STUN servers, in a function the layer calls when it is built. `FakeCoopRooms.layer(hub)` provides a test's.
+- **`CoopTicker.CoopTicker`** is what ticks a run: a reference, whose default is a timer in a dedicated worker, made and stopped with each run. A test provides `ManualTicker.layer(timer)`.
 - **`Game.Frames`** is the frame clock while attached, as for an engine.
 
 The client's commands return at once, except `leave`, which returns once the seat has closed. One stream of events says what happened:
@@ -558,25 +557,18 @@ What every peer of a run must agree on is on the class as plain values and funct
 
 ### Testing a Co-op game
 
-`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `fakeCoopRooms()` is a signalling worker and WebRTC in memory (with `drop(peer)` and `closeHost()` to cut links) and `manualTicker()` a ticker the test drives, each with the `layer` a `Coop`'s layer takes. `onFakeTimers(effect)` has an Effect run on the timers a test fakes ([below](#on-fake-timers)). Frames come from `ManualFrames.make()` in [`arcadekit/game/testing`](../game/README.md#testing-an-engine), provided as `Game.Frames`. It also has a small game to run: `TestGame`, a declared simulation with lobby picks, an offer each player answers with a command the rules may refuse (`AnswerOffer`, `NothingOwed`), a pause a player holds with another (`HoldPause`) and an end (`RunEnded`), with its content (`testContent`) and its state hash (`hashTestState`). Content with `offerAtStart: true` starts the run on an offer that its `create` reports: a start that reports, for a test of what a seat hears first. It has no Co-op client of its own: a test makes one as an app does, from a `Coop`'s `layer`, its own game's or one declared over `TestGame`.
+`arcadekit/net/testing` runs a Co-op client in Node, with no browser: `FakeCoopRooms.make()` is a signalling worker and WebRTC in memory (with `FakeCoopRooms.drop(hub, peer)` and `FakeCoopRooms.closeHost(hub)` to cut links) and `ManualTicker.make()` a ticker the test drives (`ManualTicker.tick(timer)`), each with a `layer` a `Coop`'s layer takes. `PageTimers.layer` has an Effect run on the timers a test fakes ([below](#on-fake-timers)). Frames come from `ManualFrames.make()` in [`arcadekit/game/testing`](../game/README.md#testing-an-engine), provided as `Game.Frames`. It also has a small game to run: `TestGame.TestGame`, a declared simulation with lobby picks, an offer each player answers with a command the rules may refuse (`TestGame.AnswerOffer`, `TestGame.NothingOwed`), a pause a player holds with another (`TestGame.HoldPause`) and an end (`TestGame.RunEnded`), with its content (`TestGame.content`) and its state hash (`TestGame.hash`). Content with `offerAtStart: true` starts the run on an offer that its `create` reports: a start that reports, for a test of what a seat hears first. It has no Co-op client of its own: a test makes one as an app does, from a `Coop`'s `layer`, its own game's or one declared over `TestGame.TestGame`.
 
 ```ts
 import * as Game from "arcadekit/game/browser";
 import { ManualFrames } from "arcadekit/game/testing";
 import { Coop } from "arcadekit/net/browser";
-import {
-  RunEnded,
-  TestGame,
-  fakeCoopRooms,
-  hashTestState,
-  manualTicker,
-  testContent,
-} from "arcadekit/net/testing";
+import { FakeCoopRooms, ManualTicker, TestGame } from "arcadekit/net/testing";
 import { Context, Effect, Layer } from "effect";
 
 // A Coop to test: the kit's test game, drawn nowhere.
 class TestEngine extends Game.Engine("TestEngine", {
-  simulation: TestGame,
+  simulation: TestGame.TestGame,
   view: () => ({ render: () => {}, dispose: () => {} }),
   input: () => ({
     read: () => ({ players: [{ add: 1 }], leaving: [] }),
@@ -587,21 +579,21 @@ class TestEngine extends Game.Engine("TestEngine", {
 class TestCoop extends Coop("TestCoop", {
   engine: TestEngine,
   input: () => ({ read: () => ({ add: 1 }), dispose: () => {} }),
-  content: Effect.succeed(testContent),
+  content: Effect.succeed(TestGame.content),
   picks: (content) => content.picks,
   config: (content, picks) => ({ content, picks }),
-  hash: hashTestState,
-  ends: [RunEnded],
+  hash: TestGame.hash,
+  ends: [TestGame.RunEnded],
 }) {}
 
-const hub = fakeCoopRooms();
-const timer = manualTicker();
+const hub = FakeCoopRooms.make();
+const timer = ManualTicker.make();
 
 // One player's client: the Coop's layer over the fake rooms, the manual ticker and manual frames.
 const player = Layer.build(
   TestCoop.layer.pipe(
-    Layer.provide(hub.layer),
-    Layer.provide(timer.layer),
+    Layer.provide(FakeCoopRooms.layer(hub)),
+    Layer.provide(ManualTicker.layer(timer)),
     Layer.provide(Layer.succeed(Game.Frames, ManualFrames.make()))
   )
 ).pipe(Effect.map((context) => Context.get(context, TestCoop)));
@@ -620,7 +612,7 @@ const twoPlayers = Effect.gen(function* () {
   // A tick runs the steps the Clock says are due, so let time pass between ticks.
   for (let tick = 0; tick < 50; tick++) {
     yield* Effect.sleep("4 millis");
-    timer.tick();
+    ManualTicker.tick(timer);
   }
   // About 12 steps in those 200 ms, and both players' lobby picks: [ 'red', 'green' ].
   console.log(host.debug().stepIndex, guest.debug().state?.picks);
@@ -631,12 +623,12 @@ Effect.runFork(twoPlayers);
 
 #### On fake timers
 
-The example above waits on real time. A test on fake timers runs each of its Effects through `onFakeTimers(effect)`, so that advancing the timers moves a run's ticker and its clock together.
+The example above waits on real time. A test on fake timers provides `PageTimers.layer` to each of its Effects, so that advancing the timers moves a run's ticker and its clock together.
 
-In Node, Effect reads its time from `process.hrtime` and runs its fibers on `setImmediate`, and a test's fake timers reach neither: a run's clock would stand still while its ticker's faked timer ran on, and a fiber would go on at a real moment the test doesn't await. `onFakeTimers` gives the Effect a `Clock` on the page's timers (`performance.now()` for the time a run steps by, `setTimeout` for a sleep) and a scheduler that runs its fibers on microtasks, as Foldkit's does in the browser. Nothing else of the Effect changes: what it gives, fails with and needs.
+In Node, Effect reads its time from `process.hrtime` and runs its fibers on `setImmediate`, and a test's fake timers reach neither: a run's clock would stand still while its ticker's faked timer ran on, and a fiber would go on at a real moment the test doesn't await. `PageTimers.layer` gives the Effect a `Clock` on the page's timers (`performance.now()` for the time a run steps by, `setTimeout` for a sleep) and a scheduler that runs its fibers on microtasks, as Foldkit's does in the browser. Nothing else of the Effect changes: what it gives, fails with and needs.
 
 ```ts
-import { onFakeTimers } from "arcadekit/net/testing";
+import { PageTimers } from "arcadekit/net/testing";
 import { Effect, Scope } from "effect";
 
 // The test's scope, which owns its clients. A test file makes it in `beforeEach`, after faking
@@ -650,9 +642,11 @@ const scope = Effect.runSync(Scope.make());
 export const run = <A, E>(
   effect: Effect.Effect<A, E, Scope.Scope>
 ): Promise<A> =>
-  Effect.runPromise(effect.pipe(Scope.provide(scope), onFakeTimers));
+  Effect.runPromise(
+    effect.pipe(Scope.provide(scope), Effect.provide(PageTimers.layer))
+  );
 
-// With `player` as above, built without `timer.layer`, a run ticks on the default ticker: in
+// With `player` as above, built without `ManualTicker.layer(timer)`, a run ticks on the default ticker: in
 // Node, the faked `setInterval`. A test then reads:
 //   const host = await run(player);
 //   const guest = await run(player);
@@ -666,6 +660,6 @@ export const run = <A, E>(
 
 - **Wrap every Effect the test runs or forks**, the one that builds the client's layer first: a client takes its Clock and its scheduler from the Effect that made it, and what it forks later runs on them.
 - **It fakes nothing itself**, and imports no test runner: it reads the globals as they are when the Effect runs. Fake `performance` and `setTimeout`, and `setInterval` with `clearInterval` for a run on the default ticker, which ticks on the page's timer where no worker starts, as in Node. Leave `queueMicrotask` real.
-- **With `manualTicker()`** the test ticks, and the faked time is still the run's: move the time, then tick.
+- **With `ManualTicker`** the test ticks, and the faked time is still the run's: move the time, then tick.
 
 See [ADR-0012](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0012-delay-based-lockstep-over-a-host-star.md) (delay-based lockstep over a host star), [ADR-0019](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0019-the-kit-owns-co-op-and-the-app-keeps-the-screens.md) (the kit owns co-op from the signalling worker to the client; the screens stay in the app), [ADR-0021](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0021-co-op-is-declared-from-the-games-engine.md) (co-op is declared from the game's engine, and heard through one `match`), [ADR-0022](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0022-a-lockstep-session-reports-only-from-its-ticks.md) (a session reports only from its ticks, and tells a host's start at the first) and [ADR-0011](https://github.com/lucasthevenet/arcadekit/blob/main/docs/adr/0011-a-step-uses-only-exact-math.md) (a step uses only exact math, so every browser computes the same run).

@@ -2,7 +2,7 @@ import { AudioSystem } from "arcadekit/audio";
 import * as Game from "arcadekit/game";
 import { Frames } from "arcadekit/game/browser";
 import { ManualFrames } from "arcadekit/game/testing";
-import { fakeCoopRooms } from "arcadekit/net/testing";
+import { FakeCoopRooms } from "arcadekit/net/testing";
 import { SpriteSheet } from "arcadekit/render-three";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -207,7 +207,7 @@ describe("survivors' Coop", () => {
       message: "no sheet",
     });
     const layer = SurvivorsCoop.layer.pipe(
-      Layer.provide(fakeCoopRooms().layer),
+      Layer.provide(FakeCoopRooms.layer(FakeCoopRooms.make())),
       Layer.provide(Layer.succeed(Frames, ManualFrames.make())),
       Layer.provide(AudioSystem.layerSilent),
       // The attach fails before a view is made, so nothing plays from the table.

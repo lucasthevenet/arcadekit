@@ -1,4 +1,4 @@
-import { signallingRoom, signallingWorker } from "arcadekit/net/worker";
+import { SignallingWorker } from "arcadekit/net/worker";
 
 /**
  * The survivors demo's Worker (#25, ADR-0012): it serves the site's files and is co-op's
@@ -8,6 +8,6 @@ import { signallingRoom, signallingWorker } from "arcadekit/net/worker";
  */
 
 /** One join code's room, of up to 4 players (the kit's default room size). */
-export class SignallingRoom extends signallingRoom() {}
+export class SignallingRoom extends SignallingWorker.room() {}
 
-export default signallingWorker({ rooms: "ROOMS", assets: "ASSETS" });
+export default SignallingWorker.make({ rooms: "ROOMS", assets: "ASSETS" });

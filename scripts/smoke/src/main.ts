@@ -6,9 +6,8 @@ import { Asset, Content, ContentSource } from "arcadekit/content";
 import type { EngineEntry } from "arcadekit/foldkit";
 import * as Game from "arcadekit/game/browser";
 import { InputController } from "arcadekit/input";
-import { createMemoryNetwork, hostLockstep } from "arcadekit/net";
-import type { LockstepSession } from "arcadekit/net";
-import type { RoomOptions } from "arcadekit/net/browser";
+import { LockstepSession, MemoryNetwork } from "arcadekit/net";
+import type { SignallingRoom } from "arcadekit/net/browser";
 import {
   InstancedSprites,
   PixelCamera,
@@ -148,18 +147,18 @@ const program = Effect.gen(function* () {
 });
 
 // Lockstep over the in-memory network: one player, a few steps, and a command the rules answer.
-const network = createMemoryNetwork({ seed: 1 });
-const session: LockstepSession<
+const network = MemoryNetwork.make({ seed: 1 });
+const session: LockstepSession.LockstepSession<
   Field,
   Game.EventOf<typeof DotsTogether>,
   Game.CommandOf<typeof DotsTogether>,
   Game.RefusalsOf<readonly [typeof Nudge]>
-> = hostLockstep(
+> = LockstepSession.host(
   {
     simulation: DotsTogether,
     config: { dots: 8, speed: 4 },
     contentHash: "smoke",
-    transport: network.connect("host"),
+    transport: MemoryNetwork.connect(network, "host"),
     local: { read: () => ({ moveX: 0, moveY: 0 }) },
     hash: (field) => field.playerX,
     inputDelay: 2,
@@ -175,7 +174,7 @@ session.send(new Nudge({ by: 1 }), (outcome) => {
 session.tick(16);
 session.dispose();
 
-const signalling: Partial<RoomOptions> = {};
+const signalling: Partial<SignallingRoom.Options> = {};
 console.log(signalling);
 
 Effect.runFork(

@@ -2,11 +2,11 @@
 // (tsconfig.worker.json). That project skips the check of library type files, so the two
 // expected errors below are what show that the entry's types arrived whole: with a type that
 // had fallen back to `any`, neither line would be an error, and the unused directive would fail.
-import { signallingRoom, signallingWorker } from "arcadekit/net/worker";
+import { SignallingWorker } from "arcadekit/net/worker";
 
-export class SignallingRoom extends signallingRoom({ roomSize: 8 }) {}
+export class SignallingRoom extends SignallingWorker.room({ roomSize: 8 }) {}
 
-const worker = signallingWorker({ rooms: "ROOMS", assets: "ASSETS" });
+const worker = SignallingWorker.make({ rooms: "ROOMS", assets: "ASSETS" });
 
 interface Env {
   readonly ROOMS: DurableObjectNamespace<SignallingRoom>;
@@ -23,4 +23,4 @@ export const withoutBindings = (request: Request): Promise<Response> =>
   worker.fetch(request, { ROOMS: undefined });
 
 // @ts-expect-error -- the room size is a number.
-signallingRoom({ roomSize: "8" });
+SignallingWorker.room({ roomSize: "8" });

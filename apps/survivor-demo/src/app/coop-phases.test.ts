@@ -1,5 +1,5 @@
 import { Hud } from "@arcadekit/survivors";
-import { LobbyChanged } from "arcadekit/net/browser";
+import { CoopEvent } from "arcadekit/net/browser";
 import { Scene, Story } from "foldkit";
 import { describe, expect, it } from "vitest";
 
@@ -21,7 +21,7 @@ import { view } from "./view";
 const at = (phase: Phase): Model => ({ ...init().model, phase });
 
 const lobby = Phase.CoopLobby({
-  lobby: new LobbyChanged({
+  lobby: new CoopEvent.LobbyChanged({
     role: "guest",
     code: "K7MQ2X",
     self: "guest-1",
