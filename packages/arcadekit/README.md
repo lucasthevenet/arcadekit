@@ -6,14 +6,14 @@ This is the first cut of the revamped design. It is a working prototype, not a f
 
 1. **Storage core** (`src/ecs/`): archetype tables with typed-array columns, opt-in sparse storage, cached queries, a command buffer. No Effect.
 2. **Tick scheduler**: Effect around the core. One fiber per tick, systems as generators, yieldable queries and resources, coroutine scripts, and a custom Effect `Scheduler` that only runs fibers when the tick says so.
-3. **Events and rules**: typed events every system sees exactly once, and actions with handlers that validate a move and refuse it with a typed error. Payloads are checked against a schema, applied actions are logged as JSON-safe data, and the log replays the game.
+3. **Events and rules**: typed events every system sees exactly once, and actions with handlers that validate a move and refuse it with a typed error. Payloads are checked against a schema, applied actions are logged as JSON-safe data, and the log replays the game and checks the replay against the world's hash.
 4. **Plugins**: one value that bundles a feature's systems, handlers, services and setup, and names the plugins it depends on.
 
 From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 124 tests
+pnpm test                          # 139 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -207,9 +207,27 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 
 - The payload type comes from the schema, and every payload is checked against it before the handler runs, including refinements the compiler cannot see (an amount between 1 and 10, say). A mismatch is an `Action.InvalidPayload` failure.
 - Input that arrives as data goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. An unknown name or a malformed payload is a failure or a `Rejected` event, never a crash.
-- `app.actionLog` holds every applied action with its payload in JSON form (a bigint or a date in the payload is converted for you). `Action.encodeLog` and `Action.decodeLog` turn it into text and back.
-- `App.replay(freshApp, log, { delta, ticks })` reproduces the game. If an entry is refused, because the save was edited or the game has changed, the replay stops there with `App.ReplayDiverged` naming the entry.
+- `app.actionLog` holds every applied action with its payload in JSON form (a bigint or a date in the payload is converted for you), and checkpoints of the world's hash among them. `Action.encodeLog` and `Action.decodeLog` turn it into text and back; `Action.isCheckpoint(entry)` tells the two kinds of entry apart.
+- `App.replay(freshApp, log, { delta, ticks })` reproduces the game in an app made with the same seed and started from the same state, and checks itself as it goes; see below.
 - `Action.define<Payload>()("Name")` still defines an action with no schema. Only the compiler checks it, so keep those for actions that never leave the program.
+
+### Replays that check themselves
+
+```ts
+const app = yield * App.make({ plugins: [Rules], seed, checkpointEvery: 1 });
+// ...the game is played...
+const saved = Action.encodeLog(app.actionLog);
+
+const again = yield * App.make({ plugins: [Rules], seed, checkpointEvery: 1 });
+App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
+```
+
+- A checkpoint is the world's [hash](#the-worlds-hash) at one point of the game: `{ tick, hash }`. The app records one before the first action or tick, which is the state the game starts from, and one at the end of every tick whose number divides by `checkpointEvery`. `app.checkpoint()` records one more, between ticks, for a point the game wants checked, such as the moment it is saved.
+- A replay compares its own world with each checkpoint as it reaches it, and stops at the first that does not match, before applying anything recorded after it. It throws `App.ReplayDiverged`, whose `tick` is that checkpoint's tick and whose `reason` is an `App.HashMismatch` with the hash that was `expected`, the `actual` one and `agreedAt`, the tick of the last checkpoint that did match. With a checkpoint every tick, that is the tick the replay diverged on.
+- A replay made with another seed, or into a world that does not hold what the game's world held, stops before its first tick.
+- An entry that is refused still stops the replay, as before, with the refusal as the `reason`. Without checkpoints that was the only check: a replay that had gone wrong ran on until an action happened to be refused, and one whose fault broke no rule ran to its end and gave another game.
+- `checkpointEvery` is 60 unless told otherwise. A checkpoint costs one hash of the world, 0.7 ms for 100,000 entities, so a smaller number finds a divergence closer to where it happened at that price per checkpoint, and adds an entry to the log each time. A turn-based game ticks once a move and wants 1. With 0 the app records none.
+- Once a game has started, what changes its world has to be in the log or come from the simulation: an action, a system, a script. A coin spawned straight into `app.world` between two ticks is in neither, so a replay cannot know of it, and stops at the next checkpoint.
 
 ## Files
 
@@ -227,7 +245,7 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random and hash tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replay tests |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash and replay tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -287,6 +305,7 @@ Hashing the same 100,000 entities, in the same units:
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
 - A tick with ten systems that do nothing costs about 4.6 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop.
 - A sparse tag that many entities have, mixed in with ones that do not, breaks tables into short runs and `eachChunk` loses its edge. A component like that is better off with table storage.
+- A checkpoint is one hash of the world every `checkpointEvery` ticks, 60 by default: 12 µs a tick on average for 100,000 entities. The per-tick lines above are medians, so they do not show it.
 - Hashing a world costs about two and a half raw passes over it: 1.4 ns per 32-bit field per entity, and about four times that for a field of a sparse component, whose members are hashed one by one so that their order does not matter.
 
 ## Raw columns and strict indexing
@@ -312,7 +331,8 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - The log replays a game from its start. There is no snapshot of the world itself, so loading a long game means replaying all of it.
-- Replay assumes a fixed delta, the same seed and the same starting state, and does not check any of them: a replay made with another seed runs to its end and gives another game.
+- A game whose systems or scripts issue actions through `Actions.enqueue` does not replay. Such an action is in the log, and the replay's own system issues it again, so it is applied twice. The next checkpoint stops the replay; before there were checkpoints it went unnoticed. The log has to tell an action that came from outside from one the simulation issued itself, which is one of the roadmap's open decisions.
+- The log does not say when a script was started from outside, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, the actions queued for the next tick, or how far each script has got.
 - An object in a `ref` field is not hashed (see [The world's hash](#the-worlds-hash)), and nothing yet says how such a field would be saved.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.

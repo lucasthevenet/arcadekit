@@ -26,8 +26,10 @@
  *
  *   const PlayCard = Action.define("PlayCard", Schema.Struct({ card: EntityId, target: EntityId }))
  *
- * Every action that is applied goes into `app.actionLog`. Replaying the log
- * into a fresh app reproduces the game.
+ * Every action that is applied goes into `app.actionLog`, with a checkpoint
+ * of the world's hash every so many ticks. Replaying the log into a fresh
+ * app reproduces the game, and stops at the first checkpoint that does not
+ * match.
  */
 import { Context, Data, Effect, Schema } from "effect";
 import type { Exit } from "effect";
@@ -133,29 +135,58 @@ export interface Logged {
   readonly payload: unknown;
 }
 
+/**
+ * What the world's hash was at one point of the game, as recorded in
+ * `app.actionLog`. A replay compares its own world against it, which is how
+ * it notices that it has gone another way.
+ */
+export interface Checkpoint {
+  /** How many ticks had completed when the hash was taken. */
+  readonly tick: number;
+  /** `world.hash()` at that point. */
+  readonly hash: number;
+}
+
+/** An entry of `app.actionLog`: an applied action, or a checkpoint. */
+export type LogEntry = Logged | Checkpoint;
+
+export const isCheckpoint = (entry: LogEntry): entry is Checkpoint =>
+  "hash" in entry;
+
+const Tick = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
 const LogSchema = Schema.fromJsonString(
   Schema.Array(
-    Schema.Struct({
-      tick: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-      name: Schema.String,
-      payload: Schema.Unknown,
-    })
+    Schema.Union([
+      Schema.Struct({
+        tick: Tick,
+        name: Schema.String,
+        payload: Schema.Unknown,
+      }),
+      Schema.Struct({
+        tick: Tick,
+        hash: Schema.Int.check(
+          Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 })
+        ),
+      }),
+    ])
   )
 );
 
 /** Turns an action log into text, for a save file or the network. */
-export const encodeLog = (log: readonly Logged[]): string =>
+export const encodeLog = (log: readonly LogEntry[]): string =>
   JSON.stringify(log);
 
 /**
  * Reads an action log back from text. This checks the log's own shape; each
- * payload is checked against its action's schema when the log is replayed.
+ * payload is checked against its action's schema, and each checkpoint
+ * against the world, when the log is replayed.
  */
 export const decodeLog = (
   text: string
-): Exit.Exit<readonly Logged[], Schema.SchemaError> =>
+): Exit.Exit<readonly LogEntry[], Schema.SchemaError> =>
   Schema.decodeUnknownExit(LogSchema)(text) as Exit.Exit<
-    readonly Logged[],
+    readonly LogEntry[],
     Schema.SchemaError
   >;
 

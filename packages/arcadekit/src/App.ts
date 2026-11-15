@@ -18,6 +18,9 @@
  *   5. flush the scheduler, so every fiber that became runnable runs now
  *   6. apply commands queued by scripts, and drop events everyone has seen
  *
+ * The world's hash is recorded in the action log before the first action or
+ * tick, and at the end of every `checkpointEvery`th tick.
+ *
  * A script that fails is logged with its cause. An app made with
  * `onScriptFailure: "stop"` also stops: that tick and every later one fail
  * with `ScriptFailed`.
@@ -125,8 +128,17 @@ export interface Any {
   ) => Exit.Exit<unknown, unknown>;
   /** As `enqueue`, for actions that arrive as data. Problems become `Action.Rejected` events. */
   readonly enqueueByName: (name: string, payload: unknown) => void;
-  /** Every action applied so far, in order. Enough to replay the game. */
-  readonly actionLog: readonly Action.Logged[];
+  /**
+   * Every action applied so far, in order, with checkpoints of the world's
+   * hash among them. Enough to replay the game, and to check the replay.
+   */
+  readonly actionLog: readonly Action.LogEntry[];
+  /**
+   * Records the world's hash in the action log now, and returns it. For the
+   * points a game wants checked beyond the ones `checkpointEvery` gives it,
+   * such as the moment it is saved. Only between ticks.
+   */
+  readonly checkpoint: () => number;
 }
 
 /**
@@ -198,6 +210,15 @@ export const make = <
    * was played with.
    */
   readonly seed?: number;
+  /**
+   * How often the world's hash is recorded in the action log: at the end of
+   * every tick whose number divides by this, and once before the first
+   * action or tick. A replay of the log compares its own world at each of
+   * these, so a smaller number finds a divergence closer to where it
+   * happened, for one hash of the world a time. The default is 60. A
+   * turn-based game wants 1; 0 records none.
+   */
+  readonly checkpointEvery?: number;
   /**
    * What a script's failure does, beyond being logged with its cause through
    * Effect's logger. `"log"`, the default, lets the game go on without the
@@ -300,7 +321,32 @@ export const make = <
       readonly payload: unknown;
       readonly encoded: boolean;
     }[] = [];
-    const actionLog: Action.Logged[] = [];
+    const actionLog: Action.LogEntry[] = [];
+    const checkpointEvery = options.checkpointEvery ?? 60;
+    if (!Number.isSafeInteger(checkpointEvery) || checkpointEvery < 0) {
+      throw new Error(
+        `checkpointEvery must be a whole number of ticks, 0 for none, and this one is ${checkpointEvery}.`
+      );
+    }
+    const checkpoint = (): number => {
+      const hash = world.hash();
+      actionLog.push({ tick: time.tick, hash });
+      return hash;
+    };
+    // The state the game starts from is whatever the world holds when the
+    // first action is applied or the first tick runs: setup and the caller
+    // have spawned what they spawn by then. A replay checks it has the same.
+    let started = false;
+    const start = (): void => {
+      if (started) {
+        return;
+      }
+      started = true;
+      // A checkpoint the game took by hand before starting already is it.
+      if (checkpointEvery > 0 && actionLog.length === 0) {
+        checkpoint();
+      }
+    };
     const enqueue = (
       action: Action.ActionDef<string, any, any>,
       payload: unknown
@@ -398,6 +444,7 @@ export const make = <
       if (handler === undefined) {
         return Exit.fail(new Action.UnknownAction({ action: name }));
       }
+      start();
 
       // Work out both forms of the payload: the value for the handler and the
       // JSON form for the log. Converting between them is what validates it.
@@ -463,6 +510,7 @@ export const make = <
       if (stopped !== undefined) {
         return Exit.die(stopped);
       }
+      start();
       ticking = true;
       try {
         // Queued actions are applied before time advances, so they land at the
@@ -519,6 +567,9 @@ export const make = <
         }
         commands.apply();
         events.endTick();
+        if (checkpointEvery > 0 && time.tick % checkpointEvery === 0) {
+          checkpoint();
+        }
         // A script failed during this tick (or since the last one) and the
         // app stops on that. The tick itself ran to its end first.
         if (stopped !== undefined && Exit.isSuccess(exit)) {
@@ -543,6 +594,14 @@ export const make = <
       plugins: plugins.map((plugin) => plugin.name),
       systemOrder: ordered.map((s) => s.name),
       actionLog,
+      checkpoint() {
+        if (ticking) {
+          throw new Error(
+            "checkpoint() was called during a tick. A checkpoint is taken between ticks, where a replay can compare it."
+          );
+        }
+        return checkpoint();
+      },
       tickExit,
       tick(delta) {
         const exit = tickExit(delta);
@@ -598,50 +657,112 @@ export const make = <
     Scope.Scope | External<S, H, P>
   >;
 
-/** A replayed log did not behave as it did when it was recorded. */
-export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
-  /** Position in the log of the entry that was refused. */
-  readonly index: number;
-  readonly entry: Action.Logged;
-  readonly reason: unknown;
+/**
+ * A world's hash is not the one recorded for the same point of the game.
+ * The two have been different worlds since some tick after `agreedAt`.
+ */
+export class HashMismatch extends Data.TaggedError("HashMismatch")<{
+  /** The tick both hashes were taken at. */
+  readonly tick: number;
+  /** The hash that was recorded. */
+  readonly expected: number;
+  /** The hash of the world that was compared with it. */
+  readonly actual: number;
+  /** The tick of the last checkpoint that did match, if one did. */
+  readonly agreedAt: number | undefined;
 }> {
   override get message(): string {
-    const reason =
-      this.reason instanceof Error
-        ? this.reason.message || this.reason.name
-        : String(this.reason);
-    return `Log entry ${this.index} ("${this.entry.name}" at tick ${this.entry.tick}) was refused on replay: ${reason}`;
+    const since =
+      this.agreedAt === undefined
+        ? "No earlier checkpoint matched, so the two did not start from the same state: check the seed and what was spawned before the first tick"
+        : `The last checkpoint that matched was at tick ${this.agreedAt}`;
+    return `the world's hash at tick ${this.tick} is ${this.actual}, and ${this.expected} was recorded. ${since}.`;
+  }
+}
+
+/** A replayed log did not behave as it did when it was recorded. */
+export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
+  /** Position in the log of the entry that did not hold. */
+  readonly index: number;
+  readonly entry: Action.LogEntry;
+  /**
+   * Why: the error an action was refused with, or a `HashMismatch` for a
+   * checkpoint.
+   */
+  readonly reason: unknown;
+}> {
+  /** The tick the replay had reached when it stopped. */
+  get tick(): number {
+    return this.entry.tick;
+  }
+
+  override get message(): string {
+    const { entry, reason } = this;
+    if (reason instanceof HashMismatch) {
+      return `The replay diverged from its log (entry ${this.index}): ${reason.message}`;
+    }
+    const text =
+      reason instanceof Error ? reason.message || reason.name : String(reason);
+    const what = Action.isCheckpoint(entry)
+      ? `a checkpoint at tick ${entry.tick}`
+      : `"${entry.name}" at tick ${entry.tick}`;
+    return Action.isCheckpoint(entry)
+      ? `Log entry ${this.index} (${what}) was not reached on replay: ${text}`
+      : `Log entry ${this.index} (${what}) was refused on replay: ${text}`;
   }
 }
 
 /**
  * Re-applies a recorded action log to a fresh app, ticking with a fixed
- * delta. With the same systems and the same starting state, the result is
- * the same game.
+ * delta. With the same systems, the same seed and the same starting state,
+ * the result is the same game.
  *
- * The log only ever holds actions that were accepted, so an entry that is
- * refused now means the log was altered or the game has changed since. The
- * replay stops there and throws `ReplayDiverged`.
+ * The replay checks itself against the log, and throws `ReplayDiverged` at
+ * the first entry that does not hold:
+ *
+ * - A checkpoint whose hash is not the hash of the replay's world. The
+ *   replay stops at that tick, before applying anything recorded after it.
+ *   With a checkpoint every tick, that is the tick it diverged on.
+ * - An action that is refused. The log only ever holds actions that were
+ *   accepted, so the log was altered or the game has changed since.
  */
 export const replay = (
   app: Any,
-  log: readonly Action.Logged[],
+  log: readonly Action.LogEntry[],
   options: { readonly delta: number; readonly ticks: number }
 ): void => {
   let next = 0;
+  let agreedAt: number | undefined;
   const applyDue = (): void => {
     for (
       let entry = log[next];
       entry !== undefined && entry.tick === app.time.tick;
       entry = log[next]
     ) {
-      const exit = app.dispatchByName(entry.name, entry.payload);
-      if (Exit.isFailure(exit)) {
-        throw new ReplayDiverged({
-          index: next,
-          entry,
-          reason: Cause.squash(exit.cause),
-        });
+      if (Action.isCheckpoint(entry)) {
+        const actual = app.world.hash();
+        if (actual !== entry.hash) {
+          throw new ReplayDiverged({
+            index: next,
+            entry,
+            reason: new HashMismatch({
+              tick: entry.tick,
+              expected: entry.hash,
+              actual,
+              agreedAt,
+            }),
+          });
+        }
+        agreedAt = entry.tick;
+      } else {
+        const exit = app.dispatchByName(entry.name, entry.payload);
+        if (Exit.isFailure(exit)) {
+          throw new ReplayDiverged({
+            index: next,
+            entry,
+            reason: Cause.squash(exit.cause),
+          });
+        }
       }
       next++;
     }

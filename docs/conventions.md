@@ -157,6 +157,8 @@ Each part has one shape. A new feature is made of these, not of a new kind of th
 | Script | An Effect started with `app.spawnScript`, or with `Script.spawn` from a system | Waits only with `Script.nextTick`, `Script.sleep` or an event's `wait`. Its failure is logged, and stops an app made with `onScriptFailure: "stop"`. |
 | Plugin | `Plugin.make` | Lists the plugins whose services its layer uses. |
 
+Once a game has started, its world changes only through these: a system, an action's handler, a script. Code outside the simulation (UI, the network, a test, the entry point) changes the world by dispatching an action. What it writes into `app.world` directly is not in the log, so a replay cannot repeat it, and stops at the next checkpoint. Spawning the first entities before the first tick is the exception: that is the state the game starts from.
+
 ## Determinism
 
 A tick gives the same result from the same inputs, on every machine and every replay. Code that a tick runs:

@@ -387,10 +387,12 @@ describe("the Random service", () => {
     expect(recorded.dice[0]![1]).toBeGreaterThan(10);
     expect(recorded.sparks.length).toBeGreaterThan(0);
     expect(replayOf(recorded, 31)).toEqual(recorded);
-    // With another seed the same moves are a different game.
-    const mismatched = replayOf(recorded, 32);
-    expect(mismatched.sparks).not.toEqual(recorded.sparks);
-    expect(mismatched.generator).not.toEqual(recorded.generator);
+    // With another seed the same moves would be a different game, and the
+    // replay says so before its first tick.
+    expect(() => replayOf(recorded, 32)).toThrow(App.ReplayDiverged);
+    expect(() => replayOf(recorded, 32)).toThrow(
+      /the world's hash at tick 0 .* check the seed/
+    );
   });
 
   it("refuses a bad seed when the app is made", () => {

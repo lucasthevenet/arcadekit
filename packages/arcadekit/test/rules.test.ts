@@ -37,6 +37,10 @@ const withApp = <A, T>(
   use: (app: A) => T
 ): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
+/** The applied actions of a log, without the checkpoints recorded among them. */
+const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
+  log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
+
 describe("events", () => {
   it("reach every system exactly once, whichever side of the emitter it runs on", () => {
     const seen: Record<string, Array<number>[]> = { Before: [], After: [] };
@@ -322,7 +326,7 @@ describe("actions", () => {
       expect(exit).toEqual(Exit.succeed(2));
       expect(app.world.get(two, Health)).toEqual({ hp: 2 });
       expect(app.world.get(one, Energy)).toEqual({ points: 1 });
-      expect(app.actionLog).toEqual([
+      expect(moves(app.actionLog)).toEqual([
         { tick: 0, name: "Attack", payload: { attacker: one, target: two } },
       ]);
 
@@ -351,7 +355,7 @@ describe("actions", () => {
         Exit.fail(new NotEnoughEnergy({ have: 1, need: 2 }))
       );
       expect(app.world.get(two, Health)).toEqual({ hp: 2 });
-      expect(app.actionLog).toHaveLength(1);
+      expect(moves(app.actionLog)).toHaveLength(1);
       expect(before).toHaveLength(4);
     });
   });
@@ -433,7 +437,7 @@ describe("actions", () => {
       expect(app.world.get(two, Health)).toEqual({ hp: 2 });
       expect(app.world.get(one, Health)).toEqual({ hp: 10 });
       expect(rejected).toEqual(["Attack: NotYourTurn"]);
-      expect(app.actionLog).toEqual([
+      expect(moves(app.actionLog)).toEqual([
         { tick: 0, name: "Attack", payload: { attacker: one, target: two } },
       ]);
     });
@@ -461,7 +465,7 @@ describe("actions", () => {
       app.tick(1); // applied at the start of this tick
       expect(snapshot(app)).toContain("turn 3 player 1");
       expect(
-        app.actionLog.map((entry) => `${entry.tick}:${entry.name}`)
+        moves(app.actionLog).map((entry) => `${entry.tick}:${entry.name}`)
       ).toEqual(["0:EndTurn", "1:EndTurn"]);
     });
   });
@@ -558,7 +562,9 @@ describe("replay", () => {
       });
 
     const original = play();
-    expect(original.log.map((entry) => `${entry.tick}:${entry.name}`)).toEqual([
+    expect(
+      moves(original.log).map((entry) => `${entry.tick}:${entry.name}`)
+    ).toEqual([
       "0:Attack",
       "1:EndTurn",
       "2:Summon",

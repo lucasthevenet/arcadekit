@@ -196,7 +196,9 @@ const standing = (app: App.Any): string => {
 };
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Commentary] });
+  // One tick per move, so a checkpoint of the world's hash after every tick
+  // costs nothing and lets a replay say exactly where it went another way.
+  const app = yield* App.make({ plugins: [Commentary], checkpointEvery: 1 });
   const { knight, rogue } = seat(app);
 
   // A script: ordinary sequential code that waits for something to happen.
@@ -265,9 +267,10 @@ const program = Effect.gen(function* () {
   yield* strikeWith("Knight", knight, rogue); // nobody left to hit
   console.log(`end -> ${standing(app)}; referee: ${referee.pollUnsafe()}`);
 
-  // The log holds only the moves that were accepted. Written out as text and
-  // read back, it reproduces this game in a fresh one. The replay installs
-  // only the rules, so it is silent.
+  // The log holds the moves that were accepted, and the world's hash after
+  // every tick. Written out as text and read back, it reproduces this game in
+  // a fresh one, which checks itself against those hashes as it goes. The
+  // replay installs only the rules, so it is silent.
   const saved = Action.encodeLog(app.actionLog);
   console.log(`saved: ${saved}`);
   // A fresh app in a scope of its own, closed when the replay is over.
@@ -276,7 +279,7 @@ const program = Effect.gen(function* () {
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
-    const headless = yield* App.make({ plugins: [Rules] });
+    const headless = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
     seat(headless);
     try {
       App.replay(headless, loaded.value, { delta: 1, ticks: app.time.tick });
@@ -289,6 +292,11 @@ const program = Effect.gen(function* () {
   // Someone edits the save so that a player who does not exist passes.
   console.log(
     `edited save -> ${yield* replay(saved.replace('"player":1', '"player":3'))}`
+  );
+  // Someone edits it so that the Knight's first strike lands on the Knight.
+  // The rules allow that move, so nothing is refused: the hash gives it away.
+  console.log(
+    `legal but altered -> ${yield* replay(saved.replace('"target":2', '"target":1'))}`
   );
   console.log(`garbage -> ${yield* replay("<html>")}`);
 });

@@ -58,6 +58,10 @@ const withApp = <A, T>(
   use: (made: A) => T
 ): T => Effect.runSync(Effect.scoped(Effect.map(make, use)));
 
+/** The applied actions of a log, without the checkpoints recorded among them. */
+const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
+  log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
+
 const failure = (exit: Exit.Exit<unknown, unknown>): any => {
   if (!Exit.isFailure(exit)) {
     throw new Error("expected a failure");
@@ -80,7 +84,7 @@ describe("actions with a schema", () => {
         { target, amount: 4, seed: 12_345_678_901_234_567_890n },
       ]);
       // ...and the log gets something JSON can hold.
-      expect(app.actionLog).toEqual([
+      expect(moves(app.actionLog)).toEqual([
         {
           tick: 0,
           name: "Damage",
@@ -107,7 +111,7 @@ describe("actions with a schema", () => {
       // The handler never ran, nothing changed, nothing was logged.
       expect(received).toEqual([]);
       expect(app.world.get(target, Health)).toEqual({ hp: 50 });
-      expect(app.actionLog).toEqual([]);
+      expect(moves(app.actionLog)).toEqual([]);
     });
   });
 
@@ -125,7 +129,7 @@ describe("actions with a schema", () => {
       expect(received).toEqual([
         { target, amount: 3, seed: 77n, note: "from the network" },
       ]);
-      expect(app.actionLog[0]!.payload).toEqual({
+      expect(moves(app.actionLog)[0]!.payload).toEqual({
         target,
         amount: 3,
         seed: "77",
@@ -172,7 +176,7 @@ describe("actions with a schema", () => {
 
       expect(received).toHaveLength(1); // only the last one reached the handler
       expect(app.world.get(target, Health)).toEqual({ hp: 50 });
-      expect(app.actionLog).toEqual([]);
+      expect(moves(app.actionLog)).toEqual([]);
     });
   });
 
@@ -206,7 +210,7 @@ describe("actions with a schema", () => {
         "Damage: InvalidPayload",
       ]);
       expect(
-        app.actionLog.map(
+        moves(app.actionLog).map(
           (entry) => (entry.payload as { amount: number }).amount
         )
       ).toEqual([5, 2]);
@@ -255,7 +259,7 @@ describe("saving and replaying", () => {
       };
     });
 
-  const replayInto = (log: readonly Action.Logged[], ticks: number) =>
+  const replayInto = (log: readonly Action.LogEntry[], ticks: number) =>
     withApp(game, ({ app, target }) => {
       App.replay(app, log, { delta: 1, ticks });
       return app.world.get(target, Health)!.hp;
@@ -271,12 +275,9 @@ describe("saving and replaying", () => {
     if (!Exit.isSuccess(loaded)) {
       return;
     }
-    expect(loaded.value.map((entry) => `${entry.tick}:${entry.name}`)).toEqual([
-      "0:Damage",
-      "1:Damage",
-      "3:Damage",
-      "3:Rename",
-    ]);
+    expect(
+      moves(loaded.value).map((entry) => `${entry.tick}:${entry.name}`)
+    ).toEqual(["0:Damage", "1:Damage", "3:Damage", "3:Rename"]);
     expect(replayInto(loaded.value, saved.ticks)).toBe(saved.hp);
   });
 
@@ -297,15 +298,20 @@ describe("saving and replaying", () => {
 
   it("stops a replay at the first entry that no longer applies", () => {
     const saved = record();
-    const log = JSON.parse(saved.text) as {
-      tick: number;
-      name: string;
-      payload: any;
-    }[];
+    // Entry 0 is the checkpoint of the state the game started from; the four
+    // actions follow it.
+    const log = JSON.parse(saved.text) as any[];
+    expect(log.map((entry) => entry.name)).toEqual([
+      undefined,
+      "Damage",
+      "Damage",
+      "Damage",
+      "Rename",
+    ]);
 
     // An edited save file: a hit far above what the schema allows.
     const edited = structuredClone(log);
-    edited[1]!.payload.amount = 9999;
+    edited[2].payload.amount = 9999;
     let caught: unknown;
     try {
       replayInto(edited, saved.ticks);
@@ -313,29 +319,30 @@ describe("saving and replaying", () => {
       caught = error;
     }
     expect(caught).toBeInstanceOf(App.ReplayDiverged);
-    expect((caught as App.ReplayDiverged).index).toBe(1);
+    expect((caught as App.ReplayDiverged).index).toBe(2);
+    expect((caught as App.ReplayDiverged).tick).toBe(1);
     expect((caught as App.ReplayDiverged).reason).toBeInstanceOf(
       Action.InvalidPayload
     );
     expect((caught as Error).message).toMatch(
-      /Log entry 1 \("Damage" at tick 1\) was refused on replay/
+      /Log entry 2 \("Damage" at tick 1\) was refused on replay/
     );
 
     // An action this build of the game does not have.
     const renamed = structuredClone(log);
-    renamed[0]!.name = "Smite";
+    renamed[1].name = "Smite";
     expect(() => replayInto(renamed, saved.ticks)).toThrow(
-      /Log entry 0 \("Smite" at tick 0\)/
+      /Log entry 1 \("Smite" at tick 0\)/
     );
 
     // Valid entries the rules refuse: the target is not in this game.
     const retargeted = structuredClone(log);
-    retargeted[2]!.payload.target = 4000;
-    expect(() => replayInto(retargeted, saved.ticks)).toThrow(/Log entry 2/);
+    retargeted[3].payload.target = 4000;
+    expect(() => replayInto(retargeted, saved.ticks)).toThrow(/Log entry 3/);
 
     // Entries that could never be reached.
     const late = structuredClone(log);
-    late[3]!.tick = 99;
+    late[4].tick = 99;
     expect(() => replayInto(late, saved.ticks)).toThrow(
       /its tick \(99\) was never reached/
     );
