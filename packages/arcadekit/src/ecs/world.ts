@@ -14,6 +14,8 @@
  *   query is iterating. Queue them on a CommandBuffer instead.
  * - A world owns a seeded random number generator, so its state is part of
  *   the world.
+ * - A snapshot is the whole world as bytes, and loads into an empty world
+ *   that then hashes the same and goes on the same.
  * - A transaction (`begin`, then `commit` or `rollback`) can take back every
  *   write to component data made since it began. Whatever is about to be
  *   written is saved first: one row for `set`, the visited columns for a
@@ -43,6 +45,18 @@ import type {
 } from "./component";
 import { add, addColumn, addColumnPerRow, finish, shapeOf } from "./hash";
 import { Rng } from "./random";
+import {
+  END,
+  FORMAT,
+  KIND_CODES,
+  MAGIC,
+  Reader,
+  readColumn,
+  SnapshotError,
+  WIDTH,
+  writeColumn,
+  Writer,
+} from "./snapshot";
 
 const NOT_PLACED = -1;
 const FREE = -2;
@@ -110,6 +124,19 @@ const readRow = (def: ComponentDef<any>, cols: Columns, row: number): any => {
   }
   return out;
 };
+
+const corrupt = (how: string): SnapshotError =>
+  new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
+
+/** A value in a few words, for a message. */
+const describeValue = (value: unknown): string =>
+  typeof value === "function"
+    ? "a function"
+    : typeof value === "symbol"
+      ? "a symbol"
+      : Array.isArray(value)
+        ? "an array"
+        : "an object";
 
 /** Order of name, by UTF-16 code unit: the same in every engine and locale. */
 const byName = (a: { readonly name: string }, b: { readonly name: string }) =>
@@ -1485,6 +1512,345 @@ export class World {
     return view;
   }
 
+  // --- snapshots -----------------------------------------------------------
+
+  /**
+   * The whole world as bytes: every table and sparse set, the ids to come,
+   * and the state of the random generator. A world that loads them hashes
+   * the same as this one and behaves the same from then on: the same order
+   * of iteration, the same ids for the next entities, the same random
+   * numbers.
+   *
+   * A component is written under its name, with the names and kinds of its
+   * fields, so the bytes do not depend on the order a program defines its
+   * components in. Columns of numbers are written as they are, which makes a
+   * snapshot about as big as the data: four bytes for an `f32`, and so on.
+   *
+   * A `ref` field is written when it holds a string, a number, a boolean, a
+   * bigint, null or undefined. Any other value has no form here, and the
+   * snapshot is refused with a `SnapshotError` that names the field. So is a
+   * world with a spawn queued on a CommandBuffer and not yet applied.
+   */
+  snapshot(): Uint8Array {
+    const { tables } = this;
+    let placed = 0;
+    let estimate = 256 + this.nextIndex * 2 + this.freeList.length * 4;
+    for (const table of tables) {
+      placed += table.count;
+      estimate += 64 + table.count * 4;
+      for (const def of table.defs) {
+        for (const kind of def.kinds) {
+          estimate += table.count * (kind === "ref" ? 8 : WIDTH[kind]);
+        }
+      }
+    }
+    if (placed !== this.alive) {
+      throw new SnapshotError(
+        "cannot be saved",
+        `${this.alive - placed} entities were spawned through a CommandBuffer that has not been applied yet. Apply it, or roll it back, and take the snapshot then.`
+      );
+    }
+    const sets = this.sparseSetsByName().filter((set) => set.count > 0);
+
+    // The components that hold anything, or have a table, in order of name.
+    const used = new Map<ComponentDef<any>, number>();
+    for (const table of tables) {
+      for (const def of table.defs) {
+        used.set(def, 0);
+      }
+    }
+    for (const set of sets) {
+      used.set(set.def, 0);
+    }
+    const components = Array.from(used.keys()).toSorted(byName);
+    for (let i = 0; i < components.length; i++) {
+      used.set(components[i]!, i);
+    }
+
+    const writer = new Writer(estimate);
+    writer.u32(MAGIC);
+    writer.u32(FORMAT);
+    const random = this.random.state;
+    for (let word = 0; word < 4; word++) {
+      writer.u32(random[word]!);
+    }
+
+    // Every slot's generation, and the freed slots in the order they will be
+    // handed out again.
+    writer.u32(this.nextIndex);
+    writer.numbers(this.gens, this.nextIndex, 2);
+    writer.u32(this.freeList.length);
+    for (const index of this.freeList) {
+      writer.u32(index);
+    }
+
+    writer.u32(components.length);
+    for (const def of components) {
+      writer.text(def.name);
+      writer.u8(def.storage === "sparse" ? 1 : 0);
+      writer.u32(def.fields.length);
+      for (let f = 0; f < def.fields.length; f++) {
+        writer.text(def.fields[f]!);
+        writer.u8(KIND_CODES.indexOf(def.kinds[f]!));
+      }
+    }
+
+    const writeFields = (
+      def: ComponentDef<any>,
+      columns: Columns,
+      count: number
+    ): void => {
+      for (let f = 0; f < def.fields.length; f++) {
+        const field = def.fields[f]!;
+        const row = writeColumn(writer, def.kinds[f]!, columns[field]!, count);
+        if (row !== -1) {
+          throw new SnapshotError(
+            "cannot be saved",
+            `"${def.name}.${field}" holds a value that has no saved form (${describeValue(columns[field]![row])}). A ref field is saved when it holds a string, a number, a boolean, a bigint, null or undefined.`,
+            def.name
+          );
+        }
+      }
+    };
+
+    // Tables in creation order, the empty ones too: where a table stands
+    // decides where its entities are visited.
+    writer.u32(tables.length);
+    for (const table of tables) {
+      const { count, defsByName } = table;
+      writer.u32(defsByName.length);
+      for (const def of defsByName) {
+        writer.u32(used.get(def)!);
+      }
+      writer.u32(count);
+      writer.numbers(table.entities, count, 4);
+      for (const def of defsByName) {
+        writeFields(def, table.columns[def.id]!, count);
+      }
+    }
+
+    writer.u32(sets.length);
+    for (const set of sets) {
+      writer.u32(used.get(set.def)!);
+      writer.u32(set.count);
+      writer.numbers(set.dense, set.count, 4);
+      writeFields(set.def, set.columns, set.count);
+    }
+    writer.u32(END);
+    return writer.finish();
+  }
+
+  /**
+   * Fills this world from a snapshot. The world has to be empty: one that
+   * has never held an entity.
+   *
+   * `components` are the components the snapshot may name. A world knows a
+   * component by its name, and an empty world knows none, so they are given
+   * here (those already registered need not be). A snapshot that names one
+   * that is not among them, or one whose fields are not what they were when
+   * the snapshot was taken, is refused.
+   *
+   * Every problem is a `SnapshotError`, whose `problem` says which kind: the
+   * bytes are not a snapshot, are cut short or damaged, or come from a newer
+   * format; a component is unknown or has changed; the world is not empty.
+   * Counts are checked against the bytes that are there before anything is
+   * allocated for them. A world whose load failed part of the way is not
+   * fit for use: load into a new one.
+   */
+  load(bytes: Uint8Array, components: readonly ComponentDef<any>[] = []): void {
+    if (this.nextIndex !== 0 || this.tables.length > 0 || this._recording) {
+      throw new SnapshotError(
+        "world not empty",
+        "World.load() fills an empty world, and this one has held entities. Load into a new World."
+      );
+    }
+    for (const def of components) {
+      this.register(def);
+    }
+    const reader = new Reader(bytes);
+    if (reader.left < 8 || reader.u32() !== MAGIC) {
+      throw new SnapshotError(
+        "not a snapshot",
+        "These bytes are not a snapshot of a world."
+      );
+    }
+    const format = reader.u32();
+    if (format !== FORMAT) {
+      throw new SnapshotError(
+        "newer format",
+        `The snapshot is in format ${format}, and this version reads format ${FORMAT}.`
+      );
+    }
+    const random = this.random.state;
+    for (let word = 0; word < 4; word++) {
+      random[word] = reader.u32();
+    }
+
+    const nextIndex = reader.count(2);
+    if (nextIndex > INDEX_MASK + 1) {
+      throw corrupt("it holds more entity slots than a world can have");
+    }
+    while (this.recTable.length < nextIndex) {
+      this.growRecords();
+    }
+    reader.numbers(this.gens, nextIndex, 2);
+    for (let index = 0; index < nextIndex; index++) {
+      if (this.gens[index]! > GENERATION_MASK) {
+        throw corrupt("a slot has a generation no entity could have");
+      }
+    }
+    const freed = reader.count(4);
+    // Every slot is taken to be free until a table claims it.
+    const isFree = new Uint8Array(nextIndex);
+    for (let i = 0; i < freed; i++) {
+      const index = reader.u32();
+      if (index >= nextIndex || isFree[index] === 1) {
+        throw corrupt(
+          "its list of freed slots names a slot twice, or one that does not exist"
+        );
+      }
+      isFree[index] = 1;
+      this.freeList.push(index);
+    }
+    this.nextIndex = nextIndex;
+
+    // The components, checked against the ones this program defines.
+    const named: ComponentDef<any>[] = [];
+    const componentCount = reader.count(9);
+    for (let c = 0; c < componentCount; c++) {
+      const name = reader.text();
+      const sparse = reader.u8() === 1;
+      const fields: string[] = [];
+      const kinds: (string | undefined)[] = [];
+      const fieldCount = reader.count(5);
+      for (let f = 0; f < fieldCount; f++) {
+        fields.push(reader.text());
+        kinds.push(KIND_CODES[reader.u8()]);
+      }
+      const def = this.componentsByName.get(name);
+      if (def === undefined) {
+        throw new SnapshotError(
+          "unknown component",
+          `The snapshot holds a component named "${name}", which is not among the components it was loaded with.`,
+          name
+        );
+      }
+      const was = fields.map((field, f) => `${field}: ${kinds[f]}`).join(", ");
+      const is = def.fields
+        .map((field, f) => `${field}: ${def.kinds[f]}`)
+        .join(", ");
+      if (was !== is || sparse !== (def.storage === "sparse")) {
+        throw new SnapshotError(
+          "component changed",
+          `"${name}" is not what it was when the snapshot was taken. Then: ${sparse ? "sparse" : "table"} { ${was} }. Now: ${def.storage} { ${is} }.`,
+          name
+        );
+      }
+      named.push(def);
+    }
+    const componentAt = (): ComponentDef<any> => {
+      const def = named[reader.u32()];
+      if (def === undefined) {
+        throw corrupt("it refers to a component it does not list");
+      }
+      return def;
+    };
+
+    const tableCount = reader.count(8);
+    for (let t = 0; t < tableCount; t++) {
+      const defs: ComponentDef<any>[] = [];
+      const defCount = reader.count(4);
+      for (let d = 0; d < defCount; d++) {
+        const def = componentAt();
+        if (def.storage !== "table" || defs.includes(def)) {
+          throw corrupt("a table lists a component twice, or a sparse one");
+        }
+        defs.push(def);
+      }
+      const sorted = defs.toSorted((a, b) => a.id - b.id);
+      const key = sorted.map((def) => def.id).join(",");
+      if (this.tableByKey.has(key)) {
+        throw corrupt("it holds two tables for the same components");
+      }
+      const count = reader.count(4);
+      let capacity = 16;
+      while (capacity < count) {
+        capacity *= 2;
+      }
+      const table = new Table(this.tables.length, sorted, capacity);
+      this.tables.push(table);
+      this.tableByKey.set(key, table);
+      reader.numbers(table.entities, count, 4);
+      table.count = count;
+      for (let row = 0; row < count; row++) {
+        const entity = table.entities[row] as Entity;
+        const index = entityIndex(entity);
+        if (
+          index >= nextIndex ||
+          isFree[index] === 1 ||
+          this.recTable[index] !== FREE ||
+          this.gens[index] !== entityGeneration(entity)
+        ) {
+          throw corrupt(
+            "an entity is in two places, or in a slot that is free or of another generation"
+          );
+        }
+        this.recTable[index] = table.index;
+        this.recRow[index] = row;
+      }
+      this.alive += count;
+      // The same order the fields were written in: components by name.
+      for (const def of defs) {
+        for (let f = 0; f < def.fields.length; f++) {
+          readColumn(
+            reader,
+            def.kinds[f]!,
+            table.columns[def.id]![def.fields[f]!]!,
+            count
+          );
+        }
+      }
+    }
+    if (this.alive + freed !== nextIndex) {
+      throw corrupt("some entity slots are neither in a table nor free");
+    }
+
+    const setCount = reader.count(8);
+    for (let s = 0; s < setCount; s++) {
+      const def = componentAt();
+      if (def.storage !== "sparse") {
+        throw corrupt("a sparse set is of a component that is not sparse");
+      }
+      const set = this._sparse(def);
+      const count = reader.count(4);
+      if (set.count > 0) {
+        throw corrupt("it holds two sparse sets for one component");
+      }
+      for (let i = 0; i < count; i++) {
+        const index = reader.u32();
+        if (index >= nextIndex || this.recTable[index]! < 0 || set.has(index)) {
+          throw corrupt(
+            "a sparse component is on an entity that does not exist, or on one twice"
+          );
+        }
+        set.add(index, undefined);
+      }
+      for (let f = 0; f < def.fields.length; f++) {
+        readColumn(reader, def.kinds[f]!, set.columns[def.fields[f]!]!, count);
+      }
+    }
+    if (reader.left !== 4 || reader.u32() !== END) {
+      throw corrupt("it does not end where it should");
+    }
+  }
+
+  /** The sparse sets in order of component name. */
+  private sparseSetsByName(): SparseSet[] {
+    return (this.sparseByName ??= this.sparseList.toSorted((a, b) =>
+      byName(a.def, b.def)
+    ));
+  }
+
   // --- hash ----------------------------------------------------------------
 
   /**
@@ -1547,9 +1913,7 @@ export class World {
     // Sparse components, in order of name. The order of a set's members is
     // not something a query shows, so each member is hashed on its own and
     // the results are added up. A set nobody is in is as good as absent.
-    const sets = (this.sparseByName ??= this.sparseList.toSorted((a, b) =>
-      byName(a.def, b.def)
-    ));
+    const sets = this.sparseSetsByName();
     for (let s = 0; s < sets.length; s++) {
       const set = sets[s]!;
       const { count, def } = set;

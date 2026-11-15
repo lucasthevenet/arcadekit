@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 184 tests
+pnpm test                          # 203 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -179,6 +179,27 @@ It does not depend on what cannot be told apart: how much room a table has, what
 - It is 32-bit integer arithmetic on the bits of each field, so it is the same on every machine and in every JavaScript engine.
 - It reads and changes nothing, so it can be called at any time. It costs about 7 ns per entity for four float fields, 0.7 ms for 100,000 entities; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
 
+## Snapshots
+
+```ts
+const bytes = world.snapshot(); // a Uint8Array
+
+const copy = new EcsWorld();
+copy.load(bytes, [Position, Velocity, Burning]); // the components it may name
+copy.hash() === world.hash(); // true
+```
+
+`world.snapshot()` is the whole world as bytes: every table and sparse set, the ids to come, and the state of the random generator. A world that loads them hashes the same as the one they were taken from and goes on the same: the same order of iteration, the same ids for the next entities, the same random numbers.
+
+- It is about as big as the data. A column of numbers is written as its bytes, so an entity with two `f32` fields takes 14 bytes: 4 of id, 8 of floats and 2 of generation.
+- A component is written under its name, with the names and kinds of its fields, so a snapshot does not depend on the order a program defines its components in. A world knows a component by its name and an empty world knows none, so `load` is given the components the snapshot may name.
+- `load` fills an empty world: one that has never held an entity.
+- Every problem is a `SnapshotError`, whose `problem` says which kind and whose message names the component or field: `"not a snapshot"`, `"newer format"`, `"truncated"`, `"corrupt"`, `"unknown component"`, `"component changed"` (with its fields then and now), `"world not empty"`, `"cannot be saved"`.
+- Damaged bytes are refused, not trusted: every count is checked against the bytes that are there before anything is allocated for it, an entity may not be in two rows or in a freed slot, and text has to be text. A damaged number inside a column cannot be told from another number, and loads as that.
+- A `ref` field is saved when it holds a string, a number, a boolean, a bigint, null or undefined, each exactly: `-0` and `NaN` come back as they were. Any other value has no saved form yet, and the snapshot is refused with the name of the field.
+- A snapshot is refused while a spawn is queued on a `CommandBuffer` and not applied.
+- It costs 6 ns per entity to take and 16 ns to load, for four float fields; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
+
 ## Actions (the rules layer)
 
 ```ts
@@ -259,6 +280,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/ecs/world.ts` | Tables, sparse sets, queries, world, transactions, command buffer |
 | `src/ecs/random.ts` | The seeded random number generator a world owns |
 | `src/ecs/hash.ts` | The arithmetic of the world's hash |
+| `src/ecs/snapshot.ts` | The bytes of a world's snapshot, and `SnapshotError` |
 | `src/TickScheduler.ts` | The Effect scheduler owned by the game loop |
 | `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
 | `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
@@ -267,7 +289,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash and replay tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction and snapshot tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -323,6 +345,8 @@ Hashing the same 100,000 entities, in the same units:
 | `world.hash()`, one table                                 | 7.0       |
 | `world.hash()`, the same entities spread over 32 tables   | 7.4       |
 | `world.hash()`, with a sparse one-field component on each | 13.6      |
+| `world.snapshot()`, one table (2.2 MB)                    | 6.0       |
+| `world.load()` of that snapshot, into a new world         | 15.7      |
 
 One action in that world of 100,000 entities, before and after handlers ran in a transaction:
 
@@ -362,11 +386,11 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - One package entry. The storage core has no Effect dependency and could be its own entry (`arcadekit/ecs`).
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
-- The log replays a game from its start. There is no snapshot of the world itself, so loading a long game means replaying all of it.
+- A snapshot holds the world and nothing else: not the time, the events waiting to be read, the actions queued for the next tick, or how far each script has got. An app cannot be saved and loaded yet, only its world, so a log still replays a game from its start.
 - An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
 - The log does not say when a script was started from outside, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, the actions queued for the next tick, or how far each script has got.
-- An object in a `ref` field is not hashed (see [The world's hash](#the-worlds-hash)), and nothing yet says how such a field would be saved.
+- An object in a `ref` field is not hashed (see [The world's hash](#the-worlds-hash)) and cannot be saved: a snapshot of a world that holds one is refused.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - Event payloads are typed but have no schema, so events cannot be sent over a network yet.
 - A refused action does not undo what is outside the world: an object in a `ref` field that the handler changed in place, a call to a service of the game's own, a script it started.

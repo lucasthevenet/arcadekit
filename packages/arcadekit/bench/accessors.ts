@@ -568,6 +568,39 @@ const variants: Record<
       return ms;
     },
   },
+  snapshot: {
+    // The same world as the first line: per entity an id, four floats and a
+    // generation, 22 bytes.
+    label: "world.snapshot(): 100,000 entities in one table",
+    run: () => {
+      const world = new World();
+      populate(world);
+      let sink = 0;
+      const ms = measure(() => {
+        sink += world.snapshot().length;
+      });
+      void sink;
+      return ms;
+    },
+  },
+
+  load: {
+    label: "world.load(): the same snapshot, into a new world",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const bytes = world.snapshot();
+      let sink = 0;
+      const ms = measure(() => {
+        const fresh = new World();
+        fresh.load(bytes, [Position, Velocity]);
+        sink += fresh.entityCount;
+      });
+      void sink;
+      return ms;
+    },
+  },
+
   // What an action costs, in a world of 100,000 entities. A refused action
   // has to leave nothing behind, so what its handler may write is saved
   // first: one row for `world.set`, the visited columns for a query's loop.

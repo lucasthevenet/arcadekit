@@ -8,6 +8,7 @@ export {
   Field,
 } from "./ecs/component";
 export type { Rng } from "./ecs/random";
+export { SnapshotError, type SnapshotProblem } from "./ecs/snapshot";
 export {
   CommandBuffer,
   type EntityColumn,
