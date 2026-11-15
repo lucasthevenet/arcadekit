@@ -33,33 +33,18 @@ import { Context, Data, Effect, Schema } from "effect";
 import type { Exit } from "effect";
 
 import * as Event from "./Event";
-import type { TaggedErrorClass } from "./TaggedError";
 
-interface InvalidPayloadFields {
+/** The payload did not match the action's schema. The handler was not run. */
+export class InvalidPayload extends Data.TaggedError("InvalidPayload")<{
   readonly action: string;
   /** What was wrong, as reported by the schema. */
   readonly message: string;
-}
-
-const InvalidPayloadError: TaggedErrorClass<
-  "InvalidPayload",
-  InvalidPayloadFields
-> = Data.TaggedError("InvalidPayload");
-
-/** The payload did not match the action's schema. The handler was not run. */
-export class InvalidPayload extends InvalidPayloadError {}
-
-interface UnknownActionFields {
-  readonly action: string;
-}
-
-const UnknownActionError: TaggedErrorClass<
-  "UnknownAction",
-  UnknownActionFields
-> = Data.TaggedError("UnknownAction");
+}> {}
 
 /** An action arrived by name and the app has no handler for that name. */
-export class UnknownAction extends UnknownActionError {}
+export class UnknownAction extends Data.TaggedError("UnknownAction")<{
+  readonly action: string;
+}> {}
 
 /**
  * @param N  the action's name
@@ -175,31 +160,26 @@ export const decodeLog = (
     Schema.SchemaError
   >;
 
-export interface Rejection {
-  readonly action: string;
-  readonly payload: unknown;
-  readonly error: unknown;
-}
-
 /**
  * Emitted when a queued action is refused. (An action dispatched directly
  * returns its failure to the caller instead.)
  */
-export const Rejected: Event.EventDef<Rejection> =
-  Event.define<Rejection>("Action.Rejected");
-
-export interface ActionsApi {
-  readonly enqueue: <N extends string, P>(
-    action: ActionDef<N, P, unknown>,
-    payload: P
-  ) => void;
-}
-
-const ActionsService: Context.ServiceClass<Actions, "ecs/Actions", ActionsApi> =
-  Context.Service<Actions, ActionsApi>()("ecs/Actions");
+export const Rejected = Event.define<{
+  readonly action: string;
+  readonly payload: unknown;
+  readonly error: unknown;
+}>("Action.Rejected");
 
 /**
  * Lets systems and scripts issue actions, so AI plays by the same rules as
  * players. The action is applied at the start of the next tick.
  */
-export class Actions extends ActionsService {}
+export class Actions extends Context.Service<
+  Actions,
+  {
+    readonly enqueue: <N extends string, P>(
+      action: ActionDef<N, P, unknown>,
+      payload: P
+    ) => void;
+  }
+>()("ecs/Actions") {}

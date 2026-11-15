@@ -8,16 +8,8 @@ import type { Actions } from "./Action";
 import type { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 
-// Each service is a typed constant plus a class that extends it. Written in
-// one expression, `class X extends Context.Service<...>()("key") {}`, the
-// class's type could not be worked out one file at a time, which the build's
-// declaration generator requires (isolatedDeclarations).
-
-const WorldService: Context.ServiceClass<World, "ecs/World", EcsWorld> =
-  Context.Service<World, EcsWorld>()("ecs/World");
-
 /** The ECS world. Most systems use queries and Commands instead of this. */
-export class World extends WorldService {}
+export class World extends Context.Service<World, EcsWorld>()("ecs/World") {}
 
 export interface TimeState {
   /** Seconds simulated by the current tick. */
@@ -28,42 +20,29 @@ export interface TimeState {
   tick: number;
 }
 
-const TimeService: Context.ServiceClass<
-  Time,
-  "ecs/Time",
-  Readonly<TimeState>
-> = Context.Service<Time, Readonly<TimeState>>()("ecs/Time");
-
 /** Game time. Driven by the tick, not the wall clock, so it is deterministic. */
-export class Time extends TimeService {}
-
-const CommandsService: Context.ServiceClass<
-  Commands,
-  "ecs/Commands",
-  CommandBuffer
-> = Context.Service<Commands, CommandBuffer>()("ecs/Commands");
+export class Time extends Context.Service<Time, Readonly<TimeState>>()(
+  "ecs/Time"
+) {}
 
 /** Deferred structural changes, applied when the current system finishes. */
-export class Commands extends CommandsService {}
-
-export interface ScriptApi {
-  /** Suspends the fiber until the next tick. */
-  readonly nextTick: Effect.Effect<void>;
-  /** Suspends the fiber for a span of game time. */
-  readonly sleep: (seconds: number) => Effect.Effect<void>;
-}
-
-const ScriptService: Context.ServiceClass<Script, "ecs/Script", ScriptApi> =
-  Context.Service<Script, ScriptApi>()("ecs/Script");
+export class Commands extends Context.Service<Commands, CommandBuffer>()(
+  "ecs/Commands"
+) {}
 
 /** Waiting primitives for long-running scripts (coroutines). */
-export class Script extends ScriptService {}
-
-const EventsService: Context.ServiceClass<Events, "ecs/Events", EventBus> =
-  Context.Service<Events, EventBus>()("ecs/Events");
+export class Script extends Context.Service<
+  Script,
+  {
+    /** Suspends the fiber until the next tick. */
+    readonly nextTick: Effect.Effect<void>;
+    /** Suspends the fiber for a span of game time. */
+    readonly sleep: (seconds: number) => Effect.Effect<void>;
+  }
+>()("ecs/Script") {}
 
 /** The app's event channels. Usually reached by yielding an event definition. */
-export class Events extends EventsService {}
+export class Events extends Context.Service<Events, EventBus>()("ecs/Events") {}
 
 /** Services the app provides itself. */
 export type BuiltIn = World | Time | Commands | Script | Events | Actions;

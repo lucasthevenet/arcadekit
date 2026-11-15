@@ -58,9 +58,10 @@ const config: UserConfig = defineConfig({
   outDir: "dist",
   clean: true,
   sourcemap: true,
-  // Declarations come from oxc, one file at a time; the package turns on isolatedDeclarations
-  // so every export has the explicit type it needs.
-  dts: { generator: "oxc", sourcemap: true },
+  // Declarations come from the TypeScript compiler itself, so an export's type may be inferred
+  // (a service class that extends a call, an object whose type is its value). tsgo reads the
+  // options, declarationMap included, from tsconfig.json.
+  dts: { generator: "tsgo", sourcemap: true },
   // peerDependencies stay imports (tsdown's default). Bundling anything else from node_modules
   // fails the build. `cloudflare:` runtime modules and `node:` built-ins stay imports too.
   deps: { neverBundle: [/^cloudflare:/u, /^node:/u], onlyBundle: [] },

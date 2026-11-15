@@ -3,7 +3,7 @@
   "compilerOptions": {
     "types": ["node"],
     "declaration": false,
-    "isolatedDeclarations": false
+    "declarationMap": false
   },
   "include": ["examples", "bench"]
 }

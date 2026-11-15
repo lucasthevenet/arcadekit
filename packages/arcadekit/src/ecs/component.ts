@@ -13,8 +13,8 @@
 export type Entity = number & { readonly _brand: "Entity" };
 
 export const INDEX_BITS = 22;
-export const INDEX_MASK: number = (1 << INDEX_BITS) - 1;
-export const GENERATION_MASK: number = (1 << (32 - INDEX_BITS)) - 1;
+export const INDEX_MASK = (1 << INDEX_BITS) - 1;
+export const GENERATION_MASK = (1 << (32 - INDEX_BITS)) - 1;
 
 export const entityIndex = (entity: Entity): number => entity & INDEX_MASK;
 export const entityGeneration = (entity: Entity): number =>
@@ -48,25 +48,16 @@ export interface FieldDef<T, C> {
 
 const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
 
-export const Field: {
-  readonly f32: FieldDef<number, Float32Array>;
-  readonly f64: FieldDef<number, Float64Array>;
-  readonly i32: FieldDef<number, Int32Array>;
-  readonly u32: FieldDef<number, Uint32Array>;
-  readonly u16: FieldDef<number, Uint16Array>;
-  readonly u8: FieldDef<number, Uint8Array>;
-  readonly entity: FieldDef<Entity, Uint32Array>;
+export const Field = {
+  f32: field<number, Float32Array>("f32"),
+  f64: field<number, Float64Array>("f64"),
+  i32: field<number, Int32Array>("i32"),
+  u32: field<number, Uint32Array>("u32"),
+  u16: field<number, Uint16Array>("u16"),
+  u8: field<number, Uint8Array>("u8"),
+  entity: field<Entity, Uint32Array>("entity"),
   /** Any JS value, stored in a plain array. Use for strings, objects, handles. */
-  readonly ref: <T>() => FieldDef<T, T[]>;
-} = {
-  f32: field("f32"),
-  f64: field("f64"),
-  i32: field("i32"),
-  u32: field("u32"),
-  u16: field("u16"),
-  u8: field("u8"),
-  entity: field("entity"),
-  ref: () => field("ref"),
+  ref: <T>(): FieldDef<T, T[]> => field<T, T[]>("ref"),
 };
 
 export type Column =
@@ -237,22 +228,14 @@ const define = <S extends Schema, St extends Storage = "table">(
   return def;
 };
 
-export const Component: {
+export const Component = {
   /** Define a data component. Numeric fields become typed-array columns. */
-  readonly define: <S extends Schema, St extends Storage = "table">(
-    name: string,
-    schema: S,
-    options?: { readonly storage?: St }
-  ) => ComponentDef<S, St>;
-  /** Define a component with no data, used only for filtering. */
-  readonly tag: <St extends Storage = "table">(
-    name: string,
-    options?: { readonly storage?: St }
-  ) => ComponentDef<{}, St>;
-  /** Look a component up by name (for save games, netcode, tooling). */
-  readonly byName: (name: string) => ComponentDef<any> | undefined;
-} = {
   define,
-  tag: (name, options) => define(name, {}, options),
-  byName: (name) => registry.get(name),
+  /** Define a component with no data, used only for filtering. */
+  tag: <St extends Storage = "table">(
+    name: string,
+    options?: { readonly storage?: St }
+  ): ComponentDef<{}, St> => define(name, {}, options),
+  /** Look a component up by name (for save games, netcode, tooling). */
+  byName: (name: string): ComponentDef<any> | undefined => registry.get(name),
 };

@@ -6,7 +6,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 
 ## Layout
 
-- `packages/arcadekit/src/`: the package's source. Each subpath of its `package.json` `exports` names its source file under a `source` condition, and its built files as `./dist/<name>.d.ts` and `./dist/<name>.js`; `tsdown.config.ts` builds every export from that map.
+- `packages/arcadekit/src/`: the package's source. Each subpath of its `package.json` `exports` names its source file under a `source` condition, and its built files as `./dist/<name>.d.ts` and `./dist/<name>.js`; `tsdown.config.ts` builds every export from that map, and generates the declarations with the TypeScript compiler (`tsgo`), so an export's type may be inferred.
 - A module's file is named in PascalCase after the namespace it is imported as, as Effect's own are: `src/App.ts` is `App`, `src/TickScheduler.ts` holds `TickScheduler`. The files of `src/ecs/` and `index.ts` are lower case.
 - `packages/arcadekit/src/ecs/`: the storage core (components, tables, queries, the command buffer). It is plain synchronous TypeScript and imports nothing from Effect.
 - `packages/arcadekit/test/`: its tests, run by Vitest from the source with no build.
@@ -19,7 +19,6 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 - A system is one Effect per tick with plain loops inside. Code that runs once per entity is never an Effect: measured, that is about 25 times slower than a loop over columns.
 - Nothing changes the set of entities or their components while a query is iterating. Such changes go through `Commands` and are applied when the system finishes.
 - A tick gives the same result from the same inputs. Time comes from `Time`, waiting from `Script`, and fibers only resume when the tick flushes its scheduler.
-- An error class or a service is declared as a typed constant plus a class that extends it, because the build generates declarations one file at a time (`isolatedDeclarations`). `src/Services.ts` and `src/TaggedError.ts` show the pattern.
 
 ## Validation
 

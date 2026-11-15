@@ -29,7 +29,6 @@ import * as Plugin from "./Plugin";
 import { Commands, Events, Script, Time, World } from "./Services";
 import type { BuiltIn, TimeState } from "./Services";
 import * as System from "./System";
-import type { TaggedErrorClass } from "./TaggedError";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
 
 type Systems = readonly Plugin.AnySystem[];
@@ -495,20 +494,13 @@ export const make = <
     Scope.Scope | External<S, H, P>
   >;
 
-interface ReplayDivergedFields {
+/** A replayed log did not behave as it did when it was recorded. */
+export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
   /** Position in the log of the entry that was refused. */
   readonly index: number;
   readonly entry: Action.Logged;
   readonly reason: unknown;
-}
-
-const ReplayDivergedError: TaggedErrorClass<
-  "ReplayDiverged",
-  ReplayDivergedFields
-> = Data.TaggedError("ReplayDiverged");
-
-/** A replayed log did not behave as it did when it was recorded. */
-export class ReplayDiverged extends ReplayDivergedError {
+}> {
   override get message(): string {
     const reason =
       this.reason instanceof Error
