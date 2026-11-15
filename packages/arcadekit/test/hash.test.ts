@@ -24,7 +24,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.ref<unknown>(),
+  note: Field.json<unknown>(),
 };
 const Body = Component.define("hash/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("hash/Sheet", kinds);
@@ -540,19 +540,42 @@ describe("the hash of a world", () => {
     expect(build(7).hash()).toBe(build(8).hash());
   });
 
-  it("counts an object in a ref field only as being there", () => {
+  it("counts an array or an object in a json field by what is in it", () => {
     const hashOf = (note: unknown): number => {
       const world = new EcsWorld();
       world.spawn(Sheet.of({ ...sheet(1), note }));
+      world.add(world.spawn(), Aura.of({ ...sheet(2), note }));
       return world.hash();
     };
-    // Two different objects hash alike: there is no telling what is in one.
-    expect(hashOf({ hp: 1 })).toBe(hashOf({ hp: 2 }));
-    expect(hashOf([1])).toBe(hashOf(() => 1));
-    // But an object is not nothing, and not a value either.
-    expect(hashOf({})).not.toBe(hashOf(undefined));
-    expect(hashOf({})).not.toBe(hashOf(null));
-    expect(hashOf({})).not.toBe(hashOf("[object Object]"));
+    const values: unknown[] = [
+      { hp: 1 },
+      { hp: 2 },
+      { hp: 1, mp: 0 },
+      { hp: "1" },
+      [1],
+      [1, 2],
+      [[1], 2],
+      [],
+      {},
+      "[]",
+      "{}",
+      null,
+      undefined,
+      [null],
+      { a: { b: [1, { c: true }] } },
+      { a: { b: [1, { c: false }] } },
+    ];
+    expect(new Set(values.map((value) => hashOf(value))).size).toBe(
+      values.length
+    );
+    // The same content is the same hash, whichever object holds it.
+    expect(hashOf({ hp: 1, items: ["a", "b"] })).toBe(
+      hashOf(structuredClone({ hp: 1, items: ["a", "b"] }))
+    );
+    // A value JSON cannot write is refused in so many words.
+    expect(() => hashOf({ big: 1n })).toThrow(
+      /A json field holds a value that JSON cannot write/
+    );
   });
 
   it("counts tags, which have no data, by who has them", () => {

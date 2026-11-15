@@ -34,7 +34,7 @@ const Fighter = Component.define("duel/Fighter", {
   hp: Field.i32,
   energy: Field.i32,
 });
-const Name = Component.define("duel/Name", { value: Field.ref<string>() });
+const Name = Component.define("duel/Name", { value: Field.json<string>() });
 const Turn = Component.define("duel/Turn", { player: Field.u8 });
 
 const Fighters = Query.all(Fighter);

@@ -5,12 +5,15 @@
  *
  * Whole numbers are little-endian. A column of numbers is the bytes of its
  * typed array, as they are in memory, which is the same thing on every
- * machine JavaScript runs on today. A value of a `ref` field is a tag byte
- * and then the value.
+ * machine JavaScript runs on today. A value of a `json` field, or of a `ref`
+ * field once its codec has encoded it, is a tag byte and then the value;
+ * an array or an object is its JSON text. A `transient` field is not
+ * written.
  *
  * No Effect dependency.
  */
-import type { Column, FieldKind } from "./component";
+import { isBoxed } from "./component";
+import type { Column, FieldKind, RefCodec } from "./component";
 
 /** Why a snapshot could not be taken, or could not be loaded. */
 export type SnapshotProblem =
@@ -50,7 +53,10 @@ export const END = 0x21444e45;
 const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
 /** Bytes per element of a column of numbers. */
-export const WIDTH: Record<Exclude<FieldKind, "ref">, number> = {
+export const WIDTH: Record<
+  Exclude<FieldKind, "json" | "ref" | "transient">,
+  number
+> = {
   f32: 4,
   f64: 8,
   i32: 4,
@@ -68,7 +74,9 @@ export const KIND_CODES: readonly FieldKind[] = [
   "u16",
   "u8",
   "entity",
+  "json",
   "ref",
+  "transient",
 ];
 
 const TAG_UNDEFINED = 0;
@@ -78,6 +86,7 @@ const TAG_TRUE = 3;
 const TAG_NUMBER = 4;
 const TAG_STRING = 5;
 const TAG_BIGINT = 6;
+const TAG_JSON = 7;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -149,9 +158,10 @@ export class Writer {
   }
 
   /**
-   * One value of a `ref` field. A string, a number, a boolean, a bigint,
-   * null and undefined are written as they are, exactly: -0 and NaN too.
-   * Returns false for anything else, which has no form here.
+   * One value of plain data. A string, a number, a boolean, a bigint, null
+   * and undefined are written as they are, exactly: -0 and NaN too. An
+   * array or an object is written as its JSON text. Returns false for a
+   * value that has none: a function, a symbol, an object JSON cannot write.
    */
   value(value: unknown): boolean {
     switch (typeof value) {
@@ -183,7 +193,18 @@ export class Writer {
           this.u8(TAG_NULL);
           return true;
         }
-        return false;
+        let json: string | undefined;
+        try {
+          json = JSON.stringify(value);
+        } catch {
+          return false;
+        }
+        if (json === undefined) {
+          return false;
+        }
+        this.u8(TAG_JSON);
+        this.text(json);
+        return true;
       }
     }
   }
@@ -315,6 +336,17 @@ export class Reader {
           );
         }
       }
+      case TAG_JSON: {
+        const json = this.text();
+        try {
+          return JSON.parse(json);
+        } catch {
+          throw new SnapshotError(
+            "corrupt",
+            "The snapshot holds an array or an object that is not JSON."
+          );
+        }
+      }
       default: {
         throw new SnapshotError(
           "corrupt",
@@ -325,38 +357,62 @@ export class Reader {
   }
 }
 
-/** Writes rows `[0, count)` of a column. Returns the row it could not write, or -1. */
+/**
+ * Writes rows `[0, count)` of a column. Returns the row it could not write,
+ * or -1. A `transient` field writes nothing.
+ */
 export const writeColumn = (
   writer: Writer,
   kind: FieldKind,
   column: Column,
-  count: number
+  count: number,
+  codec?: RefCodec<unknown>
 ): number => {
-  if (kind !== "ref") {
-    writer.numbers(column as Float32Array, count, WIDTH[kind]);
+  if (!isBoxed(kind)) {
+    writer.numbers(column as Float32Array, count, WIDTH[kind as "f32"]);
+    return -1;
+  }
+  if (kind === "transient") {
     return -1;
   }
   const values = column as unknown[];
   for (let row = 0; row < count; row++) {
-    if (!writer.value(values[row])) {
+    let value = values[row];
+    if (kind === "ref") {
+      try {
+        value = codec!.encode(value);
+      } catch {
+        return row;
+      }
+    }
+    if (!writer.value(value)) {
       return row;
     }
   }
   return -1;
 };
 
+/**
+ * Reads rows `[0, count)` of a column. A `transient` field reads nothing
+ * and stays undefined. A codec that refuses a value throws what it throws.
+ */
 export const readColumn = (
   reader: Reader,
   kind: FieldKind,
   column: Column,
-  count: number
+  count: number,
+  codec?: RefCodec<unknown>
 ): void => {
-  if (kind !== "ref") {
-    reader.numbers(column as Float32Array, count, WIDTH[kind]);
+  if (!isBoxed(kind)) {
+    reader.numbers(column as Float32Array, count, WIDTH[kind as "f32"]);
+    return;
+  }
+  if (kind === "transient") {
     return;
   }
   const values = column as unknown[];
   for (let row = 0; row < count; row++) {
-    values[row] = reader.value();
+    const value = reader.value();
+    values[row] = kind === "ref" ? codec!.decode(value) : value;
   }
 };

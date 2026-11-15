@@ -5,7 +5,8 @@ export {
   Component,
   type ComponentDef,
   type Entity,
-  Field,
+  type FieldDef,
+  type RefCodec,
 } from "./ecs/component";
 export type { Rng } from "./ecs/random";
 export { SnapshotError, type SnapshotProblem } from "./ecs/snapshot";
@@ -17,6 +18,7 @@ export {
   World as EcsWorld,
 } from "./ecs/world";
 export * as Event from "./Event";
+export * as Field from "./Field";
 export * as Plugin from "./Plugin";
 export * as Query from "./Query";
 export * as Resource from "./Resource";

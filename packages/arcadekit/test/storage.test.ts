@@ -14,7 +14,7 @@ const Velocity = Component.define("st/Velocity", {
   y: Field.f32,
 });
 const Health = Component.define("st/Health", { hp: Field.i32 });
-const Name = Component.define("st/Name", { value: Field.ref<string>() });
+const Name = Component.define("st/Name", { value: Field.json<string>() });
 const Target = Component.define("st/Target", { entity: Field.entity });
 const Enemy = Component.tag("st/Enemy");
 const Stunned = Component.tag("st/Stunned", { storage: "sparse" });

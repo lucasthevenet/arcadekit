@@ -19,7 +19,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.ref<unknown>(),
+  note: Field.json<unknown>(),
 };
 const define = (prefix: string) => ({
   Body: Component.define(`${prefix}/Body`, { x: Field.f32, y: Field.f32 }),
@@ -336,13 +336,14 @@ const problemOf = (run: () => unknown): SnapshotError => {
 };
 
 describe("a snapshot that cannot be taken", () => {
-  it("names the field that holds a value with no saved form", () => {
+  it("names the field that holds a value that is not plain data", () => {
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
     for (const [value, what] of [
-      [{ hp: 1 }, "an object"],
-      [[1, 2], "an array"],
       [() => 1, "a function"],
       [Symbol("s"), "a symbol"],
-      [new Map(), "an object"],
+      [{ big: 1n }, "an object"],
+      [cyclic, "an object"],
     ] as const) {
       const world = new EcsWorld();
       world.spawn(C.Sheet.of(sheet(1)));
@@ -352,6 +353,7 @@ describe("a snapshot that cannot be taken", () => {
       expect(error.component).toBe("snap/Sheet");
       expect(error.message).toContain(`"snap/Sheet.note"`);
       expect(error.message).toContain(what);
+      expect(error.message).toMatch(/Field\.ref.*Field\.transient/);
       // The same in a sparse component.
       const sparse = new EcsWorld();
       sparse.add(sparse.spawn(), C.Aura.of({ ...sheet(2), note: value }));

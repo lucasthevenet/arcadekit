@@ -28,7 +28,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.ref<unknown>(),
+  note: Field.json<unknown>(),
 };
 const Body = Component.define("tx/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("tx/Sheet", kinds);

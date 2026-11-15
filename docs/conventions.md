@@ -150,7 +150,7 @@ Each part has one shape. A new feature is made of these, not of a new kind of th
 
 | Part | Is | Rules |
 | --- | --- | --- |
-| Component | Data, declared with `Component.define` | Numbers go in typed fields. Use `storage: "sparse"` for one that is added and removed often or that few entities have. |
+| Component | Data, declared with `Component.define` | Numbers go in typed fields. Anything else is `Field.json` (plain data), `Field.schema` (a value with a schema) or `Field.transient` (not part of the game's state, so not saved or hashed): a field says which where it is defined. Use `storage: "sparse"` for one that is added and removed often or that few entities have. |
 | System | A generator given to `System.make` | Finishes within its tick. Changes the set of entities only through `Commands`. |
 | Event | A fact, declared with `Event.define` | Named in the past tense. Emitted, never awaited by a system. |
 | Action | A request from outside, declared with `Action.define` and a schema | Its handler may refuse at any point: the world takes back what it wrote. It changes which entities exist only through `Commands`, and issues another action only with `Actions.enqueue`. |

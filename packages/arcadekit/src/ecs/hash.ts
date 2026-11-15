@@ -10,7 +10,7 @@
  *
  * No Effect dependency.
  */
-import type { Column, FieldKind } from "./component";
+import type { Column, FieldKind, RefCodec } from "./component";
 
 /** Folds one 32-bit word into a hash state. */
 export const add = (state: number, word: number): number => {
@@ -63,41 +63,55 @@ const addFloat64 = (state: number, value: number): number => {
     : add(add(state, low), high);
 };
 
-// What kind of value a `ref` field holds is part of its hash, so that the
-// number 1, the string "1" and `true` are three different things.
-const REF_UNDEFINED = 1;
-const REF_NULL = 2;
-const REF_BOOLEAN = 3;
-const REF_NUMBER = 4;
-const REF_STRING = 5;
-const REF_BIGINT = 6;
-const REF_OTHER = 7;
+// What kind of value a field holds is part of its hash, so that the number
+// 1, the string "1" and `true` are three different things.
+const DATA_UNDEFINED = 1;
+const DATA_NULL = 2;
+const DATA_BOOLEAN = 3;
+const DATA_NUMBER = 4;
+const DATA_STRING = 5;
+const DATA_BIGINT = 6;
+const DATA_JSON = 7;
+
+/** The JSON text of an array or an object. A function or a symbol has none. */
+const jsonText = (value: unknown): string => {
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch (error) {
+    throw new Error(
+      `A json field holds a value that JSON cannot write, so the world cannot be hashed or saved: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+};
 
 /**
- * Folds a value of a `ref` field into a hash state. Strings, numbers,
- * booleans, bigints, null and undefined are hashed by value. Anything else
- * (an object, a function, a symbol) only counts as "something is here": two
- * different objects hash alike.
+ * Folds one value of plain data into a hash state. Text, a number, a
+ * boolean, a bigint, null and undefined are hashed by value. An array or an
+ * object is hashed as the text `JSON.stringify` gives for it, which is the
+ * form a snapshot saves it in.
  */
-export const addRef = (state: number, value: unknown): number => {
+export const addData = (state: number, value: unknown): number => {
   switch (typeof value) {
     case "undefined": {
-      return add(state, REF_UNDEFINED);
+      return add(state, DATA_UNDEFINED);
     }
     case "boolean": {
-      return add(add(state, REF_BOOLEAN), value ? 1 : 0);
+      return add(add(state, DATA_BOOLEAN), value ? 1 : 0);
     }
     case "number": {
-      return addFloat64(add(state, REF_NUMBER), value);
+      return addFloat64(add(state, DATA_NUMBER), value);
     }
     case "string": {
-      return addString(add(state, REF_STRING), value);
+      return addString(add(state, DATA_STRING), value);
     }
     case "bigint": {
-      return addString(add(state, REF_BIGINT), value.toString());
+      return addString(add(state, DATA_BIGINT), value.toString());
     }
     default: {
-      return add(state, value === null ? REF_NULL : REF_OTHER);
+      if (value === null) {
+        return add(state, DATA_NULL);
+      }
+      return addString(add(state, DATA_JSON), jsonText(value));
     }
   }
 };
@@ -164,7 +178,8 @@ export const addColumn = (
   state: number,
   kind: FieldKind,
   column: Column,
-  count: number
+  count: number,
+  codec?: RefCodec<unknown>
 ): number => {
   let h = state;
   switch (kind) {
@@ -207,11 +222,22 @@ export const addColumn = (
       }
       return h;
     }
+    case "json": {
+      const values = column as unknown[];
+      for (let i = 0; i < count; i++) {
+        h = addData(h, values[i]);
+      }
+      return h;
+    }
     case "ref": {
       const values = column as unknown[];
       for (let i = 0; i < count; i++) {
-        h = addRef(h, values[i]);
+        h = addData(h, codec!.encode(values[i]));
       }
+      return h;
+    }
+    case "transient": {
+      // Not part of the game's state: not saved, so not hashed.
       return h;
     }
   }
@@ -225,7 +251,8 @@ export const addColumnPerRow = (
   states: Int32Array,
   kind: FieldKind,
   column: Column,
-  count: number
+  count: number,
+  codec?: RefCodec<unknown>
 ): void => {
   switch (kind) {
     case "f32": {
@@ -244,11 +271,21 @@ export const addColumnPerRow = (
       }
       return;
     }
+    case "json": {
+      const values = column as unknown[];
+      for (let i = 0; i < count; i++) {
+        states[i] = addData(states[i]!, values[i]);
+      }
+      return;
+    }
     case "ref": {
       const values = column as unknown[];
       for (let i = 0; i < count; i++) {
-        states[i] = addRef(states[i]!, values[i]);
+        states[i] = addData(states[i]!, codec!.encode(values[i]));
       }
+      return;
+    }
+    case "transient": {
       return;
     }
     default: {
@@ -268,7 +305,9 @@ const KIND_CODE: Record<FieldKind, number> = {
   u16: 5,
   u8: 6,
   entity: 7,
-  ref: 8,
+  json: 8,
+  ref: 9,
+  transient: 10,
 };
 
 /**

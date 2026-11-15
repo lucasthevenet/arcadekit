@@ -34,7 +34,31 @@ export type FieldKind =
   | "u16"
   | "u8"
   | "entity"
-  | "ref";
+  | "json"
+  | "ref"
+  | "transient";
+
+/**
+ * The three kinds whose values are not numbers. They are kept in a plain
+ * array, one value per row, and each says what a snapshot and the hash do
+ * with it:
+ *
+ * - `json`: plain data, saved and hashed as it is.
+ * - `ref`: any value, saved and hashed through a codec.
+ * - `transient`: not saved and not hashed.
+ */
+export const isBoxed = (kind: FieldKind): boolean =>
+  kind === "json" || kind === "ref" || kind === "transient";
+
+/**
+ * How the values of a `ref` field are turned into plain data and back.
+ * `encode` gives something JSON can write, and `decode` takes what JSON
+ * read back. Either may throw for a value it will not take.
+ */
+export interface RefCodec<T> {
+  readonly encode: (value: T) => unknown;
+  readonly decode: (data: unknown) => T;
+}
 
 /**
  * A field of a component. `T` is the value you read and write, `C` is the
@@ -42,6 +66,8 @@ export type FieldKind =
  */
 export interface FieldDef<T, C> {
   readonly kind: FieldKind;
+  /** Present on a `ref` field. */
+  readonly codec?: RefCodec<T>;
   readonly _T?: T;
   readonly _C?: C;
 }
@@ -56,8 +82,28 @@ export const Field = {
   u16: field<number, Uint16Array>("u16"),
   u8: field<number, Uint8Array>("u8"),
   entity: field<Entity, Uint32Array>("entity"),
-  /** Any JS value, stored in a plain array. Use for strings, objects, handles. */
-  ref: <T>(): FieldDef<T, T[]> => field<T, T[]>("ref"),
+  /**
+   * Plain data: text, a number, a boolean, a bigint, null or undefined, or
+   * an array or object made of text, numbers, booleans and null. It is
+   * saved in a snapshot and counted in the hash. An array or an object is
+   * saved and hashed as the text `JSON.stringify` gives for it, so it comes
+   * back as what `JSON.parse` makes of that text.
+   */
+  json: <T>(): FieldDef<T, T[]> => field<T, T[]>("json"),
+  /**
+   * Any value at all, with a codec that turns it into plain data and back:
+   * a Date, a Map, an instance of a class. It is saved in a snapshot and
+   * counted in the hash in its encoded form, so it is encoded once per
+   * value for every hash.
+   */
+  ref: <T>(codec: RefCodec<T>): FieldDef<T, T[]> => ({ kind: "ref", codec }),
+  /**
+   * A value that is not part of the game's state: a handle, a cache,
+   * something another system can make again. It is not saved and not
+   * hashed, and is undefined in a world loaded from a snapshot.
+   */
+  transient: <T>(): FieldDef<T | undefined, (T | undefined)[]> =>
+    field<T | undefined, (T | undefined)[]>("transient"),
 };
 
 export type Column =
@@ -90,7 +136,9 @@ export const makeColumn = (kind: FieldKind, capacity: number): Column => {
     case "u8": {
       return new Uint8Array(capacity);
     }
-    case "ref": {
+    case "json":
+    case "ref":
+    case "transient": {
       return Array.from({ length: capacity }, () => undefined);
     }
   }
@@ -102,7 +150,7 @@ export const growColumn = (
   capacity: number
 ): Column => {
   const next = makeColumn(kind, capacity);
-  if (kind === "ref") {
+  if (isBoxed(kind)) {
     const from = old as any[];
     const to = next as any[];
     for (let i = 0; i < from.length; i++) {
@@ -147,6 +195,8 @@ export interface ComponentDef<
   readonly schema: S;
   readonly fields: readonly string[];
   readonly kinds: readonly FieldKind[];
+  /** Per field: the codec of a `ref` field, undefined for any other. */
+  readonly codecs: readonly (RefCodec<any> | undefined)[];
   /** Tracked in the type so queries know which terms have row-aligned columns. */
   readonly storage: St;
   readonly isTag: boolean;
@@ -215,6 +265,7 @@ const define = <S extends Schema, St extends Storage = "table">(
     schema,
     fields,
     kinds: Object.values(schema).map((fieldDef) => fieldDef.kind),
+    codecs: Object.values(schema).map((fieldDef) => fieldDef.codec),
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
     of: (value) => ({ def, value }),

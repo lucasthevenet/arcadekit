@@ -18,7 +18,6 @@ Done. A seeded random service, a hash of the world, replays that check themselve
 
 ## 2. Saving and loading
 
-- **Fields that are not numbers.** A `Field.ref` column holds any value, and a snapshot saves it only when that value is a string, a number, a boolean, a bigint, null or undefined; a world that holds an object in one cannot be saved. Give such a field a schema, or mark it as not saved. The world's hash has the same gap: it counts an object in such a field only as being there. Done when a snapshot either saves a field or says, at definition time, that it will not, and the hash covers every field that is saved.
 - **A save is a snapshot plus the log since.** Loading replays only the tail. Done when loading a long game costs the same as loading a short one.
 - **Versioning.** A save names the components and the schema version it was written with. Done when loading a save from an older version either migrates it or refuses with a typed error that says why.
 

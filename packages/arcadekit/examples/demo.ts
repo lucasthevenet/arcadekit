@@ -30,7 +30,7 @@ const Velocity = Component.define("demo/Velocity", {
   y: Field.f32,
 });
 const Lifetime = Component.define("demo/Lifetime", { seconds: Field.f32 });
-const Name = Component.define("demo/Name", { value: Field.ref<string>() });
+const Name = Component.define("demo/Name", { value: Field.json<string>() });
 // Toggled often, so it lives in a sparse set and never moves entities around.
 const Frozen = Component.tag("demo/Frozen", { storage: "sparse" });
 

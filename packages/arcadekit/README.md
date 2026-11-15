@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 203 tests
+pnpm test                          # 214 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -47,6 +47,33 @@ const program = Effect.gen(function* () {
 ```
 
 Systems run in the order they are registered unless told otherwise: `System.after(Other)` and `System.before(Other)` pull whatever has to run first forward to just before the system that needs it.
+
+## Fields
+
+```ts
+const Hero = Component.define("game/Hero", {
+  hp: Field.i32, // a number, in a typed array
+  target: Field.entity, // an entity id
+  name: Field.json<string>(), // plain data
+  inventory: Field.json<readonly string[]>(),
+  born: Field.schema(Schema.Date), // any value a schema describes
+  sprite: Field.transient<Sprite>(), // not saved
+});
+```
+
+A number goes in a typed field: `f32`, `f64`, `i32`, `u32`, `u16`, `u8`, `entity`. Anything else says, where it is defined, what a snapshot and the hash do with it.
+
+| Field | Holds | Saved and hashed |
+| --- | --- | --- |
+| `Field.json<T>()` | Plain data: text, a number, a boolean, a bigint, null or undefined, or an array or object made of text, numbers, booleans and null | As it is. An array or object as the text `JSON.stringify` gives for it |
+| `Field.schema(schema)` | Any value an Effect schema describes: a Date, a bigint inside an object, a class with a schema | In the schema's JSON form |
+| `Field.ref<T>(codec)` | Any value at all, with `encode` and `decode` of your own to plain data and back | In its encoded form |
+| `Field.transient<T>()` | A handle, a cache, anything another system can make again | No. It is undefined in a world loaded from a snapshot |
+
+- The hash covers exactly what a snapshot saves, in the form it is saved in, so a world that loads a snapshot hashes the same.
+- A value that is not plain data in a `json` field, or one a codec or schema will not take, cannot be saved: the snapshot is refused and names the field. A loaded value that a codec refuses is refused the same way.
+- What comes back from a `json` field is what JSON makes of it: a Date inside an object comes back as text. Give such a value a schema.
+- A `schema` or `ref` field is encoded once per value for every hash, and an array or object in a `json` field is turned into text. Keep them for what is small or rare; numbers that change every tick belong in typed fields.
 
 ## Plugins
 
@@ -175,7 +202,7 @@ So two worlds built by the same operations in the same order hash equal, and cha
 
 It does not depend on what cannot be told apart: how much room a table has, what is left in a column past its last row, which queries have been made, the order a sparse component's members joined in, or the order the program defined its components in. Every NaN counts as the same NaN, because its bits are the one thing engines do not agree on; 0 and -0 are different.
 
-- A `ref` field counts by value when it holds a string, a number, a boolean, a bigint, null or undefined. An object or a function only counts as being there, so two different objects hash alike.
+- A field that is not a number counts as it is saved: a `json` field as the plain data it holds, a `schema` or `ref` field in its encoded form, and a `transient` field not at all. See [Fields](#fields).
 - It is 32-bit integer arithmetic on the bits of each field, so it is the same on every machine and in every JavaScript engine.
 - It reads and changes nothing, so it can be called at any time. It costs about 7 ns per entity for four float fields, 0.7 ms for 100,000 entities; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
 
@@ -196,7 +223,7 @@ copy.hash() === world.hash(); // true
 - `load` fills an empty world: one that has never held an entity.
 - Every problem is a `SnapshotError`, whose `problem` says which kind and whose message names the component or field: `"not a snapshot"`, `"newer format"`, `"truncated"`, `"corrupt"`, `"unknown component"`, `"component changed"` (with its fields then and now), `"world not empty"`, `"cannot be saved"`.
 - Damaged bytes are refused, not trusted: every count is checked against the bytes that are there before anything is allocated for it, an entity may not be in two rows or in a freed slot, and text has to be text. A damaged number inside a column cannot be told from another number, and loads as that.
-- A `ref` field is saved when it holds a string, a number, a boolean, a bigint, null or undefined, each exactly: `-0` and `NaN` come back as they were. Any other value has no saved form yet, and the snapshot is refused with the name of the field.
+- A `json` field is saved as the plain data it holds, exactly for text, numbers, booleans, bigints, null and undefined (`-0` and `NaN` come back as they were), and as JSON text for an array or an object. A `schema` or `ref` field is saved in its encoded form, and a `transient` field is not saved. See [Fields](#fields).
 - A snapshot is refused while a spawn is queued on a `CommandBuffer` and not applied.
 - It costs 6 ns per entity to take and 16 ns to load, for four float fields; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
 
@@ -285,11 +312,12 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
 | `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
 | `src/Plugin.ts` | Plugins and their dependency order |
+| `src/Field.ts` | The fields of a component, with `Field.schema` |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction and snapshot tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot and field tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -390,10 +418,9 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
 - The log does not say when a script was started from outside, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, the actions queued for the next tick, or how far each script has got.
-- An object in a `ref` field is not hashed (see [The world's hash](#the-worlds-hash)) and cannot be saved: a snapshot of a world that holds one is refused.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - Event payloads are typed but have no schema, so events cannot be sent over a network yet.
-- A refused action does not undo what is outside the world: an object in a `ref` field that the handler changed in place, a call to a service of the game's own, a script it started.
+- A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.
 - Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.

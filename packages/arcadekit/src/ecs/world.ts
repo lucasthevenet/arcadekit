@@ -29,6 +29,7 @@ import {
   GENERATION_MASK,
   growColumn,
   INDEX_MASK,
+  isBoxed,
   isComponentDef,
   makeColumn,
   makeEntity,
@@ -109,7 +110,7 @@ const writeRow = (
     const name = def.fields[f];
     cols[name!]![row] =
       value === undefined
-        ? def.kinds[f] === "ref"
+        ? isBoxed(def.kinds[f]!)
           ? undefined
           : 0
         : value[name!];
@@ -207,7 +208,7 @@ export class Table {
         if (row !== last) {
           col[row] = col[last];
         }
-        if (def.kinds[f] === "ref") {
+        if (isBoxed(def.kinds[f]!)) {
           col[last] = undefined;
         }
       }
@@ -290,7 +291,7 @@ export class SparseSet {
       if (pos !== last) {
         col[pos] = col[last];
       }
-      if (def.kinds[f] === "ref") {
+      if (isBoxed(def.kinds[f]!)) {
         col[last] = undefined;
       }
     }
@@ -1383,7 +1384,7 @@ export class World {
         const column = cols[def.fields[f]!]!;
         if (row !== WHOLE) {
           column[row] = copies[f];
-        } else if (def.kinds[f] === "ref") {
+        } else if (isBoxed(def.kinds[f]!)) {
           const from = copies[f] as unknown[];
           for (let r = 0; r < count; r++) {
             column[r] = from[r];
@@ -1433,7 +1434,7 @@ export class World {
       if (kept === undefined || kept.length < count) {
         // Room for the column as it is now; a column only grows by doubling.
         copies[f] = column.slice(0, column.length);
-      } else if (def.kinds[f] === "ref") {
+      } else if (isBoxed(def.kinds[f]!)) {
         const to = kept as unknown[];
         for (let r = 0; r < count; r++) {
           to[r] = column[r];
@@ -1526,10 +1527,12 @@ export class World {
    * components in. Columns of numbers are written as they are, which makes a
    * snapshot about as big as the data: four bytes for an `f32`, and so on.
    *
-   * A `ref` field is written when it holds a string, a number, a boolean, a
-   * bigint, null or undefined. Any other value has no form here, and the
-   * snapshot is refused with a `SnapshotError` that names the field. So is a
-   * world with a spawn queued on a CommandBuffer and not yet applied.
+   * A `json` field is written as the plain data it holds, a `ref` field as
+   * what its codec makes of each value, and a `transient` field not at all.
+   * A value that is not plain data, or that a codec will not encode, has no
+   * form here, and the snapshot is refused with a `SnapshotError` that
+   * names the field. So is a world with a spawn queued on a CommandBuffer
+   * and not yet applied.
    */
   snapshot(): Uint8Array {
     const { tables } = this;
@@ -1540,7 +1543,7 @@ export class World {
       estimate += 64 + table.count * 4;
       for (const def of table.defs) {
         for (const kind of def.kinds) {
-          estimate += table.count * (kind === "ref" ? 8 : WIDTH[kind]);
+          estimate += table.count * (isBoxed(kind) ? 8 : WIDTH[kind as "f32"]);
         }
       }
     }
@@ -1602,11 +1605,19 @@ export class World {
     ): void => {
       for (let f = 0; f < def.fields.length; f++) {
         const field = def.fields[f]!;
-        const row = writeColumn(writer, def.kinds[f]!, columns[field]!, count);
+        const row = writeColumn(
+          writer,
+          def.kinds[f]!,
+          columns[field]!,
+          count,
+          def.codecs[f]
+        );
         if (row !== -1) {
           throw new SnapshotError(
             "cannot be saved",
-            `"${def.name}.${field}" holds a value that has no saved form (${describeValue(columns[field]![row])}). A ref field is saved when it holds a string, a number, a boolean, a bigint, null or undefined.`,
+            def.kinds[f] === "ref"
+              ? `"${def.name}.${field}" holds a value its codec did not turn into plain data (${describeValue(columns[field]![row])}).`
+              : `"${def.name}.${field}" holds a value that is not plain data (${describeValue(columns[field]![row])}). A json field holds text, numbers, booleans, bigints, null and undefined, and arrays and objects of text, numbers, booleans and null. Give the field a codec with Field.ref, or make it Field.transient if it is not to be saved.`,
             def.name
           );
         }
@@ -1802,12 +1813,7 @@ export class World {
       // The same order the fields were written in: components by name.
       for (const def of defs) {
         for (let f = 0; f < def.fields.length; f++) {
-          readColumn(
-            reader,
-            def.kinds[f]!,
-            table.columns[def.id]![def.fields[f]!]!,
-            count
-          );
+          this.readField(reader, def, f, table.columns[def.id]!, count);
         }
       }
     }
@@ -1836,11 +1842,34 @@ export class World {
         set.add(index, undefined);
       }
       for (let f = 0; f < def.fields.length; f++) {
-        readColumn(reader, def.kinds[f]!, set.columns[def.fields[f]!]!, count);
+        this.readField(reader, def, f, set.columns, count);
       }
     }
     if (reader.left !== 4 || reader.u32() !== END) {
       throw corrupt("it does not end where it should");
+    }
+  }
+
+  /** Reads one field's column, naming the field if its codec refuses a value. */
+  private readField(
+    reader: Reader,
+    def: ComponentDef<any>,
+    f: number,
+    columns: Columns,
+    count: number
+  ): void {
+    const field = def.fields[f]!;
+    try {
+      readColumn(reader, def.kinds[f]!, columns[field]!, count, def.codecs[f]);
+    } catch (error) {
+      if (error instanceof SnapshotError) {
+        throw error;
+      }
+      throw new SnapshotError(
+        "component changed",
+        `"${def.name}.${field}" has a codec that refuses a value the snapshot holds: ${error instanceof Error ? error.message : String(error)}`,
+        def.name
+      );
     }
   }
 
@@ -1870,9 +1899,9 @@ export class World {
    *
    * It does not depend on what cannot be told apart: how much room a table
    * has, which queries have been made, or the order components were defined
-   * in. A `ref` field counts by value when it holds a string, a number, a
-   * boolean, a bigint, null or undefined; any other value only counts as
-   * being there.
+   * in. A `json` field counts as the plain data it holds, a `ref` field as
+   * what its codec makes of each value, and a `transient` field not at all:
+   * the hash covers exactly what a snapshot saves.
    *
    * Measured, it costs about 1.4 ns per 32-bit field per entity in a table,
    * so 0.7 ms for 100,000 entities with four float fields, and about four
@@ -1905,7 +1934,13 @@ export class World {
         h = add(h, shapes[def.id]!);
         const columns = table.columns[def.id]!;
         for (let f = 0; f < def.fields.length; f++) {
-          h = addColumn(h, def.kinds[f]!, columns[def.fields[f]!]!, count);
+          h = addColumn(
+            h,
+            def.kinds[f]!,
+            columns[def.fields[f]!]!,
+            count,
+            def.codecs[f]
+          );
         }
       }
     }
@@ -1936,7 +1971,8 @@ export class World {
           states,
           def.kinds[f]!,
           set.columns[def.fields[f]!]!,
-          count
+          count,
+          def.codecs[f]
         );
       }
       let members = 0;
