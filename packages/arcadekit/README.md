@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 139 tests
+pnpm test                          # 178 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -189,7 +189,7 @@ const Strike = Action.define(
 
 const strike = Action.handler(Strike, function* ({ attacker, target }) {
   if ((yield* whoseTurn) !== owner) return yield* new NotYourTurn();
-  // ...check the rules first, then change things and emit events
+  // ...check the rules, change things, emit events; a refusal undoes all of it
   return hpLeft;
 });
 
@@ -199,7 +199,7 @@ app.dispatch(Strike, { attacker, target }); // Exit<number, NotYourTurn | Invali
 app.enqueue(Strike, { attacker, target }); // applied at the start of the next tick
 ```
 
-- A refused action changes nothing: its queued commands and emitted events are discarded. Direct writes to component data are not undone, so handlers should check first and write last.
+- A refused action changes nothing. A handler may refuse at any point, even after it has written: what it wrote to components, the random numbers it drew, the commands it queued, the events it emitted and the actions it enqueued are all taken back. So is everything done by a handler that dies of a bug half-way. See [Refusals leave nothing behind](#refusals-leave-nothing-behind).
 - `dispatch` is for turn-based input: the caller gets the typed outcome immediately. `enqueue` is for real-time input and for systems (AI issues the same actions as players); a refusal becomes an `Action.Rejected` event.
 - Dispatching an action with no handler, or with the wrong payload, does not compile.
 
@@ -210,6 +210,27 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 - `app.actionLog` holds every applied action with its payload in JSON form (a bigint or a date in the payload is converted for you), and checkpoints of the world's hash among them. `Action.encodeLog` and `Action.decodeLog` turn it into text and back; `Action.isCheckpoint(entry)` tells the two kinds of entry apart.
 - `App.replay(freshApp, log, { delta, ticks })` reproduces the game in an app made with the same seed and started from the same state, and checks itself as it goes; see below.
 - `Action.define<Payload>()("Name")` still defines an action with no schema. Only the compiler checks it, so keep those for actions that never leave the program.
+
+### Refusals leave nothing behind
+
+A refused action is not in the log, so a replay never runs it. Anything it left in the world would be a difference between the game and its replay. A handler therefore runs in a transaction of the world:
+
+```ts
+const strike = Action.handler(Strike, function* ({ attacker, target }) {
+  const world = yield* World;
+  const roll = (yield* Random).int(1, 6); // drawn, and put back on refusal
+  world.set(attacker, Fighter, { energy: 0 }); // written, and put back
+  (yield* Commands).spawn(Spark.of({ at: target })); // queued, and discarded
+  if (roll === 1) return yield* new Fumbled(); // refused: none of it happened
+});
+```
+
+- What a handler is about to write is saved first: one row for `world.set`, and for `each` and `eachChunk` the columns of the query's terms in every table the loop visits, once each. A refusal copies them back and restores the random generator.
+- A handler changes which entities exist through `Commands`. `world.spawn`, `despawn`, `add` and `remove` throw inside a handler: rows must stay where they are for a write to be put back by a plain copy. A discarded spawn gives its id back exactly, so the next entities get the ids they would have had.
+- A handler reads its own writes while it runs, and an accepted action costs one save and no copy back.
+- A handler cannot dispatch another action; it issues one with `Actions.enqueue`, and a refusal takes that back too.
+- The storage core has this on its own: `world.begin()`, then `world.commit()` or `world.rollback()`.
+- The cost is in the [benchmark](#benchmark-100000-entities-pos--vel--dt): 0.2 µs more for a handler that sets one entity, and one copy of the visited columns for a handler that loops.
 
 ### Replays that check themselves
 
@@ -234,7 +255,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | File | What it is |
 | --- | --- |
 | `src/ecs/component.ts` | Fields, components, entity ids, generated accessors |
-| `src/ecs/world.ts` | Tables, sparse sets, queries, world, command buffer |
+| `src/ecs/world.ts` | Tables, sparse sets, queries, world, transactions, command buffer |
 | `src/ecs/random.ts` | The seeded random number generator a world owns |
 | `src/ecs/hash.ts` | The arithmetic of the world's hash |
 | `src/TickScheduler.ts` | The Effect scheduler owned by the game loop |
@@ -302,9 +323,19 @@ Hashing the same 100,000 entities, in the same units:
 | `world.hash()`, the same entities spread over 32 tables   | 7.4       |
 | `world.hash()`, with a sparse one-field component on each | 13.6      |
 
+One action in that world of 100,000 entities, before and after handlers ran in a transaction:
+
+| Variant                                              | Before  | After   |
+| ---------------------------------------------------- | ------- | ------- |
+| Handler reads and sets one entity, accepted          | 1.07 µs | 1.31 µs |
+| The same, refused after its write                    | 10.3 µs | 10.5 µs |
+| Handler loops over all 100,000 with `each`, accepted | 0.70 ms | 0.81 ms |
+| The same, refused after its loop                     | 0.73 ms | 0.94 ms |
+
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
 - A tick with ten systems that do nothing costs about 4.6 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop.
 - A sparse tag that many entities have, mixed in with ones that do not, breaks tables into short runs and `eachChunk` loses its edge. A component like that is better off with table storage.
+- A handler that loops pays one copy of the columns it visits, 0.11 ms for four float columns of 100,000 rows, and as much again to copy them back if it is refused. The copies are kept and written over by the next action; allocating them afresh each time cost 0.35 ms. A refusal itself costs about 9 µs, which is Effect building the failure.
 - A checkpoint is one hash of the world every `checkpointEvery` ticks, 60 by default: 12 µs a tick on average for 100,000 entities. The per-tick lines above are medians, so they do not show it.
 - Hashing a world costs about two and a half raw passes over it: 1.4 ns per 32-bit field per entity, and about four times that for a field of a sparse component, whose members are hashed one by one so that their order does not matter.
 
@@ -337,7 +368,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - An object in a `ref` field is not hashed (see [The world's hash](#the-worlds-hash)), and nothing yet says how such a field would be saved.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - Event payloads are typed but have no schema, so events cannot be sent over a network yet.
-- A refused action's direct component writes are not undone (see above).
+- A refused action does not undo what is outside the world: an object in a `ref` field that the handler changed in place, a call to a service of the game's own, a script it started.
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.
 - Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.

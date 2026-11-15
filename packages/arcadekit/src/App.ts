@@ -431,9 +431,26 @@ export const make = <
 
     let ticking = false;
 
+    // The action whose handler is running, if one is.
+    let applying: string | undefined;
+
+    /** Takes back everything a handler did since the three marks were taken. */
+    const undo = (
+      commandMark: number,
+      eventMark: ReturnType<EventBus["mark"]>,
+      queuedMark: number
+    ): void => {
+      world.rollback();
+      commands.rollback(commandMark);
+      events.rollback(eventMark);
+      queued.length = queuedMark;
+    };
+
     /**
      * Validates a payload, runs its handler to completion, and logs the action
-     * if it was accepted. A refusal undoes what the handler queued.
+     * if it was accepted. The handler runs in a transaction of the world: a
+     * refusal takes back what it wrote to components, the random numbers it
+     * drew, and what it queued, emitted and enqueued.
      */
     const apply = (
       name: string,
@@ -471,24 +488,38 @@ export const make = <
         }
       }
 
+      if (applying !== undefined) {
+        throw new Error(
+          `dispatch("${name}") was called from the handler of "${applying}". A handler issues another action with Actions.enqueue, which applies it on the next tick.`
+        );
+      }
       const commandMark = commands.mark();
       const eventMark = events.mark();
+      const queuedMark = queued.length;
+      world.begin();
+      applying = name;
       events.reader = `action:${name}`;
-      const fiber = runFork(handler.handle(value));
-      events.reader = undefined;
+      let fiber: Fiber.Fiber<unknown, unknown>;
+      try {
+        fiber = runFork(handler.handle(value));
+      } finally {
+        events.reader = undefined;
+        applying = undefined;
+      }
       const exit = fiber.pollUnsafe();
       if (exit === undefined) {
         fiber.interruptUnsafe();
-        commands.rollback(commandMark);
-        events.rollback(eventMark);
+        undo(commandMark, eventMark, queuedMark);
         throw new Error(
           `The handler for "${name}" did not finish synchronously. Handlers must not wait.`
         );
       }
+      // A refusal, and a handler that died of a bug half-way, both leave the
+      // game as it was.
       if (Exit.isFailure(exit)) {
-        commands.rollback(commandMark);
-        events.rollback(eventMark);
+        undo(commandMark, eventMark, queuedMark);
       } else {
+        world.commit();
         commands.apply();
         actionLog.push({ tick: time.tick, name, payload: logged });
       }

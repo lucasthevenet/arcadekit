@@ -153,7 +153,7 @@ Each part has one shape. A new feature is made of these, not of a new kind of th
 | Component | Data, declared with `Component.define` | Numbers go in typed fields. Use `storage: "sparse"` for one that is added and removed often or that few entities have. |
 | System | A generator given to `System.make` | Finishes within its tick. Changes the set of entities only through `Commands`. |
 | Event | A fact, declared with `Event.define` | Named in the past tense. Emitted, never awaited by a system. |
-| Action | A request from outside, declared with `Action.define` and a schema | Its handler checks every rule first and changes things last, so a refusal leaves nothing behind. |
+| Action | A request from outside, declared with `Action.define` and a schema | Its handler may refuse at any point: the world takes back what it wrote. It changes which entities exist only through `Commands`, and issues another action only with `Actions.enqueue`. |
 | Script | An Effect started with `app.spawnScript`, or with `Script.spawn` from a system | Waits only with `Script.nextTick`, `Script.sleep` or an event's `wait`. Its failure is logged, and stops an app made with `onScriptFailure: "stop"`. |
 | Plugin | `Plugin.make` | Lists the plugins whose services its layer uses. |
 
@@ -181,6 +181,7 @@ Events have their own implementation in `src/Event.ts` and do not use Effect's `
 - **Reads from a column need an assertion**, `pos.x[i]!`, because the repository compiles with `noUncheckedIndexedAccess`. That is what `!` is for here, and almost the only place it belongs.
 - **A structural change during iteration throws.** Queue it on `Commands`.
 - **Iteration order is fixed**: tables in creation order, rows ascending, whichever strategy finds the rows. A change that makes order depend on data breaks replays.
+- **Every way to write component data saves it first, inside a transaction.** `set` saves its row, `each` and `eachChunk` save the columns they hand out, once per table and never per entity. A new way to write does the same when `world._recording` is true, or a refused action leaves a trace and its replay diverges. `test/transaction.test.ts` has a list of writers that every rollback is checked against: add the new one to it.
 - **What a simulation can tell apart is in `world.hash()`**, and nothing else is. State that a system can observe, or that decides what it will observe later, is added to the hash in the change that adds the state, in an order that does not depend on the process: by name, never by id. State nobody can observe (a cache, spare capacity) stays out, or two equal worlds would hash differently.
 - **Measure.** A change to the storage core or to a query comes with a run of `pnpm --filter arcadekit bench`, before and after, in the pull request.
 

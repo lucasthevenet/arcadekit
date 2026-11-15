@@ -14,6 +14,10 @@
  *   query is iterating. Queue them on a CommandBuffer instead.
  * - A world owns a seeded random number generator, so its state is part of
  *   the world.
+ * - A transaction (`begin`, then `commit` or `rollback`) can take back every
+ *   write to component data made since it began. Whatever is about to be
+ *   written is saved first: one row for `set`, the visited columns for a
+ *   query's loop.
  *
  * No Effect dependency.
  */
@@ -42,8 +46,25 @@ import { Rng } from "./random";
 
 const NOT_PLACED = -1;
 const FREE = -2;
+/** In a `Saved`, the row that means "every row". */
+const WHOLE = -1;
 
 type Columns = Record<string, Column>;
+
+/** What a transaction saved before it was written: one row, or whole columns. */
+interface Saved {
+  readonly cols: Columns;
+  readonly def: ComponentDef<any>;
+  /** `WHOLE`, or the one row that was saved. */
+  readonly row: number;
+  /** How many rows `copies` holds when it holds whole columns. */
+  readonly count: number;
+  /**
+   * Per field: a copy of the column's first `count` rows (the array may be
+   * longer, since it is kept and used again), or the one row's value.
+   */
+  readonly copies: unknown[];
+}
 
 const makeColumns = (def: ComponentDef<any>, capacity: number): Columns => {
   const cols: Columns = {};
@@ -703,6 +724,32 @@ export class QueryView<D extends Terms = Terms> {
     }
   }
 
+  // --- transactions: a loop may write anything it is handed ---------------------
+
+  /** Saves the columns of this query's table terms in one table. */
+  private saveTableTerms(table: Table): void {
+    for (let k = 0; k < this.n; k++) {
+      const id = this.termTableId[k]!;
+      if (id !== -1) {
+        this.world._saveColumns(
+          this.spec.terms[k]!,
+          table.columns[id]!,
+          table.count
+        );
+      }
+    }
+  }
+
+  /** Saves the columns of this query's sparse terms. */
+  private saveSparseTerms(): void {
+    for (let k = 0; k < this.n; k++) {
+      const set = this.termSet[k];
+      if (set !== undefined) {
+        this.world._saveColumns(set.def, set.columns, set.count);
+      }
+    }
+  }
+
   // --- each: one callback per entity, through accessors -----------------------
 
   /**
@@ -723,6 +770,10 @@ export class QueryView<D extends Terms = Terms> {
           acc[k]!._bind(set.columns);
         }
       }
+      const { world } = this;
+      if (world._recording) {
+        this.saveSparseTerms();
+      }
       let bound: Table | undefined;
       this.runs(frame, (table, start, end) => {
         if (table !== bound) {
@@ -731,6 +782,10 @@ export class QueryView<D extends Terms = Terms> {
             if (id !== -1) {
               acc[k]!._bind(table.columns[id!]!);
             }
+          }
+          // Once per table, never per entity.
+          if (world._recording) {
+            this.saveTableTerms(table);
           }
           bound = table;
         }
@@ -853,6 +908,10 @@ export class QueryView<D extends Terms = Terms> {
       for (let k = 0; k < n; k++) {
         cols[k] = this.termSet[k];
       }
+      const { world } = this;
+      if (world._recording) {
+        this.saveSparseTerms();
+      }
       let bound: Table | undefined;
       this.runs(frame, (table, start, end) => {
         if (table !== bound) {
@@ -861,6 +920,9 @@ export class QueryView<D extends Terms = Terms> {
             if (id !== -1) {
               cols[k] = table.columns[id!];
             }
+          }
+          if (world._recording) {
+            this.saveTableTerms(table);
           }
           bound = table;
         }
@@ -958,6 +1020,21 @@ export class World {
    */
   readonly random: Rng;
 
+  /** @internal True between `begin` and `commit` or `rollback`. */
+  _recording = false;
+  /** What a rollback puts back, in the order it was saved. */
+  private readonly saved: Saved[] = [];
+  /** The column sets saved whole, so that each is copied once. */
+  private readonly savedWhole = new Set<Columns>();
+  /**
+   * The copies of earlier transactions, kept per column set to be written
+   * over by the next one. Allocating them afresh cost more than copying
+   * into them: a handler that loops over a table every time it runs would
+   * otherwise allocate that table's size on every action.
+   */
+  private readonly spare = new WeakMap<Columns, unknown[]>();
+  private readonly savedRandom = new Uint32Array(4);
+
   /** @param options.seed where the random sequence starts; 0 when left out. */
   constructor(options?: { readonly seed?: number }) {
     this.random = new Rng(options?.seed ?? 0);
@@ -986,6 +1063,7 @@ export class World {
    */
   _reserve(): Entity {
     let index: number;
+    this._reservedFresh = this.freeList.length === 0;
     if (this.freeList.length > 0) {
       index = this.freeList.pop()!;
     } else {
@@ -1000,6 +1078,35 @@ export class World {
     this.recTable[index] = NOT_PLACED;
     this.alive++;
     return makeEntity(index, this.gens[index]!);
+  }
+
+  /** @internal Whether the last `_reserve` took an index never used before. */
+  _reservedFresh = false;
+
+  /**
+   * Gives back an id that `_reserve` handed out and that was never placed,
+   * leaving the world as if it had not been asked: the same ids to come, with
+   * the same generations. That is exact when ids are given back in the
+   * reverse of the order they were reserved in, with nothing else spawned or
+   * despawned in between; otherwise the slot is freed like any other.
+   * @internal
+   */
+  _release(entity: Entity, fresh: boolean): void {
+    const index = entityIndex(entity);
+    if (!this.isAlive(entity) || this.recTable[index] !== NOT_PLACED) {
+      return;
+    }
+    if (fresh && index !== this.nextIndex - 1) {
+      this.despawn(entity);
+      return;
+    }
+    this.recTable[index] = FREE;
+    this.alive--;
+    if (fresh) {
+      this.nextIndex--;
+    } else {
+      this.freeList.push(index);
+    }
   }
 
   private growRecords(): void {
@@ -1188,10 +1295,139 @@ export class World {
       cols = this.tables[this.recTable[index]!]!.columns[def.id]!;
       row = this.recRow[index]!;
     }
+    if (this._recording) {
+      this.saveRow(def, cols, row);
+    }
     for (const key in value) {
       cols[key]![row] = value[key] as any;
     }
     return true;
+  }
+
+  // --- transactions ----------------------------------------------------------
+
+  /**
+   * Starts a transaction. Until `commit` or `rollback`:
+   *
+   * - every write to component data through `set`, `each` and `eachChunk` is
+   *   one that `rollback` takes back, and so is every random number drawn;
+   * - `spawn`, `despawn`, `add` and `remove` throw. Queue them on a
+   *   CommandBuffer, whose own `rollback` discards them. Rows therefore stay
+   *   where they are for as long as the transaction lasts, which is what
+   *   makes taking a write back a plain copy.
+   *
+   * An action's handler runs inside one, so a refused action leaves nothing
+   * behind. What is saved is what is about to be written: one row for `set`,
+   * and for a loop the columns of the query's terms in each table it visits,
+   * once each.
+   *
+   * An object held in a `ref` field and changed in place is not put back:
+   * the field still holds the same object.
+   */
+  begin(): void {
+    if (this._recording) {
+      throw new Error(
+        "World.begin() was called inside a transaction. Commit or roll back the one in progress first."
+      );
+    }
+    // Four assignments, not `set`: this runs for every action.
+    const from = this.random.state;
+    const to = this.savedRandom;
+    to[0] = from[0]!;
+    to[1] = from[1]!;
+    to[2] = from[2]!;
+    to[3] = from[3]!;
+    this._recording = true;
+  }
+
+  /** Ends the transaction and keeps what was written. */
+  commit(): void {
+    this.endTransaction("commit");
+  }
+
+  /** Ends the transaction and puts back everything written since `begin`. */
+  rollback(): void {
+    const { saved } = this;
+    // Newest first, so that where a row was saved before its whole column,
+    // the oldest value is the one left standing.
+    for (let i = saved.length - 1; i >= 0; i--) {
+      const { cols, copies, count, def, row } = saved[i]!;
+      for (let f = 0; f < def.fields.length; f++) {
+        const column = cols[def.fields[f]!]!;
+        if (row !== WHOLE) {
+          column[row] = copies[f];
+        } else if (def.kinds[f] === "ref") {
+          const from = copies[f] as unknown[];
+          for (let r = 0; r < count; r++) {
+            column[r] = from[r];
+          }
+        } else {
+          (column as Float32Array).set(
+            (copies[f] as Float32Array).subarray(0, count)
+          );
+        }
+      }
+    }
+    this.random.state.set(this.savedRandom);
+    this.endTransaction("rollback");
+  }
+
+  private endTransaction(op: string): void {
+    if (!this._recording) {
+      throw new Error(
+        `World.${op}() was called with no transaction in progress. Call begin() first.`
+      );
+    }
+    this.saved.length = 0;
+    if (this.savedWhole.size > 0) {
+      this.savedWhole.clear();
+    }
+    this._recording = false;
+  }
+
+  /**
+   * Saves rows `[0, count)` of a component's columns, unless this
+   * transaction already has.
+   * @internal
+   */
+  _saveColumns(def: ComponentDef<any>, cols: Columns, count: number): void {
+    if (def.isTag || this.savedWhole.has(cols)) {
+      return;
+    }
+    this.savedWhole.add(cols);
+    let copies = this.spare.get(cols);
+    if (copies === undefined) {
+      copies = [];
+      this.spare.set(cols, copies);
+    }
+    for (let f = 0; f < def.fields.length; f++) {
+      const column = cols[def.fields[f]!]!;
+      const kept = copies[f] as Column | undefined;
+      if (kept === undefined || kept.length < count) {
+        // Room for the column as it is now; a column only grows by doubling.
+        copies[f] = column.slice(0, column.length);
+      } else if (def.kinds[f] === "ref") {
+        const to = kept as unknown[];
+        for (let r = 0; r < count; r++) {
+          to[r] = column[r];
+        }
+      } else {
+        (kept as Float32Array).set((column as Float32Array).subarray(0, count));
+      }
+    }
+    this.saved.push({ cols, copies, count, def, row: WHOLE });
+  }
+
+  /** Saves one row of a component's columns. */
+  private saveRow(def: ComponentDef<any>, cols: Columns, row: number): void {
+    if (this.savedWhole.has(cols)) {
+      return;
+    }
+    const copies: unknown[] = [];
+    for (let f = 0; f < def.fields.length; f++) {
+      copies.push(cols[def.fields[f]!]![row]);
+    }
+    this.saved.push({ cols, copies, count: 1, def, row });
   }
 
   /**
@@ -1416,6 +1652,11 @@ export class World {
   }
 
   private assertNotIterating(op: string): void {
+    if (this._recording) {
+      throw new Error(
+        `World.${op}() was called inside a transaction, where an action's handler runs. Queue it on Commands (a CommandBuffer): a refused action's commands are discarded, and its direct changes to which entities exist could not be.`
+      );
+    }
     if (this._iterating > 0) {
       throw new Error(
         `World.${op}() called while a query is iterating. Queue it on a CommandBuffer and apply it after the loop.`
@@ -1433,6 +1674,8 @@ type Command =
       readonly op: "spawn";
       readonly entity: Entity;
       readonly inputs: readonly ComponentInput[];
+      /** Whether the id's index had never been used: `rollback` needs it. */
+      readonly fresh: boolean;
     }
   | { readonly op: "despawn"; readonly entity: Entity }
   | {
@@ -1464,7 +1707,12 @@ export class CommandBuffer {
     // Checked here, where the mistake is, and not when the queue is applied.
     this.world._registerAll(inputs);
     const entity = this.world._reserve();
-    this.ops.push({ op: "spawn", entity, inputs });
+    this.ops.push({
+      op: "spawn",
+      entity,
+      inputs,
+      fresh: this.world._reservedFresh,
+    });
     return entity;
   }
 
@@ -1487,14 +1735,16 @@ export class CommandBuffer {
   }
 
   /**
-   * Discards every command queued since `mark`, releasing the ids of
-   * entities whose spawn is being discarded.
+   * Discards every command queued since `mark`. The ids of entities whose
+   * spawn is discarded are given back, newest first, so that the world is
+   * left as if they had never been asked for: the next entities get the same
+   * ids either way.
    */
   rollback(mark: number): void {
-    for (let i = mark; i < this.ops.length; i++) {
+    for (let i = this.ops.length - 1; i >= mark; i--) {
       const cmd = this.ops[i]!;
       if (cmd.op === "spawn") {
-        this.world.despawn(cmd.entity);
+        this.world._release(cmd.entity, cmd.fresh);
       }
     }
     this.ops.length = Math.min(this.ops.length, mark);

@@ -15,10 +15,21 @@ import { fileURLToPath } from "node:url";
  *
  *   pnpm --filter arcadekit bench
  */
-import { Effect } from "effect";
+import { Data, Effect, Schema } from "effect";
 
 import { World } from "../src/ecs/world";
-import { App, Component, Field, Query, System, Time } from "../src/index";
+import {
+  Action,
+  App,
+  Component,
+  EntityId,
+  Field,
+  Query,
+  System,
+  Time,
+  World as WorldService,
+} from "../src/index";
+import type { Entity } from "../src/index";
 
 const N = 100_000;
 const DT = 1 / 60;
@@ -74,6 +85,62 @@ const measure = (run: () => void, runs = 300, warmup = 80): number => {
   return samples[samples.length >> 1]!;
 };
 
+class Refused extends Data.TaggedError("Refused")<{}> {}
+
+const Nudge = Action.define(
+  "bench/Nudge",
+  Schema.Struct({ target: EntityId, refuse: Schema.Boolean })
+);
+const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
+  const world = yield* WorldService;
+  const position = world.get(target, Position);
+  if (position === undefined) {
+    return yield* new Refused();
+  }
+  world.set(target, Position, { x: position.x + 1 });
+  if (refuse) {
+    return yield* new Refused();
+  }
+});
+
+const Sweep = Action.define(
+  "bench/Sweep",
+  Schema.Struct({ refuse: Schema.Boolean })
+);
+const sweep = Action.handler(Sweep, function* ({ refuse }) {
+  (yield* Moving).each((pos, vel) => {
+    pos.x += vel.x * DT;
+    pos.y += vel.y * DT;
+  });
+  if (refuse) {
+    return yield* new Refused();
+  }
+});
+
+/** Median milliseconds of one dispatch, in an app whose world holds N entities. */
+const dispatching = <P>(
+  action: Action.ActionDef<any, P, any>,
+  payload: (target: Entity) => P,
+  runs = 20_000,
+  warmup = 5000
+): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        // No checkpoints: this measures the action, not the hash.
+        const app = yield* App.make({
+          handlers: [nudge, sweep],
+          checkpointEvery: 0,
+        });
+        populate(app.world);
+        const target = app.world.view(Moving).entities()[N >> 1]!;
+        const given = payload(target);
+        const dispatch = app.dispatch as (a: unknown, p: unknown) => unknown;
+        return measure(() => dispatch(action, given), runs, warmup);
+      })
+    )
+  );
+
 const Movement = System.make("Movement", function* () {
   const moving = yield* Moving;
   const { delta } = yield* Time;
@@ -103,7 +170,7 @@ const variants: Record<
   {
     readonly label: string;
     /** How to report the time: divided by all entities, or for the whole pass. */
-    readonly unit?: "entity" | "matches";
+    readonly unit?: "entity" | "matches" | "dispatch";
     readonly run: () => number;
   }
 > = {
@@ -501,6 +568,29 @@ const variants: Record<
       return ms;
     },
   },
+  // What an action costs, in a world of 100,000 entities. A refused action
+  // has to leave nothing behind, so what its handler may write is saved
+  // first: one row for `world.set`, the visited columns for a query's loop.
+  dispatchSet: {
+    unit: "dispatch",
+    label: "dispatch: handler reads and sets one entity, accepted",
+    run: () => dispatching(Nudge, (target) => ({ target, refuse: false })),
+  },
+  dispatchSetRefused: {
+    unit: "dispatch",
+    label: "dispatch: the same, refused after its write",
+    run: () => dispatching(Nudge, (target) => ({ target, refuse: true })),
+  },
+  dispatchLoop: {
+    unit: "dispatch",
+    label: "dispatch: handler loops over all 100,000, accepted",
+    run: () => dispatching(Sweep, () => ({ refuse: false }), 300, 80),
+  },
+  dispatchLoopRefused: {
+    unit: "dispatch",
+    label: "dispatch: the same, refused after its loop",
+    run: () => dispatching(Sweep, () => ({ refuse: true }), 300, 80),
+  },
 };
 
 const only = process.argv[2];
@@ -525,7 +615,9 @@ if (only === undefined) {
         ? `${(ms * 1000).toFixed(2).padStart(8)} µs per tick`
         : variant.unit === "matches"
           ? `${(ms * 1000).toFixed(2).padStart(8)} µs per pass`
-          : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
+          : variant.unit === "dispatch"
+            ? `${(ms * 1000).toFixed(2).padStart(8)} µs per dispatch`
+            : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
     console.log(`${variant.label.padEnd(54)} ${text}`);
   }
   const ratio = (a: string, b: string) =>
