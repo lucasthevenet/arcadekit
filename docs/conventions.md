@@ -152,7 +152,7 @@ Each part has one shape. A new feature is made of these, not of a new kind of th
 | --- | --- | --- |
 | Component | Data, declared with `Component.define` | Numbers go in typed fields. Anything else is `Field.json` (plain data), `Field.schema` (a value with a schema) or `Field.transient` (not part of the game's state, so not saved or hashed): a field says which where it is defined. Use `storage: "sparse"` for one that is added and removed often or that few entities have. |
 | System | A generator given to `System.make` | Finishes within its tick. Changes the set of entities only through `Commands`. |
-| Event | A fact, declared with `Event.define` | Named in the past tense. Emitted, never awaited by a system. |
+| Event | A fact, declared with `Event.define` and a schema | Named in the past tense, with the feature it belongs to in front: `"physics/Collided"`. Emitted, never awaited by a system. An event with a type and no schema cannot be written down. |
 | Action | A request from outside, declared with `Action.define` and a schema | Its handler may refuse at any point: the world takes back what it wrote. It changes which entities exist only through `Commands`, and issues another action only with `Actions.enqueue`. |
 | Script | An Effect started with `app.spawnScript`, or with `Script.spawn` from a system | Waits only with `Script.nextTick`, `Script.sleep` or an event's `wait`. Its failure is logged, and stops an app made with `onScriptFailure: "stop"`. |
 | Plugin | `Plugin.make` | Lists the plugins whose services its layer uses. |

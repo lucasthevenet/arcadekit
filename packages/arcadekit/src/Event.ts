@@ -17,8 +17,17 @@
  * tick, so an event emitted while systems are running is kept until the end
  * of the following tick. One emitted between ticks is dropped at the end of
  * the next tick.
+ *
+ * Give an event a schema and it can be written down, for a save, a tool or
+ * another machine:
+ *
+ *   const Collided = Event.define("Collided", Schema.Struct({ a: EntityId, b: EntityId }))
+ *
+ * The payload type comes from the schema. Emitting stays a plain call with
+ * no check: the schema is used when the event leaves the program, by
+ * `Event.encode` and `Event.decode`.
  */
-import { Effect, Effectable } from "effect";
+import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
 import { Events } from "./Services";
 
@@ -44,11 +53,17 @@ export class EventDef<P> extends Effectable.Class<
   Events
 > {
   readonly name: string;
+  /**
+   * Converts a payload to and from JSON. Derived from the schema the event
+   * was defined with; undefined for an event with a type and no schema.
+   */
+  readonly codec: Schema.Codec<P, unknown> | undefined;
   private effect: Effect.Effect<EventHandle<P>, never, Events> | undefined;
 
-  constructor(name: string) {
+  constructor(name: string, codec?: Schema.Codec<P, unknown>) {
     super();
     this.name = name;
+    this.codec = codec;
   }
 
   asEffect(): Effect.Effect<EventHandle<P>, never, Events> {
@@ -58,9 +73,79 @@ export class EventDef<P> extends Effectable.Class<
   }
 }
 
-/** Defines an event type. The payload is any value; give its type explicitly. */
-export const define = <P = void>(name: string): EventDef<P> =>
-  new EventDef<P>(name);
+/**
+ * Defines an event type.
+ *
+ * With a schema, the payload type is inferred from it and the event can be
+ * written down: `Event.define("Collided", Schema.Struct({ ... }))`.
+ *
+ * Without one, give the payload's type: `Event.define<Payload>("Collided")`.
+ * Such an event stays inside the program, and a game cannot be saved while
+ * one is waiting to be read.
+ *
+ * An event's name is its identity in an app: two different events with one
+ * name are refused when the second is first used.
+ */
+export function define<P = void>(name: string): EventDef<P>;
+export function define<S extends Schema.Codec<unknown, unknown>>(
+  name: string,
+  payload: S
+): EventDef<S["Type"]>;
+export function define(
+  name: string,
+  payload?: Schema.Codec<unknown, unknown>
+): EventDef<unknown> {
+  return new EventDef<unknown>(
+    name,
+    payload === undefined ? undefined : Schema.toCodecJson(payload)
+  );
+}
+
+/** An event's payload could not be turned into JSON, or read back from it. */
+export class InvalidEvent extends Data.TaggedError("InvalidEvent")<{
+  readonly event: string;
+  /** What was wrong: the schema's report, or that the event has no schema. */
+  readonly message: string;
+}> {}
+
+const convert = <A>(
+  def: EventDef<any>,
+  run: (codec: Schema.Codec<any, unknown>) => Exit.Exit<A, unknown>
+): Exit.Exit<A, InvalidEvent> => {
+  if (def.codec === undefined) {
+    return Exit.fail(
+      new InvalidEvent({
+        event: def.name,
+        message: `The event "${def.name}" was defined with a type and no schema, so it cannot be written down. Give Event.define a schema.`,
+      })
+    );
+  }
+  const exit = run(def.codec);
+  if (Exit.isSuccess(exit)) {
+    return Exit.succeed(exit.value);
+  }
+  const error = Cause.squash(exit.cause);
+  return Exit.fail(
+    new InvalidEvent({
+      event: def.name,
+      message: error instanceof Error ? error.message : String(error),
+    })
+  );
+};
+
+/** An event's payload in its JSON form, for a save, a tool or the network. */
+export const encode = <P>(
+  def: EventDef<P>,
+  payload: P
+): Exit.Exit<unknown, InvalidEvent> =>
+  convert(def, (codec) => Schema.encodeUnknownExit(codec)(payload));
+
+/** An event's payload read back from its JSON form, checked against its schema. */
+export const decode = <P>(
+  def: EventDef<P>,
+  data: unknown
+): Exit.Exit<P, InvalidEvent> =>
+  convert(def, (codec) => Schema.decodeUnknownExit(codec)(data));
 
 const EMPTY: readonly never[] = Object.freeze([]);
 
@@ -170,12 +255,21 @@ export class EventBus {
   // is the one place that restores it.
   private readonly channels: Map<object, ChannelState> = new Map();
   private readonly order: ChannelState[] = [];
+  private readonly names: Map<string, EventDef<any>> = new Map();
 
   private channel<P>(def: EventDef<P>): Channel<P> {
     const existing = this.channels.get(def);
     if (existing !== undefined) {
       return existing as Channel<P>;
     }
+    // The name is how a save, a tool and another machine know the event.
+    const known = this.names.get(def.name);
+    if (known !== undefined && known !== def) {
+      throw new Error(
+        `Two different events are both named "${def.name}". An event's name identifies it in an app, so give each its own, prefixed with the feature it belongs to.`
+      );
+    }
+    this.names.set(def.name, def);
     const channel = new Channel<P>();
     this.channels.set(def, channel);
     this.order.push(channel);

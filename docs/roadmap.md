@@ -32,7 +32,6 @@ Each of these is something a game would otherwise build badly for itself.
 - **Relations.** A component that points at another entity, kept correct when that entity is despawned: a parent and its children, a target, an owner. Done when despawning a parent can take its children with it, and a dangling reference cannot be read as a live entity.
 - **States and run conditions.** A game is in the menu, playing or paused, and systems run only in some of those. Done when a system can declare when it runs, a state change runs enter and exit hooks, and none of it costs anything for a system with no condition.
 - **Simulation and presentation as separate stages.** The simulation ticks at a fixed rate; drawing happens every frame, between ticks, and must not change the world. Done when `App` runs a fixed-rate stage and a per-frame stage, and the per-frame stage gets how far it is between two ticks.
-- **Events with schemas.** So an event can be logged, shown in a tool or sent to another machine. Done when `Event.define` takes a schema the way `Action.define` does.
 
 ## 4. Running in a browser
 

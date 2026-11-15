@@ -7,6 +7,7 @@ import {
   App,
   Component,
   EntityId,
+  Event,
   Field,
   System,
   World,
@@ -263,6 +264,142 @@ describe("actions with a schema", () => {
     for (const bad of [-1, 4_294_967_296, 1.5, Number.NaN, "7", null]) {
       expect(Exit.isFailure(ok(bad))).toBe(true);
     }
+  });
+});
+
+describe("events with a schema", () => {
+  const Hit = Event.define(
+    "sc/Hit",
+    Schema.Struct({
+      target: EntityId,
+      amount: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })),
+      at: Schema.Date,
+      seed: Schema.BigInt,
+      note: Schema.optional(Schema.String),
+    })
+  );
+  /** Type-only: the compiler checks it and nothing else can. */
+  const Quiet = Event.define<{ readonly n: number }>("sc/Quiet");
+
+  it("infer the payload type, and are emitted and read as ever, with no check", () => {
+    const seen: unknown[] = [];
+    const Emit = System.make("Emit", function* () {
+      const hit = yield* Hit;
+      // The payload is typed by the schema: a string here would not compile.
+      hit.emit({ target: 1 as Entity, amount: 3, at: new Date(5), seed: 9n });
+      hit.emit({
+        target: 1 as Entity,
+        // @ts-expect-error the schema says a whole number
+        amount: "three",
+        at: new Date(5),
+        seed: 9n,
+      });
+      // Out of the schema's range, which only the schema knows: emitting
+      // checks nothing, so that it stays a plain call inside a loop.
+      hit.emit({ target: 1 as Entity, amount: 500, at: new Date(5), seed: 9n });
+    });
+    const Read = System.make("Read", function* () {
+      for (const hit of (yield* Hit).read()) {
+        seen.push(hit.amount);
+      }
+    });
+    withApp(App.make({ systems: [Emit, Read] }), (app) => {
+      app.tick(1);
+      expect(seen).toEqual([3, "three", 500]);
+      expect(app.events.pending(Hit)).toBe(3);
+    });
+    expect(Hit.name).toBe("sc/Hit");
+    expect(Hit.codec).toBeDefined();
+    expect(Quiet.codec).toBeUndefined();
+  });
+
+  it("are written as JSON and read back, checked against the schema", () => {
+    const payload = {
+      target: 7 as Entity,
+      amount: 3,
+      at: new Date("2026-11-15T12:00:00.000Z"),
+      seed: 12_345_678_901_234_567_890n,
+    };
+    const encoded = Event.encode(Hit, payload);
+    expect(encoded).toEqual(
+      Exit.succeed({
+        target: 7,
+        amount: 3,
+        at: "2026-11-15T12:00:00.000Z",
+        seed: "12345678901234567890",
+      })
+    );
+    // JSON all the way: text and back.
+    const text = JSON.stringify(Exit.isSuccess(encoded) && encoded.value);
+    expect(Event.decode(Hit, JSON.parse(text))).toEqual(Exit.succeed(payload));
+
+    for (const bad of [
+      { ...payload, amount: 500 },
+      { ...payload, at: new Date(Number.NaN) },
+    ]) {
+      const error = failure(Event.encode(Hit, bad));
+      expect(error).toBeInstanceOf(Event.InvalidEvent);
+      expect(error.event).toBe("sc/Hit");
+    }
+    for (const bad of [
+      { target: 7, amount: 500, at: "2026-11-15T12:00:00.000Z", seed: "1" },
+      { target: 7, amount: 3, at: "yesterday", seed: "1" },
+      { target: 7, amount: 3, at: "2026-11-15T12:00:00.000Z" },
+      "not an object",
+      null,
+    ]) {
+      const error = failure(Event.decode(Hit, bad));
+      expect(error).toBeInstanceOf(Event.InvalidEvent);
+      expect(error.event).toBe("sc/Hit");
+      expect(error.message.length).toBeGreaterThan(0);
+    }
+    expect(
+      failure(Event.decode(Hit, { ...payload, amount: 500 })).message
+    ).toMatch(/amount/);
+  });
+
+  it("cannot be written down without one, and say what to do", () => {
+    const encoded = failure(Event.encode(Quiet, { n: 1 }));
+    expect(encoded).toBeInstanceOf(Event.InvalidEvent);
+    expect(encoded.event).toBe("sc/Quiet");
+    expect(encoded.message).toMatch(/no schema.*Give Event\.define a schema/);
+    expect(failure(Event.decode(Quiet, { n: 1 })).message).toMatch(/no schema/);
+  });
+
+  it("are known by name in an app: two different events with one name are refused", () => {
+    const Twin = Event.define<number>("sc/Hit");
+    const Both = System.make("Both", function* () {
+      (yield* Hit).emit({
+        target: 1 as Entity,
+        amount: 1,
+        at: new Date(1),
+        seed: 1n,
+      });
+      (yield* Twin).emit(1);
+    });
+    withApp(App.make({ systems: [Both] }), (app) => {
+      expect(() => app.tick(1)).toThrow(
+        /Two different events are both named "sc\/Hit"/
+      );
+    });
+    // Each on its own, in an app of its own, is fine.
+    const Alone = System.make("Alone", function* () {
+      (yield* Twin).emit(2);
+    });
+    withApp(App.make({ systems: [Alone] }), (app) => {
+      app.tick(1);
+      expect(app.events.pending(Twin)).toBe(1);
+    });
+    withApp(App.make({}), (app) => {
+      app.events.emit(Hit, {
+        target: 1 as Entity,
+        amount: 1,
+        at: new Date(1),
+        seed: 1n,
+      });
+      expect(() => app.events.emit(Twin, 1)).toThrow(/both named/);
+      expect(() => app.events.pending(Twin)).toThrow(/both named/);
+    });
   });
 });
 

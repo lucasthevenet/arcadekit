@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 214 tests
+pnpm test                          # 218 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -116,7 +116,10 @@ A string that identifies something at run time carries the name of the feature i
 ## Events
 
 ```ts
-const Collided = Event.define<{ a: Entity; b: Entity }>("Collided");
+const Collided = Event.define(
+  "physics/Collided",
+  Schema.Struct({ a: EntityId, b: EntityId })
+);
 
 // in a system
 const collided = yield * Collided;
@@ -129,6 +132,11 @@ const hits = yield * collided.wait; // suspend until some arrive
 ```
 
 Every system sees every event exactly once, whatever order the systems run in: a system that runs before the emitter sees the event on the next tick. Events are dropped once every system has had that chance.
+
+- The payload type comes from the schema. Emitting is still a plain call that checks nothing, so it stays cheap inside a loop.
+- The schema is for when an event leaves the program: `Event.encode(Collided, payload)` gives its JSON form and `Event.decode(Collided, data)` reads one back, each as an `Exit` that fails with `Event.InvalidEvent`.
+- `Event.define<Payload>("Name")` still defines an event with a type and no schema. It cannot be written down, so keep those for events that never need to be.
+- An event's name is its identity in an app: two different events with one name are refused when the second is first used.
 
 ## Scripts
 
@@ -419,7 +427,6 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The log does not say when a script was started from outside, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, the actions queued for the next tick, or how far each script has got.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
-- Event payloads are typed but have no schema, so events cannot be sent over a network yet.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.

@@ -47,12 +47,16 @@ const whoseTurn = Effect.map(Query.all(Turn), (turns) => {
 });
 
 // --- what can happen -------------------------------------------------------------
-const Struck = Event.define<{
-  readonly target: Entity;
-  readonly amount: number;
-}>("duel/Struck");
-const Fell = Event.define<{ readonly entity: Entity }>("duel/Fell");
-const TurnEnded = Event.define<{ readonly next: number }>("duel/TurnEnded");
+// Defined with schemas too, so that an event can be written down.
+const Struck = Event.define(
+  "duel/Struck",
+  Schema.Struct({ target: EntityId, amount: Schema.Int })
+);
+const Fell = Event.define("duel/Fell", Schema.Struct({ entity: EntityId }));
+const TurnEnded = Event.define(
+  "duel/TurnEnded",
+  Schema.Struct({ next: Schema.Literals([1, 2]) })
+);
 
 // --- what players can ask for ----------------------------------------------------
 // Defined with schemas, so a move is checked however it arrives (from this
