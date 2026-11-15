@@ -2,7 +2,7 @@
  * The services every system and script can ask for with `yield*`.
  */
 import { Context } from "effect";
-import type { Effect } from "effect";
+import type { Effect, Fiber } from "effect";
 
 import type { Actions } from "./Action";
 import type { CommandBuffer, World as EcsWorld } from "./ecs/world";
@@ -32,7 +32,7 @@ export class Commands extends Context.Service<Commands, CommandBuffer>()(
   "arcadekit/Commands"
 ) {}
 
-/** Waiting primitives for long-running scripts (coroutines). */
+/** How a long-running script (a coroutine) waits, and how a system starts one. */
 export class Script extends Context.Service<
   Script,
   {
@@ -40,6 +40,17 @@ export class Script extends Context.Service<
     readonly nextTick: Effect.Effect<void>;
     /** Suspends the fiber for a span of game time. */
     readonly sleep: (seconds: number) => Effect.Effect<void>;
+    /**
+     * Starts a script from a system, a handler or another script. It first
+     * runs when the tick flushes its scheduler, after the systems.
+     *
+     * The app watches it as it does one started with `app.spawnScript`: a
+     * failure is reported, and it is interrupted when the app's scope closes.
+     * A fiber started with `Effect.forkDetach` is not watched.
+     */
+    readonly spawn: <A, E, R>(
+      effect: Effect.Effect<A, E, R>
+    ) => Effect.Effect<Fiber.Fiber<A, E>, never, R>;
   }
 >()("arcadekit/Script") {}
 

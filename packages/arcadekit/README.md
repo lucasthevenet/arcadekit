@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 81 tests
+pnpm test                          # 90 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -102,6 +102,36 @@ const hits = yield * collided.wait; // suspend until some arrive
 ```
 
 Every system sees every event exactly once, whatever order the systems run in: a system that runs before the emitter sees the event on the next tick. Events are dropped once every system has had that chance.
+
+## Scripts
+
+A script is an Effect that runs across many ticks: ordinary sequential code that waits for time to pass or for something to happen.
+
+```ts
+const Fountain = Effect.gen(function* () {
+  const script = yield* Script;
+  const commands = yield* Commands;
+  for (let wave = 1; wave <= 5; wave++) {
+    commands.spawn(Position.of({ x: 0, y: 0 }), Velocity.of({ x: 0, y: wave }));
+    yield* script.sleep(0.5); // game time
+  }
+});
+
+// From outside: it runs now, up to its first wait.
+app.spawnScript(Fountain);
+
+// From a system: it first runs when the tick flushes, after the systems.
+const Opening = System.make("Opening", function* () {
+  if ((yield* Time).tick === 1) {
+    yield* (yield* Script).spawn(Fountain);
+  }
+});
+```
+
+- A script advances only during ticks. It waits with `script.nextTick`, `script.sleep` or an event's `wait`.
+- The app watches the scripts started these two ways. One that fails is logged at once, with its cause, through Effect's logger, so the loggers provided to `App.make` receive it. One that is interrupted has not failed, and every script still running is interrupted when the app's scope closes.
+- By default the game goes on without the failed script. `App.make({ onScriptFailure: "stop" })` stops the app instead: the tick the script failed in runs to its end and then fails with `App.ScriptFailed`, a defect that carries the script's cause, and so does every tick after it, without running anything. A driver stops on it.
+- A fiber started with `Effect.forkDetach` is the caller's to observe: the app does not report its failure or interrupt it.
 
 ## Actions (the rules layer)
 
@@ -231,6 +261,6 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A refused action's direct component writes are not undone (see above).
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.
-- A script that fails does so silently unless its fiber is observed.
+- Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.
 - Entity generations are 10 bits: a handle kept across 1,024 reuses of the same slot can alias a newer entity.
 - Systems run in sequence on one thread. No parallelism, no change detection.

@@ -11,7 +11,6 @@ The order follows one rule: build what later items stand on first. Saving needs 
 Small, and worth doing before anything is built on top.
 
 - **Repair or remove the stale workflows.** `deploy.yml`, `cross-browser.yml` and the smoke step of `package-checks.yml` name things that no longer exist. Done when every workflow in `.github/` passes or is gone.
-- **Report a script that fails.** Today a script's failure is silent unless something observes its fiber. Done when a failed script is logged with its cause, and an app can be told to stop on one.
 - **Move to TypeScript 7.1 when it is released.** The declaration build prints a deprecation warning on 7.0. Done when `pnpm build` is quiet.
 
 ## 1. Determinism you can rely on

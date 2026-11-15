@@ -17,6 +17,10 @@
  *   4. resume scripts that were waiting for this tick or for an event
  *   5. flush the scheduler, so every fiber that became runnable runs now
  *   6. apply commands queued by scripts, and drop events everyone has seen
+ *
+ * A script that fails is logged with its cause. An app made with
+ * `onScriptFailure: "stop"` also stops: that tick and every later one fail
+ * with `ScriptFailed`.
  */
 import { Cause, Context, Data, Effect, Exit, Layer, Schema } from "effect";
 import type { Fiber, Scope } from "effect";
@@ -98,7 +102,7 @@ export interface Any {
   readonly plugins: readonly string[];
   /** System names in the order they run. */
   readonly systemOrder: readonly string[];
-  /** Runs one tick. Throws if a system fails. */
+  /** Runs one tick. Throws if a system fails, or if the app has stopped. */
   readonly tick: (delta: number) => void;
   /**
    * As `dispatch`, for actions that arrive as data: network messages, saved
@@ -122,11 +126,16 @@ export interface Any {
  * @param HU a union of the app's action handlers
  */
 export interface App<E = never, R = never, HU = never> extends Any {
-  /** Runs one tick and returns the outcome, with system failures as a typed `Exit`. */
+  /**
+   * Runs one tick and returns the outcome, with system failures as a typed
+   * `Exit`. An app that has stopped on a failed script runs nothing and
+   * returns a defect, `ScriptFailed`.
+   */
   readonly tickExit: (delta: number) => Exit.Exit<void, E>;
   /**
    * Starts a long-running fiber (a coroutine). It runs immediately up to its
-   * first wait, and from then on only advances during ticks.
+   * first wait, and from then on only advances during ticks. If it fails, the
+   * failure is logged with its cause; see `onScriptFailure`.
    */
   readonly spawnScript: <A, E2>(
     effect: Effect.Effect<A, E2, R | BuiltIn>
@@ -149,6 +158,21 @@ export interface App<E = never, R = never, HU = never> extends Any {
   ) => void;
 }
 
+/**
+ * A script failed in an app that was told to stop on one. It is the defect
+ * every tick of that app fails with from then on.
+ */
+export class ScriptFailed extends Data.TaggedError("ScriptFailed")<{
+  /** Why the script failed. */
+  readonly cause: Cause.Cause<unknown>;
+  /** How many ticks had run when it failed. */
+  readonly tick: number;
+}> {
+  override get message(): string {
+    return `A script failed at tick ${this.tick}, and the app was told to stop on one: ${Cause.pretty(this.cause)}`;
+  }
+}
+
 export const make = <
   S extends Systems = readonly [],
   H extends Handlers = readonly [],
@@ -158,6 +182,14 @@ export const make = <
   /** Systems and handlers that belong to the app itself, not to a plugin. */
   readonly systems?: readonly [...S];
   readonly handlers?: readonly [...H];
+  /**
+   * What a script's failure does, beyond being logged with its cause through
+   * Effect's logger. `"log"`, the default, lets the game go on without the
+   * script. `"stop"` stops the app: the tick the script failed in, and every
+   * tick after it, fails with `ScriptFailed`, which stops a driver. A script
+   * that is interrupted has not failed.
+   */
+  readonly onScriptFailure?: "log" | "stop";
 }): Effect.Effect<
   App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]>,
@@ -188,6 +220,41 @@ export const make = <
           yield* nextTick;
         }
       });
+
+    // Scripts the app watches: started with `app.spawnScript` or `Script.spawn`.
+    const scripts = new Set<Fiber.Fiber<any, any>>();
+    const stopOnFailure = options.onScriptFailure === "stop";
+    let stopped: ScriptFailed | undefined;
+    // Reports are logged with the app's context once it is built, so they
+    // reach the loggers the caller provided.
+    let reportContext = Context.empty() as Context.Context<any>;
+    const watch = <A, E>(fiber: Fiber.Fiber<A, E>): Fiber.Fiber<A, E> => {
+      const ended = (exit: Exit.Exit<A, E>): void => {
+        scripts.delete(fiber);
+        // Interrupted is not failed: that is how a script is stopped.
+        if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) {
+          return;
+        }
+        Effect.runForkWith(reportContext)(
+          Effect.logError(`A script failed at tick ${time.tick}`, exit.cause)
+        );
+        if (stopOnFailure) {
+          stopped ??= new ScriptFailed({ cause: exit.cause, tick: time.tick });
+        }
+      };
+      const exit = fiber.pollUnsafe();
+      if (exit === undefined) {
+        scripts.add(fiber);
+        fiber.addObserver(ended);
+      } else {
+        ended(exit);
+      }
+      return fiber;
+    };
+    const spawn = <A, E, R>(
+      effect: Effect.Effect<A, E, R>
+    ): Effect.Effect<Fiber.Fiber<A, E>, never, R> =>
+      Effect.map(Effect.forkDetach(effect), (fiber) => watch(fiber));
 
     // Dependencies first, each plugin once, then the app's own systems.
     const plugins = Plugin.flatten(options.plugins ?? []);
@@ -232,7 +299,7 @@ export const make = <
       Context.add(World, world),
       Context.add(Time, time),
       Context.add(Commands, commands),
-      Context.add(Script, { nextTick, sleep }),
+      Context.add(Script, { nextTick, sleep, spawn }),
       Context.add(Events, events),
       Context.add(Action.Actions, { enqueue })
     );
@@ -258,6 +325,7 @@ export const make = <
       Context.add(Scheduler.Scheduler, scheduler)
     ) as Context.Context<any>;
     const runFork = Effect.runForkWith(context);
+    reportContext = context;
 
     const ordered = System.order(allSystems);
     let running = "";
@@ -271,7 +339,6 @@ export const make = <
       }
     });
 
-    const scripts = new Set<Fiber.Fiber<any, any>>();
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         // Copied first: interrupting a fiber removes it from the set.
@@ -359,6 +426,9 @@ export const make = <
       if (ticking) {
         throw new Error("App.tick was called from inside a tick");
       }
+      if (stopped !== undefined) {
+        return Exit.die(stopped);
+      }
       ticking = true;
       try {
         // Queued actions are applied before time advances, so they land at the
@@ -390,7 +460,7 @@ export const make = <
           dispatcher.flush();
           throw new Error(
             `System "${running}" did not finish within the tick. Systems must be synchronous; ` +
-              `start long-running work with app.spawnScript or Effect.forkDetach.`
+              `start long-running work with Script.spawn.`
           );
         }
 
@@ -415,6 +485,11 @@ export const make = <
         }
         commands.apply();
         events.endTick();
+        // A script failed during this tick (or since the last one) and the
+        // app stops on that. The tick itself ran to its end first.
+        if (stopped !== undefined && Exit.isSuccess(exit)) {
+          return Exit.die(stopped);
+        }
         return exit as Exit.Exit<void, TickError<S, P>>;
       } finally {
         ticking = false;
@@ -442,12 +517,7 @@ export const make = <
         }
       },
       spawnScript(effect) {
-        const fiber = runFork(effect as Effect.Effect<any, any, any>);
-        if (fiber.pollUnsafe() === undefined) {
-          scripts.add(fiber);
-          fiber.addObserver(() => scripts.delete(fiber));
-        }
-        return fiber;
+        return watch(runFork(effect as Effect.Effect<any, any, any>));
       },
       dispatch(action, payload) {
         assertBetweenTicks(action.name);

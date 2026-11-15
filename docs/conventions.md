@@ -154,7 +154,7 @@ Each part has one shape. A new feature is made of these, not of a new kind of th
 | System | A generator given to `System.make` | Finishes within its tick. Changes the set of entities only through `Commands`. |
 | Event | A fact, declared with `Event.define` | Named in the past tense. Emitted, never awaited by a system. |
 | Action | A request from outside, declared with `Action.define` and a schema | Its handler checks every rule first and changes things last, so a refusal leaves nothing behind. |
-| Script | An Effect started with `app.spawnScript` or `Effect.forkDetach` | Waits only with `Script.nextTick`, `Script.sleep` or an event's `wait`. |
+| Script | An Effect started with `app.spawnScript`, or with `Script.spawn` from a system | Waits only with `Script.nextTick`, `Script.sleep` or an event's `wait`. Its failure is logged, and stops an app made with `onScriptFailure: "stop"`. |
 | Plugin | `Plugin.make` | Lists the plugins whose services its layer uses. |
 
 ## Determinism
@@ -165,7 +165,7 @@ A tick gives the same result from the same inputs, on every machine and every re
 - waits with `Script`, never `Effect.sleep`, a `Schedule`, a timer or a promise, all of which resume outside the tick;
 - takes randomness from a seeded service, never `Math.random()`;
 - does not depend on the order of a `Map` or `Set` it did not fill itself in a fixed order;
-- does not start a fiber with `Effect.forkChild` from a system: a child is interrupted when the tick's fiber ends. Use `Effect.forkDetach` or `app.spawnScript`.
+- does not start a fiber with `Effect.forkChild` from a system: a child is interrupted when the tick's fiber ends. Use `Script.spawn`, which the app watches: it reports a failure and interrupts the script when its scope closes. `Effect.forkDetach` also survives the tick, but the app cannot see that fiber, so its failure is silent unless the caller observes it.
 
 The scheduler is why this holds. `src/TickScheduler.ts` replaces Effect's, so a fiber only resumes when the tick flushes it. Do not provide another `Scheduler` to code inside an app. API: [Scheduler](https://effect.website/docs/v4/api/effect/Scheduler), [Fiber](https://effect.website/docs/v4/api/effect/Fiber); guide: [Fibers](https://effect.website/docs/v4/concurrency/fibers).
 
