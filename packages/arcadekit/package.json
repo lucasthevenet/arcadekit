@@ -27,13 +27,22 @@
   ],
   "type": "module",
   "sideEffects": false,
-  "exports": {},
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p . && tsc -p tsconfig.examples.json",
+    "demo": "tsx examples/demo.ts",
+    "duel": "tsx examples/duel.ts",
+    "bench": "tsx bench/accessors.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261104.1",
@@ -41,7 +50,8 @@
     "@types/three": "^0.187.0",
     "effect": "~4.1.2",
     "foldkit": "~0.170.0",
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "tsx": "^4.23.15"
   },
   "peerDependencies": {
     "@cloudflare/workers-types": "^5",

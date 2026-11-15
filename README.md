@@ -1,8 +1,8 @@
 # arcadekit
 
-Primitives for browser games on Effect 4, Foldkit and Three.js.
+A framework for building games of any genre on Effect 4, built around an entity component system.
 
-This is the `next` branch: a blank slate for a revamped arcadekit. The package lives in `packages/arcadekit`, with its build and publish setup in place and no source yet. The previous version is on `main`.
+This is the `next` branch: a revamped arcadekit, designed fresh. The package lives in `packages/arcadekit`; its [README](packages/arcadekit/README.md) describes the design, what works and what is not done yet. The previous version is on `main`.
 
 ## Development
 

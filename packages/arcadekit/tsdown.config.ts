@@ -1,11 +1,10 @@
 // The kit's tsdown build.
 //
 // The entries come from the package's `exports`: every subpath has a `source` condition naming
-// its file in src/, and `types` and `default` naming what this build writes to dist/. The entry
-// for "./core" is called "core" and the one for "./net/browser" is called "net/browser", so it
-// writes dist/core.js and dist/core.d.ts, dist/net/browser.js and dist/net/browser.d.ts, and so
-// on. A subpath whose dist paths don't match that name fails the build, so the map and the build
-// can't drift apart.
+// its file in src/, and `types` and `default` naming what this build writes to dist/. The root
+// entry "." is called "index", and a subpath such as "./ecs" is called "ecs", so the build writes
+// dist/index.js and dist/index.d.ts, dist/ecs.js and dist/ecs.d.ts, and so on. A subpath whose
+// dist paths don't match that name fails the build, so the map and the build can't drift apart.
 //
 // All entries are one build, so what two entries share is written once, to a chunk both import:
 // a class or an Effect service is the same object whichever entry it is reached through.
@@ -33,10 +32,10 @@ const entries = (dir: string): Record<string, string> => {
     if (subpath === "./package.json") {
       continue;
     }
-    const name = subpath.slice("./".length);
+    const name = subpath === "." ? "index" : subpath.slice("./".length);
     const keys = Object.keys(target).join(",");
     if (
-      !subpath.startsWith("./") ||
+      !(subpath === "." || subpath.startsWith("./")) ||
       keys !== "source,types,default" ||
       target.types !== `./dist/${name}.d.ts` ||
       target.default !== `./dist/${name}.js`
