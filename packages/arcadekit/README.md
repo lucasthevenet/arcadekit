@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 106 tests
+pnpm test                          # 124 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -156,6 +156,29 @@ const app = yield * App.make({ systems: [Scatter], seed: 2024 });
 - Effect's own `Random` module is seeded from the same generator inside an app, so `Random.next` from `"effect"`, or anything built on it, replays too. It costs an Effect per draw, so it is not for loops.
 - It is not for secrets: a few outputs give away the rest.
 
+## The world's hash
+
+```ts
+const hash = app.world.hash(); // one whole number, from 0 to 2^32 - 1
+```
+
+`world.hash()` is one number for everything in the world that a simulation can tell apart. Two machines that have run the same game hold the same number, and a replay that has gone the same way does too.
+
+It covers:
+
+- every entity and the value of every field of every component it has, a component being known by its name and its fields;
+- the order queries visit entities in: tables in creation order, rows ascending;
+- the ids the next entities will get: the freed slots, in the order they will be reused, and their generations;
+- the state of the random number generator.
+
+So two worlds built by the same operations in the same order hash equal, and changing one field of one entity always changes the hash: a single change cannot cancel out. Two different worlds hash equal by chance about once in four billion.
+
+It does not depend on what cannot be told apart: how much room a table has, what is left in a column past its last row, which queries have been made, the order a sparse component's members joined in, or the order the program defined its components in. Every NaN counts as the same NaN, because its bits are the one thing engines do not agree on; 0 and -0 are different.
+
+- A `ref` field counts by value when it holds a string, a number, a boolean, a bigint, null or undefined. An object or a function only counts as being there, so two different objects hash alike.
+- It is 32-bit integer arithmetic on the bits of each field, so it is the same on every machine and in every JavaScript engine.
+- It reads and changes nothing, so it can be called at any time. It costs about 7 ns per entity for four float fields, 0.7 ms for 100,000 entities; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
+
 ## Actions (the rules layer)
 
 ```ts
@@ -195,6 +218,7 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 | `src/ecs/component.ts` | Fields, components, entity ids, generated accessors |
 | `src/ecs/world.ts` | Tables, sparse sets, queries, world, command buffer |
 | `src/ecs/random.ts` | The seeded random number generator a world owns |
+| `src/ecs/hash.ts` | The arithmetic of the world's hash |
 | `src/TickScheduler.ts` | The Effect scheduler owned by the game loop |
 | `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
 | `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
@@ -203,7 +227,7 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema and random tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replay tests |
+| `test/` | Storage, runtime, rules, plugin, schema, random and hash tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replay tests |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -252,9 +276,18 @@ Best of three runs per variant on a cloud Linux VM, Node 22. The machine is shar
 | One Effect per entity                                      | 69.3      |
 | Accessors without code generation                          | 102.8     |
 
+Hashing the same 100,000 entities, in the same units:
+
+| Variant                                                   | ns/entity |
+| --------------------------------------------------------- | --------- |
+| `world.hash()`, one table                                 | 7.0       |
+| `world.hash()`, the same entities spread over 32 tables   | 7.4       |
+| `world.hash()`, with a sparse one-field component on each | 13.6      |
+
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
 - A tick with ten systems that do nothing costs about 4.6 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop.
 - A sparse tag that many entities have, mixed in with ones that do not, breaks tables into short runs and `eachChunk` loses its edge. A component like that is better off with table storage.
+- Hashing a world costs about two and a half raw passes over it: 1.4 ns per 32-bit field per entity, and about four times that for a field of a sparse component, whose members are hashed one by one so that their order does not matter.
 
 ## Raw columns and strict indexing
 
@@ -280,6 +313,8 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - The log replays a game from its start. There is no snapshot of the world itself, so loading a long game means replaying all of it.
 - Replay assumes a fixed delta, the same seed and the same starting state, and does not check any of them: a replay made with another seed runs to its end and gives another game.
+- The hash covers the world and nothing else: not the events waiting to be read, the actions queued for the next tick, or how far each script has got.
+- An object in a `ref` field is not hashed (see [The world's hash](#the-worlds-hash)), and nothing yet says how such a field would be saved.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - Event payloads are typed but have no schema, so events cannot be sent over a network yet.
 - A refused action's direct component writes are not undone (see above).

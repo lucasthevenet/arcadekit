@@ -179,6 +179,7 @@ Events have their own implementation in `src/Event.ts` and do not use Effect's `
 - **Reads from a column need an assertion**, `pos.x[i]!`, because the repository compiles with `noUncheckedIndexedAccess`. That is what `!` is for here, and almost the only place it belongs.
 - **A structural change during iteration throws.** Queue it on `Commands`.
 - **Iteration order is fixed**: tables in creation order, rows ascending, whichever strategy finds the rows. A change that makes order depend on data breaks replays.
+- **What a simulation can tell apart is in `world.hash()`**, and nothing else is. State that a system can observe, or that decides what it will observe later, is added to the hash in the change that adds the state, in an order that does not depend on the process: by name, never by id. State nobody can observe (a cache, spare capacity) stays out, or two equal worlds would hash differently.
 - **Measure.** A change to the storage core or to a query comes with a run of `pnpm --filter arcadekit bench`, before and after, in the pull request.
 
 ## Types

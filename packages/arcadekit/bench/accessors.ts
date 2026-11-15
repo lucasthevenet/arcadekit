@@ -33,6 +33,11 @@ const Velocity = Component.define("bench/Velocity", {
 });
 const tags = [0, 1, 2, 3, 4].map((i) => Component.tag(`bench/Tag${i}`));
 const Frozen = Component.tag("bench/Frozen", { storage: "sparse" });
+const Heat = Component.define(
+  "bench/Heat",
+  { degrees: Field.f32 },
+  { storage: "sparse" }
+);
 const Moving = Query.all(Position, Velocity);
 
 /** Gives the sparse tag to one entity in every `n`. */
@@ -448,6 +453,54 @@ const variants: Record<
         )
       ),
   },
+  hash: {
+    // The same world as the first line: four float fields and an id per
+    // entity, so five 32-bit words each.
+    label: "world.hash(): 100,000 entities in one table",
+    run: () => {
+      const world = new World();
+      populate(world);
+      let sink = 0;
+      const ms = measure(() => {
+        sink ^= world.hash();
+      });
+      void sink;
+      return ms;
+    },
+  },
+
+  hashFragmented: {
+    label: "world.hash(): same entities spread over 32 tables",
+    run: () => {
+      const world = new World();
+      populate(world, true);
+      let sink = 0;
+      const ms = measure(() => {
+        sink ^= world.hash();
+      });
+      void sink;
+      return ms;
+    },
+  },
+
+  hashSparse: {
+    // Every entity also has a sparse component with one float field, whose
+    // members are hashed one by one so that their order does not matter.
+    label: "world.hash(): the same, plus a sparse field on each",
+    run: () => {
+      const world = new World();
+      populate(world);
+      for (const entity of world.view(Query.all(Position)).entities()) {
+        world.add(entity, Heat.of({ degrees: 1 }));
+      }
+      let sink = 0;
+      const ms = measure(() => {
+        sink ^= world.hash();
+      });
+      void sink;
+      return ms;
+    },
+  },
 };
 
 const only = process.argv[2];
@@ -507,6 +560,9 @@ if (only === undefined) {
   );
   console.log(
     `half the entities excluded, raw columns: ${ratio("halfFrozenChunk", "raw")}`
+  );
+  console.log(
+    `hashing the world vs one pass over it:  ${ratio("hash", "raw")}`
   );
 } else {
   // Child process: run one variant and print its median.

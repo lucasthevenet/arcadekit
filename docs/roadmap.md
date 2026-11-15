@@ -17,14 +17,13 @@ Small, and worth doing before anything is built on top.
 
 The package claims a tick is deterministic and that a log replays a game. These make the claim true for real games, and they are what saving and netcode stand on.
 
-- **A hash of the world.** One number from every component's data, in a fixed order. Done when equal worlds hash equal and any changed field changes it. It is how a replay is verified, and how two peers detect that they have drifted apart.
 - **Replay that checks itself.** Record the hash every so many ticks in the log; replay compares. Done when a replay that diverges stops at the tick it diverged, not at the next refused action.
 - **Transactional handlers.** A refused action undoes its queued commands and events, but not a direct write to a component. Either make direct writes undoable inside a handler, or make them impossible there. Done when the "check first, write last" rule is enforced by the code and not by the README. Depends on nothing; decide the approach before milestone 2 builds on handlers.
 
 ## 2. Saving and loading
 
 - **World snapshots.** Write every table and sparse set to a compact binary form, and read it back into an empty world. Columns are already typed arrays, so this is mostly bookkeeping: component names for identity, entity ids and generations preserved. Done when save-then-load gives an equal hash, for a world with every field kind and with despawned entities.
-- **Fields that are not numbers.** A `Field.ref` column holds any value and cannot be saved as it is. Give such a field a schema, or mark it as not saved. Done when a snapshot either saves a field or says, at definition time, that it will not.
+- **Fields that are not numbers.** A `Field.ref` column holds any value and cannot be saved as it is. Give such a field a schema, or mark it as not saved. The world's hash has the same gap: it counts an object in such a field only as being there. Done when a snapshot either saves a field or says, at definition time, that it will not, and the hash covers every field that is saved.
 - **A save is a snapshot plus the log since.** Loading replays only the tail. Done when loading a long game costs the same as loading a short one.
 - **Versioning.** A save names the components and the schema version it was written with. Done when loading a save from an older version either migrates it or refuses with a typed error that says why.
 
