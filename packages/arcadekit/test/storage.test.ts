@@ -110,10 +110,56 @@ describe("entities and components", () => {
     expect(world.remove(a, Health)).toBe(false);
   });
 
-  it("rejects duplicate component names", () => {
-    expect(() => Component.define("st/Position", { x: Field.f32 })).toThrow(
-      /already defined/
+  it("refuses two different components with one name, in the world that meets both", () => {
+    // Defining is not the error: another world, or another app in the same
+    // process, can use a component of the same name.
+    const mine = Component.define("st/Clash", { x: Field.f32 });
+    const theirs = Component.define("st/Clash", { x: Field.f32 });
+    const tag = Component.tag("st/Clash", { storage: "sparse" });
+    const world = new World();
+    const entity = world.spawn(mine.of({ x: 1 }));
+    expect(() => world.spawn(theirs.of({ x: 2 }))).toThrow(
+      /both named "st\/Clash"/
     );
+    expect(() => world.add(entity, theirs.of({ x: 2 }))).toThrow(/both named/);
+    expect(() => world.add(entity, tag)).toThrow(/both named/);
+    expect(() => world.view(query([theirs]))).toThrow(/both named/);
+    expect(() => world.view(query([], [theirs]))).toThrow(/both named/);
+    expect(() => world.view(query([], [], [tag]))).toThrow(/both named/);
+    // A table component that a query only excludes is met there too.
+    expect(() => world.view(query([], [], [theirs]))).toThrow(/both named/);
+    expect(() => world.register(theirs)).toThrow(/both named/);
+    // Through a command buffer the refusal comes when the command is queued,
+    // where the mistake is, and nothing is queued.
+    const commands = new CommandBuffer(world);
+    expect(() => commands.spawn(mine, theirs)).toThrow(/both named/);
+    expect(() => commands.add(entity, theirs)).toThrow(/both named/);
+    expect(commands.size).toBe(0);
+    // A refused component leaves the world as it was.
+    expect(world.entityCount).toBe(1);
+    expect(world.get(entity, mine)).toEqual({ x: 1 });
+    expect(world.has(entity, theirs)).toBe(false);
+
+    const other = new World();
+    const there = other.spawn(theirs.of({ x: 2 }));
+    expect(other.get(there, theirs)).toEqual({ x: 2 });
+    expect(() => other.spawn(mine)).toThrow(/both named/);
+  });
+
+  it("finds a component by its name once the world has met it", () => {
+    const world = new World();
+    expect(world.component("st/Position")).toBeUndefined();
+    world.spawn(Position);
+    expect(world.component("st/Position")).toBe(Position);
+    // Sparse components and query terms are met without any entity.
+    world.view(query([Health], [], [Stunned]));
+    expect(world.component("st/Health")).toBe(Health);
+    expect(world.component("st/Stunned")).toBe(Stunned);
+    // Registering by hand is for looking one up before it is used.
+    world.register(Name);
+    world.register(Name);
+    expect(world.component("st/Name")).toBe(Name);
+    expect(world.component("st/Nothing")).toBeUndefined();
   });
 });
 

@@ -925,6 +925,9 @@ export class World {
   private readonly sparseById = new Map<number, SparseSet>();
   private readonly sparseList: SparseSet[] = [];
   private readonly views = new Map<QuerySpec<any>, QueryView<any>>();
+  private readonly componentsByName = new Map<string, ComponentDef<any>>();
+  /** Indexed by component id: true once registered, so the usual check is one read. */
+  private readonly registered: (true | undefined)[] = [];
 
   /** @internal Depth of query iteration in progress. */
   _iterating = 0;
@@ -1014,6 +1017,8 @@ export class World {
 
   spawn(...inputs: readonly ComponentInput[]): Entity {
     this.assertNotIterating("spawn");
+    // Before an id is reserved, so a refused component leaves nothing behind.
+    this._registerAll(inputs);
     const entity = this._reserve();
     this._place(entity, inputs);
     return entity;
@@ -1158,12 +1163,54 @@ export class World {
     return true;
   }
 
+  /**
+   * Tells the world about a component. A component is registered the first
+   * time the world stores or queries it, so this is only needed to look one
+   * up by name before then. Its name is its identity in this world: a second
+   * component with the same name is refused.
+   */
+  register(def: ComponentDef<any>): void {
+    if (this.registered[def.id] === true) {
+      return;
+    }
+    const known = this.componentsByName.get(def.name);
+    if (known !== undefined) {
+      throw new Error(
+        `Two different components are both named "${def.name}". A component's name identifies it in a world, so give each its own, prefixed with the feature it belongs to.`
+      );
+    }
+    this.componentsByName.set(def.name, def);
+    this.registered[def.id] = true;
+  }
+
+  /** @internal Registers the component of every input. */
+  _registerAll(inputs: readonly ComponentInput[]): void {
+    for (let i = 0; i < inputs.length; i++) {
+      const input = inputs[i]!;
+      this.register(isComponentDef(input) ? input : input.def);
+    }
+  }
+
+  /** The registered component with this name, for saves, the network and tools. */
+  component(name: string): ComponentDef<any> | undefined {
+    return this.componentsByName.get(name);
+  }
+
   // --- queries -------------------------------------------------------------
 
   /** Resolves a query description against this world. Cached per description. */
   view<D extends Terms>(spec: QuerySpec<D>): QueryView<D> {
     let view = this.views.get(spec);
     if (view === undefined) {
+      for (const def of spec.terms) {
+        this.register(def);
+      }
+      for (const def of spec.withDefs) {
+        this.register(def);
+      }
+      for (const def of spec.withoutDefs) {
+        this.register(def);
+      }
       view = new QueryView(this, spec);
       this.views.set(spec, view);
     }
@@ -1176,6 +1223,7 @@ export class World {
   _sparse(def: ComponentDef<any>): SparseSet {
     let set = this.sparseById.get(def.id);
     if (set === undefined) {
+      this.register(def);
       set = new SparseSet(def);
       this.sparseById.set(def.id, set);
       this.sparseList.push(set);
@@ -1187,6 +1235,9 @@ export class World {
     const key = sortedDefs.map((d) => d.id).join(",");
     let table = this.tableByKey.get(key);
     if (table === undefined) {
+      for (const def of sortedDefs) {
+        this.register(def);
+      }
       table = new Table(this.tables.length, sortedDefs);
       this.tables.push(table);
       this.tableByKey.set(key, table);
@@ -1275,6 +1326,8 @@ export class CommandBuffer {
 
   /** Returns the new entity's id immediately; it gets its components on apply. */
   spawn(...inputs: readonly ComponentInput[]): Entity {
+    // Checked here, where the mistake is, and not when the queue is applied.
+    this.world._registerAll(inputs);
     const entity = this.world._reserve();
     this.ops.push({ op: "spawn", entity, inputs });
     return entity;
@@ -1285,6 +1338,7 @@ export class CommandBuffer {
   }
 
   add(entity: Entity, input: ComponentInput): void {
+    this.world.register(isComponentDef(input) ? input : input.def);
     this.ops.push({ op: "add", entity, input });
   }
 

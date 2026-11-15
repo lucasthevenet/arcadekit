@@ -9,7 +9,9 @@ import type { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 
 /** The ECS world. Most systems use queries and Commands instead of this. */
-export class World extends Context.Service<World, EcsWorld>()("ecs/World") {}
+export class World extends Context.Service<World, EcsWorld>()(
+  "arcadekit/World"
+) {}
 
 export interface TimeState {
   /** Seconds simulated by the current tick. */
@@ -22,12 +24,12 @@ export interface TimeState {
 
 /** Game time. Driven by the tick, not the wall clock, so it is deterministic. */
 export class Time extends Context.Service<Time, Readonly<TimeState>>()(
-  "ecs/Time"
+  "arcadekit/Time"
 ) {}
 
 /** Deferred structural changes, applied when the current system finishes. */
 export class Commands extends Context.Service<Commands, CommandBuffer>()(
-  "ecs/Commands"
+  "arcadekit/Commands"
 ) {}
 
 /** Waiting primitives for long-running scripts (coroutines). */
@@ -39,10 +41,12 @@ export class Script extends Context.Service<
     /** Suspends the fiber for a span of game time. */
     readonly sleep: (seconds: number) => Effect.Effect<void>;
   }
->()("ecs/Script") {}
+>()("arcadekit/Script") {}
 
 /** The app's event channels. Usually reached by yielding an event definition. */
-export class Events extends Context.Service<Events, EventBus>()("ecs/Events") {}
+export class Events extends Context.Service<Events, EventBus>()(
+  "arcadekit/Events"
+) {}
 
 /** Services the app provides itself. */
 export type BuiltIn = World | Time | Commands | Script | Events | Actions;

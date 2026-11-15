@@ -117,12 +117,11 @@ export const handler = <
   body: (payload: P) => Generator<Eff, A, never>
 ): Handler<N, P, A, Effect.Error<Eff> | VE, Effect.Services<Eff>> => ({
   action,
-  handle: (payload) =>
-    Effect.gen(() => body(payload)) as Effect.Effect<
-      A,
-      Effect.Error<Eff> | VE,
-      Effect.Services<Eff>
-    >,
+  // Built once: `fnUntraced` runs the generator itself on each call, with no
+  // closure around the payload and no stack trace captured.
+  handle: Effect.fnUntraced(body) as (
+    payload: P
+  ) => Effect.Effect<A, Effect.Error<Eff> | VE, Effect.Services<Eff>>,
 });
 
 /** One applied action, as recorded in `app.actionLog`. */
@@ -182,4 +181,4 @@ export class Actions extends Context.Service<
       payload: P
     ) => void;
   }
->()("ecs/Actions") {}
+>()("arcadekit/Actions") {}

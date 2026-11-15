@@ -167,10 +167,11 @@ export type ComponentInput = ComponentValue<any> | ComponentDef<any>;
 export const isComponentDef = (u: ComponentInput): u is ComponentDef<any> =>
   "id" in u;
 
-// The name is the runtime identity (serialization, netcode, debugging), so two
-// components with the same name are a bug. Effect's Context has the same rule
-// for service keys.
-const registry = new Map<string, ComponentDef<any>>();
+// A component's name is its identity in a save, on the network and in a tool.
+// A world keeps the names of the components it stores and refuses two with one
+// name (see `World.register`), so nothing here is shared between worlds. The
+// id is only a number that tells definitions apart; it is never saved or
+// compared between processes.
 let nextId = 0;
 
 /**
@@ -207,11 +208,6 @@ const define = <S extends Schema, St extends Storage = "table">(
   schema: S,
   options?: { readonly storage?: St }
 ): ComponentDef<S, St> => {
-  if (registry.has(name)) {
-    throw new Error(
-      `Component "${name}" is already defined. Component names must be unique.`
-    );
-  }
   const fields = Object.keys(schema);
   const def: ComponentDef<S, St> = {
     id: nextId++,
@@ -224,7 +220,6 @@ const define = <S extends Schema, St extends Storage = "table">(
     of: (value) => ({ def, value }),
     Accessor: makeAccessorClass(name, fields),
   };
-  registry.set(name, def);
   return def;
 };
 
@@ -236,6 +231,4 @@ export const Component = {
     name: string,
     options?: { readonly storage?: St }
   ): ComponentDef<{}, St> => define(name, {}, options),
-  /** Look a component up by name (for save games, netcode, tooling). */
-  byName: (name: string): ComponentDef<any> | undefined => registry.get(name),
 };

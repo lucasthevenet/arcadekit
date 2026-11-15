@@ -52,7 +52,7 @@ Effect's convention, kept as it is:
 - **Suffixes mean what they mean in Effect**: `Unsafe` for a call that can throw or skips a check (`fiber.pollUnsafe`), `Option` for a result that may be absent, `Exit` for a result returned as a value, where the plain name throws (`app.tickExit` beside `app.tick`).
 - **`ByName`** for the variant of a typed call that takes data from outside (`app.dispatchByName`).
 - **Files under `src/ecs/` and `index.ts` are lower case.** They are not namespaces.
-- **A string that identifies something at run time is prefixed**: `"arcadekit/World"` for a service, `"physics/Position"` for a component. Two things with the same string silently become one.
+- **A string that identifies something at run time is prefixed**: `"arcadekit/World"` for a service, `"physics/Position"` for a component. Two services with the same key silently become one. A component's name is its identity in a world, which refuses a second component with a name it already holds.
 
 Import Effect's modules from the package root, `import { Context, Effect, Layer } from "effect"`, and a single function from its module's path, `import { dual } from "effect/Function"`. See [Importing Effect](https://effect.website/docs/v4/getting-started/importing-effect).
 
@@ -79,6 +79,7 @@ export const loadLevel = Effect.fn("Level.load")(function* (name: string) {
 - **Services are how code reaches the outside world.** Sound, storage, the network, the clock and randomness are services, never imports of a module that does the work directly. That is what lets a test swap them and a replay control them.
 - **A plugin's `layer` is where its services are built.** A layer that needs another plugin's service lists that plugin in `plugins`. A resource is acquired with `Effect.acquireRelease` inside `Layer.effect`, so it is released when the app's scope closes.
 - **Do not build a layer by hand** with `Layer.build`. `App.make` is the one place that does.
+- **A program is started with the platform's `runMain`**, `NodeRuntime.runMain` under Node and `BrowserRuntime.runMain` in a browser, which reports a failure and interrupts the program cleanly, closing the app's scope. `Effect.runSync` and `Effect.runPromise` are for tests and benchmarks. Inside a program, an Effect is yielded, never run. See [Running Effects](https://effect.website/docs/v4/getting-started/running-effects); `examples/` are the examples.
 
 ```ts
 export class Audio extends Context.Service<
@@ -173,6 +174,7 @@ Events have their own implementation in `src/Event.ts` and do not use Effect's `
 ## Plain code: the storage core and hot loops
 
 - **No `effect` import in `src/ecs/`.** It is usable, and tested, with no Effect at all.
+- **Nothing is shared between worlds.** A world keeps the names of the components it stores; the module holds no registry. The one module-level value is the counter that numbers component definitions, and that number is never saved, hashed or compared between processes.
 - **Columns, not objects.** Numeric data is in typed arrays, one per field. Do not allocate inside a per-entity loop.
 - **Reads from a column need an assertion**, `pos.x[i]!`, because the repository compiles with `noUncheckedIndexedAccess`. That is what `!` is for here, and almost the only place it belongs.
 - **A structural change during iteration throws.** Queue it on `Commands`.
@@ -217,10 +219,6 @@ Checked against Effect's [rename map](https://github.com/Effect-TS/effect/blob/m
 
 Fix these when you are in the file, or see the first item of the [roadmap](./roadmap.md).
 
-- The built-in services are keyed `"ecs/World"`, `"ecs/Time"` and so on, not `"arcadekit/..."`.
-- `Action.handler` wraps the handler's generator in `Effect.gen` on every call. It should use `Effect.fnUntraced`.
 - There is no seeded random service, so the determinism rule about randomness has nothing to point at.
-- The examples run with `Effect.runSync` and `Effect.runPromise`. A real entry point uses the platform's `runMain` (`BrowserRuntime.runMain` in a browser), which interrupts the program cleanly; see [Running Effects](https://effect.website/docs/v4/getting-started/running-effects).
-- The component registry is a module-level `Map`, shared by every app in the process. It is the one piece of global state, and it is why component names must be unique.
 
 The references to Effect's repository and documentation were checked on 2026-11-15, against Effect 4.1.

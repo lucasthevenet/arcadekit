@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 78 tests
+pnpm test                          # 81 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -77,6 +77,14 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 
 - A layer or setup that fails makes `App.make` fail with that typed error.
 - Components, events and actions are plain values, so a plugin does not list them. It exports them from its module.
+
+## Names
+
+A string that identifies something at run time carries the name of the feature it belongs to.
+
+- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`.
+- A component's name is its identity in a world: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
+- `world.component(name)` gives the component a world holds under a name. A world learns a component the first time it stores or queries it; `world.register(component)` tells it sooner.
 
 ## Events
 
@@ -143,7 +151,7 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
 | `test/` | Storage, runtime, rules, plugin and schema tests, including a randomized comparison against a simple model and replay tests |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
-| `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins |
+| `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
 ## Two ways to loop
 

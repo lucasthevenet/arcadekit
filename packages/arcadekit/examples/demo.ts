@@ -1,8 +1,9 @@
 /**
  * A small simulation that uses every piece of the prototype.
  *
- *   npm run demo
+ *   pnpm --filter arcadekit demo
  */
+import { NodeRuntime } from "@effect/platform-node";
 import { Effect } from "effect";
 
 import {
@@ -127,4 +128,7 @@ const program = Effect.gen(function* () {
   console.log(`real time: ${app.time.tick - ticksBefore} ticks in 250 ms`);
 });
 
-Effect.runPromise(Effect.scoped(program));
+// The entry point: runMain runs the program, reports a failure, and
+// interrupts it (stopping the timer and closing the app's scope) when the
+// process is told to stop.
+NodeRuntime.runMain(Effect.scoped(program));

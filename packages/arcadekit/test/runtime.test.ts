@@ -3,10 +3,12 @@ import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  Action,
   App,
   Commands,
   Component,
   Driver,
+  Events,
   Field,
   Query,
   Resource,
@@ -14,6 +16,7 @@ import {
   System,
   TickScheduler,
   Time,
+  World,
 } from "../src/index";
 
 const Position = Component.define("rt/Position", {
@@ -287,6 +290,45 @@ describe("systems", () => {
       // The app is still usable afterwards.
       expect(() => app.tick(1)).toThrow(/did not finish/);
     });
+  });
+});
+
+describe("the built-in services", () => {
+  it("are keyed under arcadekit/, each with its own key", () => {
+    // A key is a service's identity: two services with one key silently
+    // become one, and a game's own "World" must not collide with these.
+    const keys = [World, Time, Commands, Script, Events, Action.Actions].map(
+      (service) => service.key
+    );
+    expect(keys).toEqual([
+      "arcadekit/World",
+      "arcadekit/Time",
+      "arcadekit/Commands",
+      "arcadekit/Script",
+      "arcadekit/Events",
+      "arcadekit/Actions",
+    ]);
+  });
+
+  it("leave a game free to define a service called World", () => {
+    class GameWorld extends Context.Service<
+      GameWorld,
+      { readonly size: number }
+    >()("World") {}
+    const Probe = System.make("Probe", function* () {
+      const world = yield* World;
+      const mine = yield* GameWorld;
+      world.spawn(Lifetime.of({ seconds: mine.size }));
+    });
+    withApp(
+      App.make({ systems: [Probe] }).pipe(
+        Effect.provideService(GameWorld, { size: 7 })
+      ),
+      (app) => {
+        app.tick(1);
+        expect(app.world.entityCount).toBe(1);
+      }
+    );
   });
 });
 

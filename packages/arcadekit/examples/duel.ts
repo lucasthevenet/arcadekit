@@ -8,8 +8,9 @@
  *
  * The game is two plugins: the rules, and commentary that depends on them.
  *
- *   npm run duel
+ *   pnpm --filter arcadekit duel
  */
+import { NodeRuntime } from "@effect/platform-node";
 import { Context, Data, Effect, Exit, Layer, Schema } from "effect";
 
 import {
@@ -213,9 +214,15 @@ const program = Effect.gen(function* () {
   );
 
   // One move: dispatch, report, then let the world react for one tick.
-  const strikeWith = (who: string, attacker: Entity, target: Entity) => {
-    const outcome = Effect.runSync(
-      Effect.match(app.dispatch(Strike, { attacker, target }), {
+  const strikeWith = Effect.fnUntraced(function* (
+    who: string,
+    attacker: Entity,
+    target: Entity
+  ) {
+    // The outcome of a dispatch is an Exit, and an Exit is an Effect.
+    const outcome = yield* Effect.match(
+      app.dispatch(Strike, { attacker, target }),
+      {
         // The failure type is exactly what can go wrong: the three errors the
         // handler raises, plus a payload the schema rejects.
         onFailure: (error) => {
@@ -235,11 +242,11 @@ const program = Effect.gen(function* () {
           }
         },
         onSuccess: (hpLeft) => `hits, target is left with ${hpLeft} hp`,
-      })
+      }
     );
     console.log(`${who} strikes: ${outcome}`);
     app.tick(1);
-  };
+  });
   const passTurn = (player: 1 | 2) => {
     app.dispatch(Pass, { player });
     app.tick(1);
@@ -247,15 +254,15 @@ const program = Effect.gen(function* () {
   };
 
   console.log(`start -> ${standing(app)}`);
-  strikeWith("Rogue", rogue, knight); // out of turn
-  strikeWith("Knight", knight, rogue);
-  strikeWith("Knight", knight, rogue);
-  strikeWith("Knight", knight, rogue); // out of energy
+  yield* strikeWith("Rogue", rogue, knight); // out of turn
+  yield* strikeWith("Knight", knight, rogue);
+  yield* strikeWith("Knight", knight, rogue);
+  yield* strikeWith("Knight", knight, rogue); // out of energy
   passTurn(1);
-  strikeWith("Rogue", rogue, knight);
+  yield* strikeWith("Rogue", rogue, knight);
   passTurn(2);
-  strikeWith("Knight", knight, rogue); // the Rogue falls
-  strikeWith("Knight", knight, rogue); // nobody left to hit
+  yield* strikeWith("Knight", knight, rogue); // the Rogue falls
+  yield* strikeWith("Knight", knight, rogue); // nobody left to hit
   console.log(`end -> ${standing(app)}; referee: ${referee.pollUnsafe()}`);
 
   // The log holds only the moves that were accepted. Written out as text and
@@ -263,35 +270,29 @@ const program = Effect.gen(function* () {
   // only the rules, so it is silent.
   const saved = Action.encodeLog(app.actionLog);
   console.log(`saved: ${saved}`);
-  const replay = (text: string): string => {
+  // A fresh app in a scope of its own, closed when the replay is over.
+  const replay = Effect.fnUntraced(function* (text: string) {
     const loaded = Action.decodeLog(text);
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
-    return Effect.runSync(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const headless = yield* App.make({ plugins: [Rules] });
-          seat(headless);
-          try {
-            App.replay(headless, loaded.value, {
-              delta: 1,
-              ticks: app.time.tick,
-            });
-            return `${standing(headless)} (${standing(headless) === standing(app) ? "identical" : "DIFFERENT"})`;
-          } catch (error) {
-            return `stopped: ${(error as Error).message}`;
-          }
-        })
-      )
-    );
-  };
-  console.log(`replayed -> ${replay(saved)}`);
+    const headless = yield* App.make({ plugins: [Rules] });
+    seat(headless);
+    try {
+      App.replay(headless, loaded.value, { delta: 1, ticks: app.time.tick });
+      return `${standing(headless)} (${standing(headless) === standing(app) ? "identical" : "DIFFERENT"})`;
+    } catch (error) {
+      return `stopped: ${(error as Error).message}`;
+    }
+  }, Effect.scoped);
+  console.log(`replayed -> ${yield* replay(saved)}`);
   // Someone edits the save so that a player who does not exist passes.
   console.log(
-    `edited save -> ${replay(saved.replace('"player":1', '"player":3'))}`
+    `edited save -> ${yield* replay(saved.replace('"player":1', '"player":3'))}`
   );
-  console.log(`garbage -> ${replay("<html>")}`);
+  console.log(`garbage -> ${yield* replay("<html>")}`);
 });
 
-Effect.runSync(Effect.scoped(program));
+// The entry point: runMain runs the program, reports a failure, and
+// interrupts it (closing the app's scope) when the process is told to stop.
+NodeRuntime.runMain(Effect.scoped(program));

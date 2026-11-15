@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
  * functions it has seen there, so running variants one after another in one
  * process makes later ones look slower than they are.
  *
- *   npm run bench
+ *   pnpm --filter arcadekit bench
  */
 import { Effect } from "effect";
 
