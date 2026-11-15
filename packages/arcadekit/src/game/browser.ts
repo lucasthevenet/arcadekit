@@ -67,6 +67,7 @@ export type {
   StateOf,
   StepContext,
 } from "./simulation";
+export type { ReadonlyState } from "./readonly-state";
 export type { FrameBudget, InputSource, StepInput } from "./step-input";
 export {
   type EngineClass,

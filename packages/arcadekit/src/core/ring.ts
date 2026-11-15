@@ -55,7 +55,47 @@ const TypeId = "~arcadekit/core/Ring";
  * @since 0.7.0
  */
 export interface Ring<L extends Layout.Layout>
-  extends Pipeable.Pipeable, Inspectable.Inspectable {
+  extends ReadonlyRing<L>, Pipeable.Pipeable, Inspectable.Inspectable {
+  /** One typed array per field of the layout, under the layout's names. */
+  readonly fields: Layout.Fields<L>;
+}
+
+/**
+ * A ring as the code that only reads a run sees it: its counts, and fields whose elements can be
+ * read and not written.
+ *
+ * **When to use**
+ *
+ * Rarely by name: it is what `Game.ReadonlyState` makes of a ring in a run's state, which a view
+ * takes what is new from with a ring reader.
+ *
+ * **Details**
+ *
+ * Every ring is one, so a function that takes it takes either. `slotOf` and `RingReader.take`
+ * take it, and `push`, `pop` and `clear` refuse it, at compile time. It is not `Pipeable`: a
+ * reader calls the module's functions with the ring first.
+ *
+ * **Example** (A view reads the newest record)
+ *
+ * ```ts
+ * import { Ring } from "arcadekit/core";
+ *
+ * const HIT = { x: Float32Array } as const;
+ *
+ * const newestX = (hits: Ring.ReadonlyRing<typeof HIT>): number =>
+ *   hits.written === 0 ? Number.NaN : hits.fields.x[Ring.slotOf(hits, hits.written - 1)]!;
+ *
+ * const hits = Ring.make(4, HIT);
+ * for (const x of [2, 5]) {
+ *   hits.fields.x[Ring.push(hits)] = x;
+ * }
+ * newestX(hits); // => 5
+ * ```
+ *
+ * @category models
+ * @since 0.8.0
+ */
+export interface ReadonlyRing<L extends Layout.Layout> {
   readonly [TypeId]: typeof TypeId;
   /** The most records it holds, and the length of every field. */
   readonly capacity: number;
@@ -63,8 +103,8 @@ export interface Ring<L extends Layout.Layout>
   readonly written: number;
   /** Records still held, the newest ones: a push raises it up to `capacity`, a pop lowers it. */
   readonly length: number;
-  /** One typed array per field of the layout, under the layout's names. */
-  readonly fields: Layout.Fields<L>;
+  /** One typed array per field of the layout, under the layout's names, read-only. */
+  readonly fields: Layout.ReadonlyFields<L>;
 }
 
 /** What the module's functions write, beyond what a caller reads. */
@@ -265,11 +305,11 @@ export const pop = <L extends Layout.Layout>(self: Ring<L>): number => {
  * @since 0.7.0
  */
 export const slotOf: {
-  (n: number): <L extends Layout.Layout>(self: Ring<L>) => number;
-  <L extends Layout.Layout>(self: Ring<L>, n: number): number;
+  (n: number): <L extends Layout.Layout>(self: ReadonlyRing<L>) => number;
+  <L extends Layout.Layout>(self: ReadonlyRing<L>, n: number): number;
 } = dual(
   2,
-  <L extends Layout.Layout>(self: Ring<L>, n: number): number =>
+  <L extends Layout.Layout>(self: ReadonlyRing<L>, n: number): number =>
     n % self.capacity
 );
 

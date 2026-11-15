@@ -30,6 +30,7 @@ import type { FrameSource } from "./frames";
 import { messageOf } from "./internal/thrown";
 import { makeLoop } from "./loop";
 import type { Loop } from "./loop";
+import type { ReadonlyState } from "./readonly-state";
 import type { RefusalFor, SimulationClass } from "./simulation";
 import type { InputSource } from "./step-input";
 import type { View } from "./view";
@@ -612,7 +613,8 @@ const steppedFrames = <Config, State, Input, Event, Command, Refusals>(
     budget.seconds = Math.max(0, nowMs - lastMs) / 1000;
     lastMs = nowMs;
     loop.frame(input, budget, nowMs);
-    view.render(loop.state, nowMs / 1000);
+    // A view is given the run's own state, read-only.
+    view.render(loop.state as ReadonlyState<State> | null, nowMs / 1000);
   }).pipe(Effect.tapError(() => Effect.sync(() => loop.stop())));
 };
 

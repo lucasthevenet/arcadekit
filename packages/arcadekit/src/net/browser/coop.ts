@@ -27,6 +27,7 @@ import type {
   EventOf,
   PlayerInputOf,
   PlayersSimulation,
+  ReadonlyState,
 } from "../../game/index";
 import { Room } from "../signalling/index";
 import type * as CoopClient from "./coop-client";
@@ -644,7 +645,7 @@ export interface CoopDefinition<
    */
   readonly maxPlayers?: number;
   /** A digest of the whole state, the same on every peer for the same run. */
-  readonly hash: (state: NoInfer<State>) => number;
+  readonly hash: (state: NoInfer<ReadonlyState<State>>) => number;
   /**
    * The events that end a run, of those the simulation reports. After one, a lost host or peer
    * is no failure: the others leaving a run that is over stops it quietly, with its end still

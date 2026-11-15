@@ -22,6 +22,7 @@ import { Kernel } from "./internal/kernel";
 import type { KernelSimulation } from "./internal/kernel";
 import { resolve } from "./internal/resolved";
 import type { Resolved } from "./internal/resolved";
+import type { ReadonlyState } from "./readonly-state";
 import type {
   CommandContext,
   RefusalFor,
@@ -500,7 +501,8 @@ class LoopImpl<Config, State, Input, Event, Command, Refusals>
               ...(sample.version === undefined
                 ? {}
                 : { version: sample.version }),
-              read: (state: State) => sample.make(sample.read(state)),
+              read: (state: ReadonlyState<State>) =>
+                sample.make(sample.read(state)),
             },
           }),
     };

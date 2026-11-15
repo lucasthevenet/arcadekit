@@ -39,6 +39,6 @@ A genre is written in two halves. Its rules, the events, commands, rejections, s
 
 The handlers inside a declaration, `create`, `step`, `apply`, `view` and `input`, are plain functions. A step runs inside a frame or a tick, finishes in the call that runs it, and gives the same bits everywhere ([Determinism](determinism.md)), and a view draws inside the frame the browser shows. What has a lifecycle is Effect: loading content and assets, an engine's attach, saves, connections.
 
-A run changes only at a step: by its input, and by a command the loop applies at the start of the next step. A view reads the state and never changes it, and the app hears what a run reports as events.
+A run changes only at a step: by its input, and by a command the loop applies at the start of the next step. What only reads a run, a view, a sample and a state hash, is given its state read-only (`Game.ReadonlyState`), so the compiler refuses a write there, and the app hears what a run reports as events.
 
 [Making a game](../making-a-game.md) walks through a genre's declarations, from the rules to the app. The push-puzzle demo is the example to copy.

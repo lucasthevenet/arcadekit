@@ -21,6 +21,7 @@ import {
   TileMap,
   Tween,
 } from "arcadekit/core";
+import type * as Game from "arcadekit/game";
 import {
   Gait,
   InstancedSprites,
@@ -87,7 +88,7 @@ interface Internal extends BoardSprites {
   /** The sheet's tags the board draws, picked once: a missing one is a near one, or frame 0. */
   readonly tags: SpriteSheet.ResolvedTags<typeof Art.tags>["tags"];
   /** The run being drawn. A new run (a restart, another level) resets everything below. */
-  puzzle: World.Puzzle | null;
+  puzzle: Game.ReadonlyState<World.Puzzle> | null;
   /** True while the menu backdrop is set up. */
   showingMenu: boolean;
   /** The board, with room above it for the HUD: what the camera fits. */
@@ -179,7 +180,7 @@ export const make = (
  */
 export const draw = (
   self: BoardSprites,
-  puzzle: World.Puzzle | null,
+  puzzle: Game.ReadonlyState<World.Puzzle> | null,
   t: number
 ): void => {
   const sprites = self as Internal;
@@ -242,7 +243,11 @@ const menuFrame = (sprites: Internal, col: number, row: number): number => {
     : sprites.tags.floor.from + floorVariant(h, sprites.tags.floor);
 };
 
-const drawPuzzle = (sprites: Internal, puzzle: World.Puzzle, t: number) => {
+const drawPuzzle = (
+  sprites: Internal,
+  puzzle: Game.ReadonlyState<World.Puzzle>,
+  t: number
+) => {
   if (sprites.puzzle !== puzzle) {
     startDrawing(sprites, puzzle);
   }
@@ -277,7 +282,11 @@ const drawPuzzle = (sprites: Internal, puzzle: World.Puzzle, t: number) => {
 };
 
 /** Pushes every box, and any still sliding into a hole. */
-const drawBoxes = (sprites: Internal, puzzle: World.Puzzle, t: number) => {
+const drawBoxes = (
+  sprites: Internal,
+  puzzle: Game.ReadonlyState<World.Puzzle>,
+  t: number
+) => {
   const { boxes } = puzzle;
   const { actors, tags } = sprites;
   for (let i = 0; i < boxes.count; i++) {
@@ -317,7 +326,7 @@ const drawBoxes = (sprites: Internal, puzzle: World.Puzzle, t: number) => {
 /** Pushes the player. `undid` says whether a turn since the last frame was an undo. */
 const drawPlayer = (
   sprites: Internal,
-  puzzle: World.Puzzle,
+  puzzle: Game.ReadonlyState<World.Puzzle>,
   t: number,
   undid: boolean
 ) => {
@@ -415,7 +424,10 @@ const drawMenu = (sprites: Internal, t: number) => {
 };
 
 /** Fits the camera to this run's board, and puts every slide at rest. */
-const startDrawing = (sprites: Internal, puzzle: World.Puzzle) => {
+const startDrawing = (
+  sprites: Internal,
+  puzzle: Game.ReadonlyState<World.Puzzle>
+) => {
   sprites.puzzle = puzzle;
   sprites.showingMenu = false;
   const { boxes, map } = puzzle;

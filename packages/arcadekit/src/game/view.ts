@@ -7,6 +7,7 @@
  *
  * @since 0.7.0
  */
+import type { ReadonlyState } from "./readonly-state";
 
 /**
  * What draws a game: `render`, called once per frame with the run's state, and `dispose`.
@@ -44,8 +45,14 @@
  * @since 0.7.0
  */
 export interface View<State> {
-  /** Draws one frame. `state` is null when no run is active (menus). */
-  readonly render: (state: State | null, timeSeconds: number) => void;
+  /**
+   * Draws one frame. `state` is null when no run is active (menus). It is the run's own state,
+   * read-only: a view never changes it.
+   */
+  readonly render: (
+    state: ReadonlyState<State> | null,
+    timeSeconds: number
+  ) => void;
   readonly dispose: () => void;
 }
 

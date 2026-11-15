@@ -537,7 +537,7 @@ const SIDE = {
 } as const;
 
 /** Pool index of the box on `cell`, or -1. */
-const boxIndexAt = (puzzle: Puzzle, cell: number) => {
+const boxIndexAt = (puzzle: Game.ReadonlyState<Puzzle>, cell: number) => {
   const { boxes } = puzzle;
   for (let i = 0; i < boxes.count; i++) {
     if (boxes.fields.cell[i] === cell) {
@@ -655,13 +655,17 @@ const undoTurn = (puzzle: Puzzle): void => {
  *
  * @category getters
  */
-export const boxIdAt = (self: Puzzle, col: number, row: number): number => {
+export const boxIdAt = (
+  self: Game.ReadonlyState<Puzzle>,
+  col: number,
+  row: number
+): number => {
   const i = boxIndexAt(self, TileMap.cellAt(self.map, col, row));
   return i === -1 ? -1 : EntityPool.idOf(self.boxes, i);
 };
 
 /** Goals that have no box on them yet. */
-const boxesLeft = (puzzle: Puzzle): number => {
+const boxesLeft = (puzzle: Game.ReadonlyState<Puzzle>): number => {
   let placed = 0;
   const { boxes } = puzzle;
   const { goal } = puzzle.map.fields;
@@ -693,7 +697,7 @@ const boxesLeft = (puzzle: Puzzle): number => {
  * @category getters
  */
 export const hudSample = (
-  self: Puzzle
+  self: Game.ReadonlyState<Puzzle>
 ): { readonly moves: number; readonly boxesLeft: number } => ({
   moves: self.moves,
   boxesLeft: boxesLeft(self),
@@ -727,7 +731,7 @@ export const hudSample = (
  *
  * @category getters
  */
-export const boardText = (self: Puzzle): string[] => {
+export const boardText = (self: Game.ReadonlyState<Puzzle>): string[] => {
   const lines: string[] = [];
   const { map } = self;
   for (let row = 0; row < map.rows; row++) {
@@ -740,7 +744,7 @@ export const boardText = (self: Puzzle): string[] => {
   return lines;
 };
 
-const cellChar = (puzzle: Puzzle, cell: number): string => {
+const cellChar = (puzzle: Game.ReadonlyState<Puzzle>, cell: number): string => {
   switch (puzzle.map.fields.tile[cell]) {
     case Level.Tile.wall: {
       return "#";

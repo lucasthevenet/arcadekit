@@ -14,6 +14,7 @@ import type { Duration, Schema } from "effect";
 import type { AnyCommand } from "./command";
 import type { AnyEvent } from "./event";
 import type { Resolved } from "./internal/resolved";
+import type { ReadonlyState } from "./readonly-state";
 
 /**
  * What `create` is given besides the run's config: the run's seed, and `report` for the events
@@ -164,9 +165,9 @@ export interface Sample<State, Sampled extends AnyEvent> {
   readonly event: Sampled;
   /** Measured on the time the loop's caller passes in: real time in the browser. */
   readonly every?: Duration.Input;
-  readonly version?: (state: State) => number;
-  /** The event's payload, read from the state. Must not change the state. */
-  readonly read: (state: State) => Omit<Sampled["Type"], "_tag">;
+  readonly version?: (state: ReadonlyState<State>) => number;
+  /** The event's payload, read from the state, which it is given read-only. */
+  readonly read: (state: ReadonlyState<State>) => Omit<Sampled["Type"], "_tag">;
 }
 
 declare const unreturnable: unique symbol;

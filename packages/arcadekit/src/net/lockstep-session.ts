@@ -24,6 +24,7 @@ import type {
   Loop,
   PlayerInputOf,
   PlayersSimulation,
+  ReadonlyState,
   RefusalFor,
   Settled,
   StepInput,
@@ -295,7 +296,7 @@ export class LockstepError extends LockstepErrorBase {}
  *   contentHash: "content-v1",
  *   transport: MemoryNetwork.connect(network, "host"),
  *   local: { read: () => 1 },
- *   hash: (state: Game.StateOf<typeof Sum>) => state.total,
+ *   hash: (state: Game.ReadonlyState<Game.StateOf<typeof Sum>>) => state.total,
  *   inputDelay: 3,
  *   hashEvery: 30,
  * };
@@ -322,8 +323,11 @@ export interface Options<Config, State, Input, Event, Command, Refusals> {
   readonly transport: Transport;
   /** This player's device or script: one player's input for each step, or null for a step with none. */
   readonly local: StepInput<PlayerInputOf<Input> | null>;
-  /** A digest of the whole state, the same on every peer for the same run. Compared every `hashEvery` steps. */
-  readonly hash: (state: State) => number;
+  /**
+   * A digest of the whole state, the same on every peer for the same run, which it is given
+   * read-only. Compared every `hashEvery` steps.
+   */
+  readonly hash: (state: ReadonlyState<State>) => number;
   /** How many steps ahead local input is scheduled. 2 to 6 at 60 Hz. */
   readonly inputDelay: number;
   /** Peers compare state hashes after every this many steps. */
@@ -510,7 +514,7 @@ export type Status = "joining" | "running" | "waiting" | "stopped";
  *   simulation: Sum,
  *   config: null,
  *   contentHash: "content-v1",
- *   hash: (state: Game.StateOf<typeof Sum>) => state.total,
+ *   hash: (state: Game.ReadonlyState<Game.StateOf<typeof Sum>>) => state.total,
  *   inputDelay: 3,
  *   hashEvery: 30,
  * };
@@ -1753,7 +1757,11 @@ class SessionImpl<Config, State, Input, Event, Command, Refusals>
       remaining -= steps;
       const step = this.loop.stepIndex;
       if (step % hashEvery === 0) {
-        this.ownHashes.set(step, this.options.hash(this.loop.state!));
+        this.ownHashes.set(
+          step,
+          // The hash is given the run's own state, read-only.
+          this.options.hash(this.loop.state! as ReadonlyState<State>)
+        );
         this.compareHashes(step);
         if (this.status === "stopped") {
           return;

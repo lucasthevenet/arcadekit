@@ -54,7 +54,7 @@ const shared = {
   simulation: Sum,
   config: null,
   contentHash: "content-v1",
-  hash: (state: Game.StateOf<typeof Sum>) => state.total,
+  hash: (state: Game.ReadonlyState<Game.StateOf<typeof Sum>>) => state.total,
   inputDelay: 3,
   hashEvery: 30,
 };

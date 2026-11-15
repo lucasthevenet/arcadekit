@@ -16,6 +16,7 @@
  * view calls from its own.
  */
 import { EntityPool } from "arcadekit/core";
+import type * as Game from "arcadekit/game";
 import {
   Gait,
   InstancedSprites,
@@ -99,7 +100,7 @@ interface WeaponLook {
 
 /** The tags and tints for one run's content. */
 interface Looks {
-  readonly arena: World.Arena;
+  readonly arena: Game.ReadonlyState<World.Arena>;
   /** The content's tags as the sheet has them, by their `SpriteTags.names`. */
   readonly tags: SpriteSheet.ResolvedTags<
     ReturnType<typeof SpriteTags.forContent>
@@ -111,7 +112,10 @@ interface Looks {
 }
 
 /** A hero's own tags, or the generic hero's in its colour if the sheet lacks any of them. */
-const heroLook = (tags: Looks["tags"], hero: Hero.Hero): HeroLook => {
+const heroLook = (
+  tags: Looks["tags"],
+  hero: Game.ReadonlyState<Hero.Hero>
+): HeroLook => {
   const { id, sprite } = hero.def;
   const walk = tags[SpriteTags.names.hero(id, "walk")]!;
   const idle = tags[SpriteTags.names.hero(id, "idle")]!;
@@ -132,7 +136,11 @@ const frameOf = (tag: SpriteSheet.Tag, age: number) =>
   Math.min(tag.from + age, tag.to);
 
 /** The x of the playing hero nearest (x, z), or x itself with none. */
-const nearestHeroX = (arena: World.Arena, x: number, z: number): number => {
+const nearestHeroX = (
+  arena: Game.ReadonlyState<World.Arena>,
+  x: number,
+  z: number
+): number => {
   let best = Number.POSITIVE_INFINITY;
   let bestX = x;
   for (const hero of arena.heroes) {
@@ -286,7 +294,7 @@ export const make = (
  */
 export const draw = (
   self: ArenaSprites,
-  arena: World.Arena | null,
+  arena: Game.ReadonlyState<World.Arena> | null,
   time: number
 ): void => {
   const sprites = self as Internal;
@@ -338,7 +346,11 @@ const drawBackdrop = (sprites: Internal, time: number) => {
   sprites.focus.z = Math.sin(time * 0.017) * reach * 0.6;
 };
 
-const drawArena = (sprites: Internal, arena: World.Arena, time: number) => {
+const drawArena = (
+  sprites: Internal,
+  arena: Game.ReadonlyState<World.Arena>,
+  time: number
+) => {
   const looks = looksFor(sprites, arena);
   sprites.halfSize = arena.content.rules.arenaHalfSize;
   const { actors, shadows } = sprites;
@@ -361,7 +373,7 @@ const drawArena = (sprites: Internal, arena: World.Arena, time: number) => {
 /** Heroes, their slot markers and shadows, and their aura rings. Returns how many rings. */
 const drawHeroes = (
   sprites: Internal,
-  arena: World.Arena,
+  arena: Game.ReadonlyState<World.Arena>,
   looks: Looks,
   time: number
 ): number => {
@@ -424,7 +436,7 @@ const drawHeroes = (
 
 const drawAuras = (
   sprites: Internal,
-  hero: Hero.Hero,
+  hero: Game.ReadonlyState<Hero.Hero>,
   looks: Looks,
   from: number
 ): number => {
@@ -451,7 +463,7 @@ const drawAuras = (
 /** Enemies facing the nearest playing hero, each a little out of step with the rest. */
 const drawEnemies = (
   sprites: Internal,
-  arena: World.Arena,
+  arena: Game.ReadonlyState<World.Arena>,
   looks: Looks,
   time: number
 ) => {
@@ -487,7 +499,11 @@ const drawEnemies = (
 };
 
 /** Gems by value, glinting now and then. */
-const drawGems = (sprites: Internal, arena: World.Arena, time: number) => {
+const drawGems = (
+  sprites: Internal,
+  arena: Game.ReadonlyState<World.Arena>,
+  time: number
+) => {
   const { actors } = sprites;
   const { data } = sprites.sheet;
   const { x, z, value } = arena.gems.fields;
@@ -510,7 +526,7 @@ const drawGems = (sprites: Internal, arena: World.Arena, time: number) => {
 /** Projectiles, each with a trail of puffs behind it, fading. */
 const drawShots = (
   sprites: Internal,
-  arena: World.Arena,
+  arena: Game.ReadonlyState<World.Arena>,
   looks: Looks,
   time: number
 ) => {
@@ -548,7 +564,7 @@ const drawShots = (
 /** Whether a hero is walking, and which way it faces; kept per slot across frames. */
 const isWalking = (
   sprites: Internal,
-  hero: Hero.Hero,
+  hero: Game.ReadonlyState<Hero.Hero>,
   time: number
 ): boolean => {
   const { slot } = hero;
@@ -563,7 +579,10 @@ const isWalking = (
 };
 
 /** The looks for a run's content, made once per run; weapons picked up mid-run join here. */
-const looksFor = (sprites: Internal, arena: World.Arena): Looks => {
+const looksFor = (
+  sprites: Internal,
+  arena: Game.ReadonlyState<World.Arena>
+): Looks => {
   if (sprites.looks?.arena !== arena) {
     const { tags } = SpriteSheet.resolveTags(
       sprites.sheet.data,

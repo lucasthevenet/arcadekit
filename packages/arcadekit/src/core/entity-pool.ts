@@ -5,7 +5,8 @@
  * A step keeps its crowds in entity pools (enemies, projectiles, gems), so moving thousands of
  * them reads and writes numbers and allocates nothing after the pool is made. Removing an entity
  * swaps the last one into its slot, so an index is not stable: an identified pool also gives
- * each entity an id that stays with it.
+ * each entity an id that stays with it. What only reads a run, a view or a sample, sees its pools
+ * read-only, so it can't move an entity the step owns.
  *
  * @since 0.7.0
  */
@@ -60,12 +61,7 @@ const IdentifiedTypeId = "~arcadekit/core/EntityPool/Identified";
  * @since 0.7.0
  */
 export interface EntityPool<L extends Layout.Layout>
-  extends Pipeable.Pipeable, Inspectable.Inspectable {
-  readonly [TypeId]: typeof TypeId;
-  /** The most entities it holds, and the length of every field. */
-  readonly capacity: number;
-  /** The live entities, at indices `[0, count)`. */
-  readonly count: number;
+  extends ReadonlyEntityPool<L>, Pipeable.Pipeable, Inspectable.Inspectable {
   /** One typed array per field of the layout, under the layout's names. */
   readonly fields: Layout.Fields<L>;
 }
@@ -107,6 +103,99 @@ export interface EntityPool<L extends Layout.Layout>
  * @since 0.7.0
  */
 export interface Identified<L extends Layout.Layout> extends EntityPool<L> {
+  readonly [IdentifiedTypeId]: typeof IdentifiedTypeId;
+}
+
+/**
+ * An entity pool as the code that only reads a run sees it: its `count`, and fields whose
+ * elements can be read and not written.
+ *
+ * **When to use**
+ *
+ * Rarely by name: it is what `Game.ReadonlyState` makes of a pool in a run's state, which a view,
+ * a sample and a state hash are given. Name it for a function of a view that takes a pool.
+ *
+ * **Details**
+ *
+ * Every entity pool is one, so a function that takes it takes either. The functions that only
+ * read a pool take it (`idOf`, `indexOf`, `visit`), and those that change one (`add`, `remove`,
+ * `clear`) refuse it, at compile time. It is not `Pipeable`: a reader calls the module's functions
+ * with the pool first.
+ *
+ * **Example** (A view's walk over a pool)
+ *
+ * ```ts
+ * import { EntityPool } from "arcadekit/core";
+ *
+ * const ENEMY = { x: Float32Array } as const;
+ *
+ * const rightmost = (enemies: EntityPool.ReadonlyEntityPool<typeof ENEMY>): number => {
+ *   let best = -Infinity;
+ *   for (let i = 0; i < enemies.count; i++) {
+ *     best = Math.max(best, enemies.fields.x[i]!);
+ *   }
+ *   return best;
+ * };
+ *
+ * const enemies = EntityPool.make(8, ENEMY);
+ * for (const x of [3, 9, 4]) {
+ *   enemies.fields.x[EntityPool.add(enemies)] = x;
+ * }
+ * rightmost(enemies); // => 9
+ * ```
+ *
+ * @category models
+ * @since 0.8.0
+ */
+export interface ReadonlyEntityPool<L extends Layout.Layout> {
+  readonly [TypeId]: typeof TypeId;
+  /** The most entities it holds, and the length of every field. */
+  readonly capacity: number;
+  /** The live entities, at indices `[0, count)`. */
+  readonly count: number;
+  /** One typed array per field of the layout, under the layout's names, read-only. */
+  readonly fields: Layout.ReadonlyFields<L>;
+}
+
+/**
+ * An identified pool as the code that only reads a run sees it: a read-only pool whose entities
+ * keep their ids.
+ *
+ * **When to use**
+ *
+ * Rarely by name: it is what `Game.ReadonlyState` makes of an identified pool in a run's state.
+ * A view that follows an entity by its id reads one with `idOf` and `indexOf`.
+ *
+ * **Details**
+ *
+ * Every identified pool is one. `addWithId` refuses it, at compile time, as `add` does.
+ *
+ * **Example** (A view finds a box by its id)
+ *
+ * ```ts
+ * import { EntityPool } from "arcadekit/core";
+ *
+ * const BOX = { cell: Int32Array } as const;
+ *
+ * const cellOf = (boxes: EntityPool.ReadonlyIdentified<typeof BOX>, id: number): number => {
+ *   const i = EntityPool.indexOf(boxes, id);
+ *   return i === -1 ? -1 : boxes.fields.cell[i]!;
+ * };
+ *
+ * const boxes = EntityPool.makeIdentified(4, BOX);
+ * for (const cell of [10, 20]) {
+ *   boxes.fields.cell[EntityPool.add(boxes)] = cell;
+ * }
+ * cellOf(boxes, 1); // => 20
+ * cellOf(boxes, 3); // => -1
+ * ```
+ *
+ * @category models
+ * @since 0.8.0
+ */
+export interface ReadonlyIdentified<
+  L extends Layout.Layout,
+> extends ReadonlyEntityPool<L> {
   readonly [IdentifiedTypeId]: typeof IdentifiedTypeId;
 }
 
@@ -472,12 +561,16 @@ export const clear = <L extends Layout.Layout>(self: EntityPool<L>): void => {
  * @since 0.7.0
  */
 export const idOf: {
-  (index: number): <L extends Layout.Layout>(self: Identified<L>) => number;
-  <L extends Layout.Layout>(self: Identified<L>, index: number): number;
+  (
+    index: number
+  ): <L extends Layout.Layout>(self: ReadonlyIdentified<L>) => number;
+  <L extends Layout.Layout>(self: ReadonlyIdentified<L>, index: number): number;
 } = dual(
   2,
-  <L extends Layout.Layout>(self: Identified<L>, index: number): number =>
-    (self as unknown as IdentifiedInternal<L>).idAt[index]!
+  <L extends Layout.Layout>(
+    self: ReadonlyIdentified<L>,
+    index: number
+  ): number => (self as unknown as IdentifiedInternal<L>).idAt[index]!
 );
 
 /**
@@ -510,11 +603,16 @@ export const idOf: {
  * @since 0.7.0
  */
 export const indexOf: {
-  (id: number): <L extends Layout.Layout>(self: Identified<L>) => number;
-  <L extends Layout.Layout>(self: Identified<L>, id: number): number;
+  (
+    id: number
+  ): <L extends Layout.Layout>(self: ReadonlyIdentified<L>) => number;
+  <L extends Layout.Layout>(self: ReadonlyIdentified<L>, id: number): number;
 } = dual(
   2,
-  <L extends Layout.Layout>(self: Identified<L>, id: number): number => {
+  <L extends Layout.Layout>(
+    self: ReadonlyIdentified<L>,
+    id: number
+  ): number => {
     const pool = self as unknown as IdentifiedInternal<L>;
     return id >= 0 && id < pool.capacity && pool.indexOfId[id]! < pool.count
       ? pool.indexOfId[id]!
@@ -606,15 +704,15 @@ export const addWithId: {
 export const visit: {
   (
     f: (value: number) => void
-  ): <L extends Layout.Layout>(self: EntityPool<L>) => void;
+  ): <L extends Layout.Layout>(self: ReadonlyEntityPool<L>) => void;
   <L extends Layout.Layout>(
-    self: EntityPool<L>,
+    self: ReadonlyEntityPool<L>,
     f: (value: number) => void
   ): void;
 } = dual(
   2,
   <L extends Layout.Layout>(
-    self: EntityPool<L>,
+    self: ReadonlyEntityPool<L>,
     f: (value: number) => void
   ): void => {
     f(self.count);

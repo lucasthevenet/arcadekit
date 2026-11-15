@@ -110,7 +110,7 @@ class JarGame extends Game.Simulation("JarGame", {
   },
 }) {}
 
-const hashJar = (jar: Jar): number => {
+const hashJar = (jar: Game.ReadonlyState<Jar>): number => {
   const h = StateHash.make();
   StateHash.add(h, jar.digest);
   StateHash.add(h, jar.coins);

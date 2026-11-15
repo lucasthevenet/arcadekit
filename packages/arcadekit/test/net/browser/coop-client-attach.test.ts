@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { AttachError, GameCrashed } from "../../../src/game/browser";
 import type { View as GameView } from "../../../src/game/browser";
+import type { ReadonlyState } from "../../../src/game/index";
 import { ManualFrames } from "../../../src/game/testing/index";
 import { CoopRooms } from "../../../src/net/browser/index";
 import type { CoopPresented } from "../../../src/net/browser/internal/coop-client";
@@ -149,7 +150,7 @@ describe("attaching a co-op client", () => {
 
   it("draws no run on each frame until detached, then cancels its frame and releases the input", async () => {
     const frames = ManualFrames.make();
-    const drawn: [TestGame.State | null, number][] = [];
+    const drawn: [ReadonlyState<TestGame.State> | null, number][] = [];
     const coop = client(frames, (_container, { local }) =>
       fakeView({
         render: (state, seconds) => drawn.push([state, seconds + local.slot]),

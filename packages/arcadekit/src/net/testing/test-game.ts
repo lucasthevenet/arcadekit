@@ -579,7 +579,7 @@ const mix = (hash: number, value: number): number =>
  * @category testing
  * @since 0.7.0
  */
-export const hash = (state: State): number => {
+export const hash = (state: Game.ReadonlyState<State>): number => {
   let digest = mix(mix(0x81_1c_9d_c5, state.steps), state.offer);
   for (let slot = 0; slot < state.totals.length; slot++) {
     digest = mix(digest, state.totals[slot]!);
