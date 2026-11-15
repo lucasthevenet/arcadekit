@@ -1,0 +1,101 @@
+# Roadmap
+
+What to build next, in order, and why in that order. The package's [README](../packages/arcadekit/README.md) says what exists today; [conventions](./conventions.md) says how to write what comes next.
+
+Each item says what it is for, what has to be true for it to be done, and what it depends on. An item is not done until it has tests that fail when it is broken, and an entry in the README.
+
+The order follows one rule: build what later items stand on first. Saving needs a seeded random source; netcode needs saving; a renderer needs a frame loop. Within a milestone the items are in order too.
+
+## 0. Housekeeping
+
+Small, and worth doing before anything is built on top.
+
+- **Bring the code in line with the conventions.** The list is at the end of [conventions](./conventions.md#where-the-code-does-not-follow-this-yet): service keys, `Action.handler`, the examples' entry points. Done when that list is empty.
+- **Repair or remove the stale workflows.** `deploy.yml`, `cross-browser.yml` and the smoke step of `package-checks.yml` name things that no longer exist. Done when every workflow in `.github/` passes or is gone.
+- **Report a script that fails.** Today a script's failure is silent unless something observes its fiber. Done when a failed script is logged with its cause, and an app can be told to stop on one.
+- **Move to TypeScript 7.1 when it is released.** The declaration build prints a deprecation warning on 7.0. Done when `pnpm build` is quiet.
+
+## 1. Determinism you can rely on
+
+The package claims a tick is deterministic and that a log replays a game. These make the claim true for real games, and they are what saving and netcode stand on.
+
+- **A seeded random service.** `Random` with `next`, `int`, `pick` and `shuffle`, whose state lives in the world so it is saved and replayed with it. Done when a game that uses it replays identically, and a test shows two apps with one seed agree and two seeds differ.
+- **A hash of the world.** One number from every component's data, in a fixed order. Done when equal worlds hash equal and any changed field changes it. It is how a replay is verified, and how two peers detect that they have drifted apart.
+- **Replay that checks itself.** Record the hash every so many ticks in the log; replay compares. Done when a replay that diverges stops at the tick it diverged, not at the next refused action.
+- **Transactional handlers.** A refused action undoes its queued commands and events, but not a direct write to a component. Either make direct writes undoable inside a handler, or make them impossible there. Done when the "check first, write last" rule is enforced by the code and not by the README. Depends on nothing; decide the approach before milestone 2 builds on handlers.
+
+## 2. Saving and loading
+
+- **World snapshots.** Write every table and sparse set to a compact binary form, and read it back into an empty world. Columns are already typed arrays, so this is mostly bookkeeping: component names for identity, entity ids and generations preserved. Done when save-then-load gives an equal hash, for a world with every field kind and with despawned entities.
+- **Fields that are not numbers.** A `Field.ref` column holds any value and cannot be saved as it is. Give such a field a schema, or mark it as not saved. Done when a snapshot either saves a field or says, at definition time, that it will not.
+- **A save is a snapshot plus the log since.** Loading replays only the tail. Done when loading a long game costs the same as loading a short one.
+- **Versioning.** A save names the components and the schema version it was written with. Done when loading a save from an older version either migrates it or refuses with a typed error that says why.
+
+Depends on milestone 1 for the random state and the hash.
+
+## 3. What every game ends up needing
+
+Each of these is something a game would otherwise build badly for itself.
+
+- **Change detection.** Queries for entities that gained a component, lost one, or had one written since a system last ran. Done when a system can react to a change without scanning everything, and the cost when nothing changed is near zero. Decide how writes are noticed (per column, per table or per row) with the benchmark open.
+- **Singletons.** One instance of some data per world, such as whose turn it is, without a query and a loop to read it. The duel example shows the gap. Done when `yield* Turn` gives a value a handler can read and write, and it is saved with the world.
+- **Relations.** A component that points at another entity, kept correct when that entity is despawned: a parent and its children, a target, an owner. Done when despawning a parent can take its children with it, and a dangling reference cannot be read as a live entity.
+- **States and run conditions.** A game is in the menu, playing or paused, and systems run only in some of those. Done when a system can declare when it runs, a state change runs enter and exit hooks, and none of it costs anything for a system with no condition.
+- **Simulation and presentation as separate stages.** The simulation ticks at a fixed rate; drawing happens every frame, between ticks, and must not change the world. Done when `App` runs a fixed-rate stage and a per-frame stage, and the per-frame stage gets how far it is between two ticks.
+- **Events with schemas.** So an event can be logged, shown in a tool or sent to another machine. Done when `Event.define` takes a schema the way `Action.define` does.
+
+## 4. Running in a browser
+
+Nothing so far draws, plays sound or reads input.
+
+- **A frame loop driver.** `requestAnimationFrame` wrapped with `Effect.callback`, feeding the fixed-step driver, stopping cleanly when interrupted, pausing when the tab is hidden. Done when a game runs in a page and closing the app's scope leaves nothing running.
+- **Input.** Keyboard, pointer and gamepad state read once per tick into the world, so the simulation sees one consistent picture; and a mapping from input to actions. Done when input goes through the same action log as everything else, so a replay needs no input at all.
+- **Assets.** Loading as a scoped resource: a level's assets are acquired when it starts and released when its scope closes. Done when leaving a level frees what it loaded, with a test that proves it.
+- **An entry point.** `BrowserRuntime.runMain` around `App.make` and a driver, as the one obvious way to start a game. Done when the examples use it.
+
+Depends on the two stages from milestone 3.
+
+## 5. Drawing and UI
+
+The package's stated aim is games on Effect, Foldkit and Three.js. These are plugins, not part of the core: a game that draws with something else leaves them out.
+
+- **A Three.js plugin.** Components for what is drawn, and a per-frame system that copies positions from columns to the scene. Instanced meshes read a column directly. Done when ten thousand moving objects draw without one allocation per object per frame.
+- **A Foldkit bridge.** UI reads the world through events and a few selected values, and acts on it only by dispatching actions. Done when a menu and a heads-up display are built without the UI holding a reference to the world.
+- **Sound.** A service that plays a named cue, driven by events. Done when the simulation never calls it directly.
+
+Decide before starting whether each of these is an entry of `arcadekit` or a package of its own.
+
+## 6. More than one player
+
+- **Lockstep.** Every peer runs the same simulation and exchanges only actions, each stamped with the tick it applies on. The action log is already most of this. Done when two apps in one test, joined by a fake network with delay and reordering, stay hash-equal.
+- **Drift detection.** Peers compare hashes and stop with a useful report when they differ. Done when a deliberately non-deterministic system is caught within a known number of ticks.
+- **Rollback.** Predict, and when a late action arrives, restore a snapshot and re-run. Done when a game feels immediate under simulated latency and still ends hash-equal.
+- **A transport.** A service with a test implementation first, a real one second.
+
+Depends on milestones 1 and 2 entirely.
+
+## 7. Speed and scale
+
+Only with a benchmark that shows the need.
+
+- **Accessors without code generation.** `each` builds its accessors with `new Function`, which a strict Content Security Policy forbids, and the obvious fallback measured about forty times slower than raw columns. Done when the package works under such a policy at a cost a game can accept.
+- **Benchmarks in CI.** Done when a change that slows the storage core by more than the noise fails a check.
+- **Systems that declare what they read and write.** The first step towards running systems in parallel, and useful on its own for ordering and for tools. Done when the order of systems can be checked for conflicts.
+- **Parallel systems.** Workers over shared memory, for systems whose declared access does not overlap. Done when it is faster on a real workload, and still deterministic.
+- **Wider entity ids.** A handle is 22 bits of index and 10 of generation; a slot reused 1,024 times can alias an old handle. Done when that cannot happen in a session of realistic length.
+
+## 8. Seeing what is going on
+
+- **An inspector.** Entities, their components, the systems and how long each took, the events of the last tick. Done when a bug can be found without adding a `console.log`.
+- **Tracing.** A layer that turns each system into a span. `System.withSpan` exists; this makes it one line to switch on for a whole app.
+- **A documentation site.** Built from the README, these documents and the doc comments.
+- **Plugins that can be switched off.** Removing a plugin's systems while the app runs, for tools and for tests.
+
+## Decisions waiting to be made
+
+Not work yet; each needs an answer before the item that depends on it.
+
+- **One entry or several.** The storage core imports nothing from Effect and could be `arcadekit/ecs`. Renderers and netcode could be entries or packages. Needed by milestone 5.
+- **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
+- **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
+- **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.

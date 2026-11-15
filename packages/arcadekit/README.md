@@ -210,6 +210,8 @@ moving.eachChunk((start, end, pos, vel) => {
 
 ## Not done yet
 
+The [roadmap](../../docs/roadmap.md) puts these in order.
+
 - Nothing here draws, plays sound or reads input. It is the simulation side only, with no Foldkit or Three.js integration.
 - One package entry. The storage core has no Effect dependency and could be its own entry (`arcadekit/ecs`).
 

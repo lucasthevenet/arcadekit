@@ -2,6 +2,8 @@ This is arcadekit: primitives for browser games on Effect 4, Foldkit and Three.j
 
 This branch is a revamped version, designed fresh: an entity component system with Effect around it. `packages/arcadekit/README.md` describes the design, what works and what is not done yet; read it first. It is a first cut, with no Foldkit or Three.js integration yet. The previous version on `main` is not a reference for this one.
 
+Before writing code, read `docs/conventions.md`: how code here is written so that it stays Effect code, with references into Effect's documentation for each pattern. `docs/roadmap.md` says what to build next and in what order.
+
 arcadekit is alpha, with no users to protect, so a better design wins over compatibility. Say what breaks in the changeset, the commit and the PR.
 
 ## Layout
@@ -11,6 +13,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 - `packages/arcadekit/src/ecs/`: the storage core (components, tables, queries, the command buffer). It is plain synchronous TypeScript and imports nothing from Effect.
 - `packages/arcadekit/test/`: its tests, run by Vitest from the source with no build.
 - `packages/arcadekit/examples/` and `packages/arcadekit/bench/`: two example games and a benchmark, run with `pnpm --filter arcadekit demo`, `duel` and `bench`. They are type-checked by `tsconfig.examples.json` and are not published.
+- `docs/`: the conventions and the roadmap.
 - `scripts/`: the workspace's helpers (the `source` condition for Vite and Vitest, and the package lint).
 - `.changeset/`: pending release notes; see its README.
 
