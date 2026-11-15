@@ -1,22 +1,12 @@
 import { defineConfig } from "oxlint";
-import core from "ultracite/oxlint/core";
-import vitest from "ultracite/oxlint/vitest";
 
+// oxlint's default rules only (its "correctness" category): code that is
+// outright wrong or useless. No style rules.
 export default defineConfig({
-  env: core.env,
-  extends: [core, vitest],
-  ignorePatterns: core.ignorePatterns,
+  ignorePatterns: ["**/dist/**", "**/node_modules/**"],
   rules: {
-    // Effect Schema convention: `const X = Schema.Struct(...)` + `type X = typeof X.Type`.
-    "eslint/no-redeclare": "off",
-    // Key order carries meaning (schema fields, config sections).
-    "eslint/sort-keys": "off",
-    // `Effect.gen(function* () { ... })` is the Effect idiom.
-    "eslint/func-names": "off",
-    // Effect APIs take callbacks by design.
-    "promise/prefer-await-to-callbacks": "off",
-    // Switches over unions are checked for exhaustiveness by TypeScript; a
-    // `default` branch would hide a missing case.
-    "eslint/default-case": "off",
+    // A system or a handler is a generator even when it needs no service,
+    // so it may have no `yield`.
+    "eslint/require-yield": "off",
   },
 });
