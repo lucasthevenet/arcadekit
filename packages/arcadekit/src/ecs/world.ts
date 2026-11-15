@@ -12,6 +12,8 @@
  *   the last time they ran.
  * - Structural changes (spawn/despawn/add/remove) are not allowed while a
  *   query is iterating. Queue them on a CommandBuffer instead.
+ * - A world owns a seeded random number generator, so its state is part of
+ *   the world.
  *
  * No Effect dependency.
  */
@@ -35,6 +37,7 @@ import type {
   Schema,
   ValueOf,
 } from "./component";
+import { Rng } from "./random";
 
 const NOT_PLACED = -1;
 const FREE = -2;
@@ -931,6 +934,17 @@ export class World {
 
   /** @internal Depth of query iteration in progress. */
   _iterating = 0;
+
+  /**
+   * The world's random number generator. Its state is part of the world, so
+   * everything random in a simulation comes from here.
+   */
+  readonly random: Rng;
+
+  /** @param options.seed where the random sequence starts; 0 when left out. */
+  constructor(options?: { readonly seed?: number }) {
+    this.random = new Rng(options?.seed ?? 0);
+  }
 
   /** Number of live entities. */
   get entityCount(): number {

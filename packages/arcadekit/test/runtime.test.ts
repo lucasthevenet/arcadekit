@@ -11,6 +11,7 @@ import {
   Events,
   Field,
   Query,
+  Random,
   Resource,
   Script,
   System,
@@ -297,15 +298,22 @@ describe("the built-in services", () => {
   it("are keyed under arcadekit/, each with its own key", () => {
     // A key is a service's identity: two services with one key silently
     // become one, and a game's own "World" must not collide with these.
-    const keys = [World, Time, Commands, Script, Events, Action.Actions].map(
-      (service) => service.key
-    );
+    const keys = [
+      World,
+      Time,
+      Commands,
+      Script,
+      Events,
+      Random,
+      Action.Actions,
+    ].map((service) => service.key);
     expect(keys).toEqual([
       "arcadekit/World",
       "arcadekit/Time",
       "arcadekit/Commands",
       "arcadekit/Script",
       "arcadekit/Events",
+      "arcadekit/Random",
       "arcadekit/Actions",
     ]);
   });

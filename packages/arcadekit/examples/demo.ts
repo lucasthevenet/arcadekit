@@ -13,6 +13,7 @@ import {
   Driver,
   Field,
   Query,
+  Random,
   Resource,
   Script,
   System,
@@ -71,12 +72,14 @@ const Expiry = System.make("Expiry", function* () {
 const Fountain = Effect.gen(function* () {
   const script = yield* Script;
   const commands = yield* Commands;
+  // Seeded: the same seed sprays the same fountain on every run and machine.
+  const random = yield* Random;
   for (let wave = 1; wave <= 5; wave++) {
     for (let i = 0; i < 100; i++) {
       commands.spawn(
         Position.of({ x: 0, y: 0 }),
-        Velocity.of({ x: (i - 50) / 10, y: 8 + wave }),
-        Lifetime.of({ seconds: 1.5 })
+        Velocity.of({ x: random.next() * 10 - 5, y: 8 + wave }),
+        Lifetime.of({ seconds: 1 + random.next() })
       );
     }
     yield* script.sleep(0.5);
@@ -85,7 +88,7 @@ const Fountain = Effect.gen(function* () {
 });
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ systems: [Expiry, Physics] }).pipe(
+  const app = yield* App.make({ systems: [Expiry, Physics], seed: 7 }).pipe(
     Effect.provide(Resource.layer(Gravity, -20))
   );
   console.log("system order:", app.systemOrder.join(" -> "));

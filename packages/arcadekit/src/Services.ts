@@ -5,6 +5,7 @@ import { Context } from "effect";
 import type { Effect, Fiber } from "effect";
 
 import type { Actions } from "./Action";
+import type { Rng } from "./ecs/random";
 import type { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 
@@ -59,5 +60,30 @@ export class Events extends Context.Service<Events, EventBus>()(
   "arcadekit/Events"
 ) {}
 
+/**
+ * Seeded randomness: the world's generator, `world.random`.
+ *
+ *   const random = yield* Random
+ *   random.next()          // from 0 up to, not including, 1
+ *   random.int(1, 6)       // a whole number, both ends included
+ *   random.pick(items)
+ *   random.shuffle(items)  // in place
+ *
+ * Its methods are plain calls, fine inside a loop. The app is seeded with
+ * `App.make({ seed })`, and the same seed gives the same numbers on every
+ * machine. The generator's state is part of the world, so it is in the
+ * world's hash and a replay draws the same numbers.
+ */
+export class Random extends Context.Service<Random, Rng>()(
+  "arcadekit/Random"
+) {}
+
 /** Services the app provides itself. */
-export type BuiltIn = World | Time | Commands | Script | Events | Actions;
+export type BuiltIn =
+  | World
+  | Time
+  | Commands
+  | Script
+  | Events
+  | Actions
+  | Random;

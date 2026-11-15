@@ -163,7 +163,7 @@ A tick gives the same result from the same inputs, on every machine and every re
 
 - reads time from `Time`, never `Date.now()`, `performance.now()` or Effect's `Clock`;
 - waits with `Script`, never `Effect.sleep`, a `Schedule`, a timer or a promise, all of which resume outside the tick;
-- takes randomness from a seeded service, never `Math.random()`;
+- takes randomness from `Random` (`const random = yield* Random`, then plain calls such as `random.next()`), never `Math.random()`. The generator's state is in the world, so a replay draws the same numbers. Effect's own `Random` is seeded from it inside an app, at the cost of an Effect per draw;
 - does not depend on the order of a `Map` or `Set` it did not fill itself in a fixed order;
 - does not start a fiber with `Effect.forkChild` from a system: a child is interrupted when the tick's fiber ends. Use `Script.spawn`, which the app watches: it reports a failure and interrupts the script when its scope closes. `Effect.forkDetach` also survives the tick, but the app cannot see that fiber, so its failure is silent unless the caller observes it.
 
@@ -217,8 +217,6 @@ Checked against Effect's [rename map](https://github.com/Effect-TS/effect/blob/m
 
 ## Where the code does not follow this yet
 
-Fix these when you are in the file, or see the first item of the [roadmap](./roadmap.md).
-
-- There is no seeded random service, so the determinism rule about randomness has nothing to point at.
+Nothing at the moment. When code has to depart from this guide for a while, list it here with what is missing, and remove the entry with the fix.
 
 The references to Effect's repository and documentation were checked on 2026-11-15, against Effect 4.1.

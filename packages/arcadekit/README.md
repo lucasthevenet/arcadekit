@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 90 tests
+pnpm test                          # 106 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -82,7 +82,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 
 A string that identifies something at run time carries the name of the feature it belongs to.
 
-- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`.
+- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`.
 - A component's name is its identity in a world: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
 - `world.component(name)` gives the component a world holds under a name. A world learns a component the first time it stores or queries it; `world.register(component)` tells it sooner.
 
@@ -133,6 +133,29 @@ const Opening = System.make("Opening", function* () {
 - By default the game goes on without the failed script. `App.make({ onScriptFailure: "stop" })` stops the app instead: the tick the script failed in runs to its end and then fails with `App.ScriptFailed`, a defect that carries the script's cause, and so does every tick after it, without running anything. A driver stops on it.
 - A fiber started with `Effect.forkDetach` is the caller's to observe: the app does not report its failure or interrupt it.
 
+## Randomness
+
+```ts
+const Scatter = System.make("Scatter", function* () {
+  const random = yield* Random;
+  const sparks = yield* Sparks;
+  sparks.each((spark) => {
+    spark.x += random.next() - 0.5; // from 0 up to, not including, 1
+  });
+  const roll = random.int(1, 6); // a whole number, both ends included
+  const cue = random.pick(["thud", "clang"]);
+  const deck = random.shuffle([1, 2, 3, 4]); // in place
+});
+
+const app = yield * App.make({ systems: [Scatter], seed: 2024 });
+```
+
+- `Random` is the one source of randomness in a simulation. Its methods are plain calls, so they are fine inside a loop; a draw costs about 4 ns.
+- The same seed gives the same numbers on every machine and in every JavaScript engine: the generator (xoshiro128\*\*) uses 32-bit integer arithmetic only, and `next()` is 32 random bits divided by 2^32. With no seed, the seed is 0, so a game is repeatable until it is given a seed from outside, such as the time at the entry point. `int` gives every value equal odds, and `shuffle` every order.
+- The generator's state is four numbers in the world, `app.world.random.state`. A replay draws the same numbers as the game it replays, as long as it is made with the same seed, and copying the state back resumes the sequence where it was.
+- Effect's own `Random` module is seeded from the same generator inside an app, so `Random.next` from `"effect"`, or anything built on it, replays too. It costs an Effect per draw, so it is not for loops.
+- It is not for secrets: a few outputs give away the rest.
+
 ## Actions (the rules layer)
 
 ```ts
@@ -171,6 +194,7 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 | --- | --- |
 | `src/ecs/component.ts` | Fields, components, entity ids, generated accessors |
 | `src/ecs/world.ts` | Tables, sparse sets, queries, world, command buffer |
+| `src/ecs/random.ts` | The seeded random number generator a world owns |
 | `src/TickScheduler.ts` | The Effect scheduler owned by the game loop |
 | `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
 | `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
@@ -179,7 +203,7 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin and schema tests, including a randomized comparison against a simple model and replay tests |
+| `test/` | Storage, runtime, rules, plugin, schema and random tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replay tests |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -255,7 +279,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - The log replays a game from its start. There is no snapshot of the world itself, so loading a long game means replaying all of it.
-- Replay assumes a fixed delta and the same starting state. Anything random has to come from a seeded service, not `Math.random`.
+- Replay assumes a fixed delta, the same seed and the same starting state, and does not check any of them: a replay made with another seed runs to its end and gives another game.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - Event payloads are typed but have no schema, so events cannot be sent over a network yet.
 - A refused action's direct component writes are not undone (see above).

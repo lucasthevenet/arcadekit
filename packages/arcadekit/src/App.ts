@@ -22,7 +22,16 @@
  * `onScriptFailure: "stop"` also stops: that tick and every later one fail
  * with `ScriptFailed`.
  */
-import { Cause, Context, Data, Effect, Exit, Layer, Schema } from "effect";
+import {
+  Cause,
+  Context,
+  Data,
+  Effect,
+  Random as EffectRandom,
+  Exit,
+  Layer,
+  Schema,
+} from "effect";
 import type { Fiber, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
@@ -30,7 +39,7 @@ import * as Action from "./Action";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
 import * as Plugin from "./Plugin";
-import { Commands, Events, Script, Time, World } from "./Services";
+import { Commands, Events, Random, Script, Time, World } from "./Services";
 import type { BuiltIn, TimeState } from "./Services";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
@@ -183,6 +192,13 @@ export const make = <
   readonly systems?: readonly [...S];
   readonly handlers?: readonly [...H];
   /**
+   * Where the app's random sequence starts: a whole number from 0 to
+   * `Number.MAX_SAFE_INTEGER`, 0 when left out. Two apps with the same seed
+   * draw the same numbers from `Random`; a replay needs the seed its game
+   * was played with.
+   */
+  readonly seed?: number;
+  /**
    * What a script's failure does, beyond being logged with its cause through
    * Effect's logger. `"log"`, the default, lets the game go on without the
    * script. `"stop"` stops the app: the tick the script failed in, and every
@@ -196,7 +212,10 @@ export const make = <
   Scope.Scope | External<S, H, P>
 > =>
   Effect.gen(function* () {
-    const world = new EcsWorld();
+    const world = new EcsWorld(
+      options.seed === undefined ? undefined : { seed: options.seed }
+    );
+    const { random } = world;
     const commands = new CommandBuffer(world);
     const events = new EventBus();
     const time: TimeState = { delta: 0, elapsed: 0, tick: 0 };
@@ -301,7 +320,22 @@ export const make = <
       Context.add(Commands, commands),
       Context.add(Script, { nextTick, sleep, spawn }),
       Context.add(Events, events),
-      Context.add(Action.Actions, { enqueue })
+      Context.add(Action.Actions, { enqueue }),
+      Context.add(Random, random),
+      // Effect's own Random draws from the same generator, so `Random.next`
+      // from "effect", or anything built on it, is seeded and replayed too.
+      Context.add(EffectRandom.Random, {
+        // 53 random bits: the most a number between 0 and 1 can hold.
+        nextDoubleUnsafe: () =>
+          ((random.bits() >>> 5) * 67_108_864 + (random.bits() >>> 6)) /
+          9_007_199_254_740_992,
+        // Any safe integer, negative ones included.
+        nextIntUnsafe: () => {
+          const magnitude =
+            (random.bits() >>> 11) * 4_294_967_296 + random.bits();
+          return (random.bits() & 1) === 0 ? magnitude : -magnitude;
+        },
+      })
     );
     // Plugin layers are chained in dependency order, so each one can use the
     // built-in services and whatever the plugins before it provide. Effect

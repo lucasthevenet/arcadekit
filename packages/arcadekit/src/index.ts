@@ -7,6 +7,7 @@ export {
   type Entity,
   Field,
 } from "./ecs/component";
+export type { Rng } from "./ecs/random";
 export {
   CommandBuffer,
   type EntityColumn,
@@ -19,6 +20,6 @@ export * as Plugin from "./Plugin";
 export * as Query from "./Query";
 export * as Resource from "./Resource";
 export { EntityId } from "./Schemas";
-export { Commands, Events, Script, Time, World } from "./Services";
+export { Commands, Events, Random, Script, Time, World } from "./Services";
 export * as System from "./System";
 export { TickDispatcher, TickScheduler } from "./TickScheduler";

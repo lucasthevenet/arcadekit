@@ -17,7 +17,6 @@ Small, and worth doing before anything is built on top.
 
 The package claims a tick is deterministic and that a log replays a game. These make the claim true for real games, and they are what saving and netcode stand on.
 
-- **A seeded random service.** `Random` with `next`, `int`, `pick` and `shuffle`, whose state lives in the world so it is saved and replayed with it. Done when a game that uses it replays identically, and a test shows two apps with one seed agree and two seeds differ. It is the last entry of the conventions' list of [where the code does not follow them yet](./conventions.md#where-the-code-does-not-follow-this-yet).
 - **A hash of the world.** One number from every component's data, in a fixed order. Done when equal worlds hash equal and any changed field changes it. It is how a replay is verified, and how two peers detect that they have drifted apart.
 - **Replay that checks itself.** Record the hash every so many ticks in the log; replay compares. Done when a replay that diverges stops at the tick it diverged, not at the next refused action.
 - **Transactional handlers.** A refused action undoes its queued commands and events, but not a direct write to a component. Either make direct writes undoable inside a handler, or make them impossible there. Done when the "check first, write last" rule is enforced by the code and not by the README. Depends on nothing; decide the approach before milestone 2 builds on handlers.
