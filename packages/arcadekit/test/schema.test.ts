@@ -39,7 +39,7 @@ const damage = Action.handler(Damage, function* (payload) {
   const world = yield* World;
   const health = world.get(payload.target, Health);
   if (health === undefined) {
-    return yield* new NoSuchTarget({ target: payload.target });
+    return yield* Effect.fail(new NoSuchTarget({ target: payload.target }));
   }
   world.set(payload.target, Health, { hp: health.hp - payload.amount });
   return health.hp - payload.amount;

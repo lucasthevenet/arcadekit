@@ -238,7 +238,7 @@ const roll = Action.handler(Roll, function* ({ sides }) {
   const random = yield* Random;
   const dice = yield* Query.all(Die);
   if (dice.count() === 0) {
-    return yield* new NoSuchDie();
+    return yield* Effect.fail(new NoSuchDie());
   }
   let face = 0;
   dice.each((die) => {

@@ -38,7 +38,7 @@ const take = Action.handler(Take, function* ({ coin }) {
   const world = yield* World;
   const held = world.get(coin, Coin);
   if (held === undefined) {
-    return yield* new NoSuchCoin({ coin });
+    return yield* Effect.fail(new NoSuchCoin({ coin }));
   }
   (yield* Commands).despawn(coin);
   return held.value;
@@ -618,7 +618,7 @@ const double = Action.handler(Double, function* () {
     refuse = tally.value > 1e12;
   });
   if (refuse) {
-    return yield* new TooBig();
+    return yield* Effect.fail(new TooBig());
   }
 });
 const add = Action.handler(Add, function* ({ by }) {

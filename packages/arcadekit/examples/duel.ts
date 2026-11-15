@@ -83,14 +83,16 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const me = world.get(attacker, Fighter);
   const them = world.get(target, Fighter);
   if (me === undefined || them === undefined) {
-    return yield* new NoSuchFighter();
+    return yield* Effect.fail(new NoSuchFighter());
   }
   const player = yield* whoseTurn;
   if (me.player !== player) {
-    return yield* new NotYourTurn({ waitingFor: player });
+    return yield* Effect.fail(new NotYourTurn({ waitingFor: player }));
   }
   if (me.energy < STRIKE_COST) {
-    return yield* new TooTired({ energy: me.energy, cost: STRIKE_COST });
+    return yield* Effect.fail(
+      new TooTired({ energy: me.energy, cost: STRIKE_COST })
+    );
   }
   // Every check has passed. Only now does anything change.
   world.set(attacker, Fighter, { energy: me.energy - STRIKE_COST });
@@ -102,7 +104,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 const pass = Action.handler(Pass, function* ({ player }) {
   const current = yield* whoseTurn;
   if (player !== current) {
-    return yield* new NotYourTurn({ waitingFor: current });
+    return yield* Effect.fail(new NotYourTurn({ waitingFor: current }));
   }
   const next = current === 1 ? 2 : 1;
   (yield* Query.all(Turn)).each((turn) => {

@@ -214,14 +214,14 @@ const attack = Action.handler(Attack, function* ({ attacker, target }) {
   const turn = yield* currentTurn;
   const owner = world.get(attacker, Owner);
   if (owner === undefined || owner.player !== turn.player) {
-    return yield* new NotYourTurn({ player: turn.player });
+    return yield* Effect.fail(new NotYourTurn({ player: turn.player }));
   }
   const energy = world.get(attacker, Energy)!.points;
   if (energy < 2) {
-    return yield* new NotEnoughEnergy({ have: energy, need: 2 });
+    return yield* Effect.fail(new NotEnoughEnergy({ have: energy, need: 2 }));
   }
   if (!world.has(target, Health)) {
-    return yield* new NoSuchTarget();
+    return yield* Effect.fail(new NoSuchTarget());
   }
   // Validation is done; from here on the action will succeed.
   world.set(attacker, Energy, { points: energy - 2 });
@@ -235,7 +235,7 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
   const turns = yield* TurnQuery;
   const turn = yield* currentTurn;
   if (player !== turn.player) {
-    return yield* new NotYourTurn({ player: turn.player });
+    return yield* Effect.fail(new NotYourTurn({ player: turn.player }));
   }
   turns.each((t) => {
     t.player = t.player === 1 ? 2 : 1;
@@ -254,7 +254,7 @@ const summon = Action.handler(Summon, function* ({ hp, player }) {
   );
   died.emit({ entity });
   if (hp <= 0) {
-    return yield* new NoSuchTarget();
+    return yield* Effect.fail(new NoSuchTarget());
   }
   return entity;
 });

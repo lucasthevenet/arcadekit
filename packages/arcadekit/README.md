@@ -188,7 +188,8 @@ const Strike = Action.define(
 );
 
 const strike = Action.handler(Strike, function* ({ attacker, target }) {
-  if ((yield* whoseTurn) !== owner) return yield* new NotYourTurn();
+  if ((yield* whoseTurn) !== owner)
+    return yield* Effect.fail(new NotYourTurn());
   // ...check the rules, change things, emit events; a refusal undoes all of it
   return hpLeft;
 });
@@ -221,7 +222,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const roll = (yield* Random).int(1, 6); // drawn, and put back on refusal
   world.set(attacker, Fighter, { energy: 0 }); // written, and put back
   (yield* Commands).spawn(Spark.of({ at: target })); // queued, and discarded
-  if (roll === 1) return yield* new Fumbled(); // refused: none of it happened
+  if (roll === 1) return yield* Effect.fail(new Fumbled()); // refused: none of it happened
 });
 ```
 

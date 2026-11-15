@@ -10,7 +10,7 @@
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
  *     const turn = yield* Turn
- *     if (turn.player !== owner) return yield* new NotYourTurn()
+ *     if (turn.player !== owner) return yield* Effect.fail(new NotYourTurn())
  *     (yield* Commands).despawn(card)
  *     (yield* CardPlayed).emit({ card, target })
  *   })

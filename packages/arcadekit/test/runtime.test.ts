@@ -266,7 +266,7 @@ describe("systems", () => {
         worst = Math.max(worst, pos.x);
       });
       if (worst > 100) {
-        return yield* new OutOfBounds({ x: worst });
+        return yield* Effect.fail(new OutOfBounds({ x: worst }));
       }
     });
     withApp(App.make({ systems: [Bounds] }), (app) => {
@@ -532,7 +532,7 @@ describe("a script that fails", () => {
       for (let i = 0; i < ticks; i++) {
         yield* nextTick;
       }
-      return yield* new Tripped({ on });
+      return yield* Effect.fail(new Tripped({ on }));
     });
 
   it("is logged with its cause, once, and the game goes on without it", () => {
@@ -636,7 +636,7 @@ describe("a script that fails", () => {
         Effect.gen(function* () {
           order.push("script started");
           yield* script.nextTick;
-          return yield* new Tripped({ on: "a system's script" });
+          return yield* Effect.fail(new Tripped({ on: "a system's script" }));
         })
       );
       // It has not run yet: it starts when the tick flushes, after the systems.
@@ -716,7 +716,7 @@ describe("a script that fails", () => {
             yield* (yield* Script).nextTick;
             yield* (yield* Script).nextTick;
             commands.spawn(Lifetime.of({ seconds: 1 }));
-            return yield* new Tripped({ on: "tick two" });
+            return yield* Effect.fail(new Tripped({ on: "tick two" }));
           })
         );
         expect(app.tickExit(1)).toEqual(Exit.void);
@@ -793,7 +793,7 @@ describe("a script that fails", () => {
     class Jammed extends Data.TaggedError("Jammed")<{}> {}
     const Jam = System.make("Jam", function* () {
       if ((yield* Time).tick === 2) {
-        return yield* new Jammed();
+        return yield* Effect.fail(new Jammed());
       }
     });
     withApp(

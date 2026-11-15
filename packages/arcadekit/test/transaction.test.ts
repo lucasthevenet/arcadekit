@@ -512,7 +512,7 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
     }
   }
   if (refuse) {
-    return yield* new Refused();
+    return yield* Effect.fail(new Refused());
   }
   return steps.length;
 });
