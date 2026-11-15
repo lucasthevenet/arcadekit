@@ -29,6 +29,7 @@
  */
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
+import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
 
 export interface EventHandle<P> {
@@ -168,11 +169,16 @@ interface ChannelState {
 }
 
 class Channel<P> implements ChannelState {
+  readonly def: EventDef<P>;
   buffer: P[] = [];
   offset = 0;
   tickStart = 0;
   readonly readers: Map<string, Handle<P>> = new Map();
   readonly waiters: Set<() => boolean> = new Set();
+
+  constructor(def: EventDef<P>) {
+    this.def = def;
+  }
 
   get end(): number {
     return this.offset + this.buffer.length;
@@ -195,6 +201,11 @@ class Channel<P> implements ChannelState {
 class Handle<P> implements EventHandle<P> {
   private readonly channel: Channel<P>;
   private cursor: number;
+
+  /** How far this handle has read: the sequence number of its next event. */
+  get position(): number {
+    return this.cursor;
+  }
 
   constructor(channel: Channel<P>, cursor: number) {
     this.channel = channel;
@@ -254,7 +265,9 @@ export class EventBus {
   // definition's own `P`, which a Map's type cannot say, so `channel` below
   // is the one place that restores it.
   private readonly channels: Map<object, ChannelState> = new Map();
-  private readonly order: ChannelState[] = [];
+  private readonly order: Channel<any>[] = [];
+  /** Events read from a save, waiting for their channel to be asked for. */
+  private readonly parked: Map<string, SavedEvents> = new Map();
   private readonly names: Map<string, EventDef<any>> = new Map();
 
   private channel<P>(def: EventDef<P>): Channel<P> {
@@ -270,10 +283,86 @@ export class EventBus {
       );
     }
     this.names.set(def.name, def);
-    const channel = new Channel<P>();
+    const channel = new Channel<P>(def);
     this.channels.set(def, channel);
     this.order.push(channel);
+    const saved = this.parked.get(def.name);
+    if (saved !== undefined) {
+      this.parked.delete(def.name);
+      this.adopt(channel, saved);
+    }
     return channel;
+  }
+
+  /** Puts the events of a save into their channel, as they were waiting. */
+  private adopt<P>(channel: Channel<P>, saved: SavedEvents): void {
+    for (const data of saved.payloads) {
+      const payload = decode(channel.def, data);
+      if (Exit.isFailure(payload)) {
+        throw new Error(
+          `The save holds an event "${saved.name}" that no longer reads: ${(Cause.squash(payload.cause) as Error).message}`
+        );
+      }
+      channel.buffer.push(payload.value);
+    }
+    // Whoever had read some of them goes on from where it was.
+    for (const [reader, count] of Object.entries(saved.read)) {
+      channel.readers.set(
+        reader,
+        new Handle(channel, channel.offset + Math.min(count, channel.size))
+      );
+    }
+  }
+
+  /**
+   * The events waiting to be read, in their JSON form, with how far each
+   * system and handler had read. Fails on one that has no schema, or whose
+   * payload its schema does not take.
+   * @internal
+   */
+  save(): Exit.Exit<SavedEvents[], InvalidEvent> {
+    const out: SavedEvents[] = [];
+    for (const channel of this.order) {
+      if (channel.size === 0) {
+        continue;
+      }
+      const payloads: unknown[] = [];
+      for (const payload of channel.buffer) {
+        const data = encode(channel.def, payload);
+        if (Exit.isFailure(data)) {
+          return Exit.fail(Cause.squash(data.cause) as InvalidEvent);
+        }
+        payloads.push(data.value);
+      }
+      const read: Record<string, number> = {};
+      for (const [reader, handle] of channel.readers) {
+        const count = handle.position - channel.offset;
+        if (count > 0) {
+          read[reader] = Math.min(count, channel.size);
+        }
+      }
+      out.push({ name: channel.def.name, payloads, read });
+    }
+    // In order of name, so that the same game always saves the same bytes.
+    return Exit.succeed(
+      out.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    );
+  }
+
+  /**
+   * Takes the events of a save. Each kind is put into its channel when the
+   * channel is first asked for, which is when its event is known here.
+   * @internal
+   */
+  restore(saved: readonly SavedEvents[]): void {
+    for (const events of saved) {
+      const def = this.names.get(events.name);
+      if (def === undefined) {
+        this.parked.set(events.name, events);
+      } else {
+        this.adopt(this.channel(def), events);
+      }
+    }
   }
 
   /**

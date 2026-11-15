@@ -23,6 +23,7 @@ import {
   Field,
   Plugin,
   Query,
+  Save,
   System,
   World,
 } from "../src/index";
@@ -145,6 +146,8 @@ const Rest = System.make("Rest", function* () {
 // --- plugins -----------------------------------------------------------------------
 /** The rules of the game, with nothing that talks to the outside world. */
 const Rules = Plugin.make("Rules", {
+  // Listed so that a saved game, which names them, can be loaded.
+  components: [Fighter, Name, Turn],
   systems: [Casualties, Rest],
   handlers: [strike, pass],
   setup: Effect.gen(function* () {
@@ -305,6 +308,20 @@ const program = Effect.gen(function* () {
     `legal but altered -> ${yield* replay(saved.replace('"target":2', '"target":1'))}`
   );
   console.log(`garbage -> ${yield* replay("<html>")}`);
+
+  // A save is the game as it stands, as bytes. Loaded into the rules alone,
+  // it is the same fight at the same point: no replay, and no setup run.
+  const save = app.save();
+  if (Exit.isSuccess(save)) {
+    const file = Save.encode(save.value);
+    const read = Save.decode(file);
+    if (Exit.isSuccess(read)) {
+      const loaded = yield* App.load(read.value, { plugins: [Rules] });
+      console.log(
+        `saved (${file.length} bytes) and loaded -> ${standing(loaded)} at tick ${loaded.time.tick} (${standing(loaded) === standing(app) ? "identical" : "DIFFERENT"})`
+      );
+    }
+  }
 });
 
 // The entry point: runMain runs the program, reports a failure, and

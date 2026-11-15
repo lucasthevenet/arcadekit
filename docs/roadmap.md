@@ -18,7 +18,6 @@ Done. A seeded random service, a hash of the world, replays that check themselve
 
 ## 2. Saving and loading
 
-- **A save is a snapshot plus the log since.** Loading replays only the tail. Done when loading a long game costs the same as loading a short one.
 - **Versioning.** A save names the components and the schema version it was written with. Done when loading a save from an older version either migrates it or refuses with a typed error that says why.
 
 Depends on milestone 1 for the random state and the hash.

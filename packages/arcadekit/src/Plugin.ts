@@ -18,12 +18,20 @@
  * A plugin that several others depend on is installed once: its systems are
  * registered once and its layer is built once.
  *
- * Components, events and actions are plain values, so a plugin does not list
- * them: it exports them from its module like anything else.
+ * Events and actions are plain values, so a plugin does not list them: it
+ * exports them from its module like anything else. It does list two things
+ * that loading a saved game needs:
+ *
+ *   const Weather = Plugin.make("Weather", {
+ *     components: [Cloud, Wind],          // so a save that names them can be read
+ *     scripts: [Storms],                  // started with the app, and again after a load
+ *     setup: spawnTheFirstClouds          // a fresh start only: a load has them already
+ *   })
  */
 import type { Effect, Layer } from "effect";
 
 import type * as Action from "./Action";
+import type { ComponentDef } from "./ecs/component";
 import type { BuiltIn } from "./Services";
 import type * as System from "./System";
 
@@ -51,6 +59,8 @@ export interface Plugin<
   readonly handlers: readonly AnyHandler[];
   readonly layer: Layer.Layer<never, any, any> | undefined;
   readonly setup: Effect.Effect<void, any, any> | undefined;
+  readonly components: readonly ComponentDef<any>[];
+  readonly scripts: readonly Effect.Effect<unknown, any, any>[];
   /** The plugins this one depends on. */
   readonly plugins: readonly Any[];
   /** Type-only. */
@@ -97,6 +107,7 @@ export const make = <
   L extends Layer.Layer<never, any, any> = Layer.Layer<never>,
   SU extends Effect.Effect<void, any, any> = Effect.Effect<void>,
   P extends readonly Any[] = readonly [],
+  SC extends readonly Effect.Effect<unknown, any, any>[] = readonly [],
 >(
   name: string,
   options: {
@@ -110,10 +121,25 @@ export const make = <
      */
     readonly layer?: L;
     /**
-     * Runs once when the app starts, after every plugin's layer is built.
-     * For spawning the initial entities. Must not wait.
+     * Runs once when a game starts afresh, after every plugin's layer is
+     * built. For spawning the initial entities. Must not wait. It does not
+     * run when the app is loaded from a save, which holds those entities.
      */
     readonly setup?: SU;
+    /**
+     * The components this plugin's feature stores. A world knows a component
+     * by its name, so loading a save needs every component the save names
+     * to be listed by some plugin, or by the app.
+     */
+    readonly components?: readonly ComponentDef<any>[];
+    /**
+     * Long-running scripts, started when the app starts: after `setup` on a
+     * fresh start, and again from their beginning when the app is loaded
+     * from a save. A save cannot hold a script in mid-flight, so a script
+     * listed here keeps what it must not lose in the world, and picks up
+     * from what it finds there.
+     */
+    readonly scripts?: readonly [...SC];
   }
 ): Plugin<
   SystemError<S[number]> | TickErrorOf<P[number]>,
@@ -125,6 +151,7 @@ export const make = <
   | SystemNeeds<S[number]>
   | HandlerNeeds<H[number]>
   | EffectNeeds<SU>
+  | EffectNeeds<SC[number]>
   | NeedsOf<P[number]>
 > => ({
   name,
@@ -132,6 +159,8 @@ export const make = <
   handlers: options.handlers ?? [],
   layer: options.layer,
   setup: options.setup,
+  components: options.components ?? [],
+  scripts: options.scripts ?? [],
   plugins: options.plugins ?? [],
 });
 

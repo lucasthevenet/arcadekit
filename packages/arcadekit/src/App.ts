@@ -39,9 +39,12 @@ import type { Fiber, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
+import type { ComponentDef } from "./ecs/component";
+import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
 import * as Plugin from "./Plugin";
+import * as Save from "./Save";
 import { Commands, Events, Random, Script, Time, World } from "./Services";
 import type { BuiltIn, TimeState } from "./Services";
 import * as System from "./System";
@@ -138,6 +141,16 @@ export interface Any {
    */
   readonly actionLog: readonly Action.LogEntry[];
   /**
+   * The game as it stands, to load later with `App.load`: the world, the
+   * time, the actions waiting for the next tick and the events waiting to
+   * be read. Only between ticks.
+   *
+   * Fails with `SaveRefused`, which says what is in the way: an action or an
+   * event with no schema is waiting, a field holds a value it cannot save,
+   * or commands are queued and not applied.
+   */
+  readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
+  /**
    * Records the world's hash in the action log now, and returns it. For the
    * points a game wants checked beyond the ones `checkpointEvery` gives it,
    * such as the moment it is saved. Only between ticks.
@@ -202,12 +215,18 @@ export class ScriptFailed extends Data.TaggedError("ScriptFailed")<{
   }
 }
 
-export const make = <
+export interface Options<
   S extends Systems = readonly [],
   H extends Handlers = readonly [],
   P extends Plugins = readonly [],
->(options: {
+> {
   readonly plugins?: readonly [...P];
+  /**
+   * Components that belong to the app itself, not to a plugin. A world
+   * knows a component by its name, so loading a save needs every component
+   * the save names to be listed here or by a plugin.
+   */
+  readonly components?: readonly ComponentDef<any>[];
   /** Systems and handlers that belong to the app itself, not to a plugin. */
   readonly systems?: readonly [...S];
   readonly handlers?: readonly [...H];
@@ -235,9 +254,63 @@ export const make = <
    * that is interrupted has not failed.
    */
   readonly onScriptFailure?: "log" | "stop";
-}): Effect.Effect<
+}
+
+/** Starts a game afresh: every plugin's `setup` runs, then its scripts start. */
+export const make = <
+  S extends Systems = readonly [],
+  H extends Handlers = readonly [],
+  P extends Plugins = readonly [],
+>(
+  options: Options<S, H, P>
+): Effect.Effect<
   App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]>,
+  Scope.Scope | External<S, H, P>
+> =>
+  build(options, undefined) as Effect.Effect<
+    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+    Plugin.ErrorOf<P[number]>,
+    Scope.Scope | External<S, H, P>
+  >;
+
+/**
+ * Brings a game back from a save, where it was: its world, its time, the
+ * actions that were waiting for the next tick and the events that were
+ * waiting to be read. Give it the plugins and options the game was made
+ * with.
+ *
+ * No plugin's `setup` runs: the save holds what setup spawned. Every
+ * plugin's scripts start again from their beginning, since a save cannot
+ * hold a script in mid-flight.
+ *
+ * The app's action log starts empty. What the game logged after the save
+ * (`log.slice(save.logLength)`) is replayed with `App.replay`, which checks
+ * it against the log's checkpoints as it goes.
+ *
+ * Fails with `LoadRefused` when the save's world cannot be loaded: it names
+ * a component no plugin lists, or one whose fields have changed, or its
+ * bytes are damaged.
+ */
+export const load = <
+  S extends Systems = readonly [],
+  H extends Handlers = readonly [],
+  P extends Plugins = readonly [],
+>(
+  save: Save.Save,
+  options: Options<S, H, P>
+): Effect.Effect<
+  App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+  Plugin.ErrorOf<P[number]> | Save.LoadRefused,
+  Scope.Scope | External<S, H, P>
+> => build(options, save);
+
+const build = <S extends Systems, H extends Handlers, P extends Plugins>(
+  options: Options<S, H, P>,
+  save: Save.Save | undefined
+): Effect.Effect<
+  App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+  Plugin.ErrorOf<P[number]> | Save.LoadRefused,
   Scope.Scope | External<S, H, P>
 > =>
   Effect.gen(function* () {
@@ -306,6 +379,36 @@ export const make = <
 
     // Dependencies first, each plugin once, then the app's own systems.
     const plugins = Plugin.flatten(options.plugins ?? []);
+    const components = [
+      ...plugins.flatMap((plugin) => plugin.components),
+      ...(options.components ?? []),
+    ];
+    for (const component of components) {
+      world.register(component);
+    }
+    if (save !== undefined) {
+      // Before anything else can touch the world: a load fills an empty one.
+      try {
+        world.load(save.world);
+      } catch (error) {
+        if (error instanceof SnapshotError) {
+          return yield* Effect.fail(
+            new Save.LoadRefused({
+              problem: error.problem,
+              message:
+                error.problem === "unknown component"
+                  ? `${error.message} List it in a plugin's \`components\`, or in the app's.`
+                  : error.message,
+            })
+          );
+        }
+        throw error;
+      }
+      time.tick = save.tick;
+      time.elapsed = save.elapsed;
+      time.delta = save.delta;
+      events.restore(save.events);
+    }
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),
       ...(options.systems ?? []),
@@ -332,6 +435,12 @@ export const make = <
       readonly encoded: boolean;
       readonly entry: { refused?: string } | undefined;
     }[] = [];
+    if (save !== undefined) {
+      // In the JSON form they were saved in, checked again when applied.
+      for (const { name, payload } of save.queued) {
+        queued.push({ name, payload, encoded: true, entry: undefined });
+      }
+    }
     const actionLog: Action.LogEntry[] = [];
     const checkpointEvery = options.checkpointEvery ?? 60;
     if (!Number.isSafeInteger(checkpointEvery) || checkpointEvery < 0) {
@@ -696,6 +805,62 @@ export const make = <
       plugins: plugins.map((plugin) => plugin.name),
       systemOrder: ordered.map((s) => s.name),
       actionLog,
+      save() {
+        if (ticking) {
+          throw new Error(
+            "save() was called during a tick. A game is saved between ticks."
+          );
+        }
+        const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
+          Exit.fail(new Save.SaveRefused({ message }));
+        if (commands.size > 0) {
+          return refused(
+            `${commands.size} commands are queued and not applied. They are applied at the end of a tick: save after one.`
+          );
+        }
+        const waiting: { name: string; payload: unknown }[] = [];
+        for (const { encoded, name, payload } of queued) {
+          if (encoded) {
+            waiting.push({ name, payload });
+            continue;
+          }
+          const codec = handlers.get(name)?.action.codec;
+          if (codec === undefined) {
+            return refused(
+              `The action "${name}" is waiting for the next tick, and it was defined with a type and no schema, so it cannot be saved. Give Action.define a schema, or save after the tick that applies it.`
+            );
+          }
+          const json = Schema.encodeUnknownExit(codec)(payload);
+          if (Exit.isFailure(json)) {
+            return refused(
+              `The action "${name}" is waiting for the next tick with a payload its schema does not take: ${describe(Cause.squash(json.cause))}`
+            );
+          }
+          waiting.push({ name, payload: json.value });
+        }
+        const pending = events.save();
+        if (Exit.isFailure(pending)) {
+          return refused(describe(Cause.squash(pending.cause)));
+        }
+        let bytes: Uint8Array;
+        try {
+          bytes = world.snapshot();
+        } catch (error) {
+          if (error instanceof SnapshotError) {
+            return refused(error.message);
+          }
+          throw error;
+        }
+        return Exit.succeed({
+          tick: time.tick,
+          elapsed: time.elapsed,
+          delta: time.delta,
+          world: bytes,
+          queued: waiting,
+          events: pending.value,
+          logLength: actionLog.length,
+        });
+      },
       checkpoint() {
         if (ticking) {
           throw new Error(
@@ -730,9 +895,10 @@ export const make = <
       enqueueByName,
     };
 
-    // Each plugin's setup runs once, in the same order, with everything in place.
+    // Each plugin's setup runs once, in the same order, with everything in
+    // place. Not when loading: the save holds what setup made.
     for (const plugin of plugins) {
-      if (plugin.setup === undefined) {
+      if (plugin.setup === undefined || save !== undefined) {
         continue;
       }
       events.reader = `setup:${plugin.name}`;
@@ -752,10 +918,18 @@ export const make = <
       }
       commands.apply();
     }
+    // Then every plugin's scripts, on a fresh start and after a load alike:
+    // a script runs up to its first wait, and from then on during ticks.
+    for (const plugin of plugins) {
+      for (const script of plugin.scripts) {
+        watch(runFork(script as Effect.Effect<unknown, unknown, any>));
+      }
+    }
+    commands.apply();
     return app;
   }) as Effect.Effect<
     App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
-    Plugin.ErrorOf<P[number]>,
+    Plugin.ErrorOf<P[number]> | Save.LoadRefused,
     Scope.Scope | External<S, H, P>
   >;
 

@@ -22,6 +22,7 @@ export * as Field from "./Field";
 export * as Plugin from "./Plugin";
 export * as Query from "./Query";
 export * as Resource from "./Resource";
+export * as Save from "./Save";
 export { EntityId } from "./Schemas";
 export { Commands, Events, Random, Script, Time, World } from "./Services";
 export * as System from "./System";

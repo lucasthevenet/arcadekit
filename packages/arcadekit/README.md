@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 218 tests
+pnpm test                          # 238 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -81,7 +81,9 @@ A number goes in a typed field: `f32`, `f64`, `i32`, `u32`, `u16`, `u8`, `entity
 const Physics = Plugin.make("Physics", {
   systems: [Movement, Walls],
   layer: Layer.succeed(Bounds, { width: 10 }), // services for the whole app
-  setup: spawnTheBall, // runs once at start
+  components: [Position, Velocity], // so a save that names them can be read
+  setup: spawnTheBall, // runs once, on a fresh start
+  scripts: [Gusts], // started with the app, and again after a load
 });
 
 const Combat = Plugin.make("Combat", {
@@ -103,7 +105,8 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
   ```
 
 - A layer or setup that fails makes `App.make` fail with that typed error.
-- Components, events and actions are plain values, so a plugin does not list them. It exports them from its module.
+- Events and actions are plain values, so a plugin does not list them. It exports them from its module. It does list its `components` and its `scripts`, which loading a saved game needs; see [Saving and loading](#saving-and-loading).
+- `setup` runs on a fresh start and not on a load. A plugin's scripts start after it, run like any other script, and are watched the same way.
 
 ## Names
 
@@ -289,6 +292,25 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 - The storage core has this on its own: `world.begin()`, then `world.commit()` or `world.rollback()`.
 - The cost is in the [benchmark](#benchmark-100000-entities-pos--vel--dt): 0.2 µs more for a handler that sets one entity, and one copy of the visited columns for a handler that loops.
 
+### Saving and loading
+
+```ts
+const saved = app.save(); // Exit<Save, SaveRefused>
+const bytes = Save.encode(save); // a Uint8Array, for a file
+
+const read = Save.decode(bytes); // Exit<Save, LoadRefused>
+const app = yield * App.load(save, { plugins: [Rules] }); // the game, where it was
+```
+
+A save is taken between two ticks. It holds the world as a [snapshot](#snapshots), the game's time, the actions waiting for the next tick (the simulation's own among them) and the events waiting to be read, with how far each system had read them. A game loaded from it goes on exactly as the saved one did.
+
+- `App.load` takes the plugins and options the game was made with. No plugin's `setup` runs: the save holds what setup spawned.
+- A save cannot hold a script in mid-flight. A plugin lists its `scripts`, and they start again from their beginning when the app is loaded. So a script keeps what it must not lose in the world, and picks up from what it finds there.
+- A world knows a component by its name, so every component a save names has to be listed in a plugin's `components` or the app's. A load that meets one that is not fails with `LoadRefused` and names it.
+- **A save is a snapshot plus the log since.** The save says how long the log was (`save.logLength`). A game that keeps its last save and the entries logged after it comes back to the present by loading the save and replaying only that tail, which costs the same however long the game has run: `App.replay(app, log.slice(save.logLength), { delta, ticks })`. The replay checks itself against the tail's checkpoints, so a save that did not bring the game back faithfully is caught on the next tick.
+- `app.save()` fails with `Save.SaveRefused` and says what is in the way: an action or an event with no schema is waiting, a field holds a value it cannot save, or commands are queued and not applied. `App.load` and `Save.decode` fail with `Save.LoadRefused`, whose `problem` is one of a snapshot's, or `"not a save"`.
+- A save is the snapshot and a little text: for 100,000 entities with four float fields, 2.2 MB and about 0.6 ms to take.
+
 ### Replays that check themselves
 
 ```ts
@@ -320,12 +342,13 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
 | `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
 | `src/Plugin.ts` | Plugins and their dependency order |
+| `src/Save.ts` | A saved game, as a value and as bytes |
 | `src/Field.ts` | The fields of a component, with `Field.schema` |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot and field tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field and save tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -422,9 +445,10 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - One package entry. The storage core has no Effect dependency and could be its own entry (`arcadekit/ecs`).
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
-- A snapshot holds the world and nothing else: not the time, the events waiting to be read, the actions queued for the next tick, or how far each script has got. An app cannot be saved and loaded yet, only its world, so a log still replays a game from its start.
+- A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.
+- A save is refused while an action or an event with no schema is waiting, which for a game that emits such an event every tick is always.
 - An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
-- The log does not say when a script was started from outside, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
+- The log does not say when a script was started by hand with `app.spawnScript`, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, the actions queued for the next tick, or how far each script has got.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
