@@ -1,3 +1,0 @@
-# Astro names each file under /_astro/ after a hash of its content, so it never changes.
-/_astro/*
-  Cache-Control: public, max-age=31536000, immutable

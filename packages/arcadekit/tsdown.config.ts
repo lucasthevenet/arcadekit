@@ -7,9 +7,8 @@
 // on. A subpath whose dist paths don't match that name fails the build, so the map and the build
 // can't drift apart.
 //
-// All entries are one build, so what two entries share (game's Loop, which net's lockstep
-// session also steps) is written once, to a chunk both import: a class or an Effect service is
-// the same object whichever entry it is reached through.
+// All entries are one build, so what two entries share is written once, to a chunk both import:
+// a class or an Effect service is the same object whichever entry it is reached through.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -64,10 +63,8 @@ const config: UserConfig = defineConfig({
   // so every export has the explicit type it needs.
   dts: { generator: "oxc", sourcemap: true },
   // peerDependencies stay imports (tsdown's default). Bundling anything else from node_modules
-  // fails the build. `cloudflare:workers` is Cloudflare's runtime's own module, which only a
-  // Worker has, so arcadekit/net/worker's import of it stays an import too. So does a `node:`
-  // built-in, which an entry that only a test or a script imports may use: Node has it.
-  deps: { onlyBundle: [], neverBundle: [/^cloudflare:/u, /^node:/u] },
+  // fails the build. `cloudflare:` runtime modules and `node:` built-ins stay imports too.
+  deps: { neverBundle: [/^cloudflare:/u, /^node:/u], onlyBundle: [] },
 });
 
 export default config;

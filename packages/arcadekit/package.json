@@ -4,29 +4,13 @@
   "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
   "keywords": [
     "arcadekit",
-    "audio",
-    "deterministic",
+    "browser-games",
     "effect",
-    "elm-architecture",
-    "fixed-timestep",
     "foldkit",
     "game",
-    "game-loop",
     "gamedev",
-    "gamepad",
-    "input",
-    "lockstep",
-    "multiplayer",
-    "object-pool",
-    "pixel-art",
-    "rng",
-    "save-game",
-    "spatial-grid",
-    "sprites",
     "three",
-    "threejs",
-    "web-audio",
-    "webrtc"
+    "threejs"
   ],
   "homepage": "https://arcadekit.dev",
   "bugs": "https://github.com/lucasthevenet/arcadekit/issues",
@@ -43,114 +27,13 @@
   ],
   "type": "module",
   "sideEffects": false,
-  "exports": {
-    "./core": {
-      "source": "./src/core/index.ts",
-      "types": "./dist/core.d.ts",
-      "default": "./dist/core.js"
-    },
-    "./input": {
-      "source": "./src/input/index.ts",
-      "types": "./dist/input.d.ts",
-      "default": "./dist/input.js"
-    },
-    "./content": {
-      "source": "./src/content/index.ts",
-      "types": "./dist/content.d.ts",
-      "default": "./dist/content.js"
-    },
-    "./content/browser": {
-      "source": "./src/content/browser/index.ts",
-      "types": "./dist/content/browser.d.ts",
-      "default": "./dist/content/browser.js"
-    },
-    "./save": {
-      "source": "./src/save/index.ts",
-      "types": "./dist/save.d.ts",
-      "default": "./dist/save.js"
-    },
-    "./save/browser": {
-      "source": "./src/save/browser/index.ts",
-      "types": "./dist/save/browser.d.ts",
-      "default": "./dist/save/browser.js"
-    },
-    "./audio": {
-      "source": "./src/audio/index.ts",
-      "types": "./dist/audio.d.ts",
-      "default": "./dist/audio.js"
-    },
-    "./audio/browser": {
-      "source": "./src/audio/browser/index.ts",
-      "types": "./dist/audio/browser.d.ts",
-      "default": "./dist/audio/browser.js"
-    },
-    "./render-three": {
-      "source": "./src/render-three/index.ts",
-      "types": "./dist/render-three.d.ts",
-      "default": "./dist/render-three.js"
-    },
-    "./render-three/testing": {
-      "source": "./src/render-three/testing/index.ts",
-      "types": "./dist/render-three/testing.d.ts",
-      "default": "./dist/render-three/testing.js"
-    },
-    "./game": {
-      "source": "./src/game/index.ts",
-      "types": "./dist/game.d.ts",
-      "default": "./dist/game.js"
-    },
-    "./game/browser": {
-      "source": "./src/game/browser.ts",
-      "types": "./dist/game/browser.d.ts",
-      "default": "./dist/game/browser.js"
-    },
-    "./game/scenario": {
-      "source": "./src/game/scenario.ts",
-      "types": "./dist/game/scenario.d.ts",
-      "default": "./dist/game/scenario.js"
-    },
-    "./game/testing": {
-      "source": "./src/game/testing/index.ts",
-      "types": "./dist/game/testing.d.ts",
-      "default": "./dist/game/testing.js"
-    },
-    "./net": {
-      "source": "./src/net/index.ts",
-      "types": "./dist/net.d.ts",
-      "default": "./dist/net.js"
-    },
-    "./net/browser": {
-      "source": "./src/net/browser/index.ts",
-      "types": "./dist/net/browser.d.ts",
-      "default": "./dist/net/browser.js"
-    },
-    "./net/testing": {
-      "source": "./src/net/testing/index.ts",
-      "types": "./dist/net/testing.d.ts",
-      "default": "./dist/net/testing.js"
-    },
-    "./net/signalling": {
-      "source": "./src/net/signalling/index.ts",
-      "types": "./dist/net/signalling.d.ts",
-      "default": "./dist/net/signalling.js"
-    },
-    "./net/worker": {
-      "source": "./src/net/worker/index.ts",
-      "types": "./dist/net/worker.d.ts",
-      "default": "./dist/net/worker.js"
-    },
-    "./foldkit": {
-      "source": "./src/foldkit/index.ts",
-      "types": "./dist/foldkit.d.ts",
-      "default": "./dist/foldkit.js"
-    }
-  },
+  "exports": {},
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p . && tsc -p tsconfig.root.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json && tsc -p tsconfig.test.json"
+    "typecheck": "tsc -p ."
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261104.1",

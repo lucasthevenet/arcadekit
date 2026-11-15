@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Runs publint and @arethetypeswrong/cli on the published arcadekit package, then
-# checks that each built entry imports only the packages it may (none for arcadekit/core and
-# arcadekit/input).
+# Runs publint and @arethetypeswrong/cli on the published arcadekit package.
 # Packs the package with pnpm first, so both tools see exactly what npm would get
-# (only `files` included). attw checks each of the package's entries. Build first:
+# (only `files` included). Build first:
 #   pnpm build:packages && pnpm lint:packages
 set -euo pipefail
 
@@ -20,12 +18,9 @@ fi
 if ! "$root/node_modules/.bin/attw" "$tarball" --profile esm-only --no-emoji; then
   failed+=("attw")
 fi
-if ! (cd "$root" && ARCADEKIT_REQUIRE_DIST=1 "$root/node_modules/.bin/vitest" run packages/arcadekit/test/entry-packages.test.ts); then
-  failed+=("entry packages")
-fi
 
 if ((${#failed[@]} > 0)); then
   echo "Failed: ${failed[*]}" >&2
   exit 1
 fi
-echo "arcadekit passes publint, attw and the entry-packages check."
+echo "arcadekit passes publint and attw."

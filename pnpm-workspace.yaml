@@ -1,5 +1,2 @@
 packages:
   - packages/*
-  - examples/*
-  - website
-  - scripts/bench
