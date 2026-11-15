@@ -338,7 +338,9 @@ describe("the Random service", () => {
     // The game really is random: it rolled, spawned and moved things.
     expect(first.sparks.length).toBeGreaterThan(0);
     expect(first.dice[0]![1]).toBeGreaterThan(20);
-    expect(first.log.length).toBeGreaterThan(20);
+    // The script's rolls are the simulation's own, so only the moves made
+    // from outside are in the log.
+    expect(first.log.length).toBeGreaterThan(15);
 
     const other = play(2025, 120);
     expect(other.generator).not.toEqual(first.generator);

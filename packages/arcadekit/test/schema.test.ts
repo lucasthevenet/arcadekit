@@ -1,4 +1,4 @@
-import { Data, Effect, Exit, Schema } from "effect";
+import { Data, Effect, Exit, Option, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -209,11 +209,36 @@ describe("actions with a schema", () => {
         "Teleport: UnknownAction",
         "Damage: InvalidPayload",
       ]);
+      // What was enqueued is in the log as it arrived, with what became of
+      // it. The last one is not: its payload has no JSON form to log.
       expect(
-        moves(app.actionLog).map(
-          (entry) => (entry.payload as { amount: number }).amount
-        )
-      ).toEqual([5, 2]);
+        moves(app.actionLog).map((entry) => [
+          entry.name,
+          (entry.payload as { amount?: number }).amount,
+          entry.queued,
+          entry.refused === undefined ? "applied" : "refused",
+        ])
+      ).toEqual([
+        ["Damage", 5, true, "applied"],
+        ["Damage", 500, true, "refused"],
+        ["Teleport", undefined, true, "refused"],
+        ["Damage", 2, true, "applied"],
+      ]);
+      // The mark is the error's own message where it has one, and its name
+      // where it has none.
+      const invalid = Exit.findErrorOption(
+        app.dispatchByName("Damage", { target, amount: 500, seed: "9" })
+      );
+      expect(moves(app.actionLog)[1]!.refused).toBe(
+        Option.getOrThrow(invalid as Option.Option<Error>).message
+      );
+      expect(moves(app.actionLog)[1]!.refused).toMatch(/amount/);
+      expect(moves(app.actionLog)[2]!.refused).toBe("UnknownAction");
+      expect(moves(app.actionLog)[3]!.payload).toEqual({
+        target,
+        amount: 2,
+        seed: "9",
+      });
     });
   });
 
@@ -321,9 +346,9 @@ describe("saving and replaying", () => {
     expect(caught).toBeInstanceOf(App.ReplayDiverged);
     expect((caught as App.ReplayDiverged).index).toBe(2);
     expect((caught as App.ReplayDiverged).tick).toBe(1);
-    expect((caught as App.ReplayDiverged).reason).toBeInstanceOf(
-      Action.InvalidPayload
-    );
+    // It was enqueued, so the replay enqueues it too, and stops after the
+    // tick in which its own rules refused what the game had accepted.
+    expect((caught as App.ReplayDiverged).reason).toMatch(/amount/);
     expect((caught as Error).message).toMatch(
       /Log entry 2 \("Damage" at tick 1\) was refused on replay/
     );

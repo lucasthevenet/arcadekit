@@ -437,8 +437,22 @@ describe("actions", () => {
       expect(app.world.get(two, Health)).toEqual({ hp: 2 });
       expect(app.world.get(one, Health)).toEqual({ hp: 10 });
       expect(rejected).toEqual(["Attack: NotYourTurn"]);
+      // Both are in the log, in the order they arrived: a replay enqueues
+      // both again, and its own rules refuse the second.
       expect(moves(app.actionLog)).toEqual([
-        { tick: 0, name: "Attack", payload: { attacker: one, target: two } },
+        {
+          tick: 0,
+          name: "Attack",
+          payload: { attacker: one, target: two },
+          queued: true,
+        },
+        {
+          tick: 0,
+          name: "Attack",
+          payload: { attacker: two, target: one },
+          queued: true,
+          refused: "NotYourTurn",
+        },
       ]);
     });
   });
@@ -464,9 +478,11 @@ describe("actions", () => {
       expect(snapshot(app)).toContain("turn 2 player 2");
       app.tick(1); // applied at the start of this tick
       expect(snapshot(app)).toContain("turn 3 player 1");
+      // The log holds the move that came from outside. The bot's own is the
+      // simulation's doing: a replay's bot makes it again.
       expect(
         moves(app.actionLog).map((entry) => `${entry.tick}:${entry.name}`)
-      ).toEqual(["0:EndTurn", "1:EndTurn"]);
+      ).toEqual(["0:EndTurn"]);
     });
   });
 
@@ -562,13 +578,17 @@ describe("replay", () => {
       });
 
     const original = play();
-    expect(
-      moves(original.log).map((entry) => `${entry.tick}:${entry.name}`)
-    ).toEqual([
+    const listed = (log: readonly Action.LogEntry[]) =>
+      moves(log).map(
+        (entry) =>
+          `${entry.tick}:${entry.name}${entry.queued === true ? " queued" : ""}${entry.refused === undefined ? "" : ` refused (${entry.refused})`}`
+      );
+    expect(listed(original.log)).toEqual([
       "0:Attack",
-      "1:EndTurn",
+      "1:EndTurn queued",
       "2:Summon",
-      "2:Attack",
+      "2:Attack queued",
+      "2:Attack queued refused (NotYourTurn)",
       "4:Attack",
       "4:EndTurn",
       "5:Attack",

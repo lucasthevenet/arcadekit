@@ -28,8 +28,10 @@
  *
  *   const PlayCard = Action.define("PlayCard", Schema.Struct({ card: EntityId, target: EntityId }))
  *
- * Every action that is applied goes into `app.actionLog`, with a checkpoint
- * of the world's hash every so many ticks. Replaying the log into a fresh
+ * Every action that comes from outside goes into `app.actionLog`, with a
+ * checkpoint of the world's hash every so many ticks. An action a system or
+ * a script issues itself, with the `Actions` service, does not: a replay's
+ * own simulation issues it again. Replaying the log into a fresh
  * app reproduces the game, and stops at the first checkpoint that does not
  * match.
  */
@@ -128,13 +130,28 @@ export const handler = <
   ) => Effect.Effect<A, Effect.Error<Eff> | VE, Effect.Services<Eff>>,
 });
 
-/** One applied action, as recorded in `app.actionLog`. */
+/**
+ * One action that came from outside the simulation, as recorded in
+ * `app.actionLog`: one that was dispatched and accepted, or one that was
+ * enqueued.
+ */
 export interface Logged {
-  /** How many ticks had completed when the action was applied. */
+  /** How many ticks had completed when the action was dispatched or enqueued. */
   readonly tick: number;
   readonly name: string;
   /** For an action with a schema, the payload in its JSON form. */
   readonly payload: unknown;
+  /**
+   * Present on an action that was enqueued: it was applied at the start of
+   * the next tick, and a replay enqueues it again. Absent on one that was
+   * dispatched.
+   */
+  readonly queued?: true;
+  /**
+   * Present on an enqueued action that was refused when its turn came: why,
+   * in a few words. A refused action that was dispatched is not logged.
+   */
+  readonly refused?: string;
 }
 
 /**
@@ -164,6 +181,8 @@ const LogSchema = Schema.fromJsonString(
         tick: Tick,
         name: Schema.String,
         payload: Schema.Unknown,
+        queued: Schema.optionalKey(Schema.Literal(true)),
+        refused: Schema.optionalKey(Schema.String),
       }),
       Schema.Struct({
         tick: Tick,
@@ -203,8 +222,10 @@ export const Rejected = Event.define<{
 }>("Action.Rejected");
 
 /**
- * Lets systems and scripts issue actions, so AI plays by the same rules as
- * players. The action is applied at the start of the next tick.
+ * Lets systems, scripts and handlers issue actions, so AI plays by the same
+ * rules as players. The action is applied at the start of the next tick. It
+ * is not logged: it is the simulation's own doing, and a replay does it
+ * again. Code outside the simulation uses `app.dispatch` or `app.enqueue`.
  */
 export class Actions extends Context.Service<
   Actions,

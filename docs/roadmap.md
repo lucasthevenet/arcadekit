@@ -14,7 +14,7 @@ Small, and worth doing before anything is built on top.
 
 ## 1. Determinism you can rely on
 
-The package claims a tick is deterministic and that a log replays a game. These make the claim true for real games, and they are what saving and netcode stand on.
+Done. A seeded random service, a hash of the world, replays that check themselves against it, handlers that run in a transaction, and a log that holds what came from outside the simulation. The package's [README](../packages/arcadekit/README.md) describes each. Saving and netcode stand on these.
 
 ## 2. Saving and loading
 
@@ -90,5 +90,4 @@ Not work yet; each needs an answer before the item that depends on it.
 - **One entry or several.** The storage core imports nothing from Effect and could be `arcadekit/ecs`. Renderers and netcode could be entries or packages. Needed by milestone 5.
 - **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
 - **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
-- **Which actions the log holds.** The log records every applied action and a replay applies every entry. An action a system or a script issued with `Actions.enqueue` is therefore applied twice on replay: once from the log and once by the replay's own system. Checkpoints now stop such a replay at the next tick, where it used to go unnoticed. Either the log holds only what came from outside the simulation, or it marks what the simulation issued itself and a replay skips those entries, or checks them against what its own systems issue. Needed by "A save is a snapshot plus the log since" in milestone 2 and by lockstep in milestone 6, where peers exchange only what came from outside.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.

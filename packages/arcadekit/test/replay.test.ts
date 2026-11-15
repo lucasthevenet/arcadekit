@@ -556,43 +556,335 @@ describe("a replay that checks itself", () => {
     expect(short.tick).toBe(25);
   });
 
-  it("catches a game whose system issues actions, which a log cannot replay yet", () => {
-    // Known gap: an action a system enqueues is in the log, and the replay's
-    // own system enqueues it again, so it is applied twice. Until the log
-    // tells the two kinds of action apart, the checkpoint is what notices.
-    const Count = Component.define("rp/Count", { n: Field.i32 });
-    const Bump = Action.define("rp/Bump", Schema.Struct({ by: Schema.Int }));
-    const bump = Action.handler(Bump, function* ({ by }) {
-      (yield* Query.all(Count)).each((count) => {
-        count.n += by;
-      });
+  it("says so when a queued action meets another fate than the log records", () => {
+    const recorded = withApp(game({ checkpointEvery: 0 }), (app) => {
+      const dropped = app.dispatch(Drop, { value: 4 });
+      const coin = Exit.isSuccess(dropped) ? dropped.value : (0 as Entity);
+      app.tick(1 / 60);
+      app.enqueue(Take, { coin });
+      app.enqueue(Take, { coin }); // refused: the coin is gone by then
+      app.tick(1 / 60);
+      app.tick(1 / 60);
+      return [...app.actionLog];
     });
-    const Ai = System.make("Ai", function* () {
-      if ((yield* Time).tick % 3 === 0) {
-        (yield* Action.Actions).enqueue(Bump, { by: 10 });
+    expect(moves(recorded).map((entry) => entry.refused)).toEqual([
+      undefined,
+      undefined,
+      "NoSuchCoin",
+    ]);
+    expect(replayInto({}, recorded, 3).stopped).toBeUndefined();
+
+    // The game accepted the first take, and in this log it names no coin.
+    const refusedNow = structuredClone(recorded) as any[];
+    refusedNow[1].payload.coin = 4000;
+    const first = replayInto({}, refusedNow, 3).stopped!;
+    expect(first.index).toBe(1);
+    expect(first.reason).toBe("NoSuchCoin");
+    expect(first.message).toBe(
+      'Log entry 1 ("rp/Take" at tick 1) was refused on replay: NoSuchCoin'
+    );
+
+    // The game refused the second take, and here the first is gone, so the
+    // second finds its coin.
+    const acceptedNow = structuredClone(recorded) as any[];
+    acceptedNow.splice(1, 1);
+    const second = replayInto({}, acceptedNow, 3).stopped!;
+    expect(second.index).toBe(1);
+    expect(second.message).toBe(
+      'Log entry 1 ("rp/Take" at tick 1) did not replay: the game refused it (NoSuchCoin) and the replay accepted it'
+    );
+  });
+});
+
+// --- what the log holds, and a game whose simulation issues actions itself -------
+
+const Tally = Component.define("rp/Tally", {
+  value: Field.f64,
+  rejections: Field.u32,
+});
+const Tallies = Query.all(Tally);
+
+const Double = Action.define("rp/Double", Schema.Struct({}));
+const Add = Action.define("rp/Add", Schema.Struct({ by: Schema.Int }));
+const Chain = Action.define("rp/Chain", Schema.Struct({ by: Schema.Int }));
+class TooBig extends Data.TaggedError("TooBig")<{}> {}
+
+// Doubling and adding do not commute, so the tally gives away any change in
+// the order actions were applied in.
+const double = Action.handler(Double, function* () {
+  let refuse = false;
+  (yield* Tallies).each((tally) => {
+    tally.value *= 2;
+    refuse = tally.value > 1e12;
+  });
+  if (refuse) {
+    return yield* new TooBig();
+  }
+});
+const add = Action.handler(Add, function* ({ by }) {
+  (yield* Tallies).each((tally) => {
+    tally.value += by;
+  });
+});
+/** A handler that issues another action. */
+const chain = Action.handler(Chain, function* ({ by }) {
+  (yield* Action.Actions).enqueue(Add, { by });
+});
+
+/** An AI: a system that makes a move of its own every few ticks. */
+const Bot = System.make("Bot", function* () {
+  const { tick } = yield* Time;
+  const actions = yield* Action.Actions;
+  if (tick % 3 === 0) {
+    actions.enqueue(Add, { by: 7 });
+  }
+  if (tick % 4 === 0) {
+    actions.enqueue(Double, {});
+  }
+});
+/** Counts refusals in the world, so that a refusal a replay misses shows. */
+const Referee = System.make("Referee", function* () {
+  const refused = (yield* Action.Rejected).read().length;
+  (yield* Tallies).each((tally) => {
+    tally.rejections += refused;
+  });
+});
+/** A script that makes a move of its own now and then. */
+const Heckler = Effect.gen(function* () {
+  const script = yield* Script;
+  const actions = yield* Action.Actions;
+  const random = yield* Random;
+  for (;;) {
+    yield* script.sleep(random.int(1, 3));
+    actions.enqueue(Add, { by: random.int(1, 9) });
+  }
+});
+
+const busy = (checkpointEvery = 1) =>
+  Effect.map(
+    App.make({
+      systems: [Bot, Referee],
+      handlers: [double, add, chain],
+      seed: 4,
+      checkpointEvery,
+    }),
+    (app) => {
+      const tally = app.world.spawn(Tally.of({ value: 1, rejections: 0 }));
+      app.spawnScript(Heckler);
+      return { app, tally };
+    }
+  );
+
+describe("the action log", () => {
+  it("holds what came from outside, as it arrived, and not what the simulation issued itself", () => {
+    withApp(busy(0), ({ app, tally }) => {
+      app.enqueue(Add, { by: 1 });
+      app.dispatch(Chain, { by: 100 }); // its handler enqueues an Add
+      app.enqueueByName("rp/Double", {});
+      app.dispatch(Add, { by: 1000 });
+      expect(app.actionLog).toEqual([
+        { tick: 0, name: "rp/Add", payload: { by: 1 }, queued: true },
+        { tick: 0, name: "rp/Chain", payload: { by: 100 } },
+        { tick: 0, name: "rp/Double", payload: {}, queued: true },
+        { tick: 0, name: "rp/Add", payload: { by: 1000 } },
+      ]);
+      // Applied in the order they arrived, the handler's own among them:
+      // 1 + 1000 at once, then (+1, +100, doubled) when the tick starts.
+      app.tick(1);
+      expect(app.world.get(tally, Tally)!.value).toBe((1001 + 1 + 100) * 2);
+      // The tick ran the bot and the script, and none of their moves is logged.
+      for (let i = 0; i < 12; i++) {
+        app.tick(1);
       }
+      expect(app.world.get(tally, Tally)!.value).toBeGreaterThan(10_000);
+      expect(app.actionLog.length).toBe(4);
     });
-    const make = App.make({
-      systems: [Ai],
-      handlers: [bump],
-      checkpointEvery: 1,
+  });
+
+  it("marks a queued action that was refused, and leaves out a dispatched one", () => {
+    withApp(busy(0), ({ app, tally }) => {
+      app.world.set(tally, Tally, { value: 1e12 });
+      expect(Exit.isFailure(app.dispatch(Double, {}))).toBe(true);
+      app.enqueue(Double, {});
+      app.enqueueByName("rp/Nothing", { x: 1 });
+      app.enqueueByName("rp/Add", { by: "seven" });
+      app.tick(1);
+      expect(
+        app.actionLog.map((entry) =>
+          Action.isCheckpoint(entry) ? "?" : [entry.name, entry.refused]
+        )
+      ).toEqual([
+        ["rp/Double", "TooBig"],
+        ["rp/Nothing", "UnknownAction"],
+        ["rp/Add", expect.stringMatching(/by/)],
+      ]);
+      // The referee saw all three refusals.
+      app.tick(1);
+      expect(app.world.get(tally, Tally)!.rejections).toBe(3);
     });
-    const recorded = withApp(make, (app) => {
-      app.world.spawn(Count);
+  });
+
+  it("keeps its marks through text, and refuses a malformed one", () => {
+    const log: Action.LogEntry[] = [
+      { tick: 0, hash: 7 },
+      { tick: 0, name: "a", payload: { x: 1 } },
+      { tick: 0, name: "b", payload: null, queued: true },
+      { tick: 1, name: "c", payload: [1], queued: true, refused: "Because" },
+    ];
+    const loaded = Action.decodeLog(Action.encodeLog(log));
+    expect(Exit.isSuccess(loaded) && loaded.value).toEqual(log);
+    for (const entry of [
+      { tick: 0, name: "a", payload: 1, queued: false },
+      { tick: 0, name: "a", payload: 1, queued: "yes" },
+      { tick: 0, name: "a", payload: 1, queued: true, refused: true },
+      { tick: 0, name: "a", payload: 1, refused: 5 },
+    ]) {
+      const refused = Action.decodeLog(JSON.stringify([entry]));
+      expect(Exit.isFailure(refused), JSON.stringify(entry)).toBe(true);
+    }
+  });
+});
+
+describe("a game whose simulation issues actions itself", () => {
+  /** Outside moves mixed in with the bot's, the script's and a handler's. */
+  const play = (app: Effect.Success<ReturnType<typeof busy>>["app"]) => {
+    const dice = new EcsWorld({ seed: 77 }).random;
+    for (let tick = 0; tick < 90; tick++) {
+      for (let n = dice.int(0, 3); n > 0; n--) {
+        const by = dice.int(1, 5);
+        const move = dice.int(1, 6);
+        if (move === 1) {
+          app.enqueue(Add, { by });
+        } else if (move === 2) {
+          app.dispatch(Chain, { by });
+        } else if (move === 3) {
+          app.enqueueByName("rp/Double", {});
+        } else if (move === 4) {
+          app.dispatch(Add, { by });
+        } else if (move === 5) {
+          app.enqueueByName("rp/Add", { by: "not a number" });
+        } else {
+          app.enqueue(Chain, { by });
+        }
+      }
+      app.tick(1);
+    }
+  };
+
+  it("replays from its log, checkpoint by checkpoint", () => {
+    const recorded = withApp(busy(), ({ app, tally }) => {
+      play(app);
+      return {
+        log: [...app.actionLog],
+        hash: app.world.hash(),
+        tally: app.world.get(tally, Tally)!,
+      };
+    });
+    // The game was a busy one: the tally was doubled past its limit and
+    // back-pressure refused moves, and the referee counted them.
+    expect(recorded.tally.rejections).toBeGreaterThan(10);
+    expect(moves(recorded.log).some((entry) => entry.queued === true)).toBe(
+      true
+    );
+    expect(
+      moves(recorded.log).some((entry) => entry.refused !== undefined)
+    ).toBe(true);
+
+    const replayed = withApp(busy(), ({ app, tally }) => {
+      App.replay(app, recorded.log, { delta: 1, ticks: 90 });
+      return {
+        log: [...app.actionLog],
+        hash: app.world.hash(),
+        tally: app.world.get(tally, Tally)!,
+      };
+    });
+    expect(replayed.hash).toBe(recorded.hash);
+    expect(replayed.tally).toEqual(recorded.tally);
+    // The replay's own log is the game's, entry for entry, marks included.
+    expect(replayed.log).toEqual(recorded.log);
+  });
+
+  it("would not replay if the simulation's own moves were replayed from the log as well", () => {
+    // The flaw this replaces: every applied action was logged and replayed,
+    // so a move the bot made was made twice, once from the log and once by
+    // the replay's own bot. Here the bot's moves are put back in by hand.
+    const recorded = withApp(busy(), ({ app }) => {
       for (let i = 0; i < 9; i++) {
         app.tick(1);
       }
       return [...app.actionLog];
     });
-    const stopped = withApp(make, (app) => {
-      app.world.spawn(Count);
+    expect(moves(recorded)).toEqual([]);
+    const withBotMoves = [...recorded];
+    const at = withBotMoves.findIndex(
+      (entry) => Action.isCheckpoint(entry) && entry.tick === 3
+    );
+    withBotMoves.splice(at + 1, 0, {
+      tick: 3,
+      name: "rp/Add",
+      payload: { by: 7 },
+    });
+    const stopped = withApp(busy(), ({ app }) => {
       try {
-        App.replay(app, recorded, { delta: 1, ticks: 9 });
+        App.replay(app, withBotMoves, { delta: 1, ticks: 9 });
       } catch (error) {
         return error as App.ReplayDiverged;
       }
     });
     expect(stopped!.reason).toBeInstanceOf(App.HashMismatch);
     expect(stopped!.tick).toBe(4);
+    // And as it is recorded, it replays.
+    withApp(busy(), ({ app }) => {
+      App.replay(app, recorded, { delta: 1, ticks: 9 });
+    });
+  });
+
+  it("keeps the order of what was enqueued from outside and what a dispatched handler enqueued", () => {
+    // Two actions wait for the next tick: a doubling enqueued from outside,
+    // and an addition enqueued by the handler of a dispatched action. They do
+    // not commute, so each order of arrival is its own game, and each has to
+    // replay as itself.
+    const make = Effect.map(
+      App.make({ handlers: [double, add, chain], checkpointEvery: 1 }),
+      (app) => ({
+        app,
+        tally: app.world.spawn(Tally.of({ value: 1, rejections: 0 })),
+      })
+    );
+    const play = (first: "enqueue" | "dispatch") =>
+      withApp(make, ({ app, tally }) => {
+        if (first === "enqueue") {
+          app.enqueue(Double, {});
+          app.dispatch(Chain, { by: 10 });
+        } else {
+          app.dispatch(Chain, { by: 10 });
+          app.enqueue(Double, {});
+        }
+        app.tick(1);
+        return {
+          value: app.world.get(tally, Tally)!.value,
+          log: [...app.actionLog],
+        };
+      });
+    const replay = (log: readonly Action.LogEntry[]) =>
+      withApp(make, ({ app, tally }) => {
+        App.replay(app, log, { delta: 1, ticks: 1 });
+        return app.world.get(tally, Tally)!.value;
+      });
+
+    const doubledFirst = play("enqueue");
+    const addedFirst = play("dispatch");
+    expect(doubledFirst.value).toBe(1 * 2 + 10);
+    expect(addedFirst.value).toBe((1 + 10) * 2);
+    expect(moves(doubledFirst.log).map((entry) => entry.name)).toEqual([
+      "rp/Double",
+      "rp/Chain",
+    ]);
+    expect(moves(addedFirst.log).map((entry) => entry.name)).toEqual([
+      "rp/Chain",
+      "rp/Double",
+    ]);
+    expect(replay(doubledFirst.log)).toBe(doubledFirst.value);
+    expect(replay(addedFirst.log)).toBe(addedFirst.value);
   });
 });

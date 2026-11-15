@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 178 tests
+pnpm test                          # 184 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -200,14 +200,14 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 ```
 
 - A refused action changes nothing. A handler may refuse at any point, even after it has written: what it wrote to components, the random numbers it drew, the commands it queued, the events it emitted and the actions it enqueued are all taken back. So is everything done by a handler that dies of a bug half-way. See [Refusals leave nothing behind](#refusals-leave-nothing-behind).
-- `dispatch` is for turn-based input: the caller gets the typed outcome immediately. `enqueue` is for real-time input and for systems (AI issues the same actions as players); a refusal becomes an `Action.Rejected` event.
+- `app.dispatch` is for turn-based input: the caller gets the typed outcome immediately. `app.enqueue` is for real-time input: the action waits for the start of the next tick, and a refusal becomes an `Action.Rejected` event. Both are for code outside the simulation. A system, a script or a handler issues an action with the `Actions` service, `(yield* Action.Actions).enqueue(...)`, so AI plays by the same rules as players.
 - Dispatching an action with no handler, or with the wrong payload, does not compile.
 
 ### Payloads, saves and the network
 
 - The payload type comes from the schema, and every payload is checked against it before the handler runs, including refinements the compiler cannot see (an amount between 1 and 10, say). A mismatch is an `Action.InvalidPayload` failure.
 - Input that arrives as data goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. An unknown name or a malformed payload is a failure or a `Rejected` event, never a crash.
-- `app.actionLog` holds every applied action with its payload in JSON form (a bigint or a date in the payload is converted for you), and checkpoints of the world's hash among them. `Action.encodeLog` and `Action.decodeLog` turn it into text and back; `Action.isCheckpoint(entry)` tells the two kinds of entry apart.
+- `app.actionLog` holds what came into the game from outside, in the order it came, with payloads in JSON form (a bigint or a date in the payload is converted for you): every dispatched action that was accepted, and every action enqueued through the app, marked `queued` and, if it was refused when its turn came, `refused` with the reason in a few words. Checkpoints of the world's hash are among them. What the simulation issued itself through `Actions` is not in the log: a replay's own systems issue it again. `Action.encodeLog` and `Action.decodeLog` turn the log into text and back; `Action.isCheckpoint(entry)` tells the two kinds of entry apart.
 - `App.replay(freshApp, log, { delta, ticks })` reproduces the game in an app made with the same seed and started from the same state, and checks itself as it goes; see below.
 - `Action.define<Payload>()("Name")` still defines an action with no schema. Only the compiler checks it, so keep those for actions that never leave the program.
 
@@ -246,7 +246,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 - A checkpoint is the world's [hash](#the-worlds-hash) at one point of the game: `{ tick, hash }`. The app records one before the first action or tick, which is the state the game starts from, and one at the end of every tick whose number divides by `checkpointEvery`. `app.checkpoint()` records one more, between ticks, for a point the game wants checked, such as the moment it is saved.
 - A replay compares its own world with each checkpoint as it reaches it, and stops at the first that does not match, before applying anything recorded after it. It throws `App.ReplayDiverged`, whose `tick` is that checkpoint's tick and whose `reason` is an `App.HashMismatch` with the hash that was `expected`, the `actual` one and `agreedAt`, the tick of the last checkpoint that did match. With a checkpoint every tick, that is the tick the replay diverged on.
 - A replay made with another seed, or into a world that does not hold what the game's world held, stops before its first tick.
-- An entry that is refused still stops the replay, as before, with the refusal as the `reason`. Without checkpoints that was the only check: a replay that had gone wrong ran on until an action happened to be refused, and one whose fault broke no rule ran to its end and gave another game.
+- A dispatched action that is refused still stops the replay, with the refusal as the `reason`. An enqueued one is enqueued again at the point it arrived, so it takes its turn among the actions the replay's own simulation issues; if the replay refuses what the game accepted, or the other way round, the replay stops after the tick that applied it. Without checkpoints those were the only checks: a replay that had gone wrong ran on until an action happened to be refused, and one whose fault broke no rule ran to its end and gave another game.
 - `checkpointEvery` is 60 unless told otherwise. A checkpoint costs one hash of the world, 0.7 ms for 100,000 entities, so a smaller number finds a divergence closer to where it happened at that price per checkpoint, and adds an entry to the log each time. A turn-based game ticks once a move and wants 1. With 0 the app records none.
 - Once a game has started, what changes its world has to be in the log or come from the simulation: an action, a system, a script. A coin spawned straight into `app.world` between two ticks is in neither, so a replay cannot know of it, and stops at the next checkpoint.
 
@@ -362,7 +362,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - The log replays a game from its start. There is no snapshot of the world itself, so loading a long game means replaying all of it.
-- A game whose systems or scripts issue actions through `Actions.enqueue` does not replay. Such an action is in the log, and the replay's own system issues it again, so it is applied twice. The next checkpoint stops the replay; before there were checkpoints it went unnoticed. The log has to tell an action that came from outside from one the simulation issued itself, which is one of the roadmap's open decisions.
+- An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
 - The log does not say when a script was started from outside, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, the actions queued for the next tick, or how far each script has got.
 - An object in a `ref` field is not hashed (see [The world's hash](#the-worlds-hash)), and nothing yet says how such a field would be saved.

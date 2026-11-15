@@ -129,8 +129,12 @@ export interface Any {
   /** As `enqueue`, for actions that arrive as data. Problems become `Action.Rejected` events. */
   readonly enqueueByName: (name: string, payload: unknown) => void;
   /**
-   * Every action applied so far, in order, with checkpoints of the world's
-   * hash among them. Enough to replay the game, and to check the replay.
+   * What came into the game from outside, in the order it came, with
+   * checkpoints of the world's hash among it: every dispatched action that
+   * was accepted, and every action enqueued through the app, whatever
+   * became of it. What a system, a script or a handler issued with
+   * `Actions.enqueue` is not here, because a replay's own simulation issues
+   * it again. Enough to replay the game, and to check the replay.
    */
   readonly actionLog: readonly Action.LogEntry[];
   /**
@@ -178,6 +182,10 @@ export interface App<E = never, R = never, HU = never> extends Any {
     payload: PayloadFor<HU, N>
   ) => void;
 }
+
+/** An error in a few words, for a log entry or a message. */
+const describe = (error: unknown): string =>
+  error instanceof Error ? error.message || error.name : String(error);
 
 /**
  * A script failed in an app that was told to stop on one. It is the defect
@@ -315,11 +323,14 @@ export const make = <
       handlers.set(handler.action.name, handler);
     }
     // `encoded` says which form the payload is in: the JSON form that arrives
-    // from outside, or the value a handler works with.
+    // from outside, or the value a handler works with. `entry` is the log
+    // entry of an action that was enqueued from outside the simulation; one
+    // that a system, a script or a handler issued has none.
     const queued: {
       readonly name: string;
       readonly payload: unknown;
       readonly encoded: boolean;
+      readonly entry: { refused?: string } | undefined;
     }[] = [];
     const actionLog: Action.LogEntry[] = [];
     const checkpointEvery = options.checkpointEvery ?? 60;
@@ -347,17 +358,73 @@ export const make = <
         checkpoint();
       }
     };
+    /**
+     * Logs an action that was enqueued from outside, as it arrives. What
+     * becomes of it is decided when it is applied, and a replay enqueues it
+     * again at the same point and lets its own simulation decide.
+     */
+    const arrived = (name: string, payload: unknown) => {
+      start();
+      const entry: {
+        readonly tick: number;
+        readonly name: string;
+        readonly payload: unknown;
+        readonly queued: true;
+        refused?: string;
+      } = { tick: time.tick, name, payload, queued: true };
+      actionLog.push(entry);
+      return entry;
+    };
+    /** From outside the simulation: `app.enqueue`. */
     const enqueue = (
+      action: Action.ActionDef<string, any, any>,
+      payload: unknown
+    ): void => {
+      const handler = handlers.get(action.name);
+      if (handler === undefined) {
+        throw new Error(`No handler for action "${action.name}"`);
+      }
+      // The log holds the JSON form. A payload that has none will be refused
+      // as invalid when its turn comes, and is not worth an entry.
+      const { codec } = handler.action;
+      const json =
+        codec === undefined
+          ? Exit.succeed(payload)
+          : Schema.encodeUnknownExit(codec)(payload);
+      queued.push({
+        name: action.name,
+        payload,
+        encoded: false,
+        entry: Exit.isSuccess(json)
+          ? arrived(action.name, json.value)
+          : undefined,
+      });
+    };
+    const enqueueByName = (name: string, payload: unknown): void => {
+      queued.push({
+        name,
+        payload,
+        encoded: true,
+        entry: arrived(name, payload),
+      });
+    };
+    /**
+     * From inside the simulation: the `Actions` service. Not logged, because
+     * a replay's own systems, scripts and handlers issue it again.
+     */
+    const enqueueFromInside = (
       action: Action.ActionDef<string, any, any>,
       payload: unknown
     ): void => {
       if (!handlers.has(action.name)) {
         throw new Error(`No handler for action "${action.name}"`);
       }
-      queued.push({ name: action.name, payload, encoded: false });
-    };
-    const enqueueByName = (name: string, payload: unknown): void => {
-      queued.push({ name, payload, encoded: true });
+      queued.push({
+        name: action.name,
+        payload,
+        encoded: false,
+        entry: undefined,
+      });
     };
 
     const builtIns = Context.empty().pipe(
@@ -366,7 +433,7 @@ export const make = <
       Context.add(Commands, commands),
       Context.add(Script, { nextTick, sleep, spawn }),
       Context.add(Events, events),
-      Context.add(Action.Actions, { enqueue }),
+      Context.add(Action.Actions, { enqueue: enqueueFromInside }),
       Context.add(Random, random),
       // Effect's own Random draws from the same generator, so `Random.next`
       // from "effect", or anything built on it, is seeded and replayed too.
@@ -447,15 +514,17 @@ export const make = <
     };
 
     /**
-     * Validates a payload, runs its handler to completion, and logs the action
-     * if it was accepted. The handler runs in a transaction of the world: a
-     * refusal takes back what it wrote to components, the random numbers it
-     * drew, and what it queued, emitted and enqueued.
+     * Validates a payload and runs its handler to completion. The handler
+     * runs in a transaction of the world: a refusal takes back what it wrote
+     * to components, the random numbers it drew, and what it queued, emitted
+     * and enqueued. With `dispatched`, an accepted action is logged; an
+     * enqueued one was logged, if it came from outside, when it arrived.
      */
     const apply = (
       name: string,
       payload: unknown,
-      encoded: boolean
+      encoded: boolean,
+      dispatched: boolean
     ): Exit.Exit<unknown, unknown> => {
       const handler = handlers.get(name);
       if (handler === undefined) {
@@ -521,7 +590,9 @@ export const make = <
       } else {
         world.commit();
         commands.apply();
-        actionLog.push({ tick: time.tick, name, payload: logged });
+        if (dispatched) {
+          actionLog.push({ tick: time.tick, name, payload: logged });
+        }
       }
       return exit;
     };
@@ -548,14 +619,14 @@ export const make = <
         // same point in the timeline as an action dispatched between ticks.
         if (queued.length > 0) {
           const batch = queued.splice(0);
-          for (const { encoded, name, payload } of batch) {
-            const exit = apply(name, payload, encoded);
+          for (const { encoded, entry, name, payload } of batch) {
+            const exit = apply(name, payload, encoded, false);
             if (Exit.isFailure(exit)) {
-              events.emit(Action.Rejected, {
-                action: name,
-                payload,
-                error: Cause.squash(exit.cause),
-              });
+              const error = Cause.squash(exit.cause);
+              if (entry !== undefined) {
+                entry.refused = describe(error);
+              }
+              events.emit(Action.Rejected, { action: name, payload, error });
             }
           }
         }
@@ -649,12 +720,12 @@ export const make = <
         if (!handlers.has(action.name)) {
           throw new Error(`No handler for action "${action.name}"`);
         }
-        return apply(action.name, payload, false) as Exit.Exit<any, any>;
+        return apply(action.name, payload, false, true) as Exit.Exit<any, any>;
       },
       enqueue,
       dispatchByName(name, payload) {
         assertBetweenTicks(name);
-        return apply(name, payload, true);
+        return apply(name, payload, true, true);
       },
       enqueueByName,
     };
@@ -722,7 +793,7 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
    */
   readonly reason: unknown;
 }> {
-  /** The tick the replay had reached when it stopped. */
+  /** The tick of the entry that did not hold. */
   get tick(): number {
     return this.entry.tick;
   }
@@ -732,13 +803,15 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
     if (reason instanceof HashMismatch) {
       return `The replay diverged from its log (entry ${this.index}): ${reason.message}`;
     }
-    const text =
-      reason instanceof Error ? reason.message || reason.name : String(reason);
+    const text = describe(reason);
     const what = Action.isCheckpoint(entry)
       ? `a checkpoint at tick ${entry.tick}`
       : `"${entry.name}" at tick ${entry.tick}`;
-    return Action.isCheckpoint(entry)
-      ? `Log entry ${this.index} (${what}) was not reached on replay: ${text}`
+    if (Action.isCheckpoint(entry)) {
+      return `Log entry ${this.index} (${what}) was not reached on replay: ${text}`;
+    }
+    return text.startsWith("the game refused it") || text.startsWith("its tick")
+      ? `Log entry ${this.index} (${what}) did not replay: ${text}`
       : `Log entry ${this.index} (${what}) was refused on replay: ${text}`;
   }
 }
@@ -754,8 +827,15 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
  * - A checkpoint whose hash is not the hash of the replay's world. The
  *   replay stops at that tick, before applying anything recorded after it.
  *   With a checkpoint every tick, that is the tick it diverged on.
- * - An action that is refused. The log only ever holds actions that were
- *   accepted, so the log was altered or the game has changed since.
+ * - A dispatched action that is refused. The log only holds dispatched
+ *   actions that were accepted, so the log was altered or the game has
+ *   changed since.
+ * - An enqueued action that is refused where the game accepted it, or the
+ *   other way round. It is enqueued again at the point it arrived, and the
+ *   replay stops after the tick that applied it.
+ *
+ * Actions that the game's systems, scripts and handlers issued are not in
+ * the log: the replay's own issue them again.
  */
 export const replay = (
   app: Any,
@@ -764,6 +844,13 @@ export const replay = (
 ): void => {
   let next = 0;
   let agreedAt: number | undefined;
+  // Enqueued entries the next tick will apply, each with the entry the
+  // replaying app logged for it.
+  const waiting: {
+    readonly index: number;
+    readonly entry: Action.Logged;
+    readonly mine: Action.Logged;
+  }[] = [];
   const applyDue = (): void => {
     for (
       let entry = log[next];
@@ -785,6 +872,15 @@ export const replay = (
           });
         }
         agreedAt = entry.tick;
+      } else if (entry.queued === true) {
+        // Enqueued again at the point it arrived, so that it takes its turn
+        // among the actions the replay's own simulation issues.
+        app.enqueueByName(entry.name, entry.payload);
+        waiting.push({
+          index: next,
+          entry,
+          mine: app.actionLog.at(-1) as Action.Logged,
+        });
       } else {
         const exit = app.dispatchByName(entry.name, entry.payload);
         if (Exit.isFailure(exit)) {
@@ -798,9 +894,27 @@ export const replay = (
       next++;
     }
   };
+  // The tick that has just run applied every action enqueued before it. Each
+  // must have met the fate the log records for it.
+  const checkQueued = (): void => {
+    for (const { entry, index, mine } of waiting) {
+      if (mine.refused !== undefined && entry.refused === undefined) {
+        throw new ReplayDiverged({ index, entry, reason: mine.refused });
+      }
+      if (mine.refused === undefined && entry.refused !== undefined) {
+        throw new ReplayDiverged({
+          index,
+          entry,
+          reason: `the game refused it (${entry.refused}) and the replay accepted it`,
+        });
+      }
+    }
+    waiting.length = 0;
+  };
   for (let i = 0; i < options.ticks; i++) {
     applyDue();
     app.tick(options.delta);
+    checkQueued();
   }
   applyDue();
   const unreached = log[next];

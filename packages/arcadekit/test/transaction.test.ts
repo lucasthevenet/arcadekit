@@ -787,9 +787,7 @@ describe("a game full of refused actions", () => {
     // Refused actions are not in the log, so a replay never runs them. If one
     // of them left anything in the world, the replay's hash would differ at
     // the next checkpoint. Random steps, random targets, half of them refused.
-    // "enqueue" is left out: an action a handler enqueues is in the log and
-    // is enqueued again by the replay's own handler, which is another matter.
-    const steps = everyStep.filter((step) => step !== "enqueue");
+    const steps = everyStep;
     for (const seed of [1, 2, 3]) {
       const recorded = withApp(game(), ({ app, entities }) => {
         const dice = new EcsWorld({ seed }).random;
