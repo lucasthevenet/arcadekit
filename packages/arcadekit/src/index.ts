@@ -1,6 +1,6 @@
-export * as Action from "./action";
-export * as App from "./app";
-export * as Driver from "./driver";
+export * as Action from "./Action";
+export * as App from "./App";
+export * as Driver from "./Driver";
 export {
   Component,
   type ComponentDef,
@@ -14,11 +14,11 @@ export {
   type SparseColumns,
   World as EcsWorld,
 } from "./ecs/world";
-export * as Event from "./event";
-export * as Plugin from "./plugin";
-export * as Query from "./query";
-export * as Resource from "./resource";
-export { EntityId } from "./schemas";
-export { Commands, Events, Script, Time, World } from "./services";
-export * as System from "./system";
-export { TickDispatcher, TickScheduler } from "./tick-scheduler";
+export * as Event from "./Event";
+export * as Plugin from "./Plugin";
+export * as Query from "./Query";
+export * as Resource from "./Resource";
+export { EntityId } from "./Schemas";
+export { Commands, Events, Script, Time, World } from "./Services";
+export * as System from "./System";
+export { TickDispatcher, TickScheduler } from "./TickScheduler";

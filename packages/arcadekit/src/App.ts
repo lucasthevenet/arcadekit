@@ -22,15 +22,15 @@ import { Cause, Context, Data, Effect, Exit, Layer, Schema } from "effect";
 import type { Fiber, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
-import * as Action from "./action";
+import * as Action from "./Action";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
-import { EventBus } from "./event";
-import * as Plugin from "./plugin";
-import { Commands, Events, Script, Time, World } from "./services";
-import type { BuiltIn, TimeState } from "./services";
-import * as System from "./system";
-import type { TaggedErrorClass } from "./tagged-error";
-import { TickDispatcher, TickScheduler } from "./tick-scheduler";
+import { EventBus } from "./Event";
+import * as Plugin from "./Plugin";
+import { Commands, Events, Script, Time, World } from "./Services";
+import type { BuiltIn, TimeState } from "./Services";
+import * as System from "./System";
+import type { TaggedErrorClass } from "./TaggedError";
+import { TickDispatcher, TickScheduler } from "./TickScheduler";
 
 type Systems = readonly Plugin.AnySystem[];
 type Handlers = readonly Plugin.AnyHandler[];

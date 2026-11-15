@@ -20,7 +20,7 @@
  */
 import { Effect, Effectable } from "effect";
 
-import { Events } from "./services";
+import { Events } from "./Services";
 
 export interface EventHandle<P> {
   /** Queues an event. Synchronous, so it can be called inside query loops. */

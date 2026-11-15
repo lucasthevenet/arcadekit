@@ -4,9 +4,9 @@
 import { Context } from "effect";
 import type { Effect } from "effect";
 
-import type { Actions } from "./action";
+import type { Actions } from "./Action";
 import type { CommandBuffer, World as EcsWorld } from "./ecs/world";
-import type { EventBus } from "./event";
+import type { EventBus } from "./Event";
 
 // Each service is a typed constant plus a class that extends it. Written in
 // one expression, `class X extends Context.Service<...>()("key") {}`, the

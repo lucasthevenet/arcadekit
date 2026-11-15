@@ -133,13 +133,13 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 | --- | --- |
 | `src/ecs/component.ts` | Fields, components, entity ids, generated accessors |
 | `src/ecs/world.ts` | Tables, sparse sets, queries, world, command buffer |
-| `src/tick-scheduler.ts` | The Effect scheduler owned by the game loop |
-| `src/app.ts` | Builds the context, orders systems, runs a tick, applies actions |
-| `src/event.ts`, `src/action.ts` | Events and the rules layer |
-| `src/plugin.ts` | Plugins and their dependency order |
-| `src/schemas.ts` | Schemas for framework types, such as `EntityId` |
-| `src/system.ts`, `src/query.ts`, `src/resource.ts`, `src/services.ts` | The rest of the user-facing API |
-| `src/driver.ts` | Fixed-step and timer drivers |
+| `src/TickScheduler.ts` | The Effect scheduler owned by the game loop |
+| `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
+| `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
+| `src/Plugin.ts` | Plugins and their dependency order |
+| `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
+| `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
+| `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
 | `test/` | Storage, runtime, rules, plugin and schema tests, including a randomized comparison against a simple model and replay tests |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |

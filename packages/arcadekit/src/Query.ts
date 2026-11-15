@@ -9,7 +9,7 @@ import { dual } from "effect/Function";
 
 import type { ComponentDef } from "./ecs/component";
 import type { QuerySpec, QueryView, Terms } from "./ecs/world";
-import { World } from "./services";
+import { World } from "./Services";
 
 /**
  * An immutable, world-independent query description.

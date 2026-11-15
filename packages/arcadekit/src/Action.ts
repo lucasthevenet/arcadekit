@@ -32,8 +32,8 @@
 import { Context, Data, Effect, Schema } from "effect";
 import type { Exit } from "effect";
 
-import * as Event from "./event";
-import type { TaggedErrorClass } from "./tagged-error";
+import * as Event from "./Event";
+import type { TaggedErrorClass } from "./TaggedError";
 
 interface InvalidPayloadFields {
   readonly action: string;

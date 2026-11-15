@@ -23,9 +23,9 @@
  */
 import type { Effect, Layer } from "effect";
 
-import type * as Action from "./action";
-import type { BuiltIn } from "./services";
-import type * as System from "./system";
+import type * as Action from "./Action";
+import type { BuiltIn } from "./Services";
+import type * as System from "./System";
 
 export type AnySystem = System.System<any, any>;
 export type AnyHandler = Action.Handler<any, any, any, any, any>;
