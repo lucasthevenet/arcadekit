@@ -1,12 +1,12 @@
 name: Release
 
-# Changesets (ADR-0016), split the way changesets.dev/guide/automating recommends for
-# trusted publishing, so only the publish job can get an npm OIDC token.
+# Changesets, split the way changesets.dev/guide/automating recommends for trusted
+# publishing, so only the publish job can get an npm OIDC token.
 # - Changesets pending on main: the version job opens or updates the "Version packages" PR.
 # - That PR merged (no changesets left, versions not on npm yet): pack, then publish.
 # Publishing uses npm trusted publishing: npm trusts this file (release.yml) in
 # lucasthevenet/arcadekit through OIDC, so no npm token is stored, and every version
-# gets provenance. Each package names it as its trusted publisher (scripts/npm-setup.sh).
+# gets provenance. The arcadekit package names it as its trusted publisher, in its settings on npm.
 # Needs Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests".
 
 on:
