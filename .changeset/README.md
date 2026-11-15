@@ -24,4 +24,4 @@ What changed, in a sentence. Then, under **Breaking**, what a game now writes in
 
 On `main`, the release workflow opens a "Version packages" PR that applies the pending changesets. Merging it publishes to npm.
 
-The first `arcadekit` on npm is a `0.0.0` placeholder the maintainer publishes from their machine (`scripts/npm-setup.sh`), so the package exists and can name the release workflow as its trusted publisher. Every real version comes from the workflow.
+npm publishes `arcadekit` through trusted publishing: it trusts the release workflow, so no npm token is stored.

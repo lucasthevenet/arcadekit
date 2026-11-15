@@ -8,7 +8,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 
 - `packages/arcadekit/src/`: the package's source. Each subpath of its `package.json` `exports` names its source file under a `source` condition, and its built files as `./dist/<name>.d.ts` and `./dist/<name>.js`; `tsdown.config.ts` builds every export from that map.
 - `packages/arcadekit/test/`: its tests, run by Vitest from the source with no build.
-- `scripts/`: the workspace's helpers (the `source` condition for Vite and Vitest, the package lint, the one-time npm setup).
+- `scripts/`: the workspace's helpers (the `source` condition for Vite and Vitest, and the package lint).
 - `.changeset/`: pending release notes; see its README.
 
 ## Validation
