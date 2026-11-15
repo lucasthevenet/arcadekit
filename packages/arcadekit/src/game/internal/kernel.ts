@@ -35,6 +35,12 @@ export interface KernelSimulation<Config, State, Input, Event> {
   /** Returns, and forgets, the events produced since the last call. */
   readonly drainEvents: (state: State) => readonly Event[];
   /**
+   * Checks the run's state, and throws if it is wrong: after `create` (with a null step), before
+   * the new run replaces the old, and after each step, with that step's number. Absent, nothing
+   * is checked.
+   */
+  readonly check?: (state: State, seed: number, step: number | null) => void;
+  /**
    * Optional sample: a read of the state for the UI (a HUD, for example), emitted as an event
    * when a run starts and then while it is active:
    *
@@ -68,6 +74,8 @@ export interface KernelSimulation<Config, State, Input, Event> {
  */
 export class Kernel<Config, State, Input, Event> {
   private run: State | null = null;
+  /** The current run's seed, which a check's refusal names. */
+  private seed = 0;
   private steps = 0;
   private paused = false;
   private readonly clock: FixedStepClock.FixedStepClock;
@@ -99,7 +107,9 @@ export class Kernel<Config, State, Input, Event> {
    */
   start(config: Config, seed: number, nowMs: number): void {
     const state = this.simulation.create(config, seed);
+    this.simulation.check?.(state, seed, null);
     this.run = state;
+    this.seed = seed;
     this.steps = 0;
     this.paused = false;
     FixedStepClock.reset(this.clock);
@@ -142,6 +152,7 @@ export class Kernel<Config, State, Input, Event> {
     }
     const runStep = (stepSeconds: number) => {
       this.simulation.step(state, input.read(this.steps), stepSeconds);
+      this.simulation.check?.(state, this.seed, this.steps);
       this.steps += 1;
       input.endStep?.();
     };

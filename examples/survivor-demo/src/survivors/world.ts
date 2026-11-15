@@ -484,6 +484,49 @@ export const hudSample = (
 });
 
 /**
+ * What must hold of an arena as its run starts and after every step, by name: the simulation's
+ * `invariants`, which a scenario checks, and a replay made with `checkInvariants`.
+ *
+ * - `healthWithinMax`: every hero's health is between 0 and its maximum.
+ * - `heroesInArena`: every hero is inside the arena's bounds.
+ * - `pauseHeldOnlyWhilePlaying`: only a playing hero holds the co-op pause.
+ * - `offersOnlyWhileLevelUpsPending`: a hero has an offer open only while a level-up waits, and
+ *   the level-ups waiting are never below 0.
+ *
+ * @category getters
+ */
+export const invariants = {
+  healthWithinMax: (arena: Game.ReadonlyState<Arena>): boolean => {
+    for (const hero of arena.heroes) {
+      if (!(hero.hp >= 0 && hero.hp <= hero.maxHp)) {
+        return false;
+      }
+    }
+    return true;
+  },
+  heroesInArena: (arena: Game.ReadonlyState<Arena>): boolean => {
+    const half = arena.content.rules.arenaHalfSize;
+    for (const hero of arena.heroes) {
+      if (hero.x < -half || hero.x > half || hero.z < -half || hero.z > half) {
+        return false;
+      }
+    }
+    return true;
+  },
+  pauseHeldOnlyWhilePlaying: (arena: Game.ReadonlyState<Arena>): boolean => {
+    for (const hero of arena.heroes) {
+      if (hero.paused && hero.status !== "playing") {
+        return false;
+      }
+    }
+    return true;
+  },
+  offersOnlyWhileLevelUpsPending: (arena: Game.ReadonlyState<Arena>): boolean =>
+    arena.pendingLevelUps >= 0 &&
+    (arena.pendingLevelUps > 0 || !isChoosing(arena)),
+};
+
+/**
  * Whether some hero has an upgrade offer open: the run is frozen until every one is closed.
  *
  * **When to use**

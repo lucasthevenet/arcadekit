@@ -64,5 +64,36 @@ console.log(loop.state?.x); // about 8: one second at speed 8
 - **`events`** lists what a step may report with `report`. Keep them rare: they cross into the UI.
 - **`commands`** lists what a player may send, and **`apply`** handles each by its tag. A command is applied at the start of the next step, before `step`, in the order sent. A run changes in no other way, so a simulation that declares a command without its handler is refused when its module loads, and so is a handler without its command. A handler may refuse its command: see [Refusing a command](commands.md).
 - **`sample`** is a read of the state for the UI, such as a HUD, delivered as an event. Its `read` and `version` are given the state read-only, a `Game.ReadonlyState`, so the compiler refuses a write there. It is delivered when a run starts and then every `every`, and/or right after any frame in which `version` (a cheap number, such as a turn counter) changed.
+- **`invariants`** says what must hold of every run's state, by name: below.
+
+## Invariants
+
+A run's state is open: the step writes its fields and typed arrays directly, and nothing guards a field. What must stay true of it, an **invariant**, is declared instead: a named function that reads the state, given read-only, and returns whether it holds. A scenario checks every one as its run starts and after every step, and fails at the first that doesn't hold, naming it, the step and the run's seed. So a change that breaks a rule fails at the step that broke it, under the rule's name, in any scenario of the game, not only the one written about that rule.
+
+```ts
+import * as Game from "arcadekit/game";
+import * as Scenario from "arcadekit/game/scenario";
+import { Schema } from "effect";
+
+class Tank extends Game.Simulation("Tank", {
+  input: Schema.Number,
+  create: (config: { readonly litres: number }) => ({ litres: config.litres }),
+  step: (tank, burn) => {
+    tank.litres -= burn;
+  },
+  invariants: {
+    neverBelowEmpty: (tank) => tank.litres >= 0,
+  },
+}) {}
+
+const scenario = Scenario.make(Tank);
+
+// Throws a ScenarioError: 'Simulation "Tank" breaks its invariant "neverBelowEmpty" at step 2
+// of the run with seed 0: the step, or a command it applied, left the state where it doesn't hold.'
+const overdraw = () =>
+  scenario(Scenario.given({ litres: 5 }), Scenario.step(2, 4));
+```
+
+A loop checks them only when asked, as a replay or a long run in a test asks: `Game.makeLoop(Tank, { checkInvariants: true })` throws an `Error` with the same message. An engine, a lockstep session and a Co-op client never run them, so play pays nothing for them. Keep each one a cheap read of the state: a scenario runs every one after every step.
 
 `Game.StateOf<typeof Race>`, `ConfigOf`, `InputOf`, `EventOf` and `CommandOf` name a simulation's types. `Race.match({ Finished: ..., Hud: ... })` makes a function that handles each event by its tag, checked to cover them all. A case for an event the simulation doesn't report compiles (one left behind by a renamed event), so `match` refuses it when it is called, as the app's module loads.

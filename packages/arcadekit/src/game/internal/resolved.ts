@@ -12,6 +12,7 @@ import type {
   SimulationClass,
   StepContext,
 } from "../simulation";
+import type { Invariants } from "./invariants";
 
 /**
  * A simulation's definition as the loop runs it: defaults filled, and the declarations' classes
@@ -48,6 +49,7 @@ export interface Resolved<Config, State, Input, Event, Command> {
         readonly read: (state: ReadonlyState<State>) => unknown;
       }
     | undefined;
+  readonly invariants: Invariants<State>;
 }
 
 /** `simulation`'s definition, typed for the loop that runs it. */

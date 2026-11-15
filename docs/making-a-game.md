@@ -69,7 +69,7 @@ it("reports the solve on the move that fills the last goal", () =>
   ));
 ```
 
-A replay steps a `Game.Loop` itself: `const loop = Game.makeLoop(MyGame)`, `loop.start(config, seed, 0)`, then `loop.frame({ read: (step) => inputs[step] }, { steps: 1 }, nowMs)` per step (`examples/push-puzzle-demo/test/push-puzzle/world.test.ts` does this).
+Declare what must stay true of the state as the simulation's [invariants](guides/simulation.md#invariants), and every scenario checks them after every step. A replay steps a `Game.Loop` itself, and asks it to check them: `const loop = Game.makeLoop(MyGame, { checkInvariants: true })`, `loop.start(config, seed, 0)`, then `loop.frame({ read: (step) => inputs[step] }, { steps: 1 }, nowMs)` per step (`examples/push-puzzle-demo/test/push-puzzle/world.test.ts` does this).
 
 ### The app
 

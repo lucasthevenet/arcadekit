@@ -30,7 +30,7 @@ export type {
   Payload,
 } from "./event";
 export { Command, Event, Rejection, Simulation } from "./index";
-export { type Loop, isLoop, makeLoop } from "./loop";
+export { type Loop, type LoopOptions, isLoop, makeLoop } from "./loop";
 export {
   type PlayerInputOf,
   PlayerInputs,

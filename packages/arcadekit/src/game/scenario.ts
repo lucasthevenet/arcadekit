@@ -10,6 +10,7 @@
  * @since 0.7.0
  */
 import { CommandDropped } from "./command";
+import { brokenInvariant, brokenMessage } from "./internal/invariants";
 import { resolve } from "./internal/resolved";
 import { makeLoop } from "./loop";
 import type { RefusalOf, SimulationClass } from "./simulation";
@@ -213,8 +214,20 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
 ): Runner<Config, State, Input, Event, Command, RefusalOf<Refusals>> & {
   readonly end: () => void;
 } => {
-  const { sample, stepSeconds } = resolve(simulation);
+  const { sample, stepSeconds, invariants } = resolve(simulation);
   const loop = makeLoop(simulation);
+  let seed = 0;
+  /** Refuses the run's state if one of the simulation's invariants doesn't hold of it. */
+  const checkInvariants = (step: number | null): void => {
+    const { state } = loop;
+    const broken =
+      state === null ? undefined : brokenInvariant(invariants, state);
+    if (broken !== undefined) {
+      throw new ScenarioError(
+        brokenMessage(simulation.simulationName, broken, seed, step)
+      );
+    }
+  };
   // Events reported since the last check, and the latest sample: a sample is a read of the
   // state, not something that happened, so `Scenario.reported` never has to list one.
   let unchecked: Event[] = [];
@@ -248,12 +261,14 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
     return state;
   };
   return {
-    given: (config, seed) => {
+    given: (config, runSeed) => {
       neverApplied("Scenario.given started a new run");
       unchecked = [];
       refusals = [];
       lastSample = undefined;
-      loop.start(config, seed, 0);
+      loop.start(config, runSeed, 0);
+      seed = runSeed;
+      checkInvariants(null);
     },
     step: (input, count) => {
       running("step");
@@ -262,6 +277,7 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
         // One frame per step, on the run's own time: a sample's `every` counts simulated time.
         const nowMs = (loop.stepIndex + 1) * stepSeconds * 1000;
         loop.frame(source, { steps: 1 }, nowMs);
+        checkInvariants(loop.stepIndex - 1);
       }
     },
     send: (command, player) => {
@@ -338,8 +354,10 @@ const makeRunner = <Config, State, Input, Event, Command, Refusals>(
  * A passing scenario accounts for everything: it fails if the run reported an event no
  * `Scenario.reported` checked, if the rules refused a command no `Scenario.refused` checked, or
  * if a command was sent and no step applied it. Samples are the exception, since a real-time game
- * reports one every few steps: check the latest with `Scenario.sampled`. The run's time is its
- * own: each step is one frame, at the time that step ends.
+ * reports one every few steps: check the latest with `Scenario.sampled`. It checks the
+ * simulation's `invariants` too, as its run starts and after every step, and fails at the first
+ * that doesn't hold, naming it, the step and the seed. The run's time is its own: each step is
+ * one frame, at the time that step ends.
  *
  * **Example** (A door that opens once its lever is held)
  *

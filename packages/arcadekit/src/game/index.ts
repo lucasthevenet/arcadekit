@@ -34,7 +34,7 @@ export type {
   NoFields,
   Payload,
 } from "./event";
-export { type Loop, isLoop, makeLoop } from "./loop";
+export { type Loop, type LoopOptions, isLoop, makeLoop } from "./loop";
 export {
   type PlayerInputOf,
   PlayerInputs,

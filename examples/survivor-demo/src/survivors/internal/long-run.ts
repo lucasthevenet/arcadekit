@@ -194,11 +194,11 @@ export interface LongRun {
 
 /**
  * Plays a long run of `steps` steps from `seed`, one per frame at 60 frames a second, taking the
- * second upgrade when offered: the pick is sent before the frame whose step applies it. It takes
- * about a second in Node.
+ * second upgrade when offered: the pick is sent before the frame whose step applies it. Every
+ * step is checked against the simulation's invariants. It takes about a second in Node.
  */
 export const play = (seed: number): LongRun => {
-  const loop = Game.makeLoop(Survivors);
+  const loop = Game.makeLoop(Survivors, { checkInvariants: true });
   const input = Game.soloInput(wander());
   loop.start({ content, heroIds: ["bolter"] }, seed, 0);
   const arena = loop.state!;

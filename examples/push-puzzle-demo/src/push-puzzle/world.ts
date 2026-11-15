@@ -704,6 +704,38 @@ export const hudSample = (
 });
 
 /**
+ * What must hold of a puzzle as its run starts and after every step, by name: the simulation's
+ * `invariants`, which a scenario checks, and a replay made with `checkInvariants`.
+ *
+ * - `boxesApart`: no two boxes share a cell.
+ * - `playerOffTheBoxes`: the player stands on no box.
+ * - `solvedOnlyWhenFilled`: a puzzle is solved only with a box on every goal.
+ * - `movesWithinTurns`: the moves made, minus those undone, are never below 0, nor more than the
+ *   turns taken.
+ *
+ * @category getters
+ */
+export const invariants = {
+  boxesApart: (puzzle: Game.ReadonlyState<Puzzle>): boolean => {
+    const { count, fields } = puzzle.boxes;
+    for (let i = 0; i < count; i++) {
+      for (let j = i + 1; j < count; j++) {
+        if (fields.cell[i] === fields.cell[j]) {
+          return false;
+        }
+      }
+    }
+    return true;
+  },
+  playerOffTheBoxes: (puzzle: Game.ReadonlyState<Puzzle>): boolean =>
+    boxIndexAt(puzzle, puzzle.player) === -1,
+  solvedOnlyWhenFilled: (puzzle: Game.ReadonlyState<Puzzle>): boolean =>
+    !puzzle.solved || boxesLeft(puzzle) === 0,
+  movesWithinTurns: (puzzle: Game.ReadonlyState<Puzzle>): boolean =>
+    puzzle.moves >= 0 && puzzle.moves <= puzzle.turns,
+};
+
+/**
  * The board as level text, one string per row, with trailing spaces trimmed.
  *
  * **When to use**

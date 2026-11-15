@@ -62,4 +62,5 @@ export class PushPuzzle extends Game.Simulation("PushPuzzle", {
     version: (puzzle) => puzzle.turns,
     read: World.hudSample,
   },
+  invariants: World.invariants,
 }) {}

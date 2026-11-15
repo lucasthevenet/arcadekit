@@ -442,6 +442,15 @@ export interface Definition<
    */
   readonly apply?: CommandHandlers<State, Commands, Events[number]["Type"]>;
   readonly sample?: Sample<State, Sampled>;
+  /**
+   * What must hold of every run's state, by name: each a function that reads the state, given
+   * read-only, and returns true while it holds. A scenario checks every one as its run starts and
+   * after every step, and so does a loop made with `checkInvariants`; an engine, a lockstep
+   * session and a Co-op client never run them, so play pays nothing for them.
+   */
+  readonly invariants?: Readonly<
+    Record<string, (state: ReadonlyState<State>) => boolean>
+  >;
 }
 
 declare const noCommand: unique symbol;
@@ -986,6 +995,15 @@ export const make = <
       );
     }
   }
+  const invariants = Object.entries(definition.invariants ?? {});
+  for (const [invariant, holds] of invariants) {
+    // Only a cast gets one past the types, and a check that can't run would fail every step.
+    if (typeof holds !== "function") {
+      throw new Error(
+        `Simulation "${name}" declares the invariant "${invariant}" as ${holds === null ? "null" : typeof holds}. Write it as a function of the state that returns true while it holds.`
+      );
+    }
+  }
   const { sample } = definition;
   const resolved = {
     stepSeconds: definition.stepSeconds ?? 1 / 60,
@@ -1008,6 +1026,7 @@ export const make = <
             version: sample.version,
             read: sample.read,
           },
+    invariants,
   };
   /** What a run reports, by tag: its events, then its sample. `match` takes a case for each. */
   const reported = resolved.events.map(({ tag }) => tag);

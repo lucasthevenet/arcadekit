@@ -18,6 +18,7 @@ import { pipeArguments } from "effect/Pipeable";
 import { EventBuffer } from "../core/index";
 import { CommandDropped } from "./command";
 import type { AnyCommand, Settled } from "./command";
+import { brokenInvariant, brokenMessage } from "./internal/invariants";
 import { Kernel } from "./internal/kernel";
 import type { KernelSimulation } from "./internal/kernel";
 import { resolve } from "./internal/resolved";
@@ -199,6 +200,57 @@ export const isLoop = (
   Predicate.hasProperty(value, TypeId);
 
 /**
+ * How a loop runs besides its simulation: whether it checks the run's invariants.
+ *
+ * **When to use**
+ *
+ * In a test that steps a loop itself, such as a replay or a long run, to have every step checked
+ * against what the simulation declares in `invariants`.
+ *
+ * **Details**
+ *
+ * `checkInvariants` is false unless given: a host that plays the game, an engine or a lockstep
+ * session, never checks them, so play pays nothing for them. A scenario checks them on its own.
+ *
+ * **Example** (A replay that checks every step)
+ *
+ * ```ts
+ * import * as Game from "arcadekit/game";
+ * import { Schema } from "effect";
+ *
+ * class Fuel extends Game.Simulation("Fuel", {
+ *   input: Schema.Number,
+ *   create: () => ({ litres: 10 }),
+ *   step: (tank, burn) => {
+ *     tank.litres -= burn;
+ *   },
+ *   invariants: { neverBelowEmpty: (tank) => tank.litres >= 0 },
+ * }) {}
+ *
+ * const options: Game.LoopOptions = { checkInvariants: true };
+ * const loop = Game.makeLoop(Fuel, options);
+ * loop.start(undefined, 1, 0);
+ * loop.frame({ read: () => 4 }, { steps: 2 }, 0); // => 2
+ * const refused = (() => {
+ *   try {
+ *     loop.frame({ read: () => 4 }, { steps: 1 }, 0);
+ *     return "";
+ *   } catch (error) {
+ *     return (error as Error).message;
+ *   }
+ * })();
+ * refused.startsWith('Simulation "Fuel" breaks its invariant "neverBelowEmpty" at step 2'); // => true
+ * ```
+ *
+ * @category models
+ * @since 0.8.0
+ */
+export interface LoopOptions {
+  /** Whether each run's invariants are checked as it starts and after every step. */
+  readonly checkInvariants?: boolean;
+}
+
+/**
  * Makes a loop for `simulation`, with no run: `start` begins one.
  *
  * **When to use**
@@ -209,7 +261,9 @@ export const isLoop = (
  * **Details**
  *
  * The loop makes nothing of the game's until `start`, which calls the simulation's `create`. Its
- * fixed clock steps by the simulation's `stepSeconds`.
+ * fixed clock steps by the simulation's `stepSeconds`. Made with `{ checkInvariants: true }`, it
+ * checks the simulation's `invariants` as each run starts and after every step, and throws an
+ * `Error` that names the first one that doesn't hold, the step and the run's seed.
  *
  * **Example** (A loop before and after its run starts)
  *
@@ -244,9 +298,10 @@ export const makeLoop = <Config, State, Input, Event, Command, Refusals>(
     Event,
     Command,
     Refusals
-  >
+  >,
+  options?: LoopOptions
 ): Loop<Config, State, Input, Event, Command, Refusals> =>
-  new LoopImpl(simulation);
+  new LoopImpl(simulation, options);
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
@@ -327,6 +382,8 @@ class LoopImpl<Config, State, Input, Event, Command, Refusals>
 {
   readonly [TypeId]: typeof TypeId = TypeId;
   private readonly name: string;
+  /** Whether a run's invariants are checked as it starts and after every step. */
+  private readonly checkInvariants: boolean;
   private readonly definition: Resolved<Config, State, Input, Event, Command>;
   private readonly commands: ReadonlyMap<string, AnyCommand>;
   private readonly kernel: Kernel<Config, State, Input, Event>;
@@ -351,9 +408,11 @@ class LoopImpl<Config, State, Input, Event, Command, Refusals>
       Event,
       Command,
       Refusals
-    >
+    >,
+    options: LoopOptions | undefined
   ) {
     super();
+    this.checkInvariants = options?.checkInvariants === true;
     this.name = simulation.simulationName;
     this.definition = resolve(simulation);
     this.commands = new Map(
@@ -491,6 +550,16 @@ class LoopImpl<Config, State, Input, Event, Command, Refusals>
         refuseResult(definition.step(state, input, stepContext), name, "step");
       },
       drainEvents: () => EventBuffer.drain(events),
+      ...(this.checkInvariants && definition.invariants.length > 0
+        ? {
+            check: (state: State, seed: number, step: number | null) => {
+              const broken = brokenInvariant(definition.invariants, state);
+              if (broken !== undefined) {
+                throw new Error(brokenMessage(name, broken, seed, step));
+              }
+            },
+          }
+        : {}),
       ...(sample === undefined
         ? {}
         : {

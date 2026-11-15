@@ -25,7 +25,7 @@ Every other module of a game is a namespace, as the kit's are: `Rng`, `EntityPoo
 | Host | What it runs | Where |
 | --- | --- | --- |
 | `Game.makeLoop(simulation)` | A simulation, one frame at a time, as its caller says ([Steps and frames](steps-and-frames.md)) | Anywhere: a replay, a server, a test |
-| `Scenario.make(simulation)` | A simulation through a loop, checking what it reports and refuses ([Scenarios](../testing/scenarios.md)) | A test |
+| `Scenario.make(simulation)` | A simulation through a loop, checking what it reports and refuses, and its invariants after every step ([Scenarios](../testing/scenarios.md)) | A test |
 | An engine's `layer` | The engine service an app drives: `start`, `send`, `listen`, `attach` | The browser |
 | `LockstepSession.host` and `join` | A simulation on every peer, stepped on every player's input ([Lockstep](lockstep.md)) | Anywhere with a transport |
 | A `Coop`'s `layer` | One player's Co-op client: the lobby, the run and its drawing | The browser |

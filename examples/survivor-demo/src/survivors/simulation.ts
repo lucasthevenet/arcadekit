@@ -90,4 +90,5 @@ export class Survivors extends Game.Simulation("Survivors", {
     version: (arena) => (arena.status === "running" ? 0 : 1),
     read: World.hudSample,
   },
+  invariants: World.invariants,
 }) {}
