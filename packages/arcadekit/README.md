@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 423 tests
+pnpm test                          # 440 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -172,6 +172,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 A string that identifies something at run time carries the name of the feature it belongs to.
 
 - The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
+- An app's assets are kept under `"arcadekit/Assets.Store"` and fetched through `"arcadekit/Assets.Loader"`; the plugin is `"arcadekit/Assets"`, and the system that keeps a bundle is named after it, `"Assets.during(game/Forest)"`.
 - What `Input.plugin` adds to a game is named the same way: the plugin and its singleton `"arcadekit/Input"`, its action `"arcadekit/Input.Report"` and its system `"arcadekit/Input.Read"`.
 - A component's name is its identity in a world, and part of its type: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
 - `world.component(name)` gives the component a world holds under a name. A world learns a component the first time it stores or queries it; `world.register(component)` tells it sooner.
@@ -445,6 +446,47 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
 
 - Reading the devices when nothing changed costs 1.4 µs a tick. A tick in which a key went down or up costs 5.2 µs in all: the reading, the action and the tick that applies it. See the [benchmark](#benchmark-100000-entities-pos--vel--dt).
 
+## Assets
+
+```ts
+const Forest = Assets.bundle("game/Forest", {
+  backdrop: Assets.image("/forest.png"),
+  layout: Assets.json("/forest.json", Layout), // checked against a schema
+});
+
+const Game = Plugin.make("Game", {
+  plugins: [Assets.plugin],
+  systems: [Assets.during(State.is(Level, "forest"), Forest), Draw],
+});
+
+const Draw = System.make("Draw", function* () {
+  const forest = yield* Forest; // what the app holds of it now
+  if (forest._tag === "Ready") draw(forest.assets.backdrop);
+}).pipe(System.inStage("frame"));
+```
+
+Loading is a scoped resource: what was loaded is let go when the scope it was loaded in closes. A bundle is the assets that are loaded together and let go together, a level's as a rule.
+
+- `Assets.during(condition, bundle)` gives a level its scope. It is a system that keeps the bundle loaded while the condition holds, one of [`System.runIf`'s](#states-and-run-conditions), usually a state. From the frame after the game enters the level the bundle is loading, in a scope of its own; from the frame after it leaves, that scope is closed. What was loaded is let go, a picture is closed, and a file that was still on its way is given up. Entered again, the level loads again.
+- `yield*` on the bundle gives what the app holds of it: `Absent`, `Loading`, `Ready` with the `assets`, each under its name and with its type, or `Failed` with the error. A bundle that failed is logged once, keeps nothing of what did load, and is tried again when the level is next entered.
+- Whatever is still loaded when the app's scope closes goes with it.
+- Loading takes real time, so it is no part of the simulation. `Assets.during` is a system of the frame stage, and a bundle can be asked for in the frame stage and the input stage only: in the tick it throws. A replay or a server, which draw nothing, load nothing, and the game they run is the same game.
+- What the game itself needs from a file, such as where the walls are, comes in as an action. A system of the input stage issues it once the file is there, with what it read as the payload, and from then on it is in the log, so a replay has it without the file:
+
+  ```ts
+  const Begin = System.make("Begin", function* () {
+    const forest = yield* Forest;
+    if (forest._tag === "Ready" && (yield* Walls).count() === 0) {
+      (yield* Action.Actions).enqueue(Build, forest.assets.layout);
+    }
+  }).pipe(System.inStage("input"));
+  ```
+
+- Anywhere there is a scope, `Assets.load(bundle)` loads into it and waits: every asset at once, failing with `Assets.AssetFailed`, which names the URL, at the first that does. That is for the entry point and for a plugin's `layer`, which holds what it loads for as long as the app: `Layer.effect(Fonts, Assets.load(Common))`.
+- An asset is `Assets.bytes(url)`, `Assets.text(url)`, `Assets.json(url, schema)` or `Assets.image(url)`, which gives an `ImageBitmap` and closes it. One of a kind of your own is `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be let go.
+- The bytes come through `Assets.Loader`, a `Context.Reference` whose default is `fetch`, given up when the load is interrupted. A test provides its files with `Assets.layerMemory({ "/forest.json": "..." })`.
+- A system of the game's own can keep a bundle too, with `(yield* Assets.Store).hold(bundle, name)` and `drop`: it stays loaded while anyone holds it.
+
 ## Randomness
 
 ```ts
@@ -652,14 +694,15 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Singleton.ts` | One instance of some data per world |
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Input.ts` | The devices and where they come from, the picture of them in the world, and bindings to actions |
+| `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver and input tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input and asset tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
-| `examples/page/` | A game in a page, drawn on a canvas and started with `BrowserRuntime.runMain` |
+| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `BrowserRuntime.runMain` |
 
 ## Two ways to loop
 
@@ -805,6 +848,10 @@ moving.eachChunk((start, end, pos, vel) => {
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - Nothing here plays sound, and nothing draws for you. There is a frame stage for what draws and a frame loop that runs it once per repaint, and the example page draws on a canvas by hand: no Foldkit or Three.js integration.
+- An asset is a picture, text, JSON or bytes. A sound and a font are for whoever plays and draws them to decode, with `Assets.make`.
+- A bundle is loaded or it is not: it does not say how far along it is, and a file that two bundles name is fetched for each.
+- A bundle that failed stays failed until its level is entered again. Nothing tries again by itself.
+- `Assets.load` waits in real time. In a script it would resume in whatever tick the file happened to arrive in, and a replay of that script would fetch the file again: a script does not load.
 - The picture of the devices is one player's. Several players on one machine, or on several, bind their devices to actions that say whose they are.
 - A gamepad's button is down or it is not: how far a trigger is pressed is not read. Nor are the wheel, text as it is typed, more than one finger at a time, or a pointer that is locked to the page.
 - A button that is held, and let go and pressed again between two readings of the devices, is held: neither edge is seen. One that is pressed twice between two readings was pressed once.

@@ -3,8 +3,9 @@
  * them, and both are drawn on a canvas once per repaint, wherever they are
  * by then.
  *
- * The arrow keys move the basket, and so does the pointer while its button
- * is held. P pauses the game.
+ * Enter starts the level, whose assets are loaded when it starts and let go
+ * when it is left with Q. The arrow keys move the basket, and so does the
+ * pointer while its button is held. P pauses the game.
  *
  *   pnpm --filter arcadekit page
  */
@@ -14,6 +15,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import {
   Action,
   App,
+  Assets,
   Commands,
   Component,
   Driver,
@@ -46,7 +48,7 @@ const Basket = Singleton.define(
   { x: Field.f32, caught: Field.i32 },
   { x: WIDTH / 2, caught: 0 }
 );
-const Phase = State.define("page/Phase", ["playing", "paused"]);
+const Phase = State.define("page/Phase", ["title", "playing", "paused"]);
 const playing = System.runIf(State.is(Phase, "playing"));
 
 // The devices, as the game has them this tick: the same picture for every
@@ -98,33 +100,89 @@ const Fall = System.make("Fall", function* () {
   }
 }).pipe(System.after(Steer), playing);
 
-const scatter = Effect.gen(function* () {
-  const commands = yield* Commands;
-  const random = yield* Random;
-  for (let i = 0; i < 40; i++) {
-    commands.spawn(
-      Star.of({
-        x: random.next() * WIDTH,
-        y: random.next() * HEIGHT,
-        speed: 40 + random.next() * 120,
-      })
-    );
-  }
-});
-
 // --- what a player can ask for ---------------------------------------------------
-// The game knows nothing of the key that pauses it: the binding below turns
-// a key into this action, which is logged like any other.
+// The game knows nothing of keys: the bindings below turn a key into one of
+// these actions, which are logged like any other.
+const Start = Action.define("page/Start", Schema.Struct({}));
+const Quit = Action.define("page/Quit", Schema.Struct({}));
 const TogglePause = Action.define("page/TogglePause", Schema.Struct({}));
-const togglePause = Action.handler(TogglePause, function* () {
-  const phase = yield* Phase;
-  phase.set(phase.is("playing") ? "paused" : "playing");
+// What a level is made of. It comes from a file, so it has a schema, and it
+// reaches the game as the payload of an action: a replay has it in its log
+// and loads no file.
+const Layout = Schema.Struct({
+  name: Schema.String,
+  stars: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
+  slowest: Schema.Finite,
+  fastest: Schema.Finite,
 });
+const Scatter = Action.define("page/Scatter", Layout);
+
+const handlers = [
+  Action.handler(Start, function* () {
+    const phase = yield* Phase;
+    if (phase.is("title")) {
+      phase.set("playing");
+    }
+  }),
+  Action.handler(Quit, function* () {
+    const phase = yield* Phase;
+    if (phase.is("title")) {
+      return;
+    }
+    const commands = yield* Commands;
+    for (const star of (yield* Stars).entities()) {
+      commands.despawn(star);
+    }
+    const basket = yield* Basket;
+    basket.x = WIDTH / 2;
+    basket.caught = 0;
+    phase.set("title");
+  }),
+  Action.handler(TogglePause, function* () {
+    const phase = yield* Phase;
+    if (!phase.is("title")) {
+      phase.set(phase.is("playing") ? "paused" : "playing");
+    }
+  }),
+  Action.handler(Scatter, function* ({ fastest, slowest, stars }) {
+    const commands = yield* Commands;
+    const random = yield* Random;
+    for (let i = 0; i < stars; i++) {
+      commands.spawn(
+        Star.of({
+          x: random.next() * WIDTH,
+          y: random.next() * HEIGHT,
+          speed: slowest + random.next() * (fastest - slowest),
+        })
+      );
+    }
+  }),
+] as const;
 
 const Controls = Input.bind(
   "page/Controls",
+  Input.onPress("Enter", Start, {}),
+  Input.onPress("KeyQ", Quit, {}),
   Input.onPress(["KeyP", "Escape", Input.padButton(0, 9)], TogglePause, {})
 );
+
+// --- a level's assets ------------------------------------------------------------
+// Loaded when the level starts and let go when the game leaves it: the
+// picture is closed, and the next time the level starts it is fetched again.
+const Level = Assets.bundle("page/Level", {
+  layout: Assets.json("/level.json", Layout),
+  star: Assets.image("/star.png"),
+});
+const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
+
+// A system of the input stage: once the level's file is there, and the sky
+// is still empty, it issues the action that fills it.
+const Begin = System.make("Begin", function* () {
+  const level = yield* Level;
+  if (level._tag === "Ready" && (yield* Stars).count() === 0) {
+    (yield* Action.Actions).enqueue(Scatter, level.assets.layout);
+  }
+}).pipe(System.inStage("input"), System.runIf(State.is(Phase, "playing")));
 
 // --- drawing: the frame stage ----------------------------------------------------
 // What a frame system keeps from one frame to the next is in a service of
@@ -149,35 +207,48 @@ const Draw = System.make("Draw", function* () {
   const { count } = yield* Frame;
   const { delta, tick } = yield* Time;
   const basket = yield* Basket;
-  const paused = (yield* Phase).is("paused");
-  // Each star is drawn where it is by now: `alpha` of a tick further on.
-  const ahead = paused ? 0 : (yield* Frame).alpha * delta;
+  const phase = yield* Phase;
+  const level = yield* Level;
   canvas.clearRect(0, 0, WIDTH, HEIGHT);
-  canvas.fillStyle = "#ffd866";
-  (yield* Stars.pipe(Query.reads())).eachChunk((start, end, star) => {
-    for (let i = start; i < end; i++) {
-      const y = star.y[i]! + star.speed[i]! * ahead;
-      canvas.fillRect(star.x[i]! - 2, y - 2, 4, 4);
-    }
-  });
-  canvas.fillStyle = paused ? "#5c6370" : "#78dce8";
-  canvas.fillRect(basket.x - BASKET.width / 2, BASKET.y, BASKET.width, 8);
-  hud.textContent = `tick ${tick} · frame ${count} · caught ${basket.caught} · basket ${Math.round(basket.x)}${paused ? " · paused" : ""}`;
+  canvas.fillStyle = "#c8d0e0";
+  canvas.font = "16px system-ui, sans-serif";
+  canvas.textAlign = "center";
+  if (phase.is("title")) {
+    canvas.fillText("Press Enter", WIDTH / 2, HEIGHT / 2);
+  } else if (level._tag !== "Ready") {
+    canvas.fillText(
+      level._tag === "Failed" ? level.error.message : "Loading",
+      WIDTH / 2,
+      HEIGHT / 2
+    );
+  } else {
+    const picture = level.assets.star;
+    // Each star is drawn where it is by now: `alpha` of a tick further on.
+    const ahead = phase.is("paused") ? 0 : (yield* Frame).alpha * delta;
+    (yield* Stars.pipe(Query.reads())).eachChunk((start, end, star) => {
+      for (let i = start; i < end; i++) {
+        const y = star.y[i]! + star.speed[i]! * ahead;
+        canvas.drawImage(picture, star.x[i]! - 4, y - 4);
+      }
+    });
+    canvas.fillStyle = phase.is("paused") ? "#5c6370" : "#78dce8";
+    canvas.fillRect(basket.x - BASKET.width / 2, BASKET.y, BASKET.width, 8);
+  }
+  hud.textContent = `tick ${tick} · frame ${count} · ${phase.value} · assets ${level._tag} · caught ${basket.caught} · basket ${Math.round(basket.x)}`;
 }).pipe(System.inStage("frame"));
 
 const Game = Plugin.make("Game", {
-  plugins: [Input.plugin],
+  plugins: [Input.plugin, Assets.plugin],
   components: [Star, Basket, Phase],
-  handlers: [togglePause],
-  systems: [Steer, Fall, Controls, Draw],
-  setup: scatter,
+  handlers,
+  systems: [Steer, Fall, Controls, Begin, LevelAssets, Draw],
 });
 
 // --- the entry point -------------------------------------------------------------
 // The frame loop follows the page's repaints until the program is
 // interrupted, which runMain does when the page goes away: the loop takes
-// its frame request back, the app's scope closes, and the page's devices
-// are no longer listened to.
+// its frame request back, the app's scope closes, what was loaded is let
+// go, and the page's devices are no longer listened to.
 const main = Effect.gen(function* () {
   const app = yield* App.make({ plugins: [Game], seed: Date.now() });
   return yield* Driver.frames(app, { hz: 60 });
