@@ -180,6 +180,27 @@ export type ColumnsOf<S extends Schema> = {
 
 export type Storage = "table" | "sparse";
 
+/**
+ * What becomes of a relation when the entity it points at is despawned:
+ * the entity that holds it is despawned too, or the relation is removed
+ * from it.
+ */
+export type OnTargetDespawn = "despawn" | "remove";
+
+/**
+ * A column that is read and not written: a relation's `target`, which the
+ * world keeps track of and so has to be told of every change to.
+ */
+export interface ReadonlyColumn<T> {
+  readonly [index: number]: T;
+  readonly length: number;
+}
+
+/** The fields of a relation: its target, then any of its own. */
+export type RelationSchema<S extends Schema> = {
+  readonly target: FieldDef<Entity, ReadonlyColumn<Entity>>;
+} & S;
+
 /** @internal What an accessor that notices writes tells: `ChangeLog` in world.ts. */
 export interface WriteLog {
   /** Per entity index: 1 when the entity is noted already. */
@@ -221,6 +242,11 @@ export interface ComponentDef<
    * entity has: see `Component.singleton`.
    */
   readonly single: boolean;
+  /**
+   * For a relation, what becomes of it when its target is despawned;
+   * undefined for any other component. See `Component.relation`.
+   */
+  readonly relation: OnTargetDespawn | undefined;
   /** Pair this component with a value, for `spawn` and `add`. */
   readonly of: (value: ValueOf<S>) => ComponentValue<S>;
   /** @internal */
@@ -275,7 +301,8 @@ let nextId = 0;
  */
 const makeAccessorClass = (
   fields: readonly string[],
-  noticing = false
+  noticing = false,
+  relation?: string
 ): new () => Accessor => {
   const init = fields.map((_, i) => `this._c${i} = null;`).join(" ");
   // An accessor that notices writes tells the log which entity it wrote,
@@ -290,7 +317,12 @@ const makeAccessorClass = (
   const props = fields
     .map((f, i) => {
       const key = JSON.stringify(f);
-      return `get [${key}]() { return this._c${i}[this._i] } set [${key}](v) { this._c${i}[this._i] = v${note} }`;
+      // A relation's target is the world's to change.
+      const set =
+        relation !== undefined && f === "target"
+          ? `throw new Error(${JSON.stringify(retarget(relation))})`
+          : `this._c${i}[this._i] = v${note}`;
+      return `get [${key}]() { return this._c${i}[this._i] } set [${key}](v) { ${set} }`;
     })
     .join("\n");
   const bind = fields
@@ -310,6 +342,10 @@ const makeAccessorClass = (
   return new Function(source)() as new () => Accessor;
 };
 
+/** What to do instead of writing a relation's target. */
+export const retarget = (name: string): string =>
+  `"${name}" is a relation, and its target is not written like a field: the world keeps track of who points at whom. Give it another target by adding it again, with add(entity, ${name.split("/").pop()}.of({ target })) on Commands or on the world.`;
+
 // Made the first time a world watches the component for changes, and kept:
 // it is code, not state, so worlds can share it.
 const noticingClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
@@ -324,7 +360,11 @@ export const noticingAccessor = (
 ): new () => Accessor => {
   let made = noticingClasses.get(def);
   if (made === undefined) {
-    made = makeAccessorClass(def.fields, true);
+    made = makeAccessorClass(
+      def.fields,
+      true,
+      def.relation === undefined ? undefined : def.name
+    );
     noticingClasses.set(def, made);
   }
   return made;
@@ -333,7 +373,11 @@ export const noticingAccessor = (
 const define = <S extends Schema, St extends Storage = "table">(
   name: string,
   schema: S,
-  options?: { readonly storage?: St; readonly single?: boolean }
+  options?: {
+    readonly storage?: St;
+    readonly single?: boolean;
+    readonly relation?: OnTargetDespawn;
+  }
 ): ComponentDef<S, St> => {
   const fields = Object.keys(schema);
   const def: ComponentDef<S, St> = {
@@ -346,8 +390,13 @@ const define = <S extends Schema, St extends Storage = "table">(
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
     single: options?.single === true,
+    relation: options?.relation,
     of: (value) => ({ def, value }),
-    Accessor: makeAccessorClass(fields),
+    Accessor: makeAccessorClass(
+      fields,
+      false,
+      options?.relation === undefined ? undefined : name
+    ),
   };
   return def;
 };
@@ -371,6 +420,38 @@ export const Component = {
     component: define(name, schema, { single: true }),
     initial,
   }),
+  /**
+   * Define a relation: a component that points at another entity, its
+   * `target`, and is kept correct when that entity is despawned.
+   *
+   *   const ChildOf = Component.relation("scene/ChildOf", { onTargetDespawn: "despawn" })
+   *   world.spawn(Position.of({ x: 0, y: 0 }), ChildOf.of({ target: parent }))
+   *
+   * `onTargetDespawn` says what a target's despawn does to whoever points
+   * at it: `"despawn"` takes them with it (a parent and its children),
+   * `"remove"` takes the relation off them (a target, an owner). Either
+   * way nothing is left pointing at an entity that is gone.
+   *
+   * `fields` are fields of the relation's own, beside `target`.
+   */
+  relation: <S extends Schema = {}, St extends Storage = "table">(
+    name: string,
+    options: {
+      readonly onTargetDespawn: OnTargetDespawn;
+      readonly storage?: St;
+      readonly fields?: S;
+    }
+  ): ComponentDef<RelationSchema<S>, St> =>
+    define<RelationSchema<S>, St>(
+      name,
+      {
+        target: Field.entity,
+        ...options.fields,
+      } as unknown as RelationSchema<S>,
+      options.storage === undefined
+        ? { relation: options.onTargetDespawn }
+        : { storage: options.storage, relation: options.onTargetDespawn }
+    ),
   /** Define a component with no data, used only for filtering. */
   tag: <St extends Storage = "table">(
     name: string,

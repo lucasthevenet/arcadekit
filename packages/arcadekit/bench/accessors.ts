@@ -50,6 +50,8 @@ const Heat = Component.define(
   { storage: "sparse" }
 );
 const Moving = Query.all(Position, Velocity);
+const Aims = Component.relation("bench/Aims", { onTargetDespawn: "remove" });
+const Child = Component.relation("bench/Child", { onTargetDespawn: "despawn" });
 
 /** Gives the sparse tag to one entity in every `n`. */
 const tagEvery = (world: World, n: number): void => {
@@ -781,6 +783,97 @@ const variants: Record<
       );
       void sink;
       return ms;
+    },
+  },
+
+  // Entities coming and going: a thousand spawned and despawned again, in
+  // the world of 100,000. Despawning looks for who points at the entity.
+  churn: {
+    unit: "matches",
+    label: "spawn 1,000 entities and despawn them again",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const made: Entity[] = [];
+      return measure(
+        () => {
+          for (let i = 0; i < 1000; i++) {
+            made.push(
+              world.spawn(
+                Position.of({ x: i, y: i }),
+                Velocity.of({ x: 1, y: 2 })
+              )
+            );
+          }
+          for (let i = 0; i < 1000; i++) {
+            world.despawn(made[i]!);
+          }
+          made.length = 0;
+        },
+        2000,
+        500
+      );
+    },
+  },
+
+  churnRelated: {
+    unit: "matches",
+    label: "the same, each pointing at one entity with a relation",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const anchor = world.spawn(Position.of({ x: 0, y: 0 }));
+      const made: Entity[] = [];
+      return measure(
+        () => {
+          for (let i = 0; i < 1000; i++) {
+            made.push(
+              world.spawn(
+                Position.of({ x: i, y: i }),
+                Velocity.of({ x: 1, y: 2 }),
+                Aims.of({ target: anchor })
+              )
+            );
+          }
+          for (let i = 0; i < 1000; i++) {
+            world.despawn(made[i]!);
+          }
+          made.length = 0;
+        },
+        2000,
+        500
+      );
+    },
+  },
+  cascade: {
+    unit: "matches",
+    label: "despawn 100 parents, each taking its 10 children",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const parents: Entity[] = [];
+      return measure(
+        () => {
+          for (let i = 0; i < 100; i++) {
+            world.despawn(parents[i]!);
+          }
+          parents.length = 0;
+        },
+        2000,
+        500,
+        () => {
+          for (let i = 0; i < 100; i++) {
+            const parent = world.spawn(Position.of({ x: i, y: i }));
+            parents.push(parent);
+            for (let c = 0; c < 10; c++) {
+              world.spawn(
+                Position.of({ x: c, y: c }),
+                Child.of({ target: parent })
+              );
+            }
+          }
+        }
+      );
     },
   },
 

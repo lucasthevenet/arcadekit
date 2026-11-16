@@ -6,6 +6,7 @@ export {
   type ComponentDef,
   type Entity,
   type FieldDef,
+  type OnTargetDespawn,
   type RefCodec,
   type SingletonSpec,
 } from "./ecs/component";

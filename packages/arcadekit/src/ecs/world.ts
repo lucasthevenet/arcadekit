@@ -37,6 +37,7 @@ import {
   makeColumn,
   makeEntity,
   noticingAccessor,
+  retarget,
 } from "./component";
 import type {
   Accessor,
@@ -44,6 +45,7 @@ import type {
   ColumnsOf,
   ComponentDef,
   ComponentInput,
+  ComponentValue,
   Entity,
   Schema,
   SingletonSpec,
@@ -152,6 +154,12 @@ const readRow = (def: ComponentDef<any>, cols: Columns, row: number): any => {
 
 const corrupt = (how: string): SnapshotError =>
   new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
+
+/** A relation was given with no value, and so with nothing to point at. */
+const targetless = (def: ComponentDef<any>): Error =>
+  new Error(
+    `"${def.name}" is a relation, and a relation needs a target: give it as ${def.name.split("/").pop()}.of({ target }).`
+  );
 
 /** A value in a few words, for a message. */
 const describeValue = (value: unknown): string =>
@@ -322,6 +330,93 @@ export class SparseSet {
     this.sparse[index] = -1;
     this.count = last;
     return true;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Relations (one index per relation: who points at whom)
+// ---------------------------------------------------------------------------
+
+/**
+ * For one relation, the entities that point at each target: a linked list
+ * per target, threaded through arrays indexed by entity index. Linking and
+ * unlinking are a few assignments; finding who points at an entity does
+ * not look at anyone else.
+ *
+ * It is worked out from the relation's own columns, which are what is
+ * saved and hashed: a world that loads a snapshot builds it again. The
+ * order within a list depends on the order relations were made in, so
+ * whoever reads a list sorts it.
+ * @internal
+ */
+export class RelationIndex {
+  /** Per target index: one entity that points at it, or -1. */
+  private head: Int32Array;
+  /** Per source index: the next and the previous source of the same target, or -1. */
+  private next: Int32Array;
+  private prev: Int32Array;
+  /** Per source index: the target it points at, or -1. */
+  private target: Int32Array;
+
+  constructor(
+    readonly def: ComponentDef<any>,
+    size: number
+  ) {
+    this.head = new Int32Array(size).fill(-1);
+    this.next = new Int32Array(size).fill(-1);
+    this.prev = new Int32Array(size).fill(-1);
+    this.target = new Int32Array(size).fill(-1);
+  }
+
+  /** Makes room for `size` entities. */
+  grow(size: number): void {
+    for (const name of ["head", "next", "prev", "target"] as const) {
+      const grown = new Int32Array(size).fill(-1);
+      grown.set(this[name]);
+      this[name] = grown;
+    }
+  }
+
+  /** `source` points at `target` from now on, and at nothing else. */
+  link(source: number, target: number): void {
+    this.unlink(source);
+    const first = this.head[target]!;
+    this.next[source] = first;
+    if (first !== -1) {
+      this.prev[first] = source;
+    }
+    this.head[target] = source;
+    this.target[source] = target;
+  }
+
+  /** `source` points at nothing. */
+  unlink(source: number): void {
+    const target = this.target[source]!;
+    if (target === -1) {
+      return;
+    }
+    const next = this.next[source]!;
+    const prev = this.prev[source]!;
+    if (prev === -1) {
+      this.head[target] = next;
+    } else {
+      this.next[prev] = next;
+    }
+    if (next !== -1) {
+      this.prev[next] = prev;
+    }
+    this.next[source] = -1;
+    this.prev[source] = -1;
+    this.target[source] = -1;
+  }
+
+  /** The indexes of the entities that point at `target`, ascending. */
+  sources(target: number): number[] {
+    const out: number[] = [];
+    for (let at = this.head[target]!; at !== -1; at = this.next[at]!) {
+      out.push(at);
+    }
+    return out.sort((a, b) => a - b);
   }
 }
 
@@ -1730,6 +1825,10 @@ export class World {
   >();
   private readonly watchViewsByKey = new Map<string, QueryView<any>>();
   private readonly removedReaders = new Map<string, RemovedReader>();
+  /** Indexed by component id: who points at whom, once a relation is stored. */
+  private readonly relations: (RelationIndex | undefined)[] = [];
+  /** The same, in order of name: the order a despawn goes through them in. */
+  private relationList: RelationIndex[] = [];
   /** Indexed by component id. */
   private readonly singles: (Single | undefined)[] = [];
   /** The singletons in order of name. Rebuilt when one is made. */
@@ -1844,6 +1943,12 @@ export class World {
     } else {
       this.freeList.push(index);
     }
+    // Something may have been told to point at the id while it was queued.
+    if (this.relationList.length > 0) {
+      const pending: Entity[] = [];
+      this.orphan(index, pending);
+      this.despawnAll(pending);
+    }
   }
 
   private growRecords(): void {
@@ -1859,6 +1964,9 @@ export class World {
     this.gens = gens;
     for (const log of this.logs) {
       log.grow(size);
+    }
+    for (const relation of this.relationList) {
+      relation.grow(size);
     }
   }
 
@@ -1880,6 +1988,7 @@ export class World {
     tableDefs.sort((a, b) => a.id - b.id);
     const table = this.tableFor(tableDefs);
     const row = table.push(entity);
+    let related: ComponentValue<any>[] | undefined;
     for (const input of byId.values()) {
       const def = isComponentDef(input) ? input : input.def;
       const value = isComponentDef(input) ? undefined : input.value;
@@ -1892,9 +2001,40 @@ export class World {
         this.addedLogs[def.id]?.note(index);
         this._changed[def.id]?.note(index);
       }
+      if (def.relation !== undefined) {
+        (related ??= []).push(input as ComponentValue<any>);
+      }
     }
     this.recTable[index] = table.index;
     this.recRow[index] = row;
+    if (related !== undefined) {
+      this.placeRelations(entity, related);
+    }
+  }
+
+  /** Takes note of the relations an entity was spawned with. */
+  private placeRelations(entity: Entity, related: ComponentValue<any>[]): void {
+    const index = entityIndex(entity);
+    let gone = false;
+    const dangling: ComponentDef<any>[] = [];
+    for (const { def, value } of related) {
+      const target = value.target as Entity;
+      if (this.isAlive(target)) {
+        this.relationOf(def).link(index, entityIndex(target));
+      } else if (def.relation === "despawn") {
+        gone = true;
+      } else {
+        dangling.push(def);
+      }
+    }
+    // A target that is gone already: what its despawn would have done.
+    if (gone) {
+      this.despawn(entity);
+    } else {
+      for (const def of dangling) {
+        this.remove(entity, def);
+      }
+    }
   }
 
   spawn(...inputs: readonly ComponentInput[]): Entity {
@@ -1906,11 +2046,65 @@ export class World {
     return entity;
   }
 
+  /**
+   * Despawns an entity. Whatever points at it with a relation goes the way
+   * the relation says: despawned too, and so on down, or left without the
+   * relation. Relations are gone through in order of name and the entities
+   * that point in order of index, so the same world always loses the same
+   * entities in the same order.
+   */
   despawn(entity: Entity): boolean {
     this.assertNotIterating("despawn");
     if (!this.isAlive(entity)) {
       return false;
     }
+    if (this.relationList.length === 0) {
+      this.despawnOne(entity);
+    } else {
+      this.despawnAll([entity]);
+    }
+    return true;
+  }
+
+  /**
+   * Despawns the entities of `pending`, last first, and whatever their
+   * going takes with it. A list and not a call for each: a chain of parents
+   * can be as long as the world is big.
+   */
+  private despawnAll(pending: Entity[]): void {
+    while (pending.length > 0) {
+      const next = pending.pop()!;
+      if (this.isAlive(next)) {
+        this.despawnOne(next);
+        this.orphan(entityIndex(next), pending);
+      }
+    }
+  }
+
+  /**
+   * The entity at `index` is gone. Whoever pointed at it loses the relation,
+   * or is added to `pending` to be despawned, lowest index on top.
+   */
+  private orphan(index: number, pending: Entity[]): void {
+    const doomed: Entity[] = [];
+    for (const relation of this.relationList) {
+      // Each is unlinked as it loses the relation, or is despawned.
+      for (const source of relation.sources(index)) {
+        const holder = makeEntity(source, this.gens[source]!);
+        if (relation.def.relation === "despawn") {
+          doomed.push(holder);
+        } else {
+          this.removeOne(holder, relation.def);
+        }
+      }
+    }
+    for (let i = doomed.length - 1; i >= 0; i--) {
+      pending.push(doomed[i]!);
+    }
+  }
+
+  /** Despawns one live entity, and nothing else. */
+  private despawnOne(entity: Entity): void {
     const index = entityIndex(entity);
     const tableIndex = this.recTable[index];
     const { removedLogs } = this;
@@ -1938,7 +2132,10 @@ export class World {
     this.gens[index] = (this.gens[index]! + 1) & GENERATION_MASK;
     this.freeList.push(index);
     this.alive--;
-    return true;
+    // It points at nothing now.
+    for (const relation of this.relationList) {
+      relation.unlink(index);
+    }
   }
 
   // --- components ----------------------------------------------------------
@@ -1951,6 +2148,34 @@ export class World {
     const index = entityIndex(entity);
     const def = isComponentDef(input) ? input : input.def;
     const value = isComponentDef(input) ? undefined : input.value;
+    if (def.relation === undefined) {
+      return this.addOne(index, entity, def, value);
+    }
+    if (value === undefined) {
+      throw targetless(def);
+    }
+    const target = value.target as Entity;
+    if (!this.isAlive(target)) {
+      // A target that is gone already: what its despawn would have done.
+      if (def.relation === "despawn") {
+        this.despawn(entity);
+      } else {
+        this.removeOne(entity, def);
+      }
+      return false;
+    }
+    this.addOne(index, entity, def, value);
+    this.relationOf(def).link(index, entityIndex(target));
+    return true;
+  }
+
+  /** Adds a component, or writes one the entity has, and notes it. */
+  private addOne(
+    index: number,
+    entity: Entity,
+    def: ComponentDef<any>,
+    value: any | undefined
+  ): boolean {
     if (def.storage === "sparse") {
       const set = this._sparse(def);
       const had = set.has(index);
@@ -1989,7 +2214,15 @@ export class World {
     if (!this.isAlive(entity)) {
       return false;
     }
+    return this.removeOne(entity, def);
+  }
+
+  /** Removes a component from a live entity. */
+  private removeOne(entity: Entity, def: ComponentDef<any>): boolean {
     const index = entityIndex(entity);
+    if (def.relation !== undefined) {
+      this.relations[def.id]?.unlink(index);
+    }
     if (def.storage === "sparse") {
       if (!this._sparse(def).remove(index)) {
         return false;
@@ -2054,6 +2287,9 @@ export class World {
     if (!this.has(entity, def)) {
       return false;
     }
+    if (def.relation !== undefined && "target" in value) {
+      throw new Error(retarget(def.name));
+    }
     const index = entityIndex(entity);
     let cols: Columns;
     let row: number;
@@ -2073,6 +2309,80 @@ export class World {
     }
     this._changed[def.id]?.note(index);
     return true;
+  }
+
+  // --- relations -------------------------------------------------------------
+
+  /**
+   * The entities that point at `target` with a relation, in order of
+   * index: a parent's children, whoever is aiming at something. Finding
+   * them does not look at any other entity.
+   */
+  sources(target: Entity, def: ComponentDef<any>): Entity[] {
+    const relation = this.relations[def.id];
+    if (relation === undefined || !this.isAlive(target)) {
+      return [];
+    }
+    return relation
+      .sources(entityIndex(target))
+      .map((source) => makeEntity(source, this.gens[source]!));
+  }
+
+  /** Who points at whom with a relation, started if need be. */
+  private relationOf(def: ComponentDef<any>): RelationIndex {
+    let relation = this.relations[def.id];
+    if (relation === undefined) {
+      relation = new RelationIndex(def, this.recTable.length);
+      this.relations[def.id] = relation;
+      this.relationList = [...this.relationList, relation].toSorted((a, b) =>
+        byName(a.def, b.def)
+      );
+    }
+    return relation;
+  }
+
+  /**
+   * Works out who points at whom from what a snapshot loaded. A relation
+   * that points at an entity that is not there is not one a world could
+   * have saved.
+   */
+  private indexRelations(): void {
+    for (const def of this.componentsByName.values()) {
+      if (def.relation === undefined) {
+        continue;
+      }
+      const link = (
+        entities: Uint32Array,
+        targets: Uint32Array,
+        count: number
+      ): void => {
+        for (let row = 0; row < count; row++) {
+          const target = targets[row] as Entity;
+          if (!this.isAlive(target)) {
+            throw corrupt(
+              `"${def.name}" points at an entity that does not exist`
+            );
+          }
+          this.relationOf(def).link(
+            entities[row]! & INDEX_MASK,
+            entityIndex(target)
+          );
+        }
+      };
+      if (def.storage === "sparse") {
+        const set = this.sparseById.get(def.id);
+        if (set !== undefined) {
+          link(set.dense, set.columns.target as Uint32Array, set.count);
+        }
+        continue;
+      }
+      for (const table of this.tables) {
+        const columns = table.columns[def.id];
+        if (columns !== undefined) {
+          link(table.entities, columns.target as Uint32Array, table.count);
+        }
+      }
+    }
   }
 
   // --- singletons ------------------------------------------------------------
@@ -2332,6 +2642,9 @@ export class World {
       const def = isComponentDef(input) ? input : input.def;
       if (def.single) {
         this.refuseSingle(def);
+      }
+      if (def.relation !== undefined && isComponentDef(input)) {
+        throw targetless(def);
       }
       this.register(def);
     }
@@ -2897,6 +3210,7 @@ export class World {
     if (reader.left !== 4 || reader.u32() !== END) {
       throw corrupt("it does not end where it should");
     }
+    this.indexRelations();
   }
 
   /** Reads one field's column, naming the field if its codec refuses a value. */

@@ -24,9 +24,8 @@ Done. A world is saved as a snapshot and loaded back, every field says what savi
 
 Each of these is something a game would otherwise build badly for itself.
 
-Done so far: change detection (`Query.changed`, `Query.added`, `Query.removed`), with writes noticed per row, and singletons (`Singleton.define`), which are the world's and saved with it. The package's [README](../packages/arcadekit/README.md) describes each.
+Done so far: change detection (`Query.changed`, `Query.added`, `Query.removed`), with writes noticed per row; singletons (`Singleton.define`), which are the world's and saved with it; and relations (`Component.relation`), whose holders go with a despawned target or lose the relation. The package's [README](../packages/arcadekit/README.md) describes each.
 
-- **Relations.** A component that points at another entity, kept correct when that entity is despawned: a parent and its children, a target, an owner. Done when despawning a parent can take its children with it, and a dangling reference cannot be read as a live entity.
 - **States and run conditions.** A game is in the menu, playing or paused, and systems run only in some of those. Done when a system can declare when it runs, a state change runs enter and exit hooks, and none of it costs anything for a system with no condition.
 - **Simulation and presentation as separate stages.** The simulation ticks at a fixed rate; drawing happens every frame, between ticks, and must not change the world. Done when `App` runs a fixed-rate stage and a per-frame stage, and the per-frame stage gets how far it is between two ticks.
 

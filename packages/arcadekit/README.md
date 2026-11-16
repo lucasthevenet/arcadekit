@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 308 tests
+pnpm test                          # 326 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -99,6 +99,39 @@ A singleton is one instance of some data per world: whose turn it is, the score,
 - A migration changes it by name with `Migrate`, as it changes a component.
 - A `Resource` is the other kind of single value: configuration with a default that a layer can override. It is not game state, and is not saved.
 - With the storage core on its own: `Component.singleton(name, fields, initial)` and `world.singleton(spec)`.
+
+## Relations
+
+```ts
+const ChildOf = Component.relation("scene/ChildOf", {
+  onTargetDespawn: "despawn", // a child goes with its parent
+});
+const Targets = Component.relation("ai/Targets", {
+  onTargetDespawn: "remove", // whoever aimed at it aims at nothing
+  storage: "sparse",
+});
+
+const turret = world.spawn(
+  Position.of({ x: 0, y: 1 }),
+  ChildOf.of({ target: tank })
+);
+world.get(turret, ChildOf)?.target; // its parent
+world.sources(tank, ChildOf); // the tank's children, in order of id
+
+commands.despawn(tank); // the turret goes with it, and whatever hangs from the turret
+```
+
+A relation is a component that points at another entity, its `target`, and is kept correct when that entity is despawned: a parent and its children, a target, an owner.
+
+- `onTargetDespawn` says what a target's despawn does to whoever points at it. `"despawn"` takes them with it, and what points at them in turn, however deep. `"remove"` takes the relation off them and leaves them be.
+- Either way nothing is left pointing at an entity that is gone, so a dangling reference cannot be read as a live entity, not even once its slot has been given to a new one. A plain `Field.entity` field is not kept this way: it holds whatever id was written to it, and whether that entity is alive is for whoever reads it to check.
+- `world.sources(target, ChildOf)` gives the entities that point at one. The world keeps track of who points at whom, so neither this nor a despawn looks at any other entity.
+- A relation's target is changed by adding the relation again, `commands.add(turret, ChildOf.of({ target: truck }))`. It is not written like a field: assigning to it, in `each` or with `world.set`, throws, and its raw column is typed as read-only. Fields of a relation's own, given as `fields`, are written like any others.
+- A relation needs a target that is alive. Given none, it is refused where the mistake is. Given one that is gone already, what that entity's despawn would have done is done at once: the child does not outlive the call, or the relation is not added.
+- In every other way it is a component: kept in tables or in a sparse set, read in a query, watched with `Query.added` and `Query.removed`, saved in a snapshot and counted in the hash. Who points at whom is worked out from it, and worked out again by a world that loads a snapshot, which refuses one whose relation points at nothing.
+- A despawn goes through relations in order of name and through the entities that point in order of id, so the same world always loses the same entities in the same order, whatever order its relations were made in.
+- An action's handler changes relations through `Commands`, like everything else that changes which entities exist.
+- An entity has one target per relation. Another kind of link is another relation.
 
 ## Plugins
 
@@ -418,8 +451,8 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 
 | File | What it is |
 | --- | --- |
-| `src/ecs/component.ts` | Fields, components, entity ids, generated accessors |
-| `src/ecs/world.ts` | Tables, sparse sets, queries, change logs, world, transactions, command buffer |
+| `src/ecs/component.ts` | Fields, components, relations, singletons, entity ids, generated accessors |
+| `src/ecs/world.ts` | Tables, sparse sets, queries, change logs, relations, world, transactions, command buffer |
 | `src/ecs/random.ts` | The seeded random number generator a world owns |
 | `src/ecs/hash.ts` | The arithmetic of the world's hash |
 | `src/ecs/snapshot.ts` | The bytes of a world's snapshot, and `SnapshotError` |
@@ -435,7 +468,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change and singleton tests, including randomized comparisons of the storage and of change queries against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton and relation tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -506,6 +539,14 @@ Change detection in the same world, with a query that watches `Position`:
 | The same, when every row is noted already | 11.3 ns/entity |
 | `eachChunk` handed the watched component: every row noted | 5.3 ns/entity |
 
+Entities coming and going in the same world:
+
+| Variant                                                    | Cost   |
+| ---------------------------------------------------------- | ------ |
+| Spawn 1,000 entities with two components and despawn them  | 561 µs |
+| The same, each also pointing at one entity with a relation | 693 µs |
+| Despawn 100 parents, each taking its 10 children with it   | 143 µs |
+
 One action in that world of 100,000 entities, before and after handlers ran in a transaction:
 
 | Variant                                              | Before  | After   |
@@ -517,6 +558,7 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 
 - Writes are noticed per row. A component that no query watches costs what it did: the lines of the first table were measured before and after and did not move. A watched one costs 2.5 ns more for an assignment in `each` to a row that is noted already, about 5 ns for the first assignment to a row since the last visit, and 2.8 ns per row that `eachChunk` hands out. Noticing per table or per column would cost nothing to write, but one `world.set` would then send every watching query through the whole table: 0.25 ms to 0.64 ms for 100,000 rows, where it now takes 0.2 µs.
 - A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
+- A relation costs its component and a few assignments to link and unlink: 0.13 µs more per entity that is spawned and despawned with one. A despawn that takes others with it costs what despawning each of them does, 130 ns apiece here. A world with no relation does one comparison more per despawn than before: the first line was 587 µs before relations and 561 µs after, which is the machine's noise.
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
 - A tick with ten systems that do nothing costs about 4.6 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop.
 - A sparse tag that many entities have, mixed in with ones that do not, breaks tables into short runs and `eachChunk` loses its edge. A component like that is better off with table storage.
@@ -554,6 +596,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A raw loop cannot say that it only reads a component. `eachChunk` counts every row it hands out as written, so a system that reads a watched component with it sets off that component's change queries every tick, and a change query cannot use it over what it watches itself.
 - `Query.removed` gives the ids of the entities that lost a component, not the values it held.
 - A singleton cannot be watched for changes: a change query is of entities.
+- An entity points at one target per relation, and a query cannot ask for what points at a given entity: `world.sources` gives those as a list.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
