@@ -476,6 +476,98 @@ describe("a save from another version of the game", () => {
     expect(error.message).toMatch(/mg\//);
   });
 
+  describe("whose world holds no entity with a component that has changed", () => {
+    // Nobody is poisoned or cursed when the game is saved.
+    const Hp = Component.define("mq/Hp", { points: Field.i32 });
+    const Poison = Component.define("mq/Poison", { left: Field.i32 });
+    const Curse = Component.define(
+      "mq/Curse",
+      { depth: Field.u8 },
+      { storage: "sparse" }
+    );
+    const quiet = () =>
+      withApp(App.make({ components: [Hp, Poison, Curse] }), (app) => {
+        app.world.spawn(Hp.of({ points: 3 }));
+        return unwrap(app.save());
+      });
+    const Poison1 = Component.define("mq/Poison", {
+      left: Field.i32,
+      strength: Field.i32,
+    });
+    const Hex1 = Component.define(
+      "mq/Hex",
+      { depth: Field.u8 },
+      { storage: "sparse" }
+    );
+    const load = (save: Save.Save, options: object) =>
+      Effect.runSync(
+        Effect.scoped(
+          Effect.exit(
+            Effect.map(App.load(save, options), (app) => {
+              // The game it loads into is one that goes on.
+              const entity = app.world.spawn(
+                Hp.of({ points: 1 }),
+                Poison1.of({ left: 2, strength: 9 })
+              );
+              app.world.add(entity, Hex1.of({ depth: 4 }));
+              app.tick(1);
+              return app.world.get(entity, Poison1);
+            })
+          )
+        )
+      );
+
+    it("is migrated like any other: a migration finds the component by name", () => {
+      const migrated = load(quiet(), {
+        components: [Hp, Poison1, Hex1],
+        version: 1,
+        migrations: [
+          {
+            from: 0,
+            migrate: ({ world }: Save.Contents) => {
+              Migrate.addField(world, "mq/Poison", "strength", "i32", 1);
+              Migrate.renameComponent(world, "mq/Curse", "mq/Hex");
+            },
+          },
+        ],
+      });
+      expect(unwrap(migrated)).toEqual({ left: 2, strength: 9 });
+    });
+
+    it("is refused when the version was not raised, as a save that held some would be", () => {
+      const error = refusal(
+        load(quiet(), { components: [Hp, Poison1, Curse], version: 0 })
+      );
+      expect(error).toBeInstanceOf(Save.LoadRefused);
+      expect(error.problem).toBe("component changed");
+      expect(error.message).toBe(
+        '"mq/Poison" is not what it was when the snapshot was taken. Then: table { left: i32 }. Now: table { left: i32, strength: i32 }.'
+      );
+    });
+
+    it("names a component the game no longer has, until a migration removes it", () => {
+      const error = refusal(
+        load(quiet(), { components: [Hp, Poison1, Hex1], version: 0 })
+      );
+      expect(error.problem).toBe("unknown component");
+      expect(error.message).toMatch(/"mq\/Curse"/);
+      const migrated = load(quiet(), {
+        components: [Hp, Poison1, Hex1],
+        version: 1,
+        migrations: [
+          {
+            from: 0,
+            migrate: ({ world }: Save.Contents) => {
+              Migrate.addField(world, "mq/Poison", "strength", "i32", 1);
+              Migrate.removeComponent(world, "mq/Curse");
+            },
+          },
+        ],
+      });
+      expect(Exit.isSuccess(migrated)).toBe(true);
+    });
+  });
+
   it("is left as it is when it is of this version already", () => {
     const { save } = savedByVersion0();
     let ran = 0;

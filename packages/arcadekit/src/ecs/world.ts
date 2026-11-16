@@ -1524,7 +1524,10 @@ export class World {
    *
    * A component is written under its name, with the names and kinds of its
    * fields, so the bytes do not depend on the order a program defines its
-   * components in. Columns of numbers are written as they are, which makes a
+   * components in. Every component the world knows is named, whether or not
+   * an entity has it, so whether a snapshot fits a program depends on the
+   * two programs' components and not on what the world held when it was
+   * taken. Columns of numbers are written as they are, which makes a
    * snapshot about as big as the data: four bytes for an `f32`, and so on.
    *
    * A `json` field is written as the plain data it holds, a `ref` field as
@@ -1555,17 +1558,13 @@ export class World {
     }
     const sets = this.sparseSetsByName().filter((set) => set.count > 0);
 
-    // The components that hold anything, or have a table, in order of name.
+    // Every component the world knows, in order of name, whether or not an
+    // entity has it: what a snapshot names is then decided by the program
+    // that took it, and not by what happened to be in its world.
     const used = new Map<ComponentDef<any>, number>();
-    for (const table of tables) {
-      for (const def of table.defs) {
-        used.set(def, 0);
-      }
-    }
-    for (const set of sets) {
-      used.set(set.def, 0);
-    }
-    const components = Array.from(used.keys()).toSorted(byName);
+    const components = Array.from(this.componentsByName.values()).toSorted(
+      byName
+    );
     for (let i = 0; i < components.length; i++) {
       used.set(components[i]!, i);
     }
@@ -1657,9 +1656,10 @@ export class World {
    *
    * `components` are the components the snapshot may name. A world knows a
    * component by its name, and an empty world knows none, so they are given
-   * here (those already registered need not be). A snapshot that names one
+   * here (those already registered need not be). A snapshot names every
+   * component the world it was taken from knew. One that names a component
    * that is not among them, or one whose fields are not what they were when
-   * the snapshot was taken, is refused.
+   * the snapshot was taken, is refused, whether or not any entity has it.
    *
    * Every problem is a `SnapshotError`, whose `problem` says which kind: the
    * bytes are not a snapshot, are cut short or damaged, or come from a newer

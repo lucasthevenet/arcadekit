@@ -6,6 +6,7 @@ import {
   EcsWorld,
   Field,
   Query,
+  readSnapshot,
   SnapshotError,
 } from "../src/index";
 import type { ComponentDef, Entity } from "../src/index";
@@ -457,6 +458,39 @@ describe("a snapshot that cannot be loaded", () => {
     ]) {
       expect(changed(body).problem).toBe("component changed");
     }
+  });
+
+  it("is refused over a component no entity has, as over one that some have", () => {
+    // The world knows three components, and only one of them is in use: one
+    // was registered and one has only been asked for by a query.
+    const D = define("snap-known");
+    const world = new EcsWorld();
+    world.register(D.Sheet);
+    world.view(Query.all(D.Body).pipe(Query.with(D.Chilled)));
+    world.spawn(D.Body.of({ x: 1, y: 2 }));
+    const bytes = world.snapshot();
+    expect(
+      readSnapshot(bytes).components.map((component) => component.name)
+    ).toEqual(["snap-known/Body", "snap-known/Chilled", "snap-known/Sheet"]);
+    expect(loaded(bytes, [D.Body, D.Chilled, D.Sheet]).hash()).toBe(
+      world.hash()
+    );
+
+    const missing = problemOf(() => loaded(bytes, [D.Body, D.Chilled]));
+    expect(missing.problem).toBe("unknown component");
+    expect(missing.component).toBe("snap-known/Sheet");
+    const changed = problemOf(() =>
+      loaded(bytes, [
+        D.Body,
+        D.Sheet,
+        Component.define("snap-known/Chilled", { degrees: Field.f32 }),
+      ])
+    );
+    expect(changed.problem).toBe("component changed");
+    expect(changed.component).toBe("snap-known/Chilled");
+    expect(changed.message).toBe(
+      '"snap-known/Chilled" is not what it was when the snapshot was taken. Then: sparse {  }. Now: table { degrees: f32 }.'
+    );
   });
 
   it("is refused when the bytes are not a snapshot, or are from a newer format", () => {

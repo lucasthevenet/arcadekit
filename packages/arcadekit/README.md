@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 256 tests
+pnpm test                          # 260 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -233,6 +233,7 @@ copy.hash() === world.hash(); // true
 
 - It is about as big as the data. A column of numbers is written as its bytes, so an entity with two `f32` fields takes 14 bytes: 4 of id, 8 of floats and 2 of generation.
 - A component is written under its name, with the names and kinds of its fields, so a snapshot does not depend on the order a program defines its components in. A world knows a component by its name and an empty world knows none, so `load` is given the components the snapshot may name.
+- A snapshot names every component its world knows, whether or not an entity has it: the ones it was told of with `world.register`, and any it has stored or queried. So whether a snapshot loads depends on the two programs' components and never on what the world held when it was taken: a component that has changed or gone is refused by name in both cases.
 - `load` fills an empty world: one that has never held an entity.
 - Every problem is a `SnapshotError`, whose `problem` says which kind and whose message names the component or field: `"not a snapshot"`, `"newer format"`, `"truncated"`, `"corrupt"`, `"unknown component"`, `"component changed"` (with its fields then and now), `"world not empty"`, `"cannot be saved"`.
 - Damaged bytes are refused, not trusted: every count is checked against the bytes that are there before anything is allocated for it, an entity may not be in two rows or in a freed slot, and text has to be text. A damaged number inside a column cannot be told from another number, and loads as that.
@@ -308,7 +309,7 @@ A save is taken between two ticks. It holds the world as a [snapshot](#snapshots
 
 - `App.load` takes the plugins and options the game was made with. No plugin's `setup` runs: the save holds what setup spawned.
 - A save cannot hold a script in mid-flight. A plugin lists its `scripts`, and they start again from their beginning when the app is loaded. So a script keeps what it must not lose in the world, and picks up from what it finds there.
-- A world knows a component by its name, so every component a save names has to be listed in a plugin's `components` or the app's. A load that meets one that is not fails with `LoadRefused` and names it.
+- A world knows a component by its name, so every component a save names has to be listed in a plugin's `components` or the app's. A save names every component its game knows: the ones its plugins list, and any other it has stored or queried, whether or not an entity has it. A load that meets one that is not listed fails with `LoadRefused` and names it.
 - An app knows an event by its name in the same way, so every event that can be waiting when a game is saved is listed in a plugin's `events` or the app's. The waiting events are read back by `App.load` itself, against the events the game lists: one that is not listed, or whose payload its schema no longer takes, fails the load with `LoadRefused`, and never a later tick. A game loaded and saved again at once holds the same events.
 - **A save is a snapshot plus the log since.** The save says how long the log was (`save.logLength`). A game that keeps its last save and the entries logged after it comes back to the present by loading the save and replaying only that tail, which costs the same however long the game has run: `App.replay(app, log.slice(save.logLength), { delta, ticks })`. The replay checks itself against the tail's checkpoints, so a save that did not bring the game back faithfully is caught on the next tick.
 - `app.save()` fails with `Save.SaveRefused` and says what is in the way: an action or an event with no schema is waiting, or an event no plugin lists, a field holds a value it cannot save, or commands are queued and not applied. `App.load` and `Save.decode` fail with `Save.LoadRefused`, whose `problem` is one of a snapshot's, or `"not a save"`, `"unknown event"` or `"event changed"`.
@@ -336,6 +337,7 @@ A game has a `version`, a whole number it raises when it changes its components 
 - A save of the game's own version loads as it is. An older one is brought up one version at a time, by the migration `from` each version. A newer one is refused.
 - A migration is given the save in a plain form that describes itself, `Save.Contents`: the world as the snapshot lists it (components by name with their fields, tables, sparse sets, one column of values per field), and the waiting actions and events in JSON form. It needs none of the game's old component definitions.
 - `Migrate` has the usual changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField`, `mapField`. Each refuses what is not there, by name. Entities keep their ids, and two tables that a removed component had kept apart become one.
+- A save names every component its game knew, so a migration finds a component by name whether or not any entity had it, and the same migration fits every save of its version. For the same reason a game that changes or drops a component without raising its version is refused every save of that version, with `"component changed"` or `"unknown component"`, and not only the saves that happened to hold one.
 - `readSnapshot` and `writeSnapshot` are the two halves on their own, for a tool that inspects or edits a snapshot.
 - Every refusal is a `Save.LoadRefused` that says why: `"newer version"`, `"no migration"` (and from which version to which), `"migration failed"` (which one, and what it threw), or, when the migrations did not bring the save all the way, `"component changed"` or `"unknown component"` with the component's fields then and now.
 - A migration makes a new game of an old save, so the log recorded before it no longer replays against it.

@@ -463,6 +463,7 @@ export interface SnapshotContents {
   generations: Uint16Array;
   /** The freed slots, in the order they will be reused. */
   freed: number[];
+  /** Every component the world knew, whether or not an entity had it. */
   components: SnapshotComponent[];
   /** In the order queries visit them. */
   tables: SnapshotTable[];

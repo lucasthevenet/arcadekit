@@ -14,7 +14,9 @@
  *   ]
  *
  * Each changes the contents in place. A component or field that is not
- * there is an error, so a migration that does not fit its save says so.
+ * there is an error, so a migration that does not fit its save says so. A
+ * save names every component its game knew, whether or not an entity had
+ * it, so a migration that fits one save of a version fits them all.
  */
 import type { Column, FieldKind } from "./ecs/component";
 import type {
