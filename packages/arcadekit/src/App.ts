@@ -262,7 +262,7 @@ export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
   readonly frame: number;
 }> {
   override get message(): string {
-    return `The frame stage changed the world: its hash was not the same after system "${this.system}" ran in frame ${this.frame} as before. The frame stage draws the game between two ticks and must leave it as it found it. Look for a write through the raw columns of eachChunk, or a draw from world.random: those are the two that are not stopped where they are made.`;
+    return `The frame stage changed the world: its hash was not the same after system "${this.system}" ran in frame ${this.frame} as before. The frame stage draws the game between two ticks and must leave it as it found it. Look for a write through the raw columns of eachChunk, which nothing stops where it is made, or a draw from world.random, which is otherwise only found when the frame ends.`;
   }
 }
 
@@ -322,9 +322,11 @@ export interface Options<
    * world's hash is taken before the stage and after each of its systems,
    * and `frame` dies with `FrameChangedWorld`, which names the system, if
    * they differ. Most ways to change the world from there throw where they
-   * are made; this finds the two that do not, a write through raw columns
-   * and a draw from `world.random`. It costs a hash of the world per frame
-   * system per frame, so it is for development and tests.
+   * are made, and a draw from `world.random` is found when the frame ends
+   * whether this is on or not. This finds the one that is left, a write
+   * through raw columns, and says which system made either. It costs a
+   * hash of the world per frame system per frame, so it is for development
+   * and tests.
    */
   readonly verifyFrames?: boolean;
 }
@@ -1015,6 +1017,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       frame.count++;
       framing = true;
       world.freeze();
+      let exit: Exit.Exit<void, TickError<S, P>>;
+      let drew: unknown;
       try {
         if (verifyFrames) {
           frameHash = world.hash();
@@ -1022,19 +1026,26 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         const fiber = runFrameFork(frameEffect);
         events.reader = undefined;
         world.reader = undefined;
-        const exit = fiber.pollUnsafe();
-        if (exit === undefined) {
+        const outcome = fiber.pollUnsafe();
+        if (outcome === undefined) {
           fiber.interruptUnsafe();
           throw new Error(
             `System "${running}" did not finish within the frame. Systems must be synchronous.`
           );
         }
         events.endFrame();
-        return exit as Exit.Exit<void, TickError<S, P>>;
+        exit = outcome as Exit.Exit<void, TickError<S, P>>;
       } finally {
-        world.thaw();
         framing = false;
+        // Thawing finds a draw from the world's generator, and undoes it.
+        try {
+          world.thaw();
+        } catch (error) {
+          drew = error;
+        }
       }
+      // A defect, unless the frame had failed for a reason of its own.
+      return drew === undefined || Exit.isFailure(exit) ? exit : Exit.die(drew);
     };
 
     const tickExit = (delta: number): Exit.Exit<void, TickError<S, P>> => {

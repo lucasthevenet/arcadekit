@@ -1879,6 +1879,8 @@ export class World {
    */
   private readonly spare = new WeakMap<Columns, unknown[]>();
   private readonly savedRandom = new Uint32Array(4);
+  /** The random generator's state when the world was frozen. */
+  private readonly frozenRandom = new Uint32Array(4);
 
   /** @param options.seed where the random sequence starts; 0 when left out. */
   constructor(options?: { readonly seed?: number }) {
@@ -2493,9 +2495,12 @@ export class World {
    * An app freezes its world for the frame stage, which draws the game
    * between two ticks and must leave it as it found it.
    *
-   * Two things are not stopped, because stopping them would cost every
-   * loop: a write through the raw columns `eachChunk` hands out, and a
-   * draw from `world.random`. `world.hash()` before and after shows either.
+   * Two things are not stopped where they are made, because stopping them
+   * there would cost every loop and every draw. A draw from `world.random`
+   * is found by `thaw`, which puts the generator back and throws. A write
+   * through the raw columns `eachChunk` hands out is not found at all:
+   * `world.hash()` before and after shows it.
+   *
    * In a frozen world `eachChunk` counts nothing as written, so a change
    * query may hand out what it watches.
    */
@@ -2505,12 +2510,33 @@ export class World {
         "World.freeze() was called inside a transaction. Commit or roll back first."
       );
     }
+    this.frozenRandom.set(this.random.state);
     this._frozen = true;
   }
 
-  /** Ends a freeze. */
+  /**
+   * Ends a freeze. If random numbers were drawn from the world's generator
+   * meanwhile, it is put back where it was, so that the world is as it was
+   * found, and this throws: the draw was a change, and a bug.
+   */
   thaw(): void {
+    if (!this._frozen) {
+      return;
+    }
     this._frozen = false;
+    const { state } = this.random;
+    const was = this.frozenRandom;
+    if (
+      state[0] !== was[0] ||
+      state[1] !== was[1] ||
+      state[2] !== was[2] ||
+      state[3] !== was[3]
+    ) {
+      state.set(was);
+      throw new Error(
+        `${frozenWrite("A draw from world.random")} What draws the game takes its random numbers from the frame stage's own Random, which is not part of the world.`
+      );
+    }
   }
 
   /** Whether the world is frozen. */

@@ -168,6 +168,32 @@ describe("a frozen world", () => {
     world.thaw();
   });
 
+  it("finds a draw from its random generator when it is thawed, and takes it back", () => {
+    const { world } = populated();
+    const before = world.hash();
+    const state = Array.from(world.random.state);
+    world.freeze();
+    world.random.next();
+    world.random.shuffle([1, 2, 3]);
+    expect(() => world.thaw()).toThrow(
+      /A draw from world\.random was made while the world is frozen.*frame stage's own Random/
+    );
+    // Thawed all the same, and as it was found.
+    expect(world.frozen).toBe(false);
+    expect(Array.from(world.random.state)).toEqual(state);
+    expect(world.hash()).toBe(before);
+    // A freeze with no draw in it thaws quietly, after draws before it.
+    world.random.next();
+    const drawn = Array.from(world.random.state);
+    world.freeze();
+    world.thaw();
+    expect(Array.from(world.random.state)).toEqual(drawn);
+    // Thawing a world that is not frozen is nothing.
+    world.random.next();
+    world.thaw();
+    expect(Array.from(world.random.state)).not.toEqual(drawn);
+  });
+
   it("cannot be frozen in the middle of a transaction", () => {
     const { world } = populated();
     world.begin();
@@ -365,6 +391,43 @@ describe("the frame stage", () => {
         third.frame(0);
         third.frame(0);
         expect(drawn).toEqual(first);
+      })
+    );
+  });
+
+  it("finds a draw from the world's generator when the frame ends, and takes it back", () => {
+    run(
+      Effect.gen(function* () {
+        let cheat = true;
+        const drawn: string[] = [];
+        const Cheat = System.make("Cheat", function* () {
+          if (cheat) {
+            (yield* World).random.next();
+          }
+        }).pipe(System.inStage("frame"));
+        const After = System.make("After", function* () {
+          drawn.push("After");
+        }).pipe(System.inStage("frame"));
+        // Not checked with verifyFrames: this is found either way.
+        const app = yield* App.make({ systems: [Cheat, After, Roll], seed: 5 });
+        app.world.spawn(Ball.of({ x: 1, vx: 1 }));
+        app.tick(1);
+        const before = app.world.hash();
+        expect(() => app.frame(0)).toThrow(
+          /A draw from world\.random was made while the world is frozen/
+        );
+        expect(app.world.hash()).toBe(before);
+        expect(app.world.frozen).toBe(false);
+        // The frame ran to its end first, and the outcome is a defect.
+        expect(drawn).toEqual(["After"]);
+        const exit = app.frameExit(0);
+        expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+        expect(app.world.hash()).toBe(before);
+        // The app is not left in a frame: it ticks, and draws once it behaves.
+        app.tick(1);
+        cheat = false;
+        app.frame(0);
+        expect(Exit.isSuccess(app.frameExit(0))).toBe(true);
       })
     );
   });
@@ -817,7 +880,13 @@ describe("a frame stage that is checked", () => {
           );
           // It is a defect: nothing in the error channel to handle.
           expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+          // Checked, a draw from the world's generator is laid at the door
+          // of the system that made it, and taken back as ever.
+          const before = app.world.hash();
           expect(() => app.frame(0)).toThrow(App.FrameChangedWorld);
+          if (how === "random") {
+            expect(app.world.hash()).toBe(before);
+          }
         })
       );
     }

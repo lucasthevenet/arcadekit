@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 364 tests
+pnpm test                          # 366 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -319,9 +319,9 @@ The simulation ticks at a fixed rate. Drawing happens every frame, between ticks
 - Its random numbers come from a generator of its own, seeded like the world's and not part of it: sparks do not change the game.
 - An action issued there with `Actions.enqueue` is input from outside, as a button is: it is logged, applied at the start of the next tick, and replayed without a frame being drawn.
 - The simulation cannot tell that it is being drawn. A game drawn every frame has the same hash, the same log and the same save as the same game never drawn, so a replay or a server runs it with no frame stage at all. The frame stage's places in events and changes are not saved: a loaded game has everything still to draw.
-- Two changes are not stopped where they are made, because stopping them would cost every loop: a write through the raw columns of `eachChunk`, and a draw from `world.random`. `App.make({ verifyFrames: true })` takes the world's hash before the stage and after each of its systems, and `frame` dies with `App.FrameChangedWorld`, which names the system. That is for development and tests.
+- Two changes are not stopped where they are made, because stopping them there would cost every loop and every draw. A draw from `world.random` is found when the frame ends: the generator is put back, so the game is as it was, and `frame` throws. A write through the raw columns of `eachChunk` is not found unless it is looked for: `App.make({ verifyFrames: true })` takes the world's hash before the stage and after each of its systems, and `frame` dies with `App.FrameChangedWorld`, which names the system. That is for development and tests.
 - A frame system takes a condition with `System.runIf` like any other. A hook does not belong there: a state is entered by a tick.
-- With the storage core on its own: `world.freeze()` and `world.thaw()`.
+- With the storage core on its own: `world.freeze()` and `world.thaw()`, which is where a draw from the world's generator is found.
 
 ## Randomness
 
@@ -651,7 +651,7 @@ moving.eachChunk((start, end, pos, vel) => {
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - Nothing here draws, plays sound or reads input. There is a frame stage for what draws, and nothing in it yet: no Foldkit or Three.js integration, and no driver that wraps `requestAnimationFrame`.
-- The frame stage cannot stop a write through the raw columns of `eachChunk`, or a draw from `world.random`, where it is made. `verifyFrames` finds either afterwards, at the cost of a hash of the world per frame system.
+- The frame stage cannot stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per frame system. A draw from `world.random` there is found when the frame ends, not where it is made.
 - A frame system that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps. There is no helper for it.
 - One package entry. The storage core has no Effect dependency and could be its own entry (`arcadekit/ecs`).
 
