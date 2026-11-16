@@ -26,11 +26,10 @@ Done. Queries for what changed, with writes noticed per row; singletons, which a
 
 ## 4. Running in a browser
 
-Nothing so far plays sound or reads input.
+Nothing so far plays sound.
 
-Done so far: the frame loop, `Driver.frames`, which follows the page's repaints, pauses while the tab is hidden and leaves nothing running when it is interrupted, and `examples/page`, a game that runs in a page. The package's [README](../packages/arcadekit/README.md) describes it.
+Done so far: the frame loop, `Driver.frames`, which follows the page's repaints, pauses while the tab is hidden and leaves nothing running when it is interrupted; `examples/page`, a game that runs in a page; and input, read once per tick in a stage of its own, kept as a picture in the world by `Input.plugin` and turned into the game's own actions by `Input.bind`, all of it through the action log, so that a replay reads no device. The package's [README](../packages/arcadekit/README.md) describes each.
 
-- **Input.** Keyboard, pointer and gamepad state read once per tick into the world, so the simulation sees one consistent picture; and a mapping from input to actions. Done when input goes through the same action log as everything else, so a replay needs no input at all.
 - **Assets.** Loading as a scoped resource: a level's assets are acquired when it starts and released when its scope closes. Done when leaving a level frees what it loaded, with a test that proves it.
 - **An entry point.** `BrowserRuntime.runMain` around `App.make` and a driver, as the one obvious way to start a game. Done when the examples use it.
 

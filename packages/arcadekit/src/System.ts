@@ -15,11 +15,12 @@ import type { Pipeable } from "effect/Pipeable";
 /** The stages of a tick, in the order they run. */
 export const stages = ["preUpdate", "update", "postUpdate"] as const;
 /**
- * A stage of the tick, or `"frame"`: the stage that draws the game, which
- * runs between ticks, when `app.frame` is called, and must not change the
- * world.
+ * A stage of the tick, or one of the two that run between ticks and must
+ * not change the world: `"input"`, which reads the devices and turns what
+ * they say into actions, just before a tick, when `app.input` is called;
+ * and `"frame"`, which draws the game, when `app.frame` is called.
  */
-export type Stage = (typeof stages)[number] | "frame";
+export type Stage = (typeof stages)[number] | "input" | "frame";
 
 /**
  * What sets a hook off: a state being entered or left. `State.onEnter` and
@@ -94,6 +95,14 @@ export const make = <Eff extends Effect.Effect<any, any, any>>(
  * frozen. It reads the world through queries, events and change queries,
  * each from a place of its own, and `yield* Frame` tells it how far the
  * frame is between two ticks. Whatever would change the game there throws.
+ *
+ * `System.inStage("input")` makes it a system of the input stage, which is
+ * for bringing the outside in: it runs once per `app.input`, just before a
+ * tick, with the world frozen. `yield* Input.Devices` tells it what the
+ * keyboard, the pointer and the gamepads say now, and what it makes of
+ * that it issues as actions with `Actions.enqueue`, which are logged and
+ * applied at the start of the tick. A replay runs no input stage: the
+ * actions are in its log.
  */
 export const inStage: {
   (stage: Stage): <E, R>(self: System<E, R>) => System<E, R>;
@@ -222,7 +231,7 @@ export const order = (
 ): System<any, any>[] => {
   unique(systems);
   const out: System<any, any>[] = [];
-  for (const stage of [...stages, "frame"] as const) {
+  for (const stage of [...stages, "input", "frame"] as const) {
     const inStage = systems.filter((s) => s.stage === stage);
     const stageNames = new Set(inStage.map((s) => s.name));
     // "A before B" is the same constraint as "B after A", so fold both into

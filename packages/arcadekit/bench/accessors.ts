@@ -24,6 +24,7 @@ import {
   Component,
   EntityId,
   Field,
+  Input,
   Query,
   State,
   System,
@@ -192,6 +193,51 @@ const idling = (power: "on" | "off"): number =>
         const app = yield* App.make({ systems });
         app.spawnScript(Effect.map(Power, (held) => held.set(power)));
         return measure(() => app.tick(DT), 50_000, 20_000);
+      })
+    )
+  );
+
+/**
+ * Median milliseconds of reading the devices into the world: three keys
+ * held and the pointer somewhere. With `changing`, a fourth key goes down
+ * or up before each pass, and the pass includes the tick that applies the
+ * report; without, nothing changes and the pass is the input stage alone.
+ */
+const listening = (changing: boolean): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        const app = yield* App.make({
+          plugins: [Input.plugin],
+          checkpointEvery: 0,
+        }).pipe(Effect.provideService(Input.Source, source));
+        for (const code of ["ArrowLeft", "ShiftLeft", "Pointer0"]) {
+          source.press(code);
+        }
+        source.move(Input.pointerX, 120);
+        source.move(Input.pointerY, 80);
+        app.input();
+        app.tick(DT);
+        let down = false;
+        return changing
+          ? measure(
+              () => {
+                down = !down;
+                if (down) {
+                  source.press("Space");
+                } else {
+                  source.release("Space");
+                }
+                app.input();
+                app.tick(DT);
+                // The log is the game's to keep; here it would only grow.
+                (app.actionLog as unknown[]).length = 0;
+              },
+              20_000,
+              5000
+            )
+          : measure(() => app.input(), 50_000, 20_000);
       })
     )
   );
@@ -729,6 +775,20 @@ const variants: Record<
   frameVerified: {
     label: "app.frame: the same, with verifyFrames",
     run: () => drawing(1, true, true),
+  },
+
+  // The input stage: the devices are read once per tick and compared with
+  // the picture the world holds. Nothing changed is the usual case, and
+  // costs a run of the stage; a change costs an action as well.
+  inputIdle: {
+    unit: "matches",
+    label: "app.input: the picture of the devices, nothing changed",
+    run: () => listening(false),
+  },
+  inputChanged: {
+    unit: "matches",
+    label: "app.input and app.tick: one key went down or up",
+    run: () => listening(true),
   },
 
   // Change detection. A write is noticed per row, and only for a component

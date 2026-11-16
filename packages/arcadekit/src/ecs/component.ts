@@ -372,7 +372,7 @@ const makeAccessorClass = (
 
 /** What went wrong when something tried to change a frozen world. */
 export const frozenWrite = (what: string): string =>
-  `${what} was made while the world is frozen. A frozen world is read and not changed: an app freezes its world for the frame stage, which draws the game between two ticks. Change the game from a system that runs in the tick, or from outside with an action.`;
+  `${what} was made while the world is frozen. A frozen world is read and not changed: an app freezes its world for the frame stage, which draws the game between two ticks, and for the input stage, which reads the devices before one. Change the game from a system that runs in the tick, or from outside with an action.`;
 
 /** What to do instead of writing a relation's target. */
 export const retarget = (name: string): string =>

@@ -8,6 +8,7 @@ import type { Actions } from "./Action";
 import type { Rng } from "./ecs/random";
 import type { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
+import type { Devices } from "./Input";
 
 /** The ECS world. Most systems use queries and Commands instead of this. */
 export class World extends Context.Service<World, EcsWorld>()(
@@ -108,4 +109,5 @@ export type BuiltIn =
   | Script
   | Events
   | Actions
-  | Random;
+  | Random
+  | Devices;

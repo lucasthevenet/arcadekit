@@ -23,6 +23,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 - Nothing changes the set of entities or their components while a query is iterating. Such changes go through `Commands` and are applied when the system finishes.
 - A tick gives the same result from the same inputs. Time comes from `Time`, waiting from `Script`, and fibers only resume when the tick flushes its scheduler.
 - What draws the game runs in the frame stage, between ticks, and never changes the world: a game that is drawn is the same game as one that is not.
+- What the devices say reaches the game as actions, issued in the input stage before a tick and logged like any other: a replay reads no device.
 
 ## Validation
 

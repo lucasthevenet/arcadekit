@@ -152,8 +152,9 @@ const EMPTY: readonly never[] = Object.freeze([]);
 
 /**
  * What the name of a reader starts with when it is a system of the frame
- * stage. Such a reader is not part of the simulation: it cannot emit, it is
- * not saved, and events are kept for it until the frame stage next runs.
+ * stage, or of the input stage. Such a reader is not part of the
+ * simulation: it cannot emit, it is not saved, and events are kept for it
+ * until the frame stage next runs.
  */
 export const FRAME_READER = "frame:";
 
@@ -260,7 +261,7 @@ class Handle<P> implements EventHandle<P> {
     this.emit = forFrame
       ? () => {
           throw new Error(
-            `The event "${channel.def.name}" was emitted in the frame stage. The frame stage draws the game and must not change it: an event from there would be one no replay could repeat. Emit from a system that runs in the tick.`
+            `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
           );
         }
       : (payload) => {

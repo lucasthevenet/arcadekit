@@ -12,6 +12,8 @@ import { Context, Effect } from "effect";
 /** Anything with a `tick`, so drivers work with every App type. */
 export interface Tickable {
   readonly tick: (delta: number) => void;
+  /** An app's input stage: run just before each tick, if it is there. */
+  readonly input?: () => void;
   /** An app's frame stage: run after the ticks of each call, if it is there. */
   readonly frame?: (alpha: number, delta?: number) => void;
 }
@@ -20,8 +22,12 @@ const EPSILON = 1e-9;
 
 /**
  * Fixed-timestep stepping. Feed it real elapsed seconds, once per frame; it
- * runs zero or more ticks of exactly `1 / hz`, then the app's frame stage,
- * and returns how many ticks it ran.
+ * runs zero or more ticks of exactly `1 / hz`, each after the app's input
+ * stage, then the app's frame stage, and returns how many ticks it ran.
+ *
+ * The input stage reads the devices once per tick, so that a tick sees one
+ * picture of them, and a frame in which no tick is due reads nothing: what
+ * was pressed meanwhile is there for the next tick.
  *
  * The simulation ticks at a fixed rate whatever the rate of frames, and the
  * frame stage is told how far its frame is between the last tick and the
@@ -40,6 +46,7 @@ export const fixedStep = (
     // The epsilon stops float error from swallowing a tick: 1 - 59 * (1 / 60)
     // is a hair less than 1 / 60.
     while (accumulator + EPSILON >= dt && steps < maxSteps) {
+      app.input?.();
       app.tick(dt);
       accumulator = Math.max(0, accumulator - dt);
       steps++;
