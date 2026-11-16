@@ -78,6 +78,7 @@ export const loadLevel = Effect.fn("Level.load")(function* (name: string) {
 - **A value with a sensible default is a `Context.Reference`** (`Resource.make` in this package). Nothing has to provide it; a layer can override it. Do not mutate a reference's default: it is created once and shared by every app in the process. A resource is configuration. Game state of which there is one is a `Singleton`: it is in the world, so it is saved, hashed, and put back when an action is refused.
 - **Services are how code reaches the outside world.** Sound, storage, the network, the clock and randomness are services, never imports of a module that does the work directly. That is what lets a test swap them and a replay control them.
 - **A plugin's `layer` is where its services are built.** A layer that needs another plugin's service lists that plugin in `plugins`. A resource is acquired with `Effect.acquireRelease` inside `Layer.effect`, so it is released when the app's scope closes.
+- **What the platform gives everywhere is a `Context.Reference` whose default is the platform's.** `Driver.Display` is the screen a frame loop follows: `requestAnimationFrame` in a page, a timer elsewhere. Its default holds nothing, so sharing it is safe, and a test provides one it turns by hand, `Driver.makeManualDisplay()`.
 - **Do not build a layer by hand** with `Layer.build`. `App.make` is the one place that does.
 - **A program is started with the platform's `runMain`**, `NodeRuntime.runMain` under Node and `BrowserRuntime.runMain` in a browser, which reports a failure and interrupts the program cleanly, closing the app's scope. `Effect.runSync` and `Effect.runPromise` are for tests and benchmarks. Inside a program, an Effect is yielded, never run. See [Running Effects](https://effect.website/docs/v4/getting-started/running-effects); `examples/` are the examples.
 
@@ -211,6 +212,7 @@ Events have their own implementation in `src/Event.ts` and do not use Effect's `
 - **Compare against something obviously right.** The storage tests run thousands of random operations against a `Map` and compare; a new data structure gets the same.
 - **Check that a test can fail.** Break the code it covers and see it go red. Several bugs in this package were found only because a deliberate break went unnoticed.
 - **A type error is tested with `// @ts-expect-error` on the line directly above the expression that errors.** The formatter moves expressions, so put the comment inside the call, above the argument.
+- **A frame loop is tested against a display turned by hand**, `Driver.makeManualDisplay()`, never against real timers: `display.frame(now)` is a frame coming due, and `display.pending` and `display.watching` say what the loop has left behind.
 - **A test that is itself an Effect** can use `it.effect` from `@effect/vitest`; see Effect's [testing example](https://github.com/Effect-TS/effect/blob/main/ai-docs/src/09_testing/10_effect-tests.ts). It is not installed yet. Do not use `TestClock` for game time: game time is `Time`, and a test advances it by ticking.
 
 ## Effect 3 habits that do not exist in Effect 4

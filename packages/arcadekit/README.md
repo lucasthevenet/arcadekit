@@ -13,10 +13,11 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 374 tests
+pnpm test                          # 388 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
+pnpm --filter arcadekit page       # a game in a page, at http://localhost:5173
 pnpm --filter arcadekit bench
 ```
 
@@ -170,7 +171,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 
 A string that identifies something at run time carries the name of the feature it belongs to.
 
-- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`.
+- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`.
 - A component's name is its identity in a world, and part of its type: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
 - `world.component(name)` gives the component a world holds under a name. A world learns a component the first time it stores or queries it; `world.register(component)` tells it sooner.
 
@@ -322,6 +323,40 @@ The simulation ticks at a fixed rate. Drawing happens every frame, between ticks
 - Two changes are not stopped where they are made, because stopping them there would cost every loop and every draw. A draw from `world.random` is found when the frame ends: the generator is put back, so the game is as it was, and `frame` throws. A write through the raw columns of `eachChunk` is not found unless it is looked for: `App.make({ verifyFrames: true })` takes the world's hash before the stage and after each of its systems, and `frame` dies with `App.FrameChangedWorld`, which names the system. That is for development and tests.
 - A frame system takes a condition with `System.runIf` like any other. A hook does not belong there: a state is entered by a tick.
 - With the storage core on its own: `world.freeze()` and `world.thaw()`, which is where a draw from the world's generator is found.
+
+## In a page
+
+```ts
+const main = Effect.gen(function* () {
+  const app = yield* App.make({ plugins: [Game] });
+  return yield* Driver.frames(app, { hz: 60 });
+});
+
+BrowserRuntime.runMain(main.pipe(Effect.scoped));
+```
+
+`Driver.frames` is the frame loop. It follows the display until it is interrupted: each time a frame is due it runs the ticks that are due, at a fixed `hz`, and then the [frame stage](#the-tick-and-the-frame), as `Driver.fixedStep` does. In a page a frame is due once per repaint, which is `requestAnimationFrame`.
+
+- The first frame draws the game as it stands and runs no tick. Time is counted from it.
+- While the tab is hidden the loop asks for no frame, and the time spent hidden does not count. A game that comes back is where it was left, and does not run to catch up.
+- Interrupting it takes back the frame it had asked for and stops watching the tab. It is interrupted with the fiber that runs it: `runMain` interrupts the program when the page goes away, and a loop started with `Effect.forkScoped` stops when its scope closes. So closing the app's scope leaves nothing running: no frame asked for, no listener, no script, and whatever the plugins' layers acquired let go.
+- If a tick or a frame throws, the loop stops the same way and dies with what was thrown.
+- A page that froze without being hidden runs at most `maxStepsPerCall` ticks in its next frame, 5 unless told otherwise, and drops the rest of the backlog.
+- It reaches the screen through `Driver.Display`, a `Context.Reference` whose default is the platform's: `requestAnimationFrame` and the document's visibility in a page, and a timer of 60 frames a second anywhere else, so the same program runs under Node.
+- A test turns the display by hand:
+
+  ```ts
+  const display = Driver.makeManualDisplay();
+  const fiber = Effect.runFork(
+    main.pipe(Effect.scoped, Effect.provideService(Driver.Display, display))
+  );
+  display.frame(0); // a frame is due, at this many milliseconds
+  display.frame(1000 / 60);
+  display.hide(); // the tab goes away
+  display.pending; // 0: no frame is asked for
+  ```
+
+- `examples/page` is a game in a page. `pnpm --filter arcadekit page` serves it.
 
 ## Randomness
 
@@ -531,11 +566,12 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
-| `src/Driver.ts` | Fixed-step and timer drivers, which run the ticks that are due and then the frame stage |
+| `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame and read-only query tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query and driver tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
+| `examples/page/` | A game in a page, drawn on a canvas and started with `BrowserRuntime.runMain` |
 
 ## Two ways to loop
 
@@ -672,7 +708,9 @@ moving.eachChunk((start, end, pos, vel) => {
 
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
-- Nothing here draws, plays sound or reads input. There is a frame stage for what draws, and nothing in it yet: no Foldkit or Three.js integration, and no driver that wraps `requestAnimationFrame`.
+- Nothing here plays sound or reads input, and nothing draws for you. There is a frame stage for what draws and a frame loop that runs it once per repaint, and the example page draws on a canvas by hand: no Foldkit or Three.js integration.
+- The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
+- The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and against stand-ins for `requestAnimationFrame` and the document.
 - The frame stage cannot stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per frame system. A draw from `world.random` there is found when the frame ends, not where it is made.
 - A frame system that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps. There is no helper for it.
 - One package entry. The storage core has no Effect dependency and could be its own entry (`arcadekit/ecs`).
