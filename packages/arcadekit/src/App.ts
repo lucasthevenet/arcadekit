@@ -12,8 +12,10 @@
  * One tick:
  *   1. apply queued actions (refused ones become `Action.Rejected` events)
  *   2. advance game time
- *   3. run every system in order inside ONE fiber, applying queued commands
- *      after each system
+ *   3. inside ONE fiber: enter the states that were asked for, running the
+ *      hooks for leaving and entering; then run every system in order,
+ *      but for the ones whose condition does not hold, applying queued
+ *      commands after each
  *   4. resume scripts that were waiting for this tick or for an event
  *   5. flush the scheduler, so every fiber that became runnable runs now
  *   6. apply commands queued by scripts, and drop events everyone has seen
@@ -48,6 +50,7 @@ import * as Plugin from "./Plugin";
 import * as Save from "./Save";
 import { Commands, Events, Random, Script, Time, World } from "./Services";
 import type { BuiltIn, TimeState } from "./Services";
+import * as State from "./State";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
 
@@ -616,14 +619,107 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const runFork = Effect.runForkWith(context);
     reportContext = context;
 
-    const ordered = System.order(allSystems);
+    // A hook runs when its state is entered or left, not with the rest.
+    System.unique(allSystems);
+    const ordered = System.order(
+      allSystems.filter((system) => system.trigger === undefined)
+    );
+    const hookKey = (trigger: System.Trigger): string =>
+      `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
+    const hooks = new Map<string, Plugin.AnySystem[]>();
+    const states = State.registryOf(world);
+    for (const listed of components) {
+      if (listed instanceof State.State) {
+        State.handleOf(world, listed);
+      }
+    }
+    for (const system of allSystems) {
+      if (system.trigger === undefined) {
+        continue;
+      }
+      const state = system.trigger.state as State.State<string>;
+      if (!state.values.includes(system.trigger.value)) {
+        throw new Error(
+          `System "${system.name}" is a hook for "${system.trigger.value}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`
+        );
+      }
+      State.handleOf(world, state);
+      const key = hookKey(system.trigger);
+      hooks.set(key, [...(hooks.get(key) ?? []), system]);
+    }
+    for (const [key, group] of hooks) {
+      // `after` and `before` order the hooks of one moment among themselves.
+      hooks.set(key, System.order(group));
+    }
+
     let running = "";
+    /** Runs one system as itself: with its own place in events and changes. */
+    const runSystem = (
+      system: Plugin.AnySystem
+    ): Effect.Effect<void, unknown, unknown> =>
+      Effect.suspend(() => {
+        running = system.name;
+        events.reader = running;
+        world.reader = running;
+        return system.condition === undefined
+          ? system.run
+          : Effect.flatMap(system.condition, (holds) =>
+              holds ? system.run : Effect.void
+            );
+      });
+    /** Makes one move of a state: the hooks for leaving, the move, the hooks for entering. */
+    const makeMove = Effect.fnUntraced(function* (
+      state: State.State<string>,
+      move: State.Move
+    ) {
+      if (move.from !== undefined) {
+        for (const hook of hooks.get(
+          hookKey({ state, on: "exit", value: move.from })
+        ) ?? []) {
+          yield* runSystem(hook);
+          commands.apply();
+        }
+      }
+      State.enter(world, state, move);
+      for (const hook of hooks.get(
+        hookKey({ state, on: "enter", value: move.to })
+      ) ?? []) {
+        yield* runSystem(hook);
+        commands.apply();
+      }
+    });
+    /** The states that were asked for are entered, and their hooks run. */
+    const enterStates = Effect.gen(function* () {
+      for (const state of states.states) {
+        // One move a tick, but for a game's first: entering the state it
+        // starts in is followed by the move that was asked for before it.
+        const move = State.pending(world, state);
+        if (move === undefined) {
+          continue;
+        }
+        yield* makeMove(state, move);
+        if (move.followedBy !== undefined) {
+          const asked = State.pending(world, state);
+          // Unless a hook has asked for something else since.
+          if (asked !== undefined && asked.to === move.followedBy) {
+            yield* makeMove(state, asked);
+          }
+        }
+      }
+    });
     const tickEffect = Effect.gen(function* () {
+      if (states.states.length > 0) {
+        yield* enterStates;
+      }
       for (const system of ordered) {
         running = system.name;
         // Each system reads events, and what changed, from its own position.
         events.reader = running;
         world.reader = running;
+        // A system with no condition is asked nothing.
+        if (system.condition !== undefined && !(yield* system.condition)) {
+          continue;
+        }
         yield* system.run;
         commands.apply();
       }

@@ -25,6 +25,7 @@ import {
   EntityId,
   Field,
   Query,
+  State,
   System,
   Time,
   World as WorldService,
@@ -152,6 +153,26 @@ const dispatching = <P>(
         const given = payload(target);
         const dispatch = app.dispatch as (a: unknown, p: unknown) => unknown;
         return measure(() => dispatch(action, given), runs, warmup);
+      })
+    )
+  );
+
+const Power = State.define("bench/Power", ["on", "off"]);
+
+/** Median milliseconds of a tick of ten idle systems that run when the power is on. */
+const idling = (power: "on" | "off"): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const systems = Array.from({ length: 10 }, (_, i) =>
+          System.make(`Idle${i}`, function* () {
+            yield* Moving;
+            yield* Time;
+          }).pipe(System.runIf(State.is(Power, "on")))
+        );
+        const app = yield* App.make({ systems });
+        app.spawnScript(Effect.map(Power, (held) => held.set(power)));
+        return measure(() => app.tick(DT), 50_000, 20_000);
       })
     )
   );
@@ -534,6 +555,15 @@ const variants: Record<
           })
         )
       ),
+  },
+  idleConditioned: {
+    // The same ten systems, each asked whether the game is in a state.
+    label: "app.tick: the same, each with a condition that holds",
+    run: () => idling("on"),
+  },
+  idleSkipped: {
+    label: "app.tick: the same, each with a condition that does not",
+    run: () => idling("off"),
   },
   hash: {
     // The same world as the first line: four float fields and an id per
@@ -919,16 +949,15 @@ if (only === undefined) {
       ms = Math.min(ms, JSON.parse(out.trim().split("\n").pop()!) as number);
     }
     results[name] = ms;
-    const text =
-      name === "idle"
-        ? `${(ms * 1000).toFixed(2).padStart(8)} µs per tick`
-        : variant.unit === "matches"
-          ? `${(ms * 1000).toFixed(2).padStart(8)} µs per pass`
-          : variant.unit === "dispatch"
-            ? `${(ms * 1000).toFixed(2).padStart(8)} µs per dispatch`
-            : variant.unit === "visit"
-              ? `${(ms * 1e6).toFixed(1).padStart(8)} ns per visit`
-              : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
+    const text = name.startsWith("idle")
+      ? `${(ms * 1000).toFixed(2).padStart(8)} µs per tick`
+      : variant.unit === "matches"
+        ? `${(ms * 1000).toFixed(2).padStart(8)} µs per pass`
+        : variant.unit === "dispatch"
+          ? `${(ms * 1000).toFixed(2).padStart(8)} µs per dispatch`
+          : variant.unit === "visit"
+            ? `${(ms * 1e6).toFixed(1).padStart(8)} ns per visit`
+            : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
     console.log(`${variant.label.padEnd(54)} ${text}`);
   }
   const ratio = (a: string, b: string) =>

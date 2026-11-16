@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 326 tests
+pnpm test                          # 342 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -260,6 +260,38 @@ const Opening = System.make("Opening", function* () {
 - By default the game goes on without the failed script. `App.make({ onScriptFailure: "stop" })` stops the app instead: the tick the script failed in runs to its end and then fails with `App.ScriptFailed`, a defect that carries the script's cause, and so does every tick after it, without running anything. A driver stops on it.
 - A fiber started with `Effect.forkDetach` is the caller's to observe: the app does not report its failure or interrupt it.
 
+## States and run conditions
+
+```ts
+const Phase = State.define("game/Phase", ["menu", "playing", "paused"]);
+
+const Movement = System.make("Movement", function* () {
+  // ...
+}).pipe(System.runIf(State.is(Phase, "playing")));
+
+const StartLevel = System.make("StartLevel", function* () {
+  // ...
+}).pipe(State.onEnter(Phase, "playing"));
+
+const resume = Action.handler(Resume, function* () {
+  const phase = yield* Phase;
+  if (!phase.is("paused")) return yield* Effect.fail(new NotPaused());
+  phase.set("playing"); // entered at the start of the next tick
+});
+```
+
+A game is in the menu, playing or paused, and systems run only in some of those. A state is one of a few named values; a system says when it runs with a condition; and what has to happen once, on the way into a state or out of it, is a hook.
+
+- `State.define` takes the state's name and its values. A game starts in the first, or in the one given as a third argument. `yield*` gives a handle: `value`, `is(...values)`, `set(value)`, and `next`, the state that was asked for and is not entered yet.
+- `set` asks. The game enters the state at the start of the next tick: the hooks for leaving the old state run, seeing the old state; then the state changes; then the hooks for entering the new one run; then the tick's systems, as the new state has them. One move a tick: the last ask before it counts, and asking for the state the game is in takes an earlier ask back and is not a move.
+- On a game's first tick, the hooks for entering the state it starts in run, followed in the same tick by a move that was asked for before it. What a hook asks for waits for the next tick.
+- `State.onEnter(Phase, "playing")` and `State.onExit` make a system a hook. It runs then, and no longer every tick. Hooks of one moment run in the order they were given, or as `System.after` and `System.before` say, and the commands of each are applied before the next.
+- `System.runIf(condition)` runs a system only on the ticks when the condition holds. `State.is(Phase, "playing", "paused")` is one; any Effect that gives a boolean is, and can read whatever a system can. Given several, a system runs when all of them hold. What a condition needs and can fail with are the system's.
+- A system with no condition is asked nothing and costs what it did. A condition costs about 0.35 µs a tick, and a system that does not run costs that and no more; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
+- A system that does not run does not read. The events of the ticks it sat out are gone when it runs again, as for any system an event is older than. What its [change queries](#change-queries) have yet to visit is kept, however long it was away.
+- A state is a [singleton](#singletons) of the world. It is saved with a game, with what was asked for, and counted in the hash; a refused action's `set` is taken back. List it in a plugin's `components`. A loaded game does not run its starting hooks again: the save holds what they did.
+- With several states, the ones asked for are entered in order of name.
+
 ## Randomness
 
 ```ts
@@ -464,11 +496,12 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Migrate.ts` | The usual changes a migration makes to an old save's world |
 | `src/Field.ts` | The fields of a component, with `Field.schema` |
 | `src/Singleton.ts` | One instance of some data per world |
+| `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton and relation tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation and state tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -560,7 +593,7 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 - A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
 - A relation costs its component and a few assignments to link and unlink: 0.13 µs more per entity that is spawned and despawned with one. A despawn that takes others with it costs what despawning each of them does, 130 ns apiece here. A world with no relation does one comparison more per despawn than before: the first line was 587 µs before relations and 561 µs after, which is the machine's noise.
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
-- A tick with ten systems that do nothing costs about 4.6 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop.
+- A tick with ten systems that do nothing costs about 5 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop. Run conditions did not change that: 4.99 to 5.47 µs before them and 5.00 to 5.81 µs after, over four runs each. With a condition on each of the ten that holds, the tick costs 8.5 µs; with one that does not, 3.5 µs.
 - A sparse tag that many entities have, mixed in with ones that do not, breaks tables into short runs and `eachChunk` loses its edge. A component like that is better off with table storage.
 - A handler that loops pays one copy of the columns it visits, 0.11 ms for four float columns of 100,000 rows, and as much again to copy them back if it is refused. The copies are kept and written over by the next action; allocating them afresh each time cost 0.35 ms. A refusal itself costs about 9 µs, which is Effect building the failure.
 - A checkpoint is one hash of the world every `checkpointEvery` ticks, 60 by default: 12 µs a tick on average for 100,000 entities. The per-tick lines above are medians, so they do not show it.
@@ -597,6 +630,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - `Query.removed` gives the ids of the entities that lost a component, not the values it held.
 - A singleton cannot be watched for changes: a change query is of entities.
 - An entity points at one target per relation, and a query cannot ask for what points at a given entity: `world.sources` gives those as a list.
+- A run condition is given to one system at a time: a plugin cannot be given one for all its systems. A script is not stopped by a state; it asks.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
