@@ -31,7 +31,8 @@
  *
  * What is drawn is told from the components an entity has, and where from
  * arcadekit's own `Transform.Position`, with `Transform.Rotation` and
- * `Transform.Scale` for the entities that have them:
+ * `Transform.Scale` for the entities that have them. A flat game's
+ * `Transform2d` is drawn the same way, in the plane of x and y:
  *
  * - `Three.instances` draws every entity of a kind as one instance of one
  *   mesh. It reads the columns raw and writes one matrix each into the
@@ -49,6 +50,7 @@ import * as Plugin from "arcadekit/Plugin";
 import * as Query from "arcadekit/Query";
 import * as System from "arcadekit/System";
 import * as Transform from "arcadekit/Transform";
+import * as Transform2d from "arcadekit/Transform2d";
 import { Context, Effect, Layer } from "effect";
 import {
   DynamicDrawUsage,
@@ -268,7 +270,7 @@ export const Render = System.make("arcadekit/three/Render", function* () {
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
  */
 export const plugin = Plugin.make("arcadekit/three", {
-  plugins: [Transform.plugin],
+  plugins: [Transform.plugin, Transform2d.plugin],
   layer: sceneLayer,
   systems: [Render],
 });
@@ -284,12 +286,20 @@ interface Xyz {
 interface Xyzw extends Xyz {
   readonly w: { readonly [row: number]: number };
 }
+/** The columns of a flat game's position, or of its scale. */
+interface Xy {
+  readonly x: { readonly [row: number]: number };
+  readonly y: { readonly [row: number]: number };
+}
+interface Angle {
+  readonly angle: { readonly [row: number]: number };
+}
 
 export interface Which {
   /**
    * The component that says an entity is one of these, or several, all of
    * which it has to have. It is drawn while it has them and a
-   * `Transform.Position`.
+   * `Transform.Position`, or a `Transform2d.Position`.
    */
   readonly of: ComponentDef<any> | readonly ComponentDef<any>[];
   /** Components an entity must not have to be drawn: one that hides it, say. */
@@ -516,6 +526,139 @@ class Instances implements Kept {
     }
   };
 
+  // A flat game's entities: in the plane of x and y, turned about the axis
+  // that comes out of it. The same four loops, with fewer columns.
+
+  /** Flat entities with a position alone. */
+  readonly placedFlat = (start: number, end: number, position: Xy): void => {
+    let at = this.reserve(end - start);
+    const out = this.array;
+    const { x, y } = position;
+    for (let i = start; i < end; i++) {
+      out[at] = 1;
+      out[at + 1] = 0;
+      out[at + 2] = 0;
+      out[at + 3] = 0;
+      out[at + 4] = 0;
+      out[at + 5] = 1;
+      out[at + 6] = 0;
+      out[at + 7] = 0;
+      out[at + 8] = 0;
+      out[at + 9] = 0;
+      out[at + 10] = 1;
+      out[at + 11] = 0;
+      out[at + 12] = x[i]!;
+      out[at + 13] = y[i]!;
+      out[at + 14] = 0;
+      out[at + 15] = 1;
+      at += 16;
+    }
+  };
+
+  /** Flat entities with a position and a size. */
+  readonly sizedFlat = (
+    start: number,
+    end: number,
+    position: Xy,
+    scale: Xy
+  ): void => {
+    let at = this.reserve(end - start);
+    const out = this.array;
+    const { x, y } = position;
+    const { x: sx, y: sy } = scale;
+    for (let i = start; i < end; i++) {
+      out[at] = sx[i]!;
+      out[at + 1] = 0;
+      out[at + 2] = 0;
+      out[at + 3] = 0;
+      out[at + 4] = 0;
+      out[at + 5] = sy[i]!;
+      out[at + 6] = 0;
+      out[at + 7] = 0;
+      out[at + 8] = 0;
+      out[at + 9] = 0;
+      out[at + 10] = 1;
+      out[at + 11] = 0;
+      out[at + 12] = x[i]!;
+      out[at + 13] = y[i]!;
+      out[at + 14] = 0;
+      out[at + 15] = 1;
+      at += 16;
+    }
+  };
+
+  /** Flat entities that are turned: a sine and a cosine each. */
+  readonly turnedFlat = (
+    start: number,
+    end: number,
+    position: Xy,
+    rotation: Angle
+  ): void => {
+    let at = this.reserve(end - start);
+    const out = this.array;
+    const { x, y } = position;
+    const { angle } = rotation;
+    for (let i = start; i < end; i++) {
+      const cos = Math.cos(angle[i]!);
+      const sin = Math.sin(angle[i]!);
+      out[at] = cos;
+      out[at + 1] = sin;
+      out[at + 2] = 0;
+      out[at + 3] = 0;
+      out[at + 4] = -sin;
+      out[at + 5] = cos;
+      out[at + 6] = 0;
+      out[at + 7] = 0;
+      out[at + 8] = 0;
+      out[at + 9] = 0;
+      out[at + 10] = 1;
+      out[at + 11] = 0;
+      out[at + 12] = x[i]!;
+      out[at + 13] = y[i]!;
+      out[at + 14] = 0;
+      out[at + 15] = 1;
+      at += 16;
+    }
+  };
+
+  /** Flat entities with all three. */
+  readonly wholeFlat = (
+    start: number,
+    end: number,
+    position: Xy,
+    rotation: Angle,
+    scale: Xy
+  ): void => {
+    let at = this.reserve(end - start);
+    const out = this.array;
+    const { x, y } = position;
+    const { angle } = rotation;
+    const { x: sx, y: sy } = scale;
+    for (let i = start; i < end; i++) {
+      const cos = Math.cos(angle[i]!);
+      const sin = Math.sin(angle[i]!);
+      const u = sx[i]!;
+      const v = sy[i]!;
+      out[at] = cos * u;
+      out[at + 1] = sin * u;
+      out[at + 2] = 0;
+      out[at + 3] = 0;
+      out[at + 4] = -sin * v;
+      out[at + 5] = cos * v;
+      out[at + 6] = 0;
+      out[at + 7] = 0;
+      out[at + 8] = 0;
+      out[at + 9] = 0;
+      out[at + 10] = 1;
+      out[at + 11] = 0;
+      out[at + 12] = x[i]!;
+      out[at + 13] = y[i]!;
+      out[at + 14] = 0;
+      out[at + 15] = 1;
+      at += 16;
+    }
+  };
+
   /** Tells the mesh how many instances it has, and the renderer what to send. */
   finish(): void {
     const { count, mesh, range } = this;
@@ -549,7 +692,11 @@ class Instances implements Kept {
  *
  * An entity is drawn while it has what `of` says and a
  * `Transform.Position`, and is turned and sized by `Transform.Rotation`
- * and `Transform.Scale` if it has them.
+ * and `Transform.Scale` if it has them. One that has a
+ * `Transform2d.Position` instead is drawn in the plane of x and y, at 0 of
+ * the third axis, turned and sized by its `Transform2d.Rotation` and
+ * `Transform2d.Scale`. An entity with both positions is drawn once, from
+ * the one of three dimensions.
  *
  * - Each frame it reads the columns raw (`eachChunk`) and writes one matrix
  *   per entity straight into the mesh's instance buffer. Nothing is made
@@ -586,12 +733,39 @@ export const instances = (name: string, options: InstancesOptions) => {
     Transform.Rotation,
     Transform.Scale
   ).pipe(Query.with(...marked), Query.without(...excluded), Query.reads());
+  // And the same four for a flat game's components, but for the entities
+  // that are placed in three dimensions as well, which are drawn above.
+  const flat = [...excluded, Transform.Position];
+  const PlacedFlat = Query.all(Transform2d.Position).pipe(
+    Query.with(...marked),
+    Query.without(...flat, Transform2d.Rotation, Transform2d.Scale),
+    Query.reads()
+  );
+  const SizedFlat = Query.all(Transform2d.Position, Transform2d.Scale).pipe(
+    Query.with(...marked),
+    Query.without(...flat, Transform2d.Rotation),
+    Query.reads()
+  );
+  const TurnedFlat = Query.all(Transform2d.Position, Transform2d.Rotation).pipe(
+    Query.with(...marked),
+    Query.without(...flat, Transform2d.Scale),
+    Query.reads()
+  );
+  const WholeFlat = Query.all(
+    Transform2d.Position,
+    Transform2d.Rotation,
+    Transform2d.Scale
+  ).pipe(Query.with(...marked), Query.without(...flat), Query.reads());
   return System.make(name, function* () {
     const kept = yield* Scene;
     const placed = yield* Placed;
     const sized = yield* Sized;
     const turned = yield* Turned;
     const whole = yield* Whole;
+    const placedFlat = yield* PlacedFlat;
+    const sizedFlat = yield* SizedFlat;
+    const turnedFlat = yield* TurnedFlat;
+    const wholeFlat = yield* WholeFlat;
     let drawn = kept._kept.get(name) as Instances | undefined;
     if (drawn === undefined) {
       drawn = new Instances(kept.scene, name, options);
@@ -603,6 +777,10 @@ export const instances = (name: string, options: InstancesOptions) => {
     sized.eachChunk(drawn.sized);
     turned.eachChunk(drawn.turned);
     whole.eachChunk(drawn.whole);
+    placedFlat.eachChunk(drawn.placedFlat);
+    sizedFlat.eachChunk(drawn.sizedFlat);
+    turnedFlat.eachChunk(drawn.turnedFlat);
+    wholeFlat.eachChunk(drawn.wholeFlat);
     drawn.finish();
   }).pipe(System.inStage("frame"), System.before(Render));
 };
@@ -634,6 +812,8 @@ class Objects<O extends Object3D> implements Kept {
   private seen = new Uint32Array(0);
   private turnedAt = new Uint32Array(0);
   private sizedAt = new Uint32Array(0);
+  /** Per entity index: 1 when its entity is placed by a flat game's components. */
+  private flat = new Uint8Array(0);
   /** The entity indexes that have an object, in no order. */
   private readonly live: number[] = [];
   private stamp = 0;
@@ -653,6 +833,9 @@ class Objects<O extends Object3D> implements Kept {
       bigger.set(this[name]);
       this[name] = bigger;
     }
+    const flat = new Uint8Array(length);
+    flat.set(this.flat);
+    this.flat = flat;
   }
 
   private release(index: number): void {
@@ -702,6 +885,68 @@ class Objects<O extends Object3D> implements Kept {
       }
       object.position.set(x[i]!, y[i]!, z[i]!);
       this.seen[index] = stamp;
+      this.flat[index] = 0;
+    }
+  };
+
+  // A flat game's entities. Only what its components say is set: where an
+  // object is along the third axis, how it is turned about the other two
+  // and how deep it is are as `make` left them, or as the game sets them.
+
+  readonly placedFlat = (
+    start: number,
+    end: number,
+    position: Xy,
+    entities: EntityColumn
+  ): void => {
+    const { x, y } = position;
+    const { objects, stamp } = this;
+    for (let i = start; i < end; i++) {
+      const entity = entities[i]!;
+      const index = entityIndex(entity);
+      if (index >= this.seen.length) {
+        this.grow(index + 1);
+      }
+      let object = objects[index];
+      if (object === undefined || this.owner[index] !== entity) {
+        object = this.adopt(index, entity);
+      }
+      object.position.x = x[i]!;
+      object.position.y = y[i]!;
+      this.seen[index] = stamp;
+      this.flat[index] = 1;
+    }
+  };
+
+  readonly turnedFlat = (
+    start: number,
+    end: number,
+    rotation: Angle,
+    entities: EntityColumn
+  ): void => {
+    const { angle } = rotation;
+    const { objects, stamp, turnedAt } = this;
+    for (let i = start; i < end; i++) {
+      const index = entityIndex(entities[i]!);
+      objects[index]!.rotation.z = angle[i]!;
+      turnedAt[index] = stamp;
+    }
+  };
+
+  readonly sizedFlat = (
+    start: number,
+    end: number,
+    scale: Xy,
+    entities: EntityColumn
+  ): void => {
+    const { x, y } = scale;
+    const { objects, sizedAt, stamp } = this;
+    for (let i = start; i < end; i++) {
+      const index = entityIndex(entities[i]!);
+      const size = objects[index]!.scale;
+      size.x = x[i]!;
+      size.y = y[i]!;
+      sizedAt[index] = stamp;
     }
   };
 
@@ -737,7 +982,7 @@ class Objects<O extends Object3D> implements Kept {
 
   /** Lets go of the objects whose entities were not found this frame. */
   finish(): void {
-    const { live, objects, seen, sizedAt, stamp, turnedAt } = this;
+    const { flat, live, objects, seen, sizedAt, stamp, turnedAt } = this;
     for (let k = live.length - 1; k >= 0; k--) {
       const index = live[k]!;
       if (seen[index] !== stamp) {
@@ -749,11 +994,21 @@ class Objects<O extends Object3D> implements Kept {
       // An entity that is no longer turned, or sized, is drawn as one that
       // never was.
       if (turnedAt[index] !== stamp && turnedAt[index] !== 0) {
-        objects[index]!.quaternion.identity();
+        if (flat[index] === 1) {
+          objects[index]!.rotation.z = 0;
+        } else {
+          objects[index]!.quaternion.identity();
+        }
         turnedAt[index] = 0;
       }
       if (sizedAt[index] !== stamp && sizedAt[index] !== 0) {
-        objects[index]!.scale.set(1, 1, 1);
+        const size = objects[index]!.scale;
+        if (flat[index] === 1) {
+          size.x = 1;
+          size.y = 1;
+        } else {
+          size.set(1, 1, 1);
+        }
         sizedAt[index] = 0;
       }
     }
@@ -787,6 +1042,10 @@ class Objects<O extends Object3D> implements Kept {
  * - Each frame every object is given its entity's `Position`, and its
  *   `Rotation` and `Scale` if the entity has them. What else there is to
  *   an object is the game's to set, in `make` or in a system of its own.
+ * - An entity placed by a flat game's `Transform2d` has its object's x and
+ *   y set, its turn about the third axis, and its size along x and y.
+ *   Where the object is along the third axis is left as `make` gave it,
+ *   which is how one kind is put in front of another.
  * - Nothing is kept in the world. A game that is loaded from a save, or an
  *   app that starts with entities, has its objects made on the first
  *   frame.
@@ -813,11 +1072,31 @@ export const objects = <O extends Object3D = Object3D>(
     Query.without(...excluded),
     Query.reads()
   );
+  // A flat game's, but for the entities placed in three dimensions too.
+  const flat = [...excluded, Transform.Position];
+  const PlacedFlat = Query.all(Transform2d.Position).pipe(
+    Query.with(...marked),
+    Query.without(...flat),
+    Query.reads()
+  );
+  const TurnedFlat = Query.all(Transform2d.Rotation).pipe(
+    Query.with(Transform2d.Position, ...marked),
+    Query.without(...flat),
+    Query.reads()
+  );
+  const SizedFlat = Query.all(Transform2d.Scale).pipe(
+    Query.with(Transform2d.Position, ...marked),
+    Query.without(...flat),
+    Query.reads()
+  );
   return System.make(name, function* () {
     const kept = yield* Scene;
     const placed = yield* Placed;
     const turned = yield* Turned;
     const sized = yield* Sized;
+    const placedFlat = yield* PlacedFlat;
+    const turnedFlat = yield* TurnedFlat;
+    const sizedFlat = yield* SizedFlat;
     let held = kept._kept.get(name) as Objects<O> | undefined;
     if (held === undefined) {
       held = new Objects(kept.scene, options);
@@ -830,6 +1109,9 @@ export const objects = <O extends Object3D = Object3D>(
     placed.eachChunk(held.placed);
     turned.eachChunk(held.turned);
     sized.eachChunk(held.sized);
+    placedFlat.eachChunk(held.placedFlat);
+    turnedFlat.eachChunk(held.turnedFlat);
+    sizedFlat.eachChunk(held.sizedFlat);
     held.finish();
   }).pipe(System.inStage("frame"), System.before(Render));
 };

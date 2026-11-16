@@ -9,7 +9,7 @@
  *
  *   pnpm --filter @arcadekit/three bench
  */
-import { App, Component, Plugin, Transform } from "arcadekit";
+import { App, Component, Plugin, Transform, Transform2d } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
@@ -88,10 +88,37 @@ variant(
   () => [place(), turn(), size()],
   instanced("d")
 );
+// A flat game's entities: fewer columns, and a sine and a cosine for a turn.
+const placeFlat = () =>
+  Transform2d.Position.of({ x: Math.random(), y: Math.random() });
+const turnFlat = () => Transform2d.Rotation.of({ angle: Math.random() * 6 });
+const sizeFlat = () => Transform2d.Scale.of({ x: 2, y: 2 });
+variant("instances, flat: a position", () => [placeFlat()], instanced("f"));
+variant(
+  "instances, flat: a position and a scale",
+  () => [placeFlat(), sizeFlat()],
+  instanced("g")
+);
+variant(
+  "instances, flat: a position and a rotation",
+  () => [placeFlat(), turnFlat()],
+  instanced("h")
+);
+variant(
+  "instances, flat: all three",
+  () => [placeFlat(), turnFlat(), sizeFlat()],
+  instanced("i")
+);
 variant(
   "objects: an Object3D each, all three copied",
   () => [place(), turn(), size()],
   Three.objects("e", { of: Thing, make: () => new Object3D() })
+);
+
+variant(
+  "objects, flat: an Object3D each, all three copied",
+  () => [placeFlat(), turnFlat(), sizeFlat()],
+  Three.objects("j", { of: Thing, make: () => new Object3D() })
 );
 
 // What the loops above replace: an Object3D per entity, its matrix worked

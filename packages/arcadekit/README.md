@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 540 tests, 31 of them of @arcadekit/three
+pnpm test                          # 550 tests, 31 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -68,7 +68,7 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform`, `View` | `effect` |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform`, `Transform2d`, `View` | `effect` |
 | `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, its sound, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
@@ -172,6 +172,28 @@ const Rules = Plugin.make("game/Rules", {
 - `Transform.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis of length 1. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
 - A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A field left out of `of` is not 0, so a flat game gives every `z`.
 - [`@arcadekit/three`](../three/README.md) draws from them, and has no components of its own.
+
+**A flat game** has `Transform2d`: the same three components with no third dimension.
+
+```ts
+commands.spawn(
+  Card,
+  Transform2d.Position.of({ x: 120, y: 80 }),
+  Transform2d.Rotation.of({ angle: Math.PI / 6 }),
+  Transform2d.Scale.of({ x: 2, y: 2 })
+);
+```
+
+| Component | Fields | Named |
+| --- | --- | --- |
+| `Transform2d.Position` | `x`, `y` | `"arcadekit/Transform2d.Position"` |
+| `Transform2d.Rotation` | `angle`, in radians | `"arcadekit/Transform2d.Rotation"` |
+| `Transform2d.Scale` | `x`, `y` | `"arcadekit/Transform2d.Scale"` |
+
+- A positive `angle` turns from the x axis towards the y axis: anticlockwise where y points up, clockwise where it points down.
+- `Transform2d.plugin` lists them, as `Transform.plugin` lists the others.
+- They are different components from `Transform`'s, with names of their own. A game uses one of the two for a thing: nothing keeps one in step with the other, and a system that queries `Transform.Position` does not find an entity that has only `Transform2d.Position`.
+- `@arcadekit/three` draws from either, in the plane of x and y for these.
 
 ## Relations
 
@@ -488,7 +510,7 @@ Browser.runMain(
 [`@arcadekit/three`](../three/README.md) is the plugin that draws a game with Three.js, in a package of its own. It is made of what is above: systems of the frame stage that read the world and cannot change it, a service that holds the scene from one frame to the next, and a renderer that comes from outside as the display does.
 
 - Where a thing is drawn comes from [`Transform`](#where-a-thing-is), which is this package's. The rules import nothing of `@arcadekit/three`, so a server and a replay install neither it nor Three.js.
-- `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.2 ms of a frame before Three.js takes over. `Three.objects` keeps an Object3D per entity for the few things that are more than that.
+- `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over. `Three.objects` keeps an Object3D per entity for the few things that are more than that.
 - A game that draws with something else does not install it.
 
 ## Input
@@ -960,7 +982,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Migrate.ts` | The usual changes a migration makes to an old save's world |
 | `src/Field.ts` | The fields of a component, with `Field.schema` |
 | `src/Singleton.ts` | One instance of some data per world |
-| `src/Transform.ts` | Where a thing is: the position, rotation and scale that the rules write and a renderer reads |
+| `src/Transform.ts`, `src/Transform2d.ts` | Where a thing is: the position, rotation and scale that the rules write and a renderer reads, in three dimensions and in two |
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Input.ts` | The devices and where they come from, the picture of them in the world, and bindings to actions |
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
@@ -972,7 +994,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, transform, page and entries tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, transform, page and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
@@ -1139,7 +1161,7 @@ moving.eachChunk((start, end, pos, vel) => {
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
-- A place is three numbers and a turn is a quaternion, whatever the game. A flat game carries a `z` it does not use, and turns about one axis with four numbers.
+- A game picks one of the two transforms for a thing, and a plugin written for one does not read the other: code that should work in both asks for both. A `Transform2d` has no depth: what is in front of what in a flat game is for what draws it to say.
 - A cue is played once and left to end. There is no music: nothing loops, nothing is stopped or faded, and nothing is heard from where it is.
 - A page's cues are fetched when the page starts and kept until it goes away. They are not assets of a level: a bundle does not hold a sound.
 - A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.

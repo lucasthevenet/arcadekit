@@ -9,6 +9,7 @@ import {
   System,
   Time,
   Transform,
+  Transform2d,
 } from "arcadekit";
 import type { Entity } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
@@ -128,6 +129,71 @@ const matrixOf = (app: App.Any, entity: Entity): string => {
       : new Vector3(scale.x, scale.y, scale.z)
   );
   return Array.from(new Float32Array(matrix.elements)).join(" ");
+};
+
+/**
+ * The sixteen numbers an entity should be drawn with, whichever transform
+ * places it, as Three.js composes them. A flat one is in the plane of x
+ * and y, turned about the axis that comes out of it.
+ */
+const placeOf = (app: App.Any, entity: Entity): number[] => {
+  if (app.world.has(entity, Position)) {
+    return matrixOf(app, entity)
+      .split(" ")
+      .map((text) => Number(text));
+  }
+  const position = app.world.get(entity, Transform2d.Position)!;
+  const rotation = app.world.get(entity, Transform2d.Rotation);
+  const scale = app.world.get(entity, Transform2d.Scale);
+  return Array.from(
+    new Float32Array(
+      new Matrix4().compose(
+        new Vector3(position.x, position.y, 0),
+        new Quaternion().setFromAxisAngle(
+          new Vector3(0, 0, 1),
+          rotation?.angle ?? 0
+        ),
+        scale === undefined
+          ? new Vector3(1, 1, 1)
+          : new Vector3(scale.x, scale.y, 1)
+      ).elements
+    )
+  );
+};
+
+/** In order of where they are, which no two entities of a test share. */
+const byPlace = (rows: number[][]): number[][] =>
+  rows.toSorted(
+    (a, b) => a[12]! - b[12]! || a[13]! - b[13]! || a[14]! - b[14]!
+  );
+
+/**
+ * Checks that a mesh draws exactly these entities, each where it is. To
+ * six decimals: a turn in the plane is a sine and a cosine here and a
+ * quaternion in Three.js, which agree to the last bit but one.
+ */
+const expectDrawn = (
+  mesh: InstancedMesh,
+  app: App.Any,
+  entities: readonly Entity[]
+): void => {
+  expect(mesh.count).toBe(entities.length);
+  const rows: number[][] = [];
+  for (let i = 0; i < mesh.count; i++) {
+    rows.push(
+      Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
+    );
+  }
+  const drawnRows = byPlace(rows);
+  const wanted = byPlace(entities.map((entity) => placeOf(app, entity)));
+  for (let i = 0; i < wanted.length; i++) {
+    for (let k = 0; k < 16; k++) {
+      expect(drawnRows[i]![k], `instance ${i}, element ${k}`).toBeCloseTo(
+        wanted[i]![k]!,
+        5
+      );
+    }
+  }
 };
 
 const expected = (app: App.Any, entities: readonly Entity[]): string[] =>
@@ -486,6 +552,9 @@ describe("Three.instances", () => {
 
   it("draws ten thousand moving objects without one allocation per object per frame", () => {
     const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+    const MovingFlat = Query.all(Transform2d.Position, Velocity).pipe(
+      Query.reads(Velocity)
+    );
     const Move = System.make("th/Move", function* () {
       const { delta } = yield* Time;
       (yield* Moving).eachChunk((from, to, position, velocity) => {
@@ -493,6 +562,12 @@ describe("Three.instances", () => {
           position.x[i] = position.x[i]! + velocity.x[i]! * delta;
           position.y[i] = position.y[i]! + velocity.y[i]! * delta;
           position.z[i] = position.z[i]! + velocity.z[i]! * delta;
+        }
+      });
+      (yield* MovingFlat).eachChunk((from, to, position, velocity) => {
+        for (let i = from; i < to; i++) {
+          position.x[i] = position.x[i]! + velocity.x[i]! * delta;
+          position.y[i] = position.y[i]! + velocity.y[i]! * delta;
         }
       });
     });
@@ -511,18 +586,34 @@ describe("Three.instances", () => {
     const count = 10_000;
     const rocks: Entity[] = [];
     for (let i = 0; i < count; i++) {
-      // Of every kind: a quarter each only placed, sized, turned, and both.
+      // Of every kind: an eighth each only placed, sized, turned, and
+      // both, in three dimensions and in two.
+      const flat = i % 8 >= 4;
       const parts = [
         Rock,
-        Position.of({ x: random.next(), y: random.next(), z: random.next() }),
+        flat
+          ? Transform2d.Position.of({ x: random.next(), y: random.next() })
+          : Position.of({
+              x: random.next(),
+              y: random.next(),
+              z: random.next(),
+            }),
         Velocity.of({ x: random.next(), y: random.next(), z: random.next() }),
       ] as ComponentInput[];
       if (i % 2 === 1) {
         const { w, x, y, z } = random.quaternion();
-        parts.push(Rotation.of({ x, y, z, w }));
+        parts.push(
+          flat
+            ? Transform2d.Rotation.of({ angle: random.next() * 6 })
+            : Rotation.of({ x, y, z, w })
+        );
       }
       if (i % 4 >= 2) {
-        parts.push(Scale.of({ x: 2, y: 2, z: 2 }));
+        parts.push(
+          flat
+            ? Transform2d.Scale.of({ x: 2, y: 3 })
+            : Scale.of({ x: 2, y: 2, z: 2 })
+        );
       }
       rocks.push(app.world.spawn(...parts));
     }
@@ -559,7 +650,10 @@ describe("Three.instances", () => {
     expect(renderer.frames).toBe(301);
     expect(renderer.counts).toEqual([count]);
     expect(app.world.get(rocks[0]!, Position)!.x).toBeGreaterThan(4);
-    expect(drawn(mesh)).toEqual(expected(app, rocks));
+    expect(app.world.get(rocks[4]!, Transform2d.Position)!.x).toBeGreaterThan(
+      4
+    );
+    expectDrawn(mesh, app, rocks);
   });
 
   it("takes its mesh out of the scene and disposes of it when the app's scope closes, and leaves the geometry and the material alone", () => {
@@ -576,6 +670,328 @@ describe("Three.instances", () => {
     expect(disposed).toEqual(["mesh"]);
     expect(mesh.parent).toBeNull();
     expect(renderer.scene?.children).toEqual([]);
+  });
+});
+
+describe("a flat game's Transform2d", () => {
+  const Flat = Transform2d;
+  const at = (x: number, y: number) => Flat.Position.of({ x, y });
+
+  it("is drawn by Three.instances in the plane of x and y, turned about the axis that comes out of it", () => {
+    const renderer = makeRenderer();
+    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const rocks = [
+      app.world.spawn(Rock, at(3, 4)),
+      app.world.spawn(Rock, at(-1, 2), Flat.Scale.of({ x: 2, y: 5 })),
+      app.world.spawn(
+        Rock,
+        at(6, -7),
+        Flat.Rotation.of({ angle: Math.PI / 2 })
+      ),
+      app.world.spawn(
+        Rock,
+        at(0.5, 9),
+        Flat.Rotation.of({ angle: 0.7 }),
+        Flat.Scale.of({ x: 3, y: 0.5 })
+      ),
+    ];
+    // Not rocks, and one that is nowhere.
+    app.world.spawn(Ship, at(8, 8));
+    app.world.spawn(Ship, at(8, 8), Flat.Rotation, Flat.Scale);
+    app.world.spawn(Rock, Flat.Rotation.of({ angle: 1 }));
+    app.frame(0);
+    const mesh = meshOf(renderer.scene, "th/Rocks");
+    expectDrawn(mesh, app, rocks);
+    // By hand, so that the test does not only agree with Three.js. Only
+    // somewhere; sized; and a quarter turn, which takes x to y.
+    expect(drawn(mesh)).toContain("1 0 0 0 0 1 0 0 0 0 1 0 3 4 0 1");
+    expect(drawn(mesh)).toContain("2 0 0 0 0 5 0 0 0 0 1 0 -1 2 0 1");
+    const quarter = byPlace(
+      Array.from({ length: 4 }, (_, i) =>
+        Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
+      )
+    ).find((row) => row[12] === 6)!;
+    expect(quarter[0]).toBeCloseTo(0, 6);
+    expect(quarter[1]).toBeCloseTo(1, 6);
+    expect(quarter[4]).toBeCloseTo(-1, 6);
+    expect(quarter[5]).toBeCloseTo(0, 6);
+    expect(quarter.slice(8)).toEqual([0, 0, 1, 0, 6, -7, 0, 1]);
+  });
+
+  it("is drawn beside entities placed in three dimensions, and an entity with both positions once, from that one", () => {
+    const random = makeRandom(404);
+    const renderer = makeRenderer();
+    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const { world } = app;
+    const alive: Entity[] = [];
+    const place = () => at(random.next() * 100 - 50, random.next() * 100 - 50);
+    const turn = () => Flat.Rotation.of({ angle: random.next() * 7 - 3.5 });
+    const size = () =>
+      Flat.Scale.of({ x: 0.5 + random.next(), y: 0.5 + random.next() });
+    for (let frame = 0; frame < 100; frame++) {
+      for (let step = 0; step < 12; step++) {
+        const roll = random.int(10);
+        const one = alive[random.int(alive.length)];
+        if (roll < 3 || one === undefined) {
+          const parts = [Rock] as ComponentInput[];
+          // Most are flat; some are in three dimensions; a few are both.
+          const kind = random.int(6);
+          if (kind !== 0) {
+            parts.push(place());
+          }
+          if (kind === 0 || kind === 1) {
+            parts.push(
+              Position.of({
+                x: random.next() * 100,
+                y: random.next() * 100,
+                z: random.next() * 100,
+              })
+            );
+          }
+          if (random.next() < 0.5) {
+            parts.push(turn());
+          }
+          if (random.next() < 0.5) {
+            parts.push(size());
+          }
+          if (random.next() < 0.2) {
+            const { w, x, y, z } = random.quaternion();
+            parts.push(Rotation.of({ x, y, z, w }));
+          }
+          alive.push(world.spawn(...parts));
+        } else if (roll === 3) {
+          world.despawn(one);
+          alive.splice(alive.indexOf(one), 1);
+        } else if (roll === 4) {
+          world.add(one, turn());
+        } else if (roll === 5) {
+          world.remove(one, Flat.Rotation);
+        } else if (roll === 6) {
+          world.add(one, size());
+        } else if (roll === 7) {
+          world.remove(one, Flat.Scale);
+        } else if (roll === 8 && world.has(one, Flat.Position)) {
+          world.add(one, place());
+        } else if (world.has(one, Flat.Position)) {
+          // Lifted out of the plane, or put back in it.
+          if (world.has(one, Position)) {
+            world.remove(one, Position);
+          } else {
+            world.add(one, Position.of({ x: frame, y: step, z: -frame }));
+          }
+        }
+      }
+      app.frame(0);
+      expectDrawn(meshOf(renderer.scene, "th/Rocks"), app, alive);
+    }
+    // All of it was drawn from along the way.
+    const has = (...parts: Parameters<typeof world.has>[1][]) =>
+      alive.some((one) => parts.every((part) => world.has(one, part)));
+    expect(has(Flat.Position, Flat.Rotation, Flat.Scale)).toBe(true);
+    expect(has(Flat.Position, Position)).toBe(true);
+    expect(
+      alive.some(
+        (one) =>
+          world.has(one, Flat.Position) &&
+          !world.has(one, Position) &&
+          !world.has(one, Flat.Rotation) &&
+          !world.has(one, Flat.Scale)
+      )
+    ).toBe(true);
+    expect(alive.length).toBeGreaterThan(50);
+  });
+
+  it("is drawn only for the entities that have every component it was given and none of those it was told to leave out", () => {
+    const Heavies = Three.instances("th/FlatHeavies", {
+      of: [Rock, Heavy],
+      without: [Hidden],
+      geometry,
+      material,
+    });
+    const renderer = makeRenderer();
+    const { app } = start(
+      App.make({ plugins: [Three.plugin], systems: [Heavies] }),
+      renderer
+    );
+    const { world } = app;
+    const turn = Flat.Rotation.of({ angle: 1 });
+    const size = Flat.Scale.of({ x: 2, y: 3 });
+    // One of each kind of table, shown and hidden.
+    const shown = [
+      world.spawn(Rock, Heavy, at(1, 0)),
+      world.spawn(Rock, Heavy, at(2, 0), size),
+      world.spawn(Rock, Heavy, at(3, 0), turn),
+      world.spawn(Rock, Heavy, at(4, 0), turn, size),
+    ];
+    const hidden = [
+      world.spawn(Rock, Heavy, Hidden, at(5, 0)),
+      world.spawn(Rock, Heavy, Hidden, at(6, 0), size),
+      world.spawn(Rock, Heavy, Hidden, at(7, 0), turn),
+      world.spawn(Rock, Heavy, Hidden, at(8, 0), turn, size),
+    ];
+    for (const only of [Rock, Heavy]) {
+      world.spawn(only, at(9, 0));
+      world.spawn(only, at(9, 0), size);
+      world.spawn(only, at(9, 0), turn);
+      world.spawn(only, at(9, 0), turn, size);
+    }
+    app.frame(0);
+    const mesh = meshOf(renderer.scene, "th/FlatHeavies");
+    expectDrawn(mesh, app, shown);
+    for (const one of hidden) {
+      world.remove(one, Hidden);
+    }
+    for (const one of shown) {
+      world.add(one, Hidden);
+    }
+    app.frame(0);
+    expectDrawn(mesh, app, hidden);
+  });
+
+  it("places an object of Three.objects in the plane, and leaves the rest of it as it was made", () => {
+    const made: { readonly object: Object3D; readonly entity: Entity }[] = [];
+    const freed: Entity[] = [];
+    const Cards = Three.objects("th/Cards", {
+      of: Ship,
+      without: [Hidden],
+      make: (entity) => {
+        const object = new Group();
+        // In front of the plane, tipped about x, and deep: the game's own.
+        object.position.z = 5;
+        object.rotation.x = 0.25;
+        object.scale.z = 4;
+        made.push({ object, entity });
+        return object;
+      },
+      free: (_, entity) => {
+        freed.push(entity);
+      },
+    });
+    const renderer = makeRenderer();
+    const { app } = start(
+      App.make({ plugins: [Three.plugin], systems: [Cards] }),
+      renderer
+    );
+    const { world } = app;
+    const objectOf = (entity: Entity): Object3D =>
+      made.findLast((one) => one.entity === entity)!.object;
+    const plain = world.spawn(Ship, at(1, 2));
+    const whole = world.spawn(
+      Ship,
+      at(-3, -4),
+      Flat.Rotation.of({ angle: 0.5 }),
+      Flat.Scale.of({ x: 2, y: 3 })
+    );
+    // Turned and sized, and nowhere; and hidden.
+    world.spawn(Ship, Flat.Rotation, Flat.Scale);
+    world.spawn(Ship, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
+    app.frame(0);
+    expect(made.map((one) => one.entity).toSorted()).toEqual([plain, whole]);
+    expect(objectOf(plain).position.toArray()).toEqual([1, 2, 5]);
+    expect(objectOf(plain).rotation.z).toBe(0);
+    expect(objectOf(plain).scale.toArray()).toEqual([1, 1, 4]);
+    expect(objectOf(whole).position.toArray()).toEqual([-3, -4, 5]);
+    expect(objectOf(whole).rotation.x).toBe(0.25);
+    expect(objectOf(whole).rotation.z).toBe(0.5);
+    expect(objectOf(whole).scale.toArray()).toEqual([2, 3, 4]);
+    // It follows its entity, and is not made again.
+    world.set(whole, Flat.Position, { x: 10, y: 20 });
+    world.set(whole, Flat.Rotation, { angle: 1.5 });
+    world.set(whole, Flat.Scale, { x: 5, y: 6 });
+    app.frame(0);
+    expect(made.length).toBe(2);
+    expect(objectOf(whole).position.toArray()).toEqual([10, 20, 5]);
+    expect(objectOf(whole).rotation.z).toBe(1.5);
+    expect(objectOf(whole).scale.toArray()).toEqual([5, 6, 4]);
+    // One that is no longer turned, or sized, is as one that never was:
+    // in the plane only, the rest as it was made.
+    world.remove(whole, Flat.Rotation);
+    app.frame(0);
+    expect(objectOf(whole).rotation.z).toBe(0);
+    expect(objectOf(whole).rotation.x).toBe(0.25);
+    expect(objectOf(whole).scale.toArray()).toEqual([5, 6, 4]);
+    world.remove(whole, Flat.Scale);
+    app.frame(0);
+    expect(objectOf(whole).scale.toArray()).toEqual([1, 1, 4]);
+    // What the game then sets is left alone.
+    objectOf(whole).rotation.z = 2;
+    objectOf(whole).scale.x = 7;
+    app.frame(0);
+    expect(objectOf(whole).rotation.z).toBe(2);
+    expect(objectOf(whole).scale.x).toBe(7);
+    // Lifted out of the plane, it is placed in three dimensions.
+    world.add(plain, Position.of({ x: 7, y: 8, z: 9 }));
+    app.frame(0);
+    expect(objectOf(plain).position.toArray()).toEqual([7, 8, 9]);
+    expect(made.length).toBe(2);
+    // And it goes with its entity like any other.
+    world.despawn(plain);
+    world.add(whole, Hidden);
+    app.frame(0);
+    expect(freed.toSorted()).toEqual([plain, whole].toSorted());
+    expect(renderer.scene?.children).toEqual([]);
+  });
+
+  it("keeps what it knows of its objects when a frame brings so many more that its room has to grow", () => {
+    const made = new Map<Entity, Object3D>();
+    const Cards = Three.objects("th/ManyCards", {
+      of: Ship,
+      make: (entity) => {
+        const object = new Group();
+        object.rotation.x = 0.25;
+        made.set(entity, object);
+        return object;
+      },
+    });
+    const { app } = start(
+      App.make({ plugins: [Three.plugin], systems: [Cards] }),
+      makeRenderer()
+    );
+    const first = app.world.spawn(
+      Ship,
+      at(1, 1),
+      Flat.Rotation.of({ angle: 2 })
+    );
+    app.frame(0);
+    expect(made.get(first)!.rotation.z).toBe(2);
+    // In one frame: the first is no longer turned, and a crowd arrives
+    // after it, more than there was room for.
+    app.world.remove(first, Flat.Rotation);
+    for (let i = 0; i < 200; i++) {
+      app.world.spawn(Ship, at(i, 2));
+    }
+    app.frame(0);
+    expect(made.size).toBe(201);
+    // Its turn in the plane is gone, and the turn it was made with is not.
+    expect(made.get(first)!.rotation.z).toBe(0);
+    expect(made.get(first)!.rotation.x).toBe(0.25);
+  });
+
+  it("is listed by Three.plugin, so that a flat game that is drawn saves and loads", () => {
+    const Flatland = Plugin.make("th/Flatland", {
+      plugins: [Three.plugin],
+      components: [Rock],
+      systems: [Rocks],
+    });
+    const first = start(App.make({ plugins: [Flatland] }), makeRenderer());
+    const rock = first.app.world.spawn(
+      Rock,
+      at(4, 5),
+      Flat.Rotation.of({ angle: 1 }),
+      Flat.Scale.of({ x: 2, y: 2 })
+    );
+    const save = first.app.save();
+    if (Exit.isFailure(save)) {
+      throw new Error("The game could not be saved");
+    }
+    const renderer = makeRenderer();
+    const { app } = start(
+      App.load(save.value, { plugins: [Flatland] }),
+      renderer
+    );
+    expect(app.world.hash()).toBe(first.app.world.hash());
+    app.frame(0);
+    expectDrawn(meshOf(renderer.scene, "th/Rocks"), app, [rock]);
   });
 });
 

@@ -1,7 +1,9 @@
 /**
  * Ten thousand moving objects in a page: motes that drift and spin in a
  * box, each one instance of one mesh, and a ship that is an object of its
- * own, steered with the arrow keys.
+ * own, steered with the arrow keys. Through the middle of the box a ring
+ * of cards turns in a plane: they are placed as a flat game places things,
+ * with two numbers and an angle.
  *
  * The simulation runs at sixty ticks a second and knows nothing of
  * Three.js. What draws it reads the columns once per repaint.
@@ -23,6 +25,7 @@ import {
   System,
   Time,
   Transform,
+  Transform2d,
 } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect, Layer } from "effect";
@@ -32,8 +35,10 @@ import {
   Color,
   ConeGeometry,
   DirectionalLight,
+  DoubleSide,
   Mesh,
   MeshStandardMaterial,
+  PlaneGeometry,
 } from "three";
 
 // In a game of your own this is "@arcadekit/three".
@@ -46,6 +51,8 @@ const BOX = 60;
 
 // --- the simulation: no Three.js here ----------------------------------------------
 const Mote = Component.tag("page/Mote");
+const Card = Component.tag("page/Card");
+const CARDS = 48;
 const Ship = Component.tag("page/Ship");
 const Velocity = Component.define("page/Velocity", {
   x: Field.f32,
@@ -93,6 +100,26 @@ const Turn = System.make("Turn", function* () {
   });
 });
 
+// The cards go round the middle, each turning as it goes: a flat game's
+// components, a position of two numbers and an angle.
+const Carded = Query.all(Transform2d.Position, Transform2d.Rotation).pipe(
+  Query.with(Card)
+);
+const Wheel = System.make("Wheel", function* () {
+  const { delta } = yield* Time;
+  const cos = Math.cos(delta * 0.3);
+  const sin = Math.sin(delta * 0.3);
+  (yield* Carded).eachChunk((start, end, position, rotation) => {
+    for (let i = start; i < end; i++) {
+      const x = position.x[i]!;
+      const y = position.y[i]!;
+      position.x[i] = x * cos - y * sin;
+      position.y[i] = x * sin + y * cos;
+      rotation.angle[i] = rotation.angle[i]! + delta * 1.5;
+    }
+  });
+});
+
 const Steer = System.make("Steer", function* () {
   const keys = yield* Input.Keyboard;
   const { delta } = yield* Time;
@@ -109,9 +136,9 @@ const Steer = System.make("Steer", function* () {
 });
 
 const Rules = Plugin.make("page/Rules", {
-  plugins: [Input.plugin, Transform.plugin],
-  components: [Mote, Ship, Velocity, Spin],
-  systems: [Steer, Drift, Turn],
+  plugins: [Input.plugin, Transform.plugin, Transform2d.plugin],
+  components: [Mote, Card, Ship, Velocity, Spin],
+  systems: [Steer, Drift, Turn, Wheel],
   setup: Effect.gen(function* () {
     const commands = yield* Commands;
     const random = yield* Random;
@@ -128,6 +155,18 @@ const Rules = Plugin.make("page/Rules", {
         Scale.of({ x: size, y: size, z: size })
       );
     }
+    for (let i = 0; i < CARDS; i++) {
+      const around = (i / CARDS) * Math.PI * 2;
+      commands.spawn(
+        Card,
+        Transform2d.Position.of({
+          x: Math.cos(around) * 40,
+          y: Math.sin(around) * 40,
+        }),
+        Transform2d.Rotation.of({ angle: around }),
+        Transform2d.Scale.of({ x: 1, y: 1.5 })
+      );
+    }
     commands.spawn(Ship, Position.of({ x: 0, y: 0, z: 0 }));
   }),
 });
@@ -138,6 +177,12 @@ const Motes = Three.instances("page/Motes", {
   geometry: new BoxGeometry(1, 1, 1),
   material: new MeshStandardMaterial({ color: "#78dce8" }),
   capacity: COUNT,
+});
+
+const Cards = Three.instances("page/Cards", {
+  of: Card,
+  geometry: new PlaneGeometry(4, 4),
+  material: new MeshStandardMaterial({ color: "#ff6188", side: DoubleSide }),
 });
 
 const Ships = Three.objects("page/Ships", {
@@ -188,7 +233,7 @@ const Look = Plugin.make("page/Look", {
       scene.add(new AmbientLight("#8090b0", 1.2), sun);
     })
   ),
-  systems: [Motes, Ships, Orbit, Hud],
+  systems: [Motes, Cards, Ships, Orbit, Hud],
 });
 
 // --- the entry point -------------------------------------------------------------

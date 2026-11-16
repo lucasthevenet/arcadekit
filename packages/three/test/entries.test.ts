@@ -131,6 +131,7 @@ describe("the entries of @arcadekit/three", () => {
   it("has no components of its own: where a thing is drawn is arcadekit's Transform, which it imports by its entry", () => {
     const { packages } = reach(sourceOf("./Three"));
     expect(packages).toContain("arcadekit/Transform");
+    expect(packages).toContain("arcadekit/Transform2d");
     // It defines no component: it reads the game's.
     expect(sources["../src/Three.ts"]).not.toMatch(
       /Component\.(?:define|tag|relation)\(/u
@@ -185,7 +186,10 @@ describe("the entries of @arcadekit/three", () => {
       y: 2,
       z: 3,
     });
-    expect(Main.Three.plugin.plugins).toEqual([Arcadekit.Transform.plugin]);
+    expect(Main.Three.plugin.plugins).toEqual([
+      Arcadekit.Transform.plugin,
+      Arcadekit.Transform2d.plugin,
+    ]);
     expect(Main.Three.Render.stage).toBe("frame");
   });
 });
