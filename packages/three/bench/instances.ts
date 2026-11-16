@@ -121,6 +121,34 @@ variant(
   Three.objects("j", { of: Thing, make: () => new Object3D() })
 );
 
+// Drawn between two ticks: each value on its way from the one a tick ago,
+// kept per entity by the renderer. No tick runs between these frames; a
+// frame that follows one does the same work.
+const smoothed = (name: string) =>
+  Three.instances(name, {
+    of: Thing,
+    geometry,
+    material,
+    capacity: N,
+    smooth: true,
+  });
+variant("instances, smooth: a position", () => [place()], smoothed("k"));
+variant(
+  "instances, smooth: all three",
+  () => [place(), turn(), size()],
+  smoothed("l")
+);
+variant(
+  "instances, smooth, flat: a position",
+  () => [placeFlat()],
+  smoothed("m")
+);
+variant(
+  "instances, smooth, flat: all three",
+  () => [placeFlat(), turnFlat(), sizeFlat()],
+  smoothed("n")
+);
+
 // What the loops above replace: an Object3D per entity, its matrix worked
 // out by Three.js and copied into the mesh, as its documentation shows.
 {

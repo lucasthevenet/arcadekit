@@ -550,111 +550,118 @@ describe("Three.instances", () => {
     expect(attribute.version).toBe(before);
   });
 
-  it("draws ten thousand moving objects without one allocation per object per frame", () => {
-    const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
-    const MovingFlat = Query.all(Transform2d.Position, Velocity).pipe(
-      Query.reads(Velocity)
-    );
-    const Move = System.make("th/Move", function* () {
-      const { delta } = yield* Time;
-      (yield* Moving).eachChunk((from, to, position, velocity) => {
-        for (let i = from; i < to; i++) {
-          position.x[i] = position.x[i]! + velocity.x[i]! * delta;
-          position.y[i] = position.y[i]! + velocity.y[i]! * delta;
-          position.z[i] = position.z[i]! + velocity.z[i]! * delta;
-        }
+  // Where the last tick left them, and between their last two places.
+  it.each([false, true])(
+    "draws ten thousand moving objects without one allocation per object per frame (smooth: %s)",
+    (smooth) => {
+      const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+      const MovingFlat = Query.all(Transform2d.Position, Velocity).pipe(
+        Query.reads(Velocity)
+      );
+      const Move = System.make("th/Move", function* () {
+        const { delta } = yield* Time;
+        (yield* Moving).eachChunk((from, to, position, velocity) => {
+          for (let i = from; i < to; i++) {
+            position.x[i] = position.x[i]! + velocity.x[i]! * delta;
+            position.y[i] = position.y[i]! + velocity.y[i]! * delta;
+            position.z[i] = position.z[i]! + velocity.z[i]! * delta;
+          }
+        });
+        (yield* MovingFlat).eachChunk((from, to, position, velocity) => {
+          for (let i = from; i < to; i++) {
+            position.x[i] = position.x[i]! + velocity.x[i]! * delta;
+            position.y[i] = position.y[i]! + velocity.y[i]! * delta;
+          }
+        });
       });
-      (yield* MovingFlat).eachChunk((from, to, position, velocity) => {
-        for (let i = from; i < to; i++) {
-          position.x[i] = position.x[i]! + velocity.x[i]! * delta;
-          position.y[i] = position.y[i]! + velocity.y[i]! * delta;
-        }
+      const Crowd = Three.instances("th/Crowd", {
+        of: Rock,
+        geometry,
+        material,
+        capacity: 16_384,
+        smooth,
       });
-    });
-    const Crowd = Three.instances("th/Crowd", {
-      of: Rock,
-      geometry,
-      material,
-      capacity: 16_384,
-    });
-    const renderer = makeRenderer();
-    const { app } = start(
-      App.make({ plugins: [Three.plugin], systems: [Move, Crowd] }),
-      renderer
-    );
-    const random = makeRandom(5);
-    const count = 10_000;
-    const rocks: Entity[] = [];
-    for (let i = 0; i < count; i++) {
-      // Of every kind: an eighth each only placed, sized, turned, and
-      // both, in three dimensions and in two.
-      const flat = i % 8 >= 4;
-      const parts = [
-        Rock,
-        flat
-          ? Transform2d.Position.of({ x: random.next(), y: random.next() })
-          : Position.of({
-              x: random.next(),
-              y: random.next(),
-              z: random.next(),
-            }),
-        Velocity.of({ x: random.next(), y: random.next(), z: random.next() }),
-      ] as ComponentInput[];
-      if (i % 2 === 1) {
-        const { w, x, y, z } = random.quaternion();
-        parts.push(
+      const renderer = makeRenderer();
+      const { app } = start(
+        App.make({ plugins: [Three.plugin], systems: [Move, Crowd] }),
+        renderer
+      );
+      const random = makeRandom(5);
+      const count = 10_000;
+      const rocks: Entity[] = [];
+      for (let i = 0; i < count; i++) {
+        // Of every kind: an eighth each only placed, sized, turned, and
+        // both, in three dimensions and in two.
+        const flat = i % 8 >= 4;
+        const parts = [
+          Rock,
           flat
-            ? Transform2d.Rotation.of({ angle: random.next() * 6 })
-            : Rotation.of({ x, y, z, w })
-        );
+            ? Transform2d.Position.of({ x: random.next(), y: random.next() })
+            : Position.of({
+                x: random.next(),
+                y: random.next(),
+                z: random.next(),
+              }),
+          Velocity.of({ x: random.next(), y: random.next(), z: random.next() }),
+        ] as ComponentInput[];
+        if (i % 2 === 1) {
+          const { w, x, y, z } = random.quaternion();
+          parts.push(
+            flat
+              ? Transform2d.Rotation.of({ angle: random.next() * 6 })
+              : Rotation.of({ x, y, z, w })
+          );
+        }
+        if (i % 4 >= 2) {
+          parts.push(
+            flat
+              ? Transform2d.Scale.of({ x: 2, y: 3 })
+              : Scale.of({ x: 2, y: 2, z: 2 })
+          );
+        }
+        rocks.push(app.world.spawn(...parts));
       }
-      if (i % 4 >= 2) {
-        parts.push(
-          flat
-            ? Transform2d.Scale.of({ x: 2, y: 3 })
-            : Scale.of({ x: 2, y: 2, z: 2 })
-        );
+      const step = (): void => {
+        app.tick(1 / 60);
+        app.frame(0.5);
+      };
+      // Until the loops are compiled, and whatever is made once is made.
+      for (let i = 0; i < 200; i++) {
+        step();
       }
-      rocks.push(app.world.spawn(...parts));
+      const mesh = meshOf(renderer.scene, "th/Crowd");
+      const attribute = mesh.instanceMatrix;
+      const buffer = attribute.array;
+      const [range] = attribute.updateRanges;
+      // How much the heap grew over one tick and one frame, many times: the
+      // middle one, since now and then the collector runs in between.
+      const grown: number[] = [];
+      for (let i = 0; i < 101; i++) {
+        const before = process.memoryUsage().heapUsed;
+        step();
+        grown.push(process.memoryUsage().heapUsed - before);
+      }
+      const typical = grown.toSorted((a, b) => a - b)[50]!;
+      // The smallest thing that can be allocated, a number, is 12 bytes or
+      // more. One of those per object would be 120,000 bytes a frame.
+      expect(typical).toBeLessThan(count * 4);
+      // And what it draws into is what it drew into: the same buffer, the
+      // same attribute, the same range.
+      expect(mesh.instanceMatrix).toBe(attribute);
+      expect(attribute.array).toBe(buffer);
+      expect(attribute.updateRanges[0]).toBe(range);
+      // They did move, and they were drawn where they are.
+      expect(renderer.frames).toBe(301);
+      expect(renderer.counts).toEqual([count]);
+      // All the way to the tick they are at, which is where both draw them.
+      app.frame(1);
+      expect(app.world.get(rocks[0]!, Position)!.x).toBeGreaterThan(4);
+      expect(app.world.get(rocks[4]!, Transform2d.Position)!.x).toBeGreaterThan(
+        4
+      );
+      expectDrawn(mesh, app, rocks);
     }
-    const step = (): void => {
-      app.tick(1 / 60);
-      app.frame(0);
-    };
-    // Until the loops are compiled, and whatever is made once is made.
-    for (let i = 0; i < 200; i++) {
-      step();
-    }
-    const mesh = meshOf(renderer.scene, "th/Crowd");
-    const attribute = mesh.instanceMatrix;
-    const buffer = attribute.array;
-    const [range] = attribute.updateRanges;
-    // How much the heap grew over one tick and one frame, many times: the
-    // middle one, since now and then the collector runs in between.
-    const grown: number[] = [];
-    for (let i = 0; i < 101; i++) {
-      const before = process.memoryUsage().heapUsed;
-      step();
-      grown.push(process.memoryUsage().heapUsed - before);
-    }
-    const typical = grown.toSorted((a, b) => a - b)[50]!;
-    // The smallest thing that can be allocated, a number, is 12 bytes or
-    // more. One of those per object would be 120,000 bytes a frame.
-    expect(typical).toBeLessThan(count * 4);
-    // And what it draws into is what it drew into: the same buffer, the
-    // same attribute, the same range.
-    expect(mesh.instanceMatrix).toBe(attribute);
-    expect(attribute.array).toBe(buffer);
-    expect(attribute.updateRanges[0]).toBe(range);
-    // They did move, and they were drawn where they are.
-    expect(renderer.frames).toBe(301);
-    expect(renderer.counts).toEqual([count]);
-    expect(app.world.get(rocks[0]!, Position)!.x).toBeGreaterThan(4);
-    expect(app.world.get(rocks[4]!, Transform2d.Position)!.x).toBeGreaterThan(
-      4
-    );
-    expectDrawn(mesh, app, rocks);
-  });
+  );
 
   it("takes its mesh out of the scene and disposes of it when the app's scope closes, and leaves the geometry and the material alone", () => {
     const renderer = makeRenderer();
@@ -992,6 +999,548 @@ describe("a flat game's Transform2d", () => {
     expect(app.world.hash()).toBe(first.app.world.hash());
     app.frame(0);
     expectDrawn(meshOf(renderer.scene, "th/Rocks"), app, [rock]);
+  });
+});
+
+describe("an entity drawn between two ticks", () => {
+  const Flat = Transform2d;
+  /** Moves every rock ten along x a tick, and every flat one too. */
+  const Slide = System.make("th/Slide", function* () {
+    (yield* Query.all(Position)).each((position) => {
+      position.x += 10;
+    });
+    (yield* Query.all(Flat.Position)).each((position) => {
+      position.x += 10;
+    });
+  });
+  const Smoothed = Three.instances("th/Smoothed", {
+    of: Rock,
+    without: [Hidden],
+    geometry,
+    material,
+    smooth: true,
+  });
+  const play = (...systems: Parameters<typeof App.make>[0]["systems"] & {}) => {
+    const renderer = makeRenderer();
+    const { app } = start(
+      App.make({
+        plugins: [Three.plugin],
+        components: [Rock, Hidden],
+        systems: [Slide, ...systems],
+      }),
+      renderer
+    );
+    return { app, renderer, mesh: () => meshOf(renderer.scene, "th/Smoothed") };
+  };
+  /** The sixteen numbers of the instance that is at this height: no two of a test share one. */
+  const rowAt = (mesh: InstancedMesh, y: number): number[] => {
+    for (let i = 0; i < mesh.count; i++) {
+      const row = Array.from(
+        mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)
+      );
+      if (Math.abs(row[13]! - y) < 1e-4) {
+        return row;
+      }
+    }
+    throw new Error(`Nothing is drawn at height ${y}`);
+  };
+  const xAt = (mesh: InstancedMesh, y: number): number => rowAt(mesh, y)[12]!;
+
+  it("is where it is the first frame it is seen, and from then on between where it was a tick ago and where it is", () => {
+    const { app, mesh } = play(Smoothed);
+    app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    // Never drawn before: there is nowhere to come from, whatever the frame.
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(0);
+    app.tick(1);
+    // Just after the tick it is still where it was, and then on its way.
+    app.frame(0);
+    expect(xAt(mesh(), 1)).toBe(0);
+    app.frame(0.25);
+    expect(xAt(mesh(), 1)).toBe(2.5);
+    app.frame(0.75);
+    expect(xAt(mesh(), 1)).toBe(7.5);
+    // A tick later the place it has come to is the one it comes from.
+    app.tick(1);
+    app.frame(0);
+    expect(xAt(mesh(), 1)).toBe(10);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(15);
+    // No further than where it is, and no further back than where it was.
+    app.frame(1);
+    expect(xAt(mesh(), 1)).toBe(20);
+    app.frame(3);
+    expect(xAt(mesh(), 1)).toBe(20);
+    app.frame(-2);
+    expect(xAt(mesh(), 1)).toBe(10);
+  });
+
+  it("comes from where it was last drawn when several ticks ran since, and stays between the two when none did", () => {
+    const { app, mesh } = play(Smoothed);
+    const rock = app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    app.frame(0);
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(5);
+    // Three ticks and then a frame: from 10, where it was, to 40.
+    app.tick(1);
+    app.tick(1);
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(25);
+    // Frames with no tick between them: the same two places.
+    app.frame(0.1);
+    expect(xAt(mesh(), 1)).toBe(13);
+    app.frame(0.9);
+    expect(xAt(mesh(), 1)).toBe(37);
+    // Moved with no tick, by an action or by hand: it goes there from
+    // where it was coming from.
+    app.world.set(rock, Position, { x: 110 });
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(60);
+  });
+
+  it("draws an entity it has not been drawing where it is: a new one, one in a slot that was another's, one that was hidden", () => {
+    const { app, mesh } = play(Smoothed);
+    const { world } = app;
+    const old = world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    const hidden = world.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }));
+    app.frame(0);
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(5);
+    // Gone, and its slot taken by another, far away: not drawn on the way
+    // from where the old one was.
+    world.despawn(old);
+    const fresh = world.spawn(Rock, Position.of({ x: 500, y: 3, z: 0 }));
+    expect(fresh & 0x3f_ff_ff).toBe(old & 0x3f_ff_ff);
+    world.add(hidden, Hidden);
+    app.tick(1);
+    app.frame(0.5);
+    expect(mesh().count).toBe(1);
+    expect(xAt(mesh(), 3)).toBe(510);
+    // From its second frame on it is on its way like any other.
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 3)).toBe(515);
+    // Shown again after frames in which it was not drawn: where it is.
+    world.remove(hidden, Hidden);
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 2)).toBe(40);
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 2)).toBe(45);
+  });
+
+  it("starts over when its system did not run for a frame", () => {
+    const Phase = { on: true };
+    const Gated = Smoothed.pipe(System.runIf(Effect.sync(() => Phase.on)));
+    const { app, mesh } = play(Gated);
+    app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    app.frame(0);
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(5);
+    Phase.on = false;
+    app.tick(1);
+    app.frame(0.5);
+    Phase.on = true;
+    app.tick(1);
+    app.frame(0.5);
+    // Not from 10, where it was last drawn from, two frames ago.
+    expect(xAt(mesh(), 1)).toBe(30);
+  });
+
+  it("is drawn where it is when it went further in a tick than it was told an entity can", () => {
+    const Wrapping = Three.instances("th/Smoothed", {
+      of: Rock,
+      geometry,
+      material,
+      smooth: true,
+      snap: 50,
+    });
+    const { app, mesh } = play(Wrapping);
+    const { world } = app;
+    const rock = world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    const card = world.spawn(Rock, Flat.Position.of({ x: 0, y: 2 }));
+    app.frame(0);
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(5);
+    expect(xAt(mesh(), 2)).toBe(5);
+    // Off one edge and in at the other: not drawn crossing the screen.
+    world.set(rock, Position, { x: -400 });
+    world.set(card, Flat.Position, { x: 300 });
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(-390);
+    expect(xAt(mesh(), 2)).toBe(310);
+    // And on its way again from there.
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(-385);
+    expect(xAt(mesh(), 2)).toBe(315);
+    // Wherever it went: up and away as well as along.
+    world.set(rock, Position, { x: -380, y: 91, z: 60 });
+    world.set(card, Flat.Position, { x: 320, y: 92 });
+    app.tick(1);
+    app.frame(0.5);
+    expect(rowAt(mesh(), 91).slice(12, 15)).toEqual([-370, 91, 60]);
+    expect(rowAt(mesh(), 92).slice(12, 15)).toEqual([330, 92, 0]);
+    world.set(rock, Position, { y: 1, z: 0 });
+    app.tick(1);
+    app.frame(1);
+    // Exactly as far as it may go is not too far.
+    // (It is at -360 now, and goes ten more with the tick.)
+    world.set(rock, Position, { x: -320 });
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(-335);
+    // And a hair further is.
+    world.set(rock, Position, { x: -269.5 });
+    app.tick(1);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(-259.5);
+  });
+
+  it("draws an entity in a slot that was another's turned and sized as it is, not on the way from the other's", () => {
+    const { app, mesh } = play(Smoothed);
+    const { world } = app;
+    const olds = [
+      world.spawn(
+        Rock,
+        Position.of({ x: 0, y: 1, z: 0 }),
+        Rotation.of(Transform3d.axisAngle(0, 0, 1, 0.2)),
+        Scale.of({ x: 1, y: 1, z: 1 })
+      ),
+      world.spawn(
+        Rock,
+        Flat.Position.of({ x: 0, y: 2 }),
+        Flat.Rotation.of({ angle: 0.2 }),
+        Flat.Scale.of({ x: 1, y: 1 })
+      ),
+    ];
+    app.frame(0);
+    app.tick(1);
+    app.frame(0.5);
+    // Both gone, and their slots taken at once, the second's first.
+    world.despawn(olds[0]!);
+    world.despawn(olds[1]!);
+    const flat = world.spawn(
+      Rock,
+      Flat.Position.of({ x: 100, y: 4 }),
+      Flat.Rotation.of({ angle: 2.5 }),
+      Flat.Scale.of({ x: 6, y: 7 })
+    );
+    const solid = world.spawn(
+      Rock,
+      Position.of({ x: 100, y: 3, z: 0 }),
+      Rotation.of(Transform3d.axisAngle(0, 0, 1, 2.5)),
+      Scale.of({ x: 6, y: 7, z: 8 })
+    );
+    expect([flat & 0x3f_ff_ff, solid & 0x3f_ff_ff].toSorted()).toEqual(
+      olds.map((one) => one & 0x3f_ff_ff).toSorted()
+    );
+    app.tick(1);
+    app.frame(0.5);
+    expectDrawn(mesh(), app, [flat, solid]);
+  });
+
+  it("turns by the shorter way and grows evenly, in three dimensions", () => {
+    const { app, mesh } = play(Smoothed);
+    const { world } = app;
+    // About an axis that leans, so that every number of the turn changes.
+    const quarter = Transform3d.axisAngle(0.6, 0, 0.8, Math.PI / 2);
+    const rock = world.spawn(
+      Rock,
+      Position.of({ x: 0, y: 1, z: 0 }),
+      Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
+      Scale.of({ x: 1, y: 1, z: 1 })
+    );
+    world.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), Rotation);
+    app.frame(0);
+    world.set(rock, Rotation, quarter);
+    world.set(rock, Scale, { x: 3, y: 5, z: 7 });
+    app.tick(1);
+    app.frame(0.5);
+    // Half of a quarter turn, at twice, three and four times the size.
+    const eighth = new Matrix4().compose(
+      new Vector3(5, 1, 0),
+      new Quaternion().setFromAxisAngle(new Vector3(0.6, 0, 0.8), Math.PI / 4),
+      new Vector3(2, 3, 4)
+    ).elements;
+    // And again in a frame with no tick before it: the same two turns.
+    for (let frame = 0; frame < 2; frame++) {
+      const drawnRow = rowAt(mesh(), 1);
+      for (let k = 0; k < 16; k++) {
+        expect(drawnRow[k], `element ${k}`).toBeCloseTo(eighth[k]!, 5);
+      }
+      app.frame(0.5);
+    }
+    // One that is not turned at all stays so.
+    expect(rowAt(mesh(), 2).slice(0, 11)).toEqual([
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+    ]);
+    // The opposite quaternion is the same turn: it does not swing round
+    // to get there.
+    app.frame(1);
+    const there = rowAt(mesh(), 1);
+    world.set(rock, Rotation, {
+      x: -quarter.x,
+      y: -quarter.y,
+      z: -quarter.z,
+      w: -quarter.w,
+    });
+    world.set(rock, Scale, { x: 3, y: 5, z: 7 });
+    app.tick(1);
+    for (const alpha of [0, 0.3, 0.5, 0.9, 1]) {
+      app.frame(alpha);
+      const now = rowAt(mesh(), 1);
+      for (let k = 0; k < 11; k++) {
+        expect(now[k], `alpha ${alpha}, element ${k}`).toBeCloseTo(
+          there[k]!,
+          5
+        );
+      }
+    }
+  });
+
+  it("turns by the shorter way round and grows evenly, in the plane", () => {
+    const { app, mesh } = play(Smoothed);
+    const { world } = app;
+    const card = world.spawn(
+      Rock,
+      Flat.Position.of({ x: 0, y: 1 }),
+      Flat.Rotation.of({ angle: 0.2 }),
+      Flat.Scale.of({ x: 1, y: 1 })
+    );
+    app.frame(0);
+    world.set(card, Flat.Rotation, { angle: 1 });
+    world.set(card, Flat.Scale, { x: 3, y: 5 });
+    app.tick(1);
+    app.frame(0.5);
+    const half = new Matrix4().compose(
+      new Vector3(5, 1, 0),
+      new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 0.6),
+      new Vector3(2, 3, 1)
+    ).elements;
+    for (let frame = 0; frame < 2; frame++) {
+      const drawnRow = rowAt(mesh(), 1);
+      for (let k = 0; k < 16; k++) {
+        expect(drawnRow[k], `element ${k}`).toBeCloseTo(half[k]!, 5);
+      }
+      app.frame(0.5);
+    }
+    // From a little past nothing to a little short of a whole turn is a
+    // little way back, through nothing, not nearly all the way round.
+    app.frame(1);
+    world.set(card, Flat.Rotation, { angle: 0.25 });
+    app.tick(1);
+    app.frame(1);
+    world.set(card, Flat.Rotation, { angle: Math.PI * 2 - 0.25 });
+    app.tick(1);
+    app.frame(0.5);
+    const through = rowAt(mesh(), 1);
+    expect(through[0]! / 3).toBeCloseTo(1, 5);
+    expect(through[1]! / 3).toBeCloseTo(0, 5);
+    app.frame(1);
+    const end = rowAt(mesh(), 1);
+    expect(end[0]! / 3).toBeCloseTo(Math.cos(0.25), 5);
+    expect(end[1]! / 3).toBeCloseTo(-Math.sin(0.25), 5);
+  });
+
+  it("agrees, over a long run of ticks and frames that do not line up, with a model of what was last drawn", () => {
+    const random = makeRandom(1612);
+    const { app, mesh } = play(Smoothed);
+    const { world } = app;
+    // Each entity at a height of its own, by which its instance is found.
+    let heights = 0;
+    const alive: {
+      readonly entity: Entity;
+      readonly y: number;
+      readonly flat: boolean;
+    }[] = [];
+    /** Per entity: where it was coming from and going to when last drawn, and in which frame. */
+    const model = new Map<
+      Entity,
+      { from: number; to: number; frame: number }
+    >();
+    const xOf = (one: (typeof alive)[number]): number =>
+      one.flat
+        ? world.get(one.entity, Flat.Position)!.x
+        : world.get(one.entity, Position)!.x;
+    for (let frame = 1; frame <= 300; frame++) {
+      const ticks = random.int(4);
+      for (let i = 0; i < ticks; i++) {
+        app.tick(1);
+      }
+      for (let step = 0; step < 3; step++) {
+        const roll = random.int(6);
+        const one = alive[random.int(alive.length)];
+        if (roll < 2 || one === undefined) {
+          const y = ++heights;
+          const flat = random.next() < 0.5;
+          const x = random.int(1000);
+          alive.push({
+            entity: flat
+              ? world.spawn(Rock, Flat.Position.of({ x, y }))
+              : world.spawn(Rock, Position.of({ x, y, z: 0 })),
+            y,
+            flat,
+          });
+        } else if (roll === 2) {
+          world.despawn(one.entity);
+          alive.splice(alive.indexOf(one), 1);
+        } else if (roll === 3) {
+          // Hidden for a while, or shown again.
+          if (world.has(one.entity, Hidden)) {
+            world.remove(one.entity, Hidden);
+          } else {
+            world.add(one.entity, Hidden);
+          }
+        }
+      }
+      const alpha = random.next();
+      app.frame(alpha);
+      const shown = alive.filter((one) => !world.has(one.entity, Hidden));
+      expect(mesh().count).toBe(shown.length);
+      for (const one of shown) {
+        const x = xOf(one);
+        const last = model.get(one.entity);
+        let from = x;
+        if (last !== undefined && last.frame === frame - 1) {
+          from = ticks > 0 ? last.to : last.from;
+        }
+        model.set(one.entity, { from, to: x, frame });
+        expect(xAt(mesh(), one.y), `frame ${frame}`).toBeCloseTo(
+          from + (x - from) * alpha,
+          2
+        );
+      }
+    }
+    // More of them than the room it started with, and of both kinds.
+    expect(heights).toBeGreaterThan(150);
+    expect(alive.some((one) => one.flat)).toBe(true);
+    expect(alive.some((one) => !one.flat)).toBe(true);
+  });
+
+  it("places an object of Three.objects the same way", () => {
+    const made = new Map<Entity, Object3D>();
+    const Ships = Three.objects("th/SmoothShips", {
+      of: Ship,
+      make: (entity) => {
+        const object = new Group();
+        object.position.z = 9;
+        made.set(entity, object);
+        return object;
+      },
+      smooth: true,
+      snap: 200,
+    });
+    const { app } = play(Ships);
+    const { world } = app;
+    const ship = world.spawn(
+      Ship,
+      Position.of({ x: 0, y: 1, z: 2 }),
+      Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
+      Scale.of({ x: 1, y: 1, z: 1 })
+    );
+    const card = world.spawn(
+      Ship,
+      Flat.Position.of({ x: 0, y: 4 }),
+      Flat.Rotation.of({ angle: 0.5 }),
+      Flat.Scale.of({ x: 1, y: 1 })
+    );
+    app.frame(0.5);
+    expect(made.get(ship)!.position.toArray()).toEqual([0, 1, 2]);
+    expect(made.get(card)!.position.toArray()).toEqual([0, 4, 9]);
+    world.set(ship, Rotation, Transform3d.axisAngle(0, 0, 1, Math.PI / 2));
+    world.set(ship, Scale, { x: 3, y: 3, z: 3 });
+    world.set(card, Flat.Rotation, { angle: 1.5 });
+    world.set(card, Flat.Scale, { x: 5, y: 7 });
+    app.tick(1);
+    app.frame(0.5);
+    expect(made.get(ship)!.position.toArray()).toEqual([5, 1, 2]);
+    expect(made.get(ship)!.scale.toArray()).toEqual([2, 2, 2]);
+    const half = new Quaternion().setFromAxisAngle(
+      new Vector3(0, 0, 1),
+      Math.PI / 4
+    );
+    expect(made.get(ship)!.quaternion.x).toBeCloseTo(half.x, 6);
+    expect(made.get(ship)!.quaternion.y).toBeCloseTo(half.y, 6);
+    expect(made.get(ship)!.quaternion.z).toBeCloseTo(half.z, 6);
+    expect(made.get(ship)!.quaternion.w).toBeCloseTo(half.w, 6);
+    expect(made.get(card)!.position.toArray()).toEqual([5, 4, 9]);
+    expect(made.get(card)!.rotation.z).toBeCloseTo(1, 6);
+    expect(made.get(card)!.scale.toArray()).toEqual([3, 4, 1]);
+    // Too far to have gone in a tick: it is where it is.
+    world.set(ship, Position, { x: 1000 });
+    app.tick(1);
+    app.frame(0.5);
+    expect(made.get(ship)!.position.x).toBe(1010);
+    expect(made.size).toBe(2);
+  });
+
+  it("is not done unless it is asked for: an entity is drawn where the last tick left it", () => {
+    const Plain = Three.instances("th/Smoothed", {
+      of: Rock,
+      geometry,
+      material,
+    });
+    const { app, mesh } = play(Plain);
+    app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    app.frame(0);
+    app.tick(1);
+    for (const alpha of [0, 0.5, 0.99]) {
+      app.frame(alpha);
+      expect(xAt(mesh(), 1)).toBe(10);
+    }
+  });
+
+  it("keeps the place before to itself: a game drawn between its ticks is the same game", () => {
+    const Rules = Plugin.make("th/SlideRules", {
+      plugins: [Transform3d.plugin, Transform2d.plugin],
+      components: [Rock, Ship, Hidden],
+      systems: [Slide],
+    });
+    const Ships = Three.objects("th/SmoothShips", {
+      of: Ship,
+      make: () => new Object3D(),
+      smooth: true,
+    });
+    const Drawn = Plugin.make("th/SmoothDrawn", {
+      plugins: [Three.plugin, Rules],
+      systems: [Smoothed, Ships],
+    });
+    const drawnGame = start(
+      App.make({ plugins: [Drawn], checkpointEvery: 1, verifyFrames: true }),
+      makeRenderer()
+    ).app;
+    const scope = Effect.runSync(Scope.make());
+    const bare = Effect.runSync(
+      App.make({ plugins: [Rules], checkpointEvery: 1 }).pipe(
+        Scope.provide(scope)
+      )
+    );
+    for (const app of [drawnGame, bare]) {
+      app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), Rotation);
+      app.world.spawn(Rock, Flat.Position.of({ x: 0, y: 2 }), Flat.Rotation);
+      app.world.spawn(Ship, Position.of({ x: 0, y: 3, z: 0 }), Scale);
+    }
+    for (let tick = 0; tick < 40; tick++) {
+      drawnGame.tick(1);
+      drawnGame.frame(0.2);
+      drawnGame.frame(0.7);
+      bare.tick(1);
+      expect(drawnGame.world.hash()).toBe(bare.world.hash());
+    }
+    expect(drawnGame.actionLog).toEqual(bare.actionLog);
+    const saves = [drawnGame.save(), bare.save()].map((save) =>
+      Exit.isSuccess(save) ? save.value : undefined
+    );
+    expect(saves[0]).toBeDefined();
+    expect(saves[0]).toEqual(saves[1]);
   });
 });
 

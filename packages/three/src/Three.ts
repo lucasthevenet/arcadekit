@@ -48,6 +48,7 @@ import { entityIndex } from "arcadekit/ecs";
 import type { ComponentDef, Entity, EntityColumn } from "arcadekit/ecs";
 import * as Plugin from "arcadekit/Plugin";
 import * as Query from "arcadekit/Query";
+import { Frame, Time } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 import * as Transform2d from "arcadekit/Transform2d";
 import * as Transform3d from "arcadekit/Transform3d";
@@ -304,10 +305,370 @@ export interface Which {
   readonly of: ComponentDef<any> | readonly ComponentDef<any>[];
   /** Components an entity must not have to be drawn: one that hides it, say. */
   readonly without?: readonly ComponentDef<any>[];
+  /**
+   * Draws each entity between its last two places, and not where the last
+   * tick left it: at `Frame.alpha` of the way from where it was a tick ago
+   * to where it is. A game whose ticks and frames do not line up then
+   * moves evenly, a tick behind. Off unless told: see `Three.instances`.
+   */
+  readonly smooth?: boolean;
+  /**
+   * With `smooth`, how far an entity may go in one tick and still be drawn
+   * on the way. One that went further, off one edge and in at the other,
+   * say, is drawn where it is. Any distance, when left out.
+   */
+  readonly snap?: number;
 }
 
 const required = (which: Which): readonly ComponentDef<any>[] =>
   "id" in which.of ? [which.of] : which.of;
+
+// --- between two ticks -------------------------------------------------------------
+// What a system keeps to draw its entities between their last two places:
+// for each component it reads, the value an entity had a tick ago and the
+// value it has, by the entity's index. It is the renderer's own, never the
+// world's: a game that is drawn smoothly is the same game.
+
+/** What the stores of one system agree on, for the frame that is being drawn. */
+interface Clock {
+  /**
+   * The app's frame, counted from 2: 0 in a store means never seen. It is
+   * the app's count and not the system's own, so that an entity is known
+   * to have been drawn in the frame before, and not merely the last time
+   * the system ran.
+   */
+  stamp: number;
+  /** Whether a tick ran since the frame before: what was current is now a tick old. */
+  shift: boolean;
+  /** How far the frame is between the last two ticks. */
+  alpha: number;
+}
+
+/** The two values of one component, per entity, and the columns they are blended into. */
+abstract class Blend {
+  protected readonly clock: Clock;
+  private readonly width: number;
+  /** Per entity index: the entity whose values these are. */
+  protected owner = new Uint32Array(0);
+  /** Per entity index: the frame its entity was last drawn in. */
+  protected seen = new Uint32Array(0);
+  protected prev = new Float32Array(0);
+  protected cur = new Float32Array(0);
+  /** How many rows the blended columns have room for. */
+  protected rows = 0;
+
+  constructor(clock: Clock, width: number) {
+    this.clock = clock;
+    this.width = width;
+  }
+
+  /** Makes room for these rows and their entities, before the loop reads either. */
+  protected fit(start: number, end: number, entities: EntityColumn): void {
+    let most = -1;
+    for (let i = start; i < end; i++) {
+      const index = entityIndex(entities[i]!);
+      if (index > most) {
+        most = index;
+      }
+    }
+    if (most >= this.owner.length) {
+      let length = Math.max(64, this.owner.length);
+      while (length <= most) {
+        length *= 2;
+      }
+      const owner = new Uint32Array(length);
+      owner.set(this.owner);
+      this.owner = owner;
+      const seen = new Uint32Array(length);
+      seen.set(this.seen);
+      this.seen = seen;
+      const prev = new Float32Array(length * this.width);
+      prev.set(this.prev);
+      this.prev = prev;
+      const cur = new Float32Array(length * this.width);
+      cur.set(this.cur);
+      this.cur = cur;
+    }
+    if (end > this.rows) {
+      this.rows = Math.max(end, this.rows * 2);
+      this.widen(this.rows);
+    }
+  }
+
+  /** Makes the blended columns anew, with this many rows. */
+  protected abstract widen(rows: number): void;
+}
+
+/** A place or a size in three dimensions: each number goes straight from one to the other. */
+class Lerp3 extends Blend {
+  private readonly out = {
+    x: new Float32Array(0),
+    y: new Float32Array(0),
+    z: new Float32Array(0),
+  };
+  /** The square of how far is too far to have gone in a tick. */
+  private readonly snap: number;
+
+  constructor(clock: Clock, snap = Infinity) {
+    super(clock, 3);
+    this.snap = snap * snap;
+  }
+
+  protected widen(rows: number): void {
+    this.out.x = new Float32Array(rows);
+    this.out.y = new Float32Array(rows);
+    this.out.z = new Float32Array(rows);
+  }
+
+  blend(start: number, end: number, from: Xyz, entities: EntityColumn): Xyz {
+    this.fit(start, end, entities);
+    const { cur, out, owner, prev, seen, snap } = this;
+    const { alpha, shift, stamp } = this.clock;
+    const { x, y, z } = from;
+    const { x: ox, y: oy, z: oz } = out;
+    for (let i = start; i < end; i++) {
+      const entity = entities[i]!;
+      const index = entityIndex(entity);
+      const at = index * 3;
+      const a = x[i]!;
+      const b = y[i]!;
+      const c = z[i]!;
+      let px = a;
+      let py = b;
+      let pz = c;
+      // Drawn in the frame before this one: it has a place to come from.
+      if (owner[index] === entity && seen[index] === stamp - 1) {
+        px = shift ? cur[at]! : prev[at]!;
+        py = shift ? cur[at + 1]! : prev[at + 1]!;
+        pz = shift ? cur[at + 2]! : prev[at + 2]!;
+        const dx = a - px;
+        const dy = b - py;
+        const dz = c - pz;
+        if (dx * dx + dy * dy + dz * dz > snap) {
+          px = a;
+          py = b;
+          pz = c;
+        }
+      }
+      owner[index] = entity;
+      seen[index] = stamp;
+      prev[at] = px;
+      prev[at + 1] = py;
+      prev[at + 2] = pz;
+      cur[at] = a;
+      cur[at + 1] = b;
+      cur[at + 2] = c;
+      ox[i] = px + (a - px) * alpha;
+      oy[i] = py + (b - py) * alpha;
+      oz[i] = pz + (c - pz) * alpha;
+    }
+    return out;
+  }
+}
+
+/** A flat game's place or size. */
+class Lerp2 extends Blend {
+  private readonly out = { x: new Float32Array(0), y: new Float32Array(0) };
+  private readonly snap: number;
+
+  constructor(clock: Clock, snap = Infinity) {
+    super(clock, 2);
+    this.snap = snap * snap;
+  }
+
+  protected widen(rows: number): void {
+    this.out.x = new Float32Array(rows);
+    this.out.y = new Float32Array(rows);
+  }
+
+  blend(start: number, end: number, from: Xy, entities: EntityColumn): Xy {
+    this.fit(start, end, entities);
+    const { cur, out, owner, prev, seen, snap } = this;
+    const { alpha, shift, stamp } = this.clock;
+    const { x, y } = from;
+    const { x: ox, y: oy } = out;
+    for (let i = start; i < end; i++) {
+      const entity = entities[i]!;
+      const index = entityIndex(entity);
+      const at = index * 2;
+      const a = x[i]!;
+      const b = y[i]!;
+      let px = a;
+      let py = b;
+      if (owner[index] === entity && seen[index] === stamp - 1) {
+        px = shift ? cur[at]! : prev[at]!;
+        py = shift ? cur[at + 1]! : prev[at + 1]!;
+        const dx = a - px;
+        const dy = b - py;
+        if (dx * dx + dy * dy > snap) {
+          px = a;
+          py = b;
+        }
+      }
+      owner[index] = entity;
+      seen[index] = stamp;
+      prev[at] = px;
+      prev[at + 1] = py;
+      cur[at] = a;
+      cur[at + 1] = b;
+      ox[i] = px + (a - px) * alpha;
+      oy[i] = py + (b - py) * alpha;
+    }
+    return out;
+  }
+}
+
+/**
+ * A turn in three dimensions: from one quaternion towards the other by the
+ * shorter way, and made of length 1 again.
+ */
+class Nlerp4 extends Blend {
+  private readonly out = {
+    x: new Float32Array(0),
+    y: new Float32Array(0),
+    z: new Float32Array(0),
+    w: new Float32Array(0),
+  };
+
+  constructor(clock: Clock) {
+    super(clock, 4);
+  }
+
+  protected widen(rows: number): void {
+    this.out.x = new Float32Array(rows);
+    this.out.y = new Float32Array(rows);
+    this.out.z = new Float32Array(rows);
+    this.out.w = new Float32Array(rows);
+  }
+
+  blend(start: number, end: number, from: Xyzw, entities: EntityColumn): Xyzw {
+    this.fit(start, end, entities);
+    const { cur, out, owner, prev, seen } = this;
+    const { alpha, shift, stamp } = this.clock;
+    const { x, y, z, w } = from;
+    const { x: ox, y: oy, z: oz, w: ow } = out;
+    for (let i = start; i < end; i++) {
+      const entity = entities[i]!;
+      const index = entityIndex(entity);
+      const at = index * 4;
+      const a = x[i]!;
+      const b = y[i]!;
+      const c = z[i]!;
+      const d = w[i]!;
+      let px = a;
+      let py = b;
+      let pz = c;
+      let pw = d;
+      if (owner[index] === entity && seen[index] === stamp - 1) {
+        px = shift ? cur[at]! : prev[at]!;
+        py = shift ? cur[at + 1]! : prev[at + 1]!;
+        pz = shift ? cur[at + 2]! : prev[at + 2]!;
+        pw = shift ? cur[at + 3]! : prev[at + 3]!;
+      }
+      owner[index] = entity;
+      seen[index] = stamp;
+      prev[at] = px;
+      prev[at + 1] = py;
+      prev[at + 2] = pz;
+      prev[at + 3] = pw;
+      cur[at] = a;
+      cur[at + 1] = b;
+      cur[at + 2] = c;
+      cur[at + 3] = d;
+      // A quaternion and its opposite are one turn: towards whichever of
+      // the two is nearer, or the blend would go the long way round.
+      const near = px * a + py * b + pz * c + pw * d < 0 ? -1 : 1;
+      const bx = px + (a * near - px) * alpha;
+      const by = py + (b * near - py) * alpha;
+      const bz = pz + (c * near - pz) * alpha;
+      const bw = pw + (d * near - pw) * alpha;
+      const length = Math.sqrt(bx * bx + by * by + bz * bz + bw * bw);
+      // All zeros stands for not turned, and stays so.
+      const scale = length > 0 ? 1 / length : 0;
+      ox[i] = bx * scale;
+      oy[i] = by * scale;
+      oz[i] = bz * scale;
+      ow[i] = bw * scale;
+    }
+    return out;
+  }
+}
+
+const TURN = Math.PI * 2;
+
+/** A flat game's turn: from one angle to the other by the shorter way round. */
+class Arc extends Blend {
+  private readonly out = { angle: new Float32Array(0) };
+
+  constructor(clock: Clock) {
+    super(clock, 1);
+  }
+
+  protected widen(rows: number): void {
+    this.out.angle = new Float32Array(rows);
+  }
+
+  blend(
+    start: number,
+    end: number,
+    from: Angle,
+    entities: EntityColumn
+  ): Angle {
+    this.fit(start, end, entities);
+    const { cur, owner, prev, seen } = this;
+    const { alpha, shift, stamp } = this.clock;
+    const { angle } = from;
+    const out = this.out.angle;
+    for (let i = start; i < end; i++) {
+      const entity = entities[i]!;
+      const index = entityIndex(entity);
+      const a = angle[i]!;
+      let before = a;
+      if (owner[index] === entity && seen[index] === stamp - 1) {
+        before = shift ? cur[index]! : prev[index]!;
+      }
+      owner[index] = entity;
+      seen[index] = stamp;
+      prev[index] = before;
+      cur[index] = a;
+      const turned = a - before;
+      out[i] = before + (turned - TURN * Math.round(turned / TURN)) * alpha;
+    }
+    return this.out;
+  }
+}
+
+/** Everything one system keeps to draw its entities between two ticks. */
+class Smooth {
+  private readonly clock: Clock = { stamp: 0, shift: false, alpha: 0 };
+  private tick = -1;
+  readonly position: Lerp3;
+  readonly rotation: Nlerp4;
+  readonly scale: Lerp3;
+  readonly flatPosition: Lerp2;
+  readonly flatRotation: Arc;
+  readonly flatScale: Lerp2;
+
+  constructor(snap: number | undefined) {
+    this.position = new Lerp3(this.clock, snap);
+    this.rotation = new Nlerp4(this.clock);
+    this.scale = new Lerp3(this.clock);
+    this.flatPosition = new Lerp2(this.clock, snap);
+    this.flatRotation = new Arc(this.clock);
+    this.flatScale = new Lerp2(this.clock);
+  }
+
+  /** A frame begins: which it is, which tick the game is at, and how far towards the next. */
+  begin(tick: number, alpha: number, frame: number): void {
+    this.clock.stamp = frame + 1;
+    this.clock.shift = tick !== this.tick;
+    this.clock.alpha = Math.min(1, Math.max(0, alpha));
+    this.tick = tick;
+  }
+}
+
+const smoothOf = (which: Which): Smooth | undefined =>
+  which.smooth === true ? new Smooth(which.snap) : undefined;
 
 // --- instances -------------------------------------------------------------------
 
@@ -338,9 +699,12 @@ class Instances implements Kept {
   private count = 0;
   /** The part of the buffer that is sent to the renderer: reused every frame. */
   private readonly range = { start: 0, count: 0 };
+  /** What draws the entities between two ticks, when the system was asked to. */
+  private readonly smooth: Smooth | undefined;
 
   constructor(scene: ThreeScene, name: string, options: InstancesOptions) {
     this.scene = scene;
+    this.smooth = smoothOf(options);
     this.capacity = Math.max(1, Math.floor(options.capacity ?? 256));
     this.array = new Float32Array(this.capacity * 16);
     this.mesh = new InstancedMesh(options.geometry, options.material, 0);
@@ -381,12 +745,22 @@ class Instances implements Kept {
     return at * 16;
   }
 
-  begin(): void {
+  begin(tick: number, alpha: number, frame: number): void {
     this.count = 0;
+    this.smooth?.begin(tick, alpha, frame);
   }
 
   /** Entities with a position alone: drawn upright, at the geometry's size. */
-  readonly placed = (start: number, end: number, position: Xyz): void => {
+  readonly placed = (
+    start: number,
+    end: number,
+    position: Xyz,
+    entities: EntityColumn
+  ): void => {
+    const { smooth } = this;
+    if (smooth !== undefined) {
+      position = smooth.position.blend(start, end, position, entities);
+    }
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y, z } = position;
@@ -416,8 +790,14 @@ class Instances implements Kept {
     start: number,
     end: number,
     position: Xyz,
-    scale: Xyz
+    scale: Xyz,
+    entities: EntityColumn
   ): void => {
+    const { smooth } = this;
+    if (smooth !== undefined) {
+      position = smooth.position.blend(start, end, position, entities);
+      scale = smooth.scale.blend(start, end, scale, entities);
+    }
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y, z } = position;
@@ -448,8 +828,14 @@ class Instances implements Kept {
     start: number,
     end: number,
     position: Xyz,
-    rotation: Xyzw
+    rotation: Xyzw,
+    entities: EntityColumn
   ): void => {
+    const { smooth } = this;
+    if (smooth !== undefined) {
+      position = smooth.position.blend(start, end, position, entities);
+      rotation = smooth.rotation.blend(start, end, rotation, entities);
+    }
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y, z } = position;
@@ -488,8 +874,15 @@ class Instances implements Kept {
     end: number,
     position: Xyz,
     rotation: Xyzw,
-    scale: Xyz
+    scale: Xyz,
+    entities: EntityColumn
   ): void => {
+    const { smooth } = this;
+    if (smooth !== undefined) {
+      position = smooth.position.blend(start, end, position, entities);
+      rotation = smooth.rotation.blend(start, end, rotation, entities);
+      scale = smooth.scale.blend(start, end, scale, entities);
+    }
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y, z } = position;
@@ -530,7 +923,16 @@ class Instances implements Kept {
   // that comes out of it. The same four loops, with fewer columns.
 
   /** Flat entities with a position alone. */
-  readonly placedFlat = (start: number, end: number, position: Xy): void => {
+  readonly placedFlat = (
+    start: number,
+    end: number,
+    position: Xy,
+    entities: EntityColumn
+  ): void => {
+    const { smooth } = this;
+    if (smooth !== undefined) {
+      position = smooth.flatPosition.blend(start, end, position, entities);
+    }
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y } = position;
@@ -560,8 +962,14 @@ class Instances implements Kept {
     start: number,
     end: number,
     position: Xy,
-    scale: Xy
+    scale: Xy,
+    entities: EntityColumn
   ): void => {
+    const { smooth } = this;
+    if (smooth !== undefined) {
+      position = smooth.flatPosition.blend(start, end, position, entities);
+      scale = smooth.flatScale.blend(start, end, scale, entities);
+    }
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y } = position;
@@ -592,8 +1000,14 @@ class Instances implements Kept {
     start: number,
     end: number,
     position: Xy,
-    rotation: Angle
+    rotation: Angle,
+    entities: EntityColumn
   ): void => {
+    const { smooth } = this;
+    if (smooth !== undefined) {
+      position = smooth.flatPosition.blend(start, end, position, entities);
+      rotation = smooth.flatRotation.blend(start, end, rotation, entities);
+    }
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y } = position;
@@ -627,8 +1041,15 @@ class Instances implements Kept {
     end: number,
     position: Xy,
     rotation: Angle,
-    scale: Xy
+    scale: Xy,
+    entities: EntityColumn
   ): void => {
+    const { smooth } = this;
+    if (smooth !== undefined) {
+      position = smooth.flatPosition.blend(start, end, position, entities);
+      rotation = smooth.flatRotation.blend(start, end, rotation, entities);
+      scale = smooth.flatScale.blend(start, end, scale, entities);
+    }
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y } = position;
@@ -709,6 +1130,7 @@ class Instances implements Kept {
  * - It needs `Three.plugin`, and its name is one of the app's systems'.
  */
 export const instances = (name: string, options: InstancesOptions) => {
+  const smooth = options.smooth === true;
   const marked = required(options);
   const excluded = options.without ?? [];
   // An entity's table has a rotation or it does not, and a scale or not:
@@ -766,13 +1188,17 @@ export const instances = (name: string, options: InstancesOptions) => {
     const sizedFlat = yield* SizedFlat;
     const turnedFlat = yield* TurnedFlat;
     const wholeFlat = yield* WholeFlat;
+    // Which tick the game is at and how far towards the next the frame is:
+    // asked only by a system that draws between the two.
+    const tick = smooth ? (yield* Time).tick : 0;
+    const frame = smooth ? yield* Frame : undefined;
     let drawn = kept._kept.get(name) as Instances | undefined;
     if (drawn === undefined) {
       drawn = new Instances(kept.scene, name, options);
       kept._kept.set(name, drawn);
     }
     // Plain loops from here on: one pass over the columns of each kind.
-    drawn.begin();
+    drawn.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
     placed.eachChunk(drawn.placed);
     sized.eachChunk(drawn.sized);
     turned.eachChunk(drawn.turned);
@@ -817,10 +1243,13 @@ class Objects<O extends Object3D> implements Kept {
   /** The entity indexes that have an object, in no order. */
   private readonly live: number[] = [];
   private stamp = 0;
+  /** What places the objects between two ticks, when the system was asked to. */
+  private readonly smooth: Smooth | undefined;
 
   constructor(scene: ThreeScene, options: ObjectsOptions<O>) {
     this.scene = scene;
     this.options = options;
+    this.smooth = smoothOf(options);
   }
 
   private grow(size: number): void {
@@ -861,8 +1290,9 @@ class Objects<O extends Object3D> implements Kept {
     return object;
   }
 
-  begin(): void {
+  begin(tick: number, alpha: number, frame: number): void {
     this.stamp++;
+    this.smooth?.begin(tick, alpha, frame);
   }
 
   readonly placed = (
@@ -871,6 +1301,9 @@ class Objects<O extends Object3D> implements Kept {
     position: Xyz,
     entities: EntityColumn
   ): void => {
+    if (this.smooth !== undefined) {
+      position = this.smooth.position.blend(start, end, position, entities);
+    }
     const { x, y, z } = position;
     const { objects, stamp } = this;
     for (let i = start; i < end; i++) {
@@ -899,6 +1332,9 @@ class Objects<O extends Object3D> implements Kept {
     position: Xy,
     entities: EntityColumn
   ): void => {
+    if (this.smooth !== undefined) {
+      position = this.smooth.flatPosition.blend(start, end, position, entities);
+    }
     const { x, y } = position;
     const { objects, stamp } = this;
     for (let i = start; i < end; i++) {
@@ -924,6 +1360,9 @@ class Objects<O extends Object3D> implements Kept {
     rotation: Angle,
     entities: EntityColumn
   ): void => {
+    if (this.smooth !== undefined) {
+      rotation = this.smooth.flatRotation.blend(start, end, rotation, entities);
+    }
     const { angle } = rotation;
     const { objects, stamp, turnedAt } = this;
     for (let i = start; i < end; i++) {
@@ -939,6 +1378,9 @@ class Objects<O extends Object3D> implements Kept {
     scale: Xy,
     entities: EntityColumn
   ): void => {
+    if (this.smooth !== undefined) {
+      scale = this.smooth.flatScale.blend(start, end, scale, entities);
+    }
     const { x, y } = scale;
     const { objects, sizedAt, stamp } = this;
     for (let i = start; i < end; i++) {
@@ -956,6 +1398,9 @@ class Objects<O extends Object3D> implements Kept {
     rotation: Xyzw,
     entities: EntityColumn
   ): void => {
+    if (this.smooth !== undefined) {
+      rotation = this.smooth.rotation.blend(start, end, rotation, entities);
+    }
     const { x, y, z, w } = rotation;
     const { objects, stamp, turnedAt } = this;
     for (let i = start; i < end; i++) {
@@ -971,6 +1416,9 @@ class Objects<O extends Object3D> implements Kept {
     scale: Xyz,
     entities: EntityColumn
   ): void => {
+    if (this.smooth !== undefined) {
+      scale = this.smooth.scale.blend(start, end, scale, entities);
+    }
     const { x, y, z } = scale;
     const { objects, sizedAt, stamp } = this;
     for (let i = start; i < end; i++) {
@@ -1055,6 +1503,7 @@ export const objects = <O extends Object3D = Object3D>(
   name: string,
   options: ObjectsOptions<O>
 ) => {
+  const smooth = options.smooth === true;
   const marked = required(options);
   const excluded = options.without ?? [];
   const Placed = Query.all(Transform3d.Position).pipe(
@@ -1097,6 +1546,8 @@ export const objects = <O extends Object3D = Object3D>(
     const placedFlat = yield* PlacedFlat;
     const turnedFlat = yield* TurnedFlat;
     const sizedFlat = yield* SizedFlat;
+    const tick = smooth ? (yield* Time).tick : 0;
+    const frame = smooth ? yield* Frame : undefined;
     let held = kept._kept.get(name) as Objects<O> | undefined;
     if (held === undefined) {
       held = new Objects(kept.scene, options);
@@ -1105,7 +1556,7 @@ export const objects = <O extends Object3D = Object3D>(
     // Every entity that is one of these is found by the first loop, which
     // makes the objects that are missing; whatever it did not find is let
     // go at the end.
-    held.begin();
+    held.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
     placed.eachChunk(held.placed);
     turned.eachChunk(held.turned);
     sized.eachChunk(held.sized);

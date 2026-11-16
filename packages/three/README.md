@@ -127,7 +127,7 @@ const Rocks = Three.instances("game/Rocks", {
 - Only the part of the buffer that is drawn is sent to the renderer.
 - The mesh is made on the first frame, named after the system, and added to the scene. It is not culled, since its instances are wherever the entities are; `prepare` is handed the mesh once, to say otherwise or to set anything else.
 - When the app's scope closes the mesh is taken out of the scene and disposed of. The geometry and the material are yours, to share between several and to dispose of.
-- The entities are drawn where the last tick left them. See [Not done yet](#not-done-yet).
+- The entities are drawn where the last tick left them, or, with `smooth: true`, [between their last two places](#between-two-ticks).
 
 ## Objects
 
@@ -147,6 +147,29 @@ const Ships = Three.objects("game/Ships", {
 - An entity that takes a despawned one's slot gets an object of its own.
 - Nothing of this is in the world. A game loaded from a save, or an app that starts with entities, has its objects made on the first frame.
 - It finds what is new and what is gone by looking at every entity of the kind each frame, which it does anyway to place them. It watches no component for changes, so it adds nothing to what a tick costs.
+
+## Between two ticks
+
+```ts
+const Rocks = Three.instances("game/Rocks", {
+  of: Rock,
+  geometry,
+  material,
+  smooth: true,
+  snap: 50, // further than this in one tick is not a move, it is a jump
+});
+```
+
+A game ticks sixty times a second and a screen shows as many frames as it likes, so the two do not line up: some frames follow one tick, some two, some none. Drawn where the last tick left it, a thing that moves evenly is seen to stutter. With `smooth: true`, `Three.instances` and `Three.objects` draw each entity between its last two places: at [`Frame.alpha`](../arcadekit/README.md#the-tick-and-the-frame) of the way from where it was a tick ago to where it is.
+
+- It is what a game that runs in real time wants, and it is off unless asked for, because of what it means: the picture is up to one tick behind the game. Just after a tick, at an `alpha` of 0, an entity is drawn where it was before the tick. A game that is stepped by hand and drawn with `app.frame(0)`, as a test does, or one that ticks only when a player moves, would see its last tick only at the next.
+- Places and sizes go straight from one to the other. A turn goes by the shorter way: a quaternion towards whichever of the other and its opposite is nearer, and is made of length 1 again; a flat game's angle by the shorter way round.
+- An entity that was not drawn in the frame before is drawn where it is: one that is new, one in a slot that was another's, one that was hidden, and every entity in the first frame, after a load, or after a frame the system did not run in.
+- `snap` is how far an entity may go in one tick and still be drawn on the way. One that went further, off one edge of the world and in at the other, say, is drawn where it is. Left out, any distance is a move. It is one distance per kind, in the units of the scene.
+- When several ticks ran since the last frame, an entity comes from where it was last drawn from, which is further back than a tick: for that one frame it moves faster than it did. When none ran, it is between the same two places as the frame before.
+- A place changed with no tick, by an action dispatched between two or by hand, is where the entity goes to from where it was coming from.
+- What it keeps, the value each component had a tick ago, is the renderer's own, by entity, and no part of the world: a game drawn this way has the same hash, log and save as one that is not drawn at all.
+- It costs a frame about 18 ns more per entity for a place, and 63 ns more for a place, a turn and a size; see [the benchmark](#benchmark).
 
 ## The scene, the camera and the renderer
 
@@ -200,19 +223,24 @@ const Follow = System.make("game/Follow", function* () {
 | `Three.instances`, flat: a position and a scale | 8.3 | 7,100 |
 | `Three.instances`, flat: a position and a rotation | 35.7 | 7,200 |
 | `Three.instances`, flat: all three | 35.9 | 7,200 |
+| `Three.instances`, smooth: a position | 26.9 | 7,300 |
+| `Three.instances`, smooth: all three | 81.3 | 7,300 |
+| `Three.instances`, smooth, flat: a position | 23.1 | 7,300 |
+| `Three.instances`, smooth, flat: all three | 82.5 | 7,300 |
 | `Three.objects`: an Object3D each, all three copied | 163.0 | 5,700 |
 | `Three.objects`, flat: an Object3D each, all three copied | 167.8 | 5,700 |
 | By hand: `world.get` and `setMatrixAt`, per entity | 361.6 | 2,480,000 |
 
-- Ten thousand moving objects cost 0.08 to 0.36 ms of a frame. The seven kilobytes are the frame itself, the same for one entity as for ten thousand: under one byte per object. They were five before a flat game's four loops were added: eight queries are asked for each frame where there were four.
+- Ten thousand moving objects, drawn where the last tick left them, cost 0.08 to 0.36 ms of a frame. The seven kilobytes are the frame itself, the same for one entity as for ten thousand: under one byte per object. They were five before a flat game's four loops were added: eight queries are asked for each frame where there were four.
 - A flat entity that is not turned costs a little less than one in three dimensions. One that is turned costs twice as much, 36 ns: a sine and a cosine each, where a quaternion is a few multiplications. A flat game with a crowd that spins pays 0.36 ms for ten thousand.
-- A test holds the system to that: 10,000 moving objects, of all eight kinds, may grow the heap by less than 4 bytes each per tick and frame, where one number allocated per object would be 12.
+- Drawn between two ticks, an entity costs about three times as much for a place, 27 ns, and four and a half times for all three, 81 ns: each value is read, kept, and blended with the one before, in a pass of its own before the matrix is written. Ten thousand of them cost 0.27 to 0.83 ms of a frame, and still nothing is allocated per entity.
+- A test holds the system to that, with and without `smooth`: 10,000 moving objects, of all eight kinds, may grow the heap by less than 4 bytes each per tick and frame, where one number allocated per object would be 12.
 - An object each costs ten to twenty times an instance, most of it Three.js keeping an object's Euler angles in step with its quaternion. That is the price of an object, and why a crowd is instances.
 - The example page, with 10,000 lit cubes in headless Chromium, grew its heap by 7 to 58 KB a frame, the renderer's own allocations included, and by 17 KB with a hundred cubes: what a frame allocates does not grow with what it draws. That browser draws in software, at 3 to 6 frames a second for 10,000 cubes and 60 for a hundred, so it says nothing of how fast a graphics card draws them.
 
 ## Not done yet
 
-- The entities are drawn where the last tick left them. A game whose ticks and frames do not line up sees that as a stutter; drawing each thing between its last two places needs the place before, which nothing keeps yet.
+- Drawing between two ticks is one setting and one distance per kind. An entity cannot say for itself that it jumped, a kind cannot be drawn ahead of the game in place of behind it, and the blending is a pass of its own that costs more than it has to: one check per entity per component, where one per entity would do.
 - An instance has a place and nothing else: no colour of its own, and no other attribute per instance.
 - A flat game's entities are all at 0 of the third axis. What is in front is said per kind, by its mesh or its objects; an entity has no depth or layer of its own, and nothing sorts them.
 - The two transforms do not mix: an entity placed in the plane is not turned by a quaternion, and one placed in three dimensions is not turned by an angle.

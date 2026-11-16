@@ -177,12 +177,16 @@ const Motes = Three.instances("page/Motes", {
   geometry: new BoxGeometry(1, 1, 1),
   material: new MeshStandardMaterial({ color: "#78dce8" }),
   capacity: COUNT,
+  // Sixty ticks a second and as many frames as the screen shows: each mote
+  // is drawn between its last two places, so that it moves evenly.
+  smooth: true,
 });
 
 const Cards = Three.instances("page/Cards", {
   of: Card,
   geometry: new PlaneGeometry(4, 4),
   material: new MeshStandardMaterial({ color: "#ff6188", side: DoubleSide }),
+  smooth: true,
 });
 
 const Ships = Three.objects("page/Ships", {
@@ -196,6 +200,7 @@ const Ships = Three.objects("page/Ships", {
     ship.geometry.dispose();
     ship.material.dispose();
   },
+  smooth: true,
 });
 
 // The camera goes round the box, in real time: it is no part of the game.
