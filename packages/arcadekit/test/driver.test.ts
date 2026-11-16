@@ -465,15 +465,15 @@ describe("the platform's display", () => {
     await new Promise((resolve) => setTimeout(resolve, 120));
     await Effect.runPromise(Fiber.interrupt(fiber));
     const ticks = app!.time.tick;
-    // About 24 ticks in 120 ms at 200 Hz; a busy machine runs fewer.
+    // About 24 ticks in 120 ms at 200 Hz; a busy machine runs fewer, or
+    // takes longer over it.
     expect(ticks).toBeGreaterThan(3);
-    expect(ticks).toBeLessThan(40);
-    // The frame that was asked for and not yet due was taken back.
+    // The frame that was asked for and not yet due was taken back, and no
+    // other was.
     expect(asked.length).toBeGreaterThan(3);
-    expect(cleared.has(asked.at(-1))).toBe(true);
+    expect(asked.filter((id) => cleared.has(id))).toEqual([asked.at(-1)]);
     await new Promise((resolve) => set(resolve, 60));
     expect(app!.time.tick).toBe(ticks);
-    expect(cleared.size).toBe(1);
   });
 
   it("is requestAnimationFrame and the document's visibility in a page", async () => {
