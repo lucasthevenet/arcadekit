@@ -20,7 +20,8 @@
  * A refused action changes nothing. Its handler runs in a transaction of the
  * world, so a refusal at any point takes back what it wrote to components,
  * the random numbers it drew, the commands it queued, the events it emitted
- * and the actions it enqueued. A handler changes which entities exist
+ * and the actions it enqueued, and unreads the events it read. A handler
+ * changes which entities exist
  * through Commands; calling `world.spawn` and the like in one is an error.
  *
  * Give an action a schema and its payload is checked on every path into the

@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 360 tests
+pnpm test                          # 364 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -413,7 +413,7 @@ app.dispatch(Strike, { attacker, target }); // Exit<number, NotYourTurn | Invali
 app.enqueue(Strike, { attacker, target }); // applied at the start of the next tick
 ```
 
-- A refused action changes nothing. A handler may refuse at any point, even after it has written: what it wrote to components, the random numbers it drew, the commands it queued, the events it emitted and the actions it enqueued are all taken back. So is everything done by a handler that dies of a bug half-way. See [Refusals leave nothing behind](#refusals-leave-nothing-behind).
+- A refused action changes nothing. A handler may refuse at any point, even after it has written: what it wrote to components, the random numbers it drew, the commands it queued, the events it emitted and the actions it enqueued are all taken back, and the events it read are unread again. So is everything done by a handler that dies of a bug half-way. See [Refusals leave nothing behind](#refusals-leave-nothing-behind).
 - `app.dispatch` is for turn-based input: the caller gets the typed outcome immediately. `app.enqueue` is for real-time input: the action waits for the start of the next tick, and a refusal becomes an `Action.Rejected` event. Both are for code outside the simulation. A system, a script or a handler issues an action with the `Actions` service, `(yield* Action.Actions).enqueue(...)`, so AI plays by the same rules as players.
 - Dispatching an action with no handler, or with the wrong payload, does not compile.
 
@@ -442,6 +442,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 - What a handler is about to write is saved first: one row for `world.set`, and for `each` and `eachChunk` the columns of the query's terms in every table the loop visits, once each. A refusal copies them back and restores the random generator.
 - A handler changes which entities exist through `Commands`. `world.spawn`, `despawn`, `add` and `remove` throw inside a handler: rows must stay where they are for a write to be put back by a plain copy. A discarded spawn gives its id back exactly, so the next entities get the ids they would have had.
 - A handler reads its own writes while it runs, and an accepted action costs one save and no copy back.
+- The events a handler read count as unread again after a refusal, and so do the visits its change queries made: the next action hears what a replay, which never ran the refused one, will have it hear.
 - A handler cannot dispatch another action; it issues one with `Actions.enqueue`, and a refusal takes that back too.
 - The storage core has this on its own: `world.begin()`, then `world.commit()` or `world.rollback()`.
 - The cost is in the [benchmark](#benchmark-100000-entities-pos--vel--dt): 0.2 µs more for a handler that sets one entity, and one copy of the visited columns for a handler that loops.

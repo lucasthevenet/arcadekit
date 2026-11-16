@@ -897,7 +897,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     /**
      * Validates a payload and runs its handler to completion. The handler
      * runs in a transaction of the world: a refusal takes back what it wrote
-     * to components, the random numbers it drew, and what it queued, emitted
+     * to components, the random numbers it drew, what it read of events and
+     * of changes, and what it queued, emitted
      * and enqueued. With `dispatched`, an accepted action is logged; an
      * enqueued one was logged, if it came from outside, when it arrived.
      */
@@ -972,6 +973,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         undo(commandMark, eventMark, queuedMark);
       } else {
         world.commit();
+        events.commit();
         commands.apply();
         if (dispatched) {
           actionLog.push({ tick: time.tick, name, payload: logged });

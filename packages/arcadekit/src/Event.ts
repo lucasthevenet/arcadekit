@@ -189,8 +189,19 @@ interface ChannelState {
   truncate(end: number): void;
 }
 
+/**
+ * The reads made while an action's handler runs, for a refusal to take
+ * back: each handle that moved, and where it was. One for the whole bus.
+ */
+interface ReadLog {
+  /** True from `mark` until `rollback` or `commit`. */
+  open: boolean;
+  readonly moved: { readonly handle: Handle<any>; readonly cursor: number }[];
+}
+
 class Channel<P> implements ChannelState {
   readonly def: EventDef<P>;
+  readonly reads: ReadLog;
   buffer: P[] = [];
   offset = 0;
   tickOffset = 0;
@@ -199,8 +210,9 @@ class Channel<P> implements ChannelState {
   readonly readers: Map<string, Handle<P>> = new Map();
   readonly waiters: Set<() => boolean> = new Set();
 
-  constructor(def: EventDef<P>) {
+  constructor(def: EventDef<P>, reads: ReadLog) {
     this.def = def;
+    this.reads = reads;
   }
 
   get end(): number {
@@ -229,6 +241,11 @@ class Handle<P> implements EventHandle<P> {
   /** How far this handle has read: the sequence number of its next event. */
   get position(): number {
     return this.cursor;
+  }
+
+  /** Puts the handle back where it was before a read. */
+  rewind(cursor: number): void {
+    this.cursor = cursor;
   }
 
   /** Whether this is a handle of the frame stage: it reads, and cannot emit. */
@@ -260,6 +277,11 @@ class Handle<P> implements EventHandle<P> {
     // than it could if nothing were.
     const oldest = this.forFrame ? channel.offset : channel.tickOffset;
     const from = Math.min(Math.max(this.cursor, oldest), end);
+    // In an action's handler, a read is one a refusal takes back: the
+    // events are unread again, as they are in a replay that never ran it.
+    if (channel.reads.open && this.cursor !== end) {
+      channel.reads.moved.push({ handle: this, cursor: this.cursor });
+    }
     this.cursor = end;
     return from === end ? EMPTY : channel.buffer.slice(from - channel.offset);
   };
@@ -307,6 +329,7 @@ export class EventBus {
   /** Events read from a save, waiting for their channel to be asked for. */
   private readonly parked: Map<string, SavedEvents> = new Map();
   private readonly names: Map<string, EventDef<any>> = new Map();
+  private readonly reads: ReadLog = { open: false, moved: [] };
   /** True while events are kept for a frame stage that is running. */
   private frames = false;
   private ticksSinceFrame = 0;
@@ -324,7 +347,7 @@ export class EventBus {
       );
     }
     this.names.set(def.name, def);
-    const channel = new Channel<P>(def);
+    const channel = new Channel<P>(def, this.reads);
     this.channels.set(def, channel);
     this.order.push(channel);
     const saved = this.parked.get(def.name);
@@ -514,19 +537,40 @@ export class EventBus {
     }
   }
 
-  /** @internal */
+  /**
+   * Marks where the channels end, before an action's handler runs. Until
+   * `rollback` or `commit`, the reads made are remembered as well.
+   * @internal
+   */
   mark(): EventMark {
     const mark: EventMark = new Map();
     for (const channel of this.order) {
       mark.set(channel, channel.end);
     }
+    this.reads.open = true;
     return mark;
   }
 
-  /** Removes every event emitted since `mark`. @internal */
+  /**
+   * Takes back what happened since `mark`: every event emitted is removed,
+   * and every event read is unread.
+   * @internal
+   */
   rollback(mark: EventMark): void {
     for (const channel of this.order) {
       channel.truncate(mark.get(channel) ?? channel.tickOffset);
     }
+    // Newest first, so that a handle that read twice ends where it began.
+    const { moved } = this.reads;
+    for (let i = moved.length - 1; i >= 0; i--) {
+      moved[i]!.handle.rewind(moved[i]!.cursor);
+    }
+    this.commit();
+  }
+
+  /** Keeps what happened since `mark`. @internal */
+  commit(): void {
+    this.reads.open = false;
+    this.reads.moved.length = 0;
   }
 }

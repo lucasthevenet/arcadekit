@@ -175,7 +175,7 @@ A tick gives the same result from the same inputs, on every machine and every re
 
 The scheduler is why this holds. `src/TickScheduler.ts` replaces Effect's, so a fiber only resumes when the tick flushes it. Do not provide another `Scheduler` to code inside an app. API: [Scheduler](https://effect.website/docs/v4/api/effect/Scheduler), [Fiber](https://effect.website/docs/v4/api/effect/Fiber); guide: [Fibers](https://effect.website/docs/v4/concurrency/fibers).
 
-Events have their own implementation in `src/Event.ts` and do not use Effect's `PubSub`. Each system keeps a read position from one tick to the next, and a refused action has to be able to take back the events it emitted.
+Events have their own implementation in `src/Event.ts` and do not use Effect's `PubSub`. Each system keeps a read position from one tick to the next, and a refused action has to be able to take back the events it emitted and the reads it made.
 
 ## Plain code: the storage core and hot loops
 
