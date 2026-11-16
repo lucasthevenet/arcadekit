@@ -55,3 +55,4 @@ export {
 } from "./Services";
 export * as System from "./System";
 export { TickDispatcher, TickScheduler } from "./TickScheduler";
+export * as View from "./View";

@@ -26,9 +26,11 @@ import {
   Field,
   Input,
   Query,
+  Singleton,
   State,
   System,
   Time,
+  View,
   World as WorldService,
 } from "../src/index";
 import type { Entity } from "../src/index";
@@ -238,6 +240,63 @@ const listening = (changing: boolean): number =>
               5000
             )
           : measure(() => app.input(), 50_000, 20_000);
+      })
+    )
+  );
+
+/**
+ * Median milliseconds of a frame whose one system publishes a view of four
+ * fields, read from a singleton. `"same"`: a UI is listening and the value
+ * is what it has. `"new"`: the value differs every frame, and the one
+ * listener is told. `"nobody"`: no bridge was provided.
+ */
+const showing = (mode: "same" | "new" | "nobody"): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const Stats = Singleton.define(
+          "bench/Stats",
+          { score: Field.i32, lives: Field.i32, level: Field.i32 },
+          { score: 0, lives: 3, level: 1 }
+        );
+        const Hud = View.define("bench/Hud", {
+          score: 0,
+          lives: 3,
+          level: 1,
+          phase: "playing",
+        });
+        let frames = 0;
+        const Show = View.publish(Hud, function* () {
+          const stats = yield* Stats;
+          return {
+            score: mode === "new" ? frames : stats.score,
+            lives: stats.lives,
+            level: stats.level,
+            phase: "playing",
+          };
+        });
+        const ui = View.makeBridge();
+        let heard = 0;
+        ui.subscribe(Hud, () => {
+          heard++;
+        });
+        const made = App.make({
+          plugins: [View.plugin],
+          components: [Stats],
+          systems: [Show],
+          checkpointEvery: 0,
+        });
+        const app = yield* mode === "nobody"
+          ? made
+          : made.pipe(Effect.provide(View.layer(ui)));
+        return measure(
+          () => {
+            frames++;
+            app.frame(0);
+          },
+          50_000,
+          20_000
+        );
       })
     )
   );
@@ -789,6 +848,24 @@ const variants: Record<
     unit: "matches",
     label: "app.input and app.tick: one key went down or up",
     run: () => listening(true),
+  },
+
+  // The view bridge: one view of four fields, worked out and compared in
+  // the frame stage. Unchanged is the usual case.
+  viewSame: {
+    unit: "matches",
+    label: "app.frame: a view published, the value unchanged",
+    run: () => showing("same"),
+  },
+  viewNew: {
+    unit: "matches",
+    label: "app.frame: a view published, new, one listener",
+    run: () => showing("new"),
+  },
+  viewNobody: {
+    unit: "matches",
+    label: "app.frame: a view with no UI there",
+    run: () => showing("nobody"),
   },
 
   // Change detection. A write is noticed per row, and only for a component

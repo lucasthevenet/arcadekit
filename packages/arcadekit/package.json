@@ -127,6 +127,11 @@
       "types": "./dist/TickScheduler.d.ts",
       "default": "./dist/TickScheduler.js"
     },
+    "./View": {
+      "source": "./src/View.ts",
+      "types": "./dist/View.d.ts",
+      "default": "./dist/View.js"
+    },
     "./ecs": {
       "source": "./src/ecs/index.ts",
       "types": "./dist/ecs.d.ts",
@@ -148,7 +153,11 @@
     "@cloudflare/workers-types": "^5.20261104.1",
     "@effect/platform-browser": "~4.1.0",
     "@effect/platform-node": "~4.1.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "effect": "~4.1.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tsx": "^4.23.15"
   },
   "peerDependencies": {

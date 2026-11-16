@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 496 tests, 31 of them of @arcadekit/three
+pnpm test                          # 517 tests, 31 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -68,7 +68,7 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `State`, `System`, `TickScheduler` | `effect` |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `State`, `System`, `TickScheduler`, `View` | `effect` |
 | `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
@@ -203,6 +203,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 A string that identifies something at run time carries the name of the feature it belongs to.
 
 - The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
+- The bridge to a UI is `"arcadekit/View.Bridge"` and an app's end of it `"arcadekit/View.Port"`; the plugin is `"arcadekit/View"`, its system `"arcadekit/View.Send"`, and the system that publishes a view is named after it, `"View.publish(game/Hud)"`.
 - An app's assets are kept under `"arcadekit/Assets.Store"` and fetched through `"arcadekit/Assets.Loader"`; the plugin is `"arcadekit/Assets"`, and the system that keeps a bundle is named after it, `"Assets.during(game/Forest)"`.
 - What `Input.plugin` adds to a game is named the same way: the plugin and its singleton `"arcadekit/Input"`, its action `"arcadekit/Input.Report"` and its system `"arcadekit/Input.Read"`.
 - A component's name is its identity in a world, and part of its type: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
@@ -372,7 +373,7 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
 
 - It never ends by itself. `Browser.runMain` interrupts it when the page goes away for good, as the platform's `runMain` does under Node when the process is told to stop, and that stops the loop and closes the scope. Nothing is left running: no frame asked for, no listener, no script, and whatever the plugins' layers acquired let go.
 - What the game needs from outside is provided to it as to `App.make`, and a missing service is the same compile error. It stays provided for as long as the game runs, which is what a layer that listens, such as [`Browser.layer`](#input), needs.
-- `ready` runs once, when the app is made and before its first frame, with the app: to wire what is outside the game to it, or to keep hold of it. What it acquires is let go with the app, and what it needs and can fail with are `run`'s.
+- `ready` runs once, when the app is made and before its first frame, with the app: to wire what is outside the game to it, or to keep hold of it. A menu or a heads-up display needs no hold of the app: it is given [the view bridge](#the-view-bridge). What it acquires is let go with the app, and what it needs and can fail with are `run`'s.
 
   ```ts
   App.run(
@@ -535,6 +536,81 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
   ```
 
 - Reading the devices when nothing changed costs 1.4 µs a tick. A tick in which a key went down or up costs 5.2 µs in all: the reading, the action and the tick that applies it. See the [benchmark](#benchmark-100000-entities-pos--vel--dt).
+
+## The view bridge
+
+```ts
+// protocol.ts: what the UI may see, and what it may ask for. The UI imports this.
+export const Hud = View.define("game/Hud", { score: 0, lives: 3 });
+export const NewGame = Action.define("game/NewGame", Schema.Struct({}));
+
+// game.ts: the game says what a view is, once per frame.
+const ShowHud = View.publish(Hud, function* () {
+  const score = yield* Score;
+  return { score: score.points, lives: score.lives };
+});
+const Game = Plugin.make("Game", {
+  plugins: [View.plugin],
+  systems: [ShowHud],
+  handlers: [newGame],
+});
+
+// ui.ts: the UI is handed the bridge, and nothing else.
+export const mount = (root: Element, ui: View.Bridge) => {
+  const label = root.querySelector("output")!;
+  label.textContent = `${ui.get(Hud).score}`;
+  ui.subscribe(Hud, ({ score }) => {
+    label.textContent = `${score}`;
+  });
+  root.querySelector("button")!.onclick = () => ui.send(NewGame, {});
+};
+
+// main.ts: the entry point makes the bridge and gives each side its end.
+const ui = View.makeBridge();
+mount(document.body, ui);
+Browser.runMain(
+  App.run({ plugins: [Game] }, { hz: 60 }).pipe(Effect.provide(View.layer(ui))),
+  { target: canvas }
+);
+```
+
+A game's menus and its heads-up display are built with whatever the game chooses: the page's own DOM, React, anything. The package depends on none of them. What it gives is the bridge between the two: the game says which values the UI may see, and the UI acts by sending actions.
+
+**A view** is a value the UI may see, declared with `View.define(name, initial)`. `initial` is what the UI has of it until the game first says, and gives it its type.
+
+- It is a key and nothing of the game, like an action. The module that declares the views and the actions is the one thing the UI and the game share.
+- Its value is plain data: text, numbers, booleans, and arrays and objects of them.
+
+**The game publishes.** `View.publish(view, body)` makes a system of the [frame stage](#the-tick-and-the-frame): each frame it works the value out, and publishes it if it is not the value the UI already has.
+
+- Two values are compared as data, field by field and however deep. So a body returns a new object each frame, and the UI is told only when something in it differs: a value that did not change costs the UI nothing, not a call.
+- It reads what a frame system can (singletons, states, queries, events, assets) and cannot change the game. In the tick, publishing throws.
+- Several ticks and one frame are one publication, of the latest value.
+- It takes `System.runIf`: a view that is not published keeps the value it had.
+- A frame system of the game's own publishes through `(yield* View.Port).publish(view, value)`, which says whether the value was news.
+- Where no UI is there, on a server, in a replay, in most tests, no body runs at all.
+
+**The UI holds the bridge**, `View.Bridge`, and nothing of the game.
+
+- `ui.get(view)` is the value as last published. It is the same object until the view is published with another value, so `===` tells a UI library whether anything changed.
+- `ui.subscribe(view, listener)` calls the listener each time the view is published with a new value, and returns what stops it. A listener that throws fails the frame, as any bug in the frame stage does, once every other listener was told.
+- `ui.send(action, payload)` asks the game for an action. It is issued in the [input stage](#input), before the next tick, by `View.plugin`: logged, and applied or refused by its handler, exactly as a key bound to it would be. So a replay needs no UI, and a button is as good as a key.
+- A UI can be mounted before the game is made: it sees every view at its initial value, and what it sends waits.
+- A bridge refuses two different views with one name.
+
+**Binding it to a UI library** is a few lines, in the game. For React:
+
+```ts
+const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
+  useSyncExternalStore(
+    (changed) => ui.subscribe(view, changed),
+    () => ui.get(view)
+  );
+```
+
+- `View.Bridge` is a `Context.Reference` whose default is no UI. `View.makeBridge()` makes one and `View.layer(ui)` provides it.
+- A game with a UI and the same game with none have the same hash, log and save, given the same actions.
+- `examples/page` builds its menu and its heads-up display twice on one bridge, with the DOM (`ui-dom.ts`) and with React (`ui-react.ts`, shown by `?ui=react`). Neither imports anything of the game but `protocol.ts`. `test/page.test.ts` mounts both in a document and plays the game through them: while stars fall and none is caught, the UI is told nothing and nothing in the document changes.
 
 ## Assets
 
@@ -786,17 +862,18 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Input.ts` | The devices and where they come from, the picture of them in the world, and bindings to actions |
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
+| `src/View.ts` | The view bridge: the values a UI may see, published once per frame when they changed, and the actions it sends |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices and pictures, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser and entries tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, page and entries tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
-| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `Browser.runMain` around `App.run` |
+| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `Browser.runMain` around `App.run`. Its menu and heads-up display are built twice on the view bridge: `ui-dom.ts` with the DOM and `ui-react.ts` with React, both from `protocol.ts`, the views and actions they share with `game.ts` |
 
 ## Two ways to loop
 
@@ -894,6 +971,14 @@ The input stage, with `Input.plugin`, three buttons held and the pointer somewhe
 | `app.input()`: the devices read, nothing changed        | 1.39 µs |
 | `app.input()` and `app.tick()`: one key went down or up | 5.22 µs |
 
+The view bridge, with one view of four fields read from a singleton:
+
+| Variant                                                   | Cost    |
+| --------------------------------------------------------- | ------- |
+| `app.frame()`: no UI is there, the view is not worked out | 0.58 µs |
+| `app.frame()`: a UI is there, the value is what it has    | 2.90 µs |
+| `app.frame()`: the value is new, and one listener told    | 2.57 µs |
+
 Entities coming and going in the same world:
 
 | Variant                                                    | Cost   |
@@ -914,6 +999,7 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 - Writes are noticed per row. A component that no query watches costs what it did: the lines of the first table were measured before and after and did not move. A watched one costs 2.5 ns more for an assignment in `each` to a row that is noted already, about 5 ns for the first assignment to a row since the last visit, and 2.8 ns per row that `eachChunk` hands out. Noticing per table or per column would cost nothing to write, but one `world.set` would then send every watching query through the whole table: 0.25 ms to 0.64 ms for 100,000 rows, where it now takes 0.2 µs.
 - A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
 - The input stage runs before every tick, so its cost when nothing happens is the one that counts: one sample of the devices, compared with what the world holds, 1.4 µs for a keyboard, a pointer and a few buttons held. An app with no system in that stage reads nothing and pays nothing.
+- A view costs the game its body and one comparison a frame, 2.3 µs for four fields, and the UI nothing at all until a field differs. A value that is new is found to be at the first field that differs, which is why it costs less than one that is not. Where no UI is there the system asks whether one is and stops.
 - A frame of ten systems that do nothing costs 5.8 µs, about what a tick of ten does: freezing the world is setting a flag. Checking a frame with `verifyFrames` costs a hash of the world before the stage and one after each of its systems, 1.3 ms more for one system over 100,000 entities.
 - A relation costs its component and a few assignments to link and unlink: 0.13 µs more per entity that is spawned and despawned with one. A despawn that takes others with it costs what despawning each of them does, 130 ns apiece here. A world with no relation does one comparison more per despawn than before: the first line was 587 µs before relations and 561 µs after, which is the machine's noise.
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
@@ -941,7 +1027,12 @@ moving.eachChunk((start, end, pos, vel) => {
 
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
-- Nothing here plays sound, and there is no bridge to a UI library. [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
+- Nothing here plays sound. [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
+- A view is worked out and compared whole, every frame a UI is there. A game with a view that is costly to work out says when it is worth it with `System.runIf`.
+- The UI is not told what became of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and the game can publish as a view.
+- What the UI sends is applied by the next tick. A game that ticks when a player moves runs the input stage and a tick itself when its UI has sent something; nothing wakes it.
+- A view's value is an object of this program, with no schema: a UI in another thread or on another machine is not served.
+- `ui.send` takes any action. That the game has a handler for it is checked when it is issued, where a missing one throws, and not by the compiler.
 - An asset is a picture, text, JSON or bytes. A sound and a font are for whoever plays and draws them to decode, with `Assets.make`.
 - A bundle is loaded or it is not: it does not say how far along it is, and a file that two bundles name is fetched for each.
 - A bundle that failed stays failed until its level is entered again. Nothing tries again by itself.
@@ -958,7 +1049,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
 - A frame system that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps. There is no helper for it, and `@arcadekit/three` draws each thing where its last tick left it.
 - `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
-- `arcadekit/Browser` is one entry for everything a page has. A UI bridge and netcode will each be an entry of their own when they are built.
+- `arcadekit/Browser` is one entry for everything a page has. Netcode will be an entry of its own when it is built.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.
