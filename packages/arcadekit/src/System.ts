@@ -12,8 +12,14 @@ import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
+/** The stages of a tick, in the order they run. */
 export const stages = ["preUpdate", "update", "postUpdate"] as const;
-export type Stage = (typeof stages)[number];
+/**
+ * A stage of the tick, or `"frame"`: the stage that draws the game, which
+ * runs between ticks, when `app.frame` is called, and must not change the
+ * world.
+ */
+export type Stage = (typeof stages)[number] | "frame";
 
 /**
  * What sets a hook off: a state being entered or left. `State.onEnter` and
@@ -80,7 +86,15 @@ export const make = <Eff extends Effect.Effect<any, any, any>>(
     trigger: undefined,
   });
 
-/** Moves a system to another stage. */
+/**
+ * Moves a system to another stage.
+ *
+ * `System.inStage("frame")` makes it a system of the frame stage, which is
+ * for drawing: it runs once per `app.frame`, between ticks, with the world
+ * frozen. It reads the world through queries, events and change queries,
+ * each from a place of its own, and `yield* Frame` tells it how far the
+ * frame is between two ticks. Whatever would change the game there throws.
+ */
 export const inStage: {
   (stage: Stage): <E, R>(self: System<E, R>) => System<E, R>;
   <E, R>(self: System<E, R>, stage: Stage): System<E, R>;
@@ -208,7 +222,7 @@ export const order = (
 ): System<any, any>[] => {
   unique(systems);
   const out: System<any, any>[] = [];
-  for (const stage of stages) {
+  for (const stage of [...stages, "frame"] as const) {
     const inStage = systems.filter((s) => s.stage === stage);
     const stageNames = new Set(inStage.map((s) => s.name));
     // "A before B" is the same constraint as "B after A", so fold both into

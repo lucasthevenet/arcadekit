@@ -8,13 +8,20 @@ import { Effect } from "effect";
 /** Anything with a `tick`, so drivers work with every App type. */
 export interface Tickable {
   readonly tick: (delta: number) => void;
+  /** An app's frame stage: run after the ticks of each call, if it is there. */
+  readonly frame?: (alpha: number, delta?: number) => void;
 }
 
 const EPSILON = 1e-9;
 
 /**
- * Fixed-timestep stepping. Feed it real elapsed seconds; it runs zero or more
- * ticks of exactly `1 / hz` and returns how many it ran.
+ * Fixed-timestep stepping. Feed it real elapsed seconds, once per frame; it
+ * runs zero or more ticks of exactly `1 / hz`, then the app's frame stage,
+ * and returns how many ticks it ran.
+ *
+ * The simulation ticks at a fixed rate whatever the rate of frames, and the
+ * frame stage is told how far its frame is between the last tick and the
+ * next (`Frame.alpha`), so that it can draw what moves in between.
  */
 export const fixedStep = (
   app: Tickable,
@@ -37,6 +44,8 @@ export const fixedStep = (
     if (steps === maxSteps && accumulator >= dt) {
       accumulator = 0;
     }
+    // What is left is part of a tick: how far the frame is into the next.
+    app.frame?.(Math.min(1, accumulator / dt), realDelta);
     return steps;
   };
 };

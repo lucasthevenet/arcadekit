@@ -12,6 +12,7 @@ import {
   Component,
   Driver,
   Field,
+  Frame,
   Query,
   Random,
   Resource,
@@ -68,6 +69,24 @@ const Expiry = System.make("Expiry", function* () {
   });
 }).pipe(System.after(Physics));
 
+// --- drawing: the frame stage --------------------------------------------------
+// Runs once per frame, between ticks, with the world frozen: it reads the
+// game and cannot change it. `Frame.alpha` says how far the frame is between
+// the last tick and the next, so what moves is drawn where it is by now.
+const sketch = { frames: 0, highest: 0 };
+const Draw = System.make("Draw", function* () {
+  const { alpha } = yield* Frame;
+  const { delta } = yield* Time;
+  let highest = 0;
+  (yield* Falling).eachChunk((start, end, pos, vel) => {
+    for (let i = start; i < end; i++) {
+      highest = Math.max(highest, pos.y[i]! + vel.y[i]! * delta * alpha);
+    }
+  });
+  sketch.frames++;
+  sketch.highest = highest;
+}).pipe(System.inStage("frame"));
+
 // --- a script: sequential game logic spread over many ticks --------------------
 const Fountain = Effect.gen(function* () {
   const script = yield* Script;
@@ -88,10 +107,13 @@ const Fountain = Effect.gen(function* () {
 });
 
 const program = Effect.gen(function* () {
-  const app = yield* App.make({ systems: [Expiry, Physics], seed: 7 }).pipe(
-    Effect.provide(Resource.layer(Gravity, -20))
+  const app = yield* App.make({
+    systems: [Expiry, Physics, Draw],
+    seed: 7,
+  }).pipe(Effect.provide(Resource.layer(Gravity, -20)));
+  console.log(
+    `system order: ${app.systemOrder.join(" -> ")}; each frame: ${app.frameOrder.join(" -> ")}`
   );
-  console.log("system order:", app.systemOrder.join(" -> "));
 
   const rock = app.world.spawn(
     Name.of({ value: "rock" }),
@@ -123,12 +145,17 @@ const program = Effect.gen(function* () {
   app.tick(1);
   console.log(`turn-based step: tick ${before} -> ${app.time.tick}`);
 
-  // 3. Real time: tick on a timer until interrupted, then the timer is cleaned up.
+  // 3. Real time: tick on a timer until interrupted, then the timer is cleaned
+  // up. The driver runs the ticks that are due and then the frame stage.
   const ticksBefore = app.time.tick;
+  const framesBefore = sketch.frames;
+  app.world.spawn(Position.of({ x: 0, y: 0 }), Velocity.of({ x: 0, y: 30 }));
   yield* Driver.interval(app, { hz: 60 }).pipe(
     Effect.timeoutOption("250 millis")
   );
-  console.log(`real time: ${app.time.tick - ticksBefore} ticks in 250 ms`);
+  console.log(
+    `real time: ${app.time.tick - ticksBefore} ticks and ${sketch.frames - framesBefore} frames in 250 ms`
+  );
 });
 
 // The entry point: runMain runs the program, reports a failure, and

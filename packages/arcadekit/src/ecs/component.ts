@@ -302,14 +302,15 @@ let nextId = 0;
 const makeAccessorClass = (
   fields: readonly string[],
   noticing = false,
-  relation?: string
+  relation?: string,
+  frozen?: string
 ): new () => Accessor => {
   const init = fields.map((_, i) => `this._c${i} = null;`).join(" ");
   // An accessor that notices writes tells the log which entity it wrote,
   // by index. The log keeps one entry per entity until a reader has been.
   // The check `note` starts with is written out here, so that a row which
   // is noted already costs a few reads and a comparison, and no call.
-  // Measured, 1.3 ns an assignment. `noted` is read through the log each
+  // Measured, 2.5 ns an assignment. `noted` is read through the log each
   // time: the log replaces it when it grows.
   const note = noticing
     ? `; const k = this._e[this._i] & ${INDEX_MASK}; if (this._l.noted[k] !== 1) this._l.note(k)`
@@ -319,9 +320,11 @@ const makeAccessorClass = (
       const key = JSON.stringify(f);
       // A relation's target is the world's to change.
       const set =
-        relation !== undefined && f === "target"
-          ? `throw new Error(${JSON.stringify(retarget(relation))})`
-          : `this._c${i}[this._i] = v${note}`;
+        frozen !== undefined
+          ? `throw new Error(${JSON.stringify(frozenWrite(`An assignment to "${frozen}.${f}"`))})`
+          : relation !== undefined && f === "target"
+            ? `throw new Error(${JSON.stringify(retarget(relation))})`
+            : `this._c${i}[this._i] = v${note}`;
       return `get [${key}]() { return this._c${i}[this._i] } set [${key}](v) { ${set} }`;
     })
     .join("\n");
@@ -342,6 +345,10 @@ const makeAccessorClass = (
   return new Function(source)() as new () => Accessor;
 };
 
+/** What went wrong when something tried to change a frozen world. */
+export const frozenWrite = (what: string): string =>
+  `${what} was made while the world is frozen. A frozen world is read and not changed: an app freezes its world for the frame stage, which draws the game between two ticks. Change the game from a system that runs in the tick, or from outside with an action.`;
+
 /** What to do instead of writing a relation's target. */
 export const retarget = (name: string): string =>
   `"${name}" is a relation, and its target is not written like a field: the world keeps track of who points at whom. Give it another target by adding it again, with add(entity, ${name.split("/").pop()}.of({ target })) on Commands or on the world.`;
@@ -349,6 +356,22 @@ export const retarget = (name: string): string =>
 // Made the first time a world watches the component for changes, and kept:
 // it is code, not state, so worlds can share it.
 const noticingClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+
+const frozenClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+
+/**
+ * The accessor class of a component in a frozen world: as `def.Accessor`
+ * to read, and every setter throws.
+ * @internal
+ */
+export const frozenAccessor = (def: ComponentDef<any>): new () => Accessor => {
+  let made = frozenClasses.get(def);
+  if (made === undefined) {
+    made = makeAccessorClass(def.fields, false, undefined, def.name);
+    frozenClasses.set(def, made);
+  }
+  return made;
+};
 
 /**
  * The accessor class of a component whose writes are noticed: as

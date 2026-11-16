@@ -177,6 +177,40 @@ const idling = (power: "on" | "off"): number =>
     )
   );
 
+/** Median milliseconds of a frame of `count` systems that read the world or do nothing. */
+const drawing = (count: number, reading: boolean, verify: boolean): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        let sink = 0;
+        const systems = Array.from({ length: count }, (_, i) =>
+          System.make(`Draw${i}`, function* () {
+            const moving = yield* Moving;
+            yield* Time;
+            if (reading) {
+              moving.eachChunk((start, end, pos, vel) => {
+                const px = pos.x;
+                const vx = vel.x;
+                for (let n = start; n < end; n++) {
+                  sink += px[n]! + vx[n]! * DT;
+                }
+              });
+            }
+          }).pipe(System.inStage("frame"))
+        );
+        const app = yield* App.make({ systems, verifyFrames: verify });
+        if (reading) {
+          populate(app.world);
+        }
+        const ms = reading
+          ? measure(() => app.frame(0.5))
+          : measure(() => app.frame(0.5), 50_000, 20_000);
+        void sink;
+        return ms;
+      })
+    )
+  );
+
 const Movement = System.make("Movement", function* () {
   const moving = yield* Moving;
   const { delta } = yield* Time;
@@ -644,6 +678,23 @@ const variants: Record<
       void sink;
       return ms;
     },
+  },
+
+  // The frame stage: systems that draw, run between ticks with the world
+  // frozen. A frame costs what a tick of the same systems does; checking
+  // that it left the world alone costs a hash before and one per system.
+  frameIdle: {
+    unit: "matches",
+    label: "app.frame: 10 systems that do no work",
+    run: () => drawing(10, false, false),
+  },
+  frameRaw: {
+    label: "app.frame: one system reading raw columns",
+    run: () => drawing(1, true, false),
+  },
+  frameVerified: {
+    label: "app.frame: the same, with verifyFrames",
+    run: () => drawing(1, true, true),
   },
 
   // Change detection. A write is noticed per row, and only for a component

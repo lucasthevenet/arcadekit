@@ -42,6 +42,14 @@ export * as Save from "./Save";
 export * as Singleton from "./Singleton";
 export * as State from "./State";
 export { EntityId } from "./Schemas";
-export { Commands, Events, Random, Script, Time, World } from "./Services";
+export {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Script,
+  Time,
+  World,
+} from "./Services";
 export * as System from "./System";
 export { TickDispatcher, TickScheduler } from "./TickScheduler";

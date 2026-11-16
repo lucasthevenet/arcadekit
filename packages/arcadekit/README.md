@@ -5,7 +5,7 @@ A framework for building games of any genre on [Effect](https://effect.website) 
 This is the first cut of the revamped design. It is a working prototype, not a finished kit: see [Not done yet](#not-done-yet).
 
 1. **Storage core** (`src/ecs/`): archetype tables with typed-array columns, opt-in sparse storage, cached queries, queries for what changed, a command buffer. No Effect.
-2. **Tick scheduler**: Effect around the core. One fiber per tick, systems as generators, yieldable queries and resources, coroutine scripts, and a custom Effect `Scheduler` that only runs fibers when the tick says so.
+2. **Tick scheduler**: Effect around the core. One fiber per tick, systems as generators, yieldable queries and resources, coroutine scripts, and a custom Effect `Scheduler` that only runs fibers when the tick says so. Beside the tick, a frame stage that draws the game between ticks and cannot change it.
 3. **Events and rules**: typed events every system sees exactly once, and actions with handlers that validate a move and refuse it with a typed error. Payloads are checked against a schema, applied actions are logged as JSON-safe data, and the log replays the game and checks the replay against the world's hash.
 4. **Plugins**: one value that bundles a feature's systems, handlers, services and setup, and names the plugins it depends on.
 
@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 342 tests
+pnpm test                          # 360 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -170,7 +170,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 
 A string that identifies something at run time carries the name of the feature it belongs to.
 
-- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`.
+- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`.
 - A component's name is its identity in a world: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
 - `world.component(name)` gives the component a world holds under a name. A world learns a component the first time it stores or queries it; `world.register(component)` tells it sooner.
 
@@ -291,6 +291,37 @@ A game is in the menu, playing or paused, and systems run only in some of those.
 - A system that does not run does not read. The events of the ticks it sat out are gone when it runs again, as for any system an event is older than. What its [change queries](#change-queries) have yet to visit is kept, however long it was away.
 - A state is a [singleton](#singletons) of the world. It is saved with a game, with what was asked for, and counted in the hash; a refused action's `set` is taken back. List it in a plugin's `components`. A loaded game does not run its starting hooks again: the save holds what they did.
 - With several states, the ones asked for are entered in order of name.
+
+## The tick and the frame
+
+```ts
+const Draw = System.make("Draw", function* () {
+  const { alpha } = yield* Frame; // how far this frame is between two ticks
+  const { delta } = yield* Time; // the length of a tick
+  (yield* Moving).eachChunk((start, end, pos, vel) => {
+    for (let i = start; i < end; i++) {
+      draw(pos.x[i]! + vel.x[i]! * delta * alpha, pos.y[i]!);
+    }
+  });
+}).pipe(System.inStage("frame"));
+
+const app = yield * App.make({ systems: [Movement, Draw] });
+const advance = Driver.fixedStep(app, { hz: 60 });
+advance(secondsSinceTheLastFrame); // the ticks that are due, then the frame stage
+```
+
+The simulation ticks at a fixed rate. Drawing happens every frame, between ticks, and must not change the world. So an app has two stages: the tick, which is everything above, and the frame.
+
+- A system made with `System.inStage("frame")` runs when `app.frame(alpha, delta)` is called, and not in the tick. `Driver.fixedStep` calls it after the ticks of each frame; so does `Driver.interval`.
+- `yield* Frame` tells it about the frame: `alpha`, how far the frame is between the last tick and the next, from 0 to 1; `delta`, the real seconds since the frame before; and `count`. That is real time, so a system that runs in the tick cannot read it: it throws and says to read `Time`.
+- The world is frozen while the frame stage runs, and whatever would change the game throws where it is made and says why: spawning, despawning, adding and removing, `world.set`, a write to a singleton or a state, a command, an assignment in `each`, an event emitted, a script started, an action dispatched.
+- It reads all it likes: queries with `each` and `eachChunk`, singletons, states, `Time`, and events and [change queries](#change-queries) from a place of its own. Events are kept for it until it has run, so it hears each one once however many ticks ran since the last frame (for up to 600 ticks, after which a frame stage that never ran is taken to be gone). Nothing is written in a frozen world, so there a change query may read what it watches with `eachChunk`.
+- Its random numbers come from a generator of its own, seeded like the world's and not part of it: sparks do not change the game.
+- An action issued there with `Actions.enqueue` is input from outside, as a button is: it is logged, applied at the start of the next tick, and replayed without a frame being drawn.
+- The simulation cannot tell that it is being drawn. A game drawn every frame has the same hash, the same log and the same save as the same game never drawn, so a replay or a server runs it with no frame stage at all. The frame stage's places in events and changes are not saved: a loaded game has everything still to draw.
+- Two changes are not stopped where they are made, because stopping them would cost every loop: a write through the raw columns of `eachChunk`, and a draw from `world.random`. `App.make({ verifyFrames: true })` takes the world's hash before the stage and after each of its systems, and `frame` dies with `App.FrameChangedWorld`, which names the system. That is for development and tests.
+- A frame system takes a condition with `System.runIf` like any other. A hook does not belong there: a state is entered by a tick.
+- With the storage core on its own: `world.freeze()` and `world.thaw()`.
 
 ## Randomness
 
@@ -499,9 +530,9 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
-| `src/Driver.ts` | Fixed-step and timer drivers |
+| `src/Driver.ts` | Fixed-step and timer drivers, which run the ticks that are due and then the frame stage |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation and state tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state and frame tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -591,6 +622,7 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 
 - Writes are noticed per row. A component that no query watches costs what it did: the lines of the first table were measured before and after and did not move. A watched one costs 2.5 ns more for an assignment in `each` to a row that is noted already, about 5 ns for the first assignment to a row since the last visit, and 2.8 ns per row that `eachChunk` hands out. Noticing per table or per column would cost nothing to write, but one `world.set` would then send every watching query through the whole table: 0.25 ms to 0.64 ms for 100,000 rows, where it now takes 0.2 µs.
 - A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
+- A frame of ten systems that do nothing costs 5.8 µs, about what a tick of ten does: freezing the world is setting a flag. Checking a frame with `verifyFrames` costs a hash of the world before the stage and one after each of its systems, 1.3 ms more for one system over 100,000 entities.
 - A relation costs its component and a few assignments to link and unlink: 0.13 µs more per entity that is spawned and despawned with one. A despawn that takes others with it costs what despawning each of them does, 130 ns apiece here. A world with no relation does one comparison more per despawn than before: the first line was 587 µs before relations and 561 µs after, which is the machine's noise.
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
 - A tick with ten systems that do nothing costs about 5 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop. Run conditions did not change that: 4.99 to 5.47 µs before them and 5.00 to 5.81 µs after, over four runs each. With a condition on each of the ten that holds, the tick costs 8.5 µs; with one that does not, 3.5 µs.
@@ -617,7 +649,9 @@ moving.eachChunk((start, end, pos, vel) => {
 
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
-- Nothing here draws, plays sound or reads input. It is the simulation side only, with no Foldkit or Three.js integration.
+- Nothing here draws, plays sound or reads input. There is a frame stage for what draws, and nothing in it yet: no Foldkit or Three.js integration, and no driver that wraps `requestAnimationFrame`.
+- The frame stage cannot stop a write through the raw columns of `eachChunk`, or a draw from `world.random`, where it is made. `verifyFrames` finds either afterwards, at the cost of a hash of the world per frame system.
+- A frame system that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps. There is no helper for it.
 - One package entry. The storage core has no Effect dependency and could be its own entry (`arcadekit/ecs`).
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.

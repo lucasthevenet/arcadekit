@@ -22,11 +22,7 @@ Done. A world is saved as a snapshot and loaded back, every field says what savi
 
 ## 3. What every game ends up needing
 
-Each of these is something a game would otherwise build badly for itself.
-
-Done so far: change detection (`Query.changed`, `Query.added`, `Query.removed`), with writes noticed per row; singletons (`Singleton.define`), which are the world's and saved with it; relations (`Component.relation`), whose holders go with a despawned target or lose the relation; and states with run conditions (`State.define`, `System.runIf`, `State.onEnter`, `State.onExit`). The package's [README](../packages/arcadekit/README.md) describes each.
-
-- **Simulation and presentation as separate stages.** The simulation ticks at a fixed rate; drawing happens every frame, between ticks, and must not change the world. Done when `App` runs a fixed-rate stage and a per-frame stage, and the per-frame stage gets how far it is between two ticks.
+Done. Queries for what changed, with writes noticed per row; singletons, which are the world's and saved with it; relations, whose holders go with a despawned target or lose the relation; states, with hooks for entering and leaving them and conditions for when a system runs; and a frame stage that draws the game between ticks, is told how far between them it is, and cannot change the world. The package's [README](../packages/arcadekit/README.md) describes each. Running in a browser stands on the last.
 
 ## 4. Running in a browser
 
@@ -37,7 +33,7 @@ Nothing so far draws, plays sound or reads input.
 - **Assets.** Loading as a scoped resource: a level's assets are acquired when it starts and released when its scope closes. Done when leaving a level frees what it loaded, with a test that proves it.
 - **An entry point.** `BrowserRuntime.runMain` around `App.make` and a driver, as the one obvious way to start a game. Done when the examples use it.
 
-Depends on the two stages from milestone 3.
+Depends on the two stages from milestone 3, which are there: `app.tick` and `app.frame`, with `Driver.fixedStep` running one and then the other.
 
 ## 5. Drawing and UI
 

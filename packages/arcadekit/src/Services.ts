@@ -28,6 +28,27 @@ export class Time extends Context.Service<Time, Readonly<TimeState>>()(
   "arcadekit/Time"
 ) {}
 
+export interface FrameState {
+  /**
+   * How far this frame is between the last tick and the next: from 0, just
+   * after a tick, up to 1, just before the next.
+   */
+  alpha: number;
+  /** Real seconds since the frame before this one. */
+  delta: number;
+  /** Number of frames run so far, this one included. */
+  count: number;
+}
+
+/**
+ * What a system of the frame stage is told about the frame it draws. Real
+ * time, so not for the simulation: a system that runs in the tick reads
+ * `Time`, and asking for a field of this there throws.
+ */
+export class Frame extends Context.Service<Frame, Readonly<FrameState>>()(
+  "arcadekit/Frame"
+) {}
+
 /** Deferred structural changes, applied when the current system finishes. */
 export class Commands extends Context.Service<Commands, CommandBuffer>()(
   "arcadekit/Commands"
@@ -82,6 +103,7 @@ export class Random extends Context.Service<Random, Rng>()(
 export type BuiltIn =
   | World
   | Time
+  | Frame
   | Commands
   | Script
   | Events

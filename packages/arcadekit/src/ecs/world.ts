@@ -35,6 +35,8 @@ import {
   isBoxed,
   isComponentDef,
   makeColumn,
+  frozenAccessor,
+  frozenWrite,
   makeEntity,
   noticingAccessor,
   retarget,
@@ -590,8 +592,8 @@ export class ChangeLog {
     const size = this.end - this.base;
     const seen = new Uint8Array(this.world._slots);
     // Readers from the one furthest on: each new place is the end less the
-    // entries kept at or past the old one.
-    // The floor moves as a reader's place does.
+    // entries kept at or past the old one. The floor moves as a reader's
+    // place does.
     const floor = { at: this.floor };
     const byPlace = [...cursors, floor].toSorted((a, b) => b.at - a.at);
     const places: number[] = [];
@@ -946,6 +948,8 @@ export class QueryView<D extends Terms = Terms> {
   private exceptions = 0;
 
   private readonly frames: Frame[] = [];
+  /** As `frames`, for a frozen world: with accessors that only read. */
+  private readonly frozenFrames: Frame[] = [];
   private depth = 0;
 
   /**
@@ -1099,15 +1103,19 @@ export class QueryView<D extends Terms = Terms> {
     }
     world._iterating++;
     const depth = this.depth++;
-    return (this.frames[depth] ??= this.makeFrame());
+    return world._frozen
+      ? (this.frozenFrames[depth] ??= this.makeFrame(true))
+      : (this.frames[depth] ??= this.makeFrame(false));
   }
 
-  private makeFrame(): Frame {
+  private makeFrame(frozen: boolean): Frame {
     return {
       accessors: this.spec.terms.map((def, k) =>
-        this.termLog[k] === undefined
-          ? new def.Accessor()
-          : new (noticingAccessor(def))()
+        frozen
+          ? new (frozenAccessor(def))()
+          : this.termLog[k] === undefined
+            ? new def.Accessor()
+            : new (noticingAccessor(def))()
       ),
       keys: new Float64Array(64),
       members: { dense: new Uint32Array(64), count: 0 },
@@ -1618,7 +1626,8 @@ export class QueryView<D extends Terms = Terms> {
    * written; a loop that only reads a watched component is better off with
    * `each`, whose accessors note the rows they write and no others. For
    * the same reason a change query cannot hand out a component it watches
-   * itself: that throws.
+   * itself: that throws. In a frozen world nothing is written, so neither
+   * applies there.
    */
   eachChunk(
     fn: (
@@ -1636,7 +1645,10 @@ export class QueryView<D extends Terms = Terms> {
         cols[k] = this.termSet[k];
       }
       const { world } = this;
-      if (this.notes && this.watching) {
+      // A frozen world is only read, so nothing a raw loop is handed there
+      // counts as written.
+      const noting = this.notes && !world._frozen;
+      if (noting && this.watching) {
         this.refuseOwnWrites();
       }
       if (world._recording) {
@@ -1657,7 +1669,7 @@ export class QueryView<D extends Terms = Terms> {
           bound = table;
         }
         const ents = table.entities;
-        if (this.notes) {
+        if (noting) {
           // Raw columns cannot say which rows were written, so every row
           // that is handed out counts as written.
           for (let k = 0; k < n; k++) {
@@ -1705,7 +1717,7 @@ export class QueryView<D extends Terms = Terms> {
   count(): number {
     this.refresh();
     if (this.watching) {
-      const peek = (this.peek ??= this.makeFrame());
+      const peek = (this.peek ??= this.makeFrame(false));
       if (this.gather(peek.members, false) === 0) {
         return 0;
       }
@@ -1853,6 +1865,8 @@ export class World {
 
   /** @internal True between `begin` and `commit` or `rollback`. */
   _recording = false;
+  /** @internal True between `freeze` and `thaw`. */
+  _frozen = false;
   /** What a rollback puts back, in the order it was saved. */
   private readonly saved: Saved[] = [];
   /** The column sets saved whole, so that each is copied once. */
@@ -1898,6 +1912,9 @@ export class World {
    * @internal
    */
   _reserve(): Entity {
+    if (this._frozen) {
+      throw new Error(frozenWrite("A spawn"));
+    }
     let index: number;
     this._reservedFresh = this.freeList.length === 0;
     if (this.freeList.length > 0) {
@@ -2290,6 +2307,9 @@ export class World {
     if (def.relation !== undefined && "target" in value) {
       throw new Error(retarget(def.name));
     }
+    if (this._frozen) {
+      throw new Error(frozenWrite("World.set()"));
+    }
     const index = entityIndex(entity);
     let cols: Columns;
     let row: number;
@@ -2442,6 +2462,11 @@ export class World {
 
   /** A singleton is about to be written: a rollback puts it back. */
   private writing(single: Single): void {
+    if (this._frozen) {
+      throw new Error(
+        frozenWrite(`A write to the singleton "${single.def.name}"`)
+      );
+    }
     if (this._recording && !this.savedWhole.has(single.columns)) {
       this.savedSingles.push({ single, written: single.written });
       this._saveColumns(single.def, single.columns, 1);
@@ -2455,6 +2480,42 @@ export class World {
       .filter((single) => single !== undefined)
       .toSorted((a, b) => byName(a.def, b.def));
     return this.singlesByName.filter((single) => single.written);
+  }
+
+  // --- freezing ---------------------------------------------------------------
+
+  /**
+   * Freezes the world: until `thaw`, it is read and not changed. Whatever
+   * would change it throws and says so: `spawn`, `despawn`, `add`,
+   * `remove`, `set`, a write to a singleton, a command queued on a
+   * CommandBuffer, and an assignment through the accessors of `each`.
+   *
+   * An app freezes its world for the frame stage, which draws the game
+   * between two ticks and must leave it as it found it.
+   *
+   * Two things are not stopped, because stopping them would cost every
+   * loop: a write through the raw columns `eachChunk` hands out, and a
+   * draw from `world.random`. `world.hash()` before and after shows either.
+   * In a frozen world `eachChunk` counts nothing as written, so a change
+   * query may hand out what it watches.
+   */
+  freeze(): void {
+    if (this._recording) {
+      throw new Error(
+        "World.freeze() was called inside a transaction. Commit or roll back first."
+      );
+    }
+    this._frozen = true;
+  }
+
+  /** Ends a freeze. */
+  thaw(): void {
+    this._frozen = false;
+  }
+
+  /** Whether the world is frozen. */
+  get frozen(): boolean {
+    return this._frozen;
   }
 
   // --- transactions ----------------------------------------------------------
@@ -2478,6 +2539,9 @@ export class World {
    * the field still holds the same object.
    */
   begin(): void {
+    if (this._frozen) {
+      throw new Error(frozenWrite("World.begin()"));
+    }
     if (this._recording) {
       throw new Error(
         "World.begin() was called inside a transaction. Commit or roll back the one in progress first."
@@ -3444,6 +3508,9 @@ export class World {
   }
 
   private assertNotIterating(op: string): void {
+    if (this._frozen) {
+      throw new Error(frozenWrite(`World.${op}()`));
+    }
     if (this._recording) {
       throw new Error(
         `World.${op}() was called inside a transaction, where an action's handler runs. Queue it on Commands (a CommandBuffer): a refused action's commands are discarded, and its direct changes to which entities exist could not be.`
@@ -3509,16 +3576,26 @@ export class CommandBuffer {
   }
 
   despawn(entity: Entity): void {
+    this.refuseFrozen("despawn");
     this.ops.push({ op: "despawn", entity });
   }
 
   add(entity: Entity, input: ComponentInput): void {
+    this.refuseFrozen("add");
     this.world._registerAll([input]);
     this.ops.push({ op: "add", entity, input });
   }
 
   remove(entity: Entity, def: ComponentDef<any>): void {
+    this.refuseFrozen("remove");
     this.ops.push({ op: "remove", entity, def });
+  }
+
+  /** A command queued in a frozen world would change it later, all the same. */
+  private refuseFrozen(op: string): void {
+    if (this.world._frozen) {
+      throw new Error(frozenWrite(`Commands.${op}()`));
+    }
   }
 
   /** A position in the queue, for `rollback`. */
