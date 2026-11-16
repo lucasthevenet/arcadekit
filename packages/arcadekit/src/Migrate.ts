@@ -15,6 +15,8 @@
  *
  * Each changes the contents in place. A component or field that is not
  * there is an error, so a migration that does not fit its save says so.
+ * A singleton is changed the same way, by its name: it is in the save if
+ * the game had written it.
  */
 import type { Column, FieldKind } from "./ecs/component";
 import type {
@@ -50,6 +52,10 @@ const columnsOf = (
   ...world.sparse
     .filter((set) => set.component === name)
     .map((set) => ({ columns: set.columns, count: set.members.length })),
+  // A singleton is one row.
+  ...world.singletons
+    .filter((single) => single.component === name)
+    .map((single) => ({ columns: single.columns, count: 1 })),
 ];
 
 const fieldOf = (component: SnapshotComponent, field: string) => {
@@ -108,7 +114,7 @@ export const renameComponent = (
       delete table.columns[from];
     }
   }
-  for (const set of world.sparse) {
+  for (const set of [...world.sparse, ...world.singletons]) {
     if (set.component === from) {
       set.component = to;
     }
@@ -225,6 +231,9 @@ export const removeComponent = (
   const component = componentOf(world, name);
   world.components.splice(world.components.indexOf(component), 1);
   world.sparse = world.sparse.filter((set) => set.component !== name);
+  world.singletons = world.singletons.filter(
+    (single) => single.component !== name
+  );
   const merged = new Map<string, SnapshotTable>();
   const tables: SnapshotTable[] = [];
   for (const table of world.tables) {

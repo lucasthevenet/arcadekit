@@ -46,6 +46,7 @@ import type {
   ComponentInput,
   Entity,
   Schema,
+  SingletonSpec,
   ValueOf,
 } from "./component";
 import { add, addColumn, addColumnPerRow, finish, shapeOf } from "./hash";
@@ -58,6 +59,7 @@ import {
   Reader,
   readColumn,
   SnapshotError,
+  STORAGES,
   WIDTH,
   writeColumn,
   Writer,
@@ -67,6 +69,24 @@ const NOT_PLACED = -1;
 const FREE = -2;
 /** In a `Saved`, the row that means "every row". */
 const WHOLE = -1;
+/** What `hash` folds in ahead of each singleton, to tell it from a sparse set. */
+const SINGLETON = 0x53_49_4e_47;
+const storageOf = (def: ComponentDef<any>): 0 | 1 | 2 =>
+  def.single ? 2 : def.storage === "sparse" ? 1 : 0;
+
+/** The one instance of a singleton that a world holds. */
+interface Single {
+  readonly def: ComponentDef<any>;
+  /** One row. */
+  readonly columns: Columns;
+  /**
+   * False until it is first written. Until then it holds its initial value,
+   * and is as good as absent: not saved, and not in the hash.
+   */
+  written: boolean;
+  /** What `World.singleton` gives: reads and writes go to `columns`. */
+  readonly value: any;
+}
 
 type Columns = Record<string, Column>;
 
@@ -1710,6 +1730,15 @@ export class World {
   >();
   private readonly watchViewsByKey = new Map<string, QueryView<any>>();
   private readonly removedReaders = new Map<string, RemovedReader>();
+  /** Indexed by component id. */
+  private readonly singles: (Single | undefined)[] = [];
+  /** The singletons in order of name. Rebuilt when one is made. */
+  private singlesByName: Single[] | undefined;
+  /** In a transaction: the singletons that were written, and whether each had been. */
+  private readonly savedSingles: {
+    readonly single: Single;
+    readonly written: boolean;
+  }[] = [];
   /** In a transaction: the readers that moved, and where each was. */
   private readonly movedReaders: {
     readonly cursor: ChangeCursor;
@@ -2046,6 +2075,78 @@ export class World {
     return true;
   }
 
+  // --- singletons ------------------------------------------------------------
+
+  /**
+   * The world's one instance of a singleton, as an object whose fields are
+   * read and written in place:
+   *
+   *   const turn = world.singleton(Turn)
+   *   turn.player = turn.player === 1 ? 2 : 1
+   *
+   * It holds the singleton's initial value until it is written. From then
+   * on it is part of the world: in its snapshot and its hash, and put back
+   * by a rollback. Reading it changes nothing, so a world that has only
+   * read a singleton hashes the same as one that never asked for it.
+   */
+  singleton<S extends Schema>(spec: SingletonSpec<S>): ValueOf<S> {
+    const found = this.singles[spec.component.id];
+    if (found !== undefined) {
+      return found.value;
+    }
+    if (!spec.component.single) {
+      throw new Error(
+        `"${spec.component.name}" is a component, not a singleton. Define a singleton with Component.singleton.`
+      );
+    }
+    const single = this.single(spec.component);
+    writeRow(spec.component, single.columns, 0, spec.initial);
+    return single.value;
+  }
+
+  /** The instance of a singleton, made if need be, with every field zero. */
+  private single(def: ComponentDef<any>): Single {
+    let single = this.singles[def.id];
+    if (single === undefined) {
+      this.register(def);
+      const columns = makeColumns(def, 1);
+      const value = {};
+      single = { def, columns, written: false, value };
+      const made = single;
+      for (const field of def.fields) {
+        const column = columns[field]!;
+        Object.defineProperty(value, field, {
+          enumerable: true,
+          get: () => column[0],
+          set: (to: unknown) => {
+            this.writing(made);
+            column[0] = to;
+          },
+        });
+      }
+      this.singles[def.id] = single;
+      this.singlesByName = undefined;
+    }
+    return single;
+  }
+
+  /** A singleton is about to be written: a rollback puts it back. */
+  private writing(single: Single): void {
+    if (this._recording && !this.savedWhole.has(single.columns)) {
+      this.savedSingles.push({ single, written: single.written });
+      this._saveColumns(single.def, single.columns, 1);
+    }
+    single.written = true;
+  }
+
+  /** The singletons that have been written, in order of name. */
+  private writtenSingles(): Single[] {
+    this.singlesByName ??= this.singles
+      .filter((single) => single !== undefined)
+      .toSorted((a, b) => byName(a.def, b.def));
+    return this.singlesByName.filter((single) => single.written);
+  }
+
   // --- transactions ----------------------------------------------------------
 
   /**
@@ -2116,6 +2217,10 @@ export class World {
       }
     }
     this.random.state.set(this.savedRandom);
+    const { savedSingles } = this;
+    for (let i = savedSingles.length - 1; i >= 0; i--) {
+      savedSingles[i]!.single.written = savedSingles[i]!.written;
+    }
     // The changes it noted, and the visits its change queries made.
     const { movedReaders, writeLogs } = this;
     for (let i = movedReaders.length - 1; i >= 0; i--) {
@@ -2139,6 +2244,7 @@ export class World {
       );
     }
     this.saved.length = 0;
+    this.savedSingles.length = 0;
     if (this.savedWhole.size > 0) {
       this.savedWhole.clear();
     }
@@ -2223,7 +2329,11 @@ export class World {
   _registerAll(inputs: readonly ComponentInput[]): void {
     for (let i = 0; i < inputs.length; i++) {
       const input = inputs[i]!;
-      this.register(isComponentDef(input) ? input : input.def);
+      const def = isComponentDef(input) ? input : input.def;
+      if (def.single) {
+        this.refuseSingle(def);
+      }
+      this.register(def);
     }
   }
 
@@ -2458,6 +2568,7 @@ export class World {
       );
     }
     const sets = this.sparseSetsByName().filter((set) => set.count > 0);
+    const singles = this.writtenSingles();
 
     // The components that hold anything, or have a table, in order of name.
     const used = new Map<ComponentDef<any>, number>();
@@ -2468,6 +2579,9 @@ export class World {
     }
     for (const set of sets) {
       used.set(set.def, 0);
+    }
+    for (const single of singles) {
+      used.set(single.def, 0);
     }
     const components = Array.from(used.keys()).toSorted(byName);
     for (let i = 0; i < components.length; i++) {
@@ -2494,7 +2608,7 @@ export class World {
     writer.u32(components.length);
     for (const def of components) {
       writer.text(def.name);
-      writer.u8(def.storage === "sparse" ? 1 : 0);
+      writer.u8(storageOf(def));
       writer.u32(def.fields.length);
       for (let f = 0; f < def.fields.length; f++) {
         writer.text(def.fields[f]!);
@@ -2551,6 +2665,12 @@ export class World {
       writer.numbers(set.dense, set.count, 4);
       writeFields(set.def, set.columns, set.count);
     }
+    // The singletons that have been written, each one row.
+    writer.u32(singles.length);
+    for (const single of singles) {
+      writer.u32(used.get(single.def)!);
+      writeFields(single.def, single.columns, 1);
+    }
     writer.u32(END);
     return writer.finish();
   }
@@ -2573,10 +2693,15 @@ export class World {
    * fit for use: load into a new one.
    */
   load(bytes: Uint8Array, components: readonly ComponentDef<any>[] = []): void {
-    if (this.nextIndex !== 0 || this.tables.length > 0 || this._recording) {
+    if (
+      this.nextIndex !== 0 ||
+      this.tables.length > 0 ||
+      this._recording ||
+      this.singles.some((single) => single?.written === true)
+    ) {
       throw new SnapshotError(
         "world not empty",
-        "World.load() fills an empty world, and this one has held entities. Load into a new World."
+        "World.load() fills an empty world, and this one has held entities or has written a singleton. Load into a new World."
       );
     }
     for (const def of components) {
@@ -2590,10 +2715,10 @@ export class World {
       );
     }
     const format = reader.u32();
-    if (format !== FORMAT) {
+    if (format < 1 || format > FORMAT) {
       throw new SnapshotError(
         "newer format",
-        `The snapshot is in format ${format}, and this version reads format ${FORMAT}.`
+        `The snapshot is in format ${format}, and this version reads formats 1 to ${FORMAT}.`
       );
     }
     const random = this.random.state;
@@ -2634,7 +2759,7 @@ export class World {
     const componentCount = reader.count(9);
     for (let c = 0; c < componentCount; c++) {
       const name = reader.text();
-      const sparse = reader.u8() === 1;
+      const storage = reader.u8();
       const fields: string[] = [];
       const kinds: (string | undefined)[] = [];
       const fieldCount = reader.count(5);
@@ -2654,10 +2779,10 @@ export class World {
       const is = def.fields
         .map((field, f) => `${field}: ${def.kinds[f]}`)
         .join(", ");
-      if (was !== is || sparse !== (def.storage === "sparse")) {
+      if (was !== is || storage !== storageOf(def)) {
         throw new SnapshotError(
           "component changed",
-          `"${name}" is not what it was when the snapshot was taken. Then: ${sparse ? "sparse" : "table"} { ${was} }. Now: ${def.storage} { ${is} }.`,
+          `"${name}" is not what it was when the snapshot was taken. Then: ${STORAGES[storage] ?? "unknown"} { ${was} }. Now: ${STORAGES[storageOf(def)]} { ${is} }.`,
           name
         );
       }
@@ -2677,8 +2802,10 @@ export class World {
       const defCount = reader.count(4);
       for (let d = 0; d < defCount; d++) {
         const def = componentAt();
-        if (def.storage !== "table" || defs.includes(def)) {
-          throw corrupt("a table lists a component twice, or a sparse one");
+        if (def.storage !== "table" || def.single || defs.includes(def)) {
+          throw corrupt(
+            "a table lists a component twice, or one that no table holds"
+          );
         }
         defs.push(def);
       }
@@ -2728,7 +2855,7 @@ export class World {
     const setCount = reader.count(8);
     for (let s = 0; s < setCount; s++) {
       const def = componentAt();
-      if (def.storage !== "sparse") {
+      if (def.storage !== "sparse" || def.single) {
         throw corrupt("a sparse set is of a component that is not sparse");
       }
       const set = this._sparse(def);
@@ -2748,6 +2875,24 @@ export class World {
       for (let f = 0; f < def.fields.length; f++) {
         this.readField(reader, def, f, set.columns, count);
       }
+    }
+    // Format 1 had no singletons.
+    const singleCount = format >= 2 ? reader.count(4) : 0;
+    const loaded = new Set<Single>();
+    for (let s = 0; s < singleCount; s++) {
+      const def = componentAt();
+      if (!def.single) {
+        throw corrupt("a singleton is of a component that is not one");
+      }
+      const single = this.single(def);
+      if (loaded.has(single)) {
+        throw corrupt("it holds two values for one singleton");
+      }
+      loaded.add(single);
+      for (let f = 0; f < def.fields.length; f++) {
+        this.readField(reader, def, f, single.columns, 1);
+      }
+      single.written = true;
     }
     if (reader.left !== 4 || reader.u32() !== END) {
       throw corrupt("it does not end where it should");
@@ -2886,6 +3031,24 @@ export class World {
       h = add(add(add(h, shape), count), members);
     }
 
+    // Singletons that have been written, in order of name. One that has
+    // only been read holds its initial value, which no simulation can tell
+    // from its not being there.
+    if (this.singles.length > 0) {
+      for (const { columns, def } of this.writtenSingles()) {
+        h = add(add(h, SINGLETON), shapes[def.id]!);
+        for (let f = 0; f < def.fields.length; f++) {
+          h = addColumn(
+            h,
+            def.kinds[f]!,
+            columns[def.fields[f]!]!,
+            1,
+            def.codecs[f]
+          );
+        }
+      }
+    }
+
     const random = this.random.state;
     h = add(add(add(add(h, random[0]!), random[1]!), random[2]!), random[3]!);
     return finish(h);
@@ -2897,6 +3060,7 @@ export class World {
   _sparse(def: ComponentDef<any>): SparseSet {
     let set = this.sparseById.get(def.id);
     if (set === undefined) {
+      this.refuseSingle(def);
       this.register(def);
       set = new SparseSet(def);
       this.sparseById.set(def.id, set);
@@ -2911,6 +3075,7 @@ export class World {
     let table = this.tableByKey.get(key);
     if (table === undefined) {
       for (const def of sortedDefs) {
+        this.refuseSingle(def);
         this.register(def);
       }
       table = new Table(this.tables.length, sortedDefs);
@@ -2918,6 +3083,15 @@ export class World {
       this.tableByKey.set(key, table);
     }
     return table;
+  }
+
+  /** A singleton's fields are not a component an entity can have. */
+  private refuseSingle(def: ComponentDef<any>): void {
+    if (def.single) {
+      throw new Error(
+        `"${def.name}" is a singleton: the world holds one, and no entity has it. Read and write it with World.singleton().`
+      );
+    }
   }
 
   private placedTable(index: number): Table {
@@ -3025,7 +3199,7 @@ export class CommandBuffer {
   }
 
   add(entity: Entity, input: ComponentInput): void {
-    this.world.register(isComponentDef(input) ? input : input.def);
+    this.world._registerAll([input]);
     this.ops.push({ op: "add", entity, input });
   }
 

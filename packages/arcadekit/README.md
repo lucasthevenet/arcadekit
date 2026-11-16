@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 291 tests
+pnpm test                          # 308 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -75,13 +75,38 @@ A number goes in a typed field: `f32`, `f64`, `i32`, `u32`, `u16`, `u8`, `entity
 - What comes back from a `json` field is what JSON makes of it: a Date inside an object comes back as text. Give such a value a schema.
 - A `schema` or `ref` field is encoded once per value for every hash, and an array or object in a `json` field is turned into text. Keep them for what is small or rare; numbers that change every tick belong in typed fields.
 
+## Singletons
+
+```ts
+const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 });
+
+const pass = Action.handler(Pass, function* ({ player }) {
+  const turn = yield* Turn;
+  if (turn.player !== player) {
+    return yield* Effect.fail(new NotYourTurn({ waitingFor: turn.player }));
+  }
+  turn.player = player === 1 ? 2 : 1;
+});
+```
+
+A singleton is one instance of some data per world: whose turn it is, the score, the level being played. `yield* Turn` gives the world's value of it, an object whose fields are read and written in place, with no entity, no query and no loop.
+
+- Its fields are a component's, of the same [kinds](#fields), and its third argument is the value it has in a world that has not written it.
+- The value is the world's. It is in the world's [snapshot](#snapshots) and [hash](#the-worlds-hash), so it is saved with a game and checked by a replay, and what a refused action wrote to it is taken back with the rest.
+- Until it is written it is as good as absent: not saved, and not in the hash. Reading it changes nothing, so a plugin that only reads a singleton does not change the hash of the game it watches. A game loaded from a save in which it had never been written starts it at the initial value of the build that loads.
+- Its name is one of the world's component names. List it in a plugin's `components`, beside the components, so that a save which names it can be loaded.
+- No entity has it and no query visits it: spawning or adding it throws.
+- A migration changes it by name with `Migrate`, as it changes a component.
+- A `Resource` is the other kind of single value: configuration with a default that a layer can override. It is not game state, and is not saved.
+- With the storage core on its own: `Component.singleton(name, fields, initial)` and `world.singleton(spec)`.
+
 ## Plugins
 
 ```ts
 const Physics = Plugin.make("Physics", {
   systems: [Movement, Walls],
   layer: Layer.succeed(Bounds, { width: 10 }), // services for the whole app
-  components: [Position, Velocity], // so a save that names them can be read
+  components: [Position, Velocity, Wind], // components and singletons, so a save that names them can be read
   setup: spawnTheBall, // runs once, on a fresh start
   scripts: [Gusts], // started with the app, and again after a load
 });
@@ -105,7 +130,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
   ```
 
 - A layer or setup that fails makes `App.make` fail with that typed error.
-- Events and actions are plain values, so a plugin does not list them. It exports them from its module. It does list its `components` and its `scripts`, which loading a saved game needs; see [Saving and loading](#saving-and-loading).
+- Events and actions are plain values, so a plugin does not list them. It exports them from its module. It does list its `components`, singletons among them, and its `scripts`, which loading a saved game needs; see [Saving and loading](#saving-and-loading).
 - `setup` runs on a fresh start and not on a load. A plugin's scripts start after it, run like any other script, and are watched the same way.
 
 ## Names
@@ -238,6 +263,7 @@ It covers:
 - every entity and the value of every field of every component it has, a component being known by its name and its fields;
 - the order queries visit entities in: tables in creation order, rows ascending;
 - the ids the next entities will get: the freed slots, in the order they will be reused, and their generations;
+- every [singleton](#singletons) that has been written, by name;
 - the state of the random number generator.
 
 So two worlds built by the same operations in the same order hash equal, and changing one field of one entity always changes the hash: a single change cannot cancel out. Two different worlds hash equal by chance about once in four billion.
@@ -258,11 +284,12 @@ copy.load(bytes, [Position, Velocity, Burning]); // the components it may name
 copy.hash() === world.hash(); // true
 ```
 
-`world.snapshot()` is the whole world as bytes: every table and sparse set, the ids to come, and the state of the random generator. A world that loads them hashes the same as the one they were taken from and goes on the same: the same order of iteration, the same ids for the next entities, the same random numbers.
+`world.snapshot()` is the whole world as bytes: every table and sparse set, the singletons that have been written, the ids to come, and the state of the random generator. A world that loads them hashes the same as the one they were taken from and goes on the same: the same order of iteration, the same ids for the next entities, the same random numbers.
 
 - It is about as big as the data. A column of numbers is written as its bytes, so an entity with two `f32` fields takes 14 bytes: 4 of id, 8 of floats and 2 of generation.
 - A component is written under its name, with the names and kinds of its fields, so a snapshot does not depend on the order a program defines its components in. A world knows a component by its name and an empty world knows none, so `load` is given the components the snapshot may name.
-- `load` fills an empty world: one that has never held an entity.
+- `load` fills an empty world: one that has never held an entity or written a singleton.
+- The format is numbered. This version writes format 2, which added singletons, and reads format 1 as well.
 - Every problem is a `SnapshotError`, whose `problem` says which kind and whose message names the component or field: `"not a snapshot"`, `"newer format"`, `"truncated"`, `"corrupt"`, `"unknown component"`, `"component changed"` (with its fields then and now), `"world not empty"`, `"cannot be saved"`.
 - Damaged bytes are refused, not trusted: every count is checked against the bytes that are there before anything is allocated for it, an entity may not be in two rows or in a freed slot, and text has to be text. A damaged number inside a column cannot be told from another number, and loads as that.
 - A `json` field is saved as the plain data it holds, exactly for text, numbers, booleans, bigints, null and undefined (`-0` and `NaN` come back as they were), and as JSON text for an array or an object. A `schema` or `ref` field is saved in its encoded form, and a `transient` field is not saved. See [Fields](#fields).
@@ -337,7 +364,7 @@ A save is taken between two ticks. It holds the world as a [snapshot](#snapshots
 
 - `App.load` takes the plugins and options the game was made with. No plugin's `setup` runs: the save holds what setup spawned.
 - A save cannot hold a script in mid-flight. A plugin lists its `scripts`, and they start again from their beginning when the app is loaded. So a script keeps what it must not lose in the world, and picks up from what it finds there.
-- A world knows a component by its name, so every component a save names has to be listed in a plugin's `components` or the app's. A load that meets one that is not fails with `LoadRefused` and names it.
+- A world knows a component by its name, so every component and singleton a save names has to be listed in a plugin's `components` or the app's. A load that meets one that is not fails with `LoadRefused` and names it.
 - **A save is a snapshot plus the log since.** The save says how long the log was (`save.logLength`). A game that keeps its last save and the entries logged after it comes back to the present by loading the save and replaying only that tail, which costs the same however long the game has run: `App.replay(app, log.slice(save.logLength), { delta, ticks })`. The replay checks itself against the tail's checkpoints, so a save that did not bring the game back faithfully is caught on the next tick.
 - `app.save()` fails with `Save.SaveRefused` and says what is in the way: an action or an event with no schema is waiting, a field holds a value it cannot save, or commands are queued and not applied. `App.load` and `Save.decode` fail with `Save.LoadRefused`, whose `problem` is one of a snapshot's, or `"not a save"`.
 - A save is the snapshot and a little text: for 100,000 entities with four float fields, 2.2 MB and about 0.6 ms to take.
@@ -403,11 +430,12 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Save.ts` | A saved game, as a value and as bytes, and its migrations |
 | `src/Migrate.ts` | The usual changes a migration makes to an old save's world |
 | `src/Field.ts` | The fields of a component, with `Field.schema` |
+| `src/Singleton.ts` | One instance of some data per world |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration and change tests, including randomized comparisons of the storage and of change queries against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change and singleton tests, including randomized comparisons of the storage and of change queries against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -525,6 +553,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The hash covers the world and nothing else: not the events waiting to be read, what change queries have yet to visit, the actions queued for the next tick, or how far each script has got.
 - A raw loop cannot say that it only reads a component. `eachChunk` counts every row it hands out as written, so a system that reads a watched component with it sets off that component's change queries every tick, and a change query cannot use it over what it watches itself.
 - `Query.removed` gives the ids of the entities that lost a component, not the values it held.
+- A singleton cannot be watched for changes: a change query is of entities.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.

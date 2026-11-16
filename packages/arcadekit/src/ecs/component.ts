@@ -216,6 +216,11 @@ export interface ComponentDef<
   /** Tracked in the type so queries know which terms have row-aligned columns. */
   readonly storage: St;
   readonly isTag: boolean;
+  /**
+   * True for the fields of a singleton, which the world holds one of and no
+   * entity has: see `Component.singleton`.
+   */
+  readonly single: boolean;
   /** Pair this component with a value, for `spawn` and `add`. */
   readonly of: (value: ValueOf<S>) => ComponentValue<S>;
   /** @internal */
@@ -232,6 +237,28 @@ export type ComponentInput = ComponentValue<any> | ComponentDef<any>;
 
 export const isComponentDef = (u: ComponentInput): u is ComponentDef<any> =>
   "id" in u;
+
+/**
+ * One instance of some data per world: whose turn it is, the score, the
+ * level being played. `world.singleton(spec)` gives the value, which is
+ * read and written like an object and is the world's: saved in a snapshot,
+ * counted in the hash, and put back when a transaction is rolled back.
+ *
+ * Any object with this shape works; the Effect layer supplies a yieldable
+ * one.
+ */
+export interface SingletonSpec<S extends Schema = Schema> {
+  /** The singleton's name and fields, in the form of a component. */
+  readonly component: ComponentDef<S>;
+  /** What it holds in a world that has not written it. */
+  readonly initial: ValueOf<S>;
+}
+
+/** What an app is told of, so that a save which names it can be read. */
+export type Listed = ComponentDef<any> | SingletonSpec<any>;
+
+export const isSingletonSpec = (u: Listed): u is SingletonSpec<any> =>
+  "initial" in u;
 
 // A component's name is its identity in a save, on the network and in a tool.
 // A world keeps the names of the components it stores and refuses two with one
@@ -306,7 +333,7 @@ export const noticingAccessor = (
 const define = <S extends Schema, St extends Storage = "table">(
   name: string,
   schema: S,
-  options?: { readonly storage?: St }
+  options?: { readonly storage?: St; readonly single?: boolean }
 ): ComponentDef<S, St> => {
   const fields = Object.keys(schema);
   const def: ComponentDef<S, St> = {
@@ -318,6 +345,7 @@ const define = <S extends Schema, St extends Storage = "table">(
     codecs: Object.values(schema).map((fieldDef) => fieldDef.codec),
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
+    single: options?.single === true,
     of: (value) => ({ def, value }),
     Accessor: makeAccessorClass(fields),
   };
@@ -326,7 +354,23 @@ const define = <S extends Schema, St extends Storage = "table">(
 
 export const Component = {
   /** Define a data component. Numeric fields become typed-array columns. */
-  define,
+  define: <S extends Schema, St extends Storage = "table">(
+    name: string,
+    schema: S,
+    options?: { readonly storage?: St }
+  ): ComponentDef<S, St> => define(name, schema, options),
+  /**
+   * Define a singleton: data the world holds one of, with the value it has
+   * until it is written. Its name is one of the world's component names.
+   */
+  singleton: <S extends Schema>(
+    name: string,
+    schema: S,
+    initial: ValueOf<S>
+  ): SingletonSpec<S> => ({
+    component: define(name, schema, { single: true }),
+    initial,
+  }),
   /** Define a component with no data, used only for filtering. */
   tag: <St extends Storage = "table">(
     name: string,

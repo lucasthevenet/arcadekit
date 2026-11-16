@@ -47,6 +47,14 @@ const sheet = (n: number) => ({
   note: `note ${n}` as unknown,
 });
 
+// Two singletons: one the populated world has written, one it has not.
+const Clock = Component.singleton("tx/Clock", kinds, sheet(500));
+const Mood = Component.singleton(
+  "tx/Mood",
+  { level: Field.i32, word: Field.json<string>() },
+  { level: 3, word: "calm" }
+);
+
 const Bodies = Query.all(Body);
 const Sheets = Query.all(Sheet);
 const Auras = Query.all(Aura);
@@ -74,6 +82,7 @@ const populated = (): { world: EcsWorld; entities: Entity[] } => {
   }
   world.despawn(entities.splice(20, 1)[0]!);
   world.despawn(entities.splice(4, 1)[0]!);
+  world.singleton(Clock).signed = -1;
   return { world, entities };
 };
 
@@ -153,6 +162,17 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
         inner.y += outer.x;
       });
     });
+  },
+  "writing a singleton that was written before": (world) => {
+    const clock = world.singleton(Clock);
+    clock.single += 1;
+    clock.note = { replaced: true };
+    clock.other = 9 as Entity;
+  },
+  "writing a singleton for the first time": (world) => {
+    const mood = world.singleton(Mood);
+    mood.level = mood.level + 1;
+    mood.word = "stormy";
   },
   "drawing random numbers": (world) => {
     world.random.next();

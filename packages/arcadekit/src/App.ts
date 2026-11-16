@@ -39,7 +39,8 @@ import type { Fiber, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
-import type { ComponentDef } from "./ecs/component";
+import { isSingletonSpec } from "./ecs/component";
+import type { Listed } from "./ecs/component";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
@@ -222,11 +223,11 @@ export interface Options<
 > {
   readonly plugins?: readonly [...P];
   /**
-   * Components that belong to the app itself, not to a plugin. A world
-   * knows a component by its name, so loading a save needs every component
+   * Components and singletons that belong to the app itself, not to a
+   * plugin. A world knows them by name, so loading a save needs every one
    * the save names to be listed here or by a plugin.
    */
-  readonly components?: readonly ComponentDef<any>[];
+  readonly components?: readonly Listed[];
   /**
    * The version of the game: a whole number that is raised when the game
    * changes its components or what its saves hold, 0 when left out. A save
@@ -395,8 +396,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       ...plugins.flatMap((plugin) => plugin.components),
       ...(options.components ?? []),
     ];
-    for (const component of components) {
-      world.register(component);
+    for (const listed of components) {
+      if (isSingletonSpec(listed)) {
+        world.singleton(listed);
+      } else {
+        world.register(listed);
+      }
     }
     const version = options.version ?? 0;
     if (!Number.isSafeInteger(version) || version < 0) {

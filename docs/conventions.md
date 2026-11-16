@@ -75,7 +75,7 @@ export const loadLevel = Effect.fn("Level.load")(function* (name: string) {
 ## Services, resources and layers
 
 - **A service is a class that extends `Context.Service`**, with its interface as the second type parameter. Give it a static `layer` when there is one obvious implementation.
-- **A value with a sensible default is a `Context.Reference`** (`Resource.make` in this package). Nothing has to provide it; a layer can override it. Do not mutate a reference's default: it is created once and shared by every app in the process.
+- **A value with a sensible default is a `Context.Reference`** (`Resource.make` in this package). Nothing has to provide it; a layer can override it. Do not mutate a reference's default: it is created once and shared by every app in the process. A resource is configuration. Game state of which there is one is a `Singleton`: it is in the world, so it is saved, hashed, and put back when an action is refused.
 - **Services are how code reaches the outside world.** Sound, storage, the network, the clock and randomness are services, never imports of a module that does the work directly. That is what lets a test swap them and a replay control them.
 - **A plugin's `layer` is where its services are built.** A layer that needs another plugin's service lists that plugin in `plugins`. A resource is acquired with `Effect.acquireRelease` inside `Layer.effect`, so it is released when the app's scope closes.
 - **Do not build a layer by hand** with `Layer.build`. `App.make` is the one place that does.
@@ -151,6 +151,7 @@ Each part has one shape. A new feature is made of these, not of a new kind of th
 | Part | Is | Rules |
 | --- | --- | --- |
 | Component | Data, declared with `Component.define` | Numbers go in typed fields. Anything else is `Field.json` (plain data), `Field.schema` (a value with a schema) or `Field.transient` (not part of the game's state, so not saved or hashed): a field says which where it is defined. Use `storage: "sparse"` for one that is added and removed often or that few entities have. |
+| Singleton | Data of which the world has one, declared with `Singleton.define` and its initial value | Fields as a component's. Listed in a plugin's `components`. Read and written through what `yield*` gives, by a system, a handler or a script. |
 | System | A generator given to `System.make` | Finishes within its tick. Changes the set of entities only through `Commands`. Reacts to what changed with a change query (`Query.changed`, `Query.added`, `Query.removed`), not by comparing with a copy it keeps. |
 | Event | A fact, declared with `Event.define` and a schema | Named in the past tense, with the feature it belongs to in front: `"physics/Collided"`. Emitted, never awaited by a system. An event with a type and no schema cannot be written down. |
 | Action | A request from outside, declared with `Action.define` and a schema | Its handler may refuse at any point: the world takes back what it wrote. It changes which entities exist only through `Commands`, and issues another action only with `Actions.enqueue`. |
