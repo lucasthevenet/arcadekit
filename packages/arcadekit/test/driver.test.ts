@@ -432,12 +432,12 @@ describe("the frame loop", () => {
   });
 });
 
-describe("the platform's display", () => {
+describe("the display when none is provided", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("is a timer where there is no page, and stops with the loop", async () => {
+  it("is a timer, and stops with the loop", async () => {
     // The frames it asks for are the timers of a sixtieth of a second.
     const asked: unknown[] = [];
     const cleared = new Set<unknown>();
@@ -474,76 +474,5 @@ describe("the platform's display", () => {
     expect(asked.filter((id) => cleared.has(id))).toEqual([asked.at(-1)]);
     await new Promise((resolve) => set(resolve, 60));
     expect(app!.time.tick).toBe(ticks);
-  });
-
-  it("is requestAnimationFrame and the document's visibility in a page", async () => {
-    const requested = new Map<number, (now: number) => void>();
-    let ids = 0;
-    const cancelled: number[] = [];
-    const listeners = new Set<() => void>();
-    const document = {
-      visibilityState: "visible",
-      addEventListener(type: string, listener: () => void) {
-        expect(type).toBe("visibilitychange");
-        listeners.add(listener);
-      },
-      removeEventListener(type: string, listener: () => void) {
-        expect(type).toBe("visibilitychange");
-        listeners.delete(listener);
-      },
-    };
-    vi.stubGlobal(
-      "requestAnimationFrame",
-      (callback: (now: number) => void) => {
-        requested.set(++ids, callback);
-        return ids;
-      }
-    );
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
-      cancelled.push(id);
-      requested.delete(id);
-    });
-    vi.stubGlobal("document", document);
-    const repaint = (now: number): void => {
-      const due = Array.from(requested.values());
-      requested.clear();
-      for (const callback of due) {
-        callback(now);
-      }
-    };
-    let app: App.Any | undefined;
-    const fiber = Effect.runFork(
-      Effect.scoped(
-        Effect.gen(function* () {
-          app = yield* App.make({ systems: [Roll] });
-          return yield* Driver.frames(app, { hz: 60 });
-        })
-      )
-    );
-    expect(requested.size).toBe(1);
-    expect(listeners.size).toBe(1);
-    repaint(0);
-    repaint(1000 / 60);
-    repaint(2000 / 60);
-    expect(app!.time.tick).toBe(2);
-    expect(requested.size).toBe(1);
-    // The tab is hidden: the request is cancelled.
-    document.visibilityState = "hidden";
-    for (const listener of listeners) {
-      listener();
-    }
-    expect(requested.size).toBe(0);
-    expect(cancelled).toEqual([4]);
-    document.visibilityState = "visible";
-    for (const listener of listeners) {
-      listener();
-    }
-    expect(requested.size).toBe(1);
-    repaint(90_000);
-    repaint(90_000 + 1000 / 60);
-    expect(app!.time.tick).toBe(3);
-    await Effect.runPromise(Fiber.interrupt(fiber));
-    expect(requested.size).toBe(0);
-    expect(listeners.size).toBe(0);
   });
 });

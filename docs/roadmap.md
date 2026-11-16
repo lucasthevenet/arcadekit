@@ -36,7 +36,7 @@ The package's stated aim is games on Effect, Foldkit and Three.js. These are plu
 - **A Foldkit bridge.** UI reads the world through events and a few selected values, and acts on it only by dispatching actions. Done when a menu and a heads-up display are built without the UI holding a reference to the world.
 - **Sound.** A service that plays a named cue, driven by events. Done when the simulation never calls it directly.
 
-Decide before starting whether each of these is an entry of `arcadekit` or a package of its own.
+Each is an entry of `arcadekit` of its own, as every module is, with the library it draws with as an optional peer: `three` and `foldkit` are that already.
 
 ## 6. More than one player
 
@@ -68,8 +68,9 @@ Only with a benchmark that shows the need.
 
 Not work yet; each needs an answer before the item that depends on it.
 
-- **One entry or several.** The storage core imports nothing from Effect and could be `arcadekit/ecs`. Renderers and netcode could be entries or packages. What only a page can use (`Input.layerBrowser`, `Assets.image`, the platform's display) is in the one entry today: it touches the page only when it is used, and the entry imports no browser package, which is why `BrowserRuntime.runMain` is the game's to call and not `App.run`'s. Needed by milestone 5.
 - **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
 - **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
 - **A game that ticks when a player moves, in a page.** `App.run` and `Driver.frames` tick in real time. A turn-based game wants its frames at the display's rate and its ticks when a move is made, with the input stage before each. Whether that is an option of the frame loop or a driver of its own is open; the duel example steps its app by hand meanwhile.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.
+
+Decided, and no longer waiting: one entry or several. Several: an entry for every module, `arcadekit/App` and the rest, and `arcadekit` for all of them together, each importing Effect alone. What only a page can use is one entry, `arcadekit/Browser`, and starts a game in it. `arcadekit/ecs` is the storage core, which imports nothing. A renderer, a UI bridge and netcode are each an entry of their own when they are built.

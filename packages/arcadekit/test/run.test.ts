@@ -10,6 +10,7 @@ import {
 } from "effect";
 import { describe, expect, it } from "vitest";
 
+import * as Browser from "../src/Browser";
 import {
   Action,
   App,
@@ -377,10 +378,10 @@ describe("App.run", () => {
     });
     const fiber = Effect.runFork(
       App.run({ plugins: [Input.plugin], systems: [Watch] }, { hz: 60 }).pipe(
-        Effect.provide(
-          Input.layerBrowser({ window: page, gamepads: () => [] })
-        ),
-        Effect.provideService(Driver.Display, display)
+        // The page's devices, and a display turned by hand in place of the
+        // page's: what is provided nearer the game is the one it gets.
+        Effect.provideService(Driver.Display, display),
+        Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
       )
     );
     expect(page.listening).toBe(7);

@@ -105,41 +105,32 @@ export interface DisplayShape {
 }
 
 /**
- * The screen as the platform has it. In a page that is
- * `requestAnimationFrame` and the document's visibility. Anywhere else
- * (Node, a worker) it is a timer of 60 frames a second that is never
- * hidden. It holds nothing, and looks for the page each time it is asked.
+ * A screen there is none of: a timer of 60 frames a second, never hidden.
+ * It holds nothing.
  */
-const platformDisplay: DisplayShape = {
+const timerDisplay: DisplayShape = {
   request(callback) {
-    if (typeof requestAnimationFrame === "function") {
-      const id = requestAnimationFrame(callback);
-      return () => cancelAnimationFrame(id);
-    }
     const id = setTimeout(() => callback(performance.now()), 1000 / 60);
     return () => clearTimeout(id);
   },
-  hidden: () =>
-    typeof document !== "undefined" && document.visibilityState === "hidden",
-  onVisibilityChange(listener) {
-    if (typeof document === "undefined") {
-      return () => {};
-    }
-    document.addEventListener("visibilitychange", listener);
-    return () => document.removeEventListener("visibilitychange", listener);
-  },
+  hidden: () => false,
+  onVisibilityChange: () => () => {},
 };
 
 /**
  * The screen a frame loop follows. Nothing has to provide it: the default
- * is the platform's. A test provides one it turns by hand:
+ * is a timer of 60 frames a second, which is all there is under Node, in a
+ * worker or on a server. A page provides its own, `requestAnimationFrame`
+ * and the document's visibility, with `Browser.layer()` or
+ * `Browser.runMain` from `arcadekit/Browser`. A test provides one it turns
+ * by hand:
  *
  *   const display = Driver.makeManualDisplay()
  *   Driver.frames(app, { hz: 60 }).pipe(Effect.provideService(Driver.Display, display))
  */
 export const Display: Context.Reference<DisplayShape> =
   Context.Reference<DisplayShape>("arcadekit/Display", {
-    defaultValue: () => platformDisplay,
+    defaultValue: () => timerDisplay,
   });
 
 /** A display turned by hand, for tests and tools. */
@@ -219,8 +210,8 @@ export const makeManualDisplay = (): ManualDisplay => {
 /**
  * The frame loop: follows the display until interrupted. Each time a frame
  * is due it runs the ticks that are due, at a fixed `hz`, and then the
- * app's frame stage, as `fixedStep` does. In a page a frame is due once per
- * repaint (`requestAnimationFrame`).
+ * app's frame stage, as `fixedStep` does. In a page, with the page's
+ * display, a frame is due once per repaint (`requestAnimationFrame`).
  *
  *   const app = yield* App.make({ plugins: [Game] })
  *   yield* Driver.frames(app, { hz: 60 })
