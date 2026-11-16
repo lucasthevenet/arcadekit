@@ -330,6 +330,75 @@ describe("a page's devices", () => {
     expect(canvas.total).toBe(0);
   });
 
+  it("follows every button of a mouse held in a chord, which the page tells of as moves", () => {
+    const page = new Listened();
+    const canvas = new Listened();
+    run(
+      Effect.gen(function* () {
+        const source = yield* Input.Source;
+        const at = { clientX: 10, clientY: 10 };
+        // The main button goes down: the one press a page reports as one.
+        canvas.send("pointerdown", { ...at, button: 0, buttons: 1 });
+        // The secondary goes down while it is held. A page says so with a
+        // move, not a press: `buttons` is what is down by then.
+        page.send("pointermove", { ...at, button: 2, buttons: 3 });
+        expect(told(source.sample())).toMatchObject({
+          down: ["Pointer0", "Pointer2"],
+          pressed: ["Pointer0", "Pointer2"],
+          released: [],
+        });
+        // The main button goes up, the secondary still held: a move again.
+        page.send("pointermove", { ...at, button: 0, buttons: 2 });
+        expect(told(source.sample())).toMatchObject({
+          down: ["Pointer2"],
+          pressed: [],
+          released: ["Pointer0"],
+        });
+        // The last button goes up: the one release a page reports as one.
+        page.send("pointerup", { ...at, button: 2, buttons: 0 });
+        expect(told(source.sample())).toMatchObject({
+          down: [],
+          pressed: [],
+          released: ["Pointer2"],
+        });
+        // The release of the last button lets go of every one: of one
+        // whose own move the page never sent, too.
+        canvas.send("pointerdown", { ...at, button: 0, buttons: 1 });
+        page.send("pointerup", { ...at, button: 2, buttons: 0 });
+        expect(told(source.sample())).toMatchObject({
+          down: [],
+          released: ["Pointer0"],
+        });
+        // The middle button is the third bit of `buttons`, not the second.
+        canvas.send("pointerdown", { ...at, button: 0, buttons: 1 });
+        page.send("pointermove", { ...at, button: 1, buttons: 5 });
+        expect(told(source.sample()).down).toEqual(["Pointer0", "Pointer1"]);
+        // Let go of outside the window, the page hears of no release: the
+        // next move, with nothing down, is how it is known.
+        page.send("pointermove", { ...at, button: -1, buttons: 0 });
+        expect(told(source.sample())).toMatchObject({
+          down: [],
+          released: ["Pointer0", "Pointer1"],
+        });
+        // A button that went down somewhere else on the page is not one
+        // the target hears of, however the pointer moves afterwards.
+        page.send("pointermove", { ...at, button: -1, buttons: 1 });
+        page.send("pointermove", { ...at, button: 2, buttons: 3 });
+        expect(told(source.sample()).down).toEqual([]);
+        // An event that says nothing of what is down, as one made by hand
+        // may, is still the press and the release of its own button.
+        canvas.send("pointerdown", { ...at, button: 2, buttons: 0 });
+        expect(told(source.sample()).down).toEqual(["Pointer2"]);
+        page.send("pointerup", { ...at, button: 2 });
+        expect(told(source.sample()).released).toEqual(["Pointer2"]);
+      }).pipe(
+        Effect.provide(
+          Browser.layer({ window: page, target: canvas, gamepads: () => [] })
+        )
+      )
+    );
+  });
+
   it("measures the pointer from the corner of the page when given no target, and hears its presses there", () => {
     const page = new Listened();
     run(

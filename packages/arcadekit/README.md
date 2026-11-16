@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 459 tests
+pnpm test                          # 460 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -480,7 +480,7 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
 
 **Where the devices come from** is `Input.Source`, a `Context.Reference` whose default has no devices.
 
-- `Browser.layer(options)`, from `arcadekit/Browser`, is a page's: the keyboard, the pointer (a mouse, a pen or a finger) and the gamepads, with the page's display. `Browser.runMain(game, options)` provides it. `target` is the element the pointer is pressed on and measured from, in CSS pixels from its top left corner; `preventDefault` lists the keys that must not scroll the page; `deadzone` is how far a stick has to be from its middle to count, a tenth unless told. A key held down went down once, and everything held is let go when the page loses focus.
+- `Browser.layer(options)`, from `arcadekit/Browser`, is a page's: the keyboard, the pointer (a mouse, a pen or a finger) and the gamepads, with the page's display. `Browser.runMain(game, options)` provides it. `target` is the element the pointer is pressed on and measured from, in CSS pixels from its top left corner; `preventDefault` lists the keys that must not scroll the page; `deadzone` is how far a stick has to be from its middle to count, a tenth unless told. A key held down went down once, and everything held is let go when the page loses focus. The buttons of a mouse held together are followed one by one, though a page tells of all but the first press and the last release as moves.
 - It listens until its scope closes, so it is provided to the whole program. Provided to `App.make` alone it is let go as soon as the app is made, and says so when it is read.
 - `Input.makeManualSource()` is a source worked by hand, for a test, a tool or controls drawn on the screen: `press`, `release`, `tap`, `move`.
 
