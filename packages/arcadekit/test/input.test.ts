@@ -1254,6 +1254,58 @@ describe("the picture of the devices in the world", () => {
     );
   });
 
+  it("is left as it is where there are no devices: reports from elsewhere drive a game through a driver", () => {
+    // A game played from a keyboard, through a driver, and its reports.
+    const source = Input.makeManualSource();
+    const { hashes, log } = run(
+      Effect.gen(function* () {
+        const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
+        const step = Driver.fixedStep(app, { hz: 10 });
+        const seen: number[] = [];
+        const moves: (() => void)[] = [
+          () => source.press("ArrowRight"),
+          () => {},
+          () => source.tap("Space"),
+          () => source.release("ArrowRight"),
+          () => {},
+        ];
+        for (const move of moves) {
+          move();
+          step(0.1);
+          seen.push(app.world.hash());
+        }
+        return { hashes: seen, log: app.actionLog as Action.Logged[] };
+      }).pipe(withSource(source))
+    );
+    // The same game with no devices, given those reports as they came,
+    // and run by the same driver, which runs its input stage too: as a
+    // peer on another machine is, or a recording played back at speed.
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
+        const step = Driver.fixedStep(app, { hz: 10 });
+        for (let tick = 0; tick < hashes.length; tick++) {
+          for (const entry of log.filter((one) => one.tick === tick)) {
+            app.enqueueByName(entry.name, entry.payload);
+          }
+          step(0.1);
+          expect(app.world.hash(), `tick ${tick + 1}`).toBe(hashes[tick]);
+        }
+        // Nothing was reported of devices that are not there.
+        expect(reports(app)).toEqual(log.map((entry) => entry.payload));
+        // And a key said to be held stays held, however often it is read.
+        app.dispatch(Input.Report, { down: ["ArrowLeft"] });
+        const before = ship(app).x;
+        step(0.1);
+        app.input();
+        app.input();
+        step(0.1);
+        expect(ship(app).x).toBeCloseTo(before - 2, 5);
+        expect(reports(app).length).toBe(log.length + 1);
+      })
+    );
+  });
+
   it("is what the devices say: a report made by hand lasts until they are next read", () => {
     const source = Input.makeManualSource();
     run(

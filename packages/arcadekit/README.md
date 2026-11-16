@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 464 tests
+pnpm test                          # 465 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -459,6 +459,7 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
 - What changed since the last tick is one action, `Input.Report`, and only when something did: holding a key still, or doing nothing, logs nothing.
 - The picture is a [singleton](#singletons): saved with a game, put back by a refusal, and counted in the hash once something was pressed. A game nobody has touched hashes as one that has no input at all.
 - The devices are the truth. A loaded game whose save had a key held, where the key is no longer down, lets it go at the first reading.
+- Where no source is provided there are no devices, which is not the same as devices with nothing pressed: the picture is left as it was last reported. So a game that is given its reports from a log or from another machine can be run by a driver, input stage and all, and goes the same way.
 - It is one picture, of one player's devices.
 
 **Bindings.** `Input.bind(name, ...)` makes a system of the input stage out of `Input.onPress`, `Input.onRelease` and `Input.onMove`: when one of its codes is pressed, released or moved, it issues an action of the game's own.

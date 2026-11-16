@@ -107,16 +107,21 @@ const NOTHING: Sample = {
   moved: [],
 };
 
+/** No devices at all, which is another thing than devices with nothing pressed. */
+const noSource: SourceShape = { sample: () => NOTHING };
+
 /**
  * Where an app's input stage takes its samples from. Nothing has to provide
  * it: the default has no devices, which is what a replay, a server and
- * most tests want. A page provides its own, with `Browser.layer()` from
+ * most tests want. With no devices the picture `Input.plugin` keeps is
+ * left as it is: what it says is whatever was last reported to it, from
+ * a log or from another machine. A page provides its own, with `Browser.layer()` from
  * `arcadekit/Browser`, and a test that plays provides a source it works by
  * hand, `Input.makeManualSource()`.
  */
 export const Source: Context.Reference<SourceShape> =
   Context.Reference<SourceShape>("arcadekit/Input.Source", {
-    defaultValue: () => ({ sample: () => NOTHING }),
+    defaultValue: () => noSource,
   });
 
 /**
@@ -252,8 +257,9 @@ type ReportPayload = typeof ReportSchema.Type;
 /**
  * What the devices did since the game last heard: the action that keeps
  * the picture in the world. `Input.plugin` issues it from the input stage
- * and handles it. A test or a tool can dispatch it too, though what it
- * says only lasts until the input stage next reads the devices.
+ * and handles it. A test, a tool or another machine can send it too.
+ * Where there are devices, what it says lasts until the input stage next
+ * reads them; where there are none, it stays.
  *
  * The lists are applied in the order they are written here: what went up,
  * then what went down, then what was tapped. So a held button that is in
@@ -424,6 +430,12 @@ const reported = new WeakMap<
  * is one, as an action.
  */
 const Read = System.make("arcadekit/Input.Read", function* () {
+  // Where there are no devices there is nothing to bring the picture up
+  // to date with: it stays as it was last reported, by a log or by
+  // another machine. No devices is not devices with every button up.
+  if ((yield* Source) === noSource) {
+    return;
+  }
   const devices = yield* Devices;
   const world = yield* World;
   const { tick } = yield* Time;
