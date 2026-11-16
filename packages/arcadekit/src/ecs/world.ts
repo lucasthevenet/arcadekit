@@ -39,6 +39,7 @@ import {
   frozenWrite,
   makeEntity,
   noticingAccessor,
+  readingAccessor,
   retarget,
 } from "./component";
 import type {
@@ -49,6 +50,8 @@ import type {
   ComponentInput,
   ComponentValue,
   Entity,
+  ReadOnlyTerm,
+  ReadonlyColumnsOf,
   Schema,
   SingletonSpec,
   ValueOf,
@@ -820,7 +823,11 @@ export class RemovedReader {
 const describeSpec = (spec: QuerySpec<any>): string => {
   const names = (defs: readonly ComponentDef<any>[] | undefined): string =>
     (defs ?? []).map((def) => def.name).join(",");
-  return `all(${names(spec.terms)}) with(${names(spec.withDefs)}) without(${names(spec.withoutDefs)}) changed(${names(spec.changedDefs)}) added(${names(spec.addedDefs)})`;
+  // What it only reads, in the order of its terms, however it was said.
+  const reads = spec.terms.filter(
+    (def: ComponentDef<any>) => spec.readDefs?.includes(def) === true
+  );
+  return `all(${names(spec.terms)}) with(${names(spec.withDefs)}) without(${names(spec.withoutDefs)}) changed(${names(spec.changedDefs)}) added(${names(spec.addedDefs)}) reads(${names(reads)})`;
 };
 
 // ---------------------------------------------------------------------------
@@ -848,11 +855,20 @@ export interface QuerySpec<D extends Terms = Terms> {
   readonly changedDefs?: readonly ComponentDef<any>[];
   /** Components to watch for being gained. */
   readonly addedDefs?: readonly ComponentDef<any>[];
+  /**
+   * Those of `terms` that the query only reads. `each` hands out accessors
+   * for them whose setters throw. `eachChunk` does not count their rows as
+   * written, for the change queries that watch them, and a transaction
+   * does not save their columns: there is nothing to put back.
+   */
+  readonly readDefs?: readonly ComponentDef<any>[];
 }
 
 export type AccessorsOf<D extends Terms> = {
   [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, any>
-    ? ValueOf<S>
+    ? D[K] extends ReadOnlyTerm
+      ? Readonly<ValueOf<S>>
+      : ValueOf<S>
     : never;
 };
 
@@ -860,8 +876,8 @@ export type AccessorsOf<D extends Terms> = {
  * The columns of a sparse component. They are not aligned with table rows,
  * so look the row up per entity: `burning.columns.seconds[burning.indexOf(entity)]`.
  */
-export interface SparseColumns<S extends Schema> {
-  readonly columns: ColumnsOf<S>;
+export interface SparseColumns<S extends Schema, C = ColumnsOf<S>> {
+  readonly columns: C;
   /** Row of an entity in `columns`. Only meaningful for entities that have the component. */
   readonly indexOf: (entity: number) => number;
 }
@@ -872,8 +888,13 @@ export type EntityColumn = Uint32Array & Readonly<Record<number, Entity>>;
 export type ColumnSetsOf<D extends Terms> = {
   [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, infer St>
     ? St extends "sparse"
-      ? SparseColumns<S>
-      : ColumnsOf<S>
+      ? SparseColumns<
+          S,
+          D[K] extends ReadOnlyTerm ? ReadonlyColumnsOf<S> : ColumnsOf<S>
+        >
+      : D[K] extends ReadOnlyTerm
+        ? ReadonlyColumnsOf<S>
+        : ColumnsOf<S>
     : never;
 };
 
@@ -926,6 +947,8 @@ export class QueryView<D extends Terms = Terms> {
   private readonly termTableId: number[] = [];
   /** Per term: its sparse set, or undefined when the term is a table component. */
   private readonly termSet: (SparseSet | undefined)[] = [];
+  /** Per term: true when the query only reads it. */
+  private readonly termRead: boolean[] = [];
   private readonly hasSparseTerms: boolean;
 
   private readonly requiredIds: number[] = [];
@@ -986,7 +1009,15 @@ export class QueryView<D extends Terms = Terms> {
       }
       return set;
     };
+    for (const def of spec.readDefs ?? []) {
+      if (!spec.terms.includes(def)) {
+        throw new Error(
+          `A query says it only reads "${def.name}", which is not one of its terms: ${spec.terms.map((term) => term.name).join(", ") || "it has none"}.`
+        );
+      }
+    }
     for (const def of spec.terms) {
+      this.termRead.push(spec.readDefs?.includes(def) === true);
       if (def.storage === "table") {
         this.requiredIds.push(def.id);
         this.termTableId.push(def.id);
@@ -1097,7 +1128,10 @@ export class QueryView<D extends Terms = Terms> {
       // A component of this query has come to be watched, or this is the
       // first iteration: its terms get accessors that note their writes.
       this.notesAt = world._watched;
-      this.termLog = this.spec.terms.map((def) => world._changed[def.id]);
+      // A term the query only reads is not written, so nothing is noted.
+      this.termLog = this.spec.terms.map((def, k) =>
+        this.termRead[k] ? undefined : world._changed[def.id]
+      );
       this.notes = this.termLog.some((log) => log !== undefined);
       this.frames.length = 0;
     }
@@ -1113,9 +1147,11 @@ export class QueryView<D extends Terms = Terms> {
       accessors: this.spec.terms.map((def, k) =>
         frozen
           ? new (frozenAccessor(def))()
-          : this.termLog[k] === undefined
-            ? new def.Accessor()
-            : new (noticingAccessor(def))()
+          : this.termRead[k]
+            ? new (readingAccessor(def))()
+            : this.termLog[k] === undefined
+              ? new def.Accessor()
+              : new (noticingAccessor(def))()
       ),
       keys: new Float64Array(64),
       members: { dense: new Uint32Array(64), count: 0 },
@@ -1455,7 +1491,8 @@ export class QueryView<D extends Terms = Terms> {
   private saveTableTerms(table: Table): void {
     for (let k = 0; k < this.n; k++) {
       const id = this.termTableId[k]!;
-      if (id !== -1) {
+      // What is only read is not written, and need not be put back.
+      if (id !== -1 && !this.termRead[k]) {
         this.world._saveColumns(
           this.spec.terms[k]!,
           table.columns[id]!,
@@ -1469,7 +1506,7 @@ export class QueryView<D extends Terms = Terms> {
   private saveSparseTerms(): void {
     for (let k = 0; k < this.n; k++) {
       const set = this.termSet[k];
-      if (set !== undefined) {
+      if (set !== undefined && !this.termRead[k]) {
         this.world._saveColumns(set.def, set.columns, set.count);
       }
     }
@@ -1623,11 +1660,10 @@ export class QueryView<D extends Terms = Terms> {
    *
    * Raw columns cannot say which rows were written. Where a change query
    * watches one of this query's terms, every row handed out counts as
-   * written; a loop that only reads a watched component is better off with
-   * `each`, whose accessors note the rows they write and no others. For
-   * the same reason a change query cannot hand out a component it watches
-   * itself: that throws. In a frozen world nothing is written, so neither
-   * applies there.
+   * written, unless the query says it only reads the term (`readDefs`).
+   * For the same reason a change query cannot hand out a component it
+   * watches itself unless it says it only reads it: that throws. In a
+   * frozen world nothing is written, so neither applies there.
    */
   eachChunk(
     fn: (
@@ -1694,15 +1730,15 @@ export class QueryView<D extends Terms = Terms> {
   /**
    * A change query that hands out, as raw columns, a component it watches
    * for writes would take its own visit for a change, and visit the same
-   * entities again every time. Until a raw loop can say which columns it
-   * only reads, that is refused.
+   * entities again every time. That is refused, unless the query says it
+   * only reads the component.
    */
   private refuseOwnWrites(): void {
     for (let k = 0; k < this.n; k++) {
       const log = this.termLog[k];
       if (log !== undefined && this.watches.some((each) => each.log === log)) {
         throw new Error(
-          `eachChunk() was called on a query that watches "${log.def.name}" for changes and also hands it out. Raw columns cannot tell a read from a write, so every row handed out counts as written, and the query would see its own visit as a change every time. Visit it with each(), whose accessors note only the rows they assign to, or take "${log.def.name}" out of the query's terms.`
+          `eachChunk() was called on a query that watches "${log.def.name}" for changes and also hands it out. Raw columns cannot tell a read from a write, so every row handed out counts as written, and the query would see its own visit as a change every time. Visit it with each(), whose accessors note only the rows they assign to; or, if the loop only reads "${log.def.name}", say so with Query.reads (readDefs); or take it out of the query's terms.`
         );
       }
     }
@@ -2764,7 +2800,8 @@ export class World {
    *
    * A write is noticed per row by `set`, by `add` with a value, and by the
    * setters of `each`. `eachChunk` hands out raw columns and cannot tell,
-   * so every row it hands out counts as written. Only watched components
+   * so every row it hands out counts as written, but for the terms the
+   * description says it only reads (`readDefs`). Only watched components
    * are noticed at all.
    */
   view<D extends Terms>(spec: QuerySpec<D>, reader?: string): QueryView<D> {

@@ -133,6 +133,25 @@ const sweep = Action.handler(Sweep, function* ({ refuse }) {
   }
 });
 
+// A handler that looks at every entity and writes none. Without the word
+// that it only reads, its transaction copies the columns it is handed.
+const Scan = Action.define("bench/Scan", Schema.Struct({}));
+const scanPlain = Action.handler(Scan, function* () {
+  let sum = 0;
+  (yield* Moving).each((pos, vel) => {
+    sum += pos.x + vel.x;
+  });
+  return sum;
+});
+const MovingRead = Moving.pipe(Query.reads());
+const scanReads = Action.handler(Scan, function* () {
+  let sum = 0;
+  (yield* MovingRead).each((pos, vel) => {
+    sum += pos.x + vel.x;
+  });
+  return sum;
+});
+
 /** Median milliseconds of one dispatch, in an app whose world holds N entities. */
 const dispatching = <P>(
   action: Action.ActionDef<any, P, any>,
@@ -207,6 +226,21 @@ const drawing = (count: number, reading: boolean, verify: boolean): number =>
           : measure(() => app.frame(0.5), 50_000, 20_000);
         void sink;
         return ms;
+      })
+    )
+  );
+
+/** Median milliseconds of a dispatch whose handler looks at every entity. */
+const scanned = (handler: typeof scanPlain): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const app = yield* App.make({
+          handlers: [handler],
+          checkpointEvery: 0,
+        });
+        populate(app.world);
+        return measure(() => app.dispatch(Scan, {}), 300, 80);
       })
     )
   );
@@ -762,6 +796,33 @@ const variants: Record<
       );
     },
   },
+  watchedChunkReads: {
+    label: "eachChunk: handed a watched component it only reads",
+    run: () => {
+      const world = new World();
+      populate(world);
+      // Velocity is written from Position, which the query only reads.
+      const view = world.view(Moving.pipe(Query.reads(Position)));
+      const watcher = world.view(Repositioned);
+      return measure(
+        () => {
+          view.eachChunk((start, end, pos, vel) => {
+            const px = pos.x;
+            const py = pos.y;
+            const vx = vel.x;
+            const vy = vel.y;
+            for (let i = start; i < end; i++) {
+              vx[i]! += px[i]! * DT;
+              vy[i]! += py[i]! * DT;
+            }
+          });
+        },
+        300,
+        80,
+        () => watcher.eachChunk(() => {})
+      );
+    },
+  },
   changedNone: {
     unit: "visit",
     label: "change query: nothing changed",
@@ -980,6 +1041,16 @@ const variants: Record<
     unit: "dispatch",
     label: "dispatch: the same, refused after its loop",
     run: () => dispatching(Sweep, () => ({ refuse: true }), 300, 80),
+  },
+  dispatchScan: {
+    unit: "dispatch",
+    label: "dispatch: handler only looks at all 100,000",
+    run: () => scanned(scanPlain),
+  },
+  dispatchScanReads: {
+    unit: "dispatch",
+    label: "dispatch: the same, through a query that only reads",
+    run: () => scanned(scanReads),
   },
 };
 

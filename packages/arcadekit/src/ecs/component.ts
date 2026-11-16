@@ -178,6 +178,22 @@ export type ColumnsOf<S extends Schema> = {
   readonly [K in keyof S]: S[K] extends FieldDef<any, infer C> ? C : never;
 };
 
+/** The columns of a component a query only reads: indexed, and not assigned to. */
+export type ReadonlyColumnsOf<S extends Schema> = {
+  readonly [K in keyof S]: S[K] extends FieldDef<infer T, any>
+    ? ReadonlyColumn<T>
+    : never;
+};
+
+/**
+ * What the type of a query's term carries when the query only reads it.
+ * Only in the type: it is how `each` and `eachChunk` know to hand out
+ * something that cannot be assigned to.
+ */
+export interface ReadOnlyTerm {
+  readonly _reads: true;
+}
+
 export type Storage = "table" | "sparse";
 
 /**
@@ -223,12 +239,20 @@ export interface Accessor {
   ): void;
 }
 
+/**
+ * @param S  the component's fields
+ * @param St where its data is kept
+ * @param N  its name. Two components can have the same fields, and it is
+ *           by their names that the compiler tells them apart: which of a
+ *           query's terms `Query.reads` was given, for one.
+ */
 export interface ComponentDef<
   S extends Schema = Schema,
   St extends Storage = Storage,
+  N extends string = string,
 > {
   readonly id: number;
-  readonly name: string;
+  readonly name: N;
   readonly schema: S;
   readonly fields: readonly string[];
   readonly kinds: readonly FieldKind[];
@@ -303,7 +327,8 @@ const makeAccessorClass = (
   fields: readonly string[],
   noticing = false,
   relation?: string,
-  frozen?: string
+  /** For an accessor that only reads: what an assignment to a field throws. */
+  refusal?: (field: string) => string
 ): new () => Accessor => {
   const init = fields.map((_, i) => `this._c${i} = null;`).join(" ");
   // An accessor that notices writes tells the log which entity it wrote,
@@ -320,8 +345,8 @@ const makeAccessorClass = (
       const key = JSON.stringify(f);
       // A relation's target is the world's to change.
       const set =
-        frozen !== undefined
-          ? `throw new Error(${JSON.stringify(frozenWrite(`An assignment to "${frozen}.${f}"`))})`
+        refusal !== undefined
+          ? `throw new Error(${JSON.stringify(refusal(f))})`
           : relation !== undefined && f === "target"
             ? `throw new Error(${JSON.stringify(retarget(relation))})`
             : `this._c${i}[this._i] = v${note}`;
@@ -367,8 +392,32 @@ const frozenClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
 export const frozenAccessor = (def: ComponentDef<any>): new () => Accessor => {
   let made = frozenClasses.get(def);
   if (made === undefined) {
-    made = makeAccessorClass(def.fields, false, undefined, def.name);
+    made = makeAccessorClass(def.fields, false, undefined, (field) =>
+      frozenWrite(`An assignment to "${def.name}.${field}"`)
+    );
     frozenClasses.set(def, made);
+  }
+  return made;
+};
+
+const readingClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+
+/**
+ * The accessor class of a component for a query that only reads it: as
+ * `def.Accessor` to read, and every setter throws.
+ * @internal
+ */
+export const readingAccessor = (def: ComponentDef<any>): new () => Accessor => {
+  let made = readingClasses.get(def);
+  if (made === undefined) {
+    made = makeAccessorClass(
+      def.fields,
+      false,
+      undefined,
+      (field) =>
+        `"${def.name}.${field}" was assigned to through a query that only reads "${def.name}": the query names it among the components it reads (Query.reads). Leave it out of those to write it.`
+    );
+    readingClasses.set(def, made);
   }
   return made;
 };
@@ -393,17 +442,21 @@ export const noticingAccessor = (
   return made;
 };
 
-const define = <S extends Schema, St extends Storage = "table">(
-  name: string,
+const define = <
+  S extends Schema,
+  St extends Storage = "table",
+  N extends string = string,
+>(
+  name: N,
   schema: S,
   options?: {
     readonly storage?: St;
     readonly single?: boolean;
     readonly relation?: OnTargetDespawn;
   }
-): ComponentDef<S, St> => {
+): ComponentDef<S, St, N> => {
   const fields = Object.keys(schema);
-  const def: ComponentDef<S, St> = {
+  const def: ComponentDef<S, St, N> = {
     id: nextId++,
     name,
     schema,
@@ -426,11 +479,15 @@ const define = <S extends Schema, St extends Storage = "table">(
 
 export const Component = {
   /** Define a data component. Numeric fields become typed-array columns. */
-  define: <S extends Schema, St extends Storage = "table">(
-    name: string,
+  define: <
+    const N extends string,
+    S extends Schema,
+    St extends Storage = "table",
+  >(
+    name: N,
     schema: S,
     options?: { readonly storage?: St }
-  ): ComponentDef<S, St> => define(name, schema, options),
+  ): ComponentDef<S, St, N> => define(name, schema, options),
   /**
    * Define a singleton: data the world holds one of, with the value it has
    * until it is written. Its name is one of the world's component names.
@@ -457,15 +514,19 @@ export const Component = {
    *
    * `fields` are fields of the relation's own, beside `target`.
    */
-  relation: <S extends Schema = {}, St extends Storage = "table">(
-    name: string,
+  relation: <
+    const N extends string,
+    S extends Schema = {},
+    St extends Storage = "table",
+  >(
+    name: N,
     options: {
       readonly onTargetDespawn: OnTargetDespawn;
       readonly storage?: St;
       readonly fields?: S;
     }
-  ): ComponentDef<RelationSchema<S>, St> =>
-    define<RelationSchema<S>, St>(
+  ): ComponentDef<RelationSchema<S>, St, N> =>
+    define<RelationSchema<S>, St, N>(
       name,
       {
         target: Field.entity,
@@ -476,8 +537,8 @@ export const Component = {
         : { storage: options.storage, relation: options.onTargetDespawn }
     ),
   /** Define a component with no data, used only for filtering. */
-  tag: <St extends Storage = "table">(
-    name: string,
+  tag: <const N extends string, St extends Storage = "table">(
+    name: N,
     options?: { readonly storage?: St }
-  ): ComponentDef<{}, St> => define(name, {}, options),
+  ): ComponentDef<{}, St, N> => define(name, {}, options),
 };

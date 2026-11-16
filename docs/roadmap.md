@@ -60,7 +60,7 @@ Only with a benchmark that shows the need.
 
 - **Accessors without code generation.** `each` builds its accessors with `new Function`, which a strict Content Security Policy forbids, and the obvious fallback measured about forty times slower than raw columns. Done when the package works under such a policy at a cost a game can accept.
 - **Benchmarks in CI.** Done when a change that slows the storage core by more than the noise fails a check.
-- **Systems that declare what they read and write.** The first step towards running systems in parallel, and useful on its own for ordering and for tools. Done when the order of systems can be checked for conflicts.
+- **Systems that declare what they read and write.** The first step towards running systems in parallel, and useful on its own for ordering and for tools. A query can already say which of its terms it only reads (`Query.reads`), so most of what a system reads and writes is the sum of its queries; what it does through `World`, `Commands` and singletons is not declared yet. Done when the order of systems can be checked for conflicts.
 - **Parallel systems.** Workers over shared memory, for systems whose declared access does not overlap. Done when it is faster on a real workload, and still deterministic.
 - **Wider entity ids.** A handle is 22 bits of index and 10 of generation; a slot reused 1,024 times can alias an old handle. Done when that cannot happen in a session of realistic length.
 
@@ -76,6 +76,6 @@ Only with a benchmark that shows the need.
 Not work yet; each needs an answer before the item that depends on it.
 
 - **One entry or several.** The storage core imports nothing from Effect and could be `arcadekit/ecs`. Renderers and netcode could be entries or packages. Needed by milestone 5.
-- **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not. Whatever it is should also let a raw loop say which columns it only reads: change detection has to count every row `eachChunk` hands out as written, and a handler's transaction copies every column it hands out, for want of that.
+- **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
 - **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.

@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 366 tests
+pnpm test                          # 374 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -171,7 +171,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 A string that identifies something at run time carries the name of the feature it belongs to.
 
 - The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`.
-- A component's name is its identity in a world: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
+- A component's name is its identity in a world, and part of its type: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
 - `world.component(name)` gives the component a world holds under a name. A world learns a component the first time it stores or queries it; `world.register(component)` tells it sooner.
 
 ## Events
@@ -220,7 +220,7 @@ A change query visits only the entities something happened to since whoever is a
 - The first visit is of every entity that matches: to a query that has never run, everything is new. A system that builds something for each `added(Sprite)` needs no other code for the entities that were there before it, or that came out of a save.
 - An entity is visited once, however often it was written, and in the order any query visits entities in. One that has lost the component since, or was despawned, is not visited.
 - A write is noticed per entity: by `world.set`, by adding a component with a value, and by assigning to a field in `each`. A component an entity has just gained counts as written. Reading notes nothing.
-- `eachChunk` hands out raw columns and cannot tell a read from a write, so every row it hands out counts as written. A loop that only reads a watched component is better off with `each`. For the same reason a change query cannot `eachChunk` over a component it watches itself, which throws: it would take its own visit for a change.
+- `eachChunk` hands out raw columns and cannot tell a read from a write, so every row it hands out counts as written, unless the query says it only reads the component: `Query.all(Position, Velocity).pipe(Query.reads(Velocity))`. For the same reason a change query cannot `eachChunk` over a component it watches itself without saying so, which throws: it would take its own visit for a change. See [Saying what a query only reads](#saying-what-a-query-only-reads).
 - Only a watched component is noticed. A component that no query watches costs nothing more to write than before.
 - `each`, `eachChunk` and `entities` are visits; `count` looks without visiting. With several components, or with `changed` and `added` together, an entity is visited when any one of them fired.
 - A system that writes what it watches sees its own writes the next time it runs.
@@ -439,7 +439,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 });
 ```
 
-- What a handler is about to write is saved first: one row for `world.set`, and for `each` and `eachChunk` the columns of the query's terms in every table the loop visits, once each. A refusal copies them back and restores the random generator.
+- What a handler is about to write is saved first: one row for `world.set`, and for `each` and `eachChunk` the columns of the query's terms in every table the loop visits, once each, but for the terms the query [only reads](#saying-what-a-query-only-reads). A refusal copies them back and restores the random generator.
 - A handler changes which entities exist through `Commands`. `world.spawn`, `despawn`, `add` and `remove` throw inside a handler: rows must stay where they are for a write to be put back by a plain copy. A discarded spawn gives its id back exactly, so the next entities get the ids they would have had.
 - A handler reads its own writes while it runs, and an accepted action costs one save and no copy back.
 - The events a handler read count as unread again after a refusal, and so do the visits its change queries made: the next action hears what a replay, which never ran the refused one, will have it hear.
@@ -533,7 +533,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers, which run the ticks that are due and then the frame stage |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state and frame tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame and read-only query tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -554,6 +554,27 @@ moving.eachChunk((start, end, pos, vel) => {
 (In this repository the raw loop needs an assertion on each read; see [Raw columns and strict indexing](#raw-columns-and-strict-indexing).)
 
 Both work with every query, including ones that require, exclude or read sparse components, and both visit entities in the same order: tables in creation order, rows ascending. With sparse conditions, `eachChunk` splits each table into runs of consecutive matching rows.
+
+### Saying what a query only reads
+
+```ts
+const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+const Drawn = Query.all(Position, Sprite).pipe(Query.reads()); // all of them
+
+moving.eachChunk((start, end, pos, vel) => {
+  for (let i = start; i < end; i++) pos.x[i] += vel.x[i] * delta;
+  // vel.x[i] = 0 does not compile
+});
+```
+
+A query can say which of its terms its loops only read, or, given none, that they only read any of them.
+
+- `each` hands out an accessor for such a term whose fields cannot be assigned to: the compiler refuses it, and at run time it throws and names the field.
+- `eachChunk` hands out its columns typed as read-only, and does not count their rows as written. A system that reads a [watched](#change-queries) component in a raw loop does not set off the queries that watch it, and a change query may read, raw, what it watches itself.
+- In an action's handler, its columns are not copied for a rollback.
+- The compiler tells two components with the same fields apart by their names, which are part of their types: in the query above `pos.x` is written and `vel.x` is not, though both are `{ x, y }`.
+
+### Sparse components in a raw loop
 
 A sparse component used as query data is an ordinary accessor in `each`. In `eachChunk` it arrives as `{ columns, indexOf }`, because its rows do not line up with the table's:
 
@@ -603,6 +624,7 @@ Change detection in the same world, with a query that watches `Position`:
 | `each` writing the watched component: every row noted | 14.0 ns/entity |
 | The same, when every row is noted already | 11.3 ns/entity |
 | `eachChunk` handed the watched component: every row noted | 5.3 ns/entity |
+| The same through a query that only reads it (`Query.reads`) | 2.6 ns/entity |
 
 Entities coming and going in the same world:
 
@@ -628,7 +650,7 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
 - A tick with ten systems that do nothing costs about 5 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop. Run conditions did not change that: 4.99 to 5.47 µs before them and 5.00 to 5.81 µs after, over four runs each. With a condition on each of the ten that holds, the tick costs 8.5 µs; with one that does not, 3.5 µs.
 - A sparse tag that many entities have, mixed in with ones that do not, breaks tables into short runs and `eachChunk` loses its edge. A component like that is better off with table storage.
-- A handler that loops pays one copy of the columns it visits, 0.11 ms for four float columns of 100,000 rows, and as much again to copy them back if it is refused. The copies are kept and written over by the next action; allocating them afresh each time cost 0.35 ms. A refusal itself costs about 9 µs, which is Effect building the failure.
+- A handler that loops pays one copy of the columns it visits, 0.11 ms for four float columns of 100,000 rows, and as much again to copy them back if it is refused. It pays for none it only reads: a handler that looks at all 100,000 entities takes 0.78 ms through a plain query and 0.67 ms through one made with `Query.reads()`. The copies are kept and written over by the next action; allocating them afresh each time cost 0.35 ms. A refusal itself costs about 9 µs, which is Effect building the failure.
 - A checkpoint is one hash of the world every `checkpointEvery` ticks, 60 by default: 12 µs a tick on average for 100,000 entities. The per-tick lines above are medians, so they do not show it.
 - Hashing a world costs about two and a half raw passes over it: 1.4 ns per 32-bit field per entity, and about four times that for a field of a sparse component, whose members are hashed one by one so that their order does not matter.
 
@@ -661,7 +683,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
 - The log does not say when a script was started by hand with `app.spawnScript`, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, what change queries have yet to visit, the actions queued for the next tick, or how far each script has got.
-- A raw loop cannot say that it only reads a component. `eachChunk` counts every row it hands out as written, so a system that reads a watched component with it sets off that component's change queries every tick, and a change query cannot use it over what it watches itself.
+- What a query only reads is the query's word. A raw column is a typed array all the same: a loop that writes one past the compiler has written it, and no change query hears of it and no refusal takes it back.
 - `Query.removed` gives the ids of the entities that lost a component, not the values it held.
 - A singleton cannot be watched for changes: a change query is of entities.
 - An entity points at one target per relation, and a query cannot ask for what points at a given entity: `world.sources` gives those as a list.

@@ -38,7 +38,8 @@ const Hurt = Query.all(Health).pipe(Query.changed(Health));
 const Born = Query.all(Sprite).pipe(Query.added(Sprite));
 const Warmed = Query.all(Heat).pipe(Query.changed(Heat));
 /** What a save knows the query `Moved` by, after its reader's name. */
-const MOVED = "all(ch/Position) with() without() changed(ch/Position) added()";
+const MOVED =
+  "all(ch/Position) with() without() changed(ch/Position) added() reads()";
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
@@ -568,6 +569,12 @@ describe("added and removed", () => {
   });
 });
 
+/** A raw loop that is handed positions to read and health to write. */
+const RawReader = Query.all(Position, Health).pipe(
+  Query.reads(Position),
+  Query.without(Frozen)
+);
+
 describe("changes against a simple model", () => {
   // Every reader is checked against a set of entities kept by hand: what
   // was written since it last visited, narrowed to what matches now, in
@@ -616,6 +623,16 @@ describe("changes against a simple model", () => {
       query: Query.all(Position).pipe(Query.changed(Heat), Query.added(Health)),
       plain: Query.all(Position, Heat, Health),
       fires: ["Heat:changed", "Health:added"],
+      raw: true,
+    },
+    {
+      // Hands out what it watches, and says it only reads it.
+      query: Query.all(Position, Health).pipe(
+        Query.changed(Position),
+        Query.reads(Position)
+      ),
+      plain: Query.all(Position, Health),
+      fires: ["Position:changed"],
       raw: true,
     },
   ];
@@ -737,6 +754,12 @@ describe("changes against a simple model", () => {
                 fire("Position:changed", ids[i]!);
               }
             });
+          // Unless the loop says it only reads it.
+          world.view(RawReader).eachChunk((start, end, _, __, ids) => {
+            for (let i = start; i < end; i++) {
+              fire("Health:changed", ids[i]!);
+            }
+          });
         } else {
           for (const reader of readers) {
             if (dice.next() < (reader.lazy ? 0.05 : 0.5)) {
@@ -763,10 +786,13 @@ describe("changes against a simple model", () => {
                   }
                 });
                 // The raw loop was handed the rows it visited: to every
-                // reader that watches one of its terms, they were written.
+                // reader that watches one of its terms, they were written,
+                // but for the terms it said it only reads.
                 for (const entity of seen) {
                   for (const def of reader.spec.query.terms) {
-                    fire(`${def.name.slice(3)}:changed`, entity);
+                    if (!reader.spec.query.readDefs.includes(def)) {
+                      fire(`${def.name.slice(3)}:changed`, entity);
+                    }
                   }
                 }
               }

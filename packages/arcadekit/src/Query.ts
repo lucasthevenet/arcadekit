@@ -19,7 +19,7 @@
 import { Effect, Effectable } from "effect";
 import { dual } from "effect/Function";
 
-import type { ComponentDef } from "./ecs/component";
+import type { ComponentDef, ReadOnlyTerm } from "./ecs/component";
 import type { QuerySpec, QueryView, RemovedReader, Terms } from "./ecs/world";
 import { World } from "./Services";
 
@@ -41,7 +41,8 @@ export class Query<D extends Terms>
     readonly withDefs: readonly ComponentDef<any>[],
     readonly withoutDefs: readonly ComponentDef<any>[],
     readonly changedDefs: readonly ComponentDef<any>[] = [],
-    readonly addedDefs: readonly ComponentDef<any>[] = []
+    readonly addedDefs: readonly ComponentDef<any>[] = [],
+    readonly readDefs: readonly ComponentDef<any>[] = []
   ) {
     super();
   }
@@ -79,7 +80,8 @@ const with_: {
       [...self.withDefs, ...defs],
       self.withoutDefs,
       self.changedDefs,
-      self.addedDefs
+      self.addedDefs,
+      self.readDefs
     )
 );
 
@@ -108,7 +110,8 @@ export const without: {
       self.withDefs,
       [...self.withoutDefs, ...defs],
       self.changedDefs,
-      self.addedDefs
+      self.addedDefs,
+      self.readDefs
     )
 );
 
@@ -151,7 +154,8 @@ export const changed: {
       self.withDefs,
       self.withoutDefs,
       [...self.changedDefs, ...defs],
-      self.addedDefs
+      self.addedDefs,
+      self.readDefs
     )
 );
 
@@ -174,10 +178,85 @@ export const added: {
     self: Query<D>,
     ...defs: readonly ComponentDef<any>[]
   ): Query<D> =>
-    new Query(self.terms, self.withDefs, self.withoutDefs, self.changedDefs, [
-      ...self.addedDefs,
-      ...defs,
-    ])
+    new Query(
+      self.terms,
+      self.withDefs,
+      self.withoutDefs,
+      self.changedDefs,
+      [...self.addedDefs, ...defs],
+      self.readDefs
+    )
+);
+
+/**
+ * A query's terms, with the ones it only reads marked as such: `R` is the
+ * components `Query.reads` was given, or `never` for all of them. Components
+ * are told apart by their names, which are in their types.
+ */
+export type Reading<D extends Terms, R> = {
+  [K in keyof D]: [R] extends [never]
+    ? D[K] & ReadOnlyTerm
+    : D[K] extends R
+      ? D[K] & ReadOnlyTerm
+      : D[K];
+} extends infer Marked extends Terms
+  ? Marked
+  : never;
+
+/**
+ * Says which of a query's terms the query only reads, or, given none, that
+ * it only reads any of them:
+ *
+ *   const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity))
+ *   const Drawn = Query.all(Position, Sprite).pipe(Query.reads())
+ *
+ * - `each` hands out an accessor for such a term whose fields cannot be
+ *   assigned to: the compiler refuses it, and it throws.
+ * - `eachChunk` hands out its columns typed as read-only, and does not
+ *   count their rows as written. So a system that reads a watched
+ *   component in a raw loop does not set off the queries that watch it,
+ *   and a change query may read, raw, what it watches itself.
+ * - In an action's handler its columns are not copied for a rollback:
+ *   there is nothing to put back.
+ *
+ * The word is the query's own. Raw columns are typed arrays all the same,
+ * and a loop that writes one past the compiler has written it: no change
+ * query hears of it, and no refusal takes it back.
+ */
+export const reads: {
+  <const R extends readonly ComponentDef<any>[]>(
+    ...defs: R
+  ): <D extends Terms>(self: Query<D>) => Query<Reading<D, R[number]>>;
+  <D extends Terms, const R extends readonly ComponentDef<any>[]>(
+    self: Query<D>,
+    ...defs: R
+  ): Query<Reading<D, R[number]>>;
+} = dual(
+  (args) => args[0] instanceof Query,
+  <D extends Terms>(
+    self: Query<D>,
+    ...defs: readonly ComponentDef<any>[]
+  ): Query<any> => {
+    for (const def of defs) {
+      if (!self.terms.includes(def)) {
+        throw new Error(
+          `Query.reads was given "${def.name}", which is not one of the query's terms: ${self.terms.map((term) => term.name).join(", ") || "it has none"}. A query only reads what it is handed; to require a component without its data, use Query.with.`
+        );
+      }
+    }
+    // In the order of the terms, each once.
+    const given = defs.length === 0 ? self.terms : defs;
+    return new Query(
+      self.terms,
+      self.withDefs,
+      self.withoutDefs,
+      self.changedDefs,
+      self.addedDefs,
+      self.terms.filter(
+        (def) => given.includes(def) || self.readDefs.includes(def)
+      )
+    );
+  }
 );
 
 /**
