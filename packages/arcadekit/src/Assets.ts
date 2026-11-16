@@ -4,7 +4,7 @@
  * closes.
  *
  *   const Forest = Assets.bundle("game/Forest", {
- *     backdrop: Assets.image("/forest.png"),
+ *     backdrop: Browser.image("/forest.png"),    // from "arcadekit/Browser"
  *     layout: Assets.json("/forest.json", Layout),
  *   })
  *
@@ -147,28 +147,6 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
     })
   );
 };
-
-/**
- * A picture, decoded and ready to draw: an `ImageBitmap`, closed when the
- * scope it was loaded in closes. Only where the platform has
- * `createImageBitmap`, which a page does.
- */
-export const image = (url: string): Asset<ImageBitmap> =>
-  make(url, (data, at) =>
-    Effect.acquireRelease(
-      Effect.tryPromise({
-        try: () =>
-          // A copy: a Blob wants bytes that nothing else can change.
-          createImageBitmap(new Blob([data.slice()])),
-        catch: (error) =>
-          new AssetFailed({
-            url: at,
-            message: `It could not be made a picture: ${describe(error)}`,
-          }),
-      }),
-      (bitmap) => Effect.sync(() => bitmap.close())
-    )
-  );
 
 // --- where bytes come from ---------------------------------------------------------
 

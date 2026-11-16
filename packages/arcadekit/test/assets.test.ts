@@ -274,50 +274,6 @@ describe("an asset", () => {
     ).toMatch(/^It is not text/);
   });
 
-  it("can be a picture, closed when its scope closes", async () => {
-    const closed: number[] = [];
-    const given: number[] = [];
-    vi.stubGlobal("createImageBitmap", async (blob: Blob) => {
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      given.push(bytes.length);
-      return { width: bytes[0], close: () => closed.push(bytes.length) };
-    });
-    const Art = Assets.bundle("as/Art", {
-      one: Assets.image("/forest.png"),
-      two: Assets.image("/cave.png"),
-    });
-    const scope = Effect.runSync(Scope.make());
-    const loaded = await Effect.runPromise(
-      Assets.load(Art).pipe(
-        Scope.provide(scope),
-        Effect.provide(Assets.layerMemory(files))
-      )
-    );
-    expect(loaded.one.width).toBe(1);
-    expect(loaded.two.width).toBe(4);
-    expect(given.toSorted()).toEqual([2, 3]);
-    expect(closed).toEqual([]);
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    expect(closed.toSorted()).toEqual([2, 3]);
-
-    // Where there is no such thing, or the bytes are no picture, it fails.
-    vi.stubGlobal("createImageBitmap", () =>
-      Promise.reject(new Error("The source image could not be decoded."))
-    );
-    const exit = await Effect.runPromise(
-      Effect.exit(Effect.scoped(Assets.load(Art))).pipe(
-        Effect.provide(Assets.layerMemory(files))
-      )
-    );
-    const error = Cause.squash(
-      (exit as Exit.Failure<never, unknown>).cause
-    ) as Assets.AssetFailed;
-    expect(error).toBeInstanceOf(Assets.AssetFailed);
-    expect(error.message).toBe(
-      "It could not be made a picture: The source image could not be decoded."
-    );
-  });
-
   it("comes by fetch unless told otherwise, and an interrupted load gives the request up", async () => {
     const requests: { url: string; signal: AbortSignal }[] = [];
     const answers = new Map<string, () => Response>([

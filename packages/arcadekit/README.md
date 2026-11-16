@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 448 tests
+pnpm test                          # 457 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -40,7 +40,7 @@ const Movement = System.make("Movement", function* () {
 });
 
 // A game that runs: sixty ticks a second, until the page goes away.
-BrowserRuntime.runMain(App.run({ systems: [Movement] }, { hz: 60 }));
+Browser.runMain(App.run({ systems: [Movement] }, { hz: 60 }));
 
 // One tick at a time, for a game that waits for its players, or a test.
 const program = Effect.gen(function* () {
@@ -51,6 +51,28 @@ const program = Effect.gen(function* () {
 ```
 
 Systems run in the order they are registered unless told otherwise: `System.after(Other)` and `System.before(Other)` pull whatever has to run first forward to just before the system that needs it.
+
+## Entries
+
+```ts
+import { App, Input, System } from "arcadekit";
+import * as Browser from "arcadekit/Browser";
+import { Component, Field, World } from "arcadekit/ecs";
+```
+
+The package has three entries, and which a program imports says what it has to have installed.
+
+| Entry | What it is | Imports |
+| --- | --- | --- |
+| `arcadekit` | The game: everything in this document that is not named below | `effect` |
+| `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
+| `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
+
+- A server, a replay and a test of a game import `arcadekit` alone. It names nothing that only a page has, so it runs under Node as it is.
+- Only what belongs to the page imports `arcadekit/Browser`: the module that starts the game there, and a plugin that draws it, for its pictures (`Browser.image`). The plugins that hold a game's rules do not, so a server installs no browser package.
+- `arcadekit/Browser` is a module, named as its namespace is and imported whole, as Effect's own are. `arcadekit/ecs` is not one: it gives the storage core's names as they are, and its world is `World`, which `arcadekit` calls `EcsWorld` beside its service of that name.
+- What two entries share is built once: a world made through `arcadekit/ecs` is one `arcadekit` knows, and a component is the same component.
+- `pnpm lint:packages` checks what each built entry imports, and a test checks the same of the sources.
 
 ## Fields
 
@@ -332,17 +354,18 @@ The simulation ticks at a fixed rate. Drawing happens every frame, between ticks
 ## In a page
 
 ```ts
-BrowserRuntime.runMain(
-  App.run({ plugins: [Game] }, { hz: 60 }).pipe(
-    Effect.provide(Input.layerBrowser({ target: canvas }))
-  )
-);
+import { App } from "arcadekit";
+import * as Browser from "arcadekit/Browser";
+
+Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
 ```
 
 `App.run` is the entry point: it makes the app and runs it until it is interrupted. It is `App.make` and the frame loop, `Driver.frames`, in a scope of their own.
 
-- It never ends by itself. The platform's `runMain` interrupts it when the page goes away, or the process is told to stop, and that stops the loop and closes the scope. Nothing is left running: no frame asked for, no listener, no script, and whatever the plugins' layers acquired let go.
-- What the game needs from outside is provided to it as to `App.make`, and a missing service is the same compile error. It stays provided for as long as the game runs, which is what a layer that listens, such as [`Input.layerBrowser`](#input), needs.
+`Browser.runMain` starts it in a page. It is the platform's `runMain` around the game, with the page's display and its devices provided to the whole of it: the frame loop follows `requestAnimationFrame`, and the [input stage](#input) hears the keyboard, the pointer and the gamepads. Its options are those of `Browser.layer`. A game that needs services of its own is given them first, `App.run(...).pipe(Effect.provide(Screen.layer))`, and one that still needs something does not compile.
+
+- It never ends by itself. `Browser.runMain` interrupts it when the page goes away for good, as the platform's `runMain` does under Node when the process is told to stop, and that stops the loop and closes the scope. Nothing is left running: no frame asked for, no listener, no script, and whatever the plugins' layers acquired let go.
+- What the game needs from outside is provided to it as to `App.make`, and a missing service is the same compile error. It stays provided for as long as the game runs, which is what a layer that listens, such as [`Browser.layer`](#input), needs.
 - `ready` runs once, when the app is made and before its first frame, with the app: to wire what is outside the game to it, or to keep hold of it. What it acquires is let go with the app, and what it needs and can fail with are `run`'s.
 
   ```ts
@@ -360,7 +383,7 @@ BrowserRuntime.runMain(
 
 - Given a `save`, it goes on from it with `App.load` in place of a fresh start, and can fail with `Save.LoadRefused`.
 - It fails with what `App.make` and `ready` can fail with, and dies with what a tick throws.
-- It runs wherever there is a display, which outside a page is a timer: `NodeRuntime.runMain(App.run(...))` is the same game under Node, and `examples/demo.ts` is started that way.
+- It runs wherever there is a display, which outside a page is a timer: `NodeRuntime.runMain(App.run(...))` is the same game under Node, with no import but `arcadekit`, and `examples/demo.ts` is started that way.
 
 `Driver.frames` is the frame loop underneath, for a program that makes its app itself. It follows the display until it is interrupted: each time a frame is due it runs the ticks that are due, at a fixed `hz`, and then the [frame stage](#the-tick-and-the-frame), as `Driver.fixedStep` does. In a page a frame is due once per repaint, which is `requestAnimationFrame`.
 
@@ -369,7 +392,7 @@ BrowserRuntime.runMain(
 - Interrupting it takes back the frame it had asked for and stops watching the tab. It is interrupted with the fiber that runs it: `runMain` interrupts the program when the page goes away, and a loop started with `Effect.forkScoped` stops when its scope closes. So closing the app's scope leaves nothing running: no frame asked for, no listener, no script, and whatever the plugins' layers acquired let go.
 - If a tick or a frame throws, the loop stops the same way and dies with what was thrown.
 - A page that froze without being hidden runs at most `maxStepsPerCall` ticks in its next frame, 5 unless told otherwise, and drops the rest of the backlog.
-- It reaches the screen through `Driver.Display`, a `Context.Reference` whose default is the platform's: `requestAnimationFrame` and the document's visibility in a page, and a timer of 60 frames a second anywhere else, so the same program runs under Node.
+- It reaches the screen through `Driver.Display`, a `Context.Reference` whose default is a timer of 60 frames a second that is never hidden, which is all there is under Node. A page's display, `requestAnimationFrame` and the document's visibility, is `Browser.display`, which `Browser.runMain` and `Browser.layer` provide.
 - A test turns the display by hand:
 
   ```ts
@@ -412,8 +435,8 @@ const Game = Plugin.make("Game", {
   handlers: [togglePause, fire],
 });
 
-// In a page, around the whole program:
-main.pipe(Effect.provide(Input.layerBrowser({ target: canvas })));
+// In a page: the page's devices, for the whole program.
+Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
 ```
 
 The keyboard, the pointer and the gamepads are outside the game. What they say reaches it as actions, through the same [log](#payloads-saves-and-the-network) as everything else that comes from outside. So a replay needs no devices at all: it is given no source and reads none, and the actions are in its log.
@@ -454,7 +477,7 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
 
 **Where the devices come from** is `Input.Source`, a `Context.Reference` whose default has no devices.
 
-- `Input.layerBrowser(options)` is a page's: the keyboard, the pointer (a mouse, a pen or a finger) and the gamepads. `target` is the element the pointer is pressed on and measured from, in CSS pixels from its top left corner; `preventDefault` lists the keys that must not scroll the page; `deadzone` is how far a stick has to be from its middle to count, a tenth unless told. A key held down went down once, and everything held is let go when the page loses focus.
+- `Browser.layer(options)`, from `arcadekit/Browser`, is a page's: the keyboard, the pointer (a mouse, a pen or a finger) and the gamepads, with the page's display. `Browser.runMain(game, options)` provides it. `target` is the element the pointer is pressed on and measured from, in CSS pixels from its top left corner; `preventDefault` lists the keys that must not scroll the page; `deadzone` is how far a stick has to be from its middle to count, a tenth unless told. A key held down went down once, and everything held is let go when the page loses focus.
 - It listens until its scope closes, so it is provided to the whole program. Provided to `App.make` alone it is let go as soon as the app is made, and says so when it is read.
 - `Input.makeManualSource()` is a source worked by hand, for a test, a tool or controls drawn on the screen: `press`, `release`, `tap`, `move`.
 
@@ -475,7 +498,7 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
 
 ```ts
 const Forest = Assets.bundle("game/Forest", {
-  backdrop: Assets.image("/forest.png"),
+  backdrop: Browser.image("/forest.png"), // from "arcadekit/Browser"
   layout: Assets.json("/forest.json", Layout), // checked against a schema
 });
 
@@ -508,7 +531,7 @@ Loading is a scoped resource: what was loaded is let go when the scope it was lo
   ```
 
 - Anywhere there is a scope, `Assets.load(bundle)` loads into it and waits: every asset at once, failing with `Assets.AssetFailed`, which names the URL, at the first that does. That is for the entry point and for a plugin's `layer`, which holds what it loads for as long as the app: `Layer.effect(Fonts, Assets.load(Common))`.
-- An asset is `Assets.bytes(url)`, `Assets.text(url)`, `Assets.json(url, schema)` or `Assets.image(url)`, which gives an `ImageBitmap` and closes it. One of a kind of your own is `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be let go.
+- An asset is `Assets.bytes(url)`, `Assets.text(url)` or `Assets.json(url, schema)`, and in a page `Browser.image(url)`, from `arcadekit/Browser`, which gives an `ImageBitmap` and closes it. One of a kind of your own is `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be let go.
 - The bytes come through `Assets.Loader`, a `Context.Reference` whose default is `fetch`, given up when the load is interrupted. A test provides its files with `Assets.layerMemory({ "/forest.json": "..." })`.
 - A system of the game's own can keep a bundle too, with `(yield* Assets.Store).hold(bundle, name)` and `drop`: it stays loaded while anyone holds it.
 
@@ -723,12 +746,14 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
-| `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset and entry point tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"` |
+| `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices and pictures, and `Browser.runMain` |
+| `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser and entries tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
-| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `BrowserRuntime.runMain` around `App.run` |
+| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `Browser.runMain` around `App.run` |
 
 ## Two ways to loop
 
@@ -886,10 +911,11 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - Only a driver runs the input stage. A game that ticks when a player moves calls `app.input()` before its tick itself.
 - `App.run` is for a game that ticks in real time. One that ticks when a player moves, as the duel example does, makes its app and steps it itself: in a page it would want its frames drawn at the display's rate and its ticks on demand, and no driver does that.
 - The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
-- The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and against stand-ins for `requestAnimationFrame` and the document.
+- The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and `arcadekit/Browser` against stand-ins for `requestAnimationFrame`, the document and the window.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
 - A frame system that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps. There is no helper for it.
-- One package entry. The storage core has no Effect dependency and could be its own entry (`arcadekit/ecs`).
+- `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
+- `arcadekit/Browser` is one entry for everything a page has. A renderer, a UI bridge and netcode will each be an entry of their own when they are built.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.

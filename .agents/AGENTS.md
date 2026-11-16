@@ -1,4 +1,4 @@
-This is arcadekit: primitives for browser games on Effect 4, Foldkit and Three.js. It publishes one package, `arcadekit`, from `packages/arcadekit`. Use `pnpm` from the repository root.
+This is arcadekit: primitives for browser games on Effect 4, Foldkit and Three.js. It publishes one package, `arcadekit`, from `packages/arcadekit`, with three entries: `arcadekit`, `arcadekit/Browser` and `arcadekit/ecs`. Use `pnpm` from the repository root.
 
 This branch is a revamped version, designed fresh: an entity component system with Effect around it. `packages/arcadekit/README.md` describes the design, what works and what is not done yet; read it first. It is a first cut, with no Foldkit or Three.js integration yet. The previous version on `main` is not a reference for this one.
 
@@ -10,6 +10,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 
 - `packages/arcadekit/src/`: the package's source. Each subpath of its `package.json` `exports` names its source file under a `source` condition, and its built files as `./dist/<name>.d.ts` and `./dist/<name>.js`; `tsdown.config.ts` builds every export from that map, and generates the declarations with the TypeScript compiler (`tsgo`), so an export's type may be inferred.
 - A module's file is named in PascalCase after the namespace it is imported as, as Effect's own are: `src/App.ts` is `App`, `src/TickScheduler.ts` holds `TickScheduler`. The files of `src/ecs/` and `index.ts` are lower case.
+- `src/index.ts` is the `arcadekit` entry. It imports Effect and nothing else, and names nothing that only a page has. `src/Browser.ts` is the `arcadekit/Browser` entry: what only a page can use, and the one import of a browser package. `src/ecs/index.ts` is the `arcadekit/ecs` entry.
 - `packages/arcadekit/src/ecs/`: the storage core (components, tables, queries, the command buffer). It is plain synchronous TypeScript and imports nothing from Effect.
 - `packages/arcadekit/test/`: its tests, run by Vitest from the source with no build.
 - `packages/arcadekit/examples/` and `packages/arcadekit/bench/`: two example games and a benchmark, run with `pnpm --filter arcadekit demo`, `duel` and `bench`, and a game in a page, `examples/page/`, served by `pnpm --filter arcadekit page`. They are type-checked by `tsconfig.examples.json` and are not published.
@@ -27,7 +28,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 
 ## Validation
 
-CI runs `pnpm check`, `pnpm test` and `pnpm build`. For any code change run `pnpm fix`, then `pnpm check`, `pnpm typecheck` and the tests that cover it. `pnpm check` is formatting plus oxlint's default rules; there are no style rules. For a change to the storage core or to a query, also run `pnpm --filter arcadekit bench`. For a change to the package's exports or its build, run `pnpm build:packages && pnpm lint:packages`. Say which checks you could not run.
+CI runs `pnpm check`, `pnpm test` and `pnpm build`. For any code change run `pnpm fix`, then `pnpm check`, `pnpm typecheck` and the tests that cover it. `pnpm check` is formatting plus oxlint's default rules; there are no style rules. For a change to the storage core or to a query, also run `pnpm --filter arcadekit bench`. For a change to the package's exports or its build, or to what a module imports, run `pnpm build:packages && pnpm lint:packages`, which also checks what each built entry imports. Say which checks you could not run.
 
 ## Issues
 

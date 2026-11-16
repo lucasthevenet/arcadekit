@@ -32,6 +32,16 @@
       "source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./Browser": {
+      "source": "./src/Browser.ts",
+      "types": "./dist/Browser.d.ts",
+      "default": "./dist/Browser.js"
+    },
+    "./ecs": {
+      "source": "./src/ecs/index.ts",
+      "types": "./dist/ecs.d.ts",
+      "default": "./dist/ecs.js"
     }
   },
   "publishConfig": {
