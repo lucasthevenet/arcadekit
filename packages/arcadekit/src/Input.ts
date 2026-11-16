@@ -515,10 +515,12 @@ const viewsOf = (world: EcsWorld, time: Readonly<TimeState>): Views => {
   }
   const held = world.singleton(Held);
   const down = (code: string): boolean => held.buttons[code]?.[0] === 1;
-  const pressed = (code: string): boolean =>
-    held.buttons[code]?.[1] === time.tick;
-  const released = (code: string): boolean =>
-    held.buttons[code]?.[2] === time.tick;
+  // The tick whoever asks belongs to. An action's handler runs before its
+  // tick is counted, in a transaction of the world, which is how it is
+  // known here: it is told what that tick's systems will be told.
+  const now = (): number => time.tick + (world._recording ? 1 : 0);
+  const pressed = (code: string): boolean => held.buttons[code]?.[1] === now();
+  const released = (code: string): boolean => held.buttons[code]?.[2] === now();
   const pads: GamepadView[] = [];
   const made: Views = {
     keyboard: { down, pressed, released },

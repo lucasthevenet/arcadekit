@@ -1357,6 +1357,71 @@ describe("the picture of the devices in the world", () => {
     );
   });
 
+  it("says in a handler what its tick's systems will be told: the tick an action is applied in is the one to come", () => {
+    const seen: string[] = [];
+    const Probe = Action.define("in/Probe", Schema.Struct({}));
+    const probe = Action.handler(Probe, function* () {
+      const keys = yield* Input.Keyboard;
+      seen.push(
+        `handler ${(yield* Time).tick + 1}:${keys.down("Space") ? " down" : ""}${keys.pressed("Space") ? " pressed" : ""}${keys.released("Space") ? " released" : ""}`
+      );
+    });
+    const Look = System.make("Look", function* () {
+      const keys = yield* Input.Keyboard;
+      seen.push(
+        `system ${(yield* Time).tick}:${keys.down("Space") ? " down" : ""}${keys.pressed("Space") ? " pressed" : ""}${keys.released("Space") ? " released" : ""}`
+      );
+    });
+    // The key is bound to the action, so both arrive in the same tick: the
+    // report first, since the plugin's system runs before the binding.
+    const Controls = Input.bind(
+      "in/ProbeKeys",
+      Input.onPress("Space", Probe, {}),
+      Input.onRelease("Space", Probe, {})
+    );
+    const source = Input.makeManualSource();
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({
+          plugins: [Input.plugin],
+          handlers: [probe],
+          systems: [Controls, Look],
+        });
+        const step = (): void => {
+          app.input();
+          app.tick(1);
+        };
+        source.press("Space");
+        step();
+        // Held, and an action that comes a tick later: the press is past.
+        app.enqueue(Probe, {});
+        step();
+        source.release("Space");
+        step();
+        expect(seen).toEqual([
+          "handler 1: down pressed",
+          "system 1: down pressed",
+          "handler 2: down",
+          "system 2: down",
+          "handler 3: released",
+          "system 3: released",
+        ]);
+        // Dispatched between two ticks, an action belongs to the one to
+        // come as well.
+        seen.length = 0;
+        app.dispatch(Input.Report, { down: ["Space"] });
+        app.dispatch(Probe, {});
+        app.tick(1);
+        app.dispatch(Probe, {});
+        expect(seen).toEqual([
+          "handler 4: down pressed",
+          "system 4: down pressed",
+          "handler 5: down",
+        ]);
+      }).pipe(withSource(source))
+    );
+  });
+
   it("is each world's own", () => {
     const left = Input.makeManualSource();
     const right = Input.makeManualSource();
