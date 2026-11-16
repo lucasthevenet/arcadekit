@@ -112,6 +112,11 @@
       "types": "./dist/Singleton.d.ts",
       "default": "./dist/Singleton.js"
     },
+    "./Sound": {
+      "source": "./src/Sound.ts",
+      "types": "./dist/Sound.d.ts",
+      "default": "./dist/Sound.js"
+    },
     "./State": {
       "source": "./src/State.ts",
       "types": "./dist/State.d.ts",

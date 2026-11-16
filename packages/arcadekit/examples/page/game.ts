@@ -16,6 +16,7 @@ import {
   Assets,
   Commands,
   Component,
+  Event,
   Field,
   Frame,
   Input,
@@ -23,6 +24,7 @@ import {
   Query,
   Random,
   Singleton,
+  Sound,
   State,
   System,
   Time,
@@ -48,6 +50,13 @@ const Basket = Singleton.define(
   { x: WIDTH / 2, caught: 0 }
 );
 const Phase = State.define("page/Phase", ["title", "playing", "paused"]);
+// What happened, said by the simulation for whoever wants to know. It
+// knows nothing of the sounds they are played as.
+const Caught = Event.define(
+  "page/Caught",
+  Schema.Struct({ stars: Schema.Int })
+);
+const Started = Event.define("page/Started", Schema.Struct({}));
 const playing = System.runIf(State.is(Phase, "playing"));
 
 // The devices, as the game has them this tick: the same picture for every
@@ -96,6 +105,7 @@ const Fall = System.make("Fall", function* () {
   });
   if (caught > 0) {
     basket.caught += caught;
+    (yield* Caught).emit({ stars: caught });
   }
 }).pipe(System.after(Steer), playing);
 
@@ -120,6 +130,7 @@ const handlers = [
     const phase = yield* Phase;
     if (phase.is("title")) {
       phase.set("playing");
+      (yield* Started).emit({});
     }
   }),
   Action.handler(Quit, function* () {
@@ -229,6 +240,19 @@ const Draw = System.make("Draw", function* () {
   }
 }).pipe(System.inStage("frame"));
 
+// --- what it sounds like: the frame stage too --------------------------------------
+// Each event of the ticks since the last frame is played as a cue. The
+// simulation never plays: a replay of this game is silent, and the same.
+const Cues = Sound.cues(
+  "page/Cues",
+  Sound.on(Started, "start"),
+  // Two at once are a little higher than one.
+  Sound.on(Caught, ({ stars }) => ({
+    cue: "caught",
+    rate: 1 + (stars - 1) / 4,
+  }))
+);
+
 // --- what the UI sees: the frame stage too -----------------------------------------
 // Each is worked out once per frame and published only when it is not what
 // the UI already has: while the stars fall and none is caught, the UI is
@@ -244,8 +268,18 @@ const ShowHud = View.publish(Hud, function* () {
 });
 
 export const Game = Plugin.make("Game", {
-  plugins: [Input.plugin, Assets.plugin, View.plugin],
+  plugins: [Input.plugin, Assets.plugin, View.plugin, Sound.plugin],
   components: [Star, Basket, Phase],
   handlers,
-  systems: [Steer, Fall, Controls, Begin, LevelAssets, Draw, ShowMenu, ShowHud],
+  systems: [
+    Steer,
+    Fall,
+    Controls,
+    Begin,
+    LevelAssets,
+    Draw,
+    Cues,
+    ShowMenu,
+    ShowHud,
+  ],
 });

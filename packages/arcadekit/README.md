@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 517 tests, 31 of them of @arcadekit/three
+pnpm test                          # 537 tests, 31 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -68,8 +68,8 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `State`, `System`, `TickScheduler`, `View` | `effect` |
-| `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `View` | `effect` |
+| `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, its sound, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
 - A server, a replay and a test of a game do not import `arcadekit/Browser`. No other entry names anything that only a page has, so they run under Node as they are.
@@ -204,6 +204,7 @@ A string that identifies something at run time carries the name of the feature i
 
 - The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
 - The bridge to a UI is `"arcadekit/View.Bridge"` and an app's end of it `"arcadekit/View.Port"`; the plugin is `"arcadekit/View"`, its system `"arcadekit/View.Send"`, and the system that publishes a view is named after it, `"View.publish(game/Hud)"`.
+- Where sound goes is `"arcadekit/Sound.Output"` and an app's player of cues `"arcadekit/Sound.Player"`; the plugin is `"arcadekit/Sound"`.
 - An app's assets are kept under `"arcadekit/Assets.Store"` and fetched through `"arcadekit/Assets.Loader"`; the plugin is `"arcadekit/Assets"`, and the system that keeps a bundle is named after it, `"Assets.during(game/Forest)"`.
 - What `Input.plugin` adds to a game is named the same way: the plugin and its singleton `"arcadekit/Input"`, its action `"arcadekit/Input.Report"` and its system `"arcadekit/Input.Read"`.
 - A component's name is its identity in a world, and part of its type: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
@@ -612,6 +613,65 @@ const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
 - A game with a UI and the same game with none have the same hash, log and save, given the same actions.
 - `examples/page` builds its menu and its heads-up display twice on one bridge, with the DOM (`ui-dom.ts`) and with React (`ui-react.ts`, shown by `?ui=react`). Neither imports anything of the game but `protocol.ts`. `test/page.test.ts` mounts both in a document and plays the game through them: while stars fall and none is caught, the UI is told nothing and nothing in the document changes.
 
+## Sound
+
+```ts
+// The simulation says what happened. It knows nothing of sound.
+const Bounced = Event.define(
+  "physics/Bounced",
+  Schema.Struct({ speed: Schema.Finite })
+);
+
+// What it sounds like: a system of the frame stage.
+const Cues = Sound.cues(
+  "game/Cues",
+  Sound.on(Scored, "coin"),
+  Sound.on(Bounced, ({ speed }) =>
+    speed < 2 ? undefined : { cue: "thud", volume: Math.min(1, speed / 10) }
+  )
+);
+
+const Game = Plugin.make("Game", {
+  plugins: [Sound.plugin],
+  systems: [Physics, Cues],
+});
+
+// Where it goes: in a page, the files of the cues.
+Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), {
+  target: canvas,
+  sounds: { coin: "/coin.wav", thud: "/thud.wav" },
+});
+```
+
+A sound is a named cue, and it is played because something happened: the simulation emits an [event](#events), and what the event sounds like is said elsewhere. The simulation never plays.
+
+- `Sound.cues(name, ...lines)` makes a system of the [frame stage](#the-tick-and-the-frame). Each frame it plays what the events since the last frame sound like. It hears every event once, however many ticks ran in between, as any frame system does.
+- `Sound.on(event, cue)` is a line: a cue's name, a name with a `volume` and a `rate`, or a function of the event's payload that gives either, or nothing.
+- A cue that several events of one frame ask for is played once, as the loudest of them asked: forty coins caught in one tick are one sound, not forty on top of each other.
+- `Sound.Player` is the service that plays, which `Sound.plugin` provides. A frame system plays through it for a sound no event stands for: `(yield* Sound.Player).play("click", { volume: 0.5 })`. In the tick it throws and says what to do instead, and an action's handler that plays dies of the same.
+- Sound follows real time and is no part of the game. A game that is heard has the same hash, log and save as one that is not, and a replay or a server, which run no frame stage, play nothing.
+- What a refused action emitted is taken back with the rest, so it is never heard.
+- `Sound.Output` is where sound goes: a `Context.Reference` whose default is nowhere, and there the cues' system reads nothing. `Sound.layer(output)` provides one, and `Sound.makeRecorder()` is one that plays nothing and notes what it was asked, for a test:
+
+  ```ts
+  const sound = Sound.makeRecorder();
+  const made = App.make({ plugins: [Game] }).pipe(
+    Effect.provide(Sound.layer(sound))
+  );
+  // With the app that gives:
+  app.tick(1 / 60);
+  app.frame(0);
+  sound.played; // [{ cue: "coin", volume: 1, rate: 1 }]
+  ```
+
+**In a page** the output is Web Audio. Given `sounds`, a file for each cue, `Browser.runMain` and `Browser.layer` provide it; `Browser.layerSound(files)` is the layer on its own.
+
+- The files are fetched when the page starts, through `Assets.Loader`, and decoded as they arrive.
+- A page may not make a sound before its user has touched it. The audio is made at the first key or pointer press, and a cue asked for in the frame after is played. What was asked for before that, or before a cue's file was there, is not played: a sound that is late is worse than none.
+- `volume` is how loud every cue is played, and `rate` is a cue's speed, and so its pitch.
+- A cue that has no file, or whose file could not be fetched or decoded, is said once through Effect's logger and plays nothing.
+- When the page goes away the audio is closed, and a request still on its way is given up.
+
 ## Assets
 
 ```ts
@@ -862,18 +922,19 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Input.ts` | The devices and where they come from, the picture of them in the world, and bindings to actions |
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
+| `src/Sound.ts` | Cues played from the game's events in the frame stage, the player, and where sound goes |
 | `src/View.ts` | The view bridge: the values a UI may see, published once per frame when they changed, and the actions it sends |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
-| `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices and pictures, and `Browser.runMain` |
+| `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, page and entries tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, page and entries tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
-| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `Browser.runMain` around `App.run`. Its menu and heads-up display are built twice on the view bridge: `ui-dom.ts` with the DOM and `ui-react.ts` with React, both from `protocol.ts`, the views and actions they share with `game.ts` |
+| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, heard through two cues, with a level whose assets come and go, started with `Browser.runMain` around `App.run`. Its menu and heads-up display are built twice on the view bridge: `ui-dom.ts` with the DOM and `ui-react.ts` with React, both from `protocol.ts`, the views and actions they share with `game.ts` |
 
 ## Two ways to loop
 
@@ -979,6 +1040,13 @@ The view bridge, with one view of four fields read from a singleton:
 | `app.frame()`: a UI is there, the value is what it has    | 2.90 µs |
 | `app.frame()`: the value is new, and one listener told    | 2.57 µs |
 
+Sound, with one system that plays cues for two kinds of event, to an output that does nothing:
+
+| Variant                                         | Cost    |
+| ----------------------------------------------- | ------- |
+| `app.frame()`: nothing happened                 | 1.25 µs |
+| `app.frame()`: one event, and its cue is played | 1.42 µs |
+
 Entities coming and going in the same world:
 
 | Variant                                                    | Cost   |
@@ -1000,6 +1068,7 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 - A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
 - The input stage runs before every tick, so its cost when nothing happens is the one that counts: one sample of the devices, compared with what the world holds, 1.4 µs for a keyboard, a pointer and a few buttons held. An app with no system in that stage reads nothing and pays nothing.
 - A view costs the game its body and one comparison a frame, 2.3 µs for four fields, and the UI nothing at all until a field differs. A value that is new is found to be at the first field that differs, which is why it costs less than one that is not. Where no UI is there the system asks whether one is and stops.
+- Sound costs a frame two reads of events that are not there, 0.7 µs over a frame that does nothing, and 0.2 µs more for a cue that is played. Where sound goes nowhere the system asks whether it does and stops.
 - A frame of ten systems that do nothing costs 5.8 µs, about what a tick of ten does: freezing the world is setting a flag. Checking a frame with `verifyFrames` costs a hash of the world before the stage and one after each of its systems, 1.3 ms more for one system over 100,000 entities.
 - A relation costs its component and a few assignments to link and unlink: 0.13 µs more per entity that is spawned and despawned with one. A despawn that takes others with it costs what despawning each of them does, 130 ns apiece here. A world with no relation does one comparison more per despawn than before: the first line was 587 µs before relations and 561 µs after, which is the machine's noise.
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
@@ -1027,13 +1096,17 @@ moving.eachChunk((start, end, pos, vel) => {
 
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
-- Nothing here plays sound. [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
+- [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
+- A cue is played once and left to end. There is no music: nothing loops, nothing is stopped or faded, and nothing is heard from where it is.
+- A page's cues are fetched when the page starts and kept until it goes away. They are not assets of a level: a bundle does not hold a sound.
+- A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.
+- The first sound a page can make is the one its user's first key or press sets off. Nothing is heard before that.
 - A view is worked out and compared whole, every frame a UI is there. A game with a view that is costly to work out says when it is worth it with `System.runIf`.
 - The UI is not told what became of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and the game can publish as a view.
 - What the UI sends is applied by the next tick. A game that ticks when a player moves runs the input stage and a tick itself when its UI has sent something; nothing wakes it.
 - A view's value is an object of this program, with no schema: a UI in another thread or on another machine is not served.
 - `ui.send` takes any action. That the game has a handler for it is checked when it is issued, where a missing one throws, and not by the compiler.
-- An asset is a picture, text, JSON or bytes. A sound and a font are for whoever plays and draws them to decode, with `Assets.make`.
+- An asset is a picture, text, JSON or bytes. A font is for whoever draws with it to decode, with `Assets.make`.
 - A bundle is loaded or it is not: it does not say how far along it is, and a file that two bundles name is fetched for each.
 - A bundle that failed stays failed until its level is entered again. Nothing tries again by itself.
 - `Assets.load` waits in real time. In a script it would resume in whatever tick the file happened to arrive in, and a replay of that script would fetch the file again: a script does not load.

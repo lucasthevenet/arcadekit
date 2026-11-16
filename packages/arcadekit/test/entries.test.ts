@@ -121,7 +121,7 @@ const isBrowser = (subpath: string): boolean => subpath === "./Browser";
 const entries = Object.keys(manifest.exports);
 // What a page has and Node does not.
 const page =
-  /\b(?:requestAnimationFrame|cancelAnimationFrame|createImageBitmap|navigator|document|window|addEventListener)\b/u;
+  /\b(?:requestAnimationFrame|cancelAnimationFrame|createImageBitmap|AudioContext|OfflineAudioContext|navigator|document|window|addEventListener)\b/u;
 
 describe("the package's entries", () => {
   it("are the package itself, every module, and the storage core", () => {
@@ -152,7 +152,7 @@ describe("the package's entries", () => {
     expect(entries).toContain("./Input");
     expect(entries).toContain("./TickScheduler");
     expect(entries).toContain("./Browser");
-    expect(entries.length).toBe(22);
+    expect(entries.length).toBe(23);
     // No module is in a folder of its own: one file, one entry.
     expect(
       Object.keys(sources).filter(
@@ -238,6 +238,7 @@ describe("the package's entries", () => {
       "Resource",
       "Save",
       "Singleton",
+      "Sound",
       "State",
       "System",
       "View",

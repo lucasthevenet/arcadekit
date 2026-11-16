@@ -7,7 +7,7 @@ import { Game, Screen } from "../examples/page/game";
 import { Hud, Menu, Start } from "../examples/page/protocol";
 import { mount as mountDom } from "../examples/page/ui-dom";
 import { mount as mountReact } from "../examples/page/ui-react";
-import { App, Assets, Input, View } from "../src/index";
+import { App, Assets, Input, Sound, View } from "../src/index";
 
 // The example page's game, with its menu and its heads-up display built
 // twice on the view bridge: once with the page's own DOM and once with a
@@ -83,11 +83,13 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
     subtree: true,
   });
   const source = Input.makeManualSource();
+  const sound = Sound.makeRecorder();
   const scope = Effect.runSync(Scope.make());
   const app = Effect.runSync(
     App.make({ plugins: [Game], seed: 3 }).pipe(
       Effect.provide(Layer.succeed(Screen, { canvas })),
       Effect.provide(View.layer(ui)),
+      Effect.provide(Sound.layer(sound)),
       Effect.provide(Assets.layerMemory(files)),
       Effect.provideService(Input.Source, source),
       Scope.provide(scope)
@@ -97,6 +99,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
     ui,
     root,
     source,
+    sound,
     before,
     told: () => told,
     /** How many times the document under the UI was changed since last asked. */
@@ -164,6 +167,8 @@ describe.each([
     await page.step();
     expect(page.buttons()).toEqual(["Pause", "Quit"]);
     expect(page.hud()).toBe("Loading");
+    // The game is heard as it is seen: from its events, in the frame.
+    expect(page.sound.played).toEqual([{ cue: "start", volume: 1, rate: 1 }]);
     expect(await page.changed()).toBeGreaterThan(0);
 
     // The level's files arrive, and the game fills its sky.
@@ -190,6 +195,11 @@ describe.each([
     const { caught } = page.ui.get(Hud);
     expect(caught).toBeGreaterThanOrEqual(3);
     expect(page.hud()).toBe(`Caught ${caught}`);
+    // A sound for each frame in which stars were caught, and no other.
+    const heard = page.sound.played.filter((one) => one.cue === "caught");
+    expect(heard.length).toBeGreaterThanOrEqual(1);
+    expect(heard.length).toBeLessThanOrEqual(caught);
+    expect(page.sound.played.length).toBe(1 + heard.length);
     expect(quiet).toBeGreaterThan(50);
     // Told of the menu once, of the level twice, and once per catch.
     expect(page.told()).toBeLessThanOrEqual(3 + caught);
@@ -209,6 +219,14 @@ describe.each([
     page.source.tap("KeyP");
     await page.step();
     expect(page.buttons()).toEqual(["Pause", "Quit"]);
+
+    // Enter starts a game, and this one is started: nothing begins, and
+    // nothing says that anything did.
+    page.source.tap("Enter");
+    await page.step(2);
+    expect(page.sound.played.filter((one) => one.cue === "start").length).toBe(
+      1
+    );
 
     await page.click("Quit");
     await page.step();

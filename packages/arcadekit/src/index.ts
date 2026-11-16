@@ -42,6 +42,7 @@ export * as Query from "./Query";
 export * as Resource from "./Resource";
 export * as Save from "./Save";
 export * as Singleton from "./Singleton";
+export * as Sound from "./Sound";
 export * as State from "./State";
 export { EntityId } from "./Schemas";
 export {

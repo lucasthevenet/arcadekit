@@ -5,7 +5,7 @@
  * Enter starts the level, whose assets are loaded when it starts and let go
  * when it is left with Q. The arrow keys move the basket, and so does the
  * pointer while its button is held. P pauses the game. The buttons under
- * the canvas do what the keys do.
+ * the canvas do what the keys do. A star caught makes a sound.
  *
  * The menu and the heads-up display are built twice, on the same bridge:
  * with the page's own DOM (ui-dom.ts), and with React (ui-react.ts), which
@@ -46,5 +46,7 @@ Browser.runMain(
   {
     target: document.querySelector("#game")!,
     preventDefault: ["ArrowLeft", "ArrowRight", "Space"],
+    // The files of the game's cues, played once the page has been touched.
+    sounds: { caught: "/caught.wav", start: "/start.wav" },
   }
 );

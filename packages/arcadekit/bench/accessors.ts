@@ -23,10 +23,12 @@ import {
   App,
   Component,
   EntityId,
+  Event,
   Field,
   Input,
   Query,
   Singleton,
+  Sound,
   State,
   System,
   Time,
@@ -296,6 +298,43 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
           },
           50_000,
           20_000
+        );
+      })
+    )
+  );
+
+/**
+ * Median milliseconds of a frame whose one system plays cues for two kinds
+ * of event, to an output that plays nothing. With `happening`, a tick
+ * before each frame emits one event, and the frame plays its cue; the tick
+ * is not timed.
+ */
+const sounding = (happening: boolean): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const Scored = Event.define("bench/Scored", Schema.Struct({}));
+        const Bounced = Event.define("bench/Bounced", Schema.Struct({}));
+        const Score = System.make("bench/Score", function* () {
+          if (happening) {
+            (yield* Scored).emit({});
+          }
+        });
+        const Cues = Sound.cues(
+          "bench/Cues",
+          Sound.on(Scored, "coin"),
+          Sound.on(Bounced, { cue: "thud", volume: 0.5 })
+        );
+        const app = yield* App.make({
+          plugins: [Sound.plugin],
+          systems: [Score, Cues],
+          checkpointEvery: 0,
+        }).pipe(Effect.provide(Sound.layer({ play() {} })));
+        return measure(
+          () => app.frame(0),
+          50_000,
+          20_000,
+          () => app.tick(DT)
         );
       })
     )
@@ -866,6 +905,18 @@ const variants: Record<
     unit: "matches",
     label: "app.frame: a view with no UI there",
     run: () => showing("nobody"),
+  },
+
+  // Sound: one system of two lines, playing to an output that does nothing.
+  soundIdle: {
+    unit: "matches",
+    label: "app.frame: cues for two events, nothing happened",
+    run: () => sounding(false),
+  },
+  soundOne: {
+    unit: "matches",
+    label: "app.frame: cues for two events, one cue played",
+    run: () => sounding(true),
   },
 
   // Change detection. A write is noticed per row, and only for a component

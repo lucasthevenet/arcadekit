@@ -1,6 +1,6 @@
 /**
- * What only a page can use: its display, its devices, its pictures, and the
- * way a program is started in it. This is the package's `arcadekit/Browser`
+ * What only a page can use: its display, its devices, its pictures, its
+ * sound, and the way a program is started in it. This is the package's `arcadekit/Browser`
  * entry, and the only one that imports a browser package. A server, a
  * replay or a test of the game imports `arcadekit` alone.
  *
@@ -25,6 +25,10 @@ import type { Runtime } from "effect";
 import * as Assets from "./Assets";
 import * as Driver from "./Driver";
 import * as Input from "./Input";
+import * as Sound from "./Sound";
+
+const describe = (error: unknown): string =>
+  error instanceof Error ? error.message || error.name : String(error);
 
 // --- the display ---------------------------------------------------------------
 
@@ -85,6 +89,20 @@ export interface Options {
   readonly window?: EventTarget;
   /** The gamepads, read once per sample. `navigator.getGamepads`, when left out. */
   readonly gamepads?: () => ArrayLike<GamepadLike | null>;
+  /**
+   * The files of the game's cues, by the cue's name: with it the page
+   * plays them, as `Browser.layerSound` does. Left out, sound goes nowhere.
+   */
+  readonly sounds?: Readonly<Record<string, string>>;
+  /** How loud every cue is played: 1, as it asks, when left out. */
+  readonly volume?: number;
+  /** Makes the page's audio. `new AudioContext()`, when left out. */
+  readonly audio?: () => AudioLike;
+  /**
+   * Makes a sound of a file's bytes. `decodeAudioData`, of a context that
+   * plays nothing and so needs no touch, when left out.
+   */
+  readonly decode?: (data: ArrayBuffer) => Promise<unknown>;
 }
 
 const isPad = (code: string): boolean => code.startsWith("Pad");
@@ -270,8 +288,8 @@ const listen = (
  *   to the whole program and not to `App.make` alone. `Browser.runMain`
  *   does.
  */
-export const layer = (options: Options = {}): Layer.Layer<never> =>
-  Layer.merge(
+export const layer = (options: Options = {}): Layer.Layer<never> => {
+  const page = Layer.merge(
     Layer.succeed(Driver.Display, display),
     Layer.effect(
       Input.Source,
@@ -284,11 +302,158 @@ export const layer = (options: Options = {}): Layer.Layer<never> =>
       )
     )
   ) as Layer.Layer<never>;
+  return options.sounds === undefined
+    ? page
+    : Layer.merge(page, layerSound(options.sounds, options));
+};
+
+// --- sound -----------------------------------------------------------------------
+
+/** As much of a page's audio as is used: the browser's `AudioContext` is one. */
+export interface AudioLike {
+  readonly destination: unknown;
+  readonly state?: string;
+  createBufferSource(): {
+    buffer: unknown;
+    readonly playbackRate: { value: number };
+    connect(to: unknown): unknown;
+    start(): void;
+  };
+  createGain(): {
+    readonly gain: { value: number };
+    connect(to: unknown): unknown;
+  };
+  resume?(): Promise<unknown>;
+  close(): Promise<unknown>;
+}
+
+/**
+ * A page's sound: the cues of the game, each a file, played with Web
+ * Audio.
+ *
+ *   Browser.layerSound({ coin: "/coin.wav", thud: "/thud.wav" })
+ *
+ * - The files are fetched when the layer is built, through
+ *   `Assets.Loader`, and decoded as they arrive.
+ * - A page may not make a sound before its user has touched it. The audio
+ *   is made at the first key or pointer press, and a cue asked for in the
+ *   very frame after is played. What was asked for before that, or before
+ *   a cue's file was there, is not played: a sound that is late is worse
+ *   than none.
+ * - A cue that has no file, or whose file could not be fetched or
+ *   decoded, is said once, through Effect's logger, and plays nothing.
+ * - When its scope closes the audio is closed and the page is no longer
+ *   listened to, so it is provided to the whole program. `Browser.runMain`
+ *   and `Browser.layer` do, given `sounds`.
+ */
+export const layerSound = (
+  files: Readonly<Record<string, string>>,
+  options: Pick<Options, "audio" | "decode" | "volume" | "window"> = {}
+): Layer.Layer<never> =>
+  Layer.effect(
+    Sound.Output,
+    Effect.gen(function* () {
+      const loader = yield* Assets.Loader;
+      const report = Effect.runForkWith(yield* Effect.context<never>());
+      const page: EventTarget = options.window ?? globalThis;
+      const make = options.audio ?? ((): AudioLike => new AudioContext());
+      const master = options.volume ?? 1;
+      // Decoding needs no touch, only playing does: a context that plays
+      // nothing decodes a file as soon as it is there.
+      const decode =
+        options.decode ??
+        ((data: ArrayBuffer): Promise<unknown> =>
+          new OfflineAudioContext(1, 1, 44_100).decodeAudioData(data));
+      const buffers = new Map<string, unknown>();
+      const missing = new Set<string>();
+      let audio: AudioLike | undefined;
+      let closed = false;
+      const failed = (cue: string, error: unknown): void => {
+        report(
+          Effect.logWarning(
+            `The sound "${cue}" (${files[cue]}) will not be played: ${describe(error)}`
+          )
+        );
+      };
+      // Every file at once, for as long as the layer lasts: a request that
+      // is still on its way when the scope closes is given up.
+      yield* Effect.forkScoped(
+        Effect.forEach(
+          Object.entries(files),
+          ([cue, url]) =>
+            Effect.match(loader.bytes(url), {
+              onSuccess: (bytes) => {
+                // A copy: decoding keeps the buffer it is given.
+                decode(bytes.slice().buffer).then(
+                  (buffer) => {
+                    if (!closed) {
+                      buffers.set(cue, buffer);
+                    }
+                  },
+                  (error: unknown) => failed(cue, error)
+                );
+              },
+              onFailure: (error) => failed(cue, error.message),
+            }),
+          { concurrency: "unbounded", discard: true }
+        )
+      );
+      // The first touch makes the audio; a later one wakes it, should the
+      // browser have put it to sleep.
+      const wake = (): void => {
+        if (audio === undefined) {
+          audio = make();
+        } else if (audio.state === "suspended") {
+          void audio.resume?.();
+        }
+      };
+      const touches = ["pointerdown", "keydown"];
+      for (const type of touches) {
+        page.addEventListener(type, wake);
+      }
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          closed = true;
+          for (const type of touches) {
+            page.removeEventListener(type, wake);
+          }
+          buffers.clear();
+          void audio?.close();
+        })
+      );
+      return {
+        play(cue, volume, rate) {
+          if (!Object.hasOwn(files, cue)) {
+            if (!missing.has(cue)) {
+              missing.add(cue);
+              report(
+                Effect.logWarning(
+                  `The sound "${cue}" was played and has no file. The page's cues are: ${Object.keys(files).join(", ") || "none"}.`
+                )
+              );
+            }
+            return;
+          }
+          const buffer = buffers.get(cue);
+          // Before the first touch, before the file is here, or after
+          // the layer was let go, which empties the buffers.
+          if (audio === undefined || buffer === undefined) {
+            return;
+          }
+          const source = audio.createBufferSource();
+          source.buffer = buffer;
+          source.playbackRate.value = rate;
+          const gain = audio.createGain();
+          gain.gain.value = volume * master;
+          source.connect(gain);
+          gain.connect(audio.destination);
+          source.start();
+        },
+      };
+    })
+  ) as Layer.Layer<never>;
 
 // --- pictures --------------------------------------------------------------------
-
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
 
 /**
  * An asset that is a picture, decoded and ready to draw: an `ImageBitmap`,
