@@ -669,6 +669,35 @@ describe("a level's assets", () => {
           const fiber = other.spawnScript(Forest.asEffect());
           const exit = fiber.pollUnsafe();
           expect(exit !== undefined && Exit.isFailure(exit)).toBe(true);
+          // The store that keeps them is no way round: it says the same of
+          // being asked, and of being told to load or to let go.
+          const calls: Record<string, (store: Assets.StoreShape) => unknown> = {
+            "asked for": (store) => store.status(Forest),
+            held: (store) => store.hold(Forest, "Sneak"),
+            "let go of": (store) => store.drop(Forest, "Sneak"),
+          };
+          let asked = 0;
+          for (const [what, call] of Object.entries(calls)) {
+            const Sneak = System.make("Sneak", function* () {
+              call(yield* Assets.Store);
+            });
+            const sneaking = yield* App.make({
+              plugins: [Game],
+              systems: [Sneak],
+            }).pipe(
+              Effect.provideService(Assets.Loader, {
+                bytes: () => {
+                  asked++;
+                  return Effect.succeed(new Uint8Array(1));
+                },
+              })
+            );
+            expect(() => sneaking.tick(1), what).toThrow(
+              new RegExp(`The assets "as/Forest" were ${what} in the tick`, "u")
+            );
+          }
+          // Nothing was loaded on the way to being refused.
+          expect(asked).toBe(0);
           // The input stage may ask, as the frame stage may.
           let status = "";
           const Ask = System.make("Ask", function* () {
