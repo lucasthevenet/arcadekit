@@ -9,7 +9,14 @@
  *
  *   pnpm --filter @arcadekit/three bench
  */
-import { App, Component, Plugin, Transform3d, Transform2d } from "arcadekit";
+import {
+  App,
+  Component,
+  Field,
+  Plugin,
+  Transform2d,
+  Transform3d,
+} from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
@@ -147,6 +154,38 @@ variant(
   "instances, smooth, flat: all three",
   () => [placeFlat(), turnFlat(), sizeFlat()],
   smoothed("n")
+);
+
+// A colour of its own for each: three more numbers, beside the matrix.
+const Paint = Component.define("bench/Paint", {
+  r: Field.f32,
+  g: Field.f32,
+  b: Field.f32,
+});
+const paint = () =>
+  Paint.of({ r: Math.random(), g: Math.random(), b: Math.random() });
+variant(
+  "instances, a colour each: a position",
+  () => [place(), paint()],
+  Three.instances("o", {
+    of: Thing,
+    geometry,
+    material,
+    capacity: N,
+    color: Paint,
+  })
+);
+variant(
+  "instances, a colour each, smooth: a position",
+  () => [place(), paint()],
+  Three.instances("p", {
+    of: Thing,
+    geometry,
+    material,
+    capacity: N,
+    color: Paint,
+    smooth: true,
+  })
 );
 
 // What the loops above replace: an Object3D per entity, its matrix worked

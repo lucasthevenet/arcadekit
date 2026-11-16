@@ -1,7 +1,7 @@
 /**
  * Ten thousand moving objects in a page: motes that drift and spin in a
- * box, each one instance of one mesh, and a ship that is an object of its
- * own, steered with the arrow keys. Through the middle of the box a ring
+ * box, each one instance of one mesh and of a colour of its own, and a ship
+ * that is an object of its own, steered with the arrow keys. Through the middle of the box a ring
  * of cards turns in a plane: they are placed as a flat game places things,
  * with two numbers and an angle.
  *
@@ -65,21 +65,42 @@ const Spin = Component.define("page/Spin", {
   angle: Field.f32,
 });
 
-const Drifting = Query.all(Position, Velocity);
+/**
+ * What colour a mote is: the game's to say, as where it is. A mote that
+ * comes off a wall takes that wall's.
+ */
+const Tint = Component.define("page/Tint", {
+  r: Field.f32,
+  g: Field.f32,
+  b: Field.f32,
+});
+
+const Drifting = Query.all(Position, Velocity, Tint);
 const Spinning = Query.all(Rotation, Spin);
+
+// Numbers as the renderer has them, linear: what `new Color("#78dce8")` of
+// Three.js holds. The rules know them as numbers and nothing else.
+const WALLS = [
+  ["x", { r: 0.188, g: 0.716, b: 0.807 }],
+  ["y", { r: 1, g: 0.686, b: 0.133 }],
+  ["z", { r: 1, g: 0.12, b: 0.246 }],
+] as const;
 
 const Drift = System.make("Drift", function* () {
   const { delta } = yield* Time;
-  (yield* Drifting).eachChunk((start, end, position, velocity) => {
-    for (const axis of ["x", "y", "z"] as const) {
+  (yield* Drifting).eachChunk((start, end, position, velocity, tint) => {
+    for (const [axis, wall] of WALLS) {
       const at = position[axis];
       const speed = velocity[axis];
       for (let i = start; i < end; i++) {
         let next = at[i]! + speed[i]! * delta;
-        // Off a wall of the box, and back.
+        // Off a wall of the box, and back, in the colour of that wall.
         if (next > BOX || next < -BOX) {
           speed[i] = -speed[i]!;
           next = at[i]!;
+          tint.r[i] = wall.r;
+          tint.g[i] = wall.g;
+          tint.b[i] = wall.b;
         }
         at[i] = next;
       }
@@ -137,7 +158,7 @@ const Steer = System.make("Steer", function* () {
 
 const Rules = Plugin.make("page/Rules", {
   plugins: [Input.plugin, Transform3d.plugin, Transform2d.plugin],
-  components: [Mote, Card, Ship, Velocity, Spin],
+  components: [Mote, Card, Ship, Velocity, Spin, Tint],
   systems: [Steer, Drift, Turn, Wheel],
   setup: Effect.gen(function* () {
     const commands = yield* Commands;
@@ -152,7 +173,8 @@ const Rules = Plugin.make("page/Rules", {
         Velocity.of({ x: speed(), y: speed(), z: speed() }),
         Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
         Spin.of({ rate: speed() / 4, angle: 0 }),
-        Scale.of({ x: size, y: size, z: size })
+        Scale.of({ x: size, y: size, z: size }),
+        Tint.of({ r: 0.6, g: 0.6, b: 0.6 })
       );
     }
     for (let i = 0; i < CARDS; i++) {
@@ -175,10 +197,13 @@ const Rules = Plugin.make("page/Rules", {
 const Motes = Three.instances("page/Motes", {
   of: Mote,
   geometry: new BoxGeometry(1, 1, 1),
-  material: new MeshStandardMaterial({ color: "#78dce8" }),
+  // White, which each mote's own colour multiplies.
+  material: new MeshStandardMaterial({ color: "#ffffff" }),
+  color: Tint,
   capacity: COUNT,
   // Sixty ticks a second and as many frames as the screen shows: each mote
-  // is drawn between its last two places, so that it moves evenly.
+  // is drawn between its last two places, so that it moves evenly, and
+  // between its last two colours.
   smooth: true,
 });
 

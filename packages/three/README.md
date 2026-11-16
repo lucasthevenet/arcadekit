@@ -129,6 +129,34 @@ const Rocks = Three.instances("game/Rocks", {
 - When the app's scope closes the mesh is taken out of the scene and disposed of. The geometry and the material are yours, to share between several and to dispose of.
 - The entities are drawn where the last tick left them, or, with `smooth: true`, [between their last two places](#between-two-ticks).
 
+### A colour each
+
+```ts
+// The rules: a colour is three numbers, as a place is.
+const Paint = Component.define("game/Paint", {
+  r: Field.f32,
+  g: Field.f32,
+  b: Field.f32,
+});
+
+// The page: every rock is drawn in its own.
+const Rocks = Three.instances("game/Rocks", {
+  of: Rock,
+  geometry,
+  material: new MeshStandardMaterial({ color: "#ffffff" }),
+  color: Paint,
+});
+```
+
+`color` names a component of the game's that gives each instance a colour of its own. This package defines none: what colour a thing is, a team's or how hurt it is, is the game's to say, and its rules write it as they write a place.
+
+- Any component kept in a table with the fields `r`, `g` and `b` is a colour, whatever else it has. Anything else given as one throws when the system is made, and is a type error before that.
+- The material's own colour is multiplied by it, so a white material is drawn in exactly the instance's.
+- The numbers are from 0 to 1 in the renderer's working colour space, which is linear: what `new Color("#ff6188")` of Three.js has as its `r`, `g` and `b`, and not that hex code's own three bytes divided by 255.
+- An entity is then one of the kind only while it has the colour too. One with no colour is not drawn by this system.
+- The colours are read from the raw columns in the same pass as the places, into a buffer of their own beside the matrices, which grows with them and of which only the part that is drawn is sent. It costs about 2 ns more per entity, and nothing is allocated.
+- With `smooth: true` a colour changes evenly between two ticks, as a place does, and `snap` does not apply to it: a colour is never too far to go to.
+
 ## Objects
 
 ```ts
@@ -227,6 +255,8 @@ const Follow = System.make("game/Follow", function* () {
 | `Three.instances`, smooth: all three | 81.3 | 7,300 |
 | `Three.instances`, smooth, flat: a position | 23.1 | 7,300 |
 | `Three.instances`, smooth, flat: all three | 82.5 | 7,300 |
+| `Three.instances`, a colour each: a position | 11.0 | 7,300 |
+| `Three.instances`, a colour each, smooth: a position | 47.9 | 7,600 |
 | `Three.objects`: an Object3D each, all three copied | 163.0 | 5,700 |
 | `Three.objects`, flat: an Object3D each, all three copied | 167.8 | 5,700 |
 | By hand: `world.get` and `setMatrixAt`, per entity | 361.6 | 2,480,000 |
@@ -234,14 +264,16 @@ const Follow = System.make("game/Follow", function* () {
 - Ten thousand moving objects, drawn where the last tick left them, cost 0.08 to 0.36 ms of a frame. The seven kilobytes are the frame itself, the same for one entity as for ten thousand: under one byte per object. They were five before a flat game's four loops were added: eight queries are asked for each frame where there were four.
 - A flat entity that is not turned costs a little less than one in three dimensions. One that is turned costs twice as much, 36 ns: a sine and a cosine each, where a quaternion is a few multiplications. A flat game with a crowd that spins pays 0.36 ms for ten thousand.
 - Drawn between two ticks, an entity costs about three times as much for a place, 27 ns, and four and a half times for all three, 81 ns: each value is read, kept, and blended with the one before, in a pass of its own before the matrix is written. Ten thousand of them cost 0.27 to 0.83 ms of a frame, and still nothing is allocated per entity.
-- A test holds the system to that, with and without `smooth`: 10,000 moving objects, of all eight kinds, may grow the heap by less than 4 bytes each per tick and frame, where one number allocated per object would be 12.
+- A colour each costs 2 ns more per entity: three more reads and three more writes. Blended between two ticks it costs 22 ns more, as much as blending the place does, since it is the same pass over three other numbers.
+- A test holds the system to that, with and without `smooth` and with a colour each: 10,000 moving objects, of all eight kinds, may grow the heap by less than 4 bytes each per tick and frame, where one number allocated per object would be 12.
 - An object each costs ten to twenty times an instance, most of it Three.js keeping an object's Euler angles in step with its quaternion. That is the price of an object, and why a crowd is instances.
 - The example page, with 10,000 lit cubes in headless Chromium, grew its heap by 7 to 58 KB a frame, the renderer's own allocations included, and by 17 KB with a hundred cubes: what a frame allocates does not grow with what it draws. That browser draws in software, at 3 to 6 frames a second for 10,000 cubes and 60 for a hundred, so it says nothing of how fast a graphics card draws them.
 
 ## Not done yet
 
 - Drawing between two ticks is one setting and one distance per kind. An entity cannot say for itself that it jumped, a kind cannot be drawn ahead of the game in place of behind it, and the blending is a pass of its own that costs more than it has to: one check per entity per component, where one per entity would do.
-- An instance has a place and nothing else: no colour of its own, and no other attribute per instance.
+- An instance has a place and a colour and nothing else: no opacity of its own, since a colour is three numbers, and no other attribute per instance, a frame of a sheet of sprites, say.
+- A colour is for instances. `Three.objects` reads none: an object's colour is its material's, which is the game's to set in a frame system of its own.
 - A flat game's entities are all at 0 of the third axis. What is in front is said per kind, by its mesh or its objects; an entity has no depth or layer of its own, and nothing sorts them.
 - The two transforms do not mix: an entity placed in the plane is not turned by a quaternion, and one placed in three dimensions is not turned by an angle.
 - One kind of entity is one geometry and one material, fixed when the system is made. A kind whose look comes from an asset that is loaded later has no helper.
