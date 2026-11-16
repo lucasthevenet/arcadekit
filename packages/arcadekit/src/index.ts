@@ -10,6 +10,7 @@ export {
 } from "./ecs/component";
 export type { Rng } from "./ecs/random";
 export {
+  hashSnapshot,
   readSnapshot,
   type SnapshotComponent,
   type SnapshotContents,

@@ -9,6 +9,7 @@ import {
   Component,
   EcsWorld,
   Field,
+  hashSnapshot,
   Migrate,
   Plugin,
   Query,
@@ -253,6 +254,10 @@ describe("a snapshot read without the program's components", () => {
       }
       const bytes = world.snapshot();
       expect(writeSnapshot(readSnapshot(bytes))).toEqual(bytes);
+      // And hashes to what the world itself does, with no component known.
+      expect(hashSnapshot(readSnapshot(bytes)), `round ${round}`).toBe(
+        world.hash()
+      );
     }
   });
 });
@@ -314,12 +319,70 @@ describe("a save from another version of the game", () => {
       expect(world.get(entities[1]!, Health2)!.points).toBe(before + 3);
       expect(app.time.tick).toBe(2);
 
-      // What it saves now is a save of version 2, which loads as it is.
+      // What it saves now is a save of version 2, which loads as it is,
+      // and is checked against the hash of the world it holds.
       const again = unwrap(app.save());
       expect(again.version).toBe(2);
+      expect(again.hash).toBe(world.hash());
       withApp(App.load(again, version2), (reloaded) => {
         expect(reloaded.world.hash()).toBe(world.hash());
       });
+    });
+  });
+
+  it("is checked against the hash it recorded before any migration runs", () => {
+    const { save } = savedByVersion0();
+    expect(hashSnapshot(readSnapshot(save.world))).toBe(save.hash);
+    // Version 1 of the game is version 0 with a migration that changes
+    // nothing, so only damage can be what refuses a save.
+    let ran = 0;
+    const next = {
+      plugins: [Game0],
+      version: 1,
+      migrations: [{ from: 0, migrate: () => void ran++ }],
+    };
+    const load = (given: Save.Save) =>
+      Effect.runSync(Effect.scoped(Effect.exit(App.load(given, next))));
+    expect(Exit.isSuccess(load(save))).toBe(true);
+    expect(ran).toBe(1);
+    const problems = new Map<string, number>();
+    for (let at = 0; at < save.world.length; at++) {
+      const world = save.world.slice();
+      world[at] = world[at]! ^ 0xff;
+      ran = 0;
+      const error = refusal(load({ ...save, world }));
+      expect(error, `byte ${at}`).toBeInstanceOf(Save.LoadRefused);
+      problems.set(error.problem, (problems.get(error.problem) ?? 0) + 1);
+      if (error.problem === "hash mismatch") {
+        expect(ran, `byte ${at}`).toBe(0);
+      }
+    }
+    expect(problems.get("hash mismatch")).toBeGreaterThan(20);
+    const error = refusal(
+      Effect.runSync(
+        Effect.scoped(
+          Effect.exit(
+            App.load({ ...save, hash: (save.hash! ^ 1) >>> 0 }, version2)
+          )
+        )
+      )
+    );
+    expect(error.problem).toBe("hash mismatch");
+    expect(error.message).toMatch(
+      new RegExp(`its hash is ${save.hash}, and the save recorded \\d+\\.`)
+    );
+  });
+
+  it("has no hash once it is migrated, and loads as it is, through bytes too", () => {
+    const { save } = savedByVersion0();
+    expect(save.hash).toBeTypeOf("number");
+    const migrated = unwrap(Save.migrate(save, 2, migrations));
+    expect(migrated.hash).toBeUndefined();
+    const decoded = unwrap(Save.decode(Save.encode(migrated)));
+    expect(decoded).toEqual(migrated);
+    expect("hash" in decoded).toBe(true);
+    withApp(App.load(decoded, version2), (app) => {
+      expect(app.world.entityCount).toBe(8);
     });
   });
 
@@ -579,7 +642,7 @@ describe("a save from another version of the game", () => {
     expect(ran).toBe(1);
     expect(moved.version).toBe(1);
     expect(moved.world).toEqual(save.world);
-    expect({ ...moved, version: 0 }).toEqual(save);
+    expect({ ...moved, version: 0, hash: save.hash }).toEqual(save);
     // The save it was given is not changed by a migration that edits.
     const before = structuredClone(save);
     unwrap(Save.migrate(save, 2, migrations));

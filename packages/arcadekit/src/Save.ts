@@ -9,7 +9,8 @@
  *   const app = yield* App.load(save, { plugins }) // the game, where it was
  *
  * A save is taken between two ticks. It holds the world, the game's time,
- * the actions waiting for the next tick and the events waiting to be read.
+ * the actions waiting for the next tick and the events waiting to be read,
+ * and the world's hash, which a load checks the world it has loaded against.
  * It does not hold scripts: a plugin lists its scripts, and they start
  * again when the app is loaded. A plugin lists its components and its events
  * too, which is how a save that names them is read.
@@ -23,7 +24,12 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
-import { readSnapshot, SnapshotError, writeSnapshot } from "./ecs/snapshot";
+import {
+  hashSnapshot,
+  readSnapshot,
+  SnapshotError,
+  writeSnapshot,
+} from "./ecs/snapshot";
 import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
 
 /** The events of one kind that were waiting to be read when a game was saved. */
@@ -50,6 +56,15 @@ export interface Save {
   readonly delta: number;
   /** `world.snapshot()`. */
   readonly world: Uint8Array;
+  /**
+   * `world.hash()` when the save was taken. `App.load` hashes the world it
+   * has loaded and refuses the save if the two differ: its bytes were
+   * damaged, or a field did not come back as the value that was saved. An
+   * older save is checked against it before its first migration runs.
+   * Undefined for a save a migration has changed, whose world is a new one:
+   * it was checked before it was changed, and is loaded as it is.
+   */
+  readonly hash: number | undefined;
   /** The actions waiting for the next tick, in order, payloads in JSON form. */
   readonly queued: readonly {
     readonly name: string;
@@ -77,6 +92,8 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  *
  * - one of a snapshot's problems;
  * - `"not a save"`: the bytes are not a saved game at all;
+ * - `"hash mismatch"`: the world that was loaded is not the world that was
+ *   saved, going by the hash the save recorded;
  * - `"unknown event"`: events were waiting to be read whose name no plugin
  *   lists;
  * - `"event changed"`: one of them no longer fits its event's schema;
@@ -89,6 +106,7 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
   readonly problem:
     | SnapshotProblem
     | "not a save"
+    | "hash mismatch"
     | "unknown event"
     | "event changed"
     | "newer version"
@@ -131,8 +149,14 @@ export interface Migration {
  * Brings a save up to a version of the game, one migration at a time. A
  * save of that version already is returned as it is.
  *
+ * The world the save holds is hashed first, from the snapshot's own
+ * contents, and compared with the hash the save recorded, so that a damaged
+ * save is refused before a migration is run on it. A migrated save has no
+ * `hash`: the one it had was of the world before the migrations.
+ *
  * Fails with `LoadRefused`: `"newer version"` for a save from a later
- * version, `"no migration"` when a step is missing, `"migration failed"`
+ * version, `"hash mismatch"` for one whose world is not the one it
+ * recorded, `"no migration"` when a step is missing, `"migration failed"`
  * when a migration throws, and a snapshot's own problems when the save's
  * world cannot be read or written back.
  */
@@ -163,6 +187,15 @@ export const migrate = (
         read: { ...events.read },
       })),
     };
+    if (save.hash !== undefined) {
+      const actual = hashSnapshot(contents.world);
+      if (actual !== save.hash) {
+        return refuse(
+          "hash mismatch",
+          `The world this save holds is not the world that was saved: its hash is ${actual}, and the save recorded ${save.hash}. The save's bytes are damaged.`
+        );
+      }
+    }
     for (let from = save.version; from < version; from++) {
       const step = migrations.find((migration) => migration.from === from);
       if (step === undefined) {
@@ -186,6 +219,7 @@ export const migrate = (
       elapsed: contents.elapsed,
       delta: contents.delta,
       world: writeSnapshot(contents.world),
+      hash: undefined,
       queued: contents.queued,
       events: contents.events,
       logLength: save.logLength,
@@ -209,6 +243,9 @@ const Header = Schema.fromJsonString(
     tick: Count,
     elapsed: Schema.Finite,
     delta: Schema.Finite,
+    // Null for a save a migration has changed. The key is always there, so
+    // that damage to it cannot pass for a save with no hash to check.
+    hash: Schema.NullOr(Count.check(Schema.isLessThanOrEqualTo(0xff_ff_ff_ff))),
     queued: Schema.Array(
       Schema.Struct({ name: Schema.String, payload: Schema.Unknown })
     ),
@@ -232,7 +269,9 @@ const textDecoder = new TextDecoder("utf-8", { fatal: true });
  */
 export const encode = (save: Save): Uint8Array => {
   const { world, ...rest } = save;
-  const json = textEncoder.encode(JSON.stringify(rest));
+  const json = textEncoder.encode(
+    JSON.stringify({ ...rest, hash: rest.hash ?? null })
+  );
   const bytes = new Uint8Array(12 + json.length + world.length);
   const view = new DataView(bytes.buffer);
   view.setUint32(0, MAGIC, true);
@@ -285,6 +324,7 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
   }
   return Exit.succeed({
     ...header.value,
+    hash: header.value.hash ?? undefined,
     world: bytes.slice(12 + length),
   });
 };

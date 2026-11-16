@@ -1730,7 +1730,13 @@ export class World {
     const componentCount = reader.count(9);
     for (let c = 0; c < componentCount; c++) {
       const name = reader.text();
-      const sparse = reader.u8() === 1;
+      const storage = reader.u8();
+      if (storage > 1) {
+        throw corrupt(
+          "a component is stored in a way this version does not know"
+        );
+      }
+      const sparse = storage === 1;
       const fields: string[] = [];
       const kinds: (string | undefined)[] = [];
       const fieldCount = reader.count(5);

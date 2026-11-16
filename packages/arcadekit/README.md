@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 260 tests
+pnpm test                          # 265 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -236,7 +236,7 @@ copy.hash() === world.hash(); // true
 - A snapshot names every component its world knows, whether or not an entity has it: the ones it was told of with `world.register`, and any it has stored or queried. So whether a snapshot loads depends on the two programs' components and never on what the world held when it was taken: a component that has changed or gone is refused by name in both cases.
 - `load` fills an empty world: one that has never held an entity.
 - Every problem is a `SnapshotError`, whose `problem` says which kind and whose message names the component or field: `"not a snapshot"`, `"newer format"`, `"truncated"`, `"corrupt"`, `"unknown component"`, `"component changed"` (with its fields then and now), `"world not empty"`, `"cannot be saved"`.
-- Damaged bytes are refused, not trusted: every count is checked against the bytes that are there before anything is allocated for it, an entity may not be in two rows or in a freed slot, and text has to be text. A damaged number inside a column cannot be told from another number, and loads as that.
+- Damaged bytes are refused, not trusted: every count is checked against the bytes that are there before anything is allocated for it, an entity may not be in two rows or in a freed slot, and text has to be text. A damaged number inside a column cannot be told from another number, and loads as that. A saved game records its world's hash, which does tell: see [Saving and loading](#saving-and-loading).
 - A `json` field is saved as the plain data it holds, exactly for text, numbers, booleans, bigints, null and undefined (`-0` and `NaN` come back as they were), and as JSON text for an array or an object. A `schema` or `ref` field is saved in its encoded form, and a `transient` field is not saved. See [Fields](#fields).
 - A snapshot is refused while a spawn is queued on a `CommandBuffer` and not applied.
 - It costs 6 ns per entity to take and 16 ns to load, for four float fields; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
@@ -305,15 +305,16 @@ const read = Save.decode(bytes); // Exit<Save, LoadRefused>
 const app = yield * App.load(save, { plugins: [Rules] }); // the game, where it was
 ```
 
-A save is taken between two ticks. It holds the world as a [snapshot](#snapshots), the game's time, the actions waiting for the next tick (the simulation's own among them) and the events waiting to be read, with how far each system had read them. A game loaded from it goes on exactly as the saved one did.
+A save is taken between two ticks. It holds the world as a [snapshot](#snapshots) with the world's [hash](#the-worlds-hash), the game's time, the actions waiting for the next tick (the simulation's own among them) and the events waiting to be read, with how far each system had read them. A game loaded from it goes on exactly as the saved one did.
 
 - `App.load` takes the plugins and options the game was made with. No plugin's `setup` runs: the save holds what setup spawned.
 - A save cannot hold a script in mid-flight. A plugin lists its `scripts`, and they start again from their beginning when the app is loaded. So a script keeps what it must not lose in the world, and picks up from what it finds there.
 - A world knows a component by its name, so every component a save names has to be listed in a plugin's `components` or the app's. A save names every component its game knows: the ones its plugins list, and any other it has stored or queried, whether or not an entity has it. A load that meets one that is not listed fails with `LoadRefused` and names it.
 - An app knows an event by its name in the same way, so every event that can be waiting when a game is saved is listed in a plugin's `events` or the app's. The waiting events are read back by `App.load` itself, against the events the game lists: one that is not listed, or whose payload its schema no longer takes, fails the load with `LoadRefused`, and never a later tick. A game loaded and saved again at once holds the same events.
+- **A load checks the world it has loaded.** `save.hash` is `world.hash()` at the moment of the save. `App.load` hashes the world it has just loaded and refuses the save, with the problem `"hash mismatch"`, if the two differ. That catches what reads as a world and is not the one that was saved: a number damaged inside a column, and a field whose codec does not give back the value it was given. It costs one hash of the world on each side.
 - **A save is a snapshot plus the log since.** The save says how long the log was (`save.logLength`). A game that keeps its last save and the entries logged after it comes back to the present by loading the save and replaying only that tail, which costs the same however long the game has run: `App.replay(app, log.slice(save.logLength), { delta, ticks })`. The replay checks itself against the tail's checkpoints, so a save that did not bring the game back faithfully is caught on the next tick.
-- `app.save()` fails with `Save.SaveRefused` and says what is in the way: an action or an event with no schema is waiting, or an event no plugin lists, a field holds a value it cannot save, or commands are queued and not applied. `App.load` and `Save.decode` fail with `Save.LoadRefused`, whose `problem` is one of a snapshot's, or `"not a save"`, `"unknown event"` or `"event changed"`.
-- A save is the snapshot and a little text: for 100,000 entities with four float fields, 2.2 MB and about 0.6 ms to take.
+- `app.save()` fails with `Save.SaveRefused` and says what is in the way: an action or an event with no schema is waiting, or an event no plugin lists, a field holds a value it cannot save, or commands are queued and not applied. `App.load` and `Save.decode` fail with `Save.LoadRefused`, whose `problem` is one of a snapshot's, or `"not a save"`, `"hash mismatch"`, `"unknown event"` or `"event changed"`.
+- A save is the snapshot and a little text, and costs one snapshot and one hash of the world to take: for 100,000 entities with four float fields, 2.2 MB and about 1.3 ms. Loading it costs one load and one hash, about 2.3 ms.
 
 ### Versions and migrations
 
@@ -338,8 +339,9 @@ A game has a `version`, a whole number it raises when it changes its components 
 - A migration is given the save in a plain form that describes itself, `Save.Contents`: the world as the snapshot lists it (components by name with their fields, tables, sparse sets, one column of values per field), and the waiting actions and events in JSON form. It needs none of the game's old component definitions.
 - `Migrate` has the usual changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField`, `mapField`. Each refuses what is not there, by name. Entities keep their ids, and two tables that a removed component had kept apart become one.
 - A save names every component its game knew, so a migration finds a component by name whether or not any entity had it, and the same migration fits every save of its version. For the same reason a game that changes or drops a component without raising its version is refused every save of that version, with `"component changed"` or `"unknown component"`, and not only the saves that happened to hold one.
-- `readSnapshot` and `writeSnapshot` are the two halves on their own, for a tool that inspects or edits a snapshot.
-- Every refusal is a `Save.LoadRefused` that says why: `"newer version"`, `"no migration"` (and from which version to which), `"migration failed"` (which one, and what it threw), or, when the migrations did not bring the save all the way, `"component changed"` or `"unknown component"` with the component's fields then and now.
+- An older save is checked before it is changed: its world is hashed from the snapshot's own contents and compared with the hash the save recorded, so a damaged save is refused with `"hash mismatch"` before a migration runs on it. A migrated save has no hash, since its world is a new one, and is loaded as it is; the game's next save records one.
+- `readSnapshot` and `writeSnapshot` are the two halves on their own, for a tool that inspects or edits a snapshot, and `hashSnapshot` gives the hash of the world the contents describe, the number `world.hash()` gave for it, with none of the game's components.
+- Every refusal is a `Save.LoadRefused` that says why: `"newer version"`, `"hash mismatch"`, `"no migration"` (and from which version to which), `"migration failed"` (which one, and what it threw), or, when the migrations did not bring the save all the way, `"component changed"` or `"unknown component"` with the component's fields then and now.
 - A migration makes a new game of an old save, so the log recorded before it no longer replays against it.
 
 ### Replays that check themselves
@@ -368,7 +370,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/ecs/world.ts` | Tables, sparse sets, queries, world, transactions, command buffer |
 | `src/ecs/random.ts` | The seeded random number generator a world owns |
 | `src/ecs/hash.ts` | The arithmetic of the world's hash |
-| `src/ecs/snapshot.ts` | The bytes of a world's snapshot, and `SnapshotError` |
+| `src/ecs/snapshot.ts` | The bytes of a world's snapshot, its contents read without the program's components and their hash, and `SnapshotError` |
 | `src/TickScheduler.ts` | The Effect scheduler owned by the game loop |
 | `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
 | `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
@@ -478,6 +480,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.
+- A save's hash covers its world. Damage to the rest of a save that still reads (its tick, the payload of a waiting action) is not caught.
 - A save is refused while an action or an event with no schema is waiting, or an event no plugin lists, which for a game that emits such an event every tick is always.
 - An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
 - The log does not say when a script was started by hand with `app.spawnScript`, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.

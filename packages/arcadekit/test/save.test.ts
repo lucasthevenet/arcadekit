@@ -525,6 +525,21 @@ describe("a saved game", () => {
     );
   });
 
+  it("records the hash of its world, and keeps it through bytes", () => {
+    withApp(App.make(options), (app) => {
+      for (let tick = 0; tick < 6; tick++) {
+        move(app, tick);
+        app.tick(1 / 60);
+      }
+      const save = unwrap(app.save());
+      expect(save.hash).toBe(app.world.hash());
+      expect(unwrap(Save.decode(Save.encode(save))).hash).toBe(save.hash);
+      // The game moves on, and the save still says what it held.
+      app.tick(1 / 60);
+      expect(save.hash).not.toBe(app.world.hash());
+    });
+  });
+
   it("knows the components its plugins list, from the start", () => {
     withApp(App.make(options), (app) => {
       expect(app.world.component("sv/Tally")).toBe(Tally);
@@ -697,6 +712,68 @@ describe("a save that cannot be loaded", () => {
     expect(refusal(load({ ...save, world: new Uint8Array(40) })).problem).toBe(
       "not a snapshot"
     );
+  });
+
+  it("is refused whichever byte of its world is damaged, even where the bytes still read as a world", () => {
+    const { save } = record(10, 5);
+    const problems = new Map<string, number>();
+    let mismatch = "";
+    for (let at = 0; at < save.world.length; at++) {
+      const world = save.world.slice();
+      world[at] = world[at]! ^ 0xff;
+      const error = refusal(load({ ...save, world }));
+      expect(error, `byte ${at}`).toBeInstanceOf(Save.LoadRefused);
+      problems.set(error.problem, (problems.get(error.problem) ?? 0) + 1);
+      if (error.problem === "hash mismatch") {
+        mismatch = error.message;
+      }
+    }
+    // A damaged number is another number, and reads as one: only the hash
+    // tells. The rest is caught by what a world has to hold together.
+    expect(problems.get("hash mismatch")).toBeGreaterThan(20);
+    expect(problems.get("corrupt")).toBeGreaterThan(20);
+    expect(mismatch).toMatch(
+      new RegExp(
+        `its hash is \\d+, and the save recorded ${save.hash}\\. The save's bytes are damaged`
+      )
+    );
+    // The hash it recorded is checked like the rest.
+    expect(
+      refusal(load({ ...save, hash: (save.hash! ^ 1) >>> 0 })).problem
+    ).toBe("hash mismatch");
+    // And it has to be there: without one, damage would go unchecked.
+    const bytes = Save.encode(save);
+    const key = new TextEncoder().encode('"hash":');
+    const at = bytes.findIndex((_, i) =>
+      key.every((byte, k) => bytes[i + k] === byte)
+    );
+    expect(at).toBeGreaterThan(0);
+    bytes[at + 1] = "g".codePointAt(0)!;
+    expect(refusal(Save.decode(bytes)).problem).toBe("corrupt");
+  });
+
+  it("is refused when a field does not come back as the value that was saved", () => {
+    // A codec that rounds on the way out and does not undo it on the way in.
+    const lossy = (decode: (data: unknown) => number) =>
+      Component.define("sv/Lossy", {
+        value: Field.ref<number>({
+          encode: (value) => Math.round(value),
+          decode,
+        }),
+      });
+    const check = (decode: (data: unknown) => number) => {
+      const Lossy = lossy(decode);
+      const save = withApp(App.make({ components: [Lossy] }), (app) => {
+        app.world.spawn(Lossy.of({ value: 1.2 }));
+        return unwrap(app.save());
+      });
+      return refusal(load(save, { components: [Lossy] }));
+    };
+    expect(check((data) => data as number)).toBeUndefined();
+    const error = check((data) => (data as number) + 0.5);
+    expect(error).toBeInstanceOf(Save.LoadRefused);
+    expect(error.problem).toBe("hash mismatch");
+    expect(error.message).toMatch(/codec does not give back the value/);
   });
 
   it("is refused as bytes that are not a save, or are cut short, or damaged", () => {

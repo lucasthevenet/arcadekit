@@ -309,7 +309,9 @@ export const make = <
  *
  * Fails with `LoadRefused` when the save cannot be loaded: it names a
  * component or an event no plugin lists, or one that has changed since, or
- * its bytes are damaged.
+ * its bytes are damaged. The world it loads is hashed and compared with the
+ * hash the save recorded, so damage that still reads as a world, and a
+ * field that does not come back as it was saved, are refused here too.
  */
 export const load = <
   S extends Systems = readonly [],
@@ -446,6 +448,27 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           );
         }
         throw error;
+      }
+      // The world that was loaded has to be the world that was saved. A
+      // number damaged inside a column loads as another number, and a codec
+      // may give back something other than it was given: neither shows
+      // until the hash is taken. A migrated save has no hash to compare:
+      // it was checked against its own before the first migration ran.
+      if (save.hash !== undefined) {
+        let actual: number | string;
+        try {
+          actual = world.hash();
+        } catch (error) {
+          actual = `none, because a field's codec refuses the value it read back (${describe(error)})`;
+        }
+        if (actual !== save.hash) {
+          return yield* Effect.fail(
+            new Save.LoadRefused({
+              problem: "hash mismatch",
+              message: `The world this save holds is not the world that was saved: its hash is ${actual}, and the save recorded ${save.hash}. The save's bytes are damaged, or a field's codec does not give back the value it was given.`,
+            })
+          );
+        }
       }
       time.tick = save.tick;
       time.elapsed = save.elapsed;
@@ -905,6 +928,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           elapsed: time.elapsed,
           delta: time.delta,
           world: bytes,
+          hash: world.hash(),
           queued: waiting,
           events: pending.value,
           logLength: actionLog.length,

@@ -14,6 +14,7 @@
  */
 import { isBoxed } from "./component";
 import type { Column, FieldKind, RefCodec } from "./component";
+import { add, addColumn, addColumnPerRow, finish, shapeOf } from "./hash";
 
 /** Why a snapshot could not be taken, or could not be loaded. */
 export type SnapshotProblem =
@@ -530,7 +531,13 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
   const components: SnapshotComponent[] = [];
   for (let c = reader.count(9); c > 0; c--) {
     const name = reader.text();
-    const storage = reader.u8() === 1 ? "sparse" : "table";
+    const stored = reader.u8();
+    if (stored > 1) {
+      throw damaged(
+        "a component is stored in a way this version does not know"
+      );
+    }
+    const storage = stored === 1 ? "sparse" : "table";
     const fields: SnapshotComponent["fields"] = [];
     for (let f = reader.count(5); f > 0; f--) {
       const field = reader.text();
@@ -709,4 +716,122 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
   }
   writer.u32(END);
   return writer.finish();
+};
+
+/**
+ * The hash of the world a snapshot's contents describe: the number
+ * `World.hash` gives for the world the snapshot was taken from, worked out
+ * from the contents alone, with none of the program's components.
+ *
+ * It is how a snapshot is checked against a hash recorded beside it when the
+ * components that wrote it are gone, as before a migration: damage that
+ * still reads as a snapshot gives another number. It follows `World.hash`
+ * step for step, and a change to one is a change to the other.
+ */
+export const hashSnapshot = (contents: SnapshotContents): number => {
+  const { freed, generations, tables } = contents;
+  const known = new Map<
+    string,
+    { readonly component: SnapshotComponent; readonly shape: number }
+  >();
+  for (const component of contents.components) {
+    known.set(component.name, {
+      component,
+      shape: shapeOf(
+        component.name,
+        component.fields.map((field) => field.name),
+        component.fields.map((field) => field.kind)
+      ),
+    });
+  }
+  const named = (name: string) => {
+    const found = known.get(name);
+    if (found === undefined) {
+      throw damaged(`it holds data for "${name}", which it does not list`);
+    }
+    return found;
+  };
+  const columnOf = (
+    component: SnapshotComponent,
+    columns: Record<string, Column> | undefined,
+    field: string,
+    count: number
+  ): Column => {
+    const column = columns?.[field];
+    if (column === undefined || column.length !== count) {
+      throw damaged(
+        `"${component.name}.${field}" has no column of ${count} values`
+      );
+    }
+    return column;
+  };
+
+  let alive = 0;
+  for (const table of tables) {
+    alive += table.entities.length;
+  }
+  let h = add(add(0, generations.length), alive);
+  h = add(h, freed.length);
+  for (const index of freed) {
+    h = add(add(h, index), generations[index] ?? 0);
+  }
+
+  h = add(h, tables.length);
+  for (const table of tables) {
+    const of = table.components
+      .map((name) => named(name))
+      .toSorted((a, b) => byName(a.component, b.component));
+    const count = table.entities.length;
+    h = add(add(h, of.length), count);
+    h = addColumn(h, "entity", table.entities, count);
+    for (const { component, shape } of of) {
+      h = add(h, shape);
+      for (const { kind, name } of component.fields) {
+        if (kind === "transient") {
+          continue;
+        }
+        h = addColumn(
+          h,
+          // A ref field's column holds what its codec had made of each value.
+          kind === "ref" ? "json" : kind,
+          columnOf(component, table.columns[component.name], name, count),
+          count
+        );
+      }
+    }
+  }
+
+  const sets = contents.sparse
+    .filter((set) => set.members.length > 0)
+    .toSorted((a, b) => byName({ name: a.component }, { name: b.component }));
+  for (const set of sets) {
+    const { component, shape } = named(set.component);
+    const count = set.members.length;
+    const states = new Int32Array(count);
+    for (let i = 0; i < count; i++) {
+      states[i] = add(shape, set.members[i]!);
+    }
+    for (const { kind, name } of component.fields) {
+      if (kind === "transient") {
+        continue;
+      }
+      addColumnPerRow(
+        states,
+        kind === "ref" ? "json" : kind,
+        columnOf(component, set.columns, name, count),
+        count
+      );
+    }
+    let members = 0;
+    for (let i = 0; i < count; i++) {
+      members = (members + finish(states[i]!)) | 0;
+    }
+    h = add(add(add(h, shape), count), members);
+  }
+
+  const { random } = contents;
+  for (let word = 0; word < 4; word++) {
+    h = add(h, random[word] ?? 0);
+  }
+  return finish(h);
 };
