@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 238 tests
+pnpm test                          # 251 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -311,6 +311,32 @@ A save is taken between two ticks. It holds the world as a [snapshot](#snapshots
 - `app.save()` fails with `Save.SaveRefused` and says what is in the way: an action or an event with no schema is waiting, a field holds a value it cannot save, or commands are queued and not applied. `App.load` and `Save.decode` fail with `Save.LoadRefused`, whose `problem` is one of a snapshot's, or `"not a save"`.
 - A save is the snapshot and a little text: for 100,000 entities with four float fields, 2.2 MB and about 0.6 ms to take.
 
+### Versions and migrations
+
+```ts
+const migrations: Save.Migration[] = [
+  {
+    from: 1, // takes a save of version 1 to version 2
+    migrate: ({ world, queued }) => {
+      Migrate.renameComponent(world, "game/Hp", "game/Health");
+      Migrate.addField(world, "game/Health", "armor", "i32", 0);
+      Migrate.mapField(world, "game/Health", "points", "f32", (hp) => hp / 2);
+    },
+  },
+];
+
+const app = yield * App.load(save, { plugins, version: 2, migrations });
+```
+
+A game has a `version`, a whole number it raises when it changes its components or what its saves hold. A save records the version that wrote it, and its world names every component with its fields.
+
+- A save of the game's own version loads as it is. An older one is brought up one version at a time, by the migration `from` each version. A newer one is refused.
+- A migration is given the save in a plain form that describes itself, `Save.Contents`: the world as the snapshot lists it (components by name with their fields, tables, sparse sets, one column of values per field), and the waiting actions and events in JSON form. It needs none of the game's old component definitions.
+- `Migrate` has the usual changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField`, `mapField`. Each refuses what is not there, by name. Entities keep their ids, and two tables that a removed component had kept apart become one.
+- `readSnapshot` and `writeSnapshot` are the two halves on their own, for a tool that inspects or edits a snapshot.
+- Every refusal is a `Save.LoadRefused` that says why: `"newer version"`, `"no migration"` (and from which version to which), `"migration failed"` (which one, and what it threw), or, when the migrations did not bring the save all the way, `"component changed"` or `"unknown component"` with the component's fields then and now.
+- A migration makes a new game of an old save, so the log recorded before it no longer replays against it.
+
 ### Replays that check themselves
 
 ```ts
@@ -342,13 +368,14 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
 | `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
 | `src/Plugin.ts` | Plugins and their dependency order |
-| `src/Save.ts` | A saved game, as a value and as bytes |
+| `src/Save.ts` | A saved game, as a value and as bytes, and its migrations |
+| `src/Migrate.ts` | The usual changes a migration makes to an old save's world |
 | `src/Field.ts` | The fields of a component, with `Field.schema` |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field and save tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save and migration tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 

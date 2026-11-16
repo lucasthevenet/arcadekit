@@ -18,9 +18,7 @@ Done. A seeded random service, a hash of the world, replays that check themselve
 
 ## 2. Saving and loading
 
-- **Versioning.** A save names the components and the schema version it was written with. Done when loading a save from an older version either migrates it or refuses with a typed error that says why.
-
-Depends on milestone 1 for the random state and the hash.
+Done. A world is saved as a snapshot and loaded back, every field says what saving does with it, a game is saved and loaded with what was waiting in it, and a save of an older version is migrated or refused with the reason. The package's [README](../packages/arcadekit/README.md) describes each.
 
 ## 3. What every game ends up needing
 

@@ -416,3 +416,296 @@ export const readColumn = (
     values[row] = kind === "ref" ? codec!.decode(value) : value;
   }
 };
+
+// ---------------------------------------------------------------------------
+// A snapshot read without the program's components
+// ---------------------------------------------------------------------------
+
+/** A component as a snapshot describes it: by name, with its fields. */
+export interface SnapshotComponent {
+  name: string;
+  storage: "table" | "sparse";
+  fields: { name: string; kind: FieldKind }[];
+}
+
+/** One table of a snapshot: the components its entities have, and their rows. */
+export interface SnapshotTable {
+  /** Names of the table's components. */
+  components: string[];
+  /** The id of the entity in each row. */
+  entities: Uint32Array;
+  /** Per component name, per field name: one value per row. */
+  columns: Record<string, Record<string, Column>>;
+}
+
+/** One sparse component of a snapshot: who has it, and their values. */
+export interface SnapshotSparse {
+  component: string;
+  /** The index (not the id) of each entity that has the component. */
+  members: Uint32Array;
+  /** Per field name: one value per member. */
+  columns: Record<string, Column>;
+}
+
+/**
+ * Everything a snapshot holds, read without knowing the program's
+ * components: a snapshot describes its own. This is the form a migration
+ * works on, to make an old save fit the components a game has now.
+ *
+ * A `json` field's column holds the plain data itself. A `ref` field's
+ * column holds what its codec had made of each value. A `transient` field
+ * has no column.
+ */
+export interface SnapshotContents {
+  /** The random generator's four words. */
+  random: Uint32Array;
+  /** One generation per entity slot. */
+  generations: Uint16Array;
+  /** The freed slots, in the order they will be reused. */
+  freed: number[];
+  components: SnapshotComponent[];
+  /** In the order queries visit them. */
+  tables: SnapshotTable[];
+  sparse: SnapshotSparse[];
+}
+
+const columnOf = (kind: FieldKind, count: number): Column => {
+  switch (kind) {
+    case "f32": {
+      return new Float32Array(count);
+    }
+    case "f64": {
+      return new Float64Array(count);
+    }
+    case "i32": {
+      return new Int32Array(count);
+    }
+    case "u32":
+    case "entity": {
+      return new Uint32Array(count);
+    }
+    case "u16": {
+      return new Uint16Array(count);
+    }
+    case "u8": {
+      return new Uint8Array(count);
+    }
+    default: {
+      return Array.from({ length: count }, () => undefined);
+    }
+  }
+};
+
+const damaged = (how: string): SnapshotError =>
+  new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
+
+/** Reads a snapshot into its contents. Needs no component definitions. */
+export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
+  const reader = new Reader(bytes);
+  if (reader.left < 8 || reader.u32() !== MAGIC) {
+    throw new SnapshotError(
+      "not a snapshot",
+      "These bytes are not a snapshot of a world."
+    );
+  }
+  const format = reader.u32();
+  if (format !== FORMAT) {
+    throw new SnapshotError(
+      "newer format",
+      `The snapshot is in format ${format}, and this version reads format ${FORMAT}.`
+    );
+  }
+  const random = new Uint32Array(4);
+  for (let word = 0; word < 4; word++) {
+    random[word] = reader.u32();
+  }
+  const generations = new Uint16Array(reader.count(2));
+  reader.numbers(generations, generations.length, 2);
+  const freed: number[] = [];
+  for (let i = reader.count(4); i > 0; i--) {
+    freed.push(reader.u32());
+  }
+
+  const components: SnapshotComponent[] = [];
+  for (let c = reader.count(9); c > 0; c--) {
+    const name = reader.text();
+    const storage = reader.u8() === 1 ? "sparse" : "table";
+    const fields: SnapshotComponent["fields"] = [];
+    for (let f = reader.count(5); f > 0; f--) {
+      const field = reader.text();
+      const kind = KIND_CODES[reader.u8()];
+      if (kind === undefined) {
+        throw damaged("a field is of a kind this version does not know");
+      }
+      fields.push({ name: field, kind });
+    }
+    components.push({ name, storage, fields });
+  }
+  const componentAt = (): SnapshotComponent => {
+    const component = components[reader.u32()];
+    if (component === undefined) {
+      throw damaged("it refers to a component it does not list");
+    }
+    return component;
+  };
+  const readFields = (
+    component: SnapshotComponent,
+    count: number
+  ): Record<string, Column> => {
+    const columns: Record<string, Column> = {};
+    for (const { kind, name } of component.fields) {
+      if (kind === "transient") {
+        continue;
+      }
+      const column = columnOf(kind, count);
+      // A ref field stays in its encoded form: there is no codec here.
+      readColumn(reader, kind === "ref" ? "json" : kind, column, count);
+      columns[name] = column;
+    }
+    return columns;
+  };
+
+  const tables: SnapshotTable[] = [];
+  for (let t = reader.count(8); t > 0; t--) {
+    const of: SnapshotComponent[] = [];
+    for (let d = reader.count(4); d > 0; d--) {
+      of.push(componentAt());
+    }
+    const entities = new Uint32Array(reader.count(4));
+    reader.numbers(entities, entities.length, 4);
+    const columns: SnapshotTable["columns"] = {};
+    for (const component of of) {
+      columns[component.name] = readFields(component, entities.length);
+    }
+    tables.push({
+      components: of.map((component) => component.name),
+      entities,
+      columns,
+    });
+  }
+  const sparse: SnapshotSparse[] = [];
+  for (let s = reader.count(8); s > 0; s--) {
+    const component = componentAt();
+    const members = new Uint32Array(reader.count(4));
+    reader.numbers(members, members.length, 4);
+    sparse.push({
+      component: component.name,
+      members,
+      columns: readFields(component, members.length),
+    });
+  }
+  if (reader.left !== 4 || reader.u32() !== END) {
+    throw damaged("it does not end where it should");
+  }
+  return { random, generations, freed, components, tables, sparse };
+};
+
+const byName = (a: { name: string }, b: { name: string }): number =>
+  a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+
+/**
+ * Writes contents back into the bytes of a snapshot. What it is given has
+ * to hang together: every component a table or a sparse set names is
+ * listed, and every field that is saved has a column of one value per row.
+ * `World.load` checks the rest when it reads the result.
+ */
+export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
+  const components = contents.components.toSorted(byName);
+  const indexOf = new Map<string, number>();
+  for (const [index, component] of components.entries()) {
+    if (indexOf.has(component.name)) {
+      throw damaged(`it lists the component "${component.name}" twice`);
+    }
+    indexOf.set(component.name, index);
+  }
+  const named = (name: string): SnapshotComponent => {
+    const index = indexOf.get(name);
+    if (index === undefined) {
+      throw damaged(`it holds data for "${name}", which it does not list`);
+    }
+    return components[index]!;
+  };
+
+  const writer = new Writer(1024);
+  writer.u32(MAGIC);
+  writer.u32(FORMAT);
+  for (let word = 0; word < 4; word++) {
+    writer.u32(contents.random[word] ?? 0);
+  }
+  writer.u32(contents.generations.length);
+  writer.numbers(contents.generations, contents.generations.length, 2);
+  writer.u32(contents.freed.length);
+  for (const index of contents.freed) {
+    writer.u32(index);
+  }
+  writer.u32(components.length);
+  for (const component of components) {
+    writer.text(component.name);
+    writer.u8(component.storage === "sparse" ? 1 : 0);
+    writer.u32(component.fields.length);
+    for (const field of component.fields) {
+      writer.text(field.name);
+      writer.u8(KIND_CODES.indexOf(field.kind));
+    }
+  }
+  const writeFields = (
+    component: SnapshotComponent,
+    columns: Record<string, Column> | undefined,
+    count: number
+  ): void => {
+    for (const { kind, name } of component.fields) {
+      if (kind === "transient") {
+        continue;
+      }
+      const column = columns?.[name];
+      if (column === undefined || column.length !== count) {
+        throw damaged(
+          `"${component.name}.${name}" has no column of ${count} values`
+        );
+      }
+      const row = writeColumn(
+        writer,
+        kind === "ref" ? "json" : kind,
+        column,
+        count
+      );
+      if (row !== -1) {
+        throw new SnapshotError(
+          "cannot be saved",
+          `"${component.name}.${name}" holds a value that is not plain data.`,
+          component.name
+        );
+      }
+    }
+  };
+
+  writer.u32(contents.tables.length);
+  for (const table of contents.tables) {
+    const of = table.components.map((name) => named(name)).toSorted(byName);
+    writer.u32(of.length);
+    for (const component of of) {
+      writer.u32(indexOf.get(component.name)!);
+    }
+    writer.u32(table.entities.length);
+    writer.numbers(table.entities, table.entities.length, 4);
+    for (const component of of) {
+      writeFields(
+        component,
+        table.columns[component.name],
+        table.entities.length
+      );
+    }
+  }
+  const sets = contents.sparse
+    .filter((set) => set.members.length > 0)
+    .toSorted((a, b) => byName({ name: a.component }, { name: b.component }));
+  writer.u32(sets.length);
+  for (const set of sets) {
+    writer.u32(indexOf.get(named(set.component).name)!);
+    writer.u32(set.members.length);
+    writer.numbers(set.members, set.members.length, 4);
+    writeFields(named(set.component), set.columns, set.members.length);
+  }
+  writer.u32(END);
+  return writer.finish();
+};

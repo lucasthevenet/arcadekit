@@ -227,6 +227,18 @@ export interface Options<
    * the save names to be listed here or by a plugin.
    */
   readonly components?: readonly ComponentDef<any>[];
+  /**
+   * The version of the game: a whole number that is raised when the game
+   * changes its components or what its saves hold, 0 when left out. A save
+   * records it. `App.load` reads a save of this version as it is, brings an
+   * older one up to it with `migrations`, and refuses a newer one.
+   */
+  readonly version?: number;
+  /**
+   * How a save of an older version becomes one of the next: one migration
+   * per version, each from `from` to `from + 1`. Only `App.load` uses them.
+   */
+  readonly migrations?: readonly Save.Migration[];
   /** Systems and handlers that belong to the app itself, not to a plugin. */
   readonly systems?: readonly [...S];
   readonly handlers?: readonly [...H];
@@ -307,7 +319,7 @@ export const load = <
 
 const build = <S extends Systems, H extends Handlers, P extends Plugins>(
   options: Options<S, H, P>,
-  save: Save.Save | undefined
+  given: Save.Save | undefined
 ): Effect.Effect<
   App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
   Plugin.ErrorOf<P[number]> | Save.LoadRefused,
@@ -385,6 +397,21 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     ];
     for (const component of components) {
       world.register(component);
+    }
+    const version = options.version ?? 0;
+    if (!Number.isSafeInteger(version) || version < 0) {
+      throw new Error(
+        `A game's version must be a whole number from 0 up, and this one is ${version}.`
+      );
+    }
+    let save: Save.Save | undefined;
+    if (given !== undefined) {
+      // An older save is brought up to this version of the game first.
+      const current = Save.migrate(given, version, options.migrations ?? []);
+      if (Exit.isFailure(current)) {
+        return yield* current;
+      }
+      save = current.value;
     }
     if (save !== undefined) {
       // Before anything else can touch the world: a load fills an empty one.
@@ -852,6 +879,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           throw error;
         }
         return Exit.succeed({
+          version,
           tick: time.tick,
           elapsed: time.elapsed,
           delta: time.delta,

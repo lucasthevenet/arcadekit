@@ -22,7 +22,8 @@
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
-import type { SnapshotProblem } from "./ecs/snapshot";
+import { readSnapshot, SnapshotError, writeSnapshot } from "./ecs/snapshot";
+import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
 
 /** The events of one kind that were waiting to be read when a game was saved. */
 export interface SavedEvents {
@@ -34,6 +35,12 @@ export interface SavedEvents {
 }
 
 export interface Save {
+  /**
+   * The version of the game that wrote the save: the `version` its app was
+   * made with, 0 when it was given none. A game raises it when it changes
+   * its components, and gives `App.load` a migration from each older one.
+   */
+  readonly version: number;
   /** How many ticks had run. */
   readonly tick: number;
   /** Game time, in seconds. */
@@ -66,13 +73,124 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
 
 /**
  * A save could not be loaded. `problem` says which kind of trouble it is:
- * one of a snapshot's problems, or `"not a save"` when the bytes are not a
- * saved game at all.
+ *
+ * - one of a snapshot's problems;
+ * - `"not a save"`: the bytes are not a saved game at all;
+ * - `"newer version"`: a later version of the game wrote the save;
+ * - `"no migration"`: an earlier one did, and the game has no migration
+ *   from that version;
+ * - `"migration failed"`: it has one, and the migration threw.
  */
 export class LoadRefused extends Data.TaggedError("LoadRefused")<{
-  readonly problem: SnapshotProblem | "not a save";
+  readonly problem:
+    | SnapshotProblem
+    | "not a save"
+    | "newer version"
+    | "no migration"
+    | "migration failed";
   readonly message: string;
 }> {}
+
+/**
+ * A save in a plain form that describes itself, for a migration to change.
+ * The world is its contents as the snapshot lists them, components by name
+ * with their fields, so it can be read whatever the game's components are
+ * now. `Migrate` has the usual changes to it.
+ */
+export interface Contents {
+  tick: number;
+  elapsed: number;
+  delta: number;
+  world: SnapshotContents;
+  /** The actions that were waiting, payloads in JSON form. */
+  queued: { name: string; payload: unknown }[];
+  /** The events that were waiting, payloads in JSON form. */
+  events: {
+    name: string;
+    payloads: unknown[];
+    read: Record<string, number>;
+  }[];
+}
+
+/**
+ * How a save written by version `from` of a game becomes one of version
+ * `from + 1`. It changes the contents it is given in place.
+ */
+export interface Migration {
+  readonly from: number;
+  readonly migrate: (contents: Contents) => void;
+}
+
+/**
+ * Brings a save up to a version of the game, one migration at a time. A
+ * save of that version already is returned as it is.
+ *
+ * Fails with `LoadRefused`: `"newer version"` for a save from a later
+ * version, `"no migration"` when a step is missing, `"migration failed"`
+ * when a migration throws, and a snapshot's own problems when the save's
+ * world cannot be read or written back.
+ */
+export const migrate = (
+  save: Save,
+  version: number,
+  migrations: readonly Migration[]
+): Exit.Exit<Save, LoadRefused> => {
+  if (save.version === version) {
+    return Exit.succeed(save);
+  }
+  if (save.version > version) {
+    return refuse(
+      "newer version",
+      `The save was written by version ${save.version} of the game, and this is version ${version}. A game cannot read what a later version of itself wrote.`
+    );
+  }
+  try {
+    const contents: Contents = {
+      tick: save.tick,
+      elapsed: save.elapsed,
+      delta: save.delta,
+      world: readSnapshot(save.world),
+      queued: save.queued.map((action) => ({ ...action })),
+      events: save.events.map((events) => ({
+        name: events.name,
+        payloads: [...events.payloads],
+        read: { ...events.read },
+      })),
+    };
+    for (let from = save.version; from < version; from++) {
+      const step = migrations.find((migration) => migration.from === from);
+      if (step === undefined) {
+        return refuse(
+          "no migration",
+          `The save was written by version ${save.version} of the game, and this is version ${version}. There is no migration from version ${from} to version ${from + 1}.`
+        );
+      }
+      try {
+        step.migrate(contents);
+      } catch (error) {
+        return refuse(
+          "migration failed",
+          `The migration from version ${from} to version ${from + 1} failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+    return Exit.succeed({
+      version,
+      tick: contents.tick,
+      elapsed: contents.elapsed,
+      delta: contents.delta,
+      world: writeSnapshot(contents.world),
+      queued: contents.queued,
+      events: contents.events,
+      logLength: save.logLength,
+    });
+  } catch (error) {
+    if (error instanceof SnapshotError) {
+      return refuse(error.problem, error.message);
+    }
+    throw error;
+  }
+};
 
 /** "AKSV": arcadekit save. */
 const MAGIC = 0x56534b41;
@@ -81,6 +199,7 @@ const FORMAT = 1;
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Header = Schema.fromJsonString(
   Schema.Struct({
+    version: Count,
     tick: Count,
     elapsed: Schema.Finite,
     delta: Schema.Finite,

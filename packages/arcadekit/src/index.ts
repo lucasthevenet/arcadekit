@@ -9,7 +9,16 @@ export {
   type RefCodec,
 } from "./ecs/component";
 export type { Rng } from "./ecs/random";
-export { SnapshotError, type SnapshotProblem } from "./ecs/snapshot";
+export {
+  readSnapshot,
+  type SnapshotComponent,
+  type SnapshotContents,
+  SnapshotError,
+  type SnapshotProblem,
+  type SnapshotSparse,
+  type SnapshotTable,
+  writeSnapshot,
+} from "./ecs/snapshot";
 export {
   CommandBuffer,
   type EntityColumn,
@@ -19,6 +28,7 @@ export {
 } from "./ecs/world";
 export * as Event from "./Event";
 export * as Field from "./Field";
+export * as Migrate from "./Migrate";
 export * as Plugin from "./Plugin";
 export * as Query from "./Query";
 export * as Resource from "./Resource";
