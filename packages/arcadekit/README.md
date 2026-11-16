@@ -9,11 +9,13 @@ This is the first cut of the revamped design. It is a working prototype, not a f
 3. **Events and rules**: typed events every system sees exactly once, and actions with handlers that validate a move and refuse it with a typed error. Payloads are checked against a schema, applied actions are logged as JSON-safe data, and the log replays the game and checks the replay against the world's hash.
 4. **Plugins**: one value that bundles a feature's systems, handlers, services and setup, and names the plugins it depends on.
 
+What draws a game is a plugin in a package of its own: [`@arcadekit/three`](../three/README.md) draws one with Three.js.
+
 From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 465 tests
+pnpm test                          # 496 tests, 31 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -72,6 +74,7 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 
 - A server, a replay and a test of a game do not import `arcadekit/Browser`. No other entry names anything that only a page has, so they run under Node as they are.
 - Only what belongs to the page imports `arcadekit/Browser`: the module that starts the game there, and a plugin that draws it, for its pictures (`Browser.image`). The plugins that hold a game's rules do not, so a server installs no browser package.
+- What needs a library of its own is a package of its own, with `arcadekit` as a peer: [`@arcadekit/three`](../three/README.md) is the Three.js plugin. Nothing in `arcadekit` imports Three.js, and it is no longer a peer dependency of it.
 - An entry of a module is the module, imported whole: `import * as Input from "arcadekit/Input"` is the `Input` of `import { Input } from "arcadekit"`, the same object. `arcadekit` gives three modules by their names in place of the module: `EntityId` from `Schemas`, the services of `Services`, and the two classes of `TickScheduler`.
 - `arcadekit/ecs` is not a module of that kind: it gives the storage core's names as they are, and its world is `World`, which `arcadekit` calls `EcsWorld` beside its service of that name.
 - What two entries share is built once: a world made through `arcadekit/ecs` is one `arcadekit` knows, and a component is the same component.
@@ -410,6 +413,40 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
   ```
 
 - `examples/page` is a game in a page. `pnpm --filter arcadekit page` serves it.
+
+### Drawing with Three.js
+
+```ts
+import { Three } from "@arcadekit/three";
+import * as Transform from "@arcadekit/three/Transform";
+
+// The rules say where a rock is. They import no Three.js.
+commands.spawn(Rock, Transform.Position.of({ x: 0, y: 4, z: 0 }));
+
+// The page says how a rock looks: every one is an instance of one mesh.
+const Rocks = Three.instances("game/Rocks", {
+  of: Rock,
+  geometry: new IcosahedronGeometry(1),
+  material: new MeshStandardMaterial({ color: "#8a8f98" }),
+});
+const Look = Plugin.make("game/Look", {
+  plugins: [Three.plugin, Rules],
+  systems: [Rocks],
+});
+
+Browser.runMain(
+  App.run({ plugins: [Look] }, { hz: 60 }).pipe(
+    Effect.provide(Three.layerWebGL({ canvas }))
+  ),
+  { target: canvas }
+);
+```
+
+[`@arcadekit/three`](../three/README.md) is the plugin that draws a game with Three.js, in a package of its own. It is made of what is above: systems of the frame stage that read the world and cannot change it, a service that holds the scene from one frame to the next, and a renderer that comes from outside as the display does.
+
+- `Transform.Position`, `Rotation` and `Scale` are components of the game, in an entry that imports no Three.js.
+- `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.2 ms of a frame before Three.js takes over. `Three.objects` keeps an Object3D per entity for the few things that are more than that.
+- A game that draws with something else does not install it.
 
 ## Input
 
@@ -904,7 +941,7 @@ moving.eachChunk((start, end, pos, vel) => {
 
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
-- Nothing here plays sound, and nothing draws for you. There is a frame stage for what draws and a frame loop that runs it once per repaint, and the example page draws on a canvas by hand: there is no Three.js plugin yet, and no bridge to a UI library.
+- Nothing here plays sound, and there is no bridge to a UI library. [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
 - An asset is a picture, text, JSON or bytes. A sound and a font are for whoever plays and draws them to decode, with `Assets.make`.
 - A bundle is loaded or it is not: it does not say how far along it is, and a file that two bundles name is fetched for each.
 - A bundle that failed stays failed until its level is entered again. Nothing tries again by itself.
@@ -919,9 +956,9 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
 - The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and `arcadekit/Browser` against stand-ins for `requestAnimationFrame`, the document and the window.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
-- A frame system that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps. There is no helper for it.
+- A frame system that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps. There is no helper for it, and `@arcadekit/three` draws each thing where its last tick left it.
 - `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
-- `arcadekit/Browser` is one entry for everything a page has. A renderer, a UI bridge and netcode will each be an entry of their own when they are built.
+- `arcadekit/Browser` is one entry for everything a page has. A UI bridge and netcode will each be an entry of their own when they are built.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.

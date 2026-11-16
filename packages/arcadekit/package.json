@@ -148,29 +148,19 @@
     "@cloudflare/workers-types": "^5.20261104.1",
     "@effect/platform-browser": "~4.1.0",
     "@effect/platform-node": "~4.1.2",
-    "@types/three": "^0.187.0",
     "effect": "~4.1.2",
-    "three": "^0.187.0",
     "tsx": "^4.23.15"
   },
   "peerDependencies": {
     "@cloudflare/workers-types": "^5",
     "@effect/platform-browser": "~4.1.0",
-    "@types/three": "^0.187.0",
-    "effect": "~4.1.2",
-    "three": "^0.187.0"
+    "effect": "~4.1.2"
   },
   "peerDependenciesMeta": {
     "@cloudflare/workers-types": {
       "optional": true
     },
     "@effect/platform-browser": {
-      "optional": true
-    },
-    "@types/three": {
-      "optional": true
-    },
-    "three": {
       "optional": true
     }
   },

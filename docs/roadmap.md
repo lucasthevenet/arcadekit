@@ -32,11 +32,11 @@ Done. A frame loop, `Driver.frames`, that follows the page's repaints, pauses wh
 
 These are plugins, not part of the core: a game that draws with something else leaves them out.
 
-- **A Three.js plugin.** Components for what is drawn, and a per-frame system that copies positions from columns to the scene. Instanced meshes read a column directly. Done when ten thousand moving objects draw without one allocation per object per frame.
+- **A Three.js plugin.** Done, as a package of its own, [`@arcadekit/three`](../packages/three/README.md): components for where a thing is, `Three.instances`, which draws every entity of a kind as one instance of one mesh by reading the columns raw, and `Three.objects`, which keeps an Object3D per entity. Ten thousand moving objects draw with nothing allocated per object per frame, which a test measures. Its README says what is not done: drawing between two ticks, a colour per instance, and a look that comes from an asset.
 - **A view bridge.** How a game's menus and heads-up display, written with any UI library or none, see the game and act on it. The game says which values the UI may see; they are published once per frame, from the frame stage, and only when they changed; and the UI acts only by sending actions, like every other source of input. Done when a menu and a heads-up display are built on it twice, once with the page's own DOM and once with a UI library, with neither holding a reference to the world, and a value that did not change costs the UI nothing.
 - **Sound.** A service that plays a named cue, driven by events. Done when the simulation never calls it directly.
 
-Each is an entry of `arcadekit` of its own, as every module is. The Three.js plugin has the library it draws with as an optional peer, which `three` is already. The view bridge has none: it imports Effect alone, and what binds it to a particular UI library is a few lines in the game or a package of its own.
+The Three.js plugin is a package of its own, with `arcadekit` and `three` as peers: what needs a library of its own is not an entry of `arcadekit`. The view bridge and sound are entries of `arcadekit`, as every module is. They import Effect alone: what binds the bridge to a particular UI library is a few lines in the game or a package of its own, and what plays a sound in a page is in `arcadekit/Browser`.
 
 ## 6. More than one player
 
@@ -75,4 +75,8 @@ Not work yet; each needs an answer before the item that depends on it.
 
 Decided, and no longer waiting: no UI library. The previous version drew its UI with Foldkit; this one does not depend on it, or on any other. Three.js is different, because it does a job the package would otherwise have to do itself. A game's UI reaches the game through the view bridge of milestone 5, with whatever library it likes.
 
-Also decided: one entry or several. Several: an entry for every module, `arcadekit/App` and the rest, and `arcadekit` for all of them together, each importing Effect alone. What only a page can use is one entry, `arcadekit/Browser`, and starts a game in it. `arcadekit/ecs` is the storage core, which imports nothing. A renderer, a UI bridge and netcode are each an entry of their own when they are built.
+Also decided: one entry or several. Several: an entry for every module, `arcadekit/App` and the rest, and `arcadekit` for all of them together, each importing Effect alone. What only a page can use is one entry, `arcadekit/Browser`, and starts a game in it. `arcadekit/ecs` is the storage core, which imports nothing. A UI bridge and netcode are each an entry of their own when they are built.
+
+Also decided: where a renderer lives. In a package of its own, `@arcadekit/three`, and not in an entry of `arcadekit` with Three.js as an optional peer, which is what this document said before. `arcadekit` then asks nobody for Three.js, and the plugin is versioned with the library it draws with.
+
+A decision this has left: `Transform.Position`, `Rotation` and `Scale` are components a game's rules write, and they live in the renderer's package, in an entry that imports no Three.js. A server that runs those rules installs `@arcadekit/three`, and `three` with it, though it never loads either's renderer. If a second renderer, sound that knows where a thing is, or netcode wants the same components, they belong in `arcadekit`.

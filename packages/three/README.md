@@ -1,0 +1,209 @@
+# @arcadekit/three
+
+Draws an [arcadekit](../arcadekit/README.md) game with [Three.js](https://threejs.org).
+
+It is a plugin, not part of the core: a game that draws with something else leaves it out, and the game it draws does not know it is there. Everything here runs in arcadekit's [frame stage](../arcadekit/README.md#the-tick-and-the-frame), between ticks, with the world frozen, so a game that is drawn has the same hash, log and save as one that is not.
+
+This is a first cut: see [Not done yet](#not-done-yet).
+
+```sh
+pnpm add arcadekit @arcadekit/three effect three
+pnpm --filter @arcadekit/three page    # ten thousand moving objects, at http://localhost:5173
+pnpm --filter @arcadekit/three bench
+```
+
+## What it looks like
+
+```ts
+import * as Transform from "@arcadekit/three/Transform";
+// rules.ts: the game. No Three.js here, so a server and a replay run it as it is.
+import { Commands, Component, Plugin } from "arcadekit";
+
+const Rock = Component.tag("game/Rock");
+
+const Rules = Plugin.make("game/Rules", {
+  plugins: [Transform.plugin],
+  components: [Rock],
+  systems: [Fall],
+  setup: Effect.map(Commands, (commands) => {
+    commands.spawn(Rock, Transform.Position.of({ x: 0, y: 4, z: 0 }));
+  }),
+});
+```
+
+```ts
+import { Three } from "@arcadekit/three";
+// main.ts: the page. How the game looks, and what draws it.
+import { App, Plugin } from "arcadekit";
+import * as Browser from "arcadekit/Browser";
+import { IcosahedronGeometry, MeshStandardMaterial } from "three";
+
+const Rocks = Three.instances("game/Rocks", {
+  of: Rock,
+  geometry: new IcosahedronGeometry(1),
+  material: new MeshStandardMaterial({ color: "#8a8f98" }),
+});
+
+const Look = Plugin.make("game/Look", {
+  plugins: [Three.plugin, Rules],
+  systems: [Rocks],
+});
+
+Browser.runMain(
+  App.run({ plugins: [Look] }, { hz: 60 }).pipe(
+    Effect.provide(Three.layerWebGL({ canvas }))
+  ),
+  { target: canvas }
+);
+```
+
+## Entries
+
+```ts
+import { Three, Transform } from "@arcadekit/three"; // both, or
+import * as Three from "@arcadekit/three/Three"; // one module at a time
+import * as Transform from "@arcadekit/three/Transform";
+```
+
+| Entry | What it has | Imports |
+| --- | --- | --- |
+| `@arcadekit/three` | Both modules below | `arcadekit`, `effect`, `three` |
+| `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances` and `objects` | `arcadekit`, `effect`, `three` |
+| `@arcadekit/three/Transform` | The components, and the plugin that lists them | `arcadekit` |
+
+- `arcadekit`, `effect` and `three` are peer dependencies: a game has one copy of each, so a component or a service of arcadekit's is the same object here as in the game.
+- `@arcadekit/three/Transform` imports no Three.js and names nothing a page has. The plugins that hold a game's rules import that entry alone. A server that runs them has `three` installed, since this package asks for it, and never loads it.
+- `pnpm lint:packages` checks what each built entry imports, and a test checks the same of the sources.
+
+## Where a thing is
+
+```ts
+commands.spawn(
+  Rock,
+  Transform.Position.of({ x: 0, y: 4, z: 0 }),
+  Transform.Rotation.of(Transform.axisAngle(0, 0, 1, Math.PI / 2)),
+  Transform.Scale.of({ x: 2, y: 2, z: 2 })
+);
+```
+
+| Component | Fields | Named |
+| --- | --- | --- |
+| `Transform.Position` | `x`, `y`, `z`, in the units of the scene | `"arcadekit/three/Position"` |
+| `Transform.Rotation` | `x`, `y`, `z`, `w`: a unit quaternion | `"arcadekit/three/Rotation"` |
+| `Transform.Scale` | `x`, `y`, `z`: 1 is the size of the geometry | `"arcadekit/three/Scale"` |
+
+- An entity is drawn where its `Position` says. `Rotation` and `Scale` are for the entities that turn or have a size of their own: one without them is drawn upright, at the size of its geometry, and costs less to draw.
+- They are ordinary components of the game: written by its systems, saved, hashed and replayed. `Transform.plugin` lists them, so a plugin that stores them depends on it; `Three.plugin` does.
+- All are 32-bit floats in columns, so a system moves ten thousand of them with a loop over `eachChunk`.
+- `Transform.axisAngle(x, y, z, angle)` gives the value of a `Rotation` about an axis of length 1. It makes an object, so it is for a spawn, not for a loop. A `Rotation` whose four fields are 0, which is what a component added without a value is, draws as not turned.
+
+## Instances
+
+```ts
+const Rocks = Three.instances("game/Rocks", {
+  of: Rock, // or several: [Rock, Lit]
+  without: [Hidden],
+  geometry: new IcosahedronGeometry(1),
+  material: new MeshStandardMaterial({ color: "#8a8f98" }),
+  capacity: 4096,
+  prepare: (mesh) => {
+    mesh.castShadow = true;
+  },
+});
+```
+
+`Three.instances` is a system of the frame stage that draws every entity of a kind as one instance of one `InstancedMesh`. An entity is one of them while it has every component `of` names, none of `without`, and a `Position`.
+
+- Each frame it reads the columns raw, with `eachChunk`, and writes one matrix per entity straight into the mesh's instance buffer. No object, matrix or vector is made per entity, and nothing is allocated per entity per frame; see [the benchmark](#benchmark).
+- An entity's table has a rotation or it does not, and a scale or not. Each of the four is its own loop, handed exactly the columns it needs, so an entity that is only somewhere costs three reads.
+- The buffer has room for `capacity` instances, 256 unless told, and doubles when it runs out. That is the one time the system allocates, and it tells the renderer to drop the buffer it had made for the old one.
+- Only the part of the buffer that is drawn is sent to the renderer.
+- The mesh is made on the first frame, named after the system, and added to the scene. It is not culled, since its instances are wherever the entities are; `prepare` is handed the mesh once, to say otherwise or to set anything else.
+- When the app's scope closes the mesh is taken out of the scene and disposed of. The geometry and the material are yours, to share between several and to dispose of.
+- The entities are drawn where the last tick left them. See [Not done yet](#not-done-yet).
+
+## Objects
+
+```ts
+const Ships = Three.objects("game/Ships", {
+  of: Ship,
+  make: (entity) => new Mesh(hull, paint),
+  free: (ship) => ship.clear(),
+});
+```
+
+`Three.objects` is a system of the frame stage that keeps one `Object3D` per entity of a kind. It is for the few things that are more than a copy of one mesh: a model with parts, a light, something that carries the camera. A crowd is `Three.instances`.
+
+- `make` is called the first frame an entity is one of these, and its object is added to the scene. The frame it no longer is, or is gone, the object is taken out and `free` is called with it. Whatever is left when the app's scope closes is freed then.
+- Each frame every object is given its entity's `Position`, and its `Rotation` and `Scale` if the entity has them. An entity that loses one is drawn as one that never had it. What else there is to an object is the game's: set in `make`, or by a frame system of its own.
+- An entity that takes a despawned one's slot gets an object of its own.
+- Nothing of this is in the world. A game loaded from a save, or an app that starts with entities, has its objects made on the first frame.
+- It finds what is new and what is gone by looking at every entity of the kind each frame, which it does anyway to place them. It watches no component for changes, so it adds nothing to what a tick costs.
+
+## The scene, the camera and the renderer
+
+```ts
+const Look = Plugin.make("game/Look", {
+  plugins: [Three.plugin],
+  // Once, when the app is made: lights, and where the camera stands.
+  layer: Layer.effectDiscard(
+    Effect.map(Three.Scene, ({ scene, camera }) => {
+      scene.add(new AmbientLight("#ffffff", 1));
+      camera.position.set(0, 20, 40);
+      camera.lookAt(0, 0, 0);
+    })
+  ),
+  systems: [Rocks, Follow],
+});
+
+// Each frame, before the scene is drawn.
+const Follow = System.make("game/Follow", function* () {
+  const { camera } = yield* Three.Scene;
+  camera.position.x = (yield* Player).x;
+}).pipe(System.inStage("frame"), System.before(Three.Render));
+```
+
+`Three.plugin` gives an app a scene and draws it once per frame.
+
+- `Three.Scene` is the service: `scene`, a Three.js `Scene`, and `camera`, a perspective camera at (0, 0, 10) until it is moved or replaced (`three.camera = new OrthographicCamera(...)`). It is what draws the game and not the game: nothing in a tick reads it, and none of it is saved.
+- `Three.Render` is the system that draws. `Three.instances` and `Three.objects` run before it, wherever they are listed. A frame system of the game's that moves the camera or anything else says `System.before(Three.Render)`.
+- `Three.Renderer` is what draws the scene, and comes from outside the app, since it needs a canvas. A game that installs `Three.plugin` and provides none does not compile.
+- `Three.layerWebGL({ canvas, antialias: true })` is a page's: a `WebGLRenderer` with the parameters Three.js takes. `Three.layerRenderer(() => new WebGPURenderer({ canvas }))` is one of your own making. Either is disposed of when the scope it is provided to closes, so it is provided to the whole program, as `App.run` is above.
+- The picture follows the size the canvas has on the page: when that changes the renderer is resized, without touching the canvas's style, and a perspective camera is given the new aspect. `fit: false` leaves it alone, and a camera of another kind is the game's to fit. `pixelRatio` is the page's own, up to 2, unless given.
+- A test provides a renderer that draws nothing: `Layer.succeed(Three.Renderer, { render(scene, camera) {} })`. Three.js makes its scenes and meshes under Node as in a page, so what was put in the scene can be looked at.
+
+## Names
+
+- The services are keyed `"arcadekit/three/Scene"` and `"arcadekit/three/Renderer"`.
+- The plugins are `"arcadekit/three"` and `"arcadekit/three/Transform"`, and the system that draws `"arcadekit/three/Render"`.
+- A system made by `Three.instances` or `Three.objects` has the name it was given, which is one of the app's systems' and is the name of the mesh.
+
+## Benchmark
+
+10,000 entities, one frame, with a renderer that draws nothing: the work this package does before Three.js takes over. Medians after warm-up, on a cloud Linux VM, Node 22; the machine is shared and noisy, so trust the ratios more than the numbers.
+
+| Variant | ns/entity | Bytes allocated per frame |
+| --- | --- | --- |
+| `Three.instances`: a position | 9.2 | 5,800 |
+| `Three.instances`: a position and a scale | 8.8 | 5,100 |
+| `Three.instances`: a position and a rotation | 12.3 | 5,100 |
+| `Three.instances`: all three | 18.1 | 4,800 |
+| `Three.objects`: an Object3D each, all three copied | 176.2 | 4,200 |
+| By hand: `world.get` and `setMatrixAt`, per entity | 345.8 | 2,480,000 |
+
+- Ten thousand moving objects cost 0.09 to 0.18 ms of a frame. The five kilobytes are the frame itself, the same for one entity as for ten thousand: under one byte per object.
+- A test holds the system to that: 10,000 moving objects, of all four kinds, may grow the heap by less than 4 bytes each per tick and frame, where one number allocated per object would be 12.
+- An object each costs ten to twenty times an instance, most of it Three.js keeping an object's Euler angles in step with its quaternion. That is the price of an object, and why a crowd is instances.
+- The example page, with 10,000 lit cubes in headless Chromium, grew its heap by 7 to 58 KB a frame, the renderer's own allocations included, and by 17 KB with a hundred cubes: what a frame allocates does not grow with what it draws. That browser draws in software, at 3 to 6 frames a second for 10,000 cubes and 60 for a hundred, so it says nothing of how fast a graphics card draws them.
+
+## Not done yet
+
+- The entities are drawn where the last tick left them. A game whose ticks and frames do not line up sees that as a stutter; drawing each thing between its last two places needs the place before, which nothing keeps yet.
+- An instance has a place and nothing else: no colour of its own, and no other attribute per instance.
+- One kind of entity is one geometry and one material, fixed when the system is made. A kind whose look comes from an asset that is loaded later has no helper.
+- Instances are in no order, so a material that needs its instances sorted back to front is not served.
+- A mesh of instances is never culled as a whole unless `prepare` says how.
+- Nothing is a child of anything: an entity's place is its place in the scene. An object that hangs from another is the game's to arrange in `make`.
+- A `Rotation` has to be a unit quaternion. One that is not draws skewed, and nothing checks.
+- `Three.layerRenderer` takes a renderer that is ready to draw. `WebGPURenderer` has to be initialised first, which is the game's to wait for.
+- No test in CI opens a page: `Three.layerWebGL` itself, the one line that makes a `WebGLRenderer`, is tried by hand in headless Chromium with the example page.

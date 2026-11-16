@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm typecheck && pnpm build:packages",
-    "build:packages": "pnpm --filter arcadekit run build",
+    "build:packages": "pnpm -r --if-present run build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run --passWithNoTests",
     "lint:packages": "bash scripts/lint-packages.sh",

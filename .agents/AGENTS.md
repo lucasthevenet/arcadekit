@@ -1,6 +1,6 @@
-This is arcadekit: primitives for browser games on Effect 4 and Three.js. It publishes one package, `arcadekit`, from `packages/arcadekit`, with an entry for every module (`arcadekit/App`, `arcadekit/Input` and so on), `arcadekit` for all of them together, `arcadekit/Browser` for what only a page can use, and `arcadekit/ecs`. Use `pnpm` from the repository root.
+This is arcadekit: primitives for browser games on Effect 4 and Three.js. It publishes two packages. `arcadekit`, from `packages/arcadekit`, has an entry for every module (`arcadekit/App`, `arcadekit/Input` and so on), `arcadekit` for all of them together, `arcadekit/Browser` for what only a page can use, and `arcadekit/ecs`. `@arcadekit/three`, from `packages/three`, is the plugin that draws a game with Three.js, with `arcadekit`, Effect and Three.js as its peers. Use `pnpm` from the repository root.
 
-This branch is a revamped version, designed fresh: an entity component system with Effect around it. `packages/arcadekit/README.md` describes the design, what works and what is not done yet; read it first. It is a first cut, and nothing draws for you yet: a Three.js plugin is on the roadmap. The package does not depend on a UI library and will not: a game's menus and heads-up display are built with whatever it chooses. The previous version on `main` is not a reference for this one.
+This branch is a revamped version, designed fresh: an entity component system with Effect around it. `packages/arcadekit/README.md` describes the design, what works and what is not done yet; read it first. It is a first cut. `arcadekit` draws nothing itself: `@arcadekit/three` does, and `packages/three/README.md` describes it. The package does not depend on a UI library and will not: a game's menus and heads-up display are built with whatever it chooses. The previous version on `main` is not a reference for this one.
 
 Before writing code, read `docs/conventions.md`: how code here is written so that it stays Effect code, with references into Effect's documentation for each pattern. `docs/roadmap.md` says what to build next and in what order.
 
@@ -14,8 +14,9 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 - `packages/arcadekit/src/ecs/`: the storage core (components, tables, queries, the command buffer). It is plain synchronous TypeScript and imports nothing from Effect.
 - `packages/arcadekit/test/`: its tests, run by Vitest from the source with no build.
 - `packages/arcadekit/examples/` and `packages/arcadekit/bench/`: two example games and a benchmark, run with `pnpm --filter arcadekit demo`, `duel` and `bench`, and a game in a page, `examples/page/`, served by `pnpm --filter arcadekit page`. They are type-checked by `tsconfig.examples.json` and are not published.
+- `packages/three/`: `@arcadekit/three`, laid out the same way: `src/Three.ts` and `src/Transform.ts` are its modules and its entries, `src/index.ts` gives both, and `test/`, `examples/page/` (`pnpm --filter @arcadekit/three page`) and `bench/` (`pnpm --filter @arcadekit/three bench`) are beside them. It imports `arcadekit` by its entries, as a game would, and `src/Transform.ts`, the components a game's rules write, imports no Three.js.
 - `docs/`: the conventions and the roadmap.
-- `scripts/`: the workspace's helpers (the `source` condition for Vite and Vitest, and the package lint).
+- `scripts/`: the workspace's helpers (the `source` condition for Vite and Vitest, the entries of a package's build, and the package lint).
 - `.changeset/`: pending release notes; see its README.
 
 ## Rules the design depends on
@@ -28,7 +29,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 
 ## Validation
 
-CI runs `pnpm check`, `pnpm test` and `pnpm build`. For any code change run `pnpm fix`, then `pnpm check`, `pnpm typecheck` and the tests that cover it. `pnpm check` is formatting plus oxlint's default rules; there are no style rules. For a change to the storage core or to a query, also run `pnpm --filter arcadekit bench`. For a change to the package's exports or its build, or to what a module imports, run `pnpm build:packages && pnpm lint:packages`, which also checks what each built entry imports. Say which checks you could not run.
+CI runs `pnpm check`, `pnpm test` and `pnpm build`. For any code change run `pnpm fix`, then `pnpm check`, `pnpm typecheck` and the tests that cover it. `pnpm check` is formatting plus oxlint's default rules; there are no style rules. For a change to the storage core or to a query, also run `pnpm --filter arcadekit bench`; for a change to the loops of `@arcadekit/three` that draw, `pnpm --filter @arcadekit/three bench`. For a change to a package's exports or its build, or to what a module imports, run `pnpm build:packages && pnpm lint:packages`, which also checks what each built entry of each package imports. Say which checks you could not run.
 
 ## Issues
 

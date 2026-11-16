@@ -30,4 +30,4 @@ The first cut of the revamped arcadekit: an entity component system with Effect 
 
 **Breaking**
 
-Everything. Nothing of the previous version remains: every earlier export is gone, and the package now has an entry for every module, `arcadekit` for all of them, `arcadekit/Browser` for what only a page can use, and `arcadekit/ecs`. A game is written against the new API described in the package's README. There is no Three.js plugin yet. `foldkit` is no longer a peer dependency: the package does not depend on a UI library.
+Everything. Nothing of the previous version remains: every earlier export is gone, and the package now has an entry for every module, `arcadekit` for all of them, `arcadekit/Browser` for what only a page can use, and `arcadekit/ecs`. A game is written against the new API described in the package's README. The Three.js plugin is a package of its own, `@arcadekit/three`, and `three` and `@types/three` are no longer peer dependencies of `arcadekit`. `foldkit` is no longer a peer dependency: the package does not depend on a UI library.
