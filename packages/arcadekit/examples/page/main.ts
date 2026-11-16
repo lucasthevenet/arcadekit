@@ -18,7 +18,6 @@ import {
   Assets,
   Commands,
   Component,
-  Driver,
   Field,
   Frame,
   Input,
@@ -245,20 +244,14 @@ const Game = Plugin.make("Game", {
 });
 
 // --- the entry point -------------------------------------------------------------
-// The frame loop follows the page's repaints until the program is
-// interrupted, which runMain does when the page goes away: the loop takes
-// its frame request back, the app's scope closes, what was loaded is let
-// go, and the page's devices are no longer listened to.
-const main = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Game], seed: Date.now() });
-  return yield* Driver.frames(app, { hz: 60 });
-});
-
+// App.run makes the app and follows the page's repaints, sixty ticks a
+// second, until it is interrupted, which runMain does when the page goes
+// away: the frame loop takes its request back, the app's scope closes,
+// what was loaded is let go, and the page's devices are no longer listened
+// to.
 BrowserRuntime.runMain(
-  main.pipe(
-    Effect.scoped,
+  App.run({ plugins: [Game], seed: Date.now() }, { hz: 60 }).pipe(
     Effect.provide(Screen.layer),
-    // Provided to the whole program, so that it listens for as long.
     Effect.provide(
       Input.layerBrowser({
         target: document.querySelector("#game")!,

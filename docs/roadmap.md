@@ -26,13 +26,7 @@ Done. Queries for what changed, with writes noticed per row; singletons, which a
 
 ## 4. Running in a browser
 
-Nothing so far plays sound.
-
-Done so far: the frame loop, `Driver.frames`, which follows the page's repaints, pauses while the tab is hidden and leaves nothing running when it is interrupted; `examples/page`, a game that runs in a page; and input, read once per tick in a stage of its own, kept as a picture in the world by `Input.plugin` and turned into the game's own actions by `Input.bind`, all of it through the action log, so that a replay reads no device; and assets, loaded as a scoped resource, with `Assets.during` keeping a level's for as long as the game is in it and freeing them when it leaves. The package's [README](../packages/arcadekit/README.md) describes each.
-
-- **An entry point.** `BrowserRuntime.runMain` around `App.make` and a driver, as the one obvious way to start a game. Done when the examples use it.
-
-Depends on the two stages from milestone 3, which are there: `app.tick` and `app.frame`, with `Driver.fixedStep` running one and then the other.
+Done. A frame loop, `Driver.frames`, that follows the page's repaints, pauses while the tab is hidden and leaves nothing running when it is interrupted; input, read once per tick in a stage of its own, kept as a picture in the world by `Input.plugin` and turned into the game's own actions by `Input.bind`, all of it through the action log, so that a replay reads no device; assets, loaded as a scoped resource, with `Assets.during` keeping a level's for as long as the game is in it; and `App.run`, the entry point that the platform's `runMain` is given. `examples/page` is a game that runs in a page, and it and the demo are started that way; the duel, which ticks once a move, steps its app itself. The package's [README](../packages/arcadekit/README.md) describes each. Drawing and UI stand on these.
 
 ## 5. Drawing and UI
 
@@ -74,7 +68,8 @@ Only with a benchmark that shows the need.
 
 Not work yet; each needs an answer before the item that depends on it.
 
-- **One entry or several.** The storage core imports nothing from Effect and could be `arcadekit/ecs`. Renderers and netcode could be entries or packages. Needed by milestone 5.
+- **One entry or several.** The storage core imports nothing from Effect and could be `arcadekit/ecs`. Renderers and netcode could be entries or packages. What only a page can use (`Input.layerBrowser`, `Assets.image`, the platform's display) is in the one entry today: it touches the page only when it is used, and the entry imports no browser package, which is why `BrowserRuntime.runMain` is the game's to call and not `App.run`'s. Needed by milestone 5.
 - **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
 - **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
+- **A game that ticks when a player moves, in a page.** `App.run` and `Driver.frames` tick in real time. A turn-based game wants its frames at the display's rate and its ticks when a move is made, with the input stage before each. Whether that is an option of the frame loop or a driver of its own is open; the duel example steps its app by hand meanwhile.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.

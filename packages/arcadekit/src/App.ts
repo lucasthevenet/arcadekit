@@ -47,6 +47,7 @@ import type { Fiber, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
+import * as Driver from "./Driver";
 import { isSingletonSpec } from "./ecs/component";
 import type { Listed } from "./ecs/component";
 import { Rng } from "./ecs/random";
@@ -403,6 +404,96 @@ export const load = <
   Plugin.ErrorOf<P[number]> | Save.LoadRefused,
   Scope.Scope | External<S, H, P>
 > => build(options, save);
+
+/** How `App.run` drives the app it makes. */
+export interface RunOptions<
+  A,
+  E2 = never,
+  R2 = never,
+  SV extends Save.Save | undefined = undefined,
+> {
+  /** How many ticks a second the game runs at, whatever the rate of frames. */
+  readonly hz: number;
+  /** The most ticks one frame runs after a stall. 5 when left out. */
+  readonly maxStepsPerCall?: number;
+  /**
+   * A save to go on from, in place of a fresh start: the app is made with
+   * `App.load`, and `run` can fail with `Save.LoadRefused`.
+   */
+  readonly save?: SV;
+  /**
+   * Runs once, when the app is made and before its first frame, with the
+   * app: to wire what is outside the game to it (a button that dispatches,
+   * a menu that saves), or to keep hold of it. What it acquires is let go
+   * with the app.
+   */
+  readonly ready?: (app: A) => Effect.Effect<void, E2, R2>;
+}
+
+/**
+ * The entry point: makes the app and runs it until it is interrupted.
+ *
+ *   BrowserRuntime.runMain(
+ *     App.run({ plugins: [Game] }, { hz: 60 }).pipe(
+ *       Effect.provide(Input.layerBrowser({ target: canvas }))
+ *     )
+ *   )
+ *
+ * It is `App.make` and `Driver.frames` in a scope of their own: the app is
+ * made, `ready` runs if there is one, and the frame loop follows the
+ * display, running the ticks that are due, at `hz`, and then the frame
+ * stage, once per repaint. It never ends by itself.
+ *
+ * Interrupting it stops the loop and closes that scope, so nothing is left
+ * running: no frame asked for, no script, and whatever the plugins' layers
+ * and `ready` acquired let go. The platform's `runMain` interrupts it when
+ * the page goes away, or the process is told to stop.
+ *
+ * What the game needs from outside is provided to it as to `App.make`,
+ * and stays provided for as long as it runs, which is what a layer that
+ * listens, such as `Input.layerBrowser`, needs. It fails with what
+ * `App.make` and `ready` can fail with, and dies with what a tick throws.
+ *
+ * It runs wherever there is a display, which outside a page is a timer:
+ * `NodeRuntime.runMain(App.run(...))` runs the same game under Node.
+ */
+export const run = <
+  S extends Systems = readonly [],
+  H extends Handlers = readonly [],
+  P extends Plugins = readonly [],
+  E2 = never,
+  R2 = never,
+  SV extends Save.Save | undefined = undefined,
+>(
+  options: Options<S, H, P>,
+  drive: RunOptions<
+    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+    E2,
+    R2,
+    SV
+  >
+): Effect.Effect<
+  never,
+  | Plugin.ErrorOf<P[number]>
+  | E2
+  | (SV extends Save.Save ? Save.LoadRefused : never),
+  External<S, H, P> | Exclude<R2, Scope.Scope>
+> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const app = yield* build(options, drive.save);
+      if (drive.ready !== undefined) {
+        yield* drive.ready(app);
+      }
+      return yield* Driver.frames(app, drive);
+    })
+  ) as Effect.Effect<
+    never,
+    | Plugin.ErrorOf<P[number]>
+    | E2
+    | (SV extends Save.Save ? Save.LoadRefused : never),
+    External<S, H, P> | Exclude<R2, Scope.Scope>
+  >;
 
 const build = <S extends Systems, H extends Handlers, P extends Plugins>(
   options: Options<S, H, P>,

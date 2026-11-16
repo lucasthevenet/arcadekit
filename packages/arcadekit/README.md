@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 440 tests
+pnpm test                          # 448 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -39,11 +39,14 @@ const Movement = System.make("Movement", function* () {
   });
 });
 
+// A game that runs: sixty ticks a second, until the page goes away.
+BrowserRuntime.runMain(App.run({ systems: [Movement] }, { hz: 60 }));
+
+// One tick at a time, for a game that waits for its players, or a test.
 const program = Effect.gen(function* () {
   const app = yield* App.make({ systems: [Movement] });
   app.world.spawn(Position.of({ x: 0, y: 0 }), Velocity.of({ x: 1, y: 0 }));
-  app.tick(1 / 60); // turn-based or tests
-  yield* Driver.interval(app, { hz: 60 }); // real time
+  app.tick(1 / 60);
 });
 ```
 
@@ -329,15 +332,37 @@ The simulation ticks at a fixed rate. Drawing happens every frame, between ticks
 ## In a page
 
 ```ts
-const main = Effect.gen(function* () {
-  const app = yield* App.make({ plugins: [Game] });
-  return yield* Driver.frames(app, { hz: 60 });
-});
-
-BrowserRuntime.runMain(main.pipe(Effect.scoped));
+BrowserRuntime.runMain(
+  App.run({ plugins: [Game] }, { hz: 60 }).pipe(
+    Effect.provide(Input.layerBrowser({ target: canvas }))
+  )
+);
 ```
 
-`Driver.frames` is the frame loop. It follows the display until it is interrupted: each time a frame is due it runs the ticks that are due, at a fixed `hz`, and then the [frame stage](#the-tick-and-the-frame), as `Driver.fixedStep` does. In a page a frame is due once per repaint, which is `requestAnimationFrame`.
+`App.run` is the entry point: it makes the app and runs it until it is interrupted. It is `App.make` and the frame loop, `Driver.frames`, in a scope of their own.
+
+- It never ends by itself. The platform's `runMain` interrupts it when the page goes away, or the process is told to stop, and that stops the loop and closes the scope. Nothing is left running: no frame asked for, no listener, no script, and whatever the plugins' layers acquired let go.
+- What the game needs from outside is provided to it as to `App.make`, and a missing service is the same compile error. It stays provided for as long as the game runs, which is what a layer that listens, such as [`Input.layerBrowser`](#input), needs.
+- `ready` runs once, when the app is made and before its first frame, with the app: to wire what is outside the game to it, or to keep hold of it. What it acquires is let go with the app, and what it needs and can fail with are `run`'s.
+
+  ```ts
+  App.run(
+    { plugins: [Game] },
+    {
+      hz: 60,
+      ready: (app) =>
+        Effect.sync(() => {
+          button.onclick = () => app.dispatch(NewGame, {});
+        }),
+    }
+  );
+  ```
+
+- Given a `save`, it goes on from it with `App.load` in place of a fresh start, and can fail with `Save.LoadRefused`.
+- It fails with what `App.make` and `ready` can fail with, and dies with what a tick throws.
+- It runs wherever there is a display, which outside a page is a timer: `NodeRuntime.runMain(App.run(...))` is the same game under Node, and `examples/demo.ts` is started that way.
+
+`Driver.frames` is the frame loop underneath, for a program that makes its app itself. It follows the display until it is interrupted: each time a frame is due it runs the ticks that are due, at a fixed `hz`, and then the [frame stage](#the-tick-and-the-frame), as `Driver.fixedStep` does. In a page a frame is due once per repaint, which is `requestAnimationFrame`.
 
 - The first frame draws the game as it stands and runs no tick. Time is counted from it.
 - While the tab is hidden the loop asks for no frame, and the time spent hidden does not count. A game that comes back is where it was left, and does not run to catch up.
@@ -685,7 +710,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/ecs/hash.ts` | The arithmetic of the world's hash |
 | `src/ecs/snapshot.ts` | The bytes of a world's snapshot, and `SnapshotError` |
 | `src/TickScheduler.ts` | The Effect scheduler owned by the game loop |
-| `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
+| `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions; and `App.run`, the entry point |
 | `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
 | `src/Plugin.ts` | Plugins and their dependency order |
 | `src/Save.ts` | A saved game, as a value and as bytes, and its migrations |
@@ -699,10 +724,11 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input and asset tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset and entry point tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
-| `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
-| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `BrowserRuntime.runMain` |
+| `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
+| `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
+| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `BrowserRuntime.runMain` around `App.run` |
 
 ## Two ways to loop
 
@@ -858,6 +884,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
 - Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
 - Only a driver runs the input stage. A game that ticks when a player moves calls `app.input()` before its tick itself.
+- `App.run` is for a game that ticks in real time. One that ticks when a player moves, as the duel example does, makes its app and steps it itself: in a page it would want its frames drawn at the display's rate and its ticks on demand, and no driver does that.
 - The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
 - The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and against stand-ins for `requestAnimationFrame` and the document.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
