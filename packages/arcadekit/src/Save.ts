@@ -24,6 +24,7 @@ import { Cause, Data, Exit, Schema } from "effect";
 
 import { readSnapshot, SnapshotError, writeSnapshot } from "./ecs/snapshot";
 import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
+import type { SavedChanges } from "./ecs/world";
 
 /** The events of one kind that were waiting to be read when a game was saved. */
 export interface SavedEvents {
@@ -55,6 +56,11 @@ export interface Save {
     readonly payload: unknown;
   }[];
   readonly events: readonly SavedEvents[];
+  /**
+   * What change queries had yet to visit, with how far each system and
+   * handler had got: `world.saveChanges()`.
+   */
+  readonly changes: readonly SavedChanges[];
   /**
    * How many entries the app's action log held. Everything logged from
    * there on is the tail to replay after loading this save.
@@ -110,6 +116,19 @@ export interface Contents {
     payloads: unknown[];
     read: Record<string, number>;
   }[];
+  /**
+   * What change queries had yet to visit, by component name. A component
+   * that a migration renames or removes keeps its old name here, and what
+   * is under a name the game no longer has is left out when the save is
+   * loaded: the queries that watch the component then start over, with
+   * every entity counting as changed.
+   */
+  changes: {
+    component: string;
+    kind: "changed" | "added" | "removed";
+    entries: number[];
+    readers: Record<string, number>;
+  }[];
 }
 
 /**
@@ -156,6 +175,12 @@ export const migrate = (
         payloads: [...events.payloads],
         read: { ...events.read },
       })),
+      changes: save.changes.map((changes) => ({
+        component: changes.component,
+        kind: changes.kind,
+        entries: [...changes.entries],
+        readers: { ...changes.readers },
+      })),
     };
     for (let from = save.version; from < version; from++) {
       const step = migrations.find((migration) => migration.from === from);
@@ -182,6 +207,7 @@ export const migrate = (
       world: writeSnapshot(contents.world),
       queued: contents.queued,
       events: contents.events,
+      changes: contents.changes,
       logLength: save.logLength,
     });
   } catch (error) {
@@ -211,6 +237,14 @@ const Header = Schema.fromJsonString(
         name: Schema.String,
         payloads: Schema.Array(Schema.Unknown),
         read: Schema.Record(Schema.String, Count),
+      })
+    ),
+    changes: Schema.Array(
+      Schema.Struct({
+        component: Schema.String,
+        kind: Schema.Literals(["changed", "added", "removed"]),
+        entries: Schema.Array(Count),
+        readers: Schema.Record(Schema.String, Count),
       })
     ),
     logLength: Count,

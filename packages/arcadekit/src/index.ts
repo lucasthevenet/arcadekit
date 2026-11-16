@@ -20,9 +20,12 @@ export {
   writeSnapshot,
 } from "./ecs/snapshot";
 export {
+  type ChangeKind,
   CommandBuffer,
   type EntityColumn,
   type QueryView,
+  type RemovedReader,
+  type SavedChanges,
   type SparseColumns,
   World as EcsWorld,
 } from "./ecs/world";

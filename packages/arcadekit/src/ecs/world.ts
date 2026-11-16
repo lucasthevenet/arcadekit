@@ -20,6 +20,9 @@
  *   write to component data made since it began. Whatever is about to be
  *   written is saved first: one row for `set`, the visited columns for a
  *   query's loop.
+ * - A query can ask for what changed: the entities that gained a component
+ *   or had one written since the query last visited them. Writes are noticed
+ *   per row, and only for the components some query watches.
  *
  * No Effect dependency.
  */
@@ -33,6 +36,7 @@ import {
   isComponentDef,
   makeColumn,
   makeEntity,
+  noticingAccessor,
 } from "./component";
 import type {
   Accessor,
@@ -302,6 +306,407 @@ export class SparseSet {
 }
 
 // ---------------------------------------------------------------------------
+// Change logs (one per watched component and kind of change)
+// ---------------------------------------------------------------------------
+
+export type ChangeKind = "changed" | "added" | "removed";
+
+/** A reader's place in a change log. @internal */
+export interface ChangeCursor {
+  /** Sequence number of the first entry the reader has yet to visit. */
+  at: number;
+  /** Who the reader is: what a save knows it by. */
+  readonly key: string;
+  /**
+   * True until the reader's first visit, which is of everything that has the
+   * component: the log only knows what happened since it was started.
+   */
+  fresh: boolean;
+  /** False for one read from a save that nobody has asked for yet. */
+  claimed: boolean;
+}
+
+/** The changes of one kind to one component that a save holds. */
+export interface SavedChanges {
+  readonly component: string;
+  readonly kind: ChangeKind;
+  /**
+   * What some reader has yet to visit, oldest first: entity indexes for
+   * `changed` and `added`, entity ids for `removed`.
+   */
+  readonly entries: readonly number[];
+  /** Per reader: how many of the entries it has visited. */
+  readonly readers: Readonly<Record<string, number>>;
+}
+
+/**
+ * What happened to one component, in the order it happened, for the queries
+ * that watch it: which entities had it written, or gained it, or lost it.
+ *
+ * Every reader has a place in the log and visits what was logged since its
+ * last visit, so each reader sees each change once however often it runs.
+ * Entries every reader has visited are forgotten.
+ *
+ * A `changed` or `added` log holds entity indexes, at most one for each
+ * entity that no reader has visited yet: `noted` says, per entity, whether
+ * it has one. A `removed` log holds entity ids, one per removal.
+ * @internal
+ */
+export class ChangeLog {
+  private entries = new Uint32Array(64);
+  /** Position in `entries` of the entry numbered `base`. */
+  private first = 0;
+  /** Sequence number of the oldest entry kept. */
+  base = 0;
+  /** One past the sequence number of the newest entry. */
+  end = 0;
+  /**
+   * Per entity index: 1 when the entity has an entry that no reader has
+   * visited, so that it need not be logged again. Those are the entries
+   * from `floor` on.
+   */
+  noted: Uint8Array;
+  /**
+   * Where the log ended the last time a reader visited. A reader visits up
+   * to the end, so entries before this have been visited by someone.
+   */
+  private floor = 0;
+  readonly cursors: ChangeCursor[] = [];
+  /** Where the log ended when the transaction in progress began. */
+  txEnd = 0;
+
+  constructor(
+    readonly def: ComponentDef<any>,
+    readonly kind: ChangeKind,
+    private readonly world: World
+  ) {
+    // As long as the world's own records, and grown with them, so that a
+    // read is never past its end: a read past the end of a typed array
+    // makes every later read at that place in the code slower.
+    this.noted = new Uint8Array(
+      kind === "removed" ? 0 : world._recTable.length
+    );
+  }
+
+  /** Notes that the entity at `index` changed, unless a waiting entry says so. */
+  note(index: number): void {
+    if (this.noted[index] === 1) {
+      return;
+    }
+    this.push(index);
+    this.noted[index] = 1;
+  }
+
+  /** Makes room for the flags of `size` entities. */
+  grow(size: number): void {
+    if (this.kind !== "removed" && size > this.noted.length) {
+      const noted = new Uint8Array(size);
+      noted.set(this.noted);
+      this.noted = noted;
+    }
+  }
+
+  /** Notes rows `[start, end)` of a table's entities, or of a sparse set's members. */
+  noteRows(entities: Uint32Array, start: number, end: number): void {
+    // Room for all of them first, so that the loop is two reads, a
+    // comparison and, for a row not noted yet, two writes.
+    while (
+      this.first + (this.end - this.base) + (end - start) >
+      this.entries.length
+    ) {
+      this.makeRoom();
+    }
+    const { entries, noted } = this;
+    let tail = this.first + (this.end - this.base);
+    const before = tail;
+    for (let row = start; row < end; row++) {
+      const index = entities[row]! & INDEX_MASK;
+      if (noted[index] === 1) {
+        continue;
+      }
+      entries[tail++] = index;
+      noted[index] = 1;
+    }
+    this.end += tail - before;
+  }
+
+  /** Appends an entry whatever the log holds: an entity id, for a removal. */
+  push(value: number): void {
+    let tail = this.first + (this.end - this.base);
+    if (tail === this.entries.length) {
+      tail = this.makeRoom();
+    }
+    this.entries[tail] = value;
+    this.end++;
+  }
+
+  /** Makes room for one more entry and returns the position it goes in. */
+  private makeRoom(): number {
+    // A reader that has not run for a long time keeps everything logged
+    // since. Before the log outgrows the world, entities logged more than
+    // once are brought down to once. Not in a transaction, whose rollback
+    // counts on the entries staying where they are.
+    if (
+      this.kind !== "removed" &&
+      !this.world._recording &&
+      this.end - this.base > 2 * this.world._slots + 1024
+    ) {
+      this.compact();
+    }
+    const size = this.end - this.base;
+    if (size > this.entries.length >> 1 || this.first === 0) {
+      const entries = new Uint32Array(this.entries.length * 2);
+      entries.set(this.entries.subarray(this.first, this.first + size));
+      this.entries = entries;
+    } else {
+      this.entries.copyWithin(0, this.first, this.first + size);
+    }
+    this.first = 0;
+    return size;
+  }
+
+  /**
+   * Keeps the newest entry of every entity and drops the rest. A reader
+   * still visits exactly the entities it had yet to visit: one that had an
+   * entry at or past a reader's place has its newest one there.
+   */
+  private compact(): void {
+    const { cursors, entries, first } = this;
+    const size = this.end - this.base;
+    const seen = new Uint8Array(this.world._slots);
+    // Readers from the one furthest on: each new place is the end less the
+    // entries kept at or past the old one.
+    // The floor moves as a reader's place does.
+    const floor = { at: this.floor };
+    const byPlace = [...cursors, floor].toSorted((a, b) => b.at - a.at);
+    const places: number[] = [];
+    let next = 0;
+    let kept = 0;
+    let write = first + size;
+    for (let read = first + size - 1; read >= first; read--) {
+      const sequence = this.base + (read - first);
+      while (next < byPlace.length && byPlace[next]!.at > sequence) {
+        places[next++] = this.end - kept;
+      }
+      const index = entries[read]!;
+      if (seen[index] === 1) {
+        continue;
+      }
+      seen[index] = 1;
+      entries[--write] = index;
+      kept++;
+    }
+    while (next < byPlace.length) {
+      places[next++] = this.end - kept;
+    }
+    for (let i = 0; i < byPlace.length; i++) {
+      byPlace[i]!.at = places[i]!;
+    }
+    this.first = write;
+    this.base = this.end - kept;
+    // An entity that is noted has one entry past the floor, its newest,
+    // which was kept: `noted` stands as it is.
+    this.floor = floor.at;
+    this.moved();
+  }
+
+  /**
+   * The reader known by `key`: the one a save restored, where it was, or a
+   * new one that starts by visiting everything.
+   */
+  cursor(key: string, fresh = true): ChangeCursor {
+    for (const cursor of this.cursors) {
+      if (cursor.key === key) {
+        if (cursor.claimed) {
+          throw new Error(
+            `Two readers of what ${this.kind === "removed" ? "lost" : this.kind} "${this.def.name}" are both known as ${JSON.stringify(key)}.`
+          );
+        }
+        cursor.claimed = true;
+        return cursor;
+      }
+    }
+    const cursor = { at: this.end, key, fresh, claimed: true };
+    this.cursors.push(cursor);
+    return cursor;
+  }
+
+  /** Copies the entries from sequence number `from` on into `into` at `offset`. */
+  copy(from: number, into: Uint32Array, offset: number): void {
+    const start = this.first + (Math.max(from, this.base) - this.base);
+    into.set(
+      this.entries.subarray(start, this.first + (this.end - this.base)),
+      offset
+    );
+  }
+
+  /** How many entries a reader at `from` has yet to visit. */
+  waiting(from: number): number {
+    return this.end - Math.max(from, this.base);
+  }
+
+  /**
+   * To be called when a reader has visited up to the end. The entities
+   * logged since the last visit are no longer ones nobody has visited: the
+   * next write of each is logged again.
+   */
+  visited(): void {
+    if (this.kind !== "removed") {
+      const { entries, noted } = this;
+      const to = this.first + (this.end - this.base);
+      for (
+        let at = this.first + (Math.max(this.floor, this.base) - this.base);
+        at < to;
+        at++
+      ) {
+        noted[entries[at]!] = 0;
+      }
+    }
+    this.floor = this.end;
+    this.moved();
+  }
+
+  /** Forgets the entries every reader has visited. */
+  moved(): void {
+    // Not in a transaction: a rollback puts readers back where they were,
+    // and they need the entries they had visited to be there still.
+    if (this.world._recording) {
+      return;
+    }
+    let min = this.end;
+    for (const cursor of this.cursors) {
+      if (cursor.at < min) {
+        min = cursor.at;
+      }
+    }
+    if (min > this.base) {
+      this.first += min - this.base;
+      this.base = min;
+    }
+    if (this.base === this.end) {
+      this.first = 0;
+    }
+  }
+
+  /** Forgets every entry made since the transaction began. */
+  rollback(): void {
+    const kept = this.first + (this.txEnd - this.base);
+    if (this.kind !== "removed") {
+      for (let at = this.first + (this.end - this.base) - 1; at >= kept; at--) {
+        // Its entity is logged afresh the next time it is written.
+        this.noted[this.entries[at]!] = 0;
+      }
+    }
+    this.end = this.txEnd;
+    // A visit inside the transaction went to an end that is gone.
+    if (this.floor > this.end) {
+      this.floor = this.end;
+    }
+    // A reader that was new in the transaction started at an end that is gone.
+    for (const cursor of this.cursors) {
+      if (cursor.at > this.end) {
+        cursor.at = this.end;
+      }
+    }
+  }
+
+  /** What readers that `keep` allows have yet to visit, for a save. */
+  save(keep: (key: string) => boolean): SavedChanges | undefined {
+    const readers: Record<string, number> = {};
+    let from = this.end;
+    let any = false;
+    for (const cursor of this.cursors) {
+      if (!cursor.fresh && keep(cursor.key)) {
+        any = true;
+        from = Math.min(from, Math.max(cursor.at, this.base));
+      }
+    }
+    if (!any) {
+      return undefined;
+    }
+    for (const cursor of this.cursors) {
+      if (!cursor.fresh && keep(cursor.key)) {
+        readers[cursor.key] = Math.max(cursor.at, this.base) - from;
+      }
+    }
+    const start = this.first + (from - this.base);
+    return {
+      component: this.def.name,
+      kind: this.kind,
+      entries: Array.from(
+        this.entries.subarray(start, this.first + (this.end - this.base))
+      ),
+      readers,
+    };
+  }
+
+  /** Takes what a save held. The log is new: nothing has been logged in it. */
+  restore(saved: SavedChanges): void {
+    const { entries } = saved;
+    const limit = this.kind === "removed" ? 4_294_967_296 : this.world._slots;
+    this.entries = new Uint32Array(Math.max(64, entries.length * 2));
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i]!;
+      if (!Number.isInteger(entry) || entry < 0 || entry >= limit) {
+        throw corrupt(
+          `the changes it holds for "${this.def.name}" name an entity that cannot be`
+        );
+      }
+      this.entries[i] = entry;
+    }
+    this.end = entries.length;
+    for (const [key, visited] of Object.entries(saved.readers)) {
+      if (!Number.isInteger(visited) || visited < 0 || visited > this.end) {
+        throw corrupt(
+          `a reader of the changes to "${this.def.name}" is further than they go`
+        );
+      }
+      this.cursors.push({ at: visited, key, fresh: false, claimed: false });
+    }
+    this.moved();
+  }
+}
+
+/**
+ * The entities that lost a component since this reader last read: by
+ * `remove`, or by being despawned. Once per removal, oldest first.
+ */
+export class RemovedReader {
+  /** @internal */
+  constructor(
+    private readonly world: World,
+    private readonly log: ChangeLog,
+    private readonly cursor: ChangeCursor
+  ) {}
+
+  /**
+   * The ids of the entities that lost the component since the last call.
+   * An id whose entity was despawned is no longer alive; one that only had
+   * the component removed still is.
+   */
+  read(): Entity[] {
+    const { cursor, log } = this;
+    const count = log.waiting(cursor.at);
+    if (count === 0) {
+      return [];
+    }
+    const ids = new Uint32Array(count);
+    log.copy(cursor.at, ids, 0);
+    this.world._reading(cursor);
+    cursor.at = log.end;
+    this.world._read(log);
+    return Array.from(ids) as Entity[];
+  }
+}
+
+/** A query's description as text: what a save knows a change query by. */
+const describeSpec = (spec: QuerySpec<any>): string => {
+  const names = (defs: readonly ComponentDef<any>[] | undefined): string =>
+    (defs ?? []).map((def) => def.name).join(",");
+  return `all(${names(spec.terms)}) with(${names(spec.withDefs)}) without(${names(spec.withoutDefs)}) changed(${names(spec.changedDefs)}) added(${names(spec.addedDefs)})`;
+};
+
+// ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------
 
@@ -318,6 +723,14 @@ export interface QuerySpec<D extends Terms = Terms> {
   readonly withDefs: readonly ComponentDef<any>[];
   /** Components an entity must not have (table or sparse). */
   readonly withoutDefs: readonly ComponentDef<any>[];
+  /**
+   * Components to watch for writes. With any of these or of `addedDefs`, the
+   * query visits only the entities for which one of them changed since the
+   * query last visited: see `World.view`.
+   */
+  readonly changedDefs?: readonly ComponentDef<any>[];
+  /** Components to watch for being gained. */
+  readonly addedDefs?: readonly ComponentDef<any>[];
 }
 
 export type AccessorsOf<D extends Terms> = {
@@ -369,6 +782,17 @@ const ROW_RANGE = 4_294_967_296; // 2^32: keys are `slot * ROW_RANGE + row`
 interface Frame {
   readonly accessors: Accessor[];
   keys: Float64Array;
+  /** For a change query: the entity indexes this iteration is of. */
+  members: Members;
+}
+
+/**
+ * Entity indexes to look for matches among: the members of a sparse set, or
+ * what a change query has yet to visit. An index may be there twice.
+ */
+interface Members {
+  dense: Uint32Array;
+  count: number;
 }
 
 type Callback = (...args: any[]) => void;
@@ -409,6 +833,21 @@ export class QueryView<D extends Terms = Terms> {
   private readonly frames: Frame[] = [];
   private depth = 0;
 
+  /**
+   * For a change query: its place in the log of each component and kind of
+   * change it watches. Empty for any other query.
+   */
+  private readonly watches: { log: ChangeLog; cursor: ChangeCursor }[] = [];
+  private readonly watching: boolean;
+  /** Scratch space for `count`, which looks without visiting. */
+  private peek: Frame | undefined;
+
+  /** Per term: the log its writes are noted in, when some query watches it. */
+  private termLog: (ChangeLog | undefined)[] = [];
+  private notes = false;
+  /** The value of `world._watched` that `termLog` was worked out for. */
+  private notesAt = -1;
+
   /** @internal Test hook: force one strategy for queries that require a sparse component. */
   _path: "auto" | "sorted" | "mask" = "auto";
   /** @internal The strategy the last iteration used. */
@@ -417,7 +856,9 @@ export class QueryView<D extends Terms = Terms> {
   /** @internal */
   constructor(
     private readonly world: World,
-    readonly spec: QuerySpec<D>
+    readonly spec: QuerySpec<D>,
+    /** For a change query: what a save knows this reader by. */
+    key = ""
   ) {
     const requireSparse = (def: ComponentDef<any>): SparseSet => {
       const set = world._sparse(def);
@@ -451,10 +892,33 @@ export class QueryView<D extends Terms = Terms> {
         this.sparseWithout.push(world._sparse(def));
       }
     }
+    // Watching a component implies requiring it.
+    const watch = (
+      defs: readonly ComponentDef<any>[] | undefined,
+      kind: ChangeKind
+    ): void => {
+      for (const def of defs ?? []) {
+        if (def.storage !== "table") {
+          requireSparse(def);
+        } else if (!this.requiredIds.includes(def.id)) {
+          this.requiredIds.push(def.id);
+        }
+        const log = world._log(def, kind);
+        if (!this.watches.some((each) => each.log === log)) {
+          this.watches.push({ log, cursor: log.cursor(key) });
+        }
+      }
+    };
+    watch(spec.changedDefs, "changed");
+    watch(spec.addedDefs, "added");
+    this.watching = this.watches.length > 0;
     this.n = spec.terms.length;
     this.hasSparseTerms = this.termSet.some((set) => set !== undefined);
-    this.filtered = this.sparseWith.length + this.sparseWithout.length > 0;
-    this.maskBase = this.sparseWith.length > 0 ? 1 : 0;
+    this.filtered =
+      this.watching || this.sparseWith.length + this.sparseWithout.length > 0;
+    // A change query skips every row but the ones it marks, as a query that
+    // requires a sparse component does.
+    this.maskBase = this.watching || this.sparseWith.length > 0 ? 1 : 0;
   }
 
   /** Picks up tables created since the last run. */
@@ -509,17 +973,97 @@ export class QueryView<D extends Terms = Terms> {
    */
   private enter(): Frame {
     this.refresh();
-    this.world._iterating++;
+    const { world } = this;
+    if (this.notesAt !== world._watched && this.depth === 0) {
+      // A component of this query has come to be watched, or this is the
+      // first iteration: its terms get accessors that note their writes.
+      this.notesAt = world._watched;
+      this.termLog = this.spec.terms.map((def) => world._changed[def.id]);
+      this.notes = this.termLog.some((log) => log !== undefined);
+      this.frames.length = 0;
+    }
+    world._iterating++;
     const depth = this.depth++;
-    return (this.frames[depth] ??= {
-      accessors: this.spec.terms.map((def) => new def.Accessor()),
+    return (this.frames[depth] ??= this.makeFrame());
+  }
+
+  private makeFrame(): Frame {
+    return {
+      accessors: this.spec.terms.map((def, k) =>
+        this.termLog[k] === undefined
+          ? new def.Accessor()
+          : new (noticingAccessor(def))()
+      ),
       keys: new Float64Array(64),
-    });
+      members: { dense: new Uint32Array(64), count: 0 },
+    };
   }
 
   private leave(): void {
     this.depth--;
-    this.world._iterating--;
+    this.world._left();
+  }
+
+  // --- change queries: what there is to visit ----------------------------------
+
+  /**
+   * Fills `members` with the entity indexes this change query has yet to
+   * visit, which may hold one twice, and returns how many. With `visit`,
+   * they then count as visited.
+   *
+   * The first time, that is every entity of the matching tables: the logs
+   * only know what happened since they were started, and to a query that
+   * has never run everything is new.
+   */
+  private gather(members: Members, visit: boolean): number {
+    const { watches, world } = this;
+    let fresh = false;
+    let count = 0;
+    for (let w = 0; w < watches.length; w++) {
+      const { cursor, log } = watches[w]!;
+      fresh ||= cursor.fresh;
+      count += log.waiting(cursor.at);
+    }
+    if (fresh) {
+      count = 0;
+      for (let t = 0; t < this.tables.length; t++) {
+        count += this.tables[t]!.count;
+      }
+    }
+    if (members.dense.length < count) {
+      members.dense = new Uint32Array(
+        Math.max(count, members.dense.length * 2)
+      );
+    }
+    const { dense } = members;
+    let at = 0;
+    if (fresh) {
+      for (let t = 0; t < this.tables.length; t++) {
+        const { count: rows, entities } = this.tables[t]!;
+        for (let row = 0; row < rows; row++) {
+          dense[at++] = entities[row]! & INDEX_MASK;
+        }
+      }
+    } else {
+      for (let w = 0; w < watches.length; w++) {
+        const { cursor, log } = watches[w]!;
+        log.copy(cursor.at, dense, at);
+        at += log.waiting(cursor.at);
+      }
+    }
+    members.count = count;
+    if (visit) {
+      for (let w = 0; w < watches.length; w++) {
+        const { cursor, log } = watches[w]!;
+        if (cursor.fresh || cursor.at !== log.end) {
+          world._reading(cursor);
+          cursor.fresh = false;
+          cursor.at = log.end;
+          world._read(log);
+        }
+      }
+    }
+    return count;
   }
 
   /**
@@ -539,14 +1083,27 @@ export class QueryView<D extends Terms = Terms> {
       return;
     }
 
-    let smallest: SparseSet | undefined;
-    for (let s = 0; s < this.sparseWith.length; s++) {
-      const set = this.sparseWith[s]!;
-      if (smallest === undefined || set.count < smallest.count) {
-        smallest = set;
+    let smallest: Members | undefined;
+    if (this.watching) {
+      // What changed is where to look: nothing else is visited at all.
+      if (this.gather(frame.members, true) === 0) {
+        return;
+      }
+      smallest = frame.members;
+    } else {
+      for (let s = 0; s < this.sparseWith.length; s++) {
+        const set = this.sparseWith[s]!;
+        if (smallest === undefined || set.count < smallest.count) {
+          smallest = set;
+        }
       }
     }
-    if (smallest !== undefined && this.shouldSort(smallest)) {
+    // A change query nested in itself has other entities to visit than the
+    // marks in place are for, so it sorts.
+    if (
+      smallest !== undefined &&
+      ((this.watching && this.depth > 1) || this.shouldSort(smallest))
+    ) {
       this._lastPath = "sorted";
       this.sortedRuns(frame, smallest, onRun);
       return;
@@ -616,7 +1173,7 @@ export class QueryView<D extends Terms = Terms> {
     }
   }
 
-  private shouldSort(smallest: SparseSet): boolean {
+  private shouldSort(smallest: Members): boolean {
     if (this._path !== "auto") {
       return this._path === "sorted";
     }
@@ -641,7 +1198,7 @@ export class QueryView<D extends Terms = Terms> {
   }
 
   /** Marks this iteration's exceptions to `maskBase` and returns how many there are. */
-  private mark(smallest: SparseSet | undefined): number {
+  private mark(smallest: Members | undefined): number {
     let marked = 0;
     const { world } = this;
     // Safe to hold: these arrays are only replaced when an entity id is
@@ -685,7 +1242,7 @@ export class QueryView<D extends Terms = Terms> {
   }
 
   /** Puts every byte `mark` could have touched back to `maskBase`. */
-  private unmark(smallest: SparseSet | undefined): void {
+  private unmark(smallest: Members | undefined): void {
     const recTable = this.world._recTable;
     const recRow = this.world._recRow;
     const sets = smallest === undefined ? this.sparseWithout : [smallest];
@@ -711,7 +1268,35 @@ export class QueryView<D extends Terms = Terms> {
   }
 
   /** For very rare required components: collect the matches, sort, merge into runs. */
-  private sortedRuns(frame: Frame, smallest: SparseSet, onRun: OnRun): void {
+  private sortedRuns(frame: Frame, smallest: Members, onRun: OnRun): void {
+    const m = this.sortedKeys(frame, smallest);
+    const { keys } = frame;
+    let k = 0;
+    while (k < m) {
+      const slot = Math.floor(keys[k]! / ROW_RANGE);
+      const start = keys[k]! - slot * ROW_RANGE;
+      let end = start + 1;
+      k++;
+      // A row that is there twice (a change query's entity, logged twice)
+      // has the same key as the one before it.
+      while (k < m) {
+        const key = keys[k]!;
+        if (key === slot * ROW_RANGE + end) {
+          end++;
+        } else if (key !== slot * ROW_RANGE + end - 1) {
+          break;
+        }
+        k++;
+      }
+      onRun(this.tables[slot]!, start, end);
+    }
+  }
+
+  /**
+   * Puts a key for each of `smallest` that matches into `frame.keys`, in
+   * the order queries visit rows in, and returns how many.
+   */
+  private sortedKeys(frame: Frame, smallest: Members): number {
     const recTable = this.world._recTable;
     const recRow = this.world._recRow;
     if (frame.keys.length < smallest.count) {
@@ -738,18 +1323,7 @@ export class QueryView<D extends Terms = Terms> {
       }
     }
     keys.subarray(0, m).sort();
-    let k = 0;
-    while (k < m) {
-      const slot = Math.floor(keys[k]! / ROW_RANGE);
-      const start = keys[k]! - slot * ROW_RANGE;
-      let end = start + 1;
-      k++;
-      while (k < m && keys[k] === slot * ROW_RANGE + end) {
-        end++;
-        k++;
-      }
-      onRun(this.tables[slot]!, start, end);
-    }
+    return m;
   }
 
   // --- transactions: a loop may write anything it is handed ---------------------
@@ -792,10 +1366,13 @@ export class QueryView<D extends Terms = Terms> {
       const f = fn as Callback;
       const acc = frame.accessors;
       // Sparse columns can be replaced when a set grows, so bind them per call.
+      // An accessor that notes its writes is told whose row each is, and
+      // where to note it; any other takes the columns and ignores the rest.
+      const { termLog } = this;
       for (let k = 0; k < this.n; k++) {
         const set = this.termSet[k];
         if (set !== undefined) {
-          acc[k]!._bind(set.columns);
+          acc[k]!._bind(set.columns, set.dense, termLog[k]);
         }
       }
       const { world } = this;
@@ -808,7 +1385,7 @@ export class QueryView<D extends Terms = Terms> {
           for (let k = 0; k < this.n; k++) {
             const id = this.termTableId[k];
             if (id !== -1) {
-              acc[k]!._bind(table.columns[id!]!);
+              acc[k]!._bind(table.columns[id!]!, table.entities, termLog[k]);
             }
           }
           // Once per table, never per entity.
@@ -920,6 +1497,13 @@ export class QueryView<D extends Terms = Terms> {
    *
    * Sparse data terms arrive as `{ columns, indexOf }` because their rows do
    * not line up with the table's.
+   *
+   * Raw columns cannot say which rows were written. Where a change query
+   * watches one of this query's terms, every row handed out counts as
+   * written; a loop that only reads a watched component is better off with
+   * `each`, whose accessors note the rows they write and no others. For
+   * the same reason a change query cannot hand out a component it watches
+   * itself: that throws.
    */
   eachChunk(
     fn: (
@@ -937,6 +1521,9 @@ export class QueryView<D extends Terms = Terms> {
         cols[k] = this.termSet[k];
       }
       const { world } = this;
+      if (this.notes && this.watching) {
+        this.refuseOwnWrites();
+      }
       if (world._recording) {
         this.saveSparseTerms();
       }
@@ -955,6 +1542,13 @@ export class QueryView<D extends Terms = Terms> {
           bound = table;
         }
         const ents = table.entities;
+        if (this.notes) {
+          // Raw columns cannot say which rows were written, so every row
+          // that is handed out counts as written.
+          for (let k = 0; k < n; k++) {
+            this.termLog[k]?.noteRows(ents, start, end);
+          }
+        }
         if (n === 1) {
           f(start, end, cols[0], ents);
         } else if (n === 2) {
@@ -970,11 +1564,45 @@ export class QueryView<D extends Terms = Terms> {
     }
   }
 
+  /**
+   * A change query that hands out, as raw columns, a component it watches
+   * for writes would take its own visit for a change, and visit the same
+   * entities again every time. Until a raw loop can say which columns it
+   * only reads, that is refused.
+   */
+  private refuseOwnWrites(): void {
+    for (let k = 0; k < this.n; k++) {
+      const log = this.termLog[k];
+      if (log !== undefined && this.watches.some((each) => each.log === log)) {
+        throw new Error(
+          `eachChunk() was called on a query that watches "${log.def.name}" for changes and also hands it out. Raw columns cannot tell a read from a write, so every row handed out counts as written, and the query would see its own visit as a change every time. Visit it with each(), whose accessors note only the rows they assign to, or take "${log.def.name}" out of the query's terms.`
+        );
+      }
+    }
+  }
+
   // --- conveniences -----------------------------------------------------------
 
-  /** Number of matching entities. */
+  /**
+   * Number of matching entities. For a change query, how many it has yet to
+   * visit: counting them is not visiting them.
+   */
   count(): number {
     this.refresh();
+    if (this.watching) {
+      const peek = (this.peek ??= this.makeFrame());
+      if (this.gather(peek.members, false) === 0) {
+        return 0;
+      }
+      const m = this.sortedKeys(peek, peek.members);
+      let distinct = 0;
+      for (let k = 0; k < m; k++) {
+        if (k === 0 || peek.keys[k] !== peek.keys[k - 1]) {
+          distinct++;
+        }
+      }
+      return distinct;
+    }
     let total = 0;
     for (const table of this.tables) {
       if (this.filtered) {
@@ -988,10 +1616,26 @@ export class QueryView<D extends Terms = Terms> {
     return total;
   }
 
-  /** The matching entities in iteration order, copied into a new array. */
+  /**
+   * The matching entities in iteration order, copied into a new array. For
+   * a change query this is a visit, like `each`.
+   */
   entities(): Entity[] {
-    this.refresh();
     const out: Entity[] = [];
+    if (this.watching) {
+      const frame = this.enter();
+      try {
+        this.runs(frame, (table, start, end) => {
+          for (let i = start; i < end; i++) {
+            out.push(table.entities[i] as Entity);
+          }
+        });
+      } finally {
+        this.leave();
+      }
+      return out;
+    }
+    this.refresh();
     for (const table of this.tables) {
       for (let i = 0; i < table.count; i++) {
         if (!this.filtered || this.pass(table.entities[i]!)) {
@@ -1043,6 +1687,37 @@ export class World {
   _iterating = 0;
 
   /**
+   * Who is asking: the reader a change query, or `removed`, is for when it
+   * is given none. An app sets this before each system and handler runs,
+   * which is what gives each of them its own place in every change log.
+   */
+  reader: string | undefined;
+  /** @internal Indexed by component id: the log of writes, when a query watches them. */
+  readonly _changed: (ChangeLog | undefined)[] = [];
+  private readonly addedLogs: (ChangeLog | undefined)[] = [];
+  private readonly removedLogs: (ChangeLog | undefined)[] = [];
+  /** Every change log, in the order they were started. */
+  private readonly logs: ChangeLog[] = [];
+  /** The `changed` logs, which are the ones a transaction can add to. */
+  private readonly writeLogs: ChangeLog[] = [];
+  /** @internal How many `changed` logs there are: a view's accessors depend on it. */
+  _watched = 0;
+  /** Logs started while a query was iterating, with accessors that note nothing. */
+  private lateLogs: ChangeLog[] = [];
+  private readonly watchViews = new Map<
+    QuerySpec<any>,
+    Map<string, QueryView<any>>
+  >();
+  private readonly watchViewsByKey = new Map<string, QueryView<any>>();
+  private readonly removedReaders = new Map<string, RemovedReader>();
+  /** In a transaction: the readers that moved, and where each was. */
+  private readonly movedReaders: {
+    readonly cursor: ChangeCursor;
+    readonly at: number;
+    readonly fresh: boolean;
+  }[] = [];
+
+  /**
    * The world's random number generator. Its state is part of the world, so
    * everything random in a simulation comes from here.
    */
@@ -1071,6 +1746,11 @@ export class World {
   /** Number of live entities. */
   get entityCount(): number {
     return this.alive;
+  }
+
+  /** @internal How many entity slots have ever been used: every index is below it. */
+  get _slots(): number {
+    return this.nextIndex;
   }
 
   // --- entities ------------------------------------------------------------
@@ -1148,6 +1828,9 @@ export class World {
     const gens = new Uint16Array(size);
     gens.set(this.gens);
     this.gens = gens;
+    for (const log of this.logs) {
+      log.grow(size);
+    }
   }
 
   /** @internal */
@@ -1176,6 +1859,10 @@ export class World {
       } else {
         this._sparse(def).add(index, value);
       }
+      if (this.logs.length > 0) {
+        this.addedLogs[def.id]?.note(index);
+        this._changed[def.id]?.note(index);
+      }
     }
     this.recTable[index] = table.index;
     this.recRow[index] = row;
@@ -1197,15 +1884,24 @@ export class World {
     }
     const index = entityIndex(entity);
     const tableIndex = this.recTable[index];
+    const { removedLogs } = this;
     if (tableIndex !== NOT_PLACED) {
+      const table = this.tables[tableIndex!]!;
+      if (removedLogs.length > 0) {
+        for (const def of table.defs) {
+          removedLogs[def.id]?.push(entity);
+        }
+      }
       const row = this.recRow[index]!;
-      const moved = this.tables[tableIndex!]!.swapRemove(row);
+      const moved = table.swapRemove(row);
       if (moved !== undefined) {
         this.recRow[entityIndex(moved)] = row;
       }
     }
     for (const set of this.sparseList) {
-      set.remove(index);
+      if (set.remove(index)) {
+        removedLogs[set.def.id]?.push(entity);
+      }
     }
     this.recTable[index] = FREE;
     // Generations wrap after 1024 reuses of a slot; a handle held that long
@@ -1227,13 +1923,23 @@ export class World {
     const def = isComponentDef(input) ? input : input.def;
     const value = isComponentDef(input) ? undefined : input.value;
     if (def.storage === "sparse") {
-      this._sparse(def).add(index, value);
+      const set = this._sparse(def);
+      const had = set.has(index);
+      set.add(index, value);
+      // A component the entity already had is written, if a value came.
+      if (!had) {
+        this.addedLogs[def.id]?.note(index);
+      }
+      if (!had || value !== undefined) {
+        this._changed[def.id]?.note(index);
+      }
       return true;
     }
     const from = this.placedTable(index);
     if (from.ids.has(def.id)) {
       if (value !== undefined) {
         writeRow(def, from.columns[def.id]!, this.recRow[index]!, value);
+        this._changed[def.id]?.note(index);
       }
       return true;
     }
@@ -1244,6 +1950,8 @@ export class World {
     }
     const row = this.move(entity, from, to);
     writeRow(def, to.columns[def.id]!, row, value);
+    this.addedLogs[def.id]?.note(index);
+    this._changed[def.id]?.note(index);
     return true;
   }
 
@@ -1254,7 +1962,11 @@ export class World {
     }
     const index = entityIndex(entity);
     if (def.storage === "sparse") {
-      return this._sparse(def).remove(index);
+      if (!this._sparse(def).remove(index)) {
+        return false;
+      }
+      this.removedLogs[def.id]?.push(entity);
+      return true;
     }
     const from = this.placedTable(index);
     if (!from.ids.has(def.id)) {
@@ -1266,6 +1978,7 @@ export class World {
       from.removeEdges.set(def.id, to);
     }
     this.move(entity, from, to);
+    this.removedLogs[def.id]?.push(entity);
     return true;
   }
 
@@ -1329,6 +2042,7 @@ export class World {
     for (const key in value) {
       cols[key]![row] = value[key] as any;
     }
+    this._changed[def.id]?.note(index);
     return true;
   }
 
@@ -1365,6 +2079,11 @@ export class World {
     to[1] = from[1]!;
     to[2] = from[2]!;
     to[3] = from[3]!;
+    // What is noted from here on is forgotten again by a rollback.
+    const { writeLogs } = this;
+    for (let i = 0; i < writeLogs.length; i++) {
+      writeLogs[i]!.txEnd = writeLogs[i]!.end;
+    }
     this._recording = true;
   }
 
@@ -1397,6 +2116,19 @@ export class World {
       }
     }
     this.random.state.set(this.savedRandom);
+    // The changes it noted, and the visits its change queries made.
+    const { movedReaders, writeLogs } = this;
+    for (let i = movedReaders.length - 1; i >= 0; i--) {
+      const { at, cursor, fresh } = movedReaders[i]!;
+      cursor.at = at;
+      cursor.fresh = fresh;
+    }
+    for (let i = 0; i < writeLogs.length; i++) {
+      // A log started inside the transaction has noted nothing before it.
+      const log = writeLogs[i]!;
+      log.txEnd = Math.min(log.txEnd, log.end);
+      log.rollback();
+    }
     this.endTransaction("rollback");
   }
 
@@ -1411,6 +2143,14 @@ export class World {
       this.savedWhole.clear();
     }
     this._recording = false;
+    if (this.movedReaders.length > 0) {
+      // Readers stay where they are for as long as a rollback could put
+      // them back; now the logs can forget what all of them have visited.
+      this.movedReaders.length = 0;
+      for (const log of this.logs) {
+        log.moved();
+      }
+    }
   }
 
   /**
@@ -1494,23 +2234,187 @@ export class World {
 
   // --- queries -------------------------------------------------------------
 
-  /** Resolves a query description against this world. Cached per description. */
-  view<D extends Terms>(spec: QuerySpec<D>): QueryView<D> {
+  /**
+   * Resolves a query description against this world. Cached per description.
+   *
+   * A description with `changedDefs` or `addedDefs` is a change query. Its
+   * view visits only the entities that had one of those components written,
+   * or gained one, since the view last visited, in the order any query
+   * visits them; the first time, that is every entity that matches. `each`,
+   * `eachChunk` and `entities` are visits, and `count` is not. When nothing
+   * changed a visit costs a few comparisons.
+   *
+   * Such a view belongs to one reader: `reader`, or `world.reader`, or
+   * nobody in particular. Two readers of one description each see every
+   * change once. A reader is known by its name and the description's
+   * components, so two descriptions that say the same share a view.
+   *
+   * A write is noticed per row by `set`, by `add` with a value, and by the
+   * setters of `each`. `eachChunk` hands out raw columns and cannot tell,
+   * so every row it hands out counts as written. Only watched components
+   * are noticed at all.
+   */
+  view<D extends Terms>(spec: QuerySpec<D>, reader?: string): QueryView<D> {
     let view = this.views.get(spec);
-    if (view === undefined) {
-      for (const def of spec.terms) {
+    if (view !== undefined) {
+      return view;
+    }
+    const watching =
+      (spec.changedDefs?.length ?? 0) + (spec.addedDefs?.length ?? 0) > 0;
+    const who = reader ?? this.reader ?? "";
+    let byReader: Map<string, QueryView<any>> | undefined;
+    if (watching) {
+      byReader = this.watchViews.get(spec);
+      if (byReader === undefined) {
+        byReader = new Map();
+        this.watchViews.set(spec, byReader);
+      }
+      view = byReader.get(who);
+      if (view !== undefined) {
+        return view;
+      }
+    }
+    for (const defs of [
+      spec.terms,
+      spec.withDefs,
+      spec.withoutDefs,
+      spec.changedDefs ?? [],
+      spec.addedDefs ?? [],
+    ]) {
+      for (const def of defs) {
         this.register(def);
       }
-      for (const def of spec.withDefs) {
-        this.register(def);
-      }
-      for (const def of spec.withoutDefs) {
-        this.register(def);
-      }
+    }
+    if (byReader === undefined) {
       view = new QueryView(this, spec);
       this.views.set(spec, view);
+      return view;
     }
+    const key = `${who}\n${describeSpec(spec)}`;
+    view = this.watchViewsByKey.get(key);
+    if (view === undefined) {
+      view = new QueryView(this, spec, key);
+      this.watchViewsByKey.set(key, view);
+    }
+    byReader.set(who, view);
     return view;
+  }
+
+  // --- changes ---------------------------------------------------------------
+
+  /**
+   * The entities that lost a component, by `remove` or by being despawned,
+   * since this reader last read. Removals are noticed from the first time
+   * anyone asks for them. One reader per name and component: `reader`, or
+   * `world.reader`, or nobody in particular.
+   */
+  removed(def: ComponentDef<any>, reader?: string): RemovedReader {
+    const who = reader ?? this.reader ?? "";
+    const key = `${def.id}\n${who}`;
+    let found = this.removedReaders.get(key);
+    if (found === undefined) {
+      this.register(def);
+      const log = this._log(def, "removed");
+      found = new RemovedReader(this, log, log.cursor(who, false));
+      this.removedReaders.set(key, found);
+    }
+    return found;
+  }
+
+  /** @internal The log of one kind of change to a component, started if need be. */
+  _log(def: ComponentDef<any>, kind: ChangeKind): ChangeLog {
+    const byId =
+      kind === "changed"
+        ? this._changed
+        : kind === "added"
+          ? this.addedLogs
+          : this.removedLogs;
+    let log = byId[def.id];
+    if (log === undefined) {
+      log = new ChangeLog(def, kind, this);
+      byId[def.id] = log;
+      this.logs.push(log);
+      if (kind === "changed") {
+        this.writeLogs.push(log);
+        this._watched++;
+        if (this._iterating > 0) {
+          this.lateLogs.push(log);
+        }
+      }
+    }
+    return log;
+  }
+
+  /** @internal A reader is about to move. A rollback puts it back. */
+  _reading(cursor: ChangeCursor): void {
+    if (this._recording) {
+      this.movedReaders.push({ cursor, at: cursor.at, fresh: cursor.fresh });
+    }
+  }
+
+  /** @internal A reader has visited a log up to its end. */
+  _read(log: ChangeLog): void {
+    log.visited();
+  }
+
+  /** @internal A query's iteration has ended. */
+  _left(): void {
+    if (--this._iterating === 0 && this.lateLogs.length > 0) {
+      // A log that was started while a loop was running missed what that
+      // loop went on to write: its accessors were made before there was a
+      // log to note in. So its readers start over, from everything.
+      for (const log of this.lateLogs) {
+        for (const cursor of log.cursors) {
+          cursor.fresh = true;
+        }
+      }
+      this.lateLogs = [];
+    }
+  }
+
+  /**
+   * What change queries and `removed` readers have yet to visit, as plain
+   * data: one entry per component and kind of change, in order of name. A
+   * snapshot does not hold this, since it is not the world's but its
+   * readers'; a game's save does. `keep` says which readers to save, by
+   * name; all of them when left out.
+   */
+  saveChanges(keep?: (reader: string) => boolean): SavedChanges[] {
+    const out: SavedChanges[] = [];
+    for (const log of this.logs) {
+      const saved = log.save((key) =>
+        keep === undefined ? true : keep(key.split("\n", 1)[0]!)
+      );
+      if (saved !== undefined) {
+        out.push(saved);
+      }
+    }
+    return out.toSorted(
+      (a, b) =>
+        byName({ name: a.component }, { name: b.component }) ||
+        byName({ name: a.kind }, { name: b.kind })
+    );
+  }
+
+  /**
+   * Takes back what `saveChanges` gave, in a world that has just loaded
+   * the snapshot taken with it and has watched nothing yet. A reader that
+   * asks afterwards goes on from where it was; one the save does not know
+   * starts by visiting everything. Changes to a component this world does
+   * not know are left out.
+   */
+  restoreChanges(saved: readonly SavedChanges[]): void {
+    if (this.logs.length > 0) {
+      throw new Error(
+        "World.restoreChanges() was called in a world whose changes are already being watched. Call it right after load(), before any query runs."
+      );
+    }
+    for (const changes of saved) {
+      const def = this.componentsByName.get(changes.component);
+      if (def !== undefined) {
+        this._log(def, changes.kind).restore(changes);
+      }
+    }
   }
 
   // --- snapshots -----------------------------------------------------------

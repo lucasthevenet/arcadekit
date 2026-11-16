@@ -180,10 +180,26 @@ export type ColumnsOf<S extends Schema> = {
 
 export type Storage = "table" | "sparse";
 
+/** @internal What an accessor that notices writes tells: `ChangeLog` in world.ts. */
+export interface WriteLog {
+  /** Per entity index: 1 when the entity is noted already. */
+  noted: Uint8Array;
+  note(index: number): void;
+}
+
 /** @internal A reusable cursor over one row of a component's columns. */
 export interface Accessor {
   _i: number;
-  _bind(columns: Record<string, Column>): void;
+  /**
+   * `entities` and `log` are for an accessor that notices writes: the entity
+   * of each row (ids for a table, indexes for a sparse set), and where a
+   * write is noted.
+   */
+  _bind(
+    columns: Record<string, Column>,
+    entities?: Uint32Array,
+    log?: WriteLog
+  ): void;
 }
 
 export interface ComponentDef<
@@ -231,26 +247,60 @@ let nextId = 0;
  * would need a non-codegen fallback (see bench/accessors.ts for the cost).
  */
 const makeAccessorClass = (
-  name: string,
-  fields: readonly string[]
+  fields: readonly string[],
+  noticing = false
 ): new () => Accessor => {
   const init = fields.map((_, i) => `this._c${i} = null;`).join(" ");
+  // An accessor that notices writes tells the log which entity it wrote,
+  // by index. The log keeps one entry per entity until a reader has been.
+  // The check `note` starts with is written out here, so that a row which
+  // is noted already costs a few reads and a comparison, and no call.
+  // Measured, 1.3 ns an assignment. `noted` is read through the log each
+  // time: the log replaces it when it grows.
+  const note = noticing
+    ? `; const k = this._e[this._i] & ${INDEX_MASK}; if (this._l.noted[k] !== 1) this._l.note(k)`
+    : "";
   const props = fields
     .map((f, i) => {
       const key = JSON.stringify(f);
-      return `get [${key}]() { return this._c${i}[this._i] } set [${key}](v) { this._c${i}[this._i] = v }`;
+      return `get [${key}]() { return this._c${i}[this._i] } set [${key}](v) { this._c${i}[this._i] = v${note} }`;
     })
     .join("\n");
   const bind = fields
     .map((f, i) => `this._c${i} = cols[${JSON.stringify(f)}];`)
     .join(" ");
-  const source = `return class {
+  const source = noticing
+    ? `return class {
+    constructor() { this._i = 0; this._e = null; this._l = null; ${init} }
+    ${props}
+    _bind(cols, ents, log) { ${bind} this._e = ents; this._l = log; }
+  }`
+    : `return class {
     constructor() { this._i = 0; ${init} }
     ${props}
     _bind(cols) { ${bind} }
   }`;
-  void name;
   return new Function(source)() as new () => Accessor;
+};
+
+// Made the first time a world watches the component for changes, and kept:
+// it is code, not state, so worlds can share it.
+const noticingClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+
+/**
+ * The accessor class of a component whose writes are noticed: as
+ * `def.Accessor`, and every setter also notes the entity it wrote.
+ * @internal
+ */
+export const noticingAccessor = (
+  def: ComponentDef<any>
+): new () => Accessor => {
+  let made = noticingClasses.get(def);
+  if (made === undefined) {
+    made = makeAccessorClass(def.fields, true);
+    noticingClasses.set(def, made);
+  }
+  return made;
 };
 
 const define = <S extends Schema, St extends Storage = "table">(
@@ -269,7 +319,7 @@ const define = <S extends Schema, St extends Storage = "table">(
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
     of: (value) => ({ def, value }),
-    Accessor: makeAccessorClass(name, fields),
+    Accessor: makeAccessorClass(fields),
   };
   return def;
 };

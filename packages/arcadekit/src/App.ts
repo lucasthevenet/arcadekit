@@ -417,6 +417,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       // Before anything else can touch the world: a load fills an empty one.
       try {
         world.load(save.world);
+        world.restoreChanges(save.changes);
       } catch (error) {
         if (error instanceof SnapshotError) {
           return yield* Effect.fail(
@@ -615,8 +616,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const tickEffect = Effect.gen(function* () {
       for (const system of ordered) {
         running = system.name;
-        // Each system reads events from its own position.
+        // Each system reads events, and what changed, from its own position.
         events.reader = running;
+        world.reader = running;
         yield* system.run;
         commands.apply();
       }
@@ -704,11 +706,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       world.begin();
       applying = name;
       events.reader = `action:${name}`;
+      world.reader = events.reader;
       let fiber: Fiber.Fiber<unknown, unknown>;
       try {
         fiber = runFork(handler.handle(value));
       } finally {
         events.reader = undefined;
+        world.reader = undefined;
         applying = undefined;
       }
       const exit = fiber.pollUnsafe();
@@ -774,6 +778,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         events.beginTick();
         const fiber = runFork(tickEffect);
         events.reader = undefined;
+        world.reader = undefined;
         const exit = fiber.pollUnsafe();
         if (exit === undefined) {
           fiber.interruptUnsafe();
@@ -886,6 +891,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           world: bytes,
           queued: waiting,
           events: pending.value,
+          changes: world.saveChanges(),
           logLength: actionLog.length,
         });
       },
@@ -930,8 +936,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         continue;
       }
       events.reader = `setup:${plugin.name}`;
+      world.reader = events.reader;
       const fiber = runFork(plugin.setup);
       events.reader = undefined;
+      world.reader = undefined;
       const exit = fiber.pollUnsafe();
       if (exit === undefined) {
         fiber.interruptUnsafe();

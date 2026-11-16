@@ -24,7 +24,8 @@ Done. A world is saved as a snapshot and loaded back, every field says what savi
 
 Each of these is something a game would otherwise build badly for itself.
 
-- **Change detection.** Queries for entities that gained a component, lost one, or had one written since a system last ran. Done when a system can react to a change without scanning everything, and the cost when nothing changed is near zero. Decide how writes are noticed (per column, per table or per row) with the benchmark open.
+Done so far: change detection (`Query.changed`, `Query.added`, `Query.removed`), with writes noticed per row. The package's [README](../packages/arcadekit/README.md) describes it.
+
 - **Singletons.** One instance of some data per world, such as whose turn it is, without a query and a loop to read it. The duel example shows the gap. Done when `yield* Turn` gives a value a handler can read and write, and it is saved with the world.
 - **Relations.** A component that points at another entity, kept correct when that entity is despawned: a parent and its children, a target, an owner. Done when despawning a parent can take its children with it, and a dangling reference cannot be read as a live entity.
 - **States and run conditions.** A game is in the menu, playing or paused, and systems run only in some of those. Done when a system can declare when it runs, a state change runs enter and exit hooks, and none of it costs anything for a system with no condition.
@@ -82,6 +83,6 @@ Only with a benchmark that shows the need.
 Not work yet; each needs an answer before the item that depends on it.
 
 - **One entry or several.** The storage core imports nothing from Effect and could be `arcadekit/ecs`. Renderers and netcode could be entries or packages. Needed by milestone 5.
-- **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
+- **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not. Whatever it is should also let a raw loop say which columns it only reads: change detection has to count every row `eachChunk` hands out as written, and a handler's transaction copies every column it hands out, for want of that.
 - **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.

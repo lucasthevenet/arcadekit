@@ -4,7 +4,7 @@ A framework for building games of any genre on [Effect](https://effect.website) 
 
 This is the first cut of the revamped design. It is a working prototype, not a finished kit: see [Not done yet](#not-done-yet).
 
-1. **Storage core** (`src/ecs/`): archetype tables with typed-array columns, opt-in sparse storage, cached queries, a command buffer. No Effect.
+1. **Storage core** (`src/ecs/`): archetype tables with typed-array columns, opt-in sparse storage, cached queries, queries for what changed, a command buffer. No Effect.
 2. **Tick scheduler**: Effect around the core. One fiber per tick, systems as generators, yieldable queries and resources, coroutine scripts, and a custom Effect `Scheduler` that only runs fibers when the tick says so.
 3. **Events and rules**: typed events every system sees exactly once, and actions with handlers that validate a move and refuse it with a typed error. Payloads are checked against a schema, applied actions are logged as JSON-safe data, and the log replays the game and checks the replay against the world's hash.
 4. **Plugins**: one value that bundles a feature's systems, handlers, services and setup, and names the plugins it depends on.
@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 251 tests
+pnpm test                          # 291 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -140,6 +140,37 @@ Every system sees every event exactly once, whatever order the systems run in: a
 - The schema is for when an event leaves the program: `Event.encode(Collided, payload)` gives its JSON form and `Event.decode(Collided, data)` reads one back, each as an `Exit` that fails with `Event.InvalidEvent`.
 - `Event.define<Payload>("Name")` still defines an event with a type and no schema. It cannot be written down, so keep those for events that never need to be.
 - An event's name is its identity in an app: two different events with one name are refused when the second is first used.
+
+## Change queries
+
+```ts
+const Moved = Query.all(Position, Sprite).pipe(Query.changed(Position));
+const Born = Query.all(Sprite).pipe(Query.added(Sprite));
+const Gone = Query.removed(Sprite);
+
+const Draw = System.make("Draw", function* () {
+  (yield* Born).each((sprite, entity) => {}); // gained a Sprite since Draw last looked
+  (yield* Moved).each((pos, sprite) => {}); // had its Position written since then
+  for (const entity of (yield* Gone).read()) {
+  } // lost its Sprite, or was despawned
+});
+```
+
+A change query visits only the entities something happened to since whoever is asking last visited: `Query.changed` for a component that was written, `Query.added` for one that was gained. `Query.removed` gives the ids of the entities that lost one. So a system reacts to a change without looking at anything else, and when nothing changed a visit costs under 100 ns, whatever the size of the world.
+
+- Every system has its own place in what changed, as it has in events, and sees every change once, whatever order the systems run in. A system that was not run misses nothing: what changed meanwhile is there when it runs again.
+- The first visit is of every entity that matches: to a query that has never run, everything is new. A system that builds something for each `added(Sprite)` needs no other code for the entities that were there before it, or that came out of a save.
+- An entity is visited once, however often it was written, and in the order any query visits entities in. One that has lost the component since, or was despawned, is not visited.
+- A write is noticed per entity: by `world.set`, by adding a component with a value, and by assigning to a field in `each`. A component an entity has just gained counts as written. Reading notes nothing.
+- `eachChunk` hands out raw columns and cannot tell a read from a write, so every row it hands out counts as written. A loop that only reads a watched component is better off with `each`. For the same reason a change query cannot `eachChunk` over a component it watches itself, which throws: it would take its own visit for a change.
+- Only a watched component is noticed. A component that no query watches costs nothing more to write than before.
+- `each`, `eachChunk` and `entities` are visits; `count` looks without visiting. With several components, or with `changed` and `added` together, an entity is visited when any one of them fired.
+- A system that writes what it watches sees its own writes the next time it runs.
+- A refused action's writes are not changes: they are taken back with the rest, and so are the visits its handler made.
+- A handler has a place of its own. Outside a system or a handler (in a script, a test, the entry point) there is one place per query, shared by whoever uses it there.
+- `Query.removed` reports once per removal, oldest first, from the first time a reader asks. The id of a despawned entity is no longer alive.
+- What a query has yet to visit is saved with a game by `app.save()`, with each system's place in it, so a loaded game reacts to what the saved one had not got to yet. It is not in `world.snapshot()` or in the world's hash: it belongs to the readers, and a plugin that only watches must not change the hash of the game it watches. With the storage core on its own, `world.saveChanges()` and `world.restoreChanges()` carry it beside a snapshot.
+- Writes are noticed per row, not per table or per column. Either of those would cost nothing to write, but one `world.set` would then have every watching query visit the whole table. The cost is in the [benchmark](#benchmark-100000-entities-pos--vel--dt).
 
 ## Scripts
 
@@ -302,7 +333,7 @@ const read = Save.decode(bytes); // Exit<Save, LoadRefused>
 const app = yield * App.load(save, { plugins: [Rules] }); // the game, where it was
 ```
 
-A save is taken between two ticks. It holds the world as a [snapshot](#snapshots), the game's time, the actions waiting for the next tick (the simulation's own among them) and the events waiting to be read, with how far each system had read them. A game loaded from it goes on exactly as the saved one did.
+A save is taken between two ticks. It holds the world as a [snapshot](#snapshots), the game's time, the actions waiting for the next tick (the simulation's own among them), the events waiting to be read, with how far each system had read them, and what [change queries](#change-queries) had yet to visit. A game loaded from it goes on exactly as the saved one did.
 
 - `App.load` takes the plugins and options the game was made with. No plugin's `setup` runs: the save holds what setup spawned.
 - A save cannot hold a script in mid-flight. A plugin lists its `scripts`, and they start again from their beginning when the app is loaded. So a script keeps what it must not lose in the world, and picks up from what it finds there.
@@ -332,6 +363,7 @@ A game has a `version`, a whole number it raises when it changes its components 
 
 - A save of the game's own version loads as it is. An older one is brought up one version at a time, by the migration `from` each version. A newer one is refused.
 - A migration is given the save in a plain form that describes itself, `Save.Contents`: the world as the snapshot lists it (components by name with their fields, tables, sparse sets, one column of values per field), and the waiting actions and events in JSON form. It needs none of the game's old component definitions.
+- What change queries had yet to visit is in `Save.Contents` too, under each component's name. For a component a migration renames, the queries that watch it start over after the load: every entity counts as changed.
 - `Migrate` has the usual changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField`, `mapField`. Each refuses what is not there, by name. Entities keep their ids, and two tables that a removed component had kept apart become one.
 - `readSnapshot` and `writeSnapshot` are the two halves on their own, for a tool that inspects or edits a snapshot.
 - Every refusal is a `Save.LoadRefused` that says why: `"newer version"`, `"no migration"` (and from which version to which), `"migration failed"` (which one, and what it threw), or, when the migrations did not bring the save all the way, `"component changed"` or `"unknown component"` with the component's fields then and now.
@@ -360,7 +392,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | File | What it is |
 | --- | --- |
 | `src/ecs/component.ts` | Fields, components, entity ids, generated accessors |
-| `src/ecs/world.ts` | Tables, sparse sets, queries, world, transactions, command buffer |
+| `src/ecs/world.ts` | Tables, sparse sets, queries, change logs, world, transactions, command buffer |
 | `src/ecs/random.ts` | The seeded random number generator a world owns |
 | `src/ecs/hash.ts` | The arithmetic of the world's hash |
 | `src/ecs/snapshot.ts` | The bytes of a world's snapshot, and `SnapshotError` |
@@ -375,7 +407,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | Fixed-step and timer drivers |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save and migration tests, including a randomized comparison against a simple model, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration and change tests, including randomized comparisons of the storage and of change queries against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
 
@@ -434,6 +466,18 @@ Hashing the same 100,000 entities, in the same units:
 | `world.snapshot()`, one table (2.2 MB)                    | 6.0       |
 | `world.load()` of that snapshot, into a new world         | 15.7      |
 
+Change detection in the same world, with a query that watches `Position`:
+
+| Variant | Cost |
+| --- | --- |
+| A change query's visit when nothing changed | 62 ns |
+| One `world.set` among 100,000 entities, and the visit after it | 200 ns |
+| Visiting the 1,000 entities that were written, of 100,000 | 42 µs |
+| Visiting all 100,000, every one written | 22.4 ns/entity |
+| `each` writing the watched component: every row noted | 14.0 ns/entity |
+| The same, when every row is noted already | 11.3 ns/entity |
+| `eachChunk` handed the watched component: every row noted | 5.3 ns/entity |
+
 One action in that world of 100,000 entities, before and after handlers ran in a transaction:
 
 | Variant                                              | Before  | After   |
@@ -443,6 +487,8 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 | Handler loops over all 100,000 with `each`, accepted | 0.70 ms | 0.81 ms |
 | The same, refused after its loop                     | 0.73 ms | 0.94 ms |
 
+- Writes are noticed per row. A component that no query watches costs what it did: the lines of the first table were measured before and after and did not move. A watched one costs 2.5 ns more for an assignment in `each` to a row that is noted already, about 5 ns for the first assignment to a row since the last visit, and 2.8 ns per row that `eachChunk` hands out. Noticing per table or per column would cost nothing to write, but one `world.set` would then send every watching query through the whole table: 0.25 ms to 0.64 ms for 100,000 rows, where it now takes 0.2 µs.
+- A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
 - A tick with ten systems that do nothing costs about 4.6 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop.
 - A sparse tag that many entities have, mixed in with ones that do not, breaks tables into short runs and `eachChunk` loses its edge. A component like that is better off with table storage.
@@ -476,11 +522,13 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A save is refused while an action or an event with no schema is waiting, which for a game that emits such an event every tick is always.
 - An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
 - The log does not say when a script was started by hand with `app.spawnScript`, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
-- The hash covers the world and nothing else: not the events waiting to be read, the actions queued for the next tick, or how far each script has got.
+- The hash covers the world and nothing else: not the events waiting to be read, what change queries have yet to visit, the actions queued for the next tick, or how far each script has got.
+- A raw loop cannot say that it only reads a component. `eachChunk` counts every row it hands out as written, so a system that reads a watched component with it sets off that component's change queries every tick, and a change query cannot use it over what it watches itself.
+- `Query.removed` gives the ids of the entities that lost a component, not the values it held.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.
 - Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.
 - Entity generations are 10 bits: a handle kept across 1,024 reuses of the same slot can alias a newer entity.
-- Systems run in sequence on one thread. No parallelism, no change detection.
+- Systems run in sequence on one thread. No parallelism.

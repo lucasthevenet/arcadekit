@@ -70,13 +70,23 @@ const populate = (world: World, fragmented = false): void => {
   }
 };
 
-/** Median milliseconds per call. */
-const measure = (run: () => void, runs = 300, warmup = 80): number => {
+/**
+ * Median milliseconds per call. `before`, when given, runs ahead of every
+ * call and is not timed: it puts back what the call uses up.
+ */
+const measure = (
+  run: () => void,
+  runs = 300,
+  warmup = 80,
+  before?: () => void
+): number => {
   for (let i = 0; i < warmup; i++) {
+    before?.();
     run();
   }
   const samples: number[] = [];
   for (let i = 0; i < runs; i++) {
+    before?.();
     const start = performance.now();
     run();
     samples.push(performance.now() - start);
@@ -84,6 +94,9 @@ const measure = (run: () => void, runs = 300, warmup = 80): number => {
   samples.sort((a, b) => a - b);
   return samples[samples.length >> 1]!;
 };
+
+/** Visits only the entities whose position was written since its last visit. */
+const Repositioned = Query.all(Velocity).pipe(Query.changed(Position));
 
 class Refused extends Data.TaggedError("Refused")<{}> {}
 
@@ -170,7 +183,7 @@ const variants: Record<
   {
     readonly label: string;
     /** How to report the time: divided by all entities, or for the whole pass. */
-    readonly unit?: "entity" | "matches" | "dispatch";
+    readonly unit?: "entity" | "matches" | "dispatch" | "visit";
     readonly run: () => number;
   }
 > = {
@@ -601,6 +614,176 @@ const variants: Record<
     },
   },
 
+  // Change detection. A write is noticed per row, and only for a component
+  // some query watches: here Position, watched by `Repositioned`. Before
+  // each timed pass the watching query visits, untimed, so that the pass
+  // has every row to note afresh, which is the most a write can cost.
+  watchedEach: {
+    label: "each: writing a watched component, all noted",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const view = world.view(Moving);
+      const watcher = world.view(Repositioned);
+      return measure(
+        () => {
+          view.each((pos, vel) => {
+            pos.x += vel.x * DT;
+            pos.y += vel.y * DT;
+          });
+        },
+        300,
+        80,
+        () => watcher.eachChunk(() => {})
+      );
+    },
+  },
+  watchedEachNoted: {
+    label: "each: the same, every row noted already",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const view = world.view(Moving);
+      world.view(Repositioned).eachChunk(() => {});
+      return measure(() => {
+        view.each((pos, vel) => {
+          pos.x += vel.x * DT;
+          pos.y += vel.y * DT;
+        });
+      });
+    },
+  },
+  watchedChunk: {
+    label: "eachChunk: handed a watched component, all noted",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const view = world.view(Moving);
+      const watcher = world.view(Repositioned);
+      return measure(
+        () => {
+          view.eachChunk((start, end, pos, vel) => {
+            const px = pos.x;
+            const py = pos.y;
+            const vx = vel.x;
+            const vy = vel.y;
+            for (let i = start; i < end; i++) {
+              px[i]! += vx[i]! * DT;
+              py[i]! += vy[i]! * DT;
+            }
+          });
+        },
+        300,
+        80,
+        () => watcher.eachChunk(() => {})
+      );
+    },
+  },
+  changedNone: {
+    unit: "visit",
+    label: "change query: nothing changed",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const watcher = world.view(Repositioned);
+      watcher.eachChunk(() => {});
+      let sink = 0;
+      const ms = measure(
+        () => {
+          // A thousand visits a sample: one is too short to time.
+          for (let i = 0; i < 1000; i++) {
+            watcher.each((vel) => {
+              sink += vel.x;
+            });
+          }
+        },
+        2000,
+        500
+      );
+      void sink;
+      return ms / 1000;
+    },
+  },
+  changedOne: {
+    unit: "visit",
+    label: "change query: one write in 100,000, set and visit",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const watcher = world.view(Repositioned);
+      watcher.eachChunk(() => {});
+      const target = world.view(Moving).entities()[N >> 1]!;
+      let sink = 0;
+      const ms = measure(
+        () => {
+          for (let i = 0; i < 1000; i++) {
+            world.set(target, Position, { x: i });
+            watcher.each((vel) => {
+              sink += vel.x;
+            });
+          }
+        },
+        2000,
+        500
+      );
+      void sink;
+      return ms / 1000;
+    },
+  },
+  changedPercent: {
+    unit: "matches",
+    label: "change query: visiting the 1,000 written, of 100,000",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const watcher = world.view(Repositioned);
+      watcher.eachChunk(() => {});
+      const all = world.view(Moving).entities();
+      let sink = 0;
+      const ms = measure(
+        () => {
+          watcher.each((vel) => {
+            sink += vel.x;
+          });
+        },
+        2000,
+        500,
+        () => {
+          for (let i = 0; i < N; i += 100) {
+            world.set(all[i]!, Position, { x: i });
+          }
+        }
+      );
+      void sink;
+      return ms;
+    },
+  },
+  changedAll: {
+    label: "change query: visiting all 100,000, all written",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const writer = world.view(Query.all(Position));
+      const watcher = world.view(Repositioned);
+      let sink = 0;
+      const ms = measure(
+        () => {
+          watcher.each((vel) => {
+            sink += vel.x;
+          });
+        },
+        300,
+        80,
+        () =>
+          writer.each((pos) => {
+            pos.x += 1;
+          })
+      );
+      void sink;
+      return ms;
+    },
+  },
+
   // What an action costs, in a world of 100,000 entities. A refused action
   // has to leave nothing behind, so what its handler may write is saved
   // first: one row for `world.set`, the visited columns for a query's loop.
@@ -650,7 +833,9 @@ if (only === undefined) {
           ? `${(ms * 1000).toFixed(2).padStart(8)} µs per pass`
           : variant.unit === "dispatch"
             ? `${(ms * 1000).toFixed(2).padStart(8)} µs per dispatch`
-            : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
+            : variant.unit === "visit"
+              ? `${(ms * 1e6).toFixed(1).padStart(8)} ns per visit`
+              : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
     console.log(`${variant.label.padEnd(54)} ${text}`);
   }
   const ratio = (a: string, b: string) =>
@@ -688,6 +873,12 @@ if (only === undefined) {
   );
   console.log(
     `hashing the world vs one pass over it:  ${ratio("hash", "raw")}`
+  );
+  console.log(
+    `writing a watched component, accessors: ${ratio("watchedEach", "each")}`
+  );
+  console.log(
+    `handing out a watched one, raw columns: ${ratio("watchedChunk", "raw")}`
   );
 } else {
   // Child process: run one variant and print its median.
