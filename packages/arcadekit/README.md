@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 460 tests
+pnpm test                          # 463 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -448,6 +448,7 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
 
 - The devices are read once per run, and every system of the stage is given that one sample as `Input.Devices`: the buttons that are `down`, the ones `pressed` and `released` since the sample before, the `axes`, and the ones that `moved`. A frame in which no tick is due reads nothing, and what was pressed meanwhile is there for the next tick, so a quick tap is never lost between two frames.
 - The world is frozen there, as in the frame stage, and whatever would change the game throws. What a system makes of the devices it issues with `Actions.enqueue`, which is logged and applied at the start of the tick that follows.
+- It hears events from a place of its own, each once, as the frame stage does: what a tick's systems emitted, what its actions emitted, and `Action.Rejected`, so a system that issued an action hears that it was refused. They are kept for it until it has run, the first tick's among them, and for up to 600 ticks when it does not run at all, as in a replay.
 - `Input.Devices` is no part of the game, so a system in the tick or in the frame stage cannot read it: its fields throw there and say what to read.
 - A replay and a server never call `app.input()`. The simulation cannot tell whether its devices are read: a game played from a keyboard and its replay have the same hash at every tick.
 

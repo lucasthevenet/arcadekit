@@ -558,6 +558,182 @@ describe("the input stage", () => {
     );
   });
 
+  it("hears what a tick's actions emitted, and that an action it issued was refused", () => {
+    class TooMuch extends Data.TaggedError("TooMuch")<{}> {}
+    const Done = Event.define("in/Done", Schema.Struct({ by: Schema.Int }));
+    const Try = Action.define("in/Try", Schema.Struct({ by: Schema.Int }));
+    const attempt = Action.handler(Try, function* ({ by }) {
+      if (by > 5) {
+        return yield* Effect.fail(new TooMuch());
+      }
+      (yield* Done).emit({ by });
+    });
+    const hear = (
+      name: string,
+      stage: System.Stage,
+      done: number[],
+      refused: string[]
+    ) =>
+      System.make(name, function* () {
+        for (const event of (yield* Done).read()) {
+          done.push(event.by);
+        }
+        for (const event of (yield* Action.Rejected).read()) {
+          refused.push(`${event.action} ${(event.error as TooMuch)._tag}`);
+        }
+      }).pipe(System.inStage(stage));
+    run(
+      Effect.gen(function* () {
+        // An app with an input stage and no frame stage; one with both;
+        // and one with neither, which is the game they must not change.
+        const heard: number[] = [];
+        const refused: string[] = [];
+        const both: number[] = [];
+        const drawn: number[] = [];
+        const drawnRefused: string[] = [];
+        const alone = yield* App.make({
+          handlers: [attempt],
+          systems: [hear("Hear", "input", heard, refused)],
+        });
+        const together = yield* App.make({
+          handlers: [attempt],
+          systems: [
+            hear("Hear", "input", both, []),
+            hear("Draw", "frame", drawn, drawnRefused),
+          ],
+        });
+        const bare = yield* App.make({ handlers: [attempt] });
+        // And one with a frame stage and no input stage.
+        const onlyDrawn: number[] = [];
+        const shown = yield* App.make({
+          handlers: [attempt],
+          systems: [hear("Draw", "frame", onlyDrawn, [])],
+        });
+        for (const by of [1, 9, 3]) {
+          for (const app of [alone, together, bare, shown]) {
+            // What the action emits, it emits before the tick's systems
+            // run: the oldest events of the tick.
+            app.input();
+            app.enqueue(Try, { by });
+            app.tick(1);
+            app.frame(0);
+          }
+        }
+        alone.input();
+        together.input();
+        // Each event once, the first tick's among them, and the refusal.
+        expect(heard).toEqual([1, 3]);
+        expect(refused).toEqual(["in/Try TooMuch"]);
+        expect(both).toEqual([1, 3]);
+        expect(drawn).toEqual([1, 3]);
+        expect(drawnRefused).toEqual(["in/Try TooMuch"]);
+        expect(onlyDrawn).toEqual([1, 3]);
+        // And the game cannot tell that anyone was listening.
+        expect(alone.world.hash()).toBe(bare.world.hash());
+        const saves = [alone, together, bare].map((app) => app.save());
+        expect(saves.every((save) => Exit.isSuccess(save))).toBe(true);
+        const events = saves.map(
+          (save) => (save as Exit.Success<Save.Save>).value.events
+        );
+        expect(events[0]).toEqual(events[2]);
+        expect(events[1]).toEqual(events[2]);
+        // Heard, they are kept no longer.
+        for (let i = 0; i < 3; i++) {
+          alone.input();
+          alone.tick(1);
+        }
+        expect(alone.events.pending(Done)).toBe(0);
+        expect(heard).toEqual([1, 3]);
+      })
+    );
+  });
+
+  it("keeps an event until the stages have had their chance at it, and no longer", () => {
+    const Done = Event.define("in/Once", Schema.Struct({ at: Schema.Int }));
+    const Emit = Action.define("in/EmitOnce", Schema.Struct({}));
+    const emit = Action.handler(Emit, function* () {
+      (yield* Done).emit({ at: (yield* Time).tick + 1 });
+    });
+    // A system that first listens late hears what is still kept: only
+    // what its stage has not yet had its chance at.
+    const late = (
+      stage: System.Stage,
+      listening: () => boolean,
+      heard: number[]
+    ) =>
+      System.make("Late", function* () {
+        if (listening()) {
+          for (const event of (yield* Done).read()) {
+            heard.push(event.at);
+          }
+        }
+      }).pipe(System.inStage(stage));
+    run(
+      Effect.gen(function* () {
+        for (const stage of ["input", "frame"] as const) {
+          let listening = false;
+          const heard: number[] = [];
+          const app = yield* App.make({
+            handlers: [emit],
+            systems: [late(stage, () => listening, heard)],
+          });
+          for (let tick = 1; tick <= 6; tick++) {
+            listening = tick === 6;
+            app.input();
+            app.enqueue(Emit, {});
+            app.tick(1);
+            app.frame(0);
+          }
+          app.input();
+          // The input stage runs before a tick, so what it has not had
+          // its chance at is the tick before; the frame stage runs after.
+          expect(heard, stage).toEqual(stage === "input" ? [5, 6] : [6]);
+        }
+      })
+    );
+  });
+
+  it("keeps events for a stage that is late, and stops for one that is never run, as a replay never runs it", () => {
+    const Done = Event.define("in/Kept", Schema.Struct({}));
+    const Emit = Action.define("in/Emit", Schema.Struct({}));
+    const emit = Action.handler(Emit, function* () {
+      (yield* Done).emit({});
+    });
+    run(
+      Effect.gen(function* () {
+        let heard = 0;
+        const Hear = System.make("Hear", function* () {
+          heard += (yield* Done).read().length;
+        }).pipe(System.inStage("input"));
+        const ticked = function* (ticks: number) {
+          const app = yield* App.make({ handlers: [emit], systems: [Hear] });
+          for (let i = 0; i < ticks; i++) {
+            app.enqueue(Emit, {});
+            app.tick(1);
+          }
+          return app;
+        };
+        // Late by a hundred ticks: every one of their events is there.
+        const late = yield* ticked(100);
+        late.input();
+        expect(heard).toBe(100);
+        // Never run in seven hundred, as in a replay: the app has taken
+        // the stage to be gone, and keeps nothing for it.
+        heard = 0;
+        const gone = yield* ticked(700);
+        gone.input();
+        expect(heard).toBe(0);
+        // Run again, it hears again from then on.
+        for (let i = 0; i < 3; i++) {
+          gone.enqueue(Emit, {});
+          gone.tick(1);
+          gone.input();
+        }
+        expect(heard).toBe(3);
+      })
+    );
+  });
+
   it("gives a system's failure back typed, and a stopped app runs none of it", () => {
     class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
     run(

@@ -159,8 +159,9 @@ const EMPTY: readonly never[] = Object.freeze([]);
 export const FRAME_READER = "frame:";
 
 /**
- * How many ticks events are kept for a frame stage that has stopped
- * running, before the app takes it to be gone: ten seconds at 60 Hz.
+ * How many ticks events are kept for a stage between ticks that has
+ * stopped running, or never ran, before the app takes it to be gone: ten
+ * seconds at 60 Hz. A replay and a server run neither stage.
  */
 const FRAME_PATIENCE = 600;
 
@@ -176,6 +177,8 @@ interface ChannelState {
   tickOffset: number;
   /** One past the newest event the frame stage has had its chance to read. */
   frameSeen: number;
+  /** One past the newest event the input stage has had its chance to read. */
+  inputSeen: number;
   /** Sequence number of the first event emitted once the current tick's systems began. */
   tickStart: number;
   /** One past the sequence number of the newest event. */
@@ -207,6 +210,7 @@ class Channel<P> implements ChannelState {
   offset = 0;
   tickOffset = 0;
   frameSeen = 0;
+  inputSeen = 0;
   tickStart = 0;
   readonly readers: Map<string, Handle<P>> = new Map();
   readonly waiters: Set<() => boolean> = new Set();
@@ -334,6 +338,20 @@ export class EventBus {
   /** True while events are kept for a frame stage that is running. */
   private frames = false;
   private ticksSinceFrame = 0;
+  /** True while events are kept for an input stage that is running. */
+  private inputs = false;
+  private ticksSinceInput = 0;
+
+  /**
+   * Told once, by the app, which of the two stages between ticks it has
+   * systems in. Events are kept for those from the first tick on, so that
+   * such a system hears the events of the ticks before it first ran.
+   * @internal
+   */
+  keepFor(stages: { readonly frame: boolean; readonly input: boolean }): void {
+    this.frames = stages.frame;
+    this.inputs = stages.input;
+  }
 
   private channel<P>(def: EventDef<P>): Channel<P> {
     const existing = this.channels.get(def);
@@ -493,20 +511,30 @@ export class EventBus {
    * @internal
    */
   endTick(): void {
-    // A frame stage that has not run for a long time is taken to be gone.
+    // A stage that has not run for a long time is taken to be gone.
     if (this.frames && ++this.ticksSinceFrame > FRAME_PATIENCE) {
       this.frames = false;
+    }
+    if (this.inputs && ++this.ticksSinceInput > FRAME_PATIENCE) {
+      this.inputs = false;
     }
     for (const channel of this.order) {
       if (channel.tickStart > channel.tickOffset) {
         channel.tickOffset = channel.tickStart;
       }
-      // Kept a little longer for the frame stage, if several ticks ran
-      // since it last did. The simulation reads from `tickOffset` either way.
-      const drop =
-        (this.frames
-          ? Math.min(channel.tickOffset, channel.frameSeen)
-          : channel.tickOffset) - channel.offset;
+      // Kept a little longer for the stages between ticks: for the frame
+      // stage, if several ticks ran since it last did, and for the input
+      // stage, which runs before a tick and would otherwise never hear
+      // what that tick's actions emitted. The simulation reads from
+      // `tickOffset` either way.
+      let keep = channel.tickOffset;
+      if (this.frames) {
+        keep = Math.min(keep, channel.frameSeen);
+      }
+      if (this.inputs) {
+        keep = Math.min(keep, channel.inputSeen);
+      }
+      const drop = keep - channel.offset;
       if (drop > 0) {
         channel.dropOldest(drop);
       }
@@ -523,6 +551,19 @@ export class EventBus {
     this.ticksSinceFrame = 0;
     for (const channel of this.order) {
       channel.frameSeen = channel.end;
+    }
+  }
+
+  /**
+   * Called when the input stage has run: its systems have had their chance
+   * at every event there is.
+   * @internal
+   */
+  endInput(): void {
+    this.inputs = true;
+    this.ticksSinceInput = 0;
+    for (const channel of this.order) {
+      channel.inputSeen = channel.end;
     }
   }
 
