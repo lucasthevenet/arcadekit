@@ -30,13 +30,13 @@ Done. A frame loop, `Driver.frames`, that follows the page's repaints, pauses wh
 
 ## 5. Drawing and UI
 
-The package's stated aim is games on Effect, Foldkit and Three.js. These are plugins, not part of the core: a game that draws with something else leaves them out.
+These are plugins, not part of the core: a game that draws with something else leaves them out.
 
 - **A Three.js plugin.** Components for what is drawn, and a per-frame system that copies positions from columns to the scene. Instanced meshes read a column directly. Done when ten thousand moving objects draw without one allocation per object per frame.
-- **A Foldkit bridge.** UI reads the world through events and a few selected values, and acts on it only by dispatching actions. Done when a menu and a heads-up display are built without the UI holding a reference to the world.
+- **A view bridge.** How a game's menus and heads-up display, written with any UI library or none, see the game and act on it. The game says which values the UI may see; they are published once per frame, from the frame stage, and only when they changed; and the UI acts only by sending actions, like every other source of input. Done when a menu and a heads-up display are built on it twice, once with the page's own DOM and once with a UI library, with neither holding a reference to the world, and a value that did not change costs the UI nothing.
 - **Sound.** A service that plays a named cue, driven by events. Done when the simulation never calls it directly.
 
-Each is an entry of `arcadekit` of its own, as every module is, with the library it draws with as an optional peer: `three` and `foldkit` are that already.
+Each is an entry of `arcadekit` of its own, as every module is. The Three.js plugin has the library it draws with as an optional peer, which `three` is already. The view bridge has none: it imports Effect alone, and what binds it to a particular UI library is a few lines in the game or a package of its own.
 
 ## 6. More than one player
 
@@ -73,4 +73,6 @@ Not work yet; each needs an answer before the item that depends on it.
 - **A game that ticks when a player moves, in a page.** `App.run` and `Driver.frames` tick in real time. A turn-based game wants its frames at the display's rate and its ticks when a move is made, with the input stage before each. Whether that is an option of the frame loop or a driver of its own is open; the duel example steps its app by hand meanwhile.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.
 
-Decided, and no longer waiting: one entry or several. Several: an entry for every module, `arcadekit/App` and the rest, and `arcadekit` for all of them together, each importing Effect alone. What only a page can use is one entry, `arcadekit/Browser`, and starts a game in it. `arcadekit/ecs` is the storage core, which imports nothing. A renderer, a UI bridge and netcode are each an entry of their own when they are built.
+Decided, and no longer waiting: no UI library. The previous version drew its UI with Foldkit; this one does not depend on it, or on any other. Three.js is different, because it does a job the package would otherwise have to do itself. A game's UI reaches the game through the view bridge of milestone 5, with whatever library it likes.
+
+Also decided: one entry or several. Several: an entry for every module, `arcadekit/App` and the rest, and `arcadekit` for all of them together, each importing Effect alone. What only a page can use is one entry, `arcadekit/Browser`, and starts a game in it. `arcadekit/ecs` is the storage core, which imports nothing. A renderer, a UI bridge and netcode are each an entry of their own when they are built.

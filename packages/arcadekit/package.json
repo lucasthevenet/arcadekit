@@ -1,12 +1,11 @@
 {
   "name": "arcadekit",
   "version": "0.7.0",
-  "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
+  "description": "Reusable primitives for building browser games with Effect and Three.js",
   "keywords": [
     "arcadekit",
     "browser-games",
     "effect",
-    "foldkit",
     "game",
     "gamedev",
     "three",
@@ -151,7 +150,6 @@
     "@effect/platform-node": "~4.1.2",
     "@types/three": "^0.187.0",
     "effect": "~4.1.2",
-    "foldkit": "~0.170.0",
     "three": "^0.187.0",
     "tsx": "^4.23.15"
   },
@@ -160,7 +158,6 @@
     "@effect/platform-browser": "~4.1.0",
     "@types/three": "^0.187.0",
     "effect": "~4.1.2",
-    "foldkit": "~0.170.0",
     "three": "^0.187.0"
   },
   "peerDependenciesMeta": {
@@ -171,9 +168,6 @@
       "optional": true
     },
     "@types/three": {
-      "optional": true
-    },
-    "foldkit": {
       "optional": true
     },
     "three": {

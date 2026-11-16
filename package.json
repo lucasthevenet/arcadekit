@@ -1,7 +1,7 @@
 {
   "name": "arcadekit-workspace",
   "private": true,
-  "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
+  "description": "Reusable primitives for building browser games with Effect and Three.js",
   "type": "module",
   "scripts": {
     "build": "pnpm typecheck && pnpm build:packages",

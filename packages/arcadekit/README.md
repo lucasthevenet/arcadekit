@@ -904,7 +904,7 @@ moving.eachChunk((start, end, pos, vel) => {
 
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
-- Nothing here plays sound, and nothing draws for you. There is a frame stage for what draws and a frame loop that runs it once per repaint, and the example page draws on a canvas by hand: no Foldkit or Three.js integration.
+- Nothing here plays sound, and nothing draws for you. There is a frame stage for what draws and a frame loop that runs it once per repaint, and the example page draws on a canvas by hand: there is no Three.js plugin yet, and no bridge to a UI library.
 - An asset is a picture, text, JSON or bytes. A sound and a font are for whoever plays and draws them to decode, with `Assets.make`.
 - A bundle is loaded or it is not: it does not say how far along it is, and a file that two bundles name is fetched for each.
 - A bundle that failed stays failed until its level is entered again. Nothing tries again by itself.
