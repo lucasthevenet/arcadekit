@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 251 tests
+pnpm test                          # 256 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -82,6 +82,7 @@ const Physics = Plugin.make("Physics", {
   systems: [Movement, Walls],
   layer: Layer.succeed(Bounds, { width: 10 }), // services for the whole app
   components: [Position, Velocity], // so a save that names them can be read
+  events: [Collided], // so one that was waiting when a game was saved can be read back
   setup: spawnTheBall, // runs once, on a fresh start
   scripts: [Gusts], // started with the app, and again after a load
 });
@@ -105,7 +106,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
   ```
 
 - A layer or setup that fails makes `App.make` fail with that typed error.
-- Events and actions are plain values, so a plugin does not list them. It exports them from its module. It does list its `components` and its `scripts`, which loading a saved game needs; see [Saving and loading](#saving-and-loading).
+- Actions are plain values, so a plugin does not list them. It exports them from its module. It does list its `components`, its `events` and its `scripts`, which loading a saved game needs; see [Saving and loading](#saving-and-loading).
 - `setup` runs on a fresh start and not on a load. A plugin's scripts start after it, run like any other script, and are watched the same way.
 
 ## Names
@@ -140,6 +141,7 @@ Every system sees every event exactly once, whatever order the systems run in: a
 - The schema is for when an event leaves the program: `Event.encode(Collided, payload)` gives its JSON form and `Event.decode(Collided, data)` reads one back, each as an `Exit` that fails with `Event.InvalidEvent`.
 - `Event.define<Payload>("Name")` still defines an event with a type and no schema. It cannot be written down, so keep those for events that never need to be.
 - An event's name is its identity in an app: two different events with one name are refused when the second is first used.
+- A plugin lists the events its feature emits, in `events`. A listed event has its channel from the start, which is what lets a save hold the ones that are waiting and a load read them back. Scripts waiting on events are woken in the order the events are listed in, the same on a fresh start and after a load. An event nobody lists still works; a game cannot be saved while one is waiting.
 
 ## Scripts
 
@@ -307,8 +309,9 @@ A save is taken between two ticks. It holds the world as a [snapshot](#snapshots
 - `App.load` takes the plugins and options the game was made with. No plugin's `setup` runs: the save holds what setup spawned.
 - A save cannot hold a script in mid-flight. A plugin lists its `scripts`, and they start again from their beginning when the app is loaded. So a script keeps what it must not lose in the world, and picks up from what it finds there.
 - A world knows a component by its name, so every component a save names has to be listed in a plugin's `components` or the app's. A load that meets one that is not fails with `LoadRefused` and names it.
+- An app knows an event by its name in the same way, so every event that can be waiting when a game is saved is listed in a plugin's `events` or the app's. The waiting events are read back by `App.load` itself, against the events the game lists: one that is not listed, or whose payload its schema no longer takes, fails the load with `LoadRefused`, and never a later tick. A game loaded and saved again at once holds the same events.
 - **A save is a snapshot plus the log since.** The save says how long the log was (`save.logLength`). A game that keeps its last save and the entries logged after it comes back to the present by loading the save and replaying only that tail, which costs the same however long the game has run: `App.replay(app, log.slice(save.logLength), { delta, ticks })`. The replay checks itself against the tail's checkpoints, so a save that did not bring the game back faithfully is caught on the next tick.
-- `app.save()` fails with `Save.SaveRefused` and says what is in the way: an action or an event with no schema is waiting, a field holds a value it cannot save, or commands are queued and not applied. `App.load` and `Save.decode` fail with `Save.LoadRefused`, whose `problem` is one of a snapshot's, or `"not a save"`.
+- `app.save()` fails with `Save.SaveRefused` and says what is in the way: an action or an event with no schema is waiting, or an event no plugin lists, a field holds a value it cannot save, or commands are queued and not applied. `App.load` and `Save.decode` fail with `Save.LoadRefused`, whose `problem` is one of a snapshot's, or `"not a save"`, `"unknown event"` or `"event changed"`.
 - A save is the snapshot and a little text: for 100,000 entities with four float fields, 2.2 MB and about 0.6 ms to take.
 
 ### Versions and migrations
@@ -473,7 +476,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.
-- A save is refused while an action or an event with no schema is waiting, which for a game that emits such an event every tick is always.
+- A save is refused while an action or an event with no schema is waiting, or an event no plugin lists, which for a game that emits such an event every tick is always.
 - An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
 - The log does not say when a script was started by hand with `app.spawnScript`, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, the actions queued for the next tick, or how far each script has got.

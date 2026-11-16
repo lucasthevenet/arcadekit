@@ -18,12 +18,13 @@
  * A plugin that several others depend on is installed once: its systems are
  * registered once and its layer is built once.
  *
- * Events and actions are plain values, so a plugin does not list them: it
- * exports them from its module like anything else. It does list two things
- * that loading a saved game needs:
+ * Actions are plain values, so a plugin does not list them: it exports them
+ * from its module like anything else. It does list what loading a saved
+ * game needs:
  *
  *   const Weather = Plugin.make("Weather", {
  *     components: [Cloud, Wind],          // so a save that names them can be read
+ *     events: [Thundered],                // so one that was waiting can be read back
  *     scripts: [Storms],                  // started with the app, and again after a load
  *     setup: spawnTheFirstClouds          // a fresh start only: a load has them already
  *   })
@@ -32,6 +33,7 @@ import type { Effect, Layer } from "effect";
 
 import type * as Action from "./Action";
 import type { ComponentDef } from "./ecs/component";
+import type { EventDef } from "./Event";
 import type { BuiltIn } from "./Services";
 import type * as System from "./System";
 
@@ -60,6 +62,7 @@ export interface Plugin<
   readonly layer: Layer.Layer<never, any, any> | undefined;
   readonly setup: Effect.Effect<void, any, any> | undefined;
   readonly components: readonly ComponentDef<any>[];
+  readonly events: readonly EventDef<any>[];
   readonly scripts: readonly Effect.Effect<unknown, any, any>[];
   /** The plugins this one depends on. */
   readonly plugins: readonly Any[];
@@ -133,6 +136,14 @@ export const make = <
      */
     readonly components?: readonly ComponentDef<any>[];
     /**
+     * The events this plugin's feature emits. An app knows an event by its
+     * name, so a game can only be saved while one is waiting to be read,
+     * and that save loaded, if the event is listed by some plugin, or by
+     * the app. Listed events also keep their order from one run to the
+     * next: scripts waiting on them are woken in the order they are listed.
+     */
+    readonly events?: readonly EventDef<any>[];
+    /**
      * Long-running scripts, started when the app starts: after `setup` on a
      * fresh start, and again from their beginning when the app is loaded
      * from a save. A save cannot hold a script in mid-flight, so a script
@@ -160,6 +171,7 @@ export const make = <
   layer: options.layer,
   setup: options.setup,
   components: options.components ?? [],
+  events: options.events ?? [],
   scripts: options.scripts ?? [],
   plugins: options.plugins ?? [],
 });

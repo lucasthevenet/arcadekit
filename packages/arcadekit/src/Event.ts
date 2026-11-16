@@ -29,6 +29,7 @@
  */
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
+import { LoadRefused } from "./Save";
 import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
 
@@ -85,7 +86,9 @@ export class EventDef<P> extends Effectable.Class<
  * one is waiting to be read.
  *
  * An event's name is its identity in an app: two different events with one
- * name are refused when the second is first used.
+ * name are refused when the second is first used. A game that saves lists
+ * its events in a plugin's `events`, so that a save which holds some can be
+ * read: see `Plugin.make`.
  */
 export function define<P = void>(name: string): EventDef<P>;
 export function define<S extends Schema.Codec<unknown, unknown>>(
@@ -266,9 +269,9 @@ export class EventBus {
   // is the one place that restores it.
   private readonly channels: Map<object, ChannelState> = new Map();
   private readonly order: Channel<any>[] = [];
-  /** Events read from a save, waiting for their channel to be asked for. */
-  private readonly parked: Map<string, SavedEvents> = new Map();
   private readonly names: Map<string, EventDef<any>> = new Map();
+  /** The events a plugin or the app lists: the ones a save can hold. */
+  private readonly listed: Set<EventDef<any>> = new Set();
 
   private channel<P>(def: EventDef<P>): Channel<P> {
     const existing = this.channels.get(def);
@@ -286,38 +289,26 @@ export class EventBus {
     const channel = new Channel<P>(def);
     this.channels.set(def, channel);
     this.order.push(channel);
-    const saved = this.parked.get(def.name);
-    if (saved !== undefined) {
-      this.parked.delete(def.name);
-      this.adopt(channel, saved);
-    }
     return channel;
   }
 
-  /** Puts the events of a save into their channel, as they were waiting. */
-  private adopt<P>(channel: Channel<P>, saved: SavedEvents): void {
-    for (const data of saved.payloads) {
-      const payload = decode(channel.def, data);
-      if (Exit.isFailure(payload)) {
-        throw new Error(
-          `The save holds an event "${saved.name}" that no longer reads: ${(Cause.squash(payload.cause) as Error).message}`
-        );
-      }
-      channel.buffer.push(payload.value);
-    }
-    // Whoever had read some of them goes on from where it was.
-    for (const [reader, count] of Object.entries(saved.read)) {
-      channel.readers.set(
-        reader,
-        new Handle(channel, channel.offset + Math.min(count, channel.size))
-      );
-    }
+  /**
+   * Tells the bus about an event a plugin or the app lists. Its channel is
+   * there from the start, so a save that holds some of its events can be
+   * read before anything has asked for it, and channels stand in the order
+   * they are listed in, on a fresh start and after a load alike.
+   * @internal
+   */
+  register(def: EventDef<any>): void {
+    this.channel(def);
+    this.listed.add(def);
   }
 
   /**
    * The events waiting to be read, in their JSON form, with how far each
    * system and handler had read. Fails on one that has no schema, or whose
-   * payload its schema does not take.
+   * payload its schema does not take, or that no plugin lists: a save that
+   * held it could not be loaded.
    * @internal
    */
   save(): Exit.Exit<SavedEvents[], InvalidEvent> {
@@ -333,6 +324,14 @@ export class EventBus {
           return Exit.fail(Cause.squash(data.cause) as InvalidEvent);
         }
         payloads.push(data.value);
+      }
+      if (!this.listed.has(channel.def)) {
+        return Exit.fail(
+          new InvalidEvent({
+            event: channel.def.name,
+            message: `The event "${channel.def.name}" is waiting to be read, and no plugin lists it, so a save that held it could not be loaded. List it in a plugin's \`events\`, or in the app's.`,
+          })
+        );
       }
       const read: Record<string, number> = {};
       for (const [reader, handle] of channel.readers) {
@@ -350,19 +349,52 @@ export class EventBus {
   }
 
   /**
-   * Takes the events of a save. Each kind is put into its channel when the
-   * channel is first asked for, which is when its event is known here.
+   * Puts the events of a save back into their channels, as they were
+   * waiting, each reader where it was. Nothing is trusted: an event no
+   * plugin lists, or a payload its schema no longer takes, refuses the
+   * load, and no channel is changed.
    * @internal
    */
-  restore(saved: readonly SavedEvents[]): void {
+  restore(saved: readonly SavedEvents[]): Exit.Exit<void, LoadRefused> {
+    const read: { channel: Channel<any>; payloads: unknown[] }[] = [];
     for (const events of saved) {
       const def = this.names.get(events.name);
-      if (def === undefined) {
-        this.parked.set(events.name, events);
-      } else {
-        this.adopt(this.channel(def), events);
+      if (def === undefined || !this.listed.has(def)) {
+        return Exit.fail(
+          new LoadRefused({
+            problem: "unknown event",
+            message: `The save holds events named "${events.name}" that were waiting to be read, and no plugin lists an event of that name. List it in a plugin's \`events\`, or in the app's.`,
+          })
+        );
+      }
+      const payloads: unknown[] = [];
+      for (const data of events.payloads) {
+        const payload = decode(def, data);
+        if (Exit.isFailure(payload)) {
+          return Exit.fail(
+            new LoadRefused({
+              problem: "event changed",
+              message: `The save holds an event "${events.name}" that no longer reads: ${(Cause.squash(payload.cause) as InvalidEvent).message}`,
+            })
+          );
+        }
+        payloads.push(payload.value);
+      }
+      read.push({ channel: this.channel(def), payloads });
+    }
+    for (const [index, { channel, payloads }] of read.entries()) {
+      for (const payload of payloads) {
+        channel.buffer.push(payload);
+      }
+      // Whoever had read some of them goes on from where it was.
+      for (const [reader, count] of Object.entries(saved[index]!.read)) {
+        channel.readers.set(
+          reader,
+          new Handle(channel, channel.offset + Math.min(count, channel.size))
+        );
       }
     }
+    return Exit.void;
   }
 
   /**

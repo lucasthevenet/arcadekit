@@ -43,6 +43,7 @@ import type { ComponentDef } from "./ecs/component";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import { EventBus } from "./Event";
+import type { EventDef } from "./Event";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
 import { Commands, Events, Random, Script, Time, World } from "./Services";
@@ -146,8 +147,8 @@ export interface Any {
    * be read. Only between ticks.
    *
    * Fails with `SaveRefused`, which says what is in the way: an action or an
-   * event with no schema is waiting, a field holds a value it cannot save,
-   * or commands are queued and not applied.
+   * event with no schema is waiting, or an event no plugin lists, a field
+   * holds a value it cannot save, or commands are queued and not applied.
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
@@ -228,6 +229,12 @@ export interface Options<
    */
   readonly components?: readonly ComponentDef<any>[];
   /**
+   * Events that belong to the app itself, not to a plugin. An app knows an
+   * event by its name, so a game is saved while one is waiting to be read,
+   * and that save loaded, only if the event is listed here or by a plugin.
+   */
+  readonly events?: readonly EventDef<any>[];
+  /**
    * The version of the game: a whole number that is raised when the game
    * changes its components or what its saves hold, 0 when left out. A save
    * records it. `App.load` reads a save of this version as it is, brings an
@@ -300,9 +307,9 @@ export const make = <
  * (`log.slice(save.logLength)`) is replayed with `App.replay`, which checks
  * it against the log's checkpoints as it goes.
  *
- * Fails with `LoadRefused` when the save's world cannot be loaded: it names
- * a component no plugin lists, or one whose fields have changed, or its
- * bytes are damaged.
+ * Fails with `LoadRefused` when the save cannot be loaded: it names a
+ * component or an event no plugin lists, or one that has changed since, or
+ * its bytes are damaged.
  */
 export const load = <
   S extends Systems = readonly [],
@@ -398,6 +405,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     for (const component of components) {
       world.register(component);
     }
+    // Listed events have their channels from the start, in this order.
+    for (const plugin of plugins) {
+      for (const event of plugin.events) {
+        events.register(event);
+      }
+    }
+    for (const event of options.events ?? []) {
+      events.register(event);
+    }
     const version = options.version ?? 0;
     if (!Number.isSafeInteger(version) || version < 0) {
       throw new Error(
@@ -434,7 +450,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       time.tick = save.tick;
       time.elapsed = save.elapsed;
       time.delta = save.delta;
-      events.restore(save.events);
+      // Read back now, against the events the game lists, so that a save
+      // whose events do not fit is refused here and not in some later tick.
+      const restored = events.restore(save.events);
+      if (Exit.isFailure(restored)) {
+        return yield* restored;
+      }
     }
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),

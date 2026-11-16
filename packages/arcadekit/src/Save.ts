@@ -11,7 +11,8 @@
  * A save is taken between two ticks. It holds the world, the game's time,
  * the actions waiting for the next tick and the events waiting to be read.
  * It does not hold scripts: a plugin lists its scripts, and they start
- * again when the app is loaded.
+ * again when the app is loaded. A plugin lists its components and its events
+ * too, which is how a save that names them is read.
  *
  * What was logged after a save is the tail of the game. A game that keeps
  * its last save and the log since can come back to where it is by loading
@@ -76,6 +77,9 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  *
  * - one of a snapshot's problems;
  * - `"not a save"`: the bytes are not a saved game at all;
+ * - `"unknown event"`: events were waiting to be read whose name no plugin
+ *   lists;
+ * - `"event changed"`: one of them no longer fits its event's schema;
  * - `"newer version"`: a later version of the game wrote the save;
  * - `"no migration"`: an earlier one did, and the game has no migration
  *   from that version;
@@ -85,6 +89,8 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
   readonly problem:
     | SnapshotProblem
     | "not a save"
+    | "unknown event"
+    | "event changed"
     | "newer version"
     | "no migration"
     | "migration failed";
