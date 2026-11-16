@@ -37,6 +37,7 @@ import {
   Context,
   Data,
   Effect,
+  Random as EffectRandom,
   Effectable,
   Exit,
   Fiber,
@@ -45,8 +46,18 @@ import {
   Scope,
 } from "effect";
 
+import * as Action from "./Action";
+import * as Input from "./Input";
 import * as Plugin from "./Plugin";
-import { World } from "./Services";
+import {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Script,
+  Time,
+  World,
+} from "./Services";
 import * as System from "./System";
 
 /** An asset could not be loaded: it is not there, or it is not what it was said to be. */
@@ -346,9 +357,24 @@ interface Held {
 const storeLayer = Layer.effect(
   Store,
   Effect.gen(function* () {
-    // Loading runs on its own, in real time: with the services the app was
-    // made with, and not on the scheduler its ticks own.
-    const context = yield* Effect.context<never>();
+    // Loading runs on its own, in real time: with what the app was given
+    // from outside, and not on the scheduler its ticks own. It is given
+    // none of the app's own services. They are the game's, and a load
+    // that reached them would change it: Effect's Random inside an app is
+    // the world's generator, and one draw from it by a loader is a game
+    // no replay repeats.
+    const context = Context.omit(
+      World,
+      Time,
+      Frame,
+      Commands,
+      Script,
+      Events,
+      Random,
+      Action.Actions,
+      Input.Devices,
+      EffectRandom.Random
+    )(yield* Effect.context<never>()) as Context.Context<never>;
     const runFork = Effect.runForkWith(context);
     const held = new Map<Bundle<Entries>, Held>();
 

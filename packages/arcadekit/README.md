@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 458 tests
+pnpm test                          # 459 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -535,6 +535,7 @@ Loading is a scoped resource: what was loaded is let go when the scope it was lo
 
 - Anywhere there is a scope, `Assets.load(bundle)` loads into it and waits: every asset at once, failing with `Assets.AssetFailed`, which names the URL, at the first that does. That is for the entry point and for a plugin's `layer`, which holds what it loads for as long as the app: `Layer.effect(Fonts, Assets.load(Common))`.
 - An asset is `Assets.bytes(url)`, `Assets.text(url)` or `Assets.json(url, schema)`, and in a page `Browser.image(url)`, from `arcadekit/Browser`, which gives an `ImageBitmap` and closes it. One of a kind of your own is `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be let go.
+- A load is given what the app was given from outside and none of the app's own services, so nothing it does is the game's doing: the random numbers a loader draws, to wait a while before it tries again, say, are not the world's.
 - The bytes come through `Assets.Loader`, a `Context.Reference` whose default is `fetch`, given up when the load is interrupted. A test provides its files with `Assets.layerMemory({ "/forest.json": "..." })`.
 - A system of the game's own can keep a bundle too, with `(yield* Assets.Store).hold(bundle, name)` and `drop`: it stays loaded while anyone holds it.
 
