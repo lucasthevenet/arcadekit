@@ -488,6 +488,21 @@ export class EventBus {
   }
 
   /**
+   * Whether an event is kept that some system of the tick has not had its
+   * chance at: one emitted by a system, which the systems before it hear
+   * in the tick that follows, or one emitted between ticks.
+   * @internal
+   */
+  waiting(): boolean {
+    for (const channel of this.order) {
+      if (channel.size > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Resumes scripts whose `wait` now has events. Returns whether any did.
    * @internal
    */

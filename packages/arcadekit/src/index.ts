@@ -42,6 +42,7 @@ export * as Query from "./Query";
 export * as Resource from "./Resource";
 export * as Save from "./Save";
 export * as Singleton from "./Singleton";
+export * as Sound from "./Sound";
 export * as State from "./State";
 export { EntityId } from "./Schemas";
 export {
@@ -55,3 +56,6 @@ export {
 } from "./Services";
 export * as System from "./System";
 export { TickDispatcher, TickScheduler } from "./TickScheduler";
+export * as Transform2d from "./Transform2d";
+export * as Transform3d from "./Transform3d";
+export * as View from "./View";

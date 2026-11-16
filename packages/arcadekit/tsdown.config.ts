@@ -1,53 +1,15 @@
 // The kit's tsdown build.
 //
-// The entries come from the package's `exports`: every subpath has a `source` condition naming
-// its file in src/, and `types` and `default` naming what this build writes to dist/. The root
-// entry "." is called "index", and a subpath such as "./ecs" is called "ecs", so the build writes
-// dist/index.js and dist/index.d.ts, dist/ecs.js and dist/ecs.d.ts, and so on. A subpath whose
-// dist paths don't match that name fails the build, so the map and the build can't drift apart.
+// The entries come from the package's `exports`, read by scripts/tsdown-entries.ts: every
+// subpath has a `source` condition naming its file in src/, and `types` and `default` naming
+// what this build writes to dist/.
 //
 // All entries are one build, so what two entries share is written once, to a chunk both import:
 // a class or an Effect service is the same object whichever entry it is reached through.
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { defineConfig } from "tsdown";
 import type { UserConfig } from "tsdown";
 
-interface SubpathExport {
-  readonly source: string;
-  readonly types: string;
-  readonly default: string;
-}
-
-const entries = (dir: string): Record<string, string> => {
-  const pkg = JSON.parse(
-    readFileSync(path.join(dir, "package.json"), "utf-8")
-  ) as {
-    readonly name: string;
-    readonly exports: Readonly<Record<string, SubpathExport>>;
-  };
-  const result: Record<string, string> = {};
-  for (const [subpath, target] of Object.entries(pkg.exports)) {
-    if (subpath === "./package.json") {
-      continue;
-    }
-    const name = subpath === "." ? "index" : subpath.slice("./".length);
-    const keys = Object.keys(target).join(",");
-    if (
-      !(subpath === "." || subpath.startsWith("./")) ||
-      keys !== "source,types,default" ||
-      target.types !== `./dist/${name}.d.ts` ||
-      target.default !== `./dist/${name}.js`
-    ) {
-      throw new Error(
-        `${pkg.name}: exports["${subpath}"] must be { source, types: "./dist/${name}.d.ts", default: "./dist/${name}.js" }`
-      );
-    }
-    result[name] = target.source;
-  }
-  return result;
-};
+import { entries } from "../../scripts/tsdown-entries.ts";
 
 const config: UserConfig = defineConfig({
   cwd: import.meta.dirname,

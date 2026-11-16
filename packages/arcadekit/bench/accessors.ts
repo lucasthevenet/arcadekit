@@ -22,13 +22,18 @@ import {
   Action,
   App,
   Component,
+  Driver,
   EntityId,
+  Event,
   Field,
   Input,
   Query,
+  Singleton,
+  Sound,
   State,
   System,
   Time,
+  View,
   World as WorldService,
 } from "../src/index";
 import type { Entity } from "../src/index";
@@ -238,6 +243,140 @@ const listening = (changing: boolean): number =>
               5000
             )
           : measure(() => app.input(), 50_000, 20_000);
+      })
+    )
+  );
+
+/**
+ * Median milliseconds of a frame whose one system publishes a view of four
+ * fields, read from a singleton. `"same"`: a UI is listening and the value
+ * is what it has. `"new"`: the value differs every frame, and the one
+ * listener is told. `"nobody"`: no bridge was provided.
+ */
+const showing = (mode: "same" | "new" | "nobody"): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const Stats = Singleton.define(
+          "bench/Stats",
+          { score: Field.i32, lives: Field.i32, level: Field.i32 },
+          { score: 0, lives: 3, level: 1 }
+        );
+        const Hud = View.define("bench/Hud", {
+          score: 0,
+          lives: 3,
+          level: 1,
+          phase: "playing",
+        });
+        let frames = 0;
+        const Show = View.publish(Hud, function* () {
+          const stats = yield* Stats;
+          return {
+            score: mode === "new" ? frames : stats.score,
+            lives: stats.lives,
+            level: stats.level,
+            phase: "playing",
+          };
+        });
+        const ui = View.makeBridge();
+        let heard = 0;
+        ui.subscribe(Hud, () => {
+          heard++;
+        });
+        const made = App.make({
+          plugins: [View.plugin],
+          components: [Stats],
+          systems: [Show],
+          checkpointEvery: 0,
+        });
+        const app = yield* mode === "nobody"
+          ? made
+          : made.pipe(Effect.provide(View.layer(ui)));
+        return measure(
+          () => {
+            frames++;
+            app.frame(0);
+          },
+          50_000,
+          20_000
+        );
+      })
+    )
+  );
+
+/**
+ * Median milliseconds of a frame whose one system plays cues for two kinds
+ * of event, to an output that plays nothing. With `happening`, a tick
+ * before each frame emits one event, and the frame plays its cue; the tick
+ * is not timed.
+ */
+const sounding = (happening: boolean): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const Scored = Event.define("bench/Scored", Schema.Struct({}));
+        const Bounced = Event.define("bench/Bounced", Schema.Struct({}));
+        const Score = System.make("bench/Score", function* () {
+          if (happening) {
+            (yield* Scored).emit({});
+          }
+        });
+        const Cues = Sound.cues(
+          "bench/Cues",
+          Sound.on(Scored, "coin"),
+          Sound.on(Bounced, { cue: "thud", volume: 0.5 })
+        );
+        const app = yield* App.make({
+          plugins: [Sound.plugin],
+          systems: [Score, Cues],
+          checkpointEvery: 0,
+        }).pipe(Effect.provide(Sound.layer({ play() {} })));
+        return measure(
+          () => app.frame(0),
+          50_000,
+          20_000,
+          () => app.tick(DT)
+        );
+      })
+    )
+  );
+
+/**
+ * Median milliseconds of one frame of a game that ticks when it is needed
+ * and is at rest: the devices read, the app asked whether anything waits,
+ * no tick, and a frame stage of one system. The game has the picture of
+ * the devices, a state and a view, as one with a menu would.
+ */
+const atRest = (): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const Phase = State.define("bench/RestPhase", ["title", "playing"]);
+        const Shown = View.define("bench/Shown", { phase: "title" });
+        const Show = View.publish(Shown, function* () {
+          return { phase: (yield* Phase).value as string };
+        });
+        const source = Input.makeManualSource();
+        const app = yield* App.make({
+          plugins: [Input.plugin, View.plugin],
+          components: [Phase],
+          systems: [Show],
+          checkpointEvery: 0,
+        }).pipe(
+          Effect.provideService(Input.Source, source),
+          Effect.provide(View.layer(View.makeBridge()))
+        );
+        const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
+        // The first tick enters the state, and one more follows it.
+        for (let i = 0; i < 10; i++) {
+          advance(DT);
+        }
+        if (app.time.tick !== 2) {
+          throw new Error(
+            `The game did not come to rest: tick ${app.time.tick}`
+          );
+        }
+        return measure(() => advance(DT), 50_000, 20_000);
       })
     )
   );
@@ -789,6 +928,44 @@ const variants: Record<
     unit: "matches",
     label: "app.input and app.tick: one key went down or up",
     run: () => listening(true),
+  },
+
+  // The view bridge: one view of four fields, worked out and compared in
+  // the frame stage. Unchanged is the usual case.
+  viewSame: {
+    unit: "matches",
+    label: "app.frame: a view published, the value unchanged",
+    run: () => showing("same"),
+  },
+  viewNew: {
+    unit: "matches",
+    label: "app.frame: a view published, new, one listener",
+    run: () => showing("new"),
+  },
+  viewNobody: {
+    unit: "matches",
+    label: "app.frame: a view with no UI there",
+    run: () => showing("nobody"),
+  },
+
+  // Sound: one system of two lines, playing to an output that does nothing.
+  soundIdle: {
+    unit: "matches",
+    label: "app.frame: cues for two events, nothing happened",
+    run: () => sounding(false),
+  },
+  soundOne: {
+    unit: "matches",
+    label: "app.frame: cues for two events, one cue played",
+    run: () => sounding(true),
+  },
+
+  // A game that ticks when it is needed, at rest: what a frame costs when
+  // no tick runs.
+  restFrame: {
+    unit: "matches",
+    label: "a frame of a game at rest: devices, a view, no tick",
+    run: () => atRest(),
   },
 
   // Change detection. A write is noticed per row, and only for a component

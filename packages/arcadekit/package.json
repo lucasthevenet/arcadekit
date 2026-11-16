@@ -112,6 +112,11 @@
       "types": "./dist/Singleton.d.ts",
       "default": "./dist/Singleton.js"
     },
+    "./Sound": {
+      "source": "./src/Sound.ts",
+      "types": "./dist/Sound.d.ts",
+      "default": "./dist/Sound.js"
+    },
     "./State": {
       "source": "./src/State.ts",
       "types": "./dist/State.d.ts",
@@ -126,6 +131,21 @@
       "source": "./src/TickScheduler.ts",
       "types": "./dist/TickScheduler.d.ts",
       "default": "./dist/TickScheduler.js"
+    },
+    "./Transform2d": {
+      "source": "./src/Transform2d.ts",
+      "types": "./dist/Transform2d.d.ts",
+      "default": "./dist/Transform2d.js"
+    },
+    "./Transform3d": {
+      "source": "./src/Transform3d.ts",
+      "types": "./dist/Transform3d.d.ts",
+      "default": "./dist/Transform3d.js"
+    },
+    "./View": {
+      "source": "./src/View.ts",
+      "types": "./dist/View.d.ts",
+      "default": "./dist/View.js"
     },
     "./ecs": {
       "source": "./src/ecs/index.ts",
@@ -148,29 +168,23 @@
     "@cloudflare/workers-types": "^5.20261104.1",
     "@effect/platform-browser": "~4.1.0",
     "@effect/platform-node": "~4.1.2",
-    "@types/three": "^0.187.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "effect": "~4.1.2",
-    "three": "^0.187.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tsx": "^4.23.15"
   },
   "peerDependencies": {
     "@cloudflare/workers-types": "^5",
     "@effect/platform-browser": "~4.1.0",
-    "@types/three": "^0.187.0",
-    "effect": "~4.1.2",
-    "three": "^0.187.0"
+    "effect": "~4.1.2"
   },
   "peerDependenciesMeta": {
     "@cloudflare/workers-types": {
       "optional": true
     },
     "@effect/platform-browser": {
-      "optional": true
-    },
-    "@types/three": {
-      "optional": true
-    },
-    "three": {
       "optional": true
     }
   },

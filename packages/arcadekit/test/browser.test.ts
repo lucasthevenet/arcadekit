@@ -1,4 +1,15 @@
-import { Cause, Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
+import {
+  Cause,
+  Context,
+  Data,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+  Schema,
+  Scope,
+} from "effect";
 import type { Scope as ScopeType } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -9,10 +20,12 @@ import {
   Commands,
   Component,
   Driver,
+  Event,
   Field,
   Input,
   Plugin,
   Query,
+  Sound,
   System,
   Time,
 } from "../src/index";
@@ -821,5 +834,355 @@ describe("Browser.runMain", () => {
     );
     // @ts-expect-error the game still needs a service
     void (() => Browser.runMain(unprovided));
+  });
+});
+
+describe("a page's sound", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A stand-in for the page's audio, which notes what it is asked. */
+  const makeAudio = () => {
+    const destination = { name: "speakers" };
+    const audio = {
+      destination,
+      state: "running",
+      started: [] as {
+        readonly buffer: unknown;
+        readonly rate: number;
+        readonly volume: number;
+        readonly into: unknown;
+      }[],
+      resumed: 0,
+      closed: 0,
+      createBufferSource() {
+        let gain: { gain: { value: number }; into: unknown } | undefined;
+        const source = {
+          buffer: undefined as unknown,
+          playbackRate: { value: 1 },
+          connect(to: unknown) {
+            gain = to as typeof gain;
+            return to;
+          },
+          start() {
+            audio.started.push({
+              buffer: source.buffer,
+              rate: source.playbackRate.value,
+              volume: gain?.gain.value ?? Number.NaN,
+              into: gain?.into,
+            });
+          },
+        };
+        return source;
+      },
+      createGain() {
+        const gain = {
+          gain: { value: 1 },
+          into: undefined as unknown,
+          connect(to: unknown) {
+            gain.into = to;
+            return to;
+          },
+        };
+        return gain;
+      },
+      resume() {
+        audio.resumed++;
+        audio.state = "running";
+        return Promise.resolve();
+      },
+      close() {
+        audio.closed++;
+        return Promise.resolve();
+      },
+    };
+    return audio;
+  };
+  const sounds = {
+    "/coin.wav": new Uint8Array(3),
+    "/thud.wav": new Uint8Array(5),
+    "/noise.wav": new Uint8Array(1),
+  };
+  /** Makes a sound of a file: one of a single byte is none. */
+  const decodeInto =
+    (decoded: number[]) =>
+    (data: ArrayBuffer): Promise<unknown> => {
+      decoded.push(data.byteLength);
+      return data.byteLength === 1
+        ? Promise.reject(new Error("Unable to decode audio data"))
+        : Promise.resolve({ samples: data.byteLength });
+    };
+  /** Builds the layer into a scope of the test's, and gives what it provides. */
+  const build = async (
+    files: Readonly<Record<string, string>>,
+    options: {
+      readonly volume?: number;
+      readonly loader?: Assets.LoaderShape;
+      readonly decode?: (data: ArrayBuffer) => Promise<unknown>;
+    } = {}
+  ) => {
+    const page = new Listened();
+    const audio = makeAudio();
+    let made = 0;
+    /** The length of each file that was given to be decoded. */
+    const decoded: number[] = [];
+    const decode = options.decode ?? decodeInto(decoded);
+    const logged: string[] = [];
+    const scope = Effect.runSync(Scope.make());
+    const context = await Effect.runPromise(
+      Layer.build(
+        Browser.layerSound(files, {
+          window: page,
+          audio: () => {
+            made++;
+            return audio;
+          },
+          decode,
+          ...(options.volume === undefined ? {} : { volume: options.volume }),
+        })
+      ).pipe(
+        Scope.provide(scope),
+        Effect.provide(
+          options.loader === undefined
+            ? Assets.layerMemory(sounds)
+            : Layer.succeed(Assets.Loader, options.loader)
+        ),
+        Effect.provide(
+          Logger.layer([
+            Logger.make((entry) => {
+              logged.push(String(entry.message));
+            }),
+          ])
+        )
+      )
+    );
+    await settle();
+    return {
+      page,
+      audio,
+      decoded,
+      logged,
+      made: () => made,
+      output: Context.get(context, Sound.Output),
+      close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+    };
+  };
+
+  it("makes the page's audio at the first touch, and plays a cue's file through it", async () => {
+    const { audio, decoded, logged, made, output, page } = await build({
+      coin: "/coin.wav",
+      thud: "/thud.wav",
+    });
+    // The files are decoded as they arrive, which needs no touch.
+    expect(decoded.toSorted()).toEqual([3, 5]);
+    // A page may not make a sound before its user has touched it: nothing
+    // is made, and what is asked for is not played, then or later.
+    expect(made()).toBe(0);
+    expect(Object.fromEntries(page.listening)).toEqual({
+      pointerdown: 1,
+      keydown: 1,
+    });
+    output.play("coin", 1, 1);
+    expect(audio.started).toEqual([]);
+    page.send("keydown", { code: "Enter" });
+    expect(made()).toBe(1);
+    expect(audio.started).toEqual([]);
+    // At once: what the touch itself set off is heard.
+    output.play("coin", 0.5, 2);
+    output.play("thud", 1, 1);
+    expect(audio.started).toEqual([
+      { buffer: { samples: 3 }, rate: 2, volume: 0.5, into: audio.destination },
+      { buffer: { samples: 5 }, rate: 1, volume: 1, into: audio.destination },
+    ]);
+    // Another touch makes no second audio, and wakes one that was put to sleep.
+    page.send("pointerdown");
+    expect(made()).toBe(1);
+    expect(audio.resumed).toBe(0);
+    audio.state = "suspended";
+    page.send("pointerdown");
+    expect(audio.resumed).toBe(1);
+    expect(decoded.length).toBe(2);
+    expect(logged).toEqual([]);
+  });
+
+  it("plays every cue at the volume it was given for all of them", async () => {
+    const { audio, output, page } = await build(
+      { coin: "/coin.wav" },
+      { volume: 0.5 }
+    );
+    page.send("pointerdown");
+    await settle();
+    output.play("coin", 0.5, 1);
+    output.play("coin", 1, 1);
+    expect(audio.started.map((one) => one.volume)).toEqual([0.25, 0.5]);
+  });
+
+  it("says once of a cue that has no file, could not be fetched or is no sound, and plays nothing for it", async () => {
+    const { audio, logged, output, page } = await build({
+      coin: "/coin.wav",
+      noise: "/noise.wav",
+      lost: "/lost.wav",
+    });
+    // Said when the request fails, or the file turns out to be no sound.
+    expect(logged.toSorted()).toEqual([
+      'The sound "lost" (/lost.wav) will not be played: There is no such file.',
+      'The sound "noise" (/noise.wav) will not be played: Unable to decode audio data',
+    ]);
+    page.send("pointerdown");
+    expect(logged.length).toBe(2);
+    for (let i = 0; i < 3; i++) {
+      output.play("noise", 1, 1);
+      output.play("lost", 1, 1);
+      output.play("laser", 1, 1);
+      // A name every object has is no cue either.
+      output.play("toString", 1, 1);
+    }
+    expect(audio.started).toEqual([]);
+    expect(logged.slice(2)).toEqual([
+      'The sound "laser" was played and has no file. The page\'s cues are: coin, noise, lost.',
+      'The sound "toString" was played and has no file. The page\'s cues are: coin, noise, lost.',
+    ]);
+    output.play("coin", 1, 1);
+    expect(audio.started.length).toBe(1);
+  });
+
+  it("plays a cue once its file has arrived, and gives up a file still on its way when it is let go", async () => {
+    const waiting = new Map<string, (bytes: Uint8Array) => void>();
+    const givenUp: string[] = [];
+    const loader: Assets.LoaderShape = {
+      bytes: (url) =>
+        Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
+          waiting.set(url, (bytes) => resume(Effect.succeed(bytes)));
+          return Effect.sync(() => {
+            givenUp.push(url);
+          });
+        }),
+    };
+    const { audio, close, decoded, output, page } = await build(
+      { coin: "/coin.wav", thud: "/thud.wav" },
+      { loader }
+    );
+    // Both asked for at once, and neither is here.
+    expect(Array.from(waiting.keys()).toSorted()).toEqual([
+      "/coin.wav",
+      "/thud.wav",
+    ]);
+    page.send("pointerdown");
+    expect(decoded).toEqual([]);
+    output.play("coin", 1, 1);
+    expect(audio.started).toEqual([]);
+    waiting.get("/coin.wav")!(new Uint8Array(7));
+    await settle();
+    expect(decoded).toEqual([7]);
+    output.play("coin", 1, 1);
+    // The one that was asked for too early is not played late.
+    expect(audio.started.length).toBe(1);
+    expect(givenUp).toEqual([]);
+    await close();
+    expect(givenUp).toEqual(["/thud.wav"]);
+  });
+
+  it("closes the audio and stops listening when its scope closes, and plays nothing after", async () => {
+    const { audio, close, made, output, page } = await build({
+      coin: "/coin.wav",
+    });
+    page.send("pointerdown");
+    await settle();
+    output.play("coin", 1, 1);
+    expect(audio.closed).toBe(0);
+    await close();
+    expect(audio.closed).toBe(1);
+    expect(page.total).toBe(0);
+    output.play("coin", 1, 1);
+    expect(audio.started.length).toBe(1);
+    page.send("pointerdown");
+    expect(made()).toBe(1);
+
+    // A file that is still being decoded when the layer is let go is not
+    // kept when it is done.
+    let done = (_sound: unknown): void => {};
+    const late = await build(
+      { coin: "/coin.wav" },
+      {
+        decode: () =>
+          new Promise((resolve) => {
+            done = resolve;
+          }),
+      }
+    );
+    late.page.send("pointerdown");
+    await late.close();
+    done({ samples: 3 });
+    await settle();
+    late.output.play("coin", 1, 1);
+    expect(late.audio.started).toEqual([]);
+
+    // One that was never touched made no audio, and has none to close.
+    const untouched = await build({ coin: "/coin.wav" });
+    await untouched.close();
+    expect(untouched.made()).toBe(0);
+    expect(untouched.audio.closed).toBe(0);
+    expect(untouched.page.total).toBe(0);
+  });
+
+  it("is part of Browser.layer when the page is given sounds, and a game's events are heard through it", async () => {
+    const Scored = Event.define("br/Scored", Schema.Struct({}));
+    const Score = System.make("br/Score", function* () {
+      if ((yield* Time).tick === 2) {
+        (yield* Scored).emit({});
+      }
+    });
+    const Cues = Sound.cues(
+      "br/Cues",
+      Sound.on(Scored, { cue: "coin", volume: 0.8 })
+    );
+    const Game = Plugin.make("br/Noisy", {
+      plugins: [Sound.plugin],
+      systems: [Score, Cues],
+    });
+    const page = makePage();
+    const audio = makeAudio();
+    const audible: boolean[] = [];
+    const Ask = System.make("br/Ask", function* () {
+      audible.push((yield* Sound.Player).audible);
+    }).pipe(System.inStage("frame"));
+    const start = (options: Browser.Options) =>
+      Effect.runFork(
+        App.run({ plugins: [Game], systems: [Ask] }, { hz: 60 }).pipe(
+          Effect.provide(Browser.layer({ gamepads: () => [], ...options })),
+          Effect.provide(Assets.layerMemory(sounds))
+        )
+      );
+    const fiber = start({
+      sounds: { coin: "/coin.wav" },
+      audio: () => audio,
+      decode: decodeInto([]),
+    });
+    await settle();
+    // The devices' seven listeners, and the two that wait for a touch.
+    expect(page.window.total).toBe(9);
+    page.window.send("keydown", { code: "Space", repeat: false });
+    await settle();
+    page.repaint(0);
+    page.repaint(1000 / 60);
+    expect(audio.started).toEqual([]);
+    page.repaint(2000 / 60);
+    expect(audio.started).toEqual([
+      { buffer: { samples: 3 }, rate: 1, volume: 0.8, into: audio.destination },
+    ]);
+    expect(audible.at(-1)).toBe(true);
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    expect(page.window.total).toBe(0);
+    expect(audio.closed).toBe(1);
+
+    // Given no sounds, the page's sound goes nowhere.
+    audible.length = 0;
+    const silent = start({});
+    await settle();
+    expect(page.window.total).toBe(7);
+    page.repaint(0);
+    expect(audible).toEqual([false]);
+    await Effect.runPromise(Fiber.interrupt(silent));
   });
 });

@@ -9,11 +9,13 @@ This is the first cut of the revamped design. It is a working prototype, not a f
 3. **Events and rules**: typed events every system sees exactly once, and actions with handlers that validate a move and refuse it with a typed error. Payloads are checked against a schema, applied actions are logged as JSON-safe data, and the log replays the game and checks the replay against the world's hash.
 4. **Plugins**: one value that bundles a feature's systems, handlers, services and setup, and names the plugins it depends on.
 
+What draws a game is a plugin in a package of its own: [`@arcadekit/three`](../three/README.md) draws one with Three.js.
+
 From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 465 tests
+pnpm test                          # 582 tests, 50 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -66,12 +68,13 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `State`, `System`, `TickScheduler` | `effect` |
-| `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `View` | `effect` |
+| `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, its sound, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
 - A server, a replay and a test of a game do not import `arcadekit/Browser`. No other entry names anything that only a page has, so they run under Node as they are.
 - Only what belongs to the page imports `arcadekit/Browser`: the module that starts the game there, and a plugin that draws it, for its pictures (`Browser.image`). The plugins that hold a game's rules do not, so a server installs no browser package.
+- What needs a library of its own is a package of its own, with `arcadekit` as a peer: [`@arcadekit/three`](../three/README.md) is the Three.js plugin. Nothing in `arcadekit` imports Three.js, and it is no longer a peer dependency of it.
 - An entry of a module is the module, imported whole: `import * as Input from "arcadekit/Input"` is the `Input` of `import { Input } from "arcadekit"`, the same object. `arcadekit` gives three modules by their names in place of the module: `EntityId` from `Schemas`, the services of `Services`, and the two classes of `TickScheduler`.
 - `arcadekit/ecs` is not a module of that kind: it gives the storage core's names as they are, and its world is `World`, which `arcadekit` calls `EcsWorld` beside its service of that name.
 - What two entries share is built once: a world made through `arcadekit/ecs` is one `arcadekit` knows, and a component is the same component.
@@ -128,6 +131,69 @@ A singleton is one instance of some data per world: whose turn it is, the score,
 - A migration changes it by name with `Migrate`, as it changes a component.
 - A `Resource` is the other kind of single value: configuration with a default that a layer can override. It is not game state, and is not saved.
 - With the storage core on its own: `Component.singleton(name, fields, initial)` and `world.singleton(spec)`.
+
+## Where a thing is
+
+```ts
+const Rock = Component.tag("game/Rock");
+
+commands.spawn(
+  Rock,
+  Transform3d.Position.of({ x: 0, y: 4, z: 0 }),
+  Transform3d.Rotation.of(Transform3d.axisAngle(0, 0, 1, Math.PI / 2)),
+  Transform3d.Scale.of({ x: 2, y: 2, z: 2 })
+);
+
+const Drift = System.make("game/Drift", function* () {
+  const { delta } = yield* Time;
+  (yield* Query.all(Transform3d.Position)).eachChunk((start, end, position) => {
+    for (let i = start; i < end; i++) position.x[i] += 2 * delta;
+  });
+});
+
+const Rules = Plugin.make("game/Rules", {
+  plugins: [Transform3d.plugin], // lists the three, so a save that names them can be read
+  components: [Rock],
+  systems: [Drift],
+});
+```
+
+`Transform3d` is three components for where a thing is in three dimensions: its position, which way it is turned, and how large it is. `Transform2d`, below, is the same for a flat game. They are in the package so that whatever needs to know where things are agrees on it: the rules that move them, what draws them, and what comes after.
+
+| Component | Fields | Named |
+| --- | --- | --- |
+| `Transform3d.Position` | `x`, `y`, `z`, in the units of the game's space | `"arcadekit/Transform3d.Position"` |
+| `Transform3d.Rotation` | `x`, `y`, `z`, `w`: a unit quaternion | `"arcadekit/Transform3d.Rotation"` |
+| `Transform3d.Scale` | `x`, `y`, `z`: 1 is the size a thing is made at | `"arcadekit/Transform3d.Scale"` |
+
+- They are ordinary components: 32-bit floats in columns of a table, written by the game's systems with a loop over `eachChunk`, saved, hashed and replayed. Nothing here draws, and the module imports no renderer.
+- An entity has the ones it needs. One that is only somewhere has a `Position`; `Rotation` and `Scale` are for the ones that turn or have a size of their own.
+- `Transform3d.plugin` lists them. A plugin that stores them depends on it, as the plugin of a renderer that reads them does.
+- `Transform3d.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis of length 1. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
+- A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A field left out of `of` is not 0, so a flat game gives every `z`.
+- [`@arcadekit/three`](../three/README.md) draws from them, and has no components of its own.
+
+**A flat game** has `Transform2d`: the same three components with no third dimension.
+
+```ts
+commands.spawn(
+  Card,
+  Transform2d.Position.of({ x: 120, y: 80 }),
+  Transform2d.Rotation.of({ angle: Math.PI / 6 }),
+  Transform2d.Scale.of({ x: 2, y: 2 })
+);
+```
+
+| Component | Fields | Named |
+| --- | --- | --- |
+| `Transform2d.Position` | `x`, `y` | `"arcadekit/Transform2d.Position"` |
+| `Transform2d.Rotation` | `angle`, in radians | `"arcadekit/Transform2d.Rotation"` |
+| `Transform2d.Scale` | `x`, `y` | `"arcadekit/Transform2d.Scale"` |
+
+- A positive `angle` turns from the x axis towards the y axis: anticlockwise where y points up, clockwise where it points down.
+- `Transform2d.plugin` lists them, as `Transform3d.plugin` lists the others.
+- They are different components from `Transform3d`'s, with names of their own. A game uses one of the two for a thing: nothing keeps one in step with the other, and a system that queries `Transform3d.Position` does not find an entity that has only `Transform2d.Position`.
+- `@arcadekit/three` draws from either, in the plane of x and y for these.
 
 ## Relations
 
@@ -200,6 +266,8 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 A string that identifies something at run time carries the name of the feature it belongs to.
 
 - The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
+- The bridge to a UI is `"arcadekit/View.Bridge"` and an app's end of it `"arcadekit/View.Port"`; the plugin is `"arcadekit/View"`, its system `"arcadekit/View.Send"`, and the system that publishes a view is named after it, `"View.publish(game/Hud)"`.
+- Where sound goes is `"arcadekit/Sound.Output"` and an app's player of cues `"arcadekit/Sound.Player"`; the plugin is `"arcadekit/Sound"`.
 - An app's assets are kept under `"arcadekit/Assets.Store"` and fetched through `"arcadekit/Assets.Loader"`; the plugin is `"arcadekit/Assets"`, and the system that keeps a bundle is named after it, `"Assets.during(game/Forest)"`.
 - What `Input.plugin` adds to a game is named the same way: the plugin and its singleton `"arcadekit/Input"`, its action `"arcadekit/Input.Report"` and its system `"arcadekit/Input.Read"`.
 - A component's name is its identity in a world, and part of its type: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
@@ -369,7 +437,7 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
 
 - It never ends by itself. `Browser.runMain` interrupts it when the page goes away for good, as the platform's `runMain` does under Node when the process is told to stop, and that stops the loop and closes the scope. Nothing is left running: no frame asked for, no listener, no script, and whatever the plugins' layers acquired let go.
 - What the game needs from outside is provided to it as to `App.make`, and a missing service is the same compile error. It stays provided for as long as the game runs, which is what a layer that listens, such as [`Browser.layer`](#input), needs.
-- `ready` runs once, when the app is made and before its first frame, with the app: to wire what is outside the game to it, or to keep hold of it. What it acquires is let go with the app, and what it needs and can fail with are `run`'s.
+- `ready` runs once, when the app is made and before its first frame, with the app: to wire what is outside the game to it, or to keep hold of it. A menu or a heads-up display needs no hold of the app: it is given [the view bridge](#the-view-bridge). What it acquires is let go with the app, and what it needs and can fail with are `run`'s.
 
   ```ts
   App.run(
@@ -410,6 +478,60 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
   ```
 
 - `examples/page` is a game in a page. `pnpm --filter arcadekit page` serves it.
+
+### A game that moves when its player does
+
+```ts
+Browser.runMain(
+  App.run({ plugins: [Chess] }, { hz: 60, ticks: "whenNeeded" }),
+  { target: board }
+);
+```
+
+A game of turns, a puzzle or a menu has nothing to do between two moves, and a game that ticks sixty times a second regardless runs its systems, passes its time and fills its log with checkpoints for nothing. With `ticks: "whenNeeded"`, `App.run` and `Driver.frames` draw every frame and tick only while something is waiting for a tick.
+
+- The [input stage](#input) runs every frame, so a key, a button of the UI's or a message is heard in the frame it comes in, and the tick it asks for runs in that frame.
+- It ticks while the app is not settled, at `hz` like any game, and once more after, for the systems that react a tick late to what a system listed after them did. Then it rests: no tick runs and the game's time stands still.
+- `app.settled` says whether anything is waiting: an action to apply, a state to enter, a script that waits for the next tick or sleeps, a fiber that is due, or an event that some system has not had its chance at. Looking changes nothing.
+- A script that sleeps keeps the game ticking for as long as it sleeps, at `hz`, so what takes the game's time (a piece sliding for three tenths of a second) takes it. A script that should let the game rest waits for an event.
+- The frame stage runs every frame, at rest too. It is told the frame is all the way to the last tick, a `Frame.alpha` of 1: what draws between two ticks draws the game where it is.
+- Resting is no part of the game. Its log holds the actions and the ticks they were applied in, and a replay given how many ticks it ran, `app.time.tick`, runs them one after the other and ends on the same hash.
+- What is not counted: a system that does something every tick whether or not anything is waiting. A game that has one runs in real time, which is what leaving `ticks` out is.
+- A frame of a game at rest costs 5.3 µs with the picture of the devices, a state and a view: the devices read, the app asked, and the frame stage.
+
+### Drawing with Three.js
+
+```ts
+import { Three } from "@arcadekit/three";
+import { Transform3d } from "arcadekit";
+
+// The rules say where a rock is, with arcadekit's own components.
+commands.spawn(Rock, Transform3d.Position.of({ x: 0, y: 4, z: 0 }));
+
+// The page says how a rock looks: every one is an instance of one mesh.
+const Rocks = Three.instances("game/Rocks", {
+  of: Rock,
+  geometry: new IcosahedronGeometry(1),
+  material: new MeshStandardMaterial({ color: "#8a8f98" }),
+});
+const Look = Plugin.make("game/Look", {
+  plugins: [Three.plugin, Rules],
+  systems: [Rocks],
+});
+
+Browser.runMain(
+  App.run({ plugins: [Look] }, { hz: 60 }).pipe(
+    Effect.provide(Three.layerWebGL({ canvas }))
+  ),
+  { target: canvas }
+);
+```
+
+[`@arcadekit/three`](../three/README.md) is the plugin that draws a game with Three.js, in a package of its own. It is made of what is above: systems of the frame stage that read the world and cannot change it, a service that holds the scene from one frame to the next, and a renderer that comes from outside as the display does.
+
+- Where a thing is drawn comes from [`Transform3d` or `Transform2d`](#where-a-thing-is), which are this package's. The rules import nothing of `@arcadekit/three`, so a server and a replay install neither it nor Three.js.
+- `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over. `Three.objects` keeps an Object3D per entity for the few things that are more than that. With `smooth: true` either draws each entity between its last two places, at `Frame.alpha` of the way, so that a game whose ticks and frames do not line up moves evenly.
+- A game that draws with something else does not install it.
 
 ## Input
 
@@ -498,6 +620,140 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
   ```
 
 - Reading the devices when nothing changed costs 1.4 µs a tick. A tick in which a key went down or up costs 5.2 µs in all: the reading, the action and the tick that applies it. See the [benchmark](#benchmark-100000-entities-pos--vel--dt).
+
+## The view bridge
+
+```ts
+// protocol.ts: what the UI may see, and what it may ask for. The UI imports this.
+export const Hud = View.define("game/Hud", { score: 0, lives: 3 });
+export const NewGame = Action.define("game/NewGame", Schema.Struct({}));
+
+// game.ts: the game says what a view is, once per frame.
+const ShowHud = View.publish(Hud, function* () {
+  const score = yield* Score;
+  return { score: score.points, lives: score.lives };
+});
+const Game = Plugin.make("Game", {
+  plugins: [View.plugin],
+  systems: [ShowHud],
+  handlers: [newGame],
+});
+
+// ui.ts: the UI is handed the bridge, and nothing else.
+export const mount = (root: Element, ui: View.Bridge) => {
+  const label = root.querySelector("output")!;
+  label.textContent = `${ui.get(Hud).score}`;
+  ui.subscribe(Hud, ({ score }) => {
+    label.textContent = `${score}`;
+  });
+  root.querySelector("button")!.onclick = () => ui.send(NewGame, {});
+};
+
+// main.ts: the entry point makes the bridge and gives each side its end.
+const ui = View.makeBridge();
+mount(document.body, ui);
+Browser.runMain(
+  App.run({ plugins: [Game] }, { hz: 60 }).pipe(Effect.provide(View.layer(ui))),
+  { target: canvas }
+);
+```
+
+A game's menus and its heads-up display are built with whatever the game chooses: the page's own DOM, React, anything. The package depends on none of them. What it gives is the bridge between the two: the game says which values the UI may see, and the UI acts by sending actions.
+
+**A view** is a value the UI may see, declared with `View.define(name, initial)`. `initial` is what the UI has of it until the game first says, and gives it its type.
+
+- It is a key and nothing of the game, like an action. The module that declares the views and the actions is the one thing the UI and the game share.
+- Its value is plain data: text, numbers, booleans, and arrays and objects of them.
+
+**The game publishes.** `View.publish(view, body)` makes a system of the [frame stage](#the-tick-and-the-frame): each frame it works the value out, and publishes it if it is not the value the UI already has.
+
+- Two values are compared as data, field by field and however deep. So a body returns a new object each frame, and the UI is told only when something in it differs: a value that did not change costs the UI nothing, not a call.
+- It reads what a frame system can (singletons, states, queries, events, assets) and cannot change the game. In the tick, publishing throws.
+- Several ticks and one frame are one publication, of the latest value.
+- It takes `System.runIf`: a view that is not published keeps the value it had.
+- A frame system of the game's own publishes through `(yield* View.Port).publish(view, value)`, which says whether the value was news.
+- Where no UI is there, on a server, in a replay, in most tests, no body runs at all.
+
+**The UI holds the bridge**, `View.Bridge`, and nothing of the game.
+
+- `ui.get(view)` is the value as last published. It is the same object until the view is published with another value, so `===` tells a UI library whether anything changed.
+- `ui.subscribe(view, listener)` calls the listener each time the view is published with a new value, and returns what stops it. A listener that throws fails the frame, as any bug in the frame stage does, once every other listener was told.
+- `ui.send(action, payload)` asks the game for an action. It is issued in the [input stage](#input), before the next tick, by `View.plugin`: logged, and applied or refused by its handler, exactly as a key bound to it would be. So a replay needs no UI, and a button is as good as a key.
+- A UI can be mounted before the game is made: it sees every view at its initial value, and what it sends waits.
+- A bridge refuses two different views with one name.
+
+**Binding it to a UI library** is a few lines, in the game. For React:
+
+```ts
+const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
+  useSyncExternalStore(
+    (changed) => ui.subscribe(view, changed),
+    () => ui.get(view)
+  );
+```
+
+- `View.Bridge` is a `Context.Reference` whose default is no UI. `View.makeBridge()` makes one and `View.layer(ui)` provides it.
+- A game with a UI and the same game with none have the same hash, log and save, given the same actions.
+- `examples/page` builds its menu and its heads-up display twice on one bridge, with the DOM (`ui-dom.ts`) and with React (`ui-react.ts`, shown by `?ui=react`). Neither imports anything of the game but `protocol.ts`. `test/page.test.ts` mounts both in a document and plays the game through them: while stars fall and none is caught, the UI is told nothing and nothing in the document changes.
+
+## Sound
+
+```ts
+// The simulation says what happened. It knows nothing of sound.
+const Bounced = Event.define(
+  "physics/Bounced",
+  Schema.Struct({ speed: Schema.Finite })
+);
+
+// What it sounds like: a system of the frame stage.
+const Cues = Sound.cues(
+  "game/Cues",
+  Sound.on(Scored, "coin"),
+  Sound.on(Bounced, ({ speed }) =>
+    speed < 2 ? undefined : { cue: "thud", volume: Math.min(1, speed / 10) }
+  )
+);
+
+const Game = Plugin.make("Game", {
+  plugins: [Sound.plugin],
+  systems: [Physics, Cues],
+});
+
+// Where it goes: in a page, the files of the cues.
+Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), {
+  target: canvas,
+  sounds: { coin: "/coin.wav", thud: "/thud.wav" },
+});
+```
+
+A sound is a named cue, and it is played because something happened: the simulation emits an [event](#events), and what the event sounds like is said elsewhere. The simulation never plays.
+
+- `Sound.cues(name, ...lines)` makes a system of the [frame stage](#the-tick-and-the-frame). Each frame it plays what the events since the last frame sound like. It hears every event once, however many ticks ran in between, as any frame system does.
+- `Sound.on(event, cue)` is a line: a cue's name, a name with a `volume` and a `rate`, or a function of the event's payload that gives either, or nothing.
+- A cue that several events of one frame ask for is played once, as the loudest of them asked: forty coins caught in one tick are one sound, not forty on top of each other.
+- `Sound.Player` is the service that plays, which `Sound.plugin` provides. A frame system plays through it for a sound no event stands for: `(yield* Sound.Player).play("click", { volume: 0.5 })`. In the tick it throws and says what to do instead, and an action's handler that plays dies of the same.
+- Sound follows real time and is no part of the game. A game that is heard has the same hash, log and save as one that is not, and a replay or a server, which run no frame stage, play nothing.
+- What a refused action emitted is taken back with the rest, so it is never heard.
+- `Sound.Output` is where sound goes: a `Context.Reference` whose default is nowhere, and there the cues' system reads nothing. `Sound.layer(output)` provides one, and `Sound.makeRecorder()` is one that plays nothing and notes what it was asked, for a test:
+
+  ```ts
+  const sound = Sound.makeRecorder();
+  const made = App.make({ plugins: [Game] }).pipe(
+    Effect.provide(Sound.layer(sound))
+  );
+  // With the app that gives:
+  app.tick(1 / 60);
+  app.frame(0);
+  sound.played; // [{ cue: "coin", volume: 1, rate: 1 }]
+  ```
+
+**In a page** the output is Web Audio. Given `sounds`, a file for each cue, `Browser.runMain` and `Browser.layer` provide it; `Browser.layerSound(files)` is the layer on its own.
+
+- The files are fetched when the page starts, through `Assets.Loader`, and decoded as they arrive.
+- A page may not make a sound before its user has touched it. The audio is made at the first key or pointer press, and a cue asked for in the frame after is played. What was asked for before that, or before a cue's file was there, is not played: a sound that is late is worse than none.
+- `volume` is how loud every cue is played, and `rate` is a cue's speed, and so its pitch.
+- A cue that has no file, or whose file could not be fetched or decoded, is said once through Effect's logger and plays nothing.
+- When the page goes away the audio is closed, and a request still on its way is given up.
 
 ## Assets
 
@@ -746,20 +1002,23 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Migrate.ts` | The usual changes a migration makes to an old save's world |
 | `src/Field.ts` | The fields of a component, with `Field.schema` |
 | `src/Singleton.ts` | One instance of some data per world |
+| `src/Transform3d.ts`, `src/Transform2d.ts` | Where a thing is: the position, rotation and scale that the rules write and a renderer reads, in three dimensions and in two |
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Input.ts` | The devices and where they come from, the picture of them in the world, and bindings to actions |
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
+| `src/Sound.ts` | Cues played from the game's events in the frame stage, the player, and where sound goes |
+| `src/View.ts` | The view bridge: the values a UI may see, published once per frame when they changed, and the actions it sends |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
-| `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices and pictures, and `Browser.runMain` |
+| `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser and entries tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, transform, page and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
-| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `Browser.runMain` around `App.run` |
+| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, heard through two cues, with a level whose assets come and go, started with `Browser.runMain` around `App.run`. Its menu and heads-up display are built twice on the view bridge: `ui-dom.ts` with the DOM and `ui-react.ts` with React, both from `protocol.ts`, the views and actions they share with `game.ts` |
 
 ## Two ways to loop
 
@@ -850,12 +1109,33 @@ Change detection in the same world, with a query that watches `Position`:
 | `eachChunk` handed the watched component: every row noted | 5.3 ns/entity |
 | The same through a query that only reads it (`Query.reads`) | 2.6 ns/entity |
 
+A game that ticks when it is needed, at rest, with the picture of the devices, a state and a view:
+
+| Variant                                                    | Cost   |
+| ---------------------------------------------------------- | ------ |
+| One frame: the devices read, the app asked, drawn, no tick | 5.3 µs |
+
 The input stage, with `Input.plugin`, three buttons held and the pointer somewhere:
 
 | Variant                                                 | Cost    |
 | ------------------------------------------------------- | ------- |
 | `app.input()`: the devices read, nothing changed        | 1.39 µs |
 | `app.input()` and `app.tick()`: one key went down or up | 5.22 µs |
+
+The view bridge, with one view of four fields read from a singleton:
+
+| Variant                                                   | Cost    |
+| --------------------------------------------------------- | ------- |
+| `app.frame()`: no UI is there, the view is not worked out | 0.58 µs |
+| `app.frame()`: a UI is there, the value is what it has    | 2.90 µs |
+| `app.frame()`: the value is new, and one listener told    | 2.57 µs |
+
+Sound, with one system that plays cues for two kinds of event, to an output that does nothing:
+
+| Variant                                         | Cost    |
+| ----------------------------------------------- | ------- |
+| `app.frame()`: nothing happened                 | 1.25 µs |
+| `app.frame()`: one event, and its cue is played | 1.42 µs |
 
 Entities coming and going in the same world:
 
@@ -877,6 +1157,8 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 - Writes are noticed per row. A component that no query watches costs what it did: the lines of the first table were measured before and after and did not move. A watched one costs 2.5 ns more for an assignment in `each` to a row that is noted already, about 5 ns for the first assignment to a row since the last visit, and 2.8 ns per row that `eachChunk` hands out. Noticing per table or per column would cost nothing to write, but one `world.set` would then send every watching query through the whole table: 0.25 ms to 0.64 ms for 100,000 rows, where it now takes 0.2 µs.
 - A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
 - The input stage runs before every tick, so its cost when nothing happens is the one that counts: one sample of the devices, compared with what the world holds, 1.4 µs for a keyboard, a pointer and a few buttons held. An app with no system in that stage reads nothing and pays nothing.
+- A view costs the game its body and one comparison a frame, 2.3 µs for four fields, and the UI nothing at all until a field differs. A value that is new is found to be at the first field that differs, which is why it costs less than one that is not. Where no UI is there the system asks whether one is and stops.
+- Sound costs a frame two reads of events that are not there, 0.7 µs over a frame that does nothing, and 0.2 µs more for a cue that is played. Where sound goes nowhere the system asks whether it does and stops.
 - A frame of ten systems that do nothing costs 5.8 µs, about what a tick of ten does: freezing the world is setting a flag. Checking a frame with `verifyFrames` costs a hash of the world before the stage and one after each of its systems, 1.3 ms more for one system over 100,000 entities.
 - A relation costs its component and a few assignments to link and unlink: 0.13 µs more per entity that is spawned and despawned with one. A despawn that takes others with it costs what despawning each of them does, 130 ns apiece here. A world with no relation does one comparison more per despawn than before: the first line was 587 µs before relations and 561 µs after, which is the machine's noise.
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
@@ -904,8 +1186,18 @@ moving.eachChunk((start, end, pos, vel) => {
 
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
-- Nothing here plays sound, and nothing draws for you. There is a frame stage for what draws and a frame loop that runs it once per repaint, and the example page draws on a canvas by hand: there is no Three.js plugin yet, and no bridge to a UI library.
-- An asset is a picture, text, JSON or bytes. A sound and a font are for whoever plays and draws them to decode, with `Assets.make`.
+- [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
+- A game picks one of the two transforms for a thing, and a plugin written for one does not read the other: code that should work in both asks for both. A `Transform2d` has no depth: what is in front of what in a flat game is for what draws it to say.
+- A cue is played once and left to end. There is no music: nothing loops, nothing is stopped or faded, and nothing is heard from where it is.
+- A page's cues are fetched when the page starts and kept until it goes away. They are not assets of a level: a bundle does not hold a sound.
+- A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.
+- The first sound a page can make is the one its user's first key or press sets off. Nothing is heard before that.
+- A view is worked out and compared whole, every frame a UI is there. A game with a view that is costly to work out says when it is worth it with `System.runIf`.
+- The UI is not told what became of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and the game can publish as a view.
+- What the UI sends is applied by the next tick, which under a driver is the frame it was sent in or the one after. A game that steps its app by hand runs the input stage and a tick itself when its UI has sent something.
+- A view's value is an object of this program, with no schema: a UI in another thread or on another machine is not served.
+- `ui.send` takes any action. That the game has a handler for it is checked when it is issued, where a missing one throws, and not by the compiler.
+- An asset is a picture, text, JSON or bytes. A font is for whoever draws with it to decode, with `Assets.make`.
 - A bundle is loaded or it is not: it does not say how far along it is, and a file that two bundles name is fetched for each.
 - A bundle that failed stays failed until its level is entered again. Nothing tries again by itself.
 - `Assets.load` waits in real time. In a script it would resume in whatever tick the file happened to arrive in, and a replay of that script would fetch the file again: a script does not load.
@@ -914,14 +1206,14 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A button that is pressed twice between two readings of the devices was pressed once.
 - The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
 - Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
-- Only a driver runs the input stage. A game that ticks when a player moves calls `app.input()` before its tick itself.
-- `App.run` is for a game that ticks in real time. One that ticks when a player moves, as the duel example does, makes its app and steps it itself: in a page it would want its frames drawn at the display's rate and its ticks on demand, and no driver does that.
+- Only a driver runs the input stage. A game that steps its app by hand, as the duel example does under Node, calls `app.input()` before its tick itself.
+- A game that ticks when it is needed rests when nothing is waiting, and what is waiting is what the app can see: actions, states, scripts and events. A system that reacts to a change through a change query, listed before the system that makes the change, reacts a tick late, and the one tick that follows the last is all it is given; two such systems in a row are a tick short. Order them with `System.after`.
 - The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
 - The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and `arcadekit/Browser` against stand-ins for `requestAnimationFrame`, the document and the window.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
-- A frame system that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps. There is no helper for it.
+- A frame system of the game's own that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps: there is no helper for it in this package. [`@arcadekit/three`](../three/README.md#between-two-ticks) does it for what it draws, with `smooth: true`, and keeps the place before to itself.
 - `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
-- `arcadekit/Browser` is one entry for everything a page has. A renderer, a UI bridge and netcode will each be an entry of their own when they are built.
+- `arcadekit/Browser` is one entry for everything a page has. Netcode will be an entry of its own when it is built.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.
