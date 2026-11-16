@@ -24,6 +24,7 @@ import {
   Plugin,
   Query,
   Save,
+  Singleton,
   System,
   World,
 } from "../src/index";
@@ -36,16 +37,10 @@ const Fighter = Component.define("duel/Fighter", {
   energy: Field.i32,
 });
 const Name = Component.define("duel/Name", { value: Field.json<string>() });
-const Turn = Component.define("duel/Turn", { player: Field.u8 });
+// One per game, not one per entity: whose turn it is.
+const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 });
 
 const Fighters = Query.all(Fighter);
-const whoseTurn = Effect.map(Query.all(Turn), (turns) => {
-  let player = 0;
-  turns.each((turn) => {
-    player = turn.player;
-  });
-  return player;
-});
 
 // --- what can happen -------------------------------------------------------------
 // Defined with schemas too, so that an event can be written down.
@@ -90,9 +85,9 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   if (me === undefined || them === undefined) {
     return yield* Effect.fail(new NoSuchFighter());
   }
-  const player = yield* whoseTurn;
-  if (me.player !== player) {
-    return yield* Effect.fail(new NotYourTurn({ waitingFor: player }));
+  const turn = yield* Turn;
+  if (me.player !== turn.player) {
+    return yield* Effect.fail(new NotYourTurn({ waitingFor: turn.player }));
   }
   if (me.energy < STRIKE_COST) {
     return yield* Effect.fail(
@@ -107,14 +102,12 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 });
 
 const pass = Action.handler(Pass, function* ({ player }) {
-  const current = yield* whoseTurn;
-  if (player !== current) {
-    return yield* Effect.fail(new NotYourTurn({ waitingFor: current }));
+  const turn = yield* Turn;
+  if (player !== turn.player) {
+    return yield* Effect.fail(new NotYourTurn({ waitingFor: turn.player }));
   }
-  const next = current === 1 ? 2 : 1;
-  (yield* Query.all(Turn)).each((turn) => {
-    turn.player = next;
-  });
+  const next = player === 1 ? 2 : 1;
+  turn.player = next;
   (yield* TurnEnded).emit({ next });
 });
 
@@ -150,9 +143,6 @@ const Rules = Plugin.make("Rules", {
   components: [Fighter, Name, Turn],
   systems: [Casualties, Rest],
   handlers: [strike, pass],
-  setup: Effect.gen(function* () {
-    (yield* Commands).spawn(Turn.of({ player: 1 }));
-  }),
 });
 
 class Narrator extends Context.Service<
@@ -305,7 +295,7 @@ const program = Effect.gen(function* () {
   // Someone edits it so that the Knight's first strike lands on the Knight.
   // The rules allow that move, so nothing is refused: the hash gives it away.
   console.log(
-    `legal but altered -> ${yield* replay(saved.replace('"target":2', '"target":1'))}`
+    `legal but altered -> ${yield* replay(saved.replace('"target":1', '"target":0'))}`
   );
   console.log(`garbage -> ${yield* replay("<html>")}`);
 

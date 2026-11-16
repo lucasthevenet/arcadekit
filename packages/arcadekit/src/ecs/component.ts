@@ -178,20 +178,81 @@ export type ColumnsOf<S extends Schema> = {
   readonly [K in keyof S]: S[K] extends FieldDef<any, infer C> ? C : never;
 };
 
+/** The columns of a component a query only reads: indexed, and not assigned to. */
+export type ReadonlyColumnsOf<S extends Schema> = {
+  readonly [K in keyof S]: S[K] extends FieldDef<infer T, any>
+    ? ReadonlyColumn<T>
+    : never;
+};
+
+/**
+ * What the type of a query's term carries when the query only reads it.
+ * Only in the type: it is how `each` and `eachChunk` know to hand out
+ * something that cannot be assigned to.
+ */
+export interface ReadOnlyTerm {
+  readonly _reads: true;
+}
+
 export type Storage = "table" | "sparse";
+
+/**
+ * What becomes of a relation when the entity it points at is despawned:
+ * the entity that holds it is despawned too, or the relation is removed
+ * from it.
+ */
+export type OnTargetDespawn = "despawn" | "remove";
+
+/**
+ * A column that is read and not written: a relation's `target`, which the
+ * world keeps track of and so has to be told of every change to.
+ */
+export interface ReadonlyColumn<T> {
+  readonly [index: number]: T;
+  readonly length: number;
+}
+
+/** The fields of a relation: its target, then any of its own. */
+export type RelationSchema<S extends Schema> = {
+  readonly target: FieldDef<Entity, ReadonlyColumn<Entity>>;
+} & S;
+
+/** @internal What an accessor that notices writes tells: `ChangeLog` in world.ts. */
+export interface WriteLog {
+  /** Per entity index: 1 when the entity is noted already. */
+  noted: Uint8Array;
+  note(index: number): void;
+}
 
 /** @internal A reusable cursor over one row of a component's columns. */
 export interface Accessor {
   _i: number;
-  _bind(columns: Record<string, Column>): void;
+  /**
+   * `entities` and `log` are for an accessor that notices writes: the entity
+   * of each row (ids for a table, indexes for a sparse set), and where a
+   * write is noted.
+   */
+  _bind(
+    columns: Record<string, Column>,
+    entities?: Uint32Array,
+    log?: WriteLog
+  ): void;
 }
 
+/**
+ * @param S  the component's fields
+ * @param St where its data is kept
+ * @param N  its name. Two components can have the same fields, and it is
+ *           by their names that the compiler tells them apart: which of a
+ *           query's terms `Query.reads` was given, for one.
+ */
 export interface ComponentDef<
   S extends Schema = Schema,
   St extends Storage = Storage,
+  N extends string = string,
 > {
   readonly id: number;
-  readonly name: string;
+  readonly name: N;
   readonly schema: S;
   readonly fields: readonly string[];
   readonly kinds: readonly FieldKind[];
@@ -200,6 +261,16 @@ export interface ComponentDef<
   /** Tracked in the type so queries know which terms have row-aligned columns. */
   readonly storage: St;
   readonly isTag: boolean;
+  /**
+   * True for the fields of a singleton, which the world holds one of and no
+   * entity has: see `Component.singleton`.
+   */
+  readonly single: boolean;
+  /**
+   * For a relation, what becomes of it when its target is despawned;
+   * undefined for any other component. See `Component.relation`.
+   */
+  readonly relation: OnTargetDespawn | undefined;
   /** Pair this component with a value, for `spawn` and `add`. */
   readonly of: (value: ValueOf<S>) => ComponentValue<S>;
   /** @internal */
@@ -217,6 +288,28 @@ export type ComponentInput = ComponentValue<any> | ComponentDef<any>;
 export const isComponentDef = (u: ComponentInput): u is ComponentDef<any> =>
   "id" in u;
 
+/**
+ * One instance of some data per world: whose turn it is, the score, the
+ * level being played. `world.singleton(spec)` gives the value, which is
+ * read and written like an object and is the world's: saved in a snapshot,
+ * counted in the hash, and put back when a transaction is rolled back.
+ *
+ * Any object with this shape works; the Effect layer supplies a yieldable
+ * one.
+ */
+export interface SingletonSpec<S extends Schema = Schema> {
+  /** The singleton's name and fields, in the form of a component. */
+  readonly component: ComponentDef<S>;
+  /** What it holds in a world that has not written it. */
+  readonly initial: ValueOf<S>;
+}
+
+/** What an app is told of, so that a save which names it can be read. */
+export type Listed = ComponentDef<any> | SingletonSpec<any>;
+
+export const isSingletonSpec = (u: Listed): u is SingletonSpec<any> =>
+  "initial" in u;
+
 // A component's name is its identity in a save, on the network and in a tool.
 // A world keeps the names of the components it stores and refuses two with one
 // name (see `World.register`), so nothing here is shared between worlds. The
@@ -231,35 +324,139 @@ let nextId = 0;
  * would need a non-codegen fallback (see bench/accessors.ts for the cost).
  */
 const makeAccessorClass = (
-  name: string,
-  fields: readonly string[]
+  fields: readonly string[],
+  noticing = false,
+  relation?: string,
+  /** For an accessor that only reads: what an assignment to a field throws. */
+  refusal?: (field: string) => string
 ): new () => Accessor => {
   const init = fields.map((_, i) => `this._c${i} = null;`).join(" ");
+  // An accessor that notices writes tells the log which entity it wrote,
+  // by index. The log keeps one entry per entity until a reader has been.
+  // The check `note` starts with is written out here, so that a row which
+  // is noted already costs a few reads and a comparison, and no call.
+  // Measured, 2.5 ns an assignment. `noted` is read through the log each
+  // time: the log replaces it when it grows.
+  const note = noticing
+    ? `; const k = this._e[this._i] & ${INDEX_MASK}; if (this._l.noted[k] !== 1) this._l.note(k)`
+    : "";
   const props = fields
     .map((f, i) => {
       const key = JSON.stringify(f);
-      return `get [${key}]() { return this._c${i}[this._i] } set [${key}](v) { this._c${i}[this._i] = v }`;
+      // A relation's target is the world's to change.
+      const set =
+        refusal !== undefined
+          ? `throw new Error(${JSON.stringify(refusal(f))})`
+          : relation !== undefined && f === "target"
+            ? `throw new Error(${JSON.stringify(retarget(relation))})`
+            : `this._c${i}[this._i] = v${note}`;
+      return `get [${key}]() { return this._c${i}[this._i] } set [${key}](v) { ${set} }`;
     })
     .join("\n");
   const bind = fields
     .map((f, i) => `this._c${i} = cols[${JSON.stringify(f)}];`)
     .join(" ");
-  const source = `return class {
+  const source = noticing
+    ? `return class {
+    constructor() { this._i = 0; this._e = null; this._l = null; ${init} }
+    ${props}
+    _bind(cols, ents, log) { ${bind} this._e = ents; this._l = log; }
+  }`
+    : `return class {
     constructor() { this._i = 0; ${init} }
     ${props}
     _bind(cols) { ${bind} }
   }`;
-  void name;
   return new Function(source)() as new () => Accessor;
 };
 
-const define = <S extends Schema, St extends Storage = "table">(
-  name: string,
+/** What went wrong when something tried to change a frozen world. */
+export const frozenWrite = (what: string): string =>
+  `${what} was made while the world is frozen. A frozen world is read and not changed: an app freezes its world for the frame stage, which draws the game between two ticks. Change the game from a system that runs in the tick, or from outside with an action.`;
+
+/** What to do instead of writing a relation's target. */
+export const retarget = (name: string): string =>
+  `"${name}" is a relation, and its target is not written like a field: the world keeps track of who points at whom. Give it another target by adding it again, with add(entity, ${name.split("/").pop()}.of({ target })) on Commands or on the world.`;
+
+// Made the first time a world watches the component for changes, and kept:
+// it is code, not state, so worlds can share it.
+const noticingClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+
+const frozenClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+
+/**
+ * The accessor class of a component in a frozen world: as `def.Accessor`
+ * to read, and every setter throws.
+ * @internal
+ */
+export const frozenAccessor = (def: ComponentDef<any>): new () => Accessor => {
+  let made = frozenClasses.get(def);
+  if (made === undefined) {
+    made = makeAccessorClass(def.fields, false, undefined, (field) =>
+      frozenWrite(`An assignment to "${def.name}.${field}"`)
+    );
+    frozenClasses.set(def, made);
+  }
+  return made;
+};
+
+const readingClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+
+/**
+ * The accessor class of a component for a query that only reads it: as
+ * `def.Accessor` to read, and every setter throws.
+ * @internal
+ */
+export const readingAccessor = (def: ComponentDef<any>): new () => Accessor => {
+  let made = readingClasses.get(def);
+  if (made === undefined) {
+    made = makeAccessorClass(
+      def.fields,
+      false,
+      undefined,
+      (field) =>
+        `"${def.name}.${field}" was assigned to through a query that only reads "${def.name}": the query names it among the components it reads (Query.reads). Leave it out of those to write it.`
+    );
+    readingClasses.set(def, made);
+  }
+  return made;
+};
+
+/**
+ * The accessor class of a component whose writes are noticed: as
+ * `def.Accessor`, and every setter also notes the entity it wrote.
+ * @internal
+ */
+export const noticingAccessor = (
+  def: ComponentDef<any>
+): new () => Accessor => {
+  let made = noticingClasses.get(def);
+  if (made === undefined) {
+    made = makeAccessorClass(
+      def.fields,
+      true,
+      def.relation === undefined ? undefined : def.name
+    );
+    noticingClasses.set(def, made);
+  }
+  return made;
+};
+
+const define = <
+  S extends Schema,
+  St extends Storage = "table",
+  N extends string = string,
+>(
+  name: N,
   schema: S,
-  options?: { readonly storage?: St }
-): ComponentDef<S, St> => {
+  options?: {
+    readonly storage?: St;
+    readonly single?: boolean;
+    readonly relation?: OnTargetDespawn;
+  }
+): ComponentDef<S, St, N> => {
   const fields = Object.keys(schema);
-  const def: ComponentDef<S, St> = {
+  const def: ComponentDef<S, St, N> = {
     id: nextId++,
     name,
     schema,
@@ -268,18 +465,80 @@ const define = <S extends Schema, St extends Storage = "table">(
     codecs: Object.values(schema).map((fieldDef) => fieldDef.codec),
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
+    single: options?.single === true,
+    relation: options?.relation,
     of: (value) => ({ def, value }),
-    Accessor: makeAccessorClass(name, fields),
+    Accessor: makeAccessorClass(
+      fields,
+      false,
+      options?.relation === undefined ? undefined : name
+    ),
   };
   return def;
 };
 
 export const Component = {
   /** Define a data component. Numeric fields become typed-array columns. */
-  define,
-  /** Define a component with no data, used only for filtering. */
-  tag: <St extends Storage = "table">(
-    name: string,
+  define: <
+    const N extends string,
+    S extends Schema,
+    St extends Storage = "table",
+  >(
+    name: N,
+    schema: S,
     options?: { readonly storage?: St }
-  ): ComponentDef<{}, St> => define(name, {}, options),
+  ): ComponentDef<S, St, N> => define(name, schema, options),
+  /**
+   * Define a singleton: data the world holds one of, with the value it has
+   * until it is written. Its name is one of the world's component names.
+   */
+  singleton: <S extends Schema>(
+    name: string,
+    schema: S,
+    initial: ValueOf<S>
+  ): SingletonSpec<S> => ({
+    component: define(name, schema, { single: true }),
+    initial,
+  }),
+  /**
+   * Define a relation: a component that points at another entity, its
+   * `target`, and is kept correct when that entity is despawned.
+   *
+   *   const ChildOf = Component.relation("scene/ChildOf", { onTargetDespawn: "despawn" })
+   *   world.spawn(Position.of({ x: 0, y: 0 }), ChildOf.of({ target: parent }))
+   *
+   * `onTargetDespawn` says what a target's despawn does to whoever points
+   * at it: `"despawn"` takes them with it (a parent and its children),
+   * `"remove"` takes the relation off them (a target, an owner). Either
+   * way nothing is left pointing at an entity that is gone.
+   *
+   * `fields` are fields of the relation's own, beside `target`.
+   */
+  relation: <
+    const N extends string,
+    S extends Schema = {},
+    St extends Storage = "table",
+  >(
+    name: N,
+    options: {
+      readonly onTargetDespawn: OnTargetDespawn;
+      readonly storage?: St;
+      readonly fields?: S;
+    }
+  ): ComponentDef<RelationSchema<S>, St, N> =>
+    define<RelationSchema<S>, St, N>(
+      name,
+      {
+        target: Field.entity,
+        ...options.fields,
+      } as unknown as RelationSchema<S>,
+      options.storage === undefined
+        ? { relation: options.onTargetDespawn }
+        : { storage: options.storage, relation: options.onTargetDespawn }
+    ),
+  /** Define a component with no data, used only for filtering. */
+  tag: <const N extends string, St extends Storage = "table">(
+    name: N,
+    options?: { readonly storage?: St }
+  ): ComponentDef<{}, St, N> => define(name, {}, options),
 };

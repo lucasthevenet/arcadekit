@@ -46,7 +46,8 @@ export class SnapshotError extends Error {
 
 /** "AKWS": arcadekit world snapshot. */
 export const MAGIC = 0x53574b41;
-export const FORMAT = 1;
+/** Format 2 added singletons. Format 1 is read as well. */
+export const FORMAT = 2;
 /** The last four bytes, so that a snapshot cut short at a boundary still shows. */
 export const END = 0x21444e45;
 
@@ -65,6 +66,9 @@ export const WIDTH: Record<
   u16: 2,
   u8: 1,
 };
+
+/** How a component's data is kept, by the byte a snapshot writes for it. */
+export const STORAGES = ["table", "sparse", "singleton"] as const;
 
 export const KIND_CODES: readonly FieldKind[] = [
   "f32",
@@ -424,7 +428,8 @@ export const readColumn = (
 /** A component as a snapshot describes it: by name, with its fields. */
 export interface SnapshotComponent {
   name: string;
-  storage: "table" | "sparse";
+  /** Where its data is: in tables, in a sparse set, or one value for the world. */
+  storage: "table" | "sparse" | "singleton";
   fields: { name: string; kind: FieldKind }[];
 }
 
@@ -444,6 +449,13 @@ export interface SnapshotSparse {
   /** The index (not the id) of each entity that has the component. */
   members: Uint32Array;
   /** Per field name: one value per member. */
+  columns: Record<string, Column>;
+}
+
+/** One singleton of a snapshot: the value the world held of it. */
+export interface SnapshotSingleton {
+  component: string;
+  /** Per field name: a column of the one value. */
   columns: Record<string, Column>;
 }
 
@@ -467,6 +479,8 @@ export interface SnapshotContents {
   /** In the order queries visit them. */
   tables: SnapshotTable[];
   sparse: SnapshotSparse[];
+  /** The singletons that had been written. */
+  singletons: SnapshotSingleton[];
 }
 
 const columnOf = (kind: FieldKind, count: number): Column => {
@@ -509,10 +523,10 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     );
   }
   const format = reader.u32();
-  if (format !== FORMAT) {
+  if (format < 1 || format > FORMAT) {
     throw new SnapshotError(
       "newer format",
-      `The snapshot is in format ${format}, and this version reads format ${FORMAT}.`
+      `The snapshot is in format ${format}, and this version reads formats 1 to ${FORMAT}.`
     );
   }
   const random = new Uint32Array(4);
@@ -529,7 +543,10 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
   const components: SnapshotComponent[] = [];
   for (let c = reader.count(9); c > 0; c--) {
     const name = reader.text();
-    const storage = reader.u8() === 1 ? "sparse" : "table";
+    const storage = STORAGES[reader.u8()];
+    if (storage === undefined) {
+      throw damaged("a component is kept in a way this version does not know");
+    }
     const fields: SnapshotComponent["fields"] = [];
     for (let f = reader.count(5); f > 0; f--) {
       const field = reader.text();
@@ -594,10 +611,26 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
       columns: readFields(component, members.length),
     });
   }
+  const singletons: SnapshotSingleton[] = [];
+  for (let s = format >= 2 ? reader.count(4) : 0; s > 0; s--) {
+    const component = componentAt();
+    singletons.push({
+      component: component.name,
+      columns: readFields(component, 1),
+    });
+  }
   if (reader.left !== 4 || reader.u32() !== END) {
     throw damaged("it does not end where it should");
   }
-  return { random, generations, freed, components, tables, sparse };
+  return {
+    random,
+    generations,
+    freed,
+    components,
+    tables,
+    sparse,
+    singletons,
+  };
 };
 
 const byName = (a: { name: string }, b: { name: string }): number =>
@@ -641,7 +674,7 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
   writer.u32(components.length);
   for (const component of components) {
     writer.text(component.name);
-    writer.u8(component.storage === "sparse" ? 1 : 0);
+    writer.u8(STORAGES.indexOf(component.storage));
     writer.u32(component.fields.length);
     for (const field of component.fields) {
       writer.text(field.name);
@@ -705,6 +738,14 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
     writer.u32(set.members.length);
     writer.numbers(set.members, set.members.length, 4);
     writeFields(named(set.component), set.columns, set.members.length);
+  }
+  const singletons = contents.singletons.toSorted((a, b) =>
+    byName({ name: a.component }, { name: b.component })
+  );
+  writer.u32(singletons.length);
+  for (const single of singletons) {
+    writer.u32(indexOf.get(named(single.component).name)!);
+    writeFields(named(single.component), single.columns, 1);
   }
   writer.u32(END);
   return writer.finish();

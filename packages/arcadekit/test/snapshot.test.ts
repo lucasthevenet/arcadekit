@@ -469,10 +469,12 @@ describe("a snapshot that cannot be loaded", () => {
       expect(problemOf(() => loaded(bytes)).problem).toBe("not a snapshot");
     }
     const newer = sample();
-    new DataView(newer.buffer).setUint32(4, 2, true);
+    new DataView(newer.buffer).setUint32(4, 3, true);
     const error = problemOf(() => loaded(newer));
     expect(error.problem).toBe("newer format");
-    expect(error.message).toMatch(/format 2, and this version reads format 1/);
+    expect(error.message).toMatch(
+      /format 3, and this version reads formats 1 to 2/
+    );
   });
 
   it("is refused wherever it is cut short, without a crash", () => {
@@ -561,10 +563,11 @@ describe("a snapshot that cannot be loaded", () => {
       throw new Error("not found");
     };
     const rows = find(a!, d!);
-    // The sparse set comes last: its one member, the index of entity a,
-    // then that member's eight fields (32 bytes, the note being an empty
-    // string) and the four bytes that end a snapshot.
-    const member = bytes.length - 4 - 32 - 4;
+    // The sparse set comes last but for the singletons: its one member,
+    // the index of entity a, then that member's eight fields (32 bytes, the
+    // note being an empty string), the number of singletons, which is none,
+    // and the four bytes that end a snapshot.
+    const member = bytes.length - 4 - 4 - 32 - 4;
     expect(view.getUint32(member - 4, true)).toBe(1);
     expect(view.getUint32(member, true)).toBe(0);
     const damaged = (change: (view: DataView) => void): SnapshotError => {

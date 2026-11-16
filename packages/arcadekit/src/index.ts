@@ -6,7 +6,9 @@ export {
   type ComponentDef,
   type Entity,
   type FieldDef,
+  type OnTargetDespawn,
   type RefCodec,
+  type SingletonSpec,
 } from "./ecs/component";
 export type { Rng } from "./ecs/random";
 export {
@@ -15,14 +17,18 @@ export {
   type SnapshotContents,
   SnapshotError,
   type SnapshotProblem,
+  type SnapshotSingleton,
   type SnapshotSparse,
   type SnapshotTable,
   writeSnapshot,
 } from "./ecs/snapshot";
 export {
+  type ChangeKind,
   CommandBuffer,
   type EntityColumn,
   type QueryView,
+  type RemovedReader,
+  type SavedChanges,
   type SparseColumns,
   World as EcsWorld,
 } from "./ecs/world";
@@ -33,7 +39,17 @@ export * as Plugin from "./Plugin";
 export * as Query from "./Query";
 export * as Resource from "./Resource";
 export * as Save from "./Save";
+export * as Singleton from "./Singleton";
+export * as State from "./State";
 export { EntityId } from "./Schemas";
-export { Commands, Events, Random, Script, Time, World } from "./Services";
+export {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Script,
+  Time,
+  World,
+} from "./Services";
 export * as System from "./System";
 export { TickDispatcher, TickScheduler } from "./TickScheduler";

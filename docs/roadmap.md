@@ -22,13 +22,7 @@ Done. A world is saved as a snapshot and loaded back, every field says what savi
 
 ## 3. What every game ends up needing
 
-Each of these is something a game would otherwise build badly for itself.
-
-- **Change detection.** Queries for entities that gained a component, lost one, or had one written since a system last ran. Done when a system can react to a change without scanning everything, and the cost when nothing changed is near zero. Decide how writes are noticed (per column, per table or per row) with the benchmark open.
-- **Singletons.** One instance of some data per world, such as whose turn it is, without a query and a loop to read it. The duel example shows the gap. Done when `yield* Turn` gives a value a handler can read and write, and it is saved with the world.
-- **Relations.** A component that points at another entity, kept correct when that entity is despawned: a parent and its children, a target, an owner. Done when despawning a parent can take its children with it, and a dangling reference cannot be read as a live entity.
-- **States and run conditions.** A game is in the menu, playing or paused, and systems run only in some of those. Done when a system can declare when it runs, a state change runs enter and exit hooks, and none of it costs anything for a system with no condition.
-- **Simulation and presentation as separate stages.** The simulation ticks at a fixed rate; drawing happens every frame, between ticks, and must not change the world. Done when `App` runs a fixed-rate stage and a per-frame stage, and the per-frame stage gets how far it is between two ticks.
+Done. Queries for what changed, with writes noticed per row; singletons, which are the world's and saved with it; relations, whose holders go with a despawned target or lose the relation; states, with hooks for entering and leaving them and conditions for when a system runs; and a frame stage that draws the game between ticks, is told how far between them it is, and cannot change the world. The package's [README](../packages/arcadekit/README.md) describes each. Running in a browser stands on the last.
 
 ## 4. Running in a browser
 
@@ -39,7 +33,7 @@ Nothing so far draws, plays sound or reads input.
 - **Assets.** Loading as a scoped resource: a level's assets are acquired when it starts and released when its scope closes. Done when leaving a level frees what it loaded, with a test that proves it.
 - **An entry point.** `BrowserRuntime.runMain` around `App.make` and a driver, as the one obvious way to start a game. Done when the examples use it.
 
-Depends on the two stages from milestone 3.
+Depends on the two stages from milestone 3, which are there: `app.tick` and `app.frame`, with `Driver.fixedStep` running one and then the other.
 
 ## 5. Drawing and UI
 
@@ -66,7 +60,7 @@ Only with a benchmark that shows the need.
 
 - **Accessors without code generation.** `each` builds its accessors with `new Function`, which a strict Content Security Policy forbids, and the obvious fallback measured about forty times slower than raw columns. Done when the package works under such a policy at a cost a game can accept.
 - **Benchmarks in CI.** Done when a change that slows the storage core by more than the noise fails a check.
-- **Systems that declare what they read and write.** The first step towards running systems in parallel, and useful on its own for ordering and for tools. Done when the order of systems can be checked for conflicts.
+- **Systems that declare what they read and write.** The first step towards running systems in parallel, and useful on its own for ordering and for tools. A query can already say which of its terms it only reads (`Query.reads`), so most of what a system reads and writes is the sum of its queries; what it does through `World`, `Commands` and singletons is not declared yet. Done when the order of systems can be checked for conflicts.
 - **Parallel systems.** Workers over shared memory, for systems whose declared access does not overlap. Done when it is faster on a real workload, and still deterministic.
 - **Wider entity ids.** A handle is 22 bits of index and 10 of generation; a slot reused 1,024 times can alias an old handle. Done when that cannot happen in a session of realistic length.
 

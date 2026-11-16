@@ -12,8 +12,25 @@ import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
+/** The stages of a tick, in the order they run. */
 export const stages = ["preUpdate", "update", "postUpdate"] as const;
-export type Stage = (typeof stages)[number];
+/**
+ * A stage of the tick, or `"frame"`: the stage that draws the game, which
+ * runs between ticks, when `app.frame` is called, and must not change the
+ * world.
+ */
+export type Stage = (typeof stages)[number] | "frame";
+
+/**
+ * What sets a hook off: a state being entered or left. `State.onEnter` and
+ * `State.onExit` make one.
+ */
+export interface Trigger {
+  /** The state, as `State.define` gave it. */
+  readonly state: { readonly name: string };
+  readonly on: "enter" | "exit";
+  readonly value: string;
+}
 
 export interface System<out E = never, out R = never> extends Pipeable {
   readonly name: string;
@@ -23,20 +40,21 @@ export interface System<out E = never, out R = never> extends Pipeable {
   /** Names of systems in the same stage that must run after this one. */
   readonly before: readonly string[];
   readonly run: Effect.Effect<void, E, R>;
+  /**
+   * Whether the system runs this tick, asked just before it would: every
+   * condition given with `runIf`, in the order given. Undefined for a
+   * system that runs every tick, which is asked nothing.
+   */
+  readonly condition: Effect.Effect<boolean, E, R> | undefined;
+  /**
+   * For a hook, what sets it off. A hook runs when that happens, at the
+   * start of a tick, and not with the tick's other systems.
+   */
+  readonly trigger: Trigger | undefined;
 }
 
-const build = <E, R>(
-  name: string,
-  stage: Stage,
-  after: readonly string[],
-  before: readonly string[],
-  run: Effect.Effect<void, E, R>
-): System<E, R> => ({
-  name,
-  stage,
-  after,
-  before,
-  run,
+const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
+  ...parts,
   pipe() {
     return pipeArguments(this, arguments);
   },
@@ -54,24 +72,34 @@ export const make = <Eff extends Effect.Effect<any, any, any>>(
   name: string,
   body: () => Generator<Eff, void, never>
 ): System<Effect.Error<Eff>, Effect.Services<Eff>> =>
-  build(
+  build({
     name,
-    "update",
-    [],
-    [],
-    Effect.gen(body) as Effect.Effect<
+    stage: "update",
+    after: [],
+    before: [],
+    run: Effect.gen(body) as Effect.Effect<
       void,
       Effect.Error<Eff>,
       Effect.Services<Eff>
-    >
-  );
+    >,
+    condition: undefined,
+    trigger: undefined,
+  });
 
-/** Moves a system to another stage. */
+/**
+ * Moves a system to another stage.
+ *
+ * `System.inStage("frame")` makes it a system of the frame stage, which is
+ * for drawing: it runs once per `app.frame`, between ticks, with the world
+ * frozen. It reads the world through queries, events and change queries,
+ * each from a place of its own, and `yield* Frame` tells it how far the
+ * frame is between two ticks. Whatever would change the game there throws.
+ */
 export const inStage: {
   (stage: Stage): <E, R>(self: System<E, R>) => System<E, R>;
   <E, R>(self: System<E, R>, stage: Stage): System<E, R>;
 } = dual(2, <E, R>(self: System<E, R>, stage: Stage): System<E, R> =>
-  build(self.name, stage, self.after, self.before, self.run)
+  build({ ...self, stage })
 );
 
 /** Orders a system after another one in the same stage. */
@@ -83,13 +111,10 @@ export const after: {
 } = dual(
   2,
   <E, R>(self: System<E, R>, other: System<any, any> | string): System<E, R> =>
-    build(
-      self.name,
-      self.stage,
-      [...self.after, typeof other === "string" ? other : other.name],
-      self.before,
-      self.run
-    )
+    build({
+      ...self,
+      after: [...self.after, typeof other === "string" ? other : other.name],
+    })
 );
 
 /**
@@ -104,24 +129,88 @@ export const before: {
 } = dual(
   2,
   <E, R>(self: System<E, R>, other: System<any, any> | string): System<E, R> =>
-    build(
-      self.name,
-      self.stage,
-      self.after,
-      [...self.before, typeof other === "string" ? other : other.name],
-      self.run
-    )
+    build({
+      ...self,
+      before: [...self.before, typeof other === "string" ? other : other.name],
+    })
 );
+
+/**
+ * Runs a system only on the ticks when a condition holds:
+ *
+ *   System.make("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
+ *
+ * The condition is an Effect that gives a boolean, asked each tick just
+ * before the system would run. `State.is` makes one from a state; any
+ * other can read whatever a system can. Given several, the system runs
+ * when all of them hold, and they are asked in order until one does not.
+ *
+ * - A system with no condition is asked nothing, and costs what it did.
+ * - A system that does not run does not read. The events of the ticks it
+ *   sat out are gone when it runs again, as they are for any system an
+ *   event is older than; what its change queries have yet to visit is
+ *   kept, however long it was away.
+ * - What the condition needs and can fail with are the system's too.
+ */
+export const runIf: {
+  <E2, R2>(
+    condition: Effect.Effect<boolean, E2, R2>
+  ): <E, R>(self: System<E, R>) => System<E | E2, R | R2>;
+  <E, R, E2, R2>(
+    self: System<E, R>,
+    condition: Effect.Effect<boolean, E2, R2>
+  ): System<E | E2, R | R2>;
+} = dual(
+  2,
+  <E, R, E2, R2>(
+    self: System<E, R>,
+    condition: Effect.Effect<boolean, E2, R2>
+  ): System<E | E2, R | R2> => {
+    const earlier = self.condition;
+    return build<E | E2, R | R2>({
+      ...self,
+      condition:
+        earlier === undefined
+          ? condition
+          : Effect.flatMap(
+              earlier,
+              (holds): Effect.Effect<boolean, E | E2, R | R2> =>
+                holds ? condition : Effect.succeed(false)
+            ),
+    });
+  }
+);
+
+/**
+ * Makes a system a hook, set off by `trigger` in place of the tick.
+ * @internal
+ */
+export const triggered = <E, R>(
+  self: System<E, R>,
+  trigger: Trigger
+): System<E, R> => build({ ...self, trigger });
 
 /** Wraps each run in a tracing span named after the system. Use in dev builds. */
 export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
-  build(
-    self.name,
-    self.stage,
-    self.after,
-    self.before,
-    Effect.withSpan(self.run, self.name) as Effect.Effect<void, E, R>
-  );
+  build({
+    ...self,
+    run: Effect.withSpan(self.run, self.name) as Effect.Effect<void, E, R>,
+  });
+
+/**
+ * A system's name is its place in events and in what changed, so two
+ * systems cannot share one.
+ * @internal
+ */
+export const unique = (systems: readonly System<any, any>[]): void => {
+  const names = new Set<string>();
+  for (const system of systems) {
+    if (names.has(system.name)) {
+      throw new Error(`Duplicate system name "${system.name}"`);
+    }
+    names.add(system.name);
+  }
+};
 
 /**
  * Sorts systems into run order: by stage, then by `after` and `before`
@@ -131,15 +220,9 @@ export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
 export const order = (
   systems: readonly System<any, any>[]
 ): System<any, any>[] => {
-  const names = new Set<string>();
-  for (const system of systems) {
-    if (names.has(system.name)) {
-      throw new Error(`Duplicate system name "${system.name}"`);
-    }
-    names.add(system.name);
-  }
+  unique(systems);
   const out: System<any, any>[] = [];
-  for (const stage of stages) {
+  for (const stage of [...stages, "frame"] as const) {
     const inStage = systems.filter((s) => s.stage === stage);
     const stageNames = new Set(inStage.map((s) => s.name));
     // "A before B" is the same constraint as "B after A", so fold both into
