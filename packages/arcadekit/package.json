@@ -42,6 +42,7 @@
     "typecheck": "tsc -p . && tsc -p tsconfig.examples.json",
     "demo": "tsx examples/demo.ts",
     "duel": "tsx examples/duel.ts",
+    "page": "vite examples/page",
     "bench": "tsx bench/accessors.ts"
   },
   "devDependencies": {

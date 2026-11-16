@@ -12,7 +12,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 - A module's file is named in PascalCase after the namespace it is imported as, as Effect's own are: `src/App.ts` is `App`, `src/TickScheduler.ts` holds `TickScheduler`. The files of `src/ecs/` and `index.ts` are lower case.
 - `packages/arcadekit/src/ecs/`: the storage core (components, tables, queries, the command buffer). It is plain synchronous TypeScript and imports nothing from Effect.
 - `packages/arcadekit/test/`: its tests, run by Vitest from the source with no build.
-- `packages/arcadekit/examples/` and `packages/arcadekit/bench/`: two example games and a benchmark, run with `pnpm --filter arcadekit demo`, `duel` and `bench`. They are type-checked by `tsconfig.examples.json` and are not published.
+- `packages/arcadekit/examples/` and `packages/arcadekit/bench/`: two example games and a benchmark, run with `pnpm --filter arcadekit demo`, `duel` and `bench`, and a game in a page, `examples/page/`, served by `pnpm --filter arcadekit page`. They are type-checked by `tsconfig.examples.json` and are not published.
 - `docs/`: the conventions and the roadmap.
 - `scripts/`: the workspace's helpers (the `source` condition for Vite and Vitest, and the package lint).
 - `.changeset/`: pending release notes; see its README.
@@ -23,6 +23,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 - Nothing changes the set of entities or their components while a query is iterating. Such changes go through `Commands` and are applied when the system finishes.
 - A tick gives the same result from the same inputs. Time comes from `Time`, waiting from `Script`, and fibers only resume when the tick flushes its scheduler.
 - What draws the game runs in the frame stage, between ticks, and never changes the world: a game that is drawn is the same game as one that is not.
+- What the devices say reaches the game as actions, issued in the input stage before a tick and logged like any other: a replay reads no device.
 
 ## Validation
 

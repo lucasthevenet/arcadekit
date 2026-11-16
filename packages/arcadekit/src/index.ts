@@ -1,5 +1,6 @@
 export * as Action from "./Action";
 export * as App from "./App";
+export * as Assets from "./Assets";
 export * as Driver from "./Driver";
 export {
   Component,
@@ -34,6 +35,7 @@ export {
 } from "./ecs/world";
 export * as Event from "./Event";
 export * as Field from "./Field";
+export * as Input from "./Input";
 export * as Migrate from "./Migrate";
 export * as Plugin from "./Plugin";
 export * as Query from "./Query";

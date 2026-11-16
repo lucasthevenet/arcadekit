@@ -5,7 +5,7 @@ A framework for building games of any genre on [Effect](https://effect.website) 
 This is the first cut of the revamped design. It is a working prototype, not a finished kit: see [Not done yet](#not-done-yet).
 
 1. **Storage core** (`src/ecs/`): archetype tables with typed-array columns, opt-in sparse storage, cached queries, queries for what changed, a command buffer. No Effect.
-2. **Tick scheduler**: Effect around the core. One fiber per tick, systems as generators, yieldable queries and resources, coroutine scripts, and a custom Effect `Scheduler` that only runs fibers when the tick says so. Beside the tick, a frame stage that draws the game between ticks and cannot change it.
+2. **Tick scheduler**: Effect around the core. One fiber per tick, systems as generators, yieldable queries and resources, coroutine scripts, and a custom Effect `Scheduler` that only runs fibers when the tick says so. Beside the tick, a frame stage that draws the game between ticks and cannot change it, and an input stage that turns what the devices say into actions.
 3. **Events and rules**: typed events every system sees exactly once, and actions with handlers that validate a move and refuse it with a typed error. Payloads are checked against a schema, applied actions are logged as JSON-safe data, and the log replays the game and checks the replay against the world's hash.
 4. **Plugins**: one value that bundles a feature's systems, handlers, services and setup, and names the plugins it depends on.
 
@@ -13,10 +13,11 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 374 tests
+pnpm test                          # 448 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
+pnpm --filter arcadekit page       # a game in a page, at http://localhost:5173
 pnpm --filter arcadekit bench
 ```
 
@@ -38,11 +39,14 @@ const Movement = System.make("Movement", function* () {
   });
 });
 
+// A game that runs: sixty ticks a second, until the page goes away.
+BrowserRuntime.runMain(App.run({ systems: [Movement] }, { hz: 60 }));
+
+// One tick at a time, for a game that waits for its players, or a test.
 const program = Effect.gen(function* () {
   const app = yield* App.make({ systems: [Movement] });
   app.world.spawn(Position.of({ x: 0, y: 0 }), Velocity.of({ x: 1, y: 0 }));
-  app.tick(1 / 60); // turn-based or tests
-  yield* Driver.interval(app, { hz: 60 }); // real time
+  app.tick(1 / 60);
 });
 ```
 
@@ -170,7 +174,9 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 
 A string that identifies something at run time carries the name of the feature it belongs to.
 
-- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`.
+- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
+- An app's assets are kept under `"arcadekit/Assets.Store"` and fetched through `"arcadekit/Assets.Loader"`; the plugin is `"arcadekit/Assets"`, and the system that keeps a bundle is named after it, `"Assets.during(game/Forest)"`.
+- What `Input.plugin` adds to a game is named the same way: the plugin and its singleton `"arcadekit/Input"`, its action `"arcadekit/Input.Report"` and its system `"arcadekit/Input.Read"`.
 - A component's name is its identity in a world, and part of its type: `Component.define("physics/Position", ...)`. Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name. A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
 - `world.component(name)` gives the component a world holds under a name. A world learns a component the first time it stores or queries it; `world.register(component)` tells it sooner.
 
@@ -310,7 +316,7 @@ const advance = Driver.fixedStep(app, { hz: 60 });
 advance(secondsSinceTheLastFrame); // the ticks that are due, then the frame stage
 ```
 
-The simulation ticks at a fixed rate. Drawing happens every frame, between ticks, and must not change the world. So an app has two stages: the tick, which is everything above, and the frame.
+The simulation ticks at a fixed rate. Drawing happens every frame, between ticks, and must not change the world. So an app has two stages: the tick, which is everything above, and the frame. A third, the input stage, runs before a tick and is described under [Input](#input).
 
 - A system made with `System.inStage("frame")` runs when `app.frame(alpha, delta)` is called, and not in the tick. `Driver.fixedStep` calls it after the ticks of each frame; so does `Driver.interval`.
 - `yield* Frame` tells it about the frame: `alpha`, how far the frame is between the last tick and the next, from 0 to 1; `delta`, the real seconds since the frame before; and `count`. That is real time, so a system that runs in the tick cannot read it: it throws and says to read `Time`.
@@ -319,9 +325,192 @@ The simulation ticks at a fixed rate. Drawing happens every frame, between ticks
 - Its random numbers come from a generator of its own, seeded like the world's and not part of it: sparks do not change the game.
 - An action issued there with `Actions.enqueue` is input from outside, as a button is: it is logged, applied at the start of the next tick, and replayed without a frame being drawn.
 - The simulation cannot tell that it is being drawn. A game drawn every frame has the same hash, the same log and the same save as the same game never drawn, so a replay or a server runs it with no frame stage at all. The frame stage's places in events and changes are not saved: a loaded game has everything still to draw.
-- Two changes are not stopped where they are made, because stopping them there would cost every loop and every draw. A draw from `world.random` is found when the frame ends: the generator is put back, so the game is as it was, and `frame` throws. A write through the raw columns of `eachChunk` is not found unless it is looked for: `App.make({ verifyFrames: true })` takes the world's hash before the stage and after each of its systems, and `frame` dies with `App.FrameChangedWorld`, which names the system. That is for development and tests.
+- Two changes are not stopped where they are made, because stopping them there would cost every loop and every draw. A draw from `world.random` is found when the frame ends: the generator is put back, so the game is as it was, and `frame` throws. A write through the raw columns of `eachChunk` is not found unless it is looked for: `App.make({ verifyFrames: true })` takes the world's hash before the stage and after each of its systems, and `frame` dies with `App.FrameChangedWorld`, which names the system. That is for development and tests, and checks the input stage the same way.
 - A frame system takes a condition with `System.runIf` like any other. A hook does not belong there: a state is entered by a tick.
 - With the storage core on its own: `world.freeze()` and `world.thaw()`, which is where a draw from the world's generator is found.
+
+## In a page
+
+```ts
+BrowserRuntime.runMain(
+  App.run({ plugins: [Game] }, { hz: 60 }).pipe(
+    Effect.provide(Input.layerBrowser({ target: canvas }))
+  )
+);
+```
+
+`App.run` is the entry point: it makes the app and runs it until it is interrupted. It is `App.make` and the frame loop, `Driver.frames`, in a scope of their own.
+
+- It never ends by itself. The platform's `runMain` interrupts it when the page goes away, or the process is told to stop, and that stops the loop and closes the scope. Nothing is left running: no frame asked for, no listener, no script, and whatever the plugins' layers acquired let go.
+- What the game needs from outside is provided to it as to `App.make`, and a missing service is the same compile error. It stays provided for as long as the game runs, which is what a layer that listens, such as [`Input.layerBrowser`](#input), needs.
+- `ready` runs once, when the app is made and before its first frame, with the app: to wire what is outside the game to it, or to keep hold of it. What it acquires is let go with the app, and what it needs and can fail with are `run`'s.
+
+  ```ts
+  App.run(
+    { plugins: [Game] },
+    {
+      hz: 60,
+      ready: (app) =>
+        Effect.sync(() => {
+          button.onclick = () => app.dispatch(NewGame, {});
+        }),
+    }
+  );
+  ```
+
+- Given a `save`, it goes on from it with `App.load` in place of a fresh start, and can fail with `Save.LoadRefused`.
+- It fails with what `App.make` and `ready` can fail with, and dies with what a tick throws.
+- It runs wherever there is a display, which outside a page is a timer: `NodeRuntime.runMain(App.run(...))` is the same game under Node, and `examples/demo.ts` is started that way.
+
+`Driver.frames` is the frame loop underneath, for a program that makes its app itself. It follows the display until it is interrupted: each time a frame is due it runs the ticks that are due, at a fixed `hz`, and then the [frame stage](#the-tick-and-the-frame), as `Driver.fixedStep` does. In a page a frame is due once per repaint, which is `requestAnimationFrame`.
+
+- The first frame draws the game as it stands and runs no tick. Time is counted from it.
+- While the tab is hidden the loop asks for no frame, and the time spent hidden does not count. A game that comes back is where it was left, and does not run to catch up.
+- Interrupting it takes back the frame it had asked for and stops watching the tab. It is interrupted with the fiber that runs it: `runMain` interrupts the program when the page goes away, and a loop started with `Effect.forkScoped` stops when its scope closes. So closing the app's scope leaves nothing running: no frame asked for, no listener, no script, and whatever the plugins' layers acquired let go.
+- If a tick or a frame throws, the loop stops the same way and dies with what was thrown.
+- A page that froze without being hidden runs at most `maxStepsPerCall` ticks in its next frame, 5 unless told otherwise, and drops the rest of the backlog.
+- It reaches the screen through `Driver.Display`, a `Context.Reference` whose default is the platform's: `requestAnimationFrame` and the document's visibility in a page, and a timer of 60 frames a second anywhere else, so the same program runs under Node.
+- A test turns the display by hand:
+
+  ```ts
+  const display = Driver.makeManualDisplay();
+  const fiber = Effect.runFork(
+    main.pipe(Effect.scoped, Effect.provideService(Driver.Display, display))
+  );
+  display.frame(0); // a frame is due, at this many milliseconds
+  display.frame(1000 / 60);
+  display.hide(); // the tab goes away
+  display.pending; // 0: no frame is asked for
+  ```
+
+- `examples/page` is a game in a page. `pnpm --filter arcadekit page` serves it.
+
+## Input
+
+```ts
+// The picture: what the devices say, as the game has it this tick.
+const Steer = System.make("Steer", function* () {
+  const keys = yield* Input.Keyboard;
+  const pointer = yield* Input.Pointer;
+  const left = keys.down("ArrowLeft"); // held
+  const jump = keys.pressed("Space"); // went down in this tick
+  const aim = pointer.down() ? { x: pointer.x, y: pointer.y } : undefined;
+});
+
+// Bindings: the devices turned into the game's own actions.
+const Controls = Input.bind(
+  "game/Controls",
+  Input.onPress(["KeyP", Input.padButton(0, 9)], TogglePause, {}),
+  Input.onPress(Input.pointerButton(), Fire, (devices) => ({
+    x: devices.axes.get(Input.pointerX) ?? 0,
+  }))
+);
+
+const Game = Plugin.make("Game", {
+  plugins: [Input.plugin], // keeps the picture
+  systems: [Steer, Controls],
+  handlers: [togglePause, fire],
+});
+
+// In a page, around the whole program:
+main.pipe(Effect.provide(Input.layerBrowser({ target: canvas })));
+```
+
+The keyboard, the pointer and the gamepads are outside the game. What they say reaches it as actions, through the same [log](#payloads-saves-and-the-network) as everything else that comes from outside. So a replay needs no devices at all: it is given no source and reads none, and the actions are in its log.
+
+**The input stage.** An app has a third stage beside the tick and the frame. A system made with `System.inStage("input")` runs when `app.input()` is called, which `Driver.fixedStep` does just before each tick, and so `Driver.frames` and `Driver.interval` with it.
+
+- The devices are read once per run, and every system of the stage is given that one sample as `Input.Devices`: the buttons that are `down`, the ones `pressed` and `released` since the sample before, the `axes`, and the ones that `moved`. A frame in which no tick is due reads nothing, and what was pressed meanwhile is there for the next tick, so a quick tap is never lost between two frames.
+- The world is frozen there, as in the frame stage, and whatever would change the game throws. What a system makes of the devices it issues with `Actions.enqueue`, which is logged and applied at the start of the tick that follows.
+- `Input.Devices` is no part of the game, so a system in the tick or in the frame stage cannot read it: its fields throw there and say what to read.
+- A replay and a server never call `app.input()`. The simulation cannot tell whether its devices are read: a game played from a keyboard and its replay have the same hash at every tick.
+
+**The picture.** `Input.plugin` keeps what the devices say in the world, for systems to read.
+
+- `yield* Input.Keyboard` gives `down(code)`, `pressed(code)` and `released(code)`. `Input.Pointer` has `x`, `y` and the same three for a button, the main one unless told. `Input.Gamepad(index)` has `axis(n)` and the three for a button.
+- `pressed` and `released` are true in the one tick that first sees the change, for every system of that tick. A key that went down and up between two ticks was pressed and released in the same tick and is not down.
+- What changed since the last tick is one action, `Input.Report`, and only when something did: holding a key still, or doing nothing, logs nothing.
+- The picture is a [singleton](#singletons): saved with a game, put back by a refusal, and counted in the hash once something was pressed. A game nobody has touched hashes as one that has no input at all.
+- The devices are the truth. A loaded game whose save had a key held, where the key is no longer down, lets it go at the first reading.
+- It is one picture, of one player's devices.
+
+**Bindings.** `Input.bind(name, ...)` makes a system of the input stage out of `Input.onPress`, `Input.onRelease` and `Input.onMove`: when one of its codes is pressed, released or moved, it issues an action of the game's own.
+
+- The handlers know nothing of keys, so the keys can change without the game or its replays changing, and the log says `Fire` and not which button.
+- Given several codes, a binding issues its action once when any of them does it. The payload is a value, or a function of the sample for an action that needs to know where the pointer is. The compiler checks it against the action.
+- Bindings do not need `Input.plugin`, and a game can use both.
+- What a binding cannot say is a system of the input stage, which reads the world as well:
+
+  ```ts
+  const Pick = System.make("Pick", function* () {
+    const devices = yield* Input.Devices;
+    if (!devices.pressed.includes(Input.pointerButton())) return;
+    const card = cardAt(yield* Cards, devices.axes.get(Input.pointerX) ?? 0);
+    if (card !== undefined) (yield* Action.Actions).enqueue(PlayCard, { card });
+  }).pipe(System.inStage("input"));
+  ```
+
+**Codes.** A button is a code and an axis is a code. A key's is the one the browser gives it, `KeyboardEvent.code`: `"KeyA"`, `"Space"`, `"ArrowLeft"`. The others are made by `Input.pointerButton(n)`, `Input.padButton(pad, n)` and `Input.padAxis(pad, n)`, and the pointer's place is `Input.pointerX` and `Input.pointerY`.
+
+**Where the devices come from** is `Input.Source`, a `Context.Reference` whose default has no devices.
+
+- `Input.layerBrowser(options)` is a page's: the keyboard, the pointer (a mouse, a pen or a finger) and the gamepads. `target` is the element the pointer is pressed on and measured from, in CSS pixels from its top left corner; `preventDefault` lists the keys that must not scroll the page; `deadzone` is how far a stick has to be from its middle to count, a tenth unless told. A key held down went down once, and everything held is let go when the page loses focus.
+- It listens until its scope closes, so it is provided to the whole program. Provided to `App.make` alone it is let go as soon as the app is made, and says so when it is read.
+- `Input.makeManualSource()` is a source worked by hand, for a test, a tool or controls drawn on the screen: `press`, `release`, `tap`, `move`.
+
+  ```ts
+  const source = Input.makeManualSource();
+  const made = App.make({ plugins: [Game] }).pipe(
+    Effect.provideService(Input.Source, source)
+  );
+  // With the app that gives:
+  source.press("Space");
+  app.input();
+  app.tick(1 / 60);
+  ```
+
+- Reading the devices when nothing changed costs 1.4 µs a tick. A tick in which a key went down or up costs 5.2 µs in all: the reading, the action and the tick that applies it. See the [benchmark](#benchmark-100000-entities-pos--vel--dt).
+
+## Assets
+
+```ts
+const Forest = Assets.bundle("game/Forest", {
+  backdrop: Assets.image("/forest.png"),
+  layout: Assets.json("/forest.json", Layout), // checked against a schema
+});
+
+const Game = Plugin.make("Game", {
+  plugins: [Assets.plugin],
+  systems: [Assets.during(State.is(Level, "forest"), Forest), Draw],
+});
+
+const Draw = System.make("Draw", function* () {
+  const forest = yield* Forest; // what the app holds of it now
+  if (forest._tag === "Ready") draw(forest.assets.backdrop);
+}).pipe(System.inStage("frame"));
+```
+
+Loading is a scoped resource: what was loaded is let go when the scope it was loaded in closes. A bundle is the assets that are loaded together and let go together, a level's as a rule.
+
+- `Assets.during(condition, bundle)` gives a level its scope. It is a system that keeps the bundle loaded while the condition holds, one of [`System.runIf`'s](#states-and-run-conditions), usually a state. From the frame after the game enters the level the bundle is loading, in a scope of its own; from the frame after it leaves, that scope is closed. What was loaded is let go, a picture is closed, and a file that was still on its way is given up. Entered again, the level loads again.
+- `yield*` on the bundle gives what the app holds of it: `Absent`, `Loading`, `Ready` with the `assets`, each under its name and with its type, or `Failed` with the error. A bundle that failed is logged once, keeps nothing of what did load, and is tried again when the level is next entered.
+- Whatever is still loaded when the app's scope closes goes with it.
+- Loading takes real time, so it is no part of the simulation. `Assets.during` is a system of the frame stage, and a bundle can be asked for in the frame stage and the input stage only: in the tick it throws. A replay or a server, which draw nothing, load nothing, and the game they run is the same game.
+- What the game itself needs from a file, such as where the walls are, comes in as an action. A system of the input stage issues it once the file is there, with what it read as the payload, and from then on it is in the log, so a replay has it without the file:
+
+  ```ts
+  const Begin = System.make("Begin", function* () {
+    const forest = yield* Forest;
+    if (forest._tag === "Ready" && (yield* Walls).count() === 0) {
+      (yield* Action.Actions).enqueue(Build, forest.assets.layout);
+    }
+  }).pipe(System.inStage("input"));
+  ```
+
+- Anywhere there is a scope, `Assets.load(bundle)` loads into it and waits: every asset at once, failing with `Assets.AssetFailed`, which names the URL, at the first that does. That is for the entry point and for a plugin's `layer`, which holds what it loads for as long as the app: `Layer.effect(Fonts, Assets.load(Common))`.
+- An asset is `Assets.bytes(url)`, `Assets.text(url)`, `Assets.json(url, schema)` or `Assets.image(url)`, which gives an `ImageBitmap` and closes it. One of a kind of your own is `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be let go.
+- The bytes come through `Assets.Loader`, a `Context.Reference` whose default is `fetch`, given up when the load is interrupted. A test provides its files with `Assets.layerMemory({ "/forest.json": "..." })`.
+- A system of the game's own can keep a bundle too, with `(yield* Assets.Store).hold(bundle, name)` and `drop`: it stays loaded while anyone holds it.
 
 ## Randomness
 
@@ -521,7 +710,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/ecs/hash.ts` | The arithmetic of the world's hash |
 | `src/ecs/snapshot.ts` | The bytes of a world's snapshot, and `SnapshotError` |
 | `src/TickScheduler.ts` | The Effect scheduler owned by the game loop |
-| `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions |
+| `src/App.ts` | Builds the context, orders systems, runs a tick, applies actions; and `App.run`, the entry point |
 | `src/Event.ts`, `src/Action.ts` | Events and the rules layer |
 | `src/Plugin.ts` | Plugins and their dependency order |
 | `src/Save.ts` | A saved game, as a value and as bytes, and its migrations |
@@ -529,13 +718,17 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Field.ts` | The fields of a component, with `Field.schema` |
 | `src/Singleton.ts` | One instance of some data per world |
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
+| `src/Input.ts` | The devices and where they come from, the picture of them in the world, and bindings to actions |
+| `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
-| `src/Driver.ts` | Fixed-step and timer drivers, which run the ticks that are due and then the frame stage |
+| `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The package's one entry: `import { App, System } from "arcadekit"` |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame and read-only query tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset and entry point tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
-| `examples/demo.ts`, `examples/duel.ts` | A real-time simulation, and a turn-based game built from two plugins, each started with `NodeRuntime.runMain` |
+| `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
+| `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
+| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, with a level whose assets come and go, started with `BrowserRuntime.runMain` around `App.run` |
 
 ## Two ways to loop
 
@@ -626,6 +819,13 @@ Change detection in the same world, with a query that watches `Position`:
 | `eachChunk` handed the watched component: every row noted | 5.3 ns/entity |
 | The same through a query that only reads it (`Query.reads`) | 2.6 ns/entity |
 
+The input stage, with `Input.plugin`, three buttons held and the pointer somewhere:
+
+| Variant                                                 | Cost    |
+| ------------------------------------------------------- | ------- |
+| `app.input()`: the devices read, nothing changed        | 1.39 µs |
+| `app.input()` and `app.tick()`: one key went down or up | 5.22 µs |
+
 Entities coming and going in the same world:
 
 | Variant                                                    | Cost   |
@@ -645,6 +845,7 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 
 - Writes are noticed per row. A component that no query watches costs what it did: the lines of the first table were measured before and after and did not move. A watched one costs 2.5 ns more for an assignment in `each` to a row that is noted already, about 5 ns for the first assignment to a row since the last visit, and 2.8 ns per row that `eachChunk` hands out. Noticing per table or per column would cost nothing to write, but one `world.set` would then send every watching query through the whole table: 0.25 ms to 0.64 ms for 100,000 rows, where it now takes 0.2 µs.
 - A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
+- The input stage runs before every tick, so its cost when nothing happens is the one that counts: one sample of the devices, compared with what the world holds, 1.4 µs for a keyboard, a pointer and a few buttons held. An app with no system in that stage reads nothing and pays nothing.
 - A frame of ten systems that do nothing costs 5.8 µs, about what a tick of ten does: freezing the world is setting a flag. Checking a frame with `verifyFrames` costs a hash of the world before the stage and one after each of its systems, 1.3 ms more for one system over 100,000 entities.
 - A relation costs its component and a few assignments to link and unlink: 0.13 µs more per entity that is spawned and despawned with one. A despawn that takes others with it costs what despawning each of them does, 130 ns apiece here. A world with no relation does one comparison more per despawn than before: the first line was 587 µs before relations and 561 µs after, which is the machine's noise.
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
@@ -672,8 +873,21 @@ moving.eachChunk((start, end, pos, vel) => {
 
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
-- Nothing here draws, plays sound or reads input. There is a frame stage for what draws, and nothing in it yet: no Foldkit or Three.js integration, and no driver that wraps `requestAnimationFrame`.
-- The frame stage cannot stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per frame system. A draw from `world.random` there is found when the frame ends, not where it is made.
+- Nothing here plays sound, and nothing draws for you. There is a frame stage for what draws and a frame loop that runs it once per repaint, and the example page draws on a canvas by hand: no Foldkit or Three.js integration.
+- An asset is a picture, text, JSON or bytes. A sound and a font are for whoever plays and draws them to decode, with `Assets.make`.
+- A bundle is loaded or it is not: it does not say how far along it is, and a file that two bundles name is fetched for each.
+- A bundle that failed stays failed until its level is entered again. Nothing tries again by itself.
+- `Assets.load` waits in real time. In a script it would resume in whatever tick the file happened to arrive in, and a replay of that script would fetch the file again: a script does not load.
+- The picture of the devices is one player's. Several players on one machine, or on several, bind their devices to actions that say whose they are.
+- A gamepad's button is down or it is not: how far a trigger is pressed is not read. Nor are the wheel, text as it is typed, more than one finger at a time, or a pointer that is locked to the page.
+- A button that is held, and let go and pressed again between two readings of the devices, is held: neither edge is seen. One that is pressed twice between two readings was pressed once.
+- The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
+- Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
+- Only a driver runs the input stage. A game that ticks when a player moves calls `app.input()` before its tick itself.
+- `App.run` is for a game that ticks in real time. One that ticks when a player moves, as the duel example does, makes its app and steps it itself: in a page it would want its frames drawn at the display's rate and its ticks on demand, and no driver does that.
+- The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
+- The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and against stand-ins for `requestAnimationFrame` and the document.
+- Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
 - A frame system that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps. There is no helper for it.
 - One package entry. The storage core has no Effect dependency and could be its own entry (`arcadekit/ecs`).
 
