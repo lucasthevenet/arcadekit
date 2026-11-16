@@ -1,8 +1,10 @@
 /// <reference types="node" />
 import {
+  Action,
   App,
   Commands,
   Component,
+  Driver,
   Field,
   Plugin,
   Query,
@@ -13,7 +15,7 @@ import {
 } from "arcadekit";
 import type { Entity } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
-import { Context, Effect, Exit, Layer, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Schema, Scope } from "effect";
 import {
   BoxGeometry,
   Group,
@@ -1480,6 +1482,54 @@ describe("an entity drawn between two ticks", () => {
     app.frame(0.5);
     expect(made.get(ship)!.position.x).toBe(1010);
     expect(made.size).toBe(2);
+  });
+
+  it("is drawn where it is once a game that ticks when it is needed has come to rest", () => {
+    // A piece that goes ten along x when it is told to, and not otherwise.
+    const Go = Action.define("th/Go", Schema.Struct({}));
+    const { app, mesh } = (() => {
+      const renderer = makeRenderer();
+      const made = start(
+        App.make({
+          plugins: [Three.plugin],
+          components: [Rock],
+          systems: [Smoothed],
+          handlers: [
+            Action.handler(Go, function* () {
+              (yield* Query.all(Position)).each((position) => {
+                position.x += 10;
+              });
+            }),
+          ],
+        }),
+        renderer
+      );
+      return {
+        app: made.app,
+        mesh: () => meshOf(renderer.scene, "th/Smoothed"),
+      };
+    })();
+    app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
+    for (let i = 0; i < 10; i++) {
+      advance(1 / 120);
+    }
+    expect(app.time.tick).toBe(0);
+    expect(xAt(mesh(), 1)).toBe(0);
+    // Told to go: the tick runs in that frame, and it is on its way.
+    app.enqueue(Go, {});
+    advance(1 / 120);
+    expect(app.time.tick).toBe(1);
+    expect(xAt(mesh(), 1)).toBe(0);
+    advance(1 / 120);
+    expect(xAt(mesh(), 1)).toBe(5);
+    // The game comes to rest, and the piece is where the game has it: not
+    // a tick behind, waiting for a tick that is not coming.
+    for (let i = 0; i < 10; i++) {
+      advance(1 / 120);
+    }
+    expect(app.time.tick).toBe(2);
+    expect(xAt(mesh(), 1)).toBe(10);
   });
 
   it("is not done unless it is asked for: an entity is drawn where the last tick left it", () => {

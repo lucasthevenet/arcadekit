@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 563 tests, 49 of them of @arcadekit/three
+pnpm test                          # 582 tests, 50 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -478,6 +478,26 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
   ```
 
 - `examples/page` is a game in a page. `pnpm --filter arcadekit page` serves it.
+
+### A game that moves when its player does
+
+```ts
+Browser.runMain(
+  App.run({ plugins: [Chess] }, { hz: 60, ticks: "whenNeeded" }),
+  { target: board }
+);
+```
+
+A game of turns, a puzzle or a menu has nothing to do between two moves, and a game that ticks sixty times a second regardless runs its systems, passes its time and fills its log with checkpoints for nothing. With `ticks: "whenNeeded"`, `App.run` and `Driver.frames` draw every frame and tick only while something is waiting for a tick.
+
+- The [input stage](#input) runs every frame, so a key, a button of the UI's or a message is heard in the frame it comes in, and the tick it asks for runs in that frame.
+- It ticks while the app is not settled, at `hz` like any game, and once more after, for the systems that react a tick late to what a system listed after them did. Then it rests: no tick runs and the game's time stands still.
+- `app.settled` says whether anything is waiting: an action to apply, a state to enter, a script that waits for the next tick or sleeps, a fiber that is due, or an event that some system has not had its chance at. Looking changes nothing.
+- A script that sleeps keeps the game ticking for as long as it sleeps, at `hz`, so what takes the game's time (a piece sliding for three tenths of a second) takes it. A script that should let the game rest waits for an event.
+- The frame stage runs every frame, at rest too. It is told the frame is all the way to the last tick, a `Frame.alpha` of 1: what draws between two ticks draws the game where it is.
+- Resting is no part of the game. Its log holds the actions and the ticks they were applied in, and a replay given how many ticks it ran, `app.time.tick`, runs them one after the other and ends on the same hash.
+- What is not counted: a system that does something every tick whether or not anything is waiting. A game that has one runs in real time, which is what leaving `ticks` out is.
+- A frame of a game at rest costs 5.3 µs with the picture of the devices, a state and a view: the devices read, the app asked, and the frame stage.
 
 ### Drawing with Three.js
 
@@ -1089,6 +1109,12 @@ Change detection in the same world, with a query that watches `Position`:
 | `eachChunk` handed the watched component: every row noted | 5.3 ns/entity |
 | The same through a query that only reads it (`Query.reads`) | 2.6 ns/entity |
 
+A game that ticks when it is needed, at rest, with the picture of the devices, a state and a view:
+
+| Variant                                                    | Cost   |
+| ---------------------------------------------------------- | ------ |
+| One frame: the devices read, the app asked, drawn, no tick | 5.3 µs |
+
 The input stage, with `Input.plugin`, three buttons held and the pointer somewhere:
 
 | Variant                                                 | Cost    |
@@ -1168,7 +1194,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The first sound a page can make is the one its user's first key or press sets off. Nothing is heard before that.
 - A view is worked out and compared whole, every frame a UI is there. A game with a view that is costly to work out says when it is worth it with `System.runIf`.
 - The UI is not told what became of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and the game can publish as a view.
-- What the UI sends is applied by the next tick. A game that ticks when a player moves runs the input stage and a tick itself when its UI has sent something; nothing wakes it.
+- What the UI sends is applied by the next tick, which under a driver is the frame it was sent in or the one after. A game that steps its app by hand runs the input stage and a tick itself when its UI has sent something.
 - A view's value is an object of this program, with no schema: a UI in another thread or on another machine is not served.
 - `ui.send` takes any action. That the game has a handler for it is checked when it is issued, where a missing one throws, and not by the compiler.
 - An asset is a picture, text, JSON or bytes. A font is for whoever draws with it to decode, with `Assets.make`.
@@ -1180,8 +1206,8 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A button that is pressed twice between two readings of the devices was pressed once.
 - The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
 - Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
-- Only a driver runs the input stage. A game that ticks when a player moves calls `app.input()` before its tick itself.
-- `App.run` is for a game that ticks in real time. One that ticks when a player moves, as the duel example does, makes its app and steps it itself: in a page it would want its frames drawn at the display's rate and its ticks on demand, and no driver does that.
+- Only a driver runs the input stage. A game that steps its app by hand, as the duel example does under Node, calls `app.input()` before its tick itself.
+- A game that ticks when it is needed rests when nothing is waiting, and what is waiting is what the app can see: actions, states, scripts and events. A system that reacts to a change through a change query, listed before the system that makes the change, reacts a tick late, and the one tick that follows the last is all it is given; two such systems in a row are a tick short. Order them with `System.after`.
 - The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
 - The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and `arcadekit/Browser` against stand-ins for `requestAnimationFrame`, the document and the window.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.

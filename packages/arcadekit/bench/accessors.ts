@@ -22,6 +22,7 @@ import {
   Action,
   App,
   Component,
+  Driver,
   EntityId,
   Event,
   Field,
@@ -336,6 +337,46 @@ const sounding = (happening: boolean): number =>
           20_000,
           () => app.tick(DT)
         );
+      })
+    )
+  );
+
+/**
+ * Median milliseconds of one frame of a game that ticks when it is needed
+ * and is at rest: the devices read, the app asked whether anything waits,
+ * no tick, and a frame stage of one system. The game has the picture of
+ * the devices, a state and a view, as one with a menu would.
+ */
+const atRest = (): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const Phase = State.define("bench/RestPhase", ["title", "playing"]);
+        const Shown = View.define("bench/Shown", { phase: "title" });
+        const Show = View.publish(Shown, function* () {
+          return { phase: (yield* Phase).value as string };
+        });
+        const source = Input.makeManualSource();
+        const app = yield* App.make({
+          plugins: [Input.plugin, View.plugin],
+          components: [Phase],
+          systems: [Show],
+          checkpointEvery: 0,
+        }).pipe(
+          Effect.provideService(Input.Source, source),
+          Effect.provide(View.layer(View.makeBridge()))
+        );
+        const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
+        // The first tick enters the state, and one more follows it.
+        for (let i = 0; i < 10; i++) {
+          advance(DT);
+        }
+        if (app.time.tick !== 2) {
+          throw new Error(
+            `The game did not come to rest: tick ${app.time.tick}`
+          );
+        }
+        return measure(() => advance(DT), 50_000, 20_000);
       })
     )
   );
@@ -917,6 +958,14 @@ const variants: Record<
     unit: "matches",
     label: "app.frame: cues for two events, one cue played",
     run: () => sounding(true),
+  },
+
+  // A game that ticks when it is needed, at rest: what a frame costs when
+  // no tick runs.
+  restFrame: {
+    unit: "matches",
+    label: "a frame of a game at rest: devices, a view, no tick",
+    run: () => atRest(),
   },
 
   // Change detection. A write is noticed per row, and only for a component

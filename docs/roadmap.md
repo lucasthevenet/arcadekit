@@ -66,12 +66,13 @@ Not work yet; each needs an answer before the item that depends on it.
 
 - **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
 - **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
-- **A game that ticks when a player moves, in a page.** `App.run` and `Driver.frames` tick in real time. A turn-based game wants its frames at the display's rate and its ticks when a move is made, with the input stage before each. Whether that is an option of the frame loop or a driver of its own is open; the duel example steps its app by hand meanwhile. The view bridge raises the same question from the UI's side: what a menu sends waits for the next tick, and in such a game nothing says that one is due.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.
 
 Decided, and no longer waiting: no UI library. The previous version drew its UI with Foldkit; this one does not depend on it, or on any other. Three.js is different, because it does a job the package would otherwise have to do itself. A game's UI reaches the game through the view bridge of milestone 5, with whatever library it likes.
 
 Also decided: one entry or several. Several: an entry for every module, `arcadekit/App` and the rest, and `arcadekit` for all of them together, each importing Effect alone. What only a page can use is one entry, `arcadekit/Browser`, and starts a game in it. `arcadekit/ecs` is the storage core, which imports nothing. A UI bridge and netcode are each an entry of their own when they are built.
+
+Also decided: a game that ticks when a player moves, in a page. It is an option of the frame loop and not a driver of its own: `ticks: "whenNeeded"`, on `Driver.frames`, `Driver.fixedStep` and `App.run`. The loop draws every frame and runs the input stage every frame, ticks while the app is not settled and once more after, and rests. What a menu sends through the view bridge is heard in the frame it is sent in.
 
 Also decided: where a renderer lives. In a package of its own, `@arcadekit/three`, and not in an entry of `arcadekit` with Three.js as an optional peer, which is what this document said before. `arcadekit` then asks nobody for Three.js, and the plugin is versioned with the library it draws with.
 

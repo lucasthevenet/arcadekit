@@ -145,6 +145,18 @@ export interface Any {
   /** Runs one tick. Throws if a system fails, or if the app has stopped. */
   readonly tick: (delta: number) => void;
   /**
+   * Whether the game is at rest: a tick now would find nothing waiting for
+   * it. It is false while an action waits to be applied, a state waits to
+   * be entered, a script waits for the next tick or sleeps, or an event
+   * waits that some system has not had its chance at.
+   *
+   * A driver told to tick only when needed asks this, so that a game that
+   * moves when its player does stands still in between. Systems that do
+   * something every tick whether or not anything is waiting are not
+   * counted: a game that has them runs in real time.
+   */
+  readonly settled: boolean;
+  /**
    * Runs the frame stage once: the systems made with
    * `System.inStage("frame")`, which draw the game as it stands between
    * two ticks. `alpha` says how far between them the frame is, from 0 just
@@ -416,6 +428,13 @@ export interface RunOptions<
   readonly hz: number;
   /** The most ticks one frame runs after a stall. 5 when left out. */
   readonly maxStepsPerCall?: number;
+  /**
+   * `"whenNeeded"` for a game that moves when its player does: it is drawn
+   * every frame and ticks only while something is waiting for a tick, as
+   * `Driver.frames` describes. `"always"`, a game in real time, when left
+   * out.
+   */
+  readonly ticks?: "always" | "whenNeeded";
   /**
    * A save to go on from, in place of a fresh start: the app is made with
    * `App.load`, and `run` can fail with `Save.LoadRefused`.
@@ -1440,6 +1459,22 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           ),
           logLength: actionLog.length,
         });
+      },
+      get settled() {
+        if (
+          queued.length > 0 ||
+          waiters.size > 0 ||
+          dispatcher.pending > 0 ||
+          events.waiting()
+        ) {
+          return false;
+        }
+        for (const state of states.states) {
+          if (State.pending(world, state) !== undefined) {
+            return false;
+          }
+        }
+        return true;
       },
       checkpoint() {
         if (ticking) {

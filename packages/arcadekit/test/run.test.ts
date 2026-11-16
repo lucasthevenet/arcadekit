@@ -326,6 +326,50 @@ describe("App.run", () => {
     expect(log.includes("script stopped")).toBe(true);
   });
 
+  it("runs a game that moves when its player does: drawn every frame, and ticked only while something waits", async () => {
+    const display = Driver.makeManualDisplay();
+    let frames = 0;
+    const Count = System.make("run/Count", function* () {
+      frames++;
+    }).pipe(System.inStage("frame"));
+    let made: App.Any | undefined;
+    let ask = (_by: number): void => {};
+    const fiber = Effect.runFork(
+      App.run(
+        { handlers: [add], components: [Score], systems: [Count] },
+        {
+          hz: 60,
+          ticks: "whenNeeded",
+          ready: (app) =>
+            Effect.sync(() => {
+              made = app;
+              ask = (by) => app.enqueue(Add, { by });
+            }),
+        }
+      ).pipe(Effect.provideService(Driver.Display, display))
+    );
+    let now = 0;
+    const repaint = (count: number): void => {
+      for (let i = 0; i < count; i++) {
+        display.frame(now);
+        now += 1000 / 60;
+      }
+    };
+    repaint(90);
+    expect(frames).toBe(90);
+    expect(made!.time.tick).toBe(0);
+    // A move: the tick that applies it, and one more.
+    ask(4);
+    repaint(1);
+    expect(made!.time.tick).toBe(1);
+    expect(made!.world.singleton(Score).points).toBe(4);
+    repaint(60);
+    expect(made!.time.tick).toBe(2);
+    expect(frames).toBe(151);
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    expect(display.pending).toBe(0);
+  });
+
   it("passes on how a long stall is handled", async () => {
     const { Game } = makeGame();
     const display = Driver.makeManualDisplay();

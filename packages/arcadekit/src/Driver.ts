@@ -16,6 +16,36 @@ export interface Tickable {
   readonly input?: () => void;
   /** An app's frame stage: run after the ticks of each call, if it is there. */
   readonly frame?: (alpha: number, delta?: number) => void;
+  /**
+   * Whether nothing is waiting for a tick: an app says so. Asked only when
+   * ticking when needed; what does not say is taken to need every tick.
+   */
+  readonly settled?: boolean;
+}
+
+/** How a driver steps an app. */
+export interface StepOptions {
+  /** How many ticks a second the game runs at, whatever the rate of frames. */
+  readonly hz: number;
+  /** The most ticks one call runs after a stall. 5 when left out. */
+  readonly maxStepsPerCall?: number;
+  /**
+   * When the game ticks.
+   *
+   * `"always"`, when left out: at `hz`, in real time.
+   *
+   * `"whenNeeded"`: only while something is waiting for a tick, for a game
+   * that moves when its player does. The input stage runs every frame, so
+   * a key, a button of the UI or a message is heard at once. While the app
+   * is not settled (an action waits, a state is to be entered, a script
+   * waits for a tick, an event has not been heard by every system) it
+   * ticks at `hz` as any game does, and once more after, for the systems
+   * that react a tick late to what a system after them did. Then it rests:
+   * no tick runs, the game's time stands still, and the frame stage goes
+   * on drawing it, told that the frame is all the way to the last tick
+   * (`Frame.alpha` of 1).
+   */
+  readonly ticks?: "always" | "whenNeeded";
 }
 
 const EPSILON = 1e-9;
@@ -32,27 +62,52 @@ const EPSILON = 1e-9;
  * The simulation ticks at a fixed rate whatever the rate of frames, and the
  * frame stage is told how far its frame is between the last tick and the
  * next (`Frame.alpha`), so that it can draw what moves in between.
+ *
+ * With `ticks: "whenNeeded"` it ticks only while the app has something
+ * waiting, and rests in between: see `StepOptions`.
  */
 export const fixedStep = (
   app: Tickable,
-  options: { readonly hz: number; readonly maxStepsPerCall?: number }
+  options: StepOptions
 ): ((realDelta: number) => number) => {
   const dt = 1 / options.hz;
   const maxSteps = options.maxStepsPerCall ?? 5;
+  const whenNeeded = options.ticks === "whenNeeded";
   let accumulator = 0;
+  // Ticking when needed: whether the last tick had something waiting for
+  // it, in which case one more follows it.
+  let settling = false;
+  // Whether the call before this one found the game at rest.
+  let resting = false;
   return (realDelta) => {
-    accumulator += realDelta;
+    // The time spent at rest is not owed. A game at rest has one tick
+    // ready, so that the tick a move asks for runs in the frame the move
+    // arrives in, and no more than that one.
+    accumulator = resting ? dt : accumulator + realDelta;
+    resting = false;
     let steps = 0;
     // The epsilon stops float error from swallowing a tick: 1 - 59 * (1 / 60)
     // is a hair less than 1 / 60.
     while (accumulator + EPSILON >= dt && steps < maxSteps) {
       app.input?.();
+      if (whenNeeded) {
+        // Asked after the input stage, which is where a move comes in.
+        const needed = app.settled !== true;
+        if (!needed && !settling) {
+          resting = true;
+          break;
+        }
+        settling = needed;
+      }
       app.tick(dt);
       accumulator = Math.max(0, accumulator - dt);
       steps++;
     }
-    // After a long stall, drop the backlog instead of spiralling.
-    if (steps === maxSteps && accumulator >= dt) {
+    if (resting) {
+      // All the way to its last tick: that is where the game stands.
+      accumulator = dt;
+    } else if (steps === maxSteps && accumulator >= dt) {
+      // After a long stall, drop the backlog instead of spiralling.
       accumulator = 0;
     }
     // What is left is part of a tick: how far the frame is into the next.
@@ -67,7 +122,7 @@ export const fixedStep = (
  */
 export const interval = (
   app: Tickable,
-  options: { readonly hz: number }
+  options: StepOptions
 ): Effect.Effect<never> =>
   Effect.callback<never>((resume) => {
     const advance = fixedStep(app, options);
@@ -225,15 +280,20 @@ export const makeManualDisplay = (): ManualDisplay => {
  *   the fiber that runs it, which is how closing a scope stops it.
  * - If a tick or a frame throws, it stops the same way and dies with what
  *   was thrown.
+ * - With `ticks: "whenNeeded"`, for a game that moves when its player
+ *   does, every frame is drawn and a tick runs only while something is
+ *   waiting for one:
+ *
+ *     yield* Driver.frames(app, { hz: 60, ticks: "whenNeeded" })
  *
  * It reaches the screen through `Display`, which a test replaces.
  */
 export const frames: (
   app: Tickable,
-  options: { readonly hz: number; readonly maxStepsPerCall?: number }
+  options: StepOptions
 ) => Effect.Effect<never> = Effect.fnUntraced(function* (
   app: Tickable,
-  options: { readonly hz: number; readonly maxStepsPerCall?: number }
+  options: StepOptions
 ) {
   const display = yield* Display;
   return yield* Effect.callback<never>((resume) => {
