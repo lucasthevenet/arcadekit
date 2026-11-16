@@ -454,7 +454,7 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
 **The picture.** `Input.plugin` keeps what the devices say in the world, for systems to read.
 
 - `yield* Input.Keyboard` gives `down(code)`, `pressed(code)` and `released(code)`. `Input.Pointer` has `x`, `y` and the same three for a button, the main one unless told. `Input.Gamepad(index)` has `axis(n)` and the three for a button.
-- `pressed` and `released` are true in the one tick that first sees the change, for every system of that tick. A key that went down and up between two ticks was pressed and released in the same tick and is not down.
+- `pressed` and `released` are true in the one tick that first sees the change, for every system of that tick. A key that went down and up between two ticks was pressed and released in the same tick and is not down; a held key that was let go and pressed again between two ticks was released and pressed in the same tick, and is down.
 - What changed since the last tick is one action, `Input.Report`, and only when something did: holding a key still, or doing nothing, logs nothing.
 - The picture is a [singleton](#singletons): saved with a game, put back by a refusal, and counted in the hash once something was pressed. A game nobody has touched hashes as one that has no input at all.
 - The devices are the truth. A loaded game whose save had a key held, where the key is no longer down, lets it go at the first reading.
@@ -909,7 +909,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - `Assets.load` waits in real time. In a script it would resume in whatever tick the file happened to arrive in, and a replay of that script would fetch the file again: a script does not load.
 - The picture of the devices is one player's. Several players on one machine, or on several, bind their devices to actions that say whose they are.
 - A gamepad's button is down or it is not: how far a trigger is pressed is not read. Nor are the wheel, text as it is typed, more than one finger at a time, or a pointer that is locked to the page.
-- A button that is held, and let go and pressed again between two readings of the devices, is held: neither edge is seen. One that is pressed twice between two readings was pressed once.
+- A button that is pressed twice between two readings of the devices was pressed once.
 - The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
 - Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
 - Only a driver runs the input stage. A game that ticks when a player moves calls `app.input()` before its tick itself.

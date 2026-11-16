@@ -727,6 +727,21 @@ describe("the picture of the devices in the world", () => {
         seen.length = 0;
         app.tick(1);
         expect(seen[0]).toBe("First 11: down pressed released");
+        // A held key let go and pressed again between two readings of the
+        // devices, with no tick between: the same. It went up, it went
+        // down, and it is held.
+        source.release("KeyA");
+        source.press("KeyA");
+        seen.length = 0;
+        step();
+        step();
+        expect(seen).toEqual([
+          "First 12: down pressed released",
+          "Second 12: down pressed released",
+          "First 13: down",
+          "Second 13: down",
+        ]);
+        expect(reports(app).at(-1)).toEqual({ up: ["KeyA"], down: ["KeyA"] });
         // A held key let go, pressed and let go again between two ticks:
         // it went up, it was pressed, and it is not held.
         source.release("KeyA");
@@ -735,10 +750,10 @@ describe("the picture of the devices in the world", () => {
         step();
         step();
         expect(seen).toEqual([
-          "First 12: pressed released",
-          "Second 12: pressed released",
-          "First 13:",
-          "Second 13:",
+          "First 14: pressed released",
+          "Second 14: pressed released",
+          "First 15:",
+          "Second 15:",
         ]);
         expect(reports(app).at(-1)).toEqual({ up: ["KeyA"], tapped: ["KeyA"] });
         // Read twice with no tick between, what did not change is said once.
@@ -985,6 +1000,30 @@ describe("the picture of the devices in the world", () => {
         still.dispatch(Input.Report, { down: ["KeyA", "KeyB"] });
         one.dispatch(Input.Report, { axes: { PointerX: 0, PointerY: 0 } });
         expect(one.world.hash()).toBe(still.world.hash());
+        // What went up is applied before what went down: a key in both
+        // was let go and pressed again, and is held.
+        const repressed = yield* App.make({ plugins: [Input.plugin] });
+        repressed.dispatch(Input.Report, { down: ["KeyA"] });
+        repressed.tick(1);
+        repressed.dispatch(Input.Report, { down: ["KeyA"], up: ["KeyA"] });
+        const held = yield* App.make({ plugins: [Input.plugin] });
+        held.dispatch(Input.Report, { down: ["KeyA"] });
+        held.tick(1);
+        expect(repressed.world.hash()).not.toBe(held.world.hash());
+        let seen = "";
+        const Look = System.make("Look", function* () {
+          const keys = yield* Input.Keyboard;
+          seen = `${keys.down("KeyA")} ${keys.pressed("KeyA")} ${keys.released("KeyA")}`;
+        });
+        const looking = yield* App.make({
+          plugins: [Input.plugin],
+          systems: [Look],
+        });
+        looking.dispatch(Input.Report, { down: ["KeyA"] });
+        looking.tick(1);
+        looking.dispatch(Input.Report, { down: ["KeyA"], up: ["KeyA"] });
+        looking.tick(1);
+        expect(seen).toBe("true true true");
         // A report that says what is so already is accepted, and writes
         // nothing: a key that is down did not go down again.
         one.tick(1);

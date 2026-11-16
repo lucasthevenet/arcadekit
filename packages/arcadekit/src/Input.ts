@@ -238,10 +238,10 @@ const Held = Singleton.define(
 );
 
 const ReportSchema = Schema.Struct({
-  /** Buttons that went down, and are down. */
-  down: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Buttons that went up. */
   up: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** Buttons that went down, and are down. */
+  down: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Buttons that went down and up again in between: pressed, and not held. */
   tapped: Schema.optionalKey(Schema.Array(Schema.String)),
   /** The axes that moved, and where to. */
@@ -255,9 +255,11 @@ type ReportPayload = typeof ReportSchema.Type;
  * and handles it. A test or a tool can dispatch it too, though what it
  * says only lasts until the input stage next reads the devices.
  *
- * The lists are applied in the order they are written here: what went
- * down, then what went up, then what was tapped. So a held button that is
- * in `up` and in `tapped` went up, and was then pressed and let go again.
+ * The lists are applied in the order they are written here: what went up,
+ * then what went down, then what was tapped. So a held button that is in
+ * `up` and in `down` was let go and pressed again, and is held; and one
+ * that is in `up` and in `tapped` went up, and was then pressed and let go
+ * again.
  */
 export const Report = Action.define("arcadekit/Input.Report", ReportSchema);
 
@@ -286,17 +288,17 @@ const nextButtons = (
       changed = true;
     }
   }
-  for (const code of payload.down ?? []) {
-    const marks = after[code];
-    if (marks === undefined || marks[0] === 0) {
-      after[code] = [1, tick, marks?.[2] ?? NEVER];
-      changed = true;
-    }
-  }
   for (const code of payload.up ?? []) {
     const marks = after[code];
     if (marks !== undefined && marks[0] === 1) {
       after[code] = [0, marks[1], tick];
+      changed = true;
+    }
+  }
+  for (const code of payload.down ?? []) {
+    const marks = after[code];
+    if (marks === undefined || marks[0] === 0) {
+      after[code] = [1, tick, marks?.[2] ?? NEVER];
       changed = true;
     }
   }
@@ -361,6 +363,11 @@ const difference = (
   for (const code of devices.down) {
     if (buttons[code]?.[0] !== 1) {
       down.push(code);
+    } else if (devices.released.includes(code)) {
+      // Held, let go and pressed again since the last sample: it went up,
+      // and it went down.
+      up.push(code);
+      down.push(code);
     }
   }
   for (const code of Object.keys(buttons)) {
@@ -396,8 +403,8 @@ const difference = (
     return undefined;
   }
   return {
-    ...(down.length > 0 ? { down } : {}),
     ...(up.length > 0 ? { up } : {}),
+    ...(down.length > 0 ? { down } : {}),
     ...(tapped.length > 0 ? { tapped } : {}),
     ...(moves === undefined ? {} : { axes: moves }),
   };
