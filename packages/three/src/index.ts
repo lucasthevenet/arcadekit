@@ -1,11 +1,10 @@
 /**
  * Draws an arcadekit game with Three.js: the `@arcadekit/three` entry.
  *
- *   import { Three, Transform } from "@arcadekit/three"
+ *   import { Three } from "@arcadekit/three"
  *
- * Each module is an entry of its own too. `@arcadekit/three/Transform` is
- * the components, and imports no Three.js: a game's rules, a server and a
- * replay import that one alone.
+ * `Three` is an entry of its own too, `@arcadekit/three/Three`. Where a
+ * thing is drawn comes from the game's own components, `arcadekit/Transform`,
+ * which the game's rules write and this package only reads.
  */
 export * as Three from "./Three";
-export * as Transform from "./Transform";

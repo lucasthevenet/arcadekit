@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 537 tests, 31 of them of @arcadekit/three
+pnpm test                          # 540 tests, 31 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -68,7 +68,7 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `View` | `effect` |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform`, `View` | `effect` |
 | `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, its sound, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
@@ -131,6 +131,47 @@ A singleton is one instance of some data per world: whose turn it is, the score,
 - A migration changes it by name with `Migrate`, as it changes a component.
 - A `Resource` is the other kind of single value: configuration with a default that a layer can override. It is not game state, and is not saved.
 - With the storage core on its own: `Component.singleton(name, fields, initial)` and `world.singleton(spec)`.
+
+## Where a thing is
+
+```ts
+const Rock = Component.tag("game/Rock");
+
+commands.spawn(
+  Rock,
+  Transform.Position.of({ x: 0, y: 4, z: 0 }),
+  Transform.Rotation.of(Transform.axisAngle(0, 0, 1, Math.PI / 2)),
+  Transform.Scale.of({ x: 2, y: 2, z: 2 })
+);
+
+const Drift = System.make("game/Drift", function* () {
+  const { delta } = yield* Time;
+  (yield* Query.all(Transform.Position)).eachChunk((start, end, position) => {
+    for (let i = start; i < end; i++) position.x[i] += 2 * delta;
+  });
+});
+
+const Rules = Plugin.make("game/Rules", {
+  plugins: [Transform.plugin], // lists the three, so a save that names them can be read
+  components: [Rock],
+  systems: [Drift],
+});
+```
+
+`Transform` is three components for where a thing is: its position, which way it is turned, and how large it is. They are in the package so that whatever needs to know where things are agrees on it: the rules that move them, what draws them, and what comes after.
+
+| Component | Fields | Named |
+| --- | --- | --- |
+| `Transform.Position` | `x`, `y`, `z`, in the units of the game's space | `"arcadekit/Transform.Position"` |
+| `Transform.Rotation` | `x`, `y`, `z`, `w`: a unit quaternion | `"arcadekit/Transform.Rotation"` |
+| `Transform.Scale` | `x`, `y`, `z`: 1 is the size a thing is made at | `"arcadekit/Transform.Scale"` |
+
+- They are ordinary components: 32-bit floats in columns of a table, written by the game's systems with a loop over `eachChunk`, saved, hashed and replayed. Nothing here draws, and the module imports no renderer.
+- An entity has the ones it needs. One that is only somewhere has a `Position`; `Rotation` and `Scale` are for the ones that turn or have a size of their own.
+- `Transform.plugin` lists them. A plugin that stores them depends on it, as the plugin of a renderer that reads them does.
+- `Transform.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis of length 1. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
+- A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A field left out of `of` is not 0, so a flat game gives every `z`.
+- [`@arcadekit/three`](../three/README.md) draws from them, and has no components of its own.
 
 ## Relations
 
@@ -420,9 +461,9 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
 
 ```ts
 import { Three } from "@arcadekit/three";
-import * as Transform from "@arcadekit/three/Transform";
+import { Transform } from "arcadekit";
 
-// The rules say where a rock is. They import no Three.js.
+// The rules say where a rock is, with arcadekit's own components.
 commands.spawn(Rock, Transform.Position.of({ x: 0, y: 4, z: 0 }));
 
 // The page says how a rock looks: every one is an instance of one mesh.
@@ -446,7 +487,7 @@ Browser.runMain(
 
 [`@arcadekit/three`](../three/README.md) is the plugin that draws a game with Three.js, in a package of its own. It is made of what is above: systems of the frame stage that read the world and cannot change it, a service that holds the scene from one frame to the next, and a renderer that comes from outside as the display does.
 
-- `Transform.Position`, `Rotation` and `Scale` are components of the game, in an entry that imports no Three.js.
+- Where a thing is drawn comes from [`Transform`](#where-a-thing-is), which is this package's. The rules import nothing of `@arcadekit/three`, so a server and a replay install neither it nor Three.js.
 - `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.2 ms of a frame before Three.js takes over. `Three.objects` keeps an Object3D per entity for the few things that are more than that.
 - A game that draws with something else does not install it.
 
@@ -919,6 +960,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Migrate.ts` | The usual changes a migration makes to an old save's world |
 | `src/Field.ts` | The fields of a component, with `Field.schema` |
 | `src/Singleton.ts` | One instance of some data per world |
+| `src/Transform.ts` | Where a thing is: the position, rotation and scale that the rules write and a renderer reads |
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Input.ts` | The devices and where they come from, the picture of them in the world, and bindings to actions |
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
@@ -930,7 +972,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, page and entries tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, transform, page and entries tests, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
@@ -1097,6 +1139,7 @@ moving.eachChunk((start, end, pos, vel) => {
 The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
+- A place is three numbers and a turn is a quaternion, whatever the game. A flat game carries a `z` it does not use, and turns about one axis with four numbers.
 - A cue is played once and left to end. There is no music: nothing loops, nothing is stopped or faded, and nothing is heard from where it is.
 - A page's cues are fetched when the page starts and kept until it goes away. They are not assets of a level: a bundle does not hold a sound.
 - A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.

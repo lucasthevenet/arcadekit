@@ -5,8 +5,7 @@
 //   arcadekit/Browser            imports Effect, and may import @effect/platform-browser
 //   every other entry of it      imports Effect and nothing else
 //
-//   @arcadekit/three/Transform   imports arcadekit, may import Effect, and no Three.js
-//   every other entry of it      imports arcadekit, Effect and Three.js, and nothing else
+//   every entry of @arcadekit/three imports arcadekit, Effect and Three.js, and nothing else
 //
 // The entries are read from each package's `exports`. It follows the chunks an entry imports,
 // since what entries share is built once.
@@ -41,16 +40,9 @@ const packages = [
   },
   {
     dir: "three",
-    allowedFor: (subpath) =>
-      subpath === "./Transform"
-        ? (name) => isArcadekit(name) || isEffect(name)
-        : (name) => isArcadekit(name) || isEffect(name) || isThree(name),
-    summary: (entries, imports) =>
-      `${
-        entries
-          .filter((name) => !imports.get(name).some((one) => isThree(one)))
-          .join(", ") || "none"
-      } no Three.js, the rest arcadekit, Effect and Three.js`,
+    allowedFor: () => (name) =>
+      isArcadekit(name) || isEffect(name) || isThree(name),
+    summary: () => "arcadekit, Effect and Three.js, and nothing else",
   },
 ];
 

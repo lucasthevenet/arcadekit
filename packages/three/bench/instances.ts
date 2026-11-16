@@ -9,12 +9,12 @@
  *
  *   pnpm --filter @arcadekit/three bench
  */
-import { App, Component, Plugin } from "arcadekit";
+import { App, Component, Plugin, Transform } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
 
-import { Three, Transform } from "../src/index";
+import { Three } from "../src/index";
 
 const N = 10_000;
 const { Position, Rotation, Scale } = Transform;

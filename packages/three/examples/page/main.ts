@@ -22,6 +22,7 @@ import {
   Random,
   System,
   Time,
+  Transform,
 } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
 import { Effect, Layer } from "effect";
@@ -36,7 +37,7 @@ import {
 } from "three";
 
 // In a game of your own this is "@arcadekit/three".
-import { Three, Transform } from "../../src/index";
+import { Three } from "../../src/index";
 
 const { Position, Rotation, Scale } = Transform;
 const COUNT =

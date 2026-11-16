@@ -15,9 +15,8 @@ pnpm --filter @arcadekit/three bench
 ## What it looks like
 
 ```ts
-import * as Transform from "@arcadekit/three/Transform";
-// rules.ts: the game. No Three.js here, so a server and a replay run it as it is.
-import { Commands, Component, Plugin } from "arcadekit";
+// rules.ts: the game. Nothing of this package here: a server and a replay run it as it is.
+import { Commands, Component, Plugin, Transform } from "arcadekit";
 
 const Rock = Component.tag("game/Rock");
 
@@ -60,19 +59,17 @@ Browser.runMain(
 ## Entries
 
 ```ts
-import { Three, Transform } from "@arcadekit/three"; // both, or
-import * as Three from "@arcadekit/three/Three"; // one module at a time
-import * as Transform from "@arcadekit/three/Transform";
+import { Three } from "@arcadekit/three"; // or
+import * as Three from "@arcadekit/three/Three";
 ```
 
 | Entry | What it has | Imports |
 | --- | --- | --- |
-| `@arcadekit/three` | Both modules below | `arcadekit`, `effect`, `three` |
+| `@arcadekit/three` | The module below, as `import { Three } from "@arcadekit/three"` | `arcadekit`, `effect`, `three` |
 | `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances` and `objects` | `arcadekit`, `effect`, `three` |
-| `@arcadekit/three/Transform` | The components, and the plugin that lists them | `arcadekit` |
 
 - `arcadekit`, `effect` and `three` are peer dependencies: a game has one copy of each, so a component or a service of arcadekit's is the same object here as in the game.
-- `@arcadekit/three/Transform` imports no Three.js and names nothing a page has. The plugins that hold a game's rules import that entry alone. A server that runs them has `three` installed, since this package asks for it, and never loads it.
+- Only what belongs to the page imports this package: the plugin that says how the game looks, and the module that starts it. Where things are is `arcadekit/Transform`, in the game's own package.
 - `pnpm lint:packages` checks what each built entry imports, and a test checks the same of the sources.
 
 ## Where a thing is
@@ -86,16 +83,12 @@ commands.spawn(
 );
 ```
 
-| Component | Fields | Named |
-| --- | --- | --- |
-| `Transform.Position` | `x`, `y`, `z`, in the units of the scene | `"arcadekit/three/Position"` |
-| `Transform.Rotation` | `x`, `y`, `z`, `w`: a unit quaternion | `"arcadekit/three/Rotation"` |
-| `Transform.Scale` | `x`, `y`, `z`: 1 is the size of the geometry | `"arcadekit/three/Scale"` |
+What is drawn where comes from arcadekit's own components, [`arcadekit/Transform`](../arcadekit/README.md#where-a-thing-is): this package has none of its own, and only reads them.
 
-- An entity is drawn where its `Position` says. `Rotation` and `Scale` are for the entities that turn or have a size of their own: one without them is drawn upright, at the size of its geometry, and costs less to draw.
-- They are ordinary components of the game: written by its systems, saved, hashed and replayed. `Transform.plugin` lists them, so a plugin that stores them depends on it; `Three.plugin` does.
-- All are 32-bit floats in columns, so a system moves ten thousand of them with a loop over `eachChunk`.
-- `Transform.axisAngle(x, y, z, angle)` gives the value of a `Rotation` about an axis of length 1. It makes an object, so it is for a spawn, not for a loop. A `Rotation` whose four fields are 0, which is what a component added without a value is, draws as not turned.
+- An entity is drawn where its `Transform.Position` says, in the units of the scene. `Transform.Rotation`, a unit quaternion, and `Transform.Scale`, where 1 is the size of the geometry, are for the entities that turn or have a size of their own: one without them is drawn upright, at the size of its geometry, and costs less to draw.
+- The plugins that hold a game's rules write them and import nothing of this package. A server and a replay that run those rules do not install it, or Three.js.
+- `Three.plugin` depends on `Transform.plugin`, which lists them.
+- A `Rotation` whose four fields are 0, which is what one added with no value is, draws as not turned.
 
 ## Instances
 
@@ -175,7 +168,7 @@ const Follow = System.make("game/Follow", function* () {
 ## Names
 
 - The services are keyed `"arcadekit/three/Scene"` and `"arcadekit/three/Renderer"`.
-- The plugins are `"arcadekit/three"` and `"arcadekit/three/Transform"`, and the system that draws `"arcadekit/three/Render"`.
+- The plugin is `"arcadekit/three"`, and the system that draws `"arcadekit/three/Render"`.
 - A system made by `Three.instances` or `Three.objects` has the name it was given, which is one of the app's systems' and is the name of the mesh.
 
 ## Benchmark

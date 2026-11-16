@@ -132,6 +132,11 @@
       "types": "./dist/TickScheduler.d.ts",
       "default": "./dist/TickScheduler.js"
     },
+    "./Transform": {
+      "source": "./src/Transform.ts",
+      "types": "./dist/Transform.d.ts",
+      "default": "./dist/Transform.js"
+    },
     "./View": {
       "source": "./src/View.ts",
       "types": "./dist/View.d.ts",

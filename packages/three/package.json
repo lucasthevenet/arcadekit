@@ -36,11 +36,6 @@
       "source": "./src/Three.ts",
       "types": "./dist/Three.d.ts",
       "default": "./dist/Three.js"
-    },
-    "./Transform": {
-      "source": "./src/Transform.ts",
-      "types": "./dist/Transform.d.ts",
-      "default": "./dist/Transform.js"
     }
   },
   "publishConfig": {

@@ -2,8 +2,8 @@
  * Draws a game with Three.js. This is the package's `@arcadekit/three/Three`
  * entry.
  *
+ *   import * as Transform from "arcadekit/Transform"
  *   import * as Three from "@arcadekit/three/Three"
- *   import * as Transform from "@arcadekit/three/Transform"
  *
  *   // The rules: a rock is somewhere. They know nothing of how it looks.
  *   commands.spawn(Rock, Transform.Position.of({ x: 0, y: 4, z: 0 }))
@@ -30,8 +30,8 @@
  * game as one that is not, and a server or a replay installs none of this.
  *
  * What is drawn is told from the components an entity has, and where from
- * `Transform.Position`, with `Transform.Rotation` and `Transform.Scale` for
- * the entities that have them:
+ * arcadekit's own `Transform.Position`, with `Transform.Rotation` and
+ * `Transform.Scale` for the entities that have them:
  *
  * - `Three.instances` draws every entity of a kind as one instance of one
  *   mesh. It reads the columns raw and writes one matrix each into the
@@ -48,6 +48,7 @@ import type { ComponentDef, Entity, EntityColumn } from "arcadekit/ecs";
 import * as Plugin from "arcadekit/Plugin";
 import * as Query from "arcadekit/Query";
 import * as System from "arcadekit/System";
+import * as Transform from "arcadekit/Transform";
 import { Context, Effect, Layer } from "effect";
 import {
   DynamicDrawUsage,
@@ -64,8 +65,6 @@ import type {
   Object3D,
   WebGLRendererParameters,
 } from "three";
-
-import * as Transform from "./Transform";
 
 // --- the scene -------------------------------------------------------------------
 

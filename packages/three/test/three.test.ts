@@ -6,9 +6,9 @@ import {
   Field,
   Plugin,
   Query,
-  Save,
   System,
   Time,
+  Transform,
 } from "arcadekit";
 import type { Entity } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
@@ -28,7 +28,7 @@ import {
 import type { Camera, Scene } from "three";
 import { describe, expect, it } from "vitest";
 
-import { Three, Transform } from "../src/index";
+import { Three } from "../src/index";
 
 const { Position, Rotation, Scale } = Transform;
 
@@ -153,7 +153,7 @@ const makeRandom = (seed: number) => {
   };
 };
 
-describe("Transform", () => {
+describe("arcadekit's Transform, as Three.js reads it", () => {
   it("axisAngle gives the quaternion Three.js gives for the same turn", () => {
     for (const [x, y, z, angle] of [
       [0, 0, 1, Math.PI / 2],
@@ -172,40 +172,6 @@ describe("Transform", () => {
       expect(ours.z).toBeCloseTo(theirs.z, 12);
       expect(ours.w).toBeCloseTo(theirs.w, 12);
     }
-  });
-
-  it("lists its components, so that a game with no renderer saves and loads them", () => {
-    const Rules = Plugin.make("th/Rules", {
-      plugins: [Transform.plugin],
-      components: [Rock],
-    });
-    const scope = Effect.runSync(Scope.make());
-    const made = Effect.runSync(
-      App.make({ plugins: [Rules] }).pipe(Scope.provide(scope))
-    );
-    const rock = made.world.spawn(
-      Rock,
-      Position.of({ x: 1, y: 2, z: 3 }),
-      Rotation.of(Transform.axisAngle(0, 0, 1, 1)),
-      Scale.of({ x: 2, y: 2, z: 2 })
-    );
-    const save = made.save();
-    if (Exit.isFailure(save)) {
-      throw new Error("The game could not be saved");
-    }
-    const read = Save.decode(Save.encode(save.value));
-    if (Exit.isFailure(read)) {
-      throw new Error("The save could not be read back");
-    }
-    const loaded = Effect.runSync(
-      App.load(read.value, { plugins: [Rules] }).pipe(Scope.provide(scope))
-    );
-    expect(loaded.world.hash()).toBe(made.world.hash());
-    expect(loaded.world.get(rock, Position)).toEqual({ x: 1, y: 2, z: 3 });
-    expect(loaded.world.get(rock, Scale)).toEqual({ x: 2, y: 2, z: 2 });
-    expect(Position.name).toBe("arcadekit/three/Position");
-    expect(Rotation.name).toBe("arcadekit/three/Rotation");
-    expect(Scale.name).toBe("arcadekit/three/Scale");
   });
 });
 

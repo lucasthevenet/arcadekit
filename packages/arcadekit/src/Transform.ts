@@ -1,0 +1,74 @@
+/**
+ * Where a thing is: its position, which way it is turned, and how large it
+ * is. Three components of the game, for whatever needs to know where
+ * things are: the rules that move them, what draws them, what is heard
+ * from them.
+ *
+ *   commands.spawn(
+ *     Rock,
+ *     Transform.Position.of({ x: 0, y: 4, z: 0 }),
+ *     Transform.Rotation.of(Transform.axisAngle(0, 0, 1, Math.PI / 2))
+ *   )
+ *
+ * They are ordinary components: columns of 32-bit floats, written by the
+ * game's systems, saved, hashed and replayed. Nothing here draws. A
+ * renderer reads them: `@arcadekit/three` draws an entity where its
+ * `Position` says, turned and sized by its `Rotation` and `Scale` if it
+ * has them.
+ */
+import { Component, Field } from "./ecs/component";
+import * as Plugin from "./Plugin";
+
+/**
+ * Where an entity is, in the units of the game's space. A game that is
+ * flat gives every `z` as 0.
+ */
+export const Position = Component.define("arcadekit/Transform.Position", {
+  x: Field.f32,
+  y: Field.f32,
+  z: Field.f32,
+});
+
+/**
+ * Which way an entity is turned, as a unit quaternion. `axisAngle` makes
+ * one. All four fields 0, which is what a `Rotation` added with no value
+ * is, stands for not turned at all.
+ */
+export const Rotation = Component.define("arcadekit/Transform.Rotation", {
+  x: Field.f32,
+  y: Field.f32,
+  z: Field.f32,
+  w: Field.f32,
+});
+
+/** How large an entity is, along each axis: 1 is the size it is made at. */
+export const Scale = Component.define("arcadekit/Transform.Scale", {
+  x: Field.f32,
+  y: Field.f32,
+  z: Field.f32,
+});
+
+/**
+ * The value of a `Rotation` that turns by `angle` radians about an axis,
+ * which has to be of length 1: `Transform.axisAngle(0, 1, 0, Math.PI)`. It
+ * makes an object, so it is for a spawn or a `world.set`, not for a loop
+ * over columns.
+ */
+export const axisAngle = (
+  x: number,
+  y: number,
+  z: number,
+  angle: number
+): { x: number; y: number; z: number; w: number } => {
+  const sin = Math.sin(angle / 2);
+  return { x: x * sin, y: y * sin, z: z * sin, w: Math.cos(angle / 2) };
+};
+
+/**
+ * Lists the three components, so that a save which names them can be read.
+ * The plugin that holds a game's rules depends on it, and so does one that
+ * draws from them, as `Three.plugin` of `@arcadekit/three` does.
+ */
+export const plugin = Plugin.make("arcadekit/Transform", {
+  components: [Position, Rotation, Scale],
+});
