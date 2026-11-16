@@ -558,6 +558,182 @@ describe("the input stage", () => {
     );
   });
 
+  it("hears what a tick's actions emitted, and that an action it issued was refused", () => {
+    class TooMuch extends Data.TaggedError("TooMuch")<{}> {}
+    const Done = Event.define("in/Done", Schema.Struct({ by: Schema.Int }));
+    const Try = Action.define("in/Try", Schema.Struct({ by: Schema.Int }));
+    const attempt = Action.handler(Try, function* ({ by }) {
+      if (by > 5) {
+        return yield* Effect.fail(new TooMuch());
+      }
+      (yield* Done).emit({ by });
+    });
+    const hear = (
+      name: string,
+      stage: System.Stage,
+      done: number[],
+      refused: string[]
+    ) =>
+      System.make(name, function* () {
+        for (const event of (yield* Done).read()) {
+          done.push(event.by);
+        }
+        for (const event of (yield* Action.Rejected).read()) {
+          refused.push(`${event.action} ${(event.error as TooMuch)._tag}`);
+        }
+      }).pipe(System.inStage(stage));
+    run(
+      Effect.gen(function* () {
+        // An app with an input stage and no frame stage; one with both;
+        // and one with neither, which is the game they must not change.
+        const heard: number[] = [];
+        const refused: string[] = [];
+        const both: number[] = [];
+        const drawn: number[] = [];
+        const drawnRefused: string[] = [];
+        const alone = yield* App.make({
+          handlers: [attempt],
+          systems: [hear("Hear", "input", heard, refused)],
+        });
+        const together = yield* App.make({
+          handlers: [attempt],
+          systems: [
+            hear("Hear", "input", both, []),
+            hear("Draw", "frame", drawn, drawnRefused),
+          ],
+        });
+        const bare = yield* App.make({ handlers: [attempt] });
+        // And one with a frame stage and no input stage.
+        const onlyDrawn: number[] = [];
+        const shown = yield* App.make({
+          handlers: [attempt],
+          systems: [hear("Draw", "frame", onlyDrawn, [])],
+        });
+        for (const by of [1, 9, 3]) {
+          for (const app of [alone, together, bare, shown]) {
+            // What the action emits, it emits before the tick's systems
+            // run: the oldest events of the tick.
+            app.input();
+            app.enqueue(Try, { by });
+            app.tick(1);
+            app.frame(0);
+          }
+        }
+        alone.input();
+        together.input();
+        // Each event once, the first tick's among them, and the refusal.
+        expect(heard).toEqual([1, 3]);
+        expect(refused).toEqual(["in/Try TooMuch"]);
+        expect(both).toEqual([1, 3]);
+        expect(drawn).toEqual([1, 3]);
+        expect(drawnRefused).toEqual(["in/Try TooMuch"]);
+        expect(onlyDrawn).toEqual([1, 3]);
+        // And the game cannot tell that anyone was listening.
+        expect(alone.world.hash()).toBe(bare.world.hash());
+        const saves = [alone, together, bare].map((app) => app.save());
+        expect(saves.every((save) => Exit.isSuccess(save))).toBe(true);
+        const events = saves.map(
+          (save) => (save as Exit.Success<Save.Save>).value.events
+        );
+        expect(events[0]).toEqual(events[2]);
+        expect(events[1]).toEqual(events[2]);
+        // Heard, they are kept no longer.
+        for (let i = 0; i < 3; i++) {
+          alone.input();
+          alone.tick(1);
+        }
+        expect(alone.events.pending(Done)).toBe(0);
+        expect(heard).toEqual([1, 3]);
+      })
+    );
+  });
+
+  it("keeps an event until the stages have had their chance at it, and no longer", () => {
+    const Done = Event.define("in/Once", Schema.Struct({ at: Schema.Int }));
+    const Emit = Action.define("in/EmitOnce", Schema.Struct({}));
+    const emit = Action.handler(Emit, function* () {
+      (yield* Done).emit({ at: (yield* Time).tick + 1 });
+    });
+    // A system that first listens late hears what is still kept: only
+    // what its stage has not yet had its chance at.
+    const late = (
+      stage: System.Stage,
+      listening: () => boolean,
+      heard: number[]
+    ) =>
+      System.make("Late", function* () {
+        if (listening()) {
+          for (const event of (yield* Done).read()) {
+            heard.push(event.at);
+          }
+        }
+      }).pipe(System.inStage(stage));
+    run(
+      Effect.gen(function* () {
+        for (const stage of ["input", "frame"] as const) {
+          let listening = false;
+          const heard: number[] = [];
+          const app = yield* App.make({
+            handlers: [emit],
+            systems: [late(stage, () => listening, heard)],
+          });
+          for (let tick = 1; tick <= 6; tick++) {
+            listening = tick === 6;
+            app.input();
+            app.enqueue(Emit, {});
+            app.tick(1);
+            app.frame(0);
+          }
+          app.input();
+          // The input stage runs before a tick, so what it has not had
+          // its chance at is the tick before; the frame stage runs after.
+          expect(heard, stage).toEqual(stage === "input" ? [5, 6] : [6]);
+        }
+      })
+    );
+  });
+
+  it("keeps events for a stage that is late, and stops for one that is never run, as a replay never runs it", () => {
+    const Done = Event.define("in/Kept", Schema.Struct({}));
+    const Emit = Action.define("in/Emit", Schema.Struct({}));
+    const emit = Action.handler(Emit, function* () {
+      (yield* Done).emit({});
+    });
+    run(
+      Effect.gen(function* () {
+        let heard = 0;
+        const Hear = System.make("Hear", function* () {
+          heard += (yield* Done).read().length;
+        }).pipe(System.inStage("input"));
+        const ticked = function* (ticks: number) {
+          const app = yield* App.make({ handlers: [emit], systems: [Hear] });
+          for (let i = 0; i < ticks; i++) {
+            app.enqueue(Emit, {});
+            app.tick(1);
+          }
+          return app;
+        };
+        // Late by a hundred ticks: every one of their events is there.
+        const late = yield* ticked(100);
+        late.input();
+        expect(heard).toBe(100);
+        // Never run in seven hundred, as in a replay: the app has taken
+        // the stage to be gone, and keeps nothing for it.
+        heard = 0;
+        const gone = yield* ticked(700);
+        gone.input();
+        expect(heard).toBe(0);
+        // Run again, it hears again from then on.
+        for (let i = 0; i < 3; i++) {
+          gone.enqueue(Emit, {});
+          gone.tick(1);
+          gone.input();
+        }
+        expect(heard).toBe(3);
+      })
+    );
+  });
+
   it("gives a system's failure back typed, and a stopped app runs none of it", () => {
     class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
     run(
@@ -727,6 +903,21 @@ describe("the picture of the devices in the world", () => {
         seen.length = 0;
         app.tick(1);
         expect(seen[0]).toBe("First 11: down pressed released");
+        // A held key let go and pressed again between two readings of the
+        // devices, with no tick between: the same. It went up, it went
+        // down, and it is held.
+        source.release("KeyA");
+        source.press("KeyA");
+        seen.length = 0;
+        step();
+        step();
+        expect(seen).toEqual([
+          "First 12: down pressed released",
+          "Second 12: down pressed released",
+          "First 13: down",
+          "Second 13: down",
+        ]);
+        expect(reports(app).at(-1)).toEqual({ up: ["KeyA"], down: ["KeyA"] });
         // A held key let go, pressed and let go again between two ticks:
         // it went up, it was pressed, and it is not held.
         source.release("KeyA");
@@ -735,10 +926,10 @@ describe("the picture of the devices in the world", () => {
         step();
         step();
         expect(seen).toEqual([
-          "First 12: pressed released",
-          "Second 12: pressed released",
-          "First 13:",
-          "Second 13:",
+          "First 14: pressed released",
+          "Second 14: pressed released",
+          "First 15:",
+          "Second 15:",
         ]);
         expect(reports(app).at(-1)).toEqual({ up: ["KeyA"], tapped: ["KeyA"] });
         // Read twice with no tick between, what did not change is said once.
@@ -985,6 +1176,30 @@ describe("the picture of the devices in the world", () => {
         still.dispatch(Input.Report, { down: ["KeyA", "KeyB"] });
         one.dispatch(Input.Report, { axes: { PointerX: 0, PointerY: 0 } });
         expect(one.world.hash()).toBe(still.world.hash());
+        // What went up is applied before what went down: a key in both
+        // was let go and pressed again, and is held.
+        const repressed = yield* App.make({ plugins: [Input.plugin] });
+        repressed.dispatch(Input.Report, { down: ["KeyA"] });
+        repressed.tick(1);
+        repressed.dispatch(Input.Report, { down: ["KeyA"], up: ["KeyA"] });
+        const held = yield* App.make({ plugins: [Input.plugin] });
+        held.dispatch(Input.Report, { down: ["KeyA"] });
+        held.tick(1);
+        expect(repressed.world.hash()).not.toBe(held.world.hash());
+        let seen = "";
+        const Look = System.make("Look", function* () {
+          const keys = yield* Input.Keyboard;
+          seen = `${keys.down("KeyA")} ${keys.pressed("KeyA")} ${keys.released("KeyA")}`;
+        });
+        const looking = yield* App.make({
+          plugins: [Input.plugin],
+          systems: [Look],
+        });
+        looking.dispatch(Input.Report, { down: ["KeyA"] });
+        looking.tick(1);
+        looking.dispatch(Input.Report, { down: ["KeyA"], up: ["KeyA"] });
+        looking.tick(1);
+        expect(seen).toBe("true true true");
         // A report that says what is so already is accepted, and writes
         // nothing: a key that is down did not go down again.
         one.tick(1);
@@ -1035,6 +1250,58 @@ describe("the picture of the devices in the world", () => {
         expect(Exit.isSuccess(late)).toBe(true);
         never.dispatch(Input.Report, { axes: { PointerX: 4 } });
         expect(app.world.hash()).toBe(never.world.hash());
+      })
+    );
+  });
+
+  it("is left as it is where there are no devices: reports from elsewhere drive a game through a driver", () => {
+    // A game played from a keyboard, through a driver, and its reports.
+    const source = Input.makeManualSource();
+    const { hashes, log } = run(
+      Effect.gen(function* () {
+        const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
+        const step = Driver.fixedStep(app, { hz: 10 });
+        const seen: number[] = [];
+        const moves: (() => void)[] = [
+          () => source.press("ArrowRight"),
+          () => {},
+          () => source.tap("Space"),
+          () => source.release("ArrowRight"),
+          () => {},
+        ];
+        for (const move of moves) {
+          move();
+          step(0.1);
+          seen.push(app.world.hash());
+        }
+        return { hashes: seen, log: app.actionLog as Action.Logged[] };
+      }).pipe(withSource(source))
+    );
+    // The same game with no devices, given those reports as they came,
+    // and run by the same driver, which runs its input stage too: as a
+    // peer on another machine is, or a recording played back at speed.
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
+        const step = Driver.fixedStep(app, { hz: 10 });
+        for (let tick = 0; tick < hashes.length; tick++) {
+          for (const entry of log.filter((one) => one.tick === tick)) {
+            app.enqueueByName(entry.name, entry.payload);
+          }
+          step(0.1);
+          expect(app.world.hash(), `tick ${tick + 1}`).toBe(hashes[tick]);
+        }
+        // Nothing was reported of devices that are not there.
+        expect(reports(app)).toEqual(log.map((entry) => entry.payload));
+        // And a key said to be held stays held, however often it is read.
+        app.dispatch(Input.Report, { down: ["ArrowLeft"] });
+        const before = ship(app).x;
+        step(0.1);
+        app.input();
+        app.input();
+        step(0.1);
+        expect(ship(app).x).toBeCloseTo(before - 2, 5);
+        expect(reports(app).length).toBe(log.length + 1);
       })
     );
   });
@@ -1139,6 +1406,71 @@ describe("the picture of the devices in the world", () => {
           { up: ["ArrowRight"], axes: { PointerX: 0 } },
         ]);
       }).pipe(withSource(Input.makeManualSource()))
+    );
+  });
+
+  it("says in a handler what its tick's systems will be told: the tick an action is applied in is the one to come", () => {
+    const seen: string[] = [];
+    const Probe = Action.define("in/Probe", Schema.Struct({}));
+    const probe = Action.handler(Probe, function* () {
+      const keys = yield* Input.Keyboard;
+      seen.push(
+        `handler ${(yield* Time).tick + 1}:${keys.down("Space") ? " down" : ""}${keys.pressed("Space") ? " pressed" : ""}${keys.released("Space") ? " released" : ""}`
+      );
+    });
+    const Look = System.make("Look", function* () {
+      const keys = yield* Input.Keyboard;
+      seen.push(
+        `system ${(yield* Time).tick}:${keys.down("Space") ? " down" : ""}${keys.pressed("Space") ? " pressed" : ""}${keys.released("Space") ? " released" : ""}`
+      );
+    });
+    // The key is bound to the action, so both arrive in the same tick: the
+    // report first, since the plugin's system runs before the binding.
+    const Controls = Input.bind(
+      "in/ProbeKeys",
+      Input.onPress("Space", Probe, {}),
+      Input.onRelease("Space", Probe, {})
+    );
+    const source = Input.makeManualSource();
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({
+          plugins: [Input.plugin],
+          handlers: [probe],
+          systems: [Controls, Look],
+        });
+        const step = (): void => {
+          app.input();
+          app.tick(1);
+        };
+        source.press("Space");
+        step();
+        // Held, and an action that comes a tick later: the press is past.
+        app.enqueue(Probe, {});
+        step();
+        source.release("Space");
+        step();
+        expect(seen).toEqual([
+          "handler 1: down pressed",
+          "system 1: down pressed",
+          "handler 2: down",
+          "system 2: down",
+          "handler 3: released",
+          "system 3: released",
+        ]);
+        // Dispatched between two ticks, an action belongs to the one to
+        // come as well.
+        seen.length = 0;
+        app.dispatch(Input.Report, { down: ["Space"] });
+        app.dispatch(Probe, {});
+        app.tick(1);
+        app.dispatch(Probe, {});
+        expect(seen).toEqual([
+          "handler 4: down pressed",
+          "system 4: down pressed",
+          "handler 5: down",
+        ]);
+      }).pipe(withSource(source))
     );
   });
 

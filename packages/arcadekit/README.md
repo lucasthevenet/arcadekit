@@ -13,7 +13,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 458 tests
+pnpm test                          # 465 tests
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -448,16 +448,18 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
 
 - The devices are read once per run, and every system of the stage is given that one sample as `Input.Devices`: the buttons that are `down`, the ones `pressed` and `released` since the sample before, the `axes`, and the ones that `moved`. A frame in which no tick is due reads nothing, and what was pressed meanwhile is there for the next tick, so a quick tap is never lost between two frames.
 - The world is frozen there, as in the frame stage, and whatever would change the game throws. What a system makes of the devices it issues with `Actions.enqueue`, which is logged and applied at the start of the tick that follows.
+- It hears events from a place of its own, each once, as the frame stage does: what a tick's systems emitted, what its actions emitted, and `Action.Rejected`, so a system that issued an action hears that it was refused. They are kept for it until it has run, the first tick's among them, and for up to 600 ticks when it does not run at all, as in a replay.
 - `Input.Devices` is no part of the game, so a system in the tick or in the frame stage cannot read it: its fields throw there and say what to read.
 - A replay and a server never call `app.input()`. The simulation cannot tell whether its devices are read: a game played from a keyboard and its replay have the same hash at every tick.
 
 **The picture.** `Input.plugin` keeps what the devices say in the world, for systems to read.
 
 - `yield* Input.Keyboard` gives `down(code)`, `pressed(code)` and `released(code)`. `Input.Pointer` has `x`, `y` and the same three for a button, the main one unless told. `Input.Gamepad(index)` has `axis(n)` and the three for a button.
-- `pressed` and `released` are true in the one tick that first sees the change, for every system of that tick. A key that went down and up between two ticks was pressed and released in the same tick and is not down.
+- `pressed` and `released` are true in the one tick that first sees the change, for every system of that tick, and for the handlers of the actions that tick applies: an action bound to a key sees the press that issued it. A key that went down and up between two ticks was pressed and released in the same tick and is not down; a held key that was let go and pressed again between two ticks was released and pressed in the same tick, and is down.
 - What changed since the last tick is one action, `Input.Report`, and only when something did: holding a key still, or doing nothing, logs nothing.
 - The picture is a [singleton](#singletons): saved with a game, put back by a refusal, and counted in the hash once something was pressed. A game nobody has touched hashes as one that has no input at all.
 - The devices are the truth. A loaded game whose save had a key held, where the key is no longer down, lets it go at the first reading.
+- Where no source is provided there are no devices, which is not the same as devices with nothing pressed: the picture is left as it was last reported. So a game that is given its reports from a log or from another machine can be run by a driver, input stage and all, and goes the same way.
 - It is one picture, of one player's devices.
 
 **Bindings.** `Input.bind(name, ...)` makes a system of the input stage out of `Input.onPress`, `Input.onRelease` and `Input.onMove`: when one of its codes is pressed, released or moved, it issues an action of the game's own.
@@ -480,7 +482,7 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
 
 **Where the devices come from** is `Input.Source`, a `Context.Reference` whose default has no devices.
 
-- `Browser.layer(options)`, from `arcadekit/Browser`, is a page's: the keyboard, the pointer (a mouse, a pen or a finger) and the gamepads, with the page's display. `Browser.runMain(game, options)` provides it. `target` is the element the pointer is pressed on and measured from, in CSS pixels from its top left corner; `preventDefault` lists the keys that must not scroll the page; `deadzone` is how far a stick has to be from its middle to count, a tenth unless told. A key held down went down once, and everything held is let go when the page loses focus.
+- `Browser.layer(options)`, from `arcadekit/Browser`, is a page's: the keyboard, the pointer (a mouse, a pen or a finger) and the gamepads, with the page's display. `Browser.runMain(game, options)` provides it. `target` is the element the pointer is pressed on and measured from, in CSS pixels from its top left corner; `preventDefault` lists the keys that must not scroll the page; `deadzone` is how far a stick has to be from its middle to count, a tenth unless told. A key held down went down once, and everything held is let go when the page loses focus. The buttons of a mouse held together are followed one by one, though a page tells of all but the first press and the last release as moves.
 - It listens until its scope closes, so it is provided to the whole program. Provided to `App.make` alone it is let go as soon as the app is made, and says so when it is read.
 - `Input.makeManualSource()` is a source worked by hand, for a test, a tool or controls drawn on the screen: `press`, `release`, `tap`, `move`.
 
@@ -535,8 +537,9 @@ Loading is a scoped resource: what was loaded is let go when the scope it was lo
 
 - Anywhere there is a scope, `Assets.load(bundle)` loads into it and waits: every asset at once, failing with `Assets.AssetFailed`, which names the URL, at the first that does. That is for the entry point and for a plugin's `layer`, which holds what it loads for as long as the app: `Layer.effect(Fonts, Assets.load(Common))`.
 - An asset is `Assets.bytes(url)`, `Assets.text(url)` or `Assets.json(url, schema)`, and in a page `Browser.image(url)`, from `arcadekit/Browser`, which gives an `ImageBitmap` and closes it. One of a kind of your own is `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be let go.
+- A load is given what the app was given from outside and none of the app's own services, so nothing it does is the game's doing: the random numbers a loader draws, to wait a while before it tries again, say, are not the world's.
 - The bytes come through `Assets.Loader`, a `Context.Reference` whose default is `fetch`, given up when the load is interrupted. A test provides its files with `Assets.layerMemory({ "/forest.json": "..." })`.
-- A system of the game's own can keep a bundle too, with `(yield* Assets.Store).hold(bundle, name)` and `drop`: it stays loaded while anyone holds it.
+- A system of the game's own, in the frame stage or the input stage, can keep a bundle too, with `(yield* Assets.Store).hold(bundle, name)` and `drop`: it stays loaded while anyone holds it. In the tick the store throws, whatever it is asked, as a bundle does.
 
 ## Randomness
 
@@ -908,7 +911,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - `Assets.load` waits in real time. In a script it would resume in whatever tick the file happened to arrive in, and a replay of that script would fetch the file again: a script does not load.
 - The picture of the devices is one player's. Several players on one machine, or on several, bind their devices to actions that say whose they are.
 - A gamepad's button is down or it is not: how far a trigger is pressed is not read. Nor are the wheel, text as it is typed, more than one finger at a time, or a pointer that is locked to the page.
-- A button that is held, and let go and pressed again between two readings of the devices, is held: neither edge is seen. One that is pressed twice between two readings was pressed once.
+- A button that is pressed twice between two readings of the devices was pressed once.
 - The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
 - Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
 - Only a driver runs the input stage. A game that ticks when a player moves calls `app.input()` before its tick itself.

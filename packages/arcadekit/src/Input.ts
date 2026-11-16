@@ -107,16 +107,21 @@ const NOTHING: Sample = {
   moved: [],
 };
 
+/** No devices at all, which is another thing than devices with nothing pressed. */
+const noSource: SourceShape = { sample: () => NOTHING };
+
 /**
  * Where an app's input stage takes its samples from. Nothing has to provide
  * it: the default has no devices, which is what a replay, a server and
- * most tests want. A page provides its own, with `Browser.layer()` from
+ * most tests want. With no devices the picture `Input.plugin` keeps is
+ * left as it is: what it says is whatever was last reported to it, from
+ * a log or from another machine. A page provides its own, with `Browser.layer()` from
  * `arcadekit/Browser`, and a test that plays provides a source it works by
  * hand, `Input.makeManualSource()`.
  */
 export const Source: Context.Reference<SourceShape> =
   Context.Reference<SourceShape>("arcadekit/Input.Source", {
-    defaultValue: () => ({ sample: () => NOTHING }),
+    defaultValue: () => noSource,
   });
 
 /**
@@ -238,10 +243,10 @@ const Held = Singleton.define(
 );
 
 const ReportSchema = Schema.Struct({
-  /** Buttons that went down, and are down. */
-  down: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Buttons that went up. */
   up: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** Buttons that went down, and are down. */
+  down: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Buttons that went down and up again in between: pressed, and not held. */
   tapped: Schema.optionalKey(Schema.Array(Schema.String)),
   /** The axes that moved, and where to. */
@@ -252,12 +257,15 @@ type ReportPayload = typeof ReportSchema.Type;
 /**
  * What the devices did since the game last heard: the action that keeps
  * the picture in the world. `Input.plugin` issues it from the input stage
- * and handles it. A test or a tool can dispatch it too, though what it
- * says only lasts until the input stage next reads the devices.
+ * and handles it. A test, a tool or another machine can send it too.
+ * Where there are devices, what it says lasts until the input stage next
+ * reads them; where there are none, it stays.
  *
- * The lists are applied in the order they are written here: what went
- * down, then what went up, then what was tapped. So a held button that is
- * in `up` and in `tapped` went up, and was then pressed and let go again.
+ * The lists are applied in the order they are written here: what went up,
+ * then what went down, then what was tapped. So a held button that is in
+ * `up` and in `down` was let go and pressed again, and is held; and one
+ * that is in `up` and in `tapped` went up, and was then pressed and let go
+ * again.
  */
 export const Report = Action.define("arcadekit/Input.Report", ReportSchema);
 
@@ -286,17 +294,17 @@ const nextButtons = (
       changed = true;
     }
   }
-  for (const code of payload.down ?? []) {
-    const marks = after[code];
-    if (marks === undefined || marks[0] === 0) {
-      after[code] = [1, tick, marks?.[2] ?? NEVER];
-      changed = true;
-    }
-  }
   for (const code of payload.up ?? []) {
     const marks = after[code];
     if (marks !== undefined && marks[0] === 1) {
       after[code] = [0, marks[1], tick];
+      changed = true;
+    }
+  }
+  for (const code of payload.down ?? []) {
+    const marks = after[code];
+    if (marks === undefined || marks[0] === 0) {
+      after[code] = [1, tick, marks?.[2] ?? NEVER];
       changed = true;
     }
   }
@@ -361,6 +369,11 @@ const difference = (
   for (const code of devices.down) {
     if (buttons[code]?.[0] !== 1) {
       down.push(code);
+    } else if (devices.released.includes(code)) {
+      // Held, let go and pressed again since the last sample: it went up,
+      // and it went down.
+      up.push(code);
+      down.push(code);
     }
   }
   for (const code of Object.keys(buttons)) {
@@ -396,8 +409,8 @@ const difference = (
     return undefined;
   }
   return {
-    ...(down.length > 0 ? { down } : {}),
     ...(up.length > 0 ? { up } : {}),
+    ...(down.length > 0 ? { down } : {}),
     ...(tapped.length > 0 ? { tapped } : {}),
     ...(moves === undefined ? {} : { axes: moves }),
   };
@@ -417,6 +430,12 @@ const reported = new WeakMap<
  * is one, as an action.
  */
 const Read = System.make("arcadekit/Input.Read", function* () {
+  // Where there are no devices there is nothing to bring the picture up
+  // to date with: it stays as it was last reported, by a log or by
+  // another machine. No devices is not devices with every button up.
+  if ((yield* Source) === noSource) {
+    return;
+  }
   const devices = yield* Devices;
   const world = yield* World;
   const { tick } = yield* Time;
@@ -508,10 +527,12 @@ const viewsOf = (world: EcsWorld, time: Readonly<TimeState>): Views => {
   }
   const held = world.singleton(Held);
   const down = (code: string): boolean => held.buttons[code]?.[0] === 1;
-  const pressed = (code: string): boolean =>
-    held.buttons[code]?.[1] === time.tick;
-  const released = (code: string): boolean =>
-    held.buttons[code]?.[2] === time.tick;
+  // The tick whoever asks belongs to. An action's handler runs before its
+  // tick is counted, in a transaction of the world, which is how it is
+  // known here: it is told what that tick's systems will be told.
+  const now = (): number => time.tick + (world._recording ? 1 : 0);
+  const pressed = (code: string): boolean => held.buttons[code]?.[1] === now();
+  const released = (code: string): boolean => held.buttons[code]?.[2] === now();
   const pads: GamepadView[] = [];
   const made: Views = {
     keyboard: { down, pressed, released },

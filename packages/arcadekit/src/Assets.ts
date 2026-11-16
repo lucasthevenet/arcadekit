@@ -37,6 +37,7 @@ import {
   Context,
   Data,
   Effect,
+  Random as EffectRandom,
   Effectable,
   Exit,
   Fiber,
@@ -45,8 +46,18 @@ import {
   Scope,
 } from "effect";
 
+import * as Action from "./Action";
+import * as Input from "./Input";
 import * as Plugin from "./Plugin";
-import { World } from "./Services";
+import {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Script,
+  Time,
+  World,
+} from "./Services";
 import * as System from "./System";
 
 /** An asset could not be loaded: it is not there, or it is not what it was said to be. */
@@ -234,11 +245,9 @@ const LOADING: Status<never> = { _tag: "Loading" };
 export class Bundle<B extends Entries> extends Effectable.Class<
   Status<Loaded<B>>,
   never,
-  Store | World
+  Store
 > {
-  private effect:
-    | Effect.Effect<Status<Loaded<B>>, never, Store | World>
-    | undefined;
+  private effect: Effect.Effect<Status<Loaded<B>>, never, Store> | undefined;
 
   constructor(
     readonly name: string,
@@ -247,17 +256,10 @@ export class Bundle<B extends Entries> extends Effectable.Class<
     super();
   }
 
-  asEffect(): Effect.Effect<Status<Loaded<B>>, never, Store | World> {
-    return (this.effect ??= Effect.flatMap(Effect.service(World), (world) => {
-      // Between ticks an app's world is frozen: that is how the stages
-      // that may know about assets are told from the tick.
-      if (!world.frozen) {
-        throw new Error(
-          `The assets "${this.name}" were asked for in the tick. Whether an asset has been loaded depends on real time, which a simulation must not: a replay loads nothing. Ask from a system of the frame stage, System.inStage("frame"), which draws with them, or of the input stage, which can issue an action once they are there.`
-        );
-      }
-      return Effect.map(Effect.service(Store), (store) => store.status(this));
-    }));
+  asEffect(): Effect.Effect<Status<Loaded<B>>, never, Store> {
+    return (this.effect ??= Effect.map(Effect.service(Store), (store) =>
+      store.status(this)
+    ));
   }
 }
 
@@ -311,6 +313,11 @@ export const load: <B extends Entries>(
 
 // --- an app's assets -----------------------------------------------------------------
 
+/**
+ * An app's store of bundles. All three are for the stages between ticks,
+ * the frame stage and the input stage: in the tick each throws, since what
+ * is loaded, and when, is no part of the game.
+ */
 export interface StoreShape {
   /** What the app holds of a bundle now. */
   readonly status: <B extends Entries>(bundle: Bundle<B>) => Status<Loaded<B>>;
@@ -346,11 +353,36 @@ interface Held {
 const storeLayer = Layer.effect(
   Store,
   Effect.gen(function* () {
-    // Loading runs on its own, in real time: with the services the app was
-    // made with, and not on the scheduler its ticks own.
-    const context = yield* Effect.context<never>();
+    // Loading runs on its own, in real time: with what the app was given
+    // from outside, and not on the scheduler its ticks own. It is given
+    // none of the app's own services. They are the game's, and a load
+    // that reached them would change it: Effect's Random inside an app is
+    // the world's generator, and one draw from it by a loader is a game
+    // no replay repeats.
+    const context = Context.omit(
+      World,
+      Time,
+      Frame,
+      Commands,
+      Script,
+      Events,
+      Random,
+      Action.Actions,
+      Input.Devices,
+      EffectRandom.Random
+    )(yield* Effect.context<never>()) as Context.Context<never>;
     const runFork = Effect.runForkWith(context);
     const held = new Map<Bundle<Entries>, Held>();
+    // Between ticks an app's world is frozen: that is how the stages that
+    // may know about assets are told from the tick.
+    const world = yield* World;
+    const betweenTicks = (bundle: Bundle<Entries>, what: string): void => {
+      if (!world.frozen) {
+        throw new Error(
+          `The assets "${bundle.name}" were ${what} in the tick. Whether an asset has been loaded depends on real time, which a simulation must not: a replay loads nothing. Do it from a system of the frame stage, System.inStage("frame"), which draws with them, or of the input stage, which can issue an action once they are there.`
+        );
+      }
+    };
 
     const entryOf = (bundle: Bundle<Entries>): Held => {
       let entry = held.get(bundle);
@@ -434,9 +466,12 @@ const storeLayer = Layer.effect(
     );
 
     return {
-      status: <B extends Entries>(bundle: Bundle<B>) =>
-        (held.get(bundle)?.status ?? ABSENT) as Status<Loaded<B>>,
+      status<B extends Entries>(bundle: Bundle<B>) {
+        betweenTicks(bundle, "asked for");
+        return (held.get(bundle)?.status ?? ABSENT) as Status<Loaded<B>>;
+      },
       hold(bundle, holder) {
+        betweenTicks(bundle, "held");
         const entry = entryOf(bundle);
         if (entry.holders.has(holder)) {
           return;
@@ -447,6 +482,7 @@ const storeLayer = Layer.effect(
         }
       },
       drop(bundle, holder) {
+        betweenTicks(bundle, "let go of");
         const entry = held.get(bundle);
         if (entry === undefined || !entry.holders.delete(holder)) {
           return;

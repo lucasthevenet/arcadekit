@@ -852,6 +852,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         (system) => system.trigger === undefined && system.stage === "input"
       )
     );
+    // What runs between ticks hears the events of every tick, the first
+    // among them: they are kept for it from the start.
+    events.keepFor({
+      frame: frameSystems.length > 0,
+      input: inputSystems.length > 0,
+    });
     const hookKey = (trigger: System.Trigger): string =>
       `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
     const hooks = new Map<string, Plugin.AnySystem[]>();
@@ -1221,9 +1227,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `System "${running}" did not finish within the ${stage === "frame" ? "frame" : "input stage"}. Systems must be synchronous.`
           );
         }
+        // Events are kept until each stage has heard them.
         if (stage === "frame") {
-          // Events are kept until what draws the game has heard them.
           events.endFrame();
+        } else {
+          events.endInput();
         }
         exit = outcome as Exit.Exit<void, TickError<S, P>>;
       } finally {

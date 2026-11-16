@@ -2,9 +2,11 @@ import {
   Cause,
   Context,
   Effect,
+  Random as EffectRandom,
   Exit,
   Layer,
   Logger,
+  Option,
   Schema,
   Scope,
 } from "effect";
@@ -17,13 +19,20 @@ import {
   Commands,
   Component,
   Driver,
+  Events,
   Field,
+  Frame,
+  Input,
   Plugin,
   Query,
+  Random,
   Save,
+  Script,
   Singleton,
   State,
   System,
+  Time,
+  World,
 } from "../src/index";
 
 const Layout = Schema.Struct({
@@ -574,6 +583,73 @@ describe("a level's assets", () => {
     );
   });
 
+  it("are loaded with none of the game's own services: nothing a loader draws or reaches is the world's", async () => {
+    const drawnGame = makeGame();
+    const bare = makeGame();
+    const reached: string[] = [];
+    const services = {
+      World,
+      Time,
+      Frame,
+      Commands,
+      Script,
+      Events,
+      Random,
+      Actions: Action.Actions,
+      Devices: Input.Devices,
+    };
+    // A loader that draws random numbers, as one that waits a random while
+    // before it tries again does, and looks for what the app provides.
+    const loader: Assets.LoaderShape = {
+      bytes: () =>
+        Effect.gen(function* () {
+          yield* EffectRandom.next;
+          for (const [name, key] of Object.entries(services)) {
+            const found = yield* Effect.serviceOption(
+              key as Context.Key<unknown, unknown>
+            );
+            if (Option.isSome(found)) {
+              reached.push(name);
+            }
+          }
+          yield* Effect.promise(settle);
+          yield* EffectRandom.next;
+          return new TextEncoder().encode('{"walls":1,"name":"Drawn"}');
+        }),
+    };
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const seen = yield* App.make({ plugins: [drawnGame.Game], seed: 3 });
+          const unseen = yield* App.make({ plugins: [bare.Game], seed: 3 });
+          for (const app of [seen, unseen]) {
+            app.dispatch(app === seen ? drawnGame.Go : bare.Go, {
+              to: "forest",
+            });
+            app.tick(1);
+          }
+          // The loader draws at once, while the frame stage is running:
+          // not from the world, which is frozen and would say so.
+          seen.frame(0);
+          yield* Effect.promise(settle);
+          yield* Effect.promise(settle);
+          seen.frame(0);
+          expect(drawnGame.drawn.at(-1)).toBe(
+            "forest: forest Ready (Drawn, 26 bytes), cave Absent"
+          );
+          expect(reached).toEqual([]);
+          // The game that loaded is the game that did not.
+          expect(Array.from(seen.world.random.state)).toEqual(
+            Array.from(unseen.world.random.state)
+          );
+          seen.tick(1);
+          unseen.tick(1);
+          expect(seen.world.hash()).toBe(unseen.world.hash());
+        })
+      ).pipe(Effect.provideService(Assets.Loader, loader))
+    );
+  });
+
   it("cannot be asked for in the tick, where a replay would have nothing to say", () => {
     const { Forest, Game } = makeGame();
     Effect.runSync(
@@ -593,6 +669,35 @@ describe("a level's assets", () => {
           const fiber = other.spawnScript(Forest.asEffect());
           const exit = fiber.pollUnsafe();
           expect(exit !== undefined && Exit.isFailure(exit)).toBe(true);
+          // The store that keeps them is no way round: it says the same of
+          // being asked, and of being told to load or to let go.
+          const calls: Record<string, (store: Assets.StoreShape) => unknown> = {
+            "asked for": (store) => store.status(Forest),
+            held: (store) => store.hold(Forest, "Sneak"),
+            "let go of": (store) => store.drop(Forest, "Sneak"),
+          };
+          let asked = 0;
+          for (const [what, call] of Object.entries(calls)) {
+            const Sneak = System.make("Sneak", function* () {
+              call(yield* Assets.Store);
+            });
+            const sneaking = yield* App.make({
+              plugins: [Game],
+              systems: [Sneak],
+            }).pipe(
+              Effect.provideService(Assets.Loader, {
+                bytes: () => {
+                  asked++;
+                  return Effect.succeed(new Uint8Array(1));
+                },
+              })
+            );
+            expect(() => sneaking.tick(1), what).toThrow(
+              new RegExp(`The assets "as/Forest" were ${what} in the tick`, "u")
+            );
+          }
+          // Nothing was loaded on the way to being refused.
+          expect(asked).toBe(0);
           // The input stage may ask, as the frame stage may.
           let status = "";
           const Ask = System.make("Ask", function* () {

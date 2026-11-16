@@ -138,17 +138,65 @@ const listen = (
     state.move(Input.pointerX, event.clientX - (box?.left ?? 0));
     state.move(Input.pointerY, event.clientY - (box?.top ?? 0));
   };
+  // A page reports one press, when the first button goes down, and one
+  // release, when the last goes up. A button that changes while another is
+  // held comes as a move, and `buttons` says which are down by then: a bit
+  // each, in an order of their own.
+  const BITS: readonly (readonly [bit: number, button: number])[] = [
+    [1, 0],
+    [2, 2],
+    [4, 1],
+    [8, 3],
+    [16, 4],
+  ];
+  // Whether a press on the target began what is held now.
+  let held = false;
+  const letGo = (): void => {
+    held = false;
+    state.releaseAll(isPointer);
+  };
+  /** Makes the buttons that are down the ones the page says are. */
+  const follow = (buttons: number): void => {
+    for (const [bit, button] of BITS) {
+      const code = Input.pointerButton(button);
+      if ((buttons & bit) === 0) {
+        state.release(code);
+      } else {
+        state.press(code);
+      }
+    }
+  };
   on(target, "pointerdown", (event: PointerEvent) => {
     place(event);
+    held = true;
     state.press(Input.pointerButton(event.button));
+    if (event.buttons > 0) {
+      follow(event.buttons);
+    }
   });
   // On the page, so that a button let go outside the target is let go.
-  on(page, "pointermove", place);
+  on(page, "pointermove", (event: PointerEvent) => {
+    place(event);
+    if (!held || typeof event.buttons !== "number") {
+      return;
+    }
+    if (event.buttons === 0) {
+      // Let go where the page could not hear of it.
+      letGo();
+    } else {
+      follow(event.buttons);
+    }
+  });
   on(page, "pointerup", (event: PointerEvent) => {
     place(event);
     state.release(Input.pointerButton(event.button));
+    if (event.buttons === 0) {
+      letGo();
+    } else if (event.buttons > 0) {
+      follow(event.buttons);
+    }
   });
-  on(page, "pointercancel", () => state.releaseAll(isPointer));
+  on(page, "pointercancel", letGo);
 
   // Gamepads send no events worth having: they are read when sampled.
   let known = new Set<string>();
