@@ -1,51 +1,17 @@
 /**
- * What only a page can use: its display, its devices, its pictures, and the
- * way a program is started in it. This is the package's `arcadekit/Browser`
- * entry, and the only one that imports a browser package. A server, a
- * replay or a test of the game imports `arcadekit` alone.
+ * A page's devices: the keyboard, the pointer and the gamepads. This is the
+ * package's `arcadekit/Input/Browser` entry, for a program that runs in a
+ * page.
  *
- *   import { App } from "arcadekit"
- *   import * as Browser from "arcadekit/Browser"
+ *   import * as InputBrowser from "arcadekit/Input/Browser"
  *
- *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), {
- *     target: canvas,
- *     preventDefault: ["Space", "ArrowUp", "ArrowDown"],
- *   })
+ *   App.run(...).pipe(Effect.provide(InputBrowser.layer({ target: canvas })))
  *
- * `Browser.runMain` is the platform's `runMain` around the game, with the
- * page's display and devices provided to the whole of it: the frame loop
- * follows `requestAnimationFrame`, the input stage hears the keyboard, the
- * pointer and the gamepads, and when the page goes away the game is
- * interrupted and everything is let go.
+ * `runMain` of `arcadekit/App/Browser` provides it, with the page's display.
  */
-import * as BrowserRuntime from "@effect/platform-browser/BrowserRuntime";
 import { Effect, Layer } from "effect";
-import type { Runtime } from "effect";
 
-import * as Assets from "./Assets";
-import * as Driver from "./Driver";
-import * as Input from "./Input";
-
-// --- the display ---------------------------------------------------------------
-
-/**
- * A page's screen: a frame is due once per repaint
- * (`requestAnimationFrame`), and nobody can see the game while the
- * document is hidden. It holds nothing.
- */
-export const display: Driver.DisplayShape = {
-  request(callback) {
-    const id = requestAnimationFrame(callback);
-    return () => cancelAnimationFrame(id);
-  },
-  hidden: () => document.visibilityState === "hidden",
-  onVisibilityChange(listener) {
-    document.addEventListener("visibilitychange", listener);
-    return () => document.removeEventListener("visibilitychange", listener);
-  },
-};
-
-// --- the devices ---------------------------------------------------------------
+import * as Input from "../Input";
 
 /** As much of a gamepad as is read: the browser's `Gamepad` is one. */
 export interface GamepadLike {
@@ -192,7 +158,7 @@ const listen = (
       sample() {
         if (stopped) {
           throw new Error(
-            "The page's devices were read after Browser.layer was let go: its listeners are gone, so it would say nothing for ever. A layer lasts as long as what it is provided to. Provide it to the whole program, as Browser.runMain does, or with App.run(...).pipe(Effect.provide(Browser.layer())), not to App.make alone."
+            "The page's devices were read after their layer was let go: its listeners are gone, so it would say nothing for ever. A layer lasts as long as what it is provided to. Provide it to the whole program, as runMain of arcadekit/App/Browser does, or with App.run(...).pipe(Effect.provide(InputBrowser.layer())), not to App.make alone."
           );
         }
         readPads();
@@ -209,91 +175,25 @@ const listen = (
 };
 
 /**
- * A page's display and its devices, for the whole of a program.
+ * The devices of a page, as where an app's input stage takes its samples
+ * from (`Input.Source`).
  *
- * - The frame loop follows `requestAnimationFrame`, and pauses while the
- *   document is hidden.
  * - A key's code is `KeyboardEvent.code`. A key held down went down once,
  *   and every key and pointer button goes up when the page loses focus.
  * - `PointerX` and `PointerY` are CSS pixels from the top left of `target`.
  *   Presses are heard on `target`, moves and releases on the whole page.
  * - Gamepads are read when the app samples, once per tick.
  * - It listens from when it is built until its scope closes, so provide it
- *   to the whole program and not to `App.make` alone. `Browser.runMain`
- *   does.
+ *   to the whole program and not to `App.make` alone.
  */
 export const layer = (options: Options = {}): Layer.Layer<never> =>
-  Layer.merge(
-    Layer.succeed(Driver.Display, display),
-    Layer.effect(
-      Input.Source,
-      Effect.map(
-        Effect.acquireRelease(
-          Effect.sync(() => listen(options)),
-          (listening) => Effect.sync(listening.stop)
-        ),
-        (listening) => listening.source
-      )
+  Layer.effect(
+    Input.Source,
+    Effect.map(
+      Effect.acquireRelease(
+        Effect.sync(() => listen(options)),
+        (listening) => Effect.sync(listening.stop)
+      ),
+      (listening) => listening.source
     )
   ) as Layer.Layer<never>;
-
-// --- pictures --------------------------------------------------------------------
-
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
-
-/**
- * An asset that is a picture, decoded and ready to draw: an `ImageBitmap`,
- * closed when the scope it was loaded in closes.
- *
- *   const Forest = Assets.bundle("game/Forest", {
- *     backdrop: Browser.image("/forest.png"),
- *   })
- */
-export const image = (url: string): Assets.Asset<ImageBitmap> =>
-  Assets.make(url, (data, at) =>
-    Effect.acquireRelease(
-      Effect.tryPromise({
-        try: () =>
-          // A copy: a Blob wants bytes that nothing else can change.
-          createImageBitmap(new Blob([data.slice()])),
-        catch: (error) =>
-          new Assets.AssetFailed({
-            url: at,
-            message: `It could not be made a picture: ${describe(error)}`,
-          }),
-      }),
-      (bitmap) => Effect.sync(() => bitmap.close())
-    )
-  );
-
-// --- starting a program ------------------------------------------------------------
-
-/**
- * Starts a game in a page. It is the platform's `runMain`
- * (`BrowserRuntime.runMain`) around the game, with `Browser.layer(options)`
- * provided to the whole of it.
- *
- *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas })
- *
- * - The game is whatever needs nothing more from outside: provide the
- *   game's own services to it first, and a missing one is a compile error
- *   here.
- * - A failure is reported through Effect's logger.
- * - When the page goes away for good (`pagehide`, and not into the
- *   back/forward cache) the game is interrupted: the frame loop stops, the
- *   app's scope closes, and the page is no longer listened to.
- */
-export const runMain = <A, E>(
-  game: Effect.Effect<A, E>,
-  options: Options & {
-    /** Leaves a failure unreported. */
-    readonly disableErrorReporting?: boolean;
-    /** What to do when the game has ended, in place of nothing. */
-    readonly teardown?: Runtime.Teardown;
-  } = {}
-): void =>
-  BrowserRuntime.runMain(Effect.provide(game, layer(options)), {
-    disableErrorReporting: options.disableErrorReporting,
-    teardown: options.teardown,
-  });

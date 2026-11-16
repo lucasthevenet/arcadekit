@@ -3,19 +3,25 @@ import { describe, expect, it } from "vitest";
 import * as Ecs from "../src/ecs/index";
 import * as Main from "../src/index";
 
-// Vite gives a test the text of files: the sources of the package, and its
-// manifest. Declared here, since the tests are compiled with no types but
-// their own.
+// Vite gives a test the text of files, and the modules themselves: the
+// sources of the package, and its manifest. Declared here, since the tests
+// are compiled with no types but their own.
 declare global {
   interface ImportMeta {
-    readonly glob: (
-      pattern: string,
-      options: {
-        readonly query: "?raw";
-        readonly import: "default";
-        readonly eager: true;
-      }
-    ) => Record<string, string>;
+    readonly glob: {
+      (
+        pattern: string,
+        options: {
+          readonly query: "?raw";
+          readonly import: "default";
+          readonly eager: true;
+        }
+      ): Record<string, string>;
+      (
+        pattern: string,
+        options: { readonly eager: true }
+      ): Record<string, Record<string, unknown>>;
+    };
   }
 }
 
@@ -24,6 +30,12 @@ const sources = import.meta.glob("../src/**/*.ts", {
   import: "default",
   eager: true,
 });
+const modules = import.meta.glob("../src/*.ts", { eager: true });
+interface Target {
+  readonly source: string;
+  readonly types: string;
+  readonly default: string;
+}
 const manifest = JSON.parse(
   Object.values(
     import.meta.glob("../package.json", {
@@ -33,14 +45,7 @@ const manifest = JSON.parse(
     })
   )[0]!
 ) as {
-  readonly exports: Record<
-    string,
-    {
-      readonly source: string;
-      readonly types: string;
-      readonly default: string;
-    }
-  >;
+  readonly exports: Record<string, Target>;
   readonly peerDependencies: Record<string, string>;
   readonly peerDependenciesMeta: Record<
     string,
@@ -109,24 +114,61 @@ const reach = (
 
 const sourceOf = (subpath: string): string =>
   `../${manifest.exports[subpath]!.source.slice("./".length)}`;
+const isEffect = (name: string): boolean =>
+  name === "effect" || name.startsWith("effect/");
+/** An entry of what only a page can use: the browser part of its area. */
+const isBrowser = (subpath: string): boolean => subpath.endsWith("/Browser");
+const entries = Object.keys(manifest.exports);
+// What a page has and Node does not.
+const page =
+  /\b(?:requestAnimationFrame|cancelAnimationFrame|createImageBitmap|navigator|document|window|addEventListener)\b/u;
 
 describe("the package's entries", () => {
-  it("are arcadekit, arcadekit/Browser and arcadekit/ecs, each with a source file", () => {
-    expect(Object.keys(manifest.exports).toSorted()).toEqual([
-      ".",
-      "./Browser",
-      "./ecs",
-    ]);
-    for (const [subpath, target] of Object.entries(manifest.exports)) {
-      // Built under the name it is imported by: a module's as its namespace.
-      const name = subpath === "." ? "index" : subpath.slice("./".length);
-      expect(target.types, subpath).toBe(`./dist/${name}.d.ts`);
-      expect(target.default, subpath).toBe(`./dist/${name}.js`);
-      expect(sourceOf(subpath) in sources, subpath).toBe(true);
+  it("are the package itself, every module, the browser part of an area that has one, and the storage core", () => {
+    // What the sources say the entries are: a module's is named as its
+    // file is, and so is the browser part of its area.
+    const expected: Record<string, Target> = {};
+    const entry = (name: string, source: string): void => {
+      const built = name === "." ? "index" : name.slice("./".length);
+      expected[name] = {
+        source: `./${source.slice("../".length)}`,
+        types: `./dist/${built}.d.ts`,
+        default: `./dist/${built}.js`,
+      };
+    };
+    entry(".", "../src/index.ts");
+    entry("./ecs", "../src/ecs/index.ts");
+    for (const file of Object.keys(sources)) {
+      const module = /^\.\.\/src\/([A-Z]\w*)\.ts$/u.exec(file);
+      if (module !== null) {
+        entry(`./${module[1]}`, file);
+      }
+      const browser = /^\.\.\/src\/([A-Z]\w*)\/Browser\.ts$/u.exec(file);
+      if (browser !== null) {
+        entry(`./${browser[1]}/Browser`, file);
+      }
     }
-    expect(sourceOf(".")).toBe("../src/index.ts");
-    expect(sourceOf("./Browser")).toBe("../src/Browser.ts");
-    expect(sourceOf("./ecs")).toBe("../src/ecs/index.ts");
+    expect(manifest.exports).toEqual(expected);
+    // In order, the package first, so that the list reads.
+    expect(entries).toEqual([".", ...entries.slice(1).toSorted()]);
+    // A few by name, so that this test does not only agree with itself.
+    expect(entries).toContain("./App");
+    expect(entries).toContain("./Input");
+    expect(entries).toContain("./TickScheduler");
+    expect(entries.filter((name) => isBrowser(name))).toEqual([
+      "./App/Browser",
+      "./Assets/Browser",
+      "./Driver/Browser",
+      "./Input/Browser",
+    ]);
+    expect(entries.length).toBe(24);
+    // Every source file is behind some entry.
+    const reached = new Set(
+      entries.flatMap((name) => reach(sourceOf(name)).files)
+    );
+    expect(Object.keys(sources).filter((file) => !reached.has(file))).toEqual(
+      []
+    );
   });
 
   it("arcadekit/ecs is the storage core alone: it imports no package, and nothing outside src/ecs", () => {
@@ -141,43 +183,120 @@ describe("the package's entries", () => {
     );
   });
 
-  it("arcadekit imports Effect and nothing else, and reaches nothing that only a page has", () => {
-    const { files, packages } = reach(sourceOf("."));
+  it("no entry but a browser one imports anything but Effect, or reaches what only a page has", () => {
+    for (const name of entries.filter((one) => !isBrowser(one))) {
+      const { files, packages } = reach(sourceOf(name));
+      expect(
+        packages.filter((one) => !isEffect(one)),
+        name
+      ).toEqual([]);
+      expect(
+        files.filter((file) => file.endsWith("/Browser.ts")),
+        name
+      ).toEqual([]);
+      // Nor does any of it name what a page has and Node does not.
+      expect(
+        files.filter((file) => page.test(code(sources[file]!))),
+        name
+      ).toEqual([]);
+    }
+    // The package's own entry is all of them but the browser ones.
+    const main = reach(sourceOf(".")).files;
     expect(
-      packages.filter(
-        (name) => name !== "effect" && !name.startsWith("effect/")
-      )
-    ).toEqual([]);
-    expect(files).not.toContain("../src/Browser.ts");
-    // Nor does any of it name what a page has and Node does not.
-    const page =
-      /\b(?:requestAnimationFrame|cancelAnimationFrame|createImageBitmap|navigator|document|window|addEventListener)\b/u;
-    expect(files.filter((file) => page.test(code(sources[file]!)))).toEqual([]);
+      Object.keys(sources)
+        .filter((file) => !main.includes(file))
+        .toSorted()
+    ).toEqual([
+      "../src/App/Browser.ts",
+      "../src/Assets/Browser.ts",
+      "../src/Driver/Browser.ts",
+      "../src/Input/Browser.ts",
+      "../src/ecs/index.ts",
+    ]);
   });
 
-  it("arcadekit/Browser is the one entry that imports a browser package, which is an optional peer", () => {
-    const { files, packages } = reach(sourceOf("./Browser"));
-    expect(
-      packages.filter(
-        (name) => name !== "effect" && !name.startsWith("effect/")
-      )
-    ).toEqual(["@effect/platform-browser/BrowserRuntime"]);
-    expect(files).toContain("../src/Browser.ts");
+  it("a browser entry is the browser part of its own area, and one of them imports the browser package", () => {
+    const importing: string[] = [];
+    for (const name of entries.filter((one) => isBrowser(one))) {
+      const { packages } = reach(sourceOf(name));
+      const others = packages.filter((one) => !isEffect(one));
+      if (others.length > 0) {
+        importing.push(name);
+        expect(others, name).toEqual([
+          "@effect/platform-browser/BrowserRuntime",
+        ]);
+      }
+      // It is where its area meets the page, by naming what a page has or
+      // by importing the package that does: that is what it is for.
+      expect(
+        page.test(code(sources[sourceOf(name)]!)) || others.length > 0,
+        name
+      ).toBe(true);
+    }
+    // Starting a game in a page is what needs the platform's runMain.
+    expect(importing).toEqual(["./App/Browser"]);
     expect(manifest.peerDependencies["@effect/platform-browser"]).toBeDefined();
     expect(
       manifest.peerDependenciesMeta["@effect/platform-browser"]?.optional
     ).toBe(true);
-    // Only its own file is its own: the rest is the game's, shared.
-    const main = reach(sourceOf(".")).files;
-    expect(files.filter((file) => !main.includes(file))).toEqual([
-      "../src/Browser.ts",
+    // Each is its own area's and no other's. Starting a game in a page is
+    // the one that brings two of them together: its display and devices.
+    const browserFiles = (name: string): string[] =>
+      reach(sourceOf(name)).files.filter((file) =>
+        file.endsWith("/Browser.ts")
+      );
+    expect(browserFiles("./Input/Browser")).toEqual([
+      "../src/Input/Browser.ts",
     ]);
-    // Every source file belongs to an entry.
+    expect(browserFiles("./Driver/Browser")).toEqual([
+      "../src/Driver/Browser.ts",
+    ]);
+    expect(browserFiles("./Assets/Browser")).toEqual([
+      "../src/Assets/Browser.ts",
+    ]);
+    expect(browserFiles("./App/Browser")).toEqual([
+      "../src/App/Browser.ts",
+      "../src/Driver/Browser.ts",
+      "../src/Input/Browser.ts",
+    ]);
+  });
+
+  it("the package's own entry gives every module as its entry does: the same module, not a copy", () => {
+    const main = Main as Record<string, unknown>;
+    const namespaces = [
+      "Action",
+      "App",
+      "Assets",
+      "Driver",
+      "Event",
+      "Field",
+      "Input",
+      "Migrate",
+      "Plugin",
+      "Query",
+      "Resource",
+      "Save",
+      "Singleton",
+      "State",
+      "System",
+    ];
+    for (const name of namespaces) {
+      expect(main[name], name).toBe(modules[`../src/${name}.ts`]);
+    }
+    // The three it gives the names of, in place of the module.
+    expect(Main.EntityId).toBe(modules["../src/Schemas.ts"]!.EntityId);
+    expect(Main.Time).toBe(modules["../src/Services.ts"]!.Time);
+    expect(Main.World).toBe(modules["../src/Services.ts"]!.World);
+    expect(Main.TickScheduler).toBe(
+      modules["../src/TickScheduler.ts"]!.TickScheduler
+    );
+    // Every module is one or the other.
     expect(
-      Object.keys(sources)
-        .filter((file) => !main.includes(file) && !files.includes(file))
+      Object.keys(modules)
+        .map((file) => file.slice("../src/".length, -".ts".length))
+        .filter((name) => name !== "index" && !namespaces.includes(name))
         .toSorted()
-    ).toEqual(["../src/ecs/index.ts"]);
+    ).toEqual(["Schemas", "Services", "TickScheduler"]);
   });
 });
 

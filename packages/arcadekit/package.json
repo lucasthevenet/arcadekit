@@ -33,10 +33,115 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./Browser": {
-      "source": "./src/Browser.ts",
-      "types": "./dist/Browser.d.ts",
-      "default": "./dist/Browser.js"
+    "./Action": {
+      "source": "./src/Action.ts",
+      "types": "./dist/Action.d.ts",
+      "default": "./dist/Action.js"
+    },
+    "./App": {
+      "source": "./src/App.ts",
+      "types": "./dist/App.d.ts",
+      "default": "./dist/App.js"
+    },
+    "./App/Browser": {
+      "source": "./src/App/Browser.ts",
+      "types": "./dist/App/Browser.d.ts",
+      "default": "./dist/App/Browser.js"
+    },
+    "./Assets": {
+      "source": "./src/Assets.ts",
+      "types": "./dist/Assets.d.ts",
+      "default": "./dist/Assets.js"
+    },
+    "./Assets/Browser": {
+      "source": "./src/Assets/Browser.ts",
+      "types": "./dist/Assets/Browser.d.ts",
+      "default": "./dist/Assets/Browser.js"
+    },
+    "./Driver": {
+      "source": "./src/Driver.ts",
+      "types": "./dist/Driver.d.ts",
+      "default": "./dist/Driver.js"
+    },
+    "./Driver/Browser": {
+      "source": "./src/Driver/Browser.ts",
+      "types": "./dist/Driver/Browser.d.ts",
+      "default": "./dist/Driver/Browser.js"
+    },
+    "./Event": {
+      "source": "./src/Event.ts",
+      "types": "./dist/Event.d.ts",
+      "default": "./dist/Event.js"
+    },
+    "./Field": {
+      "source": "./src/Field.ts",
+      "types": "./dist/Field.d.ts",
+      "default": "./dist/Field.js"
+    },
+    "./Input": {
+      "source": "./src/Input.ts",
+      "types": "./dist/Input.d.ts",
+      "default": "./dist/Input.js"
+    },
+    "./Input/Browser": {
+      "source": "./src/Input/Browser.ts",
+      "types": "./dist/Input/Browser.d.ts",
+      "default": "./dist/Input/Browser.js"
+    },
+    "./Migrate": {
+      "source": "./src/Migrate.ts",
+      "types": "./dist/Migrate.d.ts",
+      "default": "./dist/Migrate.js"
+    },
+    "./Plugin": {
+      "source": "./src/Plugin.ts",
+      "types": "./dist/Plugin.d.ts",
+      "default": "./dist/Plugin.js"
+    },
+    "./Query": {
+      "source": "./src/Query.ts",
+      "types": "./dist/Query.d.ts",
+      "default": "./dist/Query.js"
+    },
+    "./Resource": {
+      "source": "./src/Resource.ts",
+      "types": "./dist/Resource.d.ts",
+      "default": "./dist/Resource.js"
+    },
+    "./Save": {
+      "source": "./src/Save.ts",
+      "types": "./dist/Save.d.ts",
+      "default": "./dist/Save.js"
+    },
+    "./Schemas": {
+      "source": "./src/Schemas.ts",
+      "types": "./dist/Schemas.d.ts",
+      "default": "./dist/Schemas.js"
+    },
+    "./Services": {
+      "source": "./src/Services.ts",
+      "types": "./dist/Services.d.ts",
+      "default": "./dist/Services.js"
+    },
+    "./Singleton": {
+      "source": "./src/Singleton.ts",
+      "types": "./dist/Singleton.d.ts",
+      "default": "./dist/Singleton.js"
+    },
+    "./State": {
+      "source": "./src/State.ts",
+      "types": "./dist/State.d.ts",
+      "default": "./dist/State.js"
+    },
+    "./System": {
+      "source": "./src/System.ts",
+      "types": "./dist/System.d.ts",
+      "default": "./dist/System.js"
+    },
+    "./TickScheduler": {
+      "source": "./src/TickScheduler.ts",
+      "types": "./dist/TickScheduler.d.ts",
+      "default": "./dist/TickScheduler.js"
     },
     "./ecs": {
       "source": "./src/ecs/index.ts",

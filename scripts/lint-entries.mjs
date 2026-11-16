@@ -1,23 +1,31 @@
 // Checks what each built entry of arcadekit imports, in dist/: the promise an entry makes
 // is about what a program that imports it has to have installed.
 //
-//   arcadekit/ecs      imports no package at all
-//   arcadekit          imports Effect and nothing else
-//   arcadekit/Browser  imports Effect and @effect/platform-browser
+//   arcadekit/ecs           imports no package at all
+//   arcadekit/<Area>/Browser  imports Effect, and may import @effect/platform-browser
+//   every other entry       imports Effect and nothing else
 //
-// It follows the chunks an entry imports, since what entries share is built once.
+// The entries are read from the package's `exports`. It follows the chunks an entry imports,
+// since what entries share is built once.
 // Build first: pnpm build:packages && pnpm lint:packages
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const dist = path.join(import.meta.dirname, "../packages/arcadekit/dist");
+const dir = path.join(import.meta.dirname, "../packages/arcadekit");
+const manifest = JSON.parse(
+  readFileSync(path.join(dir, "package.json"), "utf-8")
+);
 
 const isEffect = (name) => name === "effect" || name.startsWith("effect/");
-const entries = {
-  "ecs.js": () => false,
-  "index.js": isEffect,
-  "Browser.js": (name) =>
-    isEffect(name) || name.startsWith("@effect/platform-browser"),
+const allowedFor = (subpath) => {
+  if (subpath === "./ecs") {
+    return () => false;
+  }
+  if (subpath.endsWith("/Browser")) {
+    return (name) =>
+      isEffect(name) || name.startsWith("@effect/platform-browser");
+  }
+  return isEffect;
 };
 
 /** Every package a built file imports, itself or through the chunks it imports. */
@@ -29,7 +37,7 @@ const packagesOf = (entry) => {
       return;
     }
     seen.add(file);
-    const text = readFileSync(path.join(dist, file), "utf-8");
+    const text = readFileSync(path.join(dir, file), "utf-8");
     const pattern =
       /(?:^|[;\n])\s*(?:import|export)\s*(?:[^"';]*?\bfrom\s*)?["']([^"']+)["']/gu;
     for (const match of text.matchAll(pattern)) {
@@ -46,18 +54,22 @@ const packagesOf = (entry) => {
 };
 
 let failed = false;
-for (const [entry, allowed] of Object.entries(entries)) {
-  const packages = packagesOf(entry);
-  const stray = packages.filter((name) => !allowed(name));
+const browser = [];
+for (const [subpath, target] of Object.entries(manifest.exports)) {
+  const name = subpath === "." ? "arcadekit" : `arcadekit/${subpath.slice(2)}`;
+  const packages = packagesOf(target.default);
+  const stray = packages.filter((one) => !allowedFor(subpath)(one));
   if (stray.length > 0) {
     failed = true;
-    console.error(`dist/${entry} must not import: ${stray.join(", ")}`);
-  } else {
-    console.log(
-      `dist/${entry} imports ${packages.length === 0 ? "no package" : packages.join(", ")}`
-    );
+    console.error(`${name} must not import: ${stray.join(", ")}`);
+  }
+  if (packages.some((one) => !isEffect(one))) {
+    browser.push(name);
   }
 }
 if (failed) {
   process.exit(1);
 }
+console.log(
+  `${Object.keys(manifest.exports).length} entries import what they may: arcadekit/ecs no package, ${browser.join(", ") || "none"} a browser package, the rest Effect alone.`
+);

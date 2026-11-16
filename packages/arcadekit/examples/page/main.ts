@@ -11,8 +11,10 @@
  */
 import { Context, Effect, Layer, Schema } from "effect";
 
-// In a game of your own these are "arcadekit/Browser" and "arcadekit".
-import * as Browser from "../../src/Browser";
+// In a game of your own these are "arcadekit/App/Browser",
+// "arcadekit/Assets/Browser" and "arcadekit".
+import * as AppBrowser from "../../src/App/Browser";
+import * as AssetsBrowser from "../../src/Assets/Browser";
 import {
   Action,
   App,
@@ -171,7 +173,7 @@ const Controls = Input.bind(
 // picture is closed, and the next time the level starts it is fetched again.
 const Level = Assets.bundle("page/Level", {
   layout: Assets.json("/level.json", Layout),
-  star: Browser.image("/star.png"),
+  star: AssetsBrowser.image("/star.png"),
 });
 const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
 
@@ -246,12 +248,12 @@ const Game = Plugin.make("Game", {
 
 // --- the entry point -------------------------------------------------------------
 // App.run makes the app and runs it, sixty ticks a second, until it is
-// interrupted. Browser.runMain starts it in the page: the frame loop follows
+// interrupted. AppBrowser.runMain starts it in the page: the frame loop follows
 // the page's repaints, the page's devices are listened to, and when the page
 // goes away the game is interrupted: the loop takes its frame request back,
 // the app's scope closes, what was loaded is let go, and nobody listens any
 // more.
-Browser.runMain(
+AppBrowser.runMain(
   App.run({ plugins: [Game], seed: Date.now() }, { hz: 60 }).pipe(
     Effect.provide(Screen.layer)
   ),
