@@ -1,6 +1,6 @@
 /**
  * Where a thing is in a flat game: its position, how far it is turned, and
- * how large it is. The same three components as `Transform`, for a game
+ * how large it is. The same three components as `Transform3d`, for a game
  * that has two dimensions and no use for a third.
  *
  *   commands.spawn(

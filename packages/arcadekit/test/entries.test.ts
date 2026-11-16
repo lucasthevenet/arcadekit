@@ -241,8 +241,8 @@ describe("the package's entries", () => {
       "Sound",
       "State",
       "System",
-      "Transform",
       "Transform2d",
+      "Transform3d",
       "View",
     ];
     for (const name of namespaces) {

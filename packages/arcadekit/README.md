@@ -68,7 +68,7 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform`, `Transform2d`, `View` | `effect` |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `View` | `effect` |
 | `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, its sound, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
@@ -139,37 +139,37 @@ const Rock = Component.tag("game/Rock");
 
 commands.spawn(
   Rock,
-  Transform.Position.of({ x: 0, y: 4, z: 0 }),
-  Transform.Rotation.of(Transform.axisAngle(0, 0, 1, Math.PI / 2)),
-  Transform.Scale.of({ x: 2, y: 2, z: 2 })
+  Transform3d.Position.of({ x: 0, y: 4, z: 0 }),
+  Transform3d.Rotation.of(Transform3d.axisAngle(0, 0, 1, Math.PI / 2)),
+  Transform3d.Scale.of({ x: 2, y: 2, z: 2 })
 );
 
 const Drift = System.make("game/Drift", function* () {
   const { delta } = yield* Time;
-  (yield* Query.all(Transform.Position)).eachChunk((start, end, position) => {
+  (yield* Query.all(Transform3d.Position)).eachChunk((start, end, position) => {
     for (let i = start; i < end; i++) position.x[i] += 2 * delta;
   });
 });
 
 const Rules = Plugin.make("game/Rules", {
-  plugins: [Transform.plugin], // lists the three, so a save that names them can be read
+  plugins: [Transform3d.plugin], // lists the three, so a save that names them can be read
   components: [Rock],
   systems: [Drift],
 });
 ```
 
-`Transform` is three components for where a thing is: its position, which way it is turned, and how large it is. They are in the package so that whatever needs to know where things are agrees on it: the rules that move them, what draws them, and what comes after.
+`Transform3d` is three components for where a thing is in three dimensions: its position, which way it is turned, and how large it is. `Transform2d`, below, is the same for a flat game. They are in the package so that whatever needs to know where things are agrees on it: the rules that move them, what draws them, and what comes after.
 
 | Component | Fields | Named |
 | --- | --- | --- |
-| `Transform.Position` | `x`, `y`, `z`, in the units of the game's space | `"arcadekit/Transform.Position"` |
-| `Transform.Rotation` | `x`, `y`, `z`, `w`: a unit quaternion | `"arcadekit/Transform.Rotation"` |
-| `Transform.Scale` | `x`, `y`, `z`: 1 is the size a thing is made at | `"arcadekit/Transform.Scale"` |
+| `Transform3d.Position` | `x`, `y`, `z`, in the units of the game's space | `"arcadekit/Transform3d.Position"` |
+| `Transform3d.Rotation` | `x`, `y`, `z`, `w`: a unit quaternion | `"arcadekit/Transform3d.Rotation"` |
+| `Transform3d.Scale` | `x`, `y`, `z`: 1 is the size a thing is made at | `"arcadekit/Transform3d.Scale"` |
 
 - They are ordinary components: 32-bit floats in columns of a table, written by the game's systems with a loop over `eachChunk`, saved, hashed and replayed. Nothing here draws, and the module imports no renderer.
 - An entity has the ones it needs. One that is only somewhere has a `Position`; `Rotation` and `Scale` are for the ones that turn or have a size of their own.
-- `Transform.plugin` lists them. A plugin that stores them depends on it, as the plugin of a renderer that reads them does.
-- `Transform.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis of length 1. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
+- `Transform3d.plugin` lists them. A plugin that stores them depends on it, as the plugin of a renderer that reads them does.
+- `Transform3d.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis of length 1. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
 - A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A field left out of `of` is not 0, so a flat game gives every `z`.
 - [`@arcadekit/three`](../three/README.md) draws from them, and has no components of its own.
 
@@ -191,8 +191,8 @@ commands.spawn(
 | `Transform2d.Scale` | `x`, `y` | `"arcadekit/Transform2d.Scale"` |
 
 - A positive `angle` turns from the x axis towards the y axis: anticlockwise where y points up, clockwise where it points down.
-- `Transform2d.plugin` lists them, as `Transform.plugin` lists the others.
-- They are different components from `Transform`'s, with names of their own. A game uses one of the two for a thing: nothing keeps one in step with the other, and a system that queries `Transform.Position` does not find an entity that has only `Transform2d.Position`.
+- `Transform2d.plugin` lists them, as `Transform3d.plugin` lists the others.
+- They are different components from `Transform3d`'s, with names of their own. A game uses one of the two for a thing: nothing keeps one in step with the other, and a system that queries `Transform3d.Position` does not find an entity that has only `Transform2d.Position`.
 - `@arcadekit/three` draws from either, in the plane of x and y for these.
 
 ## Relations
@@ -483,10 +483,10 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
 
 ```ts
 import { Three } from "@arcadekit/three";
-import { Transform } from "arcadekit";
+import { Transform3d } from "arcadekit";
 
 // The rules say where a rock is, with arcadekit's own components.
-commands.spawn(Rock, Transform.Position.of({ x: 0, y: 4, z: 0 }));
+commands.spawn(Rock, Transform3d.Position.of({ x: 0, y: 4, z: 0 }));
 
 // The page says how a rock looks: every one is an instance of one mesh.
 const Rocks = Three.instances("game/Rocks", {
@@ -509,7 +509,7 @@ Browser.runMain(
 
 [`@arcadekit/three`](../three/README.md) is the plugin that draws a game with Three.js, in a package of its own. It is made of what is above: systems of the frame stage that read the world and cannot change it, a service that holds the scene from one frame to the next, and a renderer that comes from outside as the display does.
 
-- Where a thing is drawn comes from [`Transform`](#where-a-thing-is), which is this package's. The rules import nothing of `@arcadekit/three`, so a server and a replay install neither it nor Three.js.
+- Where a thing is drawn comes from [`Transform3d` or `Transform2d`](#where-a-thing-is), which are this package's. The rules import nothing of `@arcadekit/three`, so a server and a replay install neither it nor Three.js.
 - `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over. `Three.objects` keeps an Object3D per entity for the few things that are more than that.
 - A game that draws with something else does not install it.
 
@@ -982,7 +982,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Migrate.ts` | The usual changes a migration makes to an old save's world |
 | `src/Field.ts` | The fields of a component, with `Field.schema` |
 | `src/Singleton.ts` | One instance of some data per world |
-| `src/Transform.ts`, `src/Transform2d.ts` | Where a thing is: the position, rotation and scale that the rules write and a renderer reads, in three dimensions and in two |
+| `src/Transform3d.ts`, `src/Transform2d.ts` | Where a thing is: the position, rotation and scale that the rules write and a renderer reads, in three dimensions and in two |
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Input.ts` | The devices and where they come from, the picture of them in the world, and bindings to actions |
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |

@@ -128,9 +128,9 @@ describe("the entries of @arcadekit/three", () => {
     ]);
   });
 
-  it("has no components of its own: where a thing is drawn is arcadekit's Transform, which it imports by its entry", () => {
+  it("has no components of its own: where a thing is drawn is arcadekit's Transform3d, which it imports by its entry", () => {
     const { packages } = reach(sourceOf("./Three"));
-    expect(packages).toContain("arcadekit/Transform");
+    expect(packages).toContain("arcadekit/Transform3d");
     expect(packages).toContain("arcadekit/Transform2d");
     // It defines no component: it reads the game's.
     expect(sources["../src/Three.ts"]).not.toMatch(
@@ -176,18 +176,18 @@ describe("the entries of @arcadekit/three", () => {
     // and their plugin the one the game's app installs.
     const world = new Arcadekit.EcsWorld();
     const entity = world.spawn(
-      Arcadekit.Transform.Position.of({ x: 1, y: 2, z: 3 })
+      Arcadekit.Transform3d.Position.of({ x: 1, y: 2, z: 3 })
     );
-    expect(world.component("arcadekit/Transform.Position")).toBe(
-      Arcadekit.Transform.Position
+    expect(world.component("arcadekit/Transform3d.Position")).toBe(
+      Arcadekit.Transform3d.Position
     );
-    expect(world.get(entity, Arcadekit.Transform.Position)).toEqual({
+    expect(world.get(entity, Arcadekit.Transform3d.Position)).toEqual({
       x: 1,
       y: 2,
       z: 3,
     });
     expect(Main.Three.plugin.plugins).toEqual([
-      Arcadekit.Transform.plugin,
+      Arcadekit.Transform3d.plugin,
       Arcadekit.Transform2d.plugin,
     ]);
     expect(Main.Three.Render.stage).toBe("frame");

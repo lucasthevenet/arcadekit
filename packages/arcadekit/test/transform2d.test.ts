@@ -10,7 +10,7 @@ import {
   Save,
   System,
   Time,
-  Transform,
+  Transform3d,
   Transform2d,
 } from "../src/index";
 import * as Entry from "../src/Transform2d";
@@ -40,23 +40,23 @@ describe("Transform2d", () => {
     expect(Entry.plugin).toBe(Transform2d.plugin);
   });
 
-  it("is not Transform: an entity can have either, and nothing keeps one in step with the other", () => {
-    expect(Position).not.toBe(Transform.Position);
-    expect(Rotation).not.toBe(Transform.Rotation);
-    expect(Scale).not.toBe(Transform.Scale);
+  it("is not Transform3d: an entity can have either, and nothing keeps one in step with the other", () => {
+    expect(Position).not.toBe(Transform3d.Position);
+    expect(Rotation).not.toBe(Transform3d.Rotation);
+    expect(Scale).not.toBe(Transform3d.Scale);
     const { world } = run(
-      App.make({ plugins: [Transform.plugin, Transform2d.plugin] })
+      App.make({ plugins: [Transform3d.plugin, Transform2d.plugin] })
     );
     const both = world.spawn(
       Position.of({ x: 1, y: 2 }),
-      Transform.Position.of({ x: 7, y: 8, z: 9 })
+      Transform3d.Position.of({ x: 7, y: 8, z: 9 })
     );
     world.set(both, Position, { x: 3, y: 4 });
     expect(world.get(both, Position)).toEqual({ x: 3, y: 4 });
-    expect(world.get(both, Transform.Position)).toEqual({ x: 7, y: 8, z: 9 });
+    expect(world.get(both, Transform3d.Position)).toEqual({ x: 7, y: 8, z: 9 });
     expect(world.view(Query.all(Position)).count()).toBe(1);
     world.remove(both, Position);
-    expect(world.has(both, Transform.Position)).toBe(true);
+    expect(world.has(both, Transform3d.Position)).toBe(true);
   });
 
   it("is moved and turned by a system with a loop over its columns", () => {
@@ -120,7 +120,7 @@ describe("Transform2d", () => {
         App.load(read.value, {
           plugins: [
             Plugin.make("t2/Other", {
-              plugins: [Transform.plugin],
+              plugins: [Transform3d.plugin],
               components: [Card],
             }),
           ],

@@ -8,7 +8,7 @@ import {
   Query,
   System,
   Time,
-  Transform,
+  Transform3d,
   Transform2d,
 } from "arcadekit";
 import type { Entity } from "arcadekit";
@@ -31,7 +31,7 @@ import { describe, expect, it } from "vitest";
 
 import { Three } from "../src/index";
 
-const { Position, Rotation, Scale } = Transform;
+const { Position, Rotation, Scale } = Transform3d;
 
 const Rock = Component.tag("th/Rock");
 const Ship = Component.tag("th/Ship");
@@ -219,7 +219,7 @@ const makeRandom = (seed: number) => {
   };
 };
 
-describe("arcadekit's Transform, as Three.js reads it", () => {
+describe("arcadekit's Transform3d, as Three.js reads it", () => {
   it("axisAngle gives the quaternion Three.js gives for the same turn", () => {
     for (const [x, y, z, angle] of [
       [0, 0, 1, Math.PI / 2],
@@ -228,7 +228,7 @@ describe("arcadekit's Transform, as Three.js reads it", () => {
       [0.6, 0, 0.8, 2.5],
       [0, 1, 0, 0],
     ] as const) {
-      const ours = Transform.axisAngle(x, y, z, angle);
+      const ours = Transform3d.axisAngle(x, y, z, angle);
       const theirs = new Quaternion().setFromAxisAngle(
         new Vector3(x, y, z),
         angle
@@ -245,7 +245,7 @@ describe("Three.instances", () => {
   it("draws every entity of a kind as one instance of one mesh, where the entity is", () => {
     const renderer = makeRenderer();
     const { app } = start(App.make({ plugins: [Look] }), renderer);
-    const turn = Transform.axisAngle(0, 0, 1, Math.PI / 3);
+    const turn = Transform3d.axisAngle(0, 0, 1, Math.PI / 3);
     const rocks = [
       app.world.spawn(Rock, Position.of({ x: 1, y: 2, z: 3 })),
       app.world.spawn(
@@ -261,7 +261,7 @@ describe("Three.instances", () => {
       app.world.spawn(
         Rock,
         Position.of({ x: 0, y: -1, z: 0 }),
-        Rotation.of(Transform.axisAngle(1, 0, 0, 2)),
+        Rotation.of(Transform3d.axisAngle(1, 0, 0, 2)),
         Scale.of({ x: 0.25, y: 4, z: 1.5 })
       ),
     ];
@@ -387,7 +387,7 @@ describe("Three.instances", () => {
     );
     const { world } = app;
     const at = (x: number) => Position.of({ x, y: 0, z: 0 });
-    const turn = Rotation.of(Transform.axisAngle(0, 1, 0, 1));
+    const turn = Rotation.of(Transform3d.axisAngle(0, 1, 0, 1));
     const size = Scale.of({ x: 2, y: 3, z: 4 });
     // One of each kind of table, shown and hidden.
     const shown = [
@@ -1033,7 +1033,7 @@ describe("Three.objects", () => {
 
   it("makes one object per entity, once, adds it to the scene and puts it where the entity is", () => {
     const { app, renderer } = fresh();
-    const turn = Transform.axisAngle(0, 1, 0, 0.75);
+    const turn = Transform3d.axisAngle(0, 1, 0, 0.75);
     const plain = app.world.spawn(Ship, Position.of({ x: 1, y: 2, z: 3 }));
     const whole = app.world.spawn(
       Ship,
@@ -1374,7 +1374,7 @@ describe("Three.plugin", () => {
       }
     });
     const Rules = Plugin.make("th/SpinRules", {
-      plugins: [Transform.plugin],
+      plugins: [Transform3d.plugin],
       components: [Rock, Ship],
       systems: [Spin],
     });

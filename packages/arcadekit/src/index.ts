@@ -56,6 +56,6 @@ export {
 } from "./Services";
 export * as System from "./System";
 export { TickDispatcher, TickScheduler } from "./TickScheduler";
-export * as Transform from "./Transform";
 export * as Transform2d from "./Transform2d";
+export * as Transform3d from "./Transform3d";
 export * as View from "./View";

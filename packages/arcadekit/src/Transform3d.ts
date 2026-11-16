@@ -1,13 +1,13 @@
 /**
- * Where a thing is: its position, which way it is turned, and how large it
- * is. Three components of the game, for whatever needs to know where
- * things are: the rules that move them, what draws them, what is heard
- * from them.
+ * Where a thing is in three dimensions: its position, which way it is
+ * turned, and how large it is. Three components of the game, for whatever
+ * needs to know where things are: the rules that move them, what draws
+ * them, what is heard from them. A flat game has `Transform2d`.
  *
  *   commands.spawn(
  *     Rock,
- *     Transform.Position.of({ x: 0, y: 4, z: 0 }),
- *     Transform.Rotation.of(Transform.axisAngle(0, 0, 1, Math.PI / 2))
+ *     Transform3d.Position.of({ x: 0, y: 4, z: 0 }),
+ *     Transform3d.Rotation.of(Transform3d.axisAngle(0, 0, 1, Math.PI / 2))
  *   )
  *
  * They are ordinary components: columns of 32-bit floats, written by the
@@ -23,7 +23,7 @@ import * as Plugin from "./Plugin";
  * Where an entity is, in the units of the game's space. A game that is
  * flat gives every `z` as 0.
  */
-export const Position = Component.define("arcadekit/Transform.Position", {
+export const Position = Component.define("arcadekit/Transform3d.Position", {
   x: Field.f32,
   y: Field.f32,
   z: Field.f32,
@@ -34,7 +34,7 @@ export const Position = Component.define("arcadekit/Transform.Position", {
  * one. All four fields 0, which is what a `Rotation` added with no value
  * is, stands for not turned at all.
  */
-export const Rotation = Component.define("arcadekit/Transform.Rotation", {
+export const Rotation = Component.define("arcadekit/Transform3d.Rotation", {
   x: Field.f32,
   y: Field.f32,
   z: Field.f32,
@@ -42,7 +42,7 @@ export const Rotation = Component.define("arcadekit/Transform.Rotation", {
 });
 
 /** How large an entity is, along each axis: 1 is the size it is made at. */
-export const Scale = Component.define("arcadekit/Transform.Scale", {
+export const Scale = Component.define("arcadekit/Transform3d.Scale", {
   x: Field.f32,
   y: Field.f32,
   z: Field.f32,
@@ -50,7 +50,7 @@ export const Scale = Component.define("arcadekit/Transform.Scale", {
 
 /**
  * The value of a `Rotation` that turns by `angle` radians about an axis,
- * which has to be of length 1: `Transform.axisAngle(0, 1, 0, Math.PI)`. It
+ * which has to be of length 1: `Transform3d.axisAngle(0, 1, 0, Math.PI)`. It
  * makes an object, so it is for a spawn or a `world.set`, not for a loop
  * over columns.
  */
@@ -69,6 +69,6 @@ export const axisAngle = (
  * The plugin that holds a game's rules depends on it, and so does one that
  * draws from them, as `Three.plugin` of `@arcadekit/three` does.
  */
-export const plugin = Plugin.make("arcadekit/Transform", {
+export const plugin = Plugin.make("arcadekit/Transform3d", {
   components: [Position, Rotation, Scale],
 });

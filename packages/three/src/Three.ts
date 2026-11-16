@@ -2,11 +2,11 @@
  * Draws a game with Three.js. This is the package's `@arcadekit/three/Three`
  * entry.
  *
- *   import * as Transform from "arcadekit/Transform"
+ *   import * as Transform3d from "arcadekit/Transform3d"
  *   import * as Three from "@arcadekit/three/Three"
  *
  *   // The rules: a rock is somewhere. They know nothing of how it looks.
- *   commands.spawn(Rock, Transform.Position.of({ x: 0, y: 4, z: 0 }))
+ *   commands.spawn(Rock, Transform3d.Position.of({ x: 0, y: 4, z: 0 }))
  *
  *   // The page: every rock is one instance of one mesh.
  *   const Rocks = Three.instances("game/Rocks", {
@@ -30,8 +30,8 @@
  * game as one that is not, and a server or a replay installs none of this.
  *
  * What is drawn is told from the components an entity has, and where from
- * arcadekit's own `Transform.Position`, with `Transform.Rotation` and
- * `Transform.Scale` for the entities that have them. A flat game's
+ * arcadekit's own `Transform3d.Position`, with `Transform3d.Rotation` and
+ * `Transform3d.Scale` for the entities that have them. A flat game's
  * `Transform2d` is drawn the same way, in the plane of x and y:
  *
  * - `Three.instances` draws every entity of a kind as one instance of one
@@ -49,8 +49,8 @@ import type { ComponentDef, Entity, EntityColumn } from "arcadekit/ecs";
 import * as Plugin from "arcadekit/Plugin";
 import * as Query from "arcadekit/Query";
 import * as System from "arcadekit/System";
-import * as Transform from "arcadekit/Transform";
 import * as Transform2d from "arcadekit/Transform2d";
+import * as Transform3d from "arcadekit/Transform3d";
 import { Context, Effect, Layer } from "effect";
 import {
   DynamicDrawUsage,
@@ -270,7 +270,7 @@ export const Render = System.make("arcadekit/three/Render", function* () {
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
  */
 export const plugin = Plugin.make("arcadekit/three", {
-  plugins: [Transform.plugin, Transform2d.plugin],
+  plugins: [Transform3d.plugin, Transform2d.plugin],
   layer: sceneLayer,
   systems: [Render],
 });
@@ -299,7 +299,7 @@ export interface Which {
   /**
    * The component that says an entity is one of these, or several, all of
    * which it has to have. It is drawn while it has them and a
-   * `Transform.Position`, or a `Transform2d.Position`.
+   * `Transform3d.Position`, or a `Transform2d.Position`.
    */
   readonly of: ComponentDef<any> | readonly ComponentDef<any>[];
   /** Components an entity must not have to be drawn: one that hides it, say. */
@@ -691,8 +691,8 @@ class Instances implements Kept {
  *   })
  *
  * An entity is drawn while it has what `of` says and a
- * `Transform.Position`, and is turned and sized by `Transform.Rotation`
- * and `Transform.Scale` if it has them. One that has a
+ * `Transform3d.Position`, and is turned and sized by `Transform3d.Rotation`
+ * and `Transform3d.Scale` if it has them. One that has a
  * `Transform2d.Position` instead is drawn in the plane of x and y, at 0 of
  * the third axis, turned and sized by its `Transform2d.Rotation` and
  * `Transform2d.Scale`. An entity with both positions is drawn once, from
@@ -713,29 +713,29 @@ export const instances = (name: string, options: InstancesOptions) => {
   const excluded = options.without ?? [];
   // An entity's table has a rotation or it does not, and a scale or not:
   // four queries, each handed exactly the columns its entities have.
-  const Placed = Query.all(Transform.Position).pipe(
+  const Placed = Query.all(Transform3d.Position).pipe(
     Query.with(...marked),
-    Query.without(...excluded, Transform.Rotation, Transform.Scale),
+    Query.without(...excluded, Transform3d.Rotation, Transform3d.Scale),
     Query.reads()
   );
-  const Sized = Query.all(Transform.Position, Transform.Scale).pipe(
+  const Sized = Query.all(Transform3d.Position, Transform3d.Scale).pipe(
     Query.with(...marked),
-    Query.without(...excluded, Transform.Rotation),
+    Query.without(...excluded, Transform3d.Rotation),
     Query.reads()
   );
-  const Turned = Query.all(Transform.Position, Transform.Rotation).pipe(
+  const Turned = Query.all(Transform3d.Position, Transform3d.Rotation).pipe(
     Query.with(...marked),
-    Query.without(...excluded, Transform.Scale),
+    Query.without(...excluded, Transform3d.Scale),
     Query.reads()
   );
   const Whole = Query.all(
-    Transform.Position,
-    Transform.Rotation,
-    Transform.Scale
+    Transform3d.Position,
+    Transform3d.Rotation,
+    Transform3d.Scale
   ).pipe(Query.with(...marked), Query.without(...excluded), Query.reads());
   // And the same four for a flat game's components, but for the entities
   // that are placed in three dimensions as well, which are drawn above.
-  const flat = [...excluded, Transform.Position];
+  const flat = [...excluded, Transform3d.Position];
   const PlacedFlat = Query.all(Transform2d.Position).pipe(
     Query.with(...marked),
     Query.without(...flat, Transform2d.Rotation, Transform2d.Scale),
@@ -1036,7 +1036,7 @@ class Objects<O extends Object3D> implements Kept {
  * `Three.instances`.
  *
  * - `make` is called the first frame an entity has what `of` says and a
- *   `Transform.Position`, and its object is added to the scene. The frame
+ *   `Transform3d.Position`, and its object is added to the scene. The frame
  *   the entity no longer does, or is gone, the object is taken out, and
  *   `free` is called with it.
  * - Each frame every object is given its entity's `Position`, and its
@@ -1057,23 +1057,23 @@ export const objects = <O extends Object3D = Object3D>(
 ) => {
   const marked = required(options);
   const excluded = options.without ?? [];
-  const Placed = Query.all(Transform.Position).pipe(
+  const Placed = Query.all(Transform3d.Position).pipe(
     Query.with(...marked),
     Query.without(...excluded),
     Query.reads()
   );
-  const Turned = Query.all(Transform.Rotation).pipe(
-    Query.with(Transform.Position, ...marked),
+  const Turned = Query.all(Transform3d.Rotation).pipe(
+    Query.with(Transform3d.Position, ...marked),
     Query.without(...excluded),
     Query.reads()
   );
-  const Sized = Query.all(Transform.Scale).pipe(
-    Query.with(Transform.Position, ...marked),
+  const Sized = Query.all(Transform3d.Scale).pipe(
+    Query.with(Transform3d.Position, ...marked),
     Query.without(...excluded),
     Query.reads()
   );
   // A flat game's, but for the entities placed in three dimensions too.
-  const flat = [...excluded, Transform.Position];
+  const flat = [...excluded, Transform3d.Position];
   const PlacedFlat = Query.all(Transform2d.Position).pipe(
     Query.with(...marked),
     Query.without(...flat),

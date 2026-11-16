@@ -10,22 +10,22 @@ import {
   Save,
   System,
   Time,
-  Transform,
+  Transform3d,
 } from "../src/index";
-import * as TransformEntry from "../src/Transform";
+import * as Entry from "../src/Transform3d";
 
-const { Position, Rotation, Scale } = Transform;
+const { Position, Rotation, Scale } = Transform3d;
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
 const Rock = Component.tag("tf/Rock");
 
-describe("Transform", () => {
+describe("Transform3d", () => {
   it("is three components of the game, of 32-bit floats, each known by its name", () => {
-    expect(Position.name).toBe("arcadekit/Transform.Position");
-    expect(Rotation.name).toBe("arcadekit/Transform.Rotation");
-    expect(Scale.name).toBe("arcadekit/Transform.Scale");
+    expect(Position.name).toBe("arcadekit/Transform3d.Position");
+    expect(Rotation.name).toBe("arcadekit/Transform3d.Rotation");
+    expect(Scale.name).toBe("arcadekit/Transform3d.Scale");
     expect(Position.fields).toEqual(["x", "y", "z"]);
     expect(Rotation.fields).toEqual(["x", "y", "z", "w"]);
     expect(Scale.fields).toEqual(["x", "y", "z"]);
@@ -35,8 +35,8 @@ describe("Transform", () => {
       expect(component.storage).toBe("table");
     }
     // One module, whichever entry it is reached through.
-    expect(TransformEntry.Position).toBe(Position);
-    expect(TransformEntry.plugin).toBe(Transform.plugin);
+    expect(Entry.Position).toBe(Position);
+    expect(Entry.plugin).toBe(Transform3d.plugin);
   });
 
   it("is moved by a system with a loop over its columns, like any component", () => {
@@ -50,7 +50,7 @@ describe("Transform", () => {
       });
     });
     const app = run(
-      App.make({ plugins: [Transform.plugin], systems: [Drift] })
+      App.make({ plugins: [Transform3d.plugin], systems: [Drift] })
     );
     const rock = app.world.spawn(Position.of({ x: 1, y: 2, z: 3 }));
     // Added with no value, it is at the origin.
@@ -62,46 +62,51 @@ describe("Transform", () => {
 
   it("axisAngle gives the unit quaternion of a turn about an axis", () => {
     // No turn at all.
-    expect(Transform.axisAngle(0, 1, 0, 0)).toEqual({ x: 0, y: 0, z: 0, w: 1 });
+    expect(Transform3d.axisAngle(0, 1, 0, 0)).toEqual({
+      x: 0,
+      y: 0,
+      z: 0,
+      w: 1,
+    });
     // A quarter turn about the vertical: half the angle, in sine and cosine.
-    const quarter = Transform.axisAngle(0, 1, 0, Math.PI / 2);
+    const quarter = Transform3d.axisAngle(0, 1, 0, Math.PI / 2);
     expect(quarter.x).toBe(0);
     expect(quarter.y).toBeCloseTo(Math.SQRT1_2, 12);
     expect(quarter.z).toBe(0);
     expect(quarter.w).toBeCloseTo(Math.SQRT1_2, 12);
     // A half turn about an axis that leans.
-    const half = Transform.axisAngle(0.6, 0, 0.8, Math.PI);
+    const half = Transform3d.axisAngle(0.6, 0, 0.8, Math.PI);
     expect(half.x).toBeCloseTo(0.6, 12);
     expect(half.y).toBe(0);
     expect(half.z).toBeCloseTo(0.8, 12);
     expect(half.w).toBeCloseTo(0, 12);
     // The other way round is the same turn, backwards.
-    const back = Transform.axisAngle(1, 0, 0, -1);
+    const back = Transform3d.axisAngle(1, 0, 0, -1);
     expect(back.x).toBeCloseTo(-Math.sin(0.5), 12);
     expect(back.w).toBeCloseTo(Math.cos(0.5), 12);
     // Of length 1, whatever the angle, for an axis of length 1.
     for (const angle of [0.1, 1, 2.5, 4, -3]) {
-      const { w, x, y, z } = Transform.axisAngle(0.6, 0.8, 0, angle);
+      const { w, x, y, z } = Transform3d.axisAngle(0.6, 0.8, 0, angle);
       expect(Math.hypot(x, y, z, w)).toBeCloseTo(1, 12);
     }
     // It is what a Rotation is given.
-    const world = run(App.make({ plugins: [Transform.plugin] })).world;
+    const world = run(App.make({ plugins: [Transform3d.plugin] })).world;
     const turned = world.spawn(Rotation.of(quarter));
     expect(world.get(turned, Rotation)!.w).toBe(Math.fround(quarter.w));
   });
 
   it("lists its components, so that a game saves and loads them with no renderer anywhere", () => {
     const Rules = Plugin.make("tf/Rules", {
-      plugins: [Transform.plugin],
+      plugins: [Transform3d.plugin],
       components: [Rock],
     });
-    expect(Transform.plugin.name).toBe("arcadekit/Transform");
-    expect(Transform.plugin.components).toEqual([Position, Rotation, Scale]);
+    expect(Transform3d.plugin.name).toBe("arcadekit/Transform3d");
+    expect(Transform3d.plugin.components).toEqual([Position, Rotation, Scale]);
     const made = run(App.make({ plugins: [Rules] }));
     const rock = made.world.spawn(
       Rock,
       Position.of({ x: 1, y: 2, z: 3 }),
-      Rotation.of(Transform.axisAngle(0, 0, 1, 1)),
+      Rotation.of(Transform3d.axisAngle(0, 0, 1, 1)),
       Scale.of({ x: 2, y: 3, z: 4 })
     );
     const save = made.save();

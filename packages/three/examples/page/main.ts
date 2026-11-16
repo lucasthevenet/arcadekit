@@ -24,7 +24,7 @@ import {
   Random,
   System,
   Time,
-  Transform,
+  Transform3d,
   Transform2d,
 } from "arcadekit";
 import * as Browser from "arcadekit/Browser";
@@ -44,7 +44,7 @@ import {
 // In a game of your own this is "@arcadekit/three".
 import { Three } from "../../src/index";
 
-const { Position, Rotation, Scale } = Transform;
+const { Position, Rotation, Scale } = Transform3d;
 const COUNT =
   Number(new URLSearchParams(location.search).get("count")) || 10_000;
 const BOX = 60;
@@ -136,7 +136,7 @@ const Steer = System.make("Steer", function* () {
 });
 
 const Rules = Plugin.make("page/Rules", {
-  plugins: [Input.plugin, Transform.plugin, Transform2d.plugin],
+  plugins: [Input.plugin, Transform3d.plugin, Transform2d.plugin],
   components: [Mote, Card, Ship, Velocity, Spin],
   systems: [Steer, Drift, Turn, Wheel],
   setup: Effect.gen(function* () {

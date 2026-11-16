@@ -132,15 +132,15 @@
       "types": "./dist/TickScheduler.d.ts",
       "default": "./dist/TickScheduler.js"
     },
-    "./Transform": {
-      "source": "./src/Transform.ts",
-      "types": "./dist/Transform.d.ts",
-      "default": "./dist/Transform.js"
-    },
     "./Transform2d": {
       "source": "./src/Transform2d.ts",
       "types": "./dist/Transform2d.d.ts",
       "default": "./dist/Transform2d.js"
+    },
+    "./Transform3d": {
+      "source": "./src/Transform3d.ts",
+      "types": "./dist/Transform3d.d.ts",
+      "default": "./dist/Transform3d.js"
     },
     "./View": {
       "source": "./src/View.ts",

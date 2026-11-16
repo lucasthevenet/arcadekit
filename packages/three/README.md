@@ -16,16 +16,16 @@ pnpm --filter @arcadekit/three bench
 
 ```ts
 // rules.ts: the game. Nothing of this package here: a server and a replay run it as it is.
-import { Commands, Component, Plugin, Transform } from "arcadekit";
+import { Commands, Component, Plugin, Transform3d } from "arcadekit";
 
 const Rock = Component.tag("game/Rock");
 
 const Rules = Plugin.make("game/Rules", {
-  plugins: [Transform.plugin],
+  plugins: [Transform3d.plugin],
   components: [Rock],
   systems: [Fall],
   setup: Effect.map(Commands, (commands) => {
-    commands.spawn(Rock, Transform.Position.of({ x: 0, y: 4, z: 0 }));
+    commands.spawn(Rock, Transform3d.Position.of({ x: 0, y: 4, z: 0 }));
   }),
 });
 ```
@@ -69,7 +69,7 @@ import * as Three from "@arcadekit/three/Three";
 | `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances` and `objects` | `arcadekit`, `effect`, `three` |
 
 - `arcadekit`, `effect` and `three` are peer dependencies: a game has one copy of each, so a component or a service of arcadekit's is the same object here as in the game.
-- Only what belongs to the page imports this package: the plugin that says how the game looks, and the module that starts it. Where things are is `arcadekit/Transform`, in the game's own package.
+- Only what belongs to the page imports this package: the plugin that says how the game looks, and the module that starts it. Where things are is `arcadekit/Transform3d` or `arcadekit/Transform2d`, in the game's own package.
 - `pnpm lint:packages` checks what each built entry imports, and a test checks the same of the sources.
 
 ## Where a thing is
@@ -77,17 +77,17 @@ import * as Three from "@arcadekit/three/Three";
 ```ts
 commands.spawn(
   Rock,
-  Transform.Position.of({ x: 0, y: 4, z: 0 }),
-  Transform.Rotation.of(Transform.axisAngle(0, 0, 1, Math.PI / 2)),
-  Transform.Scale.of({ x: 2, y: 2, z: 2 })
+  Transform3d.Position.of({ x: 0, y: 4, z: 0 }),
+  Transform3d.Rotation.of(Transform3d.axisAngle(0, 0, 1, Math.PI / 2)),
+  Transform3d.Scale.of({ x: 2, y: 2, z: 2 })
 );
 ```
 
-What is drawn where comes from arcadekit's own components, [`arcadekit/Transform`](../arcadekit/README.md#where-a-thing-is): this package has none of its own, and only reads them.
+What is drawn where comes from arcadekit's own components, [`arcadekit/Transform3d` and `arcadekit/Transform2d`](../arcadekit/README.md#where-a-thing-is): this package has none of its own, and only reads them.
 
-- An entity is drawn where its `Transform.Position` says, in the units of the scene. `Transform.Rotation`, a unit quaternion, and `Transform.Scale`, where 1 is the size of the geometry, are for the entities that turn or have a size of their own: one without them is drawn upright, at the size of its geometry, and costs less to draw.
+- An entity is drawn where its `Transform3d.Position` says, in the units of the scene. `Transform3d.Rotation`, a unit quaternion, and `Transform3d.Scale`, where 1 is the size of the geometry, are for the entities that turn or have a size of their own: one without them is drawn upright, at the size of its geometry, and costs less to draw.
 - The plugins that hold a game's rules write them and import nothing of this package. A server and a replay that run those rules do not install it, or Three.js.
-- `Three.plugin` depends on `Transform.plugin`, which lists them, and on `Transform2d.plugin`.
+- `Three.plugin` depends on `Transform3d.plugin`, which lists them, and on `Transform2d.plugin`.
 - A `Rotation` whose four fields are 0, which is what one added with no value is, draws as not turned.
 
 **A flat game** places its things with [`arcadekit/Transform2d`](../arcadekit/README.md#where-a-thing-is), and is drawn the same way by the same systems:

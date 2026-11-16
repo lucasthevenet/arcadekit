@@ -9,7 +9,7 @@
  *
  *   pnpm --filter @arcadekit/three bench
  */
-import { App, Component, Plugin, Transform, Transform2d } from "arcadekit";
+import { App, Component, Plugin, Transform3d, Transform2d } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
@@ -17,7 +17,7 @@ import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
 import { Three } from "../src/index";
 
 const N = 10_000;
-const { Position, Rotation, Scale } = Transform;
+const { Position, Rotation, Scale } = Transform3d;
 const Thing = Component.tag("bench/Thing");
 const geometry = new BoxGeometry(1, 1, 1);
 const material = new MeshBasicMaterial();
@@ -66,7 +66,7 @@ const variant = (
 
 const place = () =>
   Position.of({ x: Math.random(), y: Math.random(), z: Math.random() });
-const turn = () => Rotation.of(Transform.axisAngle(0, 1, 0, Math.random()));
+const turn = () => Rotation.of(Transform3d.axisAngle(0, 1, 0, Math.random()));
 const size = () => Scale.of({ x: 2, y: 2, z: 2 });
 const instanced = (name: string) =>
   Three.instances(name, { of: Thing, geometry, material, capacity: N });
@@ -127,7 +127,7 @@ variant(
   const scope = Effect.runSync(Scope.make());
   const app = Effect.runSync(
     App.make({
-      plugins: [Plugin.make("bench/Bare", { plugins: [Transform.plugin] })],
+      plugins: [Plugin.make("bench/Bare", { plugins: [Transform3d.plugin] })],
     }).pipe(Scope.provide(scope))
   );
   const entities = Array.from({ length: N }, () =>
