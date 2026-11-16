@@ -121,9 +121,9 @@ const timerDisplay: DisplayShape = {
  * The screen a frame loop follows. Nothing has to provide it: the default
  * is a timer of 60 frames a second, which is all there is under Node, in a
  * worker or on a server. A page provides its own, `requestAnimationFrame`
- * and the document's visibility, with the `layer` of
- * `arcadekit/Driver/Browser`, which `runMain` of `arcadekit/App/Browser`
- * does for it. A test provides one it turns by hand:
+ * and the document's visibility, with `Browser.layer()` or
+ * `Browser.runMain` from `arcadekit/Browser`. A test provides one it turns
+ * by hand:
  *
  *   const display = Driver.makeManualDisplay()
  *   Driver.frames(app, { hz: 60 }).pipe(Effect.provideService(Driver.Display, display))

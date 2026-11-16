@@ -116,17 +116,17 @@ const sourceOf = (subpath: string): string =>
   `../${manifest.exports[subpath]!.source.slice("./".length)}`;
 const isEffect = (name: string): boolean =>
   name === "effect" || name.startsWith("effect/");
-/** An entry of what only a page can use: the browser part of its area. */
-const isBrowser = (subpath: string): boolean => subpath.endsWith("/Browser");
+/** The entry of what only a page can use. */
+const isBrowser = (subpath: string): boolean => subpath === "./Browser";
 const entries = Object.keys(manifest.exports);
 // What a page has and Node does not.
 const page =
   /\b(?:requestAnimationFrame|cancelAnimationFrame|createImageBitmap|navigator|document|window|addEventListener)\b/u;
 
 describe("the package's entries", () => {
-  it("are the package itself, every module, the browser part of an area that has one, and the storage core", () => {
+  it("are the package itself, every module, and the storage core", () => {
     // What the sources say the entries are: a module's is named as its
-    // file is, and so is the browser part of its area.
+    // file is.
     const expected: Record<string, Target> = {};
     const entry = (name: string, source: string): void => {
       const built = name === "." ? "index" : name.slice("./".length);
@@ -143,10 +143,6 @@ describe("the package's entries", () => {
       if (module !== null) {
         entry(`./${module[1]}`, file);
       }
-      const browser = /^\.\.\/src\/([A-Z]\w*)\/Browser\.ts$/u.exec(file);
-      if (browser !== null) {
-        entry(`./${browser[1]}/Browser`, file);
-      }
     }
     expect(manifest.exports).toEqual(expected);
     // In order, the package first, so that the list reads.
@@ -155,13 +151,15 @@ describe("the package's entries", () => {
     expect(entries).toContain("./App");
     expect(entries).toContain("./Input");
     expect(entries).toContain("./TickScheduler");
-    expect(entries.filter((name) => isBrowser(name))).toEqual([
-      "./App/Browser",
-      "./Assets/Browser",
-      "./Driver/Browser",
-      "./Input/Browser",
-    ]);
-    expect(entries.length).toBe(24);
+    expect(entries).toContain("./Browser");
+    expect(entries.length).toBe(21);
+    // No module is in a folder of its own: one file, one entry.
+    expect(
+      Object.keys(sources).filter(
+        (file) =>
+          !/^\.\.\/src\/\w+\.ts$/u.test(file) && !file.startsWith("../src/ecs/")
+      )
+    ).toEqual([]);
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
@@ -183,81 +181,44 @@ describe("the package's entries", () => {
     );
   });
 
-  it("no entry but a browser one imports anything but Effect, or reaches what only a page has", () => {
+  it("no entry but arcadekit/Browser imports anything but Effect, or reaches what only a page has", () => {
     for (const name of entries.filter((one) => !isBrowser(one))) {
       const { files, packages } = reach(sourceOf(name));
       expect(
         packages.filter((one) => !isEffect(one)),
         name
       ).toEqual([]);
-      expect(
-        files.filter((file) => file.endsWith("/Browser.ts")),
-        name
-      ).toEqual([]);
+      expect(files, name).not.toContain("../src/Browser.ts");
       // Nor does any of it name what a page has and Node does not.
       expect(
         files.filter((file) => page.test(code(sources[file]!))),
         name
       ).toEqual([]);
     }
-    // The package's own entry is all of them but the browser ones.
+    // The package's own entry is all of them but that one.
     const main = reach(sourceOf(".")).files;
     expect(
       Object.keys(sources)
         .filter((file) => !main.includes(file))
         .toSorted()
-    ).toEqual([
-      "../src/App/Browser.ts",
-      "../src/Assets/Browser.ts",
-      "../src/Driver/Browser.ts",
-      "../src/Input/Browser.ts",
-      "../src/ecs/index.ts",
-    ]);
+    ).toEqual(["../src/Browser.ts", "../src/ecs/index.ts"]);
   });
 
-  it("a browser entry is the browser part of its own area, and one of them imports the browser package", () => {
-    const importing: string[] = [];
-    for (const name of entries.filter((one) => isBrowser(one))) {
-      const { packages } = reach(sourceOf(name));
-      const others = packages.filter((one) => !isEffect(one));
-      if (others.length > 0) {
-        importing.push(name);
-        expect(others, name).toEqual([
-          "@effect/platform-browser/BrowserRuntime",
-        ]);
-      }
-      // It is where its area meets the page, by naming what a page has or
-      // by importing the package that does: that is what it is for.
-      expect(
-        page.test(code(sources[sourceOf(name)]!)) || others.length > 0,
-        name
-      ).toBe(true);
-    }
-    // Starting a game in a page is what needs the platform's runMain.
-    expect(importing).toEqual(["./App/Browser"]);
+  it("arcadekit/Browser is the one entry that imports a browser package, which is an optional peer", () => {
+    const { files, packages } = reach(sourceOf("./Browser"));
+    expect(packages.filter((one) => !isEffect(one))).toEqual([
+      "@effect/platform-browser/BrowserRuntime",
+    ]);
     expect(manifest.peerDependencies["@effect/platform-browser"]).toBeDefined();
     expect(
       manifest.peerDependenciesMeta["@effect/platform-browser"]?.optional
     ).toBe(true);
-    // Each is its own area's and no other's. Starting a game in a page is
-    // the one that brings two of them together: its display and devices.
-    const browserFiles = (name: string): string[] =>
-      reach(sourceOf(name)).files.filter((file) =>
-        file.endsWith("/Browser.ts")
-      );
-    expect(browserFiles("./Input/Browser")).toEqual([
-      "../src/Input/Browser.ts",
-    ]);
-    expect(browserFiles("./Driver/Browser")).toEqual([
-      "../src/Driver/Browser.ts",
-    ]);
-    expect(browserFiles("./Assets/Browser")).toEqual([
-      "../src/Assets/Browser.ts",
-    ]);
-    expect(browserFiles("./App/Browser")).toEqual([
-      "../src/App/Browser.ts",
-      "../src/Driver/Browser.ts",
-      "../src/Input/Browser.ts",
+    // It is where the package names the page: that is what it is for.
+    expect(page.test(code(sources["../src/Browser.ts"]!))).toBe(true);
+    // Only its own file is its own: the rest is the game's, shared.
+    const main = reach(sourceOf(".")).files;
+    expect(files.filter((file) => !main.includes(file))).toEqual([
+      "../src/Browser.ts",
     ]);
   });
 
@@ -290,13 +251,15 @@ describe("the package's entries", () => {
     expect(Main.TickScheduler).toBe(
       modules["../src/TickScheduler.ts"]!.TickScheduler
     );
-    // Every module is one or the other.
+    // Every module is one or the other, but for the one that only a page
+    // can use, which the package's own entry leaves out.
     expect(
       Object.keys(modules)
         .map((file) => file.slice("../src/".length, -".ts".length))
         .filter((name) => name !== "index" && !namespaces.includes(name))
         .toSorted()
-    ).toEqual(["Schemas", "Services", "TickScheduler"]);
+    ).toEqual(["Browser", "Schemas", "Services", "TickScheduler"]);
+    expect("Browser" in main).toBe(false);
   });
 });
 

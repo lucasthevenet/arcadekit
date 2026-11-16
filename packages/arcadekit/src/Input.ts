@@ -34,11 +34,11 @@
  * action itself, with `Actions.enqueue`.
  *
  * Where the devices come from is `Input.Source`. A page's keyboard,
- * pointer and gamepads are in this module's browser entry, which only a
- * page imports:
+ * pointer and gamepads are in the package's other entry, which only a page
+ * imports:
  *
- *   import * as InputBrowser from "arcadekit/Input/Browser"
- *   App.run(...).pipe(Effect.provide(InputBrowser.layer({ target: canvas })))
+ *   import * as Browser from "arcadekit/Browser"
+ *   Browser.runMain(App.run(...), { target: canvas })
  *
  * Nothing provides one to a replay or a server, and none is read there.
  */
@@ -110,9 +110,9 @@ const NOTHING: Sample = {
 /**
  * Where an app's input stage takes its samples from. Nothing has to provide
  * it: the default has no devices, which is what a replay, a server and
- * most tests want. A page provides its own, with the `layer()` of
- * `arcadekit/Input/Browser`, and a test that plays provides a source it
- * works by hand, `Input.makeManualSource()`.
+ * most tests want. A page provides its own, with `Browser.layer()` from
+ * `arcadekit/Browser`, and a test that plays provides a source it works by
+ * hand, `Input.makeManualSource()`.
  */
 export const Source: Context.Reference<SourceShape> =
   Context.Reference<SourceShape>("arcadekit/Input.Source", {

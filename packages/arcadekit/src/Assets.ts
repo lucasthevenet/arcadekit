@@ -4,7 +4,7 @@
  * closes.
  *
  *   const Forest = Assets.bundle("game/Forest", {
- *     backdrop: AssetsBrowser.image("/forest.png"),  // "arcadekit/Assets/Browser"
+ *     backdrop: Browser.image("/forest.png"),    // from "arcadekit/Browser"
  *     layout: Assets.json("/forest.json", Layout),
  *   })
  *

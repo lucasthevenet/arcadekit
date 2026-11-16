@@ -43,30 +43,20 @@
       "types": "./dist/App.d.ts",
       "default": "./dist/App.js"
     },
-    "./App/Browser": {
-      "source": "./src/App/Browser.ts",
-      "types": "./dist/App/Browser.d.ts",
-      "default": "./dist/App/Browser.js"
-    },
     "./Assets": {
       "source": "./src/Assets.ts",
       "types": "./dist/Assets.d.ts",
       "default": "./dist/Assets.js"
     },
-    "./Assets/Browser": {
-      "source": "./src/Assets/Browser.ts",
-      "types": "./dist/Assets/Browser.d.ts",
-      "default": "./dist/Assets/Browser.js"
+    "./Browser": {
+      "source": "./src/Browser.ts",
+      "types": "./dist/Browser.d.ts",
+      "default": "./dist/Browser.js"
     },
     "./Driver": {
       "source": "./src/Driver.ts",
       "types": "./dist/Driver.d.ts",
       "default": "./dist/Driver.js"
-    },
-    "./Driver/Browser": {
-      "source": "./src/Driver/Browser.ts",
-      "types": "./dist/Driver/Browser.d.ts",
-      "default": "./dist/Driver/Browser.js"
     },
     "./Event": {
       "source": "./src/Event.ts",
@@ -82,11 +72,6 @@
       "source": "./src/Input.ts",
       "types": "./dist/Input.d.ts",
       "default": "./dist/Input.js"
-    },
-    "./Input/Browser": {
-      "source": "./src/Input/Browser.ts",
-      "types": "./dist/Input/Browser.d.ts",
-      "default": "./dist/Input/Browser.js"
     },
     "./Migrate": {
       "source": "./src/Migrate.ts",

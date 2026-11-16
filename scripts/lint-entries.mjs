@@ -1,9 +1,9 @@
 // Checks what each built entry of arcadekit imports, in dist/: the promise an entry makes
 // is about what a program that imports it has to have installed.
 //
-//   arcadekit/ecs           imports no package at all
-//   arcadekit/<Area>/Browser  imports Effect, and may import @effect/platform-browser
-//   every other entry       imports Effect and nothing else
+//   arcadekit/ecs      imports no package at all
+//   arcadekit/Browser  imports Effect, and may import @effect/platform-browser
+//   every other entry  imports Effect and nothing else
 //
 // The entries are read from the package's `exports`. It follows the chunks an entry imports,
 // since what entries share is built once.
@@ -21,7 +21,7 @@ const allowedFor = (subpath) => {
   if (subpath === "./ecs") {
     return () => false;
   }
-  if (subpath.endsWith("/Browser")) {
+  if (subpath === "./Browser") {
     return (name) =>
       isEffect(name) || name.startsWith("@effect/platform-browser");
   }

@@ -2,9 +2,7 @@ import { Cause, Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import type { Scope as ScopeType } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as AppBrowser from "../src/App/Browser";
-import * as AssetsBrowser from "../src/Assets/Browser";
-import * as DriverBrowser from "../src/Driver/Browser";
+import * as Browser from "../src/Browser";
 import {
   App,
   Assets,
@@ -18,7 +16,6 @@ import {
   System,
   Time,
 } from "../src/index";
-import * as InputBrowser from "../src/Input/Browser";
 
 const Ship = Component.define("br/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship);
@@ -124,7 +121,7 @@ const pad = (
   buttons: boolean[],
   axes: number[],
   connected = true
-): InputBrowser.GamepadLike => ({
+): Browser.GamepadLike => ({
   index,
   connected,
   buttons: buttons.map((pressed) => ({ pressed })),
@@ -220,7 +217,7 @@ describe("a page's display", () => {
           app = yield* App.make({ systems: [Roll] });
           return yield* Driver.frames(app, { hz: 60 });
         })
-      ).pipe(Effect.provideService(Driver.Display, DriverBrowser.display))
+      ).pipe(Effect.provideService(Driver.Display, Browser.display))
     );
     expect(requested.size).toBe(1);
     expect(listeners.size).toBe(1);
@@ -320,7 +317,7 @@ describe("a page's devices", () => {
         });
       }).pipe(
         Effect.provide(
-          InputBrowser.layer({
+          Browser.layer({
             window: page,
             target: canvas,
             gamepads: () => [],
@@ -348,7 +345,7 @@ describe("a page's devices", () => {
           moved: ["PointerX", "PointerY"],
         });
       }).pipe(
-        Effect.provide(InputBrowser.layer({ window: page, gamepads: () => [] }))
+        Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
       )
     );
     // A target that is no element is measured from where it is given.
@@ -369,7 +366,7 @@ describe("a page's devices", () => {
         });
       }).pipe(
         Effect.provide(
-          InputBrowser.layer({ window: page, target: bare, gamepads: () => [] })
+          Browser.layer({ window: page, target: bare, gamepads: () => [] })
         )
       )
     );
@@ -393,7 +390,7 @@ describe("a page's devices", () => {
         expect(page.send("keyup", { code: "KeyR" })).toBe(false);
       }).pipe(
         Effect.provide(
-          InputBrowser.layer({
+          Browser.layer({
             window: page,
             preventDefault: ["Space"],
             gamepads: () => [],
@@ -408,14 +405,14 @@ describe("a page's devices", () => {
           false
         );
       }).pipe(
-        Effect.provide(InputBrowser.layer({ window: page, gamepads: () => [] }))
+        Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
       )
     );
   });
 
   it("reads the gamepads when it is sampled", () => {
     const page = new Listened();
-    let pads: (InputBrowser.GamepadLike | null)[] = [];
+    let pads: (Browser.GamepadLike | null)[] = [];
     let polls = 0;
     run(
       Effect.gen(function* () {
@@ -475,7 +472,7 @@ describe("a page's devices", () => {
         expect(told(source.sample()).released).toEqual([]);
       }).pipe(
         Effect.provide(
-          InputBrowser.layer({
+          Browser.layer({
             window: page,
             gamepads: () => {
               polls++;
@@ -494,7 +491,7 @@ describe("a page's devices", () => {
         });
       }).pipe(
         Effect.provide(
-          InputBrowser.layer({
+          Browser.layer({
             window: page,
             deadzone: 0.25,
             gamepads: () => pads,
@@ -513,13 +510,11 @@ describe("a page's devices", () => {
         }).pipe(System.inStage("input"));
         // The layer is let go as soon as the app is made.
         const app = yield* App.make({ systems: [Listen] }).pipe(
-          Effect.provide(
-            InputBrowser.layer({ window: page, gamepads: () => [] })
-          )
+          Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
         );
         expect(page.total).toBe(0);
         expect(() => app.input()).toThrow(
-          /were read after their layer was let go/
+          /were read after Browser\.layer was let go/
         );
         expect(() => app.input()).toThrow(/Provide it to the whole program/);
       })
@@ -542,7 +537,7 @@ describe("a page's devices", () => {
         expect(ship(app).x).toBeCloseTo(2, 5);
         expect(ship(app).shots).toBe(1);
       }).pipe(
-        Effect.provide(InputBrowser.layer({ window: page, gamepads: () => [] }))
+        Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
       )
     );
   });
@@ -562,8 +557,8 @@ describe("a picture", () => {
       return { width: bytes[0], close: () => closed.push(bytes.length) };
     });
     const Art = Assets.bundle("br/Art", {
-      one: AssetsBrowser.image("/forest.png"),
-      two: AssetsBrowser.image("/cave.png"),
+      one: Browser.image("/forest.png"),
+      two: Browser.image("/cave.png"),
     });
     const scope = Effect.runSync(Scope.make());
     const loaded = await Effect.runPromise(
@@ -598,12 +593,12 @@ describe("a picture", () => {
   });
 });
 
-describe("the page's display and its devices", () => {
+describe("Browser.layer", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("are two layers, each provided for as long as the game runs", async () => {
+  it("is the page's display and its devices together, for as long as it is provided", async () => {
     const page = makePage();
     let made: App.Any | undefined;
     const fiber = Effect.runFork(
@@ -616,10 +611,7 @@ describe("the page's display and its devices", () => {
               made = app;
             }),
         }
-      ).pipe(
-        Effect.provide(InputBrowser.layer({ gamepads: () => [] })),
-        Effect.provide(DriverBrowser.layer)
-      )
+      ).pipe(Effect.provide(Browser.layer({ gamepads: () => [] })))
     );
     // The frame loop asks the page for its frames, and watches its tab.
     expect(page.requested.size).toBe(1);
@@ -639,7 +631,7 @@ describe("the page's display and its devices", () => {
   });
 });
 
-describe("runMain, in a page", () => {
+describe("Browser.runMain", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -658,7 +650,7 @@ describe("runMain, in a page", () => {
     });
     let made: App.Any | undefined;
     let ended: Exit.Exit<unknown, unknown> | undefined;
-    AppBrowser.runMain(
+    Browser.runMain(
       App.run(
         { plugins: [Sound] },
         {
@@ -724,7 +716,7 @@ describe("runMain, in a page", () => {
       });
     }
     let ended: Exit.Exit<unknown, unknown> | undefined;
-    AppBrowser.runMain(Effect.fail(new NoCanvas()), {
+    Browser.runMain(Effect.fail(new NoCanvas()), {
       gamepads: () => [],
       disableErrorReporting: true,
       teardown: (exit, onExit) => {
@@ -742,7 +734,7 @@ describe("runMain, in a page", () => {
     // Told not to report it, it said nothing. Otherwise it is reported.
     expect(said).toEqual([]);
     ended = undefined;
-    AppBrowser.runMain(Effect.fail(new NoCanvas()), {
+    Browser.runMain(Effect.fail(new NoCanvas()), {
       gamepads: () => [],
       teardown: (exit, onExit) => {
         ended = exit;
@@ -759,6 +751,6 @@ describe("runMain, in a page", () => {
       () => Effect.never
     );
     // @ts-expect-error the game still needs a service
-    void (() => AppBrowser.runMain(unprovided));
+    void (() => Browser.runMain(unprovided));
   });
 });
