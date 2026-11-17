@@ -804,6 +804,73 @@ describe("what each hands its callback", () => {
     });
   }
 
+  it("reads and writes where the data is after a table or a sparse set has grown between two loops", () => {
+    const world = new World();
+    const view = world.view(query([Health, Burning]));
+    const plain = world.view(query([Health]));
+    const entities: Entity[] = [];
+    const grow = (upTo: number): void => {
+      while (entities.length < upTo) {
+        const n = entities.length;
+        entities.push(
+          world.spawn(Health.of({ hp: n }), Burning.of({ seconds: n / 2 }))
+        );
+      }
+    };
+    // A table and a sparse set start with room for sixteen, and move
+    // their columns to larger arrays when that is used up.
+    for (const count of [10, 16, 17, 40, 200]) {
+      grow(count);
+      for (const each of [view, plain]) {
+        const seen: number[] = [];
+        each.each((...args: unknown[]) => {
+          const [health, burning] = args as [
+            { hp: number },
+            { seconds: number } | Entity,
+          ];
+          seen.push(health.hp);
+          if (typeof burning === "object") {
+            expect(burning.seconds).toBe(health.hp / 2);
+            burning.seconds += 0;
+          }
+          health.hp += 1000;
+        });
+        expect(seen).toEqual(Array.from({ length: count }, (_, n) => n));
+        // The write went where the world reads from.
+        each.each((health) => {
+          (health as { hp: number }).hp -= 1000;
+        });
+      }
+      for (let n = 0; n < count; n++) {
+        expect(world.get(entities[n]!, Health)).toEqual({ hp: n });
+        expect(world.get(entities[n]!, Burning)).toEqual({ seconds: n / 2 });
+      }
+    }
+    // And a sparse set that grows on its own, its table as it was.
+    const Mark = Component.define(
+      "st/Mark",
+      { v: Field.i32 },
+      { storage: "sparse" }
+    );
+    const marked = world.view(query([Mark]));
+    for (const count of [10, 20, 70]) {
+      for (let n = 0; n < count; n++) {
+        world.add(entities[n]!, Mark.of({ v: n }));
+      }
+      const seen: number[] = [];
+      marked.each((mark) => {
+        seen.push(mark.v);
+        mark.v = -mark.v;
+      });
+      expect(seen.toSorted((a, b) => a - b)).toEqual(
+        Array.from({ length: count }, (_, n) => n)
+      );
+      for (let n = 0; n < count; n++) {
+        expect(world.get(entities[n]!, Mark)).toEqual({ v: -n || 0 });
+      }
+    }
+  });
+
   it("hands four terms and more their own rows, in tables and in sparse sets", () => {
     const world = new World();
     const A = Component.define("st/A", { v: Field.i32 });

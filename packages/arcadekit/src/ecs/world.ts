@@ -938,6 +938,16 @@ interface Loop {
   readonly row: Row;
   /** Per term: the row it reads, which for a sparse term is one of its own. */
   readonly rows: Row[];
+  /**
+   * What the accessors of the table's terms are pointed at: the entities
+   * of the table they were last bound to. A table that grows gets other
+   * arrays, its entities' among them, so this says both which table and
+   * that its columns are where they were. Most loops visit the same table
+   * every time, and need not be pointed at it again.
+   */
+  table: Uint32Array | undefined;
+  /** Per sparse term: the same for its set, known by its members' array. */
+  readonly sets: (Uint32Array | undefined)[];
 }
 
 /** Scratch state for one level of nested iteration over the same view. */
@@ -1215,6 +1225,8 @@ export class QueryView<D extends Terms = Terms> {
       fields: accessors.map((accessor) => accessor.fields),
       row,
       rows,
+      table: undefined,
+      sets: [],
     };
   }
 
@@ -1586,14 +1598,16 @@ export class QueryView<D extends Terms = Terms> {
       const f = fn as Callback;
       const loop = (frame.loop ??= this.makeLoop(frame.frozen));
       const acc = loop.accessors;
-      // Sparse columns can be replaced when a set grows, so bind them per call.
+      // Sparse columns are replaced when a set grows, and its members'
+      // array with them: an accessor is pointed at them again only then.
       // An accessor that notes its writes is told whose row each is, and
       // where to note it; any other takes the columns and ignores the rest.
       const { termLog } = this;
       for (let k = 0; k < this.n; k++) {
         const set = this.termSet[k];
-        if (set !== undefined) {
+        if (set !== undefined && loop.sets[k] !== set.dense) {
           acc[k]!.bind(set.columns, set.dense, termLog[k]);
+          loop.sets[k] = set.dense;
         }
       }
       const { world } = this;
@@ -1603,11 +1617,15 @@ export class QueryView<D extends Terms = Terms> {
       let bound: Table | undefined;
       this.runs(frame, (table, start, end) => {
         if (table !== bound) {
-          for (let k = 0; k < this.n; k++) {
-            const id = this.termTableId[k];
-            if (id !== -1) {
-              acc[k]!.bind(table.columns[id!]!, table.entities, termLog[k]);
+          // Unless they are pointed at it already, from the last time.
+          if (loop.table !== table.entities) {
+            for (let k = 0; k < this.n; k++) {
+              const id = this.termTableId[k];
+              if (id !== -1) {
+                acc[k]!.bind(table.columns[id!]!, table.entities, termLog[k]);
+              }
             }
+            loop.table = table.entities;
           }
           // Once per table, never per entity.
           if (world._recording) {
