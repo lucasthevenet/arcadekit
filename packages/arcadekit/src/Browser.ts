@@ -382,6 +382,10 @@ interface Channel {
  *   very frame after is played. A cue that was asked for before that, or
  *   before its file was there, is not played: a sound that is late is
  *   worse than none.
+ * - A cue is played only by audio that is running. While it sleeps, or
+ *   is still waking, which takes a moment when the page is seen again,
+ *   a cue is dropped, as one before the first touch is: started then, it
+ *   would wait and be heard with every other that waited, all at once.
  * - Music is not late, it is what should be playing: a track that was
  *   asked for before the first touch, or before its file was there, starts
  *   when it can. It plays over and over, and a change of track or of
@@ -534,7 +538,8 @@ export const layerSound = (
           }
           // What should have been playing all along starts now.
           settleAll();
-        } else if (audio.state === "suspended") {
+        } else if (audio.state !== undefined && audio.state !== "running") {
+          // Asleep for whatever reason, the browser's own among them.
           void audio.resume?.();
         }
       };
@@ -562,6 +567,12 @@ export const layerSound = (
           // Before the first touch, before the file is here, or after
           // the layer was let go, which empties the buffers.
           if (audio === undefined || buffer === undefined) {
+            return;
+          }
+          // Asleep, or still waking, as it is for a moment after the page
+          // is seen again: a cue started now would wait, and be heard with
+          // every other that waited, all at once, when the audio wakes.
+          if (audio.state !== undefined && audio.state !== "running") {
             return;
           }
           const source = audio.createBufferSource();

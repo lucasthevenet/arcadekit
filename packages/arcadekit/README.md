@@ -811,6 +811,7 @@ The output is Web Audio, and `Browser.runMain` and `Browser.layer` provide it. `
 
 - The files are fetched when the page starts, through `Assets.Loader`, and decoded as they arrive.
 - A page may not make a sound before its user has touched it. The audio is made at the first key or pointer press, and a cue asked for in the frame after is played. A cue that was asked for before that, or before its file was there, is not played: a sound that is late is worse than none.
+- A cue is played only by audio that is running. While the audio sleeps, or is still waking, which takes a moment when the page is seen again or a laptop's lid is opened, a cue is dropped: started then, it would wait, and every cue that waited would be heard at once.
 - Music is never late: it is what should be playing. A track that was asked for before the first touch, or before its file was there, starts when it can.
 - `volume` is how loud everything is played, and `rate` is a cue's speed, and so its pitch.
 - A cue or a track that has no file, or whose file could not be fetched or decoded, is said once through Effect's logger and plays nothing.

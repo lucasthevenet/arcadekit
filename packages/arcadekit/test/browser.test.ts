@@ -1315,11 +1315,49 @@ describe("a page's sound", () => {
     output.music("score", "theme", 1, 1);
     display.hide();
     expect([audio.suspended, audio.resumed]).toEqual([1, 0]);
-    // What is asked meanwhile is what it wakes to: nothing is forgotten.
+    // Music that is asked for meanwhile is what it wakes to: nothing is
+    // forgotten.
     output.music("score", undefined, 0, 0);
+    // A cue is: started now it would wait, and every cue that waited
+    // would be heard at once when the audio wakes.
+    output.play("theme", 1, 1);
+    output.play("theme", 1, 1);
+    expect(audio.started).toEqual([]);
+    // Seen again, the audio takes its time to wake, as a laptop's does
+    // when its lid is opened, while the game goes on at once.
+    const waking = audio.resume;
+    audio.resume = () => {
+      audio.resumed++;
+      return Promise.resolve();
+    };
     display.show();
     expect([audio.suspended, audio.resumed]).toEqual([1, 1]);
+    expect(audio.state).toBe("suspended");
+    output.play("theme", 1, 1);
+    expect(audio.started).toEqual([]);
+    // Awake, a cue is played, and none of the ones that came too early.
+    audio.resume = waking;
+    audio.state = "running";
+    output.play("theme", 0.5, 1);
+    expect(audio.started.length).toBe(1);
+    expect(audio.started[0]!.volume).toBe(0.5);
     expect(audio.loops[0]!.stopped).toBe(0);
+    // The browser can put it to sleep for reasons of its own, and by
+    // other names: a touch wakes it from any of them.
+    audio.state = "interrupted";
+    output.play("theme", 1, 1);
+    expect(audio.started.length).toBe(1);
+    page.send("keydown", { code: "Enter" });
+    expect(audio.resumed).toBe(2);
+    expect(audio.state).toBe("running");
+    // An audio that does not say how it is, as one of your own may not,
+    // is taken to be running.
+    delete (audio as { state?: string }).state;
+    output.play("theme", 1, 1);
+    expect(audio.started.length).toBe(2);
+    page.send("keydown", { code: "Enter" });
+    expect(audio.resumed).toBe(2);
+    audio.state = "running";
     await close();
     expect(display.watching).toBe(0);
     display.hide();
