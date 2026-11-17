@@ -20,7 +20,7 @@ const makeRewriter = () => {
   const links = createLinkRewriter({
     repoRoot: REPO_ROOT,
     repoUrl: REPO_URL,
-    branch: "next",
+    branch: "main",
     pageLinks: new Map([
       ["website/src/content/docs/index.mdx", "/"],
       [KIT, "/reference/arcadekit"],
@@ -72,13 +72,13 @@ describe("a relative link in a README", () => {
   it("goes to GitHub when the file is not a page", () => {
     const { rewrite, deadLinks } = makeRewriter();
     expect(rewrite("src/App.ts", KIT)).toBe(
-      `${REPO_URL}/blob/next/packages/arcadekit/src/App.ts`
+      `${REPO_URL}/blob/main/packages/arcadekit/src/App.ts`
     );
     expect(rewrite("src/App.ts#L10", KIT)).toBe(
-      `${REPO_URL}/blob/next/packages/arcadekit/src/App.ts#L10`
+      `${REPO_URL}/blob/main/packages/arcadekit/src/App.ts#L10`
     );
     expect(rewrite("examples/demo/", KIT)).toBe(
-      `${REPO_URL}/tree/next/packages/arcadekit/examples/demo`
+      `${REPO_URL}/tree/main/packages/arcadekit/examples/demo`
     );
     expect(deadLinks()).toStrictEqual([]);
   });
@@ -107,7 +107,7 @@ describe("the plugin", () => {
       '<a href="/reference/arcadekit#the-tick-and-the-frame">the frame</a>'
     );
     expect(html).toContain(
-      `<a href="${REPO_URL}/tree/next/packages/three/examples/page">the page</a>`
+      `<a href="${REPO_URL}/tree/main/packages/three/examples/page">the page</a>`
     );
     expect(html).toContain('<a href="https://effect.website">Effect</a>');
   });
@@ -132,18 +132,18 @@ describe("a full link", () => {
   it("goes to the page when it names a page's file on GitHub", () => {
     const { rewrite } = makeRewriter();
     expect(
-      rewrite(`${REPO_URL}/blob/next/docs/roadmap.md#housekeeping`, KIT)
+      rewrite(`${REPO_URL}/blob/main/docs/roadmap.md#housekeeping`, KIT)
     ).toBe("/roadmap#housekeeping");
-    expect(rewrite(`${REPO_URL}/tree/next/packages/three`, KIT)).toBe(
+    expect(rewrite(`${REPO_URL}/tree/main/packages/three`, KIT)).toBe(
       "/reference/three"
     );
   });
 
   it("is dead when it names a file the repository doesn't have", () => {
     const { rewrite, deadLinks } = makeRewriter();
-    const renamed = `${REPO_URL}/blob/next/packages/arcadekit/src/RENAMED.ts`;
-    const missing = `${REPO_URL}/tree/next/packages/nope`;
-    const outside = `${REPO_URL}/blob/next/../other/README.md`;
+    const renamed = `${REPO_URL}/blob/main/packages/arcadekit/src/RENAMED.ts`;
+    const missing = `${REPO_URL}/tree/main/packages/nope`;
+    const outside = `${REPO_URL}/blob/main/../other/README.md`;
     for (const href of [renamed, missing, outside]) {
       expect(rewrite(href, KIT)).toBe(href);
     }
@@ -155,10 +155,10 @@ describe("a full link", () => {
   it("is left alone otherwise", () => {
     const { rewrite, deadLinks } = makeRewriter();
     for (const href of [
-      `${REPO_URL}/blob/next/packages/arcadekit/src/App.ts`,
-      `${REPO_URL}/tree/next/.changeset`,
+      `${REPO_URL}/blob/main/packages/arcadekit/src/App.ts`,
+      `${REPO_URL}/tree/main/.changeset`,
       // Another branch, which this checkout can't check.
-      `${REPO_URL}/blob/main/packages/arcadekit/src/core/README.md`,
+      `${REPO_URL}/blob/next/packages/arcadekit/src/core/README.md`,
       `${REPO_URL}/issues/25`,
       `${REPO_URL}#readme`,
       "https://effect.website",

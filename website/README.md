@@ -88,9 +88,9 @@ The files are written for GitHub, so the site adds a little as it renders them, 
 
 ## Which version it describes
 
-The site is built from the repository as it is, so its pages follow the branch it is built from. This design lives on `next` until it replaces `main`, so the links to GitHub name `next` (`BRANCH` in [`src/lib/site.ts`](src/lib/site.ts)); change it when `next` becomes `main`. Between releases they can describe an export, or a whole entry, that the package on npm doesn't have yet. The header says so: it shows the package's version alone, such as "v0.7.0", linked to the changelog, only when no changeset for `arcadekit` waits in `.changeset/`. When one does, it shows "v0.7.0 + unreleased", linked to the waiting changesets ([`src/lib/version.ts`](src/lib/version.ts), and the header's [`src/components/social-icons.astro`](src/components/social-icons.astro), which replaces Starlight's `SocialIcons`).
+The site is built from the repository as it is, so its pages follow the branch it is built from. Its links to GitHub name that branch, `main` (`BRANCH` in [`src/lib/site.ts`](src/lib/site.ts)). Between releases they can describe an export, or a whole entry, that the package on npm doesn't have yet. The header says so: it shows the package's version alone, such as "v0.7.0", linked to the changelog, only when no changeset for `arcadekit` waits in `.changeset/`. When one does, it shows "v0.7.0 + unreleased", linked to the waiting changesets ([`src/lib/version.ts`](src/lib/version.ts), and the header's [`src/components/social-icons.astro`](src/components/social-icons.astro), which replaces Starlight's `SocialIcons`).
 
-The other choice is a site that describes only what is released: deploy it when a release is published, not after each push to `main`. Then a fix to a page waits for the next release too. The workflow below deploys from `main`, so this site goes live when `next` is merged into it.
+The other choice is a site that describes only what is released: deploy it when a release is published, not after each push to `main`. Then a fix to a page waits for the next release too. The workflow below deploys from `main`.
 
 ## Images
 
