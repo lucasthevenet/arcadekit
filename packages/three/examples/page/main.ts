@@ -3,7 +3,9 @@
  * box, each one instance of one mesh and of a colour of its own, and a ship
  * that is an object of its own, steered with the arrow keys. Through the middle of the box a ring
  * of cards turns in a plane: they are placed as a flat game places things,
- * with two numbers and an angle.
+ * with two numbers and an angle. A card's face is a picture, loaded as an
+ * asset: C puts the deck away, which lets the picture go, and brings it
+ * back, which loads it again.
  *
  * The simulation runs at sixty ticks a second and knows nothing of
  * Three.js. What draws it reads the columns once per repaint.
@@ -14,6 +16,7 @@
  */
 import {
   App,
+  Assets,
   Commands,
   Component,
   Field,
@@ -207,10 +210,34 @@ const Motes = Three.instances("page/Motes", {
   smooth: true,
 });
 
+// A card's face is a file. The cards are drawn while it is loaded, which
+// is while the deck is out: that is the page's to say, and no part of the
+// game, which moves its cards whether they are seen or not.
+const Deck = Assets.bundle("page/Deck", {
+  face: Three.texture("/card.png"),
+});
+let deckOut = true;
+addEventListener("keydown", (event) => {
+  if (event.key === "c") {
+    deckOut = !deckOut;
+  }
+});
+const KeepDeck = Assets.during(
+  Effect.sync(() => deckOut),
+  Deck
+);
+
 const Cards = Three.instances("page/Cards", {
   of: Card,
-  geometry: new PlaneGeometry(4, 4),
-  material: new MeshStandardMaterial({ color: "#ff6188", side: DoubleSide }),
+  from: Deck,
+  look: ({ face }) => ({
+    geometry: new PlaneGeometry(4, 4),
+    material: new MeshStandardMaterial({ map: face, side: DoubleSide }),
+  }),
+  free: ({ geometry, material }) => {
+    geometry.dispose();
+    material.dispose();
+  },
   smooth: true,
 });
 
@@ -253,7 +280,7 @@ const Hud = System.make("Hud", function* () {
 }).pipe(System.inStage("frame"));
 
 const Look = Plugin.make("page/Look", {
-  plugins: [Three.plugin, Rules],
+  plugins: [Three.plugin, Assets.plugin, Rules],
   // The scene is set up once, when the app is made.
   layer: Layer.effectDiscard(
     Effect.map(Three.Scene, ({ scene }) => {
@@ -263,7 +290,7 @@ const Look = Plugin.make("page/Look", {
       scene.add(new AmbientLight("#8090b0", 1.2), sun);
     })
   ),
-  systems: [Motes, Cards, Ships, Orbit, Hud],
+  systems: [KeepDeck, Motes, Cards, Ships, Orbit, Hud],
 });
 
 // --- the entry point -------------------------------------------------------------

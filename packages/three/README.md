@@ -66,7 +66,7 @@ import * as Three from "@arcadekit/three/Three";
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `@arcadekit/three` | The module below, as `import { Three } from "@arcadekit/three"` | `arcadekit`, `effect`, `three` |
-| `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances` and `objects` | `arcadekit`, `effect`, `three` |
+| `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances`, `objects` and `texture` | `arcadekit`, `effect`, `three` |
 
 - `arcadekit`, `effect` and `three` are peer dependencies: a game has one copy of each, so a component or a service of arcadekit's is the same object here as in the game.
 - Only what belongs to the page imports this package: the plugin that says how the game looks, and the module that starts it. Where things are is `arcadekit/Transform3d` or `arcadekit/Transform2d`, in the game's own package.
@@ -157,6 +157,62 @@ const Rocks = Three.instances("game/Rocks", {
 - The colours are read from the raw columns in the same pass as the places, into a buffer of their own beside the matrices, which grows with them and of which only the part that is drawn is sent. It costs about 2 ns more per entity, and nothing is allocated.
 - With `smooth: true` a colour changes evenly between two ticks, as a place does, and `snap` does not apply to it: a colour is never too far to go to.
 
+### A look made of assets
+
+```ts
+const Forest = Assets.bundle("game/Forest", {
+  bark: Three.texture("/bark.png"),
+});
+
+const Trees = Three.instances("game/Trees", {
+  of: Tree,
+  from: Forest,
+  look: ({ bark }) => ({
+    geometry: new CylinderGeometry(1, 1, 8),
+    material: new MeshStandardMaterial({ map: bark }),
+  }),
+  free: ({ geometry, material }) => {
+    geometry.dispose();
+    material.dispose();
+  },
+});
+
+const Look = Plugin.make("game/Look", {
+  plugins: [Three.plugin, Assets.plugin],
+  systems: [Assets.during(State.is(Level, "forest"), Forest), Trees],
+});
+```
+
+A geometry and a material given to `Three.instances` are there when the system is made. A level's are not: its textures are [loaded when the game enters it and let go when it leaves](../arcadekit/README.md#assets). Such a kind says which bundle its look comes `from`, and how the `look` is made of what the bundle holds.
+
+- The entities are drawn while the app holds the bundle loaded, and at no other time: before it is loaded, while it is loading and after it failed, no mesh of theirs is in the scene. Who keeps it loaded is not this system's business: `Assets.during`, as a rule.
+- `look` is called once each time the bundle is loaded, with its assets under their names and with their types, and returns the geometry and the material. Everything else is as for any instances: `color`, `smooth`, `capacity`, `prepare`, which is handed each mesh that is made.
+- When the bundle is let go the mesh is taken out of the scene and disposed of, and then `free` is handed what `look` returned, anything it returned beyond the two included, to dispose of what it made. The assets are the bundle's to let go. The same happens when the app's scope closes.
+- Entered again, the level is loaded again, and the look is made again of what is loaded now. The mesh starts with the room the last one had grown to.
+- Nothing is ever drawn with assets that were let go. `Three.Render` asks, just before it draws, whether what each such kind was made of is still there, and takes out what is not: so it does not matter whether the system that lets the level go runs before this one or after it in a frame.
+- Listed and nothing more said, `Assets.during` runs after the scene is drawn, since everything that draws runs before `Three.Render`: the instances then appear a frame after the bundle is loaded and are drawn one frame more after the level is left, with assets that are still there. `Assets.during(...).pipe(System.before(Trees))` makes it the same frame.
+- It needs `Assets.plugin`, which the type of the system says: left out, the app asks for the store of assets from outside, and a program that gives it none does not compile. A kind whose look is there from the start asks nothing of it.
+
+## Textures
+
+```ts
+const Forest = Assets.bundle("game/Forest", {
+  bark: Three.texture("/bark.png"),
+  bumps: Three.texture("/bark-normals.png", (texture) => {
+    texture.colorSpace = NoColorSpace; // not colours
+    texture.wrapS = texture.wrapT = RepeatWrapping;
+  }),
+});
+```
+
+`Three.texture(url)` is an [asset](../arcadekit/README.md#assets) that is a `Texture` of Three.js: it goes in a bundle beside the level's other files, is fetched and decoded with them, and is disposed of, with the picture it was made of, when the scope it was loaded in closes.
+
+- It is decoded by the page's `createImageBitmap`, off the thread the game runs on.
+- It is a picture of colours, in sRGB, and the right way up for the geometries of Three.js. The function it is given second is handed the texture once, before it is ever sent to the renderer, to say otherwise or to set how it repeats and is filtered.
+- Which way up it is cannot be changed there: a bitmap is flipped when it is made, and Three.js does not read `flipY` of a texture made of one.
+- A file that is no picture fails the bundle, as any asset that cannot be made does, with `Assets.AssetFailed` naming the URL.
+- A model, a font, or anything else Three.js has a loader for is an asset of your own, `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be disposed of.
+
 ## Objects
 
 ```ts
@@ -175,6 +231,20 @@ const Ships = Three.objects("game/Ships", {
 - An entity that takes a despawned one's slot gets an object of its own.
 - Nothing of this is in the world. A game loaded from a save, or an app that starts with entities, has its objects made on the first frame.
 - It finds what is new and what is gone by looking at every entity of the kind each frame, which it does anyway to place them. It watches no component for changes, so it adds nothing to what a tick costs.
+
+Objects that are made of a level's assets, a model, say, name the bundle they come `from`, and `make` is handed its assets as well:
+
+```ts
+const Deer = Three.objects("game/Deer", {
+  of: Deer,
+  from: Forest,
+  make: (entity, { deer }) => clone(deer),
+  free: (object) => object.clear(),
+});
+```
+
+- There are objects while the app holds the bundle loaded. The frame it is, every entity of the kind gets its object, made of what is loaded; when it is let go, every object is taken out of the scene and handed to `free`, before the scene is next drawn. Loaded again, each is made again.
+- The rest is as above, and as for [instances made of assets](#a-look-made-of-assets): it needs `Assets.plugin`, and nothing is drawn with what was let go.
 
 ## Between two ticks
 
@@ -257,6 +327,7 @@ const Follow = System.make("game/Follow", function* () {
 | `Three.instances`, smooth, flat: all three | 82.5 | 7,300 |
 | `Three.instances`, a colour each: a position | 11.0 | 7,300 |
 | `Three.instances`, a colour each, smooth: a position | 47.9 | 7,600 |
+| `Three.instances`, a look made of assets: a position | 8.7 | 8,000 |
 | `Three.objects`: an Object3D each, all three copied | 163.0 | 5,700 |
 | `Three.objects`, flat: an Object3D each, all three copied | 167.8 | 5,700 |
 | By hand: `world.get` and `setMatrixAt`, per entity | 361.6 | 2,480,000 |
@@ -265,6 +336,7 @@ const Follow = System.make("game/Follow", function* () {
 - A flat entity that is not turned costs a little less than one in three dimensions. One that is turned costs twice as much, 36 ns: a sine and a cosine each, where a quaternion is a few multiplications. A flat game with a crowd that spins pays 0.36 ms for ten thousand.
 - Drawn between two ticks, an entity costs about three times as much for a place, 27 ns, and four and a half times for all three, 81 ns: each value is read, kept, and blended with the one before, in a pass of its own before the matrix is written. Ten thousand of them cost 0.27 to 0.83 ms of a frame, and still nothing is allocated per entity.
 - A colour each costs 2 ns more per entity: three more reads and three more writes. Blended between two ticks it costs 22 ns more, as much as blending the place does, since it is the same pass over three other numbers.
+- A look that is made of assets costs an entity nothing: the loops are the same. What it costs is asked once a frame, by the system and again before the scene is drawn, whether the assets are still there, and with the system that keeps the bundle that is under a kilobyte and too little time to measure here.
 - A test holds the system to that, with and without `smooth` and with a colour each: 10,000 moving objects, of all eight kinds, may grow the heap by less than 4 bytes each per tick and frame, where one number allocated per object would be 12.
 - An object each costs ten to twenty times an instance, most of it Three.js keeping an object's Euler angles in step with its quaternion. That is the price of an object, and why a crowd is instances.
 - The example page, with 10,000 lit cubes in headless Chromium, grew its heap by 7 to 58 KB a frame, the renderer's own allocations included, and by 17 KB with a hundred cubes: what a frame allocates does not grow with what it draws. That browser draws in software, at 3 to 6 frames a second for 10,000 cubes and 60 for a hundred, so it says nothing of how fast a graphics card draws them.
@@ -276,7 +348,9 @@ const Follow = System.make("game/Follow", function* () {
 - A colour is for instances. `Three.objects` reads none: an object's colour is its material's, which is the game's to set in a frame system of its own.
 - A flat game's entities are all at 0 of the third axis. What is in front is said per kind, by its mesh or its objects; an entity has no depth or layer of its own, and nothing sorts them.
 - The two transforms do not mix: an entity placed in the plane is not turned by a quaternion, and one placed in three dimensions is not turned by an angle.
-- One kind of entity is one geometry and one material, fixed when the system is made. A kind whose look comes from an asset that is loaded later has no helper.
+- One kind of entity is one geometry and one material: given when the system is made, or made of one bundle's assets while that bundle is loaded. A look does not change for any other reason, a setting of the player's, say, and an entity cannot say for itself which of several looks it has: that is a kind per look.
+- While a kind's bundle is loading nothing of the kind is drawn: there is no look to stand in for the one that is on its way.
+- The one asset here is a texture. A model is an asset of the game's own, made with `Assets.make` around a loader of Three.js, and what such a loader fetches for itself, a glTF file's pictures, say, does not come through `Assets.Loader`.
 - Instances are in no order, so a material that needs its instances sorted back to front is not served.
 - A mesh of instances is never culled as a whole unless `prepare` says how.
 - Nothing is a child of anything: an entity's place is its place in the scene. An object that hangs from another is the game's to arrange in `make`.
