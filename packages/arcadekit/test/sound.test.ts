@@ -301,33 +301,98 @@ describe("Sound.Player", () => {
     expect(sound.played).toEqual([]);
   });
 
-  it("plays for a system of the frame stage or the input stage, as it is, or as it is told", () => {
+  it("plays for a system of the frame stage or the input stage, as it is told, once the frame's systems have run", () => {
+    let clicks: readonly (Sound.Options | undefined)[] = [];
+    const heard: number[] = [];
+    const sound = Sound.makeRecorder();
     const Click = System.make("sd/Click", function* () {
       const player = yield* Sound.Player;
-      player.play("click");
-      player.play("click", { volume: 0.25 });
-      player.play("click", { rate: 1.5 });
-      player.play("click", { volume: -3, rate: 0.5 });
+      for (const options of clicks) {
+        player.play("click", options);
+      }
+      // Asked for, and not played yet: the frame is not over.
+      heard.push(sound.played.length);
     }).pipe(System.inStage("frame"));
+    let beep = false;
     const Beep = System.make("sd/Beep", function* () {
-      (yield* Sound.Player).play("beep", { volume: 2 });
+      if (beep) {
+        (yield* Sound.Player).play("beep", { volume: 2 });
+      }
     }).pipe(System.inStage("input"));
-    const sound = Sound.makeRecorder();
     const app = run(
       App.make({ plugins: [Sound.plugin], systems: [Click, Beep] }).pipe(
         Effect.provide(Sound.layer(sound))
       )
     );
-    app.frame(0);
-    expect(sound.played).toEqual([
-      { cue: "click", volume: 1, rate: 1 },
+    const frame = (...asked: (Sound.Options | undefined)[]): Sound.Played[] => {
+      clicks = asked;
+      sound.played.length = 0;
+      app.frame(0);
+      return [...sound.played];
+    };
+    // As it is, and as it is told.
+    expect(frame(undefined)).toEqual([{ cue: "click", volume: 1, rate: 1 }]);
+    expect(frame({ volume: 0.25 })).toEqual([
       { cue: "click", volume: 0.25, rate: 1 },
+    ]);
+    expect(frame({ rate: 1.5 })).toEqual([
       { cue: "click", volume: 1, rate: 1.5 },
-      // Not below nothing.
+    ]);
+    // Not below nothing.
+    expect(frame({ volume: -3, rate: 0.5 })).toEqual([
       { cue: "click", volume: 0, rate: 0.5 },
     ]);
+    expect(heard).toEqual([0, 0, 0, 0]);
+    // Asked several times in one frame it is one sound, as the loudest
+    // asked, and of two as loud the first.
+    expect(
+      frame({ volume: 0.5, rate: 2 }, { volume: 0.9, rate: 3 }, { volume: 0.9 })
+    ).toEqual([{ cue: "click", volume: 0.9, rate: 3 }]);
+    // And nothing is left of a frame for the next.
+    expect(frame()).toEqual([]);
+    // Asked for in the input stage, it is heard with the frame that
+    // follows, and before what that frame asks.
+    beep = true;
     app.input();
-    expect(sound.played.at(-1)).toEqual({ cue: "beep", volume: 2, rate: 1 });
+    expect(sound.played).toEqual([]);
+    beep = false;
+    expect(frame(undefined)).toEqual([
+      { cue: "beep", volume: 2, rate: 1 },
+      { cue: "click", volume: 1, rate: 1 },
+    ]);
+    expect(app.frameOrder).toEqual(["sd/Click", "arcadekit/Sound.Flush"]);
+  });
+
+  it("makes one sound of a cue that several systems play in one frame, whichever they are", () => {
+    const sound = Sound.makeRecorder();
+    const Theirs = Sound.cues(
+      "sd/Theirs",
+      Sound.on(Bounced, { cue: "thud", volume: 0.3 }),
+      Sound.on(Dropped, "whoosh")
+    );
+    const Mine = System.make("sd/Mine", function* () {
+      (yield* Sound.Player).play("whoosh", { volume: 0.2, rate: 2 });
+      (yield* Sound.Player).play("ping");
+    }).pipe(System.inStage("frame"));
+    const app = run(
+      App.make({ plugins: [Game], systems: [Theirs, Mine] }).pipe(
+        Effect.provide(Sound.layer(sound))
+      )
+    );
+    about(app, 5);
+    app.dispatch(Drop, { height: 50 });
+    app.tick(0.1);
+    app.frame(0);
+    // The game's own cues ask for a whoosh and a thud, the second system
+    // for both again, and the third for a whoosh: one of each, each as
+    // the loudest asked, in the order they were first asked for.
+    expect(sound.played.map((one) => one.cue)).toEqual([
+      "whoosh",
+      "thud",
+      "ping",
+    ]);
+    expect(sound.played[0]).toEqual({ cue: "whoosh", volume: 1, rate: 1 });
+    expect(sound.played[1]!.volume).toBeGreaterThan(0.3);
   });
 
   it("says whether sound goes anywhere", () => {

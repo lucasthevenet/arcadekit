@@ -239,10 +239,19 @@ export interface PlayerShape {
   /** Whether sound goes anywhere. False on a server, in a replay, in most tests. */
   readonly audible: boolean;
   /**
-   * Plays a cue, by its name or as a clip, now. For the stages between
-   * ticks: in the tick it throws, since the simulation does not play.
+   * Plays a cue, by its name or as a clip, in the frame it is asked for:
+   * what a frame's systems ask is played when they have all run. A cue
+   * asked for several times in one frame, by whichever of them, is played
+   * once, as the loudest asked; cues are played in the order they were
+   * first asked for. For the stages between ticks: in the tick it throws,
+   * since the simulation does not play.
    */
   readonly play: (cue: Playable, options?: Options) => void;
+  /**
+   * Plays what was asked for since this was last called.
+   * @internal
+   */
+  readonly _flush: () => void;
   /**
    * Says what a channel is to be playing, over and over or with `once` to
    * its end: a track, or `undefined` for silence. Said again with the
@@ -289,6 +298,9 @@ const playerLayer = Layer.effect(
         channels.clear();
       })
     );
+    // What a frame's systems have asked to hear, by the cue: one sound for
+    // each, however many asked and whichever system they were.
+    const asked = new Map<Playable, { volume: number; rate: number }>();
     return {
       audible: output !== silent,
       play(cue, options) {
@@ -297,7 +309,23 @@ const playerLayer = Layer.effect(
             `The cue "${nameOf(cue)}" was played in the tick. Sound follows real time and is no part of the game: a replay and a server play nothing, and a tick must not depend on whether anything is heard. Emit an event for what happened, and play what it sounds like from a system of the frame stage, which Sound.cues makes.`
           );
         }
-        output.play(cue, Math.max(0, options?.volume ?? 1), options?.rate ?? 1);
+        const volume = Math.max(0, options?.volume ?? 1);
+        const already = asked.get(cue);
+        if (already === undefined) {
+          asked.set(cue, { volume, rate: options?.rate ?? 1 });
+        } else if (volume > already.volume) {
+          already.volume = volume;
+          already.rate = options?.rate ?? 1;
+        }
+      },
+      _flush() {
+        if (asked.size === 0) {
+          return;
+        }
+        for (const [cue, how] of asked) {
+          output.play(cue, how.volume, how.rate);
+        }
+        asked.clear();
       },
       music(channel, track, options) {
         if (!world.frozen) {
@@ -343,7 +371,15 @@ const playerLayer = Layer.effect(
  * given. A plugin whose systems are made with `Sound.cues` lists it in
  * `plugins`.
  */
-export const plugin = Plugin.make("arcadekit/Sound", { layer: playerLayer });
+/** Plays what the frame's systems asked to hear, once they have all run. */
+const Flush = System.make("arcadekit/Sound.Flush", function* () {
+  (yield* Player)._flush();
+}).pipe(System.inStage("postFrame"));
+
+export const plugin = Plugin.make("arcadekit/Sound", {
+  layer: playerLayer,
+  systems: [Flush],
+});
 
 // --- cues: from the game's events to what they sound like ---------------------------
 
@@ -424,7 +460,8 @@ const byEvent = (lines: readonly Line[]): Heard => {
  *   does.
  * - A cue that several events of one frame ask for is played once, as
  *   the loudest of them asked: forty coins caught in one tick are one
- *   sound, not forty on top of each other.
+ *   sound, not forty on top of each other. That is so across systems
+ *   too: two that play the same cue in a frame make one sound of it.
  * - Cues are played in the order they were first asked for.
  * - Where sound goes nowhere it reads nothing and plays nothing.
  * - It needs `Sound.plugin`, and takes `System.runIf` like any system.
@@ -487,8 +524,6 @@ export const cues: {
       }
       ({ lines } = now);
     }
-    // Made only in a frame that has something to play.
-    let asked: Map<Playable, { volume: number; rate: number }> | undefined;
     for (const [event, picks] of lines!) {
       // Read once: a system is handed an event once, however many of its
       // lines are of it.
@@ -499,23 +534,13 @@ export const cues: {
           if (picked === undefined) {
             continue;
           }
-          const cue = isCue(picked) ? picked.cue : picked;
-          const volume = isCue(picked) ? (picked.volume ?? 1) : 1;
-          const rate = isCue(picked) ? (picked.rate ?? 1) : 1;
-          asked ??= new Map();
-          const already = asked.get(cue);
-          if (already === undefined) {
-            asked.set(cue, { volume, rate });
-          } else if (volume > already.volume) {
-            already.volume = volume;
-            already.rate = rate;
+          // The player makes one sound of all that ask for the same cue.
+          if (isCue(picked)) {
+            player.play(picked.cue, picked);
+          } else {
+            player.play(picked);
           }
         }
-      }
-    }
-    if (asked !== undefined) {
-      for (const [cue, how] of asked) {
-        player.play(cue, how);
       }
     }
   }).pipe(System.inStage("frame"));

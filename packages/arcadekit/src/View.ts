@@ -329,7 +329,10 @@ export const plugin = Plugin.make("arcadekit/View", {
  *   new object each frame and the UI is told only when a field differs.
  * - Where no UI is there, the body is not run at all.
  * - It takes `System.runIf` like any system: a view that is not published
- *   keeps the value it had.
+ *   keeps the value it had. That is what a view that is costly to work
+ *   out, and is worked out now and then, wants. One that belongs to a
+ *   part of the game, and should not be seen when the game is elsewhere,
+ *   says `System.otherwise(View.reset(view))`.
  * - The system is named `View.publish(<the view's name>)`. One per view.
  */
 export const publish = <A, Eff extends Effect.Effect<any, any, any>>(
@@ -351,3 +354,25 @@ export const publish = <A, Eff extends Effect.Effect<any, any, any>>(
     Effect.Services<Eff> | Port
   >;
 };
+
+/**
+ * Publishes a view's first value again, the one it was defined with: what
+ * a UI should see of a view whose part of the game is not there.
+ *
+ *   const ShowHud = View.publish(Hud, readHud).pipe(
+ *     System.runIf(State.is(Phase, "playing")),
+ *     System.otherwise(View.reset(Hud))
+ *   )
+ *
+ * A view that is not published keeps the value it had, so the score of a
+ * level that was left would stay on the screen. Given to
+ * `System.otherwise`, this is what is published in its place while the
+ * system does not run. The UI is told once, as of any value: said again
+ * it is the value the view has. For the stages between ticks, as
+ * publishing is.
+ */
+export const reset = <A>(view: View<A>): Effect.Effect<void, never, Port> =>
+  // Where no UI is there, this publishes to nobody.
+  Effect.map(Effect.service(Port), (port) => {
+    port.publish(view, view.initial);
+  });

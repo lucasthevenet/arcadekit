@@ -18,6 +18,7 @@ import {
   Singleton,
   State,
   System,
+  Ticks,
   View,
 } from "../src/index";
 
@@ -73,8 +74,15 @@ const Rules = Plugin.make("st/Rules", {
 });
 
 describe("app.settled", () => {
-  it("is true of a game with nothing waiting, and stays so however it is ticked", () => {
+  it("is true of a game with nothing waiting, once it has ticked, and stays so however it is ticked", () => {
     const app = run(App.make({ components: [Piece], checkpointEvery: 0 }));
+    // A game that has not ticked yet has not been asked whether it has
+    // anything to do.
+    expect(app.settled).toBe(false);
+    app.frame(0);
+    app.input();
+    expect(app.settled).toBe(false);
+    app.tick(1);
     expect(app.settled).toBe(true);
     app.tick(1);
     app.frame(0);
@@ -197,6 +205,7 @@ describe("app.settled", () => {
 
   it("is false while a fiber is due to run at the next tick", () => {
     const app = run(App.make({ components: [Piece] }));
+    app.tick(1);
     expect(app.settled).toBe(true);
     const ran: string[] = [];
     // Started between two ticks, it gives way at once: the rest of it runs
@@ -365,5 +374,190 @@ describe("a game that ticks when its player moves", () => {
     expect(again.world.hash()).toBe(app.world.hash());
     expect(again.time.tick).toBe(app.time.tick);
     expect(again.world.singleton(Score).moves).toBe(2);
+  });
+});
+
+// --- a system with work of its own -------------------------------------------------
+// A clock that is wound by an action and runs down a tenth of a second a
+// tick. Nothing an app can see is waiting while it runs: no action, no
+// state, no script, no event. The system says so itself.
+const Clock = Singleton.define("st/Clock", { left: Field.i32 }, { left: 0 });
+const Wind = Action.define("st/Wind", Schema.Struct({ ticks: Schema.Int }));
+const wind = Action.handler(Wind, function* ({ ticks }) {
+  (yield* Clock).left = ticks;
+});
+const windAndSay = Action.handler(Wind, function* ({ ticks }) {
+  (yield* Clock).left = ticks;
+  // A handler may say so too: it is the tick's.
+  (yield* Ticks).more();
+});
+let ran = 0;
+const RunDown = System.make("st/RunDown", function* () {
+  ran++;
+  const clock = yield* Clock;
+  if (clock.left > 0) {
+    clock.left -= 1;
+    (yield* Ticks).more();
+  }
+});
+/** The same clock, kept by a system that does not say it has more to do. */
+const RunDownSilently = System.make("st/RunDown", function* () {
+  const clock = yield* Clock;
+  if (clock.left > 0) {
+    clock.left -= 1;
+  }
+});
+
+describe("a system that has more to do", () => {
+  const options = { components: [Clock], handlers: [wind] };
+
+  it("says so with Ticks.more, each tick it has: the app is not settled until a tick in which nobody did", () => {
+    const app = run(App.make({ ...options, systems: [RunDown] }));
+    app.tick(1);
+    expect(app.settled).toBe(true);
+    // The action waits; applied, the clock runs, and each tick asks.
+    app.enqueue(Wind, { ticks: 3 });
+    expect(app.settled).toBe(false);
+    const settled: boolean[] = [];
+    for (let i = 0; i < 5; i++) {
+      app.tick(1);
+      settled.push(app.settled);
+    }
+    // Three ticks with more to do; the fourth finds it run down.
+    expect(settled).toEqual([false, false, false, true, true]);
+    expect(app.world.singleton(Clock).left).toBe(0);
+    // Looking does not change it, and nor do the stages between ticks.
+    app.dispatch(Wind, { ticks: 1 });
+    expect(app.settled).toBe(true);
+    app.tick(1);
+    for (let i = 0; i < 3; i++) {
+      app.frame(0);
+      app.input();
+      expect(app.settled).toBe(false);
+    }
+  });
+
+  it("keeps a game that ticks when it is needed going for as long as it asks, and no longer", () => {
+    ran = 0;
+    const app = run(App.make({ ...options, systems: [RunDown] }));
+    const advance = Driver.fixedStep(app, { hz: 10, ticks: "whenNeeded" });
+    const frames = (count: number): void => {
+      for (let i = 0; i < count; i++) {
+        advance(0.1);
+      }
+    };
+    // A new game runs a tick to be asked in, and the one after it.
+    frames(50);
+    expect(app.time.tick).toBe(2);
+    app.enqueue(Wind, { ticks: 20 });
+    frames(10);
+    // Half way down, and still going: a tick a frame.
+    expect(app.world.singleton(Clock).left).toBe(10);
+    expect(app.time.tick).toBe(12);
+    frames(100);
+    // Twenty ticks of the clock, the one that found it at nothing, and the
+    // one that follows the last; then rest.
+    expect(app.world.singleton(Clock).left).toBe(0);
+    expect(app.time.tick).toBe(2 + 20 + 2);
+    expect(ran).toBe(app.time.tick);
+
+    // The same clock kept by a system that does not say: the action is
+    // applied, one tick follows it, and the game rests with the clock
+    // still wound.
+    const silent = run(App.make({ ...options, systems: [RunDownSilently] }));
+    const step = Driver.fixedStep(silent, { hz: 10, ticks: "whenNeeded" });
+    step(0.1);
+    step(0.1);
+    silent.enqueue(Wind, { ticks: 20 });
+    for (let i = 0; i < 100; i++) {
+      step(0.1);
+    }
+    expect(silent.world.singleton(Clock).left).toBe(18);
+  });
+
+  it("is heard from a handler and from a script, and changes nothing of a game that ticks in real time", () => {
+    const app = run(
+      App.make({ components: [Clock], handlers: [windAndSay], systems: [] })
+    );
+    app.tick(1);
+    expect(app.settled).toBe(true);
+    // Dispatched between two ticks, the handler has run: the game is
+    // asked for a tick though nothing waits.
+    app.dispatch(Wind, { ticks: 1 });
+    expect(app.settled).toBe(false);
+    app.tick(1);
+    expect(app.settled).toBe(true);
+    // A script: asked in the tick it runs in.
+    app.spawnScript(
+      Effect.gen(function* () {
+        yield* (yield* Script).nextTick;
+        (yield* Ticks).more();
+      })
+    );
+    // It waits for the next tick, which is itself a thing to tick for.
+    expect(app.settled).toBe(false);
+    app.tick(1);
+    // Woken in that tick, it asked: one more.
+    expect(app.settled).toBe(false);
+    app.tick(1);
+    expect(app.settled).toBe(true);
+    // In real time every tick runs whoever asks: the same game, tick for
+    // tick, as one whose system says nothing.
+    const said = run(
+      App.make({ ...options, systems: [RunDown], checkpointEvery: 1 })
+    );
+    const unsaid = run(
+      App.make({ ...options, systems: [RunDownSilently], checkpointEvery: 1 })
+    );
+    for (const one of [said, unsaid]) {
+      one.enqueue(Wind, { ticks: 4 });
+      Driver.fixedStep(one, { hz: 10 })(1);
+    }
+    expect(said.time.tick).toBe(5);
+    expect(said.world.hash()).toBe(unsaid.world.hash());
+    expect(said.actionLog).toEqual(unsaid.actionLog);
+  });
+
+  it("is asked again of a game that was loaded: the first tick of an app is always run", () => {
+    const made = App.make({ ...options, systems: [RunDown] });
+    const app = run(made);
+    app.enqueue(Wind, { ticks: 6 });
+    app.tick(1);
+    app.tick(1);
+    expect(app.world.singleton(Clock).left).toBe(4);
+    const save = app.save();
+    expect(save._tag).toBe("Success");
+    if (save._tag !== "Success") {
+      return;
+    }
+    // Loaded in the middle of the clock's run. What the system asked is
+    // not in the save; the first tick asks it afresh.
+    const loaded = run(
+      App.load(save.value, { ...options, systems: [RunDown] })
+    );
+    expect(loaded.settled).toBe(false);
+    const advance = Driver.fixedStep(loaded, { hz: 10, ticks: "whenNeeded" });
+    for (let i = 0; i < 50; i++) {
+      advance(0.1);
+    }
+    expect(loaded.world.singleton(Clock).left).toBe(0);
+    expect(loaded.time.tick).toBe(2 + 4 + 2);
+  });
+
+  it("is the tick's to say: between ticks it throws, and says where it belongs", () => {
+    for (const stage of ["frame", "input", "preFrame", "postFrame"] as const) {
+      const Pushy = System.make("st/Pushy", function* () {
+        (yield* Ticks).more();
+      }).pipe(System.inStage(stage));
+      const app = run(App.make({ systems: [Pushy] }));
+      app.tick(1, { input: false });
+      const between = (): void =>
+        stage === "input" ? app.input() : app.frame(0);
+      expect(between, stage).toThrow(
+        "Ticks.more was called in the frame stage or the input stage"
+      );
+      // And nothing came of it.
+      expect(app.settled, stage).toBe(true);
+    }
   });
 });

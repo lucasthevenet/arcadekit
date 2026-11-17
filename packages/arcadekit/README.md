@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 658 tests, 83 of them of @arcadekit/three
+pnpm test                          # 665 tests, 83 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -265,7 +265,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 
 A string that identifies something at run time carries the name of the feature it belongs to.
 
-- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
+- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Ticks"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
 - The bridge to a UI is `"arcadekit/View.Bridge"` and an app's end of it `"arcadekit/View.Port"`; the plugin is `"arcadekit/View"`, its system `"arcadekit/View.Send"`, and the system that publishes a view is named after it, `"View.publish(game/Hud)"`.
 - Where sound goes is `"arcadekit/Sound.Output"` and an app's player of cues `"arcadekit/Sound.Player"`; the plugin is `"arcadekit/Sound"`.
 - An app's assets are kept under `"arcadekit/Assets.Store"` and fetched through `"arcadekit/Assets.Loader"`; the plugin is `"arcadekit/Assets"`, and the system that keeps a bundle is named after it, `"Assets.during(game/Forest)"`.
@@ -496,10 +496,12 @@ A game of turns, a puzzle or a menu has nothing to do between two moves, and a g
 - The [input stage](#input) runs every frame, so a key, a button of the UI's or a message is heard in the frame it comes in, and the tick it asks for runs in that frame.
 - It ticks while the app is not settled, at `hz` like any game, and once more after, for the systems that react a tick late to what a system listed after them did. Then it rests: no tick runs and the game's time stands still.
 - `app.settled` says whether anything is waiting: an action to apply, a state to enter, a script that waits for the next tick or sleeps, a fiber that is due, or an event that some system has not had its chance at. Looking changes nothing.
+- A system that has work of its own says so. One that does something every tick for as long as a condition of its own holds, a clock that runs down, a body in flight, is none of those: it asks for the next tick itself, `(yield* Ticks).more()`, each tick it has more to do. The tick in which nobody asks is the last. A handler and a script may ask too; between ticks it throws, since what draws the game does not decide when it ticks; and under a driver that ticks in real time it does nothing.
+- An app that has just been made, or loaded from a save, is not settled: it runs one tick, in which every system can ask, and the one that follows it, before it rests. What was asked is not in a save.
 - A script that sleeps keeps the game ticking for as long as it sleeps, at `hz`, so what takes the game's time (a piece sliding for three tenths of a second) takes it. A script that should let the game rest waits for an event.
 - The frame stage runs every frame, at rest too. It is told the frame is all the way to the last tick, a `Frame.alpha` of 1: what draws between two ticks draws the game where it is.
 - Resting is no part of the game. Its log holds the actions and the ticks they were applied in, and a replay given how many ticks it ran, `app.time.tick`, runs them one after the other and ends on the same hash.
-- What is not counted: a system that does something every tick whether or not anything is waiting. A game that has one runs in real time, which is what leaving `ticks` out is.
+- What is not counted: a system that does something every tick and does not say so. Its work stops when the game rests, and nothing tells it apart from one that had nothing to do.
 - A frame of a game at rest costs 5.3 µs with the picture of the devices, a state and a view: the devices read, the app asked, and the frame stage.
 
 ### Drawing with Three.js
@@ -672,7 +674,7 @@ A game's menus and its heads-up display are built with whatever the game chooses
 - Two values are compared as data, field by field and however deep. So a body returns a new object each frame, and the UI is told only when something in it differs: a value that did not change costs the UI nothing, not a call.
 - It reads what a frame system can (singletons, states, queries, events, assets) and cannot change the game. In the tick, publishing throws.
 - Several ticks and one frame are one publication, of the latest value.
-- It takes `System.runIf`: a view that is not published keeps the value it had. `System.otherwise` says what a UI should see then, if that is not it.
+- It takes `System.runIf`: a view that is not published keeps the value it had, which is what a view that is costly to work out, and is worked out now and then, wants. One that belongs to a part of the game, and should not be seen when the game is elsewhere, says so: `System.otherwise(View.reset(Hud))` publishes the value the view was defined with while its system does not run.
 - A frame system of the game's own publishes through `(yield* View.Port).publish(view, value)`, which says whether the value was news.
 - Where no UI is there, on a server, in a replay, in most tests, no body runs at all.
 
@@ -732,9 +734,9 @@ A sound is a named cue, and it is played because something happened: the simulat
 
 - `Sound.cues(name, ...lines)` makes a system of the [frame stage](#the-tick-and-the-frame). Each frame it plays what the events since the last frame sound like. It hears every event once, however many ticks ran in between, as any frame system does.
 - `Sound.on(event, cue)` is a line: a cue's name, a name with a `volume` and a `rate`, or a function of the event's payload that gives either, or nothing. Several lines may be of one event, and each hears it.
-- A cue that several events of one frame ask for is played once, as the loudest of them asked: forty coins caught in one tick are one sound, not forty on top of each other.
-- Cues are played in the order of their lines, the lines of one event together.
-- `Sound.Player` is the service that plays, which `Sound.plugin` provides. A frame system plays through it for a sound no event stands for: `(yield* Sound.Player).play("click", { volume: 0.5 })`. In the tick it throws and says what to do instead, and an action's handler that plays dies of the same.
+- A cue that several events of one frame ask for is played once, as the loudest of them asked: forty coins caught in one tick are one sound, not forty on top of each other. That is the player's doing and not the system's, so it holds across systems: two that play the same cue in a frame, a plugin's and the game's, make one sound of it.
+- What a frame's systems ask to hear is played when they have all run, by a system of [`"postFrame"`](#the-tick-and-the-frame) that `Sound.plugin` brings, in the order it was first asked for.
+- `Sound.Player` is the service that plays, which `Sound.plugin` provides. A frame system plays through it for a sound no event stands for: `(yield* Sound.Player).play("click", { volume: 0.5 })`. It is heard with the rest of its frame, and is one sound with whatever else asked for the same cue. Asked for in the input stage, it is heard with the frame that follows. In the tick it throws and says what to do instead, and an action's handler that plays dies of the same.
 - Sound follows real time and is no part of the game. A game that is heard has the same hash, log and save as one that is not, and a replay or a server, which run no frame stage, play nothing.
 - What a refused action emitted is taken back with the rest, so it is never heard.
 - `Sound.Output` is where sound goes: a `Context.Reference` whose default is nowhere, and there the cues' system reads nothing. `Sound.layer(output)` provides one, and `Sound.makeRecorder()` is one that plays nothing and notes what it was asked, for a test: its cues in `played`, what each channel was told in `scored`, and what each is playing now in `playing`.
@@ -1202,9 +1204,9 @@ Sound, with one system that plays cues for two kinds of event, or one that keeps
 
 | Variant                                                   | Cost    |
 | --------------------------------------------------------- | ------- |
-| `app.frame()`: cues, nothing happened                     | 1.82 µs |
-| `app.frame()`: cues, one event, and its cue is played     | 2.01 µs |
-| `app.frame()`: music that goes on as it was, nothing told | 1.52 µs |
+| `app.frame()`: cues, nothing happened                     | 1.43 µs |
+| `app.frame()`: cues, one event, and its cue is played     | 1.63 µs |
+| `app.frame()`: music that goes on as it was, nothing told | 1.24 µs |
 
 Entities coming and going in the same world:
 
@@ -1260,7 +1262,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A cue is played once and left to end: it cannot be stopped, and nothing is heard from where it is. A track that plays once says nothing when it has ended: the body that asked for it cannot tell, and what follows it is for the game to say.
 - A streamed track that goes round may be heard to join where it does: the page's own player is not exact about it. A short piece that has to go round without a seam is given by its URL and decoded. A stream is fetched by the page and not through `Assets.Loader`, so a test plays `Sound.clip(name)` in its place.
 - A channel fades in a straight line, from one track to the next in the same time. Two tracks are not kept in step, a track does not start where the last one was, and nothing is timed to a beat.
-- A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.
+- A cue is one sound a frame, whatever speed each asked for it at: the loudest's. Two sounds of one file at once, a chord, are two names for it.
 - A page's audio sleeps while the page is hidden, always, as its frame loop does. A game that is to be heard in the background cannot say so.
 - The first sound a page can make is the one its user's first key or press sets off. Nothing is heard before that.
 - A view is worked out and compared whole, every frame a UI is there. A game with a view that is costly to work out says when it is worth it with `System.runIf`.
@@ -1278,7 +1280,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
 - Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
 - A tick reads the devices unless it is told not to. What runs a game again from its log by hand, with `dispatchByName` and `tick`, says `{ input: false }` as `App.replay` does, or the machine's own keys join in.
-- A game that ticks when it is needed rests when nothing is waiting, and what is waiting is what the app can see: actions, states, scripts and events. A system that reacts to a change through a change query, listed before the system that makes the change, reacts a tick late, and the one tick that follows the last is all it is given; two such systems in a row are a tick short. Order them with `System.after`.
+- A game that ticks when it is needed rests when nothing is waiting, and what is waiting is what the app can see, actions, states, scripts and events, and what a system said with `Ticks.more`. A system that has work every tick and does not say so stops with the game. A system that reacts to a change through a change query, listed before the system that makes the change, reacts a tick late, and the one tick that follows the last is all it is given; two such systems in a row are a tick short. Order them with `System.after`, or have the one that changed something ask for a tick.
 - The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
 - The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and `arcadekit/Browser` against stand-ins for `requestAnimationFrame`, the document and the window.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
