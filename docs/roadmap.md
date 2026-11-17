@@ -54,7 +54,24 @@ Done so far: accessors without code generation. What `each` hands out is made of
 
 - **Benchmarks in CI.** Built, but for a step that is a person's. `pnpm --filter arcadekit bench:compare <base checkout>` measures this checkout's storage core against another's, variant by variant and turn and turn about on one machine, and fails if one is slower by more than the noise, unless a commit says it meant to; the [README](../packages/arcadekit/README.md#benchmarks-in-ci) says how it decides. The workflow that runs it on a pull request is written, `packages/arcadekit/bench/ci-workflow.yml`, and has to be moved to `.github/workflows/bench.yml` by someone whose credentials may change workflows. Done when it has run on a pull request there.
 
-- **Parallel systems.** Workers over shared memory, for systems whose declared access does not overlap. Done when it is faster on a real workload, and still deterministic.
+- **Parallel systems.** Workers over shared memory, for systems whose declared access does not overlap. Done when it is faster on a real workload, and still deterministic. Measured, and not built: it waits on decisions below.
+
+  `pnpm --filter arcadekit bench:parallel` is the smallest thing that could be called this, and no part of the package: columns in shared memory, a loop that is a plain function every thread has imported, a table's rows shared out between three workers and the main thread, which waits for them before it goes on. On four cores of a shared machine, the best of three:
+
+  | Loop | One thread | Four, asleep between jobs | Four, spinning |
+  | --- | --: | --: | --: |
+  | `pos += vel * dt`, 1,000 entities | 2.8 µs | 69.7 µs | 2.5 µs |
+  | The same, 100,000 | 263 µs | 180 µs | 69 µs |
+  | A flock, each steering by its eight neighbours, 10,000 | 370 µs | 253 µs | 178 µs |
+  | The same, 100,000 | 3.7 ms | 2.1 ms | 1.3 ms |
+  | The same, 400,000 | 14.8 ms | 8.0 ms | 6.7 ms |
+
+  Every line leaves the same numbers behind however the rows are shared out, since the loops write nothing another thread reads. Shared memory costs a loop on one thread nothing: 261 µs against 263.
+
+  So there is something to gain, two to four times, where a tick is over its budget: a flock of 400,000 does not fit in a sixtieth of a second on one thread and does on four. There is nothing to gain for the 100,000 entities of the package's own benchmark, which move in a quarter of a millisecond, and a loss wherever workers are left to sleep and the loop is short: waking one takes longer than a thousand entities take to move. That is the need, and it is a game larger than any the package has been tried on.
+
+  What it stands on is there: a system says what it reads and writes, and is held to it. What it waits on is what a worker runs. A worker has no closure of the main thread's, so the loop it runs is a function of a module it imported itself, given columns and numbers: a raw loop over columns, which is the `eachChunk` path, and three of the decisions below are about exactly that. Building it first would have settled them by accident.
+
 - **Wider entity ids.** A handle is 22 bits of index and 10 of generation; a slot reused 1,024 times can alias an old handle. Done when that cannot happen in a session of realistic length.
 
 ## 8. Seeing what is going on
@@ -126,6 +143,13 @@ Not work yet; each needs an answer before the item that depends on it.
 - **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
 - **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.
+
+Parallel systems wait on all three: a loop that runs on a worker is a raw loop over columns, it has to say what a sparse component is to it, and it has to be in a module that a worker's entry imports, which is a question of where a game's files are. They bring four more, which `pnpm --filter arcadekit bench:parallel` was written to inform:
+
+- **What a worker runs.** A function of a module the worker imported, given columns, a range of rows and numbers, and nothing it closed over. Whether that is a new kind of system, or the loop of an ordinary one given a name, and how a worker comes to import it: a worker is made of a file, and which file is the game's bundler's to say.
+- **Whether workers sleep.** One that sleeps between jobs takes 25 µs to 70 µs to wake, which is more than most loops take; one that spins is there at once and burns a core, on a phone as on a desk. A page's main thread may not sleep at all, and spins while it waits.
+- **Where shared memory is not to be had.** A page gets it only with the headers that isolate it from other origins, which are its host's to send. A game served without them runs on one thread, and has to be the same game.
+- **What cannot be shared.** A field that holds an object, `json`, `ref` or `transient`, is not in shared memory. A worker's commands, the events it emits and the numbers it draws have to come back to the main thread and be applied in the order the systems were listed in, or a tick is no longer the same from the same inputs.
 
 Decided, and no longer waiting: no UI library. The previous version drew its UI with Foldkit; this one does not depend on it, or on any other. Three.js is different, because it does a job the package would otherwise have to do itself. A game's UI reaches the game through the view bridge of milestone 5, with whatever library it likes.
 

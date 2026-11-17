@@ -186,7 +186,8 @@
     "relay:check": "tsx examples/relay-check.ts",
     "relay:cloudflare": "cd examples/relay-cloudflare && alchemy dev",
     "bench": "tsx bench/accessors.ts",
-    "bench:compare": "tsx bench/compare.ts"
+    "bench:compare": "tsx bench/compare.ts",
+    "bench:parallel": "tsx bench/parallel/run.ts"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.87",

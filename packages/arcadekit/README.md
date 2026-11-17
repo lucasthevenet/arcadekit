@@ -1382,6 +1382,7 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `bench/core.ts` | The storage core's variants of it, which import `arcadekit/ecs` and nothing else |
 | `bench/compare.ts`, `bench/verdict.ts` | The check of a pull request: those variants for two checkouts, turn and turn about, and the rule that says whether one is slower |
 | `bench/ci-workflow.yml` | The workflow that runs that check on a pull request, to be moved to `.github/workflows/bench.yml` |
+| `bench/parallel/` | A measurement, and no part of the package: a loop's rows shared between workers and the main thread over shared memory, `pnpm --filter arcadekit bench:parallel` |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/relay.ts` | A relay under Node: `Relay.make()` behind a WebSocket server (`ws`, a dev dependency for this and for the relay's tests) |
 | `examples/relay-cloudflare/` | The relay on Cloudflare, declared with Alchemy: a Worker, and a Durable Object per room that reads who is connected back from its sockets |
@@ -1656,4 +1657,4 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.
 - The workflow that compares benchmarks on a pull request is not in `.github/workflows/` yet: see [Benchmarks in CI](#benchmarks-in-ci). The check is of the storage core alone, and lets through a slowdown of less than a twentieth.
 - Entity generations are 10 bits: a handle kept across 1,024 reuses of the same slot can alias a newer entity.
-- Systems run in sequence on one thread. No parallelism.
+- Systems run in sequence on one thread. Running them side by side on workers was measured and not built: `pnpm --filter arcadekit bench:parallel` shares a loop's rows between four threads over shared memory, and a flock of 100,000 goes from 3.7 ms to 1.3 ms, where the 100,000 entities of the benchmark above move in a quarter of a millisecond on one. The [roadmap](../../docs/roadmap.md#7-speed-and-scale) has the numbers and what it waits on.
