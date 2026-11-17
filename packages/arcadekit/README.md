@@ -15,12 +15,13 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 813 tests, 93 of them of @arcadekit/three
+pnpm test                          # 831 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
 pnpm --filter arcadekit page       # a game in a page, at http://localhost:5173
 pnpm --filter arcadekit bench
+pnpm --filter arcadekit bench:compare ../base   # is this checkout slower than that one?
 ```
 
 ## What it looks like
@@ -1308,8 +1309,11 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, relay, origin, policy and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, a world that is restored compared with a new one that loaded the same snapshot, and a game played in a process that may not make code from text. `test/peers.ts` is the game and the network those of several peers share, and `test/policy-game.ts` the game of the last |
-| `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, relay, origin, policy, benchmark verdict and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, a world that is restored compared with a new one that loaded the same snapshot, and a game played in a process that may not make code from text. `test/peers.ts` is the game and the network those of several peers share, and `test/policy-game.ts` the game of the last |
+| `bench/accessors.ts` | The benchmark: every line of the tables below, each variant in a process of its own |
+| `bench/core.ts` | The storage core's variants of it, which import `arcadekit/ecs` and nothing else |
+| `bench/compare.ts`, `bench/verdict.ts` | The check of a pull request: those variants for two checkouts, turn and turn about, and the rule that says whether one is slower |
+| `bench/ci-workflow.yml` | The workflow that runs that check on a pull request, to be moved to `.github/workflows/bench.yml` |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/relay.ts` | A relay under Node: `Relay.make()` behind a WebSocket server (`ws`, a dev dependency for this and for the relay's tests) |
 | `examples/relay-cloudflare/` | The relay on Cloudflare, declared with Alchemy: a Worker, and a Durable Object per room that reads who is connected back from its sockets |
@@ -1480,6 +1484,32 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 - Predicting a tick costs a capture, 0.56 ms for 100,000 entities and 6 µs for a thousand, and only for a tick the session is not sure of. Being wrong costs a rewind, 1.4 ms for 100,000, and the ticks since, run again. `world.restore` did not change what the lines above cost: `eachChunk` 2.65 ns before and 2.70 after, `each` 6.61 and 6.80, a snapshot 5.26 and 5.57, a load 15.37 and 15.08, a tick of ten idle systems 5.49 µs and 5.48, which is the machine's noise.
 - Hashing a world costs about two and a half raw passes over it: 1.4 ns per 32-bit field per entity, and about four times that for a field of a sparse component, whose members are hashed one by one so that their order does not matter.
 
+### Benchmarks in CI
+
+```sh
+git worktree add ../base origin/next
+(cd ../base && pnpm install --frozen-lockfile)
+pnpm --filter arcadekit bench:compare "$PWD/../base"
+```
+
+`bench:compare` says whether this checkout's storage core is slower than another's by more than the noise, and fails if it is. The `Benchmarks` workflow runs it on a pull request that touches the storage core, against what the pull request would be merged into.
+
+**The workflow is written and not in place.** It is `bench/ci-workflow.yml`, and runs once it is moved to `.github/workflows/bench.yml`, which takes credentials that may change workflows; the session that wrote it had none. Until then the check is run by hand, as above.
+
+- It runs the variants of `bench/core.ts`, which are the lines above that go through `arcadekit/ecs` alone: the loops, the filters, the hash, a snapshot and a load, change queries, and entities coming and going. Both builds run this checkout's copy of that file, so the two are asked the same thing; a variant the base cannot run is new.
+- Each variant is run up to fifteen times by each build, turn and turn about, each run a process of its own. A run is now and then half as slow again as the rest, one in six on the machine this was written on, and never much faster, so a build is known by its fastest run.
+- A variant is slower when two things hold. Its fastest run is more than 5% slower than the base's: less than that is what moving code about does to a loop that was not touched. And so many of the base's runs were faster than every run of its own that two builds alike would look so less than once in a thousand comparisons, which with fifteen runs each is nine of the fifteen. The second is the noise, counted as the check goes and with nothing assumed about its shape: where runs are far apart, a difference has to be plainer to count.
+- A variant whose two builds are within 2.5% of each other after six runs each is not run again, which is most variants of most changes: the whole check took five minutes for two builds that were the same, and eight for two of which eight variants differed.
+- A change that slows a variant on purpose says so, in the message of one of its commits, and the check then reports the variant and does not fail on it:
+
+  ```
+  Bench-slower: each, eachMany
+  ```
+
+  It travels with the commit, so nothing is left to take out afterwards. The list may go on over the lines that follow, indented.
+
+- What it finds: on a machine as noisy as that one, a slowdown of 15% nine times in ten. The first time it was run it found one that the full benchmark had shown and that had been put down to the machine: a change query's visit of one entity, a fifth slower. What it does not: one of less than 5%, or several such one after the other; and anything outside the storage core, a tick or an action's dispatch, which `pnpm --filter arcadekit bench` reports and nothing compares.
+
 ## Raw columns and strict indexing
 
 This repository compiles with `noUncheckedIndexedAccess`, under which reading `pos.x[i]` gives `number | undefined`. A raw-column loop therefore needs an assertion on each read:
@@ -1553,5 +1583,6 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.
 - Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.
+- The workflow that compares benchmarks on a pull request is not in `.github/workflows/` yet: see [Benchmarks in CI](#benchmarks-in-ci). The check is of the storage core alone, and lets through a slowdown of less than a twentieth.
 - Entity generations are 10 bits: a handle kept across 1,024 reuses of the same slot can alias a newer entity.
 - Systems run in sequence on one thread. No parallelism.
