@@ -63,9 +63,15 @@ export interface Delivery {
 
 /**
  * The relay will not have it: a peer that may not come in, or something a
- * member sent that it will not pass on. `reason` says which, `status` is
- * the HTTP status to answer a request to connect with, and `code` the
- * WebSocket close code to close a socket with.
+ * member sent that it will not pass on.
+ *
+ * A host closes the socket with `code` and `reason`:
+ * `socket.close(refused.code, refused.reason)`. The reason is a few words,
+ * since a close frame carries 123 bytes at most, and it is what the peer's
+ * transport is told. `message` says more, with the names, for a log or for
+ * the body of an HTTP answer with `status`. A page is told nothing of a
+ * request to connect that was turned away with a status, so a host that
+ * wants the peer to know why accepts the socket and closes it.
  */
 export class Refused extends Data.TaggedError("RelayRefused")<{
   readonly reason:
@@ -290,7 +296,7 @@ export interface Server {
  *   const relay = Relay.make()
  *   server.on("connection", (socket, request) => {
  *     const connection = relay.connect(request.url, (text) => socket.send(text))
- *     if (Exit.isFailure(connection)) return socket.close(1008)
+ *     if (Exit.isFailure(connection)) return socket.close(1008, "refused")
  *     socket.on("message", (data) => connection.value.receive(data))
  *     socket.on("close", () => connection.value.close())
  *   })

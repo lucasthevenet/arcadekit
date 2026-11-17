@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 803 tests, 93 of them of @arcadekit/three
+pnpm test                          # 804 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -1210,7 +1210,7 @@ Peers on different machines meet at a relay: each opens a WebSocket to it, at an
 
 - `Relay.join(url, present, options)` says whether a peer may come in, from the address it asked for and whoever is in the room already, and gives its `Member`, `{ room, peer }`, for the host to keep with the connection. It is refused when the address names no room or no peer, when the name is taken in that room, when the room is full (`maxPeers`, 8 unless told), or when the room lets in only `peers` this is not one of.
 - `Relay.forward(member, data, present, options)` says what to pass on of something a member sent: one text for every other member of its room. What is passed on is the message as the relay read it, written out again, so nothing rides along. It is refused when it is not a message, when it is longer than `maxLength` (65,536 characters unless told), or when it says it is from anyone but the member that sent it.
-- A refusal is a `Relay.Refused`: its `reason`, a `message` that names the peer and the room, the HTTP `status` to answer a request to connect with, and the WebSocket close `code` to close a socket with. `Transport.layerWebSocket` hands that reason to the peer it was closed on.
+- A refusal is a `Relay.Refused`. A host closes the socket with it, `socket.close(refused.code, refused.reason)`: the reason is a few words, `"name taken"`, since a close frame carries 123 bytes at most, and `Transport.layerWebSocket` hands it to the peer it was closed on. Its `message` says more, with the names, for a log, and `status` is the HTTP status for a host that turns the request away instead; a page is told nothing of that, so a host that wants the peer to know why accepts the socket and closes it.
 - **The relay vouches for the sender.** A peer says who it is once, when it connects, and is held to it: a message in another's name is refused and the socket closed. So the `from` [a handler is told](#actions-the-rules-layer) is the peer the relay let in under that name.
 - Whether to let that peer in under that name is the host's to decide before it calls `join`, with whatever the request carries: a token, a session, a list of players. The relay asks nothing of it.
 - `present` is whoever is connected, as the host knows them. The functions keep nothing between two calls, which is what a host that is put to sleep between two messages needs: on Cloudflare a Durable Object reads its members back from its sockets' attachments, and `Relay.Member` is the schema to keep one with; behind an API gateway they are the rows of a table of connections.

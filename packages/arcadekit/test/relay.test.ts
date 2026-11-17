@@ -327,7 +327,7 @@ const serve = async (options?: Relay.Options) => {
     );
     if (Exit.isFailure(connection)) {
       const refused = Cause.squash(connection.cause) as Relay.Refused;
-      socket.close(refused.code, refused.message);
+      socket.close(refused.code, refused.reason);
       return;
     }
     const { member } = connection.value;
@@ -338,7 +338,7 @@ const serve = async (options?: Relay.Options) => {
       if (Exit.isFailure(received)) {
         const refused = Cause.squash(received.cause) as Relay.Refused;
         closes.push({ peer: member.peer, code: refused.code });
-        socket.close(refused.code, refused.message);
+        socket.close(refused.code, refused.reason);
       }
     });
     socket.on("close", () => connection.value.close());
@@ -533,8 +533,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             new Transport.Closed({
               url: Relay.address(served.url, ada),
               code: 1008,
-              reason:
-                '"ada" sent a message that says it is from "grace". A peer speaks for itself.',
+              reason: "speaks for another",
             })
           );
           expect(() => liar.send(message("ada", 1))).toThrow(Transport.Closed);
@@ -568,10 +567,67 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           );
           expect(thrown).toBeInstanceOf(Transport.Closed);
           expect((thrown as Transport.Closed).message).toBe(
-            `The transport's socket to ${Relay.address(served.url, ada)} is closed (code 1008: A peer named "ada" is in the room "blue" already.). Every message has to arrive, so the game cannot go on over it.`
+            `The transport's socket to ${Relay.address(served.url, ada)} is closed (code 1008: name taken). Every message has to arrive, so the game cannot go on over it.`
           );
           // The first is none the worse.
           expect(first.receive()).toEqual([]);
+        })
+      )
+    );
+  });
+
+  it("is told why in the few words a close frame has room for, however long the names", async () => {
+    const served = await serve();
+    stop = served.stop;
+    // Every reason fits: a close frame carries 123 bytes at most, and a
+    // server that is handed more throws.
+    const reasons: Relay.Refused["reason"][] = [
+      "not an address",
+      "name taken",
+      "room full",
+      "not a peer",
+      "not a message",
+      "speaks for another",
+      "too long",
+    ];
+    for (const reason of reasons) {
+      expect(new TextEncoder().encode(reason).length).toBeLessThanOrEqual(123);
+    }
+    const long = { room: "r".repeat(64), peer: "p".repeat(64) };
+    expect(
+      refusal(Relay.join(Relay.address("/rooms", long), [long])).message.length
+    ).toBeGreaterThan(123);
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* open(Relay.address(served.url, long));
+          yield* Effect.promise(() =>
+            until(() => served.relay.rooms === 1, "the first is in")
+          );
+          const taken = yield* open(Relay.address(served.url, long));
+          const nowhere = yield* open(`${served.url}/blue`);
+          const closedWith = (transport: Transport.Shape) =>
+            Effect.promise(async () => {
+              let thrown: unknown;
+              await until(() => {
+                try {
+                  transport.receive();
+                  return false;
+                } catch (error) {
+                  thrown = error;
+                  return true;
+                }
+              }, "it was closed");
+              return thrown as Transport.Closed;
+            });
+          expect((yield* closedWith(taken)).reason).toBe("name taken");
+          expect((yield* closedWith(nowhere)).reason).toBe("not an address");
+          // The server is still there for whoever comes next.
+          const next = yield* open(Relay.address(served.url, ada));
+          yield* Effect.promise(() =>
+            until(() => served.relay.rooms === 2, "the next is in")
+          );
+          expect(next.receive()).toEqual([]);
         })
       )
     );

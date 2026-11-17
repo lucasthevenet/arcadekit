@@ -23,7 +23,7 @@ server.on("connection", (socket, request) => {
   if (Exit.isFailure(connection)) {
     const refused = Cause.squash(connection.cause) as Relay.Refused;
     console.log(`refused: ${refused.message}`);
-    socket.close(refused.code, refused.message);
+    socket.close(refused.code, refused.reason);
     return;
   }
   const { member } = connection.value;
@@ -35,7 +35,7 @@ server.on("connection", (socket, request) => {
     if (Exit.isFailure(received)) {
       const refused = Cause.squash(received.cause) as Relay.Refused;
       console.log(`closed ${member.peer}: ${refused.message}`);
-      socket.close(refused.code, refused.message);
+      socket.close(refused.code, refused.reason);
     }
   });
   socket.on("close", () => {
