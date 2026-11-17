@@ -31,7 +31,7 @@
 import type { Effect, Layer } from "effect";
 
 import type * as Action from "./Action";
-import type { ComponentDef } from "./ecs/component";
+import type { Listed } from "./ecs/component";
 import type { BuiltIn } from "./Services";
 import type * as System from "./System";
 
@@ -59,7 +59,7 @@ export interface Plugin<
   readonly handlers: readonly AnyHandler[];
   readonly layer: Layer.Layer<never, any, any> | undefined;
   readonly setup: Effect.Effect<void, any, any> | undefined;
-  readonly components: readonly ComponentDef<any>[];
+  readonly components: readonly Listed[];
   readonly scripts: readonly Effect.Effect<unknown, any, any>[];
   /** The plugins this one depends on. */
   readonly plugins: readonly Any[];
@@ -127,11 +127,11 @@ export const make = <
      */
     readonly setup?: SU;
     /**
-     * The components this plugin's feature stores. A world knows a component
-     * by its name, so loading a save needs every component the save names
+     * The components and singletons this plugin's feature stores. A world
+     * knows them by name, so loading a save needs every one the save names
      * to be listed by some plugin, or by the app.
      */
-    readonly components?: readonly ComponentDef<any>[];
+    readonly components?: readonly Listed[];
     /**
      * Long-running scripts, started when the app starts: after `setup` on a
      * fresh start, and again from their beginning when the app is loaded

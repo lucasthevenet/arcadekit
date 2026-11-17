@@ -150,15 +150,40 @@ export const decode = <P>(
 
 const EMPTY: readonly never[] = Object.freeze([]);
 
+/**
+ * What the name of a reader starts with when it is a system of the frame
+ * stage, or of the input stage. Such a reader is not part of the
+ * simulation: it cannot emit, it is not saved, and events are kept for it
+ * until the frame stage next runs.
+ */
+export const FRAME_READER = "frame:";
+
+/**
+ * How many ticks events are kept for a stage between ticks that has
+ * stopped running, or never ran, before the app takes it to be gone: ten
+ * seconds at 60 Hz. A replay and a server run neither stage.
+ */
+const FRAME_PATIENCE = 600;
+
 /** The part of a channel that does not depend on its payload type. */
 interface ChannelState {
   /** Sequence number of the oldest event still kept. Sequence numbers never repeat. */
   offset: number;
+  /**
+   * Sequence number of the oldest event the simulation can still read. It
+   * is `offset` unless older events are being kept for the frame stage,
+   * which the simulation must not be able to tell.
+   */
+  tickOffset: number;
+  /** One past the newest event the frame stage has had its chance to read. */
+  frameSeen: number;
+  /** One past the newest event the input stage has had its chance to read. */
+  inputSeen: number;
   /** Sequence number of the first event emitted once the current tick's systems began. */
   tickStart: number;
   /** One past the sequence number of the newest event. */
   readonly end: number;
-  /** Number of events currently kept. */
+  /** Number of events the simulation can still read. */
   readonly size: number;
   /** Suspended `wait`s. Each returns true once it has resumed its fiber. */
   readonly waiters: Set<() => boolean>;
@@ -168,24 +193,40 @@ interface ChannelState {
   truncate(end: number): void;
 }
 
+/**
+ * The reads made while an action's handler runs, for a refusal to take
+ * back: each handle that moved, and where it was. One for the whole bus.
+ */
+interface ReadLog {
+  /** True from `mark` until `rollback` or `commit`. */
+  open: boolean;
+  readonly moved: { readonly handle: Handle<any>; readonly cursor: number }[];
+}
+
 class Channel<P> implements ChannelState {
   readonly def: EventDef<P>;
+  readonly reads: ReadLog;
   buffer: P[] = [];
   offset = 0;
+  tickOffset = 0;
+  frameSeen = 0;
+  inputSeen = 0;
   tickStart = 0;
   readonly readers: Map<string, Handle<P>> = new Map();
   readonly waiters: Set<() => boolean> = new Set();
 
-  constructor(def: EventDef<P>) {
+  constructor(def: EventDef<P>, reads: ReadLog) {
     this.def = def;
+    this.reads = reads;
   }
 
   get end(): number {
     return this.offset + this.buffer.length;
   }
 
+  /** How many events the simulation can still read. */
   get size(): number {
-    return this.buffer.length;
+    return this.end - this.tickOffset;
   }
 
   dropOldest(count: number): void {
@@ -207,21 +248,45 @@ class Handle<P> implements EventHandle<P> {
     return this.cursor;
   }
 
-  constructor(channel: Channel<P>, cursor: number) {
-    this.channel = channel;
+  /** Puts the handle back where it was before a read. */
+  rewind(cursor: number): void {
     this.cursor = cursor;
   }
 
-  readonly emit = (payload: P): void => {
-    this.channel.buffer.push(payload);
-  };
+  /** Whether this is a handle of the frame stage: it reads, and cannot emit. */
+  private readonly forFrame: boolean;
+  readonly emit: (payload: P) => void;
+
+  constructor(channel: Channel<P>, cursor: number, forFrame = false) {
+    this.channel = channel;
+    this.cursor = cursor;
+    this.forFrame = forFrame;
+    // Decided once, so that emitting stays one call with no check in it.
+    this.emit = forFrame
+      ? () => {
+          throw new Error(
+            `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
+          );
+        }
+      : (payload) => {
+          channel.buffer.push(payload);
+        };
+  }
 
   readonly read = (): readonly P[] => {
     const { channel } = this;
     const { end } = channel;
     // Clamp: old events may have been dropped, and a failed action's events
-    // may have been rolled back, since this handle last read.
-    const from = Math.min(Math.max(this.cursor, channel.offset), end);
+    // may have been rolled back, since this handle last read. The frame
+    // stage reads back to what is kept for it; the simulation no further
+    // than it could if nothing were.
+    const oldest = this.forFrame ? channel.offset : channel.tickOffset;
+    const from = Math.min(Math.max(this.cursor, oldest), end);
+    // In an action's handler, a read is one a refusal takes back: the
+    // events are unread again, as they are in a replay that never ran it.
+    if (channel.reads.open && this.cursor !== end) {
+      channel.reads.moved.push({ handle: this, cursor: this.cursor });
+    }
     this.cursor = end;
     return from === end ? EMPTY : channel.buffer.slice(from - channel.offset);
   };
@@ -269,6 +334,24 @@ export class EventBus {
   /** Events read from a save, waiting for their channel to be asked for. */
   private readonly parked: Map<string, SavedEvents> = new Map();
   private readonly names: Map<string, EventDef<any>> = new Map();
+  private readonly reads: ReadLog = { open: false, moved: [] };
+  /** True while events are kept for a frame stage that is running. */
+  private frames = false;
+  private ticksSinceFrame = 0;
+  /** True while events are kept for an input stage that is running. */
+  private inputs = false;
+  private ticksSinceInput = 0;
+
+  /**
+   * Told once, by the app, which of the two stages between ticks it has
+   * systems in. Events are kept for those from the first tick on, so that
+   * such a system hears the events of the ticks before it first ran.
+   * @internal
+   */
+  keepFor(stages: { readonly frame: boolean; readonly input: boolean }): void {
+    this.frames = stages.frame;
+    this.inputs = stages.input;
+  }
 
   private channel<P>(def: EventDef<P>): Channel<P> {
     const existing = this.channels.get(def);
@@ -283,7 +366,7 @@ export class EventBus {
       );
     }
     this.names.set(def.name, def);
-    const channel = new Channel<P>(def);
+    const channel = new Channel<P>(def, this.reads);
     this.channels.set(def, channel);
     this.order.push(channel);
     const saved = this.parked.get(def.name);
@@ -327,7 +410,11 @@ export class EventBus {
         continue;
       }
       const payloads: unknown[] = [];
-      for (const payload of channel.buffer) {
+      // What the simulation can read: not what is only kept for the frame
+      // stage, whose readers are not saved either.
+      for (const payload of channel.buffer.slice(
+        channel.tickOffset - channel.offset
+      )) {
         const data = encode(channel.def, payload);
         if (Exit.isFailure(data)) {
           return Exit.fail(Cause.squash(data.cause) as InvalidEvent);
@@ -336,8 +423,8 @@ export class EventBus {
       }
       const read: Record<string, number> = {};
       for (const [reader, handle] of channel.readers) {
-        const count = handle.position - channel.offset;
-        if (count > 0) {
+        const count = handle.position - channel.tickOffset;
+        if (count > 0 && !reader.startsWith(FRAME_READER)) {
           read[reader] = Math.min(count, channel.size);
         }
       }
@@ -378,7 +465,13 @@ export class EventBus {
     }
     let handle = channel.readers.get(reader);
     if (handle === undefined) {
-      handle = new Handle(channel, channel.offset);
+      // From the oldest event kept: `read` goes no further back than its
+      // reader may, which for the simulation is `tickOffset`.
+      handle = new Handle(
+        channel,
+        channel.offset,
+        reader.startsWith(FRAME_READER)
+      );
       channel.readers.set(reader, handle);
     }
     return handle;
@@ -392,6 +485,21 @@ export class EventBus {
   /** Number of events of a type currently kept. For tests and tooling. */
   pending<P>(def: EventDef<P>): number {
     return this.channel(def).size;
+  }
+
+  /**
+   * Whether an event is kept that some system of the tick has not had its
+   * chance at: one emitted by a system, which the systems before it hear
+   * in the tick that follows, or one emitted between ticks.
+   * @internal
+   */
+  waiting(): boolean {
+    for (const channel of this.order) {
+      if (channel.size > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -418,11 +526,59 @@ export class EventBus {
    * @internal
    */
   endTick(): void {
+    // A stage that has not run for a long time is taken to be gone.
+    if (this.frames && ++this.ticksSinceFrame > FRAME_PATIENCE) {
+      this.frames = false;
+    }
+    if (this.inputs && ++this.ticksSinceInput > FRAME_PATIENCE) {
+      this.inputs = false;
+    }
     for (const channel of this.order) {
-      const drop = channel.tickStart - channel.offset;
+      if (channel.tickStart > channel.tickOffset) {
+        channel.tickOffset = channel.tickStart;
+      }
+      // Kept a little longer for the stages between ticks: for the frame
+      // stage, if several ticks ran since it last did, and for the input
+      // stage, which runs before a tick and would otherwise never hear
+      // what that tick's actions emitted. The simulation reads from
+      // `tickOffset` either way.
+      let keep = channel.tickOffset;
+      if (this.frames) {
+        keep = Math.min(keep, channel.frameSeen);
+      }
+      if (this.inputs) {
+        keep = Math.min(keep, channel.inputSeen);
+      }
+      const drop = keep - channel.offset;
       if (drop > 0) {
         channel.dropOldest(drop);
       }
+    }
+  }
+
+  /**
+   * Called when the frame stage has run: its systems have had their chance
+   * at every event there is.
+   * @internal
+   */
+  endFrame(): void {
+    this.frames = true;
+    this.ticksSinceFrame = 0;
+    for (const channel of this.order) {
+      channel.frameSeen = channel.end;
+    }
+  }
+
+  /**
+   * Called when the input stage has run: its systems have had their chance
+   * at every event there is.
+   * @internal
+   */
+  endInput(): void {
+    this.inputs = true;
+    this.ticksSinceInput = 0;
+    for (const channel of this.order) {
+      channel.inputSeen = channel.end;
     }
   }
 
@@ -438,19 +594,40 @@ export class EventBus {
     }
   }
 
-  /** @internal */
+  /**
+   * Marks where the channels end, before an action's handler runs. Until
+   * `rollback` or `commit`, the reads made are remembered as well.
+   * @internal
+   */
   mark(): EventMark {
     const mark: EventMark = new Map();
     for (const channel of this.order) {
       mark.set(channel, channel.end);
     }
+    this.reads.open = true;
     return mark;
   }
 
-  /** Removes every event emitted since `mark`. @internal */
+  /**
+   * Takes back what happened since `mark`: every event emitted is removed,
+   * and every event read is unread.
+   * @internal
+   */
   rollback(mark: EventMark): void {
     for (const channel of this.order) {
-      channel.truncate(mark.get(channel) ?? channel.offset);
+      channel.truncate(mark.get(channel) ?? channel.tickOffset);
     }
+    // Newest first, so that a handle that read twice ends where it began.
+    const { moved } = this.reads;
+    for (let i = moved.length - 1; i >= 0; i--) {
+      moved[i]!.handle.rewind(moved[i]!.cursor);
+    }
+    this.commit();
+  }
+
+  /** Keeps what happened since `mark`. @internal */
+  commit(): void {
+    this.reads.open = false;
+    this.reads.moved.length = 0;
   }
 }

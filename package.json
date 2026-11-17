@@ -1,11 +1,11 @@
 {
   "name": "arcadekit-workspace",
   "private": true,
-  "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
+  "description": "Reusable primitives for building browser games with Effect and Three.js",
   "type": "module",
   "scripts": {
     "build": "pnpm typecheck && pnpm build:packages",
-    "build:packages": "pnpm --filter arcadekit run build",
+    "build:packages": "pnpm -r --if-present run build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run --passWithNoTests",
     "lint:packages": "bash scripts/lint-packages.sh",
@@ -20,6 +20,7 @@
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
     "@types/node": "^26.6.6",
+    "happy-dom": "^21.0.4",
     "oxfmt": "^0.75.0",
     "oxlint": "^1.90.0",
     "publint": "^0.3.25",

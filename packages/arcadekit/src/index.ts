@@ -1,12 +1,15 @@
 export * as Action from "./Action";
 export * as App from "./App";
+export * as Assets from "./Assets";
 export * as Driver from "./Driver";
 export {
   Component,
   type ComponentDef,
   type Entity,
   type FieldDef,
+  type OnTargetDespawn,
   type RefCodec,
+  type SingletonSpec,
 } from "./ecs/component";
 export type { Rng } from "./ecs/random";
 export {
@@ -15,25 +18,45 @@ export {
   type SnapshotContents,
   SnapshotError,
   type SnapshotProblem,
+  type SnapshotSingleton,
   type SnapshotSparse,
   type SnapshotTable,
   writeSnapshot,
 } from "./ecs/snapshot";
 export {
+  type ChangeKind,
   CommandBuffer,
   type EntityColumn,
   type QueryView,
+  type RemovedReader,
+  type SavedChanges,
   type SparseColumns,
   World as EcsWorld,
 } from "./ecs/world";
 export * as Event from "./Event";
 export * as Field from "./Field";
+export * as Input from "./Input";
 export * as Migrate from "./Migrate";
 export * as Plugin from "./Plugin";
 export * as Query from "./Query";
 export * as Resource from "./Resource";
 export * as Save from "./Save";
+export * as Singleton from "./Singleton";
+export * as Sound from "./Sound";
+export * as State from "./State";
 export { EntityId } from "./Schemas";
-export { Commands, Events, Random, Script, Time, World } from "./Services";
+export {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Script,
+  Ticks,
+  Time,
+  World,
+} from "./Services";
 export * as System from "./System";
 export { TickDispatcher, TickScheduler } from "./TickScheduler";
+export * as Transform2d from "./Transform2d";
+export * as Transform3d from "./Transform3d";
+export * as View from "./View";

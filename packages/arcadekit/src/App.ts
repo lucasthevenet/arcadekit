@@ -12,14 +12,22 @@
  * One tick:
  *   1. apply queued actions (refused ones become `Action.Rejected` events)
  *   2. advance game time
- *   3. run every system in order inside ONE fiber, applying queued commands
- *      after each system
+ *   3. inside ONE fiber: enter the states that were asked for, running the
+ *      hooks for leaving and entering; then run every system in order,
+ *      but for the ones whose condition does not hold, applying queued
+ *      commands after each
  *   4. resume scripts that were waiting for this tick or for an event
  *   5. flush the scheduler, so every fiber that became runnable runs now
  *   6. apply commands queued by scripts, and drop events everyone has seen
  *
  * The world's hash is recorded in the action log before the first action or
  * tick, and at the end of every `checkpointEvery`th tick.
+ *
+ * Between ticks, `frame` runs the systems of the frame stage, which draw
+ * the game: with the world frozen, so that they cannot change it, and told
+ * how far the frame is between two ticks. And `input`, just before a tick,
+ * runs the systems of the input stage, which are told what the devices say
+ * and turn it into actions: the same way, with the world frozen.
  *
  * A script that fails is logged with its cause. An app made with
  * `onScriptFailure: "stop"` also stops: that tick and every later one fail
@@ -39,14 +47,28 @@ import type { Fiber, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
-import type { ComponentDef } from "./ecs/component";
+import * as Driver from "./Driver";
+import { isSingletonSpec } from "./ecs/component";
+import type { Listed } from "./ecs/component";
+import { Rng } from "./ecs/random";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
-import { EventBus } from "./Event";
+import { EventBus, FRAME_READER } from "./Event";
+import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
-import { Commands, Events, Random, Script, Time, World } from "./Services";
-import type { BuiltIn, TimeState } from "./Services";
+import {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Script,
+  Ticks,
+  Time,
+  World,
+} from "./Services";
+import type { BuiltIn, FrameState, TimeState } from "./Services";
+import * as State from "./State";
 import * as System from "./System";
 import { TickDispatcher, TickScheduler } from "./TickScheduler";
 
@@ -117,8 +139,61 @@ export interface Any {
   readonly plugins: readonly string[];
   /** System names in the order they run. */
   readonly systemOrder: readonly string[];
-  /** Runs one tick. Throws if a system fails, or if the app has stopped. */
-  readonly tick: (delta: number) => void;
+  /** The names of the frame stage's systems, in the order they run. */
+  readonly frameOrder: readonly string[];
+  /** The names of the input stage's systems, in the order they run. */
+  readonly inputOrder: readonly string[];
+  /**
+   * Runs one tick. Throws if a system fails, or if the app has stopped.
+   *
+   * A tick hears the devices first: if the input stage has not run since
+   * the tick before, it is run now, as a driver would have, so a game that
+   * steps its app by hand need not remember `app.input()`. `{ input: false
+   * }` is a tick that reads nothing, for what runs a game again from its
+   * log, where every action is already written: `App.replay` ticks so.
+   */
+  readonly tick: (delta: number, options?: TickOptions) => void;
+  /**
+   * Whether the game is at rest: a tick now would find nothing waiting for
+   * it. It is false while an action waits to be applied, a state waits to
+   * be entered, a script waits for the next tick or sleeps, or an event
+   * waits that some system has not had its chance at.
+   *
+   * A driver told to tick only when needed asks this, so that a game that
+   * moves when its player does stands still in between. A system that
+   * does something every tick while a condition of its own holds is not
+   * seen unless it says so, with `Ticks.more`, each tick it has more to
+   * do; and an app that has not ticked yet, new or just loaded, is not
+   * settled, so that every system gets a tick to say so in.
+   */
+  readonly settled: boolean;
+  /**
+   * Runs the frame stage once: the systems made with
+   * `System.inStage("frame")`, which draw the game as it stands between
+   * two ticks. `alpha` says how far between them the frame is, from 0 just
+   * after a tick up to 1 just before the next, and `delta` how many real
+   * seconds have passed since the frame before; both reach the systems as
+   * the `Frame` service. A driver calls this after the ticks of each frame.
+   *
+   * The world is frozen while it runs, and whatever would change the game
+   * throws. Throws if a system fails, or if the app has stopped. Only
+   * between ticks.
+   */
+  readonly frame: (alpha: number, delta?: number) => void;
+  /**
+   * Runs the input stage once: the systems made with
+   * `System.inStage("input")`, which turn what the devices say into
+   * actions. The devices are read once, here, and the systems are given
+   * that one picture of them as `Input.Devices`. What they issue with
+   * `Actions.enqueue` is logged and applied at the start of the next tick.
+   * A driver calls this just before each tick, and a tick that finds it
+   * was not called since the tick before runs it itself. A replay does
+   * neither: the actions are in its log.
+   *
+   * The world is frozen while it runs, as for `frame`. Throws if a system
+   * fails, or if the app has stopped. Only between ticks.
+   */
+  readonly input: () => void;
   /**
    * As `dispatch`, for actions that arrive as data: network messages, saved
    * games, replays. The payload is expected in its JSON form and is validated
@@ -163,13 +238,33 @@ export interface Any {
  * @param R  services available to scripts, beyond the built-in ones
  * @param HU a union of the app's action handlers
  */
+const NO_INPUT: TickOptions = { input: false };
+
+/** How a tick is run. */
+export interface TickOptions {
+  /**
+   * Whether the tick runs the input stage first when nothing has since the
+   * tick before. True when left out. False for a tick that must read no
+   * device and hear no UI: a replay's, or a simulation run again from a
+   * log.
+   */
+  readonly input?: boolean;
+}
+
 export interface App<E = never, R = never, HU = never> extends Any {
   /**
    * Runs one tick and returns the outcome, with system failures as a typed
    * `Exit`. An app that has stopped on a failed script runs nothing and
    * returns a defect, `ScriptFailed`.
    */
-  readonly tickExit: (delta: number) => Exit.Exit<void, E>;
+  readonly tickExit: (
+    delta: number,
+    options?: TickOptions
+  ) => Exit.Exit<void, E>;
+  /** As `frame`, with the outcome returned and a system's failure typed. */
+  readonly frameExit: (alpha: number, delta?: number) => Exit.Exit<void, E>;
+  /** As `input`, with the outcome returned and a system's failure typed. */
+  readonly inputExit: () => Exit.Exit<void, E>;
   /**
    * Starts a long-running fiber (a coroutine). It runs immediately up to its
    * first wait, and from then on only advances during ticks. If it fails, the
@@ -215,6 +310,26 @@ export class ScriptFailed extends Data.TaggedError("ScriptFailed")<{
   }
 }
 
+/**
+ * A system of the frame stage, or of the input stage, changed the world,
+ * which it must not: found by an app made with `verifyFrames`. It is a
+ * defect, not a failure to handle: those stages run between ticks, and a
+ * game that depends on having been drawn, or on its devices having been
+ * read, does not replay.
+ */
+export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
+  /** The stage the system belongs to. */
+  readonly stage: "frame" | "input";
+  /** The system after which the world was no longer what it had been. */
+  readonly system: string;
+  /** Which frame it was, counted from 1: for the input stage, the last one drawn. */
+  readonly frame: number;
+}> {
+  override get message(): string {
+    return `The ${this.stage} stage changed the world: its hash was not the same after system "${this.system}" ran${this.stage === "frame" ? ` in frame ${this.frame}` : ""} as before. ${this.stage === "frame" ? "The frame stage draws the game between two ticks" : "The input stage reads the devices before a tick"} and must leave the world as it found it. Look for a write through the raw columns of eachChunk, which nothing stops where it is made, or a draw from world.random, which is otherwise only found when the stage ends.`;
+  }
+}
+
 export interface Options<
   S extends Systems = readonly [],
   H extends Handlers = readonly [],
@@ -222,11 +337,11 @@ export interface Options<
 > {
   readonly plugins?: readonly [...P];
   /**
-   * Components that belong to the app itself, not to a plugin. A world
-   * knows a component by its name, so loading a save needs every component
+   * Components and singletons that belong to the app itself, not to a
+   * plugin. A world knows them by name, so loading a save needs every one
    * the save names to be listed here or by a plugin.
    */
-  readonly components?: readonly ComponentDef<any>[];
+  readonly components?: readonly Listed[];
   /**
    * The version of the game: a whole number that is raised when the game
    * changes its components or what its saves hold, 0 when left out. A save
@@ -266,6 +381,19 @@ export interface Options<
    * that is interrupted has not failed.
    */
   readonly onScriptFailure?: "log" | "stop";
+  /**
+   * Checks that the frame stage leaves the world as it found it, and the
+   * input stage too: the
+   * world's hash is taken before the stage and after each of its systems,
+   * and `frame` dies with `FrameChangedWorld`, which names the system, if
+   * they differ. Most ways to change the world from there throw where they
+   * are made, and a draw from `world.random` is found when the frame ends
+   * whether this is on or not. This finds the one that is left, a write
+   * through raw columns, and says which system made either. It costs a
+   * hash of the world per frame system per frame, so it is for development
+   * and tests.
+   */
+  readonly verifyFrames?: boolean;
 }
 
 /** Starts a game afresh: every plugin's `setup` runs, then its scripts start. */
@@ -316,6 +444,103 @@ export const load = <
   Plugin.ErrorOf<P[number]> | Save.LoadRefused,
   Scope.Scope | External<S, H, P>
 > => build(options, save);
+
+/** How `App.run` drives the app it makes. */
+export interface RunOptions<
+  A,
+  E2 = never,
+  R2 = never,
+  SV extends Save.Save | undefined = undefined,
+> {
+  /** How many ticks a second the game runs at, whatever the rate of frames. */
+  readonly hz: number;
+  /** The most ticks one frame runs after a stall. 5 when left out. */
+  readonly maxStepsPerCall?: number;
+  /**
+   * `"whenNeeded"` for a game that moves when its player does: it is drawn
+   * every frame and ticks only while something is waiting for a tick, as
+   * `Driver.frames` describes. `"always"`, a game in real time, when left
+   * out.
+   */
+  readonly ticks?: "always" | "whenNeeded";
+  /**
+   * A save to go on from, in place of a fresh start: the app is made with
+   * `App.load`, and `run` can fail with `Save.LoadRefused`.
+   */
+  readonly save?: SV;
+  /**
+   * Runs once, when the app is made and before its first frame, with the
+   * app: to wire what is outside the game to it (a button that dispatches,
+   * a menu that saves), or to keep hold of it. What it acquires is let go
+   * with the app.
+   */
+  readonly ready?: (app: A) => Effect.Effect<void, E2, R2>;
+}
+
+/**
+ * The entry point: makes the app and runs it until it is interrupted.
+ *
+ *   BrowserRuntime.runMain(
+ *     App.run({ plugins: [Game] }, { hz: 60 }).pipe(
+ *       Effect.provide(Input.layerBrowser({ target: canvas }))
+ *     )
+ *   )
+ *
+ * It is `App.make` and `Driver.frames` in a scope of their own: the app is
+ * made, `ready` runs if there is one, and the frame loop follows the
+ * display, running the ticks that are due, at `hz`, and then the frame
+ * stage, once per repaint. It never ends by itself.
+ *
+ * Interrupting it stops the loop and closes that scope, so nothing is left
+ * running: no frame asked for, no script, and whatever the plugins' layers
+ * and `ready` acquired let go. The platform's `runMain` interrupts it when
+ * the page goes away, or the process is told to stop.
+ *
+ * What the game needs from outside is provided to it as to `App.make`,
+ * and stays provided for as long as it runs, which is what a layer that
+ * listens, such as `Input.layerBrowser`, needs. It fails with what
+ * `App.make` and `ready` can fail with, and dies with what a tick throws.
+ *
+ * It runs wherever there is a display, which outside a page is a timer:
+ * `NodeRuntime.runMain(App.run(...))` runs the same game under Node.
+ */
+export const run = <
+  S extends Systems = readonly [],
+  H extends Handlers = readonly [],
+  P extends Plugins = readonly [],
+  E2 = never,
+  R2 = never,
+  SV extends Save.Save | undefined = undefined,
+>(
+  options: Options<S, H, P>,
+  drive: RunOptions<
+    App<TickError<S, P>, Provided<P> | External<S, H, P>, AllHandlers<H, P>>,
+    E2,
+    R2,
+    SV
+  >
+): Effect.Effect<
+  never,
+  | Plugin.ErrorOf<P[number]>
+  | E2
+  | (SV extends Save.Save ? Save.LoadRefused : never),
+  External<S, H, P> | Exclude<R2, Scope.Scope>
+> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const app = yield* build(options, drive.save);
+      if (drive.ready !== undefined) {
+        yield* drive.ready(app);
+      }
+      return yield* Driver.frames(app, drive);
+    })
+  ) as Effect.Effect<
+    never,
+    | Plugin.ErrorOf<P[number]>
+    | E2
+    | (SV extends Save.Save ? Save.LoadRefused : never),
+    External<S, H, P> | Exclude<R2, Scope.Scope>
+  >;
 
 const build = <S extends Systems, H extends Handlers, P extends Plugins>(
   options: Options<S, H, P>,
@@ -395,8 +620,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       ...plugins.flatMap((plugin) => plugin.components),
       ...(options.components ?? []),
     ];
-    for (const component of components) {
-      world.register(component);
+    for (const listed of components) {
+      if (isSingletonSpec(listed)) {
+        world.singleton(listed);
+      } else {
+        world.register(listed);
+      }
     }
     const version = options.version ?? 0;
     if (!Number.isSafeInteger(version) || version < 0) {
@@ -417,6 +646,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       // Before anything else can touch the world: a load fills an empty one.
       try {
         world.load(save.world);
+        world.restoreChanges(save.changes);
       } catch (error) {
         if (error instanceof SnapshotError) {
           return yield* Effect.fail(
@@ -511,6 +741,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       actionLog.push(entry);
       return entry;
     };
+    const handles = (action: Action.ActionDef<string, any, any>): boolean =>
+      handlers.has(action.name);
     /** From outside the simulation: `app.enqueue`. */
     const enqueue = (
       action: Action.ActionDef<string, any, any>,
@@ -563,13 +795,57 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       });
     };
 
+    const frame: FrameState = { alpha: 0, delta: 0, count: 0 };
+    const notInTick = (): never => {
+      throw new Error(
+        'Frame was read by a system that runs in the tick. It tells the frame stage how far a frame is between two ticks, in real time, which a simulation must not depend on: read Time instead, or move the system to the frame stage with System.inStage("frame").'
+      );
+    };
+    const notInInput = (): never => {
+      throw new Error(
+        'Input.Devices was read outside the input stage. It is what the devices say now, which is no part of the game. A system that runs in the tick reads the picture the game has of them, Input.Keyboard, Input.Pointer or Input.Gamepad, and what turns the devices into actions is a system of the input stage, System.inStage("input").'
+      );
+    };
     const builtIns = Context.empty().pipe(
       Context.add(World, world),
       Context.add(Time, time),
+      Context.add(Input.Devices, {
+        get down() {
+          return notInInput();
+        },
+        get pressed() {
+          return notInInput();
+        },
+        get released() {
+          return notInInput();
+        },
+        get axes() {
+          return notInInput();
+        },
+        get moved() {
+          return notInInput();
+        },
+      }),
+      Context.add(Frame, {
+        get alpha() {
+          return notInTick();
+        },
+        get delta() {
+          return notInTick();
+        },
+        get count() {
+          return notInTick();
+        },
+      }),
       Context.add(Commands, commands),
       Context.add(Script, { nextTick, sleep, spawn }),
+      Context.add(Ticks, {
+        more() {
+          wanted = true;
+        },
+      }),
       Context.add(Events, events),
-      Context.add(Action.Actions, { enqueue: enqueueFromInside }),
+      Context.add(Action.Actions, { enqueue: enqueueFromInside, handles }),
       Context.add(Random, random),
       // Effect's own Random draws from the same generator, so `Random.next`
       // from "effect", or anything built on it, is seeded and replayed too.
@@ -610,17 +886,258 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const runFork = Effect.runForkWith(context);
     reportContext = context;
 
-    const ordered = System.order(allSystems);
+    // A hook runs when its state is entered or left, not with the rest.
+    System.unique(allSystems);
+    const ordered = System.order(
+      allSystems.filter(
+        (system) =>
+          system.trigger === undefined &&
+          !System.isFrameStage(system.stage) &&
+          system.stage !== "input"
+      )
+    );
+    // A frame's three stages, one after the other, are one list.
+    const frameSystems = System.order(
+      allSystems.filter(
+        (system) =>
+          system.trigger === undefined && System.isFrameStage(system.stage)
+      )
+    );
+    const inputSystems = System.order(
+      allSystems.filter(
+        (system) => system.trigger === undefined && system.stage === "input"
+      )
+    );
+    // What runs between ticks hears the events of every tick, the first
+    // among them: they are kept for it from the start.
+    events.keepFor({
+      frame: frameSystems.length > 0,
+      input: inputSystems.length > 0,
+    });
+    const hookKey = (trigger: System.Trigger): string =>
+      `${trigger.state.name}\n${trigger.on}\n${trigger.value}`;
+    const hooks = new Map<string, Plugin.AnySystem[]>();
+    const states = State.registryOf(world);
+    for (const listed of components) {
+      if (listed instanceof State.State) {
+        State.handleOf(world, listed);
+      }
+    }
+    for (const system of allSystems) {
+      if (system.trigger === undefined) {
+        continue;
+      }
+      const state = system.trigger.state as State.State<string>;
+      if (System.isFrameStage(system.stage)) {
+        throw new Error(
+          `System "${system.name}" is a hook and is in the frame stage. A hook runs at the start of a tick, when the game enters or leaves a state; the frame stage runs between ticks. Draw what a state looks like from a frame system with System.runIf(State.is(...)).`
+        );
+      }
+      if (system.stage === "input") {
+        throw new Error(
+          `System "${system.name}" is a hook and is in the input stage. A hook runs at the start of a tick, when the game enters or leaves a state; the input stage runs before the tick. Read the devices only in some states with System.runIf(State.is(...)).`
+        );
+      }
+      if (!state.values.includes(system.trigger.value)) {
+        throw new Error(
+          `System "${system.name}" is a hook for "${system.trigger.value}", which is not a value of the state "${state.name}". Its values are: ${state.values.join(", ")}.`
+        );
+      }
+      State.handleOf(world, state);
+      const key = hookKey(system.trigger);
+      hooks.set(key, [...(hooks.get(key) ?? []), system]);
+    }
+    for (const [key, group] of hooks) {
+      // `after` and `before` order the hooks of one moment among themselves.
+      hooks.set(key, System.order(group));
+    }
+
     let running = "";
+    /** Runs one system as itself: with its own place in events and changes. */
+    const runSystem = (
+      system: Plugin.AnySystem
+    ): Effect.Effect<void, unknown, unknown> =>
+      Effect.suspend(() => {
+        running = system.name;
+        events.reader = running;
+        world.reader = running;
+        return system.condition === undefined
+          ? system.run
+          : Effect.flatMap(system.condition, (holds) =>
+              holds ? system.run : (system.idle ?? Effect.void)
+            );
+      });
+    /** Makes one move of a state: the hooks for leaving, the move, the hooks for entering. */
+    const makeMove = Effect.fnUntraced(function* (
+      state: State.State<string>,
+      move: State.Move
+    ) {
+      if (move.from !== undefined) {
+        for (const hook of hooks.get(
+          hookKey({ state, on: "exit", value: move.from })
+        ) ?? []) {
+          yield* runSystem(hook);
+          commands.apply();
+        }
+      }
+      State.enter(world, state, move);
+      for (const hook of hooks.get(
+        hookKey({ state, on: "enter", value: move.to })
+      ) ?? []) {
+        yield* runSystem(hook);
+        commands.apply();
+      }
+    });
+    /** The states that were asked for are entered, and their hooks run. */
+    const enterStates = Effect.gen(function* () {
+      for (const state of states.states) {
+        // One move a tick, but for a game's first: entering the state it
+        // starts in is followed by the move that was asked for before it.
+        const move = State.pending(world, state);
+        if (move === undefined) {
+          continue;
+        }
+        yield* makeMove(state, move);
+        if (move.followedBy !== undefined) {
+          const asked = State.pending(world, state);
+          // Unless a hook has asked for something else since.
+          if (asked !== undefined && asked.to === move.followedBy) {
+            yield* makeMove(state, asked);
+          }
+        }
+      }
+    });
     const tickEffect = Effect.gen(function* () {
+      if (states.states.length > 0) {
+        yield* enterStates;
+      }
       for (const system of ordered) {
         running = system.name;
-        // Each system reads events from its own position.
+        // Each system reads events, and what changed, from its own position.
         events.reader = running;
+        world.reader = running;
+        // A system with no condition is asked nothing.
+        if (system.condition !== undefined && !(yield* system.condition)) {
+          // What it does in place of running, if it was given anything.
+          if (system.idle !== undefined) {
+            yield* system.idle;
+            commands.apply();
+          }
+          continue;
+        }
         yield* system.run;
         commands.apply();
       }
     });
+
+    // --- the stages between ticks: frame and input -------------------------------
+    // Their systems get the world to read and nothing to change it with.
+    // What is random there comes from a generator of its own, which is not
+    // part of the world; an action issued there is input from outside, and
+    // is logged as such; and a script, which would run in the tick, cannot
+    // be started from there.
+    const verifyFrames = options.verifyFrames === true;
+    const frameRandom = new Rng(options.seed ?? 0);
+    const notInFrame = (what: string) => (): never => {
+      throw new Error(
+        `${what} was used in the frame stage or the input stage. A script runs in the tick and is part of the simulation; those stages run between ticks and finish at once.`
+      );
+    };
+    const frameContext = context.pipe(
+      Context.add(Frame, frame),
+      Context.add(Random, frameRandom),
+      Context.add(EffectRandom.Random, {
+        nextDoubleUnsafe: () =>
+          ((frameRandom.bits() >>> 5) * 67_108_864 +
+            (frameRandom.bits() >>> 6)) /
+          9_007_199_254_740_992,
+        nextIntUnsafe: () => {
+          const magnitude =
+            (frameRandom.bits() >>> 11) * 4_294_967_296 + frameRandom.bits();
+          return (frameRandom.bits() & 1) === 0 ? magnitude : -magnitude;
+        },
+      }),
+      Context.add(Action.Actions, { enqueue, handles }),
+      Context.add(Script, {
+        nextTick: Effect.sync(notInFrame("Script.nextTick")),
+        sleep: notInFrame("Script.sleep"),
+        spawn: notInFrame("Script.spawn"),
+      }),
+      Context.add(Ticks, {
+        more() {
+          throw new Error(
+            "Ticks.more was called in the frame stage or the input stage. Whether the game ticks again is the game's to say, from a system of the tick: what draws it, or reads the devices, runs between ticks and decides nothing of it. A key that should wake the game issues an action."
+          );
+        },
+      })
+    ) as Context.Context<any>;
+    const runFrameFork = Effect.runForkWith(frameContext);
+    // The input stage is told what the devices say: one picture of them,
+    // taken when the stage begins. It is not told about the frame.
+    const source = Context.get(context, Input.Source);
+    const devices: {
+      -readonly [K in keyof Input.Sample]: Input.Sample[K];
+    } = {
+      down: new Set(),
+      pressed: [],
+      released: [],
+      axes: new Map(),
+      moved: [],
+    };
+    const noFrame = (): never => {
+      throw new Error(
+        "Frame was read by a system of the input stage. It tells the frame stage how far a frame is between two ticks; the input stage runs before a tick, and no frame is being drawn."
+      );
+    };
+    const inputContext = frameContext.pipe(
+      Context.add(Input.Devices, devices),
+      Context.add(Frame, {
+        get alpha() {
+          return noFrame();
+        },
+        get delta() {
+          return noFrame();
+        },
+        get count() {
+          return noFrame();
+        },
+      })
+    ) as Context.Context<any>;
+    const runInputFork = Effect.runForkWith(inputContext);
+    let frameHash = 0;
+    const stageEffect = (
+      stage: "frame" | "input",
+      systems: readonly Plugin.AnySystem[]
+    ): Effect.Effect<void, unknown, unknown> =>
+      Effect.gen(function* () {
+        for (const system of systems) {
+          running = system.name;
+          // A place of its own in events and in what changed, apart from
+          // the simulation's and never saved.
+          events.reader = `${FRAME_READER}${running}`;
+          world.reader = events.reader;
+          if (system.condition !== undefined && !(yield* system.condition)) {
+            if (system.idle === undefined) {
+              continue;
+            }
+            // What it does in place of running, held to the same.
+            yield* system.idle;
+          } else {
+            yield* system.run;
+          }
+          if (verifyFrames && world.hash() !== frameHash) {
+            return yield* Effect.die(
+              new FrameChangedWorld({
+                stage,
+                system: running,
+                frame: frame.count,
+              })
+            );
+          }
+        }
+      });
+    const frameEffect = stageEffect("frame", frameSystems);
+    const inputEffect = stageEffect("input", inputSystems);
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -633,6 +1150,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     );
 
     let ticking = false;
+    // The stage that is running between two ticks, if one is.
+    let between: "frame" | "input" | undefined;
+    // Whether the input stage has run since the last tick.
+    let heard = false;
+    // Whether the game asked for its next tick: `Ticks.more`. An app that
+    // has not ticked yet has not been asked, and is taken to want one.
+    let wanted = true;
+    const busy = (): string =>
+      ticking
+        ? "tick"
+        : between === "input"
+          ? "run of the input stage"
+          : "frame";
 
     // The action whose handler is running, if one is.
     let applying: string | undefined;
@@ -652,7 +1182,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     /**
      * Validates a payload and runs its handler to completion. The handler
      * runs in a transaction of the world: a refusal takes back what it wrote
-     * to components, the random numbers it drew, and what it queued, emitted
+     * to components, the random numbers it drew, what it read of events and
+     * of changes, and what it queued, emitted
      * and enqueued. With `dispatched`, an accepted action is logged; an
      * enqueued one was logged, if it came from outside, when it arrived.
      */
@@ -704,11 +1235,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       world.begin();
       applying = name;
       events.reader = `action:${name}`;
+      world.reader = events.reader;
       let fiber: Fiber.Fiber<unknown, unknown>;
       try {
         fiber = runFork(handler.handle(value));
       } finally {
         events.reader = undefined;
+        world.reader = undefined;
         applying = undefined;
       }
       const exit = fiber.pollUnsafe();
@@ -725,6 +1258,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         undo(commandMark, eventMark, queuedMark);
       } else {
         world.commit();
+        events.commit();
         commands.apply();
         if (dispatched) {
           actionLog.push({ tick: time.tick, name, payload: logged });
@@ -739,15 +1273,120 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           `dispatch("${name}") was called during a tick. Use enqueue from systems and scripts.`
         );
       }
+      if (between !== undefined) {
+        throw new Error(
+          `dispatch("${name}") was called during the ${between} stage, which must not change the game. Issue it with Actions.enqueue: it is applied at the start of the next tick.`
+        );
+      }
     };
 
-    const tickExit = (delta: number): Exit.Exit<void, TickError<S, P>> => {
-      if (ticking) {
-        throw new Error("App.tick was called from inside a tick");
+    /** Runs one of the two stages between ticks, with the world frozen. */
+    const runBetween = (
+      stage: "frame" | "input"
+    ): Exit.Exit<void, TickError<S, P>> => {
+      between = stage;
+      world.freeze();
+      let exit: Exit.Exit<void, TickError<S, P>>;
+      let drew: unknown;
+      try {
+        if (verifyFrames) {
+          frameHash = world.hash();
+        }
+        const fiber =
+          stage === "frame"
+            ? runFrameFork(frameEffect)
+            : runInputFork(inputEffect);
+        events.reader = undefined;
+        world.reader = undefined;
+        const outcome = fiber.pollUnsafe();
+        if (outcome === undefined) {
+          fiber.interruptUnsafe();
+          throw new Error(
+            `System "${running}" did not finish within the ${stage === "frame" ? "frame" : "input stage"}. Systems must be synchronous.`
+          );
+        }
+        // Events are kept until each stage has heard them.
+        if (stage === "frame") {
+          events.endFrame();
+        } else {
+          events.endInput();
+        }
+        exit = outcome as Exit.Exit<void, TickError<S, P>>;
+      } finally {
+        between = undefined;
+        // Thawing finds a draw from the world's generator, and undoes it.
+        try {
+          world.thaw();
+        } catch (error) {
+          drew = error;
+        }
+      }
+      // A defect, unless the stage had failed for a reason of its own.
+      return drew === undefined || Exit.isFailure(exit) ? exit : Exit.die(drew);
+    };
+
+    const frameExit = (
+      alpha: number,
+      delta = 0
+    ): Exit.Exit<void, TickError<S, P>> => {
+      if (ticking || between !== undefined) {
+        throw new Error(
+          `App.frame was called from inside a ${busy()}. The frame stage runs between ticks.`
+        );
       }
       if (stopped !== undefined) {
         return Exit.die(stopped);
       }
+      if (frameSystems.length === 0) {
+        return Exit.void;
+      }
+      frame.alpha = alpha;
+      frame.delta = delta;
+      frame.count++;
+      return runBetween("frame");
+    };
+
+    const inputExit = (): Exit.Exit<void, TickError<S, P>> => {
+      if (ticking || between !== undefined) {
+        throw new Error(
+          `App.input was called from inside a ${busy()}. The input stage runs between ticks, before one.`
+        );
+      }
+      if (stopped !== undefined) {
+        return Exit.die(stopped);
+      }
+      if (inputSystems.length === 0) {
+        return Exit.void;
+      }
+      // One picture of the devices for the whole stage.
+      Object.assign(devices, source.sample());
+      heard = true;
+      return runBetween("input");
+    };
+
+    const tickExit = (
+      delta: number,
+      options?: TickOptions
+    ): Exit.Exit<void, TickError<S, P>> => {
+      if (ticking || between !== undefined) {
+        throw new Error(`App.tick was called from inside a ${busy()}`);
+      }
+      if (stopped !== undefined) {
+        return Exit.die(stopped);
+      }
+      // A tick hears the devices first. Whoever steps the app may have
+      // seen to it, as a driver does; if not, it is seen to here.
+      if (!heard && inputSystems.length > 0 && options?.input !== false) {
+        const exit = inputExit();
+        if (Exit.isFailure(exit)) {
+          // The tick did not run, and the next one is to hear first too.
+          heard = false;
+          return exit;
+        }
+      }
+      heard = false;
+      // Each tick is asked afresh: one in which nobody asks is the last.
+      wanted = false;
       start();
       ticking = true;
       try {
@@ -774,6 +1413,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         events.beginTick();
         const fiber = runFork(tickEffect);
         events.reader = undefined;
+        world.reader = undefined;
         const exit = fiber.pollUnsafe();
         if (exit === undefined) {
           fiber.interruptUnsafe();
@@ -831,11 +1471,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       dispatcher,
       plugins: plugins.map((plugin) => plugin.name),
       systemOrder: ordered.map((s) => s.name),
+      frameOrder: frameSystems.map((s) => s.name),
+      inputOrder: inputSystems.map((s) => s.name),
       actionLog,
       save() {
-        if (ticking) {
+        if (ticking || between !== undefined) {
           throw new Error(
-            "save() was called during a tick. A game is saved between ticks."
+            "save() was called during a tick or a frame. A game is saved between ticks."
           );
         }
         const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
@@ -886,8 +1528,30 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           world: bytes,
           queued: waiting,
           events: pending.value,
+          // The frame stage's readers are not the game's: a loaded game
+          // has everything still to draw.
+          changes: world.saveChanges(
+            (reader) => !reader.startsWith(FRAME_READER)
+          ),
           logLength: actionLog.length,
         });
+      },
+      get settled() {
+        if (
+          wanted ||
+          queued.length > 0 ||
+          waiters.size > 0 ||
+          dispatcher.pending > 0 ||
+          events.waiting()
+        ) {
+          return false;
+        }
+        for (const state of states.states) {
+          if (State.pending(world, state) !== undefined) {
+            return false;
+          }
+        }
+        return true;
       },
       checkpoint() {
         if (ticking) {
@@ -898,8 +1562,22 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return checkpoint();
       },
       tickExit,
-      tick(delta) {
-        const exit = tickExit(delta);
+      tick(delta, options) {
+        const exit = tickExit(delta, options);
+        if (Exit.isFailure(exit)) {
+          throw Cause.squash(exit.cause);
+        }
+      },
+      frameExit,
+      frame(alpha, delta) {
+        const exit = frameExit(alpha, delta);
+        if (Exit.isFailure(exit)) {
+          throw Cause.squash(exit.cause);
+        }
+      },
+      inputExit,
+      input() {
+        const exit = inputExit();
         if (Exit.isFailure(exit)) {
           throw Cause.squash(exit.cause);
         }
@@ -930,8 +1608,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         continue;
       }
       events.reader = `setup:${plugin.name}`;
+      world.reader = events.reader;
       const fiber = runFork(plugin.setup);
       events.reader = undefined;
+      world.reader = undefined;
       const exit = fiber.pollUnsafe();
       if (exit === undefined) {
         fiber.interruptUnsafe();
@@ -1115,7 +1795,8 @@ export const replay = (
   };
   for (let i = 0; i < options.ticks; i++) {
     applyDue();
-    app.tick(options.delta);
+    // A replay reads no device: what the devices said is in the log.
+    app.tick(options.delta, NO_INPUT);
     checkQueued();
   }
   applyDue();

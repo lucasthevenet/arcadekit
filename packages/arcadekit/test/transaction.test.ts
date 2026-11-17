@@ -15,6 +15,7 @@ import {
   Query,
   Random,
   System,
+  Time,
   World,
 } from "../src/index";
 import type { Entity } from "../src/index";
@@ -47,6 +48,14 @@ const sheet = (n: number) => ({
   note: `note ${n}` as unknown,
 });
 
+// Two singletons: one the populated world has written, one it has not.
+const Clock = Component.singleton("tx/Clock", kinds, sheet(500));
+const Mood = Component.singleton(
+  "tx/Mood",
+  { level: Field.i32, word: Field.json<string>() },
+  { level: 3, word: "calm" }
+);
+
 const Bodies = Query.all(Body);
 const Sheets = Query.all(Sheet);
 const Auras = Query.all(Aura);
@@ -74,6 +83,7 @@ const populated = (): { world: EcsWorld; entities: Entity[] } => {
   }
   world.despawn(entities.splice(20, 1)[0]!);
   world.despawn(entities.splice(4, 1)[0]!);
+  world.singleton(Clock).signed = -1;
   return { world, entities };
 };
 
@@ -153,6 +163,17 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
         inner.y += outer.x;
       });
     });
+  },
+  "writing a singleton that was written before": (world) => {
+    const clock = world.singleton(Clock);
+    clock.single += 1;
+    clock.note = { replaced: true };
+    clock.other = 9 as Entity;
+  },
+  "writing a singleton for the first time": (world) => {
+    const mood = world.singleton(Mood);
+    mood.level = mood.level + 1;
+    mood.word = "stormy";
   },
   "drawing random numbers": (world) => {
     world.random.next();
@@ -417,6 +438,8 @@ describe("commands that are rolled back", () => {
 
 class Refused extends Data.TaggedError("Refused")<{}> {}
 const Noted = Event.define<{ readonly step: string }>("tx/Noted");
+/** Emitted by a system every tick, for a handler to read. */
+const Rung = Event.define("tx/Rung", Schema.Struct({ at: Schema.Int }));
 
 const Step = Schema.Literals([
   "set",
@@ -430,6 +453,8 @@ const Step = Schema.Literals([
   "remove",
   "emit",
   "enqueue",
+  "read",
+  "ring",
   "bug",
 ]);
 const Act = Action.define(
@@ -506,6 +531,22 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
         actions.enqueue(Echo, { by: 1 });
         break;
       }
+      case "read": {
+        // What it has heard since it last listened goes into the world, so
+        // that an event read twice, or never, shows.
+        const heard = (yield* Rung)
+          .read()
+          .reduce((sum, { at }) => sum + 100 + at, 0);
+        (yield* Bodies).each((body) => {
+          body.y += heard;
+        });
+        break;
+      }
+      case "ring": {
+        // An event of the kind it reads, so that it can read twice.
+        (yield* Rung).emit({ at: 0 });
+        break;
+      }
       case "bug": {
         throw new Error("a bug in the handler");
       }
@@ -531,6 +572,16 @@ const Listen = System.make("Listen", function* () {
     notes.push(step);
   }
 });
+const Ring = System.make("Ring", function* () {
+  (yield* Rung).emit({ at: (yield* Time).tick });
+});
+/** Hears each ring in the tick it is rung in: once, whatever is refused. */
+const rings: number[] = [];
+const Hear = System.make("Hear", function* () {
+  for (const { at } of (yield* Rung).read()) {
+    rings.push(at);
+  }
+});
 
 const withApp = <T, A>(
   make: Effect.Effect<T, never, Scope.Scope>,
@@ -540,7 +591,7 @@ const withApp = <T, A>(
 const game = (checkpointEvery = 1) =>
   Effect.map(
     App.make({
-      systems: [Listen],
+      systems: [Listen, Ring, Hear],
       handlers: [act, echo],
       seed: 9,
       checkpointEvery,
@@ -580,6 +631,7 @@ const everyStep: Steps = [
   "remove",
   "emit",
   "enqueue",
+  "read",
 ];
 
 describe("an action that is refused", () => {
@@ -676,6 +728,103 @@ describe("an action that is refused", () => {
       });
       expect(after).toBe(plain);
     });
+  });
+
+  it("has not read the events its handler read: the next action hears them", () => {
+    const heardBy = (attempts: readonly ("refused" | "queued")[]) =>
+      withApp(game(), ({ app, entities }) => {
+        const target = entities[0]!;
+        const y = (): number => app.world.get(target, Body)!.y;
+        const before = y();
+        app.tick(1);
+        for (const attempt of attempts) {
+          const payload = { target, steps: ["read" as const], refuse: true };
+          if (attempt === "refused") {
+            expect(app.dispatch(Act, payload)).toEqual(
+              Exit.fail(new Refused())
+            );
+          } else {
+            // Refused when its turn comes, at the start of the next tick.
+            app.enqueue(Act, payload);
+            app.tick(1);
+          }
+          expect(y()).toBe(before);
+        }
+        app.dispatch(Act, { target, steps: ["read"], refuse: false });
+        const heard = y() - before;
+        // And what was read by an action that was accepted stays read.
+        app.dispatch(Act, { target, steps: ["read"], refuse: false });
+        expect(y() - before).toBe(heard);
+        return heard;
+      });
+    // The event of tick 1, whether or not anything was refused before.
+    expect(heardBy([])).toBe(101);
+    expect(heardBy(["refused"])).toBe(101);
+    expect(heardBy(["refused", "refused", "refused"])).toBe(101);
+    // After a refusal that took a tick: the events of ticks 1 and 2.
+    const afterATick = withApp(game(), ({ app, entities }) => {
+      const target = entities[0]!;
+      const before = app.world.get(target, Body)!.y;
+      app.tick(1);
+      app.tick(1);
+      app.dispatch(Act, { target, steps: ["read"], refuse: false });
+      return app.world.get(target, Body)!.y - before;
+    });
+    expect(heardBy(["queued"])).toBe(afterATick);
+  });
+
+  it("unreads only what its own handler read, however often it read", () => {
+    withApp(game(), ({ app, entities }) => {
+      const target = entities[0]!;
+      const y = (): number => app.world.get(target, Body)!.y;
+      const act = (steps: Steps, refuse: boolean): void => {
+        app.dispatch(Act, { target, steps, refuse });
+      };
+      rings.length = 0;
+      app.tick(1);
+      const before = y();
+      // Reads, rings and reads again, and is refused: both reads are undone.
+      act(["read", "ring", "read"], true);
+      expect(y()).toBe(before);
+      act(["read"], false);
+      expect(y() - before).toBe(101);
+      // What an accepted action read stays read through a later refusal.
+      act(["set"], true);
+      act(["read"], true);
+      act(["read"], false);
+      expect(y() - before).toBe(101);
+      // And a system's reads are no action's to take back: it hears each
+      // ring once, with refusals and acceptances between its ticks.
+      app.tick(1);
+      act(["read"], true);
+      app.tick(1);
+      act(["read"], false);
+      act(["emit"], true);
+      app.tick(1);
+      app.enqueue(Act, { target, steps: ["read"], refuse: true });
+      app.tick(1);
+      expect(rings).toEqual([1, 2, 3, 4, 5]);
+    });
+  });
+
+  it("replays when the refused action had read events, as if it had not", () => {
+    const { hash, log } = withApp(game(), ({ app, entities }) => {
+      const target = entities[0]!;
+      app.tick(1);
+      app.dispatch(Act, { target, steps: ["read"], refuse: true });
+      app.dispatch(Act, { target, steps: ["read"], refuse: false });
+      app.tick(1);
+      app.dispatch(Act, { target, steps: ["emit", "read"], refuse: true });
+      app.enqueue(Act, { target, steps: ["read"], refuse: true });
+      app.enqueue(Act, { target, steps: ["read"], refuse: false });
+      app.tick(1);
+      return { log: [...app.actionLog], hash: app.world.hash() };
+    });
+    const replayed = withApp(game(), ({ app }) => {
+      App.replay(app, log, { delta: 1, ticks: 3 });
+      return app.world.hash();
+    });
+    expect(replayed).toBe(hash);
   });
 
   it("gives the same ids afterwards as if it had never been dispatched", () => {
