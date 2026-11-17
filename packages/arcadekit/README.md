@@ -1399,7 +1399,6 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `bench/accessors.ts` | The benchmark: every line of the tables below, each variant in a process of its own |
 | `bench/core.ts` | The storage core's variants of it, which import `arcadekit/ecs` and nothing else |
 | `bench/compare.ts`, `bench/verdict.ts` | The check of a pull request: those variants for two checkouts, turn and turn about, and the rule that says whether one is slower |
-| `bench/ci-workflow.yml` | The workflow that runs that check on a pull request, to be moved to `.github/workflows/bench.yml` |
 | `bench/parallel/` | A measurement, and no part of the package: a loop's rows shared between workers and the main thread over shared memory, `pnpm --filter arcadekit bench:parallel` |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/relay.ts` | A relay under Node: `Relay.make()` behind a WebSocket server (`ws`, a dev dependency for this and for the relay's tests) |
@@ -1582,7 +1581,7 @@ pnpm --filter arcadekit bench:compare "$PWD/../base"
 
 `bench:compare` says whether this checkout's storage core is slower than another's by more than the noise, and fails if it is. The `Benchmarks` workflow runs it on a pull request that touches the storage core, against what the pull request would be merged into.
 
-**The workflow is written and not in place.** It is `bench/ci-workflow.yml`, and runs once it is moved to `.github/workflows/bench.yml`, which takes credentials that may change workflows; the session that wrote it had none. Until then the check is run by hand, as above.
+The workflow is `.github/workflows/bench.yml`. Its first run was on the pull request that added it, and took seven and a half minutes on GitHub's own machine: the variants that pull request's commits name as slowed on purpose were found slower in fifteen runs of fifteen, a program of ten components 36% faster, and the rest the same.
 
 - It runs the variants of `bench/core.ts`, which are the lines above that go through `arcadekit/ecs` alone: the loops, the filters, the hash, a snapshot and a load, change queries, and entities coming and going. Both builds run this checkout's copy of that file, so the two are asked the same thing; a variant the base cannot run is new. The copy is in the base for as long as the comparison lasts and no longer.
 - Each variant is run up to fifteen times by each build, turn and turn about, each run a process of its own. A run is now and then half as slow again as the rest, one in six on the machine this was written on, and never much faster, so a build is known by its fastest run.
@@ -1674,6 +1673,6 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.
 - Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.
-- The workflow that compares benchmarks on a pull request is not in `.github/workflows/` yet: see [Benchmarks in CI](#benchmarks-in-ci). The check is of the storage core alone, and lets through a slowdown of less than a twentieth.
+- The check on benchmarks in CI is of the storage core alone, and lets through a slowdown of less than a twentieth: see [Benchmarks in CI](#benchmarks-in-ci).
 - A world holds at most 4,194,304 entities at once, and an id takes eight bytes wherever it is kept.
 - Systems run in sequence on one thread. Running them side by side on workers was measured and not built: `pnpm --filter arcadekit bench:parallel` shares a loop's rows between four threads over shared memory, and a flock of 100,000 goes from 3.7 ms to 1.3 ms, where the 100,000 entities of the benchmark above move in a quarter of a millisecond on one. The [roadmap](../../docs/roadmap.md#7-speed-and-scale) has the numbers and what it waits on.
