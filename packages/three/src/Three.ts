@@ -767,6 +767,22 @@ class FromAssets<T extends Kept> implements Kept {
   }
 }
 
+/** What `Three.texture` is told of a picture. */
+export interface TextureOptions {
+  /**
+   * Called once with the texture, before it is ever sent to the renderer:
+   * to say it is not colours, or how it repeats and is filtered.
+   */
+  readonly prepare?: (texture: Texture) => void;
+  /**
+   * Whether the picture is turned over as it is decoded, so that its
+   * first row is at the top of a geometry of Three.js: `true` when left
+   * out, as a `TextureLoader` gives it. `false` leaves it as the file has
+   * it, which is what a model's own coordinates expect.
+   */
+  readonly flipY?: boolean;
+}
+
 /**
  * An asset that is a picture to draw with: a `Texture` of Three.js, in a
  * bundle with the rest of a level's, and disposed of when the scope it was
@@ -774,34 +790,49 @@ class FromAssets<T extends Kept> implements Kept {
  *
  *   const Forest = Assets.bundle("game/Forest", {
  *     bark: Three.texture("/bark.png"),
- *     normals: Three.texture("/bark-normals.png", (texture) => {
- *       texture.colorSpace = NoColorSpace
+ *     normals: Three.texture("/bark-normals.png", {
+ *       prepare: (texture) => {
+ *         texture.colorSpace = NoColorSpace
+ *       },
  *     }),
  *   })
  *
- * - It is a picture of colours, sRGB, the right way up for the geometries
- *   of Three.js, unless `prepare`, which is handed the texture once, says
- *   otherwise. Which way up cannot be changed after: a bitmap is flipped
- *   when it is made, and `flipY` is not read.
+ * - It is a picture of colours, sRGB, unless `prepare`, which is handed
+ *   the texture once, says otherwise.
+ * - It is the right way up for the geometries of Three.js, unless
+ *   `flipY: false` says to leave it as the file has it. That is said
+ *   here and not in `prepare`: a bitmap is turned over when it is
+ *   decoded, and Three.js does not read `flipY` of one after. Setting it
+ *   in `prepare` would do nothing, so it fails the load with an error
+ *   that says so.
  * - It is decoded off the page's thread, by `createImageBitmap`, which a
  *   page has and Node does not.
  */
 export const texture = (
   url: string,
-  prepare?: (texture: Texture) => void
-): Assets.Asset<Texture> =>
-  Assets.make(url, (data, at) =>
+  options: TextureOptions = {}
+): Assets.Asset<Texture> => {
+  const flipY = options.flipY ?? true;
+  return Assets.make(url, (data, at) =>
     Effect.acquireRelease(
       Effect.tryPromise({
         try: async () => {
           const bitmap = await createImageBitmap(
             // A copy: a Blob wants bytes that nothing else can change.
             new Blob([data.slice()]),
-            { imageOrientation: "flipY" }
+            { imageOrientation: flipY ? "flipY" : "from-image" }
           );
           const made = new Texture(bitmap);
           made.colorSpace = SRGBColorSpace;
-          prepare?.(made);
+          // What the texture says of itself is how it was decoded.
+          made.flipY = flipY;
+          options.prepare?.(made);
+          if (made.flipY !== flipY) {
+            bitmap.close();
+            throw new Error(
+              `flipY was set to ${made.flipY} in prepare, which does nothing: a texture made of a bitmap is turned over when it is decoded, and Three.js does not read flipY of it after. Say which way up it is where it is made: Three.texture("${url}", { flipY: ${made.flipY} }).`
+            );
+          }
           made.needsUpdate = true;
           return made;
         },
@@ -822,6 +853,7 @@ export const texture = (
         })
     )
   );
+};
 
 // --- instances -------------------------------------------------------------------
 

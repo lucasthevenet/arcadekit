@@ -448,7 +448,9 @@ interface Channel {
  *   is made at the first key or pointer press, and a cue asked for in the
  *   very frame after is played. A cue that was asked for before that, or
  *   before its file was there, is not played: a sound that is late is
- *   worse than none.
+ *   worse than none. The first cue that comes before the first touch is
+ *   said, once, through Effect's logger, so that a game which opens with
+ *   a sound is told why it is not heard.
  * - A cue is played only by audio that is running. While it sleeps, or
  *   is still waking, which takes a moment when the page is seen again,
  *   a cue is dropped, as one before the first touch is: started then, it
@@ -501,6 +503,8 @@ export const layerSound = (
       let audio: AudioLike | undefined;
       let unwatch: (() => void) | undefined;
       let closed = false;
+      // Whether it was said that a cue came before the first touch.
+      let early = false;
       const failed = (cue: string, error: unknown): void => {
         report(
           Effect.logWarning(
@@ -741,6 +745,22 @@ export const layerSound = (
           // Before the first touch, before the file is here, or after
           // the layer was let go, which empties the buffers.
           if (audio === undefined || buffer === undefined) {
+            // Before the first touch, on a page that could play it after:
+            // said once, since nothing else tells why a game that opens
+            // with a sound is not heard.
+            if (
+              audio === undefined &&
+              !closed &&
+              make !== undefined &&
+              !early
+            ) {
+              early = true;
+              report(
+                Effect.logInfo(
+                  `The cue "${typeof cue === "string" ? cue : cue.name}" was asked for before the page was touched, and is not played: a browser lets a page make no sound until its user has pressed a key or a button, and a cue that came late would be worse than none. A track asked for then starts at the first touch. This is said once.`
+                )
+              );
+            }
             return;
           }
           // Asleep, or still waking, as it is for a moment after the page

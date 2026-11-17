@@ -771,9 +771,14 @@ describe("a texture", () => {
     const prepared: { readonly version: number; readonly space: string }[] = [];
     const Forest = Assets.bundle("ta/Textures", {
       bark: Three.texture("/bark.png"),
-      normals: Three.texture("/normals.png", (texture) => {
-        prepared.push({ version: texture.version, space: texture.colorSpace });
-        texture.colorSpace = NoColorSpace;
+      normals: Three.texture("/normals.png", {
+        prepare: (texture) => {
+          prepared.push({
+            version: texture.version,
+            space: texture.colorSpace,
+          });
+          texture.colorSpace = NoColorSpace;
+        },
       }),
     });
     const scope = Effect.runSync(Scope.make());
@@ -810,6 +815,75 @@ describe("a texture", () => {
     await Effect.runPromise(Scope.close(scope, Exit.void));
     expect(disposed).toBe(1);
     expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([1, 1]);
+  });
+
+  it("is left as its file has it when it is told so where it is made, and refuses to be told in prepare", async () => {
+    const { asked, bitmaps } = stubBitmaps();
+    const files = Assets.layerMemory({ "/skin.png": new Uint8Array([1, 2]) });
+    const load = (asset: Assets.Asset<Texture>) =>
+      Effect.runPromise(
+        Effect.exit(
+          Effect.scoped(
+            Effect.map(
+              Assets.load(Assets.bundle("ta/Skin", { skin: asset })),
+              ({ skin }) => ({ flipY: skin.flipY, image: skin.image })
+            )
+          )
+        ).pipe(Effect.provide(files))
+      );
+    // A model's own picture, say: as the file has it.
+    const seen: boolean[] = [];
+    const plain = await load(
+      Three.texture("/skin.png", {
+        flipY: false,
+        // Said again as it is, it is not a change.
+        prepare: (texture) => {
+          seen.push(texture.flipY);
+          texture.flipY = false;
+        },
+      })
+    );
+    expect(plain).toEqual(Exit.succeed({ flipY: false, image: bitmaps[0] }));
+    expect(seen).toEqual([false]);
+    // And turned over, which is what it is when nothing says: the texture
+    // says of itself how it was decoded.
+    expect(await load(Three.texture("/skin.png", { flipY: true }))).toEqual(
+      Exit.succeed({ flipY: true, image: bitmaps[1] })
+    );
+    expect(asked.map((one) => one.options)).toEqual([
+      { imageOrientation: "from-image" },
+      { imageOrientation: "flipY" },
+    ]);
+    // Three.js does not read flipY of a bitmap, so setting it in prepare
+    // would do nothing, either way: the load fails and says where to.
+    for (const [made, set] of [
+      [undefined, false],
+      [true, false],
+      [false, true],
+    ] as const) {
+      const exit = await load(
+        Three.texture("/skin.png", {
+          ...(made === undefined ? {} : { flipY: made }),
+          prepare: (texture) => {
+            texture.flipY = set;
+          },
+        })
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(
+        Cause.squash((exit as Exit.Failure<never, unknown>).cause)
+      ).toEqual(
+        new Assets.AssetFailed({
+          url: "/skin.png",
+          message: `It could not be made a texture: flipY was set to ${set} in prepare, which does nothing: a texture made of a bitmap is turned over when it is decoded, and Three.js does not read flipY of it after. Say which way up it is where it is made: Three.texture("/skin.png", { flipY: ${set} }).`,
+        })
+      );
+    }
+    // How it is told is an object, as a model is: a function alone is not.
+    // @ts-expect-error prepare is named
+    Three.texture("/skin.png", () => {});
+    // What was decoded for a load that failed is not kept.
+    expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([1, 1, 1, 1, 1]);
   });
 
   it("fails as an asset that could not be loaded when the file is no picture", async () => {

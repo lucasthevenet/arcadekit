@@ -181,7 +181,7 @@ describe.each([
     expect(page.sound.played).toEqual([{ cue: "start", volume: 1, rate: 1 }]);
     // And its music has begun, which is not an event but how things are.
     expect(page.sound.scored).toEqual([
-      { channel: "page/Score", track: "theme", volume: 0.4, fade: 0.6 },
+      { channel: "music", track: "theme", volume: 0.4, fade: 0.6 },
     ]);
     expect(await page.changed()).toBeGreaterThan(0);
 
@@ -226,7 +226,7 @@ describe.each([
     expect(page.buttons()).toEqual(["Resume", "Quit"]);
     // The music is turned down, not off.
     expect(page.sound.scored.at(-1)).toEqual({
-      channel: "page/Score",
+      channel: "music",
       track: "theme",
       volume: 0.1,
       fade: 0.6,

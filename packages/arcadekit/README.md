@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 678 tests, 92 of them of @arcadekit/three
+pnpm test                          # 688 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -171,7 +171,7 @@ const Rules = Plugin.make("game/Rules", {
 - `Transform3d.plugin` lists them. A plugin that stores them depends on it, as the plugin of a renderer that reads them does.
 - `Transform3d.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis, which is a direction of any length. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
 - A `Rotation` is its turn and not its length: a quaternion of any length stands for the turn of the one of length 1 along it, and what reads one takes it so. One that a game's rules let drift from length 1 is drawn as the same turn, and all zeros, which is what a `Rotation` added with no value is, as not turned at all.
-- A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A field left out of `of` is not 0, so a flat game gives every `z`.
+- A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A number left out of a value is 0 as well. `of` takes every field, so the compiler asks for each, and a flat game gives every `z`; from JavaScript, or past a cast, a number that is left out is 0 in the world, and never NaN. `world.set` writes the fields it is given: a number it names and gives no value for is left as it was.
 - [`@arcadekit/three`](../three/README.md) draws from them, and has no components of its own.
 
 **A flat game** has `Transform2d`: the same three components with no third dimension.
@@ -775,11 +775,13 @@ Music is not an event. It is what the game, as it is, should sound like, for as 
 - `{ track: "fanfare", once: true }` plays to its end and no further. It is still what the channel is playing: it is not started again while the body says the same, another track fades it out if it has not ended, and it plays again from its start once the body has said something else in between. A sound that only marks a moment, and need not be faded or stopped, is a [cue](#sound).
 - Nothing happens while it says the same. When it says another track the first fades out and the second fades in, over `fade` seconds; another volume is the same track, turned up or down as long. Half a second when nothing says.
 - It is worked out from the game and kept nowhere in it. A game that is loaded from a save, or an app that starts in the middle of a level, has its music from its first frame, and a game with music has the same hash, log and save as one with none.
-- The system's name is its channel. Two systems are two channels, which play together: the score, and the wind.
+- Every such system is of one score, on the channel `"music"`. Of a menu's music and a level's, each a system that runs while the game is there, the one that has something to play is heard, and a track that both play goes on from the one to the other with nothing told. What a frame's systems say of a channel is made one thing when they have all run: silence gives way to a track, whichever was said first.
+- Two systems that say different tracks of one channel in one frame, or one track at two volumes, is a bug: the frame fails where the second is said, with an error that names the channel and both.
+- What plays beside the score has a channel of its own, any name: `Sound.music("game/Wind", body, { channel: "wind" })`. Two channels play together, and several systems can share that one too.
 - The body reads what a frame system can: singletons, states, queries, events, [assets](#assets). Where sound goes nowhere it is not run at all.
-- Under `System.runIf` its channel is silent while the condition does not hold, as if the body had said so: music that is for a level stops when the level is left, with the fade it was given. Run again, the body says what plays, from the start of the track.
+- Under `System.runIf` it says nothing should play while the condition does not hold, as if the body had said so: music that is for a level stops when the level is left, with the fade it was given, unless another system of its channel plays. Run again, the body says what plays, from the start of the track.
 - When the app's scope closes, every channel that was playing is told silence at once.
-- `(yield* Sound.Player).music(channel, track, { volume, fade })` is what it is made of, for a frame system of your own. It tells the output of a change and of nothing else, so it can be said every frame, and in the tick it throws, as `play` does.
+- `(yield* Sound.Player).music(channel, track, { volume, fade })` is what it is made of, for a frame system of your own. It tells the output of a change and of nothing else, so it can be said every frame, and in the tick it throws, as `play` does. The output is told at the end of the frame, as for a cue; said in the input stage, with the frame that follows.
 
 ### A level's sounds
 
@@ -795,12 +797,17 @@ const ForestCues = Sound.cues("forest/Cues", Forest, ({ creak }) => [
 ]);
 
 // Its music: a clip of the bundle, while the bundle is loaded.
-const Air = Sound.music("forest/Air", function* () {
-  const forest = yield* Forest;
-  return forest._tag === "Ready"
-    ? { track: forest.assets.wind, volume: 0.3 }
-    : undefined;
-});
+// Beside the score, so on a channel of its own.
+const Air = Sound.music(
+  "forest/Air",
+  function* () {
+    const forest = yield* Forest;
+    return forest._tag === "Ready"
+      ? { track: forest.assets.wind, volume: 0.3 }
+      : undefined;
+  },
+  { channel: "air" }
+);
 ```
 
 The sounds a page is given by name are there for as long as the page. A level's own are [assets](#assets) of its bundle, loaded when the game enters it and let go when it leaves.
@@ -817,7 +824,7 @@ The sounds a page is given by name are there for as long as the page. A level's 
 The output is Web Audio, and `Browser.runMain` and `Browser.layer` provide it. `sounds` gives the files of the sounds the page has for as long as it lasts, by the name a cue or a track is played by; `Browser.layerSound(files)` is the layer on its own.
 
 - The files are fetched when the page starts, through `Assets.Loader`, and decoded as they arrive.
-- A page may not make a sound before its user has touched it. The audio is made at the first key or pointer press, and a cue asked for in the frame after is played. A cue that was asked for before that, or before its file was there, is not played: a sound that is late is worse than none.
+- A page may not make a sound before its user has touched it. The audio is made at the first key or pointer press, and a cue asked for in the frame after is played. A cue that was asked for before that, or before its file was there, is not played: a sound that is late is worse than none. The first cue that comes before the first touch is said, once, through Effect's logger, by its name: a game that opens with a sound is told why it is not heard.
 - A cue is played only by audio that is running. While the audio sleeps, or is still waking, which takes a moment when the page is seen again or a laptop's lid is opened, a cue is dropped: started then, it would wait, and every cue that waited would be heard at once.
 - Music is never late: it is what should be playing. A track that was asked for before the first touch, or before its file was there, starts when it can.
 - `volume` is how loud everything is played, and `rate` is a cue's speed, and so its pitch.

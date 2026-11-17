@@ -74,6 +74,106 @@ describe("entities and components", () => {
     expect(world.get(b, Position)).toEqual({ x: 0, y: 0 });
   });
 
+  it("takes a number left out of a value for 0, as in a component added with none, and never for NaN", () => {
+    const Mixed = Component.define("st/Mixed", {
+      x: Field.f32,
+      wide: Field.f64,
+      hp: Field.i32,
+      who: Field.entity,
+      name: Field.json<string | undefined>(),
+      cache: Field.transient<object>(),
+    });
+    const Faint = Component.define(
+      "st/Faint",
+      { seconds: Field.f32, turns: Field.u8 },
+      { storage: "sparse" }
+    );
+    const world = new World();
+    // A row that held other numbers, so that nothing is 0 by luck.
+    const old = world.spawn(
+      Mixed.of({
+        x: 9,
+        wide: 9,
+        hp: 9,
+        who: 9 as Entity,
+        name: "old",
+        cache: {},
+      }),
+      Faint.of({ seconds: 9, turns: 9 })
+    );
+    world.despawn(old);
+    // Past the compiler, as JavaScript or a cast gets there.
+    const spawned = world.spawn(
+      Mixed.of({ x: 3 } as never),
+      Faint.of({} as never)
+    );
+    expect(world.get(spawned, Mixed)).toEqual({
+      x: 3,
+      wide: 0,
+      hp: 0,
+      who: 0,
+      // What is not a number is not there.
+      name: undefined,
+      cache: undefined,
+    });
+    expect(world.get(spawned, Faint)).toEqual({ seconds: 0, turns: 0 });
+    // Named and not given is the same as not named.
+    const named = world.spawn(
+      Mixed.of({ x: undefined, wide: 2, hp: undefined } as never)
+    );
+    expect(world.get(named, Mixed)).toMatchObject({ x: 0, wide: 2, hp: 0 });
+    // Added, to an entity without it and over the one it has: a value is
+    // the whole component, and what it leaves out is 0 again.
+    const added = world.spawn();
+    world.add(added, Mixed.of({ wide: 4 } as never));
+    expect(world.get(added, Mixed)).toMatchObject({ x: 0, wide: 4, hp: 0 });
+    world.add(spawned, Mixed.of({ hp: 5 } as never));
+    expect(world.get(spawned, Mixed)).toMatchObject({ x: 0, wide: 0, hp: 5 });
+    world.add(spawned, Faint.of({ turns: 2 } as never));
+    expect(world.get(spawned, Faint)).toEqual({ seconds: 0, turns: 2 });
+    // Through a command buffer, which is how a system does either.
+    const commands = new CommandBuffer(world);
+    const later = commands.spawn(Mixed.of({ hp: 7 } as never));
+    commands.add(added, Faint.of({} as never));
+    commands.apply();
+    expect(world.get(later, Mixed)).toMatchObject({ x: 0, wide: 0, hp: 7 });
+    expect(world.get(added, Faint)).toEqual({ seconds: 0, turns: 0 });
+    // A number that is given is written as it is, whatever it is.
+    const odd = world.spawn(Mixed.of({ x: Number.NaN, wide: -0 } as never));
+    expect(world.get(odd, Mixed)!.x).toBeNaN();
+    expect(Object.is(world.get(odd, Mixed)!.wide, -0)).toBe(true);
+  });
+
+  it("leaves a number as it was when set names it and gives none, and writes what is not a number", () => {
+    const Mixed = Component.define("st/Mixed2", {
+      x: Field.f32,
+      hp: Field.i32,
+      name: Field.json<string | undefined>(),
+    });
+    const Faint = Component.define(
+      "st/Faint2",
+      { seconds: Field.f32 },
+      { storage: "sparse" }
+    );
+    const world = new World();
+    const one = world.spawn(
+      Mixed.of({ x: 1.5, hp: 4, name: "one" }),
+      Faint.of({ seconds: 2.5 })
+    );
+    world.set(one, Mixed, { x: undefined, hp: 6 } as never);
+    expect(world.get(one, Mixed)).toEqual({ x: 1.5, hp: 6, name: "one" });
+    world.set(one, Mixed, { hp: undefined, x: 8 } as never);
+    expect(world.get(one, Mixed)).toEqual({ x: 8, hp: 6, name: "one" });
+    world.set(one, Faint, { seconds: undefined } as never);
+    expect(world.get(one, Faint)).toEqual({ seconds: 2.5 });
+    // A field that holds anything holds nothing when it is told to.
+    world.set(one, Mixed, { name: undefined });
+    expect(world.get(one, Mixed)).toEqual({ x: 8, hp: 6, name: undefined });
+    // And a number that is given is written, zero among them.
+    world.set(one, Mixed, { x: 0, hp: 0 });
+    expect(world.get(one, Mixed)).toEqual({ x: 0, hp: 0, name: undefined });
+  });
+
   it("stores arbitrary values and entity references", () => {
     const world = new World();
     const a = world.spawn(Name.of({ value: "goblin" }));
