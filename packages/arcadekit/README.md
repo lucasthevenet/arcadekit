@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 804 tests, 93 of them of @arcadekit/three
+pnpm test                          # 812 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -1279,7 +1279,7 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 
 | File | What it is |
 | --- | --- |
-| `src/ecs/component.ts` | Fields, components, relations, singletons, entity ids, generated accessors |
+| `src/ecs/component.ts` | Fields, components, relations, singletons, entity ids, and the accessors `each` hands out |
 | `src/ecs/world.ts` | Tables, sparse sets, queries, change logs, relations, world, transactions, command buffer |
 | `src/ecs/random.ts` | The seeded random number generator a world owns |
 | `src/ecs/hash.ts` | The arithmetic of the world's hash |
@@ -1308,7 +1308,7 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, relay, origin and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, and a world that is restored compared with a new one that loaded the same snapshot. `test/peers.ts` is the game and the network those of several peers share |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, relay, origin, policy and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, a world that is restored compared with a new one that loaded the same snapshot, and a game played in a process that may not make code from text. `test/peers.ts` is the game and the network those of several peers share, and `test/policy-game.ts` the game of the last |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/relay.ts` | A relay under Node: `Relay.make()` behind a WebSocket server (`ws`, a dev dependency for this and for the relay's tests) |
@@ -1334,6 +1334,14 @@ moving.eachChunk((start, end, pos, vel) => {
 (In this repository the raw loop needs an assertion on each read; see [Raw columns and strict indexing](#raw-columns-and-strict-indexing).)
 
 Both work with every query, including ones that require, exclude or read sparse components, and both visit entities in the same order: tables in creation order, rows ascending. With sparse conditions, `eachChunk` splits each table into runs of consecutive matching rows.
+
+### Under a Content Security Policy
+
+Nothing in the package makes code from text: no `eval` and no `new Function`. A page whose policy has no `'unsafe-eval'`, `script-src 'self'` say, runs a game as it is, with nothing to switch on and nothing that goes slower there.
+
+- What `each` hands its callback is an object with a getter and a setter per field, each a closure over the field's column and the row the loop is at. They were classes generated with `new Function`, which such a policy refuses: a game stopped at its first `Component.define`.
+- It costs a little more than the generated classes did where a program has one or two components, 1 ns an entity, and much less in a real game, 10 ns against 18 in a program of ten: see the [benchmark](#benchmark-100000-entities-pos--vel--dt). `eachChunk` never went through accessors, and a view that is only ever given to `eachChunk` makes none.
+- A test plays a game in a process that forbids making code from text, which is what such a page is to the engine, and holds it to the same world as one played without. The same game was run by hand in a page served with `Content-Security-Policy: default-src 'self'; script-src 'self'`, in headless Chromium, and ended on the same hash. Other browsers were not tried.
 
 ### Saying what a query only reads
 
@@ -1375,13 +1383,13 @@ Best of three runs per variant on a cloud Linux VM, Node 22. The machine is shar
 | ---------------------------------------------------------- | --------- |
 | `eachChunk`: raw typed-array columns                       | 2.6       |
 | `eachChunk`, excluding a sparse tag 1% of entities have    | 4.8       |
-| `each`: accessors, only caller in the program              | 6.6       |
-| `each`, excluding a sparse tag 1% have                     | 7.4       |
-| `each`: accessors, after 6 other systems used `each`       | 9.6       |
+| `each`: accessors, only caller in the program              | 8.0       |
+| `each`, excluding a sparse tag 1% have                     | 8.8       |
+| `each`: accessors, in a program of ten components          | 10.2      |
+| `each`: accessors, after 6 other systems used `each`       | 10.7      |
 | `eachChunk`, excluding a sparse tag half the entities have | 11.4      |
 | Array of plain objects (no ECS)                            | 16.0      |
 | One Effect per entity                                      | 69.3      |
-| Accessors without code generation                          | 102.8     |
 
 Hashing the same 100,000 entities, in the same units:
 
@@ -1404,8 +1412,8 @@ Change detection in the same world, with a query that watches `Position`:
 | One `world.set` among 100,000 entities, and the visit after it | 200 ns |
 | Visiting the 1,000 entities that were written, of 100,000 | 42 µs |
 | Visiting all 100,000, every one written | 22.4 ns/entity |
-| `each` writing the watched component: every row noted | 14.0 ns/entity |
-| The same, when every row is noted already | 11.3 ns/entity |
+| `each` writing the watched component: every row noted | 17.2 ns/entity |
+| The same, when every row is noted already | 13.8 ns/entity |
 | `eachChunk` handed the watched component: every row noted | 5.3 ns/entity |
 | The same through a query that only reads it (`Query.reads`) | 2.6 ns/entity |
 
@@ -1455,7 +1463,9 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 | Handler loops over all 100,000 with `each`, accepted | 0.70 ms | 0.81 ms |
 | The same, refused after its loop                     | 0.73 ms | 0.94 ms |
 
-- Writes are noticed per row. A component that no query watches costs what it did: the lines of the first table were measured before and after and did not move. A watched one costs 2.5 ns more for an assignment in `each` to a row that is noted already, about 5 ns for the first assignment to a row since the last visit, and 2.8 ns per row that `eachChunk` hands out. Noticing per table or per column would cost nothing to write, but one `world.set` would then send every watching query through the whole table: 0.25 ms to 0.64 ms for 100,000 rows, where it now takes 0.2 µs.
+- Writes are noticed per row. A component that no query watches costs what it did: the lines of the first table were measured before and after and did not move. A watched one costs about 3 ns more for an assignment in `each` to a row that is noted already, about 5 ns for the first assignment to a row since the last visit, and 2.8 ns per row that `eachChunk` hands out. Noticing per table or per column would cost nothing to write, but one `world.set` would then send every watching query through the whole table: 0.25 ms to 0.64 ms for 100,000 rows, where it now takes 0.2 µs.
+- What `each` hands out is made of closures, where it was classes generated with `new Function`, which a page's [Content Security Policy](#under-a-content-security-policy) may refuse. Measured one against the other, turn and turn about: 8.0 ns an entity against 6.7 where one callback is all the program has, 10.7 against 9.6 after six other systems, and 10.2 against 17.7 in a program of ten components with fields of six kinds, which is the one that is like a game. A generated class kept the row it was at in a field of its own, and the loop that moved it on had by then met too many classes to know where that field was; a loop now has one row, whatever it hands out. The getters are written out once per kind of column: one getter for every kind measured 112 ns in a program with seven kinds of field. Pointing the accessors at a table costs about 75 ns a term, so a world of very many very small tables pays for that: 100,000 entities in 8,192 tables measured 19.8 ns an entity against 15.3.
+- About one run in six of any of these is half as fast again as the rest, whichever build it is of: the machine, or where the arrays happened to land. The lines here are the best of three.
 - A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
 - The input stage runs before every tick, so its cost when nothing happens is the one that counts: one sample of the devices, compared with what the world holds, 1.4 µs for a keyboard, a pointer and a few buttons held. An app with no system in that stage reads nothing and pays nothing.
 - A view costs the game its body and one comparison a frame, 2.3 µs for four fields, and the UI nothing at all until a field differs. A value that is new is found to be at the first field that differs, which is why it costs less than one that is not. Where no UI is there the system asks whether one is and stops.
@@ -1541,7 +1551,6 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A run condition is given to one system at a time: a plugin cannot be given one for all its systems. A script is not stopped by a state; it asks.
 - A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check, which is told who that is.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
-- Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.
 - Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.
 - Entity generations are 10 bits: a handle kept across 1,024 reuses of the same slot can alias a newer entity.

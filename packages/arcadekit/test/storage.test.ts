@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { Component, Field } from "../src/ecs/component";
-import type { Entity } from "../src/ecs/component";
+import type { ComponentDef, Entity } from "../src/ecs/component";
 import { CommandBuffer, World } from "../src/ecs/world";
 import type { QuerySpec, Terms } from "../src/ecs/world";
 
@@ -646,6 +646,250 @@ describe("queries", () => {
     expect(after[0]).not.toContain(40);
     expect(after[0]).toContain(5);
     expect(world.isAlive(ents[0]!)).toBe(false);
+  });
+});
+
+describe("what each hands its callback", () => {
+  // One field of every kind a column can be.
+  const fields = {
+    f32: Field.f32,
+    f64: Field.f64,
+    i32: Field.i32,
+    u32: Field.u32,
+    u16: Field.u16,
+    u8: Field.u8,
+    entity: Field.entity,
+    json: Field.json<string>(),
+    ref: Field.ref<Date>({
+      encode: (date) => date.getTime(),
+      decode: (time) => new Date(time as number),
+    }),
+    transient: Field.transient<{ readonly n: number }>(),
+  };
+  const Every = Component.define("st/Every", fields);
+  const EverySparse = Component.define("st/EverySparse", fields, {
+    storage: "sparse",
+  });
+  /** A value that is a different one in every field for every `n`. */
+  const valueOf = (n: number) => ({
+    f32: n + 0.5,
+    f64: n + 0.1,
+    i32: -n - 1,
+    u32: 3_000_000_000 + n,
+    u16: 60_000 + n,
+    u8: (200 + n) & 255,
+    entity: (n + 7) as Entity,
+    json: `text ${n}`,
+    ref: new Date(1000 * n),
+    transient: { n },
+  });
+  const names = Object.keys(fields) as (keyof typeof fields)[];
+
+  for (const def of [Every, EverySparse]) {
+    it(`reads and writes a field of every kind, each in its own column and at its own row (${def.storage})`, () => {
+      const world = new World();
+      const entities: Entity[] = [];
+      for (let n = 0; n < 40; n++) {
+        // A second table, and rows of the sparse set that are not the
+        // table's: every third entity has no such component.
+        const extra = n % 2 === 0 ? [Enemy] : [];
+        entities.push(
+          n % 3 === 2
+            ? world.spawn(Health.of({ hp: n }), ...extra)
+            : world.spawn(Health.of({ hp: n }), def.of(valueOf(n)), ...extra)
+        );
+      }
+      const having = entities.filter((_, n) => n % 3 !== 2);
+      const view = world.view(query([Health, def]));
+
+      // Read through the accessors: what was spawned, field by field.
+      const seen: Entity[] = [];
+      view.each((health, every, entity) => {
+        seen.push(entity);
+        const expected = valueOf(health.hp);
+        for (const name of names) {
+          expect(every[name], name).toEqual(expected[name]);
+        }
+        // What it holds is its fields, and no more.
+        expect(Object.keys(every)).toEqual([]);
+        expect(names.every((name) => name in every)).toBe(true);
+      });
+      expect(seen.toSorted()).toEqual(having.toSorted());
+
+      // Written through the accessors: what the world then holds.
+      view.each((health, every) => {
+        const next = valueOf(health.hp + 100);
+        for (const name of names) {
+          (every as Record<string, unknown>)[name] = next[name];
+        }
+      });
+      for (const entity of having) {
+        const n = world.get(entity, Health)!.hp;
+        expect(world.get(entity, def)).toEqual(valueOf(n + 100));
+      }
+
+      // One field written leaves the others, and the rows beside it.
+      const target = having[5]!;
+      view.each((_, every, entity) => {
+        if (entity === target) {
+          every.u16 = 1;
+        }
+      });
+      for (const entity of having) {
+        const n = world.get(entity, Health)!.hp;
+        expect(world.get(entity, def)).toEqual(
+          entity === target ? { ...valueOf(n + 100), u16: 1 } : valueOf(n + 100)
+        );
+      }
+    });
+
+    it(`reads the same through a query that only reads, in a frozen world, and where writes are noticed (${def.storage})`, () => {
+      const world = new World();
+      // Others first, so that no entity's row is its index.
+      for (let n = 0; n < 7; n++) {
+        world.spawn(Health.of({ hp: 100 + n }));
+      }
+      for (let n = 0; n < 12; n++) {
+        world.spawn(Health.of({ hp: n }), def.of(valueOf(n)));
+      }
+      const read = (spec: QuerySpec<any>): unknown[] => {
+        const rows: unknown[] = [];
+        world.view(spec).each((...args: unknown[]) => {
+          const [health, every] = args as [
+            { readonly hp: number },
+            Record<string, unknown>,
+          ];
+          rows.push([health.hp, ...names.map((name) => every[name])]);
+        });
+        return rows;
+      };
+      const expected = Array.from({ length: 12 }, (_, n) => [
+        n,
+        ...names.map((name) => valueOf(n)[name]),
+      ]);
+      const plain = query([Health, def]);
+      expect(read(plain)).toEqual(expected);
+      expect(read({ ...query([Health, def]), readDefs: [def] })).toEqual(
+        expected
+      );
+      world.freeze();
+      expect(read(plain)).toEqual(expected);
+      world.thaw();
+      // A query that watches the component: from now on its writes are noted.
+      const watching = world.view({
+        ...query([Health]),
+        changedDefs: [def],
+      });
+      watching.entities();
+      expect(read(plain)).toEqual(expected);
+      // And every field's assignment is one, noted for the entity it was.
+      for (const name of names) {
+        const written: Entity[] = [];
+        world.view(plain).each((health, every, entity) => {
+          if (health.hp % 5 === 0) {
+            (every as Record<string, unknown>)[name] = valueOf(health.hp + 50)[
+              name
+            ];
+            written.push(entity);
+          }
+        });
+        expect(watching.entities(), name).toEqual(written);
+      }
+      expect(read(plain)).toEqual(
+        Array.from({ length: 12 }, (_, n) => [
+          n,
+          ...names.map((name) => valueOf(n % 5 === 0 ? n + 50 : n)[name]),
+        ])
+      );
+    });
+  }
+
+  it("hands four terms and more their own rows, in tables and in sparse sets", () => {
+    const world = new World();
+    const A = Component.define("st/A", { v: Field.i32 });
+    const B = Component.define("st/B", { v: Field.i32 });
+    const C = Component.define("st/C", { v: Field.i32 });
+    const F = Component.define("st/F", { v: Field.i32 });
+    const D = Component.define("st/D", { v: Field.i32 }, { storage: "sparse" });
+    const E = Component.define("st/E", { v: Field.i32 }, { storage: "sparse" });
+    const entities: Entity[] = [];
+    for (let n = 0; n < 30; n++) {
+      entities.push(
+        world.spawn(
+          A.of({ v: n }),
+          B.of({ v: 10 * n }),
+          C.of({ v: 100 * n }),
+          F.of({ v: 100_000 * n })
+        )
+      );
+    }
+    // The sparse sets in two other orders than the table's rows.
+    for (let n = 29; n >= 0; n--) {
+      world.add(entities[n]!, D.of({ v: 1000 * n }));
+    }
+    for (const n of [
+      3,
+      1,
+      2,
+      0,
+      ...Array.from({ length: 26 }, (_, k) => k + 4),
+    ]) {
+      world.add(entities[n]!, E.of({ v: 10_000 * n }));
+    }
+    // Components of one shape and several names: told apart nowhere here.
+    const lists: ComponentDef<any>[][] = [
+      // In the table alone: one loop for each number of terms up to three,
+      // and one for any number past that.
+      [B],
+      [B, A],
+      [C, A, B],
+      [A, B, C, F],
+      [F, C, B, A, B],
+      // With terms that are sparse, whose rows are their own.
+      [A, B, C, D],
+      [A, B, C, D, E],
+      [D, E],
+      [D, A, E],
+      [E],
+    ];
+    for (const terms of lists) {
+      const rows: number[][] = [];
+      world.view(query(terms)).each((...args: unknown[]) => {
+        const entity = args.pop() as Entity;
+        const n = entities.indexOf(entity);
+        rows.push([n, ...args.map((term) => (term as { v: number }).v)]);
+        for (const term of args) {
+          (term as { v: number }).v += 1;
+        }
+      });
+      const scale = new Map<ComponentDef<any>, number>([
+        [A, 1],
+        [B, 10],
+        [C, 100],
+        [D, 1000],
+        [E, 10_000],
+        [F, 100_000],
+      ]);
+      expect(rows.length).toBe(30);
+      for (const [n, ...values] of rows) {
+        // A term that is there twice was handed out twice, and added to
+        // twice.
+        expect(values).toEqual(
+          terms.map(
+            (def) =>
+              (world.get(entities[n!]!, def) as { readonly v: number }).v -
+              terms.filter((other) => other === def).length
+          )
+        );
+        // Whatever was added so far, each value is still its own entity's.
+        for (let k = 0; k < terms.length; k++) {
+          const of = scale.get(terms[k]!)!;
+          expect(Math.floor(values[k]! / of) % 10 === n! % 10 || of === 1).toBe(
+            true
+          );
+        }
+      }
+    }
   });
 });
 

@@ -224,20 +224,42 @@ export interface WriteLog {
   note(index: number): void;
 }
 
-/** @internal A reusable cursor over one row of a component's columns. */
+/**
+ * @internal The row a loop is at. The accessors a loop hands out read and
+ * write that row of their columns, so moving the loop on is one assignment
+ * here, however many components it visits.
+ */
+export interface Row {
+  i: number;
+}
+
+/**
+ * @internal What a query's loop is handed for one of its terms: an object
+ * with a property per field, which reads and writes the row its loop is
+ * at, and what points it at a table's columns.
+ */
 export interface Accessor {
-  _i: number;
+  /** What the callback of `each` is given. It holds the fields and nothing else. */
+  readonly fields: object;
   /**
-   * `entities` and `log` are for an accessor that notices writes: the entity
-   * of each row (ids for a table, indexes for a sparse set), and where a
-   * write is noted.
+   * Points the fields at a set of columns. `entities` and `log` are for an
+   * accessor that notices writes: the entity of each row (ids for a table,
+   * indexes for a sparse set), and where a write is noted.
    */
-  _bind(
+  bind(
     columns: Record<string, Column>,
     entities?: Uint32Array,
     log?: WriteLog
   ): void;
 }
+
+/**
+ * @internal What an accessor does with an assignment: writes it; writes it
+ * and notes whose row it was, for the queries that watch the component;
+ * or refuses it, in a query that only reads the component or in a world
+ * that is frozen.
+ */
+export type AccessorMode = "writes" | "notes" | "reads" | "frozen";
 
 /**
  * @param S  the component's fields
@@ -273,8 +295,6 @@ export interface ComponentDef<
   readonly relation: OnTargetDespawn | undefined;
   /** Pair this component with a value, for `spawn` and `add`. */
   readonly of: (value: ValueOf<S>) => ComponentValue<S>;
-  /** @internal */
-  readonly Accessor: new () => Accessor;
 }
 
 export interface ComponentValue<S extends Schema = Schema> {
@@ -317,59 +337,6 @@ export const isSingletonSpec = (u: Listed): u is SingletonSpec<any> =>
 // compared between processes.
 let nextId = 0;
 
-/**
- * Builds a class with one getter/setter pair per field, each reading
- * `column[row]` directly. Generated with `new Function` so every property
- * access is static and the JIT can inline it. Environments with a strict CSP
- * would need a non-codegen fallback (see bench/accessors.ts for the cost).
- */
-const makeAccessorClass = (
-  fields: readonly string[],
-  noticing = false,
-  relation?: string,
-  /** For an accessor that only reads: what an assignment to a field throws. */
-  refusal?: (field: string) => string
-): new () => Accessor => {
-  const init = fields.map((_, i) => `this._c${i} = null;`).join(" ");
-  // An accessor that notices writes tells the log which entity it wrote,
-  // by index. The log keeps one entry per entity until a reader has been.
-  // The check `note` starts with is written out here, so that a row which
-  // is noted already costs a few reads and a comparison, and no call.
-  // Measured, 2.5 ns an assignment. `noted` is read through the log each
-  // time: the log replaces it when it grows.
-  const note = noticing
-    ? `; const k = this._e[this._i] & ${INDEX_MASK}; if (this._l.noted[k] !== 1) this._l.note(k)`
-    : "";
-  const props = fields
-    .map((f, i) => {
-      const key = JSON.stringify(f);
-      // A relation's target is the world's to change.
-      const set =
-        refusal !== undefined
-          ? `throw new Error(${JSON.stringify(refusal(f))})`
-          : relation !== undefined && f === "target"
-            ? `throw new Error(${JSON.stringify(retarget(relation))})`
-            : `this._c${i}[this._i] = v${note}`;
-      return `get [${key}]() { return this._c${i}[this._i] } set [${key}](v) { ${set} }`;
-    })
-    .join("\n");
-  const bind = fields
-    .map((f, i) => `this._c${i} = cols[${JSON.stringify(f)}];`)
-    .join(" ");
-  const source = noticing
-    ? `return class {
-    constructor() { this._i = 0; this._e = null; this._l = null; ${init} }
-    ${props}
-    _bind(cols, ents, log) { ${bind} this._e = ents; this._l = log; }
-  }`
-    : `return class {
-    constructor() { this._i = 0; ${init} }
-    ${props}
-    _bind(cols) { ${bind} }
-  }`;
-  return new Function(source)() as new () => Accessor;
-};
-
 /** What went wrong when something tried to change a frozen world. */
 export const frozenWrite = (what: string): string =>
   `${what} was made while the world is frozen. A frozen world is read and not changed: an app freezes its world for the frame stage, which draws the game between two ticks, and for the input stage, which reads the devices before one. Change the game from a system that runs in the tick, or from outside with an action.`;
@@ -378,68 +345,301 @@ export const frozenWrite = (what: string): string =>
 export const retarget = (name: string): string =>
   `"${name}" is a relation, and its target is not written like a field: the world keeps track of who points at whom. Give it another target by adding it again, with add(entity, ${name.split("/").pop()}.of({ target })) on Commands or on the world.`;
 
-// Made the first time a world watches the component for changes, and kept:
-// it is code, not state, so worlds can share it.
-const noticingClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+// ---------------------------------------------------------------------------
+// Accessors: what `each` hands its callback
+// ---------------------------------------------------------------------------
+//
+// An accessor is an object with a getter and a setter per field, each a
+// closure over the field's column and the row its loop is at. Nothing here
+// is generated from text: a page whose Content Security Policy forbids
+// `eval` and `new Function` runs it as it is.
+//
+// What makes that as fast as generated code is where an engine keeps what
+// it learns. It learns per function as written in the source, not per
+// closure made of it, and specialises a read of `column[row]` for the kinds
+// of array it has seen there. So:
+//
+// - Every kind of column has its functions written out, below, seven times
+//   over. One getter for every kind would meet every kind of array at one
+//   place in the source, and past four an engine stops specialising: such
+//   a getter measured 112 ns an entity in a program with seven kinds of
+//   field, where these measure 10.
+// - The getters and setters reach nothing through `this`. What they need
+//   they close over: the column, in a variable that `bind` assigns, and
+//   the row, in an object every loop has one of in the same shape.
+// - The properties are defined on an object that is then made a prototype,
+//   and the accessor is an empty object under it. An object given
+//   accessor properties of its own, one closure after another, is turned
+//   into a dictionary by V8 and read five times slower.
+//
+// Measured against classes generated with `new Function`, which this
+// replaces, in `bench/accessors.ts`: 8.0 ns an entity against 6.7 with one
+// callback in the program, 10.7 against 9.6 with seven, and 10.2 against
+// 17.7 in a program of ten components. A generated class kept its row in a
+// field of its own, and the loop that assigned it had by then met too many
+// classes to know where the field was.
 
-const frozenClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+/** What an accessor that notices writes was last bound to. */
+interface Noting {
+  entities: Uint32Array;
+  log: WriteLog;
+}
 
 /**
- * The accessor class of a component in a frozen world: as `def.Accessor`
- * to read, and every setter throws.
- * @internal
+ * Defines one field on `target` and returns what points it at a column.
+ * `noting` is given for an accessor that notices writes, and `refusal`,
+ * what an assignment throws, for a field that is not written.
  */
-export const frozenAccessor = (def: ComponentDef<any>): new () => Accessor => {
-  let made = frozenClasses.get(def);
-  if (made === undefined) {
-    made = makeAccessorClass(def.fields, false, undefined, (field) =>
-      frozenWrite(`An assignment to "${def.name}.${field}"`)
-    );
-    frozenClasses.set(def, made);
-  }
-  return made;
+type DefineField = (
+  target: object,
+  name: string,
+  row: Row,
+  noting: Noting | undefined,
+  refusal: string | undefined
+) => (column: Column) => void;
+
+const refuse = (message: string) => (): never => {
+  throw new Error(message);
 };
 
-const readingClasses = new WeakMap<ComponentDef<any>, new () => Accessor>();
+// The seven that follow differ in the type of `column` and in nothing
+// else. They are not one function given the type: see above.
 
-/**
- * The accessor class of a component for a query that only reads it: as
- * `def.Accessor` to read, and every setter throws.
- * @internal
- */
-export const readingAccessor = (def: ComponentDef<any>): new () => Accessor => {
-  let made = readingClasses.get(def);
-  if (made === undefined) {
-    made = makeAccessorClass(
-      def.fields,
-      false,
-      undefined,
-      (field) =>
-        `"${def.name}.${field}" was assigned to through a query that only reads "${def.name}": the query names it among the components it reads (Query.reads). Leave it out of those to write it.`
-    );
-    readingClasses.set(def, made);
-  }
-  return made;
+const defineF32: DefineField = (target, name, row, noting, refusal) => {
+  let column = undefined as unknown as Float32Array;
+  Object.defineProperty(target, name, {
+    get: () => column[row.i],
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: number) => {
+              column[row.i] = value;
+            }
+          : (value: number) => {
+              column[row.i] = value;
+              // The log keeps one entry per entity until a reader has been.
+              // The check `note` starts with is written out here, so that a
+              // row which is noted already costs a few reads and a
+              // comparison, and no call. `noted` is read through the log
+              // each time: the log replaces it when it grows.
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = to as Float32Array;
+  };
+};
+
+const defineF64: DefineField = (target, name, row, noting, refusal) => {
+  let column = undefined as unknown as Float64Array;
+  Object.defineProperty(target, name, {
+    get: () => column[row.i],
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: number) => {
+              column[row.i] = value;
+            }
+          : (value: number) => {
+              column[row.i] = value;
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = to as Float64Array;
+  };
+};
+
+const defineI32: DefineField = (target, name, row, noting, refusal) => {
+  let column = undefined as unknown as Int32Array;
+  Object.defineProperty(target, name, {
+    get: () => column[row.i],
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: number) => {
+              column[row.i] = value;
+            }
+          : (value: number) => {
+              column[row.i] = value;
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = to as Int32Array;
+  };
+};
+
+const defineU32: DefineField = (target, name, row, noting, refusal) => {
+  let column = undefined as unknown as Uint32Array;
+  Object.defineProperty(target, name, {
+    get: () => column[row.i],
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: number) => {
+              column[row.i] = value;
+            }
+          : (value: number) => {
+              column[row.i] = value;
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = to as Uint32Array;
+  };
+};
+
+const defineU16: DefineField = (target, name, row, noting, refusal) => {
+  let column = undefined as unknown as Uint16Array;
+  Object.defineProperty(target, name, {
+    get: () => column[row.i],
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: number) => {
+              column[row.i] = value;
+            }
+          : (value: number) => {
+              column[row.i] = value;
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = to as Uint16Array;
+  };
+};
+
+const defineU8: DefineField = (target, name, row, noting, refusal) => {
+  let column = undefined as unknown as Uint8Array;
+  Object.defineProperty(target, name, {
+    get: () => column[row.i],
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: number) => {
+              column[row.i] = value;
+            }
+          : (value: number) => {
+              column[row.i] = value;
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = to as Uint8Array;
+  };
+};
+
+/** A `json`, `ref` or `transient` field: a plain array, one value per row. */
+const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
+  let column = undefined as unknown as unknown[];
+  Object.defineProperty(target, name, {
+    get: () => column[row.i],
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: unknown) => {
+              column[row.i] = value;
+            }
+          : (value: unknown) => {
+              column[row.i] = value;
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = to as unknown[];
+  };
+};
+
+const DEFINE_FIELD: Readonly<Record<FieldKind, DefineField>> = {
+  f32: defineF32,
+  f64: defineF64,
+  i32: defineI32,
+  u32: defineU32,
+  // An entity id is kept in the same kind of array as a `u32`.
+  entity: defineU32,
+  u16: defineU16,
+  u8: defineU8,
+  json: defineBoxed,
+  ref: defineBoxed,
+  transient: defineBoxed,
 };
 
 /**
- * The accessor class of a component whose writes are noticed: as
- * `def.Accessor`, and every setter also notes the entity it wrote.
+ * Makes an accessor of a component for one loop: its fields read and write
+ * the row that `row` says, of the columns it was last bound to.
  * @internal
  */
-export const noticingAccessor = (
-  def: ComponentDef<any>
-): new () => Accessor => {
-  let made = noticingClasses.get(def);
-  if (made === undefined) {
-    made = makeAccessorClass(
-      def.fields,
-      true,
-      def.relation === undefined ? undefined : def.name
-    );
-    noticingClasses.set(def, made);
-  }
-  return made;
+export const makeAccessor = (
+  def: ComponentDef<any>,
+  mode: AccessorMode,
+  row: Row
+): Accessor => {
+  const { fields, kinds, name } = def;
+  const noting: Noting | undefined =
+    mode === "notes"
+      ? {
+          entities: undefined as unknown as Uint32Array,
+          log: undefined as unknown as WriteLog,
+        }
+      : undefined;
+  const target = {};
+  const binders = fields.map((field, f) =>
+    DEFINE_FIELD[kinds[f]!](
+      target,
+      field,
+      row,
+      noting,
+      mode === "reads"
+        ? `"${name}.${field}" was assigned to through a query that only reads "${name}": the query names it among the components it reads (Query.reads). Leave it out of those to write it.`
+        : mode === "frozen"
+          ? frozenWrite(`An assignment to "${name}.${field}"`)
+          : // A relation's target is the world's to change.
+            def.relation !== undefined && field === "target"
+            ? retarget(name)
+            : undefined
+    )
+  );
+  return {
+    fields: Object.create(target) as object,
+    bind(columns, entities, log) {
+      for (let f = 0; f < binders.length; f++) {
+        binders[f]!(columns[fields[f]!]!);
+      }
+      if (noting !== undefined) {
+        noting.entities = entities!;
+        noting.log = log!;
+      }
+    },
+  };
 };
 
 const define = <
@@ -468,11 +668,6 @@ const define = <
     single: options?.single === true,
     relation: options?.relation,
     of: (value) => ({ def, value }),
-    Accessor: makeAccessorClass(
-      fields,
-      false,
-      options?.relation === undefined ? undefined : name
-    ),
   };
   return def;
 };

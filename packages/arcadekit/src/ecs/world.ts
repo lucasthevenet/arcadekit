@@ -34,12 +34,10 @@ import {
   INDEX_MASK,
   isBoxed,
   isComponentDef,
+  makeAccessor,
   makeColumn,
-  frozenAccessor,
   frozenWrite,
   makeEntity,
-  noticingAccessor,
-  readingAccessor,
   retarget,
 } from "./component";
 import type {
@@ -52,6 +50,7 @@ import type {
   Entity,
   ReadOnlyTerm,
   ReadonlyColumnsOf,
+  Row,
   Schema,
   SingletonSpec,
   ValueOf,
@@ -930,9 +929,23 @@ const NATIVE_SCAN_ROWS_PER_EXCEPTION = 64;
 
 const ROW_RANGE = 4_294_967_296; // 2^32: keys are `slot * ROW_RANGE + row`
 
+/** What `each` hands out, and where its loop is, for one level of iteration. */
+interface Loop {
+  readonly accessors: Accessor[];
+  /** Per term: what the callback of `each` is handed. */
+  readonly fields: object[];
+  /** The row the loop is at, for every term whose rows are a table's. */
+  readonly row: Row;
+  /** Per term: the row it reads, which for a sparse term is one of its own. */
+  readonly rows: Row[];
+}
+
 /** Scratch state for one level of nested iteration over the same view. */
 interface Frame {
-  readonly accessors: Accessor[];
+  /** Made by the first `each` at this level: a raw loop needs none of it. */
+  loop: Loop | undefined;
+  /** Whether `loop` is for a frozen world, whose accessors only read. */
+  readonly frozen: boolean;
   keys: Float64Array;
   /** For a change query: the entity indexes this iteration is of. */
   members: Members;
@@ -963,6 +976,8 @@ export class QueryView<D extends Terms = Terms> {
   private readonly termTableId: number[] = [];
   /** Per term: its sparse set, or undefined when the term is a table component. */
   private readonly termSet: (SparseSet | undefined)[] = [];
+  /** The terms that are sparse, by their place among the terms. */
+  private readonly sparseTerms: number[] = [];
   /** Per term: true when the query only reads it. */
   private readonly termRead: boolean[] = [];
   private readonly hasSparseTerms: boolean;
@@ -1041,6 +1056,7 @@ export class QueryView<D extends Terms = Terms> {
         this.termSet.push(undefined);
       } else {
         // Reading a sparse component's data implies requiring it.
+        this.sparseTerms.push(this.termTableId.length);
         this.termTableId.push(-1);
         this.termSet.push(requireSparse(def));
       }
@@ -1166,17 +1182,39 @@ export class QueryView<D extends Terms = Terms> {
 
   private makeFrame(frozen: boolean): Frame {
     return {
-      accessors: this.spec.terms.map((def, k) =>
-        frozen
-          ? new (frozenAccessor(def))()
-          : this.termRead[k]
-            ? new (readingAccessor(def))()
-            : this.termLog[k] === undefined
-              ? new def.Accessor()
-              : new (noticingAccessor(def))()
-      ),
+      loop: undefined,
+      frozen,
       keys: new Float64Array(64),
       members: { dense: new Uint32Array(64), count: 0 },
+    };
+  }
+
+  /** The accessors of a level of iteration, made the first time `each` asks. */
+  private makeLoop(frozen: boolean): Loop {
+    // The terms that are in the table share the row the loop is at. A
+    // sparse term has its rows elsewhere, and a row of its own.
+    const row: Row = { i: 0 };
+    const rows = this.termSet.map((set) =>
+      set === undefined ? row : { i: 0 }
+    );
+    const accessors = this.spec.terms.map((def, k) =>
+      makeAccessor(
+        def,
+        frozen
+          ? "frozen"
+          : this.termRead[k]
+            ? "reads"
+            : this.termLog[k] === undefined
+              ? "writes"
+              : "notes",
+        rows[k]!
+      )
+    );
+    return {
+      accessors,
+      fields: accessors.map((accessor) => accessor.fields),
+      row,
+      rows,
     };
   }
 
@@ -1546,7 +1584,8 @@ export class QueryView<D extends Terms = Terms> {
     const frame = this.enter();
     try {
       const f = fn as Callback;
-      const acc = frame.accessors;
+      const loop = (frame.loop ??= this.makeLoop(frame.frozen));
+      const acc = loop.accessors;
       // Sparse columns can be replaced when a set grows, so bind them per call.
       // An accessor that notes its writes is told whose row each is, and
       // where to note it; any other takes the columns and ignores the rest.
@@ -1554,7 +1593,7 @@ export class QueryView<D extends Terms = Terms> {
       for (let k = 0; k < this.n; k++) {
         const set = this.termSet[k];
         if (set !== undefined) {
-          acc[k]!._bind(set.columns, set.dense, termLog[k]);
+          acc[k]!.bind(set.columns, set.dense, termLog[k]);
         }
       }
       const { world } = this;
@@ -1567,7 +1606,7 @@ export class QueryView<D extends Terms = Terms> {
           for (let k = 0; k < this.n; k++) {
             const id = this.termTableId[k];
             if (id !== -1) {
-              acc[k]!._bind(table.columns[id!]!, table.entities, termLog[k]);
+              acc[k]!.bind(table.columns[id!]!, table.entities, termLog[k]);
             }
           }
           // Once per table, never per entity.
@@ -1577,9 +1616,9 @@ export class QueryView<D extends Terms = Terms> {
           bound = table;
         }
         if (this.hasSparseTerms) {
-          this.visitSparse(f, acc, table.entities, start, end);
+          this.visitSparse(f, loop, table.entities, start, end);
         } else {
-          this.visit(f, acc, table.entities, start, end);
+          this.visit(f, loop, table.entities, start, end);
         }
       });
     } finally {
@@ -1590,47 +1629,45 @@ export class QueryView<D extends Terms = Terms> {
   /** The hot loop: rows `[start, end)` of one table, all terms row-aligned. */
   private visit(
     f: Callback,
-    acc: Accessor[],
+    loop: Loop,
     ents: Uint32Array,
     start: number,
     end: number
   ): void {
     const { n } = this;
+    const { fields, row } = loop;
+    // Moving on is one assignment, whatever the number of terms: they all
+    // read the row from the same place.
     // Specialised by arity so the callback is called with a fixed number
     // of arguments (a spread call here costs roughly 3x).
     if (n === 1) {
-      const a = acc[0]!;
+      const a = fields[0]!;
       for (let i = start; i < end; i++) {
-        a._i = i;
+        row.i = i;
         f(a, ents[i]);
       }
     } else if (n === 2) {
-      const a = acc[0]!;
-      const b = acc[1]!;
+      const a = fields[0]!;
+      const b = fields[1]!;
       for (let i = start; i < end; i++) {
-        a._i = i;
-        b._i = i;
+        row.i = i;
         f(a, b, ents[i]);
       }
     } else if (n === 3) {
-      const a = acc[0]!;
-      const b = acc[1]!;
-      const c = acc[2]!;
+      const a = fields[0]!;
+      const b = fields[1]!;
+      const c = fields[2]!;
       for (let i = start; i < end; i++) {
-        a._i = i;
-        b._i = i;
-        c._i = i;
+        row.i = i;
         f(a, b, c, ents[i]);
       }
     } else {
       const args: any[] = Array.from({ length: n + 1 });
       for (let k = 0; k < n; k++) {
-        args[k] = acc[k];
+        args[k] = fields[k];
       }
       for (let i = start; i < end; i++) {
-        for (let k = 0; k < n; k++) {
-          acc[k]!._i = i;
-        }
+        row.i = i;
         args[n] = ents[i];
         f.apply(undefined, args);
       }
@@ -1640,26 +1677,28 @@ export class QueryView<D extends Terms = Terms> {
   /** As `visit`, but sparse terms need their own row looked up per entity. */
   private visitSparse(
     f: Callback,
-    acc: Accessor[],
+    loop: Loop,
     ents: Uint32Array,
     start: number,
     end: number
   ): void {
-    const { n } = this;
+    const { n, sparseTerms, termSet } = this;
+    const { fields, row, rows } = loop;
     for (let i = start; i < end; i++) {
       const entity = ents[i]!;
-      for (let k = 0; k < n; k++) {
-        const set = this.termSet[k];
-        acc[k]!._i = set === undefined ? i : set.sparse[entity & INDEX_MASK]!;
+      row.i = i;
+      for (let s = 0; s < sparseTerms.length; s++) {
+        const k = sparseTerms[s]!;
+        rows[k]!.i = termSet[k]!.sparse[entity & INDEX_MASK]!;
       }
       if (n === 1) {
-        f(acc[0], entity);
+        f(fields[0], entity);
       } else if (n === 2) {
-        f(acc[0], acc[1], entity);
+        f(fields[0], fields[1], entity);
       } else if (n === 3) {
-        f(acc[0], acc[1], acc[2], entity);
+        f(fields[0], fields[1], fields[2], entity);
       } else {
-        f(...acc, entity);
+        f(...fields, entity);
       }
     }
   }

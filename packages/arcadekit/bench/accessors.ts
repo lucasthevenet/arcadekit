@@ -600,46 +600,89 @@ const variants: Record<
     },
   },
 
-  closures: {
-    // What a fallback for strict-CSP pages would cost: getters that close
-    // over the field name instead of being generated as static reads.
-    label: "accessors without code generation",
+  eachComponents: {
+    // A real game has more than two components, of more than one kind of
+    // field. What `each` hands out must not cost more for that: generated
+    // classes did, since one place in the loop assigned the row of every
+    // class there was.
+    label: "each: accessors, in a program of ten components",
     run: () => {
       const world = new World();
       populate(world);
       const view = world.view(Moving);
-      const closureAccessor = (fields: readonly string[]) => {
-        const acc: any = { _i: 0, _cols: undefined };
-        for (const field of fields) {
-          Object.defineProperty(acc, field, {
-            get() {
-              return this._cols[field][this._i];
-            },
-            set(value: number) {
-              this._cols[field][this._i] = value;
-            },
-          });
-        }
-        return acc;
-      };
-      const cPos = closureAccessor(["x", "y"]);
-      const cVel = closureAccessor(["x", "y"]);
-      return measure(
-        () => {
-          view.eachChunk((start, end, pos, vel) => {
-            cPos._cols = pos;
-            cVel._cols = vel;
-            for (let i = start; i < end; i++) {
-              cPos._i = i;
-              cVel._i = i;
-              cPos.x += cVel.x * DT;
-              cPos.y += cVel.y * DT;
-            }
-          });
-        },
-        100,
-        30
-      );
+      const Health = Component.define("bench/Health", {
+        hp: Field.i32,
+        max: Field.i32,
+      });
+      const Spin = Component.define("bench/Spin", {
+        angle: Field.f64,
+        speed: Field.f64,
+      });
+      const Colour = Component.define("bench/Colour", {
+        r: Field.u8,
+        g: Field.u8,
+        b: Field.u8,
+      });
+      const Team = Component.define("bench/Team", {
+        side: Field.u16,
+        rank: Field.u16,
+      });
+      const Owner = Component.define("bench/Owner", {
+        by: Field.entity,
+        since: Field.u32,
+      });
+      const Label = Component.define("bench/Label", {
+        text: Field.json<string>(),
+      });
+      const Mass = Component.define("bench/Mass", {
+        kg: Field.f32,
+        drag: Field.f32,
+      });
+      const Age = Component.define("bench/Age", { seconds: Field.f32 });
+      for (let i = 0; i < 2000; i++) {
+        world.spawn(
+          Health.of({ hp: i, max: i }),
+          Spin.of({ angle: 0, speed: 1 }),
+          Colour.of({ r: 1, g: 2, b: 3 }),
+          Team.of({ side: i & 1, rank: i & 7 }),
+          Owner.of({ by: 0 as Entity, since: i }),
+          Label.of({ text: "thing" }),
+          Mass.of({ kg: 1, drag: 0.5 }),
+          Age.of({ seconds: 0 })
+        );
+      }
+      const wounds = world.view(Query.all(Health, Team));
+      const turning = world.view(Query.all(Spin, Age));
+      const painted = world.view(Query.all(Colour, Label));
+      const owned = world.view(Query.all(Owner, Mass));
+      const falling = world.view(Query.all(Mass, Age, Spin));
+      let sink = 0;
+      for (let pass = 0; pass < 400; pass++) {
+        wounds.each((health, team) => {
+          health.hp = Math.min(health.max, health.hp + team.rank);
+        });
+        turning.each((spin, age) => {
+          spin.angle += spin.speed * DT;
+          age.seconds += DT;
+        });
+        painted.each((colour, label) => {
+          colour.r = (colour.g + colour.b + label.text.length) & 255;
+        });
+        owned.each((owner, mass, entity) => {
+          owner.since += 1;
+          sink += owner.by + mass.kg + entity;
+        });
+        falling.each((mass, age, spin) => {
+          spin.speed -= mass.drag * age.seconds * DT;
+        });
+      }
+      void sink;
+      return measure(() => {
+        view.each((pos, vel) => {
+          pos.x += vel.x * DT;
+          pos.y += vel.y * DT;
+        });
+      });
     },
   },
 
@@ -1422,7 +1465,7 @@ if (only === undefined) {
     `accessors (best case) vs raw columns:   ${ratio("each", "raw")}`
   );
   console.log(
-    `no-codegen accessors vs raw columns:    ${ratio("closures", "raw")}`
+    `accessors (ten components) vs raw:      ${ratio("eachComponents", "raw")}`
   );
   console.log(
     `array of objects vs raw columns:        ${ratio("objects", "raw")}`

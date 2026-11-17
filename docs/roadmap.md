@@ -50,7 +50,8 @@ Depends on milestones 1 and 2 entirely.
 
 Only with a benchmark that shows the need.
 
-- **Accessors without code generation.** `each` builds its accessors with `new Function`, which a strict Content Security Policy forbids, and the obvious fallback measured about forty times slower than raw columns. Done when the package works under such a policy at a cost a game can accept.
+Done so far: accessors without code generation. What `each` hands out is made of closures, with no `new Function` anywhere in the package, so a page under a strict Content Security Policy runs a game as it is; it costs 1 ns an entity more than the generated classes did in a program of two components, and four tenths less in one of ten. The package's [README](../packages/arcadekit/README.md#under-a-content-security-policy) describes it.
+
 - **Benchmarks in CI.** Done when a change that slows the storage core by more than the noise fails a check.
 - **Systems that declare what they read and write.** The first step towards running systems in parallel, and useful on its own for ordering and for tools. A query can already say which of its terms it only reads (`Query.reads`), so most of what a system reads and writes is the sum of its queries; what it does through `World`, `Commands` and singletons is not declared yet. Done when the order of systems can be checked for conflicts.
 - **Parallel systems.** Workers over shared memory, for systems whose declared access does not overlap. Done when it is faster on a real workload, and still deterministic.
