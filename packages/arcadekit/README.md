@@ -1217,6 +1217,42 @@ Peers on different machines meet at a relay: each opens a WebSocket to it, at an
 - `Relay.make(options)` keeps them itself, for a host that stays in memory: `relay.connect(url, send)` gives a connection to `receive` what the peer sent and to `close`. `examples/relay.ts` is that behind a WebSocket server under Node, forty lines, and `pnpm --filter arcadekit relay` runs it: two machines on one network play through it as it is.
 - A room is named by its address and belongs to nobody: the first peer to ask opens it, and it is gone when the last has left.
 
+**On Cloudflare, with [Alchemy](https://alchemy.run).** `examples/relay-cloudflare` is the relay as a Worker and a Durable Object per room, declared and deployed with Alchemy: three files, of which `src/room.ts` is the host.
+
+```ts
+export default class Room extends Cloudflare.DurableObject<Room>()(
+  "Rooms",
+  Effect.gen(function* () {
+    const state = yield* Cloudflare.DurableObjectState;
+    return Effect.gen(function* () {
+      const present = /* every socket of the room, with the member it carries */;
+      return {
+        fetch: Effect.gen(function* () {
+          const joined = Relay.join(request.url, members(yield* present));
+          if (Exit.isFailure(joined)) return turnedAway(joined);
+          const [response, socket] = yield* Cloudflare.upgrade();
+          yield* socket.setAttachment(Relay.Member, joined.value);
+          return response;
+        }),
+        webSocketMessage: Effect.fn(function* (socket, data) {
+          const from = yield* socket.getAttachment(Relay.Member);
+          const deliveries = Relay.forward(from, data, members(yield* present));
+          if (Exit.isFailure(deliveries)) return yield* close(socket, deliveries);
+          for (const { to, text } of deliveries.value) yield* socketOf(to).send(text);
+        }),
+      };
+    });
+  })
+) {}
+```
+
+- The room keeps nothing in memory. Cloudflare puts a Durable Object to sleep between two messages and keeps its sockets open, and each socket carries its member as an attachment, which is read back on every call: that is all `join` and `forward` ask to be told.
+- `pnpm --filter arcadekit relay:cloudflare` runs it on this machine, in workerd, with no Cloudflare account: `alchemy dev`, with the stack's state kept in a folder beside it. `alchemy deploy`, from `examples/relay-cloudflare`, puts it on an account.
+- `pnpm --filter arcadekit relay:check <address>` checks a relay wherever it runs: two peers of a small game play through it and have to end on the same world, a second peer of a taken name has to be refused, and so does a message in another's name. It passes against the Node relay (`ws://localhost:8787`) and against this one under `alchemy dev` (`ws://localhost:1337/rooms`). It has not been run against a deployed Worker: that needs an account.
+- A peer that is refused there is turned away with the HTTP status, before there is a socket, and so learns only that it did not connect. Accepting the socket and closing it with the reason, as the Node relay does, left the socket half-closed under workerd.
+- Alchemy and its Cloudflare package are dev dependencies of this package, for that example alone, as React is for the page's. They are a beta (2.0.0-beta.87), and ask for Effect 4.1.4, which is what the repository now installs.
+- Behind an API gateway on AWS the same two functions are called from a function per event, with who is connected kept in a table: `join` on connect, `forward` on a message, and the row deleted on disconnect. There is no example of that here.
+
 ### Peers that come apart
 
 ```ts
@@ -1276,6 +1312,8 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/relay.ts` | A relay under Node: `Relay.make()` behind a WebSocket server (`ws`, a dev dependency for this and for the relay's tests) |
+| `examples/relay-cloudflare/` | The relay on Cloudflare, declared with Alchemy: a Worker, and a Durable Object per room that reads who is connected back from its sockets |
+| `examples/relay-check.ts` | Checks a relay at an address: two peers play through it, and a taken name and a message in another's name have to be refused |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
 | `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, heard through a cue of the page's, one of the level's and music that follows the game, with a level whose assets come and go, started with `Browser.runMain` around `App.run`. Its menu and heads-up display are built twice on the view bridge: `ui-dom.ts` with the DOM and `ui-react.ts` with React, both from `protocol.ts`, the views and actions they share with `game.ts` |
 
@@ -1480,7 +1518,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A frame system of the game's own that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps: there is no helper for it in this package. [`@arcadekit/three`](../three/README.md#between-two-ticks) does it for what it draws, with `smooth: true`, and keeps the place before to itself.
 - `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
 - `arcadekit/Browser` is one entry for everything a page has.
-- The relay is a handler, and hosting it is the game's: a WebSocket server under Node is in the examples, and where the host is put to sleep between messages the game writes the few lines that keep who is connected. A relay does not say who has come and gone, does not slow a peer that sends too much, and does not ask who a peer is: letting a peer in under a name is the host's to settle before `Relay.join`.
+- The relay is a handler, and hosting it is the game's. The examples have a WebSocket server under Node and a Durable Object on Cloudflare, declared with Alchemy, and neither is a package to install: a game copies the one it needs. The Cloudflare one was run under `alchemy dev` and never deployed from here, and there is none for AWS. A relay does not say who has come and gone, does not slow a peer that sends too much, and does not ask who a peer is: letting a peer in under a name is the host's to settle before `Relay.join`.
 - A rollback session keeps a snapshot of the whole world for each tick it is not sure of, and loads one to go back. For a very large world that is the cost of every such tick: nothing keeps only what changed.
 - A game played with rollback is drawn and heard as it is predicted. A sound for something that is then taken back was played, an event of a tick that is run again is heard again by the frame stage, and its change queries visit everything after each rewind. Nothing tells what draws which ticks are final but `session.confirmed`.
 - A script is started again by every rewind, and what a service of the game's own holds is not put back. With rollback, what the simulation reads is in the world.
