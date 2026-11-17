@@ -323,7 +323,7 @@ demo/
 
   A loop that draws from `Random`, spawns or despawns through `Commands`, emits an event, or reads a `json` or `transient` field is not one of these: it stays in its system. A plugin with no such loop has no `loops.ts`.
 
-- **This is what running systems on workers will need.** A worker has no closure of the main thread's, so what runs on one is a loop it imported itself. A game that runs systems on workers will have one more file at its root, `worker.ts`, which imports the `loops.ts` of every plugin, and will start it itself, `new Worker(new URL("./worker.ts", import.meta.url), { type: "module" })`, since a bundler recognises that line only as it is written. Nothing runs on a worker yet: see [Not done yet](#not-done-yet).
+- **This is what running systems on workers will need.** A worker has no closure of the main thread's, so what runs on one is a loop it imported itself. How a worker will come to import a game's loops, and so which files a game adds for it, is not decided. Nothing runs on a worker yet: see [Not done yet](#not-done-yet).
 
 ## Names
 
