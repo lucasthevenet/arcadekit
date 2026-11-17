@@ -39,6 +39,13 @@ const Rock = Component.tag("th/Rock");
 const Ship = Component.tag("th/Ship");
 const Hidden = Component.tag("th/Hidden", { storage: "sparse" });
 const Heavy = Component.tag("th/Heavy");
+/** A colour of the game's own: three numbers, and one more that is not read. */
+const Paint = Component.define("th/Paint", {
+  r: Field.f32,
+  g: Field.f32,
+  b: Field.f32,
+  shine: Field.f32,
+});
 const Velocity = Component.define("th/Velocity", {
   x: Field.f32,
   y: Field.f32,
@@ -553,9 +560,13 @@ describe("Three.instances", () => {
   });
 
   // Where the last tick left them, and between their last two places.
-  it.each([false, true])(
-    "draws ten thousand moving objects without one allocation per object per frame (smooth: %s)",
-    (smooth) => {
+  it.each([
+    [false, false],
+    [true, false],
+    [true, true],
+  ])(
+    "draws ten thousand moving objects without one allocation per object per frame (smooth: %s, each of a colour of its own: %s)",
+    (smooth, colored) => {
       const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
       const MovingFlat = Query.all(Transform2d.Position, Velocity).pipe(
         Query.reads(Velocity)
@@ -582,6 +593,7 @@ describe("Three.instances", () => {
         material,
         capacity: 16_384,
         smooth,
+        ...(colored ? { color: Paint } : {}),
       });
       const renderer = makeRenderer();
       const { app } = start(
@@ -606,6 +618,16 @@ describe("Three.instances", () => {
               }),
           Velocity.of({ x: random.next(), y: random.next(), z: random.next() }),
         ] as ComponentInput[];
+        if (colored) {
+          parts.push(
+            Paint.of({
+              r: random.next(),
+              g: random.next(),
+              b: random.next(),
+              shine: 0,
+            })
+          );
+        }
         if (i % 2 === 1) {
           const { w, x, y, z } = random.quaternion();
           parts.push(
@@ -627,6 +649,10 @@ describe("Three.instances", () => {
         app.tick(1 / 60);
         app.frame(0.5);
       };
+      const startedAt = [
+        app.world.get(rocks[0]!, Position)!.x,
+        app.world.get(rocks[4]!, Transform2d.Position)!.x,
+      ];
       // Until the loops are compiled, and whatever is made once is made.
       for (let i = 0; i < 200; i++) {
         step();
@@ -657,9 +683,11 @@ describe("Three.instances", () => {
       expect(renderer.counts).toEqual([count]);
       // All the way to the tick they are at, which is where both draw them.
       app.frame(1);
-      expect(app.world.get(rocks[0]!, Position)!.x).toBeGreaterThan(4);
+      expect(app.world.get(rocks[0]!, Position)!.x).toBeGreaterThan(
+        startedAt[0]! + 0.01
+      );
       expect(app.world.get(rocks[4]!, Transform2d.Position)!.x).toBeGreaterThan(
-        4
+        startedAt[1]! + 0.01
       );
       expectDrawn(mesh, app, rocks);
     }
@@ -1591,6 +1619,267 @@ describe("an entity drawn between two ticks", () => {
     );
     expect(saves[0]).toBeDefined();
     expect(saves[0]).toEqual(saves[1]);
+  });
+});
+
+describe("a colour per instance", () => {
+  const Flat = Transform2d;
+  const Painted = Three.instances("th/Painted", {
+    of: Rock,
+    without: [Hidden],
+    geometry,
+    material,
+    color: Paint,
+    capacity: 4,
+  });
+  const play = (system: ReturnType<typeof Three.instances> = Painted) => {
+    const renderer = makeRenderer();
+    const { app, close } = start(
+      App.make({
+        plugins: [Three.plugin],
+        components: [Rock, Hidden, Paint],
+        systems: [system],
+      }),
+      renderer
+    );
+    return { app, close, mesh: () => meshOf(renderer.scene, "th/Painted") };
+  };
+  const paint = (r: number, g: number, b: number) =>
+    Paint.of({ r, g, b, shine: 9 });
+  /** The colour of the instance that is drawn at this height. */
+  const colorAt = (mesh: InstancedMesh, y: number): number[] => {
+    for (let i = 0; i < mesh.count; i++) {
+      if (Math.abs(mesh.instanceMatrix.array[i * 16 + 13]! - y) < 1e-4) {
+        return Array.from(mesh.instanceColor!.array.subarray(i * 3, i * 3 + 3));
+      }
+    }
+    throw new Error(`Nothing is drawn at height ${y}`);
+  };
+
+  it("is the colour its entity has, for every kind of entity, beside the matrix of the same entity", () => {
+    const { app, mesh } = play();
+    const { world } = app;
+    const turn = Rotation.of(Transform3d.axisAngle(0, 1, 0, 1));
+    const size = Scale.of({ x: 2, y: 2, z: 2 });
+    const flatTurn = Flat.Rotation.of({ angle: 1 });
+    const flatSize = Flat.Scale.of({ x: 2, y: 2 });
+    const at = (y: number) => Position.of({ x: 0, y, z: 0 });
+    const flat = (y: number) => Flat.Position.of({ x: 0, y });
+    // One of each of the eight, each of a colour of its own.
+    const rocks = [
+      world.spawn(Rock, at(1), paint(0.125, 0, 0)),
+      world.spawn(Rock, at(2), size, paint(0.25, 0, 0)),
+      world.spawn(Rock, at(3), turn, paint(0.375, 0, 0)),
+      world.spawn(Rock, at(4), turn, size, paint(0.5, 0, 0)),
+      world.spawn(Rock, flat(5), paint(0, 0.125, 0.75)),
+      world.spawn(Rock, flat(6), flatSize, paint(0, 0.25, 0.75)),
+      world.spawn(Rock, flat(7), flatTurn, paint(0, 0.375, 0.75)),
+      world.spawn(Rock, flat(8), flatTurn, flatSize, paint(0, 0.5, 0.75)),
+    ];
+    // Not painted, of every kind: a kind with a colour draws what has one.
+    world.spawn(Rock, at(9));
+    world.spawn(Rock, at(9), turn, size);
+    world.spawn(Rock, flat(9));
+    world.spawn(Rock, flat(9), flatTurn, flatSize);
+    // Painted and not a rock; and hidden.
+    world.spawn(Ship, at(9), paint(1, 1, 1));
+    world.spawn(Rock, Hidden, at(9), paint(1, 1, 1));
+    app.frame(0);
+    expectDrawn(mesh(), app, rocks);
+    for (let y = 1; y <= 4; y++) {
+      expect(colorAt(mesh(), y)).toEqual([y / 8, 0, 0]);
+    }
+    for (let y = 5; y <= 8; y++) {
+      expect(colorAt(mesh(), y)).toEqual([0, (y - 4) / 8, 0.75]);
+    }
+    // Three numbers an instance, in a buffer of its own that changes often.
+    const colors = mesh().instanceColor!;
+    expect(colors.itemSize).toBe(3);
+    expect(colors.usage).toBe(mesh().instanceMatrix.usage);
+    // It follows the entity: repainted, and gone.
+    world.set(rocks[0]!, Paint, { r: 0, g: 1, b: 0.5 });
+    world.despawn(rocks[1]!);
+    app.frame(0);
+    expect(mesh().count).toBe(7);
+    expect(colorAt(mesh(), 1)).toEqual([0, 1, 0.5]);
+    expect(colorAt(mesh(), 3)).toEqual([0.375, 0, 0]);
+  });
+
+  it("keeps each colour with its instance while they come, go and change, and the room for them grows", () => {
+    const random = makeRandom(88);
+    const { app, mesh } = play();
+    const { world } = app;
+    let heights = 0;
+    const alive: { readonly entity: Entity; readonly y: number }[] = [];
+    let dropped = 0;
+    for (let frame = 0; frame < 120; frame++) {
+      for (let step = 0; step < 6; step++) {
+        const roll = random.int(8);
+        const one = alive[random.int(alive.length)];
+        if (roll < 4 || one === undefined) {
+          const y = ++heights;
+          const parts = [
+            Rock,
+            random.next() < 0.5
+              ? Position.of({ x: random.int(50), y, z: 0 })
+              : Flat.Position.of({ x: random.int(50), y }),
+            paint(random.next(), random.next(), random.next()),
+          ] as ComponentInput[];
+          if (random.next() < 0.3) {
+            parts.push(
+              Scale.of({ x: 2, y: 2, z: 2 }),
+              Flat.Scale.of({ x: 2, y: 2 })
+            );
+          }
+          alive.push({ entity: world.spawn(...parts), y });
+        } else if (roll === 4) {
+          world.despawn(one.entity);
+          alive.splice(alive.indexOf(one), 1);
+        } else if (roll === 5) {
+          world.set(one.entity, Paint, { r: random.next(), g: random.next() });
+        } else if (world.has(one.entity, Paint)) {
+          // Unpainted for a while, and painted again.
+          world.remove(one.entity, Paint);
+        } else {
+          world.add(one.entity, paint(random.next(), 0, 0));
+        }
+      }
+      app.frame(0);
+      if (frame === 0) {
+        mesh().addEventListener("dispose", () => {
+          dropped++;
+        });
+      }
+      const shown = alive.filter((one) => world.has(one.entity, Paint));
+      expect(mesh().count).toBe(shown.length);
+      for (const one of shown) {
+        const { b, g, r } = world.get(one.entity, Paint)!;
+        expect(colorAt(mesh(), one.y), `frame ${frame}`).toEqual([r, g, b]);
+      }
+    }
+    // It started with room for four, and outgrew it several times over:
+    // both buffers together, each time.
+    expect(alive.length).toBeGreaterThan(64);
+    expect(dropped).toBeGreaterThanOrEqual(5);
+    expect(mesh().instanceColor!.array.length).toBe(
+      (mesh().instanceMatrix.array.length / 16) * 3
+    );
+  });
+
+  it("tells the renderer to send the colours that are drawn and no more, each frame something is", () => {
+    const { app, mesh } = play();
+    const rocks = [1, 2, 3].map((y) =>
+      app.world.spawn(Rock, Position.of({ x: 0, y, z: 0 }), paint(1, 1, 1))
+    );
+    app.frame(0);
+    const colors = mesh().instanceColor!;
+    expect(colors.updateRanges).toEqual([{ start: 0, count: 9 }]);
+    const [range] = colors.updateRanges;
+    const sent = colors.version;
+    expect(sent).toBeGreaterThan(0);
+    colors.clearUpdateRanges();
+    app.world.despawn(rocks[0]!);
+    app.frame(0);
+    expect(colors.updateRanges).toEqual([{ start: 0, count: 6 }]);
+    expect(colors.updateRanges[0]).toBe(range);
+    expect(colors.version).toBe(sent + 1);
+    // A renderer that sent nothing in between is not told twice.
+    app.frame(0);
+    expect(colors.updateRanges.length).toBe(1);
+    // Nothing to draw: nothing to send.
+    app.world.despawn(rocks[1]!);
+    app.world.despawn(rocks[2]!);
+    colors.clearUpdateRanges();
+    const before = colors.version;
+    app.frame(0);
+    expect(colors.updateRanges).toEqual([]);
+    expect(colors.version).toBe(before);
+    expect(mesh().instanceColor).toBe(colors);
+  });
+
+  it("changes evenly between two ticks when the kind is drawn so, however far it changes", () => {
+    const Fading = Three.instances("th/Painted", {
+      of: Rock,
+      geometry,
+      material,
+      color: Paint,
+      smooth: true,
+      // How far an entity may go: a colour is not a place, and is never too far.
+      snap: 0.1,
+    });
+    const { app, mesh } = play(Fading);
+    const rock = app.world.spawn(
+      Rock,
+      Position.of({ x: 0, y: 1, z: 0 }),
+      paint(0, 0.5, 1)
+    );
+    app.frame(0.5);
+    expect(colorAt(mesh(), 1)).toEqual([0, 0.5, 1]);
+    app.world.set(rock, Paint, { r: 1, g: 0.5, b: 0 });
+    app.tick(1);
+    app.frame(0);
+    expect(colorAt(mesh(), 1)).toEqual([0, 0.5, 1]);
+    app.frame(0.25);
+    expect(colorAt(mesh(), 1)).toEqual([0.25, 0.5, 0.75]);
+    app.frame(1);
+    expect(colorAt(mesh(), 1)).toEqual([1, 0.5, 0]);
+  });
+
+  it("is not there unless it is asked for: the mesh has no colours, and an entity needs none to be drawn", () => {
+    const Plain = Three.instances("th/Painted", {
+      of: Rock,
+      geometry,
+      material,
+    });
+    const { app, mesh } = play(Plain);
+    app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    app.world.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), paint(1, 0, 0));
+    app.frame(0);
+    expect(mesh().count).toBe(2);
+    expect(mesh().instanceColor).toBeNull();
+  });
+
+  it("has to be a colour: a component of r, g and b kept in a table", () => {
+    const Hue = Component.define("th/Hue", { degrees: Field.f32 });
+    const Glow = Component.define(
+      "th/Glow",
+      { r: Field.f32, g: Field.f32, b: Field.f32 },
+      { storage: "sparse" }
+    );
+    const base = { of: Rock, geometry, material };
+    // @ts-expect-error a hue is one number, not three
+    const wrong: Three.InstancesOptions = { ...base, color: Hue };
+    // @ts-expect-error its rows are not the rows of the table that is drawn
+    const sparse: Three.InstancesOptions = { ...base, color: Glow };
+    expect(() => Three.instances("th/Wrong", wrong)).toThrow(
+      'Three.instances("th/Wrong") was given "th/Hue" as its colour, which is not one'
+    );
+    expect(() => Three.instances("th/Sparse", sparse)).toThrow(
+      'was given "th/Glow" as its colour'
+    );
+    // Two of the three are not a colour either.
+    const Rg = Component.define("th/Rg", { r: Field.f32, g: Field.f32 });
+    expect(() =>
+      Three.instances("th/Rg", { ...base, color: Rg as never })
+    ).toThrow('was given "th/Rg" as its colour');
+    // One with more than a colour in it is one all the same.
+    expect(Three.instances("th/Fine", { ...base, color: Paint }).name).toBe(
+      "th/Fine"
+    );
+  });
+
+  it("goes with the mesh when the app's scope closes", () => {
+    const { app, close, mesh } = play();
+    app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), paint(1, 1, 1));
+    app.frame(0);
+    const kept = mesh();
+    let disposed = 0;
+    kept.instanceColor!.addEventListener("dispose", () => {
+      disposed++;
+    });
+    close();
+    expect(disposed).toBe(1);
+    expect(kept.parent).toBeNull();
   });
 });
 

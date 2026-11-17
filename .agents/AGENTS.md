@@ -29,6 +29,10 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 - What the devices say reaches the game as actions, issued in the input stage before a tick and logged like any other: a replay reads no device.
 - A UI holds a bridge and nothing of the game: it sees the views the game publishes in the frame stage, and acts by sending actions, which are issued and logged the same way.
 
+## What only knowing the inside prevents
+
+`docs/roadmap.md` keeps a list, "To revisit before a stable release": things that go wrong with no error and that nothing in the types or at run time stops, so that only someone who knows how the inside works avoids them. The order systems really run in is one; a value that has to be in some form and is not checked is another. When you come across one, while building, testing or writing a README sentence that begins "it is the game's to", add a line to that list in the same commit, with what would close it if you know. When you close one, take its line out.
+
 ## Validation
 
 CI runs `pnpm check`, `pnpm test` and `pnpm build`. For any code change run `pnpm fix`, then `pnpm check`, `pnpm typecheck` and the tests that cover it. `pnpm check` is formatting plus oxlint's default rules; there are no style rules. For a change to the storage core or to a query, also run `pnpm --filter arcadekit bench`; for a change to the loops of `@arcadekit/three` that draw, `pnpm --filter @arcadekit/three bench`. For a change to a package's exports or its build, or to what a module imports, run `pnpm build:packages && pnpm lint:packages`, which also checks what each built entry of each package imports. Say which checks you could not run.

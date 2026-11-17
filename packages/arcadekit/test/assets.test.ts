@@ -59,6 +59,16 @@ const tracked = (url: string, log: string[]) =>
     )
   );
 
+/**
+ * An asset failed, at this URL and for this reason. Each is looked at by
+ * itself: to `toEqual`, two failures with different messages are equal.
+ */
+const expectFailed = (error: unknown, url: string, message: string): void => {
+  expect(error).toBeInstanceOf(Assets.AssetFailed);
+  expect((error as Assets.AssetFailed).url).toBe(url);
+  expect((error as Assets.AssetFailed).message).toBe(message);
+};
+
 const files = {
   "/forest.png": new Uint8Array([1, 2, 3]),
   "/forest.json": '{"walls":3,"name":"Forest"}',
@@ -195,13 +205,7 @@ describe("an asset", () => {
     );
     expect(Exit.isFailure(exit)).toBe(true);
     const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
-    expect(error).toBeInstanceOf(Assets.AssetFailed);
-    expect(error).toEqual(
-      new Assets.AssetFailed({
-        url: "/nowhere.png",
-        message: "There is no such file.",
-      })
-    );
+    expectFailed(error, "/nowhere.png", "There is no such file.");
     // Nothing that was made is left.
     expect(log.filter((line) => line.startsWith("open")).length).toBe(
       log.filter((line) => line.startsWith("close")).length
@@ -217,13 +221,10 @@ describe("an asset", () => {
         )
       ).pipe(Effect.provide(Assets.layerMemory(files)))
     );
-    expect(
-      Cause.squash((inherited as Exit.Failure<never, unknown>).cause)
-    ).toEqual(
-      new Assets.AssetFailed({
-        url: "toString",
-        message: "There is no such file.",
-      })
+    expectFailed(
+      Cause.squash((inherited as Exit.Failure<never, unknown>).cause),
+      "toString",
+      "There is no such file."
     );
   });
 
@@ -311,11 +312,10 @@ describe("an asset", () => {
       file: "fetched",
     });
     const gone = await Effect.runPromise(Effect.exit(one("/gone.txt")));
-    expect(Cause.squash((gone as Exit.Failure<never, unknown>).cause)).toEqual(
-      new Assets.AssetFailed({
-        url: "/gone.txt",
-        message: "The server answered 404 Not Found",
-      })
+    expectFailed(
+      Cause.squash((gone as Exit.Failure<never, unknown>).cause),
+      "/gone.txt",
+      "The server answered 404 Not Found"
     );
     // A request that never answers, and a load that is interrupted.
     const fiber = Effect.runFork(one("/slow.txt"));
@@ -476,12 +476,7 @@ describe("a level's assets", () => {
           slow.waiting.get("/forest.json")!.fail("The disk is full.");
           yield* Effect.promise(settle);
           expect(frame()).toBe("forest: forest Failed, cave Absent");
-          expect(errors.at(-1)).toEqual(
-            new Assets.AssetFailed({
-              url: "/forest.json",
-              message: "The disk is full.",
-            })
-          );
+          expectFailed(errors.at(-1), "/forest.json", "The disk is full.");
           // The picture that did load is let go at once.
           expect(log).toEqual(["open /forest.png", "close /forest.png"]);
           // It is said once, through the app's loggers.
@@ -944,13 +939,8 @@ describe("a level's assets", () => {
             systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
           });
           app.frame(0);
-          expect(status).toEqual({
-            _tag: "Failed",
-            error: new Assets.AssetFailed({ url: "", message: "boom" }),
-          });
-          expect((status as { error: unknown }).error).toBeInstanceOf(
-            Assets.AssetFailed
-          );
+          expect(status?._tag).toBe("Failed");
+          expectFailed((status as { error: unknown }).error, "", "boom");
         })
       ).pipe(Effect.provide(Assets.layerMemory(files)), Effect.provide(quiet))
     );

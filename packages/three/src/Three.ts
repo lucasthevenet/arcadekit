@@ -42,13 +42,23 @@
  *   first matches and let go when it no longer does, and copies the
  *   entity's place into it each frame. For the few things that are more
  *   than a copy of a mesh.
+ * - Either takes a look that is there from the start, or one made of a
+ *   bundle's assets (`from`), which is there while the bundle is loaded.
+ *   `Three.texture` is the asset that is a texture.
  * - `Three.Render` then draws the scene, through `Three.Renderer`.
  */
+import * as Assets from "arcadekit/Assets";
 import { entityIndex } from "arcadekit/ecs";
-import type { ComponentDef, Entity, EntityColumn } from "arcadekit/ecs";
+import type {
+  ComponentDef,
+  Entity,
+  EntityColumn,
+  FieldDef,
+} from "arcadekit/ecs";
 import * as Plugin from "arcadekit/Plugin";
 import * as Query from "arcadekit/Query";
 import { Frame, Time } from "arcadekit/Services";
+import type { World } from "arcadekit/Services";
 import * as System from "arcadekit/System";
 import * as Transform2d from "arcadekit/Transform2d";
 import * as Transform3d from "arcadekit/Transform3d";
@@ -58,7 +68,9 @@ import {
   InstancedBufferAttribute,
   InstancedMesh,
   PerspectiveCamera,
+  SRGBColorSpace,
   Scene as ThreeScene,
+  Texture,
   WebGLRenderer,
 } from "three";
 import type {
@@ -74,6 +86,12 @@ import type {
 /** What a system of this module has made of the game, and lets go with the app. */
 interface Kept {
   readonly dispose: () => void;
+  /**
+   * Asked just before the scene is drawn, of what is made of assets: are
+   * they still there? What is not is taken out of the scene now, so that
+   * nothing is drawn with what was let go since its system ran.
+   */
+  readonly settle?: () => void;
 }
 
 export interface SceneShape {
@@ -258,7 +276,10 @@ export const layerWebGL = (
  *   )
  */
 export const Render = System.make("arcadekit/three/Render", function* () {
-  const { camera, scene } = yield* Scene;
+  const { _kept, camera, scene } = yield* Scene;
+  for (const one of _kept.values()) {
+    one.settle?.();
+  }
   (yield* Renderer).render(scene, camera);
 }).pipe(System.inStage("frame"));
 
@@ -278,11 +299,21 @@ export const plugin = Plugin.make("arcadekit/three", {
 
 // --- which entities ----------------------------------------------------------------
 
+/** A column of numbers, as a loop reads it. */
+interface Numbers {
+  readonly [row: number]: number;
+}
 /** The columns of a component of three numbers, as a loop reads them. */
 interface Xyz {
-  readonly x: { readonly [row: number]: number };
-  readonly y: { readonly [row: number]: number };
-  readonly z: { readonly [row: number]: number };
+  readonly x: Numbers;
+  readonly y: Numbers;
+  readonly z: Numbers;
+}
+/** The columns of a colour. */
+interface Rgb {
+  readonly r: Numbers;
+  readonly g: Numbers;
+  readonly b: Numbers;
 }
 interface Xyzw extends Xyz {
   readonly w: { readonly [row: number]: number };
@@ -421,10 +452,21 @@ class Lerp3 extends Blend {
   }
 
   blend(start: number, end: number, from: Xyz, entities: EntityColumn): Xyz {
+    return this.run(start, end, from.x, from.y, from.z, entities);
+  }
+
+  /** As `blend`, of three columns whatever they are called: a colour's, for one. */
+  run(
+    start: number,
+    end: number,
+    x: Numbers,
+    y: Numbers,
+    z: Numbers,
+    entities: EntityColumn
+  ): Xyz {
     this.fit(start, end, entities);
     const { cur, out, owner, prev, seen, snap } = this;
     const { alpha, shift, stamp } = this.clock;
-    const { x, y, z } = from;
     const { x: ox, y: oy, z: oz } = out;
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
@@ -648,6 +690,7 @@ class Smooth {
   readonly flatPosition: Lerp2;
   readonly flatRotation: Arc;
   readonly flatScale: Lerp2;
+  readonly color: Lerp3;
 
   constructor(snap: number | undefined) {
     this.position = new Lerp3(this.clock, snap);
@@ -656,6 +699,7 @@ class Smooth {
     this.flatPosition = new Lerp2(this.clock, snap);
     this.flatRotation = new Arc(this.clock);
     this.flatScale = new Lerp2(this.clock);
+    this.color = new Lerp3(this.clock);
   }
 
   /** A frame begins: which it is, which tick the game is at, and how far towards the next. */
@@ -670,11 +714,154 @@ class Smooth {
 const smoothOf = (which: Which): Smooth | undefined =>
   which.smooth === true ? new Smooth(which.snap) : undefined;
 
+// --- what is made of assets ----------------------------------------------------------
+
+/** The assets of a bundle, whatever they are. */
+// `any`: an asset is of whatever its `decode` makes.
+type Entries = Readonly<Record<string, Assets.Asset<any>>>;
+
+/**
+ * What a system makes of a bundle's assets: there while the app holds the
+ * bundle loaded, let go when it does not, and made again of what is loaded
+ * next.
+ */
+class FromAssets<T extends Kept> implements Kept {
+  private assets: unknown;
+  private made: T | undefined;
+
+  constructor(
+    private readonly store: Assets.StoreShape,
+    private readonly bundle: Assets.Bundle<Entries>,
+    private readonly make: (assets: any) => T
+  ) {}
+
+  /** The assets the app holds now, if it holds them. */
+  private held(): unknown {
+    const status = this.store.status(this.bundle);
+    return status._tag === "Ready" ? status.assets : undefined;
+  }
+
+  /** What is made of the assets the app holds now, if it holds them. */
+  now(): T | undefined {
+    // Loaded again is loaded anew: other pictures, though of the same files.
+    const assets = this.held();
+    if (assets !== this.assets) {
+      this.dispose();
+      this.assets = assets;
+      if (assets !== undefined) {
+        this.made = this.make(assets);
+      }
+    }
+    return this.made;
+  }
+
+  // Only lets go: what is loaded now is made something of by the system,
+  // the next time it runs, which also has the entities to draw with it.
+  readonly settle = (): void => {
+    if (this.made !== undefined && this.held() !== this.assets) {
+      this.dispose();
+    }
+  };
+
+  dispose(): void {
+    const { made } = this;
+    this.made = undefined;
+    made?.dispose();
+  }
+}
+
+/**
+ * An asset that is a picture to draw with: a `Texture` of Three.js, in a
+ * bundle with the rest of a level's, and disposed of when the scope it was
+ * loaded in closes.
+ *
+ *   const Forest = Assets.bundle("game/Forest", {
+ *     bark: Three.texture("/bark.png"),
+ *     normals: Three.texture("/bark-normals.png", (texture) => {
+ *       texture.colorSpace = NoColorSpace
+ *     }),
+ *   })
+ *
+ * - It is a picture of colours, sRGB, the right way up for the geometries
+ *   of Three.js, unless `prepare`, which is handed the texture once, says
+ *   otherwise. Which way up cannot be changed after: a bitmap is flipped
+ *   when it is made, and `flipY` is not read.
+ * - It is decoded off the page's thread, by `createImageBitmap`, which a
+ *   page has and Node does not.
+ */
+export const texture = (
+  url: string,
+  prepare?: (texture: Texture) => void
+): Assets.Asset<Texture> =>
+  Assets.make(url, (data, at) =>
+    Effect.acquireRelease(
+      Effect.tryPromise({
+        try: async () => {
+          const bitmap = await createImageBitmap(
+            // A copy: a Blob wants bytes that nothing else can change.
+            new Blob([data.slice()]),
+            { imageOrientation: "flipY" }
+          );
+          const made = new Texture(bitmap);
+          made.colorSpace = SRGBColorSpace;
+          prepare?.(made);
+          made.needsUpdate = true;
+          return made;
+        },
+        catch: (error) =>
+          new Assets.AssetFailed({
+            url: at,
+            message: `It could not be made a texture: ${
+              error instanceof Error
+                ? error.message || error.name
+                : String(error)
+            }`,
+          }),
+      }),
+      (made) =>
+        Effect.sync(() => {
+          made.dispose();
+          (made.image as { close?: () => void } | null)?.close?.();
+        })
+    )
+  );
+
 // --- instances -------------------------------------------------------------------
 
-export interface InstancesOptions extends Which {
+/**
+ * A component of the game's that is a colour: three numbers, `r`, `g` and
+ * `b`, kept in a table. What else it has is not read.
+ */
+export type ColorComponent = ComponentDef<any, "table"> & {
+  readonly schema: {
+    readonly r: FieldDef<number, any>;
+    readonly g: FieldDef<number, any>;
+    readonly b: FieldDef<number, any>;
+  };
+};
+
+/** How an instance looks: the one geometry and the one material of its mesh. */
+export interface Look {
   readonly geometry: BufferGeometry;
   readonly material: Material | Material[];
+}
+
+/** What `Three.instances` is told, however its look is come by. */
+export interface InstancesShared extends Which {
+  /**
+   * A component of the game's that gives each instance a colour of its
+   * own: its `r`, `g` and `b`, from 0 to 1, by which the material's own
+   * colour is multiplied. An entity is then one of these only while it has
+   * that component too.
+   *
+   *   const Paint = Component.define("game/Paint", { r: Field.f32, g: Field.f32, b: Field.f32 })
+   *   Three.instances("game/Rocks", { of: Rock, geometry, material, color: Paint })
+   *
+   * The numbers are in the renderer's working colour space, which is
+   * linear: what `new Color("#ff6188")` of Three.js has as its `r`, `g`
+   * and `b`.
+   */
+  readonly color?: ColorComponent;
   /**
    * How many instances there is room for at first: 256 when left out. The
    * room doubles when it runs out, which is the one time the system
@@ -689,6 +876,44 @@ export interface InstancesOptions extends Which {
   readonly prepare?: (mesh: InstancedMesh) => void;
 }
 
+/** Instances whose look is there when the system is made. */
+export interface InstancesOptions extends InstancesShared, Look {}
+
+/**
+ * Instances whose look is made of assets that are loaded later, and let go
+ * again: a level's.
+ */
+export interface InstancesFromOptions<
+  B extends Entries,
+  L extends Look = Look,
+> extends InstancesShared {
+  /** The bundle the look is made of. The instances are drawn while it is loaded. */
+  readonly from: Assets.Bundle<B>;
+  /**
+   * Makes the look of the bundle's assets, once each time they are
+   * loaded. What it returns beyond a geometry and a material is kept for
+   * `free`.
+   */
+  readonly look: (assets: Assets.Loaded<B>) => L;
+  /**
+   * Called when the assets are let go, or the app's scope closes, after
+   * the mesh was taken out of the scene: to dispose of what `look` made.
+   * The assets themselves are the bundle's to let go.
+   */
+  readonly free?: (look: L) => void;
+}
+
+/** The eight loops of a kind: placed, sized, turned or all three, in space or in the plane. */
+type Loop =
+  | "placed"
+  | "sized"
+  | "turned"
+  | "whole"
+  | "placedFlat"
+  | "sizedFlat"
+  | "turnedFlat"
+  | "wholeFlat";
+
 /** One instanced mesh, and the loops that fill its buffer from columns. */
 class Instances implements Kept {
   readonly mesh: InstancedMesh;
@@ -701,12 +926,44 @@ class Instances implements Kept {
   private readonly range = { start: 0, count: 0 };
   /** What draws the entities between two ticks, when the system was asked to. */
   private readonly smooth: Smooth | undefined;
+  /** The instances' colours, three numbers each, for a kind that has them. */
+  private colors: Float32Array | undefined;
+  private readonly colorRange = { start: 0, count: 0 };
+  /**
+   * The eight loops as the system gives them to its queries: as they are,
+   * or, for a kind with a colour, each followed by the colours of its rows.
+   */
+  readonly loops: Record<Loop, (...columns: any[]) => void>;
 
   constructor(scene: ThreeScene, name: string, options: InstancesOptions) {
     this.scene = scene;
     this.smooth = smoothOf(options);
     this.capacity = Math.max(1, Math.floor(options.capacity ?? 256));
     this.array = new Float32Array(this.capacity * 16);
+    if (options.color === undefined) {
+      this.loops = {
+        placed: this.placed,
+        sized: this.sized,
+        turned: this.turned,
+        whole: this.whole,
+        placedFlat: this.placedFlat,
+        sizedFlat: this.sizedFlat,
+        turnedFlat: this.turnedFlat,
+        wholeFlat: this.wholeFlat,
+      };
+    } else {
+      this.colors = new Float32Array(this.capacity * 3);
+      this.loops = {
+        placed: this.painted1(this.placed),
+        sized: this.painted2(this.sized),
+        turned: this.painted2(this.turned),
+        whole: this.painted3(this.whole),
+        placedFlat: this.painted1(this.placedFlat),
+        sizedFlat: this.painted2(this.sizedFlat),
+        turnedFlat: this.painted2(this.turnedFlat),
+        wholeFlat: this.painted3(this.wholeFlat),
+      };
+    }
     this.mesh = new InstancedMesh(options.geometry, options.material, 0);
     this.mesh.name = name;
     // Its instances are wherever the entities are, which a bounding sphere
@@ -721,6 +978,106 @@ class Instances implements Kept {
     const attribute = new InstancedBufferAttribute(this.array, 16);
     attribute.setUsage(DynamicDrawUsage);
     this.mesh.instanceMatrix = attribute;
+    if (this.colors !== undefined) {
+      const colors = new InstancedBufferAttribute(this.colors, 3);
+      colors.setUsage(DynamicDrawUsage);
+      this.mesh.instanceColor = colors;
+    }
+  }
+
+  // A kind with a colour is handed one more component by its queries, after
+  // the ones a loop reads: the loop runs as it is, and the colours of the
+  // same rows are written beside the matrices it wrote.
+
+  private painted1<A>(
+    loop: (start: number, end: number, a: A, entities: EntityColumn) => void
+  ) {
+    return (
+      start: number,
+      end: number,
+      a: A,
+      color: Rgb,
+      entities: EntityColumn
+    ): void => {
+      const from = this.count;
+      loop(start, end, a, entities);
+      this.paint(from, start, end, color, entities);
+    };
+  }
+
+  private painted2<A, B>(
+    loop: (
+      start: number,
+      end: number,
+      a: A,
+      b: B,
+      entities: EntityColumn
+    ) => void
+  ) {
+    return (
+      start: number,
+      end: number,
+      a: A,
+      b: B,
+      color: Rgb,
+      entities: EntityColumn
+    ): void => {
+      const from = this.count;
+      loop(start, end, a, b, entities);
+      this.paint(from, start, end, color, entities);
+    };
+  }
+
+  private painted3<A, B, C>(
+    loop: (
+      start: number,
+      end: number,
+      a: A,
+      b: B,
+      c: C,
+      entities: EntityColumn
+    ) => void
+  ) {
+    return (
+      start: number,
+      end: number,
+      a: A,
+      b: B,
+      c: C,
+      color: Rgb,
+      entities: EntityColumn
+    ): void => {
+      const from = this.count;
+      loop(start, end, a, b, c, entities);
+      this.paint(from, start, end, color, entities);
+    };
+  }
+
+  /** Writes the colours of these rows, for the instances from `from` on. */
+  private paint(
+    from: number,
+    start: number,
+    end: number,
+    color: Rgb,
+    entities: EntityColumn
+  ): void {
+    // Read after the loop, which may have made more room for both.
+    const out = this.colors!;
+    let { r, g, b } = color;
+    if (this.smooth !== undefined) {
+      ({
+        x: r,
+        y: g,
+        z: b,
+      } = this.smooth.color.run(start, end, r, g, b, entities));
+    }
+    let at = from * 3;
+    for (let i = start; i < end; i++) {
+      out[at] = r[i]!;
+      out[at + 1] = g[i]!;
+      out[at + 2] = b[i]!;
+      at += 3;
+    }
   }
 
   /** Makes room for `rows` more instances, and says where the first goes. */
@@ -734,8 +1091,13 @@ class Instances implements Kept {
       }
       const array = new Float32Array(capacity * 16);
       array.set(this.array.subarray(0, at * 16));
-      // A buffer cannot grow where it is: the renderer lets go of the one
-      // it made for the old attribute, and makes one for the new.
+      if (this.colors !== undefined) {
+        const colors = new Float32Array(capacity * 3);
+        colors.set(this.colors.subarray(0, at * 3));
+        this.colors = colors;
+      }
+      // A buffer cannot grow where it is: the renderer lets go of the ones
+      // it made for the old attributes, and makes new ones.
       this.mesh.dispose();
       this.array = array;
       this.capacity = capacity;
@@ -1092,7 +1454,19 @@ class Instances implements Kept {
       attribute.updateRanges.length = 0;
       attribute.updateRanges.push(range);
       attribute.needsUpdate = true;
+      const colors = mesh.instanceColor;
+      if (colors !== null) {
+        this.colorRange.count = count * 3;
+        colors.updateRanges.length = 0;
+        colors.updateRanges.push(this.colorRange);
+        colors.needsUpdate = true;
+      }
     }
+  }
+
+  /** How many instances there is room for now. */
+  get room(): number {
+    return this.capacity;
   }
 
   dispose(): void {
@@ -1100,6 +1474,14 @@ class Instances implements Kept {
     this.mesh.dispose();
   }
 }
+
+/** The instances of a look made of assets, while those assets are loaded. */
+interface Sourced extends Kept {
+  readonly instances: Instances;
+}
+
+/** What a system of this module asks of an app, and what one that draws from a bundle asks besides. */
+type Needs = Frame | Scene | Time | World;
 
 /**
  * Draws every entity of a kind as one instance of one mesh: a system of
@@ -1128,56 +1510,103 @@ class Instances implements Kept {
  *   and disposed of with the app. The geometry and the material are yours:
  *   to share between several, and to dispose of.
  * - It needs `Three.plugin`, and its name is one of the app's systems'.
+ *
+ * A look that is made of assets, a level's texture, say, is given as the
+ * bundle it comes `from` and what makes it of them:
+ *
+ *   const Rocks = Three.instances("game/Rocks", {
+ *     of: Rock,
+ *     from: Forest,
+ *     look: ({ bark }) => ({
+ *       geometry: new IcosahedronGeometry(1),
+ *       material: new MeshStandardMaterial({ map: bark }),
+ *     }),
+ *     free: ({ geometry, material }) => {
+ *       geometry.dispose()
+ *       material.dispose()
+ *     },
+ *   })
+ *
+ * - The entities are drawn while the app holds the bundle loaded, which
+ *   `Assets.during` or the game's own system sees to, and not before or
+ *   after: no mesh is in the scene then.
+ * - `look` is called once each time the bundle is loaded, and `free` with
+ *   what it returned when the bundle is let go or the app's scope closes.
+ * - It needs `Assets.plugin` as well.
  */
-export const instances = (name: string, options: InstancesOptions) => {
+export const instances: {
+  <B extends Entries, L extends Look = Look>(
+    name: string,
+    options: InstancesFromOptions<B, L>
+  ): System.System<never, Needs | Assets.Store>;
+  (name: string, options: InstancesOptions): System.System<never, Needs>;
+} = (
+  name: string,
+  options: InstancesOptions | InstancesFromOptions<Entries>
+  // `any`: the system of a look that is there asks for no store of assets,
+  // which the two signatures above say and one body cannot.
+): System.System<never, any> => {
+  const from = "from" in options ? options : undefined;
   const smooth = options.smooth === true;
   const marked = required(options);
   const excluded = options.without ?? [];
+  const { color } = options;
+  if (
+    color !== undefined &&
+    (color.storage !== "table" ||
+      !["r", "g", "b"].every((field) => color.fields.includes(field)))
+  ) {
+    throw new Error(
+      `Three.instances("${name}") was given "${color.name}" as its colour, which is not one: a colour is a component kept in a table with the fields r, g and b.`
+    );
+  }
+  // `any`: the terms of a query are a tuple in its type, and a kind with a
+  // colour has one more than one without, after the ones its loop reads.
+  const kind = (
+    own: readonly ComponentDef<any>[],
+    absent: readonly ComponentDef<any>[]
+  ): Query.Query<any> =>
+    Query.all(...own, ...(color === undefined ? [] : [color])).pipe(
+      Query.with(...marked),
+      Query.without(...excluded, ...absent),
+      Query.reads()
+    );
   // An entity's table has a rotation or it does not, and a scale or not:
   // four queries, each handed exactly the columns its entities have.
-  const Placed = Query.all(Transform3d.Position).pipe(
-    Query.with(...marked),
-    Query.without(...excluded, Transform3d.Rotation, Transform3d.Scale),
-    Query.reads()
+  const Placed = kind(
+    [Transform3d.Position],
+    [Transform3d.Rotation, Transform3d.Scale]
   );
-  const Sized = Query.all(Transform3d.Position, Transform3d.Scale).pipe(
-    Query.with(...marked),
-    Query.without(...excluded, Transform3d.Rotation),
-    Query.reads()
+  const Sized = kind(
+    [Transform3d.Position, Transform3d.Scale],
+    [Transform3d.Rotation]
   );
-  const Turned = Query.all(Transform3d.Position, Transform3d.Rotation).pipe(
-    Query.with(...marked),
-    Query.without(...excluded, Transform3d.Scale),
-    Query.reads()
+  const Turned = kind(
+    [Transform3d.Position, Transform3d.Rotation],
+    [Transform3d.Scale]
   );
-  const Whole = Query.all(
-    Transform3d.Position,
-    Transform3d.Rotation,
-    Transform3d.Scale
-  ).pipe(Query.with(...marked), Query.without(...excluded), Query.reads());
+  const Whole = kind(
+    [Transform3d.Position, Transform3d.Rotation, Transform3d.Scale],
+    []
+  );
   // And the same four for a flat game's components, but for the entities
   // that are placed in three dimensions as well, which are drawn above.
-  const flat = [...excluded, Transform3d.Position];
-  const PlacedFlat = Query.all(Transform2d.Position).pipe(
-    Query.with(...marked),
-    Query.without(...flat, Transform2d.Rotation, Transform2d.Scale),
-    Query.reads()
+  const PlacedFlat = kind(
+    [Transform2d.Position],
+    [Transform3d.Position, Transform2d.Rotation, Transform2d.Scale]
   );
-  const SizedFlat = Query.all(Transform2d.Position, Transform2d.Scale).pipe(
-    Query.with(...marked),
-    Query.without(...flat, Transform2d.Rotation),
-    Query.reads()
+  const SizedFlat = kind(
+    [Transform2d.Position, Transform2d.Scale],
+    [Transform3d.Position, Transform2d.Rotation]
   );
-  const TurnedFlat = Query.all(Transform2d.Position, Transform2d.Rotation).pipe(
-    Query.with(...marked),
-    Query.without(...flat, Transform2d.Scale),
-    Query.reads()
+  const TurnedFlat = kind(
+    [Transform2d.Position, Transform2d.Rotation],
+    [Transform3d.Position, Transform2d.Scale]
   );
-  const WholeFlat = Query.all(
-    Transform2d.Position,
-    Transform2d.Rotation,
-    Transform2d.Scale
-  ).pipe(Query.with(...marked), Query.without(...flat), Query.reads());
+  const WholeFlat = kind(
+    [Transform2d.Position, Transform2d.Rotation, Transform2d.Scale],
+    [Transform3d.Position]
+  );
   return System.make(name, function* () {
     const kept = yield* Scene;
     const placed = yield* Placed;
@@ -1192,33 +1621,68 @@ export const instances = (name: string, options: InstancesOptions) => {
     // asked only by a system that draws between the two.
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
-    let drawn = kept._kept.get(name) as Instances | undefined;
-    if (drawn === undefined) {
-      drawn = new Instances(kept.scene, name, options);
-      kept._kept.set(name, drawn);
+    let drawn: Instances | undefined;
+    if (from === undefined) {
+      drawn = kept._kept.get(name) as Instances | undefined;
+      if (drawn === undefined) {
+        drawn = new Instances(kept.scene, name, options as InstancesOptions);
+        kept._kept.set(name, drawn);
+      }
+    } else {
+      let sourced = kept._kept.get(name) as FromAssets<Sourced> | undefined;
+      if (sourced === undefined) {
+        // The room the instances came to need is kept from one loading of
+        // the bundle to the next.
+        let room = from.capacity ?? 256;
+        const { scene } = kept;
+        sourced = new FromAssets(
+          yield* Assets.Store,
+          from.from,
+          (assets): Sourced => {
+            const look = from.look(assets);
+            const made = new Instances(scene, name, {
+              ...from,
+              geometry: look.geometry,
+              material: look.material,
+              capacity: room,
+            });
+            return {
+              instances: made,
+              dispose: () => {
+                ({ room } = made);
+                made.dispose();
+                from.free?.(look);
+              },
+            };
+          }
+        );
+        kept._kept.set(name, sourced);
+      }
+      drawn = sourced.now()?.instances;
+      // Its assets are not there: nothing of it is in the scene.
+      if (drawn === undefined) {
+        return;
+      }
     }
     // Plain loops from here on: one pass over the columns of each kind.
     drawn.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
-    placed.eachChunk(drawn.placed);
-    sized.eachChunk(drawn.sized);
-    turned.eachChunk(drawn.turned);
-    whole.eachChunk(drawn.whole);
-    placedFlat.eachChunk(drawn.placedFlat);
-    sizedFlat.eachChunk(drawn.sizedFlat);
-    turnedFlat.eachChunk(drawn.turnedFlat);
-    wholeFlat.eachChunk(drawn.wholeFlat);
+    const { loops } = drawn;
+    placed.eachChunk(loops.placed);
+    sized.eachChunk(loops.sized);
+    turned.eachChunk(loops.turned);
+    whole.eachChunk(loops.whole);
+    placedFlat.eachChunk(loops.placedFlat);
+    sizedFlat.eachChunk(loops.sizedFlat);
+    turnedFlat.eachChunk(loops.turnedFlat);
+    wholeFlat.eachChunk(loops.wholeFlat);
     drawn.finish();
   }).pipe(System.inStage("frame"), System.before(Render));
 };
 
 // --- objects ---------------------------------------------------------------------
 
-export interface ObjectsOptions<O extends Object3D = Object3D> extends Which {
-  /**
-   * Makes the object of an entity, the first frame the entity is one of
-   * these. It is added to the scene, and given the entity's place.
-   */
-  readonly make: (entity: Entity) => O;
+/** What `Three.objects` is told, whatever its objects are made of. */
+export interface ObjectsShared<O extends Object3D = Object3D> extends Which {
   /**
    * Called when the entity is no longer one of these, or the app's scope
    * closes, after the object was taken out of the scene: to dispose of
@@ -1227,10 +1691,46 @@ export interface ObjectsOptions<O extends Object3D = Object3D> extends Which {
   readonly free?: (object: O, entity: Entity) => void;
 }
 
+export interface ObjectsOptions<
+  O extends Object3D = Object3D,
+> extends ObjectsShared<O> {
+  /**
+   * Makes the object of an entity, the first frame the entity is one of
+   * these. It is added to the scene, and given the entity's place.
+   */
+  readonly make: (entity: Entity) => O;
+}
+
+/**
+ * Objects that are made of assets which are loaded later, and let go
+ * again: a level's models.
+ */
+export interface ObjectsFromOptions<
+  B extends Entries,
+  O extends Object3D = Object3D,
+> extends ObjectsShared<O> {
+  /** The bundle the objects are made of. There are objects while it is loaded. */
+  readonly from: Assets.Bundle<B>;
+  /**
+   * Makes the object of an entity of the bundle's assets: the first frame
+   * the entity is one of these and the assets are loaded, and again each
+   * time they are loaded anew.
+   */
+  readonly make: (entity: Entity, assets: Assets.Loaded<B>) => O;
+}
+
+/** Either of the two, as the class that keeps the objects sees it. */
+interface ObjectsOf<O extends Object3D> extends ObjectsShared<O> {
+  // `any`: the assets of whichever bundle, or none.
+  readonly make: (entity: Entity, assets: any) => O;
+}
+
 /** One object per entity, by the entity's index, and the loops that place them. */
 class Objects<O extends Object3D> implements Kept {
   private readonly scene: ThreeScene;
-  private readonly options: ObjectsOptions<O>;
+  private readonly options: ObjectsOf<O>;
+  /** What the objects are made of, for a kind that is made of assets. */
+  private readonly assets: unknown;
   private readonly objects: (O | undefined)[] = [];
   /** Per entity index: the entity the object there was made for. */
   private owner = new Uint32Array(0);
@@ -1246,9 +1746,10 @@ class Objects<O extends Object3D> implements Kept {
   /** What places the objects between two ticks, when the system was asked to. */
   private readonly smooth: Smooth | undefined;
 
-  constructor(scene: ThreeScene, options: ObjectsOptions<O>) {
+  constructor(scene: ThreeScene, options: ObjectsOf<O>, assets: unknown) {
     this.scene = scene;
     this.options = options;
+    this.assets = assets;
     this.smooth = smoothOf(options);
   }
 
@@ -1281,7 +1782,7 @@ class Objects<O extends Object3D> implements Kept {
     } else {
       this.release(index);
     }
-    const object = this.options.make(entity);
+    const object = this.options.make(entity, this.assets);
     this.objects[index] = object;
     this.owner[index] = entity;
     this.turnedAt[index] = 0;
@@ -1498,11 +1999,37 @@ class Objects<O extends Object3D> implements Kept {
  *   app that starts with entities, has its objects made on the first
  *   frame.
  * - It needs `Three.plugin`, and its name is one of the app's systems'.
+ *
+ * Objects that are made of a level's assets name the bundle they come
+ * `from`, and `make` is handed what it holds:
+ *
+ *   const Deer = Three.objects("game/Deer", {
+ *     of: Deer,
+ *     from: Forest,
+ *     make: (entity, { deer }) => clone(deer),
+ *   })
+ *
+ * - There are objects while the app holds the bundle loaded: each is made
+ *   the frame it is, and all are let go, through `free`, when it is not.
+ * - It needs `Assets.plugin` as well.
  */
-export const objects = <O extends Object3D = Object3D>(
+// The one made of assets is first, so that the two things its `make` is
+// handed are typed from it.
+export const objects: {
+  <B extends Entries, O extends Object3D = Object3D>(
+    name: string,
+    options: ObjectsFromOptions<B, O>
+  ): System.System<never, Needs | Assets.Store>;
+  <O extends Object3D = Object3D>(
+    name: string,
+    options: ObjectsOptions<O>
+  ): System.System<never, Needs>;
+} = <O extends Object3D>(
   name: string,
-  options: ObjectsOptions<O>
-) => {
+  options: ObjectsOptions<O> | ObjectsFromOptions<Entries, O>
+  // `any`: as for `instances`.
+): System.System<never, any> => {
+  const from = "from" in options ? options.from : undefined;
   const smooth = options.smooth === true;
   const marked = required(options);
   const excluded = options.without ?? [];
@@ -1548,10 +2075,29 @@ export const objects = <O extends Object3D = Object3D>(
     const sizedFlat = yield* SizedFlat;
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
-    let held = kept._kept.get(name) as Objects<O> | undefined;
-    if (held === undefined) {
-      held = new Objects(kept.scene, options);
-      kept._kept.set(name, held);
+    let held: Objects<O> | undefined;
+    if (from === undefined) {
+      held = kept._kept.get(name) as Objects<O> | undefined;
+      if (held === undefined) {
+        held = new Objects(kept.scene, options, undefined);
+        kept._kept.set(name, held);
+      }
+    } else {
+      let sourced = kept._kept.get(name) as FromAssets<Objects<O>> | undefined;
+      if (sourced === undefined) {
+        const { scene } = kept;
+        sourced = new FromAssets(
+          yield* Assets.Store,
+          from,
+          (assets) => new Objects(scene, options, assets)
+        );
+        kept._kept.set(name, sourced);
+      }
+      held = sourced.now();
+      // Its assets are not there: there is nothing to make an object of.
+      if (held === undefined) {
+        return;
+      }
     }
     // Every entity that is one of these is found by the first loop, which
     // makes the objects that are missing; whatever it did not find is let

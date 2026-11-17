@@ -9,7 +9,17 @@
  *
  *   pnpm --filter @arcadekit/three bench
  */
-import { App, Component, Plugin, Transform3d, Transform2d } from "arcadekit";
+import {
+  App,
+  Assets,
+  Component,
+  Field,
+  Plugin,
+  Transform2d,
+  Transform3d,
+} from "arcadekit";
+import { System } from "arcadekit";
+import type { Frame, Time, World } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
@@ -22,7 +32,10 @@ const Thing = Component.tag("bench/Thing");
 const geometry = new BoxGeometry(1, 1, 1);
 const material = new MeshBasicMaterial();
 
-const noRenderer = Layer.succeed(Three.Renderer, { render() {} });
+const noRenderer = Layer.mergeAll(
+  Layer.succeed(Three.Renderer, { render() {} }),
+  Assets.layerMemory({ "/bark.png": "" })
+);
 
 const median = (values: number[]): number =>
   values.toSorted((a, b) => a - b)[values.length >> 1]!;
@@ -46,14 +59,19 @@ const measure = (frame: () => void): { ns: number; bytes: number } => {
 const variant = (
   name: string,
   parts: () => ComponentInput[],
-  system: ReturnType<typeof Three.instances>
+  system: System.System<
+    never,
+    Frame | Three.Scene | Time | World | Assets.Store
+  >,
+  // What else the frame runs, for a variant that needs it.
+  also: readonly System.System<never, Assets.Store>[] = []
 ): void => {
   const scope = Effect.runSync(Scope.make());
   const app = Effect.runSync(
-    App.make({ plugins: [Three.plugin], systems: [system] }).pipe(
-      Effect.provide(noRenderer),
-      Scope.provide(scope)
-    )
+    App.make({
+      plugins: [Three.plugin, Assets.plugin],
+      systems: [...also, system],
+    }).pipe(Effect.provide(noRenderer), Scope.provide(scope))
   );
   for (let i = 0; i < N; i++) {
     app.world.spawn(Thing, ...parts());
@@ -147,6 +165,58 @@ variant(
   "instances, smooth, flat: all three",
   () => [placeFlat(), turnFlat(), sizeFlat()],
   smoothed("n")
+);
+
+// A colour of its own for each: three more numbers, beside the matrix.
+const Paint = Component.define("bench/Paint", {
+  r: Field.f32,
+  g: Field.f32,
+  b: Field.f32,
+});
+const paint = () =>
+  Paint.of({ r: Math.random(), g: Math.random(), b: Math.random() });
+variant(
+  "instances, a colour each: a position",
+  () => [place(), paint()],
+  Three.instances("o", {
+    of: Thing,
+    geometry,
+    material,
+    capacity: N,
+    color: Paint,
+  })
+);
+variant(
+  "instances, a colour each, smooth: a position",
+  () => [place(), paint()],
+  Three.instances("p", {
+    of: Thing,
+    geometry,
+    material,
+    capacity: N,
+    color: Paint,
+    smooth: true,
+  })
+);
+
+// A look that is made of a bundle's assets, and asked each frame whether
+// they are still there: once by the system, and once before the scene is
+// drawn.
+const Level = Assets.bundle("bench/Level", {
+  // An asset that needs no file, since none is fetched here.
+  bark: Assets.make("/bark.png", () => Effect.succeed(material)),
+});
+const Sourced = Three.instances("q", {
+  of: Thing,
+  from: Level,
+  look: ({ bark }) => ({ geometry, material: bark }),
+  capacity: N,
+});
+variant(
+  "instances, a look made of assets: a position",
+  () => [place()],
+  Sourced,
+  [Assets.during(Effect.succeed(true), Level).pipe(System.before(Sourced))]
 );
 
 // What the loops above replace: an Object3D per entity, its matrix worked
