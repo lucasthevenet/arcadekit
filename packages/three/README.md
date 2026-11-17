@@ -206,18 +206,23 @@ A geometry and a material given to `Three.instances` are there when the system i
 ```ts
 const Forest = Assets.bundle("game/Forest", {
   bark: Three.texture("/bark.png"),
-  bumps: Three.texture("/bark-normals.png", (texture) => {
-    texture.colorSpace = NoColorSpace; // not colours
-    texture.wrapS = texture.wrapT = RepeatWrapping;
+  bumps: Three.texture("/bark-normals.png", {
+    prepare: (texture) => {
+      texture.colorSpace = NoColorSpace; // not colours
+      texture.wrapS = texture.wrapT = RepeatWrapping;
+    },
   }),
+  // As the file has it, which a model's own coordinates expect.
+  skin: Three.texture("/skin.png", { flipY: false }),
 });
 ```
 
 `Three.texture(url)` is an [asset](../arcadekit/README.md#assets) that is a `Texture` of Three.js: it goes in a bundle beside the level's other files, is fetched and decoded with them, and is disposed of, with the picture it was made of, when the scope it was loaded in closes.
 
 - It is decoded by the page's `createImageBitmap`, off the thread the game runs on.
-- It is a picture of colours, in sRGB, and the right way up for the geometries of Three.js. The function it is given second is handed the texture once, before it is ever sent to the renderer, to say otherwise or to set how it repeats and is filtered.
-- Which way up it is cannot be changed there: a bitmap is flipped when it is made, and Three.js does not read `flipY` of a texture made of one.
+- It is a picture of colours, in sRGB. `prepare` is handed the texture once, before it is ever sent to the renderer, to say otherwise or to set how it repeats and is filtered.
+- It is the right way up for the geometries of Three.js, as a `TextureLoader` gives it. `flipY: false` leaves it as the file has it.
+- Which way up is said there, where the texture is made, and not in `prepare`: a bitmap is turned over when it is decoded, and Three.js does not read `flipY` of a texture made of one. Set in `prepare` it would do nothing, so the load fails with an error that says where to say it.
 - A file that is no picture fails the bundle, as any asset that cannot be made does, with `Assets.AssetFailed` naming the URL.
 - A model is [`Gltf.model`](#models). A font, or anything else Three.js has a loader for, is an asset of your own, `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be disposed of.
 

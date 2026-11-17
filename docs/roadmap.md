@@ -90,7 +90,6 @@ What a replay, a save and the hash do not hold:
 Values that have to be right and are not checked:
 
 - **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
-- **A texture made by `Three.texture` cannot be turned over in `prepare`**: Three.js does not read `flipY` of a texture made of a bitmap, and setting it does nothing.
 - **What a frame that failed said of a channel stands until a frame ends.** Systems that say something else of it in the next frame are refused as if two had spoken at once, unless the failure was that refusal itself. A game under a driver stops at a failed frame; a test that steps on after one has to know.
 
 Who lets go of what:
