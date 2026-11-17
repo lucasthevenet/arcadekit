@@ -1,6 +1,6 @@
 # Docs site
 
-The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose pages are the repository's own markdown, read where it is. No file is copied, so there is one text to keep right.
+The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose own pages, the walkthrough, the concepts and the guides, are under [`src/content/docs/`](src/content/docs). The reference is the repository's own markdown, the packages' READMEs, the roadmap and the conventions, read where it is: no file is copied, so there is one text to keep right.
 
 The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's](https://alchemy.run) are, in three topics, each with a sidebar of its own ([starlight-sidebar-topics](https://starlight-sidebar-topics.netlify.app)):
 
@@ -11,34 +11,35 @@ The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's]
 | Address | File |
 | --- | --- |
 | `/` | [`src/content/docs/index.mdx`](src/content/docs/index.mdx), the landing page, whose text is the site's own |
-| `/<path>`, such as `/making-a-game`, `/concepts/determinism` and `/guides/input` | `docs/<path>.md`: the walkthrough, the concepts, the guides, the roadmap and the conventions |
+| `/<path>`, such as `/making-a-game`, `/concepts/determinism` and `/guides/input` | `src/content/docs/<path>.md`: the walkthrough, the concepts and the guides |
+| `/roadmap` and `/conventions` | `docs/roadmap.md` and `docs/conventions.md`, the project's own |
 | `/reference/<package>`, such as `/reference/arcadekit` and `/reference/three` | `packages/<package>/README.md`, which npm shows too |
 
 ```bash
 pnpm dev:docs     # from the repo root: Astro's dev server, which reloads a page as its file changes
 pnpm build:docs   # build the site to website/dist; `pnpm build` runs it too
-pnpm --filter @arcadekit/website snippets   # compile the code of docs/, and run its tests
+pnpm --filter @arcadekit/website snippets   # compile the code of the site's pages, and run their tests
 pnpm --filter @arcadekit/website preview    # serve the built site
 ```
 
 ## A new page
 
-A file under [`docs/`](../docs) is a page as soon as it exists, and so is a new package's README: [`src/lib/pages.ts`](src/lib/pages.ts) finds every markdown file under `docs/`, and every `packages/*/README.md`. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
+A markdown file under [`src/content/docs/`](src/content/docs) is a page as soon as it exists, at its path there. It is a Starlight page, with a frontmatter that gives its `title` and its `description`, the line under a shared link. Its body starts after the frontmatter, with no `# ` heading: Starlight writes the title.
 
-Every page starts with a `# ` heading, its title, then a paragraph. The sidebar lists the page by its title, and the paragraph is its description under a shared link. A file that doesn't start with a `# ` heading fails the build.
+A file directly in `docs/` and a new package's README are pages too, read where they are: [`src/lib/pages.ts`](src/lib/pages.ts) finds them. They have no frontmatter, since GitHub would show it: such a file starts with a `# ` heading, its title, then a paragraph, its description, and one that doesn't fails the build. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
 
 [`src/lib/sidebar.ts`](src/lib/sidebar.ts) places each page in its topic. Its `OUTLINE` names the pages in order, in groups: a page it doesn't name goes at the end of its folder's group, so a new concept is listed at the end of Concepts, a new guide under Guides' "More" and a new package under Packages, until the outline places it. A page the outline names that doesn't exist fails the build.
 
 ## The code on a page
 
-Every `ts` block of a page of `docs/` is compiled against the packages as they are in this checkout, by [`scripts/check-snippets.mjs`](scripts/check-snippets.mjs), which `pnpm typecheck` runs:
+Every `ts` block of a page under `src/content/docs/` is compiled against the packages as they are in this checkout, by [`scripts/check-snippets.mjs`](scripts/check-snippets.mjs), which `pnpm typecheck` runs:
 
 - A block is a program of its own: it imports what it uses.
 - A block with a title, ` ```ts title="rules.ts" `, is that file of its page, and Starlight shows the title over it. Another block of the page can import it, and a later block with the same title adds to the end of it. So a walkthrough can build a game a file at a time.
 - A file whose title ends in `.test.ts` is run with Vitest: a page that shows a test shows one that passes.
 - A block fenced ` ```ts sketch ` is a sketch, with `/* … */` where a game's own code goes. It is highlighted as TypeScript and nothing compiles it.
 
-An error is reported at the page and line it is on. The READMEs' blocks are not compiled: they show parts of a game, not whole ones.
+An error is reported at the page and line it is on. The READMEs' blocks and the landing page's are not compiled: they show parts of a game, not whole ones.
 
 ## Its look
 
@@ -51,7 +52,7 @@ The site is styled after [polycombo.io](https://polycombo.io): one dark theme, s
 
 ## How it reads the repository
 
-Starlight serves the entries of its `docs` collection, which its own loader reads from `src/content/docs/`. There the site has its landing page alone. [`src/lib/loader.ts`](src/lib/loader.ts) adds each page `pages.ts` finds as an entry of the same collection, read where it is ([`src/content.config.ts`](src/content.config.ts)):
+Starlight serves the entries of its `docs` collection, which its own loader reads from `src/content/docs/`: the site's own pages. [`src/lib/loader.ts`](src/lib/loader.ts) adds each README and each file of `docs/` that `pages.ts` finds as an entry of the same collection, read where it is ([`src/content.config.ts`](src/content.config.ts)):
 
 - Starlight writes a page's title from its frontmatter, and the files have none, since GitHub would show it. The entry's title is the file's first line, its `# ` heading, and its content is the rest of the file, so the page has one title. A reference page with no README is titled with its import path or its module's name.
 - Its description is the file's first paragraph, which the page's `<meta>` tags give a shared link.
@@ -61,7 +62,7 @@ The loader renders each file with the site's Markdown processor, [Sätteri](http
 
 ## Links
 
-The pages are also read on GitHub, and the READMEs on npm, so their links stay written for those: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as every file under `docs/`. So a page under `docs/` links to a README or another page by its relative path, and a README links to a guide by its GitHub URL. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
+The pages are also read on GitHub, and the READMEs on npm, so their links stay written for those: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as `docs/roadmap.md`. A page of the site's own links to another by its relative path (`../guides/input.md`), to a README by its address on the site (`/reference/arcadekit#sound`), and to any other file of the repository by its relative path. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
 
 - a link to a file that is a page goes to that page;
 - a link to any other file or folder of the repository goes to it on GitHub.

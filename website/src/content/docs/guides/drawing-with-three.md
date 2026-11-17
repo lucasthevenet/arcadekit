@@ -1,6 +1,9 @@
-# Drawing with Three.js
+---
+title: "Drawing with Three.js"
+description: "arcadekit draws nothing itself. @arcadekit/three is a plugin, in a package of its own, that draws a game with Three.js."
+---
 
-arcadekit draws nothing itself. [`@arcadekit/three`](../../packages/three/README.md) is a plugin, in a package of its own, that draws a game with [Three.js](https://threejs.org). It runs in the frame stage and reads the world without changing it, so a game that is drawn has the same hash, log and save as one that is not.
+arcadekit draws nothing itself. [`@arcadekit/three`](/reference/three) is a plugin, in a package of its own, that draws a game with [Three.js](https://threejs.org). It runs in the frame stage and reads the world without changing it, so a game that is drawn has the same hash, log and save as one that is not.
 
 ```sh
 pnpm add arcadekit @arcadekit/three effect three
@@ -95,5 +98,5 @@ A flat game places things with `Transform2d`, and the same systems draw them in 
 
 ## Read more
 
-- [The `@arcadekit/three` reference](../../packages/three/README.md), with colours, textures, models, the benchmark, and what is not done yet.
-- [`packages/three/examples/page`](../../packages/three/examples/page): ten thousand moving objects.
+- [The `@arcadekit/three` reference](/reference/three), with colours, textures, models, the benchmark, and what is not done yet.
+- [`packages/three/examples/page`](../../../../../packages/three/examples/page): ten thousand moving objects.

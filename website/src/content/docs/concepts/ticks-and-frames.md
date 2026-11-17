@@ -1,4 +1,7 @@
-# Ticks and frames
+---
+title: "Ticks and frames"
+description: "A game's simulation ticks at a fixed rate. The screen repaints at its own. arcadekit keeps the two apart, and adds a third moment for what the devices say."
+---
 
 A game's simulation ticks at a fixed rate. The screen repaints at its own. arcadekit keeps the two apart, and adds a third moment for what the devices say.
 
@@ -50,5 +53,5 @@ A game of turns, a puzzle or a menu has nothing to do between moves. With `ticks
 
 ## Read more
 
-- [The tick and the frame](../../packages/arcadekit/README.md#the-tick-and-the-frame) in the reference.
+- [The tick and the frame](/reference/arcadekit#the-tick-and-the-frame) in the reference.
 - [Input](../guides/input.md), [sound](../guides/sound.md) and [drawing with Three.js](../guides/drawing-with-three.md).

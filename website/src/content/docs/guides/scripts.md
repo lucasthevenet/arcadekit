@@ -1,4 +1,7 @@
-# Scripts
+---
+title: "Scripts"
+description: "A script is an Effect that runs across many ticks: ordinary sequential code that waits for time to pass or for something to happen. A cutscene, a wave of enemies, a tutorial step."
+---
 
 A script is an Effect that runs across many ticks: ordinary sequential code that waits for time to pass or for something to happen. A cutscene, a wave of enemies, a tutorial step.
 
@@ -49,4 +52,4 @@ A save can't hold a script in mid-flight. A plugin lists its `scripts`, and they
 
 ## Read more
 
-- [Scripts](../../packages/arcadekit/README.md#scripts) in the reference.
+- [Scripts](/reference/arcadekit#scripts) in the reference.

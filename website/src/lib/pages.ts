@@ -1,21 +1,21 @@
-// Which files of the repository are pages of the site, and where each one is served.
+// Which files are pages of the site, and where each one is served.
 //
-// The site has one page of its own, the landing page (src/content/docs/index.mdx). Every other
-// page is the repository's own text, read where it is (loader.ts):
-// - each file under `docs/`, at its path there: `docs/guides/input.md` at `/guides/input`.
-//   These are the walkthrough, the concepts, the guides, the roadmap and the conventions, read on
-//   GitHub and here;
-// - each package's README, at `/reference/<package>`: `packages/arcadekit/README.md` at
-//   `/reference/arcadekit`, `packages/three/README.md` at `/reference/three`. They are the
-//   reference, and npm shows them too.
-// `docs/` and `packages/` are read whole, so a new page or a new package is a page without a
-// change here.
+// - The site's own pages, under src/content/docs/: the landing page, the walkthrough, the concepts
+//   and the guides, each at its path there (`guides/input.md` at `/guides/input`). They are
+//   Starlight's own pages, with a frontmatter, and Starlight's loader reads them.
+// - The repository's own markdown, read where it is (loader.ts):
+//   - each file directly in `docs/`, the roadmap and the conventions, at `/<name>`;
+//   - each package's README, at `/reference/<package>`: `packages/arcadekit/README.md` at
+//     `/reference/arcadekit`. They are the reference, and npm shows them too.
+// The folders are read whole, so a new page or a new package is a page without a change here.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { REPO_ROOT, WEBSITE_DIR } from "./site.ts";
 
 const DOCS = "docs";
+/** The site's own pages, relative to the repository's root. */
+const SITE_DOCS = `${WEBSITE_DIR}/src/content/docs`;
 const PACKAGES = "packages";
 /** Where the packages' pages are served: a package's page is this, then its folder's name. */
 const REFERENCE = "reference";
@@ -41,9 +41,12 @@ export interface RepositoryPage extends SitePage {
   readonly body: string;
 }
 
-/** A page of `docs/`: the walkthrough, a concept, a guide, the roadmap or the conventions. */
-export interface DocPage extends RepositoryPage {
-  /** Its top folder under `docs/`, such as `guides`, or `""` for a file directly in it. */
+/** A page of the docs: the walkthrough, a concept or a guide, the roadmap or the conventions. */
+export interface DocPage extends SitePage {
+  /**
+   * Its top folder under src/content/docs/, such as `guides`, `""` for a file directly in it, or
+   * `"project"` for a file of `docs/`.
+   */
   readonly section: string;
 }
 
@@ -136,12 +139,23 @@ const markdownUnder = (dir: string): string[] =>
     .filter((file) => file.endsWith(".md"))
     .toSorted();
 
-const docPages = (): DocPage[] =>
-  markdownUnder(DOCS).map((file) => {
+/** The site's own pages but the landing page: the walkthrough, the concepts and the guides. */
+const sitePages = (): DocPage[] =>
+  markdownUnder(SITE_DOCS).map((file) => {
     const slug = file.replace(/\.md$/u, "");
     const section = file.includes("/") ? (file.split("/", 1)[0] ?? "") : "";
-    return { ...readPage(`${DOCS}/${file}`, slug), section };
+    return { file: `${SITE_DOCS}/${file}`, slug, link: `/${slug}`, section };
   });
+
+/** The files directly in `docs/`, the roadmap and the conventions, read where they are. */
+const projectPages = (): (RepositoryPage & DocPage)[] =>
+  readdirSync(path.join(REPO_ROOT, DOCS))
+    .filter((file) => file.endsWith(".md"))
+    .toSorted()
+    .map((file) => ({
+      ...readPage(`${DOCS}/${file}`, file.replace(/\.md$/u, "")),
+      section: "project",
+    }));
 
 /** Each package's README, at `/reference/<folder>`. */
 const packagePages = (): PackagePage[] =>
@@ -158,11 +172,13 @@ const packagePages = (): PackagePage[] =>
 /** Every page of the site, found on disk. */
 export const discoverPages = () => {
   const home: SitePage = { file: HOME, slug: "index", link: "/" };
-  const docs = docPages();
+  const project = projectPages();
+  /** The pages of the Learn and Guides topics, and the project's own. */
+  const docs: readonly DocPage[] = [...sitePages(), ...project];
   const packages = packagePages();
   /** The pages read from the repository, which loader.ts adds to the site. */
-  const repository: readonly RepositoryPage[] = [...docs, ...packages];
-  const all: readonly SitePage[] = [home, ...repository];
+  const repository: readonly RepositoryPage[] = [...project, ...packages];
+  const all: readonly SitePage[] = [home, ...docs, ...packages];
 
   const files = new Map<string, string>();
   for (const page of all) {

@@ -1,4 +1,7 @@
-# Input
+---
+title: "Input"
+description: "The keyboard, the pointer and the gamepads are outside the game. What they say reaches it as actions, through the same log as everything else from outside, so a replay needs no devices."
+---
 
 The keyboard, the pointer and the gamepads are outside the game. What they say reaches it as actions, through the same log as everything else from outside, so a replay needs no devices. This guide covers the two ways to read them: bindings, and the picture of the devices.
 
@@ -92,4 +95,4 @@ The world is frozen in the input stage, as in the frame stage: a system there is
 
 ## Read more
 
-- [Input](../../packages/arcadekit/README.md#input) in the reference, with what is not read yet: a trigger's pressure, the wheel, typed text, more than one finger.
+- [Input](/reference/arcadekit#input) in the reference, with what is not read yet: a trigger's pressure, the wheel, typed text, more than one finger.

@@ -1,4 +1,7 @@
-# Systems
+---
+title: "Systems"
+description: "A system is the game's code: one Effect per tick, with plain loops inside. This guide covers the order systems run in, their stages, running only some of the time, and saying what a system touches."
+---
 
 A system is the game's code: one Effect per tick, with plain loops inside. This guide covers the order systems run in, their stages, running only some of the time, and saying what a system touches.
 
@@ -122,4 +125,4 @@ A conflict is settled by saying the order, with `System.after` or `System.before
 
 ## Read more
 
-- [States and run conditions](../../packages/arcadekit/README.md#states-and-run-conditions) and [what a system reads and writes](../../packages/arcadekit/README.md#what-a-system-reads-and-writes) in the reference.
+- [States and run conditions](/reference/arcadekit#states-and-run-conditions) and [what a system reads and writes](/reference/arcadekit#what-a-system-reads-and-writes) in the reference.

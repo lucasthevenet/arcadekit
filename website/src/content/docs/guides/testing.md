@@ -1,4 +1,7 @@
-# Testing
+---
+title: "Testing"
+description: "A game made with arcadekit runs under Node with nothing but its plugins, so its tests need no browser."
+---
 
 A game made with arcadekit runs under Node with nothing but its plugins, so its tests need no browser. This guide covers stepping an app in a test, and the stand-ins for what a page has: devices, sound, a display, files, and a network.
 
@@ -127,4 +130,4 @@ A game played in a test, then replayed into a fresh app with `App.replay`, has t
 
 ## Read more
 
-- The package's own tests, [`packages/arcadekit/test`](../../packages/arcadekit/test), play games through every part of it. [`test/page.test.ts`](../../packages/arcadekit/test/page.test.ts) mounts the example page's two UIs in a document and plays the game through them.
+- The package's own tests, [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of it. [`test/page.test.ts`](../../../../../packages/arcadekit/test/page.test.ts) mounts the example page's two UIs in a document and plays the game through them.

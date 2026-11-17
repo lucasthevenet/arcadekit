@@ -1,4 +1,7 @@
-# Several players
+---
+title: "Several players"
+description: "Every peer of a game runs the same simulation. What they send each other is the actions their players issue, each stamped with the tick it applies on, and nothing else."
+---
 
 Every peer of a game runs the same simulation. What they send each other is the actions their players issue, each stamped with the tick it applies on, and nothing else. A game is the same game on two machines when both apply the same actions on the same ticks in the same order.
 
@@ -35,9 +38,9 @@ The peers send each other the world's hash at their checkpoints. When every peer
 
 ## What is not done
 
-The peers of a session are fixed when it is made: nobody joins a game in progress or leaves one. Every message has to arrive: a socket that drops ends the game over it. A game in a session ticks all the time, not only when needed. The [reference](../../packages/arcadekit/README.md#not-done-yet) has the rest.
+The peers of a session are fixed when it is made: nobody joins a game in progress or leaves one. Every message has to arrive: a socket that drops ends the game over it. A game in a session ticks all the time, not only when needed. The [reference](/reference/arcadekit#not-done-yet) has the rest.
 
 ## Read more
 
 - [Lockstep and rollback](../guides/lockstep-and-rollback.md) and [transports and relays](../guides/transports-and-relays.md).
-- [More than one player](../../packages/arcadekit/README.md#more-than-one-player) in the reference.
+- [More than one player](/reference/arcadekit#more-than-one-player) in the reference.

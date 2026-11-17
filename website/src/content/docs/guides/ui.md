@@ -1,4 +1,7 @@
-# A UI
+---
+title: "A UI"
+description: "A game's menus and heads-up display are built with whatever the game chooses: the page's own DOM, React, anything. arcadekit depends on none of them."
+---
 
 A game's menus and heads-up display are built with whatever the game chooses: the page's own DOM, React, anything. arcadekit depends on none of them. What it gives is a bridge: the game says which values the UI may see, and the UI acts by sending actions.
 
@@ -112,5 +115,5 @@ const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
 
 ## Read more
 
-- [The view bridge](../../packages/arcadekit/README.md#the-view-bridge) in the reference.
-- [`examples/page`](../../packages/arcadekit/examples/page) builds its menu and heads-up display twice on one bridge, with the DOM and with React.
+- [The view bridge](/reference/arcadekit#the-view-bridge) in the reference.
+- [`examples/page`](../../../../../packages/arcadekit/examples/page) builds its menu and heads-up display twice on one bridge, with the DOM and with React.

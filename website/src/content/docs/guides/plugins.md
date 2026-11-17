@@ -1,4 +1,7 @@
-# Plugins
+---
+title: "Plugins"
+description: "A plugin is one value that bundles a feature: its systems, its action handlers, its components, the services it provides, and what it does at the start. A game is a plugin of plugins."
+---
 
 A plugin is one value that bundles a feature: its systems, its action handlers, its components, the services it provides, and what it does at the start. A game is a plugin of plugins.
 
@@ -107,8 +110,8 @@ game/
 - A plugin's raw loops, the bodies of its `eachChunk` calls, can go in a `loops.ts` of their own: plain functions of a range of rows, columns and numbers, which import nothing and close over nothing. The system stays in `index.ts` and passes in what the loop needs. A loop that draws random numbers, uses `Commands` or emits an event stays in its system.
 - What draws, what plays and the UI are plugins of their own, which the rules never import. So a server or a replay runs the rules alone.
 
-[`examples/demo`](../../packages/arcadekit/examples/demo) is laid out this way.
+[`examples/demo`](../../../../../packages/arcadekit/examples/demo) is laid out this way.
 
 ## Read more
 
-- [Plugins](../../packages/arcadekit/README.md#plugins) in the reference.
+- [Plugins](/reference/arcadekit#plugins) in the reference.

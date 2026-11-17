@@ -1,4 +1,7 @@
-# Determinism
+---
+title: "Determinism"
+description: "A tick gives the same result from the same inputs, on every machine and in every JavaScript engine. Saves, replays and network play all stand on that."
+---
 
 A tick gives the same result from the same inputs, on every machine and in every JavaScript engine. Saves, replays and network play all stand on that.
 
@@ -42,9 +45,9 @@ The frame stage draws and plays sound with the world frozen. A game that is draw
 
 ## What is not checked
 
-Some ways to break determinism aren't caught by the types or at run time: a fiber started with `Effect.forkDetach`, a write through a raw column during the frame stage, a script that keeps its progress in its own variables when the game is loaded. The roadmap keeps the list, under [To revisit before a stable release](../roadmap.md#to-revisit-before-a-stable-release).
+Some ways to break determinism aren't caught by the types or at run time: a fiber started with `Effect.forkDetach`, a write through a raw column during the frame stage, a script that keeps its progress in its own variables when the game is loaded. The roadmap keeps the list, under [To revisit before a stable release](/roadmap#to-revisit-before-a-stable-release).
 
 ## Read more
 
 - [Saving and loading](../guides/saving-and-loading.md) and [replays](../guides/replays.md).
-- [Randomness](../../packages/arcadekit/README.md#randomness) and [the world's hash](../../packages/arcadekit/README.md#the-worlds-hash) in the reference.
+- [Randomness](/reference/arcadekit#randomness) and [the world's hash](/reference/arcadekit#the-worlds-hash) in the reference.

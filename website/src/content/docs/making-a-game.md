@@ -1,4 +1,7 @@
-# Making a game
+---
+title: "Making a game"
+description: "This page builds a small game from nothing: coins fall, a basket catches them, and three missed coins end the game. It runs in a test first, then in a page."
+---
 
 This page builds a small game from nothing: coins fall, a basket catches them, and three missed coins end the game. It runs in a test first, then in a page.
 
@@ -291,4 +294,4 @@ Serve `main.ts` with any bundler, [Vite](https://vite.dev) for instance, from a 
 - [Entities and systems](concepts/entities-and-systems.md) and [ticks and frames](concepts/ticks-and-frames.md) explain the shape this page used.
 - [Determinism](concepts/determinism.md) says what a game must not do for its replays, saves and network play to work.
 - The guides go further, a task at a time: [drawing with Three.js](guides/drawing-with-three.md), [sound](guides/sound.md), [a UI](guides/ui.md), [saving](guides/saving-and-loading.md), [several players](guides/lockstep-and-rollback.md).
-- [`examples/page`](../packages/arcadekit/examples/page) is a fuller game in a page, with assets, sound, music and a UI built two ways.
+- [`examples/page`](../../../../packages/arcadekit/examples/page) is a fuller game in a page, with assets, sound, music and a UI built two ways.

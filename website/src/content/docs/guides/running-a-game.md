@@ -1,4 +1,7 @@
-# Running a game
+---
+title: "Running a game"
+description: "A game is started with App.run, given to the platform's runMain. This guide covers running in a page and under Node, games that tick only when needed, and stepping an app by hand."
+---
 
 A game is started with `App.run`, given to the platform's `runMain`. This guide covers running in a page and under Node, games that tick only when needed, and stepping an app by hand.
 
@@ -109,5 +112,5 @@ const program = Effect.gen(function* () {
 
 ## Read more
 
-- [In a page](../../packages/arcadekit/README.md#in-a-page) and [a game that moves when its player does](../../packages/arcadekit/README.md#a-game-that-moves-when-its-player-does) in the reference.
-- [`examples/page`](../../packages/arcadekit/examples/page), started with `Browser.runMain`, and [`examples/demo`](../../packages/arcadekit/examples/demo), started under Node.
+- [In a page](/reference/arcadekit#in-a-page) and [a game that moves when its player does](/reference/arcadekit#a-game-that-moves-when-its-player-does) in the reference.
+- [`examples/page`](../../../../../packages/arcadekit/examples/page), started with `Browser.runMain`, and [`examples/demo`](../../../../../packages/arcadekit/examples/demo), started under Node.

@@ -1,4 +1,4 @@
-// Compiles the `ts` blocks of the pages of `docs/` against the packages as they are in this
+// Compiles the `ts` blocks of the site's own pages (src/content/docs/) against the packages as they are in this
 // checkout, so that the code a page shows is code that compiles.
 //
 //   pnpm --filter @arcadekit/website snippets
@@ -28,9 +28,11 @@ import path from "node:path";
 
 const site = path.resolve(import.meta.dirname, "..");
 const root = path.resolve(site, "..");
+/** The site's own pages, relative to the repository's root. */
+const DOCS = "website/src/content/docs";
 const out = path.join(site, ".snippets");
 
-const pages = readdirSync(path.join(root, "docs"), { recursive: true })
+const pages = readdirSync(path.join(root, DOCS), { recursive: true })
   .map((file) => String(file).split(path.sep).join("/"))
   .filter((file) => file.endsWith(".md"))
   .toSorted();
@@ -48,7 +50,7 @@ const write = (file, page, start, lines) => {
   const offset = existsSync(absolute)
     ? readFileSync(absolute, "utf-8").split("\n").length - 1
     : 0;
-  segments.push({ page: `docs/${page}`, start, offset });
+  segments.push({ page: `${DOCS}/${page}`, start, offset });
   origins.set(file, segments);
   mkdirSync(path.dirname(absolute), { recursive: true });
   appendFileSync(absolute, `${lines.join("\n")}\n`);
@@ -56,9 +58,7 @@ const write = (file, page, start, lines) => {
 
 for (const page of pages) {
   const folder = page.replace(/\.md$/u, "");
-  const lines = readFileSync(path.join(root, "docs", page), "utf-8").split(
-    "\n"
-  );
+  const lines = readFileSync(path.join(root, DOCS, page), "utf-8").split("\n");
   let block;
   let untitled = 0;
   lines.forEach((line, index) => {
@@ -84,7 +84,7 @@ for (const page of pages) {
 }
 
 if (blocks === 0) {
-  console.log("docs/ has no blocks to compile.");
+  console.log("The site's pages have no blocks to compile.");
   process.exit(0);
 }
 
@@ -138,10 +138,12 @@ const errors = `${tsc.stdout ?? ""}${tsc.stderr ?? ""}`
 
 if (tsc.status !== 0) {
   console.error(errors.join("\n"));
-  console.error(`\nThe blocks of docs/ do not compile (${blocks} checked).`);
+  console.error(
+    `\nThe blocks of the site's pages do not compile (${blocks} checked).`
+  );
   process.exit(1);
 }
-console.log(`${blocks} blocks of docs/ compile.`);
+console.log(`${blocks} blocks of the site's pages compile.`);
 
 const tests = [...origins.keys()].filter((file) => file.endsWith(".test.ts"));
 if (tests.length > 0) {
@@ -151,7 +153,7 @@ if (tests.length > 0) {
     { cwd: root, stdio: "inherit", shell: process.platform === "win32" }
   );
   if (vitest.status !== 0) {
-    console.error(`\nThe tests of docs/ fail: ${tests.join(", ")}.`);
+    console.error(`\nThe tests of the site's pages fail: ${tests.join(", ")}.`);
     process.exit(1);
   }
 }

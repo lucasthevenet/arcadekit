@@ -1,4 +1,7 @@
-# Transports and relays
+---
+title: "Transports and relays"
+description: "A session holds no socket."
+---
 
 A session holds no socket. What carries its messages is a service, `Transport`, with two plain calls: `send(message)` to every other peer, and `receive()`, which gives what has arrived since it was last asked. Between machines, the messages go through a relay.
 
@@ -62,12 +65,12 @@ A relay passes what one peer of a room sends on to the others. It runs no game a
 
 ## Hosting one
 
-`Relay.make()` keeps who is connected itself, for a host that stays in memory. Under Node, behind a WebSocket server, that is about forty lines: [`examples/relay.ts`](../../packages/arcadekit/examples/relay.ts), run with `pnpm --filter arcadekit relay`.
+`Relay.make()` keeps who is connected itself, for a host that stays in memory. Under Node, behind a WebSocket server, that is about forty lines: [`examples/relay.ts`](../../../../../packages/arcadekit/examples/relay.ts), run with `pnpm --filter arcadekit relay`.
 
-A host that is put to sleep between messages calls `join` and `forward` itself and keeps who is connected where it lasts. [`examples/relay-cloudflare`](../../packages/arcadekit/examples/relay-cloudflare) is the relay as a Durable Object per room, declared with [Alchemy](https://alchemy.run): each socket carries its member as an attachment. It has been run with `alchemy dev` and not yet deployed from the repository.
+A host that is put to sleep between messages calls `join` and `forward` itself and keeps who is connected where it lasts. [`examples/relay-cloudflare`](../../../../../packages/arcadekit/examples/relay-cloudflare) is the relay as a Durable Object per room, declared with [Alchemy](https://alchemy.run): each socket carries its member as an attachment. It has been run with `alchemy dev` and not yet deployed from the repository.
 
 `pnpm --filter arcadekit relay:check <address>` checks a relay wherever it runs: two peers play a small game through it and must end on the same world, and a taken name and a message in another's name must be refused.
 
 ## Read more
 
-- [Carrying the messages](../../packages/arcadekit/README.md#carrying-the-messages) and [a relay](../../packages/arcadekit/README.md#a-relay) in the reference.
+- [Carrying the messages](/reference/arcadekit#carrying-the-messages) and [a relay](/reference/arcadekit#a-relay) in the reference.

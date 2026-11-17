@@ -1,4 +1,7 @@
-# Entities and systems
+---
+title: "Entities and systems"
+description: "arcadekit is an entity component system (ECS) with Effect around it. This page explains the parts and why the line between Effect code and plain code is where it is."
+---
 
 arcadekit is an entity component system (ECS) with Effect around it. This page explains the parts and why the line between Effect code and plain code is where it is.
 
@@ -86,4 +89,4 @@ The design follows [Bevy](https://bevy.org), an ECS built around systems, querie
 
 - [Components](../guides/components.md) and [queries](../guides/queries.md) in the guides.
 - [Systems](../guides/systems.md): their order, their stages, and saying what they read and write.
-- The [reference](../../packages/arcadekit/README.md#fields) for every kind of field.
+- The [reference](/reference/arcadekit#fields) for every kind of field.

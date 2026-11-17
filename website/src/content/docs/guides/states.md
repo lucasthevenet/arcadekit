@@ -1,4 +1,7 @@
-# States
+---
+title: "States"
+description: "A game is in the menu, playing or paused, and its systems run in only some of those. A state is one of a few named values."
+---
 
 A game is in the menu, playing or paused, and its systems run in only some of those. A state is one of a few named values. A system says when it runs with a condition, and what has to happen once, on the way into a state or out of it, is a hook.
 
@@ -71,4 +74,4 @@ A state is a singleton of the world: saved, hashed, and put back when an action 
 
 ## Read more
 
-- [States and run conditions](../../packages/arcadekit/README.md#states-and-run-conditions) in the reference.
+- [States and run conditions](/reference/arcadekit#states-and-run-conditions) in the reference.

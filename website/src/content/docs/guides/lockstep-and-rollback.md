@@ -1,4 +1,7 @@
-# Lockstep and rollback
+---
+title: "Lockstep and rollback"
+description: "A session joins one app to the other peers of a game. This guide covers making a lockstep or a rollback session, stepping it, and what a game must do to be played this way."
+---
 
 A session joins one app to the other peers of a game. This guide covers making a lockstep or a rollback session, stepping it, and what a game must do to be played this way. [Several players](../concepts/several-players.md) explains the idea.
 
@@ -88,4 +91,4 @@ Nothing brings peers back together. A game that wants to go on has every peer lo
 
 ## Read more
 
-- [More than one player](../../packages/arcadekit/README.md#more-than-one-player), [rollback](../../packages/arcadekit/README.md#without-waiting-rollback) and [peers that come apart](../../packages/arcadekit/README.md#peers-that-come-apart) in the reference.
+- [More than one player](/reference/arcadekit#more-than-one-player), [rollback](/reference/arcadekit#without-waiting-rollback) and [peers that come apart](/reference/arcadekit#peers-that-come-apart) in the reference.

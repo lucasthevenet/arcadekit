@@ -1,4 +1,7 @@
-# Assets
+---
+title: "Assets"
+description: "Pictures, sounds and data files are loaded as a scoped resource: what was loaded is let go when the scope it was loaded in closes."
+---
 
 Pictures, sounds and data files are loaded as a scoped resource: what was loaded is let go when the scope it was loaded in closes. A bundle is the assets that are loaded and let go together, usually a level's.
 
@@ -61,7 +64,7 @@ const Begin = System.make("game/Begin", function* () {
 | `Browser.sound(url)` | A `Sound.Clip`, decoded whole. See [sound](sound.md) |
 | `Assets.make(url, decode)` | Anything else, with `Effect.acquireRelease` for what has to be let go |
 
-[`@arcadekit/three`](../../packages/three/README.md) adds `Three.texture(url)` and `Gltf.model(url)`.
+[`@arcadekit/three`](/reference/three) adds `Three.texture(url)` and `Gltf.model(url)`.
 
 ## Loading for as long as the app
 
@@ -73,4 +76,4 @@ They come through `Assets.Loader`, which is `fetch` unless told otherwise. A tes
 
 ## Read more
 
-- [Assets](../../packages/arcadekit/README.md#assets) in the reference.
+- [Assets](/reference/arcadekit#assets) in the reference.

@@ -2,7 +2,7 @@
 // a sidebar of its own (starlight-sidebar-topics), as Effect's and Alchemy's docs are split.
 //
 // OUTLINE says which group each known page is in and in what order. It is not the list of pages:
-// a page of `docs/` it doesn't name is still listed, at the end of the group of its folder (a new
+// a page of src/content/docs/ it doesn't name is still listed, at the end of the group of its folder (a new
 // concept at the end of Concepts, a new guide in Guides' "More"), and a package it doesn't name at
 // the end of Packages. A name in it that is no page fails the build, so the outline can't keep a
 // page that is gone.
@@ -31,7 +31,8 @@ export type TopicId = "learn" | "guides" | "reference";
 
 /**
  * Where the pages the outline doesn't name go: the group whose `section` is the folder of
- * `docs/` they are in, or `"packages"` for a package's README.
+ * src/content/docs/ they are in, `"project"` for a file of `docs/`, or `"packages"` for a
+ * package's README.
  */
 type Section = string;
 
@@ -125,6 +126,7 @@ export const OUTLINE: readonly (Group & {
   {
     topic: "reference",
     label: "The project",
+    section: "project",
     items: ["roadmap", "conventions"],
   },
 ];
@@ -145,7 +147,7 @@ const sectionOf = (pages: SitePages, slug: string): Section | undefined => {
 export const outlinedGroups = (
   pages: SitePages
 ): (Group & { readonly topic: TopicId })[] => {
-  const slugs = pages.repository.map((page) => page.slug);
+  const slugs = [...pages.docs, ...pages.packages].map((page) => page.slug);
   const named = new Set(
     OUTLINE.flatMap((group) =>
       group.items.filter((item) => typeof item === "string")

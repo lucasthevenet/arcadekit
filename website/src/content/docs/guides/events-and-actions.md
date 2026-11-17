@@ -1,4 +1,7 @@
-# Events and actions
+---
+title: "Events and actions"
+description: "An event is what the simulation says happened. An action is what someone asks the game to do. This guide covers both, and how an action is checked, applied or refused."
+---
 
 An event is what the simulation says happened. An action is what someone asks the game to do. This guide covers both, and how an action is checked, applied or refused.
 
@@ -112,5 +115,5 @@ Input that arrives as JSON goes through `app.dispatchByName(name, json)` or `app
 
 ## Read more
 
-- [Events](../../packages/arcadekit/README.md#events) and [actions](../../packages/arcadekit/README.md#actions-the-rules-layer) in the reference.
-- [`examples/duel.ts`](../../packages/arcadekit/examples/duel.ts), a turn-based game built on actions.
+- [Events](/reference/arcadekit#events) and [actions](/reference/arcadekit#actions-the-rules-layer) in the reference.
+- [`examples/duel.ts`](../../../../../packages/arcadekit/examples/duel.ts), a turn-based game built on actions.

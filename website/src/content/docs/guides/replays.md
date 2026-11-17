@@ -1,4 +1,7 @@
-# Replays
+---
+title: "Replays"
+description: "A game that changes only by its actions, its systems and its seed can be played again from its log."
+---
 
 A game that changes only by its actions, its systems and its seed can be played again from its log. A replay checks itself as it goes, so a game that has stopped being deterministic is caught at the tick it went another way.
 
@@ -66,5 +69,5 @@ A replay compares its own world at each checkpoint, and stops at the first that 
 
 ## Read more
 
-- [Replays that check themselves](../../packages/arcadekit/README.md#replays-that-check-themselves) in the reference.
+- [Replays that check themselves](/reference/arcadekit#replays-that-check-themselves) in the reference.
 - [Determinism](../concepts/determinism.md), for what a game must not do.

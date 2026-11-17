@@ -1,4 +1,7 @@
-# Sound
+---
+title: "Sound"
+description: "A sound is a named cue, played because something happened: the simulation emits an event, and what that event sounds like is said elsewhere. Music is what the game, as it is, should sound like."
+---
 
 A sound is a named cue, played because something happened: the simulation emits an event, and what that event sounds like is said elsewhere. Music is what the game, as it is, should sound like. Both are played from the frame stage. The simulation never plays.
 
@@ -91,4 +94,4 @@ A game that is heard has the same hash, log and save as one that is not. A repla
 
 ## Read more
 
-- [Sound](../../packages/arcadekit/README.md#sound) and [music](../../packages/arcadekit/README.md#music) in the reference, with what is not done: a cue that can be stopped, sound heard from where it is, music in time.
+- [Sound](/reference/arcadekit#sound) and [music](/reference/arcadekit#music) in the reference, with what is not done: a cue that can be stopped, sound heard from where it is, music in time.

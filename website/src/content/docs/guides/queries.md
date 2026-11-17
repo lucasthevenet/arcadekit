@@ -1,4 +1,7 @@
-# Queries
+---
+title: "Queries"
+description: "A query finds the entities that have some components, and hands their data to a loop. This guide covers the two ways to loop, filters, saying what a loop only reads, and queries for what changed."
+---
 
 A query finds the entities that have some components, and hands their data to a loop. This guide covers the two ways to loop, filters, saying what a loop only reads, and queries for what changed.
 
@@ -111,4 +114,4 @@ A change query is for what changes now and then. A system that wants every entit
 
 ## Read more
 
-- [Change queries](../../packages/arcadekit/README.md#change-queries), [two ways to loop](../../packages/arcadekit/README.md#two-ways-to-loop) and [the benchmark](../../packages/arcadekit/README.md#benchmark-100000-entities-pos--vel--dt) in the reference.
+- [Change queries](/reference/arcadekit#change-queries), [two ways to loop](/reference/arcadekit#two-ways-to-loop) and [the benchmark](/reference/arcadekit#benchmark-100000-entities-pos--vel--dt) in the reference.

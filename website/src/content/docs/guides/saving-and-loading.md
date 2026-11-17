@@ -1,4 +1,7 @@
-# Saving and loading
+---
+title: "Saving and loading"
+description: "A save holds a game between two ticks, and a game loaded from it goes on exactly as the saved one did. This guide covers saving, loading, and bringing an old save up to date."
+---
 
 A save holds a game between two ticks, and a game loaded from it goes on exactly as the saved one did. This guide covers saving, loading, and bringing an old save up to date.
 
@@ -84,4 +87,4 @@ Every refusal is a `Save.LoadRefused` that says why: a newer version, a missing 
 
 ## Read more
 
-- [Saving and loading](../../packages/arcadekit/README.md#saving-and-loading), [versions and migrations](../../packages/arcadekit/README.md#versions-and-migrations) and [snapshots](../../packages/arcadekit/README.md#snapshots) in the reference.
+- [Saving and loading](/reference/arcadekit#saving-and-loading), [versions and migrations](/reference/arcadekit#versions-and-migrations) and [snapshots](/reference/arcadekit#snapshots) in the reference.

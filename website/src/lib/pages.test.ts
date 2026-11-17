@@ -9,20 +9,16 @@ import { outlinedGroups, sidebarTopics } from "./sidebar.ts";
 import { REPO_ROOT } from "./site.ts";
 
 const doc = (slug: string): DocPage => ({
-  file: `docs/${slug}.md`,
+  file: `website/src/content/docs/${slug}.md`,
   slug,
   link: `/${slug}`,
-  title: slug,
-  description: "",
-  body: "",
   section: slug.includes("/") ? (slug.split("/", 1)[0] ?? "") : "",
 });
 
-/** The site's pages, with some pages of `docs/` added or taken out. */
+/** The site's pages, with some of its docs added or taken out. */
 const withDocs = (pages: SitePages, docs: readonly DocPage[]): SitePages => ({
   ...pages,
-  docs: [...docs],
-  repository: [...docs, ...pages.packages],
+  docs,
 });
 
 /** Each group's label, with the pages it lists. */
@@ -32,16 +28,25 @@ const labelled = (groups: ReturnType<typeof outlinedGroups>) =>
 describe("the site's pages", () => {
   const pages = discoverPages();
 
-  it("has a page for each file under docs/, at its path there", () => {
-    const links = pages.docs.map((page) => page.link);
+  it("has a page for each file under src/content/docs/, at its path there", () => {
+    const own = pages.docs.filter((page) => page.section !== "project");
+    const links = own.map((page) => page.link);
     expect(links).toContain("/making-a-game");
     expect(links).toContain("/guides/input");
     expect(links).toContain("/concepts/determinism");
-    expect(links).toContain("/roadmap");
-    for (const page of pages.docs) {
-      expect(page.file).toBe(`docs/${page.slug}.md`);
+    for (const page of own) {
+      expect(page.file).toBe(`website/src/content/docs/${page.slug}.md`);
       expect(page.link).toBe(`/${page.slug}`);
     }
+  });
+
+  it("has the roadmap and the conventions, read where they are in docs/", () => {
+    expect(pages.repository.map((page) => [page.file, page.link])).toEqual(
+      expect.arrayContaining([
+        ["docs/conventions.md", "/conventions"],
+        ["docs/roadmap.md", "/roadmap"],
+      ])
+    );
   });
 
   it("has each package's README at /reference/<its folder>", () => {
@@ -87,7 +92,7 @@ describe("the sidebar", () => {
     );
     expect(groups.Concepts?.at(-1)).toBe("concepts/physics");
     expect(groups.More).toStrictEqual(["guides/menus"]);
-    // A file directly in docs/, or in a folder no group has, goes in Get started.
+    // A file directly in src/content/docs/, or in a folder no group has, goes in Get started.
     expect(groups["Get started"]?.slice(-2)).toStrictEqual([
       "changelog",
       "recipes/menus",

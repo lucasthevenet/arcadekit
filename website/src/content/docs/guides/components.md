@@ -1,4 +1,7 @@
-# Components
+---
+title: "Components"
+description: "A component is a kind of data an entity can have. This guide covers the kinds of field, tags, singletons, relations, and the components for where a thing is."
+---
 
 A component is a kind of data an entity can have. This guide covers the kinds of field, tags, singletons, relations, and the components for where a thing is.
 
@@ -149,4 +152,4 @@ An entity has the ones it needs. One that is only somewhere has a `Position`. `T
 
 ## Read more
 
-- [Fields](../../packages/arcadekit/README.md#fields), [an entity's id](../../packages/arcadekit/README.md#an-entitys-id), [singletons](../../packages/arcadekit/README.md#singletons), [relations](../../packages/arcadekit/README.md#relations) and [where a thing is](../../packages/arcadekit/README.md#where-a-thing-is) in the reference.
+- [Fields](/reference/arcadekit#fields), [an entity's id](/reference/arcadekit#an-entitys-id), [singletons](/reference/arcadekit#singletons), [relations](/reference/arcadekit#relations) and [where a thing is](/reference/arcadekit#where-a-thing-is) in the reference.
