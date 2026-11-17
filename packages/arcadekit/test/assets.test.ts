@@ -59,14 +59,10 @@ const tracked = (url: string, log: string[]) =>
     )
   );
 
-/**
- * An asset failed, at this URL and for this reason. Each is looked at by
- * itself: to `toEqual`, two failures with different messages are equal.
- */
+/** An asset failed, at this URL and for this reason. */
 const expectFailed = (error: unknown, url: string, message: string): void => {
   expect(error).toBeInstanceOf(Assets.AssetFailed);
-  expect((error as Assets.AssetFailed).url).toBe(url);
-  expect((error as Assets.AssetFailed).message).toBe(message);
+  expect(error).toEqual(new Assets.AssetFailed({ url, message }));
 };
 
 const files = {
@@ -142,6 +138,30 @@ const makeGame = () => {
   });
   return { Cave, Forest, Game, Go, Level, drawn, log };
 };
+
+describe("a failure, in these tests", () => {
+  it("is not equal to one that differs only in its reason, which toEqual alone would not see", () => {
+    // scripts/vitest-setup.ts sees to it: without it the first of these
+    // passes whatever the two messages are.
+    const failed = (url: string, message: string) =>
+      new Assets.AssetFailed({ url, message });
+    expect(failed("/a", "It is not there.")).not.toEqual(
+      failed("/a", "It is not JSON.")
+    );
+    expect(failed("/a", "It is not there.")).not.toEqual(
+      failed("/b", "It is not there.")
+    );
+    expect(failed("/a", "It is not there.")).toEqual(
+      failed("/a", "It is not there.")
+    );
+    expect({ error: failed("/a", "one") }).not.toEqual({
+      error: failed("/a", "two"),
+    });
+    // An error that is not one of Effect's, the same.
+    expect(new Error("one")).not.toEqual(new Error("two"));
+    expect(new Error("one")).toEqual(new Error("one"));
+  });
+});
 
 describe("an asset", () => {
   afterEach(() => {

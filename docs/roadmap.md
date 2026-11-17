@@ -89,7 +89,7 @@ What a replay, a save and the hash do not hold:
 
 Values that have to be right and are not checked:
 
-- **A field left out of `Component.of` is NaN, not 0.** Only a component added with no value at all is zeroed. A `Transform3d.Position.of({ x: 1 })` draws nowhere.
+- **A field left out of `Component.of` is NaN, not 0, where the compiler is not asked.** In TypeScript it does not compile: `of` takes every field. From JavaScript, or past a cast, a float that was left out is NaN, an integer is 0, and a `Transform3d.Position` with no `z` draws nowhere. Only a component added with no value at all is zeroed.
 - **A `Transform3d.Rotation` has to be a unit quaternion.** One that is not draws skewed.
 - **An instance's colour is in the renderer's linear colour space**, not a hex code's bytes over 255, and from 0 to 1. Either mistake draws the wrong colour and no more.
 - **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
@@ -108,10 +108,6 @@ Who lets go of what:
 Reported, and not settled:
 
 - **A page's sound after a laptop's lid was shut and opened.** With the example page of `arcadekit` on a MacBook: music playing, the lid shut and opened, the game played again, and the sound took a moment to come back and then came with its first notes all at once, as if they had been queued. Other apps on the same machine did not do it. One cause was found and closed: cues played while the page's audio was asleep or still waking were started all the same, and were heard together when it woke; they are dropped now. That was reproduced only with an audio made slow to wake in headless Chromium, never with a real lid, and it was not heard again on the machine after the change. Before a stable release: shut a real lid, on more than one browser, and listen. If it is still there, look at what the audio's clock does across the sleep (`currentTime` against the wall clock, and `state`), and at whether the looping track should be started afresh when the page is seen again in place of being woken.
-
-Tests:
-
-- **`toEqual` finds two tagged errors that differ only in their `message` equal.** A test that compares a failure that way checks everything but the reason. [Conventions](./conventions.md#tests) says how to compare; nothing stops the other way.
 
 ## Decisions waiting to be made
 
