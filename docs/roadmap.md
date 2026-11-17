@@ -36,10 +36,15 @@ These are plugins, not part of the core: a game that draws with something else l
 
 ## 6. More than one player
 
-- **Lockstep.** Every peer runs the same simulation and exchanges only actions, each stamped with the tick it applies on. The action log is already most of this. Done when two apps in one test, joined by a fake network with delay and reordering, stay hash-equal.
-- **Drift detection.** Peers compare hashes and stop with a useful report when they differ. Done when a deliberately non-deterministic system is caught within a known number of ticks.
-- **Rollback.** Predict, and when a late action arrives, restore a snapshot and re-run. Done when a game feels immediate under simulated latency and still ends hash-equal.
-- **A transport.** A service with a test implementation first, a real one second.
+Done, but for a transport that leaves the machine.
+
+Lockstep, `arcadekit/Lockstep`: a session takes its app over, puts what its player issues in a message for the tick a few ahead, and runs a tick once it holds every peer's message for it, so every peer applies the same actions on the same ticks in the same order. Drift detection, in the same sessions: the peers send each other the checkpoints their logs record, and when every peer has said its hash for a tick and they are not all the same, each stops with `Lockstep.Drifted`, which says the tick, every peer's hash and when they last agreed; a system that is not deterministic is caught within `checkpointEvery - 1 + delay` ticks, and peers that do not start from the same state before their first. Rollback, `arcadekit/Rollback`: the same session with leave to run ahead. It runs a tick as if the peers it has not heard from had nothing to say, keeps the game as it was with `app.capture()`, and when a message comes for a tick that has run, goes back with `app.rewind()`, which stands on `world.restore()`, and runs forward again; a player's own move is in the next tick whatever the network takes. Lockstep is the session that runs no tick ahead: there is one implementation of the two. And a transport, `arcadekit/Transport`: the service that carries a session's messages, `Transport.connect`, which joins a session to it for a driver to step, a network in memory for tests that delays and reorders as it is told, and a real one over a `BroadcastChannel`, between the tabs and workers of one browser.
+
+In the tests, peers joined by a network that delays and reorders are hash-equal, with the same log, which replays into a game of one that never went back; and two peers play through a real `BroadcastChannel`, each ticking in its own time. The package's [README](../packages/arcadekit/README.md#more-than-one-player) describes each, and says what is not done: peers that join or leave, a message that is lost, who issued an action, and what is drawn and heard of a tick that is then run again.
+
+What is left:
+
+- **A transport between machines.** `Transport.text` makes a transport of anything that carries text, and nothing in the repository carries text to another machine: a WebSocket needs a relay that passes each message on to the others in a room, and a data channel needs someone to introduce the peers. Done when two machines play a game through something this repository ships and tests. Waits for the decision below on where a relay lives.
 
 Depends on milestones 1 and 2 entirely.
 
@@ -74,10 +79,20 @@ The order systems run in:
 Ticks, frames and real time:
 
 - **A system that has work every tick and does not say so stops when the game rests.** A game that ticks when needed rests when the app sees nothing waiting: actions, states, scripts, events, and what a system said with `Ticks.more`. A system that counts a clock down in a field and never asks is not told apart from one with nothing to do, and nothing says so. To close it: nothing cheap is known. The world's hash before and after a tick would tell, at the cost of a hash a tick.
-- **A tick reads the devices unless it is told not to.** `App.replay` tells it. Whatever else runs a game again from a log by hand, a rollback or a tool, has to say `{ input: false }` itself, or the keys of the machine it runs on are reported into the game it is re-running, and nothing says so. And a game that steps its app by hand still has to run a tick when its UI has sent something: nothing ticks for it.
+- **A tick reads the devices unless it is told not to.** `App.replay` tells it, and a session's own ticks read none. Whatever else runs a game again from a log by hand, a tool, has to say `{ input: false }` itself, or the keys of the machine it runs on are reported into the game it is re-running, and nothing says so. And a game that steps its app by hand still has to run a tick when its UI has sent something: nothing ticks for it.
 - **`smooth: true` draws a tick behind.** A game stepped by hand and drawn with `app.frame(0)` shows the tick before the one it just ran. A test that looks at what is drawn has to know.
 - **`Effect.sleep`, a promise, or any wait in real time resumes outside the tick**, and a fiber started with `Effect.forkDetach` is not watched by the app. Either changes the game at a moment no replay repeats. Scripts wait with `Script.nextTick`, `Script.sleep` or an event's `wait`; nothing refuses the others.
 - **`Assets.load` in a script** resumes in whatever tick the file arrives in. It is not refused there.
+
+Several peers:
+
+- **A layer that listens, provided to one line, is gone with that line.** `Transport.layerBroadcastChannel` provided to `Transport.connect` alone closes its channel as soon as the session is joined. It says so when it is next used, which is the first tick; a transport of the game's own made with `Transport.text` says nothing unless the game makes it.
+- **A payload its schema refuses is refused on the peer that issued it alone.** It has no JSON form to send, so the other peers never hear of it, and the `Action.Rejected` it becomes is an event on one machine. A system of the tick that reads that event and writes what it read has the peers come apart. To close it: refuse such a payload where it is enqueued, as a value or by throwing, in a game of one too.
+- **Not everything that makes peers alike is compared.** Each peer is told its own plugins, seed, `delta` and names. Another seed, or a world that does not start the same, is found before the first tick, since the peers compare the hash they start from. Another `delta`, a system one peer lacks, or another list of names is found only when it has changed a world, at the checkpoint after: and a list of names that leaves a peer out is never found, since that peer is not heard. To close it: have the peers compare a hash of what they were made with, the names and the delta among it, with the state they start from.
+- **A rewind starts each plugin's scripts again, and stops the ones started by hand.** A script that keeps its place in its own variables plays its part twice, on the peer that went back and not on the one that did not: the peers come apart, and drift detection says at which tick and not why. To close it: refuse a rollback session for an app that has scripts, or keep a script's place where a moment can hold it.
+- **What a service of the game's own holds is not put back by a rewind**, as it is not saved: a count kept in a layer goes on from the future that was given up. Nothing tells a service that the game went back.
+- **What the frame stage did for a tick that is run again is done again.** A sound is played twice, and a UI is told of a score that is then taken back. The frame stage is not told which ticks are final: a game asks its session, `session.confirmed`.
+- **What the hash does not cover can differ between peers for as long as it does not reach the world**: the events waiting to be read, what a change query has yet to visit, a system's own variables, a service's state. The report then names the tick it reached the world, not the tick it began.
 
 What a replay, a save and the hash do not hold:
 
@@ -107,6 +122,7 @@ Not work yet; each needs an answer before the item that depends on it.
 
 - **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
 - **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
+- **Where a relay lives.** A transport between machines needs something that is not a game: a server that passes messages on between the peers of a room, or one that introduces them to each other for a direct channel. It could be a package of its own with a server's dependencies, as the renderer is one with Three.js's; an entry of `arcadekit` that runs under Node, a worker or both, built on Effect's own sockets; or the game's to write against `Transport.text`, with an example. Needed by the last item of milestone 6.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.
 
 Decided, and no longer waiting: no UI library. The previous version drew its UI with Foldkit; this one does not depend on it, or on any other. Three.js is different, because it does a job the package would otherwise have to do itself. A game's UI reaches the game through the view bridge of milestone 5, with whatever library it likes.

@@ -53,7 +53,9 @@ import type { Listed } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
+import type { SavedChanges } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
+import type { EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -226,6 +228,37 @@ export interface Any {
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
+   * The game as it stands, kept in memory to come back to with `rewind`:
+   * the world, the time, the actions waiting for the next tick, the events
+   * waiting to be read, what change queries had yet to visit, and how long
+   * the log was. Only between ticks.
+   *
+   * It is not a save. It holds the waiting actions and events as they are,
+   * so none of them needs a schema, and it is of this app and this run of
+   * the program alone. It is what predicting a tick and running it again
+   * is made of: `Rollback` captures before a tick it is not sure of.
+   *
+   * Fails with `SaveRefused` when the world cannot be put into a snapshot:
+   * a field holds a value it cannot save, or commands are queued and not
+   * applied.
+   */
+  readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
+  /**
+   * Puts the game back as it was when `moment` was captured, in place: the
+   * same app, world and services, holding what they held then. The log is
+   * cut back to the length it had. Only between ticks, and only with a
+   * moment of this app.
+   *
+   * What a moment does not hold is as for a save. Every script the app
+   * watches is interrupted, and each plugin's scripts start again from
+   * their beginning, as after a load: a script keeps what it must not lose
+   * in the world. What a service of the game's own holds is left as it is.
+   * A field that is `transient` is undefined afterwards. And what runs
+   * between ticks starts over: the frame stage's and the input stage's
+   * change queries visit everything again.
+   */
+  readonly rewind: (moment: Moment) => void;
+  /**
    * Records the world's hash in the action log now, and returns it. For the
    * points a game wants checked beyond the ones `checkpointEvery` gives it,
    * such as the moment it is saved. Only between ticks.
@@ -240,6 +273,16 @@ export interface Any {
  */
 const NO_INPUT: TickOptions = { input: false };
 
+/**
+ * A game at one moment, held in memory: what `app.capture()` gives and
+ * `app.rewind()` takes. It says which tick it is of, and the rest is the
+ * app's own.
+ */
+export interface Moment {
+  /** How many ticks had run when it was captured. */
+  readonly tick: number;
+}
+
 /** How a tick is run. */
 export interface TickOptions {
   /**
@@ -251,7 +294,41 @@ export interface TickOptions {
   readonly input?: boolean;
 }
 
+/**
+ * What `divert` gives whoever took an app over: the two things the app no
+ * longer does for anyone else.
+ */
+export interface Diverted<E = never> {
+  /**
+   * Queues an action for the next tick and logs it, as `enqueueByName` did:
+   * by its name, with its payload in JSON form.
+   */
+  readonly deliver: (name: string, payload: unknown) => void;
+  /** Runs one tick, as `tickExit` did. It reads no device. */
+  readonly tickExit: (delta: number) => Exit.Exit<void, E>;
+}
+
 export interface App<E = never, R = never, HU = never> extends Any {
+  /**
+   * Takes the app over, for what decides on which tick an action is applied
+   * and when a tick runs: a session of several peers, each of which has to
+   * apply the same actions on the same ticks.
+   *
+   * From then on an action enqueued from outside is not queued for the next
+   * tick. It is handed to `take`, by its name and with its payload in JSON
+   * form: one given to `enqueue` or `enqueueByName`, and one issued with
+   * `Actions.enqueue` in the input stage or the frame stage, so a key that
+   * is bound to an action and a button of the UI are taken too. What the
+   * simulation issues itself is not: every peer's own issues it.
+   *
+   * What it returns is the one way left to queue an action and to run a
+   * tick. `tick`, `tickExit`, `dispatch` and `dispatchByName` throw from
+   * then on: each would move this machine's game and nobody else's. An app
+   * is taken over once.
+   */
+  readonly divert: (
+    take: (name: string, payload: unknown) => void
+  ) => Diverted<E>;
   /**
    * Runs one tick and returns the outcome, with system failures as a typed
    * `Exit`. An app that has stopped on a failed script runs nothing and
@@ -699,6 +776,20 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
     }
     const actionLog: Action.LogEntry[] = [];
+    // The moments this app has captured: `rewind` takes no other.
+    const moments = new WeakSet<Moment>();
+    /** What a moment holds beside its tick. */
+    interface Captured extends Moment {
+      readonly elapsed: number;
+      readonly delta: number;
+      readonly world: Uint8Array;
+      readonly changes: SavedChanges[];
+      readonly events: EventsMoment;
+      readonly queued: (typeof queued)[number][];
+      readonly logLength: number;
+      readonly started: boolean;
+      readonly wanted: boolean;
+    }
     const checkpointEvery = options.checkpointEvery ?? 60;
     if (!Number.isSafeInteger(checkpointEvery) || checkpointEvery < 0) {
       throw new Error(
@@ -743,6 +834,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     const handles = (action: Action.ActionDef<string, any, any>): boolean =>
       handlers.has(action.name);
+    // Who has taken over what comes from outside, if anyone has: `divert`.
+    let diverted: ((name: string, payload: unknown) => void) | undefined;
     /** From outside the simulation: `app.enqueue`. */
     const enqueue = (
       action: Action.ActionDef<string, any, any>,
@@ -755,10 +848,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       // The log holds the JSON form. A payload that has none will be refused
       // as invalid when its turn comes, and is not worth an entry.
       const { codec } = handler.action;
+      if (diverted !== undefined && codec === undefined) {
+        throw new Error(
+          `The action "${action.name}" was defined with a type and no schema, so it cannot be sent to the other peers of this game. Give Action.define a schema.`
+        );
+      }
       const json =
         codec === undefined
           ? Exit.succeed(payload)
           : Schema.encodeUnknownExit(codec)(payload);
+      if (diverted !== undefined && Exit.isSuccess(json)) {
+        diverted(action.name, json.value);
+        return;
+      }
       queued.push({
         name: action.name,
         payload,
@@ -768,13 +870,21 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           : undefined,
       });
     };
-    const enqueueByName = (name: string, payload: unknown): void => {
+    /** Queues an action that arrived as data for the next tick, and logs it. */
+    const deliver = (name: string, payload: unknown): void => {
       queued.push({
         name,
         payload,
         encoded: true,
         entry: arrived(name, payload),
       });
+    };
+    const enqueueByName = (name: string, payload: unknown): void => {
+      if (diverted === undefined) {
+        deliver(name, payload);
+      } else {
+        diverted(name, payload);
+      }
     };
     /**
      * From inside the simulation: the `Actions` service. Not logged, because
@@ -1268,6 +1378,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     const assertBetweenTicks = (name: string): void => {
+      if (diverted !== undefined) {
+        throw new Error(
+          `dispatch("${name}") was called on an app that a session has taken over. It would apply the action on this machine alone, and the peers would no longer be playing the same game. Use enqueue: the session has every peer apply it on the same tick.`
+        );
+      }
       if (ticking) {
         throw new Error(
           `dispatch("${name}") was called during a tick. Use enqueue from systems and scripts.`
@@ -1365,6 +1480,17 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     const tickExit = (
+      delta: number,
+      options?: TickOptions
+    ): Exit.Exit<void, TickError<S, P>> => {
+      if (diverted !== undefined) {
+        throw new Error(
+          "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
+        );
+      }
+      return runTick(delta, options);
+    };
+    const runTick = (
       delta: number,
       options?: TickOptions
     ): Exit.Exit<void, TickError<S, P>> => {
@@ -1553,6 +1679,98 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
         return true;
       },
+      capture() {
+        if (ticking || between !== undefined) {
+          throw new Error(
+            `capture() was called during a ${busy()}. A game is captured between ticks.`
+          );
+        }
+        const refused = (message: string): Exit.Exit<never, Save.SaveRefused> =>
+          Exit.fail(new Save.SaveRefused({ message }));
+        if (commands.size > 0) {
+          return refused(
+            `${commands.size} commands are queued and not applied. They are applied at the end of a tick: capture after one.`
+          );
+        }
+        let bytes: Uint8Array;
+        try {
+          bytes = world.snapshot();
+        } catch (error) {
+          if (error instanceof SnapshotError) {
+            return refused(error.message);
+          }
+          throw error;
+        }
+        const moment: Captured = {
+          tick: time.tick,
+          elapsed: time.elapsed,
+          delta: time.delta,
+          world: bytes,
+          // What runs between ticks has everything still to draw.
+          changes: world.saveChanges(
+            (reader) => !reader.startsWith(FRAME_READER)
+          ),
+          events: events.capture(),
+          queued: queued.slice(),
+          logLength: actionLog.length,
+          started,
+          wanted,
+        };
+        moments.add(moment);
+        return Exit.succeed(moment);
+      },
+      rewind(moment) {
+        if (ticking || between !== undefined) {
+          throw new Error(
+            `rewind() was called during a ${busy()}. A game is put back between ticks.`
+          );
+        }
+        if (applying !== undefined) {
+          throw new Error(
+            `rewind() was called from the handler of "${applying}". A game is put back between ticks.`
+          );
+        }
+        if (!moments.has(moment)) {
+          throw new Error(
+            "rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
+          );
+        }
+        const was = moment as Captured;
+        // The scripts first: none of them is part of what was captured.
+        for (const fiber of Array.from(scripts)) {
+          fiber.interruptUnsafe();
+        }
+        dispatcher.flush();
+        waiters.clear();
+        // What is queued on the buffer was never part of the world.
+        commands.rollback(0);
+        world.restore(was.world);
+        world.restoreChanges(was.changes);
+        time.tick = was.tick;
+        time.elapsed = was.elapsed;
+        time.delta = was.delta;
+        events.rewind(was.events);
+        queued.length = 0;
+        for (const action of was.queued) {
+          // It is waiting again: what became of it has not happened.
+          if (action.entry !== undefined) {
+            delete action.entry.refused;
+          }
+          queued.push(action);
+        }
+        actionLog.length = was.logLength;
+        started = was.started;
+        wanted = was.wanted;
+        heard = false;
+        stopped = undefined;
+        // As after a load: each plugin's scripts, from their beginning.
+        for (const plugin of plugins) {
+          for (const script of plugin.scripts) {
+            watch(runFork(script as Effect.Effect<unknown, unknown, any>));
+          }
+        }
+        commands.apply();
+      },
       checkpoint() {
         if (ticking) {
           throw new Error(
@@ -1599,6 +1817,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return apply(name, payload, true, true);
       },
       enqueueByName,
+      divert(take) {
+        if (diverted !== undefined) {
+          throw new Error(
+            "divert() was called on an app that has been taken over already. An app is in one session at a time."
+          );
+        }
+        diverted = take;
+        return { deliver, tickExit: (delta) => runTick(delta, NO_INPUT) };
+      },
     };
 
     // Each plugin's setup runs once, in the same order, with everything in

@@ -316,6 +316,29 @@ class Handle<P> implements EventHandle<P> {
 /** A snapshot of how many events each channel held, for rolling back. */
 export type EventMark = Map<object, number>;
 
+/**
+ * Everything a bus holds at one moment, kept in memory to come back to:
+ * the events as they are, with no need of a schema, and how far everyone
+ * had read. Opaque: `capture` makes it and `rewind` takes it.
+ */
+export interface EventsMoment {
+  readonly frames: boolean;
+  readonly ticksSinceFrame: number;
+  readonly inputs: boolean;
+  readonly ticksSinceInput: number;
+  readonly parked: ReadonlyMap<string, SavedEvents>;
+  readonly channels: readonly {
+    readonly channel: object;
+    readonly buffer: readonly unknown[];
+    readonly offset: number;
+    readonly tickOffset: number;
+    readonly frameSeen: number;
+    readonly inputSeen: number;
+    readonly tickStart: number;
+    readonly cursors: ReadonlyMap<string, number>;
+  }[];
+}
+
 /** All of an app's event channels. Provided as the `Events` service. */
 export class EventBus {
   /**
@@ -591,6 +614,83 @@ export class EventBus {
   beginTick(): void {
     for (const channel of this.order) {
       channel.tickStart = channel.end;
+    }
+  }
+
+  /**
+   * The bus as it stands, to come back to with `rewind`. Between ticks.
+   * @internal
+   */
+  capture(): EventsMoment {
+    return {
+      frames: this.frames,
+      ticksSinceFrame: this.ticksSinceFrame,
+      inputs: this.inputs,
+      ticksSinceInput: this.ticksSinceInput,
+      parked: new Map(this.parked),
+      channels: this.order.map((channel) => {
+        const cursors = new Map<string, number>();
+        for (const [reader, handle] of channel.readers) {
+          cursors.set(reader, handle.position);
+        }
+        return {
+          channel,
+          buffer: channel.buffer.slice(),
+          offset: channel.offset,
+          tickOffset: channel.tickOffset,
+          frameSeen: channel.frameSeen,
+          inputSeen: channel.inputSeen,
+          tickStart: channel.tickStart,
+          cursors,
+        };
+      }),
+    };
+  }
+
+  /**
+   * Puts the bus back as it was when `moment` was captured: the events
+   * that were waiting then, and everyone's place in them. A reader that
+   * has come since starts over, and a kind of event that was first used
+   * since has none waiting.
+   * @internal
+   */
+  rewind(moment: EventsMoment): void {
+    this.frames = moment.frames;
+    this.ticksSinceFrame = moment.ticksSinceFrame;
+    this.inputs = moment.inputs;
+    this.ticksSinceInput = moment.ticksSinceInput;
+    this.parked.clear();
+    for (const [name, saved] of moment.parked) {
+      this.parked.set(name, saved);
+    }
+    const captured = new Map(
+      moment.channels.map((entry) => [entry.channel, entry])
+    );
+    for (const channel of this.order) {
+      const was = captured.get(channel);
+      if (was === undefined) {
+        channel.buffer = [];
+        channel.tickOffset = channel.offset;
+        channel.frameSeen = channel.offset;
+        channel.inputSeen = channel.offset;
+        channel.tickStart = channel.offset;
+        channel.readers.clear();
+        continue;
+      }
+      channel.buffer = was.buffer.slice();
+      channel.offset = was.offset;
+      channel.tickOffset = was.tickOffset;
+      channel.frameSeen = was.frameSeen;
+      channel.inputSeen = was.inputSeen;
+      channel.tickStart = was.tickStart;
+      for (const [reader, handle] of channel.readers) {
+        const at = was.cursors.get(reader);
+        if (at === undefined) {
+          channel.readers.delete(reader);
+        } else {
+          handle.rewind(at);
+        }
+      }
     }
   }
 

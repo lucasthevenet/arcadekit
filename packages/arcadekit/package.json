@@ -72,6 +72,11 @@
       "types": "./dist/Input.d.ts",
       "default": "./dist/Input.js"
     },
+    "./Lockstep": {
+      "source": "./src/Lockstep.ts",
+      "types": "./dist/Lockstep.d.ts",
+      "default": "./dist/Lockstep.js"
+    },
     "./Migrate": {
       "source": "./src/Migrate.ts",
       "types": "./dist/Migrate.d.ts",
@@ -91,6 +96,11 @@
       "source": "./src/Resource.ts",
       "types": "./dist/Resource.d.ts",
       "default": "./dist/Resource.js"
+    },
+    "./Rollback": {
+      "source": "./src/Rollback.ts",
+      "types": "./dist/Rollback.d.ts",
+      "default": "./dist/Rollback.js"
     },
     "./Save": {
       "source": "./src/Save.ts",
@@ -141,6 +151,11 @@
       "source": "./src/Transform3d.ts",
       "types": "./dist/Transform3d.d.ts",
       "default": "./dist/Transform3d.js"
+    },
+    "./Transport": {
+      "source": "./src/Transport.ts",
+      "types": "./dist/Transport.d.ts",
+      "default": "./dist/Transport.js"
     },
     "./View": {
       "source": "./src/View.ts",

@@ -36,10 +36,12 @@ export {
 export * as Event from "./Event";
 export * as Field from "./Field";
 export * as Input from "./Input";
+export * as Lockstep from "./Lockstep";
 export * as Migrate from "./Migrate";
 export * as Plugin from "./Plugin";
 export * as Query from "./Query";
 export * as Resource from "./Resource";
+export * as Rollback from "./Rollback";
 export * as Save from "./Save";
 export * as Singleton from "./Singleton";
 export * as Sound from "./Sound";
@@ -59,4 +61,5 @@ export * as System from "./System";
 export { TickDispatcher, TickScheduler } from "./TickScheduler";
 export * as Transform2d from "./Transform2d";
 export * as Transform3d from "./Transform3d";
+export * as Transport from "./Transport";
 export * as View from "./View";

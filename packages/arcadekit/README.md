@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 688 tests, 93 of them of @arcadekit/three
+pnpm test                          # 773 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -68,7 +68,7 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `View` | `effect` |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Lockstep`, `Migrate`, `Plugin`, `Query`, `Resource`, `Rollback`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `Transport`, `View` | `effect` |
 | `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, its sound, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
@@ -268,6 +268,7 @@ A string that identifies something at run time carries the name of the feature i
 
 - The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Ticks"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
 - The bridge to a UI is `"arcadekit/View.Bridge"` and an app's end of it `"arcadekit/View.Port"`; the plugin is `"arcadekit/View"`, its system `"arcadekit/View.Send"`, and the system that publishes a view is named after it, `"View.publish(game/Hud)"`.
+- What carries a session's messages is `"arcadekit/Transport"`.
 - Where sound goes is `"arcadekit/Sound.Output"` and an app's player of cues `"arcadekit/Sound.Player"`; the plugin is `"arcadekit/Sound"`.
 - An app's assets are kept under `"arcadekit/Assets.Store"` and fetched through `"arcadekit/Assets.Loader"`; the plugin is `"arcadekit/Assets"`, and the system that keeps a bundle is named after it, `"Assets.during(game/Forest)"`.
 - What `Input.plugin` adds to a game is named the same way: the plugin and its singleton `"arcadekit/Input"`, its action `"arcadekit/Input.Report"` and its system `"arcadekit/Input.Read"`.
@@ -944,6 +945,7 @@ copy.hash() === world.hash(); // true
 - A `json` field is saved as the plain data it holds, exactly for text, numbers, booleans, bigints, null and undefined (`-0` and `NaN` come back as they were), and as JSON text for an array or an object. A `schema` or `ref` field is saved in its encoded form, and a `transient` field is not saved. See [Fields](#fields).
 - A snapshot is refused while a spawn is queued on a `CommandBuffer` and not applied.
 - It costs 6 ns per entity to take and 16 ns to load, for four float fields; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
+- `world.restore(bytes)` puts a snapshot back into a world that is in use, in place of everything it holds: the world is emptied and loaded. Afterwards it is what a new world that loaded the snapshot would be, hash, order, ids to come and random numbers, which a test holds it to over random operations. It is for a snapshot the world took itself. A singleton's value stays the object it was, and `world.random` the generator it was. A view or a `removed` reader that was asked for before throws when it is used and says to ask again, as a system does every tick; what change queries had yet to visit is forgotten, and `restoreChanges` takes back what `saveChanges` gave. It costs 14 ns per entity.
 
 ## Actions (the rules layer)
 
@@ -1064,6 +1066,149 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 - `checkpointEvery` is 60 unless told otherwise. A checkpoint costs one hash of the world, 0.7 ms for 100,000 entities, so a smaller number finds a divergence closer to where it happened at that price per checkpoint, and adds an entry to the log each time. A turn-based game ticks once a move and wants 1. With 0 the app records none.
 - Once a game has started, what changes its world has to be in the log or come from the simulation: an action, a system, a script. A coin spawned straight into `app.world` between two ticks is in neither, so a replay cannot know of it, and stops at the next checkpoint.
 
+## More than one player
+
+```ts
+const app = yield * App.make({ plugins: [Game], seed });
+const session = Lockstep.make(app, {
+  peer: "ada", // this machine's player
+  peers: ["ada", "grace"], // everyone: the same names on every machine
+  delta: 1 / 60, // the seconds a tick simulates, the same on every machine
+});
+
+app.enqueue(Move, { player: "ada", dx: 1 }); // as in a game of one
+
+session.receive(message); // a message that came from another peer
+session.tick(); // true if the tick ran, false if it waits for a peer
+for (const message of session.outgoing()) send(message); // to every other peer
+```
+
+Every peer runs the same simulation, and what they send each other is the actions their players issue and nothing else, each stamped with the tick it applies on. That is lockstep. A game is the same game on two machines when both apply the same actions on the same ticks in the same order, which is what the [log](#payloads-saves-and-the-network) already says of a game of one, so a session is little more than the log, shared.
+
+- A session takes its app over. What comes into the game from outside is no longer queued for the next tick: `app.enqueue`, a key [bound](#input) to an action, a button of [the UI](#the-view-bridge). Each goes into this peer's message for the tick `delay` ticks ahead, and every peer applies it on that tick, the one that issued it among them. So a game issues its input as a game of one does, and goes from one player to several without changing how.
+- A peer runs a tick once it holds every peer's message for it. There is one message from every peer for every tick, empty more often than not, since it is also how a peer says it has nothing more for that tick. `session.tick()` says whether the tick ran, and `session.waitingFor` names the peers it waits for.
+- `delay` is how long a message has to arrive before anyone waits: 2 ticks unless told. A player sees their own move that much later, and a network that takes longer than that slows the game to its pace. Each peer may have its own.
+- A tick's actions are applied peer by peer in the order of the peers' names, and each peer's in the order it issued them, whatever order the messages arrived in. Two players who go for the same coin on the same tick get the same answer on every machine: one has it, and the other is refused, with the same `Action.Rejected`.
+- Messages arrive in any order and more than once. One that is held already, is for a tick that has run, or comes from a name that is no peer of the game, is dropped. Every message has to arrive in the end.
+- A session holds no socket and no timer. `session.receive` is given what arrived and `session.outgoing()` gives what to send; `Lockstep.encode` and `Lockstep.decode` turn a message into text and back, the second as an `Exit` that refuses what is not one. A payload is checked against its action's schema when it is applied, by every peer alike.
+- The session steps the app. `app.tick` and `app.dispatch` throw from then on, and say why: either would move this machine's game and nobody else's. A driver is given the session in the app's place, `Driver.frames(session, { hz: 60 })`, and draws the game through it; a driver at another rate than the session's `delta` is refused.
+- A tick hears the devices first, as an app's own does, and a key that is pressed while the peer waits for another is in its next message.
+- What the simulation issues itself with `Actions`, a bot's move, is not sent: every peer's own simulation issues it.
+- Every peer is made alike: the same plugins, the same seed, the same state to start from. A session begins at whatever tick its app is at, so a game can go on from a save that every peer loaded.
+- The log of a peer is an ordinary log. Every peer's is the same, entry for entry, and `App.replay` plays it back into a game of one.
+- `app.divert(take)` is what a session is made with, for a session of another kind: it hands over what comes in from outside, and returns the one way left to queue an action and to run a tick.
+
+### Without waiting: rollback
+
+```ts
+const session = Rollback.make(app, {
+  peer: "ada",
+  peers: ["ada", "grace"],
+  delta: 1 / 60,
+  ahead: 8, // how many ticks it may run past what every peer has said
+});
+
+app.enqueue(Move, { player: "ada", dx: 1 });
+session.tick(); // the move is in the world, whatever the network takes
+session.confirmed; // how many ticks are final
+```
+
+A lockstep session shows a player their own move `delay` ticks late, and a network slower than that slows everyone. A rollback session does not wait. It runs the tick at once, as if the peers it has not heard from had nothing to say for it, which is true of most ticks; and when a message comes for a tick that has run, and it did have something to say, the session goes back to before that tick and runs forward again with what it knows now.
+
+- It is the same session, with the same messages, and everything above holds of it: it takes its app over, is given what arrived and gives what to send, is stepped by a driver, and applies a tick's actions in the order of the peers' names. A lockstep session is one that runs no tick ahead.
+- A player's own move is applied on the next tick: `delay` is 0 unless told. A delay of a tick or two spares the other peers a rewind for every move, for that much lag on one's own.
+- `ahead` is how far it runs past what every peer has said, 8 ticks unless told. A peer that far ahead waits, as a lockstep session does, and `waitingFor` says for whom. It is also the furthest a rewind goes back.
+- The peers end the same game. Every peer applies every action on the tick it is stamped with, whenever it heard of it: in the tests, peers under a network that takes up to seven ticks hold the same world and the same log once the messages are in, and the log replays into a game of one that never went back, tick for tick.
+- A message that says nothing for a tick that has run costs nothing: the guess was right. One that says something costs a rewind and the ticks since, run again. `session.rewinds` and `session.resimulated` count them, and `session.confirmed` is how many ticks are final: what is after it may still be run another way.
+- Before a tick it is not sure of, the session keeps the game as it is, with `app.capture()`, and lets go of it once every peer has spoken for that tick: `session.kept` of them at a time, never more than `ahead`. A tick that every peer has spoken for is not captured at all, so a fast network pays nothing.
+- A peer may see a move accepted that is then refused. Two players who take the same coin on the same tick each see themselves take it, until the other's message arrives: then both have the one whose name comes first take it, and the other's take is refused, in the log and in the world.
+- The peers compare the hashes of the ticks that are final, and stop with `Lockstep.Drifted` as lockstep peers do. A tick's hash is sent once every peer has spoken for it, so a difference is found within `checkpointEvery - 1 + delay + 2 × ahead` ticks.
+- `session.tickExit()` can also fail with `Save.SaveRefused`, when the game cannot be captured: a field holds a value no snapshot can hold. The tick is not run.
+- What a rewind puts back is what `app.capture()` holds, below, and what it does not is the game's to keep out of the simulation's way.
+
+**Going back to a moment** is the app's own, for a session or a tool:
+
+```ts
+const moment = app.capture(); // Exit<App.Moment, Save.SaveRefused>
+app.tick(1 / 60);
+app.rewind(moment.value); // the same app, as it was
+```
+
+- A moment holds what a [save](#saving-and-loading) does: the world, the game's time, the actions waiting for the next tick, the events waiting to be read with everyone's place in them, what change queries had yet to visit, and how long the log was. `rewind` puts all of it back in place and cuts the log back: the app, its world and its services are the ones they were.
+- It is kept in memory and is of one app in one run of the program. So what is waiting needs no schema: a game with an action or an event of a type alone can be captured where it cannot be saved.
+- Scripts are not in it, as they are not in a save. A rewind interrupts every script the app watches and starts each plugin's `scripts` again from their beginning. A script that keeps its place in its own variables plays its part a second time, so a game that is played with rollback does in a system what such a script would do, or keeps the script's place in the world.
+- Nor is what a service of the game's own holds, or a field that is `transient`, which is undefined afterwards, as in a loaded game.
+- What draws starts over. The frame stage's and the input stage's change queries visit everything again, as in a loaded game, and they hear the events of a tick that is run again a second time: a sound may be played twice.
+
+### Carrying the messages
+
+```ts
+const program = Effect.gen(function* () {
+  const app = yield* App.make({ plugins: [Game], seed });
+  const session = Rollback.make(app, { peer, peers, delta: 1 / 60 });
+  return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 });
+}).pipe(
+  Effect.scoped,
+  Effect.provide(Transport.layerBroadcastChannel("game/room-7"))
+);
+
+Browser.runMain(program, { target: canvas });
+```
+
+A session holds no socket. What carries its messages is a service, `Transport`, with two plain calls: `send(message)`, to every other peer, and `receive()`, which gives the messages that have arrived since it was last asked.
+
+- `Transport.connect(session)` joins a session to the transport and gives what a driver steps in the session's place. Each tick it hands the session what has arrived, runs the session's tick, and sends what the session has to say, whether the tick ran, waited or failed: a session that stops because the peers have come apart says so to the others first.
+- There is no default. A game of several peers that is given no transport does not compile, as with any service: every way of reaching the others is a choice.
+- It asks little of a wire: that every message arrives, in whatever order. A message that arrives twice is dropped by the session.
+- `Transport.layerBroadcastChannel(name)` is the transport between the tabs, the windows and the workers of one browser, or the threads of one process. Every peer that opens the same name hears every other, with no server. It reaches no other machine. The channel is closed with the layer's scope, so the layer is provided to the whole program, and a transport that is used after its scope has closed throws and says so, in place of a game that waits for ever.
+- `Transport.text(wire)` makes a transport of anything that carries text, for a wire of the game's own. A message travels as `Lockstep.encode` writes it, and a text that is not a message is dropped and counted in `dropped`: nothing that comes off a wire is trusted. Through a WebSocket, to a relay that passes each message on to the others in a room, which is the game's to run:
+
+  ```ts
+  const socket = new WebSocket(url);
+  const transport = Transport.text({
+    send: (text) => socket.send(text),
+    listen(onText) {
+      socket.onmessage = (event) => onText(String(event.data));
+      return () => socket.close();
+    },
+  });
+  program.pipe(Effect.provide(Transport.layer(transport)));
+  ```
+
+- `Transport.makeHub({ delay, seed })` is a network in memory, for tests. `hub.layer(peer)` is a peer's end of it. Nothing is lost and nothing happens until the test says so: a message is on its way for as many steps as its delay, a number or a range from which each message's is drawn, so that they overtake each other, and time passes when the test calls `hub.step()`. The same seed is the same network.
+
+  ```ts
+  const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 1 });
+  const ada =
+    yield * Transport.connect(session).pipe(Effect.provide(hub.layer("ada")));
+  hub.step();
+  ada.tick();
+  ```
+
+- The frame loop rests while its tab is hidden, and a peer that rests is waited for. Two peers in one browser are two windows side by side, not two tabs of one.
+
+### Peers that come apart
+
+```ts
+const exit = session.tickExit(); // Exit<boolean, E | Lockstep.Drifted>
+session.drifted; // why the session stopped, once it has
+
+// The peers are no longer playing the same game. At tick 120 the hashes of
+// their worlds are: ada 2860666740, grace 3734032547 (found by "ada"). They
+// last agreed at tick 60, so they came apart in one of the 60 ticks after it: ...
+```
+
+Lockstep rests on every peer's simulation going the same way. One system that reads the clock, `Math.random` or the order of a `Set`, and the peers hold different games, each sure of its own. So the peers compare: each tells the others the [checkpoints](#replays-that-check-themselves) its log records, the hash of its world at a tick, in the messages it sends anyway.
+
+- When every peer has said its hash for a tick and they are not all the same, the session stops. Its tick fails with `Lockstep.Drifted`, and so does every tick after it; `session.drifted` is the same value, for a UI to show. `session.tick()` throws it, which stops a driver.
+- The report says the tick, the hash every peer had at it, by name, so that with three or more the one that is not as the others stands out, and `agreedAt`, the last tick at which they were all the same. With a checkpoint every tick that is the tick before they came apart.
+- It is found within a known number of ticks. A checkpoint travels with the peer's message for the tick `delay` ahead, which no peer runs without. So no peer runs more than `checkpointEvery - 1 + delay` ticks past the first whose world differed, however slow the network, `delay` being the largest any peer has: with a checkpoint every tick and a delay of 2, two ticks.
+- The state the peers start from is compared before anyone's first tick, whatever `checkpointEvery` is: a session records a checkpoint when it begins. Peers made with another seed, or with something else spawned at the start, never run a tick, and the report says they did not start from the same state.
+- After that the peers compare what their logs record, every 60 ticks unless the app was told otherwise, and with `checkpointEvery: 0` nothing more. Peers with different schedules compare the ticks both record, and a checkpoint one peer takes by hand, `app.checkpoint()`, is not held against the others.
+- A peer that stops says its hash first, so the others stop with the same report in place of waiting for it.
+- It costs a message 30 bytes or so per checkpoint and the session a comparison: the hash is the one the app takes for its log anyway.
+- What is compared is the world's hash, so what the [hash](#the-worlds-hash) does not cover is found only when it shows in the world: an event that one peer alone has waiting, or a system's own variables.
+
 ## Files
 
 | File | What it is |
@@ -1087,13 +1232,16 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
 | `src/Sound.ts` | Cues played from the game's events and music kept to what the game is, both in the frame stage, clips, the player, and where sound goes |
 | `src/View.ts` | The view bridge: the values a UI may see, published once per frame when they changed, and the actions it sends |
+| `src/Lockstep.ts` | A session of several peers: the messages they exchange, the tick that waits for every peer's, and the hashes they compare |
+| `src/Rollback.ts` | The session that does not wait: it runs ahead of the network and goes back when it was wrong |
+| `src/Transport.ts` | What carries a session's messages: the service, what joins a session to it, a transport over text, the one between tabs, and a network in memory for tests |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, and a world that is restored compared with a new one that loaded the same snapshot. `test/peers.ts` is the game and the network those of several peers share |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
@@ -1167,13 +1315,16 @@ Best of three runs per variant on a cloud Linux VM, Node 22. The machine is shar
 
 Hashing the same 100,000 entities, in the same units:
 
-| Variant                                                   | ns/entity |
-| --------------------------------------------------------- | --------- |
-| `world.hash()`, one table                                 | 7.0       |
-| `world.hash()`, the same entities spread over 32 tables   | 7.4       |
-| `world.hash()`, with a sparse one-field component on each | 13.6      |
-| `world.snapshot()`, one table (2.2 MB)                    | 6.0       |
-| `world.load()` of that snapshot, into a new world         | 15.7      |
+| Variant                                                       | ns/entity |
+| ------------------------------------------------------------- | --------- |
+| `world.hash()`, one table                                     | 7.0       |
+| `world.hash()`, the same entities spread over 32 tables       | 7.4       |
+| `world.hash()`, with a sparse one-field component on each     | 13.6      |
+| `world.snapshot()`, one table (2.2 MB)                        | 6.0       |
+| `world.load()` of that snapshot, into a new world             | 15.7      |
+| `world.restore()` of it, into the world it came from          | 13.7      |
+| `app.capture()`: a game of those entities, kept to go back to | 5.6       |
+| `app.rewind()`: the game put back to that moment              | 13.8      |
 
 Change detection in the same world, with a query that watches `Position`:
 
@@ -1246,6 +1397,7 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 - A sparse tag that many entities have, mixed in with ones that do not, breaks tables into short runs and `eachChunk` loses its edge. A component like that is better off with table storage.
 - A handler that loops pays one copy of the columns it visits, 0.11 ms for four float columns of 100,000 rows, and as much again to copy them back if it is refused. It pays for none it only reads: a handler that looks at all 100,000 entities takes 0.78 ms through a plain query and 0.67 ms through one made with `Query.reads()`. The copies are kept and written over by the next action; allocating them afresh each time cost 0.35 ms. A refusal itself costs about 9 µs, which is Effect building the failure.
 - A checkpoint is one hash of the world every `checkpointEvery` ticks, 60 by default: 12 µs a tick on average for 100,000 entities. The per-tick lines above are medians, so they do not show it.
+- Predicting a tick costs a capture, 0.56 ms for 100,000 entities and 6 µs for a thousand, and only for a tick the session is not sure of. Being wrong costs a rewind, 1.4 ms for 100,000, and the ticks since, run again. `world.restore` did not change what the lines above cost: `eachChunk` 2.65 ns before and 2.70 after, `each` 6.61 and 6.80, a snapshot 5.26 and 5.57, a load 15.37 and 15.08, a tick of ten idle systems 5.49 µs and 5.48, which is the machine's noise.
 - Hashing a world costs about two and a half raw passes over it: 1.4 ns per 32-bit field per entity, and about four times that for a field of a sparse component, whose members are hashed one by one so that their order does not matter.
 
 ## Raw columns and strict indexing
@@ -1295,12 +1447,21 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
 - A frame system of the game's own that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps: there is no helper for it in this package. [`@arcadekit/three`](../three/README.md#between-two-ticks) does it for what it draws, with `smooth: true`, and keeps the place before to itself.
 - `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
-- `arcadekit/Browser` is one entry for everything a page has. Netcode will be an entry of its own when it is built.
+- `arcadekit/Browser` is one entry for everything a page has.
+- No transport here leaves the machine. `Transport.layerBroadcastChannel` reaches the tabs and workers of one browser, and `Transport.text` makes a transport of a WebSocket or a data channel that the game opens itself: the relay, or whatever introduces the peers to each other, is the game's to run. The roadmap has it, with the decision it waits for.
+- A rollback session keeps a snapshot of the whole world for each tick it is not sure of, and loads one to go back. For a very large world that is the cost of every such tick: nothing keeps only what changed.
+- A game played with rollback is drawn and heard as it is predicted. A sound for something that is then taken back was played, an event of a tick that is run again is heard again by the frame stage, and its change queries visit everything after each rewind. Nothing tells what draws which ticks are final but `session.confirmed`.
+- A script is started again by every rewind, and what a service of the game's own holds is not put back. With rollback, what the simulation reads is in the world.
+- Peers that have come apart stop. Nothing brings them back together: a game that wants to go on has every peer load one peer's save and makes its sessions again.
+- A session's peers are fixed when it is made. Nobody joins a game in progress or leaves one, and a peer that stops is waited for.
+- Every message has to arrive. One that is lost stops the game for everyone: nothing asks for it again, and nothing says that a peer has gone quiet but `session.waitingFor`.
+- A handler is not told which peer issued an action. A game puts the player in the payload, and a peer can put another's name there.
+- A game in a session ticks all the time. One that ticks when it is needed, `ticks: "whenNeeded"`, is not for several peers yet: a session does not say when it is settled.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.
 - A save is refused while an action or an event with no schema is waiting, which for a game that emits such an event every tick is always.
-- An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
+- An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal, and in a session the other peers never hear of it.
 - The log does not say when a script was started by hand with `app.spawnScript`, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, what change queries have yet to visit, the actions queued for the next tick, or how far each script has got.
 - What a query only reads is the query's word. A raw column is a typed array all the same: a loop that writes one past the compiler has written it, and no change query hears of it and no refusal takes it back.
