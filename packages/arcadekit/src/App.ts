@@ -251,7 +251,41 @@ export interface TickOptions {
   readonly input?: boolean;
 }
 
+/**
+ * What `divert` gives whoever took an app over: the two things the app no
+ * longer does for anyone else.
+ */
+export interface Diverted<E = never> {
+  /**
+   * Queues an action for the next tick and logs it, as `enqueueByName` did:
+   * by its name, with its payload in JSON form.
+   */
+  readonly deliver: (name: string, payload: unknown) => void;
+  /** Runs one tick, as `tickExit` did. It reads no device. */
+  readonly tickExit: (delta: number) => Exit.Exit<void, E>;
+}
+
 export interface App<E = never, R = never, HU = never> extends Any {
+  /**
+   * Takes the app over, for what decides on which tick an action is applied
+   * and when a tick runs: a session of several peers, each of which has to
+   * apply the same actions on the same ticks.
+   *
+   * From then on an action enqueued from outside is not queued for the next
+   * tick. It is handed to `take`, by its name and with its payload in JSON
+   * form: one given to `enqueue` or `enqueueByName`, and one issued with
+   * `Actions.enqueue` in the input stage or the frame stage, so a key that
+   * is bound to an action and a button of the UI are taken too. What the
+   * simulation issues itself is not: every peer's own issues it.
+   *
+   * What it returns is the one way left to queue an action and to run a
+   * tick. `tick`, `tickExit`, `dispatch` and `dispatchByName` throw from
+   * then on: each would move this machine's game and nobody else's. An app
+   * is taken over once.
+   */
+  readonly divert: (
+    take: (name: string, payload: unknown) => void
+  ) => Diverted<E>;
   /**
    * Runs one tick and returns the outcome, with system failures as a typed
    * `Exit`. An app that has stopped on a failed script runs nothing and
@@ -743,6 +777,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
     const handles = (action: Action.ActionDef<string, any, any>): boolean =>
       handlers.has(action.name);
+    // Who has taken over what comes from outside, if anyone has: `divert`.
+    let diverted: ((name: string, payload: unknown) => void) | undefined;
     /** From outside the simulation: `app.enqueue`. */
     const enqueue = (
       action: Action.ActionDef<string, any, any>,
@@ -755,10 +791,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       // The log holds the JSON form. A payload that has none will be refused
       // as invalid when its turn comes, and is not worth an entry.
       const { codec } = handler.action;
+      if (diverted !== undefined && codec === undefined) {
+        throw new Error(
+          `The action "${action.name}" was defined with a type and no schema, so it cannot be sent to the other peers of this game. Give Action.define a schema.`
+        );
+      }
       const json =
         codec === undefined
           ? Exit.succeed(payload)
           : Schema.encodeUnknownExit(codec)(payload);
+      if (diverted !== undefined && Exit.isSuccess(json)) {
+        diverted(action.name, json.value);
+        return;
+      }
       queued.push({
         name: action.name,
         payload,
@@ -768,13 +813,21 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           : undefined,
       });
     };
-    const enqueueByName = (name: string, payload: unknown): void => {
+    /** Queues an action that arrived as data for the next tick, and logs it. */
+    const deliver = (name: string, payload: unknown): void => {
       queued.push({
         name,
         payload,
         encoded: true,
         entry: arrived(name, payload),
       });
+    };
+    const enqueueByName = (name: string, payload: unknown): void => {
+      if (diverted === undefined) {
+        deliver(name, payload);
+      } else {
+        diverted(name, payload);
+      }
     };
     /**
      * From inside the simulation: the `Actions` service. Not logged, because
@@ -1268,6 +1321,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     const assertBetweenTicks = (name: string): void => {
+      if (diverted !== undefined) {
+        throw new Error(
+          `dispatch("${name}") was called on an app that a session has taken over. It would apply the action on this machine alone, and the peers would no longer be playing the same game. Use enqueue: the session has every peer apply it on the same tick.`
+        );
+      }
       if (ticking) {
         throw new Error(
           `dispatch("${name}") was called during a tick. Use enqueue from systems and scripts.`
@@ -1365,6 +1423,17 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     const tickExit = (
+      delta: number,
+      options?: TickOptions
+    ): Exit.Exit<void, TickError<S, P>> => {
+      if (diverted !== undefined) {
+        throw new Error(
+          "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
+        );
+      }
+      return runTick(delta, options);
+    };
+    const runTick = (
       delta: number,
       options?: TickOptions
     ): Exit.Exit<void, TickError<S, P>> => {
@@ -1599,6 +1668,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return apply(name, payload, true, true);
       },
       enqueueByName,
+      divert(take) {
+        if (diverted !== undefined) {
+          throw new Error(
+            "divert() was called on an app that has been taken over already. An app is in one session at a time."
+          );
+        }
+        diverted = take;
+        return { deliver, tickExit: (delta) => runTick(delta, NO_INPUT) };
+      },
     };
 
     // Each plugin's setup runs once, in the same order, with everything in

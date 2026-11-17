@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 688 tests, 93 of them of @arcadekit/three
+pnpm test                          # 711 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -68,7 +68,7 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `View` | `effect` |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Lockstep`, `Migrate`, `Plugin`, `Query`, `Resource`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `View` | `effect` |
 | `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, its sound, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
@@ -1064,6 +1064,38 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 - `checkpointEvery` is 60 unless told otherwise. A checkpoint costs one hash of the world, 0.7 ms for 100,000 entities, so a smaller number finds a divergence closer to where it happened at that price per checkpoint, and adds an entry to the log each time. A turn-based game ticks once a move and wants 1. With 0 the app records none.
 - Once a game has started, what changes its world has to be in the log or come from the simulation: an action, a system, a script. A coin spawned straight into `app.world` between two ticks is in neither, so a replay cannot know of it, and stops at the next checkpoint.
 
+## More than one player
+
+```ts
+const app = yield * App.make({ plugins: [Game], seed });
+const session = Lockstep.make(app, {
+  peer: "ada", // this machine's player
+  peers: ["ada", "grace"], // everyone: the same names on every machine
+  delta: 1 / 60, // the seconds a tick simulates, the same on every machine
+});
+
+app.enqueue(Move, { player: "ada", dx: 1 }); // as in a game of one
+
+session.receive(message); // a message that came from another peer
+session.tick(); // true if the tick ran, false if it waits for a peer
+for (const message of session.outgoing()) send(message); // to every other peer
+```
+
+Every peer runs the same simulation, and what they send each other is the actions their players issue and nothing else, each stamped with the tick it applies on. That is lockstep. A game is the same game on two machines when both apply the same actions on the same ticks in the same order, which is what the [log](#payloads-saves-and-the-network) already says of a game of one, so a session is little more than the log, shared.
+
+- A session takes its app over. What comes into the game from outside is no longer queued for the next tick: `app.enqueue`, a key [bound](#input) to an action, a button of [the UI](#the-view-bridge). Each goes into this peer's message for the tick `delay` ticks ahead, and every peer applies it on that tick, the one that issued it among them. So a game issues its input as a game of one does, and goes from one player to several without changing how.
+- A peer runs a tick once it holds every peer's message for it. There is one message from every peer for every tick, empty more often than not, since it is also how a peer says it has nothing more for that tick. `session.tick()` says whether the tick ran, and `session.waitingFor` names the peers it waits for.
+- `delay` is how long a message has to arrive before anyone waits: 2 ticks unless told. A player sees their own move that much later, and a network that takes longer than that slows the game to its pace. Each peer may have its own.
+- A tick's actions are applied peer by peer in the order of the peers' names, and each peer's in the order it issued them, whatever order the messages arrived in. Two players who go for the same coin on the same tick get the same answer on every machine: one has it, and the other is refused, with the same `Action.Rejected`.
+- Messages arrive in any order and more than once. One that is held already, is for a tick that has run, or comes from a name that is no peer of the game, is dropped. Every message has to arrive in the end.
+- A session holds no socket and no timer. `session.receive` is given what arrived and `session.outgoing()` gives what to send; `Lockstep.encode` and `Lockstep.decode` turn a message into text and back, the second as an `Exit` that refuses what is not one. A payload is checked against its action's schema when it is applied, by every peer alike.
+- The session steps the app. `app.tick` and `app.dispatch` throw from then on, and say why: either would move this machine's game and nobody else's. A driver is given the session in the app's place, `Driver.frames(session, { hz: 60 })`, and draws the game through it; a driver at another rate than the session's `delta` is refused.
+- A tick hears the devices first, as an app's own does, and a key that is pressed while the peer waits for another is in its next message.
+- What the simulation issues itself with `Actions`, a bot's move, is not sent: every peer's own simulation issues it.
+- Every peer is made alike: the same plugins, the same seed, the same state to start from. A session begins at whatever tick its app is at, so a game can go on from a save that every peer loaded.
+- The log of a peer is an ordinary log. Every peer's is the same, entry for entry, and `App.replay` plays it back into a game of one.
+- `app.divert(take)` is what a session is made with, for a session of another kind: it hands over what comes in from outside, and returns the one way left to queue an action and to run a tick.
+
 ## Files
 
 | File | What it is |
@@ -1087,13 +1119,14 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
 | `src/Sound.ts` | Cues played from the game's events and music kept to what the game is, both in the frame stage, clips, the player, and where sound goes |
 | `src/View.ts` | The view bridge: the values a UI may see, published once per frame when they changed, and the actions it sends |
+| `src/Lockstep.ts` | A session of several peers: the messages they exchange, and the tick that waits for every peer's |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, and peers of one game joined by a network that delays and reorders |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
@@ -1295,12 +1328,17 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
 - A frame system of the game's own that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps: there is no helper for it in this package. [`@arcadekit/three`](../three/README.md#between-two-ticks) does it for what it draws, with `smooth: true`, and keeps the place before to itself.
 - `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
-- `arcadekit/Browser` is one entry for everything a page has. Netcode will be an entry of its own when it is built.
+- `arcadekit/Browser` is one entry for everything a page has.
+- Nothing carries a session's messages yet: a game hands them to whatever it has. Nor do the peers compare their worlds: two that have come apart go on, each with a game of its own. Both are next on the roadmap, and predicting a move before the others have heard of it after them.
+- A session's peers are fixed when it is made. Nobody joins a game in progress or leaves one, and a peer that stops is waited for.
+- Every message has to arrive. One that is lost stops the game for everyone: nothing asks for it again.
+- A handler is not told which peer issued an action. A game puts the player in the payload, and a peer can put another's name there.
+- A game in a session ticks all the time. One that ticks when it is needed, `ticks: "whenNeeded"`, is not for several peers yet: a session does not say when it is settled.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.
 - A save is refused while an action or an event with no schema is waiting, which for a game that emits such an event every tick is always.
-- An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal.
+- An action enqueued with a payload its schema rejects is refused when its turn comes, as an event, and is not in the log, since it has no JSON form. A replay therefore does not repeat that one refusal, and in a session the other peers never hear of it.
 - The log does not say when a script was started by hand with `app.spawnScript`, nor the delta and the number of ticks of the game it records. A replay is told those by its caller.
 - The hash covers the world and nothing else: not the events waiting to be read, what change queries have yet to visit, the actions queued for the next tick, or how far each script has got.
 - What a query only reads is the query's word. A raw column is a typed array all the same: a loop that writes one past the compiler has written it, and no change query hears of it and no refusal takes it back.

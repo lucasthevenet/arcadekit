@@ -36,6 +36,7 @@ The first cut of the revamped arcadekit: an entity component system with Effect 
 - `world.snapshot()` and `world.load()`: the whole world as compact bytes, and back into an empty world that hashes the same and goes on the same. A problem is a `SnapshotError` that says which kind and names the component.
 - `world.hash()`: one number for everything in a world that a simulation can tell apart, the same on every machine, which changes whenever one field of one entity does.
 - Built-in services keyed under `"arcadekit/"`: `World`, `Time`, `Frame`, `Commands`, `Script`, `Ticks`, `Events`, `Random`, `Action.Actions` and `Input.Devices`.
+- Lockstep: `Lockstep.make(app, { peer, peers, delta, delay })`, from the new entry `arcadekit/Lockstep`, makes an app one peer of a game of several. The session takes the app over with `app.divert`: what comes in from outside (`app.enqueue`, a key bound to an action, a button of the UI) goes into this peer's message for the tick `delay` ahead, and every peer applies it on that tick, in the order of the peers' names. A tick runs once the peer holds every peer's message for it. The session is given the messages that arrived (`receive`) and gives the ones to send (`outgoing`), as values or as text (`Lockstep.encode`, `Lockstep.decode`), and a driver steps it in the app's place. On an app that was taken over, `tick`, `dispatch` and `dispatchByName` throw.
 
 **Breaking**
 

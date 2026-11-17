@@ -36,7 +36,8 @@ These are plugins, not part of the core: a game that draws with something else l
 
 ## 6. More than one player
 
-- **Lockstep.** Every peer runs the same simulation and exchanges only actions, each stamped with the tick it applies on. The action log is already most of this. Done when two apps in one test, joined by a fake network with delay and reordering, stay hash-equal.
+Lockstep is done: `arcadekit/Lockstep`. A session takes its app over, puts what its player issues in a message for the tick a few ahead, and runs a tick once it holds every peer's message for it, so every peer applies the same actions on the same ticks in the same order; in a test, peers joined by a network that delays and reorders are hash-equal at every tick, and their logs are the same. The package's [README](../packages/arcadekit/README.md#more-than-one-player) describes it. A session holds no socket: it is given what arrived and gives what to send. What is left:
+
 - **Drift detection.** Peers compare hashes and stop with a useful report when they differ. Done when a deliberately non-deterministic system is caught within a known number of ticks.
 - **Rollback.** Predict, and when a late action arrives, restore a snapshot and re-run. Done when a game feels immediate under simulated latency and still ends hash-equal.
 - **A transport.** A service with a test implementation first, a real one second.
@@ -78,6 +79,11 @@ Ticks, frames and real time:
 - **`smooth: true` draws a tick behind.** A game stepped by hand and drawn with `app.frame(0)` shows the tick before the one it just ran. A test that looks at what is drawn has to know.
 - **`Effect.sleep`, a promise, or any wait in real time resumes outside the tick**, and a fiber started with `Effect.forkDetach` is not watched by the app. Either changes the game at a moment no replay repeats. Scripts wait with `Script.nextTick`, `Script.sleep` or an event's `wait`; nothing refuses the others.
 - **`Assets.load` in a script** resumes in whatever tick the file arrives in. It is not refused there.
+
+Several peers:
+
+- **A payload its schema refuses is refused on the peer that issued it alone.** It has no JSON form to send, so the other peers never hear of it, and the `Action.Rejected` it becomes is an event on one machine. A system of the tick that reads that event and writes what it read has the peers come apart. To close it: refuse such a payload where it is enqueued, as a value or by throwing, in a game of one too.
+- **Nothing says that the peers of a session were made alike.** The same plugins, the same seed, the same `delta`, the same names: each peer is told its own, and one that was told otherwise plays another game from its first tick. Comparing hashes will find a different world; a different `delta` shows only once a system has used it.
 
 What a replay, a save and the hash do not hold:
 

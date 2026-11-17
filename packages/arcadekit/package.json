@@ -72,6 +72,11 @@
       "types": "./dist/Input.d.ts",
       "default": "./dist/Input.js"
     },
+    "./Lockstep": {
+      "source": "./src/Lockstep.ts",
+      "types": "./dist/Lockstep.d.ts",
+      "default": "./dist/Lockstep.js"
+    },
     "./Migrate": {
       "source": "./src/Migrate.ts",
       "types": "./dist/Migrate.d.ts",
