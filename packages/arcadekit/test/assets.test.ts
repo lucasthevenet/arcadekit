@@ -395,6 +395,44 @@ describe("a level's assets", () => {
     );
   });
 
+  it("are there, or gone, for every system of the frame they come or go in, wherever the system that keeps them is listed", async () => {
+    const log: string[] = [];
+    const Level = State.define("as/Order", ["menu", "forest"]);
+    const Forest = Assets.bundle("as/Ordered", {
+      backdrop: tracked("/forest.png", log),
+    });
+    const seen: string[] = [];
+    const Draw = System.make("Draw", function* () {
+      seen.push((yield* Forest)._tag);
+    }).pipe(System.inStage("frame"));
+    const Keep = Assets.during(State.is(Level, "forest"), Forest);
+    // It is of the stage before a frame's own.
+    expect(Keep.stage).toBe("preFrame");
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const app = yield* App.make({
+            components: [Level],
+            plugins: [Assets.plugin],
+            // Listed after what draws with the bundle.
+            systems: [Draw, Keep],
+          });
+          expect(app.frameOrder).toEqual(["Assets.during(as/Ordered)", "Draw"]);
+          const go = (to: "menu" | "forest"): void => {
+            app.spawnScript(Effect.map(Level, (level) => level.set(to)));
+            app.tick(1);
+            app.frame(0);
+          };
+          app.frame(0);
+          go("forest");
+          go("menu");
+          expect(seen).toEqual(["Absent", "Ready", "Absent"]);
+          expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+        })
+      ).pipe(Effect.provide(Assets.layerMemory(files)))
+    );
+  });
+
   it("take the time they take, and are given up if the game leaves first", async () => {
     const { Game, Go, drawn, log } = makeGame();
     const slow = makeSlowLoader();

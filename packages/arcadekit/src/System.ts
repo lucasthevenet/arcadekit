@@ -15,12 +15,33 @@ import type { Pipeable } from "effect/Pipeable";
 /** The stages of a tick, in the order they run. */
 export const stages = ["preUpdate", "update", "postUpdate"] as const;
 /**
- * A stage of the tick, or one of the two that run between ticks and must
- * not change the world: `"input"`, which reads the devices and turns what
- * they say into actions, just before a tick, when `app.input` is called;
- * and `"frame"`, which draws the game, when `app.frame` is called.
+ * The stages of a frame, in the order they run, as a tick has three:
+ * `"preFrame"` for what a frame's systems stand on, such as which assets
+ * are loaded; `"frame"`, where the game is drawn and heard; and
+ * `"postFrame"` for what has to come after all of that, such as putting
+ * the picture on the screen.
  */
-export type Stage = (typeof stages)[number] | "input" | "frame";
+export const frameStages = ["preFrame", "frame", "postFrame"] as const;
+/**
+ * A stage of the tick, or one of those that run between ticks and must not
+ * change the world: `"input"`, which reads the devices and turns what they
+ * say into actions, just before a tick, when `app.input` is called; and
+ * the three of a frame, `"preFrame"`, `"frame"` and `"postFrame"`, which
+ * draw the game, when `app.frame` is called.
+ */
+export type Stage =
+  | (typeof stages)[number]
+  | "input"
+  | (typeof frameStages)[number];
+
+/** Whether a stage is one of a frame's. */
+export const isFrameStage = (
+  stage: Stage
+): stage is (typeof frameStages)[number] =>
+  (frameStages as readonly string[]).includes(stage);
+
+/** Every stage, in the order they run where more than one is run together. */
+const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
 
 /**
  * What sets a hook off: a state being entered or left. `State.onEnter` and
@@ -96,6 +117,13 @@ export const make = <Eff extends Effect.Effect<any, any, any>>(
  * each from a place of its own, and `yield* Frame` tells it how far the
  * frame is between two ticks. Whatever would change the game there throws.
  *
+ * A frame has two more stages, around that one, as a tick has three.
+ * `"preFrame"` runs before every system of `"frame"`, for what they stand
+ * on: `Assets.during` is there, so that a frame's systems all find the
+ * same assets loaded. `"postFrame"` runs after them all, for what needs
+ * everything drawn: a renderer puts the picture on the screen there. All
+ * three are the frame stage as far as what a system may do goes.
+ *
  * `System.inStage("input")` makes it a system of the input stage, which is
  * for bringing the outside in: it runs once per `app.input`, just before a
  * tick, with the world frozen. `yield* Input.Devices` tells it what the
@@ -111,7 +139,11 @@ export const inStage: {
   build({ ...self, stage })
 );
 
-/** Orders a system after another one in the same stage. */
+/**
+ * Orders a system after another one in the same stage. One in an earlier
+ * stage has run already, and naming it is no error; one in a later stage
+ * is.
+ */
 export const after: {
   (
     other: System<any, any> | string
@@ -129,6 +161,8 @@ export const after: {
 /**
  * Orders a system before another one in the same stage. This is how a plugin
  * slots a system in ahead of one that belongs to a plugin it depends on.
+ * One in a later stage runs after it already, and naming it is no error;
+ * one in an earlier stage is.
  */
 export const before: {
   (
@@ -231,7 +265,8 @@ export const order = (
 ): System<any, any>[] => {
   unique(systems);
   const out: System<any, any>[] = [];
-  for (const stage of [...stages, "input", "frame"] as const) {
+  const stageOf = new Map(systems.map((s) => [s.name, s.stage]));
+  for (const stage of everyStage) {
     const inStage = systems.filter((s) => s.stage === stage);
     const stageNames = new Set(inStage.map((s) => s.name));
     // "A before B" is the same constraint as "B after A", so fold both into
@@ -243,16 +278,36 @@ export const order = (
     for (const system of inStage) {
       for (const dep of system.after) {
         if (!stageNames.has(dep)) {
+          const other = stageOf.get(dep);
+          if (other === undefined) {
+            throw new Error(
+              `System "${system.name}" must run after "${dep}", which is not in the "${stage}" stage`
+            );
+          }
+          // A stage that runs earlier has run: there is nothing to order.
+          if (everyStage.indexOf(other) < everyStage.indexOf(stage)) {
+            continue;
+          }
           throw new Error(
-            `System "${system.name}" must run after "${dep}", which is not in the "${stage}" stage`
+            `System "${system.name}" must run after "${dep}", which is in the "${other}" stage: that stage runs after every system of the "${stage}" stage, this one among them`
           );
         }
         mustFollow.get(system.name)!.push(dep);
       }
       for (const later of system.before) {
         if (!stageNames.has(later)) {
+          const other = stageOf.get(later);
+          if (other === undefined) {
+            throw new Error(
+              `System "${system.name}" must run before "${later}", which is not in the "${stage}" stage`
+            );
+          }
+          // A stage that runs later has yet to run: there is nothing to order.
+          if (everyStage.indexOf(other) > everyStage.indexOf(stage)) {
+            continue;
+          }
           throw new Error(
-            `System "${system.name}" must run before "${later}", which is not in the "${stage}" stage`
+            `System "${system.name}" must run before "${later}", which is in the "${other}" stage: that stage runs before every system of the "${stage}" stage, this one among them`
           );
         }
         mustFollow.get(later)!.push(system.name);

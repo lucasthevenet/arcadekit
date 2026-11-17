@@ -194,6 +194,7 @@ describe("the entries of @arcadekit/three", () => {
       Arcadekit.Transform3d.plugin,
       Arcadekit.Transform2d.plugin,
     ]);
-    expect(Main.Three.Render.stage).toBe("frame");
+    // After everything a frame draws, whatever order it is listed in.
+    expect(Main.Three.Render.stage).toBe("postFrame");
   });
 });

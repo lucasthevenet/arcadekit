@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 631 tests, 74 of them of @arcadekit/three
+pnpm test                          # 635 tests, 74 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -52,7 +52,7 @@ const program = Effect.gen(function* () {
 });
 ```
 
-Systems run in the order they are registered unless told otherwise: `System.after(Other)` and `System.before(Other)` pull whatever has to run first forward to just before the system that needs it.
+Systems run in the order they are registered unless told otherwise: `System.after(Other)` and `System.before(Other)` pull whatever has to run first forward to just before the system that needs it. That is within a stage. A tick has three, `"preUpdate"`, `"update"` and `"postUpdate"`, and each runs whole before the next; a system is in `"update"` unless `System.inStage` says otherwise.
 
 ## Entries
 
@@ -419,6 +419,8 @@ The simulation ticks at a fixed rate. Drawing happens every frame, between ticks
 - An action issued there with `Actions.enqueue` is input from outside, as a button is: it is logged, applied at the start of the next tick, and replayed without a frame being drawn.
 - The simulation cannot tell that it is being drawn. A game drawn every frame has the same hash, the same log and the same save as the same game never drawn, so a replay or a server runs it with no frame stage at all. The frame stage's places in events and changes are not saved: a loaded game has everything still to draw.
 - Two changes are not stopped where they are made, because stopping them there would cost every loop and every draw. A draw from `world.random` is found when the frame ends: the generator is put back, so the game is as it was, and `frame` throws. A write through the raw columns of `eachChunk` is not found unless it is looked for: `App.make({ verifyFrames: true })` takes the world's hash before the stage and after each of its systems, and `frame` dies with `App.FrameChangedWorld`, which names the system. That is for development and tests, and checks the input stage the same way.
+- A frame has three stages, as a tick has, and each runs whole before the next: `"preFrame"`, `"frame"` and `"postFrame"`. A game's systems are in `"frame"`. `"preFrame"` is for what they all stand on: [`Assets.during`](#assets) is there, so that every system of a frame finds the same assets loaded, wherever it is listed. `"postFrame"` is for what needs everything drawn: [`@arcadekit/three`](../three/README.md) puts the picture on the screen there, so a system that moves the camera says nothing about when. All three are the frame stage in every other way: the world is frozen, `Frame` is there to read, and `app.frameOrder` lists them in the order they run.
+- `System.before` and `System.after` order a system within its stage. Said of a system in another stage they are true already or cannot be: `before` one of a later stage is accepted and changes nothing, and `before` one of an earlier stage throws when the app is made, and says which stage runs first. The same holds of a tick's stages. A frame's systems and a tick's are never ordered against each other.
 - A frame system takes a condition with `System.runIf` like any other. A hook does not belong there: a state is entered by a tick.
 - With the storage core on its own: `world.freeze()` and `world.thaw()`, which is where a draw from the world's generator is found.
 
@@ -840,7 +842,7 @@ const Draw = System.make("Draw", function* () {
 
 Loading is a scoped resource: what was loaded is let go when the scope it was loaded in closes. A bundle is the assets that are loaded together and let go together, a level's as a rule.
 
-- `Assets.during(condition, bundle)` gives a level its scope. It is a system that keeps the bundle loaded while the condition holds, one of [`System.runIf`'s](#states-and-run-conditions), usually a state. From the frame after the game enters the level the bundle is loading, in a scope of its own; from the frame after it leaves, that scope is closed. What was loaded is let go, a picture is closed, and a file that was still on its way is given up. Entered again, the level loads again.
+- `Assets.during(condition, bundle)` gives a level its scope. It is a system that keeps the bundle loaded while the condition holds, one of [`System.runIf`'s](#states-and-run-conditions), usually a state. From the frame after the game enters the level the bundle is loading, in a scope of its own; from the frame after it leaves, that scope is closed. It is of the stage before a frame's own, `"preFrame"`, so every system of that frame finds the bundle as it then is, wherever the two are listed. What was loaded is let go, a picture is closed, and a file that was still on its way is given up. Entered again, the level loads again.
 - `yield*` on the bundle gives what the app holds of it: `Absent`, `Loading`, `Ready` with the `assets`, each under its name and with its type, or `Failed` with the error. A bundle that failed is logged once, keeps nothing of what did load, and is tried again when the level is next entered.
 - Whatever is still loaded when the app's scope closes goes with it.
 - Loading takes real time, so it is no part of the simulation. `Assets.during` is a system of the frame stage, and a bundle can be asked for in the frame stage and the input stage only: in the tick it throws. A replay or a server, which draw nothing, load nothing, and the game they run is the same game.

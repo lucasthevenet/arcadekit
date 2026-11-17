@@ -857,13 +857,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       allSystems.filter(
         (system) =>
           system.trigger === undefined &&
-          system.stage !== "frame" &&
+          !System.isFrameStage(system.stage) &&
           system.stage !== "input"
       )
     );
+    // A frame's three stages, one after the other, are one list.
     const frameSystems = System.order(
       allSystems.filter(
-        (system) => system.trigger === undefined && system.stage === "frame"
+        (system) =>
+          system.trigger === undefined && System.isFrameStage(system.stage)
       )
     );
     const inputSystems = System.order(
@@ -891,7 +893,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         continue;
       }
       const state = system.trigger.state as State.State<string>;
-      if (system.stage === "frame") {
+      if (System.isFrameStage(system.stage)) {
         throw new Error(
           `System "${system.name}" is a hook and is in the frame stage. A hook runs at the start of a tick, when the game enters or leaves a state; the frame stage runs between ticks. Draw what a state looks like from a frame system with System.runIf(State.is(...)).`
         );

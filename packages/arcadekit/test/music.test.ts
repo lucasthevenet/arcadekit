@@ -499,7 +499,8 @@ describe("a level's cues", () => {
     const { app } = start(
       App.make({
         plugins: [Rules, Sound.plugin, Assets.plugin],
-        systems: [Keep.pipe(System.before(ForestCues)), ForestCues],
+        // Listed after the cues it is for: it is of an earlier stage.
+        systems: [ForestCues, Keep],
       }).pipe(Effect.provide(files)),
       sound
     );
@@ -628,7 +629,7 @@ describe("a level's music", () => {
     const { app } = start(
       App.make({
         plugins: [Rules, Sound.plugin, Assets.plugin],
-        systems: [Keep.pipe(System.before(Ambience)), Ambience],
+        systems: [Ambience, Keep],
       }).pipe(Effect.provide(files)),
       sound
     );

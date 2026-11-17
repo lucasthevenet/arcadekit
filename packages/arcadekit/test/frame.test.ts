@@ -247,6 +247,168 @@ describe("the frame stage", () => {
     );
   });
 
+  it("has a stage before it and one after, as a tick has, and each runs whole before the next, however its systems are listed", () => {
+    run(
+      Effect.gen(function* () {
+        const ran: string[] = [];
+        const noting = (name: string, stage: System.Stage) =>
+          System.make(name, function* () {
+            // Each is told the frame, as any system that draws is.
+            ran.push(`${name} ${(yield* Frame).alpha}`);
+          }).pipe(System.inStage(stage));
+        const app = yield* App.make({
+          systems: [
+            noting("Show", "postFrame"),
+            noting("Draw", "frame"),
+            noting("Tick", "update"),
+            noting("Load", "preFrame"),
+            noting("Hud", "frame"),
+            noting("Fit", "postFrame").pipe(System.before("Show")),
+            noting("Clear", "frame").pipe(System.before("Draw")),
+            noting("Listen", "input"),
+          ],
+        });
+        // The stage first, then what the systems say, then as listed.
+        expect(app.frameOrder).toEqual([
+          "Load",
+          "Clear",
+          "Draw",
+          "Hud",
+          "Fit",
+          "Show",
+        ]);
+        expect(app.systemOrder).toEqual(["Tick"]);
+        app.frame(0.25);
+        expect(ran).toEqual([
+          "Load 0.25",
+          "Clear 0.25",
+          "Draw 0.25",
+          "Hud 0.25",
+          "Fit 0.25",
+          "Show 0.25",
+        ]);
+        expect(System.frameStages).toEqual(["preFrame", "frame", "postFrame"]);
+        expect(System.frameStages.map(System.isFrameStage)).toEqual([
+          true,
+          true,
+          true,
+        ]);
+        expect(
+          (["preUpdate", "update", "postUpdate", "input"] as const).map(
+            System.isFrameStage
+          )
+        ).toEqual([false, false, false, false]);
+      })
+    );
+  });
+
+  it("is the frame stage in all three as far as what a system may do goes: none changes the game, and none is a hook", () => {
+    for (const stage of ["preFrame", "postFrame"] as const) {
+      const made = App.make({
+        components: [Score],
+        systems: [
+          System.make("Vandal", function* () {
+            (yield* Score).points = 1;
+          }).pipe(System.inStage(stage)),
+        ],
+      });
+      const app = run(made);
+      expect(() => app.frame(0), stage).toThrow('singleton "fr/Score"');
+      expect(app.world.singleton(Score).points).toBe(0);
+      // A tick does not run it.
+      app.tick(1);
+      expect(app.world.singleton(Score).points).toBe(0);
+      expect(
+        () =>
+          run(
+            App.make({
+              components: [Phase],
+              systems: [
+                System.make("Splash", function* () {}).pipe(
+                  System.inStage(stage),
+                  State.onEnter(Phase, "paused")
+                ),
+              ],
+            })
+          ),
+        stage
+      ).toThrow(/System "Splash" is a hook and is in the frame stage/);
+    }
+  });
+
+  it("takes a system's word about one of another stage when it is so already, and refuses it when it cannot be", () => {
+    const sys = (name: string, stage: System.Stage) =>
+      System.make(name, function* () {}).pipe(System.inStage(stage));
+    const names = (list: readonly System.System<any, any>[]) =>
+      System.order(list).map((system) => system.name);
+    // True as it stands: nothing is moved, and nothing is wrong.
+    expect(
+      names([
+        sys("Show", "postFrame"),
+        sys("Camera", "frame").pipe(System.before("Show")),
+        sys("Draw", "frame").pipe(System.after("Load")),
+        sys("Load", "preFrame").pipe(System.before("Draw")),
+        sys("Last", "postFrame").pipe(System.after("Camera")),
+      ])
+    ).toEqual(["Load", "Camera", "Draw", "Show", "Last"]);
+    // And of a tick's stages the same.
+    expect(
+      names([
+        sys("Late", "postUpdate").pipe(System.after("Rules")),
+        sys("Rules", "update").pipe(System.after("Early")),
+        sys("Early", "preUpdate").pipe(System.before("Late")),
+      ])
+    ).toEqual(["Early", "Rules", "Late"]);
+    // What cannot be: a stage runs whole before the next.
+    expect(() =>
+      System.order([
+        sys("Show", "postFrame"),
+        sys("Camera", "frame").pipe(System.after("Show")),
+      ])
+    ).toThrow(
+      'System "Camera" must run after "Show", which is in the "postFrame" stage: that stage runs after every system of the "frame" stage, this one among them'
+    );
+    expect(() =>
+      System.order([
+        sys("Load", "preFrame"),
+        sys("Draw", "frame").pipe(System.before("Load")),
+      ])
+    ).toThrow(
+      'System "Draw" must run before "Load", which is in the "preFrame" stage: that stage runs before every system of the "frame" stage, this one among them'
+    );
+    expect(() =>
+      System.order([
+        sys("Rules", "update").pipe(System.after("Late")),
+        sys("Late", "postUpdate"),
+      ])
+    ).toThrow('which is in the "postUpdate" stage');
+    expect(() =>
+      System.order([
+        sys("Late", "postUpdate").pipe(System.before("Rules")),
+        sys("Rules", "update"),
+      ])
+    ).toThrow('which is in the "update" stage');
+    // And a system that is nowhere is still not there.
+    expect(() =>
+      System.order([sys("Draw", "frame").pipe(System.after("Nobody"))])
+    ).toThrow('must run after "Nobody", which is not in the "frame" stage');
+    expect(() =>
+      System.order([sys("Draw", "frame").pipe(System.before("Nobody"))])
+    ).toThrow('must run before "Nobody", which is not in the "frame" stage');
+    // A frame's systems and a tick's are never ordered against each other:
+    // an app sorts them apart.
+    expect(() =>
+      run(
+        App.make({
+          systems: [
+            sys("Rules", "update"),
+            sys("Draw", "frame").pipe(System.after("Rules")),
+          ],
+        })
+      )
+    ).toThrow('must run after "Rules", which is not in the "frame" stage');
+  });
+
   it("is told how far the frame is between two ticks", () => {
     run(
       Effect.gen(function* () {

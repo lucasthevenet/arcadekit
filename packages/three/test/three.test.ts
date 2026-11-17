@@ -2183,7 +2183,8 @@ describe("Three.plugin", () => {
       const three = yield* Three.Scene;
       order.push("aim");
       three.camera = camera;
-    }).pipe(System.inStage("frame"), System.before(Three.Render));
+      // Nothing said of when: what draws the scene is of a later stage.
+    }).pipe(System.inStage("frame"));
     const Ships = Three.objects("th/Flagships", {
       of: Ship,
       make: () => {

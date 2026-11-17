@@ -68,8 +68,7 @@ What is merely not built yet is not here: that is the READMEs' "Not done yet". W
 
 The order systems run in:
 
-- **The order systems are listed in is not the order they run in.** A system that says `System.before(other)` is pulled ahead of where `other` was listed, and a plugin's systems are listed before the app's own. Everything `@arcadekit/three` draws with runs before `Three.Render`, which `Three.plugin` lists first: so a frame system of the game's that says nothing runs after the scene is drawn, though it is listed above what draws.
-- **`Assets.during` that is only listed runs after the scene is drawn**, for that reason. A look made of its bundle appears a frame late and is drawn one frame more after the level is left. The README of `arcadekit` says to list it before the systems that draw with the bundle, which here does nothing: it takes `System.before(thatSystem)`. To close it: have what draws from a bundle order itself after the system that keeps it, or have `Assets.during` say when in the frame it runs.
+- **`System.before` and `System.after` move a system past everything listed in between.** One that says `System.before(other)` is pulled ahead of where `other` was listed, and with it ahead of every system listed between the two, which said nothing; and a plugin's systems are listed before the app's own. Adding such a system leaves the others in the order they were, which is the point, but the one that moved may now run before something it reads from. What a frame draws with no longer does this: a renderer's last step is in `"postFrame"`, and nothing has to say `before` it.
 - **A system that reacts through a change query, listed before the system that makes the change, reacts a tick late.** In a game that ticks when needed, one such system gets the one tick that follows the last and two in a row are a tick short: the game rests with work undone.
 
 Ticks, frames and real time:

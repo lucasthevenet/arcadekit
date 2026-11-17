@@ -147,12 +147,35 @@ const play = (
 };
 
 /**
- * Keeps the forest's assets while the game is in the forest, and runs
- * before the system that draws with them, so that the frame the bundle
- * comes or goes in is the frame that system sees it.
+ * Keeps the forest's assets while the game is in the forest. It runs
+ * before a frame's own systems, wherever it is listed, so the frame the
+ * bundle comes or goes in is the frame the system that draws sees it.
  */
-const during = (Forest: Forest, drawing: System.System<never, any>) =>
-  Assets.during(State.is(Level, "forest"), Forest).pipe(System.before(drawing));
+const during = (Forest: Forest) =>
+  Assets.during(State.is(Level, "forest"), Forest);
+
+/**
+ * A system of a game's own that keeps the forest's assets as
+ * `Assets.during` would, but late: in the frame's own stage, after the
+ * systems that draw with them have looked. The worst way round.
+ */
+const keepLate = (
+  Forest: Forest,
+  ...drawing: readonly System.System<never, any>[]
+) => {
+  let keep = System.make("ta/KeepLate", function* () {
+    const store = yield* Assets.Store;
+    if ((yield* Level).value === "forest") {
+      store.hold(Forest, "ta/KeepLate");
+    } else {
+      store.drop(Forest, "ta/KeepLate");
+    }
+  }).pipe(System.inStage("frame"));
+  for (const system of drawing) {
+    keep = keep.pipe(System.after(system));
+  }
+  return keep;
+};
 
 const at = (x: number) => Position.of({ x, y: 0, z: 0 });
 /** Where the instances of a mesh are along x, in order. */
@@ -207,7 +230,7 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees, looks } = makeTrees(Forest, log);
-    const { app, enter, mesh, renderer } = play([during(Forest, Trees), Trees]);
+    const { app, enter, mesh, renderer } = play([during(Forest), Trees]);
     app.world.spawn(Tree, at(1));
     app.world.spawn(Tree, at(2));
     app.world.spawn(Deer, at(9));
@@ -246,7 +269,7 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees, freed, looks } = makeTrees(Forest, log);
-    const { app, enter, mesh, renderer } = play([during(Forest, Trees), Trees]);
+    const { app, enter, mesh, renderer } = play([during(Forest), Trees]);
     app.world.spawn(Tree, at(1));
     enter("forest");
     const drawn = mesh()!;
@@ -277,7 +300,7 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees, looks } = makeTrees(Forest, log);
-    const { app, enter, mesh } = play([during(Forest, Trees), Trees]);
+    const { app, enter, mesh } = play([during(Forest), Trees]);
     const trees = [1, 2, 3, 4, 5].map((x) => app.world.spawn(Tree, at(x)));
     enter("forest");
     const first = mesh()!;
@@ -309,39 +332,32 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees } = makeTrees(Forest, log);
-    // Listed and nothing more said: what draws runs before the scene is
-    // drawn, and what keeps the level's assets after it.
-    const late = play([
+    // Listed after what draws, and nothing more said: `Assets.during` is
+    // of the stage before a frame's own, so the trees find their bark in
+    // the frame it is loaded, and find it gone in the frame it goes.
+    const listed = play([
+      Trees,
       Assets.during(State.is(Level, "forest"), Forest),
-      Trees,
     ]);
-    late.app.world.spawn(Tree, at(1));
-    late.enter("forest");
-    // A frame late, since the bundle was loaded after the trees looked.
-    expect(log).toEqual(["open 1"]);
-    expect(late.renderer.drew).toEqual([]);
-    late.app.frame(0);
-    expect(late.renderer.drew).toEqual(["ta/Trees"]);
-    // And a frame late to go, drawn once more with bark that is still there.
-    late.enter("menu");
-    expect(late.renderer.drew).toEqual(["ta/Trees"]);
-    expect(late.renderer.stale).toBe(0);
-    expect(log.slice(-1)).toEqual(["close 1"]);
-    late.app.frame(0);
-    expect(late.renderer.drew).toEqual([]);
+    listed.app.world.spawn(Tree, at(1));
+    listed.enter("forest");
+    expect(log).toEqual(["open 1", "look 1", "prepare ta/Trees"]);
+    expect(listed.renderer.drew).toEqual(["ta/Trees"]);
+    listed.enter("menu");
+    expect(listed.renderer.drew).toEqual([]);
     expect(log.slice(-2)).toEqual(["close 1", "free 1"]);
-    expect(late.renderer.stale).toBe(0);
-
-    // The worst way round: the trees look, then the level lets its assets
-    // go, then the scene is drawn.
-    log.length = 0;
-    const { app, enter, renderer } = play([
-      Trees,
-      Assets.during(State.is(Level, "forest"), Forest).pipe(
-        System.before(Three.Render),
-        System.after(Trees)
-      ),
+    expect(listed.renderer.stale).toBe(0);
+    expect(listed.app.frameOrder.slice(-3)).toEqual([
+      "Assets.during(ta/Forest)",
+      "ta/Trees",
+      "arcadekit/three/Render",
     ]);
+
+    // The worst way round, which a system of the game's own can still be:
+    // the trees look, then the level lets its assets go, then the scene
+    // is drawn.
+    log.length = 0;
+    const { app, enter, renderer } = play([Trees, keepLate(Forest, Trees)]);
     app.world.spawn(Tree, at(1));
     enter("forest");
     expect(renderer.drew).toEqual([]);
@@ -419,7 +435,7 @@ describe("instances whose look is made of assets", () => {
           waiting.push((exit) => resume(exit));
         }),
     }) as Layer.Layer<never>;
-    const { app, enter, renderer } = play([during(Forest, Trees), Trees], slow);
+    const { app, enter, renderer } = play([during(Forest), Trees], slow);
     app.world.spawn(Tree, at(1));
     enter("forest");
     app.frame(0);
@@ -452,7 +468,7 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees, freed } = makeTrees(Forest, log);
-    const systems = [during(Forest, Trees), Trees];
+    const systems = [during(Forest), Trees];
     const loaded = play(systems);
     loaded.app.world.spawn(Tree, at(1));
     loaded.enter("forest");
@@ -490,7 +506,7 @@ describe("instances whose look is made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const { Trees } = makeTrees(Forest, log, { smooth: true, color: Paint });
-    const { app, enter, mesh } = play([during(Forest, Trees), Trees]);
+    const { app, enter, mesh } = play([during(Forest), Trees]);
     const tree = app.world.spawn(
       Tree,
       at(0),
@@ -601,7 +617,7 @@ describe("objects made of assets", () => {
     const log: string[] = [];
     const Forest = makeForest(log);
     const Herd = makeDeer(Forest, log);
-    const { app, enter, renderer } = play([during(Forest, Herd), Herd]);
+    const { app, enter, renderer } = play([during(Forest), Herd]);
     const one = app.world.spawn(Deer, at(1));
     const two = app.world.spawn(Deer, at(2));
     app.world.spawn(Tree, at(9));
@@ -666,11 +682,7 @@ describe("objects made of assets", () => {
     const { app, close, enter, renderer } = play([
       Trees,
       Herd,
-      Assets.during(State.is(Level, "forest"), Forest).pipe(
-        System.before(Three.Render),
-        System.after(Trees),
-        System.after(Herd)
-      ),
+      keepLate(Forest, Trees, Herd),
     ]);
     const one = app.world.spawn(Deer, at(1));
     app.world.spawn(Tree, at(2));
@@ -837,10 +849,8 @@ describe("a texture", () => {
       free: ({ material }) => material.dispose(),
     });
     const { app, enter, mesh, renderer } = play([
-      Assets.during(State.is(Level, "forest"), Forest).pipe(
-        System.before(Trees)
-      ),
       Trees,
+      Assets.during(State.is(Level, "forest"), Forest),
     ]);
     app.world.spawn(Tree, at(1));
     enter("forest");

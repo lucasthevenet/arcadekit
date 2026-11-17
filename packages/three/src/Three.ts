@@ -266,14 +266,12 @@ export const layerWebGL = (
   layerRenderer(() => new WebGLRenderer(parameters), parameters);
 
 /**
- * Draws the scene, once per frame. It is the last thing this module does
- * in a frame: `Three.instances` and `Three.objects` run before it, and a
- * system of the game's that moves the camera says so too:
+ * Draws the scene, once per frame. It is a system of the stage after a
+ * frame's own, `"postFrame"`, so it runs after every system of the frame
+ * stage, wherever each is listed and with nothing said: `Three.instances`
+ * and `Three.objects`, and a system of the game's that moves the camera.
  *
- *   System.make("Follow", ...).pipe(
- *     System.inStage("frame"),
- *     System.before(Three.Render)
- *   )
+ *   System.make("Follow", ...).pipe(System.inStage("frame"))
  */
 export const Render = System.make("arcadekit/three/Render", function* () {
   const { _kept, camera, scene } = yield* Scene;
@@ -281,7 +279,7 @@ export const Render = System.make("arcadekit/three/Render", function* () {
     one.settle?.();
   }
   (yield* Renderer).render(scene, camera);
-}).pipe(System.inStage("frame"));
+}).pipe(System.inStage("postFrame"));
 
 /**
  * Gives an app a scene and draws it each frame. The plugin that says how
@@ -1676,7 +1674,7 @@ export const instances: {
     turnedFlat.eachChunk(loops.turnedFlat);
     wholeFlat.eachChunk(loops.wholeFlat);
     drawn.finish();
-  }).pipe(System.inStage("frame"), System.before(Render));
+  }).pipe(System.inStage("frame"));
 };
 
 // --- objects ---------------------------------------------------------------------
@@ -2110,5 +2108,5 @@ export const objects: {
     turnedFlat.eachChunk(held.turnedFlat);
     sizedFlat.eachChunk(held.sizedFlat);
     held.finish();
-  }).pipe(System.inStage("frame"), System.before(Render));
+  }).pipe(System.inStage("frame"));
 };

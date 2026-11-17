@@ -262,7 +262,7 @@ const Orbit = System.make("Orbit", function* () {
   angle += (yield* Frame).delta * 0.1;
   camera.position.set(Math.sin(angle) * 170, 40, Math.cos(angle) * 170);
   camera.lookAt(0, 0, 0);
-}).pipe(System.inStage("frame"), System.before(Three.Render));
+}).pipe(System.inStage("frame"));
 
 const hud = document.querySelector("#hud") as HTMLElement;
 let shown = 0;
