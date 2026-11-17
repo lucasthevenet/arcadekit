@@ -181,6 +181,8 @@ const Controls = Input.bind(
 const Level = Assets.bundle("page/Level", {
   layout: Assets.json("/level.json", Layout),
   star: Browser.image("/star.png"),
+  // The level's own sound, loaded and let go with the rest of it.
+  caught: Browser.sound("/caught.wav"),
 });
 const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
 
@@ -243,14 +245,29 @@ const Draw = System.make("Draw", function* () {
 // --- what it sounds like: the frame stage too --------------------------------------
 // Each event of the ticks since the last frame is played as a cue. The
 // simulation never plays: a replay of this game is silent, and the same.
-const Cues = Sound.cues(
-  "page/Cues",
-  Sound.on(Started, "start"),
+// "start" is a sound the page has for as long as it lasts, by its name.
+const Cues = Sound.cues("page/Cues", Sound.on(Started, "start"));
+// The level's cues are made of what its bundle holds, each time it is
+// loaded, and are silent while it is not.
+const LevelCues = Sound.cues("page/LevelCues", Level, ({ caught }) => [
   // Two at once are a little higher than one.
   Sound.on(Caught, ({ stars }) => ({
-    cue: "caught",
+    cue: caught,
     rate: 1 + (stars - 1) / 4,
-  }))
+  })),
+]);
+// Music is not an event but what the game, as it is, should sound like:
+// said each frame, and started, turned down and stopped as that changes.
+const Score = Sound.music(
+  "page/Score",
+  function* () {
+    const phase = (yield* Phase).value;
+    if (phase === "title") {
+      return undefined;
+    }
+    return { track: "theme", volume: phase === "paused" ? 0.1 : 0.4 };
+  },
+  { fade: 0.6 }
 );
 
 // --- what the UI sees: the frame stage too -----------------------------------------
@@ -279,6 +296,8 @@ export const Game = Plugin.make("Game", {
     LevelAssets,
     Draw,
     Cues,
+    LevelCues,
+    Score,
     ShowMenu,
     ShowHud,
   ],

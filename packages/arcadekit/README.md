@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 606 tests, 74 of them of @arcadekit/three
+pnpm test                          # 631 tests, 74 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -729,12 +729,13 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), {
 A sound is a named cue, and it is played because something happened: the simulation emits an [event](#events), and what the event sounds like is said elsewhere. The simulation never plays.
 
 - `Sound.cues(name, ...lines)` makes a system of the [frame stage](#the-tick-and-the-frame). Each frame it plays what the events since the last frame sound like. It hears every event once, however many ticks ran in between, as any frame system does.
-- `Sound.on(event, cue)` is a line: a cue's name, a name with a `volume` and a `rate`, or a function of the event's payload that gives either, or nothing.
+- `Sound.on(event, cue)` is a line: a cue's name, a name with a `volume` and a `rate`, or a function of the event's payload that gives either, or nothing. Several lines may be of one event, and each hears it.
 - A cue that several events of one frame ask for is played once, as the loudest of them asked: forty coins caught in one tick are one sound, not forty on top of each other.
+- Cues are played in the order of their lines, the lines of one event together.
 - `Sound.Player` is the service that plays, which `Sound.plugin` provides. A frame system plays through it for a sound no event stands for: `(yield* Sound.Player).play("click", { volume: 0.5 })`. In the tick it throws and says what to do instead, and an action's handler that plays dies of the same.
 - Sound follows real time and is no part of the game. A game that is heard has the same hash, log and save as one that is not, and a replay or a server, which run no frame stage, play nothing.
 - What a refused action emitted is taken back with the rest, so it is never heard.
-- `Sound.Output` is where sound goes: a `Context.Reference` whose default is nowhere, and there the cues' system reads nothing. `Sound.layer(output)` provides one, and `Sound.makeRecorder()` is one that plays nothing and notes what it was asked, for a test:
+- `Sound.Output` is where sound goes: a `Context.Reference` whose default is nowhere, and there the cues' system reads nothing. `Sound.layer(output)` provides one, and `Sound.makeRecorder()` is one that plays nothing and notes what it was asked, for a test: its cues in `played`, what each channel was told in `scored`, and what each is playing now in `playing`.
 
   ```ts
   const sound = Sound.makeRecorder();
@@ -747,12 +748,74 @@ A sound is a named cue, and it is played because something happened: the simulat
   sound.played; // [{ cue: "coin", volume: 1, rate: 1 }]
   ```
 
-**In a page** the output is Web Audio. Given `sounds`, a file for each cue, `Browser.runMain` and `Browser.layer` provide it; `Browser.layerSound(files)` is the layer on its own.
+### Music
+
+```ts
+const Score = Sound.music(
+  "game/Score",
+  function* () {
+    const level = (yield* Level).value;
+    if (level === "menu") return undefined; // silence
+    if ((yield* Paused).on) return { track: "theme", volume: 0.2 };
+    return level === "cave" ? { track: "drip", fade: 2 } : "theme";
+  },
+  { fade: 1 }
+);
+```
+
+Music is not an event. It is what the game, as it is, should sound like, for as long as it is so. `Sound.music(name, body)` makes a system of the frame stage that says so each frame, and the player starts, fades and stops what that takes.
+
+- The body gives a track: a name the output knows, or one with a `volume` and a `fade` of its own, or `undefined` for silence. A track plays over and over until the body says another.
+- Nothing happens while it says the same. When it says another track the first fades out and the second fades in, over `fade` seconds; another volume is the same track, turned up or down as long. Half a second when nothing says.
+- It is worked out from the game and kept nowhere in it. A game that is loaded from a save, or an app that starts in the middle of a level, has its music from its first frame, and a game with music has the same hash, log and save as one with none.
+- The system's name is its channel. Two systems are two channels, which play together: the score, and the wind.
+- The body reads what a frame system can: singletons, states, queries, events, [assets](#assets). Where sound goes nowhere it is not run at all.
+- Under `System.runIf` it says nothing while its condition does not hold, and the channel goes on playing what it was last told. For silence the body returns `undefined`.
+- When the app's scope closes, every channel that was playing is told silence at once.
+- `(yield* Sound.Player).music(channel, track, { volume, fade })` is what it is made of, for a frame system of your own. It tells the output of a change and of nothing else, so it can be said every frame, and in the tick it throws, as `play` does.
+
+### A level's sounds
+
+```ts
+const Forest = Assets.bundle("game/Forest", {
+  creak: Browser.sound("/creak.wav"),
+  wind: Browser.sound("/wind.ogg"),
+});
+
+// Its cues: lines made of what the bundle holds.
+const ForestCues = Sound.cues("forest/Cues", Forest, ({ creak }) => [
+  Sound.on(Stepped, ({ hard }) => ({ cue: creak, volume: hard ? 1 : 0.4 })),
+]);
+
+// Its music: a clip of the bundle, while the bundle is loaded.
+const Air = Sound.music("forest/Air", function* () {
+  const forest = yield* Forest;
+  return forest._tag === "Ready"
+    ? { track: forest.assets.wind, volume: 0.3 }
+    : undefined;
+});
+```
+
+The sounds a page is given by name are there for as long as the page. A level's own are [assets](#assets) of its bundle, loaded when the game enters it and let go when it leaves.
+
+- A loaded sound is a `Sound.Clip`, and goes wherever a cue's or a track's name goes: `Sound.on(event, clip)`, `{ cue: clip, volume }`, `{ track: clip }`, `player.play(clip)`.
+- `Sound.cues(name, bundle, (assets) => lines)` makes the lines of what the bundle holds, once each time it is loaded. While the app does not hold the bundle loaded it plays nothing, and what happened meanwhile is not played later.
+- A level's music is a body that reads the bundle and gives one of its clips once it is `Ready`. Entered again, the level is loaded again, and its music starts again.
+- Both need `Assets.plugin`, which the type of the cues' system says.
+- In a page the asset is `Browser.sound(url)`. It is decoded whole as it arrives. Let go with its bundle, what is still sounding of it plays to its end, or until its channel is told otherwise.
+- `Sound.clip(name, data)` makes one by hand, for an output of your own or for a test, which needs nothing to play: a recorder notes a clip by its `name`, and the clip itself as `clip`.
+
+### In a page
+
+The output is Web Audio, and `Browser.runMain` and `Browser.layer` provide it. `sounds` gives the files of the sounds the page has for as long as it lasts, by the name a cue or a track is played by; `Browser.layerSound(files)` is the layer on its own.
 
 - The files are fetched when the page starts, through `Assets.Loader`, and decoded as they arrive.
-- A page may not make a sound before its user has touched it. The audio is made at the first key or pointer press, and a cue asked for in the frame after is played. What was asked for before that, or before a cue's file was there, is not played: a sound that is late is worse than none.
-- `volume` is how loud every cue is played, and `rate` is a cue's speed, and so its pitch.
-- A cue that has no file, or whose file could not be fetched or decoded, is said once through Effect's logger and plays nothing.
+- A page may not make a sound before its user has touched it. The audio is made at the first key or pointer press, and a cue asked for in the frame after is played. A cue that was asked for before that, or before its file was there, is not played: a sound that is late is worse than none.
+- Music is never late: it is what should be playing. A track that was asked for before the first touch, or before its file was there, starts when it can.
+- `volume` is how loud everything is played, and `rate` is a cue's speed, and so its pitch.
+- A cue or a track that has no file, or whose file could not be fetched or decoded, is said once through Effect's logger and plays nothing.
+- While the page is hidden its audio sleeps, music and all, and wakes when the page is seen again: the frame loop rests then, and a game that stands still is not heard.
+- A page with no files of its own still has sound, for the clips of its levels. `sounds: false` is a page with none: no audio is made, and the game is told that nothing is heard.
 - When the page goes away the audio is closed, and a request still on its way is given up.
 
 ## Assets
@@ -1006,7 +1069,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/State.ts` | States, their hooks, and the condition that a game is in one |
 | `src/Input.ts` | The devices and where they come from, the picture of them in the world, and bindings to actions |
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
-| `src/Sound.ts` | Cues played from the game's events in the frame stage, the player, and where sound goes |
+| `src/Sound.ts` | Cues played from the game's events and music kept to what the game is, both in the frame stage, clips, the player, and where sound goes |
 | `src/View.ts` | The view bridge: the values a UI may see, published once per frame when they changed, and the actions it sends |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
@@ -1014,11 +1077,11 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, transform, page and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, and a game played from a keyboard and replayed with none |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
-| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, heard through two cues, with a level whose assets come and go, started with `Browser.runMain` around `App.run`. Its menu and heads-up display are built twice on the view bridge: `ui-dom.ts` with the DOM and `ui-react.ts` with React, both from `protocol.ts`, the views and actions they share with `game.ts` |
+| `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, heard through a cue of the page's, one of the level's and music that follows the game, with a level whose assets come and go, started with `Browser.runMain` around `App.run`. Its menu and heads-up display are built twice on the view bridge: `ui-dom.ts` with the DOM and `ui-react.ts` with React, both from `protocol.ts`, the views and actions they share with `game.ts` |
 
 ## Two ways to loop
 
@@ -1130,12 +1193,13 @@ The view bridge, with one view of four fields read from a singleton:
 | `app.frame()`: a UI is there, the value is what it has    | 2.90 µs |
 | `app.frame()`: the value is new, and one listener told    | 2.57 µs |
 
-Sound, with one system that plays cues for two kinds of event, to an output that does nothing:
+Sound, with one system that plays cues for two kinds of event, or one that keeps a channel's music, to an output that does nothing:
 
-| Variant                                         | Cost    |
-| ----------------------------------------------- | ------- |
-| `app.frame()`: nothing happened                 | 1.25 µs |
-| `app.frame()`: one event, and its cue is played | 1.42 µs |
+| Variant                                                   | Cost    |
+| --------------------------------------------------------- | ------- |
+| `app.frame()`: cues, nothing happened                     | 1.82 µs |
+| `app.frame()`: cues, one event, and its cue is played     | 2.01 µs |
+| `app.frame()`: music that goes on as it was, nothing told | 1.52 µs |
 
 Entities coming and going in the same world:
 
@@ -1188,9 +1252,11 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
 - A game picks one of the two transforms for a thing, and a plugin written for one does not read the other: code that should work in both asks for both. A `Transform2d` has no depth: what is in front of what in a flat game is for what draws it to say.
-- A cue is played once and left to end. There is no music: nothing loops, nothing is stopped or faded, and nothing is heard from where it is.
-- A page's cues are fetched when the page starts and kept until it goes away. They are not assets of a level: a bundle does not hold a sound.
+- A cue is played once and left to end: it cannot be stopped, and nothing is heard from where it is. A track only plays over and over: one that is to play once and end, a fanfare, is a cue, and is not faded.
+- A sound is decoded whole into memory, a track too: there is no streaming, so a long piece of music is as large there as it is long.
+- A channel fades in a straight line, from one track to the next in the same time. Two tracks are not kept in step, a track does not start where the last one was, and nothing is timed to a beat.
 - A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.
+- A page's audio sleeps while the page is hidden, always, as its frame loop does. A game that is to be heard in the background cannot say so.
 - The first sound a page can make is the one its user's first key or press sets off. Nothing is heard before that.
 - A view is worked out and compared whole, every frame a UI is there. A game with a view that is costly to work out says when it is worth it with `System.runIf`.
 - The UI is not told what became of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and the game can publish as a view.

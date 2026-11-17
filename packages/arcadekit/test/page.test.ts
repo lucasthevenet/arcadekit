@@ -33,6 +33,7 @@ const files = {
     fastest: 160,
   }),
   "/star.png": new Uint8Array([1, 2, 3]),
+  "/caught.wav": new Uint8Array([4, 5]),
 };
 
 /** A canvas that draws nothing: the game's own drawing is not what is tested here. */
@@ -48,6 +49,15 @@ afterEach(() => {
 
 const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   vi.stubGlobal("createImageBitmap", async () => ({ close() {} }));
+  // The level's sound is decoded as a page decodes it.
+  vi.stubGlobal(
+    "OfflineAudioContext",
+    class {
+      decodeAudioData(data: ArrayBuffer): Promise<unknown> {
+        return Promise.resolve({ samples: data.byteLength });
+      }
+    }
+  );
   const ui = View.makeBridge();
   // What the UI is handed: the bridge, counting how often it is told.
   let told = 0;
@@ -169,6 +179,10 @@ describe.each([
     expect(page.hud()).toBe("Loading");
     // The game is heard as it is seen: from its events, in the frame.
     expect(page.sound.played).toEqual([{ cue: "start", volume: 1, rate: 1 }]);
+    // And its music has begun, which is not an event but how things are.
+    expect(page.sound.scored).toEqual([
+      { channel: "page/Score", track: "theme", volume: 0.4, fade: 0.6 },
+    ]);
     expect(await page.changed()).toBeGreaterThan(0);
 
     // The level's files arrive, and the game fills its sky.
@@ -196,7 +210,9 @@ describe.each([
     expect(caught).toBeGreaterThanOrEqual(3);
     expect(page.hud()).toBe(`Caught ${caught}`);
     // A sound for each frame in which stars were caught, and no other.
-    const heard = page.sound.played.filter((one) => one.cue === "caught");
+    // It is the level's own sound, a clip its bundle holds.
+    const heard = page.sound.played.filter((one) => one.cue === "/caught.wav");
+    expect(heard[0]!.clip!.data).toEqual({ samples: 2 });
     expect(heard.length).toBeGreaterThanOrEqual(1);
     expect(heard.length).toBeLessThanOrEqual(caught);
     expect(page.sound.played.length).toBe(1 + heard.length);
@@ -208,6 +224,13 @@ describe.each([
     await page.click("Pause");
     await page.step();
     expect(page.buttons()).toEqual(["Resume", "Quit"]);
+    // The music is turned down, not off.
+    expect(page.sound.scored.at(-1)).toEqual({
+      channel: "page/Score",
+      track: "theme",
+      volume: 0.1,
+      fade: 0.6,
+    });
     await page.changed();
     const paused = page.told();
     await page.step(60);
@@ -233,6 +256,9 @@ describe.each([
     expect(page.buttons()).toEqual(["Start"]);
     expect(page.hud()).toBe("Caught 0");
     expect(page.ui.get(Menu)).toEqual({ phase: "title" });
+    // Back at the title there is no music.
+    expect(page.sound.playing.size).toBe(0);
+    expect(page.sound.scored.length).toBe(4);
 
     // Taken out, it listens no more and leaves nothing behind.
     await page.unmount();
