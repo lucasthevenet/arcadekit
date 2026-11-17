@@ -561,6 +561,26 @@ const variants: Record<string, Variant> = {
         )
       ),
   },
+  idleDeclared: {
+    // The same ten systems, each having said what it reads and writes: the
+    // app holds each to it, and its query is looked up in what it said.
+    label: "app.tick: the same, each having said its access",
+    run: () =>
+      Effect.runSync(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const systems = Array.from({ length: 10 }, (_, i) =>
+              System.make(`Idle${i}`, function* () {
+                yield* Moving;
+                yield* Time;
+              }).pipe(System.access({ queries: [Moving] }))
+            );
+            const app = yield* App.make({ systems });
+            return measure(() => app.tick(DT), 50_000, 20_000);
+          })
+        )
+      ),
+  },
   idleConditioned: {
     // The same ten systems, each asked whether the game is in a state.
     label: "app.tick: the same, each with a condition that holds",

@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 831 tests, 93 of them of @arcadekit/three
+pnpm test                          # 861 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -53,7 +53,7 @@ const program = Effect.gen(function* () {
 });
 ```
 
-Systems run in the order they are registered unless told otherwise: `System.after(Other)` and `System.before(Other)` pull whatever has to run first forward to just before the system that needs it. That is within a stage. A tick has three, `"preUpdate"`, `"update"` and `"postUpdate"`, and each runs whole before the next; a system is in `"update"` unless `System.inStage` says otherwise.
+Systems run in the order they are registered unless told otherwise: `System.after(Other)` and `System.before(Other)` pull whatever has to run first forward to just before the system that needs it. That is within a stage. A tick has three, `"preUpdate"`, `"update"` and `"postUpdate"`, and each runs whole before the next; a system is in `"update"` unless `System.inStage` says otherwise. Which of two systems runs first is often an accident of where they were listed: a system that [says what it reads and writes](#what-a-system-reads-and-writes) lets the app find the pairs for which that matters.
 
 ## Entries
 
@@ -394,6 +394,74 @@ A game is in the menu, playing or paused, and systems run only in some of those.
 - A system that does not run does not read. The events of the ticks it sat out are gone when it runs again, as for any system an event is older than. What its [change queries](#change-queries) have yet to visit is kept, however long it was away.
 - A state is a [singleton](#singletons) of the world. It is saved with a game, with what was asked for, and counted in the hash; a refused action's `set` is taken back. List it in a plugin's `components`. A loaded game does not run its starting hooks again: the save holds what they did.
 - With several states, the ones asked for are entered in order of name.
+
+## What a system reads and writes
+
+```ts
+const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+
+const Movement = System.make("Movement", function* () {
+  const { delta } = yield* Time;
+  (yield* Moving).each((position, velocity) => {
+    position.x += velocity.x * delta;
+  });
+}).pipe(System.access({ queries: [Moving] }));
+
+const Scoring = System.make("Scoring", function* () {
+  const score = yield* Score;
+  for (const hit of (yield* Hit).read()) score.points += hit.damage;
+}).pipe(System.access({ reads: [Hit], writes: [Score] }));
+
+const app = yield * App.make({ systems: [Movement, Aiming, Scoring] });
+app.conflicts; // the pairs whose order matters, and that nothing says
+app.undeclared; // the systems that have not said
+```
+
+A system can say what it reads and writes, with `System.access`. Most of it is its queries, which already say which of their terms they only read. Beside them it names what it touches some other way.
+
+| It says | For |
+| --- | --- |
+| `queries` | The queries it visits, `Query.removed` among them. A query's terms are written, but for the ones it [only reads](#saying-what-a-query-only-reads); what it requires, excludes or watches for changes is read |
+| `reads` | What it reads and does not change: a singleton or a state, an event it reads, a component it reads through `World` |
+| `writes` | What it changes: a singleton or a state, an event it emits, a component it sets through `World` or spawns, adds or removes through `Commands` |
+| `random: true` | It draws from `Random` |
+| `actions: true` | It issues actions with `Actions.enqueue` |
+| `scripts: true` | It starts scripts with `Script.spawn` |
+
+- **It is all of what the system does, and the app holds the system to it.** A query, a singleton, an event, a read or a write through the world, a command, an action or a script that was left out throws where it is made, names the system and what it did, and says what to add. A draw from `Random` is found when the system has run. So what a system says can be relied on: by the check below, and by what will run systems side by side.
+- What a system may write it may read. A query it did not name is let through when everything it touches is within what the system said.
+- A despawn takes everything an entity has, whatever was said. It is held to this much: the entity has a component the system said it writes, which is how the system knows it. A system that despawns bullets says `writes: [Bullet]`.
+- What a condition given with `System.runIf(State.is(...))` reads is known, and need not be said. A condition of the game's own is the system's to say, as is what `System.otherwise` does.
+- `Time` and `Ticks` are not said, nor is the picture of the devices, `Input.Keyboard` and its kind: no system writes the time or the picture, and asking for a tick is the same whoever asks first.
+- A system that has not said may do anything, as before, and costs a tick nothing more. One that has costs it about 50 ns: a tick of ten systems that do nothing takes 6.1 µs when each has said, against 5.6. Nothing is checked inside a loop.
+- Scripts and handlers are not systems, and are held to nothing.
+- With the storage core on its own: `world.guard`, which is what an app sets before such a system runs.
+
+**The order of systems can then be checked.** Systems run in the order they are listed in unless `System.after` or `System.before` says otherwise, and a plugin's are listed before the app's own: which of two runs first is often an accident. `app.conflicts` lists the pairs for which the accident decides something:
+
+```ts
+[
+  {
+    first: "Movement", // runs first, as things stand
+    second: "Aiming",
+    over: [
+      {
+        what: "physics/Position",
+        kind: "component",
+        first: "writes",
+        second: "reads",
+      },
+    ],
+  },
+];
+```
+
+- Two systems are in conflict when both touch a component, a singleton, a state or an event, one of them at least to write it; or both draw from `Random`, both issue actions, or both start scripts: what comes of either then depends on which went first.
+- They are not when their order is said: one is `after` or `before` the other, directly or through others; they are in different stages; or one is a hook, which runs before a tick's systems. Hooks of one moment are checked among themselves.
+- `"watches"` is a read through a change query. A system listed ahead of the one that writes what it watches reacts a tick late, and that pair is in the list until its order is said.
+- A game settles a conflict by saying the order, which changes nothing when it is the order they run in already. A test holds the list to empty: `expect(app.conflicts).toEqual([])`, and `expect(app.undeclared).toEqual([])` for a game that wants every system to have said.
+- The systems of the frame stage and of the input stage change nothing, and are in neither list.
+- `System.conflicts(systems)` is the same check of any list of systems, and `System.accessOf(system)` what one of them said, worked out.
 
 ## The tick and the frame
 
@@ -1309,7 +1377,7 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, relay, origin, policy, benchmark verdict and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, a world that is restored compared with a new one that loaded the same snapshot, and a game played in a process that may not make code from text. `test/peers.ts` is the game and the network those of several peers share, and `test/policy-game.ts` the game of the last |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, relay, origin, policy, benchmark verdict, access and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, a world that is restored compared with a new one that loaded the same snapshot, and a game played in a process that may not make code from text. `test/peers.ts` is the game and the network those of several peers share, and `test/policy-game.ts` the game of the last |
 | `bench/accessors.ts` | The benchmark: every line of the tables below, each variant in a process of its own |
 | `bench/core.ts` | The storage core's variants of it, which import `arcadekit/ecs` and nothing else |
 | `bench/compare.ts`, `bench/verdict.ts` | The check of a pull request: those variants for two checkouts, turn and turn about, and the rule that says whether one is slower |
@@ -1496,7 +1564,7 @@ pnpm --filter arcadekit bench:compare "$PWD/../base"
 
 **The workflow is written and not in place.** It is `bench/ci-workflow.yml`, and runs once it is moved to `.github/workflows/bench.yml`, which takes credentials that may change workflows; the session that wrote it had none. Until then the check is run by hand, as above.
 
-- It runs the variants of `bench/core.ts`, which are the lines above that go through `arcadekit/ecs` alone: the loops, the filters, the hash, a snapshot and a load, change queries, and entities coming and going. Both builds run this checkout's copy of that file, so the two are asked the same thing; a variant the base cannot run is new.
+- It runs the variants of `bench/core.ts`, which are the lines above that go through `arcadekit/ecs` alone: the loops, the filters, the hash, a snapshot and a load, change queries, and entities coming and going. Both builds run this checkout's copy of that file, so the two are asked the same thing; a variant the base cannot run is new. The copy is in the base for as long as the comparison lasts and no longer.
 - Each variant is run up to fifteen times by each build, turn and turn about, each run a process of its own. A run is now and then half as slow again as the rest, one in six on the machine this was written on, and never much faster, so a build is known by its fastest run.
 - A variant is slower when two things hold. Its fastest run is more than 5% slower than the base's: less than that is what moving code about does to a loop that was not touched. And so many of the base's runs were faster than every run of its own that two builds alike would look so less than once in a thousand comparisons, which with fifteen runs each is nine of the fifteen. The second is the noise, counted as the check goes and with nothing assumed about its shape: where runs are far apart, a difference has to be plainer to count.
 - A variant whose two builds are within 2.5% of each other after six runs each is not run again, which is most variants of most changes: the whole check took five minutes for two builds that were the same, and eight for two of which eight variants differed.
@@ -1568,6 +1636,9 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - Who issued an action is who its message says it is from, and only a relay vouches for that. Through `Transport.layerBroadcastChannel`, or a transport of the game's own that does not, a peer can send a message in another's name. The peers that took it and the one whose name it was then hold different games, and stop with `Lockstep.Drifted`: it is found, not prevented.
 - A game in a session ticks all the time. One that ticks when it is needed, `ticks: "whenNeeded"`, is not for several peers yet: a session does not say when it is settled.
 
+- What a system says it reads and writes is held as it runs, not proved when the app is made: a system that reaches for something it left out only in some ticks is refused in the first of them. Scripts and handlers say nothing and are in no check, and neither are the systems of the package's own plugins that run between ticks.
+- A despawn is said by one component the entity has, and takes the rest with it, and whatever a relation hangs from it: a system that visits those entities by other components is not found to be in conflict with the one that despawned them.
+- A conflict in the order of systems is settled by saying an order. Two systems that conflict and whose order does not matter cannot say so.
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
 - A save does not hold scripts, so a script that keeps its progress in its own variables starts over when a game is loaded. Nor does it hold what a game's own services hold.
 - A save is refused while an action or an event with no schema is waiting, which for a game that emits such an event every tick is always.

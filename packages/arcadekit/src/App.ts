@@ -53,9 +53,9 @@ import type { Listed } from "./ecs/component";
 import { Rng } from "./ecs/random";
 import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
-import type { SavedChanges } from "./ecs/world";
+import type { Guard, SavedChanges } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
-import type { EventsMoment } from "./Event";
+import type { EventGuard, EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -145,6 +145,21 @@ export interface Any {
   readonly frameOrder: readonly string[];
   /** The names of the input stage's systems, in the order they run. */
   readonly inputOrder: readonly string[];
+  /**
+   * The pairs of the tick's systems whose order matters and is not said:
+   * both touch the same component, singleton, state or event, one of them
+   * to write it, and nothing but the order they were listed in decides
+   * which runs first. `System.conflicts` says how it is worked out. Only
+   * the systems that said what they read and write, with `System.access`,
+   * can be in one. A game settles a conflict with `System.after` or
+   * `System.before`, and a test holds the list to empty.
+   */
+  readonly conflicts: readonly System.Conflict[];
+  /**
+   * The names of the tick's systems, hooks among them, that have not said
+   * what they read and write: `conflicts` knows nothing of them.
+   */
+  readonly undeclared: readonly string[];
   /**
    * Runs one tick. Throws if a system fails, or if the app has stopped.
    *
@@ -380,6 +395,27 @@ export interface App<E = never, R = never, HU = never> extends Any {
     payload: PayloadFor<HU, N>
   ) => void;
 }
+
+/**
+ * What a system that said what it reads and writes is held to while it
+ * runs: `System.access` is all of what it does, so whatever it left out is
+ * refused where it is done.
+ */
+interface Hold {
+  /** For a message: `System "Movement"`. */
+  readonly who: string;
+  /** What the world refuses of its components, singletons and commands. */
+  readonly world: Guard;
+  /** What the bus refuses of its events. */
+  readonly events: EventGuard;
+  readonly random: boolean;
+  readonly actions: boolean;
+  readonly scripts: boolean;
+}
+
+/** What a refusal ends with: how a system says more. */
+const ADVICE =
+  " A system that says what it reads and writes says all of it: add this to its System.access, or leave the system without one.";
 
 /** An error in a few words, for a log entry or a message. */
 const describe = (error: unknown): string =>
@@ -699,10 +735,20 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       return fiber;
     };
+    // The system that is running, when it said what it reads and writes:
+    // see `hold`, below.
+    let held: Hold | undefined;
     const spawn = <A, E, R>(
       effect: Effect.Effect<A, E, R>
     ): Effect.Effect<Fiber.Fiber<A, E>, never, R> =>
-      Effect.map(Effect.forkDetach(effect), (fiber) => watch(fiber));
+      Effect.suspend(() => {
+        if (held !== undefined && !held.scripts) {
+          throw new Error(
+            `${held.who} started a script, and did not say it would: scripts: true.${ADVICE}`
+          );
+        }
+        return Effect.map(Effect.forkDetach(effect), (fiber) => watch(fiber));
+      });
 
     // Dependencies first, each plugin once, then the app's own systems.
     const plugins = Plugin.flatten(options.plugins ?? []);
@@ -923,6 +969,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       diverted(name, payload);
     };
+    /** An action issued by a system that said its access, and not this. */
+    const refuseAction = (name: string): void => {
+      if (held !== undefined && !held.actions) {
+        throw new Error(
+          `${held.who} issued the action "${name}", and did not say it issues actions: actions: true.${ADVICE}`
+        );
+      }
+    };
     /**
      * From inside the simulation: the `Actions` service. Not logged, because
      * a replay's own systems, scripts and handlers issue it again.
@@ -934,6 +988,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       if (!handlers.has(action.name)) {
         throw new Error(`No handler for action "${action.name}"`);
       }
+      refuseAction(action.name);
       queued.push({
         name: action.name,
         payload,
@@ -1100,6 +1155,88 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       hooks.set(key, System.order(group));
     }
 
+    // --- what a system said it reads and writes -----------------------------------
+    // A system that said it, with `System.access`, is held to it while it
+    // runs: the world and the bus are told what it may touch, and refuse
+    // the rest where it is done. One that has not said is held to nothing.
+    const holds = new Map<string, Hold>();
+    for (const system of allSystems) {
+      const said = System.accessOf(system);
+      if (said === undefined) {
+        continue;
+      }
+      const who = `System "${system.name}"`;
+      const reads: (true | undefined)[] = [];
+      const writes: (true | undefined)[] = [];
+      const writeDefs = [];
+      for (const { def, touch } of said.components.values()) {
+        reads[def.id] = true;
+        if (touch === "writes") {
+          writes[def.id] = true;
+          writeDefs.push(def);
+        }
+      }
+      const emits = new Set<string>();
+      for (const [name, touch] of said.events) {
+        if (touch === "writes") {
+          emits.add(name);
+        }
+      }
+      holds.set(system.name, {
+        who,
+        world: {
+          who,
+          advice: ADVICE,
+          reads,
+          writes,
+          writeDefs,
+          queries: new Set(said.queries),
+        },
+        events: {
+          who,
+          advice: ADVICE,
+          reads: new Set(said.events.keys()),
+          emits,
+        },
+        random: said.random,
+        actions: said.actions,
+        scripts: said.scripts,
+      });
+    }
+    const randomWas = new Uint32Array(4);
+    /** Holds whoever runs next to what it said, if it said. */
+    const hold = (to: Hold | undefined): void => {
+      held = to;
+      world.guard = to?.world;
+      events.guard = to?.events;
+      if (to !== undefined && !to.random) {
+        randomWas.set(world.random.state);
+      }
+    };
+    /** The system has run. A draw it did not say it makes is found here. */
+    const release = (): void => {
+      const was = held;
+      if (was === undefined) {
+        return;
+      }
+      held = undefined;
+      world.guard = undefined;
+      events.guard = undefined;
+      const { state } = world.random;
+      if (
+        !was.random &&
+        (state[0] !== randomWas[0] ||
+          state[1] !== randomWas[1] ||
+          state[2] !== randomWas[2] ||
+          state[3] !== randomWas[3])
+      ) {
+        throw new Error(
+          `${was.who} drew from Random, and did not say it would: random: true.${ADVICE}`
+        );
+      }
+    };
+    const report = System.conflicts(allSystems);
+
     let running = "";
     /** Runs one system as itself: with its own place in events and changes. */
     const runSystem = (
@@ -1109,11 +1246,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         running = system.name;
         events.reader = running;
         world.reader = running;
-        return system.condition === undefined
-          ? system.run
-          : Effect.flatMap(system.condition, (holds) =>
-              holds ? system.run : (system.idle ?? Effect.void)
-            );
+        hold(holds.get(running));
+        return Effect.map(
+          system.condition === undefined
+            ? system.run
+            : Effect.flatMap(system.condition, (holds) =>
+                holds ? system.run : (system.idle ?? Effect.void)
+              ),
+          release
+        );
       });
     /** Makes one move of a state: the hooks for leaving, the move, the hooks for entering. */
     const makeMove = Effect.fnUntraced(function* (
@@ -1155,25 +1296,41 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
       }
     });
+    // Beside `ordered`: what each is held to, so that a system that has
+    // not said costs a tick one read of this.
+    const orderedHolds = ordered.map((system) => holds.get(system.name));
     const tickEffect = Effect.gen(function* () {
       if (states.states.length > 0) {
         yield* enterStates;
       }
-      for (const system of ordered) {
+      for (let at = 0; at < ordered.length; at++) {
+        const system = ordered[at]!;
         running = system.name;
         // Each system reads events, and what changed, from its own position.
         events.reader = running;
         world.reader = running;
+        const to = orderedHolds[at];
+        if (to !== undefined) {
+          hold(to);
+        }
         // A system with no condition is asked nothing.
         if (system.condition !== undefined && !(yield* system.condition)) {
           // What it does in place of running, if it was given anything.
           if (system.idle !== undefined) {
             yield* system.idle;
+            release();
             commands.apply();
+          } else {
+            release();
           }
           continue;
         }
         yield* system.run;
+        // Its commands are applied as nobody's: it said them when it
+        // queued them.
+        if (to !== undefined) {
+          release();
+        }
         commands.apply();
       }
     });
@@ -1205,7 +1362,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           return (frameRandom.bits() & 1) === 0 ? magnitude : -magnitude;
         },
       }),
-      Context.add(Action.Actions, { enqueue, handles }),
+      Context.add(Action.Actions, {
+        enqueue: ((action, payload) => {
+          refuseAction(action.name);
+          enqueue(action, payload);
+        }) as typeof enqueue,
+        handles,
+      }),
       Context.add(Script, {
         nextTick: Effect.sync(notInFrame("Script.nextTick")),
         sleep: notInFrame("Script.sleep"),
@@ -1264,8 +1427,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           // the simulation's and never saved.
           events.reader = `${FRAME_READER}${running}`;
           world.reader = events.reader;
+          hold(holds.get(running));
           if (system.condition !== undefined && !(yield* system.condition)) {
             if (system.idle === undefined) {
+              release();
               continue;
             }
             // What it does in place of running, held to the same.
@@ -1273,6 +1438,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           } else {
             yield* system.run;
           }
+          release();
           if (verifyFrames && world.hash() !== frameHash) {
             return yield* Effect.die(
               new FrameChangedWorld({
@@ -1457,6 +1623,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             : runInputFork(inputEffect);
         events.reader = undefined;
         world.reader = undefined;
+        // A system that failed was not released.
+        held = undefined;
+        world.guard = undefined;
+        events.guard = undefined;
         const outcome = fiber.pollUnsafe();
         if (outcome === undefined) {
           fiber.interruptUnsafe();
@@ -1589,6 +1759,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         const fiber = runFork(tickEffect);
         events.reader = undefined;
         world.reader = undefined;
+        // A system that failed was not released.
+        held = undefined;
+        world.guard = undefined;
+        events.guard = undefined;
         const exit = fiber.pollUnsafe();
         if (exit === undefined) {
           fiber.interruptUnsafe();
@@ -1648,6 +1822,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       systemOrder: ordered.map((s) => s.name),
       frameOrder: frameSystems.map((s) => s.name),
       inputOrder: inputSystems.map((s) => s.name),
+      conflicts: report.conflicts,
+      undeclared: report.undeclared,
       actionLog,
       save() {
         if (ticking || between !== undefined) {

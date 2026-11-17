@@ -23,6 +23,8 @@
  * - A query can ask for what changed: the entities that gained a component
  *   or had one written since the query last visited them. Writes are noticed
  *   per row, and only for the components some query watches.
+ * - A world can be given a guard: what the code that is running said it
+ *   would read and write. It then refuses the rest, where it is asked for.
  *
  * No Effect dependency.
  */
@@ -830,6 +832,37 @@ export class RemovedReader {
     this.world._read(log);
     return Array.from(ids) as Entity[];
   }
+}
+
+/**
+ * What the code that is running said it would read and write. While a
+ * world has one, `world.guard`, it refuses what was not said, where it is
+ * done: a query, a singleton, a read or a write through the world, a
+ * command. Nothing is checked inside a loop.
+ *
+ * An app gives its world one before each system that declared its access
+ * runs, and takes it away after. With the storage core on its own, it is
+ * a way to hold a piece of code to what it is meant to touch.
+ */
+export interface Guard {
+  /** Who runs under it, for a message: `System "Movement"`. */
+  readonly who: string;
+  /** What to do about a refusal, which ends its message. */
+  readonly advice: string;
+  /**
+   * Indexed by a component's id: true for one that may be read. A
+   * singleton is known by its component. What may be written may be read.
+   */
+  readonly reads: readonly (true | undefined)[];
+  /** Indexed by a component's id: true for one that may be written. */
+  readonly writes: readonly (true | undefined)[];
+  /** The components that may be written: what a despawn is held to. */
+  readonly writeDefs: readonly ComponentDef<any>[];
+  /**
+   * The queries that may be asked for as they are. One that is asked for
+   * and found to be within `reads` and `writes` is added.
+   */
+  readonly queries: Set<QuerySpec<any>>;
 }
 
 /** A query's description as text: what a save knows a change query by. */
@@ -1939,6 +1972,11 @@ export class World {
    * which is what gives each of them its own place in every change log.
    */
   reader: string | undefined;
+  /**
+   * What whoever is running said it would read and write, when it said:
+   * the world refuses the rest. See `Guard`.
+   */
+  guard: Guard | undefined;
   /** @internal Indexed by component id: the log of writes, when a query watches them. */
   readonly _changed: (ChangeLog | undefined)[] = [];
   private readonly addedLogs: (ChangeLog | undefined)[] = [];
@@ -2178,6 +2216,9 @@ export class World {
 
   spawn(...inputs: readonly ComponentInput[]): Entity {
     this.assertNotIterating("spawn");
+    if (this.guard !== undefined) {
+      this._guardWrites(inputs, "spawned an entity with");
+    }
     // Before an id is reserved, so a refused component leaves nothing behind.
     this._registerAll(inputs);
     const entity = this._reserve();
@@ -2196,6 +2237,9 @@ export class World {
     this.assertNotIterating("despawn");
     if (!this.isAlive(entity)) {
       return false;
+    }
+    if (this.guard !== undefined) {
+      this._guardDespawn(entity);
     }
     if (this.relationList.length === 0) {
       this.despawnOne(entity);
@@ -2281,6 +2325,9 @@ export class World {
 
   add(entity: Entity, input: ComponentInput): boolean {
     this.assertNotIterating("add");
+    if (this.guard !== undefined) {
+      this._guardWrites([input], "added");
+    }
     if (!this.isAlive(entity)) {
       return false;
     }
@@ -2350,6 +2397,9 @@ export class World {
 
   remove(entity: Entity, def: ComponentDef<any>): boolean {
     this.assertNotIterating("remove");
+    if (this.guard !== undefined) {
+      this._guardWrites([def], "removed");
+    }
     if (!this.isAlive(entity)) {
       return false;
     }
@@ -2384,6 +2434,9 @@ export class World {
   }
 
   has(entity: Entity, def: ComponentDef<any>): boolean {
+    if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
+      this.refuse(`read "${def.name}" through the world`, "read");
+    }
     if (!this.isAlive(entity)) {
       return false;
     }
@@ -2423,6 +2476,9 @@ export class World {
     def: ComponentDef<S>,
     value: Partial<ValueOf<S>>
   ): boolean {
+    if (this.guard !== undefined && this.guard.writes[def.id] !== true) {
+      this.refuse(`wrote "${def.name}" through the world`, "write");
+    }
     if (!this.has(entity, def)) {
       return false;
     }
@@ -2466,6 +2522,9 @@ export class World {
    * them does not look at any other entity.
    */
   sources(target: Entity, def: ComponentDef<any>): Entity[] {
+    if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
+      this.refuse(`read "${def.name}" through the world`, "read");
+    }
     const relation = this.relations[def.id];
     if (relation === undefined || !this.isAlive(target)) {
       return [];
@@ -2547,6 +2606,12 @@ export class World {
    * read a singleton hashes the same as one that never asked for it.
    */
   singleton<S extends Schema>(spec: SingletonSpec<S>): ValueOf<S> {
+    if (
+      this.guard !== undefined &&
+      this.guard.reads[spec.component.id] !== true
+    ) {
+      this.refuse(`asked for the singleton "${spec.component.name}"`, "read");
+    }
     const found = this.singles[spec.component.id];
     if (found !== undefined) {
       if (found.initial === undefined) {
@@ -2601,6 +2666,9 @@ export class World {
       throw new Error(
         frozenWrite(`A write to the singleton "${single.def.name}"`)
       );
+    }
+    if (this.guard !== undefined && this.guard.writes[single.def.id] !== true) {
+      this.refuse(`wrote the singleton "${single.def.name}"`, "write");
     }
     if (this._recording && !this.savedWhole.has(single.columns)) {
       this.savedSingles.push({ single, written: single.written });
@@ -2675,6 +2743,90 @@ export class World {
   /** Whether the world is frozen. */
   get frozen(): boolean {
     return this._frozen;
+  }
+
+  // --- the guard ---------------------------------------------------------------
+
+  /** What a guard refuses: it says who, what, and what to do about it. */
+  private refuse(did: string, how: "read" | "write"): never {
+    const { advice, who } = this.guard!;
+    throw new Error(
+      `${who} ${did}, and did not say it would ${how} it.${advice}`
+    );
+  }
+
+  /**
+   * Holds a query to the guard: its terms are written, but for the ones it
+   * says it only reads, and what it requires, excludes or watches is read.
+   * A query that passes is remembered, and not looked at again.
+   */
+  private guardQuery(guard: Guard, spec: QuerySpec<any>): void {
+    for (const def of spec.terms as readonly ComponentDef<any>[]) {
+      if (spec.readDefs?.includes(def) === true) {
+        if (guard.reads[def.id] !== true) {
+          this.refuse(`asked for a query that reads "${def.name}"`, "read");
+        }
+      } else if (guard.writes[def.id] !== true) {
+        this.refuse(`asked for a query that writes "${def.name}"`, "write");
+      }
+    }
+    for (const defs of [
+      spec.withDefs,
+      spec.withoutDefs,
+      spec.changedDefs ?? [],
+      spec.addedDefs ?? [],
+    ]) {
+      for (const def of defs) {
+        if (guard.reads[def.id] !== true) {
+          this.refuse(`asked for a query that reads "${def.name}"`, "read");
+        }
+      }
+    }
+    guard.queries.add(spec);
+  }
+
+  /**
+   * Holds a spawn, an add or a remove to the guard: every component it
+   * names has to be one that may be written.
+   * @internal
+   */
+  _guardWrites(
+    inputs: readonly ComponentInput[],
+    did: "spawned an entity with" | "added" | "removed"
+  ): void {
+    const { writes } = this.guard!;
+    for (let i = 0; i < inputs.length; i++) {
+      const input = inputs[i]!;
+      const def = isComponentDef(input) ? input : input.def;
+      if (writes[def.id] !== true) {
+        this.refuse(`${did} "${def.name}"`, "write");
+      }
+    }
+  }
+
+  /**
+   * Holds a despawn to the guard. A despawn takes everything an entity
+   * has, whatever was said, so it is held to this much: the entity has a
+   * component that may be written, which is how whoever despawns it knows
+   * it. One that is gone, or not placed yet, loses nothing.
+   * @internal
+   */
+  _guardDespawn(entity: Entity): void {
+    const { advice, who, writeDefs } = this.guard!;
+    if (
+      !this.isAlive(entity) ||
+      this.recTable[entityIndex(entity)] === NOT_PLACED
+    ) {
+      return;
+    }
+    for (let i = 0; i < writeDefs.length; i++) {
+      if (this.has(entity, writeDefs[i]!)) {
+        return;
+      }
+    }
+    throw new Error(
+      `${who} despawned an entity that has none of the components it said it writes (${writeDefs.map((def) => `"${def.name}"`).join(", ") || "none"}). A despawn takes everything an entity has, and is said by a component the entity is known by: one of those it has.${advice}`
+    );
   }
 
   // --- transactions ----------------------------------------------------------
@@ -2902,6 +3054,9 @@ export class World {
    * are noticed at all.
    */
   view<D extends Terms>(spec: QuerySpec<D>, reader?: string): QueryView<D> {
+    if (this.guard !== undefined && !this.guard.queries.has(spec)) {
+      this.guardQuery(this.guard, spec);
+    }
     let view = this.views.get(spec);
     if (view !== undefined) {
       return view;
@@ -2956,6 +3111,9 @@ export class World {
    * `world.reader`, or nobody in particular.
    */
   removed(def: ComponentDef<any>, reader?: string): RemovedReader {
+    if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
+      this.refuse(`asked which entities lost "${def.name}"`, "read");
+    }
     const who = reader ?? this.reader ?? "";
     const key = `${def.id}\n${who}`;
     let found = this.removedReaders.get(key);
@@ -3802,6 +3960,9 @@ export class CommandBuffer {
   spawn(...inputs: readonly ComponentInput[]): Entity {
     // Checked here, where the mistake is, and not when the queue is applied.
     this.world._registerAll(inputs);
+    if (this.world.guard !== undefined) {
+      this.world._guardWrites(inputs, "spawned an entity with");
+    }
     const entity = this.world._reserve();
     this.ops.push({
       op: "spawn",
@@ -3814,17 +3975,26 @@ export class CommandBuffer {
 
   despawn(entity: Entity): void {
     this.refuseFrozen("despawn");
+    if (this.world.guard !== undefined) {
+      this.world._guardDespawn(entity);
+    }
     this.ops.push({ op: "despawn", entity });
   }
 
   add(entity: Entity, input: ComponentInput): void {
     this.refuseFrozen("add");
     this.world._registerAll([input]);
+    if (this.world.guard !== undefined) {
+      this.world._guardWrites([input], "added");
+    }
     this.ops.push({ op: "add", entity, input });
   }
 
   remove(entity: Entity, def: ComponentDef<any>): void {
     this.refuseFrozen("remove");
+    if (this.world.guard !== undefined) {
+      this.world._guardWrites([def], "removed");
+    }
     this.ops.push({ op: "remove", entity, def });
   }
 

@@ -257,7 +257,16 @@ class Handle<P> implements EventHandle<P> {
   private readonly forFrame: boolean;
   readonly emit: (payload: P) => void;
 
-  constructor(channel: Channel<P>, cursor: number, forFrame = false) {
+  /**
+   * @param refusal what emitting throws, for the handle of a system that
+   *                said what it writes and did not name this event
+   */
+  constructor(
+    channel: Channel<P>,
+    cursor: number,
+    forFrame = false,
+    refusal?: string
+  ) {
     this.channel = channel;
     this.cursor = cursor;
     this.forFrame = forFrame;
@@ -268,9 +277,13 @@ class Handle<P> implements EventHandle<P> {
             `The event "${channel.def.name}" was emitted in the frame stage or the input stage. They run between ticks and must not change the game: an event from there would be one no replay could repeat. Emit from a system that runs in the tick, or issue an action with Actions.enqueue.`
           );
         }
-      : (payload) => {
-          channel.buffer.push(payload);
-        };
+      : refusal === undefined
+        ? (payload) => {
+            channel.buffer.push(payload);
+          }
+        : () => {
+            throw new Error(refusal);
+          };
   }
 
   readonly read = (): readonly P[] => {
@@ -340,6 +353,22 @@ export interface EventsMoment {
 }
 
 /** All of an app's event channels. Provided as the `Events` service. */
+/**
+ * What a system that said what it reads and writes is held to, of events:
+ * the app sets one on the bus while such a system runs.
+ * @internal
+ */
+export interface EventGuard {
+  /** Who runs under it, for a message: `System "Movement"`. */
+  readonly who: string;
+  /** What to do about a refusal, which ends its message. */
+  readonly advice: string;
+  /** The names of the events it may read. */
+  readonly reads: ReadonlySet<string>;
+  /** The names of the events it may emit, and so may read. */
+  readonly emits: ReadonlySet<string>;
+}
+
 export class EventBus {
   /**
    * Who is asking for handles right now. The app sets this before each
@@ -348,6 +377,13 @@ export class EventBus {
    * @internal
    */
   reader: string | undefined;
+  /**
+   * What whoever is asking said it would read and emit, when it said: an
+   * event it did not name is refused where it is asked for, and one it
+   * only reads where it is emitted.
+   * @internal
+   */
+  guard: EventGuard | undefined;
 
   // Keyed by event definition. The value is the `Channel<P>` of that
   // definition's own `P`, which a Map's type cannot say, so `channel` below
@@ -482,18 +518,28 @@ export class EventBus {
    */
   handle<P>(def: EventDef<P>): EventHandle<P> {
     const channel = this.channel(def);
-    const { reader } = this;
+    const { guard, reader } = this;
+    const emits = guard === undefined || guard.emits.has(def.name);
+    if (!emits && !guard!.reads.has(def.name)) {
+      throw new Error(
+        `${guard!.who} asked for the event "${def.name}", which is not among what it said it reads and writes.${guard!.advice}`
+      );
+    }
     if (reader === undefined) {
       return new Handle(channel, channel.end);
     }
     let handle = channel.readers.get(reader);
     if (handle === undefined) {
       // From the oldest event kept: `read` goes no further back than its
-      // reader may, which for the simulation is `tickOffset`.
+      // reader may, which for the simulation is `tickOffset`. What a
+      // reader said it emits does not change, so its handle is told once.
       handle = new Handle(
         channel,
         channel.offset,
-        reader.startsWith(FRAME_READER)
+        reader.startsWith(FRAME_READER),
+        emits
+          ? undefined
+          : `${guard!.who} emitted the event "${def.name}", which it said it reads and did not say it writes.${guard!.advice}`
       );
       channel.readers.set(reader, handle);
     }

@@ -28,6 +28,7 @@ arcadekit is alpha, with no users to protect, so a better design wins over compa
 - What is heard is played in the frame stage too, from the events the simulation emits. The simulation never plays a sound.
 - What the devices say reaches the game as actions, issued in the input stage before a tick and logged like any other: a replay reads no device.
 - The peers of a game send each other the actions their players issue, each stamped with the tick it applies on, and nothing else. A session takes its app over, so that nothing moves one machine's game alone, and holds no socket and no timer: it is given the messages that arrived and gives the ones to send, and `Transport`, a service, carries them, between machines through a relay, which is a handler of plain functions (`Relay.join`, `Relay.forward`) that a host calls and that holds each peer to the name it connected under. A session that runs ahead of the network goes back with `app.rewind`, which puts back the world and what is waiting in the app and nothing else: what the simulation reads is in the world.
+- A system that says what it reads and writes, with `System.access`, says all of it, and the app holds it to that: what it says can be relied on by whatever orders systems or runs them side by side.
 - A UI holds a bridge and nothing of the game: it sees the views the game publishes in the frame stage, and acts by sending actions, which are issued and logged the same way.
 
 ## What only knowing the inside prevents

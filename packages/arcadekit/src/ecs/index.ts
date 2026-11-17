@@ -43,6 +43,7 @@ export { CommandBuffer, QueryView, RemovedReader, World } from "./world";
 export type {
   ChangeKind,
   EntityColumn,
+  Guard,
   QuerySpec,
   SavedChanges,
   SparseColumns,

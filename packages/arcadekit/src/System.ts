@@ -12,6 +12,10 @@ import { dual } from "effect/Function";
 import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
+import type { ComponentDef, SingletonSpec } from "./ecs/component";
+import type { QuerySpec } from "./ecs/world";
+import type { EventDef } from "./Event";
+
 /** The stages of a tick, in the order they run. */
 export const stages = ["preUpdate", "update", "postUpdate"] as const;
 /**
@@ -54,6 +58,71 @@ export interface Trigger {
   readonly value: string;
 }
 
+/**
+ * What a system's access is said of: a component, a singleton or a state,
+ * or an event.
+ */
+export type Touched = ComponentDef<any> | SingletonSpec<any> | EventDef<any>;
+
+/**
+ * What a system says it reads and writes: `System.access` takes one. It is
+ * all of what the system does to the game: once a system has said it, the
+ * app holds the system to it, and whatever it left out throws where it is
+ * done and names what to add.
+ */
+export interface Access {
+  /**
+   * The queries it visits: `Query.all(...)` and its kind, and
+   * `Query.removed(...)`. A query's terms are written, but for the ones it
+   * says it only reads (`Query.reads`); what it requires, excludes or
+   * watches for changes is read.
+   */
+  readonly queries?: readonly (
+    | QuerySpec<any>
+    | { readonly component: ComponentDef<any> }
+  )[];
+  /**
+   * What it reads and does not change: a component it reads through
+   * `World`, a singleton or a state, an event it reads.
+   */
+  readonly reads?: readonly Touched[];
+  /**
+   * What it changes: a component it sets through `World` or spawns, adds
+   * or removes through `Commands`, a singleton or a state it writes, an
+   * event it emits. A despawn is a change of whatever the entity has that
+   * is named here: a system that despawns bullets writes `Bullet`.
+   */
+  readonly writes?: readonly Touched[];
+  /** Whether it draws from `Random`. */
+  readonly random?: boolean;
+  /** Whether it issues actions, with `Actions.enqueue`. */
+  readonly actions?: boolean;
+  /** Whether it starts scripts, with `Script.spawn`. */
+  readonly scripts?: boolean;
+}
+
+/**
+ * How a system touches a thing: it reads it, it reads it through a change
+ * query and so reacts to whoever writes it, or it writes it.
+ */
+export type Touch = "reads" | "watches" | "writes";
+
+/** A system's access, worked out: every thing it touches, by name. */
+export interface Resolved {
+  /** Components, singletons and states. */
+  readonly components: ReadonlyMap<
+    string,
+    { readonly def: ComponentDef<any>; readonly touch: Touch }
+  >;
+  /** Events: read, or emitted, which is `"writes"`. */
+  readonly events: ReadonlyMap<string, Touch>;
+  /** The queries it named, which it may ask for as they are. */
+  readonly queries: readonly QuerySpec<any>[];
+  readonly random: boolean;
+  readonly actions: boolean;
+  readonly scripts: boolean;
+}
+
 export interface System<out E = never, out R = never> extends Pipeable {
   readonly name: string;
   readonly stage: Stage;
@@ -79,6 +148,14 @@ export interface System<out E = never, out R = never> extends Pipeable {
    * start of a tick, and not with the tick's other systems.
    */
   readonly trigger: Trigger | undefined;
+  /**
+   * What the system said it reads and writes, with `System.access`.
+   * Undefined for one that has not said: it may do anything, and nothing
+   * is known of it.
+   */
+  readonly access: Access | undefined;
+  /** What its conditions read, which it need not say again. */
+  readonly implied: readonly Touched[];
 }
 
 const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
@@ -113,6 +190,8 @@ export const make = <Eff extends Effect.Effect<any, any, any>>(
     condition: undefined,
     idle: undefined,
     trigger: undefined,
+    access: undefined,
+    implied: [],
   });
 
 /**
@@ -219,6 +298,7 @@ export const runIf: {
     const earlier = self.condition;
     return build<E | E2, R | R2>({
       ...self,
+      implied: [...self.implied, ...(conditionReads.get(condition) ?? [])],
       condition:
         earlier === undefined
           ? condition
@@ -230,6 +310,23 @@ export const runIf: {
     });
   }
 );
+
+/** What a condition reads, when whoever made it said: see `reading`. */
+const conditionReads = new WeakMap<object, readonly Touched[]>();
+
+/**
+ * Says what a condition made for `System.runIf` reads, so that a system
+ * which declares its access need not name it again: `State.is` says so of
+ * its state. It gives the condition back.
+ * @internal
+ */
+export const reading = <A, E, R>(
+  condition: Effect.Effect<A, E, R>,
+  reads: readonly Touched[]
+): Effect.Effect<A, E, R> => {
+  conditionReads.set(condition, reads);
+  return condition;
+};
 
 /**
  * Makes a system a hook, set off by `trigger` in place of the tick.
@@ -280,6 +377,133 @@ export const otherwise: {
       idle: self.idle === undefined ? idle : Effect.andThen(self.idle, idle),
     })
 );
+
+/**
+ * Says what a system reads and writes:
+ *
+ *   const Movement = System.make("Movement", function* () {
+ *     const moving = yield* Moving
+ *     ...
+ *   }).pipe(System.access({ queries: [Moving] }))
+ *
+ *   const Scoring = System.make("Scoring", ...).pipe(
+ *     System.access({ queries: [Coins], reads: [Collided], writes: [Score] })
+ *   )
+ *
+ * Most of it is the system's queries. Beside them it names what it reads
+ * and what it changes some other way: a singleton or a state, an event, a
+ * component it reaches through `World` or `Commands`; and whether it draws
+ * from `Random`, issues actions or starts scripts.
+ *
+ * - It is all of what the system does. The app holds a system that said
+ *   it to it: a query, a singleton, an event, a command or a draw that
+ *   was left out throws where it is made, and names what to add. So what
+ *   is said can be relied on, by `app.conflicts` and by what comes after.
+ * - What a condition given with `System.runIf(State.is(...))` reads is
+ *   known, and need not be said.
+ * - A system that has not said may do anything, as before, and is told of
+ *   in `app.undeclared`.
+ * - Given twice, both hold.
+ */
+export const access: {
+  (access: Access): <E, R>(self: System<E, R>) => System<E, R>;
+  <E, R>(self: System<E, R>, access: Access): System<E, R>;
+} = dual(2, <E, R>(self: System<E, R>, given: Access): System<E, R> => {
+  const earlier = self.access;
+  return build({
+    ...self,
+    access:
+      earlier === undefined
+        ? given
+        : {
+            queries: [...(earlier.queries ?? []), ...(given.queries ?? [])],
+            reads: [...(earlier.reads ?? []), ...(given.reads ?? [])],
+            writes: [...(earlier.writes ?? []), ...(given.writes ?? [])],
+            random: earlier.random === true || given.random === true,
+            actions: earlier.actions === true || given.actions === true,
+            scripts: earlier.scripts === true || given.scripts === true,
+          },
+  });
+});
+
+const STRENGTH: Readonly<Record<Touch, number>> = {
+  reads: 0,
+  watches: 1,
+  writes: 2,
+};
+
+/**
+ * A system's access, worked out from what it said: undefined for a system
+ * that has not said.
+ */
+export const accessOf = (system: System<any, any>): Resolved | undefined => {
+  const said = system.access;
+  if (said === undefined) {
+    return undefined;
+  }
+  const components = new Map<
+    string,
+    { readonly def: ComponentDef<any>; readonly touch: Touch }
+  >();
+  const events = new Map<string, Touch>();
+  const component = (def: ComponentDef<any>, touch: Touch): void => {
+    const known = components.get(def.name);
+    if (known === undefined || STRENGTH[touch] > STRENGTH[known.touch]) {
+      components.set(def.name, { def, touch });
+    }
+  };
+  const touched = (thing: Touched, touch: Touch): void => {
+    if ("initial" in thing) {
+      // A singleton, or a state, which is one.
+      component(thing.component, touch);
+    } else if ("id" in thing) {
+      component(thing, touch);
+    } else {
+      const known = events.get(thing.name);
+      if (known === undefined || STRENGTH[touch] > STRENGTH[known]) {
+        events.set(thing.name, touch);
+      }
+    }
+  };
+  const queries: QuerySpec<any>[] = [];
+  for (const query of said.queries ?? []) {
+    if (!("terms" in query)) {
+      // Query.removed: it hears of whoever takes the component away.
+      component(query.component, "watches");
+      continue;
+    }
+    queries.push(query);
+    for (const def of query.terms as readonly ComponentDef<any>[]) {
+      component(
+        def,
+        query.readDefs?.includes(def) === true ? "reads" : "writes"
+      );
+    }
+    for (const def of [...query.withDefs, ...query.withoutDefs]) {
+      component(def, "reads");
+    }
+    for (const def of [
+      ...(query.changedDefs ?? []),
+      ...(query.addedDefs ?? []),
+    ]) {
+      component(def, "watches");
+    }
+  }
+  for (const thing of [...(said.reads ?? []), ...system.implied]) {
+    touched(thing, "reads");
+  }
+  for (const thing of said.writes ?? []) {
+    touched(thing, "writes");
+  }
+  return {
+    components,
+    events,
+    queries,
+    random: said.random === true,
+    actions: said.actions === true,
+    scripts: said.scripts === true,
+  };
+};
 
 /** Wraps each run in a tracing span named after the system. Use in dev builds. */
 export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
@@ -389,4 +613,196 @@ export const order = (
     }
   }
   return out;
+};
+
+/**
+ * Two systems whose order matters, and that nothing decides but the order
+ * they happened to be listed in.
+ */
+export interface Conflict {
+  /** The one that runs first, as things stand. */
+  readonly first: string;
+  /** The one that runs after it. */
+  readonly second: string;
+  /** What both touch, one of them at least to write it, in order of name. */
+  readonly over: readonly {
+    /** A component's, a singleton's, a state's or an event's name, or a service's. */
+    readonly what: string;
+    readonly kind: "component" | "event" | "service";
+    readonly first: Touch;
+    readonly second: Touch;
+  }[];
+}
+
+/** What `System.conflicts` finds in a list of systems. */
+export interface Report {
+  /** In the order the systems run in. */
+  readonly conflicts: readonly Conflict[];
+  /**
+   * The systems of the tick, hooks among them, that have not said what
+   * they read and write. Nothing is known of them, and none is in a
+   * conflict.
+   */
+  readonly undeclared: readonly string[];
+}
+
+/** What two systems both touch, one at least to write it. */
+const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
+  const over: Conflict["over"][number][] = [];
+  const clash = (
+    what: string,
+    kind: Conflict["over"][number]["kind"],
+    a: Touch | undefined,
+    b: Touch | undefined
+  ): void => {
+    if (
+      a !== undefined &&
+      b !== undefined &&
+      (a === "writes" || b === "writes")
+    ) {
+      over.push({ what, kind, first: a, second: b });
+    }
+  };
+  for (const [name, { touch }] of first.components) {
+    clash(name, "component", touch, second.components.get(name)?.touch);
+  }
+  for (const [name, touch] of first.events) {
+    clash(name, "event", touch, second.events.get(name));
+  }
+  // What comes of either depends on which went first: the numbers drawn,
+  // the order the actions are applied in and the scripts started.
+  for (const [what, a, b] of [
+    ["Random", first.random, second.random],
+    ["Actions", first.actions, second.actions],
+    ["Script", first.scripts, second.scripts],
+  ] as const) {
+    if (a && b) {
+      over.push({ what, kind: "service", first: "writes", second: "writes" });
+    }
+  }
+  const kinds = ["component", "event", "service"];
+  return over.toSorted(
+    (a, b) =>
+      kinds.indexOf(a.kind) - kinds.indexOf(b.kind) ||
+      (a.what < b.what ? -1 : a.what > b.what ? 1 : 0)
+  );
+};
+
+/**
+ * Checks the order of systems for conflicts: the pairs that touch the same
+ * thing, one of them at least to write it, in an order that nothing says.
+ *
+ * Systems run in the order they are listed in unless `System.after` or
+ * `System.before` says otherwise, and a plugin's are listed before the
+ * app's own. So which of two systems runs first is often an accident, and
+ * where one writes what the other reads, the accident decides what the
+ * game does: whether a system sees this tick's positions or the last
+ * tick's, or reacts to a change in the tick it was made in or the one
+ * after. This finds those, among the systems that said what they read and
+ * write with `System.access`.
+ *
+ * - A pair is in conflict when both touch a component, a singleton, a
+ *   state or an event and one writes it; or both draw from `Random`, both
+ *   issue actions, or both start scripts.
+ * - It is not one when its order is said: one is `after` or `before` the
+ *   other, directly or through others; or they are in different stages,
+ *   which run one after the other; or one is a hook, which runs before a
+ *   tick's systems. Hooks of one moment are checked among themselves.
+ * - The systems of the frame stage and of the input stage change nothing,
+ *   and are left out.
+ *
+ * `app.conflicts` is this for an app's systems. A game settles a conflict
+ * by saying the order, which changes nothing when it is the order they run
+ * in already.
+ */
+export const conflicts = (systems: readonly System<any, any>[]): Report => {
+  const found: Conflict[] = [];
+  const undeclared: string[] = [];
+  const check = (group: readonly System<any, any>[]): void => {
+    const ordered = order(group);
+    const stageOf = new Map(
+      ordered.map((system) => [system.name, system.stage])
+    );
+    // Who has to have run before whom, as it was said.
+    const follows = new Map<string, string[]>(
+      ordered.map((system) => [system.name, []])
+    );
+    for (const system of ordered) {
+      for (const earlier of system.after) {
+        if (stageOf.get(earlier) === system.stage) {
+          follows.get(system.name)!.push(earlier);
+        }
+      }
+      for (const later of system.before) {
+        if (stageOf.get(later) === system.stage) {
+          follows.get(later)!.push(system.name);
+        }
+      }
+    }
+    /** Whether it was said, directly or through others, that `first` runs before `second`. */
+    const said = (first: string, second: string): boolean => {
+      const seen = new Set<string>();
+      const pending = [second];
+      while (pending.length > 0) {
+        for (const earlier of follows.get(pending.pop()!)!) {
+          if (earlier === first) {
+            return true;
+          }
+          if (!seen.has(earlier)) {
+            seen.add(earlier);
+            pending.push(earlier);
+          }
+        }
+      }
+      return false;
+    };
+    const resolved = ordered.map((system) => accessOf(system));
+    for (let i = 0; i < ordered.length; i++) {
+      const first = resolved[i];
+      if (first === undefined) {
+        undeclared.push(ordered[i]!.name);
+        continue;
+      }
+      for (let j = i + 1; j < ordered.length; j++) {
+        const second = resolved[j];
+        // Stages run one after the other: that order is said.
+        if (
+          second === undefined ||
+          ordered[i]!.stage !== ordered[j]!.stage ||
+          said(ordered[i]!.name, ordered[j]!.name)
+        ) {
+          continue;
+        }
+        const over = overlap(first, second);
+        if (over.length > 0) {
+          found.push({
+            first: ordered[i]!.name,
+            second: ordered[j]!.name,
+            over,
+          });
+        }
+      }
+    }
+  };
+  // Hooks run when their state is entered or left, each moment's among
+  // themselves; the rest of the tick's systems, stage by stage.
+  const hooks = new Map<string, System<any, any>[]>();
+  for (const system of systems) {
+    if (system.trigger !== undefined) {
+      const { on, state, value } = system.trigger;
+      const key = `${state.name}\n${on}\n${value}`;
+      hooks.set(key, [...(hooks.get(key) ?? []), system]);
+    }
+  }
+  for (const group of hooks.values()) {
+    check(group);
+  }
+  check(
+    systems.filter(
+      (system) =>
+        system.trigger === undefined &&
+        (stages as readonly string[]).includes(system.stage)
+    )
+  );
+  return { conflicts: found, undeclared };
 };
