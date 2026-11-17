@@ -46,8 +46,14 @@ export class SnapshotError extends Error {
 
 /** "AKWS": arcadekit world snapshot. */
 export const MAGIC = 0x53574b41;
-/** Format 2 added singletons. Format 1 is read as well. */
-export const FORMAT = 2;
+/**
+ * Format 2 added singletons. Format 3 widened an entity's id: a slot's
+ * generation is four bytes where it was two, and an id is eight where it
+ * was four, in a table's list of entities and in an `entity` field. An id
+ * of an older format is the same number in a narrower place, and formats 1
+ * and 2 are read as well.
+ */
+export const FORMAT = 3;
 /** The last four bytes, so that a snapshot cut short at a boundary still shows. */
 export const END = 0x21444e45;
 
@@ -62,7 +68,7 @@ export const WIDTH: Record<
   f64: 8,
   i32: 4,
   u32: 4,
-  entity: 4,
+  entity: 8,
   u16: 2,
   u8: 1,
 };
@@ -405,8 +411,16 @@ export const readColumn = (
   kind: FieldKind,
   column: Column,
   count: number,
-  codec?: RefCodec<unknown>
+  codec?: RefCodec<unknown>,
+  /** True for a snapshot older than format 3, whose ids are four bytes. */
+  narrow = false
 ): void => {
+  if (kind === "entity" && narrow) {
+    const ids = new Uint32Array(count);
+    reader.numbers(ids, count, 4);
+    (column as Float64Array).set(ids);
+    return;
+  }
   if (!isBoxed(kind)) {
     reader.numbers(column as Float32Array, count, WIDTH[kind as "f32"]);
     return;
@@ -438,7 +452,7 @@ export interface SnapshotTable {
   /** Names of the table's components. */
   components: string[];
   /** The id of the entity in each row. */
-  entities: Uint32Array;
+  entities: Float64Array;
   /** Per component name, per field name: one value per row. */
   columns: Record<string, Record<string, Column>>;
 }
@@ -472,7 +486,7 @@ export interface SnapshotContents {
   /** The random generator's four words. */
   random: Uint32Array;
   /** One generation per entity slot. */
-  generations: Uint16Array;
+  generations: Uint32Array;
   /** The freed slots, in the order they will be reused. */
   freed: number[];
   components: SnapshotComponent[];
@@ -494,9 +508,11 @@ const columnOf = (kind: FieldKind, count: number): Column => {
     case "i32": {
       return new Int32Array(count);
     }
-    case "u32":
-    case "entity": {
+    case "u32": {
       return new Uint32Array(count);
+    }
+    case "entity": {
+      return new Float64Array(count);
     }
     case "u16": {
       return new Uint16Array(count);
@@ -533,8 +549,16 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
   for (let word = 0; word < 4; word++) {
     random[word] = reader.u32();
   }
-  const generations = new Uint16Array(reader.count(2));
-  reader.numbers(generations, generations.length, 2);
+  // See `FORMAT`: before format 3 a generation was two bytes and an id four.
+  const narrow = format < 3;
+  const generations = new Uint32Array(reader.count(narrow ? 2 : 4));
+  if (narrow) {
+    const read = new Uint16Array(generations.length);
+    reader.numbers(read, read.length, 2);
+    generations.set(read);
+  } else {
+    reader.numbers(generations, generations.length, 4);
+  }
   const freed: number[] = [];
   for (let i = reader.count(4); i > 0; i--) {
     freed.push(reader.u32());
@@ -576,7 +600,14 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
       }
       const column = columnOf(kind, count);
       // A ref field stays in its encoded form: there is no codec here.
-      readColumn(reader, kind === "ref" ? "json" : kind, column, count);
+      readColumn(
+        reader,
+        kind === "ref" ? "json" : kind,
+        column,
+        count,
+        undefined,
+        narrow
+      );
       columns[name] = column;
     }
     return columns;
@@ -588,8 +619,14 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     for (let d = reader.count(4); d > 0; d--) {
       of.push(componentAt());
     }
-    const entities = new Uint32Array(reader.count(4));
-    reader.numbers(entities, entities.length, 4);
+    const entities = new Float64Array(reader.count(narrow ? 4 : 8));
+    if (narrow) {
+      const read = new Uint32Array(entities.length);
+      reader.numbers(read, read.length, 4);
+      entities.set(read);
+    } else {
+      reader.numbers(entities, entities.length, 8);
+    }
     const columns: SnapshotTable["columns"] = {};
     for (const component of of) {
       columns[component.name] = readFields(component, entities.length);
@@ -666,7 +703,7 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
     writer.u32(contents.random[word] ?? 0);
   }
   writer.u32(contents.generations.length);
-  writer.numbers(contents.generations, contents.generations.length, 2);
+  writer.numbers(contents.generations, contents.generations.length, 4);
   writer.u32(contents.freed.length);
   for (const index of contents.freed) {
     writer.u32(index);
@@ -720,7 +757,7 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
       writer.u32(indexOf.get(component.name)!);
     }
     writer.u32(table.entities.length);
-    writer.numbers(table.entities, table.entities.length, 4);
+    writer.numbers(table.entities, table.entities.length, 8);
     for (const component of of) {
       writeFields(
         component,

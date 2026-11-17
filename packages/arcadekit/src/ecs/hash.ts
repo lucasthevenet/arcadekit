@@ -192,8 +192,7 @@ export const addColumn = (
       const { buffer, byteOffset } = column as Int32Array;
       return addWords(h, new Uint32Array(buffer, byteOffset, count), count);
     }
-    case "u32":
-    case "entity": {
+    case "u32": {
       return addWords(h, column as Uint32Array, count);
     }
     case "u16": {
@@ -209,6 +208,26 @@ export const addColumn = (
         h = add(h, values[i]!);
       }
       return h;
+    }
+    case "entity": {
+      // An entity's id is a whole number kept as a 64-bit float, and never
+      // NaN: its two words as they are, low word first, in the loop that
+      // takes words four at a time. Going through the loop for floats,
+      // which looks at each for NaN, made hashing a world of four float
+      // fields half as slow again.
+      const { buffer, byteOffset } = column as Float64Array;
+      const words = new Uint32Array(buffer, byteOffset, count * 2);
+      if (LOW_FIRST) {
+        return addWords(h, words, count * 2);
+      }
+      // A machine that keeps the high word first: the same words, in the
+      // order every other machine has them.
+      const ordered = new Uint32Array(count * 2);
+      for (let i = 0; i < count; i++) {
+        ordered[2 * i] = words[2 * i + 1]!;
+        ordered[2 * i + 1] = words[2 * i]!;
+      }
+      return addWords(h, ordered, count * 2);
     }
     case "f64": {
       const { buffer, byteOffset } = column as Float64Array;
@@ -264,6 +283,7 @@ export const addColumnPerRow = (
       }
       return;
     }
+    case "entity":
     case "f64": {
       const values = column as Float64Array;
       for (let i = 0; i < count; i++) {

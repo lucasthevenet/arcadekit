@@ -204,6 +204,20 @@ describe("the package's entries", () => {
     ).toEqual(["../src/Browser.ts", "../src/ecs/index.ts"]);
   });
 
+  it("no source makes code from text, which a strict Content Security Policy forbids", () => {
+    // `eval`, and the constructors that compile their argument. What
+    // `each` hands out was once classes made this way: see `makeAccessor`.
+    const generates =
+      /\beval\s*\(|\bnew\s+(?:Async)?(?:Generator)?Function\b|\bFunction\s*\(/u;
+    for (const [file, text] of Object.entries(sources)) {
+      expect(code(text), file).not.toMatch(generates);
+    }
+    // And the pattern is one that would find it.
+    expect('return new Function("return 1")').toMatch(generates);
+    expect("const made = Function(source)").toMatch(generates);
+    expect("eval (source)").toMatch(generates);
+  });
+
   it("arcadekit/Browser is the one entry that imports a browser package, which is an optional peer", () => {
     const { files, packages } = reach(sourceOf("./Browser"));
     expect(packages.filter((one) => !isEffect(one))).toEqual([

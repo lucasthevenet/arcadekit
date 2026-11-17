@@ -50,11 +50,25 @@ Depends on milestones 1 and 2 entirely.
 
 Only with a benchmark that shows the need.
 
-- **Accessors without code generation.** `each` builds its accessors with `new Function`, which a strict Content Security Policy forbids, and the obvious fallback measured about forty times slower than raw columns. Done when the package works under such a policy at a cost a game can accept.
-- **Benchmarks in CI.** Done when a change that slows the storage core by more than the noise fails a check.
-- **Systems that declare what they read and write.** The first step towards running systems in parallel, and useful on its own for ordering and for tools. A query can already say which of its terms it only reads (`Query.reads`), so most of what a system reads and writes is the sum of its queries; what it does through `World`, `Commands` and singletons is not declared yet. Done when the order of systems can be checked for conflicts.
-- **Parallel systems.** Workers over shared memory, for systems whose declared access does not overlap. Done when it is faster on a real workload, and still deterministic.
-- **Wider entity ids.** A handle is 22 bits of index and 10 of generation; a slot reused 1,024 times can alias an old handle. Done when that cannot happen in a session of realistic length.
+Done so far: accessors without code generation. What `each` hands out is made of closures, with no `new Function` anywhere in the package, so a page under a strict Content Security Policy runs a game as it is; it costs 1 ns an entity more than the generated classes did in a program of two components, and four tenths less in one of ten. The package's [README](../packages/arcadekit/README.md#under-a-content-security-policy) describes it. And systems that say what they read and write: `System.access` names a system's queries and what it touches beside them, the app holds a system that said it to it, and `app.conflicts` lists the pairs of systems that touch the same thing, one of them to write it, in an order nothing says; the [README](../packages/arcadekit/README.md#what-a-system-reads-and-writes) describes both. It is what running systems side by side will stand on. And wider entity ids: an id is 22 bits of index and 31 of generation, a whole number below 2^53 in arrays of 64-bit floats, where it was 32 bits with ten of generation and a slot given out every tick came round in seventeen seconds; a slot whose generations are used up is given out no more, so an id never names another entity than its own, in a session of any length. The [README](../packages/arcadekit/README.md#an-entitys-id) describes it. And benchmarks in CI: a pull request that touches the storage core is measured against what it would be merged into, variant by variant and turn and turn about on one machine, and fails if one is slower by more than the noise, unless a commit says it meant to; the [README](../packages/arcadekit/README.md#benchmarks-in-ci) says how it decides.
+
+- **Parallel systems.** Workers over shared memory, for systems whose declared access does not overlap. Done when it is faster on a real workload, and still deterministic. Measured, and not built: it waits on decisions below.
+
+  `pnpm --filter arcadekit bench:parallel` is the smallest thing that could be called this, and no part of the package: columns in shared memory, a loop that is a plain function every thread has imported, a table's rows shared out between three workers and the main thread, which waits for them before it goes on. On four cores of a shared machine, the best of three:
+
+  | Loop | One thread | Four, asleep between jobs | Four, spinning |
+  | --- | --: | --: | --: |
+  | `pos += vel * dt`, 1,000 entities | 2.8 µs | 69.7 µs | 2.5 µs |
+  | The same, 100,000 | 263 µs | 180 µs | 69 µs |
+  | A flock, each steering by its eight neighbours, 10,000 | 370 µs | 253 µs | 178 µs |
+  | The same, 100,000 | 3.7 ms | 2.1 ms | 1.3 ms |
+  | The same, 400,000 | 14.8 ms | 8.0 ms | 6.7 ms |
+
+  Every line leaves the same numbers behind however the rows are shared out, since the loops write nothing another thread reads. Shared memory costs a loop on one thread nothing: 261 µs against 263.
+
+  So there is something to gain, two to four times, where a tick is over its budget: a flock of 400,000 does not fit in a sixtieth of a second on one thread and does on four. There is nothing to gain for the 100,000 entities of the package's own benchmark, which move in a quarter of a millisecond, and a loss wherever workers are left to sleep and the loop is short: waking one takes longer than a thousand entities take to move. That is the need, and it is a game larger than any the package has been tried on.
+
+  What it stands on is there: a system says what it reads and writes, and is held to it. What it waits on is what a worker runs. A worker has no closure of the main thread's, so the loop it runs is a function of a module it imported itself, given columns and numbers: a raw loop over columns, which is the `eachChunk` path, and three of the decisions below are about exactly that. Building it first would have settled them by accident.
 
 ## 8. Seeing what is going on
 
@@ -71,8 +85,10 @@ What is merely not built yet is not here: that is the READMEs' "Not done yet". W
 
 The order systems run in:
 
-- **`System.before` and `System.after` move a system past everything listed in between.** One that says `System.before(other)` is pulled ahead of where `other` was listed, and with it ahead of every system listed between the two, which said nothing; and a plugin's systems are listed before the app's own. Adding such a system leaves the others in the order they were, which is the point, but the one that moved may now run before something it reads from. What a frame draws with no longer does this: a renderer's last step is in `"postFrame"`, and nothing has to say `before` it.
-- **A system that reacts through a change query, listed before the system that makes the change, reacts a tick late.** In a game that ticks when needed, one such system gets the one tick that follows the last and two in a row are a tick short: the game rests with work undone, unless the system that changed something asks for a tick with `Ticks.more`.
+- **`System.before` and `System.after` move a system past everything listed in between.** One that says `System.before(other)` is pulled ahead of where `other` was listed, and with it ahead of every system listed between the two, which said nothing; and a plugin's systems are listed before the app's own. Adding such a system leaves the others in the order they were, which is the point, but the one that moved may now run before something it reads from. What a frame draws with no longer does this: a renderer's last step is in `"postFrame"`, and nothing has to say `before` it. `app.conflicts` finds such a pair when both systems have said what they read and write, with `System.access`; one that has not is in `app.undeclared` and in no check. To close it: have every system say, which would break every game that has one that does not.
+- **A system that reacts through a change query, listed before the system that makes the change, reacts a tick late.** In a game that ticks when needed, one such system gets the one tick that follows the last and two in a row are a tick short: the game rests with work undone, unless the system that changed something asks for a tick with `Ticks.more`. `app.conflicts` lists the pair, as one that `"watches"` and one that `"writes"`, when both have said what they read and write; it does not say which way round is right, and an order that was said the wrong way round is taken at its word.
+- **What a system said it reads and writes is held as it runs, and no sooner.** A system that touches something it left out only when some condition of the game holds is refused in the first tick in which it does, which may be an hour into a game and never in a test. To close it: nothing short of proving it from the system's types, which do not carry it.
+- **A despawn is said by one component.** A system that despawns an entity says it writes a component the entity has, and the entity's other components go with it, as does whatever hangs from it by a relation. A system that visits those through components the first never named is not found to be in conflict with it.
 
 Ticks, frames and real time:
 
@@ -100,7 +116,6 @@ What a replay, a save and the hash do not hold:
 - **A refused action does not undo what is outside the world**: an object in a field changed in place, a call to a service of the game's own, a script it started.
 - **A save holds no scripts, and the log does not say when one was started by hand** or the delta and number of ticks it was recorded at. Whoever loads or replays has to know and supply them.
 - **The hash is of the world only**: not the events waiting, what change queries have yet to visit, the actions queued, or how far a script has got. Two games with the same hash can go different ways.
-- **An entity handle kept across 1,024 reuses of its slot names a newer entity.**
 
 Values that have to be right and are not checked:
 
@@ -123,6 +138,13 @@ Not work yet; each needs an answer before the item that depends on it.
 - **Raw columns under `noUncheckedIndexedAccess`.** Every read in an `eachChunk` loop needs a `!`. Accept it, or find an API for the fast path that does not.
 - **Sparse data in raw loops.** A sparse component arrives as `{ columns, indexOf }`, which works and reads badly.
 - **How a game is laid out on disk.** One plugin per folder is the obvious answer; the examples are single files and do not show it.
+
+Parallel systems wait on all three: a loop that runs on a worker is a raw loop over columns, it has to say what a sparse component is to it, and it has to be in a module that a worker's entry imports, which is a question of where a game's files are. They bring four more, which `pnpm --filter arcadekit bench:parallel` was written to inform:
+
+- **What a worker runs.** A function of a module the worker imported, given columns, a range of rows and numbers, and nothing it closed over. Whether that is a new kind of system, or the loop of an ordinary one given a name, and how a worker comes to import it: a worker is made of a file, and which file is the game's bundler's to say.
+- **Whether workers sleep.** One that sleeps between jobs takes 25 µs to 70 µs to wake, which is more than most loops take; one that spins is there at once and burns a core, on a phone as on a desk. A page's main thread may not sleep at all, and spins while it waits.
+- **Where shared memory is not to be had.** A page gets it only with the headers that isolate it from other origins, which are its host's to send. A game served without them runs on one thread, and has to be the same game.
+- **What cannot be shared.** A field that holds an object, `json`, `ref` or `transient`, is not in shared memory. A worker's commands, the events it emits and the numbers it draws have to come back to the main thread and be applied in the order the systems were listed in, or a tick is no longer the same from the same inputs.
 
 Decided, and no longer waiting: no UI library. The previous version drew its UI with Foldkit; this one does not depend on it, or on any other. Three.js is different, because it does a job the package would otherwise have to do itself. A game's UI reaches the game through the view bridge of milestone 5, with whatever library it likes.
 

@@ -17,12 +17,11 @@ import { fileURLToPath } from "node:url";
  */
 import { Data, Effect, Exit, Schema } from "effect";
 
-import { World } from "../src/ecs/world";
 import {
   Action,
   App,
-  Component,
   Driver,
+  EcsWorld as World,
   EntityId,
   Event,
   Field,
@@ -37,75 +36,25 @@ import {
   World as WorldService,
 } from "../src/index";
 import type { Entity } from "../src/index";
+import {
+  variants as coreVariants,
+  measure,
+  populate,
+  sizes,
+  Position,
+  Velocity,
+} from "./core";
+import type { Variant } from "./core";
 
+// As `bench/core.ts` has them, and constants of this module so that a loop
+// reads them at no cost.
 const N = 100_000;
 const DT = 1 / 60;
+if (N !== sizes.entities || DT !== sizes.step) {
+  throw new Error("bench/accessors.ts and bench/core.ts differ on N or DT.");
+}
 
-const Position = Component.define("bench/Position", {
-  x: Field.f32,
-  y: Field.f32,
-});
-const Velocity = Component.define("bench/Velocity", {
-  x: Field.f32,
-  y: Field.f32,
-});
-const tags = [0, 1, 2, 3, 4].map((i) => Component.tag(`bench/Tag${i}`));
-const Frozen = Component.tag("bench/Frozen", { storage: "sparse" });
-const Heat = Component.define(
-  "bench/Heat",
-  { degrees: Field.f32 },
-  { storage: "sparse" }
-);
 const Moving = Query.all(Position, Velocity);
-const Aims = Component.relation("bench/Aims", { onTargetDespawn: "remove" });
-const Child = Component.relation("bench/Child", { onTargetDespawn: "despawn" });
-
-/** Gives the sparse tag to one entity in every `n`. */
-const tagEvery = (world: World, n: number): void => {
-  const all = world.view(Query.all(Position)).entities();
-  for (let i = 0; i < all.length; i += n) {
-    world.add(all[i]!, Frozen);
-  }
-};
-
-const populate = (world: World, fragmented = false): void => {
-  for (let i = 0; i < N; i++) {
-    const extra = fragmented ? tags.filter((_, bit) => (i >> bit) & 1) : [];
-    world.spawn(
-      Position.of({ x: i, y: i }),
-      Velocity.of({ x: 1, y: 2 }),
-      ...extra
-    );
-  }
-};
-
-/**
- * Median milliseconds per call. `before`, when given, runs ahead of every
- * call and is not timed: it puts back what the call uses up.
- */
-const measure = (
-  run: () => void,
-  runs = 300,
-  warmup = 80,
-  before?: () => void
-): number => {
-  for (let i = 0; i < warmup; i++) {
-    before?.();
-    run();
-  }
-  const samples: number[] = [];
-  for (let i = 0; i < runs; i++) {
-    before?.();
-    const start = performance.now();
-    run();
-    samples.push(performance.now() - start);
-  }
-  samples.sort((a, b) => a - b);
-  return samples[samples.length >> 1]!;
-};
-
-/** Visits only the entities whose position was written since its last visit. */
-const Repositioned = Query.all(Velocity).pipe(Query.changed(Position));
 
 class Refused extends Data.TaggedError("Refused")<{}> {}
 
@@ -514,134 +463,9 @@ const MovementRaw = System.make("MovementRaw", function* () {
   });
 });
 
-const variants: Record<
-  string,
-  {
-    readonly label: string;
-    /** How to report the time: divided by all entities, or for the whole pass. */
-    readonly unit?: "entity" | "matches" | "dispatch" | "visit";
-    readonly run: () => number;
-  }
-> = {
-  raw: {
-    label: "eachChunk: raw typed-array columns",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const view = world.view(Moving);
-      return measure(() => {
-        view.eachChunk((start, end, pos, vel) => {
-          const px = pos.x;
-          const py = pos.y;
-          const vx = vel.x;
-          const vy = vel.y;
-          for (let i = start; i < end; i++) {
-            px[i]! += vx[i]! * DT;
-            py[i]! += vy[i]! * DT;
-          }
-        });
-      });
-    },
-  },
-
-  each: {
-    label: "each: accessors, only one system in the program",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const view = world.view(Moving);
-      return measure(() => {
-        view.each((pos, vel) => {
-          pos.x += vel.x * DT;
-          pos.y += vel.y * DT;
-        });
-      });
-    },
-  },
-
-  eachMany: {
-    // A real game calls each() from dozens of systems, so V8 can no longer
-    // inline the callback. This is the number to plan around.
-    label: "each: accessors, after 6 other systems used each()",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const view = world.view(Moving);
-      const positions = world.view(Query.all(Position));
-      const velocities = world.view(Query.all(Velocity));
-      let sink = 0;
-      for (let pass = 0; pass < 80; pass++) {
-        positions.each((pos) => {
-          sink += pos.x;
-        });
-        positions.each((pos) => {
-          sink += pos.y;
-        });
-        velocities.each((vel) => {
-          sink += vel.x;
-        });
-        velocities.each((vel, entity) => {
-          sink += entity;
-        });
-        view.each((pos, vel) => {
-          sink += pos.x - vel.y;
-        });
-        view.each((_, vel, entity) => {
-          sink += vel.x + entity;
-        });
-      }
-      void sink;
-      return measure(() => {
-        view.each((pos, vel) => {
-          pos.x += vel.x * DT;
-          pos.y += vel.y * DT;
-        });
-      });
-    },
-  },
-
-  closures: {
-    // What a fallback for strict-CSP pages would cost: getters that close
-    // over the field name instead of being generated as static reads.
-    label: "accessors without code generation",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const view = world.view(Moving);
-      const closureAccessor = (fields: readonly string[]) => {
-        const acc: any = { _i: 0, _cols: undefined };
-        for (const field of fields) {
-          Object.defineProperty(acc, field, {
-            get() {
-              return this._cols[field][this._i];
-            },
-            set(value: number) {
-              this._cols[field][this._i] = value;
-            },
-          });
-        }
-        return acc;
-      };
-      const cPos = closureAccessor(["x", "y"]);
-      const cVel = closureAccessor(["x", "y"]);
-      return measure(
-        () => {
-          view.eachChunk((start, end, pos, vel) => {
-            cPos._cols = pos;
-            cVel._cols = vel;
-            for (let i = start; i < end; i++) {
-              cPos._i = i;
-              cVel._i = i;
-              cPos.x += cVel.x * DT;
-              cPos.y += cVel.y * DT;
-            }
-          });
-        },
-        100,
-        30
-      );
-    },
-  },
+const variants: Record<string, Variant> = {
+  // The storage core's own, which `bench/core.ts` holds and CI compares.
+  ...coreVariants,
 
   objects: {
     label: "baseline: array of plain objects",
@@ -656,138 +480,6 @@ const variants: Record<
           o.pos.x += o.vel.x * DT;
           o.pos.y += o.vel.y * DT;
         }
-      });
-    },
-  },
-
-  fragmented: {
-    label: "each: same entities spread over 32 tables",
-    run: () => {
-      const world = new World();
-      populate(world, true);
-      const view = world.view(Moving);
-      return measure(() => {
-        view.each((pos, vel) => {
-          pos.x += vel.x * DT;
-          pos.y += vel.y * DT;
-        });
-      });
-    },
-  },
-
-  fragmentedRaw: {
-    label: "eachChunk: same entities spread over 32 tables",
-    run: () => {
-      const world = new World();
-      populate(world, true);
-      const view = world.view(Moving);
-      return measure(() => {
-        view.eachChunk((start, end, pos, vel) => {
-          const px = pos.x;
-          const py = pos.y;
-          const vx = vel.x;
-          const vy = vel.y;
-          for (let i = start; i < end; i++) {
-            px[i]! += vx[i]! * DT;
-            py[i]! += vy[i]! * DT;
-          }
-        });
-      });
-    },
-  },
-
-  withoutEach: {
-    label: "each: without a sparse tag that 1% of entities have",
-    run: () => {
-      const world = new World();
-      populate(world);
-      tagEvery(world, 100);
-      const view = world.view(Moving.pipe(Query.without(Frozen)));
-      return measure(() => {
-        view.each((pos, vel) => {
-          pos.x += vel.x * DT;
-          pos.y += vel.y * DT;
-        });
-      });
-    },
-  },
-
-  withoutChunk: {
-    label: "eachChunk: without a sparse tag that 1% have",
-    run: () => {
-      const world = new World();
-      populate(world);
-      tagEvery(world, 100);
-      const view = world.view(Moving.pipe(Query.without(Frozen)));
-      return measure(() => {
-        view.eachChunk((start, end, pos, vel) => {
-          const px = pos.x;
-          const py = pos.y;
-          const vx = vel.x;
-          const vy = vel.y;
-          for (let i = start; i < end; i++) {
-            px[i]! += vx[i]! * DT;
-            py[i]! += vy[i]! * DT;
-          }
-        });
-      });
-    },
-  },
-
-  withMask: {
-    unit: "matches",
-    label: "each: with a sparse tag 1 in 100 have, mask",
-    run: () => {
-      const world = new World();
-      populate(world);
-      tagEvery(world, 100);
-      const view = world.view(Moving.pipe(Query.with(Frozen)));
-      view._path = "mask";
-      return measure(() => {
-        view.each((pos, vel) => {
-          pos.x += vel.x * DT;
-          pos.y += vel.y * DT;
-        });
-      });
-    },
-  },
-
-  withSorted: {
-    unit: "matches",
-    label: "each: with a sparse tag 1 in 100 have, sorted",
-    run: () => {
-      const world = new World();
-      populate(world);
-      tagEvery(world, 100);
-      const view = world.view(Moving.pipe(Query.with(Frozen)));
-      view._path = "sorted";
-      return measure(() => {
-        view.each((pos, vel) => {
-          pos.x += vel.x * DT;
-          pos.y += vel.y * DT;
-        });
-      });
-    },
-  },
-
-  halfFrozenChunk: {
-    label: "eachChunk: without a sparse tag every other entity has",
-    run: () => {
-      const world = new World();
-      populate(world);
-      tagEvery(world, 2);
-      const view = world.view(Moving.pipe(Query.without(Frozen)));
-      return measure(() => {
-        view.eachChunk((start, end, pos, vel) => {
-          const px = pos.x;
-          const py = pos.y;
-          const vx = vel.x;
-          const vy = vel.y;
-          for (let i = start; i < end; i++) {
-            px[i]! += vx[i]! * DT;
-            py[i]! += vy[i]! * DT;
-          }
-        });
       });
     },
   },
@@ -869,6 +561,26 @@ const variants: Record<
         )
       ),
   },
+  idleDeclared: {
+    // The same ten systems, each having said what it reads and writes: the
+    // app holds each to it, and its query is looked up in what it said.
+    label: "app.tick: the same, each having said its access",
+    run: () =>
+      Effect.runSync(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const systems = Array.from({ length: 10 }, (_, i) =>
+              System.make(`Idle${i}`, function* () {
+                yield* Moving;
+                yield* Time;
+              }).pipe(System.access({ queries: [Moving] }))
+            );
+            const app = yield* App.make({ systems });
+            return measure(() => app.tick(DT), 50_000, 20_000);
+          })
+        )
+      ),
+  },
   idleConditioned: {
     // The same ten systems, each asked whether the game is in a state.
     label: "app.tick: the same, each with a condition that holds",
@@ -877,102 +589,6 @@ const variants: Record<
   idleSkipped: {
     label: "app.tick: the same, each with a condition that does not",
     run: () => idling("off"),
-  },
-  hash: {
-    // The same world as the first line: four float fields and an id per
-    // entity, so five 32-bit words each.
-    label: "world.hash(): 100,000 entities in one table",
-    run: () => {
-      const world = new World();
-      populate(world);
-      let sink = 0;
-      const ms = measure(() => {
-        sink ^= world.hash();
-      });
-      void sink;
-      return ms;
-    },
-  },
-
-  hashFragmented: {
-    label: "world.hash(): same entities spread over 32 tables",
-    run: () => {
-      const world = new World();
-      populate(world, true);
-      let sink = 0;
-      const ms = measure(() => {
-        sink ^= world.hash();
-      });
-      void sink;
-      return ms;
-    },
-  },
-
-  hashSparse: {
-    // Every entity also has a sparse component with one float field, whose
-    // members are hashed one by one so that their order does not matter.
-    label: "world.hash(): the same, plus a sparse field on each",
-    run: () => {
-      const world = new World();
-      populate(world);
-      for (const entity of world.view(Query.all(Position)).entities()) {
-        world.add(entity, Heat.of({ degrees: 1 }));
-      }
-      let sink = 0;
-      const ms = measure(() => {
-        sink ^= world.hash();
-      });
-      void sink;
-      return ms;
-    },
-  },
-  snapshot: {
-    // The same world as the first line: per entity an id, four floats and a
-    // generation, 22 bytes.
-    label: "world.snapshot(): 100,000 entities in one table",
-    run: () => {
-      const world = new World();
-      populate(world);
-      let sink = 0;
-      const ms = measure(() => {
-        sink += world.snapshot().length;
-      });
-      void sink;
-      return ms;
-    },
-  },
-
-  load: {
-    label: "world.load(): the same snapshot, into a new world",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const bytes = world.snapshot();
-      let sink = 0;
-      const ms = measure(() => {
-        const fresh = new World();
-        fresh.load(bytes, [Position, Velocity]);
-        sink += fresh.entityCount;
-      });
-      void sink;
-      return ms;
-    },
-  },
-
-  restore: {
-    label: "world.restore(): the same snapshot, into its own world",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const bytes = world.snapshot();
-      let sink = 0;
-      const ms = measure(() => {
-        world.restore(bytes);
-        sink += world.entityCount;
-      });
-      void sink;
-      return ms;
-    },
   },
 
   // What predicting a tick costs: the game is captured before a tick the
@@ -1061,294 +677,6 @@ const variants: Record<
     run: () => atRest(),
   },
 
-  // Change detection. A write is noticed per row, and only for a component
-  // some query watches: here Position, watched by `Repositioned`. Before
-  // each timed pass the watching query visits, untimed, so that the pass
-  // has every row to note afresh, which is the most a write can cost.
-  watchedEach: {
-    label: "each: writing a watched component, all noted",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const view = world.view(Moving);
-      const watcher = world.view(Repositioned);
-      return measure(
-        () => {
-          view.each((pos, vel) => {
-            pos.x += vel.x * DT;
-            pos.y += vel.y * DT;
-          });
-        },
-        300,
-        80,
-        () => watcher.eachChunk(() => {})
-      );
-    },
-  },
-  watchedEachNoted: {
-    label: "each: the same, every row noted already",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const view = world.view(Moving);
-      world.view(Repositioned).eachChunk(() => {});
-      return measure(() => {
-        view.each((pos, vel) => {
-          pos.x += vel.x * DT;
-          pos.y += vel.y * DT;
-        });
-      });
-    },
-  },
-  watchedChunk: {
-    label: "eachChunk: handed a watched component, all noted",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const view = world.view(Moving);
-      const watcher = world.view(Repositioned);
-      return measure(
-        () => {
-          view.eachChunk((start, end, pos, vel) => {
-            const px = pos.x;
-            const py = pos.y;
-            const vx = vel.x;
-            const vy = vel.y;
-            for (let i = start; i < end; i++) {
-              px[i]! += vx[i]! * DT;
-              py[i]! += vy[i]! * DT;
-            }
-          });
-        },
-        300,
-        80,
-        () => watcher.eachChunk(() => {})
-      );
-    },
-  },
-  watchedChunkReads: {
-    label: "eachChunk: handed a watched component it only reads",
-    run: () => {
-      const world = new World();
-      populate(world);
-      // Velocity is written from Position, which the query only reads.
-      const view = world.view(Moving.pipe(Query.reads(Position)));
-      const watcher = world.view(Repositioned);
-      return measure(
-        () => {
-          view.eachChunk((start, end, pos, vel) => {
-            const px = pos.x;
-            const py = pos.y;
-            const vx = vel.x;
-            const vy = vel.y;
-            for (let i = start; i < end; i++) {
-              vx[i]! += px[i]! * DT;
-              vy[i]! += py[i]! * DT;
-            }
-          });
-        },
-        300,
-        80,
-        () => watcher.eachChunk(() => {})
-      );
-    },
-  },
-  changedNone: {
-    unit: "visit",
-    label: "change query: nothing changed",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const watcher = world.view(Repositioned);
-      watcher.eachChunk(() => {});
-      let sink = 0;
-      const ms = measure(
-        () => {
-          // A thousand visits a sample: one is too short to time.
-          for (let i = 0; i < 1000; i++) {
-            watcher.each((vel) => {
-              sink += vel.x;
-            });
-          }
-        },
-        2000,
-        500
-      );
-      void sink;
-      return ms / 1000;
-    },
-  },
-  changedOne: {
-    unit: "visit",
-    label: "change query: one write in 100,000, set and visit",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const watcher = world.view(Repositioned);
-      watcher.eachChunk(() => {});
-      const target = world.view(Moving).entities()[N >> 1]!;
-      let sink = 0;
-      const ms = measure(
-        () => {
-          for (let i = 0; i < 1000; i++) {
-            world.set(target, Position, { x: i });
-            watcher.each((vel) => {
-              sink += vel.x;
-            });
-          }
-        },
-        2000,
-        500
-      );
-      void sink;
-      return ms / 1000;
-    },
-  },
-  changedPercent: {
-    unit: "matches",
-    label: "change query: visiting the 1,000 written, of 100,000",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const watcher = world.view(Repositioned);
-      watcher.eachChunk(() => {});
-      const all = world.view(Moving).entities();
-      let sink = 0;
-      const ms = measure(
-        () => {
-          watcher.each((vel) => {
-            sink += vel.x;
-          });
-        },
-        2000,
-        500,
-        () => {
-          for (let i = 0; i < N; i += 100) {
-            world.set(all[i]!, Position, { x: i });
-          }
-        }
-      );
-      void sink;
-      return ms;
-    },
-  },
-  changedAll: {
-    label: "change query: visiting all 100,000, all written",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const writer = world.view(Query.all(Position));
-      const watcher = world.view(Repositioned);
-      let sink = 0;
-      const ms = measure(
-        () => {
-          watcher.each((vel) => {
-            sink += vel.x;
-          });
-        },
-        300,
-        80,
-        () =>
-          writer.each((pos) => {
-            pos.x += 1;
-          })
-      );
-      void sink;
-      return ms;
-    },
-  },
-
-  // Entities coming and going: a thousand spawned and despawned again, in
-  // the world of 100,000. Despawning looks for who points at the entity.
-  churn: {
-    unit: "matches",
-    label: "spawn 1,000 entities and despawn them again",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const made: Entity[] = [];
-      return measure(
-        () => {
-          for (let i = 0; i < 1000; i++) {
-            made.push(
-              world.spawn(
-                Position.of({ x: i, y: i }),
-                Velocity.of({ x: 1, y: 2 })
-              )
-            );
-          }
-          for (let i = 0; i < 1000; i++) {
-            world.despawn(made[i]!);
-          }
-          made.length = 0;
-        },
-        2000,
-        500
-      );
-    },
-  },
-
-  churnRelated: {
-    unit: "matches",
-    label: "the same, each pointing at one entity with a relation",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const anchor = world.spawn(Position.of({ x: 0, y: 0 }));
-      const made: Entity[] = [];
-      return measure(
-        () => {
-          for (let i = 0; i < 1000; i++) {
-            made.push(
-              world.spawn(
-                Position.of({ x: i, y: i }),
-                Velocity.of({ x: 1, y: 2 }),
-                Aims.of({ target: anchor })
-              )
-            );
-          }
-          for (let i = 0; i < 1000; i++) {
-            world.despawn(made[i]!);
-          }
-          made.length = 0;
-        },
-        2000,
-        500
-      );
-    },
-  },
-  cascade: {
-    unit: "matches",
-    label: "despawn 100 parents, each taking its 10 children",
-    run: () => {
-      const world = new World();
-      populate(world);
-      const parents: Entity[] = [];
-      return measure(
-        () => {
-          for (let i = 0; i < 100; i++) {
-            world.despawn(parents[i]!);
-          }
-          parents.length = 0;
-        },
-        2000,
-        500,
-        () => {
-          for (let i = 0; i < 100; i++) {
-            const parent = world.spawn(Position.of({ x: i, y: i }));
-            parents.push(parent);
-            for (let c = 0; c < 10; c++) {
-              world.spawn(
-                Position.of({ x: c, y: c }),
-                Child.of({ target: parent })
-              );
-            }
-          }
-        }
-      );
-    },
-  },
-
   // What an action costs, in a world of 100,000 entities. A refused action
   // has to leave nothing behind, so what its handler may write is saved
   // first: one row for `world.set`, the visited columns for a query's loop.
@@ -1422,7 +750,7 @@ if (only === undefined) {
     `accessors (best case) vs raw columns:   ${ratio("each", "raw")}`
   );
   console.log(
-    `no-codegen accessors vs raw columns:    ${ratio("closures", "raw")}`
+    `accessors (ten components) vs raw:      ${ratio("eachComponents", "raw")}`
   );
   console.log(
     `array of objects vs raw columns:        ${ratio("objects", "raw")}`

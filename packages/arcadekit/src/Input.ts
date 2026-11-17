@@ -525,7 +525,13 @@ const viewsOf = (world: EcsWorld, time: Readonly<TimeState>): Views => {
   if (found !== undefined) {
     return found;
   }
+  // Whoever asks first may be a system that said what it reads and writes.
+  // The picture is not among what it says, as the time is not: no system
+  // writes it, so reading it puts no two systems in an order.
+  const { guard } = world;
+  world.guard = undefined;
   const held = world.singleton(Held);
+  world.guard = guard;
   const down = (code: string): boolean => held.buttons[code]?.[0] === 1;
   // The tick whoever asks belongs to. An action's handler runs before its
   // tick is counted, in a transaction of the world, which is how it is

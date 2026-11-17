@@ -79,9 +79,11 @@ const column = (kind: FieldKind, count: number, value: unknown): Column => {
     case "i32": {
       return new Int32Array(count).fill(value as number);
     }
-    case "u32":
-    case "entity": {
+    case "u32": {
       return new Uint32Array(count).fill(value as number);
+    }
+    case "entity": {
+      return new Float64Array(count).fill(value as number);
     }
     case "u16": {
       return new Uint16Array(count).fill(value as number);
@@ -251,7 +253,7 @@ export const removeComponent = (
     }
     // The same set of components as an earlier table: its rows move there.
     const count = first.entities.length;
-    const entities = new Uint32Array(count + table.entities.length);
+    const entities = new Float64Array(count + table.entities.length);
     entities.set(first.entities);
     entities.set(table.entities, count);
     first.entities = entities;
