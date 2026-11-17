@@ -152,6 +152,11 @@
       "types": "./dist/Transform3d.d.ts",
       "default": "./dist/Transform3d.js"
     },
+    "./Transport": {
+      "source": "./src/Transport.ts",
+      "types": "./dist/Transport.d.ts",
+      "default": "./dist/Transport.js"
+    },
     "./View": {
       "source": "./src/View.ts",
       "types": "./dist/View.d.ts",

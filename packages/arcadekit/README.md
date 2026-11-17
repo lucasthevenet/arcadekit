@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 758 tests, 93 of them of @arcadekit/three
+pnpm test                          # 773 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -68,7 +68,7 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Lockstep`, `Migrate`, `Plugin`, `Query`, `Resource`, `Rollback`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `View` | `effect` |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Lockstep`, `Migrate`, `Plugin`, `Query`, `Resource`, `Rollback`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `Transport`, `View` | `effect` |
 | `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, its sound, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
@@ -268,6 +268,7 @@ A string that identifies something at run time carries the name of the feature i
 
 - The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Ticks"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
 - The bridge to a UI is `"arcadekit/View.Bridge"` and an app's end of it `"arcadekit/View.Port"`; the plugin is `"arcadekit/View"`, its system `"arcadekit/View.Send"`, and the system that publishes a view is named after it, `"View.publish(game/Hud)"`.
+- What carries a session's messages is `"arcadekit/Transport"`.
 - Where sound goes is `"arcadekit/Sound.Output"` and an app's player of cues `"arcadekit/Sound.Player"`; the plugin is `"arcadekit/Sound"`.
 - An app's assets are kept under `"arcadekit/Assets.Store"` and fetched through `"arcadekit/Assets.Loader"`; the plugin is `"arcadekit/Assets"`, and the system that keeps a bundle is named after it, `"Assets.during(game/Forest)"`.
 - What `Input.plugin` adds to a game is named the same way: the plugin and its singleton `"arcadekit/Input"`, its action `"arcadekit/Input.Report"` and its system `"arcadekit/Input.Read"`.
@@ -1139,6 +1140,53 @@ app.rewind(moment.value); // the same app, as it was
 - Nor is what a service of the game's own holds, or a field that is `transient`, which is undefined afterwards, as in a loaded game.
 - What draws starts over. The frame stage's and the input stage's change queries visit everything again, as in a loaded game, and they hear the events of a tick that is run again a second time: a sound may be played twice.
 
+### Carrying the messages
+
+```ts
+const program = Effect.gen(function* () {
+  const app = yield* App.make({ plugins: [Game], seed });
+  const session = Rollback.make(app, { peer, peers, delta: 1 / 60 });
+  return yield* Driver.frames(yield* Transport.connect(session), { hz: 60 });
+}).pipe(
+  Effect.scoped,
+  Effect.provide(Transport.layerBroadcastChannel("game/room-7"))
+);
+
+Browser.runMain(program, { target: canvas });
+```
+
+A session holds no socket. What carries its messages is a service, `Transport`, with two plain calls: `send(message)`, to every other peer, and `receive()`, which gives the messages that have arrived since it was last asked.
+
+- `Transport.connect(session)` joins a session to the transport and gives what a driver steps in the session's place. Each tick it hands the session what has arrived, runs the session's tick, and sends what the session has to say, whether the tick ran, waited or failed: a session that stops because the peers have come apart says so to the others first.
+- There is no default. A game of several peers that is given no transport does not compile, as with any service: every way of reaching the others is a choice.
+- It asks little of a wire: that every message arrives, in whatever order. A message that arrives twice is dropped by the session.
+- `Transport.layerBroadcastChannel(name)` is the transport between the tabs, the windows and the workers of one browser, or the threads of one process. Every peer that opens the same name hears every other, with no server. It reaches no other machine. The channel is closed with the layer's scope, so the layer is provided to the whole program, and a transport that is used after its scope has closed throws and says so, in place of a game that waits for ever.
+- `Transport.text(wire)` makes a transport of anything that carries text, for a wire of the game's own. A message travels as `Lockstep.encode` writes it, and a text that is not a message is dropped and counted in `dropped`: nothing that comes off a wire is trusted. Through a WebSocket, to a relay that passes each message on to the others in a room, which is the game's to run:
+
+  ```ts
+  const socket = new WebSocket(url);
+  const transport = Transport.text({
+    send: (text) => socket.send(text),
+    listen(onText) {
+      socket.onmessage = (event) => onText(String(event.data));
+      return () => socket.close();
+    },
+  });
+  program.pipe(Effect.provide(Transport.layer(transport)));
+  ```
+
+- `Transport.makeHub({ delay, seed })` is a network in memory, for tests. `hub.layer(peer)` is a peer's end of it. Nothing is lost and nothing happens until the test says so: a message is on its way for as many steps as its delay, a number or a range from which each message's is drawn, so that they overtake each other, and time passes when the test calls `hub.step()`. The same seed is the same network.
+
+  ```ts
+  const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 1 });
+  const ada =
+    yield * Transport.connect(session).pipe(Effect.provide(hub.layer("ada")));
+  hub.step();
+  ada.tick();
+  ```
+
+- The frame loop rests while its tab is hidden, and a peer that rests is waited for. Two peers in one browser are two windows side by side, not two tabs of one.
+
 ### Peers that come apart
 
 ```ts
@@ -1186,13 +1234,14 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `src/View.ts` | The view bridge: the values a UI may see, published once per frame when they changed, and the actions it sends |
 | `src/Lockstep.ts` | A session of several peers: the messages they exchange, the tick that waits for every peer's, and the hashes they compare |
 | `src/Rollback.ts` | The session that does not wait: it runs ahead of the network and goes back when it was wrong |
+| `src/Transport.ts` | What carries a session's messages: the service, what joins a session to it, a transport over text, the one between tabs, and a network in memory for tests |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, and a world that is restored compared with a new one that loaded the same snapshot. `test/peers.ts` is the game and the network those of several peers share |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, and a world that is restored compared with a new one that loaded the same snapshot. `test/peers.ts` is the game and the network those of several peers share |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
@@ -1399,13 +1448,13 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A frame system of the game's own that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps: there is no helper for it in this package. [`@arcadekit/three`](../three/README.md#between-two-ticks) does it for what it draws, with `smooth: true`, and keeps the place before to itself.
 - `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
 - `arcadekit/Browser` is one entry for everything a page has.
-- Nothing carries a session's messages yet: a game hands them to whatever it has. That is next on the roadmap.
+- No transport here leaves the machine. `Transport.layerBroadcastChannel` reaches the tabs and workers of one browser, and `Transport.text` makes a transport of a WebSocket or a data channel that the game opens itself: the relay, or whatever introduces the peers to each other, is the game's to run. The roadmap has it, with the decision it waits for.
 - A rollback session keeps a snapshot of the whole world for each tick it is not sure of, and loads one to go back. For a very large world that is the cost of every such tick: nothing keeps only what changed.
 - A game played with rollback is drawn and heard as it is predicted. A sound for something that is then taken back was played, an event of a tick that is run again is heard again by the frame stage, and its change queries visit everything after each rewind. Nothing tells what draws which ticks are final but `session.confirmed`.
 - A script is started again by every rewind, and what a service of the game's own holds is not put back. With rollback, what the simulation reads is in the world.
 - Peers that have come apart stop. Nothing brings them back together: a game that wants to go on has every peer load one peer's save and makes its sessions again.
 - A session's peers are fixed when it is made. Nobody joins a game in progress or leaves one, and a peer that stops is waited for.
-- Every message has to arrive. One that is lost stops the game for everyone: nothing asks for it again.
+- Every message has to arrive. One that is lost stops the game for everyone: nothing asks for it again, and nothing says that a peer has gone quiet but `session.waitingFor`.
 - A handler is not told which peer issued an action. A game puts the player in the payload, and a peer can put another's name there.
 - A game in a session ticks all the time. One that ticks when it is needed, `ticks: "whenNeeded"`, is not for several peers yet: a session does not say when it is settled.
 
