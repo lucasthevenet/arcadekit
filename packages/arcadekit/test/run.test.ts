@@ -425,7 +425,9 @@ describe("App.run", () => {
         // The page's devices, and a display turned by hand in place of the
         // page's: what is provided nearer the game is the one it gets.
         Effect.provideService(Driver.Display, display),
-        Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
+        Effect.provide(
+          Browser.layer({ window: page, gamepads: () => [], sounds: false })
+        )
       )
     );
     expect(page.listening).toBe(7);

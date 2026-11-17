@@ -90,11 +90,14 @@ export interface Options {
   /** The gamepads, read once per sample. `navigator.getGamepads`, when left out. */
   readonly gamepads?: () => ArrayLike<GamepadLike | null>;
   /**
-   * The files of the game's cues, by the cue's name: with it the page
-   * plays them, as `Browser.layerSound` does. Left out, sound goes nowhere.
+   * The files of the sounds the page has for as long as it lasts, by the
+   * name a cue or a track is played by, as `Browser.layerSound` takes
+   * them. Left out, the page still plays the sounds a level's bundle
+   * holds, `Browser.sound`. `false` is a page with no sound at all: no
+   * audio is made, and the game is told that nothing is heard.
    */
-  readonly sounds?: Readonly<Record<string, string>>;
-  /** How loud every cue is played: 1, as it asks, when left out. */
+  readonly sounds?: Readonly<Record<string, string>> | false;
+  /** How loud everything is played: 1, as it asks, when left out. */
   readonly volume?: number;
   /** Makes the page's audio. `new AudioContext()`, when left out. */
   readonly audio?: () => AudioLike;
@@ -302,9 +305,16 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
       )
     )
   ) as Layer.Layer<never>;
-  return options.sounds === undefined
+  return options.sounds === false
     ? page
-    : Layer.merge(page, layerSound(options.sounds, options));
+    : Layer.merge(
+        page,
+        // Its sound sleeps while the page's own document is hidden.
+        Layer.provide(
+          layerSound(options.sounds ?? {}, options),
+          Layer.succeed(Driver.Display, display)
+        )
+      );
 };
 
 // --- sound -----------------------------------------------------------------------
@@ -313,41 +323,86 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
 export interface AudioLike {
   readonly destination: unknown;
   readonly state?: string;
+  /** Its own clock, in seconds: what a fade is timed by. */
+  readonly currentTime: number;
   createBufferSource(): {
     buffer: unknown;
+    loop: boolean;
     readonly playbackRate: { value: number };
     connect(to: unknown): unknown;
     start(): void;
+    stop(when?: number): void;
   };
   createGain(): {
-    readonly gain: { value: number };
+    readonly gain: {
+      value: number;
+      setValueAtTime(value: number, time: number): unknown;
+      linearRampToValueAtTime(value: number, time: number): unknown;
+      cancelScheduledValues(time: number): unknown;
+    };
     connect(to: unknown): unknown;
   };
+  /** Stops its clock, and with it everything that sounds, until it is resumed. */
+  suspend?(): Promise<unknown>;
   resume?(): Promise<unknown>;
   close(): Promise<unknown>;
 }
 
+// Decoding needs no touch, only playing does: a context that plays nothing
+// decodes a file as soon as it is there.
+const decodeOffline = (data: ArrayBuffer): Promise<unknown> =>
+  new OfflineAudioContext(1, 1, 44_100).decodeAudioData(data);
+
+/** One channel of music: what it is to play, and what it is playing. */
+interface Channel {
+  wanted:
+    | { readonly track: Sound.Playable; readonly volume: number }
+    | undefined;
+  /** How many seconds the change that was last asked for takes. */
+  fade: number;
+  playing:
+    | {
+        readonly track: Sound.Playable;
+        readonly source: ReturnType<AudioLike["createBufferSource"]>;
+        readonly gain: ReturnType<AudioLike["createGain"]>;
+      }
+    | undefined;
+}
+
 /**
- * A page's sound: the cues of the game, each a file, played with Web
- * Audio.
+ * A page's sound, played with Web Audio: the sounds it has for as long as
+ * it lasts, each a file with a name, and the clips a level's bundle holds.
  *
- *   Browser.layerSound({ coin: "/coin.wav", thud: "/thud.wav" })
+ *   Browser.layerSound({ coin: "/coin.wav", theme: "/theme.ogg" })
  *
  * - The files are fetched when the layer is built, through
  *   `Assets.Loader`, and decoded as they arrive.
  * - A page may not make a sound before its user has touched it. The audio
  *   is made at the first key or pointer press, and a cue asked for in the
- *   very frame after is played. What was asked for before that, or before
- *   a cue's file was there, is not played: a sound that is late is worse
- *   than none.
- * - A cue that has no file, or whose file could not be fetched or
- *   decoded, is said once, through Effect's logger, and plays nothing.
+ *   very frame after is played. A cue that was asked for before that, or
+ *   before its file was there, is not played: a sound that is late is
+ *   worse than none.
+ * - A cue is played only by audio that is running. While it sleeps, or
+ *   is still waking, which takes a moment when the page is seen again,
+ *   a cue is dropped, as one before the first touch is: started then, it
+ *   would wait and be heard with every other that waited, all at once.
+ * - Music is not late, it is what should be playing: a track that was
+ *   asked for before the first touch, or before its file was there, starts
+ *   when it can. It plays over and over, and a change of track or of
+ *   volume is a fade of as long as was asked.
+ * - A cue or a track that has no file, or whose file could not be fetched
+ *   or decoded, is said once, through Effect's logger, and plays nothing.
+ * - While the display it is given, `Driver.Display`, says the page is
+ *   hidden, the audio is put to sleep, music and all, and woken when the
+ *   page is seen again: the frame loop rests then, and a game that stands
+ *   still is not heard. `Browser.layer` gives it the page's.
+ * - A page with no Web Audio plays nothing.
  * - When its scope closes the audio is closed and the page is no longer
  *   listened to, so it is provided to the whole program. `Browser.runMain`
- *   and `Browser.layer` do, given `sounds`.
+ *   and `Browser.layer` do, unless told `sounds: false`.
  */
 export const layerSound = (
-  files: Readonly<Record<string, string>>,
+  files: Readonly<Record<string, string>> = {},
   options: Pick<Options, "audio" | "decode" | "volume" | "window"> = {}
 ): Layer.Layer<never> =>
   Layer.effect(
@@ -356,17 +411,19 @@ export const layerSound = (
       const loader = yield* Assets.Loader;
       const report = Effect.runForkWith(yield* Effect.context<never>());
       const page: EventTarget = options.window ?? globalThis;
-      const make = options.audio ?? ((): AudioLike => new AudioContext());
+      const make =
+        options.audio ??
+        (typeof AudioContext === "undefined"
+          ? undefined
+          : (): AudioLike => new AudioContext());
       const master = options.volume ?? 1;
-      // Decoding needs no touch, only playing does: a context that plays
-      // nothing decodes a file as soon as it is there.
-      const decode =
-        options.decode ??
-        ((data: ArrayBuffer): Promise<unknown> =>
-          new OfflineAudioContext(1, 1, 44_100).decodeAudioData(data));
+      const decode = options.decode ?? decodeOffline;
       const buffers = new Map<string, unknown>();
       const missing = new Set<string>();
+      const channels = new Map<string, Channel>();
+      const display = yield* Driver.Display;
       let audio: AudioLike | undefined;
+      let unwatch: (() => void) | undefined;
       let closed = false;
       const failed = (cue: string, error: unknown): void => {
         report(
@@ -374,6 +431,68 @@ export const layerSound = (
             `The sound "${cue}" (${files[cue]}) will not be played: ${describe(error)}`
           )
         );
+      };
+      /** What is played for a name or a clip, if it is there to play. */
+      const bufferOf = (sound: Sound.Playable): unknown => {
+        if (typeof sound !== "string") {
+          return sound.data;
+        }
+        if (!Object.hasOwn(files, sound) && !missing.has(sound)) {
+          missing.add(sound);
+          report(
+            Effect.logWarning(
+              `The sound "${sound}" was played and has no file. The page's sounds are: ${Object.keys(files).join(", ") || "none"}.`
+            )
+          );
+        }
+        return buffers.get(sound);
+      };
+      /** Brings a channel from what it is playing to what it is to play. */
+      const settle = (channel: Channel): void => {
+        if (audio === undefined) {
+          return;
+        }
+        const { fade, playing, wanted } = channel;
+        const now = audio.currentTime;
+        if (playing !== undefined && playing.track !== wanted?.track) {
+          const level = playing.gain.gain;
+          level.cancelScheduledValues(now);
+          level.setValueAtTime(level.value, now);
+          level.linearRampToValueAtTime(0, now + fade);
+          playing.source.stop(now + fade);
+          channel.playing = undefined;
+        }
+        if (wanted === undefined) {
+          return;
+        }
+        if (channel.playing === undefined) {
+          const buffer = bufferOf(wanted.track);
+          // Not here yet: it starts when its file is.
+          if (buffer === undefined) {
+            return;
+          }
+          const source = audio.createBufferSource();
+          source.buffer = buffer;
+          source.loop = true;
+          const gain = audio.createGain();
+          gain.gain.setValueAtTime(0, now);
+          gain.gain.linearRampToValueAtTime(wanted.volume * master, now + fade);
+          source.connect(gain);
+          gain.connect(audio.destination);
+          source.start();
+          channel.playing = { track: wanted.track, source, gain };
+        } else {
+          // The same track, louder or softer.
+          const level = channel.playing.gain.gain;
+          level.cancelScheduledValues(now);
+          level.setValueAtTime(level.value, now);
+          level.linearRampToValueAtTime(wanted.volume * master, now + fade);
+        }
+      };
+      const settleAll = (): void => {
+        for (const channel of channels.values()) {
+          settle(channel);
+        }
       };
       // Every file at once, for as long as the layer lasts: a request that
       // is still on its way when the scope closes is given up.
@@ -388,6 +507,8 @@ export const layerSound = (
                   (buffer) => {
                     if (!closed) {
                       buffers.set(cue, buffer);
+                      // A channel may have been waiting for it.
+                      settleAll();
                     }
                   },
                   (error: unknown) => failed(cue, error)
@@ -402,8 +523,23 @@ export const layerSound = (
       // browser have put it to sleep.
       const wake = (): void => {
         if (audio === undefined) {
-          audio = make();
-        } else if (audio.state === "suspended") {
+          audio = make?.();
+          if (audio !== undefined) {
+            // Hidden, nobody plays the game and its frame loop rests: what
+            // is heard rests with it. Watched from now on, since before
+            // there is audio there is nothing to put to sleep.
+            unwatch = display.onVisibilityChange(() => {
+              if (display.hidden()) {
+                void audio?.suspend?.();
+              } else {
+                void audio?.resume?.();
+              }
+            });
+          }
+          // What should have been playing all along starts now.
+          settleAll();
+        } else if (audio.state !== undefined && audio.state !== "running") {
+          // Asleep for whatever reason, the browser's own among them.
           void audio.resume?.();
         }
       };
@@ -411,33 +547,32 @@ export const layerSound = (
       for (const type of touches) {
         page.addEventListener(type, wake);
       }
+
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           closed = true;
           for (const type of touches) {
             page.removeEventListener(type, wake);
           }
+          unwatch?.();
           buffers.clear();
+          channels.clear();
           void audio?.close();
+          audio = undefined;
         })
       );
       return {
         play(cue, volume, rate) {
-          if (!Object.hasOwn(files, cue)) {
-            if (!missing.has(cue)) {
-              missing.add(cue);
-              report(
-                Effect.logWarning(
-                  `The sound "${cue}" was played and has no file. The page's cues are: ${Object.keys(files).join(", ") || "none"}.`
-                )
-              );
-            }
-            return;
-          }
-          const buffer = buffers.get(cue);
+          const buffer = bufferOf(cue);
           // Before the first touch, before the file is here, or after
           // the layer was let go, which empties the buffers.
           if (audio === undefined || buffer === undefined) {
+            return;
+          }
+          // Asleep, or still waking, as it is for a moment after the page
+          // is seen again: a cue started now would wait, and be heard with
+          // every other that waited, all at once, when the audio wakes.
+          if (audio.state !== undefined && audio.state !== "running") {
             return;
           }
           const source = audio.createBufferSource();
@@ -449,9 +584,48 @@ export const layerSound = (
           gain.connect(audio.destination);
           source.start();
         },
+        music(name, track, volume, fade) {
+          let channel = channels.get(name);
+          if (channel === undefined) {
+            channel = { wanted: undefined, fade, playing: undefined };
+            channels.set(name, channel);
+          }
+          channel.wanted = track === undefined ? undefined : { track, volume };
+          channel.fade = fade;
+          settle(channel);
+        },
       };
     })
   ) as Layer.Layer<never>;
+
+/**
+ * An asset that is a sound, decoded and ready to play: a `Sound.Clip`, in
+ * a bundle with the rest of a level's, and played wherever a cue's or a
+ * track's name would be.
+ *
+ *   const Forest = Assets.bundle("game/Forest", {
+ *     chirp: Browser.sound("/chirp.wav"),
+ *     theme: Browser.sound("/forest.ogg"),
+ *   })
+ *
+ * - It is decoded whole, into memory, as it arrives: a long track is as
+ *   large there as it is long.
+ * - Let go with its bundle, it is no longer the bundle's to play; what is
+ *   still sounding of it plays to its end, or until its channel is told
+ *   otherwise, and is freed after.
+ */
+export const sound = (url: string): Assets.Asset<Sound.Clip> =>
+  Assets.make(url, (data, at) =>
+    Effect.tryPromise({
+      // A copy: decoding keeps the buffer it is given.
+      try: async () => Sound.clip(at, await decodeOffline(data.slice().buffer)),
+      catch: (error) =>
+        new Assets.AssetFailed({
+          url: at,
+          message: `It could not be made a sound: ${describe(error)}`,
+        }),
+    })
+  );
 
 // --- pictures --------------------------------------------------------------------
 

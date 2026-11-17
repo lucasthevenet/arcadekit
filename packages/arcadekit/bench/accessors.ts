@@ -330,13 +330,39 @@ const sounding = (happening: boolean): number =>
           plugins: [Sound.plugin],
           systems: [Score, Cues],
           checkpointEvery: 0,
-        }).pipe(Effect.provide(Sound.layer({ play() {} })));
+        }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
         return measure(
           () => app.frame(0),
           50_000,
           20_000,
           () => app.tick(DT)
         );
+      })
+    )
+  );
+
+/**
+ * Median milliseconds of one frame of a game with music that goes on as it
+ * was: the body asked what should be playing, a state read, the same answer
+ * as the frame before, and the output told nothing.
+ */
+const scoring = (): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const Phase = State.define("bench/MusicPhase", ["playing", "title"]);
+        const Score = Sound.music("bench/Music", function* () {
+          return (yield* Phase).value === "playing"
+            ? { track: "theme", volume: 0.5 }
+            : undefined;
+        });
+        const app = yield* App.make({
+          plugins: [Sound.plugin],
+          components: [Phase],
+          systems: [Score],
+          checkpointEvery: 0,
+        }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
+        return measure(() => app.frame(0), 50_000, 20_000);
       })
     )
   );
@@ -958,6 +984,12 @@ const variants: Record<
     unit: "matches",
     label: "app.frame: cues for two events, one cue played",
     run: () => sounding(true),
+  },
+
+  musicSame: {
+    unit: "matches",
+    label: "app.frame: music that goes on as it was",
+    run: () => scoring(),
   },
 
   // A game that ticks when it is needed, at rest: what a frame costs when

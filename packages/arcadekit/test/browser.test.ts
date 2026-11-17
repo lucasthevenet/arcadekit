@@ -178,6 +178,19 @@ const makePage = () => {
         callback(now);
       }
     },
+    /** The tab goes out of sight, and whoever watches is told. */
+    hide(): void {
+      document.visibilityState = "hidden";
+      for (const listener of Array.from(visibility)) {
+        listener();
+      }
+    },
+    show(): void {
+      document.visibilityState = "visible";
+      for (const listener of Array.from(visibility)) {
+        listener();
+      }
+    },
   };
 };
 
@@ -334,6 +347,8 @@ describe("a page's devices", () => {
             window: page,
             target: canvas,
             gamepads: () => [],
+            // The devices alone: a page's sound listens for a touch too.
+            sounds: false,
           })
         )
       )
@@ -406,7 +421,12 @@ describe("a page's devices", () => {
         expect(told(source.sample()).released).toEqual(["Pointer2"]);
       }).pipe(
         Effect.provide(
-          Browser.layer({ window: page, target: canvas, gamepads: () => [] })
+          Browser.layer({
+            window: page,
+            target: canvas,
+            gamepads: () => [],
+            sounds: false,
+          })
         )
       )
     );
@@ -427,7 +447,9 @@ describe("a page's devices", () => {
           moved: ["PointerX", "PointerY"],
         });
       }).pipe(
-        Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
+        Effect.provide(
+          Browser.layer({ window: page, gamepads: () => [], sounds: false })
+        )
       )
     );
     // A target that is no element is measured from where it is given.
@@ -698,8 +720,9 @@ describe("Browser.layer", () => {
     // The frame loop asks the page for its frames, and watches its tab.
     expect(page.requested.size).toBe(1);
     expect(page.visibility.size).toBe(1);
-    // The keyboard and the pointer are listened to on the window.
-    expect(page.window.total).toBe(7);
+    // The keyboard and the pointer are listened to on the window, and
+    // the first touch, which the page's sound waits for.
+    expect(page.window.total).toBe(9);
     page.repaint(0);
     page.window.send("keydown", { code: "ArrowRight", repeat: false });
     page.repaint(1000 / 60);
@@ -754,8 +777,9 @@ describe("Browser.runMain", () => {
     );
     expect(log).toEqual(["sound opened"]);
     expect(page.requested.size).toBe(1);
-    // The page's devices, and the page going away.
-    expect(page.window.total).toBe(8);
+    // The page's devices, the touch its sound waits for, and the page
+    // going away.
+    expect(page.window.total).toBe(10);
     expect(page.window.listening.get("pagehide")).toBe(1);
     page.repaint(0);
     page.window.send("keydown", { code: "ArrowLeft", repeat: false });
@@ -842,30 +866,67 @@ describe("a page's sound", () => {
     vi.unstubAllGlobals();
   });
 
+  /** What a source that plays over and over was asked, as the stand-in notes it. */
+  interface Looped {
+    readonly buffer: unknown;
+    readonly into: unknown;
+    /** What its volume was told, in order: set to, ramp to, or cancel, and when. */
+    readonly levels: (readonly [string, ...number[]])[];
+    /** When it was told to stop, if it was. */
+    stopped: number | undefined;
+  }
   /** A stand-in for the page's audio, which notes what it is asked. */
   const makeAudio = () => {
     const destination = { name: "speakers" };
+    interface Gain {
+      readonly gain: {
+        value: number;
+        setValueAtTime(value: number, time: number): void;
+        linearRampToValueAtTime(value: number, time: number): void;
+        cancelScheduledValues(time: number): void;
+      };
+      readonly levels: (readonly [string, ...number[]])[];
+      into: unknown;
+      connect(to: unknown): unknown;
+    }
     const audio = {
       destination,
       state: "running",
+      /** The audio's own clock, which the test turns. */
+      currentTime: 0,
       started: [] as {
         readonly buffer: unknown;
         readonly rate: number;
         readonly volume: number;
         readonly into: unknown;
       }[],
+      /** Every source that was started to play over and over. */
+      loops: [] as Looped[],
       resumed: 0,
+      suspended: 0,
       closed: 0,
       createBufferSource() {
-        let gain: { gain: { value: number }; into: unknown } | undefined;
+        let gain: Gain | undefined;
+        let looped: Looped | undefined;
         const source = {
           buffer: undefined as unknown,
+          loop: false,
           playbackRate: { value: 1 },
           connect(to: unknown) {
-            gain = to as typeof gain;
+            gain = to as Gain;
             return to;
           },
           start() {
+            if (source.loop) {
+              looped = {
+                buffer: source.buffer,
+                into: gain?.into,
+                levels: gain?.levels ?? [],
+                stopped: undefined,
+              };
+              audio.loops.push(looped);
+              return;
+            }
             audio.started.push({
               buffer: source.buffer,
               rate: source.playbackRate.value,
@@ -873,19 +934,46 @@ describe("a page's sound", () => {
               into: gain?.into,
             });
           },
+          stop(when?: number) {
+            if (looped !== undefined) {
+              looped.stopped = when ?? audio.currentTime;
+            }
+          },
         };
         return source;
       },
       createGain() {
-        const gain = {
-          gain: { value: 1 },
-          into: undefined as unknown,
+        const levels: (readonly [string, ...number[]])[] = [];
+        const gain: Gain = {
+          gain: {
+            value: 1,
+            setValueAtTime(value, time) {
+              gain.gain.value = value;
+              levels.push(["set", value, time]);
+            },
+            // The stand-in is there at once: what is read back is where it
+            // was last told to go.
+            linearRampToValueAtTime(value, time) {
+              gain.gain.value = value;
+              levels.push(["ramp", value, time]);
+            },
+            cancelScheduledValues(time) {
+              levels.push(["cancel", time]);
+            },
+          },
+          levels,
+          into: undefined,
           connect(to: unknown) {
             gain.into = to;
             return to;
           },
         };
         return gain;
+      },
+      suspend() {
+        audio.suspended++;
+        audio.state = "suspended";
+        return Promise.resolve();
       },
       resume() {
         audio.resumed++;
@@ -924,6 +1012,7 @@ describe("a page's sound", () => {
   ) => {
     const page = new Listened();
     const audio = makeAudio();
+    const display = Driver.makeManualDisplay();
     let made = 0;
     /** The length of each file that was given to be decoded. */
     const decoded: number[] = [];
@@ -943,6 +1032,7 @@ describe("a page's sound", () => {
         })
       ).pipe(
         Scope.provide(scope),
+        Effect.provideService(Driver.Display, display),
         Effect.provide(
           options.loader === undefined
             ? Assets.layerMemory(sounds)
@@ -961,6 +1051,7 @@ describe("a page's sound", () => {
     return {
       page,
       audio,
+      display,
       decoded,
       logged,
       made: () => made,
@@ -1040,8 +1131,8 @@ describe("a page's sound", () => {
     }
     expect(audio.started).toEqual([]);
     expect(logged.slice(2)).toEqual([
-      'The sound "laser" was played and has no file. The page\'s cues are: coin, noise, lost.',
-      'The sound "toString" was played and has no file. The page\'s cues are: coin, noise, lost.',
+      'The sound "laser" was played and has no file. The page\'s sounds are: coin, noise, lost.',
+      'The sound "toString" was played and has no file. The page\'s sounds are: coin, noise, lost.',
     ]);
     output.play("coin", 1, 1);
     expect(audio.started.length).toBe(1);
@@ -1126,7 +1217,340 @@ describe("a page's sound", () => {
     expect(untouched.page.total).toBe(0);
   });
 
-  it("is part of Browser.layer when the page is given sounds, and a game's events are heard through it", async () => {
+  it("starts a track when it can, plays it over and over, and fades from one to the next", async () => {
+    const { audio, made, output, page } = await build(
+      { theme: "/coin.wav", drip: "/thud.wav" },
+      { volume: 0.5 }
+    );
+    // Asked for before the first touch: music is not a cue, which would be
+    // late. It is what should be playing, and starts when it can.
+    output.music("score", "theme", 0.8, 2);
+    expect(made()).toBe(0);
+    expect(audio.loops).toEqual([]);
+    audio.currentTime = 10;
+    page.send("keydown", { code: "Enter" });
+    // From silence to its volume, of the page's own, over the two seconds.
+    expect(audio.loops).toEqual([
+      {
+        buffer: { samples: 3 },
+        into: audio.destination,
+        levels: [
+          ["set", 0, 10],
+          ["ramp", 0.4, 12],
+        ],
+        stopped: undefined,
+      },
+    ]);
+    // It is no cue: nothing was started to play once.
+    expect(audio.started).toEqual([]);
+
+    // The same track, softer: the one source, turned down from where it is.
+    audio.currentTime = 20;
+    output.music("score", "theme", 0.2, 1);
+    expect(audio.loops.length).toBe(1);
+    expect(audio.loops[0]!.levels.slice(2)).toEqual([
+      ["cancel", 20],
+      ["set", 0.4, 20],
+      ["ramp", 0.1, 21],
+    ]);
+    expect(audio.loops[0]!.stopped).toBeUndefined();
+
+    // Another track: the first fades out and stops when it has, while the
+    // second fades in.
+    audio.currentTime = 30;
+    output.music("score", "drip", 1, 4);
+    expect(audio.loops.length).toBe(2);
+    expect(audio.loops[0]!.levels.slice(5)).toEqual([
+      ["cancel", 30],
+      ["set", 0.1, 30],
+      ["ramp", 0, 34],
+    ]);
+    expect(audio.loops[0]!.stopped).toBe(34);
+    expect(audio.loops[1]).toEqual({
+      buffer: { samples: 5 },
+      into: audio.destination,
+      levels: [
+        ["set", 0, 30],
+        ["ramp", 0.5, 34],
+      ],
+      stopped: undefined,
+    });
+
+    // Silence: it fades out, stops, and nothing takes its place.
+    audio.currentTime = 40;
+    output.music("score", undefined, 0, 0.5);
+    expect(audio.loops.length).toBe(2);
+    expect(audio.loops[1]!.levels.slice(2)).toEqual([
+      ["cancel", 40],
+      ["set", 0.5, 40],
+      ["ramp", 0, 40.5],
+    ]);
+    expect(audio.loops[1]!.stopped).toBe(40.5);
+    // Silence again changes nothing, and the first is left as it was.
+    output.music("score", undefined, 0, 0.5);
+    expect(audio.loops[1]!.levels.length).toBe(5);
+    expect(audio.loops[0]!.levels.length).toBe(8);
+    // At once is a fade of no time.
+    audio.currentTime = 50;
+    output.music("score", "theme", 1, 0);
+    expect(audio.loops[2]!.levels).toEqual([
+      ["set", 0, 50],
+      ["ramp", 0.5, 50],
+    ]);
+  });
+
+  it("sleeps while the page is hidden, music and all, and wakes when it is seen again", async () => {
+    const { audio, close, display, output, page } = await build({
+      theme: "/coin.wav",
+    });
+    // Before it was ever touched there is no audio to put to sleep, and
+    // the page is not watched.
+    expect(display.watching).toBe(0);
+    display.hide();
+    display.show();
+    expect([audio.suspended, audio.resumed]).toEqual([0, 0]);
+    page.send("pointerdown");
+    page.send("pointerdown");
+    expect(display.watching).toBe(1);
+    output.music("score", "theme", 1, 1);
+    display.hide();
+    expect([audio.suspended, audio.resumed]).toEqual([1, 0]);
+    // Music that is asked for meanwhile is what it wakes to: nothing is
+    // forgotten.
+    output.music("score", undefined, 0, 0);
+    // A cue is: started now it would wait, and every cue that waited
+    // would be heard at once when the audio wakes.
+    output.play("theme", 1, 1);
+    output.play("theme", 1, 1);
+    expect(audio.started).toEqual([]);
+    // Seen again, the audio takes its time to wake, as a laptop's does
+    // when its lid is opened, while the game goes on at once.
+    const waking = audio.resume;
+    audio.resume = () => {
+      audio.resumed++;
+      return Promise.resolve();
+    };
+    display.show();
+    expect([audio.suspended, audio.resumed]).toEqual([1, 1]);
+    expect(audio.state).toBe("suspended");
+    output.play("theme", 1, 1);
+    expect(audio.started).toEqual([]);
+    // Awake, a cue is played, and none of the ones that came too early.
+    audio.resume = waking;
+    audio.state = "running";
+    output.play("theme", 0.5, 1);
+    expect(audio.started.length).toBe(1);
+    expect(audio.started[0]!.volume).toBe(0.5);
+    expect(audio.loops[0]!.stopped).toBe(0);
+    // The browser can put it to sleep for reasons of its own, and by
+    // other names: a touch wakes it from any of them.
+    audio.state = "interrupted";
+    output.play("theme", 1, 1);
+    expect(audio.started.length).toBe(1);
+    page.send("keydown", { code: "Enter" });
+    expect(audio.resumed).toBe(2);
+    expect(audio.state).toBe("running");
+    // An audio that does not say how it is, as one of your own may not,
+    // is taken to be running.
+    delete (audio as { state?: string }).state;
+    output.play("theme", 1, 1);
+    expect(audio.started.length).toBe(2);
+    page.send("keydown", { code: "Enter" });
+    expect(audio.resumed).toBe(2);
+    audio.state = "running";
+    await close();
+    expect(display.watching).toBe(0);
+    display.hide();
+    expect(audio.suspended).toBe(1);
+  });
+
+  it("plays each channel by itself, beside the cues", async () => {
+    const { audio, output, page } = await build({
+      theme: "/coin.wav",
+      wind: "/thud.wav",
+    });
+    page.send("pointerdown");
+    output.music("score", "theme", 1, 1);
+    output.music("air", "wind", 0.3, 1);
+    output.play("theme", 1, 1);
+    expect(audio.loops.map((loop) => loop.buffer)).toEqual([
+      { samples: 3 },
+      { samples: 5 },
+    ]);
+    // A cue of the same file is a sound of its own, played once.
+    expect(audio.started.length).toBe(1);
+    // One channel goes quiet; the other is not touched.
+    audio.currentTime = 5;
+    output.music("air", undefined, 0, 2);
+    expect(audio.loops[1]!.stopped).toBe(7);
+    expect(audio.loops[0]!.stopped).toBeUndefined();
+    expect(audio.loops[0]!.levels.length).toBe(2);
+    // The same track on two channels is played twice.
+    output.music("air", "theme", 1, 0);
+    expect(audio.loops.length).toBe(3);
+    expect(audio.loops[2]!.buffer).toEqual({ samples: 3 });
+  });
+
+  it("starts a track whose file was not there yet when it is, and says once of one that has no file", async () => {
+    const waiting = new Map<string, (bytes: Uint8Array) => void>();
+    const loader: Assets.LoaderShape = {
+      bytes: (url) =>
+        Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
+          waiting.set(url, (bytes) => resume(Effect.succeed(bytes)));
+        }),
+    };
+    const { audio, logged, output, page } = await build(
+      { theme: "/coin.wav", drip: "/thud.wav" },
+      { loader }
+    );
+    page.send("pointerdown");
+    output.music("score", "theme", 1, 1);
+    // What it changed its mind to before either file came is what plays.
+    output.music("score", "drip", 0.5, 1);
+    output.music("air", "hiss", 1, 1);
+    output.music("air", "hiss", 0.5, 1);
+    expect(audio.loops).toEqual([]);
+    audio.currentTime = 3;
+    waiting.get("/coin.wav")!(new Uint8Array(7));
+    await settle();
+    expect(audio.loops).toEqual([]);
+    waiting.get("/thud.wav")!(new Uint8Array(9));
+    await settle();
+    expect(audio.loops).toEqual([
+      {
+        buffer: { samples: 9 },
+        into: audio.destination,
+        levels: [
+          ["set", 0, 3],
+          ["ramp", 0.5, 4],
+        ],
+        stopped: undefined,
+      },
+    ]);
+    expect(logged).toEqual([
+      'The sound "hiss" was played and has no file. The page\'s sounds are: theme, drip.',
+    ]);
+  });
+
+  it("plays a clip as it plays a file of its own, with nothing said of a name it does not have", async () => {
+    const { audio, logged, output, page } = await build({});
+    page.send("pointerdown");
+    const chirp = Sound.clip("/chirp.wav", { samples: 11 });
+    const wind = Sound.clip("/wind.ogg", { samples: 99 });
+    output.play(chirp, 0.5, 2);
+    output.music("air", wind, 0.25, 1);
+    expect(audio.started).toEqual([
+      {
+        buffer: { samples: 11 },
+        rate: 2,
+        volume: 0.5,
+        into: audio.destination,
+      },
+    ]);
+    expect(audio.loops.map((loop) => loop.buffer)).toEqual([{ samples: 99 }]);
+    // Another clip of the same file is another track: the one fades to it.
+    const again = Sound.clip("/wind.ogg", { samples: 98 });
+    output.music("air", again, 0.25, 1);
+    expect(audio.loops.map((loop) => loop.buffer)).toEqual([
+      { samples: 99 },
+      { samples: 98 },
+    ]);
+    expect(audio.loops[0]!.stopped).toBe(1);
+    // The clip it is playing, at another volume, is the one source still.
+    output.music("air", again, 0.5, 1);
+    expect(audio.loops.length).toBe(2);
+    expect(audio.loops[1]!.levels.at(-1)).toEqual(["ramp", 0.5, 1]);
+    expect(logged).toEqual([]);
+  });
+
+  it("plays no music after its scope closes, and none in a page that has no audio", async () => {
+    const { audio, close, output, page } = await build({ theme: "/coin.wav" });
+    page.send("pointerdown");
+    output.music("score", "theme", 1, 1);
+    expect(audio.loops.length).toBe(1);
+    await close();
+    expect(audio.closed).toBe(1);
+    output.music("score", "theme", 0.5, 1);
+    output.music("other", "theme", 1, 1);
+    // Nor a clip, which the page never held and so did not let go of.
+    output.music("air", Sound.clip("wind", { samples: 1 }), 1, 1);
+    output.play(Sound.clip("chirp", { samples: 1 }), 1, 1);
+    expect(audio.loops.length).toBe(1);
+    expect(audio.loops[0]!.levels.length).toBe(2);
+    expect(audio.started).toEqual([]);
+
+    // No Web Audio at all, as under Node: a touch makes nothing, and
+    // nothing throws.
+    const bare = new Listened();
+    const scope = Effect.runSync(Scope.make());
+    const context = await Effect.runPromise(
+      Layer.build(Browser.layerSound(undefined, { window: bare })).pipe(
+        Scope.provide(scope)
+      )
+    );
+    const quiet = Context.get(context, Sound.Output);
+    expect(bare.total).toBe(2);
+    bare.send("pointerdown");
+    bare.send("keydown", { code: "Enter" });
+    quiet.play(Sound.clip("x", {}), 1, 1);
+    quiet.music("score", Sound.clip("y", {}), 1, 1);
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    expect(bare.total).toBe(0);
+  });
+
+  it("has an asset for a level's sound, which is decoded as it arrives and played as a clip", async () => {
+    const decoded: number[] = [];
+    vi.stubGlobal(
+      "OfflineAudioContext",
+      class {
+        decodeAudioData(data: ArrayBuffer): Promise<unknown> {
+          decoded.push(data.byteLength);
+          return data.byteLength === 1
+            ? Promise.reject(new Error("Unable to decode audio data"))
+            : Promise.resolve({ samples: data.byteLength });
+        }
+      }
+    );
+    const Forest = Assets.bundle("br/Forest", {
+      chirp: Browser.sound("/coin.wav"),
+      wind: Browser.sound("/thud.wav"),
+    });
+    const { chirp, wind } = await Effect.runPromise(
+      Effect.scoped(Assets.load(Forest)).pipe(
+        Effect.provide(Assets.layerMemory(sounds))
+      )
+    );
+    expect(chirp).toBeInstanceOf(Sound.Clip);
+    // Named for where it came from, which is what a log calls it.
+    expect([chirp.name, chirp.data]).toEqual(["/coin.wav", { samples: 3 }]);
+    expect([wind.name, wind.data]).toEqual(["/thud.wav", { samples: 5 }]);
+    expect(decoded.toSorted()).toEqual([3, 5]);
+    // The page plays it as it is.
+    const { audio, output, page } = await build({});
+    page.send("pointerdown");
+    output.play(chirp, 1, 1);
+    expect(audio.started[0]!.buffer).toEqual({ samples: 3 });
+
+    // A file that is no sound fails its bundle, as any asset does.
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Assets.load(
+            Assets.bundle("br/Broken", { noise: Browser.sound("/noise.wav") })
+          )
+        )
+      ).pipe(Effect.provide(Assets.layerMemory(sounds)))
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
+    const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
+    expect(error).toBeInstanceOf(Assets.AssetFailed);
+    expect((error as Assets.AssetFailed).url).toBe("/noise.wav");
+    expect((error as Assets.AssetFailed).message).toBe(
+      "It could not be made a sound: Unable to decode audio data"
+    );
+  });
+
+  it("is part of Browser.layer unless the page is told it has none, and a game's events are heard through it", async () => {
     const Scored = Event.define("br/Scored", Schema.Struct({}));
     const Score = System.make("br/Score", function* () {
       if ((yield* Time).tick === 2) {
@@ -1172,13 +1596,33 @@ describe("a page's sound", () => {
       { buffer: { samples: 3 }, rate: 1, volume: 0.8, into: audio.destination },
     ]);
     expect(audible.at(-1)).toBe(true);
+    // It is the page's own document that puts it to sleep, the one the
+    // frame loop rests by.
+    expect(page.visibility.size).toBe(2);
+    page.hide();
+    expect(audio.suspended).toBe(1);
+    page.show();
+    expect(audio.resumed).toBe(1);
     await Effect.runPromise(Fiber.interrupt(fiber));
+    expect(page.visibility.size).toBe(0);
     expect(page.window.total).toBe(0);
     expect(audio.closed).toBe(1);
 
-    // Given no sounds, the page's sound goes nowhere.
+    // Given no files of its own the page has sound all the same: a
+    // level's sounds are clips of its bundle, and need no name here.
     audible.length = 0;
-    const silent = start({});
+    const plain = start({ audio: () => audio });
+    await settle();
+    expect(page.window.total).toBe(9);
+    page.repaint(0);
+    expect(audible).toEqual([true]);
+    await Effect.runPromise(Fiber.interrupt(plain));
+    expect(page.window.total).toBe(0);
+
+    // Told it has none, the page's sound goes nowhere, and no touch is
+    // waited for.
+    audible.length = 0;
+    const silent = start({ sounds: false });
     await settle();
     expect(page.window.total).toBe(7);
     page.repaint(0);
