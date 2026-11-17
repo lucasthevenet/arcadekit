@@ -1185,6 +1185,24 @@ describe("an entity drawn between two ticks", () => {
     expect(xAt(mesh(), 1)).toBe(10);
   });
 
+  it("is drawn between its last two places when its id is past what 32 bits hold", () => {
+    const { app, mesh } = play(Smoothed);
+    // A slot given out 1,100 times: the next entity in it has such an id.
+    for (let n = 0; n < 1100; n++) {
+      app.world.despawn(app.world.spawn(Rock));
+    }
+    const rock = app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+    expect(rock).toBeGreaterThan(2 ** 32);
+    app.frame(0.5);
+    expect(xAt(mesh(), 1)).toBe(0);
+    app.tick(1);
+    // It is known for the entity it was a frame ago, and is on its way.
+    app.frame(0.25);
+    expect(xAt(mesh(), 1)).toBe(2.5);
+    app.frame(0.75);
+    expect(xAt(mesh(), 1)).toBe(7.5);
+  });
+
   it("comes from where it was last drawn when several ticks ran since, and stays between the two when none did", () => {
     const { app, mesh } = play(Smoothed);
     const rock = app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
@@ -2464,6 +2482,25 @@ describe("Three.objects", () => {
     expect(objectOf(plain)!.position.toArray()).toEqual([10, 20, 30]);
     expect(objectOf(whole)!.scale.toArray()).toEqual([5, 5, 5]);
     expect(objectOf(whole)!.quaternion.toArray()).toEqual([0, 0, 1, 0]);
+  });
+
+  it("keeps the one object of an entity whose id is past what 32 bits hold", () => {
+    const { app } = fresh();
+    // A slot given out 1,100 times: the next entity in it has such an id.
+    for (let n = 0; n < 1100; n++) {
+      app.world.despawn(app.world.spawn(Ship));
+    }
+    const ship = app.world.spawn(Ship, Position.of({ x: 1, y: 2, z: 3 }));
+    expect(ship).toBeGreaterThan(2 ** 32);
+    app.frame(0);
+    app.world.set(ship, Position, { x: 4, y: 5, z: 6 });
+    app.frame(0);
+    app.frame(0);
+    // Made once, for this entity, and not again for every frame that
+    // finds it.
+    expect(made.map((one) => one.entity)).toEqual([ship]);
+    expect(freed).toEqual([]);
+    expect(objectOf(ship)!.position.toArray()).toEqual([4, 5, 6]);
   });
 
   it("takes the object out and frees it when its entity is gone, or is no longer one of these", () => {

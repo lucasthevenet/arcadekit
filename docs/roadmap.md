@@ -50,7 +50,7 @@ Depends on milestones 1 and 2 entirely.
 
 Only with a benchmark that shows the need.
 
-Done so far: accessors without code generation. What `each` hands out is made of closures, with no `new Function` anywhere in the package, so a page under a strict Content Security Policy runs a game as it is; it costs 1 ns an entity more than the generated classes did in a program of two components, and four tenths less in one of ten. The package's [README](../packages/arcadekit/README.md#under-a-content-security-policy) describes it. And systems that say what they read and write: `System.access` names a system's queries and what it touches beside them, the app holds a system that said it to it, and `app.conflicts` lists the pairs of systems that touch the same thing, one of them to write it, in an order nothing says; the [README](../packages/arcadekit/README.md#what-a-system-reads-and-writes) describes both. It is what running systems side by side will stand on.
+Done so far: accessors without code generation. What `each` hands out is made of closures, with no `new Function` anywhere in the package, so a page under a strict Content Security Policy runs a game as it is; it costs 1 ns an entity more than the generated classes did in a program of two components, and four tenths less in one of ten. The package's [README](../packages/arcadekit/README.md#under-a-content-security-policy) describes it. And systems that say what they read and write: `System.access` names a system's queries and what it touches beside them, the app holds a system that said it to it, and `app.conflicts` lists the pairs of systems that touch the same thing, one of them to write it, in an order nothing says; the [README](../packages/arcadekit/README.md#what-a-system-reads-and-writes) describes both. It is what running systems side by side will stand on. And wider entity ids: an id is 22 bits of index and 31 of generation, a whole number below 2^53 in arrays of 64-bit floats, where it was 32 bits with ten of generation and a slot given out every tick came round in seventeen seconds; a slot whose generations are used up is given out no more, so an id never names another entity than its own, in a session of any length. The [README](../packages/arcadekit/README.md#an-entitys-id) describes it.
 
 - **Benchmarks in CI.** Built, but for a step that is a person's. `pnpm --filter arcadekit bench:compare <base checkout>` measures this checkout's storage core against another's, variant by variant and turn and turn about on one machine, and fails if one is slower by more than the noise, unless a commit says it meant to; the [README](../packages/arcadekit/README.md#benchmarks-in-ci) says how it decides. The workflow that runs it on a pull request is written, `packages/arcadekit/bench/ci-workflow.yml`, and has to be moved to `.github/workflows/bench.yml` by someone whose credentials may change workflows. Done when it has run on a pull request there.
 
@@ -71,8 +71,6 @@ Done so far: accessors without code generation. What `each` hands out is made of
   So there is something to gain, two to four times, where a tick is over its budget: a flock of 400,000 does not fit in a sixtieth of a second on one thread and does on four. There is nothing to gain for the 100,000 entities of the package's own benchmark, which move in a quarter of a millisecond, and a loss wherever workers are left to sleep and the loop is short: waking one takes longer than a thousand entities take to move. That is the need, and it is a game larger than any the package has been tried on.
 
   What it stands on is there: a system says what it reads and writes, and is held to it. What it waits on is what a worker runs. A worker has no closure of the main thread's, so the loop it runs is a function of a module it imported itself, given columns and numbers: a raw loop over columns, which is the `eachChunk` path, and three of the decisions below are about exactly that. Building it first would have settled them by accident.
-
-- **Wider entity ids.** A handle is 22 bits of index and 10 of generation; a slot reused 1,024 times can alias an old handle. Done when that cannot happen in a session of realistic length.
 
 ## 8. Seeing what is going on
 
@@ -120,7 +118,6 @@ What a replay, a save and the hash do not hold:
 - **A refused action does not undo what is outside the world**: an object in a field changed in place, a call to a service of the game's own, a script it started.
 - **A save holds no scripts, and the log does not say when one was started by hand** or the delta and number of ticks it was recorded at. Whoever loads or replays has to know and supply them.
 - **The hash is of the world only**: not the events waiting, what change queries have yet to visit, the actions queued, or how far a script has got. Two games with the same hash can go different ways.
-- **An entity handle kept across 1,024 reuses of its slot names a newer entity.**
 
 Values that have to be right and are not checked:
 

@@ -9,18 +9,41 @@
 // Entities
 // ---------------------------------------------------------------------------
 
-/** An entity is a 32-bit number: 22 bits of index, 10 bits of generation. */
+/**
+ * An entity is a whole number below 2^53: the 22 bits of its index, which
+ * is the slot it lives in, and above them its generation, which counts how
+ * often the slot was given out before. A slot is given out again with the
+ * next generation, so an id that was held across the reuse names nobody.
+ *
+ * The generation has 31 bits. It was ten, in an id of 32 bits, and a slot
+ * that is given out again every tick wraps ten bits in seventeen seconds
+ * at sixty ticks a second: an id held that long named a newer entity. At
+ * 31 bits the same slot lasts over a year, and when it is used up it is
+ * given out no more, so an id never names another entity than its own.
+ *
+ * An id is a number like any other. It is kept in arrays of 64-bit floats,
+ * which hold every whole number below 2^53 exactly, and is a whole number
+ * in JSON.
+ */
 export type Entity = number & { readonly _brand: "Entity" };
 
 export const INDEX_BITS = 22;
 export const INDEX_MASK = (1 << INDEX_BITS) - 1;
-export const GENERATION_MASK = (1 << (32 - INDEX_BITS)) - 1;
+/** How many indexes there are: what an id's generation is multiplied by. */
+const INDEX_RANGE = 2 ** INDEX_BITS;
+/**
+ * How many generations a slot has, 0 up to this less one. A slot's count
+ * of them reaches it when the last was used, and the slot is then given
+ * out no more.
+ */
+export const GENERATIONS = 2 ** (53 - INDEX_BITS);
 
+// `&` takes a number's low 32 bits, whatever is above them: the index.
 export const entityIndex = (entity: Entity): number => entity & INDEX_MASK;
 export const entityGeneration = (entity: Entity): number =>
-  entity >>> INDEX_BITS;
+  Math.floor(entity / INDEX_RANGE);
 export const makeEntity = (index: number, generation: number): Entity =>
-  ((((generation & GENERATION_MASK) << INDEX_BITS) | index) >>> 0) as Entity;
+  (generation * INDEX_RANGE + index) as Entity;
 
 // ---------------------------------------------------------------------------
 // Fields
@@ -81,7 +104,7 @@ export const Field = {
   u32: field<number, Uint32Array>("u32"),
   u16: field<number, Uint16Array>("u16"),
   u8: field<number, Uint8Array>("u8"),
-  entity: field<Entity, Uint32Array>("entity"),
+  entity: field<Entity, Float64Array>("entity"),
   /**
    * Plain data: text, a number, a boolean, a bigint, null or undefined, or
    * an array or object made of text, numbers, booleans and null. It is
@@ -126,9 +149,12 @@ export const makeColumn = (kind: FieldKind, capacity: number): Column => {
     case "i32": {
       return new Int32Array(capacity);
     }
-    case "u32":
-    case "entity": {
+    case "u32": {
       return new Uint32Array(capacity);
+    }
+    case "entity": {
+      // An id is a whole number below 2^53, which a 64-bit float holds.
+      return new Float64Array(capacity);
     }
     case "u16": {
       return new Uint16Array(capacity);
@@ -248,7 +274,7 @@ export interface Accessor {
    */
   bind(
     columns: Record<string, Column>,
-    entities?: Uint32Array,
+    entities?: Uint32Array | Float64Array,
     log?: WriteLog
   ): void;
 }
@@ -381,7 +407,8 @@ export const retarget = (name: string): string =>
 
 /** What an accessor that notices writes was last bound to. */
 interface Noting {
-  entities: Uint32Array;
+  /** A table's ids, or a sparse set's indexes. */
+  entities: Uint32Array | Float64Array;
   log: WriteLog;
 }
 
@@ -584,8 +611,8 @@ const DEFINE_FIELD: Readonly<Record<FieldKind, DefineField>> = {
   f64: defineF64,
   i32: defineI32,
   u32: defineU32,
-  // An entity id is kept in the same kind of array as a `u32`.
-  entity: defineU32,
+  // An entity id is kept in the same kind of array as an `f64`.
+  entity: defineF64,
   u16: defineU16,
   u8: defineU8,
   json: defineBoxed,
@@ -607,7 +634,7 @@ export const makeAccessor = (
   const noting: Noting | undefined =
     mode === "notes"
       ? {
-          entities: undefined as unknown as Uint32Array,
+          entities: undefined as unknown as Float64Array,
           log: undefined as unknown as WriteLog,
         }
       : undefined;

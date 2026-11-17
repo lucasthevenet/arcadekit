@@ -377,8 +377,8 @@ interface Clock {
 abstract class Blend {
   protected readonly clock: Clock;
   private readonly width: number;
-  /** Per entity index: the entity whose values these are. */
-  protected owner = new Uint32Array(0);
+  /** Per entity index: the entity whose values these are, by its id. */
+  protected owner = new Float64Array(0);
   /** Per entity index: the frame its entity was last drawn in. */
   protected seen = new Uint32Array(0);
   protected prev = new Float32Array(0);
@@ -405,7 +405,7 @@ abstract class Blend {
       while (length <= most) {
         length *= 2;
       }
-      const owner = new Uint32Array(length);
+      const owner = new Float64Array(length);
       owner.set(this.owner);
       this.owner = owner;
       const seen = new Uint32Array(length);
@@ -1874,8 +1874,8 @@ class Objects<O extends Object3D> implements Kept {
   /** What the objects are made of, for a kind that is made of assets. */
   private readonly assets: unknown;
   private readonly objects: (O | undefined)[] = [];
-  /** Per entity index: the entity the object there was made for. */
-  private owner = new Uint32Array(0);
+  /** Per entity index: the entity the object there was made for, by its id. */
+  private owner = new Float64Array(0);
   /** Per entity index: the frame its entity was last found in, turned, and sized. */
   private seen = new Uint32Array(0);
   private turnedAt = new Uint32Array(0);
@@ -1900,7 +1900,11 @@ class Objects<O extends Object3D> implements Kept {
     while (length < size) {
       length *= 2;
     }
-    for (const name of ["owner", "seen", "turnedAt", "sizedAt"] as const) {
+    // An id is wider than a frame's number: an array of 64-bit floats.
+    const owner = new Float64Array(length);
+    owner.set(this.owner);
+    this.owner = owner;
+    for (const name of ["seen", "turnedAt", "sizedAt"] as const) {
       const bigger = new Uint32Array(length);
       bigger.set(this[name]);
       this[name] = bigger;

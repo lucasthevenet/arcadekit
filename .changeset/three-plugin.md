@@ -14,5 +14,6 @@ A new package: draws an arcadekit game with Three.js.
 - Models: `Gltf.model(url)`, from `@arcadekit/three/Gltf`, is the asset that is a glTF file, `.glb` or `.gltf`. The buffers and pictures a `.gltf` names are fetched through `Assets.Loader` and handed to Three.js with it, and its geometries, materials and textures are disposed of with the scope it was loaded in. `Gltf.mesh(model, name)` is one of its meshes, for a look. It is a module of its own, so that a game with no models does not carry the loader.
 - `Three.Render` is in the stage after a frame's own, `"postFrame"`: everything that draws, and a system that moves the camera, has run when it does, with nothing said about order.
 - All of it runs in the frame stage and reads the world: a game that is drawn has the same hash, log and save as one that is not.
+- What it knows an entity by is its whole id, which is past what 32 bits hold once the entity's slot has been given out 1,024 times: such an entity keeps its object and its place between two ticks.
 
 Nothing breaks: the package is new. It needs `arcadekit`, `effect` and `three` as peers.

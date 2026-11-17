@@ -267,8 +267,8 @@ describe("a snapshot of a world", () => {
     for (let n = 0; n < 10_000; n++) {
       world.spawn(C.Body.of({ x: n, y: n }));
     }
-    // Per entity: 4 bytes of id, two floats of 4, and 2 of generation.
-    const data = 10_000 * (4 + 4 + 4 + 2);
+    // Per entity: 8 bytes of id, two floats of 4, and 4 of generation.
+    const data = 10_000 * (8 + 4 + 4 + 4);
     const { length } = world.snapshot();
     expect(length).toBeGreaterThanOrEqual(data);
     expect(length).toBeLessThan(data + 200);
@@ -469,11 +469,11 @@ describe("a snapshot that cannot be loaded", () => {
       expect(problemOf(() => loaded(bytes)).problem).toBe("not a snapshot");
     }
     const newer = sample();
-    new DataView(newer.buffer).setUint32(4, 3, true);
+    new DataView(newer.buffer).setUint32(4, 4, true);
     const error = problemOf(() => loaded(newer));
     expect(error.problem).toBe("newer format");
     expect(error.message).toMatch(
-      /format 3, and this version reads formats 1 to 2/
+      /format 4, and this version reads formats 1 to 3/
     );
   });
 
@@ -530,8 +530,8 @@ describe("a snapshot that cannot be loaded", () => {
   it("is refused when its entities and freed slots do not add up", () => {
     // Four bodies in one table, the second and third despawned. The bytes
     // start: magic, format, four words of generator, the number of slots,
-    // one generation of two bytes per slot, the number of freed slots, and
-    // those slots in the order they will be reused.
+    // one generation of four bytes per slot, the number of freed slots, and
+    // those slots in the order they will be reused. An id is eight bytes.
     const world = new EcsWorld();
     const [a, b, c, d] = [0, 1, 2, 3].map((n) =>
       world.spawn(C.Body.of({ x: n, y: n }))
@@ -542,7 +542,7 @@ describe("a snapshot that cannot be loaded", () => {
     const bytes = world.snapshot();
     const slots = 24;
     const generations = slots + 4;
-    const freed = generations + 4 * 2;
+    const freed = generations + 4 * 4;
     const view = new DataView(bytes.buffer);
     expect(view.getUint32(slots, true)).toBe(4);
     expect(view.getUint32(freed, true)).toBe(2);
@@ -550,12 +550,12 @@ describe("a snapshot that cannot be loaded", () => {
       view.getUint32(freed + 4, true),
       view.getUint32(freed + 8, true),
     ]).toEqual([1, 2]);
-    /** Where two whole numbers stand side by side in the bytes. */
+    /** Where two ids stand side by side in the bytes. */
     const find = (first: number, second: number): number => {
-      for (let at = freed + 12; at + 8 <= bytes.length; at++) {
+      for (let at = freed + 12; at + 16 <= bytes.length; at++) {
         if (
-          view.getUint32(at, true) === first &&
-          view.getUint32(at + 4, true) === second
+          view.getFloat64(at, true) === first &&
+          view.getFloat64(at + 8, true) === second
         ) {
           return at;
         }
@@ -564,10 +564,10 @@ describe("a snapshot that cannot be loaded", () => {
     };
     const rows = find(a!, d!);
     // The sparse set comes last but for the singletons: its one member,
-    // the index of entity a, then that member's eight fields (32 bytes, the
+    // the index of entity a, then that member's eight fields (36 bytes, the
     // note being an empty string), the number of singletons, which is none,
     // and the four bytes that end a snapshot.
-    const member = bytes.length - 4 - 4 - 32 - 4;
+    const member = bytes.length - 4 - 4 - 36 - 4;
     expect(view.getUint32(member - 4, true)).toBe(1);
     expect(view.getUint32(member, true)).toBe(0);
     const damaged = (change: (view: DataView) => void): SnapshotError => {
@@ -589,20 +589,43 @@ describe("a snapshot that cannot be loaded", () => {
       ],
       [
         "a generation no entity could have",
-        (v) => v.setUint16(generations + 2, 5000, true),
+        (v) => v.setUint32(generations + 4, 2 ** 31 + 1, true),
       ],
-      ["an entity in two rows", (v) => v.setUint32(rows + 4, a!, true)],
+      [
+        // 2^31 says the slot is used up, and such a slot is given out no more.
+        "a freed slot whose generations are used up",
+        (v) => v.setUint32(generations + 4, 2 ** 31, true),
+      ],
+      [
+        "a slot that is used up and holds an entity",
+        (v) => v.setUint32(generations, 2 ** 31, true),
+      ],
+      ["an entity in two rows", (v) => v.setFloat64(rows + 8, a!, true)],
       [
         "an entity of another generation",
-        (v) => v.setUint32(rows, a! + (1 << 22), true),
+        (v) => v.setFloat64(rows, a! + 2 ** 22, true),
       ],
       [
         "an entity in a slot that does not exist",
-        (v) => v.setUint32(rows, 77, true),
+        (v) => v.setFloat64(rows, 77, true),
       ],
       [
         "an entity in a freed slot",
-        (v) => v.setUint32(rows + 4, 1 + (1 << 22), true),
+        (v) => v.setFloat64(rows + 8, 1 + 2 ** 22, true),
+      ],
+      // Eight bytes can hold what is no id at all.
+      ["an id that is not whole", (v) => v.setFloat64(rows, 0.5, true)],
+      ["an id that is no number", (v) => v.setFloat64(rows, Number.NaN, true)],
+      ["an id below nothing", (v) => v.setFloat64(rows, -1, true)],
+      ["an id past the last", (v) => v.setFloat64(rows, 2 ** 53, true)],
+      [
+        // The generation its slot would then have is the one that says
+        // the slot is used up.
+        "an id past the last, in a slot that is used up",
+        (v) => {
+          v.setFloat64(rows, 2 ** 53, true);
+          v.setUint32(generations, 2 ** 31, true);
+        },
       ],
       [
         "a sparse component on a freed slot",

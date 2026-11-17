@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 861 tests, 93 of them of @arcadekit/three
+pnpm test                          # 871 tests, 95 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -94,7 +94,7 @@ const Hero = Component.define("game/Hero", {
 });
 ```
 
-A number goes in a typed field: `f32`, `f64`, `i32`, `u32`, `u16`, `u8`, `entity`. Anything else says, where it is defined, what a snapshot and the hash do with it.
+A number goes in a typed field: `f32`, `f64`, `i32`, `u32`, `u16`, `u8`, `entity`, which is [an entity's id](#an-entitys-id) and takes eight bytes. Anything else says, where it is defined, what a snapshot and the hash do with it.
 
 | Field | Holds | Saved and hashed |
 | --- | --- | --- |
@@ -107,6 +107,24 @@ A number goes in a typed field: `f32`, `f64`, `i32`, `u32`, `u16`, `u8`, `entity
 - A value that is not plain data in a `json` field, or one a codec or schema will not take, cannot be saved: the snapshot is refused and names the field. A loaded value that a codec refuses is refused the same way.
 - What comes back from a `json` field is what JSON makes of it: a Date inside an object comes back as text. Give such a value a schema.
 - A `schema` or `ref` field is encoded once per value for every hash, and an array or object in a `json` field is turned into text. Keep them for what is small or rare; numbers that change every tick belong in typed fields.
+
+## An entity's id
+
+```ts
+const rock = world.spawn(Position.of({ x: 0, y: 0 }));
+entityIndex(rock); // the slot it lives in
+entityGeneration(rock); // how often that slot was given out before
+world.despawn(rock);
+world.isAlive(rock); // false, now and for good
+```
+
+An entity is known by a number: its id. An id is a slot, its index, and above the index's 22 bits a generation, which counts how often the slot was given out before. A slot that comes free is given out again with the next generation, so an id that was kept across the reuse names nobody: `isAlive` is false of it, `get` gives nothing, and a relation that held it is gone.
+
+- **An id never names another entity than its own.** The generation has 31 bits. It had ten, in an id of 32 bits, and a slot that is given out again every tick, as a bullet's is, came round to its first generation in seventeen seconds at sixty ticks a second: an id kept that long was a live entity's again, and nothing said so. At 31 bits the same slot lasts more than a year. When its generations are used up it is given out no more.
+- An id is a whole number below 2^53, kept in arrays of 64-bit floats, which hold every such number exactly: a table's `entities`, which `eachChunk` hands out, and the column of an `entity` field are `Float64Array`s. It is a whole number in JSON, in a save and in an action's payload, where `EntityId` is its schema.
+- The id of an entity whose slot was given out fewer than 1,024 times is the number it was when ids were 32 bits. One past that is larger than 32 bits hold: code that packs ids into a `Uint32Array`, or reads a generation with a shift, cuts it short. `entityIndex` and `entityGeneration` read the two halves.
+- A world holds at most 4,194,304 entities at a time, which is what 22 bits of index are.
+- It costs four bytes more wherever an id is kept, and nothing that was measured in a loop: see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
 
 ## Singletons
 
@@ -991,7 +1009,7 @@ It does not depend on what cannot be told apart: how much room a table has, what
 
 - A field that is not a number counts as it is saved: a `json` field as the plain data it holds, a `schema` or `ref` field in its encoded form, and a `transient` field not at all. See [Fields](#fields).
 - It is 32-bit integer arithmetic on the bits of each field, so it is the same on every machine and in every JavaScript engine.
-- It reads and changes nothing, so it can be called at any time. It costs about 7 ns per entity for four float fields, 0.7 ms for 100,000 entities; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
+- It reads and changes nothing, so it can be called at any time. It costs about 8 ns per entity for four float fields, 0.8 ms for 100,000 entities; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
 
 ## Snapshots
 
@@ -1005,16 +1023,16 @@ copy.hash() === world.hash(); // true
 
 `world.snapshot()` is the whole world as bytes: every table and sparse set, the singletons that have been written, the ids to come, and the state of the random generator. A world that loads them hashes the same as the one they were taken from and goes on the same: the same order of iteration, the same ids for the next entities, the same random numbers.
 
-- It is about as big as the data. A column of numbers is written as its bytes, so an entity with two `f32` fields takes 14 bytes: 4 of id, 8 of floats and 2 of generation.
+- It is about as big as the data. A column of numbers is written as its bytes, so an entity with two `f32` fields takes 20 bytes: 8 of id, 8 of floats and 4 of generation.
 - A component is written under its name, with the names and kinds of its fields, so a snapshot does not depend on the order a program defines its components in. A world knows a component by its name and an empty world knows none, so `load` is given the components the snapshot may name.
 - `load` fills an empty world: one that has never held an entity or written a singleton.
-- The format is numbered. This version writes format 2, which added singletons, and reads format 1 as well.
+- The format is numbered. This version writes format 3, which widened an [entity's id](#an-entitys-id), and reads formats 1 and 2 as well: an id of theirs is the same number, read from a narrower place. Format 2 added singletons.
 - Every problem is a `SnapshotError`, whose `problem` says which kind and whose message names the component or field: `"not a snapshot"`, `"newer format"`, `"truncated"`, `"corrupt"`, `"unknown component"`, `"component changed"` (with its fields then and now), `"world not empty"`, `"cannot be saved"`.
 - Damaged bytes are refused, not trusted: every count is checked against the bytes that are there before anything is allocated for it, an entity may not be in two rows or in a freed slot, and text has to be text. A damaged number inside a column cannot be told from another number, and loads as that.
 - A `json` field is saved as the plain data it holds, exactly for text, numbers, booleans, bigints, null and undefined (`-0` and `NaN` come back as they were), and as JSON text for an array or an object. A `schema` or `ref` field is saved in its encoded form, and a `transient` field is not saved. See [Fields](#fields).
 - A snapshot is refused while a spawn is queued on a `CommandBuffer` and not applied.
-- It costs 6 ns per entity to take and 16 ns to load, for four float fields; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
-- `world.restore(bytes)` puts a snapshot back into a world that is in use, in place of everything it holds: the world is emptied and loaded. Afterwards it is what a new world that loaded the snapshot would be, hash, order, ids to come and random numbers, which a test holds it to over random operations. It is for a snapshot the world took itself. A singleton's value stays the object it was, and `world.random` the generator it was. A view or a `removed` reader that was asked for before throws when it is used and says to ask again, as a system does every tick; what change queries had yet to visit is forgotten, and `restoreChanges` takes back what `saveChanges` gave. It costs 14 ns per entity.
+- It costs 7 ns per entity to take and 21 ns to load, for four float fields; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
+- `world.restore(bytes)` puts a snapshot back into a world that is in use, in place of everything it holds: the world is emptied and loaded. Afterwards it is what a new world that loaded the snapshot would be, hash, order, ids to come and random numbers, which a test holds it to over random operations. It is for a snapshot the world took itself. A singleton's value stays the object it was, and `world.random` the generator it was. A view or a `removed` reader that was asked for before throws when it is used and says to ask again, as a system does every tick; what change queries had yet to visit is forgotten, and `restoreChanges` takes back what `saveChanges` gave. It costs 16 ns per entity.
 
 ## Actions (the rules layer)
 
@@ -1089,7 +1107,7 @@ A save is taken between two ticks. It holds the world as a [snapshot](#snapshots
 - A world knows a component by its name, so every component and singleton a save names has to be listed in a plugin's `components` or the app's. A load that meets one that is not fails with `LoadRefused` and names it.
 - **A save is a snapshot plus the log since.** The save says how long the log was (`save.logLength`). A game that keeps its last save and the entries logged after it comes back to the present by loading the save and replaying only that tail, which costs the same however long the game has run: `App.replay(app, log.slice(save.logLength), { delta, ticks })`. The replay checks itself against the tail's checkpoints, so a save that did not bring the game back faithfully is caught on the next tick.
 - `app.save()` fails with `Save.SaveRefused` and says what is in the way: an action or an event with no schema is waiting, a field holds a value it cannot save, or commands are queued and not applied. `App.load` and `Save.decode` fail with `Save.LoadRefused`, whose `problem` is one of a snapshot's, or `"not a save"`.
-- A save is the snapshot and a little text: for 100,000 entities with four float fields, 2.2 MB and about 0.6 ms to take.
+- A save is the snapshot and a little text: for 100,000 entities with four float fields, 2.8 MB and about 0.7 ms to take.
 
 ### Versions and migrations
 
@@ -1133,7 +1151,7 @@ App.replay(again, loaded, { delta: 1, ticks }); // throws App.ReplayDiverged
 - A replay compares its own world with each checkpoint as it reaches it, and stops at the first that does not match, before applying anything recorded after it. It throws `App.ReplayDiverged`, whose `tick` is that checkpoint's tick and whose `reason` is an `App.HashMismatch` with the hash that was `expected`, the `actual` one and `agreedAt`, the tick of the last checkpoint that did match. With a checkpoint every tick, that is the tick the replay diverged on.
 - A replay made with another seed, or into a world that does not hold what the game's world held, stops before its first tick.
 - A dispatched action that is refused still stops the replay, with the refusal as the `reason`. An enqueued one is enqueued again at the point it arrived, so it takes its turn among the actions the replay's own simulation issues; if the replay refuses what the game accepted, or the other way round, the replay stops after the tick that applied it. Without checkpoints those were the only checks: a replay that had gone wrong ran on until an action happened to be refused, and one whose fault broke no rule ran to its end and gave another game.
-- `checkpointEvery` is 60 unless told otherwise. A checkpoint costs one hash of the world, 0.7 ms for 100,000 entities, so a smaller number finds a divergence closer to where it happened at that price per checkpoint, and adds an entry to the log each time. A turn-based game ticks once a move and wants 1. With 0 the app records none.
+- `checkpointEvery` is 60 unless told otherwise. A checkpoint costs one hash of the world, 0.8 ms for 100,000 entities, so a smaller number finds a divergence closer to where it happened at that price per checkpoint, and adds an entry to the log each time. A turn-based game ticks once a move and wants 1. With 0 the app records none.
 - Once a game has started, what changes its world has to be in the log or come from the simulation: an action, a system, a script. A coin spawned straight into `app.world` between two ticks is in neither, so a replay cannot know of it, and stops at the next checkpoint.
 
 ## More than one player
@@ -1377,7 +1395,7 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, relay, origin, policy, benchmark verdict, access and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, a world that is restored compared with a new one that loaded the same snapshot, and a game played in a process that may not make code from text. `test/peers.ts` is the game and the network those of several peers share, and `test/policy-game.ts` the game of the last |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, relay, origin, policy, benchmark verdict, access, id and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, a world that is restored compared with a new one that loaded the same snapshot, and a game played in a process that may not make code from text. `test/peers.ts` is the game and the network those of several peers share, and `test/policy-game.ts` the game of the last |
 | `bench/accessors.ts` | The benchmark: every line of the tables below, each variant in a process of its own |
 | `bench/core.ts` | The storage core's variants of it, which import `arcadekit/ecs` and nothing else |
 | `bench/compare.ts`, `bench/verdict.ts` | The check of a pull request: those variants for two checkouts, turn and turn about, and the rule that says whether one is slower |
@@ -1468,14 +1486,14 @@ Hashing the same 100,000 entities, in the same units:
 
 | Variant                                                       | ns/entity |
 | ------------------------------------------------------------- | --------- |
-| `world.hash()`, one table                                     | 7.0       |
-| `world.hash()`, the same entities spread over 32 tables       | 7.4       |
-| `world.hash()`, with a sparse one-field component on each     | 13.6      |
-| `world.snapshot()`, one table (2.2 MB)                        | 6.0       |
-| `world.load()` of that snapshot, into a new world             | 15.7      |
-| `world.restore()` of it, into the world it came from          | 13.7      |
-| `app.capture()`: a game of those entities, kept to go back to | 5.6       |
-| `app.rewind()`: the game put back to that moment              | 13.8      |
+| `world.hash()`, one table                                     | 8.3       |
+| `world.hash()`, the same entities spread over 32 tables       | 8.7       |
+| `world.hash()`, with a sparse one-field component on each     | 15.0      |
+| `world.snapshot()`, one table (2.8 MB)                        | 6.7       |
+| `world.load()` of that snapshot, into a new world             | 21.0      |
+| `world.restore()` of it, into the world it came from          | 16.0      |
+| `app.capture()`: a game of those entities, kept to go back to | 6.9       |
+| `app.rewind()`: the game put back to that moment              | 16.2      |
 
 Change detection in the same world, with a query that watches `Position`:
 
@@ -1487,7 +1505,7 @@ Change detection in the same world, with a query that watches `Position`:
 | Visiting all 100,000, every one written | 22.4 ns/entity |
 | `each` writing the watched component: every row noted | 17.2 ns/entity |
 | The same, when every row is noted already | 13.8 ns/entity |
-| `eachChunk` handed the watched component: every row noted | 5.3 ns/entity |
+| `eachChunk` handed the watched component: every row noted | 6.3 ns/entity |
 | The same through a query that only reads it (`Query.reads`) | 2.6 ns/entity |
 
 A game that ticks when it is needed, at rest, with the picture of the devices, a state and a view:
@@ -1539,19 +1557,20 @@ One action in that world of 100,000 entities, before and after handlers ran in a
 - Writes are noticed per row. A component that no query watches costs what it did: the lines of the first table were measured before and after and did not move. A watched one costs about 3 ns more for an assignment in `each` to a row that is noted already, about 5 ns for the first assignment to a row since the last visit, and 2.8 ns per row that `eachChunk` hands out. Noticing per table or per column would cost nothing to write, but one `world.set` would then send every watching query through the whole table: 0.25 ms to 0.64 ms for 100,000 rows, where it now takes 0.2 µs.
 - What `each` hands out is made of closures, where it was classes generated with `new Function`, which a page's [Content Security Policy](#under-a-content-security-policy) may refuse. Measured one against the other, turn and turn about: 8.0 ns an entity against 6.7 where one callback is all the program has, 10.7 against 9.6 after six other systems, and 10.2 against 17.7 in a program of ten components with fields of six kinds, which is the one that is like a game. A generated class kept the row it was at in a field of its own, and the loop that moved it on had by then met too many classes to know where that field was; a loop now has one row, whatever it hands out. The getters are written out once per kind of column: one getter for every kind measured 112 ns in a program with seven kinds of field. Pointing the accessors at a table costs about 75 ns a term, and a loop that visits the table it visited the last time is not pointed at it again, so that is paid by a query of several tables, once for each, and a world of very many very small tables pays for it: 100,000 entities in 8,192 tables measured 19.8 ns an entity against 15.3.
 - About one run in six of any of these is half as fast again as the rest, whichever build it is of: the machine, or where the arrays happened to land. The lines here are the best of three.
+- An [entity's id](#an-entitys-id) is eight bytes where it was four, and its generation four where it was two. For 100,000 entities with four float fields, measured one against the other: a snapshot is 2.8 MB against 2.2 and takes 6.7 ns an entity against 5.3; a load 20 ns against 14, since every id is checked for being one; a restore 16 against 13.6; the hash 8.4 against 7.0, one word more in six. A raw loop that is handed a watched component reads each row's id to note it, 6.3 ns against 5.9, and a despawn that takes others with it 162 µs against 154 for a hundred parents. No other line moved by more than the noise: the loops, the filters, the change queries, a thousand spawns and despawns.
 - A change query is for what changes now and then. Visiting everything because everything was written costs three and a half plain passes, since each entity is looked up from the log: a system that wants every entity every tick asks for them with an ordinary query.
 - The input stage runs before every tick, so its cost when nothing happens is the one that counts: one sample of the devices, compared with what the world holds, 1.4 µs for a keyboard, a pointer and a few buttons held. An app with no system in that stage reads nothing and pays nothing.
 - A view costs the game its body and one comparison a frame, 2.3 µs for four fields, and the UI nothing at all until a field differs. A value that is new is found to be at the first field that differs, which is why it costs less than one that is not. Where no UI is there the system asks whether one is and stops.
 - Sound costs a frame two reads of events that are not there, 0.7 µs over a frame that does nothing, and 0.2 µs more for a cue that is played. Where sound goes nowhere the system asks whether it does and stops.
-- A frame of ten systems that do nothing costs 5.8 µs, about what a tick of ten does: freezing the world is setting a flag. Checking a frame with `verifyFrames` costs a hash of the world before the stage and one after each of its systems, 1.3 ms more for one system over 100,000 entities.
+- A frame of ten systems that do nothing costs 5.8 µs, about what a tick of ten does: freezing the world is setting a flag. Checking a frame with `verifyFrames` costs a hash of the world before the stage and one after each of its systems, 1.7 ms more for one system over 100,000 entities.
 - A relation costs its component and a few assignments to link and unlink: 0.13 µs more per entity that is spawned and despawned with one. A despawn that takes others with it costs what despawning each of them does, 130 ns apiece here. A world with no relation does one comparison more per despawn than before: the first line was 587 µs before relations and 561 µs after, which is the machine's noise.
 - A query that requires a sparse tag 1 in 100 entities have takes about 38 µs per pass to visit its 1,000 matches.
 - A tick with ten systems that do nothing costs about 5 µs, and going through `app.tick` adds nothing measurable to a 100,000-entity loop. Run conditions did not change that: 4.99 to 5.47 µs before them and 5.00 to 5.81 µs after, over four runs each. With a condition on each of the ten that holds, the tick costs 8.5 µs; with one that does not, 3.5 µs.
 - A sparse tag that many entities have, mixed in with ones that do not, breaks tables into short runs and `eachChunk` loses its edge. A component like that is better off with table storage.
 - A handler that loops pays one copy of the columns it visits, 0.11 ms for four float columns of 100,000 rows, and as much again to copy them back if it is refused. It pays for none it only reads: a handler that looks at all 100,000 entities takes 0.78 ms through a plain query and 0.67 ms through one made with `Query.reads()`. The copies are kept and written over by the next action; allocating them afresh each time cost 0.35 ms. A refusal itself costs about 9 µs, which is Effect building the failure.
-- A checkpoint is one hash of the world every `checkpointEvery` ticks, 60 by default: 12 µs a tick on average for 100,000 entities. The per-tick lines above are medians, so they do not show it.
-- Predicting a tick costs a capture, 0.56 ms for 100,000 entities and 6 µs for a thousand, and only for a tick the session is not sure of. Being wrong costs a rewind, 1.4 ms for 100,000, and the ticks since, run again. `world.restore` did not change what the lines above cost: `eachChunk` 2.65 ns before and 2.70 after, `each` 6.61 and 6.80, a snapshot 5.26 and 5.57, a load 15.37 and 15.08, a tick of ten idle systems 5.49 µs and 5.48, which is the machine's noise.
-- Hashing a world costs about two and a half raw passes over it: 1.4 ns per 32-bit field per entity, and about four times that for a field of a sparse component, whose members are hashed one by one so that their order does not matter.
+- A checkpoint is one hash of the world every `checkpointEvery` ticks, 60 by default: 14 µs a tick on average for 100,000 entities. The per-tick lines above are medians, so they do not show it.
+- Predicting a tick costs a capture, 0.69 ms for 100,000 entities and 7 µs for a thousand, and only for a tick the session is not sure of. Being wrong costs a rewind, 1.6 ms for 100,000, and the ticks since, run again. `world.restore` did not change what the lines above cost: `eachChunk` 2.65 ns before and 2.70 after, `each` 6.61 and 6.80, a snapshot 5.26 and 5.57, a load 15.37 and 15.08, a tick of ten idle systems 5.49 µs and 5.48, which is the machine's noise.
+- Hashing a world costs about three raw passes over it: 1.4 ns per 32-bit field per entity, an entity's id being two of them, and about four times that for a field of a sparse component, whose members are hashed one by one so that their order does not matter.
 
 ### Benchmarks in CI
 
@@ -1656,5 +1675,5 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.
 - Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.
 - The workflow that compares benchmarks on a pull request is not in `.github/workflows/` yet: see [Benchmarks in CI](#benchmarks-in-ci). The check is of the storage core alone, and lets through a slowdown of less than a twentieth.
-- Entity generations are 10 bits: a handle kept across 1,024 reuses of the same slot can alias a newer entity.
+- A world holds at most 4,194,304 entities at once, and an id takes eight bytes wherever it is kept.
 - Systems run in sequence on one thread. Running them side by side on workers was measured and not built: `pnpm --filter arcadekit bench:parallel` shares a loop's rows between four threads over shared memory, and a flock of 100,000 goes from 3.7 ms to 1.3 ms, where the 100,000 entities of the benchmark above move in a quarter of a millisecond on one. The [roadmap](../../docs/roadmap.md#7-speed-and-scale) has the numbers and what it waits on.

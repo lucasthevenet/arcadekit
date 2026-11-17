@@ -368,10 +368,18 @@ describe("a singleton in a snapshot", () => {
     const world = new EcsWorld({ seed: 2 });
     world.spawn(Body.of({ x: 5 }));
     const bytes = world.snapshot();
-    // Format 1 is format 2 without the count of singletons before the end.
-    const old = new Uint8Array(bytes.length - 4);
-    old.set(bytes.subarray(0, bytes.length - 8));
-    old.set(bytes.subarray(bytes.length - 4), bytes.length - 8);
+    // This world as the build that wrote format 2 wrote it. Format 1 is
+    // format 2 without the count of singletons before the end.
+    const second = Uint8Array.from(
+      "414b57530200000079b860088046c1aa102e36af1289a87f01000000000000000000010000000700000073672f426f6479000100000001000000780001000000010000000000000001000000000000000000a0400000000000000000454e4421".match(
+        /../gu
+      )!,
+      (byte) => Number.parseInt(byte, 16)
+    );
+    expect(new DataView(second.buffer).getUint32(4, true)).toBe(2);
+    const old = new Uint8Array(second.length - 4);
+    old.set(second.subarray(0, second.length - 8));
+    old.set(second.subarray(second.length - 4), second.length - 8);
     new DataView(old.buffer).setUint32(4, 1, true);
     const copy = new EcsWorld();
     copy.load(old, [Body]);

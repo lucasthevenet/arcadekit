@@ -655,7 +655,9 @@ const history = (seed: number, steps: number): number[] => {
   return hashes;
 };
 
-const KNOWN_HASH = 1_013_956_505;
+// It was 1,013,956,505 while an entity's id was 32 bits and hashed as one
+// word: an id is hashed as the 64 bits it is kept in now.
+const KNOWN_HASH = 2_316_040_553;
 
 // --- through an app --------------------------------------------------------------
 

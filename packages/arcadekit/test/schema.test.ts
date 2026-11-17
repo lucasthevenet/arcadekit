@@ -261,7 +261,11 @@ describe("actions with a schema", () => {
     const ok = Schema.decodeUnknownExit(EntityId);
     expect(Exit.isSuccess(ok(0))).toBe(true);
     expect(Exit.isSuccess(ok(4_294_967_295))).toBe(true);
-    for (const bad of [-1, 4_294_967_296, 1.5, Number.NaN, "7", null]) {
+    // The id of an entity whose slot was given out 1,024 times, and the
+    // largest there is: an id is a whole number below 2^53.
+    expect(Exit.isSuccess(ok(4_294_967_296))).toBe(true);
+    expect(Exit.isSuccess(ok(2 ** 53 - 1))).toBe(true);
+    for (const bad of [-1, 2 ** 53, 1.5, Number.NaN, "7", null]) {
       expect(Exit.isFailure(ok(bad))).toBe(true);
     }
   });

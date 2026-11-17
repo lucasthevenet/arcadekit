@@ -29,9 +29,8 @@
  * No Effect dependency.
  */
 import {
-  entityGeneration,
   entityIndex,
-  GENERATION_MASK,
+  GENERATIONS,
   growColumn,
   INDEX_MASK,
   isBoxed,
@@ -75,6 +74,8 @@ import {
 
 const NOT_PLACED = -1;
 const FREE = -2;
+/** How many slots there are: what an id's generation is multiplied by. */
+const SLOTS = INDEX_MASK + 1;
 /** In a `Saved`, the row that means "every row". */
 const WHOLE = -1;
 /** What `hash` folds in ahead of each singleton, to tell it from a sparse set. */
@@ -192,7 +193,8 @@ const byName = (a: { readonly name: string }, b: { readonly name: string }) =>
 
 /** @internal */
 export class Table {
-  entities: Uint32Array;
+  /** The id of the entity in each row. */
+  entities: Float64Array;
   count = 0;
   capacity: number;
   /** Indexed by component id. The record identity is stable; its arrays are replaced on growth. */
@@ -212,7 +214,7 @@ export class Table {
     capacity = 16
   ) {
     this.capacity = capacity;
-    this.entities = new Uint32Array(capacity);
+    this.entities = new Float64Array(capacity);
     this.defsByName = defs.toSorted(byName);
     for (const def of defs) {
       this.ids.add(def.id);
@@ -224,7 +226,7 @@ export class Table {
   push(entity: Entity): number {
     if (this.count === this.capacity) {
       const capacity = this.capacity * 2;
-      const entities = new Uint32Array(capacity);
+      const entities = new Float64Array(capacity);
       entities.set(this.entities);
       this.entities = entities;
       for (const def of this.defs) {
@@ -479,7 +481,8 @@ export interface SavedChanges {
  * @internal
  */
 export class ChangeLog {
-  private entries = new Uint32Array(64);
+  /** Entity indexes, or for a `removed` log entity ids, which are wider. */
+  private entries: Uint32Array | Float64Array;
   /** Position in `entries` of the entry numbered `base`. */
   private first = 0;
   /** Sequence number of the oldest entry kept. */
@@ -512,6 +515,14 @@ export class ChangeLog {
     this.noted = new Uint8Array(
       kind === "removed" ? 0 : world._recTable.length
     );
+    this.entries = this.room(64);
+  }
+
+  /** An array for this many entries, of the kind this log holds. */
+  private room(size: number): Uint32Array | Float64Array {
+    return this.kind === "removed"
+      ? new Float64Array(size)
+      : new Uint32Array(size);
   }
 
   /** Notes that the entity at `index` changed, unless a waiting entry says so. */
@@ -533,7 +544,11 @@ export class ChangeLog {
   }
 
   /** Notes rows `[start, end)` of a table's entities, or of a sparse set's members. */
-  noteRows(entities: Uint32Array, start: number, end: number): void {
+  noteRows(
+    entities: Uint32Array | Float64Array,
+    start: number,
+    end: number
+  ): void {
     // Room for all of them first, so that the loop is two reads, a
     // comparison and, for a row not noted yet, two writes.
     while (
@@ -581,7 +596,7 @@ export class ChangeLog {
     }
     const size = this.end - this.base;
     if (size > this.entries.length >> 1 || this.first === 0) {
-      const entries = new Uint32Array(this.entries.length * 2);
+      const entries = this.room(this.entries.length * 2);
       entries.set(this.entries.subarray(this.first, this.first + size));
       this.entries = entries;
     } else {
@@ -658,7 +673,7 @@ export class ChangeLog {
   }
 
   /** Copies the entries from sequence number `from` on into `into` at `offset`. */
-  copy(from: number, into: Uint32Array, offset: number): void {
+  copy(from: number, into: Uint32Array | Float64Array, offset: number): void {
     const start = this.first + (Math.max(from, this.base) - this.base);
     into.set(
       this.entries.subarray(start, this.first + (this.end - this.base)),
@@ -769,8 +784,9 @@ export class ChangeLog {
   /** Takes what a save held. The log is new: nothing has been logged in it. */
   restore(saved: SavedChanges): void {
     const { entries } = saved;
-    const limit = this.kind === "removed" ? 4_294_967_296 : this.world._slots;
-    this.entries = new Uint32Array(Math.max(64, entries.length * 2));
+    const limit =
+      this.kind === "removed" ? Number.MAX_SAFE_INTEGER + 1 : this.world._slots;
+    this.entries = this.room(Math.max(64, entries.length * 2));
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i]!;
       if (!Number.isInteger(entry) || entry < 0 || entry >= limit) {
@@ -825,7 +841,7 @@ export class RemovedReader {
     if (count === 0) {
       return [];
     }
-    const ids = new Uint32Array(count);
+    const ids = new Float64Array(count);
     log.copy(cursor.at, ids, 0);
     this.world._reading(cursor);
     cursor.at = log.end;
@@ -929,7 +945,7 @@ export interface SparseColumns<S extends Schema, C = ColumnsOf<S>> {
 }
 
 /** The entity ids of a table's rows. Reading an element gives an `Entity`. */
-export type EntityColumn = Uint32Array & Readonly<Record<number, Entity>>;
+export type EntityColumn = Float64Array & Readonly<Record<number, Entity>>;
 
 export type ColumnSetsOf<D extends Terms> = {
   [K in keyof D]: D[K] extends ComponentDef<infer S extends Schema, infer St>
@@ -978,7 +994,7 @@ interface Loop {
    * that its columns are where they were. Most loops visit the same table
    * every time, and need not be pointed at it again.
    */
-  table: Uint32Array | undefined;
+  table: Float64Array | undefined;
   /** Per sparse term: the same for its set, known by its members' array. */
   readonly sets: (Uint32Array | undefined)[];
 }
@@ -1681,7 +1697,7 @@ export class QueryView<D extends Terms = Terms> {
   private visit(
     f: Callback,
     loop: Loop,
-    ents: Uint32Array,
+    ents: Float64Array,
     start: number,
     end: number
   ): void {
@@ -1729,7 +1745,7 @@ export class QueryView<D extends Terms = Terms> {
   private visitSparse(
     f: Callback,
     loop: Loop,
-    ents: Uint32Array,
+    ents: Float64Array,
     start: number,
     end: number
   ): void {
@@ -1937,7 +1953,8 @@ export class World {
   get _recRow(): Int32Array {
     return this.recRow;
   }
-  private gens = new Uint16Array(1024);
+  /** Per slot: how many times it was given out and taken back. */
+  private gens = new Uint32Array(1024);
   private readonly freeList: number[] = [];
   private nextIndex = 0;
   private alive = 0;
@@ -2059,10 +2076,13 @@ export class World {
 
   isAlive(entity: Entity): boolean {
     const index = entityIndex(entity);
+    // The generation, compared without rounding it down: a number that is
+    // no id, which has a part below its index's bits or none at all, is the
+    // generation of no slot.
     return (
       index < this.nextIndex &&
       this.recTable[index] !== FREE &&
-      this.gens[index] === entityGeneration(entity)
+      this.gens[index] === (entity - index) / SLOTS
     );
   }
 
@@ -2136,7 +2156,7 @@ export class World {
     const recRow = new Int32Array(size);
     recRow.set(this.recRow);
     this.recRow = recRow;
-    const gens = new Uint16Array(size);
+    const gens = new Uint32Array(size);
     gens.set(this.gens);
     this.gens = gens;
     for (const log of this.logs) {
@@ -2310,10 +2330,14 @@ export class World {
       }
     }
     this.recTable[index] = FREE;
-    // Generations wrap after 1024 reuses of a slot; a handle held that long
-    // could alias a newer entity.
-    this.gens[index] = (this.gens[index]! + 1) & GENERATION_MASK;
-    this.freeList.push(index);
+    // The slot is given out again with its next generation, so that the id
+    // which just died names nobody. When the last generation has been used
+    // the slot is given out no more: no id is ever given out twice.
+    const next = this.gens[index]! + 1;
+    this.gens[index] = next;
+    if (next < GENERATIONS) {
+      this.freeList.push(index);
+    }
     this.alive--;
     // It points at nothing now.
     for (const relation of this.relationList) {
@@ -2558,8 +2582,8 @@ export class World {
         continue;
       }
       const link = (
-        entities: Uint32Array,
-        targets: Uint32Array,
+        entities: Uint32Array | Float64Array,
+        targets: Float64Array,
         count: number
       ): void => {
         for (let row = 0; row < count; row++) {
@@ -2578,14 +2602,14 @@ export class World {
       if (def.storage === "sparse") {
         const set = this.sparseById.get(def.id);
         if (set !== undefined) {
-          link(set.dense, set.columns.target as Uint32Array, set.count);
+          link(set.dense, set.columns.target as Float64Array, set.count);
         }
         continue;
       }
       for (const table of this.tables) {
         const columns = table.columns[def.id];
         if (columns !== undefined) {
-          link(table.entities, columns.target as Uint32Array, table.count);
+          link(table.entities, columns.target as Float64Array, table.count);
         }
       }
     }
@@ -3246,10 +3270,10 @@ export class World {
   snapshot(): Uint8Array {
     const { tables } = this;
     let placed = 0;
-    let estimate = 256 + this.nextIndex * 2 + this.freeList.length * 4;
+    let estimate = 256 + this.nextIndex * 4 + this.freeList.length * 4;
     for (const table of tables) {
       placed += table.count;
-      estimate += 64 + table.count * 4;
+      estimate += 64 + table.count * 8;
       for (const def of table.defs) {
         for (const kind of def.kinds) {
           estimate += table.count * (isBoxed(kind) ? 8 : WIDTH[kind as "f32"]);
@@ -3294,7 +3318,7 @@ export class World {
     // Every slot's generation, and the freed slots in the order they will be
     // handed out again.
     writer.u32(this.nextIndex);
-    writer.numbers(this.gens, this.nextIndex, 2);
+    writer.numbers(this.gens, this.nextIndex, 4);
     writer.u32(this.freeList.length);
     for (const index of this.freeList) {
       writer.u32(index);
@@ -3347,7 +3371,7 @@ export class World {
         writer.u32(used.get(def)!);
       }
       writer.u32(count);
-      writer.numbers(table.entities, count, 4);
+      writer.numbers(table.entities, count, 8);
       for (const def of defsByName) {
         writeFields(def, table.columns[def.id]!, count);
       }
@@ -3498,17 +3522,32 @@ export class World {
       random[word] = reader.u32();
     }
 
-    const nextIndex = reader.count(2);
+    // Format 3 widened an entity's id: a generation is four bytes where it
+    // was two, and an id, in a table or in a field, eight where it was four.
+    // An id of the older formats is the same number, in a narrower place.
+    const narrow = format < 3;
+    const nextIndex = reader.count(narrow ? 2 : 4);
     if (nextIndex > INDEX_MASK + 1) {
       throw corrupt("it holds more entity slots than a world can have");
     }
     while (this.recTable.length < nextIndex) {
       this.growRecords();
     }
-    reader.numbers(this.gens, nextIndex, 2);
+    if (narrow) {
+      const generations = new Uint16Array(nextIndex);
+      reader.numbers(generations, nextIndex, 2);
+      this.gens.set(generations);
+    } else {
+      reader.numbers(this.gens, nextIndex, 4);
+    }
+    // A slot whose generations are used up is neither free nor anyone's.
+    let retired = 0;
     for (let index = 0; index < nextIndex; index++) {
-      if (this.gens[index]! > GENERATION_MASK) {
+      if (this.gens[index]! > GENERATIONS) {
         throw corrupt("a slot has a generation no entity could have");
+      }
+      if (this.gens[index] === GENERATIONS) {
+        retired++;
       }
     }
     const freed = reader.count(4);
@@ -3516,9 +3555,13 @@ export class World {
     const isFree = new Uint8Array(nextIndex);
     for (let i = 0; i < freed; i++) {
       const index = reader.u32();
-      if (index >= nextIndex || isFree[index] === 1) {
+      if (
+        index >= nextIndex ||
+        isFree[index] === 1 ||
+        this.gens[index] === GENERATIONS
+      ) {
         throw corrupt(
-          "its list of freed slots names a slot twice, or one that does not exist"
+          "its list of freed slots names a slot twice, one that does not exist, or one that is used up"
         );
       }
       isFree[index] = 1;
@@ -3586,7 +3629,7 @@ export class World {
       if (this.tableByKey.has(key)) {
         throw corrupt("it holds two tables for the same components");
       }
-      const count = reader.count(4);
+      const count = reader.count(narrow ? 4 : 8);
       let capacity = 16;
       while (capacity < count) {
         capacity *= 2;
@@ -3594,16 +3637,27 @@ export class World {
       const table = new Table(this.tables.length, sorted, capacity);
       this.tables.push(table);
       this.tableByKey.set(key, table);
-      reader.numbers(table.entities, count, 4);
+      if (narrow) {
+        const ids = new Uint32Array(count);
+        reader.numbers(ids, count, 4);
+        table.entities.set(ids);
+      } else {
+        reader.numbers(table.entities, count, 8);
+      }
       table.count = count;
       for (let row = 0; row < count; row++) {
         const entity = table.entities[row] as Entity;
         const index = entityIndex(entity);
+        // Eight bytes can hold what is no id at all: a number that is not
+        // whole, below nothing, or past the last id. None of those is its
+        // index and a generation a slot could have; and a slot whose
+        // generations are used up, which the count below takes for
+        // nobody's, is one too many if it holds an entity.
         if (
           index >= nextIndex ||
           isFree[index] === 1 ||
           this.recTable[index] !== FREE ||
-          this.gens[index] !== entityGeneration(entity)
+          this.gens[index] !== (entity - index) / SLOTS
         ) {
           throw corrupt(
             "an entity is in two places, or in a slot that is free or of another generation"
@@ -3616,11 +3670,11 @@ export class World {
       // The same order the fields were written in: components by name.
       for (const def of defs) {
         for (let f = 0; f < def.fields.length; f++) {
-          this.readField(reader, def, f, table.columns[def.id]!, count);
+          this.readField(reader, def, f, table.columns[def.id]!, count, narrow);
         }
       }
     }
-    if (this.alive + freed !== nextIndex) {
+    if (this.alive + freed + retired !== nextIndex) {
       throw corrupt("some entity slots are neither in a table nor free");
     }
 
@@ -3645,7 +3699,7 @@ export class World {
         set.add(index, undefined);
       }
       for (let f = 0; f < def.fields.length; f++) {
-        this.readField(reader, def, f, set.columns, count);
+        this.readField(reader, def, f, set.columns, count, narrow);
       }
     }
     // Format 1 had no singletons.
@@ -3662,7 +3716,7 @@ export class World {
       }
       loaded.add(single);
       for (let f = 0; f < def.fields.length; f++) {
-        this.readField(reader, def, f, single.columns, 1);
+        this.readField(reader, def, f, single.columns, 1, narrow);
       }
       single.written = true;
     }
@@ -3678,11 +3732,19 @@ export class World {
     def: ComponentDef<any>,
     f: number,
     columns: Columns,
-    count: number
+    count: number,
+    narrow: boolean
   ): void {
     const field = def.fields[f]!;
     try {
-      readColumn(reader, def.kinds[f]!, columns[field]!, count, def.codecs[f]);
+      readColumn(
+        reader,
+        def.kinds[f]!,
+        columns[field]!,
+        count,
+        def.codecs[f],
+        narrow
+      );
     } catch (error) {
       if (error instanceof SnapshotError) {
         throw error;
