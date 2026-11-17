@@ -281,6 +281,50 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 - Events and actions are plain values, so a plugin does not list them. It exports them from its module. It does list its `components`, singletons among them, and its `scripts`, which loading a saved game needs; see [Saving and loading](#saving-and-loading).
 - `setup` runs on a fresh start and not on a load. A plugin's scripts start after it, run like any other script, and are watched the same way.
 
+### How a game is laid out
+
+A folder for each plugin, and a file at the root that makes the app. [`examples/demo/`](examples/demo/) is laid out so:
+
+```
+demo/
+  main.ts           the game's own plugin, and App.run
+  physics/
+    index.ts        the plugin, and what other plugins use of it
+    loops.ts        its raw loops: plain functions, importing nothing
+  lifetime/
+    index.ts
+  sketch/
+    index.ts        what draws, which the rules never import
+```
+
+- **A plugin's folder has an `index.ts`**: the plugin, `export const plugin = Plugin.make(...)`, and its components, queries, systems, events and actions, for the plugins that build on it. Another plugin imports it by that file, `import * as Physics from "../physics/index"`, and lists `Physics.plugin` in its `plugins`.
+- **Its raw loops are in `loops.ts`**: plain functions of a range of rows, columns and numbers. They import nothing and close over nothing, so whatever runs one needs only to have imported it. The system stays in `index.ts`, reads what the loop needs (the time, a resource, a singleton) and passes it in:
+
+  ```ts
+  // physics/loops.ts
+  export const fall = (
+    start: number,
+    end: number,
+    py: Float32Array,
+    vy: Float32Array,
+    delta: number
+  ): void => {
+    for (let i = start; i < end; i++) py[i]! += vy[i]! * delta;
+  };
+
+  // physics/index.ts
+  const Physics = System.make("Physics", function* () {
+    const { delta } = yield* Time;
+    (yield* Falling).eachChunk((start, end, pos, vel) =>
+      fall(start, end, pos.y, vel.y, delta)
+    );
+  }).pipe(System.access({ queries: [Falling] }));
+  ```
+
+  A loop that draws from `Random`, spawns or despawns through `Commands`, emits an event, or reads a `json` or `transient` field is not one of these: it stays in its system. A plugin with no such loop has no `loops.ts`.
+
+- **This is what running systems on workers will need.** A worker has no closure of the main thread's, so what runs on one is a loop it imported itself. A game that runs systems on workers will have one more file at its root, `worker.ts`, which imports the `loops.ts` of every plugin, and will start it itself, `new Worker(new URL("./worker.ts", import.meta.url), { type: "module" })`, since a bundler recognises that line only as it is written. Nothing runs on a worker yet: see [Not done yet](#not-done-yet).
+
 ## Names
 
 A string that identifies something at run time carries the name of the feature it belongs to.
@@ -546,7 +590,7 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
 
 - Given a `save`, it goes on from it with `App.load` in place of a fresh start, and can fail with `Save.LoadRefused`.
 - It fails with what `App.make` and `ready` can fail with, and dies with what a tick throws.
-- It runs wherever there is a display, which outside a page is a timer: `NodeRuntime.runMain(App.run(...))` is the same game under Node, with no import but `arcadekit`, and `examples/demo.ts` is started that way.
+- It runs wherever there is a display, which outside a page is a timer: `NodeRuntime.runMain(App.run(...))` is the same game under Node, with no import but `arcadekit`, and `examples/demo/main.ts` is started that way.
 
 `Driver.frames` is the frame loop underneath, for a program that makes its app itself. It follows the display until it is interrupted: each time a frame is due it runs the ticks that are due, at a fixed `hz`, and then the [frame stage](#the-tick-and-the-frame), as `Driver.fixedStep` does. In a page a frame is due once per repaint, which is `requestAnimationFrame`.
 
@@ -1400,7 +1444,7 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `bench/core.ts` | The storage core's variants of it, which import `arcadekit/ecs` and nothing else |
 | `bench/compare.ts`, `bench/verdict.ts` | The check of a pull request: those variants for two checkouts, turn and turn about, and the rule that says whether one is slower |
 | `bench/parallel/` | A measurement, and no part of the package: a loop's rows shared between workers and the main thread over shared memory, `pnpm --filter arcadekit bench:parallel` |
-| `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
+| `examples/demo/` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run`, and laid out as a game is: a folder for each plugin, with the raw loop of one in a module of its own, and `main.ts`, which makes the app |
 | `examples/relay.ts` | A relay under Node: `Relay.make()` behind a WebSocket server (`ws`, a dev dependency for this and for the relay's tests) |
 | `examples/relay-cloudflare/` | The relay on Cloudflare, declared with Alchemy: a Worker, and a Durable Object per room that reads who is connected back from its sockets |
 | `examples/relay-check.ts` | Checks a relay at an address: two peers play through it, and a taken name and a message in another's name have to be refused |
@@ -1464,6 +1508,8 @@ view.eachChunk((start, end, pos, burning, entities) => {
   }
 });
 ```
+
+That stays the shape of a sparse component's data on the main thread. A sparse component as a filter, `with` or `without`, costs a raw loop nothing per row: the table arrives as runs of consecutive rows that match. When systems run on workers, that is all a sparse component will be to a loop that runs on one: its filter, worked out on the main thread, and not its data. A component common enough for its loop to be worth sharing out between threads is better in a table.
 
 ## Benchmark (100,000 entities, `pos += vel * dt`)
 
@@ -1610,6 +1656,8 @@ moving.eachChunk((start, end, pos, vel) => {
 ```
 
 `each` does not have this problem, because its accessors return `number`. A project without that compiler option can write `pos.x[i] += vel.x[i] * delta`.
+
+That is how it stays: the raw path has no API that spares the assertion. One that checked would be a call per read, and a raw loop is there because it makes none. The assertions belong in loop bodies, which is almost the only place `!` does.
 
 ## Not done yet
 

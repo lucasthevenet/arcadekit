@@ -179,7 +179,7 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc -p . && tsc -p tsconfig.examples.json",
-    "demo": "tsx examples/demo.ts",
+    "demo": "tsx examples/demo/main.ts",
     "duel": "tsx examples/duel.ts",
     "page": "vite examples/page",
     "relay": "tsx examples/relay.ts",
