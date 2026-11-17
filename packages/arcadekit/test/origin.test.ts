@@ -10,18 +10,14 @@ import {
   moves,
   network,
   Purse,
+  purseOf,
   round,
   Stranger,
   Tip,
   withApp,
   withPeers,
 } from "./peers";
-import type { Game, Peer } from "./peers";
-
-const purseOf = (app: Game) => {
-  const { ada, grace } = app.world.singleton(Purse);
-  return { ada, grace };
-};
+import type { Peer } from "./peers";
 
 describe("who issued an action", () => {
   it("is told to its handler when the action came with a name", () => {

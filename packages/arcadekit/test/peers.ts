@@ -197,6 +197,12 @@ export const game = (seed = 5, checkpointEvery = 1) =>
   App.make(gameOptions(seed, checkpointEvery));
 export type Game = Effect.Success<ReturnType<typeof game>>;
 
+/** What each of the two players has in the purse. */
+export const purseOf = (app: Game): { ada: number; grace: number } => {
+  const { ada, grace } = app.world.singleton(Purse);
+  return { ada, grace };
+};
+
 export interface Peer {
   readonly name: string;
   readonly app: Game;
