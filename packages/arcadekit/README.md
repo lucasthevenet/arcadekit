@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 665 tests, 83 of them of @arcadekit/three
+pnpm test                          # 669 tests, 83 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -683,6 +683,7 @@ A game's menus and its heads-up display are built with whatever the game chooses
 - `ui.get(view)` is the value as last published. It is the same object until the view is published with another value, so `===` tells a UI library whether anything changed.
 - `ui.subscribe(view, listener)` calls the listener each time the view is published with a new value, and returns what stops it. A listener that throws fails the frame, as any bug in the frame stage does, once every other listener was told.
 - `ui.send(action, payload)` asks the game for an action. It is issued in the [input stage](#input), before the next tick, by `View.plugin`: logged, and applied or refused by its handler, exactly as a key bound to it would be. So a replay needs no UI, and a button is as good as a key.
+- An action the game has no handler for is a bug, and `send` throws for it there, in the UI's own code: `View.plugin` tells the bridge which actions the game handles when the app is made, and until the app ends. One sent before the game is made, when nobody can tell, throws in the game's first input stage.
 - A UI can be mounted before the game is made: it sees every view at its initial value, and what it sends waits.
 - A bridge refuses two different views with one name.
 
@@ -958,7 +959,7 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 ```
 
 - A refused action changes nothing. A handler may refuse at any point, even after it has written: what it wrote to components, the random numbers it drew, the commands it queued, the events it emitted and the actions it enqueued are all taken back, and the events it read are unread again. So is everything done by a handler that dies of a bug half-way. See [Refusals leave nothing behind](#refusals-leave-nothing-behind).
-- `app.dispatch` is for turn-based input: the caller gets the typed outcome immediately. `app.enqueue` is for real-time input: the action waits for the start of the next tick, and a refusal becomes an `Action.Rejected` event. Both are for code outside the simulation. A system, a script or a handler issues an action with the `Actions` service, `(yield* Action.Actions).enqueue(...)`, so AI plays by the same rules as players.
+- `app.dispatch` is for turn-based input: the caller gets the typed outcome immediately. `app.enqueue` is for real-time input: the action waits for the start of the next tick, and a refusal becomes an `Action.Rejected` event. Both are for code outside the simulation. A system, a script or a handler issues an action with the `Actions` service, `(yield* Action.Actions).enqueue(...)`, so AI plays by the same rules as players. `handles(action)` of the same service says whether the game has a handler for an action, which `enqueue` throws without.
 - Dispatching an action with no handler, or with the wrong payload, does not compile.
 
 ### Payloads, saves and the network
@@ -1269,7 +1270,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The UI is not told what became of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and the game can publish as a view.
 - What the UI sends is applied by the next tick, which under a driver is the frame it was sent in or the one after. A game that steps its app by hand runs a tick itself when its UI has sent something.
 - A view's value is an object of this program, with no schema: a UI in another thread or on another machine is not served.
-- `ui.send` takes any action. That the game has a handler for it is checked when it is issued, where a missing one throws, and not by the compiler.
+- `ui.send` takes any action as far as the compiler knows. That the game has a handler for it is checked when it is sent, and a bridge is not typed by the game it will be given to.
 - An asset is a picture, text, JSON or bytes. A font is for whoever draws with it to decode, with `Assets.make`.
 - A bundle is loaded or it is not: it does not say how far along it is, and a file that two bundles name is fetched for each.
 - A bundle that failed stays failed until its level is entered again. Nothing tries again by itself.

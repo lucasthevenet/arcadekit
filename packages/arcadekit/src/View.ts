@@ -103,6 +103,10 @@ export interface Bridge {
    * Asks the game for an action. It is issued before the game's next tick,
    * logged, and applied or refused by its handler, as a key bound to it
    * would be.
+   *
+   * An action the game has no handler for is a bug, and throws here, where
+   * it was sent. Sent before the game is made, when nobody can tell yet, it
+   * throws in the game's first input stage.
    */
   readonly send: <N extends string, P>(
     action: Action.ActionDef<N, P, unknown>,
@@ -119,6 +123,15 @@ export interface Bridge {
    * @internal
    */
   readonly _take: () => readonly Sent[];
+  /**
+   * The game's end: says which actions the game has a handler for, from
+   * now until what is returned is called. A bridge serves one game at a
+   * time: the last to say.
+   * @internal
+   */
+  readonly _connect: (
+    handles: (action: Sent["action"]) => boolean
+  ) => () => void;
 }
 
 const NOTHING: readonly Sent[] = Object.freeze([]);
@@ -146,6 +159,8 @@ interface Slot {
 export const makeBridge = (): Bridge => {
   const slots = new Map<string, Slot>();
   let sent: Sent[] = [];
+  // Which actions the game handles, once a game is there to say.
+  let handles: ((action: Sent["action"]) => boolean) | undefined;
   const slotOf = (view: View<any>): Slot => {
     let slot = slots.get(view.name);
     if (slot === undefined) {
@@ -168,6 +183,11 @@ export const makeBridge = (): Bridge => {
       };
     },
     send(action, ...payload) {
+      if (handles !== undefined && !handles(action)) {
+        throw new Error(
+          `The action "${action.name}" was sent to a game that has no handler for it. List its handler in a plugin's handlers, or in the app's.`
+        );
+      }
       sent.push({ action, payload: payload[0] });
     },
     _publish(view, value) {
@@ -206,6 +226,15 @@ export const makeBridge = (): Bridge => {
       sent = [];
       return taken;
     },
+    _connect(mine) {
+      handles = mine;
+      return () => {
+        // A game that ended after another began leaves the other's.
+        if (handles === mine) {
+          handles = undefined;
+        }
+      };
+    },
   };
 };
 
@@ -219,6 +248,7 @@ const noBridge: Bridge = {
   },
   _publish: () => false,
   _take: () => NOTHING,
+  _connect: () => () => {},
 };
 
 /**
@@ -270,6 +300,13 @@ const portLayer = Layer.effect(
     // Between ticks an app's world is frozen: that is how the stages that
     // may talk to the UI are told from the tick.
     const world = yield* World;
+    // From here to the app's end the bridge knows what the game handles,
+    // and refuses the rest where it is sent.
+    const { handles } = yield* Action.Actions;
+    yield* Effect.acquireRelease(
+      Effect.sync(() => bridge._connect(handles)),
+      (leave) => Effect.sync(leave)
+    );
     return {
       connected: bridge !== noBridge,
       publish(view, value) {
@@ -304,8 +341,10 @@ const Send = System.make("arcadekit/View.Send", function* () {
  *
  * - What the UI sent is issued in the input stage, just before a tick, in
  *   the order it was sent, with `Actions.enqueue`: logged, and applied at
- *   the start of the tick. An action the app has no handler for is a bug,
- *   and throws there.
+ *   the start of the tick.
+ * - An action the app has no handler for is a bug. The bridge is told which
+ *   the app handles when the app is made, and `send` throws for another;
+ *   one sent before that throws here, in the app's first input stage.
  * - Where no bridge was provided the plugin does nothing.
  */
 export const plugin = Plugin.make("arcadekit/View", {

@@ -1,5 +1,4 @@
-import { Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
+import { Data, Effect, Exit, Schema, Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -91,6 +90,34 @@ const play = (ui: View.Bridge | undefined, seed = 1) => {
     ui === undefined ? made : made.pipe(Effect.provide(View.layer(ui)))
   );
 };
+
+// What the game above has no handler for.
+const Unknown = Action.define("vw/Unknown", Schema.Struct({}));
+const Other = Action.define("vw/Other", Schema.Struct({}));
+
+/**
+ * The same game, kept until `end` is called. `play` ends its app's scope
+ * as soon as the app is made, which a game that runs does when it stops.
+ */
+const keep = (
+  ui: View.Bridge,
+  handlers: readonly Action.Handler<any, any, any, any, never>[] = []
+) => {
+  const scope = Effect.runSync(Scope.make());
+  const app = Effect.runSync(
+    App.make({ plugins: [Game], handlers, seed: 1 }).pipe(
+      Effect.provide(View.layer(ui)),
+      Scope.provide(scope)
+    )
+  );
+  return {
+    app,
+    end: () => Effect.runSync(Scope.close(scope, Exit.void)),
+  };
+};
+
+const isAction = (entry: Action.LogEntry): entry is Action.Logged =>
+  !Action.isCheckpoint(entry);
 
 /** A UI that only notes what it is told. */
 const listen = <A>(ui: View.Bridge, view: View.View<A>) => {
@@ -572,12 +599,89 @@ describe("what the UI sends", () => {
     expect(idle.world.hash()).not.toBe(hashes.at(-1));
   });
 
-  it("is a bug when the game has no handler for it: the input stage throws", () => {
-    const Unknown = Action.define("vw/Unknown", Schema.Struct({}));
+  it("is a bug when the game has no handler for it, and throws where it was sent", () => {
     const ui = View.makeBridge();
-    const app = play(ui);
+    const { app, end } = keep(ui);
+    expect(() => ui.send(Unknown, {})).toThrow(
+      'The action "vw/Unknown" was sent to a game that has no handler for it'
+    );
+    // And was not kept: the game goes on, and hears what it does handle.
+    ui.send(Start, {});
+    app.tick(1);
+    expect(app.actionLog.filter(isAction).map((e) => e.name)).toEqual([
+      "vw/Start",
+    ]);
+    app.frame(0);
+    expect(ui.get(Menu)).toEqual({ phase: "playing" });
+    end();
+  });
+
+  it("sent before the game is made, when nobody can tell, throws in the game's first input stage", () => {
+    const ui = View.makeBridge();
     ui.send(Unknown, {});
+    const { app, end } = keep(ui);
     expect(() => app.input()).toThrow('No handler for action "vw/Unknown"');
+    end();
+  });
+
+  it("is anybody's again once the game has ended: the bridge waits for the next", () => {
+    const ui = View.makeBridge();
+    const first = keep(ui);
+    expect(() => ui.send(Unknown, {})).toThrow("has no handler for it");
+    first.end();
+    // No game is there to say what it handles.
+    ui.send(Unknown, {});
+    ui.send(Start, {});
+    // The next one handles it, and refuses what it does not from then on.
+    const second = keep(ui, [
+      Action.handler(Unknown, function* () {
+        pings += 100;
+      }),
+    ]);
+    pings = 0;
+    second.app.tick(1);
+    expect(pings).toBe(100);
+    ui.send(Unknown, {});
+    expect(() => ui.send(Other, {})).toThrow(
+      'The action "vw/Other" was sent to a game that has no handler for it'
+    );
+    second.end();
+  });
+
+  it("is checked against the game made last, which a game that ended before it does not undo", () => {
+    const ui = View.makeBridge();
+    const first = keep(ui);
+    const second = keep(ui, [Action.handler(Unknown, function* () {})]);
+    ui.send(Unknown, {});
+    // The first to end leaves the bridge to the second.
+    first.end();
+    ui.send(Unknown, {});
+    expect(() => ui.send(Other, {})).toThrow("has no handler for it");
+    second.end();
+    // And the second leaves it to nobody.
+    ui.send(Other, {});
+  });
+
+  it("is what a system can ask too: Actions.handles says whether an action can be issued", () => {
+    const said: boolean[] = [];
+    const Ask = (name: string, stage: System.Stage) =>
+      System.make(name, function* () {
+        const { handles } = yield* Action.Actions;
+        said.push(handles(Start), handles(Unknown));
+      }).pipe(System.inStage(stage));
+    const app = run(
+      App.make({
+        plugins: [Game],
+        systems: [
+          Ask("vw/AskInput", "input"),
+          Ask("vw/AskTick", "update"),
+          Ask("vw/AskFrame", "frame"),
+        ],
+      })
+    );
+    app.tick(1);
+    app.frame(0);
+    expect(said).toEqual([true, false, true, false, true, false]);
   });
 
   it("cannot be sent to the bridge that stands for no UI", () => {
