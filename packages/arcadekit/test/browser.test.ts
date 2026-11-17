@@ -1127,6 +1127,10 @@ describe("a page's sound", () => {
     };
   };
 
+  /** What is said, once, of a cue that came before the page was touched. */
+  const UNTOUCHED = (cue: string): string =>
+    `The cue "${cue}" was asked for before the page was touched, and is not played: a browser lets a page make no sound until its user has pressed a key or a button, and a cue that came late would be worse than none. A track asked for then starts at the first touch. This is said once.`;
+
   it("makes the page's audio at the first touch, and plays a cue's file through it", async () => {
     const { audio, decoded, logged, made, output, page } = await build({
       coin: "/coin.wav",
@@ -1161,7 +1165,81 @@ describe("a page's sound", () => {
     page.send("pointerdown");
     expect(audio.resumed).toBe(1);
     expect(decoded.length).toBe(2);
+    // The cue that came before the touch was said, and nothing else.
+    expect(logged).toEqual([UNTOUCHED("coin")]);
+  });
+
+  it("says once that a cue came before the first touch, by the first one's name, and not where no touch would help", async () => {
+    const { audio, close, logged, output, page } = await build({
+      coin: "/coin.wav",
+    });
+    const clip = Sound.clip("/level/chirp.wav", { samples: 2 });
+    // A clip is named as it is; a track is not a cue, and waits.
+    output.music("score", "coin", 1, 0, false);
     expect(logged).toEqual([]);
+    output.play(clip, 1, 1);
+    output.play("coin", 1, 1);
+    output.play("nothing", 1, 1);
+    expect(logged).toEqual([
+      UNTOUCHED("/level/chirp.wav"),
+      // What has no file is said for itself, as ever.
+      'The sound "nothing" was played and has no file. The page\'s sounds are: coin.',
+    ]);
+    // Touched, a cue is played, and nothing more is said of it: nor when
+    // the audio sleeps, which is the page being away.
+    page.send("pointerdown");
+    output.play("coin", 1, 1);
+    audio.state = "suspended";
+    output.play("coin", 1, 1);
+    expect(audio.started.length).toBe(1);
+    expect(logged.length).toBe(2);
+    // Let go, the layer plays nothing and says nothing.
+    await close();
+    output.play("coin", 1, 1);
+    expect(logged.length).toBe(2);
+
+    // Let go before it was ever touched, it has nothing to say either.
+    const gone = await build({ coin: "/coin.wav" });
+    await gone.close();
+    gone.output.play("coin", 1, 1);
+    expect(gone.logged).toEqual([]);
+  });
+
+  it("plays nothing on a page with no Web Audio, touched or not, and has nothing to say of it", async () => {
+    // As it is here: nothing is given to make an audio with, and there
+    // is no AudioContext to make one of.
+    expect(typeof AudioContext).toBe("undefined");
+    const page = new Listened();
+    const logged: string[] = [];
+    const scope = Effect.runSync(Scope.make());
+    const context = await Effect.runPromise(
+      Layer.build(
+        Browser.layerSound(
+          { coin: "/coin.wav" },
+          { window: page, decode: decodeInto([]) }
+        )
+      ).pipe(
+        Scope.provide(scope),
+        Effect.provideService(Driver.Display, Driver.makeManualDisplay()),
+        Effect.provide(Assets.layerMemory(sounds)),
+        Effect.provide(
+          Logger.layer([
+            Logger.make((entry) => {
+              logged.push(String(entry.message));
+            }),
+          ])
+        )
+      )
+    );
+    await settle();
+    const output = Context.get(context, Sound.Output);
+    output.play("coin", 1, 1);
+    output.music("score", "coin", 1, 0, false);
+    page.send("pointerdown");
+    output.play("coin", 1, 1);
+    // No touch would have helped, so nothing is said of one.
+    expect(logged).toEqual([]);
+    await Effect.runPromise(Scope.close(scope, Exit.void));
   });
 
   it("plays every cue at the volume it was given for all of them", async () => {
