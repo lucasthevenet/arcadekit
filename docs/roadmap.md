@@ -95,7 +95,6 @@ Values that have to be right and are not checked:
 - **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
 - **A texture made by `Three.texture` cannot be turned over in `prepare`**: Three.js does not read `flipY` of a texture made of a bitmap, and setting it does nothing.
 - **`ui.send` takes any action.** One the game has no handler for throws when it is issued, in the input stage, and not where it was sent or when it was compiled.
-- **Two systems made with `Sound.cues` that play the same cue play it twice.** The merging of a frame's cues is per system.
 - **Two `Sound.music` systems are two channels, by their names.** Two that were meant to be one score, a menu's and a level's, play on top of each other, each fading as if it were alone.
 - **A cue asked for before the page was first touched is dropped; a track is kept.** The first sound of a game that starts with a cue is not heard. Nothing says so.
 

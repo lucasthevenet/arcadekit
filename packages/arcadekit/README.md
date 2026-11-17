@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 659 tests, 83 of them of @arcadekit/three
+pnpm test                          # 660 tests, 83 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -732,9 +732,9 @@ A sound is a named cue, and it is played because something happened: the simulat
 
 - `Sound.cues(name, ...lines)` makes a system of the [frame stage](#the-tick-and-the-frame). Each frame it plays what the events since the last frame sound like. It hears every event once, however many ticks ran in between, as any frame system does.
 - `Sound.on(event, cue)` is a line: a cue's name, a name with a `volume` and a `rate`, or a function of the event's payload that gives either, or nothing. Several lines may be of one event, and each hears it.
-- A cue that several events of one frame ask for is played once, as the loudest of them asked: forty coins caught in one tick are one sound, not forty on top of each other.
-- Cues are played in the order of their lines, the lines of one event together.
-- `Sound.Player` is the service that plays, which `Sound.plugin` provides. A frame system plays through it for a sound no event stands for: `(yield* Sound.Player).play("click", { volume: 0.5 })`. In the tick it throws and says what to do instead, and an action's handler that plays dies of the same.
+- A cue that several events of one frame ask for is played once, as the loudest of them asked: forty coins caught in one tick are one sound, not forty on top of each other. That is the player's doing and not the system's, so it holds across systems: two that play the same cue in a frame, a plugin's and the game's, make one sound of it.
+- What a frame's systems ask to hear is played when they have all run, by a system of [`"postFrame"`](#the-tick-and-the-frame) that `Sound.plugin` brings, in the order it was first asked for.
+- `Sound.Player` is the service that plays, which `Sound.plugin` provides. A frame system plays through it for a sound no event stands for: `(yield* Sound.Player).play("click", { volume: 0.5 })`. It is heard with the rest of its frame, and is one sound with whatever else asked for the same cue. Asked for in the input stage, it is heard with the frame that follows. In the tick it throws and says what to do instead, and an action's handler that plays dies of the same.
 - Sound follows real time and is no part of the game. A game that is heard has the same hash, log and save as one that is not, and a replay or a server, which run no frame stage, play nothing.
 - What a refused action emitted is taken back with the rest, so it is never heard.
 - `Sound.Output` is where sound goes: a `Context.Reference` whose default is nowhere, and there the cues' system reads nothing. `Sound.layer(output)` provides one, and `Sound.makeRecorder()` is one that plays nothing and notes what it was asked, for a test: its cues in `played`, what each channel was told in `scored`, and what each is playing now in `playing`.
@@ -1202,9 +1202,9 @@ Sound, with one system that plays cues for two kinds of event, or one that keeps
 
 | Variant                                                   | Cost    |
 | --------------------------------------------------------- | ------- |
-| `app.frame()`: cues, nothing happened                     | 1.82 µs |
-| `app.frame()`: cues, one event, and its cue is played     | 2.01 µs |
-| `app.frame()`: music that goes on as it was, nothing told | 1.52 µs |
+| `app.frame()`: cues, nothing happened                     | 1.43 µs |
+| `app.frame()`: cues, one event, and its cue is played     | 1.63 µs |
+| `app.frame()`: music that goes on as it was, nothing told | 1.24 µs |
 
 Entities coming and going in the same world:
 
@@ -1260,7 +1260,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A cue is played once and left to end: it cannot be stopped, and nothing is heard from where it is. A track that plays once says nothing when it has ended: the body that asked for it cannot tell, and what follows it is for the game to say.
 - A streamed track that goes round may be heard to join where it does: the page's own player is not exact about it. A short piece that has to go round without a seam is given by its URL and decoded. A stream is fetched by the page and not through `Assets.Loader`, so a test plays `Sound.clip(name)` in its place.
 - A channel fades in a straight line, from one track to the next in the same time. Two tracks are not kept in step, a track does not start where the last one was, and nothing is timed to a beat.
-- A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.
+- A cue is one sound a frame, whatever speed each asked for it at: the loudest's. Two sounds of one file at once, a chord, are two names for it.
 - A page's audio sleeps while the page is hidden, always, as its frame loop does. A game that is to be heard in the background cannot say so.
 - The first sound a page can make is the one its user's first key or press sets off. Nothing is heard before that.
 - A view is worked out and compared whole, every frame a UI is there. A game with a view that is costly to work out says when it is worth it with `System.runIf`.
