@@ -30,9 +30,14 @@ export const Position = Component.define("arcadekit/Transform3d.Position", {
 });
 
 /**
- * Which way an entity is turned, as a unit quaternion. `axisAngle` makes
- * one. All four fields 0, which is what a `Rotation` added with no value
- * is, stands for not turned at all.
+ * Which way an entity is turned, as a quaternion. `axisAngle` makes one.
+ *
+ * It is the turn that matters and not the length. A quaternion of any
+ * length stands for the turn of the one of length 1 along it, and what
+ * reads a `Rotation` takes it so: one that a game's rules let drift from
+ * length 1, or never made of it, is drawn as the same turn. All four
+ * fields 0, which is what a `Rotation` added with no value is, stands for
+ * not turned at all.
  */
 export const Rotation = Component.define("arcadekit/Transform3d.Rotation", {
   x: Field.f32,
@@ -49,10 +54,11 @@ export const Scale = Component.define("arcadekit/Transform3d.Scale", {
 });
 
 /**
- * The value of a `Rotation` that turns by `angle` radians about an axis,
- * which has to be of length 1: `Transform3d.axisAngle(0, 1, 0, Math.PI)`. It
- * makes an object, so it is for a spawn or a `world.set`, not for a loop
- * over columns.
+ * The value of a `Rotation` that turns by `angle` radians about an axis:
+ * `Transform3d.axisAngle(0, 1, 0, Math.PI)`. The axis is a direction, of
+ * any length but none; about no axis at all, three zeros, it is no turn.
+ * What it gives is of length 1. It makes an object, so it is for a spawn
+ * or a `world.set`, not for a loop over columns.
  */
 export const axisAngle = (
   x: number,
@@ -60,7 +66,13 @@ export const axisAngle = (
   z: number,
   angle: number
 ): { x: number; y: number; z: number; w: number } => {
-  const sin = Math.sin(angle / 2);
+  const length = Math.hypot(x, y, z);
+  if (length === 0) {
+    return { x: 0, y: 0, z: 0, w: 1 };
+  }
+  // Over the axis's length: the angle would be another for an axis that
+  // is not of length 1, and not only the quaternion's length.
+  const sin = Math.sin(angle / 2) / length;
   return { x: x * sin, y: y * sin, z: z * sin, w: Math.cos(angle / 2) };
 };
 

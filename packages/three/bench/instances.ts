@@ -187,6 +187,18 @@ variant(
   })
 );
 variant(
+  "instances, a colour each, as the renderer has it: a position",
+  () => [place(), paint()],
+  Three.instances("o2", {
+    of: Thing,
+    geometry,
+    material,
+    capacity: N,
+    color: Paint,
+    colorSpace: "srgb-linear",
+  })
+);
+variant(
   "instances, a colour each, smooth: a position",
   () => [place(), paint()],
   Three.instances("p", {

@@ -560,7 +560,7 @@ class Lerp2 extends Blend {
 
 /**
  * A turn in three dimensions: from one quaternion towards the other by the
- * shorter way, and made of length 1 again.
+ * shorter way. What comes out is not of length 1, and need not be.
  */
 class Nlerp4 extends Blend {
   private readonly out = {
@@ -622,13 +622,12 @@ class Nlerp4 extends Blend {
       const by = py + (b * near - py) * alpha;
       const bz = pz + (c * near - pz) * alpha;
       const bw = pw + (d * near - pw) * alpha;
-      const length = Math.sqrt(bx * bx + by * by + bz * bz + bw * bw);
-      // All zeros stands for not turned, and stays so.
-      const scale = length > 0 ? 1 / length : 0;
-      ox[i] = bx * scale;
-      oy[i] = by * scale;
-      oz[i] = bz * scale;
-      ow[i] = bw * scale;
+      // Of whatever length it comes out: what draws it takes the turn a
+      // quaternion stands for, and all zeros for not turned.
+      ox[i] = bx;
+      oy[i] = by;
+      oz[i] = bz;
+      ow[i] = bw;
     }
     return out;
   }
@@ -827,6 +826,32 @@ export const texture = (
 // --- instances -------------------------------------------------------------------
 
 /**
+ * How finely a colour is converted: the table has one more entry than
+ * this. Sixteen steps to each of a byte's 255, so that a byte is at a step
+ * exactly, and a float is within a thirty-second of a byte of one.
+ */
+const STEPS = 4080;
+
+/**
+ * What a number of an sRGB colour is in linear colour, which is what a
+ * renderer works in: the curve of the standard, at each of the table's
+ * steps from 0 to 1. A raised power per number per instance per frame
+ * would cost more than the rest of the instance does.
+ */
+const LINEAR = /* @__PURE__ */ (() => {
+  const table = new Float32Array(STEPS + 1);
+  for (let i = 0; i <= STEPS; i++) {
+    const c = i / STEPS;
+    table[i] = c < 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }
+  return table;
+})();
+
+/** Whether a field holds whole numbers: a colour's are then bytes. */
+const isWhole = (kind: string): boolean =>
+  kind === "u8" || kind === "u16" || kind === "u32" || kind === "i32";
+
+/**
  * A component of the game's that is a colour: three numbers, `r`, `g` and
  * `b`, kept in a table. What else it has is not read.
  */
@@ -855,11 +880,30 @@ export interface InstancesShared extends Which {
    *   const Paint = Component.define("game/Paint", { r: Field.f32, g: Field.f32, b: Field.f32 })
    *   Three.instances("game/Rocks", { of: Rock, geometry, material, color: Paint })
    *
-   * The numbers are in the renderer's working colour space, which is
-   * linear: what `new Color("#ff6188")` of Three.js has as its `r`, `g`
-   * and `b`.
+   * The numbers are a colour as a hex code or a style sheet writes it,
+   * unless `colorSpace` says otherwise: `#ff6188` is an `r` of
+   * `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`. Fields
+   * of floats hold 0 to 1; fields of whole numbers (`Field.u8`) hold the
+   * bytes themselves, 0 to 255.
    */
   readonly color?: ColorComponent;
+  /**
+   * The colour space the numbers of `color` are in, by the names Three.js
+   * gives them.
+   *
+   * - `"srgb"`, when left out: what a hex code holds, and what a colour
+   *   picker shows. Each number is converted for the renderer, which
+   *   works in linear colour, through a table: a byte exactly, and a
+   *   float to a sixteenth of a byte, finer than a screen shows. A number that is not from
+   *   0 to 1, or from 0 to 255 in a field of whole numbers, is no colour,
+   *   and fails the frame with an error that names the entity.
+   * - `"srgb-linear"`: the renderer's own working space, what
+   *   `new Color("#ff6188")` of Three.js has as its `r`, `g` and `b`. The
+   *   numbers are handed over as they are and nothing is checked: a
+   *   number over 1 is brighter than white, which a renderer that blooms
+   *   can show.
+   */
+  readonly colorSpace?: "srgb" | "srgb-linear";
   /**
    * How many instances there is room for at first: 256 when left out. The
    * room doubles when it runs out, which is the one time the system
@@ -927,6 +971,11 @@ class Instances implements Kept {
   /** The instances' colours, three numbers each, for a kind that has them. */
   private colors: Float32Array | undefined;
   private readonly colorRange = { start: 0, count: 0 };
+  /** Whether a colour's numbers are converted from sRGB, or handed over. */
+  private readonly curved: boolean;
+  /** What a colour's number is multiplied by: for one that is from 0 to 1. */
+  private readonly gain: number;
+  private readonly name: string;
   /**
    * The eight loops as the system gives them to its queries: as they are,
    * or, for a kind with a colour, each followed by the colours of its rows.
@@ -935,9 +984,15 @@ class Instances implements Kept {
 
   constructor(scene: ThreeScene, name: string, options: InstancesOptions) {
     this.scene = scene;
+    this.name = name;
     this.smooth = smoothOf(options);
     this.capacity = Math.max(1, Math.floor(options.capacity ?? 256));
     this.array = new Float32Array(this.capacity * 16);
+    this.curved = options.colorSpace !== "srgb-linear";
+    this.gain =
+      options.color !== undefined && isWhole(options.color.schema.r.kind)
+        ? 1 / 255
+        : 1;
     if (options.color === undefined) {
       this.loops = {
         placed: this.placed,
@@ -1070,12 +1125,45 @@ class Instances implements Kept {
       } = this.smooth.color.run(start, end, r, g, b, entities));
     }
     let at = from * 3;
+    const { gain } = this;
+    if (!this.curved) {
+      // The renderer's own numbers: as they are, or bytes over 255.
+      for (let i = start; i < end; i++) {
+        out[at] = r[i]! * gain;
+        out[at + 1] = g[i]! * gain;
+        out[at + 2] = b[i]! * gain;
+        at += 3;
+      }
+      return;
+    }
+    // A hex code's numbers, each looked up in the table at the nearest of
+    // its steps. One that is off either end of it is no colour.
+    const scale = gain * STEPS;
     for (let i = start; i < end; i++) {
-      out[at] = r[i]!;
-      out[at + 1] = g[i]!;
-      out[at + 2] = b[i]!;
+      const u = (r[i]! * scale + 0.5) | 0;
+      const v = (g[i]! * scale + 0.5) | 0;
+      const w = (b[i]! * scale + 0.5) | 0;
+      // Under zero or past the table's end, either of which leaves one of
+      // the six below zero: one test for the three numbers.
+      if ((u | v | w | (STEPS - u) | (STEPS - v) | (STEPS - w)) < 0) {
+        this.refuse(entities[i]!, r[i]!, g[i]!, b[i]!);
+      }
+      out[at] = LINEAR[u]!;
+      out[at + 1] = LINEAR[v]!;
+      out[at + 2] = LINEAR[w]!;
       at += 3;
     }
+  }
+
+  private refuse(entity: Entity, r: number, g: number, b: number): never {
+    const most = this.gain === 1 ? 1 : 255;
+    throw new Error(
+      `Three.instances("${this.name}") was given the colour (${r}, ${g}, ${b}) by entity ${entity}, which is no colour: each of its numbers is from 0 to ${most}${
+        most === 1
+          ? ", as a hex code's bytes over 255 are. For the bytes themselves, give the component fields of whole numbers, Field.u8"
+          : ""
+      }. A colour that is brighter than white is one of the renderer's own, which colorSpace: "srgb-linear" hands over as it is.`
+    );
   }
 
   /** Makes room for `rows` more instances, and says where the first goes. */
@@ -1205,9 +1293,14 @@ class Instances implements Kept {
       const b = qy[i]!;
       const c = qz[i]!;
       const d = qw[i]!;
-      const a2 = a + a;
-      const b2 = b + b;
-      const c2 = c + c;
+      // Twice over its length squared, which is 2 for a quaternion of
+      // length 1: one of any other length draws as the turn it stands
+      // for, and not skewed. All zeros is no turn at all.
+      const n = a * a + b * b + c * c + d * d;
+      const s = n > 0 ? 2 / n : 0;
+      const a2 = a * s;
+      const b2 = b * s;
+      const c2 = c * s;
       out[at] = 1 - (b * b2 + c * c2);
       out[at + 1] = a * b2 + d * c2;
       out[at + 2] = a * c2 - d * b2;
@@ -1253,9 +1346,14 @@ class Instances implements Kept {
       const b = qy[i]!;
       const c = qz[i]!;
       const d = qw[i]!;
-      const a2 = a + a;
-      const b2 = b + b;
-      const c2 = c + c;
+      // Twice over its length squared, which is 2 for a quaternion of
+      // length 1: one of any other length draws as the turn it stands
+      // for, and not skewed. All zeros is no turn at all.
+      const n = a * a + b * b + c * c + d * d;
+      const s = n > 0 ? 2 / n : 0;
+      const a2 = a * s;
+      const b2 = b * s;
+      const c2 = c * s;
       const u = sx[i]!;
       const v = sy[i]!;
       const w = sz[i]!;
@@ -1557,6 +1655,20 @@ export const instances: {
     throw new Error(
       `Three.instances("${name}") was given "${color.name}" as its colour, which is not one: a colour is a component kept in a table with the fields r, g and b.`
     );
+  }
+  if (color !== undefined) {
+    const kinds = [color.schema.r, color.schema.g, color.schema.b].map(
+      (field) => field.kind
+    );
+    const numbers = ["f32", "f64", "u8", "u16", "u32", "i32"];
+    if (
+      !kinds.every((kind) => numbers.includes(kind)) ||
+      new Set(kinds.map(isWhole)).size > 1
+    ) {
+      throw new Error(
+        `Three.instances("${name}") was given "${color.name}" as its colour, whose r, g and b are fields of ${kinds.join(", ")}: the three are all floats, from 0 to 1, or all whole numbers, the bytes from 0 to 255.`
+      );
+    }
   }
   // `any`: the terms of a query are a tuple in its type, and a kind with a
   // colour has one more than one without, after the ones its loop reads.
@@ -1904,7 +2016,20 @@ class Objects<O extends Object3D> implements Kept {
     const { objects, stamp, turnedAt } = this;
     for (let i = start; i < end; i++) {
       const index = entityIndex(entities[i]!);
-      objects[index]!.quaternion.set(x[i]!, y[i]!, z[i]!, w[i]!);
+      // An Object3D's quaternion has to be of length 1, which the game's
+      // may not be: it is given the turn that one stands for. All zeros
+      // is no turn at all.
+      const a = x[i]!;
+      const b = y[i]!;
+      const c = z[i]!;
+      const d = w[i]!;
+      const n = a * a + b * b + c * c + d * d;
+      if (n > 0) {
+        const s = 1 / Math.sqrt(n);
+        objects[index]!.quaternion.set(a * s, b * s, c * s, d * s);
+      } else {
+        objects[index]!.quaternion.identity();
+      }
       turnedAt[index] = stamp;
     }
   };

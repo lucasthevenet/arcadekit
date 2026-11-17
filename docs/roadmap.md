@@ -90,11 +90,8 @@ What a replay, a save and the hash do not hold:
 Values that have to be right and are not checked:
 
 - **A field left out of `Component.of` is NaN, not 0, where the compiler is not asked.** In TypeScript it does not compile: `of` takes every field. From JavaScript, or past a cast, a float that was left out is NaN, an integer is 0, and a `Transform3d.Position` with no `z` draws nowhere. Only a component added with no value at all is zeroed.
-- **A `Transform3d.Rotation` has to be a unit quaternion.** One that is not draws skewed.
-- **An instance's colour is in the renderer's linear colour space**, not a hex code's bytes over 255, and from 0 to 1. Either mistake draws the wrong colour and no more.
 - **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
 - **A texture made by `Three.texture` cannot be turned over in `prepare`**: Three.js does not read `flipY` of a texture made of a bitmap, and setting it does nothing.
-- **`ui.send` takes any action.** One the game has no handler for throws when it is issued, in the input stage, and not where it was sent or when it was compiled.
 - **Two `Sound.music` systems are two channels, by their names.** Two that were meant to be one score, a menu's and a level's, play on top of each other, each fading as if it were alone.
 - **A cue asked for before the page was first touched is dropped; a track is kept.** The first sound of a game that starts with a cue is not heard. Nothing says so.
 

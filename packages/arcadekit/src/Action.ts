@@ -235,5 +235,10 @@ export class Actions extends Context.Service<
       action: ActionDef<N, P, unknown>,
       payload: P
     ) => void;
+    /**
+     * Whether the game has a handler for an action. One it has none for
+     * cannot be issued: `enqueue` throws.
+     */
+    readonly handles: (action: ActionDef<string, any, unknown>) => boolean;
   }
 >()("arcadekit/Actions") {}

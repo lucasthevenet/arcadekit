@@ -741,6 +741,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       actionLog.push(entry);
       return entry;
     };
+    const handles = (action: Action.ActionDef<string, any, any>): boolean =>
+      handlers.has(action.name);
     /** From outside the simulation: `app.enqueue`. */
     const enqueue = (
       action: Action.ActionDef<string, any, any>,
@@ -843,7 +845,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         },
       }),
       Context.add(Events, events),
-      Context.add(Action.Actions, { enqueue: enqueueFromInside }),
+      Context.add(Action.Actions, { enqueue: enqueueFromInside, handles }),
       Context.add(Random, random),
       // Effect's own Random draws from the same generator, so `Random.next`
       // from "effect", or anything built on it, is seeded and replayed too.
@@ -1055,7 +1057,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           return (frameRandom.bits() & 1) === 0 ? magnitude : -magnitude;
         },
       }),
-      Context.add(Action.Actions, { enqueue }),
+      Context.add(Action.Actions, { enqueue, handles }),
       Context.add(Script, {
         nextTick: Effect.sync(notInFrame("Script.nextTick")),
         sleep: notInFrame("Script.sleep"),

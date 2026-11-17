@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 665 tests, 83 of them of @arcadekit/three
+pnpm test                          # 678 tests, 92 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -163,13 +163,14 @@ const Rules = Plugin.make("game/Rules", {
 | Component | Fields | Named |
 | --- | --- | --- |
 | `Transform3d.Position` | `x`, `y`, `z`, in the units of the game's space | `"arcadekit/Transform3d.Position"` |
-| `Transform3d.Rotation` | `x`, `y`, `z`, `w`: a unit quaternion | `"arcadekit/Transform3d.Rotation"` |
+| `Transform3d.Rotation` | `x`, `y`, `z`, `w`: a quaternion | `"arcadekit/Transform3d.Rotation"` |
 | `Transform3d.Scale` | `x`, `y`, `z`: 1 is the size a thing is made at | `"arcadekit/Transform3d.Scale"` |
 
 - They are ordinary components: 32-bit floats in columns of a table, written by the game's systems with a loop over `eachChunk`, saved, hashed and replayed. Nothing here draws, and the module imports no renderer.
 - An entity has the ones it needs. One that is only somewhere has a `Position`; `Rotation` and `Scale` are for the ones that turn or have a size of their own.
 - `Transform3d.plugin` lists them. A plugin that stores them depends on it, as the plugin of a renderer that reads them does.
-- `Transform3d.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis of length 1. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
+- `Transform3d.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis, which is a direction of any length. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
+- A `Rotation` is its turn and not its length: a quaternion of any length stands for the turn of the one of length 1 along it, and what reads one takes it so. One that a game's rules let drift from length 1 is drawn as the same turn, and all zeros, which is what a `Rotation` added with no value is, as not turned at all.
 - A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A field left out of `of` is not 0, so a flat game gives every `z`.
 - [`@arcadekit/three`](../three/README.md) draws from them, and has no components of its own.
 
@@ -683,6 +684,7 @@ A game's menus and its heads-up display are built with whatever the game chooses
 - `ui.get(view)` is the value as last published. It is the same object until the view is published with another value, so `===` tells a UI library whether anything changed.
 - `ui.subscribe(view, listener)` calls the listener each time the view is published with a new value, and returns what stops it. A listener that throws fails the frame, as any bug in the frame stage does, once every other listener was told.
 - `ui.send(action, payload)` asks the game for an action. It is issued in the [input stage](#input), before the next tick, by `View.plugin`: logged, and applied or refused by its handler, exactly as a key bound to it would be. So a replay needs no UI, and a button is as good as a key.
+- An action the game has no handler for is a bug, and `send` throws for it there, in the UI's own code: `View.plugin` tells the bridge which actions the game handles when the app is made, and until the app ends. One sent before the game is made, when nobody can tell, throws in the game's first input stage.
 - A UI can be mounted before the game is made: it sees every view at its initial value, and what it sends waits.
 - A bridge refuses two different views with one name.
 
@@ -958,7 +960,7 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 ```
 
 - A refused action changes nothing. A handler may refuse at any point, even after it has written: what it wrote to components, the random numbers it drew, the commands it queued, the events it emitted and the actions it enqueued are all taken back, and the events it read are unread again. So is everything done by a handler that dies of a bug half-way. See [Refusals leave nothing behind](#refusals-leave-nothing-behind).
-- `app.dispatch` is for turn-based input: the caller gets the typed outcome immediately. `app.enqueue` is for real-time input: the action waits for the start of the next tick, and a refusal becomes an `Action.Rejected` event. Both are for code outside the simulation. A system, a script or a handler issues an action with the `Actions` service, `(yield* Action.Actions).enqueue(...)`, so AI plays by the same rules as players.
+- `app.dispatch` is for turn-based input: the caller gets the typed outcome immediately. `app.enqueue` is for real-time input: the action waits for the start of the next tick, and a refusal becomes an `Action.Rejected` event. Both are for code outside the simulation. A system, a script or a handler issues an action with the `Actions` service, `(yield* Action.Actions).enqueue(...)`, so AI plays by the same rules as players. `handles(action)` of the same service says whether the game has a handler for an action, which `enqueue` throws without.
 - Dispatching an action with no handler, or with the wrong payload, does not compile.
 
 ### Payloads, saves and the network
@@ -1269,7 +1271,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The UI is not told what became of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and the game can publish as a view.
 - What the UI sends is applied by the next tick, which under a driver is the frame it was sent in or the one after. A game that steps its app by hand runs a tick itself when its UI has sent something.
 - A view's value is an object of this program, with no schema: a UI in another thread or on another machine is not served.
-- `ui.send` takes any action. That the game has a handler for it is checked when it is issued, where a missing one throws, and not by the compiler.
+- `ui.send` takes any action as far as the compiler knows. That the game has a handler for it is checked when it is sent, and a bridge is not typed by the game it will be given to.
 - An asset is a picture, text, JSON or bytes. A font is for whoever draws with it to decode, with `Assets.make`.
 - A bundle is loaded or it is not: it does not say how far along it is, and a file that two bundles name is fetched for each.
 - A bundle that failed stays failed until its level is entered again. Nothing tries again by itself.
