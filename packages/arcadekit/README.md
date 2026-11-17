@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 635 tests, 74 of them of @arcadekit/three
+pnpm test                          # 638 tests, 74 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -386,6 +386,7 @@ A game is in the menu, playing or paused, and systems run only in some of those.
 - On a game's first tick, the hooks for entering the state it starts in run, followed in the same tick by a move that was asked for before it. What a hook asks for waits for the next tick.
 - `State.onEnter(Phase, "playing")` and `State.onExit` make a system a hook. It runs then, and no longer every tick. Hooks of one moment run in the order they were given, or as `System.after` and `System.before` say, and the commands of each are applied before the next.
 - `System.runIf(condition)` runs a system only on the ticks when the condition holds. `State.is(Phase, "playing", "paused")` is one; any Effect that gives a boolean is, and can read whatever a system can. Given several, a system runs when all of them hold. What a condition needs and can fail with are the system's.
+- `System.otherwise(effect)` gives a system something to do in place of running, each time its condition does not hold. A system that keeps something outside itself as it should be, a picture on the screen or a track that plays, leaves it as it last was when it is not run; this is how it says what that thing should be then. It runs as the system, in its stage: in a tick its commands are applied, and in a frame it may change nothing. `Sound.music` uses it, so that music which is not asked for is not played. What it needs and can fail with are the system's too.
 - A system with no condition is asked nothing and costs what it did. A condition costs about 0.35 µs a tick, and a system that does not run costs that and no more; see the [benchmark](#benchmark-100000-entities-pos--vel--dt).
 - A system that does not run does not read. The events of the ticks it sat out are gone when it runs again, as for any system an event is older than. What its [change queries](#change-queries) have yet to visit is kept, however long it was away.
 - A state is a [singleton](#singletons) of the world. It is saved with a game, with what was asked for, and counted in the hash; a refused action's `set` is taken back. List it in a plugin's `components`. A loaded game does not run its starting hooks again: the save holds what they did.
@@ -672,7 +673,7 @@ A game's menus and its heads-up display are built with whatever the game chooses
 - Two values are compared as data, field by field and however deep. So a body returns a new object each frame, and the UI is told only when something in it differs: a value that did not change costs the UI nothing, not a call.
 - It reads what a frame system can (singletons, states, queries, events, assets) and cannot change the game. In the tick, publishing throws.
 - Several ticks and one frame are one publication, of the latest value.
-- It takes `System.runIf`: a view that is not published keeps the value it had.
+- It takes `System.runIf`: a view that is not published keeps the value it had. `System.otherwise` says what a UI should see then, if that is not it.
 - A frame system of the game's own publishes through `(yield* View.Port).publish(view, value)`, which says whether the value was news.
 - Where no UI is there, on a server, in a replay, in most tests, no body runs at all.
 
@@ -772,7 +773,7 @@ Music is not an event. It is what the game, as it is, should sound like, for as 
 - It is worked out from the game and kept nowhere in it. A game that is loaded from a save, or an app that starts in the middle of a level, has its music from its first frame, and a game with music has the same hash, log and save as one with none.
 - The system's name is its channel. Two systems are two channels, which play together: the score, and the wind.
 - The body reads what a frame system can: singletons, states, queries, events, [assets](#assets). Where sound goes nowhere it is not run at all.
-- Under `System.runIf` it says nothing while its condition does not hold, and the channel goes on playing what it was last told. For silence the body returns `undefined`.
+- Under `System.runIf` its channel is silent while the condition does not hold, as if the body had said so: music that is for a level stops when the level is left, with the fade it was given. Run again, the body says what plays, from the start of the track.
 - When the app's scope closes, every channel that was playing is told silence at once.
 - `(yield* Sound.Player).music(channel, track, { volume, fade })` is what it is made of, for a frame system of your own. It tells the output of a change and of nothing else, so it can be said every frame, and in the tick it throws, as `play` does.
 

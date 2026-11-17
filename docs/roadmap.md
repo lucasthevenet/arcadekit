@@ -96,7 +96,7 @@ Values that have to be right and are not checked:
 - **A texture made by `Three.texture` cannot be turned over in `prepare`**: Three.js does not read `flipY` of a texture made of a bitmap, and setting it does nothing.
 - **`ui.send` takes any action.** One the game has no handler for throws when it is issued, in the input stage, and not where it was sent or when it was compiled.
 - **Two systems made with `Sound.cues` that play the same cue play it twice.** The merging of a frame's cues is per system.
-- **A `Sound.music` system that does not run says nothing, and its channel plays on.** One gated with `System.runIf` to a level goes on playing that level's music after the level is left. For silence its body has to run and return `undefined`. `View.publish` keeps its last value the same way. To close it: have a system that is gated say so to what it keeps, or give `Sound.music` its condition itself.
+- **A view that is not published keeps the value it had.** `View.publish` under `System.runIf` leaves the UI showing what was so when the system last ran, a score from a level that was left, say. `System.otherwise` says what it should see then; nothing asks for it.
 - **Two `Sound.music` systems are two channels, by their names.** Two that were meant to be one score, a menu's and a level's, play on top of each other, each fading as if it were alone.
 - **A cue asked for before the page was first touched is dropped; a track is kept.** The first sound of a game that starts with a cue is not heard. Nothing says so.
 

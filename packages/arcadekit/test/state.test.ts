@@ -248,6 +248,151 @@ describe("a run condition", () => {
     void needs;
   });
 
+  it("lets a system say what it does in place of running, each time it does not hold", () => {
+    run(
+      Effect.gen(function* () {
+        const ran: string[] = [];
+        const say = (what: string) =>
+          Effect.sync(() => {
+            ran.push(what);
+          });
+        const app = yield* App.make({
+          components: [Ball],
+          systems: [
+            noting("Hud", ran).pipe(
+              System.runIf(State.is(Phase, "playing")),
+              System.otherwise(say("Hud hidden"))
+            ),
+            // Given twice, both, in the order given; and before its
+            // condition or after it, the same.
+            System.otherwise(noting("Music", ran), say("Music off")).pipe(
+              System.runIf(State.is(Phase, "playing", "paused")),
+              System.otherwise(say("Music gone"))
+            ),
+            // In a tick it is the system in every way: what it asks of
+            // the commands is done when it is.
+            noting("Spawner", ran).pipe(
+              System.runIf(State.is(Phase, "playing")),
+              System.otherwise(
+                Effect.map(Commands, (commands) => {
+                  commands.spawn(Ball.of({ x: 1 }));
+                })
+              )
+            ),
+            System.make("Count", function* () {
+              ran.push(`${(yield* Balls).count()} balls`);
+            }),
+            // With no condition there is no time it is not run, and
+            // nothing is done in its place.
+            noting("Always", ran).pipe(System.otherwise(say("Never"))),
+            // In the frame it is held to what a frame system is: what
+            // would change the game throws.
+            noting("Draw", ran).pipe(
+              System.inStage("frame"),
+              System.runIf(State.is(Phase, "playing")),
+              System.otherwise(say("Draw nothing"))
+            ),
+          ],
+          handlers: [go],
+        });
+        const tick = (): string[] => {
+          ran.length = 0;
+          app.tick(1);
+          app.frame(0);
+          return [...ran];
+        };
+        expect(tick()).toEqual([
+          "Hud hidden",
+          "Music off",
+          "Music gone",
+          "1 balls",
+          "Always",
+          "Draw nothing",
+        ]);
+        app.dispatch(Go, { to: "playing", refuse: false });
+        expect(tick()).toEqual([
+          "Hud",
+          "Music",
+          "Spawner",
+          "1 balls",
+          "Always",
+          "Draw",
+        ]);
+        app.dispatch(Go, { to: "paused", refuse: false });
+        expect(tick()).toEqual([
+          "Hud hidden",
+          "Music",
+          "2 balls",
+          "Always",
+          "Draw nothing",
+        ]);
+        // It is asked for every time, not once.
+        expect(tick()).toEqual([
+          "Hud hidden",
+          "Music",
+          "3 balls",
+          "Always",
+          "Draw nothing",
+        ]);
+      })
+    );
+    // What a frame system does in place of running may not change the
+    // game either.
+    const Vandal = System.make("Vandal", function* () {}).pipe(
+      System.inStage("frame"),
+      System.runIf(Effect.succeed(false)),
+      System.otherwise(Effect.map(Phase, (phase) => phase.set("paused")))
+    );
+    const app = run(App.make({ components: [Phase], systems: [Vandal] }));
+    expect(() => app.frame(0)).toThrow('singleton "st/Phase"');
+    // And what it needs and can fail with are the system's.
+    class Lamp extends Context.Service<Lamp, { lit: boolean }>()("st/Lamp") {}
+    class Burnt extends Data.TaggedError("Burnt")<{}> {}
+    const Lit = System.make("Lit", function* () {}).pipe(
+      System.runIf(Effect.succeed(false)),
+      System.otherwise(
+        Effect.flatMap(Lamp, (lamp) =>
+          lamp.lit ? Effect.void : Effect.fail(new Burnt())
+        )
+      )
+    );
+    const typed: System.System<Burnt, Lamp> = Lit;
+    // @ts-expect-error it can fail, and needs a lamp
+    const untyped: System.System<never, never> = Lit;
+    expect([typed.name, untyped.name]).toEqual(["Lit", "Lit"]);
+    expect(Lit.idle).toBeDefined();
+    expect(noting("Plain", []).idle).toBeUndefined();
+  });
+
+  it("lets a hook say the same of the time it is set off and its condition does not hold", () => {
+    run(
+      Effect.gen(function* () {
+        const ran: string[] = [];
+        const app = yield* App.make({
+          systems: [
+            noting("Fanfare", ran).pipe(
+              State.onEnter(Phase, "playing"),
+              System.runIf(State.is(Weather, "dry")),
+              System.otherwise(
+                Effect.sync(() => {
+                  ran.push("Too wet for a fanfare");
+                })
+              )
+            ),
+          ],
+          handlers: [go],
+        });
+        app.tick(1);
+        expect(ran).toEqual([]);
+        app.dispatch(Go, { to: "playing", refuse: false });
+        app.tick(1);
+        app.tick(1);
+        // Once, when it was set off, and not every tick after.
+        expect(ran).toEqual(["Too wet for a fanfare"]);
+      })
+    );
+  });
+
   it("keeps a system that did not run out of events, and not out of changes", () => {
     const Bounced = Event.define(
       "st/Bounced",

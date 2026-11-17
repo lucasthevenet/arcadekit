@@ -69,6 +69,12 @@ export interface System<out E = never, out R = never> extends Pipeable {
    */
   readonly condition: Effect.Effect<boolean, E, R> | undefined;
   /**
+   * What the system does in place of running, each time its condition does
+   * not hold: `System.otherwise` gives it. Undefined for a system that then
+   * does nothing, as most do.
+   */
+  readonly idle: Effect.Effect<void, E, R> | undefined;
+  /**
    * For a hook, what sets it off. A hook runs when that happens, at the
    * start of a tick, and not with the tick's other systems.
    */
@@ -105,6 +111,7 @@ export const make = <Eff extends Effect.Effect<any, any, any>>(
       Effect.Services<Eff>
     >,
     condition: undefined,
+    idle: undefined,
     trigger: undefined,
   });
 
@@ -232,6 +239,47 @@ export const triggered = <E, R>(
   self: System<E, R>,
   trigger: Trigger
 ): System<E, R> => build({ ...self, trigger });
+
+/**
+ * Gives a system something to do in place of running, each time its
+ * condition does not hold:
+ *
+ *   const Hud = System.make("Hud", drawHud).pipe(
+ *     System.inStage("frame"),
+ *     System.runIf(State.is(Phase, "playing")),
+ *     System.otherwise(hideHud)
+ *   )
+ *
+ * A system that keeps something outside itself as it should be, a picture
+ * on the screen, a track that plays, leaves it as it last was when it is
+ * not run. This is how it says what that thing should be then.
+ *
+ * - It runs in the system's place, in its stage and as the system: with
+ *   its place in events and changes, and in a tick its commands are
+ *   applied.
+ * - It is not asked for while the system has no condition, or while every
+ *   condition holds. Given twice, both run, in the order given.
+ * - What it needs and can fail with are the system's too.
+ */
+export const otherwise: {
+  <E2, R2>(
+    idle: Effect.Effect<void, E2, R2>
+  ): <E, R>(self: System<E, R>) => System<E | E2, R | R2>;
+  <E, R, E2, R2>(
+    self: System<E, R>,
+    idle: Effect.Effect<void, E2, R2>
+  ): System<E | E2, R | R2>;
+} = dual(
+  2,
+  <E, R, E2, R2>(
+    self: System<E, R>,
+    idle: Effect.Effect<void, E2, R2>
+  ): System<E | E2, R | R2> =>
+    build<E | E2, R | R2>({
+      ...self,
+      idle: self.idle === undefined ? idle : Effect.andThen(self.idle, idle),
+    })
+);
 
 /** Wraps each run in a tracing span named after the system. Use in dev builds. */
 export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>

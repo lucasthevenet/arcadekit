@@ -1021,6 +1021,34 @@ describe("a frame stage that is checked", () => {
     void (yield* Balls).count();
   }).pipe(System.inStage("frame"));
 
+  it("holds what a system does in place of running to the same, and names that system", () => {
+    run(
+      Effect.gen(function* () {
+        // It does not run, and what it does then writes a raw column.
+        const Idle = Honest.pipe(
+          System.runIf(Effect.succeed(false)),
+          System.otherwise(
+            Effect.map(Balls, (balls) => {
+              balls.eachChunk((start, end, ball) => {
+                for (let i = start; i < end; i++) {
+                  ball.x[i] = 99;
+                }
+              });
+            })
+          )
+        );
+        const app = yield* App.make({ systems: [Idle], verifyFrames: true });
+        app.world.spawn(Ball.of({ x: 1, vx: 1 }));
+        const exit = app.frameExit(0);
+        const error = Exit.isFailure(exit)
+          ? Cause.squash(exit.cause)
+          : undefined;
+        expect(error).toBeInstanceOf(App.FrameChangedWorld);
+        expect(error).toMatchObject({ system: "Honest" });
+      })
+    );
+  });
+
   it("finds the two changes that are not stopped where they are made, and names the system", () => {
     for (const how of ["raw", "random"] as const) {
       run(

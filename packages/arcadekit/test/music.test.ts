@@ -266,25 +266,44 @@ describe("Sound.music", () => {
     expect(asked).toBe(2);
   });
 
-  it("says nothing while its system does not run, and the channel goes on playing what it was last told", () => {
+  it("is silent while its system does not run, as if the body had said so, and says what plays when it runs again", () => {
     const sound = Sound.makeRecorder();
     const Gated = Score.pipe(
       System.runIf(Effect.map(Hush, (hush) => hush.on === 0))
     );
-    const { step } = play([Gated], sound);
+    const { app, step } = play([Gated], sound);
     step(Go, { to: "forest" });
+    expect(Object.fromEntries(sound.playing)).toEqual({ "mu/Score": "theme" });
+    // Hushed, the system is not run: its music stops, with the fade it
+    // was given, and the body, which would have said a volume of 0.2, is
+    // not asked.
+    const before = asked;
     step(SetHush, { on: true });
-    // Hushed, the body would have said a volume of 0.2; it was not asked.
-    step(Go, { to: "menu" });
+    app.frame(0);
+    app.frame(0);
+    expect(asked).toBe(before);
     expect(sound.scored).toEqual([
       { channel: "mu/Score", track: "theme", volume: 1, fade: 1 },
-    ]);
-    expect(Object.fromEntries(sound.playing)).toEqual({ "mu/Score": "theme" });
-    // Asked again, it says what is so now.
-    step(SetHush, { on: false });
-    expect(sound.scored.slice(1)).toEqual([
       { channel: "mu/Score", track: undefined, volume: 0, fade: 1 },
     ]);
+    expect(sound.playing.size).toBe(0);
+    // Run again, it says what is so now.
+    step(SetHush, { on: false });
+    expect(sound.scored.slice(2)).toEqual([
+      { channel: "mu/Score", track: "theme", volume: 1, fade: 1 },
+    ]);
+    // A system that was never run has nothing to stop.
+    const other = Sound.makeRecorder();
+    const never = play(
+      [Score.pipe(System.runIf(Effect.succeed(false)))],
+      other
+    );
+    never.step(Go, { to: "forest" });
+    expect(other.scored).toEqual([]);
+    // And where nothing is heard, nothing is said.
+    const deaf = play([Gated]);
+    deaf.step(SetHush, { on: true });
+    expect(asked).toBe(0);
   });
 
   it("leaves nothing playing when the app goes: every channel that was playing is told silence, at once", () => {
