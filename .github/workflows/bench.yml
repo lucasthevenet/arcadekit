@@ -1,7 +1,3 @@
-# This file is a GitHub workflow that is not in place yet. To switch it on, move it to
-# .github/workflows/bench.yml: the session that wrote it was not allowed to push a
-# workflow, which takes credentials with the `workflow` scope.
-
 name: Benchmarks
 
 # Did the pull request make the storage core slower? `bench/compare.ts` runs the variants
