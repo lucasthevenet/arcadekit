@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 773 tests, 93 of them of @arcadekit/three
+pnpm test                          # 782 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -970,12 +970,13 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 
 - A refused action changes nothing. A handler may refuse at any point, even after it has written: what it wrote to components, the random numbers it drew, the commands it queued, the events it emitted and the actions it enqueued are all taken back, and the events it read are unread again. So is everything done by a handler that dies of a bug half-way. See [Refusals leave nothing behind](#refusals-leave-nothing-behind).
 - `app.dispatch` is for turn-based input: the caller gets the typed outcome immediately. `app.enqueue` is for real-time input: the action waits for the start of the next tick, and a refusal becomes an `Action.Rejected` event. Both are for code outside the simulation. A system, a script or a handler issues an action with the `Actions` service, `(yield* Action.Actions).enqueue(...)`, so AI plays by the same rules as players. `handles(action)` of the same service says whether the game has a handler for an action, which `enqueue` throws without.
+- A handler is told where the action came from, beside its payload: `function* (payload, { from })`. In a game of several peers `from` is the name of the peer that issued it, on every peer alike; in a game of one it is undefined, as it is for an action the simulation issues itself. Who may do a thing is checked against that, and not against a name in the payload, which whoever sent it wrote. It is in the log, kept with an action that waits in a save, and told with a refusal: `Action.Rejected` has it, so that a UI shows a player their own.
 - Dispatching an action with no handler, or with the wrong payload, does not compile.
 
 ### Payloads, saves and the network
 
 - The payload type comes from the schema, and every payload is checked against it before the handler runs, including refinements the compiler cannot see (an amount between 1 and 10, say). A mismatch is an `Action.InvalidPayload` failure.
-- Input that arrives as data goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. An unknown name or a malformed payload is a failure or a `Rejected` event, never a crash.
+- Input that arrives as data goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. An unknown name or a malformed payload is a failure or a `Rejected` event, never a crash. Either takes who issued it as a third argument, for a program that brings actions in on someone else's behalf, a server for its clients: `app.enqueueByName(name, json, client)`.
 - `app.actionLog` holds what came into the game from outside, in the order it came, with payloads in JSON form (a bigint or a date in the payload is converted for you): every dispatched action that was accepted, and every action enqueued through the app, marked `queued` and, if it was refused when its turn came, `refused` with the reason in a few words. Checkpoints of the world's hash are among them. What the simulation issued itself through `Actions` is not in the log: a replay's own systems issue it again. `Action.encodeLog` and `Action.decodeLog` turn the log into text and back; `Action.isCheckpoint(entry)` tells the two kinds of entry apart.
 - `App.replay(freshApp, log, { delta, ticks })` reproduces the game in an app made with the same seed and started from the same state, and checks itself as it goes; see below.
 - `Action.define<Payload>()("Name")` still defines an action with no schema. Only the compiler checks it, so keep those for actions that never leave the program.
@@ -1094,6 +1095,16 @@ Every peer runs the same simulation, and what they send each other is the action
 - The session steps the app. `app.tick` and `app.dispatch` throw from then on, and say why: either would move this machine's game and nobody else's. A driver is given the session in the app's place, `Driver.frames(session, { hz: 60 })`, and draws the game through it; a driver at another rate than the session's `delta` is refused.
 - A tick hears the devices first, as an app's own does, and a key that is pressed while the peer waits for another is in its next message.
 - What the simulation issues itself with `Actions`, a bot's move, is not sent: every peer's own simulation issues it.
+- Every peer's handler is told which peer issued an action, `{ from }`, beside the payload. The session stamps it from the message it came in, so a player's move need not say whose it is, and cannot say it is someone else's:
+
+  ```ts
+  const pass = Action.handler(Pass, function* (_, { from }) {
+    const turn = yield* Turn;
+    if (turn.player !== from) return yield* Effect.fail(new NotYourTurn());
+    turn.player = other(from);
+  });
+  ```
+
 - Every peer is made alike: the same plugins, the same seed, the same state to start from. A session begins at whatever tick its app is at, so a game can go on from a save that every peer loaded.
 - The log of a peer is an ordinary log. Every peer's is the same, entry for entry, and `App.replay` plays it back into a game of one.
 - `app.divert(take)` is what a session is made with, for a session of another kind: it hands over what comes in from outside, and returns the one way left to queue an action and to run a tick.
@@ -1241,7 +1252,7 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, and a world that is restored compared with a new one that loaded the same snapshot. `test/peers.ts` is the game and the network those of several peers share |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, origin and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, and a world that is restored compared with a new one that loaded the same snapshot. `test/peers.ts` is the game and the network those of several peers share |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
@@ -1455,7 +1466,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - Peers that have come apart stop. Nothing brings them back together: a game that wants to go on has every peer load one peer's save and makes its sessions again.
 - A session's peers are fixed when it is made. Nobody joins a game in progress or leaves one, and a peer that stops is waited for.
 - Every message has to arrive. One that is lost stops the game for everyone: nothing asks for it again, and nothing says that a peer has gone quiet but `session.waitingFor`.
-- A handler is not told which peer issued an action. A game puts the player in the payload, and a peer can put another's name there.
+- Who issued an action is who its message says it is from. A transport that does not vouch for that, a `BroadcastChannel` or a relay that passes on whatever it is handed, lets a peer send a message in another's name. The peers that took it and the one whose name it was then hold different games, and stop with `Lockstep.Drifted`: it is found, not prevented.
 - A game in a session ticks all the time. One that ticks when it is needed, `ticks: "whenNeeded"`, is not for several peers yet: a session does not say when it is settled.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
@@ -1469,7 +1480,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A singleton cannot be watched for changes: a change query is of entities.
 - An entity points at one target per relation, and a query cannot ask for what points at a given entity: `world.sources` gives those as a list.
 - A run condition is given to one system at a time: a plugin cannot be given one for all its systems. A script is not stopped by a state; it asks.
-- A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
+- A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check, which is told who that is.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.

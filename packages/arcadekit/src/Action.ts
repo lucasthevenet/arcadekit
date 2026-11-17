@@ -103,15 +103,45 @@ export function define(
   return { codec: Schema.toCodecJson(payload), name };
 }
 
+/**
+ * Where an action came from, which a handler is told beside its payload.
+ *
+ * It is stamped on the way in by whatever brought the action, and is no
+ * part of the payload, so whoever issued the action does not get to say:
+ * a session stamps each peer's actions with that peer's name. (bevy_replicon
+ * hands a server its clients' messages the same way, wrapped in a
+ * `FromClient` that holds the sender's id, and bevy_ggrs gives each
+ * player's input under that player's handle.)
+ */
+export interface Origin {
+  /**
+   * Who issued the action: the name of a peer of the session, or whatever
+   * name it was given with `enqueueByName` or `dispatchByName`. Undefined
+   * for an action this program issued itself: one enqueued or dispatched
+   * through the app in a game of one, or issued by the simulation with
+   * `Actions`.
+   */
+  readonly from: string | undefined;
+}
+
 export interface Handler<N extends string, P, A, E, R> {
   readonly action: ActionDef<N, P, unknown>;
-  readonly handle: (payload: P) => Effect.Effect<A, E, R>;
+  readonly handle: (payload: P, origin: Origin) => Effect.Effect<A, E, R>;
 }
 
 /**
  * Defines how an action is checked against the rules and applied. Must finish
  * synchronously. For an action with a schema, the payload it receives has
  * already been validated.
+ *
+ * Beside the payload it is told where the action came from, `{ from }`:
+ * in a game of several peers, the peer that issued it.
+ *
+ *   const pass = Action.handler(Pass, function* (_, { from }) {
+ *     const turn = yield* Turn
+ *     if (turn.player !== from) return yield* Effect.fail(new NotYourTurn())
+ *     ...
+ *   })
  */
 export const handler = <
   N extends string,
@@ -121,13 +151,14 @@ export const handler = <
   A,
 >(
   action: ActionDef<N, P, VE>,
-  body: (payload: P) => Generator<Eff, A, never>
+  body: (payload: P, origin: Origin) => Generator<Eff, A, never>
 ): Handler<N, P, A, Effect.Error<Eff> | VE, Effect.Services<Eff>> => ({
   action,
   // Built once: `fnUntraced` runs the generator itself on each call, with no
   // closure around the payload and no stack trace captured.
   handle: Effect.fnUntraced(body) as (
-    payload: P
+    payload: P,
+    origin: Origin
   ) => Effect.Effect<A, Effect.Error<Eff> | VE, Effect.Services<Eff>>,
 });
 
@@ -142,6 +173,11 @@ export interface Logged {
   readonly name: string;
   /** For an action with a schema, the payload in its JSON form. */
   readonly payload: unknown;
+  /**
+   * Who issued it, when it came with a name: a peer of the session. Absent
+   * on an action this program issued itself.
+   */
+  readonly from?: string;
   /**
    * Present on an action that was enqueued: it was applied at the start of
    * the next tick, and a replay enqueues it again. Absent on one that was
@@ -182,6 +218,7 @@ const LogSchema = Schema.fromJsonString(
         tick: Tick,
         name: Schema.String,
         payload: Schema.Unknown,
+        from: Schema.optionalKey(Schema.String),
         queued: Schema.optionalKey(Schema.Literal(true)),
         refused: Schema.optionalKey(Schema.String),
       }),
@@ -220,6 +257,8 @@ export const Rejected = Event.define<{
   readonly action: string;
   readonly payload: unknown;
   readonly error: unknown;
+  /** Who had issued it, as its handler would have been told. */
+  readonly from: string | undefined;
 }>("Action.Rejected");
 
 /**
