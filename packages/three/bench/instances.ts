@@ -216,7 +216,7 @@ variant(
   "instances, a look made of assets: a position",
   () => [place()],
   Sourced,
-  [Assets.during(Effect.succeed(true), Level).pipe(System.before(Sourced))]
+  [Assets.during(Effect.succeed(true), Level)]
 );
 
 // What the loops above replace: an Object3D per entity, its matrix worked

@@ -190,7 +190,7 @@ A geometry and a material given to `Three.instances` are there when the system i
 - When the bundle is let go the mesh is taken out of the scene and disposed of, and then `free` is handed what `look` returned, anything it returned beyond the two included, to dispose of what it made. The assets are the bundle's to let go. The same happens when the app's scope closes.
 - Entered again, the level is loaded again, and the look is made again of what is loaded now. The mesh starts with the room the last one had grown to.
 - Nothing is ever drawn with assets that were let go. `Three.Render` asks, just before it draws, whether what each such kind was made of is still there, and takes out what is not: so it does not matter whether the system that lets the level go runs before this one or after it in a frame.
-- Listed and nothing more said, `Assets.during` runs after the scene is drawn, since everything that draws runs before `Three.Render`: the instances then appear a frame after the bundle is loaded and are drawn one frame more after the level is left, with assets that are still there. `Assets.during(...).pipe(System.before(Trees))` makes it the same frame.
+- `Assets.during` is of the stage before a frame's own, [`"preFrame"`](../arcadekit/README.md#the-tick-and-the-frame): the instances appear in the frame the bundle is loaded and are gone in the frame it is let go, wherever the two systems are listed. The check before the draw is for a system of the game's own that lets a bundle go later in the frame than this one looked.
 - It needs `Assets.plugin`, which the type of the system says: left out, the app asks for the store of assets from outside, and a program that gives it none does not compile. A kind whose look is there from the start asks nothing of it.
 
 ## Textures
@@ -289,13 +289,13 @@ const Look = Plugin.make("game/Look", {
 const Follow = System.make("game/Follow", function* () {
   const { camera } = yield* Three.Scene;
   camera.position.x = (yield* Player).x;
-}).pipe(System.inStage("frame"), System.before(Three.Render));
+}).pipe(System.inStage("frame"));
 ```
 
 `Three.plugin` gives an app a scene and draws it once per frame.
 
 - `Three.Scene` is the service: `scene`, a Three.js `Scene`, and `camera`, a perspective camera at (0, 0, 10) until it is moved or replaced (`three.camera = new OrthographicCamera(...)`). It is what draws the game and not the game: nothing in a tick reads it, and none of it is saved.
-- `Three.Render` is the system that draws. `Three.instances` and `Three.objects` run before it, wherever they are listed. A frame system of the game's that moves the camera or anything else says `System.before(Three.Render)`.
+- `Three.Render` is the system that draws. It is of the stage after a frame's own, [`"postFrame"`](../arcadekit/README.md#the-tick-and-the-frame), so every system of the frame stage has run when it does, wherever each is listed and with nothing said: `Three.instances` and `Three.objects`, and a frame system of the game's that moves the camera or anything else.
 - `Three.Renderer` is what draws the scene, and comes from outside the app, since it needs a canvas. A game that installs `Three.plugin` and provides none does not compile.
 - `Three.layerWebGL({ canvas, antialias: true })` is a page's: a `WebGLRenderer` with the parameters Three.js takes. `Three.layerRenderer(() => new WebGPURenderer({ canvas }))` is one of your own making. Either is disposed of when the scope it is provided to closes, so it is provided to the whole program, as `App.run` is above.
 - The picture follows the size the canvas has on the page: when that changes the renderer is resized, without touching the canvas's style, and a perspective camera is given the new aspect. `fit: false` leaves it alone, and a camera of another kind is the game's to fit. `pixelRatio` is the page's own, up to 2, unless given.

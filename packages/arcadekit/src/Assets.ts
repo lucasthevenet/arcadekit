@@ -515,10 +515,12 @@ export const plugin = Plugin.make("arcadekit/Assets", { layer: storeLayer });
  * up. So a level's assets are there for as long as the level, and leaving
  * it frees them.
  *
- * It is a system of the frame stage, since assets are for what draws the
- * game: a replay or a server, which run no frame, load nothing. List it
- * before the systems that draw with the bundle. One per bundle; to keep a
- * bundle for several states, give a condition that holds in each.
+ * It is a system of a frame, since assets are for what draws the game: a
+ * replay or a server, which run no frame, load nothing. Of a frame's three
+ * stages it is in the first, `"preFrame"`, so every system that draws with
+ * the bundle finds it as it is in that frame, wherever the two are listed.
+ * One per bundle; to keep a bundle for several states, give a condition
+ * that holds in each.
  */
 export const during = <E, R, B extends Entries>(
   condition: Effect.Effect<boolean, E, R>,
@@ -532,5 +534,5 @@ export const during = <E, R, B extends Entries>(
     } else {
       store.drop(bundle, name);
     }
-  }).pipe(System.inStage("frame"));
+  }).pipe(System.inStage("preFrame"));
 };
