@@ -9,7 +9,11 @@
  */
 import { Context, Effect } from "effect";
 
-/** Anything with a `tick`, so drivers work with every App type. */
+/**
+ * Anything with a `tick`, so drivers work with every App type.
+ *
+ * @category Models
+ */
 export interface Tickable {
   readonly tick: (delta: number) => void;
   /**
@@ -27,7 +31,11 @@ export interface Tickable {
   readonly settled?: boolean;
 }
 
-/** How a driver steps an app. */
+/**
+ * How a driver steps an app.
+ *
+ * @category Options
+ */
 export interface StepOptions {
   /** How many ticks a second the game runs at, whatever the rate of frames. */
   readonly hz: number;
@@ -69,6 +77,8 @@ const EPSILON = 1e-9;
  *
  * With `ticks: "whenNeeded"` it ticks only while the app has something
  * waiting, and rests in between: see `StepOptions`.
+ *
+ * @category Running
  */
 export const fixedStep = (
   app: Tickable,
@@ -123,6 +133,8 @@ export const fixedStep = (
 /**
  * Ticks on a timer until interrupted, then stops the timer. In a page, use
  * `frames`, which follows the display.
+ *
+ * @category Running
  */
 export const interval = (
   app: Tickable,
@@ -147,6 +159,8 @@ export const interval = (
 /**
  * What a frame loop needs of the screen it draws to: to be called back when
  * the next frame is due, and to know whether anyone can see it.
+ *
+ * @category Services
  */
 export interface DisplayShape {
   /**
@@ -186,13 +200,19 @@ const timerDisplay: DisplayShape = {
  *
  *   const display = Driver.makeManualDisplay()
  *   Driver.frames(app, { hz: 60 }).pipe(Effect.provideService(Driver.Display, display))
+ *
+ * @category Services
  */
 export const Display: Context.Reference<DisplayShape> =
   Context.Reference<DisplayShape>("arcadekit/Display", {
     defaultValue: () => timerDisplay,
   });
 
-/** A display turned by hand, for tests and tools. */
+/**
+ * A display turned by hand, for tests and tools.
+ *
+ * @category Testing
+ */
 export interface ManualDisplay extends DisplayShape {
   /**
    * A frame is due, at `now` milliseconds: calls whoever asked for it, and
@@ -214,6 +234,8 @@ export interface ManualDisplay extends DisplayShape {
  * frame that was asked for, `hide()` and `show()` are the tab going away and
  * coming back, and `pending` and `watching` say what a frame loop has left
  * behind.
+ *
+ * @category Testing
  */
 export const makeManualDisplay = (): ManualDisplay => {
   let requests: ((now: number) => void)[] = [];
@@ -291,6 +313,8 @@ export const makeManualDisplay = (): ManualDisplay => {
  *     yield* Driver.frames(app, { hz: 60, ticks: "whenNeeded" })
  *
  * It reaches the screen through `Display`, which a test replaces.
+ *
+ * @category Running
  */
 export const frames: (
   app: Tickable,

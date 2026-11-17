@@ -102,7 +102,20 @@ describe.runIf(built)("a module's page", () => {
     const page = renderModule(readSound(), "https://github.com/o/r", "main");
     expect(page.startsWith("Sound: a service")).toBe(true);
     expect(page).toContain('import * as Sound from "arcadekit/Sound"');
-    expect(page).toContain("## Values\n\n### clip");
+    expect(page).toContain("## Constructors\n\n### clip");
+  });
+
+  it("lists the categories in their order", () => {
+    const page = renderModule(readSound(), "https://github.com/o/r", "main");
+    const at = (heading: string) => page.indexOf(`\n## ${heading}\n`);
+    expect(at("Constructors")).toBeGreaterThan(-1);
+    expect(at("Constructors")).toBeLessThan(at("Models"));
+    expect(at("Models")).toBeLessThan(at("Services"));
+    expect(at("Services")).toBeLessThan(at("Testing"));
+  });
+
+  it("links each export to where it is written", () => {
+    const page = renderModule(readSound(), "https://github.com/o/r", "main");
     expect(page).toContain(
       "https://github.com/o/r/blob/main/packages/arcadekit/src/Sound.ts#L"
     );

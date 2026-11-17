@@ -41,10 +41,16 @@ import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
 /**
  * A model that was loaded: what the glTF loader of Three.js gives. `scene`
  * is its default scene, `scenes` all of them, `animations` its clips.
+ *
+ * @category Models
  */
 export type Model = GLTF;
 
-/** How a model is loaded. */
+/**
+ * How a model is loaded.
+ *
+ * @category Options
+ */
 export interface ModelOptions {
   /**
    * Handed the loader before it reads the model, once per loading: to give
@@ -337,6 +343,8 @@ const dispose = (model: Model): void => {
  *   geometries and materials, so `model.scene.clone()` is cheap, and what
  *   changes one copy's material changes them all.
  * - Its pictures are decoded by the page, as `Three.texture`'s are.
+ *
+ * @category Constructors
  */
 export const model = (
   url: string,
@@ -377,6 +385,8 @@ export const model = (
  * the mesh's own where its node has none. A mesh of several materials is
  * several meshes under that name, and the first is given. Throws, naming
  * the meshes there are, when none has it.
+ *
+ * @category Utilities
  */
 export const mesh = (of: Model, name?: string): Mesh => {
   const found: Mesh[] = [];

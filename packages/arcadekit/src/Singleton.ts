@@ -28,6 +28,8 @@ import { World } from "./Services";
 /**
  * A singleton's definition. It is an Effect, so `yield*` gives the world's
  * value of it: an object whose fields are read and written in place.
+ *
+ * @category Models
  */
 export class Singleton<S extends Schema>
   extends Effectable.Class<ValueOf<S>, never, World>
@@ -66,6 +68,8 @@ export class Singleton<S extends Schema>
  * - Until it is written it holds `initial`, and is as good as absent: a
  *   world that has only read it hashes the same as one that never asked.
  * - No entity has it, and no query visits it.
+ *
+ * @category Constructors
  */
 export const define = <S extends Schema>(
   name: string,

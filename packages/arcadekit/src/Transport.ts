@@ -31,7 +31,11 @@ import type { Tickable } from "./Driver";
 import { Rng } from "./ecs/random";
 import * as Lockstep from "./Lockstep";
 
-/** What a transport does. Both are plain calls: nothing here waits. */
+/**
+ * What a transport does. Both are plain calls: nothing here waits.
+ *
+ * @category Services
+ */
 export interface Shape {
   /** Sends a message to every other peer. */
   readonly send: (message: Lockstep.Message) => void;
@@ -47,18 +51,26 @@ export interface Shape {
  * The transport of this peer. A game of several peers is given one, and
  * one that is given none does not compile: there is no default, since
  * every way of reaching the others is a choice.
+ *
+ * @category Services
  */
 export class Transport extends Context.Service<Transport, Shape>()(
   "arcadekit/Transport"
 ) {}
 
-/** A layer that provides a transport made by hand. */
+/**
+ * A layer that provides a transport made by hand.
+ *
+ * @category Layers
+ */
 export const layer = (transport: Shape): Layer.Layer<Transport> =>
   Layer.succeed(Transport, transport);
 
 /**
  * A session joined to the transport: what a driver steps in the session's
  * place. Its `tick` says whether the session's tick ran.
+ *
+ * @category Models
  */
 export interface Connected extends Tickable {
   readonly tick: (delta?: number) => boolean;
@@ -74,6 +86,8 @@ export interface Connected extends Tickable {
  * to the others first.
  *
  *   yield* Driver.frames(yield* Transport.connect(session), { hz: 60 })
+ *
+ * @category Running
  */
 export const connect: (
   session: Pick<
@@ -105,6 +119,8 @@ export const connect: (
  * Something that carries text to the other peers: a WebSocket to a relay
  * that passes each message on to the others in a room, a data channel, a
  * port.
+ *
+ * @category Models
  */
 export interface Wire {
   /** Sends a text to every other peer. */
@@ -116,7 +132,11 @@ export interface Wire {
   readonly listen: (onText: (text: string) => void) => () => void;
 }
 
-/** A transport over a wire, and what stops it listening. */
+/**
+ * A transport over a wire, and what stops it listening.
+ *
+ * @category Models
+ */
 export interface TextTransport extends Shape {
   /** Stops listening to the wire. */
   readonly close: () => void;
@@ -134,6 +154,8 @@ export interface TextTransport extends Shape {
  *
  * The wire has to deliver every message, in whatever order. A WebSocket
  * does; a data channel has to be told to.
+ *
+ * @category Constructors
  */
 export const text = (wire: Wire): TextTransport => {
   let inbox: Lockstep.Message[] = [];
@@ -170,6 +192,8 @@ export const text = (wire: Wire): TextTransport => {
  *
  * The channel is opened when the layer is built and closed with its
  * scope, so it is provided to the whole program, as whatever listens is.
+ *
+ * @category Layers
  */
 export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
   Layer.effect(
@@ -222,6 +246,8 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
  * network did. `send` and `receive` throw it from then on, so the tick
  * that uses the transport fails with it and its driver stops, in place of
  * a game that waits for messages that cannot come.
+ *
+ * @category Errors
  */
 export class Closed extends Data.TaggedError("TransportClosed")<{
   /** The address the socket was opened to. */
@@ -255,6 +281,8 @@ export class Closed extends Data.TaggedError("TransportClosed")<{
  *   lost for good, and nothing asks for one again.
  *
  * It uses the `WebSocket` every platform has: a page, a worker, Node 22.
+ *
+ * @category Layers
  */
 export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
   Layer.effect(
@@ -339,7 +367,11 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
     )
   );
 
-/** How a hub treats what is sent through it. */
+/**
+ * How a hub treats what is sent through it.
+ *
+ * @category Testing
+ */
 export interface HubOptions {
   /**
    * How many steps a message takes to arrive: a number, or a range from
@@ -354,6 +386,8 @@ export interface HubOptions {
 /**
  * A network in memory, for tests: every peer has a port, and what one
  * sends reaches every other.
+ *
+ * @category Testing
  */
 export interface Hub {
   /**
@@ -379,6 +413,8 @@ export interface Hub {
  *   const ada = yield* Transport.connect(session).pipe(Effect.provide(hub.layer("ada")))
  *   hub.step()
  *   ada.tick()
+ *
+ * @category Testing
  */
 export const makeHub = (options: HubOptions = {}): Hub => {
   const dice = new Rng(options.seed ?? 0);

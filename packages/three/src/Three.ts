@@ -94,7 +94,11 @@ interface Kept {
   readonly settle?: () => void;
 }
 
-/** The scene and its camera, as a system gets them from `yield* Three.Scene`. */
+/**
+ * The scene and its camera, as a system gets them from `yield* Three.Scene`.
+ *
+ * @category Services
+ */
 export interface SceneShape {
   /** The scene everything is drawn into. Lights and the rest are added to it. */
   readonly scene: ThreeScene;
@@ -125,6 +129,8 @@ export interface SceneShape {
  *   )
  *
  * It is what draws the game, not the game: nothing in a tick reads it.
+ *
+ * @category Services
  */
 export class Scene extends Context.Service<Scene, SceneShape>()(
   "arcadekit/three/Scene"
@@ -155,6 +161,8 @@ const sceneLayer = Layer.effect(
 /**
  * What draws: a renderer of Three.js, or a test's that notes what it was
  * asked to draw.
+ *
+ * @category Services
  */
 export interface RendererShape {
   /** Draws the scene as the camera sees it. Called once per frame. */
@@ -165,6 +173,8 @@ export interface RendererShape {
  * What draws the scene. It comes from outside the app, since it needs a
  * canvas: `Three.layerWebGL({ canvas })` in a page. A test provides one
  * that draws nothing and notes what it was asked.
+ *
+ * @category Services
  */
 export class Renderer extends Context.Service<Renderer, RendererShape>()(
   "arcadekit/three/Renderer"
@@ -173,6 +183,8 @@ export class Renderer extends Context.Service<Renderer, RendererShape>()(
 /**
  * As much of a Three.js renderer as is used. `WebGLRenderer` is one, and so
  * is `WebGPURenderer`.
+ *
+ * @category Models
  */
 export interface RendererLike {
   /** The canvas. Its size on the page is what the picture is fitted to. */
@@ -186,7 +198,11 @@ export interface RendererLike {
   dispose(): void;
 }
 
-/** How a page's renderer follows its canvas. */
+/**
+ * How a page's renderer follows its canvas.
+ *
+ * @category Options
+ */
 export interface FitOptions {
   /**
    * Whether the picture follows the size the canvas has on the page: when
@@ -212,6 +228,8 @@ const isPerspective = (camera: Camera): camera is PerspectiveCamera =>
  *   Three.layerRenderer(() => new WebGPURenderer({ canvas }))
  *
  * Provide it to the whole program, as `Browser.runMain` is given the page.
+ *
+ * @category Layers
  */
 export const layerRenderer = (
   make: () => RendererLike,
@@ -265,6 +283,8 @@ export const layerRenderer = (
 /**
  * A page's renderer: a `WebGLRenderer` on the canvas it is given, with the
  * parameters Three.js takes, fitted to the canvas unless told otherwise.
+ *
+ * @category Layers
  */
 export const layerWebGL = (
   parameters: WebGLRendererParameters & FitOptions = {}
@@ -278,6 +298,8 @@ export const layerWebGL = (
  * and `Three.objects`, and a system of the game's that moves the camera.
  *
  *   System.make("Follow", ...).pipe(System.inStage("frame"))
+ *
+ * @category Systems
  */
 export const Render = System.make("arcadekit/three/Render", function* () {
   const { _kept, camera, scene } = yield* Scene;
@@ -294,6 +316,8 @@ export const Render = System.make("arcadekit/three/Render", function* () {
  *
  * The app then needs a `Three.Renderer` from outside:
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
+ *
+ * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/three", {
   plugins: [Transform3d.plugin, Transform2d.plugin],
@@ -331,7 +355,11 @@ interface Angle {
   readonly angle: { readonly [row: number]: number };
 }
 
-/** Which entities a drawing system draws. */
+/**
+ * Which entities a drawing system draws.
+ *
+ * @category Models
+ */
 export interface Which {
   /**
    * The component that says an entity is one of these, or several, all of
@@ -774,7 +802,11 @@ class FromAssets<T extends Kept> implements Kept {
   }
 }
 
-/** What `Three.texture` is told of a picture. */
+/**
+ * What `Three.texture` is told of a picture.
+ *
+ * @category Options
+ */
 export interface TextureOptions {
   /**
    * Called once with the texture, before it is ever sent to the renderer:
@@ -814,6 +846,8 @@ export interface TextureOptions {
  *   that says so.
  * - It is decoded off the page's thread, by `createImageBitmap`, which a
  *   page has and Node does not.
+ *
+ * @category Constructors
  */
 export const texture = (
   url: string,
@@ -893,6 +927,8 @@ const isWhole = (kind: string): boolean =>
 /**
  * A component of the game's that is a colour: three numbers, `r`, `g` and
  * `b`, kept in a table. What else it has is not read.
+ *
+ * @category Models
  */
 export type ColorComponent = ComponentDef<any, "table"> & {
   readonly schema: {
@@ -902,13 +938,21 @@ export type ColorComponent = ComponentDef<any, "table"> & {
   };
 };
 
-/** How an instance looks: the one geometry and the one material of its mesh. */
+/**
+ * How an instance looks: the one geometry and the one material of its mesh.
+ *
+ * @category Models
+ */
 export interface Look {
   readonly geometry: BufferGeometry;
   readonly material: Material | Material[];
 }
 
-/** What `Three.instances` is told, however its look is come by. */
+/**
+ * What `Three.instances` is told, however its look is come by.
+ *
+ * @category Models
+ */
 export interface InstancesShared extends Which {
   /**
    * A component of the game's that gives each instance a colour of its
@@ -957,12 +1001,18 @@ export interface InstancesShared extends Which {
   readonly prepare?: (mesh: InstancedMesh) => void;
 }
 
-/** Instances whose look is there when the system is made. */
+/**
+ * Instances whose look is there when the system is made.
+ *
+ * @category Options
+ */
 export interface InstancesOptions extends InstancesShared, Look {}
 
 /**
  * Instances whose look is made of assets that are loaded later, and let go
  * again: a level's.
+ *
+ * @category Options
  */
 export interface InstancesFromOptions<
   B extends Entries,
@@ -1668,6 +1718,8 @@ type Needs = Frame | Scene | Time | World;
  * - `look` is called once each time the bundle is loaded, and `free` with
  *   what it returned when the bundle is let go or the app's scope closes.
  * - It needs `Assets.plugin` as well.
+ *
+ * @category Systems
  */
 export const instances: {
   <B extends Entries, L extends Look = Look>(
@@ -1830,7 +1882,11 @@ export const instances: {
 
 // --- objects ---------------------------------------------------------------------
 
-/** What `Three.objects` is told, whatever its objects are made of. */
+/**
+ * What `Three.objects` is told, whatever its objects are made of.
+ *
+ * @category Models
+ */
 export interface ObjectsShared<O extends Object3D = Object3D> extends Which {
   /**
    * Called when the entity is no longer one of these, or the app's scope
@@ -1843,6 +1899,8 @@ export interface ObjectsShared<O extends Object3D = Object3D> extends Which {
 /**
  * How `Three.objects` makes, updates and frees the object of each entity it
  * draws.
+ *
+ * @category Options
  */
 export interface ObjectsOptions<
   O extends Object3D = Object3D,
@@ -1857,6 +1915,8 @@ export interface ObjectsOptions<
 /**
  * Objects that are made of assets which are loaded later, and let go
  * again: a level's models.
+ *
+ * @category Options
  */
 export interface ObjectsFromOptions<
   B extends Entries,
@@ -2182,6 +2242,8 @@ class Objects<O extends Object3D> implements Kept {
  * - There are objects while the app holds the bundle loaded: each is made
  *   the frame it is, and all are let go, through `free`, when it is not.
  * - It needs `Assets.plugin` as well.
+ *
+ * @category Systems
  */
 // The one made of assets is first, so that the two things its `make` is
 // handed are typed from it.

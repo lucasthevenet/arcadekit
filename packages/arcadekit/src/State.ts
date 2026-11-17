@@ -39,6 +39,8 @@ type Fields = {
 /**
  * A system's handle to a state, from `yield* SomeState`: which state the
  * game is in, and a way to ask for another.
+ *
+ * @category Models
  */
 export interface StateHandle<V extends string> {
   /** The state the game is in. */
@@ -60,6 +62,8 @@ export interface StateHandle<V extends string> {
  * A state's definition. It is an Effect, so `yield*` gives a handle to the
  * world's value of it. It is also the singleton that holds that value, so
  * it is listed in a plugin's `components` like one.
+ *
+ * @category Models
  */
 export class State<V extends string>
   extends Effectable.Class<StateHandle<V>, never, World>
@@ -106,6 +110,8 @@ export class State<V extends string>
  *
  * The name is one of the world's component names. List the state in a
  * plugin's `components`, so that a save which names it can be loaded.
+ *
+ * @category Constructors
  */
 export const define = <const V extends string>(
   name: string,
@@ -182,7 +188,11 @@ export const handleOf = <V extends string>(
   return handle;
 };
 
-/** A state's move from one value to another; from nowhere on a game's first tick. */
+/**
+ * A state's move from one value to another; from nowhere on a game's first tick.
+ *
+ * @category Models
+ */
 export interface Move {
   readonly from: string | undefined;
   readonly to: string;
@@ -234,6 +244,8 @@ export const enter = (world: EcsWorld, state: State<any>, move: Move): void => {
  * A condition for `System.runIf`: the game is in one of these states.
  *
  *   System.make("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
+ *
+ * @category Conditions
  */
 export const is = <V extends string>(
   state: State<V>,
@@ -254,6 +266,8 @@ export const is = <V extends string>(
  * The hooks of the state a game starts in run on its first tick, before
  * any move that was asked for ahead of it. They do not run again when a
  * saved game is loaded: the save holds what they did.
+ *
+ * @category Combinators
  */
 export const onEnter =
   <V extends string>(state: State<V>, value: NoInfer<V>) =>
@@ -264,6 +278,8 @@ export const onEnter =
  * Makes a system a hook: it runs once when the game leaves a state, at the
  * start of the tick in which it does, before the hooks for the state it
  * enters. `yield*` on the state still gives the one being left.
+ *
+ * @category Combinators
  */
 export const onExit =
   <V extends string>(state: State<V>, value: NoInfer<V>) =>

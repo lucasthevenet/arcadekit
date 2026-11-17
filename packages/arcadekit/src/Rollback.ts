@@ -37,6 +37,8 @@ import type * as Save from "./Save";
 /**
  * How a rollback session is set up: this peer, every peer, and how far it
  * runs ahead of what it has heard.
+ *
+ * @category Options
  */
 export interface Options {
   /** This peer's name. */
@@ -70,6 +72,8 @@ export interface Options {
  * could not be captured before a tick it was not sure of.
  *
  * @param E what a tick of its app can fail with
+ *
+ * @category Models
  */
 export interface Session<E = never> extends Lockstep.Session<
   E | Save.SaveRefused
@@ -97,6 +101,8 @@ export interface Session<E = never> extends Lockstep.Session<
 /**
  * Puts an app in a game of several peers, as `Lockstep.make` does, with a
  * session that runs ahead of the network and goes back when it was wrong.
+ *
+ * @category Constructors
  */
 export const make = <E>(
   app: Lockstep.SessionApp<E>,

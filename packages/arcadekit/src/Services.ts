@@ -10,12 +10,20 @@ import type { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { EventBus } from "./Event";
 import type { Devices } from "./Input";
 
-/** The ECS world. Most systems use queries and Commands instead of this. */
+/**
+ * The ECS world. Most systems use queries and Commands instead of this.
+ *
+ * @category Services
+ */
 export class World extends Context.Service<World, EcsWorld>()(
   "arcadekit/World"
 ) {}
 
-/** The game's time, as `Time` gives it to a system. */
+/**
+ * The game's time, as `Time` gives it to a system.
+ *
+ * @category Models
+ */
 export interface TimeState {
   /** Seconds simulated by the current tick. */
   delta: number;
@@ -25,12 +33,20 @@ export interface TimeState {
   tick: number;
 }
 
-/** Game time. Driven by the tick, not the wall clock, so it is deterministic. */
+/**
+ * Game time. Driven by the tick, not the wall clock, so it is deterministic.
+ *
+ * @category Services
+ */
 export class Time extends Context.Service<Time, Readonly<TimeState>>()(
   "arcadekit/Time"
 ) {}
 
-/** The frame being drawn, as `Frame` gives it to a system of the frame stage. */
+/**
+ * The frame being drawn, as `Frame` gives it to a system of the frame stage.
+ *
+ * @category Models
+ */
 export interface FrameState {
   /**
    * How far this frame is between the last tick and the next: from 0, just
@@ -47,17 +63,27 @@ export interface FrameState {
  * What a system of the frame stage is told about the frame it draws. Real
  * time, so not for the simulation: a system that runs in the tick reads
  * `Time`, and asking for a field of this there throws.
+ *
+ * @category Services
  */
 export class Frame extends Context.Service<Frame, Readonly<FrameState>>()(
   "arcadekit/Frame"
 ) {}
 
-/** Deferred structural changes, applied when the current system finishes. */
+/**
+ * Deferred structural changes, applied when the current system finishes.
+ *
+ * @category Services
+ */
 export class Commands extends Context.Service<Commands, CommandBuffer>()(
   "arcadekit/Commands"
 ) {}
 
-/** How a long-running script (a coroutine) waits, and how a system starts one. */
+/**
+ * How a long-running script (a coroutine) waits, and how a system starts one.
+ *
+ * @category Services
+ */
 export class Script extends Context.Service<
   Script,
   {
@@ -105,6 +131,8 @@ export class Script extends Context.Service<
  * - What was asked is not saved. An app that has just been made, or loaded
  *   from a save, runs one tick before it rests, in which every system can
  *   ask again.
+ *
+ * @category Services
  */
 export class Ticks extends Context.Service<
   Ticks,
@@ -114,7 +142,11 @@ export class Ticks extends Context.Service<
   }
 >()("arcadekit/Ticks") {}
 
-/** The app's event channels. Usually reached by yielding an event definition. */
+/**
+ * The app's event channels. Usually reached by yielding an event definition.
+ *
+ * @category Services
+ */
 export class Events extends Context.Service<Events, EventBus>()(
   "arcadekit/Events"
 ) {}
@@ -132,12 +164,18 @@ export class Events extends Context.Service<Events, EventBus>()(
  * `App.make({ seed })`, and the same seed gives the same numbers on every
  * machine. The generator's state is part of the world, so it is in the
  * world's hash and a replay draws the same numbers.
+ *
+ * @category Services
  */
 export class Random extends Context.Service<Random, Rng>()(
   "arcadekit/Random"
 ) {}
 
-/** Services the app provides itself. */
+/**
+ * Services the app provides itself.
+ *
+ * @category Type-level
+ */
 export type BuiltIn =
   | World
   | Time

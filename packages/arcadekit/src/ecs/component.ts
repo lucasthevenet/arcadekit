@@ -24,6 +24,8 @@
  * An id is a number like any other. It is kept in arrays of 64-bit floats,
  * which hold every whole number below 2^53 exactly, and is a whole number
  * in JSON.
+ *
+ * @category Models
  */
 export type Entity = number & { readonly _brand: "Entity" };
 
@@ -42,11 +44,15 @@ export const GENERATIONS = 2 ** (53 - INDEX_BITS);
 /**
  * An entity's index: its slot in the world, which a despawned entity's
  * successor reuses.
+ *
+ * @category Utilities
  */
 export const entityIndex = (entity: Entity): number => entity & INDEX_MASK;
 /**
  * An entity's generation: how many entities had its index before it, which
  * tells it apart from them.
+ *
+ * @category Utilities
  */
 export const entityGeneration = (entity: Entity): number =>
   Math.floor(entity / INDEX_RANGE);
@@ -60,6 +66,8 @@ export const makeEntity = (index: number, generation: number): Entity =>
 /**
  * How a field is stored: a typed array of numbers, an entity, or a value of
  * any kind.
+ *
+ * @category Models
  */
 export type FieldKind =
   | "f32"
@@ -89,6 +97,8 @@ export const isBoxed = (kind: FieldKind): boolean =>
  * How the values of a `ref` field are turned into plain data and back.
  * `encode` gives something JSON can write, and `decode` takes what JSON
  * read back. Either may throw for a value it will not take.
+ *
+ * @category Models
  */
 export interface RefCodec<T> {
   readonly encode: (value: T) => unknown;
@@ -98,6 +108,8 @@ export interface RefCodec<T> {
 /**
  * A field of a component. `T` is the value you read and write, `C` is the
  * column type that stores it.
+ *
+ * @category Models
  */
 export interface FieldDef<T, C> {
   readonly kind: FieldKind;
@@ -112,6 +124,8 @@ const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
 /**
  * The kinds of field a component is made of. A number goes in a typed
  * array; anything else says what a snapshot and the hash do with it.
+ *
+ * @category Fields
  */
 export const Field = {
   f32: field<number, Float32Array>("f32"),
@@ -210,7 +224,11 @@ export const growColumn = (
 
 export type Schema = Record<string, FieldDef<any, any>>;
 
-/** The plain-object shape of a component: `{ x: number, y: number }`. */
+/**
+ * The plain-object shape of a component: `{ x: number, y: number }`.
+ *
+ * @category Type-level
+ */
 export type ValueOf<S extends Schema> = {
   -readonly [K in keyof S]: S[K] extends FieldDef<infer T, any> ? T : never;
 };
@@ -240,6 +258,8 @@ export interface ReadOnlyTerm {
  * How a component is stored: in the tables of the entities that have it,
  * or `"sparse"`, in a set of its own, for one that is added and removed
  * often.
+ *
+ * @category Models
  */
 export type Storage = "table" | "sparse";
 
@@ -247,12 +267,16 @@ export type Storage = "table" | "sparse";
  * What becomes of a relation when the entity it points at is despawned:
  * the entity that holds it is despawned too, or the relation is removed
  * from it.
+ *
+ * @category Models
  */
 export type OnTargetDespawn = "despawn" | "remove";
 
 /**
  * A column that is read and not written: a relation's `target`, which the
  * world keeps track of and so has to be told of every change to.
+ *
+ * @category Models
  */
 export interface ReadonlyColumn<T> {
   readonly [index: number]: T;
@@ -314,6 +338,8 @@ export type AccessorMode = "writes" | "notes" | "reads" | "frozen";
  * @param N  its name. Two components can have the same fields, and it is
  *           by their names that the compiler tells them apart: which of a
  *           query's terms `Query.reads` was given, for one.
+ *
+ * @category Models
  */
 export interface ComponentDef<
   S extends Schema = Schema,
@@ -347,13 +373,19 @@ export interface ComponentDef<
 /**
  * A component with its value, as `spawn` and `add` take it:
  * `Position.of({ x: 0, y: 0 })`.
+ *
+ * @category Models
  */
 export interface ComponentValue<S extends Schema = Schema> {
   readonly def: ComponentDef<S>;
   readonly value: ValueOf<S>;
 }
 
-/** What `spawn` and `add` accept: a value, or a bare component (zeroed / tag). */
+/**
+ * What `spawn` and `add` accept: a value, or a bare component (zeroed / tag).
+ *
+ * @category Type-level
+ */
 export type ComponentInput = ComponentValue<any> | ComponentDef<any>;
 
 export const isComponentDef = (u: ComponentInput): u is ComponentDef<any> =>
@@ -367,6 +399,8 @@ export const isComponentDef = (u: ComponentInput): u is ComponentDef<any> =>
  *
  * Any object with this shape works; the Effect layer supplies a yieldable
  * one.
+ *
+ * @category Models
  */
 export interface SingletonSpec<S extends Schema = Schema> {
   /** The singleton's name and fields, in the form of a component. */
@@ -724,7 +758,11 @@ const define = <
   return def;
 };
 
-/** Defines components: data, a tag, or a relation to another entity. */
+/**
+ * Defines components: data, a tag, or a relation to another entity.
+ *
+ * @category Constructors
+ */
 export const Component = {
   /** Define a data component. Numeric fields become typed-array columns. */
   define: <

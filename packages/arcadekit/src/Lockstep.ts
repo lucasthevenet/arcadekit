@@ -42,7 +42,11 @@ import type * as App from "./App";
 import type { Tickable } from "./Driver";
 import type * as Save from "./Save";
 
-/** An action as a peer issued it: its name, and its payload in JSON form. */
+/**
+ * An action as a peer issued it: its name, and its payload in JSON form.
+ *
+ * @category Models
+ */
 export interface Issued {
   readonly name: string;
   readonly payload: unknown;
@@ -53,6 +57,8 @@ export interface Issued {
  * There is one from every peer for every tick, with no action in it more
  * often than not: it is also how a peer says it has nothing more for that
  * tick.
+ *
+ * @category Models
  */
 export interface Message {
   /** The peer that issued the actions. */
@@ -104,6 +110,8 @@ const MessageSchema = Schema.fromJsonString(
  * `delay` ahead, which no peer runs without: so no peer runs more than
  * `checkpointEvery - 1 + delay` ticks past the first whose world differed,
  * `delay` being the largest any peer has.
+ *
+ * @category Errors
  */
 export class Drifted extends Data.TaggedError("Drifted")<{
   /** The tick the hashes were taken at: the first checkpoint that differs. */
@@ -130,13 +138,19 @@ export class Drifted extends Data.TaggedError("Drifted")<{
   }
 }
 
-/** A message as text, for whatever carries it. */
+/**
+ * A message as text, for whatever carries it.
+ *
+ * @category Codecs
+ */
 export const encode = (message: Message): string => JSON.stringify(message);
 
 /**
  * Reads a message back from text. This checks the message's own shape; each
  * payload is checked against its action's schema when the action is
  * applied, and one that does not pass is refused by every peer alike.
+ *
+ * @category Codecs
  */
 export const decode = (text: string): Exit.Exit<Message, Schema.SchemaError> =>
   Schema.decodeUnknownExit(MessageSchema)(text) as Exit.Exit<
@@ -147,6 +161,8 @@ export const decode = (text: string): Exit.Exit<Message, Schema.SchemaError> =>
 /**
  * How a lockstep session is set up: this peer, every peer, and how many
  * ticks ahead an action is sent.
+ *
+ * @category Options
  */
 export interface Options {
   /** This peer's name. */
@@ -171,6 +187,8 @@ export interface Options {
  * `Driver.frames(session, { hz })`.
  *
  * @param E what a tick of its app can fail with
+ *
+ * @category Models
  */
 export interface Session<E = never> extends Tickable {
   readonly peer: string;
@@ -242,6 +260,8 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  *
  * From here on the session steps the app: the app's own `tick` and
  * `dispatch` throw, since either would move this peer's game alone.
+ *
+ * @category Constructors
  */
 export const make = <E>(app: SessionApp<E>, options: Options): Session<E> =>
   // A lockstep session predicts nothing, so it captures nothing, and a
@@ -252,7 +272,11 @@ export const make = <E>(app: SessionApp<E>, options: Options): Session<E> =>
     ahead: 0,
   }) as Session<E>;
 
-/** What a session needs of its app. Every app has it. */
+/**
+ * What a session needs of its app. Every app has it.
+ *
+ * @category Type-level
+ */
 export type SessionApp<E> = Pick<
   App.App<E>,
   | "actionLog"
@@ -268,6 +292,8 @@ export type SessionApp<E> = Pick<
 /**
  * What a session that predicts adds: `Rollback.Session`, which describes
  * each.
+ *
+ * @category Models
  */
 export interface Predicting {
   readonly ahead: number;

@@ -22,6 +22,8 @@ import * as Plugin from "./Plugin";
 /**
  * Where an entity is, in the units of the game's space. A game that is
  * flat gives every `z` as 0.
+ *
+ * @category Components
  */
 export const Position = Component.define("arcadekit/Transform3d.Position", {
   x: Field.f32,
@@ -38,6 +40,8 @@ export const Position = Component.define("arcadekit/Transform3d.Position", {
  * length 1, or never made of it, is drawn as the same turn. All four
  * fields 0, which is what a `Rotation` added with no value is, stands for
  * not turned at all.
+ *
+ * @category Components
  */
 export const Rotation = Component.define("arcadekit/Transform3d.Rotation", {
   x: Field.f32,
@@ -46,7 +50,11 @@ export const Rotation = Component.define("arcadekit/Transform3d.Rotation", {
   w: Field.f32,
 });
 
-/** How large an entity is, along each axis: 1 is the size it is made at. */
+/**
+ * How large an entity is, along each axis: 1 is the size it is made at.
+ *
+ * @category Components
+ */
 export const Scale = Component.define("arcadekit/Transform3d.Scale", {
   x: Field.f32,
   y: Field.f32,
@@ -59,6 +67,8 @@ export const Scale = Component.define("arcadekit/Transform3d.Scale", {
  * any length but none; about no axis at all, three zeros, it is no turn.
  * What it gives is of length 1. It makes an object, so it is for a spawn
  * or a `world.set`, not for a loop over columns.
+ *
+ * @category Utilities
  */
 export const axisAngle = (
   x: number,
@@ -80,6 +90,8 @@ export const axisAngle = (
  * Lists the three components, so that a save which names them can be read.
  * The plugin that holds a game's rules depends on it, and so does one that
  * draws from them, as `Three.plugin` of `@arcadekit/three` does.
+ *
+ * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/Transform3d", {
   components: [Position, Rotation, Scale],

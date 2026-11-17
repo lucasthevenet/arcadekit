@@ -48,6 +48,8 @@ import * as Lockstep from "./Lockstep";
  * Who a connection is: the room it is in, and the peer it speaks for. A
  * host keeps this with the connection, and hands the relay everyone in a
  * room when it asks what to do.
+ *
+ * @category Schemas
  */
 export const Member: Schema.Struct<{
   readonly room: typeof Schema.String;
@@ -55,7 +57,11 @@ export const Member: Schema.Struct<{
 }> = Schema.Struct({ room: Schema.String, peer: Schema.String });
 export type Member = typeof Member.Type;
 
-/** One text to send to one member of the room. */
+/**
+ * One text to send to one member of the room.
+ *
+ * @category Models
+ */
 export interface Delivery {
   readonly to: Member;
   readonly text: string;
@@ -72,6 +78,8 @@ export interface Delivery {
  * the body of an HTTP answer with `status`. A page is told nothing of a
  * request to connect that was turned away with a status, so a host that
  * wants the peer to know why accepts the socket and closes it.
+ *
+ * @category Errors
  */
 export class Refused extends Data.TaggedError("RelayRefused")<{
   readonly reason:
@@ -92,6 +100,8 @@ export class Refused extends Data.TaggedError("RelayRefused")<{
 /**
  * How a relay's rooms are kept: how many peers one takes, and which names
  * it lets in.
+ *
+ * @category Options
  */
 export interface Options {
   /**
@@ -128,6 +138,8 @@ const refuse = (
  *
  *   Relay.address("wss://relay.example.com/rooms", { room: "blue", peer: "ada" })
  *   // "wss://relay.example.com/rooms/blue?peer=ada"
+ *
+ * @category Hosting
  */
 export const address = (base: string, member: Member): string =>
   `${base.replace(/\/+$/u, "")}/${encodeURIComponent(member.room)}?peer=${encodeURIComponent(member.peer)}`;
@@ -144,6 +156,8 @@ export const address = (base: string, member: Member): string =>
  *
  * It does not ask whether the peer is who it says: that is the host's to
  * settle before it calls this, with whatever the request carries.
+ *
+ * @category Hosting
  */
 export const join = (
   url: string,
@@ -218,6 +232,8 @@ const decoder = new TextDecoder();
  * host closes the socket with the refusal's `code`, when it is not a
  * message, when it is longer than the relay takes, or when it says it is
  * from anyone but the member that sent it.
+ *
+ * @category Hosting
  */
 export const forward = (
   from: Member,
@@ -262,7 +278,11 @@ export const forward = (
   return Exit.succeed(deliveries);
 };
 
-/** A peer's connection to a relay that keeps its rooms in memory. */
+/**
+ * A peer's connection to a relay that keeps its rooms in memory.
+ *
+ * @category Models
+ */
 export interface Connection {
   readonly member: Member;
   /**
@@ -276,7 +296,11 @@ export interface Connection {
   readonly close: () => void;
 }
 
-/** A relay that keeps who is connected itself. */
+/**
+ * A relay that keeps who is connected itself.
+ *
+ * @category Models
+ */
 export interface Server {
   /**
    * A peer asks to connect, at `url`: `send` is how the relay sends to it.
@@ -304,6 +328,8 @@ export interface Server {
  *     socket.on("message", (data) => connection.value.receive(data))
  *     socket.on("close", () => connection.value.close())
  *   })
+ *
+ * @category Constructors
  */
 export const make = (options: Options = {}): Server => {
   // Per room, how to send to each peer in it, by name.

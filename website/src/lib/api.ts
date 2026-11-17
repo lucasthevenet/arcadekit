@@ -492,9 +492,48 @@ export const categoryOf = (item: Export): string =>
   item.parts[0]?.kind ??
   "Values";
 
-/** Where a category is listed: a `@category` first, then the kinds in their order. */
-const rank = (category: string) =>
-  (KINDS as readonly string[]).indexOf(category);
+/**
+ * The categories the packages' doc comments use, in the order a page lists them: what a game
+ * makes and is made of first, then what runs it, then what it rarely needs.
+ */
+export const CATEGORIES = [
+  "Constructors",
+  "Models",
+  "Components",
+  "Fields",
+  "Actions",
+  "Events",
+  "Views",
+  "Systems",
+  "Combinators",
+  "Conditions",
+  "Plugins",
+  "Services",
+  "Layers",
+  "Running",
+  "Hosting",
+  "Guards",
+  "Codecs",
+  "Schemas",
+  "Migrations",
+  "Constants",
+  "Utilities",
+  "Errors",
+  "Options",
+  "Testing",
+  "Type-level",
+] as const;
+
+/**
+ * Where a category is listed: those of `CATEGORIES` in its order, then any other, then the
+ * kinds an export with no `@category` falls under.
+ */
+const rank = (category: string) => {
+  const known = (CATEGORIES as readonly string[]).indexOf(category);
+  if (known !== -1) return known;
+  const kind = (KINDS as readonly string[]).indexOf(category);
+  return kind === -1 ? CATEGORIES.length : CATEGORIES.length + 1 + kind;
+};
 
 /**
  * An export: its doc comments, then its declarations in one block, as overloads are written,
