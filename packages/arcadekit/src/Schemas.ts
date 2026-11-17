@@ -10,6 +10,8 @@ import type { Entity } from "./ecs/component";
  *
  * This checks the shape only. Whether the entity still exists depends on the
  * world, so that check belongs in the handler.
+ *
+ * @category Schemas
  */
 export const EntityId: Schema.Codec<Entity, number> = Schema.Int.check(
   Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })

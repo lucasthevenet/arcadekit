@@ -47,7 +47,11 @@ import * as System from "./System";
 
 // --- a view ----------------------------------------------------------------------
 
-/** A value the UI may see: its name, and what it is before the game has said. */
+/**
+ * A value the UI may see: its name, and what it is before the game has said.
+ *
+ * @category Models
+ */
 export interface View<A> {
   readonly name: string;
   readonly initial: A;
@@ -65,6 +69,8 @@ export interface View<A> {
  * Its value is plain data (text, numbers, booleans, arrays and objects of
  * them), which is what two values are compared as. Its name is its
  * identity on a bridge, which refuses two different views with one name.
+ *
+ * @category Constructors
  */
 export const define = <A>(name: string, initial: A): View<A> => ({
   name,
@@ -76,13 +82,21 @@ export const define = <A>(name: string, initial: A): View<A> => ({
 /** Left out for an action that takes no payload. */
 type PayloadArgument<P> = undefined extends P ? [payload?: P] : [payload: P];
 
-/** An action the UI asked for, waiting for the input stage. */
+/**
+ * An action the UI asked for, waiting for the input stage.
+ *
+ * @category Models
+ */
 export interface Sent {
   readonly action: Action.ActionDef<string, any, unknown>;
   readonly payload: unknown;
 }
 
-/** What a UI is handed: the game's views, and a way to ask for an action. */
+/**
+ * What a UI is handed: the game's views, and a way to ask for an action.
+ *
+ * @category Models
+ */
 export interface Bridge {
   /**
    * A view's value as it was last published, or its initial value. It is
@@ -155,6 +169,8 @@ interface Slot {
  * It holds the views' values, their listeners and the actions waiting to
  * be issued: nothing of the world. A UI can be mounted on it before the
  * game is made, and sees every view at its initial value until then.
+ *
+ * @category Constructors
  */
 export const makeBridge = (): Bridge => {
   const slots = new Map<string, Slot>();
@@ -262,12 +278,22 @@ export const Bridge: Context.Reference<Bridge> = Context.Reference<Bridge>(
   { defaultValue: () => noBridge }
 );
 
-/** Provides a bridge to the game: `Effect.provide(View.layer(ui))`. */
+/**
+ * Provides a bridge to the game: `Effect.provide(View.layer(ui))`.
+ *
+ * @category Layers
+ */
 export const layer = (bridge: Bridge): Layer.Layer<never> =>
   Layer.succeed(Bridge, bridge) as Layer.Layer<never>;
 
 // --- the app's end of the bridge ---------------------------------------------------
 
+/**
+ * The app's end of the bridge to a UI: what a system of the frame stage
+ * publishes views through.
+ *
+ * @category Services
+ */
 export interface PortShape {
   /** Whether a UI is there to be told. False on a server, in a replay, in most tests. */
   readonly connected: boolean;
@@ -288,6 +314,8 @@ export interface PortShape {
  * An app's end of the bridge. `View.plugin` provides it, `View.publish`
  * works it, and a frame system of the game's own can publish through it:
  * `(yield* View.Port).publish(Hud, value)`.
+ *
+ * @category Services
  */
 export class Port extends Context.Service<Port, PortShape>()(
   "arcadekit/View.Port"
@@ -346,6 +374,8 @@ const Send = System.make("arcadekit/View.Send", function* () {
  *   the app handles when the app is made, and `send` throws for another;
  *   one sent before that throws here, in the app's first input stage.
  * - Where no bridge was provided the plugin does nothing.
+ *
+ * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/View", {
   layer: portLayer,
@@ -373,6 +403,8 @@ export const plugin = Plugin.make("arcadekit/View", {
  *   part of the game, and should not be seen when the game is elsewhere,
  *   says `System.otherwise(View.reset(view))`.
  * - The system is named `View.publish(<the view's name>)`. One per view.
+ *
+ * @category Systems
  */
 export const publish = <A, Eff extends Effect.Effect<any, any, any>>(
   view: View<A>,
@@ -409,6 +441,8 @@ export const publish = <A, Eff extends Effect.Effect<any, any, any>>(
  * system does not run. The UI is told once, as of any value: said again
  * it is the value the view has. For the stages between ticks, as
  * publishing is.
+ *
+ * @category Utilities
  */
 export const reset = <A>(view: View<A>): Effect.Effect<void, never, Port> =>
   // Where no UI is there, this publishes to nobody.

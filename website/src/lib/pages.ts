@@ -6,7 +6,9 @@
 // - The repository's own markdown, read where it is (loader.ts):
 //   - each file directly in `docs/`, the roadmap and the conventions, at `/<name>`;
 //   - each package's README, at `/reference/<package>`: `packages/arcadekit/README.md` at
-//     `/reference/arcadekit`. They are the reference, and npm shows them too.
+//     `/reference/arcadekit`. It is a package's overview, and npm shows it too.
+// - Each module of a package, at `/reference/<package>/<Module>`, made from its doc comments
+//   (api.ts): `arcadekit/Sound` at `/reference/arcadekit/Sound`.
 // The folders are read whole, so a new page or a new package is a page without a change here.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -169,6 +171,43 @@ const packagePages = (): PackagePage[] =>
       folder,
     }));
 
+/** A module of a package, whose page is made from its doc comments (api.ts). */
+export interface ModulePage extends SitePage {
+  /** The module's name, as a game imports it: `Sound`. */
+  readonly name: string;
+  /** Its package's folder under `packages/`, such as `arcadekit`, and the package's name. */
+  readonly folder: string;
+  readonly packageName: string;
+}
+
+/**
+ * Each module of each package, at `/reference/<folder>/<Module>`: every entry its `package.json`
+ * exports but the package's own. `file` is the module's source, which its edit link opens.
+ */
+const modulePages = (packages: readonly PackagePage[]): ModulePage[] =>
+  packages.flatMap((page) => {
+    const manifest = JSON.parse(
+      read(`${PACKAGES}/${page.folder}/package.json`)
+    ) as {
+      readonly name: string;
+      readonly exports?: Record<string, { readonly source?: string }>;
+    };
+    return Object.entries(manifest.exports ?? {})
+      .filter(([key, entry]) => key !== "." && entry.source !== undefined)
+      .map(([key, entry]) => {
+        const name = key.replace(/^\.\//u, "");
+        const slug = `${REFERENCE}/${page.folder}/${name}`;
+        return {
+          file: `${PACKAGES}/${page.folder}/${String(entry.source).replace(/^\.\//u, "")}`,
+          slug,
+          link: `/${slug}`,
+          name,
+          folder: page.folder,
+          packageName: manifest.name,
+        };
+      });
+  });
+
 /** Every page of the site, found on disk. */
 export const discoverPages = () => {
   const home: SitePage = { file: HOME, slug: "index", link: "/" };
@@ -179,9 +218,11 @@ export const discoverPages = () => {
   /** The pages read from the repository, which loader.ts adds to the site. */
   const repository: readonly RepositoryPage[] = [...project, ...packages];
   const all: readonly SitePage[] = [home, ...docs, ...packages];
+  /** The modules' pages, made from their doc comments by the loader. */
+  const modules = modulePages(packages);
 
   const files = new Map<string, string>();
-  for (const page of all) {
+  for (const page of [...all, ...modules]) {
     const taken = files.get(page.slug);
     if (taken !== undefined) {
       throw new Error(
@@ -191,7 +232,7 @@ export const discoverPages = () => {
     files.set(page.slug, page.file);
   }
 
-  return { home, docs, packages, repository, all };
+  return { home, docs, packages, modules, repository, all };
 };
 
 export type SitePages = ReturnType<typeof discoverPages>;

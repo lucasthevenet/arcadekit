@@ -60,7 +60,11 @@ import {
 } from "./Services";
 import * as System from "./System";
 
-/** An asset could not be loaded: it is not there, or it is not what it was said to be. */
+/**
+ * An asset could not be loaded: it is not there, or it is not what it was said to be.
+ *
+ * @category Errors
+ */
 export class AssetFailed extends Data.TaggedError("AssetFailed")<{
   /** Where the asset was to come from. */
   readonly url: string;
@@ -73,7 +77,11 @@ const describe = (error: unknown): string =>
 
 // --- one asset ---------------------------------------------------------------
 
-/** Something to load: where its bytes are, and what is made of them. */
+/**
+ * Something to load: where its bytes are, and what is made of them.
+ *
+ * @category Models
+ */
 export interface Asset<out A> {
   readonly url: string;
   /**
@@ -92,6 +100,8 @@ export interface Asset<out A> {
  *   const sound = (url: string) => Assets.make(url, (bytes, at) =>
  *     Effect.acquireRelease(decodeAudio(bytes, at), (buffer) => free(buffer))
  *   )
+ *
+ * @category Constructors
  */
 export const make = <A>(
   url: string,
@@ -101,11 +111,19 @@ export const make = <A>(
   ) => Effect.Effect<A, AssetFailed, Scope.Scope>
 ): Asset<A> => ({ url, decode: (bytes) => decode(bytes, url) });
 
-/** A file as it is. */
+/**
+ * A file as it is.
+ *
+ * @category Constructors
+ */
 export const bytes = (url: string): Asset<Uint8Array> =>
   make(url, (data) => Effect.succeed(data));
 
-/** A file of text, which has to be UTF-8. */
+/**
+ * A file of text, which has to be UTF-8.
+ *
+ * @category Constructors
+ */
 export const text = (url: string): Asset<string> =>
   make(url, (data, at) =>
     Effect.suspend(() => {
@@ -127,6 +145,8 @@ export const text = (url: string): Asset<string> =>
 /**
  * A file of JSON that a schema describes. It comes from outside the
  * program, so it is checked: one that does not fit fails to load.
+ *
+ * @category Constructors
  */
 export const json = <S extends Schema.Codec<unknown, unknown>>(
   url: string,
@@ -161,6 +181,12 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
 
 // --- where bytes come from ---------------------------------------------------------
 
+/**
+ * What fetches an asset's bytes. In a page it is `fetch`; a test provides
+ * one that reads from memory.
+ *
+ * @category Services
+ */
 export interface LoaderShape {
   /** The bytes at a URL. Interrupting it gives up the request. */
   readonly bytes: (url: string) => Effect.Effect<Uint8Array, AssetFailed>;
@@ -186,6 +212,8 @@ const fetching: LoaderShape = {
  * Where the bytes of an asset come from. Nothing has to provide it: the
  * default is `fetch`, which a page and Node both have. A test provides
  * files of its own with `Assets.layerMemory`.
+ *
+ * @category Services
  */
 export const Loader: Context.Reference<LoaderShape> =
   Context.Reference<LoaderShape>("arcadekit/Assets.Loader", {
@@ -195,6 +223,8 @@ export const Loader: Context.Reference<LoaderShape> =
 /**
  * A loader of files held in memory, by URL, for a test or a tool. A file
  * given as text is its UTF-8 bytes. A URL that is not among them fails.
+ *
+ * @category Testing
  */
 export const layerMemory = (
   files: Readonly<Record<string, Uint8Array | string>>
@@ -220,12 +250,20 @@ export const layerMemory = (
 // assets of several kinds.
 type Entries = Readonly<Record<string, Asset<any>>>;
 
-/** What a bundle is once loaded: each asset under its name. */
+/**
+ * What a bundle is once loaded: each asset under its name.
+ *
+ * @category Type-level
+ */
 export type Loaded<B extends Entries> = {
   readonly [K in keyof B]: B[K] extends Asset<infer A> ? A : never;
 };
 
-/** What an app holds of a bundle at the moment. */
+/**
+ * What an app holds of a bundle at the moment.
+ *
+ * @category Models
+ */
 export type Status<A> =
   /** Nobody has asked for it. */
   | { readonly _tag: "Absent" }
@@ -241,6 +279,8 @@ const LOADING: Status<never> = { _tag: "Loading" };
  * Assets that are loaded together and let go together: a level's, a
  * menu's. It is an Effect, so in a system of the frame stage or the input
  * stage `yield*` gives what the app holds of it now.
+ *
+ * @category Models
  */
 export class Bundle<B extends Entries> extends Effectable.Class<
   Status<Loaded<B>>,
@@ -267,6 +307,8 @@ export class Bundle<B extends Entries> extends Effectable.Class<
  * Names assets that belong together. The name is what the app calls the
  * bundle in its log, and what the system that loads it is named after, so
  * prefix it with the feature it belongs to.
+ *
+ * @category Constructors
  */
 export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
   new Bundle(name, assets);
@@ -284,6 +326,8 @@ export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
  * It waits in real time, so it is for the entry point and for a plugin's
  * `layer`, which is built before the game starts, and not for a system or
  * a script.
+ *
+ * @category Running
  */
 export const load: <B extends Entries>(
   bundle: Bundle<B>
@@ -317,6 +361,8 @@ export const load: <B extends Entries>(
  * An app's store of bundles. All three are for the stages between ticks,
  * the frame stage and the input stage: in the tick each throws, since what
  * is loaded, and when, is no part of the game.
+ *
+ * @category Services
  */
 export interface StoreShape {
   /** What the app holds of a bundle now. */
@@ -336,6 +382,8 @@ export interface StoreShape {
 /**
  * The bundles an app has loaded. `Assets.plugin` provides it,
  * `Assets.during` works it, and `yield*` on a bundle reads it.
+ *
+ * @category Services
  */
 export class Store extends Context.Service<Store, StoreShape>()(
   "arcadekit/Assets.Store"
@@ -500,6 +548,8 @@ const storeLayer = Layer.effect(
  * use `Assets.during`, or read a bundle, lists it in `plugins`.
  *
  * Whatever is still loaded when the app's scope closes is let go with it.
+ *
+ * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/Assets", { layer: storeLayer });
 
@@ -521,6 +571,8 @@ export const plugin = Plugin.make("arcadekit/Assets", { layer: storeLayer });
  * the bundle finds it as it is in that frame, wherever the two are listed.
  * One per bundle; to keep a bundle for several states, give a condition
  * that holds in each.
+ *
+ * @category Systems
  */
 export const during = <E, R, B extends Entries>(
   condition: Effect.Effect<boolean, E, R>,

@@ -16,7 +16,11 @@ import type { ComponentDef, SingletonSpec } from "./ecs/component";
 import type { QuerySpec } from "./ecs/world";
 import type { EventDef } from "./Event";
 
-/** The stages of a tick, in the order they run. */
+/**
+ * The stages of a tick, in the order they run.
+ *
+ * @category Constants
+ */
 export const stages = ["preUpdate", "update", "postUpdate"] as const;
 /**
  * The stages of a frame, in the order they run, as a tick has three:
@@ -24,6 +28,8 @@ export const stages = ["preUpdate", "update", "postUpdate"] as const;
  * are loaded; `"frame"`, where the game is drawn and heard; and
  * `"postFrame"` for what has to come after all of that, such as putting
  * the picture on the screen.
+ *
+ * @category Constants
  */
 export const frameStages = ["preFrame", "frame", "postFrame"] as const;
 /**
@@ -32,13 +38,19 @@ export const frameStages = ["preFrame", "frame", "postFrame"] as const;
  * say into actions, just before a tick, when `app.input` is called; and
  * the three of a frame, `"preFrame"`, `"frame"` and `"postFrame"`, which
  * draw the game, when `app.frame` is called.
+ *
+ * @category Models
  */
 export type Stage =
   | (typeof stages)[number]
   | "input"
   | (typeof frameStages)[number];
 
-/** Whether a stage is one of a frame's. */
+/**
+ * Whether a stage is one of a frame's.
+ *
+ * @category Guards
+ */
 export const isFrameStage = (
   stage: Stage
 ): stage is (typeof frameStages)[number] =>
@@ -50,6 +62,8 @@ const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
 /**
  * What sets a hook off: a state being entered or left. `State.onEnter` and
  * `State.onExit` make one.
+ *
+ * @category Models
  */
 export interface Trigger {
   /** The state, as `State.define` gave it. */
@@ -61,6 +75,8 @@ export interface Trigger {
 /**
  * What a system's access is said of: a component, a singleton or a state,
  * or an event.
+ *
+ * @category Models
  */
 export type Touched = ComponentDef<any> | SingletonSpec<any> | EventDef<any>;
 
@@ -69,6 +85,8 @@ export type Touched = ComponentDef<any> | SingletonSpec<any> | EventDef<any>;
  * all of what the system does to the game: once a system has said it, the
  * app holds the system to it, and whatever it left out throws where it is
  * done and names what to add.
+ *
+ * @category Models
  */
 export interface Access {
   /**
@@ -104,10 +122,16 @@ export interface Access {
 /**
  * How a system touches a thing: it reads it, it reads it through a change
  * query and so reacts to whoever writes it, or it writes it.
+ *
+ * @category Models
  */
 export type Touch = "reads" | "watches" | "writes";
 
-/** A system's access, worked out: every thing it touches, by name. */
+/**
+ * A system's access, worked out: every thing it touches, by name.
+ *
+ * @category Models
+ */
 export interface Resolved {
   /** Components, singletons and states. */
   readonly components: ReadonlyMap<
@@ -123,6 +147,13 @@ export interface Resolved {
   readonly scripts: boolean;
 }
 
+/**
+ * A system: one Effect that runs once per tick, or once per frame, in its
+ * stage. Made with `System.make`; `E` is what it can fail with and `R` what
+ * it needs.
+ *
+ * @category Models
+ */
 export interface System<out E = never, out R = never> extends Pipeable {
   readonly name: string;
   readonly stage: Stage;
@@ -172,6 +203,8 @@ const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
  * re-run every tick. `Effect.fn` is deliberately not used here: it captures a
  * stack trace on every call, which is fine for request handlers but not for
  * something that runs sixty times a second.
+ *
+ * @category Constructors
  */
 export const make = <Eff extends Effect.Effect<any, any, any>>(
   name: string,
@@ -217,6 +250,8 @@ export const make = <Eff extends Effect.Effect<any, any, any>>(
  * that it issues as actions with `Actions.enqueue`, which are logged and
  * applied at the start of the tick. A replay runs no input stage: the
  * actions are in its log.
+ *
+ * @category Combinators
  */
 export const inStage: {
   (stage: Stage): <E, R>(self: System<E, R>) => System<E, R>;
@@ -229,6 +264,8 @@ export const inStage: {
  * Orders a system after another one in the same stage. One in an earlier
  * stage has run already, and naming it is no error; one in a later stage
  * is.
+ *
+ * @category Combinators
  */
 export const after: {
   (
@@ -249,6 +286,8 @@ export const after: {
  * slots a system in ahead of one that belongs to a plugin it depends on.
  * One in a later stage runs after it already, and naming it is no error;
  * one in an earlier stage is.
+ *
+ * @category Combinators
  */
 export const before: {
   (
@@ -280,6 +319,8 @@ export const before: {
  *   event is older than; what its change queries have yet to visit is
  *   kept, however long it was away.
  * - What the condition needs and can fail with are the system's too.
+ *
+ * @category Combinators
  */
 export const runIf: {
   <E2, R2>(
@@ -357,6 +398,8 @@ export const triggered = <E, R>(
  * - It is not asked for while the system has no condition, or while every
  *   condition holds. Given twice, both run, in the order given.
  * - What it needs and can fail with are the system's too.
+ *
+ * @category Combinators
  */
 export const otherwise: {
   <E2, R2>(
@@ -404,6 +447,8 @@ export const otherwise: {
  * - A system that has not said may do anything, as before, and is told of
  *   in `app.undeclared`.
  * - Given twice, both hold.
+ *
+ * @category Combinators
  */
 export const access: {
   (access: Access): <E, R>(self: System<E, R>) => System<E, R>;
@@ -435,6 +480,8 @@ const STRENGTH: Readonly<Record<Touch, number>> = {
 /**
  * A system's access, worked out from what it said: undefined for a system
  * that has not said.
+ *
+ * @category Utilities
  */
 export const accessOf = (system: System<any, any>): Resolved | undefined => {
   const said = system.access;
@@ -505,7 +552,11 @@ export const accessOf = (system: System<any, any>): Resolved | undefined => {
   };
 };
 
-/** Wraps each run in a tracing span named after the system. Use in dev builds. */
+/**
+ * Wraps each run in a tracing span named after the system. Use in dev builds.
+ *
+ * @category Combinators
+ */
 export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
   build({
     ...self,
@@ -618,6 +669,8 @@ export const order = (
 /**
  * Two systems whose order matters, and that nothing decides but the order
  * they happened to be listed in.
+ *
+ * @category Models
  */
 export interface Conflict {
   /** The one that runs first, as things stand. */
@@ -634,7 +687,11 @@ export interface Conflict {
   }[];
 }
 
-/** What `System.conflicts` finds in a list of systems. */
+/**
+ * What `System.conflicts` finds in a list of systems.
+ *
+ * @category Models
+ */
 export interface Report {
   /** In the order the systems run in. */
   readonly conflicts: readonly Conflict[];
@@ -714,6 +771,8 @@ const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
  * `app.conflicts` is this for an app's systems. A game settles a conflict
  * by saying the order, which changes nothing when it is the order they run
  * in already.
+ *
+ * @category Utilities
  */
 export const conflicts = (systems: readonly System<any, any>[]): Report => {
   const found: Conflict[] = [];

@@ -29,6 +29,8 @@ import { World } from "./Services";
  * It extends `Effectable.Class`, which makes it an Effect: `yield*` works on
  * it, `.pipe()` comes for free, and the `World` requirement shows up in the
  * type of any system that uses it.
+ *
+ * @category Models
  */
 export class Query<D extends Terms>
   extends Effectable.Class<QueryView<D>, never, World>
@@ -57,10 +59,20 @@ export class Query<D extends Terms>
   }
 }
 
-/** Entities that have all of these components; their data is passed to the loop. */
+/**
+ * Entities that have all of these components; their data is passed to the loop.
+ *
+ * @category Constructors
+ */
 export const all = <const D extends Terms>(...terms: D): Query<D> =>
   new Query(terms, [], []);
 
+/**
+ * Narrows a query to entities that also have these components, without
+ * reading their data: `Query.all(Position).pipe(Query.with(Player))`.
+ *
+ * @category Combinators
+ */
 const with_: {
   (
     ...defs: readonly ComponentDef<any>[]
@@ -90,7 +102,11 @@ export {
   with_ as with,
 };
 
-/** Exclude entities that have any of these components. */
+/**
+ * Exclude entities that have any of these components.
+ *
+ * @category Combinators
+ */
 export const without: {
   (
     ...defs: readonly ComponentDef<any>[]
@@ -134,6 +150,8 @@ export const without: {
  *   there is one place per query, shared by whoever uses it there.
  * - With several components, or with `Query.added` as well, an entity is
  *   visited when any one of them fired.
+ *
+ * @category Combinators
  */
 export const changed: {
   (
@@ -163,6 +181,8 @@ export const changed: {
  * Visit only the entities that gained one of these components since whoever
  * is asking last visited: by being spawned with it, or by `add`. Otherwise
  * as `Query.changed`.
+ *
+ * @category Combinators
  */
 export const added: {
   (
@@ -192,6 +212,8 @@ export const added: {
  * A query's terms, with the ones it only reads marked as such: `R` is the
  * components `Query.reads` was given, or `never` for all of them. Components
  * are told apart by their names, which are in their types.
+ *
+ * @category Type-level
  */
 export type Reading<D extends Terms, R> = {
   [K in keyof D]: [R] extends [never]
@@ -222,6 +244,8 @@ export type Reading<D extends Terms, R> = {
  * The word is the query's own. Raw columns are typed arrays all the same,
  * and a loop that writes one past the compiler has written it: no change
  * query hears of it, and no refusal takes it back.
+ *
+ * @category Combinators
  */
 export const reads: {
   <const R extends readonly ComponentDef<any>[]>(
@@ -265,6 +289,8 @@ export const reads: {
  * once per removal. An entity that was despawned lost all it had, and its
  * id is no longer alive. Removals are noticed from the first time a reader
  * asks, and each system and handler has its own place in them.
+ *
+ * @category Models
  */
 export class Removed extends Effectable.Class<RemovedReader, never, World> {
   private effect: Effect.Effect<RemovedReader, never, World> | undefined;
@@ -280,5 +306,11 @@ export class Removed extends Effectable.Class<RemovedReader, never, World> {
   }
 }
 
+/**
+ * The entities that lost a component since this system last asked:
+ * `(yield* Query.removed(Burning))`.
+ *
+ * @category Constructors
+ */
 export const removed = (component: ComponentDef<any>): Removed =>
   new Removed(component);

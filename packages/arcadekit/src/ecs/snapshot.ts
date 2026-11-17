@@ -15,7 +15,11 @@
 import { isBoxed } from "./component";
 import type { Column, FieldKind, RefCodec } from "./component";
 
-/** Why a snapshot could not be taken, or could not be loaded. */
+/**
+ * Why a snapshot could not be taken, or could not be loaded.
+ *
+ * @category Models
+ */
 export type SnapshotProblem =
   | "not a snapshot"
   | "newer format"
@@ -30,6 +34,8 @@ export type SnapshotProblem =
  * A snapshot could not be taken or loaded. `problem` says which kind of
  * trouble it is, for code; the message says it for a person, with the name
  * of the component or field where there is one.
+ *
+ * @category Errors
  */
 export class SnapshotError extends Error {
   override readonly name = "SnapshotError";
@@ -439,7 +445,11 @@ export const readColumn = (
 // A snapshot read without the program's components
 // ---------------------------------------------------------------------------
 
-/** A component as a snapshot describes it: by name, with its fields. */
+/**
+ * A component as a snapshot describes it: by name, with its fields.
+ *
+ * @category Models
+ */
 export interface SnapshotComponent {
   name: string;
   /** Where its data is: in tables, in a sparse set, or one value for the world. */
@@ -447,7 +457,11 @@ export interface SnapshotComponent {
   fields: { name: string; kind: FieldKind }[];
 }
 
-/** One table of a snapshot: the components its entities have, and their rows. */
+/**
+ * One table of a snapshot: the components its entities have, and their rows.
+ *
+ * @category Models
+ */
 export interface SnapshotTable {
   /** Names of the table's components. */
   components: string[];
@@ -457,7 +471,11 @@ export interface SnapshotTable {
   columns: Record<string, Record<string, Column>>;
 }
 
-/** One sparse component of a snapshot: who has it, and their values. */
+/**
+ * One sparse component of a snapshot: who has it, and their values.
+ *
+ * @category Models
+ */
 export interface SnapshotSparse {
   component: string;
   /** The index (not the id) of each entity that has the component. */
@@ -466,7 +484,11 @@ export interface SnapshotSparse {
   columns: Record<string, Column>;
 }
 
-/** One singleton of a snapshot: the value the world held of it. */
+/**
+ * One singleton of a snapshot: the value the world held of it.
+ *
+ * @category Models
+ */
 export interface SnapshotSingleton {
   component: string;
   /** Per field name: a column of the one value. */
@@ -481,6 +503,8 @@ export interface SnapshotSingleton {
  * A `json` field's column holds the plain data itself. A `ref` field's
  * column holds what its codec had made of each value. A `transient` field
  * has no column.
+ *
+ * @category Models
  */
 export interface SnapshotContents {
   /** The random generator's four words. */
@@ -529,7 +553,11 @@ const columnOf = (kind: FieldKind, count: number): Column => {
 const damaged = (how: string): SnapshotError =>
   new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
 
-/** Reads a snapshot into its contents. Needs no component definitions. */
+/**
+ * Reads a snapshot into its contents. Needs no component definitions.
+ *
+ * @category Codecs
+ */
 export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
   const reader = new Reader(bytes);
   if (reader.left < 8 || reader.u32() !== MAGIC) {
@@ -678,6 +706,8 @@ const byName = (a: { name: string }, b: { name: string }): number =>
  * to hang together: every component a table or a sparse set names is
  * listed, and every field that is saved has a column of one value per row.
  * `World.load` checks the rest when it reads the result.
+ *
+ * @category Codecs
  */
 export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
   const components = contents.components.toSorted(byName);

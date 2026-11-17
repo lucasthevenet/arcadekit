@@ -26,6 +26,12 @@ const mix = (value: number): number => {
 
 const GOLDEN = 0x9e3779b9;
 
+/**
+ * A seeded random number generator, xoshiro128**: the same seed gives the
+ * same numbers on every machine. A world owns one, as `world.random`.
+ *
+ * @category Models
+ */
 export class Rng {
   /**
    * The generator's whole state. Copy it to save the generator, and write it

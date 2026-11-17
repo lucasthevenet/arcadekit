@@ -7,10 +7,9 @@ import { fileURLToPath } from "node:url";
 export const SITE_URL = "https://arcadekit.dev";
 export const REPO_URL = "https://github.com/lucasthevenet/arcadekit";
 /**
- * The branch the site is built from, and that its links to GitHub point at. The pages describe
- * the rebuild, which is on `next` until it becomes `main`.
+ * The branch the site is built from, and that its links to GitHub point at.
  */
-export const BRANCH = "next";
+export const BRANCH = "main";
 export const NPM_URL = "https://www.npmjs.com/package/arcadekit";
 
 /** The repository's root on disk. The pages are read from it in place. */

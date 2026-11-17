@@ -437,6 +437,12 @@ export class RelationIndex {
 // Change logs (one per watched component and kind of change)
 // ---------------------------------------------------------------------------
 
+/**
+ * What a change query visits: entities whose component was written, added
+ * or removed.
+ *
+ * @category Models
+ */
 export type ChangeKind = "changed" | "added" | "removed";
 
 /** A reader's place in a change log. @internal */
@@ -454,7 +460,11 @@ export interface ChangeCursor {
   claimed: boolean;
 }
 
-/** The changes of one kind to one component that a save holds. */
+/**
+ * The changes of one kind to one component that a save holds.
+ *
+ * @category Models
+ */
 export interface SavedChanges {
   readonly component: string;
   readonly kind: ChangeKind;
@@ -812,6 +822,8 @@ export class ChangeLog {
 /**
  * The entities that lost a component since this reader last read: by
  * `remove`, or by being despawned. Once per removal, oldest first.
+ *
+ * @category Models
  */
 export class RemovedReader {
   private readonly restored: number;
@@ -859,6 +871,8 @@ export class RemovedReader {
  * An app gives its world one before each system that declared its access
  * runs, and takes it away after. With the storage core on its own, it is
  * a way to hold a piece of code to what it is meant to touch.
+ *
+ * @category Models
  */
 export interface Guard {
   /** Who runs under it, for a message: `System "Movement"`. */
@@ -896,11 +910,18 @@ const describeSpec = (spec: QuerySpec<any>): string => {
 // Queries
 // ---------------------------------------------------------------------------
 
+/**
+ * The components a query reads, in the order its loop is given them.
+ *
+ * @category Models
+ */
 export type Terms = readonly ComponentDef<any>[];
 
 /**
  * A world-independent description of a query. Any object with this shape
  * works; the Effect layer supplies a yieldable, pipeable implementation.
+ *
+ * @category Models
  */
 export interface QuerySpec<D extends Terms = Terms> {
   /** Components whose data the query reads or writes (table or sparse). */
@@ -937,6 +958,8 @@ export type AccessorsOf<D extends Terms> = {
 /**
  * The columns of a sparse component. They are not aligned with table rows,
  * so look the row up per entity: `burning.columns.seconds[burning.indexOf(entity)]`.
+ *
+ * @category Models
  */
 export interface SparseColumns<S extends Schema, C = ColumnsOf<S>> {
   readonly columns: C;
@@ -944,7 +967,11 @@ export interface SparseColumns<S extends Schema, C = ColumnsOf<S>> {
   readonly indexOf: (entity: number) => number;
 }
 
-/** The entity ids of a table's rows. Reading an element gives an `Entity`. */
+/**
+ * The entity ids of a table's rows. Reading an element gives an `Entity`.
+ *
+ * @category Models
+ */
 export type EntityColumn = Float64Array & Readonly<Record<number, Entity>>;
 
 export type ColumnSetsOf<D extends Terms> = {
@@ -1022,6 +1049,12 @@ interface Members {
 type Callback = (...args: any[]) => void;
 type OnRun = (table: Table, start: number, end: number) => void;
 
+/**
+ * A query over one world: what a system gets from `yield* SomeQuery`, to
+ * loop over with `each`.
+ *
+ * @category Models
+ */
 export class QueryView<D extends Terms = Terms> {
   /** The world's count of restores when this view was made. */
   private readonly restored: number;
@@ -1942,6 +1975,13 @@ export class QueryView<D extends Terms = Terms> {
 // World
 // ---------------------------------------------------------------------------
 
+/**
+ * The storage core: entities, the tables of their components, sparse
+ * sets, singletons and change logs. Plain synchronous code with no Effect;
+ * an app holds one and gives it to systems as the `World` service.
+ *
+ * @category Models
+ */
 export class World {
   private recTable = new Int32Array(1024).fill(FREE);
   private recRow = new Int32Array(1024);
@@ -4008,6 +4048,8 @@ type Command =
 /**
  * Queues structural changes so they can be made from inside query loops and
  * applied in one pass at a known point in the tick.
+ *
+ * @category Models
  */
 export class CommandBuffer {
   private ops: Command[] = [];

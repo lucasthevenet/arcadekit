@@ -62,6 +62,8 @@ import * as System from "./System";
  * It is made by whatever loads it for the output that will play it: in a
  * page, the asset `Browser.sound(url)`. `name` is what a log or a recorder
  * calls it, and `data` what the output plays, which only the output reads.
+ *
+ * @category Models
  */
 export class Clip {
   constructor(
@@ -77,11 +79,17 @@ export class Clip {
  *   const Forest = Assets.bundle("game/Forest", {
  *     chirp: Assets.make("/chirp.wav", () => Effect.succeed(Sound.clip("chirp"))),
  *   })
+ *
+ * @category Constructors
  */
 export const clip = (name: string, data?: unknown): Clip =>
   new Clip(name, data);
 
-/** What can be played: a sound of the output's own, by its name, or one that was loaded. */
+/**
+ * What can be played: a sound of the output's own, by its name, or one that was loaded.
+ *
+ * @category Models
+ */
 export type Playable = string | Clip;
 
 const nameOf = (sound: Playable): string =>
@@ -89,6 +97,12 @@ const nameOf = (sound: Playable): string =>
 
 // --- where sound goes ------------------------------------------------------------
 
+/**
+ * What plays sound: an output, such as a page's Web Audio. The player
+ * tells it what to play once a frame has run.
+ *
+ * @category Services
+ */
 export interface OutputShape {
   /**
    * Starts a cue now: at `volume`, where 1 is the cue as it was recorded,
@@ -118,17 +132,27 @@ const silent: OutputShape = { play() {}, music() {} };
  * is what a server, a replay and most tests want. A page provides its
  * own: `Browser.layerSound(files)`, or the `sounds` of `Browser.runMain`.
  * A test provides one that notes what it was asked, `Sound.makeRecorder()`.
+ *
+ * @category Services
  */
 export const Output: Context.Reference<OutputShape> =
   Context.Reference<OutputShape>("arcadekit/Sound.Output", {
     defaultValue: () => silent,
   });
 
-/** Provides an output to the game: `Effect.provide(Sound.layer(output))`. */
+/**
+ * Provides an output to the game: `Effect.provide(Sound.layer(output))`.
+ *
+ * @category Layers
+ */
 export const layer = (output: OutputShape): Layer.Layer<never> =>
   Layer.succeed(Output, output) as Layer.Layer<never>;
 
-/** A cue that was played, as a recorder notes it. */
+/**
+ * A cue that was played, as a recorder notes it.
+ *
+ * @category Testing
+ */
 export interface Played {
   /** The cue's name, or the name of the clip that was played. */
   readonly cue: string;
@@ -138,7 +162,11 @@ export interface Played {
   readonly clip?: Clip;
 }
 
-/** What a channel was told to play, as a recorder notes it. */
+/**
+ * What a channel was told to play, as a recorder notes it.
+ *
+ * @category Testing
+ */
 export interface Scored {
   readonly channel: string;
   /** The track's name, or the name of the clip; `undefined` for silence. */
@@ -151,6 +179,12 @@ export interface Scored {
   readonly once?: true;
 }
 
+/**
+ * An output that notes what it is told and plays nothing, from
+ * `Sound.makeRecorder()`.
+ *
+ * @category Testing
+ */
 export interface Recorder extends OutputShape {
   /** Every cue it was asked to play, oldest first. */
   readonly played: Played[];
@@ -171,6 +205,8 @@ export interface Recorder extends OutputShape {
  *   app.tick(1 / 60)
  *   app.frame(0)
  *   sound.played   // [{ cue: "coin", volume: 1, rate: 1 }]
+ *
+ * @category Testing
  */
 export const makeRecorder = (): Recorder => {
   const played: Played[] = [];
@@ -211,7 +247,11 @@ export const makeRecorder = (): Recorder => {
 /** The channel of a system made with `Sound.music` that names none. */
 const MUSIC = "music";
 
-/** How a cue is played. */
+/**
+ * How a cue is played.
+ *
+ * @category Options
+ */
 export interface Options {
   /** How loud: 1, the cue as it was recorded, when left out. Not below 0. */
   readonly volume?: number;
@@ -219,7 +259,11 @@ export interface Options {
   readonly rate?: number;
 }
 
-/** How a channel plays its track. */
+/**
+ * How a channel plays its track.
+ *
+ * @category Options
+ */
 export interface MusicOptions {
   /** How loud: 1, the track as it was recorded, when left out. Not below 0. */
   readonly volume?: number;
@@ -238,6 +282,11 @@ export interface MusicOptions {
   readonly once?: boolean;
 }
 
+/**
+ * The player, as a system of the frame stage gets it from `yield* Sound.Player`.
+ *
+ * @category Services
+ */
 export interface PlayerShape {
   /** Whether sound goes anywhere. False on a server, in a replay, in most tests. */
   readonly audible: boolean;
@@ -283,6 +332,8 @@ export interface PlayerShape {
  * An app's player of cues. `Sound.plugin` provides it and `Sound.cues`
  * works it. A system of the frame stage can play through it too, for a
  * sound that no event stands for: `(yield* Sound.Player).play("click")`.
+ *
+ * @category Services
  */
 export class Player extends Context.Service<Player, PlayerShape>()(
   "arcadekit/Sound.Player"
@@ -445,6 +496,12 @@ const Flush = System.make("arcadekit/Sound.Flush", function* () {
   (yield* Player)._flush();
 }).pipe(System.inStage("postFrame"));
 
+/**
+ * Plays what the frame's systems ask for. A game that has cues or music
+ * lists it among its plugins.
+ *
+ * @category Plugins
+ */
 export const plugin = Plugin.make("arcadekit/Sound", {
   layer: playerLayer,
   systems: [Flush],
@@ -452,7 +509,11 @@ export const plugin = Plugin.make("arcadekit/Sound", {
 
 // --- cues: from the game's events to what they sound like ---------------------------
 
-/** A cue with how to play it. */
+/**
+ * A cue with how to play it.
+ *
+ * @category Models
+ */
 export interface Cue extends Options {
   readonly cue: Playable;
 }
@@ -460,13 +521,19 @@ export interface Cue extends Options {
 /**
  * What an event sounds like: a cue's name or a clip, either with how to
  * play it, or how to make one of those of the event, which may be nothing.
+ *
+ * @category Type-level
  */
 export type CueOf<P> =
   | Playable
   | Cue
   | ((payload: P) => Playable | Cue | undefined);
 
-/** One line of `Sound.cues`: when this event happens, play that cue. */
+/**
+ * One line of `Sound.cues`: when this event happens, play that cue.
+ *
+ * @category Models
+ */
 export interface Line {
   /** @internal */
   readonly event: Event.EventDef<any>;
@@ -483,6 +550,8 @@ export interface Line {
  *
  * The cue is a name or a clip, either with a volume and a rate, or a
  * function of the event's payload that gives one of those, or nothing.
+ *
+ * @category Constructors
  */
 export const on = <P>(event: Event.EventDef<P>, cue: CueOf<P>): Line => ({
   event,
@@ -546,6 +615,8 @@ const byEvent = (lines: readonly Line[]): Heard => {
  * - While the app does not hold the bundle loaded nothing is played, and
  *   what happened meanwhile is not played later.
  * - It needs `Assets.plugin` as well.
+ *
+ * @category Systems
  */
 export const cues: {
   <B extends Entries>(
@@ -617,12 +688,20 @@ export const cues: {
 
 // --- music: what should be heard, for as long as the game is as it is ----------------
 
-/** A track with how to play it. */
+/**
+ * A track with how to play it.
+ *
+ * @category Models
+ */
 export interface Track extends MusicOptions {
   readonly track: Playable;
 }
 
-/** What a channel should be playing: a track, one with how to play it, or nothing. */
+/**
+ * What a channel should be playing: a track, one with how to play it, or nothing.
+ *
+ * @category Type-level
+ */
 export type TrackOf = Playable | Track | undefined;
 
 const isTrack = (picked: Playable | Track): picked is Track =>
@@ -669,6 +748,8 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *   music that is for a level stops when the level is left, unless
  *   another system of its channel plays. Run again, the body says what
  *   plays, from the start of the track.
+ *
+ * @category Systems
  */
 export const music = <Eff extends Effect.Effect<any, any, any>>(
   name: string,

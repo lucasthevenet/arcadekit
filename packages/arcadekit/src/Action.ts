@@ -41,14 +41,22 @@ import type { Exit } from "effect";
 
 import * as Event from "./Event";
 
-/** The payload did not match the action's schema. The handler was not run. */
+/**
+ * The payload did not match the action's schema. The handler was not run.
+ *
+ * @category Errors
+ */
 export class InvalidPayload extends Data.TaggedError("InvalidPayload")<{
   readonly action: string;
   /** What was wrong, as reported by the schema. */
   readonly message: string;
 }> {}
 
-/** An action arrived by name and the app has no handler for that name. */
+/**
+ * An action arrived by name and the app has no handler for that name.
+ *
+ * @category Errors
+ */
 export class UnknownAction extends Data.TaggedError("UnknownAction")<{
   readonly action: string;
 }> {}
@@ -57,6 +65,8 @@ export class UnknownAction extends Data.TaggedError("UnknownAction")<{
  * @param N  the action's name
  * @param P  the payload a handler receives
  * @param VE `InvalidPayload` when the action has a schema, otherwise `never`
+ *
+ * @category Models
  */
 export interface ActionDef<N extends string, P, VE = never> {
   readonly name: N;
@@ -80,6 +90,8 @@ export interface ActionDef<N extends string, P, VE = never> {
  * Without one, only the compiler checks the payload, which is fine for
  * actions that never leave the program. Curried so the payload type can be
  * given while the name is inferred: `Action.define<Payload>()("Strike")`.
+ *
+ * @category Constructors
  */
 export function define<P = void>(): <const N extends string>(
   name: N
@@ -112,6 +124,8 @@ export function define(
  * hands a server its clients' messages the same way, wrapped in a
  * `FromClient` that holds the sender's id, and bevy_ggrs gives each
  * player's input under that player's handle.)
+ *
+ * @category Models
  */
 export interface Origin {
   /**
@@ -124,6 +138,12 @@ export interface Origin {
   readonly from: string | undefined;
 }
 
+/**
+ * How an action is applied: the action, and what it does with a payload
+ * and who issued it. Made with `Action.handler`.
+ *
+ * @category Models
+ */
 export interface Handler<N extends string, P, A, E, R> {
   readonly action: ActionDef<N, P, unknown>;
   readonly handle: (payload: P, origin: Origin) => Effect.Effect<A, E, R>;
@@ -142,6 +162,8 @@ export interface Handler<N extends string, P, A, E, R> {
  *     if (turn.player !== from) return yield* Effect.fail(new NotYourTurn())
  *     ...
  *   })
+ *
+ * @category Constructors
  */
 export const handler = <
   N extends string,
@@ -166,6 +188,8 @@ export const handler = <
  * One action that came from outside the simulation, as recorded in
  * `app.actionLog`: one that was dispatched and accepted, or one that was
  * enqueued.
+ *
+ * @category Models
  */
 export interface Logged {
   /** How many ticks had completed when the action was dispatched or enqueued. */
@@ -195,6 +219,8 @@ export interface Logged {
  * What the world's hash was at one point of the game, as recorded in
  * `app.actionLog`. A replay compares its own world against it, which is how
  * it notices that it has gone another way.
+ *
+ * @category Models
  */
 export interface Checkpoint {
   /** How many ticks had completed when the hash was taken. */
@@ -203,9 +229,19 @@ export interface Checkpoint {
   readonly hash: number;
 }
 
-/** An entry of `app.actionLog`: an applied action, or a checkpoint. */
+/**
+ * An entry of `app.actionLog`: an applied action, or a checkpoint.
+ *
+ * @category Models
+ */
 export type LogEntry = Logged | Checkpoint;
 
+/**
+ * Whether an entry of the log is a checkpoint, the world's hash at a tick,
+ * rather than an action.
+ *
+ * @category Guards
+ */
 export const isCheckpoint = (entry: LogEntry): entry is Checkpoint =>
   "hash" in entry;
 
@@ -232,7 +268,11 @@ const LogSchema = Schema.fromJsonString(
   )
 );
 
-/** Turns an action log into text, for a save file or the network. */
+/**
+ * Turns an action log into text, for a save file or the network.
+ *
+ * @category Codecs
+ */
 export const encodeLog = (log: readonly LogEntry[]): string =>
   JSON.stringify(log);
 
@@ -240,6 +280,8 @@ export const encodeLog = (log: readonly LogEntry[]): string =>
  * Reads an action log back from text. This checks the log's own shape; each
  * payload is checked against its action's schema, and each checkpoint
  * against the world, when the log is replayed.
+ *
+ * @category Codecs
  */
 export const decodeLog = (
   text: string
@@ -252,6 +294,8 @@ export const decodeLog = (
 /**
  * Emitted when a queued action is refused. (An action dispatched directly
  * returns its failure to the caller instead.)
+ *
+ * @category Events
  */
 export const Rejected = Event.define<{
   readonly action: string;
@@ -266,6 +310,8 @@ export const Rejected = Event.define<{
  * rules as players. The action is applied at the start of the next tick. It
  * is not logged: it is the simulation's own doing, and a replay does it
  * again. Code outside the simulation uses `app.dispatch` or `app.enqueue`.
+ *
+ * @category Services
  */
 export class Actions extends Context.Service<
   Actions,

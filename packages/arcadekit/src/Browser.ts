@@ -36,6 +36,8 @@ const describe = (error: unknown): string =>
  * A page's screen: a frame is due once per repaint
  * (`requestAnimationFrame`), and nobody can see the game while the
  * document is hidden. It holds nothing.
+ *
+ * @category Services
  */
 export const display: Driver.DisplayShape = {
   request(callback) {
@@ -51,7 +53,11 @@ export const display: Driver.DisplayShape = {
 
 // --- the devices ---------------------------------------------------------------
 
-/** As much of a gamepad as is read: the browser's `Gamepad` is one. */
+/**
+ * As much of a gamepad as is read: the browser's `Gamepad` is one.
+ *
+ * @category Models
+ */
 export interface GamepadLike {
   readonly index: number;
   readonly connected: boolean;
@@ -59,7 +65,11 @@ export interface GamepadLike {
   readonly axes: ArrayLike<number>;
 }
 
-/** As much of an element as the pointer is measured against. */
+/**
+ * As much of an element as the pointer is measured against.
+ *
+ * @category Models
+ */
 export interface PointerTarget extends EventTarget {
   readonly getBoundingClientRect?: () => {
     readonly left: number;
@@ -67,6 +77,12 @@ export interface PointerTarget extends EventTarget {
   };
 }
 
+/**
+ * How `Browser.runMain` and `Browser.layer` connect a game to the page:
+ * what the pointer is measured against, the gamepads, and sound.
+ *
+ * @category Options
+ */
 export interface Options {
   /**
    * What the pointer is pressed on, and what its place is measured from:
@@ -297,6 +313,8 @@ const listen = (
  * - It listens from when it is built until its scope closes, so provide it
  *   to the whole program and not to `App.make` alone. `Browser.runMain`
  *   does.
+ *
+ * @category Layers
  */
 export const layer = (options: Options = {}): Layer.Layer<never> => {
   const page = Layer.merge(
@@ -326,7 +344,11 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
 
 // --- sound -----------------------------------------------------------------------
 
-/** As much of a page's audio as is used: the browser's `AudioContext` is one. */
+/**
+ * As much of a page's audio as is used: the browser's `AudioContext` is one.
+ *
+ * @category Models
+ */
 export interface AudioLike {
   readonly destination: unknown;
   readonly state?: string;
@@ -357,7 +379,11 @@ export interface AudioLike {
   close(): Promise<unknown>;
 }
 
-/** As much of what plays a streamed track as is used: an `<audio>` element is one. */
+/**
+ * As much of what plays a streamed track as is used: an `<audio>` element is one.
+ *
+ * @category Models
+ */
 export interface MediaLike {
   loop: boolean;
   play(): Promise<unknown>;
@@ -393,6 +419,8 @@ class Streamed {
  * - Started, faded and stopped as any track, and with `once` played to its
  *   end. One that goes round may be heard to join where it does: a short
  *   piece that has to go round without a seam is better decoded.
+ *
+ * @category Constructors
  */
 export const stream = (url: string): Sound.Clip =>
   Sound.clip(url, new Streamed(url));
@@ -470,6 +498,8 @@ interface Channel {
  * - When its scope closes the audio is closed and the page is no longer
  *   listened to, so it is provided to the whole program. `Browser.runMain`
  *   and `Browser.layer` do, unless told `sounds: false`.
+ *
+ * @category Layers
  */
 export const layerSound = (
   files: Readonly<Record<string, string | Sound.Clip>> = {},
@@ -822,6 +852,8 @@ export const layerSound = (
  * - Let go with its bundle, it is no longer the bundle's to play; what is
  *   still sounding of it plays to its end, or until its channel is told
  *   otherwise, and is freed after.
+ *
+ * @category Constructors
  */
 export const sound = (url: string): Assets.Asset<Sound.Clip> =>
   Assets.make(url, (data, at) =>
@@ -845,6 +877,8 @@ export const sound = (url: string): Assets.Asset<Sound.Clip> =>
  *   const Forest = Assets.bundle("game/Forest", {
  *     backdrop: Browser.image("/forest.png"),
  *   })
+ *
+ * @category Constructors
  */
 export const image = (url: string): Assets.Asset<ImageBitmap> =>
   Assets.make(url, (data, at) =>
@@ -879,6 +913,8 @@ export const image = (url: string): Assets.Asset<ImageBitmap> =>
  * - When the page goes away for good (`pagehide`, and not into the
  *   back/forward cache) the game is interrupted: the frame loop stops, the
  *   app's scope closes, and the page is no longer listened to.
+ *
+ * @category Running
  */
 export const runMain = <A, E>(
   game: Effect.Effect<A, E>,

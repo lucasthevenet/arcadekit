@@ -7,12 +7,23 @@
  */
 import { Context, Layer } from "effect";
 
+/**
+ * Makes a resource: a value with a default, which a layer can override.
+ *
+ *   const Gravity = Resource.make("game/Gravity", { defaultValue: () => 9.81 })
+ *
+ * @category Constructors
+ */
 export const make = <A>(
   key: string,
   options: { readonly defaultValue: () => A }
 ): Context.Reference<A> => Context.Reference<A>(key, options);
 
-/** A layer that overrides a resource's default value. */
+/**
+ * A layer that overrides a resource's default value.
+ *
+ * @category Layers
+ */
 export const layer = <A>(
   resource: Context.Reference<A>,
   value: A

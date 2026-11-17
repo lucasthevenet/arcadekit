@@ -16,8 +16,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { docsLoader } from "@astrojs/starlight/loaders";
 import type { Loader, LoaderContext } from "astro/loaders";
 
-import { discoverPages } from "./pages.ts";
-import type { RepositoryPage } from "./pages.ts";
+import { readModule, renderModule } from "./api.ts";
+import { discoverPages, firstParagraph } from "./pages.ts";
+import type { ModulePage, RepositoryPage } from "./pages.ts";
 import { BRANCH, REPO_ROOT, REPO_URL } from "./site.ts";
 
 /** Adds a page of the repository to the collection, rendered as it is now on disk. */
@@ -48,13 +49,34 @@ const store = async (context: LoaderContext, page: RepositoryPage) => {
   });
 };
 
+/** A module's page as a page of the repository: its doc comments, rendered as markdown. */
+const modulePage = (page: ModulePage): RepositoryPage => {
+  const module = readModule(
+    REPO_ROOT,
+    `packages/${page.folder}`,
+    page.packageName,
+    page.name,
+    page.file
+  );
+  return {
+    ...page,
+    title: page.name,
+    description: firstParagraph(`# ${page.name}\n\n${module.comment}`),
+    body: renderModule(module, REPO_URL, BRANCH),
+  };
+};
+
 export const pagesLoader = (): Loader => ({
   name: "arcadekit-pages",
   load: async (context) => {
     // Starlight's own loader first: it removes every entry it didn't load, these included.
     await docsLoader().load(context);
     const pages = discoverPages();
-    await Promise.all(pages.repository.map((page) => store(context, page)));
+    await Promise.all(
+      [...pages.repository, ...pages.modules.map(modulePage)].map((page) =>
+        store(context, page)
+      )
+    );
 
     // `astro dev` reloads a page as its file changes. A new page is found when the site starts:
     // restart `pnpm dev:docs` after adding one.

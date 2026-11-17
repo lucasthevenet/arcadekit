@@ -26,7 +26,11 @@ import { readSnapshot, SnapshotError, writeSnapshot } from "./ecs/snapshot";
 import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
 import type { SavedChanges } from "./ecs/world";
 
-/** The events of one kind that were waiting to be read when a game was saved. */
+/**
+ * The events of one kind that were waiting to be read when a game was saved.
+ *
+ * @category Models
+ */
 export interface SavedEvents {
   readonly name: string;
   /** Each event's payload in its JSON form, oldest first. */
@@ -35,6 +39,13 @@ export interface SavedEvents {
   readonly read: Readonly<Record<string, number>>;
 }
 
+/**
+ * A game held between two ticks, made by `app.save()`: its world as a
+ * snapshot, its time, what was waiting for the next tick, and how long its
+ * log was. `Save.encode` turns it into bytes, and `App.load` goes on from it.
+ *
+ * @category Models
+ */
 export interface Save {
   /**
    * The version of the game that wrote the save: the `version` its app was
@@ -76,6 +87,8 @@ export interface Save {
  * A game could not be saved as it stands. The message says what is in the
  * way and names it: a queued action or a waiting event with no schema, a
  * field that holds what it cannot save, a command that is still queued.
+ *
+ * @category Errors
  */
 export class SaveRefused extends Data.TaggedError("SaveRefused")<{
   readonly message: string;
@@ -90,6 +103,8 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
  * - `"no migration"`: an earlier one did, and the game has no migration
  *   from that version;
  * - `"migration failed"`: it has one, and the migration threw.
+ *
+ * @category Errors
  */
 export class LoadRefused extends Data.TaggedError("LoadRefused")<{
   readonly problem:
@@ -106,6 +121,8 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
  * The world is its contents as the snapshot lists them, components by name
  * with their fields, so it can be read whatever the game's components are
  * now. `Migrate` has the usual changes to it.
+ *
+ * @category Models
  */
 export interface Contents {
   tick: number;
@@ -138,6 +155,8 @@ export interface Contents {
 /**
  * How a save written by version `from` of a game becomes one of version
  * `from + 1`. It changes the contents it is given in place.
+ *
+ * @category Models
  */
 export interface Migration {
   readonly from: number;
@@ -152,6 +171,8 @@ export interface Migration {
  * version, `"no migration"` when a step is missing, `"migration failed"`
  * when a migration throws, and a snapshot's own problems when the save's
  * world cannot be read or written back.
+ *
+ * @category Migrations
  */
 export const migrate = (
   save: Save,
@@ -265,6 +286,8 @@ const textDecoder = new TextDecoder("utf-8", { fatal: true });
 /**
  * A save as bytes: a short header, everything but the world as JSON text,
  * then the world's snapshot as it is.
+ *
+ * @category Codecs
  */
 export const encode = (save: Save): Uint8Array => {
   const { world, ...rest } = save;
@@ -288,6 +311,8 @@ const refuse = (
 /**
  * Reads a save back from bytes. This checks the save's own shape; the
  * world inside it is checked when the save is loaded.
+ *
+ * @category Codecs
  */
 export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

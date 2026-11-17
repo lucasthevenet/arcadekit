@@ -32,6 +32,12 @@ import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
 
+/**
+ * A system's handle to one kind of event, from `yield* SomeEvent`: it emits
+ * them, and reads those it has not seen yet.
+ *
+ * @category Models
+ */
 export interface EventHandle<P> {
   /** Queues an event. Synchronous, so it can be called inside query loops. */
   readonly emit: (payload: P) => void;
@@ -47,6 +53,8 @@ export interface EventHandle<P> {
 /**
  * An event type. It is an Effect, so `yield*` gives a handle to its channel
  * in the current app.
+ *
+ * @category Models
  */
 export class EventDef<P> extends Effectable.Class<
   EventHandle<P>,
@@ -86,6 +94,8 @@ export class EventDef<P> extends Effectable.Class<
  *
  * An event's name is its identity in an app: two different events with one
  * name are refused when the second is first used.
+ *
+ * @category Constructors
  */
 export function define<P = void>(name: string): EventDef<P>;
 export function define<S extends Schema.Codec<unknown, unknown>>(
@@ -102,7 +112,11 @@ export function define(
   );
 }
 
-/** An event's payload could not be turned into JSON, or read back from it. */
+/**
+ * An event's payload could not be turned into JSON, or read back from it.
+ *
+ * @category Errors
+ */
 export class InvalidEvent extends Data.TaggedError("InvalidEvent")<{
   readonly event: string;
   /** What was wrong: the schema's report, or that the event has no schema. */
@@ -134,14 +148,22 @@ const convert = <A>(
   );
 };
 
-/** An event's payload in its JSON form, for a save, a tool or the network. */
+/**
+ * An event's payload in its JSON form, for a save, a tool or the network.
+ *
+ * @category Codecs
+ */
 export const encode = <P>(
   def: EventDef<P>,
   payload: P
 ): Exit.Exit<unknown, InvalidEvent> =>
   convert(def, (codec) => Schema.encodeUnknownExit(codec)(payload));
 
-/** An event's payload read back from its JSON form, checked against its schema. */
+/**
+ * An event's payload read back from its JSON form, checked against its schema.
+ *
+ * @category Codecs
+ */
 export const decode = <P>(
   def: EventDef<P>,
   data: unknown
@@ -155,6 +177,8 @@ const EMPTY: readonly never[] = Object.freeze([]);
  * stage, or of the input stage. Such a reader is not part of the
  * simulation: it cannot emit, it is not saved, and events are kept for it
  * until the frame stage next runs.
+ *
+ * @category Constants
  */
 export const FRAME_READER = "frame:";
 
@@ -326,13 +350,19 @@ class Handle<P> implements EventHandle<P> {
   });
 }
 
-/** A snapshot of how many events each channel held, for rolling back. */
+/**
+ * A snapshot of how many events each channel held, for rolling back.
+ *
+ * @category Models
+ */
 export type EventMark = Map<object, number>;
 
 /**
  * Everything a bus holds at one moment, kept in memory to come back to:
  * the events as they are, with no need of a schema, and how far everyone
  * had read. Opaque: `capture` makes it and `rewind` takes it.
+ *
+ * @category Models
  */
 export interface EventsMoment {
   readonly frames: boolean;
@@ -369,6 +399,12 @@ export interface EventGuard {
   readonly emits: ReadonlySet<string>;
 }
 
+/**
+ * Where an app's events wait to be read, with each reader's place in them.
+ * The app holds one; a game reads and emits through an `EventHandle`.
+ *
+ * @category Models
+ */
 export class EventBus {
   /**
    * Who is asking for handles right now. The app sets this before each

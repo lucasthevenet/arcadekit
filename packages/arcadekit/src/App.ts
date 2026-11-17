@@ -130,6 +130,8 @@ type FailureFor<HU, N extends string> =
 /**
  * The part of an app that does not depend on its systems or handlers. Every
  * app is one of these, so use it for code that works with any app.
+ *
+ * @category Models
  */
 export interface Any {
   readonly world: EcsWorld;
@@ -305,13 +307,19 @@ const NO_INPUT: TickOptions = { input: false };
  * A game at one moment, held in memory: what `app.capture()` gives and
  * `app.rewind()` takes. It says which tick it is of, and the rest is the
  * app's own.
+ *
+ * @category Models
  */
 export interface Moment {
   /** How many ticks had run when it was captured. */
   readonly tick: number;
 }
 
-/** How a tick is run. */
+/**
+ * How a tick is run.
+ *
+ * @category Options
+ */
 export interface TickOptions {
   /**
    * Whether the tick runs the input stage first when nothing has since the
@@ -325,6 +333,8 @@ export interface TickOptions {
 /**
  * What `divert` gives whoever took an app over: the two things the app no
  * longer does for anyone else.
+ *
+ * @category Models
  */
 export interface Diverted<E = never> {
   /**
@@ -336,6 +346,16 @@ export interface Diverted<E = never> {
   readonly tickExit: (delta: number) => Exit.Exit<void, E>;
 }
 
+/**
+ * A running game: its world, its time, the actions waiting for the next
+ * tick, and what runs a tick and a frame. Made with `App.make`, `App.load`
+ * or, in a page, `App.run`.
+ *
+ * `E` is what a tick can fail with, `R` what its systems need, and `HU`
+ * the actions its handlers take.
+ *
+ * @category Models
+ */
 export interface App<E = never, R = never, HU = never> extends Any {
   /**
    * Takes the app over, for what decides on which tick an action is applied
@@ -424,6 +444,8 @@ const describe = (error: unknown): string =>
 /**
  * A script failed in an app that was told to stop on one. It is the defect
  * every tick of that app fails with from then on.
+ *
+ * @category Errors
  */
 export class ScriptFailed extends Data.TaggedError("ScriptFailed")<{
   /** Why the script failed. */
@@ -442,6 +464,8 @@ export class ScriptFailed extends Data.TaggedError("ScriptFailed")<{
  * defect, not a failure to handle: those stages run between ticks, and a
  * game that depends on having been drawn, or on its devices having been
  * read, does not replay.
+ *
+ * @category Errors
  */
 export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
   /** The stage the system belongs to. */
@@ -456,6 +480,13 @@ export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
   }
 }
 
+/**
+ * What an app is made of and how it runs, as `App.make` and `App.load` take
+ * it: its plugins, its own systems, handlers and components, and its
+ * version.
+ *
+ * @category Options
+ */
 export interface Options<
   S extends Systems = readonly [],
   H extends Handlers = readonly [],
@@ -522,7 +553,11 @@ export interface Options<
   readonly verifyFrames?: boolean;
 }
 
-/** Starts a game afresh: every plugin's `setup` runs, then its scripts start. */
+/**
+ * Starts a game afresh: every plugin's `setup` runs, then its scripts start.
+ *
+ * @category Constructors
+ */
 export const make = <
   S extends Systems = readonly [],
   H extends Handlers = readonly [],
@@ -557,6 +592,8 @@ export const make = <
  * Fails with `LoadRefused` when the save's world cannot be loaded: it names
  * a component no plugin lists, or one whose fields have changed, or its
  * bytes are damaged.
+ *
+ * @category Constructors
  */
 export const load = <
   S extends Systems = readonly [],
@@ -571,7 +608,11 @@ export const load = <
   Scope.Scope | External<S, H, P>
 > => build(options, save);
 
-/** How `App.run` drives the app it makes. */
+/**
+ * How `App.run` drives the app it makes.
+ *
+ * @category Options
+ */
 export interface RunOptions<
   A,
   E2 = never,
@@ -629,6 +670,8 @@ export interface RunOptions<
  *
  * It runs wherever there is a display, which outside a page is a timer:
  * `NodeRuntime.runMain(App.run(...))` runs the same game under Node.
+ *
+ * @category Running
  */
 export const run = <
   S extends Systems = readonly [],
@@ -2100,6 +2143,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 /**
  * A world's hash is not the one recorded for the same point of the game.
  * The two have been different worlds since some tick after `agreedAt`.
+ *
+ * @category Errors
  */
 export class HashMismatch extends Data.TaggedError("HashMismatch")<{
   /** The tick both hashes were taken at. */
@@ -2120,7 +2165,11 @@ export class HashMismatch extends Data.TaggedError("HashMismatch")<{
   }
 }
 
-/** A replayed log did not behave as it did when it was recorded. */
+/**
+ * A replayed log did not behave as it did when it was recorded.
+ *
+ * @category Errors
+ */
 export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
   /** Position in the log of the entry that did not hold. */
   readonly index: number;
@@ -2174,6 +2223,8 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
  *
  * Actions that the game's systems, scripts and handlers issued are not in
  * the log: the replay's own issue them again.
+ *
+ * @category Running
  */
 export const replay = (
   app: Any,

@@ -97,7 +97,11 @@ const column = (kind: FieldKind, count: number, value: unknown): Column => {
   }
 };
 
-/** Gives a component another name. Its data is untouched. */
+/**
+ * Gives a component another name. Its data is untouched.
+ *
+ * @category Migrations
+ */
 export const renameComponent = (
   world: SnapshotContents,
   from: string,
@@ -123,7 +127,11 @@ export const renameComponent = (
   }
 };
 
-/** Gives a field another name. Its values are untouched. */
+/**
+ * Gives a field another name. Its values are untouched.
+ *
+ * @category Migrations
+ */
 export const renameField = (
   world: SnapshotContents,
   component: string,
@@ -149,6 +157,8 @@ export const renameField = (
  * has the component. It goes after the fields that are there, or before the
  * field named in `before`: a component's fields are in the order it defines
  * them in.
+ *
+ * @category Migrations
  */
 export const addField = (
   world: SnapshotContents,
@@ -175,7 +185,11 @@ export const addField = (
   }
 };
 
-/** Takes a field, and its values, out of a component. */
+/**
+ * Takes a field, and its values, out of a component.
+ *
+ * @category Migrations
+ */
 export const removeField = (
   world: SnapshotContents,
   component: string,
@@ -195,6 +209,8 @@ export const removeField = (
  * Gives a field another kind, and each of its values a new one worked out
  * from the old: `mapField(world, "game/Hp", "points", "f32", (hp) => hp / 2)`.
  * A `ref` field's old value is what its codec had made of it.
+ *
+ * @category Migrations
  */
 export const mapField = (
   world: SnapshotContents,
@@ -225,6 +241,8 @@ export const mapField = (
  * Takes a component, and everyone's values of it, out of the save. The
  * entities stay. Two tables that now hold the same components become one,
  * the later one's rows after the earlier one's.
+ *
+ * @category Migrations
  */
 export const removeComponent = (
   world: SnapshotContents,
