@@ -1,0 +1,45 @@
+name: Benchmarks
+
+# Did the pull request make the storage core slower? `bench/compare.ts` runs the variants
+# of `bench/core.ts` for what the pull request would be merged into and for the pull
+# request, turn and turn about on this one machine, and fails if any is slower by more
+# than the noise. A commit that slows a variant on purpose says so in its message, with a
+# line `Bench-slower: <variants>`, and the check then reports it and does not fail on it.
+# The package's README says how it decides, under "Benchmarks in CI".
+
+on:
+  pull_request:
+    paths:
+      - packages/arcadekit/src/ecs/**
+      - packages/arcadekit/bench/**
+      - pnpm-lock.yaml
+      - .github/workflows/bench.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  storage-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Every commit of the pull request, for what their messages say.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # What is checked out is the pull request merged into its base, and the first
+      # parent of that merge is the base: a second checkout of it, beside this one.
+      - run: git worktree add ../base HEAD^1
+      - run: pnpm install --frozen-lockfile
+        working-directory: ../base
+      - run: pnpm --filter arcadekit bench:compare "$GITHUB_WORKSPACE/../base"

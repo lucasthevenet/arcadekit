@@ -1,44 +1,44 @@
-This is arcadekit: primitives for browser games on Effect 4, Foldkit and Three.js. It publishes one package, `arcadekit`, with twenty entries; two demo games are built on it, each with its genre's code inside it. Use `pnpm` from the repository root.
+This is arcadekit: primitives for browser games on Effect 4 and Three.js. It publishes two packages. `arcadekit`, from `packages/arcadekit`, has an entry for every module (`arcadekit/App`, `arcadekit/Input` and so on), `arcadekit` for all of them together, `arcadekit/Browser` for what only a page can use, and `arcadekit/ecs`. `@arcadekit/three`, from `packages/three`, is the plugin that draws a game with Three.js, with `arcadekit`, Effect and Three.js as its peers. Use `pnpm` from the repository root.
 
-arcadekit is alpha, with no users to protect, so a better design wins over compatibility. Rename, reshape or remove what needs it, exports, stored formats and localStorage keys included, and move every caller and doc in the same change, with no alias, shim or migration. Say what breaks in the changeset, the commit and the PR. Keep the replay and determinism hashes unless changing the simulation's rules is the point.
+This branch is a revamped version, designed fresh: an entity component system with Effect around it. `packages/arcadekit/README.md` describes the design, what works and what is not done yet; read it first. It is a first cut. `arcadekit` draws nothing itself: `@arcadekit/three` does, and `packages/three/README.md` describes it. The package does not depend on a UI library and will not: a game's menus and heads-up display are built with whatever it chooses. The previous version on `main` is not a reference for this one.
+
+Before writing code, read `docs/conventions.md`: how code here is written so that it stays Effect code, with references into Effect's documentation for each pattern. `docs/roadmap.md` says what to build next and in what order.
+
+arcadekit is alpha, with no users to protect, so a better design wins over compatibility. Say what breaks in the changeset, the commit and the PR.
 
 ## Layout
 
-- `packages/arcadekit/src/<entry>/`: an entry's source, and its `README.md`, which is also its reference page on arcadekit.dev: what the entry has. Its doc comments are the rest of its reference, a page for each module. Its tests, and the helpers only tests import, are in `packages/arcadekit/test/<entry>/`.
-- `examples/push-puzzle-demo` and `examples/survivor-demo`: the demos, each with its genre in `src/<genre>/` beside its Foldkit app in `src/app/`. `website`: the docs site, built from `docs/`, the entries' READMEs and the glossary.
-- `docs/`: how to use the kit, by task rather than by entry: the walkthrough (`making-a-game.md`), `concepts/`, `guides/` and `testing/`, each file a page of arcadekit.dev. A change to what an entry does changes the guide that shows it too.
-- `CONTEXT.md`: the glossary. Name things with its words in code, tests and prose, and give a new concept its entry in the same change.
-- `tools/lint/` and `oxlint.config.ts`: the kit's own lint rules. Their messages say what to write.
-- Inside the package, an entry imports another by relative path to its public file (`../core/index`). The demos import `arcadekit/<entry>`, and their genre the same way as an entry: by relative path to its public file (`../push-puzzle/index`, `../push-puzzle/browser/index`).
+- `packages/arcadekit/src/`: the package's source. Each subpath of its `package.json` `exports` names its source file under a `source` condition, and its built files as `./dist/<name>.d.ts` and `./dist/<name>.js`; `tsdown.config.ts` builds every export from that map, and generates the declarations with the TypeScript compiler (`tsgo`), so an export's type may be inferred.
+- A module's file is named in PascalCase after the namespace it is imported as, as Effect's own are: `src/App.ts` is `App`, `src/TickScheduler.ts` holds `TickScheduler`. The files of `src/ecs/` and `index.ts` are lower case.
+- Every module is an entry: `src/App.ts` is `arcadekit/App`. `src/index.ts` is the `arcadekit` entry, which gives them all but `Browser`. Each imports Effect and nothing else, and names nothing that only a page has. `src/Browser.ts` is the `arcadekit/Browser` entry: everything only a page can use, and the one import of a browser package. `src/ecs/index.ts` is the `arcadekit/ecs` entry. A new module gets its entry in `package.json` with it.
+- `packages/arcadekit/src/ecs/`: the storage core (components, tables, queries, the command buffer). It is plain synchronous TypeScript and imports nothing from Effect.
+- `packages/arcadekit/test/`: its tests, run by Vitest from the source with no build.
+- `packages/arcadekit/examples/` and `packages/arcadekit/bench/`: two example games and a benchmark, run with `pnpm --filter arcadekit demo`, `duel` and `bench`, the comparison of two checkouts' storage cores, `pnpm --filter arcadekit bench:compare <base checkout>`, which the `Benchmarks` workflow runs on a pull request that touches the storage core, a measurement of loops shared between workers, `pnpm --filter arcadekit bench:parallel`, a relay under Node, `examples/relay.ts`, run with `pnpm --filter arcadekit relay`, the same relay on Cloudflare, `examples/relay-cloudflare/`, declared with Alchemy and run on this machine with `pnpm --filter arcadekit relay:cloudflare`, a check of either, `pnpm --filter arcadekit relay:check <address>`, and a game in a page, `examples/page/`, served by `pnpm --filter arcadekit page`. They are type-checked by `tsconfig.examples.json` and are not published. Alchemy and its Cloudflare package are dev dependencies for the relay's example alone, and are a beta. The page's UI is built twice, with the DOM and with React, which is a dev dependency for that alone; `test/page.test.ts` mounts both in a document (happy-dom) and plays the game through them.
+- `packages/three/`: `@arcadekit/three`, laid out the same way: `src/Three.ts` is its module and its entry, `src/Gltf.ts` is the one for models, which brings the glTF loader of Three.js, `src/index.ts` gives both, and `test/`, `examples/page/` (`pnpm --filter @arcadekit/three page`) and `bench/` (`pnpm --filter @arcadekit/three bench`) are beside them. It imports `arcadekit` by its entries, as a game would, and defines no component: where a thing is drawn comes from `arcadekit/Transform3d` and, for a flat game, `arcadekit/Transform2d` (`packages/arcadekit/src/Transform3d.ts` and `Transform2d.ts`), which a game's rules write.
+- `docs/`: the conventions and the roadmap.
+- `website/`: the docs site, Starlight. Its own pages are in `website/src/content/docs/`: `making-a-game.md`, `concepts/` and `guides/`, each with a frontmatter, and linking to a README by its address on the site (`/reference/arcadekit#saving-and-loading`). It also serves each package's README and the files of `docs/` in place; `website/README.md` says how. `pnpm dev:docs` serves it and `pnpm build:docs` builds it, and the build fails on a dead link. Every `ts` block of `website/src/content/docs/` is compiled by the site's typecheck, and a block titled `*.test.ts` is run: mark a block that is not whole `ts sketch`.
+- `scripts/`: the workspace's helpers (the `source` condition for Vite and Vitest, what every test file starts with, the entries of a package's build, and the package lint).
+- `.changeset/`: pending release notes; see its README.
 
-## A game is declared
+## Rules the design depends on
 
-A game is written as declarations: one named class per part, `class LevelSolved extends Game.Event("LevelSolved", { moves: Schema.Int }) {}`, hosted by a Layer or a loop. They are `Game.Event`, `Game.Command`, `Game.Rejection`, `Game.Simulation` (`arcadekit/game`), `Game.Engine` (`arcadekit/game/browser`), `Content`, `Asset` (`arcadekit/content`), `Coop` (`arcadekit/net/browser`), `Save`, `Setting` (`arcadekit/save`) and `CueTable` (`arcadekit/audio`). Every other module of a game is a namespace. The push-puzzle demo is the example to copy.
+- A system is one Effect per tick with plain loops inside. Code that runs once per entity is never an Effect: measured, that is about 25 times slower than a loop over columns.
+- Nothing changes the set of entities or their components while a query is iterating. Such changes go through `Commands` and are applied when the system finishes.
+- A tick gives the same result from the same inputs. Time comes from `Time`, waiting from `Script`, and fibers only resume when the tick flushes its scheduler.
+- What draws the game runs in the frame stage, between ticks, and never changes the world: a game that is drawn is the same game as one that is not.
+- What is heard is played in the frame stage too, from the events the simulation emits. The simulation never plays a sound.
+- What the devices say reaches the game as actions, issued in the input stage before a tick and logged like any other: a replay reads no device.
+- The peers of a game send each other the actions their players issue, each stamped with the tick it applies on, and nothing else. A session takes its app over, so that nothing moves one machine's game alone, and holds no socket and no timer: it is given the messages that arrived and gives the ones to send, and `Transport`, a service, carries them, between machines through a relay, which is a handler of plain functions (`Relay.join`, `Relay.forward`) that a host calls and that holds each peer to the name it connected under. A session that runs ahead of the network goes back with `app.rewind`, which puts back the world and what is waiting in the app and nothing else: what the simulation reads is in the world.
+- A system that says what it reads and writes, with `System.access`, says all of it, and the app holds it to that: what it says can be relied on by whatever orders systems or runs them side by side.
+- A UI holds a bridge and nothing of the game: it sees the views the game publishes in the frame stage, and acts by sending actions, which are issued and logged the same way.
 
-- The handlers inside a declaration (`create`, `step`, `apply`, `view`, `input`) are plain functions.
-- A run changes only at a step: by its input, and by a command the loop applies at the start of the next step.
-- A step gives the same bits on every peer and every replay. Its time comes in as an argument, its randomness from the run's `Rng`, its math from `ExactMath`.
-- Code is Effect unless correctness needs it plain: a step, a frame, a lockstep tick, or a host's listener that writes state a frame reads.
+## What only knowing the inside prevents
+
+`docs/roadmap.md` keeps a list, "To revisit before a stable release": things that go wrong with no error and that nothing in the types or at run time stops, so that only someone who knows how the inside works avoids them. The order systems really run in is one; a value that has to be in some form and is not checked is another. When you come across one, while building, testing or writing a README sentence that begins "it is the game's to", add a line to that list in the same commit, with what would close it if you know. When you close one, take its line out.
 
 ## Validation
 
-Run the narrowest check that covers the change. CI runs `pnpm check`, `pnpm test` and `pnpm build`.
-
-| Change | Run |
-| --- | --- |
-| Any code | `pnpm fix`, then `pnpm check`, `pnpm typecheck`, and `pnpm test <files>` for the tests that cover it |
-| A doc comment's example, or a `ts` block of a README or of `docs/` | `pnpm build:packages && pnpm smoke --no-build` |
-| A README, a page of `docs/`, a doc comment, `CONTEXT.md` or `website` | `pnpm build:docs`, which fails on a dead link |
-| A step, a simulation's rules or `arcadekit/core` | `pnpm test` for the replay and determinism hashes, and `pnpm test:browsers` |
-| The package's exports or its build | `pnpm build:packages && pnpm lint:packages` |
-
-Say which checks you could not run.
-
-## Generated files
-
-- `examples/*/public/sprites/*.png` and `*.json`: `pnpm sprites` (`scripts/generate-sprite-sheets.mjs`).
-- `examples/*/public/sounds/*.wav`: `pnpm sounds` (`scripts/generate-placeholder-sounds.mjs`).
-- `packages/arcadekit/CHANGELOG.md`: Changesets writes it on release, from `.changeset/`.
+CI runs `pnpm check`, `pnpm test` and `pnpm build`. For any code change run `pnpm fix`, then `pnpm check`, `pnpm typecheck` and the tests that cover it. `pnpm check` is formatting plus oxlint's default rules; there are no style rules. For a change to the storage core or to a query, also run `pnpm --filter arcadekit bench`, and `pnpm --filter arcadekit bench:compare <base checkout>` against a checkout of the base, which fails on a variant that is slower by more than the noise unless a commit says `Bench-slower: <variants>` in its message; for a change to the loops of `@arcadekit/three` that draw, `pnpm --filter @arcadekit/three bench`. For a change to a package's exports or its build, or to what a module imports, run `pnpm build:packages && pnpm lint:packages`, which also checks what each built entry of each package imports. For a change to `website/` or `docs/`, run `pnpm --filter @arcadekit/website typecheck`, which compiles the pages' code, and `pnpm build:docs`. Say which checks you could not run.
 
 ## Issues
 

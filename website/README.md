@@ -1,78 +1,76 @@
 # Docs site
 
-The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose pages are the repository's own text, read where it is: its markdown, and the package's doc comments. No file is copied, so there is one text to keep right.
+The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose own pages, the walkthrough, the concepts and the guides, are under [`src/content/docs/`](src/content/docs). The reference is the repository's own markdown, the packages' READMEs, the roadmap and the conventions, read where it is: no file is copied, so there is one text to keep right.
 
 The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's](https://alchemy.run) are, in three topics, each with a sidebar of its own ([starlight-sidebar-topics](https://starlight-sidebar-topics.netlify.app)):
 
-- **Learn**: getting started, the walkthrough, the concepts and the games built on the kit.
-- **Guides**: a guide for each task, whichever entries it takes, and testing.
-- **Reference**: the package's page, then a page for each entry and one for each of its modules, with every export's signature and doc comment, generated from the source.
+- **Learn**: the walkthrough, the concepts, and the examples.
+- **Guides**: a guide for each task, and testing.
+- **Reference**: each package's README, then the roadmap and the conventions.
 
 | Address | File |
 | --- | --- |
 | `/` | [`src/content/docs/index.mdx`](src/content/docs/index.mdx), the landing page, whose text is the site's own |
-| `/<path>`, such as `/making-a-game`, `/concepts/lockstep` and `/guides/sprites` | `docs/<path>.md`: the walkthrough, the concepts, the guides and testing |
-| `/reference` | [The package's README](../packages/arcadekit/README.md), which npm shows too: how to install it, and its entries |
-| `/reference/<entry>`, such as `/reference/core` and `/reference/net/browser` | `packages/arcadekit/src/<entry>/README.md`, which npm shows too, then the entry's own exports. An entry with no README has its public file's module comment instead |
-| `/reference/<entry>/<module>`, such as `/reference/core/rng` | The module the entry exports as a namespace, `packages/arcadekit/src/core/rng.ts`: its module comment, then its exports |
-| `/glossary` | [`CONTEXT.md`](../CONTEXT.md), with each term as a heading |
+| `/<path>`, such as `/making-a-game`, `/concepts/determinism` and `/guides/input` | `src/content/docs/<path>.md`: the walkthrough, the concepts and the guides |
+| `/roadmap` and `/conventions` | `docs/roadmap.md` and `docs/conventions.md`, the project's own |
+| `/reference/<package>`, such as `/reference/arcadekit` and `/reference/three` | `packages/<package>/README.md`, which npm shows too |
 
 ```bash
-pnpm dev:docs     # from the repo root: Astro's dev server, which reloads a page as a file it is made from changes
+pnpm dev:docs     # from the repo root: Astro's dev server, which reloads a page as its file changes
 pnpm build:docs   # build the site to website/dist; `pnpm build` runs it too
-pnpm --filter @arcadekit/website preview   # serve the built site
+pnpm --filter @arcadekit/website snippets   # compile the code of the site's pages, and run their tests
+pnpm --filter @arcadekit/website preview    # serve the built site
 ```
 
 ## A new page
 
-A file under [`docs/`](../docs) is a page as soon as it exists, and so are a new entry and a new module: [`src/lib/pages.ts`](src/lib/pages.ts) finds every markdown file under `docs/`, and every entry of the package's `exports` with the modules it exports, and serves `docs/guides/sprites.md` at `/guides/sprites`, `arcadekit/net/testing` at `/reference/net/testing` and its `FakeCoopRooms` at `/reference/net/testing/fake-coop-rooms`. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
+A markdown file under [`src/content/docs/`](src/content/docs) is a page as soon as it exists, at its path there. It is a Starlight page, with a frontmatter that gives its `title` and its `description`, the line under a shared link. Its body starts after the frontmatter, with no `# ` heading: Starlight writes the title.
 
-Every page of `docs/` and every README starts with a `# ` heading, its title, then a paragraph. The sidebar lists the page by its title, and the paragraph is its description under a shared link. A file that doesn't start with a `# ` heading fails the build. An entry's README is titled with its import path, `# arcadekit/net/testing`, or `pnpm test` fails ([`src/lib/pages.test.ts`](src/lib/pages.test.ts)). A README with no entry of the package's `exports` fails the build.
+A file directly in `docs/` and a new package's README are pages too, read where they are: [`src/lib/pages.ts`](src/lib/pages.ts) finds them. They have no frontmatter, since GitHub would show it: such a file starts with a `# ` heading, its title, then a paragraph, its description, and one that doesn't fails the build. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
 
-A `ts` block of a page is compiled by the smoke test ([`scripts/smoke-test.mjs`](../scripts/smoke-test.mjs)), alone, as a small program of its own: every block under `docs/`, and those of the READMEs in its `ENTRIES`, so add a new entry's folder there. A sketch, with `/* … */` where a game's own code goes, is fenced ` ```ts sketch `: it is highlighted as TypeScript and nothing compiles it.
+[`src/lib/sidebar.ts`](src/lib/sidebar.ts) places each page in its topic. Its `OUTLINE` names the pages in order, in groups: a page it doesn't name goes at the end of its folder's group, so a new concept is listed at the end of Concepts, a new guide under Guides' "More" and a new package under Packages, until the outline places it. A page the outline names that doesn't exist fails the build.
 
-[`src/lib/sidebar.ts`](src/lib/sidebar.ts) places each page in its topic. Its `OUTLINE` names the guides and concepts in order, in groups: a page it doesn't name goes at the end of its folder's group, so a new concept is listed at the end of Concepts and a new guide under Guides' "More" until the outline places it, and a page the outline names that doesn't exist fails the build. Reference lists each top-level entry in the order of `ENTRY_ORDER`, a new one at the end, as a group of its page, its modules and its sub-entries.
+## The code on a page
 
-## The API reference
+Every `ts` block of a page under `src/content/docs/` is compiled against the packages as they are in this checkout, by [`scripts/check-snippets.mjs`](scripts/check-snippets.mjs), which `pnpm typecheck` runs:
 
-[`src/lib/api.ts`](src/lib/api.ts) reads the package's API from its source, with [oxc](https://oxc.rs) as [Rolldown](https://rolldown.rs) ships it, so the site needs no TypeScript compiler of its own:
+- A block is a program of its own: it imports what it uses.
+- A block with a title, ` ```ts title="rules.ts" `, is that file of its page, and Starlight shows the title over it. Another block of the page can import it, and a later block with the same title adds to the end of it. So a walkthrough can build a game a file at a time.
+- A file whose title ends in `.test.ts` is run with Vitest: a page that shows a test shows one that passes.
+- A block fenced ` ```ts sketch ` is a sketch, with `/* … */` where a game's own code goes. It is highlighted as TypeScript and nothing compiles it.
 
-- **What an entry exports** is what its public file says, the `source` of its subpath in the package's `exports`. A namespace (`export * as Rng from "./rng"`) is a module with a page of its own. Every other export, such as `Game.Event` or `Content`, is the entry's own, on the entry's page. A sub-entry leaves out what it re-exports from the entry above it, and says it has those too: `arcadekit/game/browser` lists `Game.Engine` and what draws, not `Game.Event` again.
-- **An export's signature** is its declaration as oxc's isolated declarations write it, as `tsc --declaration` does for a package checked with `isolatedDeclarations`, as this one is. A `const` that is another file's declaration under a new name (`const Event: typeof makeEvent`) shows that declaration's signature.
-- **Its text** is its doc comment, as [the doc-comments skill](../.agents/skills/doc-comments/SKILL.md) has it written: a summary, "When to use", "Details", examples, then `@category` and `@since`. A page lists the exports by category, in the order of the skill's list, and by name in each.
-
-So a doc comment is written once, for an editor's hover and for the site, and its examples are typechecked with the rest by the smoke test. A README's table of modules links each to its source file, which on the site is the module's page.
+An error is reported at the page and line it is on. The READMEs' blocks and the landing page's are not compiled: they show parts of a game, not whole ones.
 
 ## Its look
 
 The site is styled after [polycombo.io](https://polycombo.io): one dark theme, square panels on hairlines, titles in [Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed) and in capitals, labels in [IBM Plex Mono](https://fonts.google.com/specimen/IBM+Plex+Mono), text in [Inter](https://rsms.me/inter/), and an acid lime accent, with a ramp from lime to pink for what is numbered. The faces are self-hosted from their `@fontsource` packages.
 
 - [`src/styles/custom.css`](src/styles/custom.css) holds the palette, as `--ak-*` variables that Starlight's own (`--sl-*`) are made from, and every rule over Starlight's. Starlight's styles are in CSS layers, so these, in none, win over them.
-- [`src/components/`](src/components) replaces five of Starlight's components: the header's mark and name (`site-title.astro`: the D-pad in lime, then "arcadekit" in the text face, as Foldkit and Effect set theirs), the landing page's hero (`hero.astro`, with the line over its title from the page's `eyebrow`), a page's title (`page-title.astro`: a reference page's keeps its case), and the theme's two (`theme-provider.astro`, `theme-select.astro`: one theme, so no picker). The landing page's numbers are `kit-stats.astro`, counted from the reference's pages.
+- [`src/components/`](src/components) replaces five of Starlight's components: the header's mark and name (`site-title.astro`: the D-pad in lime, then "arcadekit" in the text face, as Foldkit and Effect set theirs), the landing page's hero (`hero.astro`, with the line over its title from the page's `eyebrow`), a page's title (`page-title.astro`: a reference page's keeps its case), and the theme's two (`theme-provider.astro`, `theme-select.astro`: one theme, so no picker). The landing page's numbers are `kit-stats.astro`: the package's version and entries, the packages and the guides.
 - The landing page is laid out as [foldkit.dev](https://foldkit.dev) is: a section for each thing the kit is, each a line in the monospace face (`<p class="eyebrow">`) over its title, then who it is and isn't a fit for. Its card grids are three to a row, or one on a narrow screen.
 - Code is drawn with the `vesper` theme on the page's panels (`expressiveCode` in [`astro.config.ts`](astro.config.ts)).
 
 ## How it reads the repository
 
-Starlight serves the entries of its `docs` collection, which its own loader reads from `src/content/docs/`. There the site has its landing page alone. [`src/lib/loader.ts`](src/lib/loader.ts) adds each page `pages.ts` finds as an entry of the same collection, read where it is ([`src/content.config.ts`](src/content.config.ts)):
+Starlight serves the entries of its `docs` collection, which its own loader reads from `src/content/docs/`: the site's own pages. [`src/lib/loader.ts`](src/lib/loader.ts) adds each README and each file of `docs/` that `pages.ts` finds as an entry of the same collection, read where it is ([`src/content.config.ts`](src/content.config.ts)):
 
 - Starlight writes a page's title from its frontmatter, and the files have none, since GitHub would show it. The entry's title is the file's first line, its `# ` heading, and its content is the rest of the file, so the page has one title. A reference page with no README is titled with its import path or its module's name.
 - Its description is the file's first paragraph, which the page's `<meta>` tags give a shared link.
-- Its edit link goes to the file on GitHub: for a module's page, its source file, whose doc comments are its text.
+- Its edit link goes to the file on GitHub.
 
 The loader renders each file with the site's Markdown processor, [Sätteri](https://satteri.bruits.org), Astro's own, with the plugins in `src/lib/` that [What it adds to a page](#what-it-adds-to-a-page) lists. Starlight's own transforms, such as a heading's anchor link, apply only to the folders its `markdown.processedDirs` names: here the repository's root.
 
 ## Links
 
-The pages are also read on GitHub, and the READMEs on npm, so their links stay written for those: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as the glossary and every file under `docs/`. So a page under `docs/` links to a README or another page by its relative path, and a README links to a guide by its GitHub URL. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
+The pages are also read on GitHub, and the READMEs on npm, so their links stay written for those: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as `docs/roadmap.md`. A page of the site's own links to another by its relative path (`../guides/input.md`), to a README by its address on the site (`/reference/arcadekit#sound`), and to any other file of the repository by its relative path. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
 
 - a link to a file that is a page goes to that page;
 - a link to any other file or folder of the repository goes to it on GitHub.
 
 `pnpm build` fails on a dead link, so CI does too ([`src/lib/dead-links.ts`](src/lib/dead-links.ts)). It lists every one, of two kinds:
 
-- A link a page's file writes to the repository, in either form: a relative link, and a full URL to `main` on GitHub. It must name a file or folder that exists.
-- A link of the built site to one of its own pages, from a page once rewritten, from the landing page or the sidebar. Its page must exist, and its fragment, such as `#commands`, must be a heading or an anchor on that page. GitHub gives a heading the same anchor, so a fragment that works here works there too, except a glossary term's: a term is a heading only here.
+- A link a page's file writes to the repository, in either form: a relative link, and a full URL to the site's branch on GitHub. It must name a file or folder that exists.
+- A link of the built site to one of its own pages, from a page once rewritten, from the landing page or the sidebar. Its page must exist, and its fragment, such as `#commands`, must be a heading or an anchor on that page. GitHub gives a heading the same anchor, so a fragment that works here works there too.
 
 Two kinds of link are not checked:
 
@@ -85,15 +83,14 @@ A bare issue number in a page's text, such as `#25`, becomes a link to that issu
 
 The files are written for GitHub, so the site adds a little as it renders them, and changes no file:
 
-- **The glossary.** `CONTEXT.md` is a list of paragraphs that each start with a term in bold. [`src/lib/glossary.ts`](src/lib/glossary.ts) renders the term as a heading above its definition, so each term has an address (`/glossary#lockstep`), a line in the page's table of contents and a search result of its own.
-- **Search.** Starlight's search is [Pagefind](https://pagefind.app), which indexes the built site. The glossary's prose counts for half in a search (`data-pagefind-weight`, also in `glossary.ts`): a search for an export should find how to use it first. A term's heading keeps its weight, so it still comes first for the term.
+- **Search.** Starlight's search is [Pagefind](https://pagefind.app), which indexes the built site.
 - **Tables on a phone.** [`src/lib/tables.ts`](src/lib/tables.ts) lets a path in a table's cell wrap after a slash, and [`src/styles/custom.css`](src/styles/custom.css) tightens the cells, so a table fits the page.
 
 ## Which version it describes
 
-The site is built from the repository as it is, so its pages follow `main`. Between releases they can describe an export, or a whole entry, that the package on npm doesn't have yet. The header says so: it shows the package's version alone, such as "v0.7.0", linked to the changelog, only when no changeset for `arcadekit` waits in `.changeset/`. When one does, it shows "v0.7.0 + unreleased", linked to the waiting changesets ([`src/lib/version.ts`](src/lib/version.ts), and the header's [`src/components/social-icons.astro`](src/components/social-icons.astro), which replaces Starlight's `SocialIcons`).
+The site is built from the repository as it is, so its pages follow the branch it is built from. This design lives on `next` until it replaces `main`, so the links to GitHub name `next` (`BRANCH` in [`src/lib/site.ts`](src/lib/site.ts)); change it when `next` becomes `main`. Between releases they can describe an export, or a whole entry, that the package on npm doesn't have yet. The header says so: it shows the package's version alone, such as "v0.7.0", linked to the changelog, only when no changeset for `arcadekit` waits in `.changeset/`. When one does, it shows "v0.7.0 + unreleased", linked to the waiting changesets ([`src/lib/version.ts`](src/lib/version.ts), and the header's [`src/components/social-icons.astro`](src/components/social-icons.astro), which replaces Starlight's `SocialIcons`).
 
-The other choice is a site that describes only what is released: deploy it when a release is published, not after each push to `main`. Then a fix to a page waits for the next release too. The workflow below deploys from `main`.
+The other choice is a site that describes only what is released: deploy it when a release is published, not after each push to `main`. Then a fix to a page waits for the next release too. The workflow below deploys from `main`, so this site goes live when `next` is merged into it.
 
 ## Images
 
@@ -103,7 +100,7 @@ The site's mark is a D-pad, an arrow cut in each arm, and `public/favicon.svg` i
 
 The site is static files on Cloudflare, declared with [Alchemy](https://alchemy.run) in [`alchemy.run.ts`](alchemy.run.ts): a Worker with no script, whose assets are the build. A page is a folder's `index.html`, served at its address with no slash at the end, which is what each page's canonical link names. The `prod` stage has the custom domain `arcadekit.dev`. Every other stage is served at its `workers.dev` URL.
 
-Set two variables, as for [the survivors demo](../examples/survivor-demo/README.md#deploying):
+Set two variables:
 
 - `CLOUDFLARE_ACCOUNT_ID`: the account to deploy into. For the `prod` stage it must hold the `arcadekit.dev` zone.
 - `CLOUDFLARE_API_TOKEN`: an API token that can do the following.

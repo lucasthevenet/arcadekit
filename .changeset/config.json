@@ -2,7 +2,9 @@
   "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
   "changelog": [
     "@changesets/changelog-github",
-    { "repo": "lucasthevenet/arcadekit" }
+    {
+      "repo": "lucasthevenet/arcadekit"
+    }
   ],
   "commit": false,
   "fixed": [],
@@ -10,9 +12,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": [
-    "@arcadekit/survivor-demo",
-    "@arcadekit/push-puzzle-demo",
-    "@arcadekit/website"
-  ]
+  "ignore": []
 }

@@ -1,0 +1,77 @@
+{
+  "name": "@arcadekit/three",
+  "version": "0.0.0",
+  "description": "Draws an arcadekit game with Three.js",
+  "keywords": [
+    "arcadekit",
+    "browser-games",
+    "effect",
+    "game",
+    "gamedev",
+    "three",
+    "threejs"
+  ],
+  "homepage": "https://arcadekit.dev",
+  "bugs": "https://github.com/lucasthevenet/arcadekit/issues",
+  "license": "MIT",
+  "author": "Lucas Thevenet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasthevenet/arcadekit.git",
+    "directory": "packages/three"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./Gltf": {
+      "source": "./src/Gltf.ts",
+      "types": "./dist/Gltf.d.ts",
+      "default": "./dist/Gltf.js"
+    },
+    "./Three": {
+      "source": "./src/Three.ts",
+      "types": "./dist/Three.d.ts",
+      "default": "./dist/Three.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p . && tsc -p tsconfig.examples.json",
+    "page": "vite examples/page",
+    "bench": "tsx --conditions=source bench/instances.ts"
+  },
+  "devDependencies": {
+    "@effect/platform-browser": "~4.1.4",
+    "@types/three": "^0.187.0",
+    "arcadekit": "workspace:^",
+    "effect": "~4.1.4",
+    "three": "^0.187.0",
+    "tsx": "^4.23.15"
+  },
+  "peerDependencies": {
+    "@types/three": "^0.187.0",
+    "arcadekit": "workspace:^",
+    "effect": "~4.1.2",
+    "three": "^0.187.0"
+  },
+  "peerDependenciesMeta": {
+    "@types/three": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

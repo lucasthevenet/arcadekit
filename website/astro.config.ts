@@ -3,16 +3,14 @@
 // A Starlight site whose pages are the repository's own markdown, read in place: src/lib/pages.ts
 // finds them, src/lib/loader.ts adds them to Starlight's `docs` collection, and src/lib/sidebar.ts
 // groups them. As a page renders, the Markdown processor's plugins make the links the pages
-// already have work here (links.ts), give the glossary's terms headings of their own
-// (glossary.ts), and let a table fit a phone (tables.ts). The build fails on a dead link
-// (dead-links.ts).
+// already have work here (links.ts), and let a table fit a phone (tables.ts). The build fails on a
+// dead link (dead-links.ts).
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import starlightSidebarTopics from "starlight-sidebar-topics";
 
 import { deadLinks } from "./src/lib/dead-links.ts";
-import { createGlossaryPlugins } from "./src/lib/glossary.ts";
 import { createLinkRewriter } from "./src/lib/links.ts";
 import { discoverPages } from "./src/lib/pages.ts";
 import { sidebarTopics } from "./src/lib/sidebar.ts";
@@ -27,7 +25,7 @@ import {
 import { tableNames } from "./src/lib/tables.ts";
 
 const DESCRIPTION =
-  "Domain-driven design for browser games, on Effect: a game's rules as a deterministic model in its own words, apart from the browser, with specs that run in Node, so an agent can design, build and test a game with you.";
+  "A framework for browser games of any genre, on Effect 4: an entity component system whose ticks are deterministic, so a game saves, replays and plays over the network as it is.";
 
 // The pages are found when this config is read: restart `astro dev` after adding one.
 const pages = discoverPages();
@@ -36,34 +34,23 @@ const links = createLinkRewriter({
   repoRoot: REPO_ROOT,
   repoUrl: REPO_URL,
   branch: BRANCH,
-  pageLinks: new Map(
-    pages.all.flatMap((page) =>
-      page.files.map((file) => [file, page.link] as const)
-    )
-  ),
+  pageLinks: new Map(pages.all.map((page) => [page.file, page.link] as const)),
   onDeadLink: ({ href, file }) => {
     console.warn(`(!) Found dead link ${href} in ${file}`);
   },
 });
 
-const glossary = createGlossaryPlugins({
-  repoRoot: REPO_ROOT,
-  glossary: pages.glossary.file,
-});
-
 export default defineConfig({
   site: SITE_URL,
-  // A page is a folder's `index.html`, `net/worker/index.html`, served at `/net/worker` with no
+  // A page is a folder's `index.html`, `guides/input/index.html`, served at `/guides/input` with no
   // slash at its end (alchemy.run.ts), which its canonical link names.
   trailingSlash: "never",
   build: { format: "directory" },
 
   markdown: {
     processor: satteri({
-      // In order: the glossary's terms become headings before the links plugin leaves the text
-      // of every heading alone.
-      mdastPlugins: [glossary.terms, links.plugin],
-      hastPlugins: [glossary.searchWeight, tableNames],
+      mdastPlugins: [links.plugin],
+      hastPlugins: [tableNames],
     }),
   },
 

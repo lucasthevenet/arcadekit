@@ -1,32 +1,15 @@
 {
   "name": "arcadekit",
   "version": "0.7.0",
-  "description": "Reusable primitives for building browser games with Effect, Foldkit and Three.js",
+  "description": "Reusable primitives for building browser games with Effect and Three.js",
   "keywords": [
     "arcadekit",
-    "audio",
-    "deterministic",
+    "browser-games",
     "effect",
-    "elm-architecture",
-    "fixed-timestep",
-    "foldkit",
     "game",
-    "game-loop",
     "gamedev",
-    "gamepad",
-    "input",
-    "lockstep",
-    "multiplayer",
-    "object-pool",
-    "pixel-art",
-    "rng",
-    "save-game",
-    "spatial-grid",
-    "sprites",
     "three",
-    "threejs",
-    "web-audio",
-    "webrtc"
+    "threejs"
   ],
   "homepage": "https://arcadekit.dev",
   "bugs": "https://github.com/lucasthevenet/arcadekit/issues",
@@ -44,105 +27,150 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    "./core": {
-      "source": "./src/core/index.ts",
-      "types": "./dist/core.d.ts",
-      "default": "./dist/core.js"
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
-    "./input": {
-      "source": "./src/input/index.ts",
-      "types": "./dist/input.d.ts",
-      "default": "./dist/input.js"
+    "./Action": {
+      "source": "./src/Action.ts",
+      "types": "./dist/Action.d.ts",
+      "default": "./dist/Action.js"
     },
-    "./content": {
-      "source": "./src/content/index.ts",
-      "types": "./dist/content.d.ts",
-      "default": "./dist/content.js"
+    "./App": {
+      "source": "./src/App.ts",
+      "types": "./dist/App.d.ts",
+      "default": "./dist/App.js"
     },
-    "./content/browser": {
-      "source": "./src/content/browser/index.ts",
-      "types": "./dist/content/browser.d.ts",
-      "default": "./dist/content/browser.js"
+    "./Assets": {
+      "source": "./src/Assets.ts",
+      "types": "./dist/Assets.d.ts",
+      "default": "./dist/Assets.js"
     },
-    "./save": {
-      "source": "./src/save/index.ts",
-      "types": "./dist/save.d.ts",
-      "default": "./dist/save.js"
+    "./Browser": {
+      "source": "./src/Browser.ts",
+      "types": "./dist/Browser.d.ts",
+      "default": "./dist/Browser.js"
     },
-    "./save/browser": {
-      "source": "./src/save/browser/index.ts",
-      "types": "./dist/save/browser.d.ts",
-      "default": "./dist/save/browser.js"
+    "./Driver": {
+      "source": "./src/Driver.ts",
+      "types": "./dist/Driver.d.ts",
+      "default": "./dist/Driver.js"
     },
-    "./audio": {
-      "source": "./src/audio/index.ts",
-      "types": "./dist/audio.d.ts",
-      "default": "./dist/audio.js"
+    "./Event": {
+      "source": "./src/Event.ts",
+      "types": "./dist/Event.d.ts",
+      "default": "./dist/Event.js"
     },
-    "./audio/browser": {
-      "source": "./src/audio/browser/index.ts",
-      "types": "./dist/audio/browser.d.ts",
-      "default": "./dist/audio/browser.js"
+    "./Field": {
+      "source": "./src/Field.ts",
+      "types": "./dist/Field.d.ts",
+      "default": "./dist/Field.js"
     },
-    "./render-three": {
-      "source": "./src/render-three/index.ts",
-      "types": "./dist/render-three.d.ts",
-      "default": "./dist/render-three.js"
+    "./Input": {
+      "source": "./src/Input.ts",
+      "types": "./dist/Input.d.ts",
+      "default": "./dist/Input.js"
     },
-    "./render-three/testing": {
-      "source": "./src/render-three/testing/index.ts",
-      "types": "./dist/render-three/testing.d.ts",
-      "default": "./dist/render-three/testing.js"
+    "./Lockstep": {
+      "source": "./src/Lockstep.ts",
+      "types": "./dist/Lockstep.d.ts",
+      "default": "./dist/Lockstep.js"
     },
-    "./game": {
-      "source": "./src/game/index.ts",
-      "types": "./dist/game.d.ts",
-      "default": "./dist/game.js"
+    "./Migrate": {
+      "source": "./src/Migrate.ts",
+      "types": "./dist/Migrate.d.ts",
+      "default": "./dist/Migrate.js"
     },
-    "./game/browser": {
-      "source": "./src/game/browser.ts",
-      "types": "./dist/game/browser.d.ts",
-      "default": "./dist/game/browser.js"
+    "./Plugin": {
+      "source": "./src/Plugin.ts",
+      "types": "./dist/Plugin.d.ts",
+      "default": "./dist/Plugin.js"
     },
-    "./game/scenario": {
-      "source": "./src/game/scenario.ts",
-      "types": "./dist/game/scenario.d.ts",
-      "default": "./dist/game/scenario.js"
+    "./Query": {
+      "source": "./src/Query.ts",
+      "types": "./dist/Query.d.ts",
+      "default": "./dist/Query.js"
     },
-    "./game/testing": {
-      "source": "./src/game/testing/index.ts",
-      "types": "./dist/game/testing.d.ts",
-      "default": "./dist/game/testing.js"
+    "./Relay": {
+      "source": "./src/Relay.ts",
+      "types": "./dist/Relay.d.ts",
+      "default": "./dist/Relay.js"
     },
-    "./net": {
-      "source": "./src/net/index.ts",
-      "types": "./dist/net.d.ts",
-      "default": "./dist/net.js"
+    "./Resource": {
+      "source": "./src/Resource.ts",
+      "types": "./dist/Resource.d.ts",
+      "default": "./dist/Resource.js"
     },
-    "./net/browser": {
-      "source": "./src/net/browser/index.ts",
-      "types": "./dist/net/browser.d.ts",
-      "default": "./dist/net/browser.js"
+    "./Rollback": {
+      "source": "./src/Rollback.ts",
+      "types": "./dist/Rollback.d.ts",
+      "default": "./dist/Rollback.js"
     },
-    "./net/testing": {
-      "source": "./src/net/testing/index.ts",
-      "types": "./dist/net/testing.d.ts",
-      "default": "./dist/net/testing.js"
+    "./Save": {
+      "source": "./src/Save.ts",
+      "types": "./dist/Save.d.ts",
+      "default": "./dist/Save.js"
     },
-    "./net/signalling": {
-      "source": "./src/net/signalling/index.ts",
-      "types": "./dist/net/signalling.d.ts",
-      "default": "./dist/net/signalling.js"
+    "./Schemas": {
+      "source": "./src/Schemas.ts",
+      "types": "./dist/Schemas.d.ts",
+      "default": "./dist/Schemas.js"
     },
-    "./net/worker": {
-      "source": "./src/net/worker/index.ts",
-      "types": "./dist/net/worker.d.ts",
-      "default": "./dist/net/worker.js"
+    "./Services": {
+      "source": "./src/Services.ts",
+      "types": "./dist/Services.d.ts",
+      "default": "./dist/Services.js"
     },
-    "./foldkit": {
-      "source": "./src/foldkit/index.ts",
-      "types": "./dist/foldkit.d.ts",
-      "default": "./dist/foldkit.js"
+    "./Singleton": {
+      "source": "./src/Singleton.ts",
+      "types": "./dist/Singleton.d.ts",
+      "default": "./dist/Singleton.js"
+    },
+    "./Sound": {
+      "source": "./src/Sound.ts",
+      "types": "./dist/Sound.d.ts",
+      "default": "./dist/Sound.js"
+    },
+    "./State": {
+      "source": "./src/State.ts",
+      "types": "./dist/State.d.ts",
+      "default": "./dist/State.js"
+    },
+    "./System": {
+      "source": "./src/System.ts",
+      "types": "./dist/System.d.ts",
+      "default": "./dist/System.js"
+    },
+    "./TickScheduler": {
+      "source": "./src/TickScheduler.ts",
+      "types": "./dist/TickScheduler.d.ts",
+      "default": "./dist/TickScheduler.js"
+    },
+    "./Transform2d": {
+      "source": "./src/Transform2d.ts",
+      "types": "./dist/Transform2d.d.ts",
+      "default": "./dist/Transform2d.js"
+    },
+    "./Transform3d": {
+      "source": "./src/Transform3d.ts",
+      "types": "./dist/Transform3d.d.ts",
+      "default": "./dist/Transform3d.js"
+    },
+    "./Transport": {
+      "source": "./src/Transport.ts",
+      "types": "./dist/Transport.d.ts",
+      "default": "./dist/Transport.js"
+    },
+    "./View": {
+      "source": "./src/View.ts",
+      "types": "./dist/View.d.ts",
+      "default": "./dist/View.js"
+    },
+    "./ecs": {
+      "source": "./src/ecs/index.ts",
+      "types": "./dist/ecs.d.ts",
+      "default": "./dist/ecs.js"
     }
   },
   "publishConfig": {
@@ -150,38 +178,42 @@
   },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p . && tsc -p tsconfig.root.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json && tsc -p tsconfig.test.json"
+    "typecheck": "tsc -p . && tsc -p tsconfig.examples.json",
+    "demo": "tsx examples/demo/main.ts",
+    "duel": "tsx examples/duel.ts",
+    "page": "vite examples/page",
+    "relay": "tsx examples/relay.ts",
+    "relay:check": "tsx examples/relay-check.ts",
+    "relay:cloudflare": "cd examples/relay-cloudflare && alchemy dev",
+    "bench": "tsx bench/accessors.ts",
+    "bench:compare": "tsx bench/compare.ts",
+    "bench:parallel": "tsx bench/parallel/run.ts"
   },
   "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
     "@cloudflare/workers-types": "^5.20261104.1",
-    "@effect/platform-browser": "~4.1.0",
-    "@types/three": "^0.187.0",
-    "effect": "~4.1.2",
-    "foldkit": "~0.170.0",
-    "three": "^0.187.0"
+    "@effect/platform-browser": "~4.1.4",
+    "@effect/platform-node": "~4.1.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "alchemy": "2.0.0-beta.87",
+    "effect": "~4.1.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "ws": "^8.23.0"
   },
   "peerDependencies": {
     "@cloudflare/workers-types": "^5",
     "@effect/platform-browser": "~4.1.0",
-    "@types/three": "^0.187.0",
-    "effect": "~4.1.2",
-    "foldkit": "~0.170.0",
-    "three": "^0.187.0"
+    "effect": "~4.1.2"
   },
   "peerDependenciesMeta": {
     "@cloudflare/workers-types": {
       "optional": true
     },
     "@effect/platform-browser": {
-      "optional": true
-    },
-    "@types/three": {
-      "optional": true
-    },
-    "foldkit": {
-      "optional": true
-    },
-    "three": {
       "optional": true
     }
   },

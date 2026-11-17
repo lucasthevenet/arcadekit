@@ -1,6 +1,6 @@
 # Changesets
 
-A changeset says that a change releases `arcadekit`, how far it bumps it, and the line that goes in its changelog. Add one to any PR that changes the published package (`packages/arcadekit`):
+A changeset says that a change releases a package, how far it bumps it, and the line that goes in its changelog. Add one to any PR that changes a published package (`packages/arcadekit`, `packages/three`):
 
 ```sh
 pnpm changeset
@@ -18,11 +18,11 @@ What changed, in a sentence. Then, under **Breaking**, what a game now writes in
 
 `pnpm fix` formats a `ts` block of a changeset too. Keep a `yield*` inside a generator there, or the formatter writes it back as `yield * x`.
 
-- `arcadekit` is the one published package; every entry (`arcadekit/core`, `arcadekit/net`, ...) releases with it.
-- The demo apps never release (`ignore`), nor the genres inside them.
+- Two packages are published: `arcadekit`, with which every one of its entries releases, and `@arcadekit/three`. A changeset names the ones it changes, each with its own bump.
+- `@arcadekit/three` has `arcadekit` as a peer. Releasing `arcadekit` releases it too, as a patch, with the new range.
 - While below 1.0, a minor bump may break the interface. Say how in the changeset.
 - A change that only adds is `minor` too while below 1.0. Say that nothing breaks.
 
 On `main`, the release workflow opens a "Version packages" PR that applies the pending changesets. Merging it publishes to npm.
 
-The first `arcadekit` on npm is a `0.0.0` placeholder the maintainer publishes from their machine (`scripts/npm-setup.sh`), so the package exists and can name the release workflow as its trusted publisher. Every real version comes from the workflow.
+npm publishes through trusted publishing: it trusts the release workflow, so no npm token is stored. Each package names the workflow as its trusted publisher in its own settings on npm, so a new package has to be given one there before its first release.

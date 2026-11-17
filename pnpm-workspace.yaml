@@ -1,5 +1,6 @@
 packages:
   - packages/*
-  - examples/*
   - website
-  - scripts/bench
+
+# A version is installed a day after it is published, not before.
+minimumReleaseAge: 1440

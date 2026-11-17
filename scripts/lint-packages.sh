@@ -1,31 +1,33 @@
 #!/usr/bin/env bash
-# Runs publint and @arethetypeswrong/cli on the published arcadekit package, then
-# checks that each built entry imports only the packages it may (none for arcadekit/core and
-# arcadekit/input).
-# Packs the package with pnpm first, so both tools see exactly what npm would get
-# (only `files` included). attw checks each of the package's entries. Build first:
+# Runs publint and @arethetypeswrong/cli on each published package, and checks what each of
+# its built entries imports (scripts/lint-entries.mjs).
+# Packs each package with pnpm first, so both tools see exactly what npm would get
+# (only `files` included). Build first:
 #   pnpm build:packages && pnpm lint:packages
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-dir="$root/packages/arcadekit"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 
 failed=()
-tarball="$(cd "$dir" && pnpm pack --pack-destination "$out" | tail -n 1)"
-if ! "$root/node_modules/.bin/publint" run "$tarball" --strict; then
-  failed+=("publint")
-fi
-if ! "$root/node_modules/.bin/attw" "$tarball" --profile esm-only --no-emoji; then
-  failed+=("attw")
-fi
-if ! (cd "$root" && ARCADEKIT_REQUIRE_DIST=1 "$root/node_modules/.bin/vitest" run packages/arcadekit/test/entry-packages.test.ts); then
-  failed+=("entry packages")
+for name in arcadekit three; do
+  dir="$root/packages/$name"
+  tarball="$(cd "$dir" && pnpm pack --pack-destination "$out" | tail -n 1)"
+  if ! "$root/node_modules/.bin/publint" run "$tarball" --strict; then
+    failed+=("publint($name)")
+  fi
+  if ! "$root/node_modules/.bin/attw" "$tarball" --profile esm-only --no-emoji; then
+    failed+=("attw($name)")
+  fi
+done
+
+if ! node "$root/scripts/lint-entries.mjs"; then
+  failed+=("entries")
 fi
 
 if ((${#failed[@]} > 0)); then
   echo "Failed: ${failed[*]}" >&2
   exit 1
 fi
-echo "arcadekit passes publint, attw and the entry-packages check."
+echo "arcadekit and @arcadekit/three pass publint and attw, and their entries import what they may."

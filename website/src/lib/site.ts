@@ -6,9 +6,11 @@ import { fileURLToPath } from "node:url";
 /** Where the site is served: its canonical address, with no trailing slash. */
 export const SITE_URL = "https://arcadekit.dev";
 export const REPO_URL = "https://github.com/lucasthevenet/arcadekit";
-/** The branch the site is built from, and that its links to GitHub point at. */
-export const BRANCH = "main";
-export const GRIMBONK_URL = "https://grimbonk.arcadekit.dev";
+/**
+ * The branch the site is built from, and that its links to GitHub point at. The pages describe
+ * the rebuild, which is on `next` until it becomes `main`.
+ */
+export const BRANCH = "next";
 export const NPM_URL = "https://www.npmjs.com/package/arcadekit";
 
 /** The repository's root on disk. The pages are read from it in place. */

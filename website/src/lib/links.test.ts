@@ -10,24 +10,23 @@ import { REPO_ROOT } from "./site.ts";
 
 // The repository is the fixture: every file these links name exists in it.
 const REPO_URL = "https://github.com/lucasthevenet/arcadekit";
-const CORE = "packages/arcadekit/src/core/README.md";
-const NET = "packages/arcadekit/src/net/README.md";
-const WORKER = "packages/arcadekit/src/net/worker/README.md";
-const PACKAGE_README = "packages/arcadekit/README.md";
+const KIT = "packages/arcadekit/README.md";
+const THREE = "packages/three/README.md";
+const ROADMAP = "docs/roadmap.md";
+const CONVENTIONS = "docs/conventions.md";
 
 const makeRewriter = () => {
   const reported: DeadLink[] = [];
   const links = createLinkRewriter({
     repoRoot: REPO_ROOT,
     repoUrl: REPO_URL,
-    branch: "main",
+    branch: "next",
     pageLinks: new Map([
       ["website/src/content/docs/index.mdx", "/"],
-      [PACKAGE_README, "/"],
-      [CORE, "/core"],
-      [NET, "/net"],
-      [WORKER, "/net/worker"],
-      ["CONTEXT.md", "/glossary"],
+      [KIT, "/reference/arcadekit"],
+      [THREE, "/reference/three"],
+      [ROADMAP, "/roadmap"],
+      [CONVENTIONS, "/conventions"],
     ]),
     onDeadLink: (link) => reported.push(link),
   });
@@ -35,7 +34,7 @@ const makeRewriter = () => {
 };
 
 /** Renders markdown as a file of the repository, with the rewriter's plugin. */
-const render = async (markdown: string, file = CORE) => {
+const render = async (markdown: string, file = THREE) => {
   const { html } = await markdownToHtml(markdown, {
     mdastPlugins: [makeRewriter().plugin],
     fileURL: pathToFileURL(path.join(REPO_ROOT, file)),
@@ -46,61 +45,53 @@ const render = async (markdown: string, file = CORE) => {
 describe("a relative link in a README", () => {
   it("goes to the page of the file it names", () => {
     const { rewrite, deadLinks } = makeRewriter();
-    expect(rewrite("../../README.md", CORE)).toBe("/");
-    expect(rewrite("worker/README.md", NET)).toBe("/net/worker");
-    expect(rewrite("../README.md", WORKER)).toBe("/net");
-    expect(rewrite("../../../../../CONTEXT.md", WORKER)).toBe("/glossary");
+    expect(rewrite("../arcadekit/README.md", THREE)).toBe(
+      "/reference/arcadekit"
+    );
+    expect(rewrite("../../docs/roadmap.md", KIT)).toBe("/roadmap");
+    expect(rewrite("./conventions.md", ROADMAP)).toBe("/conventions");
     expect(deadLinks()).toStrictEqual([]);
   });
 
-  it("goes to an entry's page when it names the entry's folder", () => {
+  it("goes to a package's page when it names the package's folder", () => {
     const { rewrite } = makeRewriter();
-    expect(rewrite("../core", NET)).toBe("/core");
-    expect(rewrite("../core/", NET)).toBe("/core");
+    expect(rewrite("../three", KIT)).toBe("/reference/three");
+    expect(rewrite("../three/", KIT)).toBe("/reference/three");
   });
 
   it("keeps its fragment and its query", () => {
     const { rewrite } = makeRewriter();
-    expect(rewrite("../../README.md#entries", CORE)).toBe("/#entries");
-    expect(rewrite("worker/README.md?plain=1#abuse", NET)).toBe(
-      "/net/worker?plain=1#abuse"
+    expect(rewrite("../arcadekit/README.md#input", THREE)).toBe(
+      "/reference/arcadekit#input"
+    );
+    expect(rewrite("../../docs/roadmap.md?plain=1#housekeeping", KIT)).toBe(
+      "/roadmap?plain=1#housekeeping"
     );
   });
 
   it("goes to GitHub when the file is not a page", () => {
     const { rewrite, deadLinks } = makeRewriter();
-    expect(
-      rewrite("../../../../../examples/survivor-demo/alchemy.run.ts", WORKER)
-    ).toBe(`${REPO_URL}/blob/main/examples/survivor-demo/alchemy.run.ts`);
-    expect(rewrite("../signalling/join-code.ts#L10", WORKER)).toBe(
-      `${REPO_URL}/blob/main/packages/arcadekit/src/net/signalling/join-code.ts#L10`
+    expect(rewrite("src/App.ts", KIT)).toBe(
+      `${REPO_URL}/blob/next/packages/arcadekit/src/App.ts`
     );
-    expect(rewrite("../../../../../examples/survivor-demo", WORKER)).toBe(
-      `${REPO_URL}/tree/main/examples/survivor-demo`
+    expect(rewrite("src/App.ts#L10", KIT)).toBe(
+      `${REPO_URL}/blob/next/packages/arcadekit/src/App.ts#L10`
     );
-    expect(deadLinks()).toStrictEqual([]);
-  });
-
-  it("starts from the package README's folder on the landing page, which includes it", () => {
-    const { rewrite, deadLinks } = makeRewriter();
-    expect(rewrite("src/core/README.md", PACKAGE_README)).toBe("/core");
-    expect(rewrite("src/net/worker/README.md", PACKAGE_README)).toBe(
-      "/net/worker"
+    expect(rewrite("examples/demo/", KIT)).toBe(
+      `${REPO_URL}/tree/next/packages/arcadekit/examples/demo`
     );
     expect(deadLinks()).toStrictEqual([]);
   });
 
   it("is dead when it names nothing, and is reported once", () => {
     const { rewrite, deadLinks, reported } = makeRewriter();
-    expect(rewrite("../nope/README.md", CORE)).toBe("../nope/README.md");
-    expect(rewrite("../nope/README.md", CORE)).toBe("../nope/README.md");
+    expect(rewrite("../nope/README.md", THREE)).toBe("../nope/README.md");
+    expect(rewrite("../nope/README.md", THREE)).toBe("../nope/README.md");
     // Out of the repository.
-    expect(rewrite("../../../../../README.md", CORE)).toBe(
-      "../../../../../README.md"
-    );
+    expect(rewrite("../../../README.md", THREE)).toBe("../../../README.md");
     const dead = [
-      { file: CORE, href: "../nope/README.md" },
-      { file: CORE, href: "../../../../../README.md" },
+      { file: THREE, href: "../nope/README.md" },
+      { file: THREE, href: "../../../README.md" },
     ];
     expect(deadLinks()).toStrictEqual(dead);
     expect(reported).toStrictEqual(dead);
@@ -110,18 +101,20 @@ describe("a relative link in a README", () => {
 describe("the plugin", () => {
   it("rewrites the links of a page as it renders", async () => {
     const html = await render(
-      "See [the net](../net/README.md#co-op), [the demo](../../../../examples/survivor-demo) and [Effect](https://effect.website).\n"
+      "See [the frame](../arcadekit/README.md#the-tick-and-the-frame), [the page](examples/page) and [Effect](https://effect.website).\n"
     );
-    expect(html).toContain('<a href="/net#co-op">the net</a>');
     expect(html).toContain(
-      `<a href="${REPO_URL}/tree/main/examples/survivor-demo">the demo</a>`
+      '<a href="/reference/arcadekit#the-tick-and-the-frame">the frame</a>'
+    );
+    expect(html).toContain(
+      `<a href="${REPO_URL}/tree/next/packages/three/examples/page">the page</a>`
     );
     expect(html).toContain('<a href="https://effect.website">Effect</a>');
   });
 
   it("leaves markdown from outside the repository, or from no file, alone", async () => {
     const { plugin } = makeRewriter();
-    const markdown = "See [it](../net/README.md), as #25 asked.\n";
+    const markdown = "See [it](../three/README.md), as #25 asked.\n";
     const outside = await markdownToHtml(markdown, {
       mdastPlugins: [plugin],
       fileURL: pathToFileURL(path.join(path.dirname(REPO_ROOT), "README.md")),
@@ -129,7 +122,7 @@ describe("the plugin", () => {
     const nowhere = await markdownToHtml(markdown, { mdastPlugins: [plugin] });
     for (const { html } of [outside, nowhere]) {
       expect(html).toBe(
-        '<p>See <a href="../net/README.md">it</a>, as #25 asked.</p>\n'
+        '<p>See <a href="../three/README.md">it</a>, as #25 asked.</p>\n'
       );
     }
   });
@@ -138,43 +131,43 @@ describe("the plugin", () => {
 describe("a full link", () => {
   it("goes to the page when it names a page's file on GitHub", () => {
     const { rewrite } = makeRewriter();
-    expect(rewrite(`${REPO_URL}/blob/main/CONTEXT.md#lockstep`, CORE)).toBe(
-      "/glossary#lockstep"
-    );
     expect(
-      rewrite(`${REPO_URL}/tree/main/packages/arcadekit/src/net/worker`, CORE)
-    ).toBe("/net/worker");
+      rewrite(`${REPO_URL}/blob/next/docs/roadmap.md#housekeeping`, KIT)
+    ).toBe("/roadmap#housekeeping");
+    expect(rewrite(`${REPO_URL}/tree/next/packages/three`, KIT)).toBe(
+      "/reference/three"
+    );
   });
 
   it("is dead when it names a file the repository doesn't have", () => {
     const { rewrite, deadLinks } = makeRewriter();
-    const renamed = `${REPO_URL}/blob/main/packages/arcadekit/src/core/RENAMED.md`;
-    const missing = `${REPO_URL}/tree/main/packages/arcadekit/src/nope`;
-    const outside = `${REPO_URL}/blob/main/../other/README.md`;
+    const renamed = `${REPO_URL}/blob/next/packages/arcadekit/src/RENAMED.ts`;
+    const missing = `${REPO_URL}/tree/next/packages/nope`;
+    const outside = `${REPO_URL}/blob/next/../other/README.md`;
     for (const href of [renamed, missing, outside]) {
-      expect(rewrite(href, CORE)).toBe(href);
+      expect(rewrite(href, KIT)).toBe(href);
     }
     expect(deadLinks()).toStrictEqual(
-      [renamed, missing, outside].map((href) => ({ file: CORE, href }))
+      [renamed, missing, outside].map((href) => ({ file: KIT, href }))
     );
   });
 
   it("is left alone otherwise", () => {
     const { rewrite, deadLinks } = makeRewriter();
     for (const href of [
-      `${REPO_URL}/blob/main/packages/arcadekit/CHANGELOG.md`,
-      `${REPO_URL}/tree/main/.changeset`,
+      `${REPO_URL}/blob/next/packages/arcadekit/src/App.ts`,
+      `${REPO_URL}/tree/next/.changeset`,
       // Another branch, which this checkout can't check.
-      `${REPO_URL}/blob/next/packages/arcadekit/src/not-written-yet/README.md`,
+      `${REPO_URL}/blob/main/packages/arcadekit/src/core/README.md`,
       `${REPO_URL}/issues/25`,
       `${REPO_URL}#readme`,
       "https://effect.website",
       "mailto:someone@example.com",
       "//example.com/page",
-      "/core",
+      "/reference/arcadekit",
       "#install",
     ]) {
-      expect(rewrite(href, CORE)).toBe(href);
+      expect(rewrite(href, KIT)).toBe(href);
     }
     expect(deadLinks()).toStrictEqual([]);
   });

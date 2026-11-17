@@ -1,28 +1,21 @@
 ---
-// The kit in numbers, for the landing page's status: its version, and, counted from the pages the
-// reference is made of, its entries, the modules they export, the exports those pages document,
-// and the guides.
+// The kit in numbers, for the landing page's status: the package's version, its entries (each
+// subpath of its `exports`, which is a module, or `arcadekit` and `arcadekit/ecs`), the packages
+// of the repository, and the guides.
 import { getCollection } from "astro:content";
 
 import kit from "../../../packages/arcadekit/package.json";
 
 const pages = await getCollection("docs");
-const reference = pages.flatMap((page) =>
-  page.data.api === undefined ? [] : [page.data.api]
+const entries = Object.keys(kit.exports).filter(
+  (subpath) => subpath !== "./package.json"
 );
 const stats = [
   { label: "Version", value: `v${kit.version}` },
+  { label: "Entries", value: entries.length },
   {
-    label: "Entries",
-    value: reference.filter((api) => api.kind === "entry").length,
-  },
-  {
-    label: "Modules",
-    value: reference.filter((api) => api.kind === "module").length,
-  },
-  {
-    label: "Documented exports",
-    value: reference.reduce((sum, api) => sum + api.exports, 0),
+    label: "Packages",
+    value: pages.filter((page) => page.id.startsWith("reference/")).length,
   },
   {
     label: "Guides",

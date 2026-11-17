@@ -3,142 +3,67 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  discoverPages,
-  firstParagraph,
-  kitEntries,
-  splitTitle,
-} from "./pages.ts";
-import type { DocPage, EntryPage } from "./pages.ts";
-import {
-  orderedEntries,
-  outlinedDocs,
-  referenceGroups,
-  sidebarTopics,
-} from "./sidebar.ts";
+import { discoverPages, firstParagraph, splitTitle } from "./pages.ts";
+import type { DocPage, SitePages } from "./pages.ts";
+import { outlinedGroups, sidebarTopics } from "./sidebar.ts";
 import { REPO_ROOT } from "./site.ts";
 
-const entry = (name: string): EntryPage => ({
-  file: `packages/arcadekit/src/${name}/README.md`,
-  files: [`packages/arcadekit/src/${name}/README.md`],
-  slug: `reference/${name}`,
-  link: `/reference/${name}`,
-  title: `arcadekit/${name}`,
-  description: "",
-  body: "",
-  entry: name,
-  readme: true,
-  exports: 0,
-});
-
 const doc = (slug: string): DocPage => ({
-  file: `docs/${slug}.md`,
-  files: [`docs/${slug}.md`],
+  file: `website/src/content/docs/${slug}.md`,
   slug,
   link: `/${slug}`,
-  title: slug,
-  description: "",
-  body: "",
   section: slug.includes("/") ? (slug.split("/", 1)[0] ?? "") : "",
 });
+
+/** The site's pages, with some of its docs added or taken out. */
+const withDocs = (pages: SitePages, docs: readonly DocPage[]): SitePages => ({
+  ...pages,
+  docs,
+});
+
+/** Each group's label, with the pages it lists. */
+const labelled = (groups: ReturnType<typeof outlinedGroups>) =>
+  Object.fromEntries(groups.map((group) => [group.label, group.items]));
 
 describe("the site's pages", () => {
   const pages = discoverPages();
 
-  it("has a page for each file under docs/, at its path there", () => {
-    const links = pages.docs.map((page) => page.link);
+  it("has a page for each file under src/content/docs/, at its path there", () => {
+    const own = pages.docs.filter((page) => page.section !== "project");
+    const links = own.map((page) => page.link);
     expect(links).toContain("/making-a-game");
-    expect(links).toContain("/guides/sprites");
+    expect(links).toContain("/guides/input");
     expect(links).toContain("/concepts/determinism");
-    for (const page of pages.docs) {
-      expect(page.file).toBe(`docs/${page.slug}.md`);
+    for (const page of own) {
+      expect(page.file).toBe(`website/src/content/docs/${page.slug}.md`);
       expect(page.link).toBe(`/${page.slug}`);
     }
   });
 
-  it("has a reference page for each entry of the package, at its import path", () => {
-    const links = pages.entries.map((page) => page.link);
-    expect(links.toSorted()).toStrictEqual(
-      Object.keys(kitEntries())
-        .map((name) => `/reference/${name}`)
-        .toSorted()
+  it("has the roadmap and the conventions, read where they are in docs/", () => {
+    expect(pages.repository.map((page) => [page.file, page.link])).toEqual(
+      expect.arrayContaining([
+        ["docs/conventions.md", "/conventions"],
+        ["docs/roadmap.md", "/roadmap"],
+      ])
     );
-    expect(links).toContain("/reference/net/worker");
   });
 
-  // The site would build without these two, but the sidebar lists a page by its heading and a
-  // shared link shows its first paragraph (website/README.md, "A new page").
-  it("has READMEs that start with their import path as the heading, then a paragraph", () => {
-    const readmes = pages.entries.filter((page) => page.readme);
-    expect(readmes.map((page) => page.entry)).toContain("core");
-    for (const page of readmes) {
-      expect(page.file).toBe(`packages/arcadekit/src/${page.entry}/README.md`);
-      expect(
-        page.title,
-        `${page.file} must start with the heading "# arcadekit/${page.entry}", its import path: the sidebar lists the page by it`
-      ).toBe(`arcadekit/${page.entry}`);
-      expect(
-        page.description,
-        `${page.file} must have a paragraph after its heading: it is the page's description`
-      ).not.toBe("");
-    }
-  });
-
-  it("gives an entry with no README its public file's comment, without its import path", () => {
-    const browser = pages.entries.find((page) => page.entry === "net/browser");
-    expect(browser?.readme).toBe(false);
-    expect(browser?.file).toBe("packages/arcadekit/src/net/browser/index.ts");
-    expect(browser?.description).toMatch(/^Lockstep over WebRTC/u);
-    // Its modules, each with what it is, then its own exports.
-    expect(browser?.body).toContain(
-      "- [`CoopClient`](coop-client.ts): one player's side of a co-op game"
-    );
-    expect(browser?.body).toContain("## Declarations\n\n### Coop");
-  });
-
-  it("adds an entry's own exports to its README, and says which entry's it has too", () => {
-    const game = pages.entries.find((page) => page.entry === "game");
-    expect(game?.files).toStrictEqual([
-      "packages/arcadekit/src/game/README.md",
-      "packages/arcadekit/src/game/index.ts",
+  it("has each package's README at /reference/<its folder>", () => {
+    expect(pages.packages.map((page) => [page.file, page.link])).toStrictEqual([
+      ["packages/arcadekit/README.md", "/reference/arcadekit"],
+      ["packages/three/README.md", "/reference/three"],
     ]);
-    expect(game?.body).toContain("## API\n\n### Declarations\n\n#### Command");
-    const browser = pages.entries.find((page) => page.entry === "game/browser");
-    expect(browser?.body).toMatch(
-      /^It has every export of \[`arcadekit\/game`\]\(README\.md\) too/mu
-    );
-    expect(browser?.body).toContain("### Engine");
-    expect(browser?.body).not.toContain("### Simulation");
-  });
-
-  it("has a page for each module, at its file's name", () => {
-    const rng = pages.modules.find(
-      (page) => page.slug === "reference/core/rng"
-    );
-    expect(rng?.module).toBe("Rng");
-    expect(rng?.file).toBe("packages/arcadekit/src/core/rng.ts");
-    expect(rng?.body).toContain('import { Rng } from "arcadekit/core";');
-    expect(rng?.body).toContain("## Constructors\n\n### make");
-    expect(pages.modules.map((page) => page.slug)).toContain(
-      "reference/net/browser/coop-client"
-    );
-  });
-
-  it("has the package's README at /reference, the reference's first page", () => {
-    expect(pages.kit.file).toBe("packages/arcadekit/README.md");
-    expect(pages.kit.link).toBe("/reference");
-    expect(pages.kit.title).toBe("arcadekit");
-  });
-
-  it("has the glossary", () => {
-    expect(pages.glossary.file).toBe("CONTEXT.md");
-    expect(pages.glossary.link).toBe("/glossary");
+    expect(pages.packages.map((page) => page.title)).toStrictEqual([
+      "arcadekit",
+      "@arcadekit/three",
+    ]);
   });
 
   it("renders each file below its title, which Starlight writes", () => {
     for (const page of pages.repository) {
-      expect(page.body).not.toMatch(/^# /u);
-      expect(page.body.length).toBeGreaterThan(0);
+      expect(page.body.startsWith("# ")).toBe(false);
+      expect(page.title).not.toBe("");
     }
   });
 
@@ -151,26 +76,23 @@ describe("the site's pages", () => {
   });
 });
 
-const labelled = (groups: { label: string; items: readonly unknown[] }[]) =>
-  Object.fromEntries(groups.map((group) => [group.label, group.items]));
-
 describe("the sidebar", () => {
   it("lists a page the outline doesn't name at the end of its folder's group", () => {
     const pages = discoverPages();
     const groups = labelled(
-      outlinedDocs([
-        ...pages.docs,
-        doc("concepts/rollback"),
-        doc("guides/menus"),
-        doc("testing/replays"),
-        doc("changelog"),
-        doc("recipes/menus"),
-      ])
+      outlinedGroups(
+        withDocs(pages, [
+          ...pages.docs,
+          doc("concepts/physics"),
+          doc("guides/menus"),
+          doc("changelog"),
+          doc("recipes/menus"),
+        ])
+      )
     );
-    expect(groups.Concepts?.at(-1)).toBe("concepts/rollback");
+    expect(groups.Concepts?.at(-1)).toBe("concepts/physics");
     expect(groups.More).toStrictEqual(["guides/menus"]);
-    expect(groups.Testing?.at(-1)).toBe("testing/replays");
-    // A file directly in docs/, or in a folder no group has, goes in Get started.
+    // A file directly in src/content/docs/, or in a folder no group has, goes in Get started.
     expect(groups["Get started"]?.slice(-2)).toStrictEqual([
       "changelog",
       "recipes/menus",
@@ -178,14 +100,17 @@ describe("the sidebar", () => {
   });
 
   it("leaves out a group with no page", () => {
-    const groups = labelled(outlinedDocs(discoverPages().docs));
+    const groups = labelled(outlinedGroups(discoverPages()));
     expect(groups.More).toBeUndefined();
   });
 
   it("names only pages that exist", () => {
     const pages = discoverPages();
-    const without = pages.docs.filter((page) => page.slug !== "guides/sprites");
-    expect(() => outlinedDocs(without)).toThrow("guides/sprites");
+    const without = withDocs(
+      pages,
+      pages.docs.filter((page) => page.slug !== "guides/input")
+    );
+    expect(() => outlinedGroups(without)).toThrow("guides/input");
   });
 
   it("has a topic for learning, one for the guides and one for the reference", () => {
@@ -203,55 +128,13 @@ describe("the sidebar", () => {
     }
   });
 
-  it("lists the entries by group, then any other, each with its sub-entries", () => {
-    const ordered = orderedEntries(
-      ["core", "game", "net", "net/worker", "physics", "net/browser"].map(entry)
-    ).map((page) => page.entry);
-    expect(ordered).toStrictEqual([
-      "game",
-      "core",
-      "net",
-      "net/browser",
-      "net/worker",
-      "physics",
+  it("lists the packages, then the roadmap and the conventions, in Reference", () => {
+    const groups = labelled(outlinedGroups(discoverPages()));
+    expect(groups.Packages).toStrictEqual([
+      "reference/arcadekit",
+      "reference/three",
     ]);
-  });
-
-  it("lists the package, each entry's page and modules in Reference, then the glossary", () => {
-    const groups = referenceGroups(discoverPages());
-    expect(groups[0]).toStrictEqual({
-      label: "The package",
-      slug: "reference",
-    });
-    expect(groups.at(-1)).toBe("glossary");
-    const core = groups.find(
-      (group) => typeof group === "object" && group.label === "arcadekit/core"
-    );
-    expect(core).toMatchObject({ collapsed: true });
-    expect(
-      typeof core === "object" && "items" in core ? core.items.slice(0, 2) : []
-    ).toStrictEqual([
-      { label: "Overview", slug: "reference/core" },
-      "reference/core/entity-pool",
-    ]);
-    // A sub-entry with modules is a group of its own; one with none is its page.
-    const game = groups.find(
-      (group) => typeof group === "object" && group.label === "arcadekit/game"
-    );
-    expect(game).toMatchObject({
-      items: [
-        { label: "Overview", slug: "reference/game" },
-        "reference/game/browser",
-        "reference/game/scenario",
-        {
-          label: "arcadekit/game/testing",
-          items: [
-            { label: "Overview", slug: "reference/game/testing" },
-            "reference/game/testing/manual-frames",
-          ],
-        },
-      ],
-    });
+    expect(groups["The project"]).toStrictEqual(["roadmap", "conventions"]);
   });
 });
 
