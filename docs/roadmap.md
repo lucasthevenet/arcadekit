@@ -106,6 +106,10 @@ Who lets go of what:
 - **A geometry and a material given to `Three.instances` are the game's to dispose of**, and so is whatever `make` of `Three.objects` made, through `free`. Nothing here does, and nothing says when one was forgotten.
 - **A loader of Three.js that fetches for itself**, a glTF file's pictures, say, does not go through `Assets.Loader`: a test's files in memory do not serve it, and an interrupted load does not give those requests up.
 
+Reported, and not settled:
+
+- **A page's sound after a laptop's lid was shut and opened.** With the example page of `arcadekit` on a MacBook: music playing, the lid shut and opened, the game played again, and the sound took a moment to come back and then came with its first notes all at once, as if they had been queued. Other apps on the same machine did not do it. One cause was found and closed: cues played while the page's audio was asleep or still waking were started all the same, and were heard together when it woke; they are dropped now. That was reproduced only with an audio made slow to wake in headless Chromium, never with a real lid, and it was not heard again on the machine after the change. Before a stable release: shut a real lid, on more than one browser, and listen. If it is still there, look at what the audio's clock does across the sleep (`currentTime` against the wall clock, and `state`), and at whether the looping track should be started afresh when the page is seen again in place of being woken.
+
 Tests:
 
 - **`toEqual` finds two tagged errors that differ only in their `message` equal.** A test that compares a failure that way checks everything but the reason. [Conventions](./conventions.md#tests) says how to compare; nothing stops the other way.
