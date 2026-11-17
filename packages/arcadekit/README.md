@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 680 tests, 92 of them of @arcadekit/three
+pnpm test                          # 685 tests, 92 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -775,11 +775,13 @@ Music is not an event. It is what the game, as it is, should sound like, for as 
 - `{ track: "fanfare", once: true }` plays to its end and no further. It is still what the channel is playing: it is not started again while the body says the same, another track fades it out if it has not ended, and it plays again from its start once the body has said something else in between. A sound that only marks a moment, and need not be faded or stopped, is a [cue](#sound).
 - Nothing happens while it says the same. When it says another track the first fades out and the second fades in, over `fade` seconds; another volume is the same track, turned up or down as long. Half a second when nothing says.
 - It is worked out from the game and kept nowhere in it. A game that is loaded from a save, or an app that starts in the middle of a level, has its music from its first frame, and a game with music has the same hash, log and save as one with none.
-- The system's name is its channel. Two systems are two channels, which play together: the score, and the wind.
+- Every such system is of one score, on the channel `"music"`. Of a menu's music and a level's, each a system that runs while the game is there, the one that has something to play is heard, and a track that both play goes on from the one to the other with nothing told. What a frame's systems say of a channel is made one thing when they have all run: silence gives way to a track, whichever was said first.
+- Two systems that say different tracks of one channel in one frame, or one track at two volumes, is a bug: the frame fails where the second is said, with an error that names the channel and both.
+- What plays beside the score has a channel of its own, any name: `Sound.music("game/Wind", body, { channel: "wind" })`. Two channels play together, and several systems can share that one too.
 - The body reads what a frame system can: singletons, states, queries, events, [assets](#assets). Where sound goes nowhere it is not run at all.
-- Under `System.runIf` its channel is silent while the condition does not hold, as if the body had said so: music that is for a level stops when the level is left, with the fade it was given. Run again, the body says what plays, from the start of the track.
+- Under `System.runIf` it says nothing should play while the condition does not hold, as if the body had said so: music that is for a level stops when the level is left, with the fade it was given, unless another system of its channel plays. Run again, the body says what plays, from the start of the track.
 - When the app's scope closes, every channel that was playing is told silence at once.
-- `(yield* Sound.Player).music(channel, track, { volume, fade })` is what it is made of, for a frame system of your own. It tells the output of a change and of nothing else, so it can be said every frame, and in the tick it throws, as `play` does.
+- `(yield* Sound.Player).music(channel, track, { volume, fade })` is what it is made of, for a frame system of your own. It tells the output of a change and of nothing else, so it can be said every frame, and in the tick it throws, as `play` does. The output is told at the end of the frame, as for a cue; said in the input stage, with the frame that follows.
 
 ### A level's sounds
 
@@ -795,12 +797,17 @@ const ForestCues = Sound.cues("forest/Cues", Forest, ({ creak }) => [
 ]);
 
 // Its music: a clip of the bundle, while the bundle is loaded.
-const Air = Sound.music("forest/Air", function* () {
-  const forest = yield* Forest;
-  return forest._tag === "Ready"
-    ? { track: forest.assets.wind, volume: 0.3 }
-    : undefined;
-});
+// Beside the score, so on a channel of its own.
+const Air = Sound.music(
+  "forest/Air",
+  function* () {
+    const forest = yield* Forest;
+    return forest._tag === "Ready"
+      ? { track: forest.assets.wind, volume: 0.3 }
+      : undefined;
+  },
+  { channel: "air" }
+);
 ```
 
 The sounds a page is given by name are there for as long as the page. A level's own are [assets](#assets) of its bundle, loaded when the game enters it and let go when it leaves.

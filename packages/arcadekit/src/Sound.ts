@@ -208,6 +208,9 @@ export const makeRecorder = (): Recorder => {
 
 // --- the player ------------------------------------------------------------------
 
+/** The channel of a system made with `Sound.music` that names none. */
+const MUSIC = "music";
+
 /** How a cue is played. */
 export interface Options {
   /** How loud: 1, the cue as it was recorded, when left out. Not below 0. */
@@ -256,8 +259,18 @@ export interface PlayerShape {
    * Says what a channel is to be playing, over and over or with `once` to
    * its end: a track, or `undefined` for silence. Said again with the
    * same track and volume it does nothing, so a system says it every
-   * frame; said with another, the output fades from the one to the other. A channel is any name:
-   * `Sound.music` uses its system's. Between ticks only, as `play`.
+   * frame; said with another, the output fades from the one to the
+   * other.
+   *
+   * What a frame's systems say of one channel is one thing, which the
+   * output is told when they have all run. Silence gives way to a track,
+   * whichever was said first: of the systems that share a channel, the
+   * one that has something to play is heard. Two tracks said of one
+   * channel in one frame, or one track at two volumes, is a bug and
+   * throws: a channel plays one thing at a time.
+   *
+   * A channel is any name: `Sound.music` uses `"music"` unless it is
+   * given another. Between ticks only, as `play`.
    */
   readonly music: (
     channel: string,
@@ -283,10 +296,23 @@ const playerLayer = Layer.effect(
     // may play are told from the tick.
     const world = yield* World;
     // What each channel was last told: the output hears of a change only.
+    // And what this frame's systems have said of it so far, if any has:
+    // kept in the same record, so that a frame makes none.
     const channels = new Map<
       string,
-      { track: Playable | undefined; volume: number; once: boolean }
+      {
+        track: Playable | undefined;
+        volume: number;
+        once: boolean;
+        said: boolean;
+        next: Playable | undefined;
+        nextVolume: number;
+        nextOnce: boolean;
+        nextFade: number;
+      }
     >();
+    const describe = (track: Playable, volume: number, once: boolean) =>
+      `"${nameOf(track)}"${volume === 1 ? "" : ` at ${volume}`}${once ? ", once" : ""}`;
     // An app that goes leaves nothing playing in an output that stays.
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -296,6 +322,7 @@ const playerLayer = Layer.effect(
           }
         }
         channels.clear();
+        asked.clear();
       })
     );
     // What a frame's systems have asked to hear, by the cue: one sound for
@@ -319,6 +346,24 @@ const playerLayer = Layer.effect(
         }
       },
       _flush() {
+        for (const [channel, told] of channels) {
+          if (!told.said) {
+            continue;
+          }
+          told.said = false;
+          const { next, nextOnce, nextVolume } = told;
+          if (
+            told.track === next &&
+            told.volume === nextVolume &&
+            told.once === nextOnce
+          ) {
+            continue;
+          }
+          told.track = next;
+          told.volume = nextVolume;
+          told.once = nextOnce;
+          output.music(channel, next, nextVolume, told.nextFade, nextOnce);
+        }
         if (asked.size === 0) {
           return;
         }
@@ -336,31 +381,55 @@ const playerLayer = Layer.effect(
         const volume =
           track === undefined ? 0 : Math.max(0, options?.volume ?? 1);
         const once = track !== undefined && options?.once === true;
+        const fade = Math.max(0, options?.fade ?? 0.5);
         const told = channels.get(channel);
         if (told === undefined) {
           // A channel that was never told anything is silent already.
-          if (track === undefined) {
-            return;
+          if (track !== undefined) {
+            channels.set(channel, {
+              track: undefined,
+              volume: 0,
+              once: false,
+              said: true,
+              next: track,
+              nextVolume: volume,
+              nextOnce: once,
+              nextFade: fade,
+            });
           }
-          channels.set(channel, { track, volume, once });
-        } else if (
-          told.track === track &&
-          told.volume === volume &&
-          told.once === once
-        ) {
           return;
-        } else {
-          told.track = track;
-          told.volume = volume;
-          told.once = once;
         }
-        output.music(
-          channel,
-          track,
-          volume,
-          Math.max(0, options?.fade ?? 0.5),
-          once
-        );
+        if (!told.said) {
+          told.said = true;
+          told.next = track;
+          told.nextVolume = volume;
+          told.nextOnce = once;
+          told.nextFade = fade;
+          return;
+        }
+        // Said already this frame. Silence gives way to a track, whichever
+        // came first; the same thing said twice is said once.
+        if (track === undefined) {
+          return;
+        }
+        if (told.next === undefined) {
+          told.next = track;
+          told.nextVolume = volume;
+          told.nextOnce = once;
+          told.nextFade = fade;
+          return;
+        }
+        if (
+          told.next !== track ||
+          told.nextVolume !== volume ||
+          told.nextOnce !== once
+        ) {
+          // The frame ends here, and what it said with it.
+          told.said = false;
+          throw new Error(
+            `The channel "${channel}" was told to play two things in one frame: ${describe(told.next, told.nextVolume, told.nextOnce)} and ${describe(track, volume, once)}. A channel plays one track at a time. The systems made with Sound.music share the channel "${MUSIC}" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`
+          );
+        }
       },
     };
   })
@@ -585,26 +654,33 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *   states, queries, events, assets. A level's own music is a clip of its
  *   bundle: `const forest = yield* Forest`, and `forest.assets.theme` once
  *   it is `Ready`.
- * - The system's name is its channel. Two systems are two channels, which
- *   play together: music, and the wind.
+ * - Every such system is of one score, on the channel `"music"`: of a
+ *   menu's and a level's, the one that has something to play is heard,
+ *   and a track that both play goes on from the one to the other. Two
+ *   that say different tracks in one frame is a bug, and throws.
+ * - What plays beside the score has a `channel` of its own, any name:
+ *   `Sound.music("game/Wind", body, { channel: "wind" })`. Two channels
+ *   play together.
  * - `fade` is how many seconds a change takes, half a second when left
  *   out.
  * - Where sound goes nowhere the body is not run at all.
- * - It needs `Sound.plugin`. Under `System.runIf` its channel is silent
- *   while the condition does not hold, as if the body had said so: music
- *   that is for a level stops when the level is left. Run again, the body
- *   says what plays, from the start of the track.
+ * - It needs `Sound.plugin`. Under `System.runIf` it says nothing should
+ *   play while the condition does not hold, as if the body had said so:
+ *   music that is for a level stops when the level is left, unless
+ *   another system of its channel plays. Run again, the body says what
+ *   plays, from the start of the track.
  */
 export const music = <Eff extends Effect.Effect<any, any, any>>(
   name: string,
   body: () => Generator<Eff, TrackOf, never>,
-  options: { readonly fade?: number } = {}
+  options: { readonly fade?: number; readonly channel?: string } = {}
 ): System.System<Effect.Error<Eff>, Effect.Services<Eff> | Player> => {
   const pick = Effect.gen(body) as Effect.Effect<
     TrackOf,
     Effect.Error<Eff>,
     Effect.Services<Eff>
   >;
+  const channel = options.channel ?? MUSIC;
   return System.make(name, function* () {
     const player = yield* Player;
     if (!player.audible) {
@@ -612,22 +688,22 @@ export const music = <Eff extends Effect.Effect<any, any, any>>(
     }
     const picked = yield* pick;
     if (picked === undefined) {
-      player.music(name, undefined, options);
+      player.music(channel, undefined, options);
     } else if (isTrack(picked)) {
-      player.music(name, picked.track, {
+      player.music(channel, picked.track, {
         volume: picked.volume ?? 1,
         fade: picked.fade ?? options.fade ?? 0.5,
         once: picked.once === true,
       });
     } else {
-      player.music(name, picked, options);
+      player.music(channel, picked, options);
     }
   }).pipe(
     System.inStage("frame"),
     // Not run, it is not asked, and there is nothing it says should play.
     System.otherwise(
       Effect.map(Player, (player) => {
-        player.music(name, undefined, options);
+        player.music(channel, undefined, options);
       })
     )
   ) as System.System<Effect.Error<Eff>, Effect.Services<Eff> | Player>;

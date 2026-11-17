@@ -91,7 +91,7 @@ Values that have to be right and are not checked:
 
 - **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
 - **A texture made by `Three.texture` cannot be turned over in `prepare`**: Three.js does not read `flipY` of a texture made of a bitmap, and setting it does nothing.
-- **Two `Sound.music` systems are two channels, by their names.** Two that were meant to be one score, a menu's and a level's, play on top of each other, each fading as if it were alone.
+- **What a frame that failed said of a channel stands until a frame ends.** Systems that say something else of it in the next frame are refused as if two had spoken at once, unless the failure was that refusal itself. A game under a driver stops at a failed frame; a test that steps on after one has to know.
 - **A cue asked for before the page was first touched is dropped; a track is kept.** The first sound of a game that starts with a cue is not heard. Nothing says so.
 
 Who lets go of what:
