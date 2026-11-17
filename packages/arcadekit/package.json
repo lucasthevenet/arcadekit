@@ -92,6 +92,11 @@
       "types": "./dist/Query.d.ts",
       "default": "./dist/Query.js"
     },
+    "./Relay": {
+      "source": "./src/Relay.ts",
+      "types": "./dist/Relay.d.ts",
+      "default": "./dist/Relay.js"
+    },
     "./Resource": {
       "source": "./src/Resource.ts",
       "types": "./dist/Resource.d.ts",
@@ -177,18 +182,25 @@
     "demo": "tsx examples/demo.ts",
     "duel": "tsx examples/duel.ts",
     "page": "vite examples/page",
+    "relay": "tsx examples/relay.ts",
+    "relay:check": "tsx examples/relay-check.ts",
+    "relay:cloudflare": "cd examples/relay-cloudflare && alchemy dev",
     "bench": "tsx bench/accessors.ts"
   },
   "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
     "@cloudflare/workers-types": "^5.20261104.1",
-    "@effect/platform-browser": "~4.1.0",
-    "@effect/platform-node": "~4.1.2",
+    "@effect/platform-browser": "~4.1.4",
+    "@effect/platform-node": "~4.1.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "effect": "~4.1.2",
+    "@types/ws": "^8.18.2",
+    "alchemy": "2.0.0-beta.87",
+    "effect": "~4.1.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "ws": "^8.23.0"
   },
   "peerDependencies": {
     "@cloudflare/workers-types": "^5",

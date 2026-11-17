@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 773 tests, 93 of them of @arcadekit/three
+pnpm test                          # 804 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -68,7 +68,7 @@ Every module is an entry of its own, named as the module is: `arcadekit/App`, `a
 | Entry | What it has | Imports |
 | --- | --- | --- |
 | `arcadekit` | Every module below, as `import { App, Input } from "arcadekit"` | `effect` |
-| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Lockstep`, `Migrate`, `Plugin`, `Query`, `Resource`, `Rollback`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `Transport`, `View` | `effect` |
+| `arcadekit/App`, `arcadekit/Input`, … | One module each: `Action`, `App`, `Assets`, `Driver`, `Event`, `Field`, `Input`, `Lockstep`, `Migrate`, `Plugin`, `Query`, `Relay`, `Resource`, `Rollback`, `Save`, `Schemas`, `Services`, `Singleton`, `Sound`, `State`, `System`, `TickScheduler`, `Transform3d`, `Transform2d`, `Transport`, `View` | `effect` |
 | `arcadekit/Browser` | What only a page can use: its display, its devices, its pictures, its sound, and `Browser.runMain`, which starts a game in it | `effect` and `@effect/platform-browser`, an optional peer |
 | `arcadekit/ecs` | The [storage core](#snapshots) on its own: components, the world, queries, commands, snapshots, the hash | Nothing |
 
@@ -970,12 +970,13 @@ app.enqueue(Strike, { attacker, target }); // applied at the start of the next t
 
 - A refused action changes nothing. A handler may refuse at any point, even after it has written: what it wrote to components, the random numbers it drew, the commands it queued, the events it emitted and the actions it enqueued are all taken back, and the events it read are unread again. So is everything done by a handler that dies of a bug half-way. See [Refusals leave nothing behind](#refusals-leave-nothing-behind).
 - `app.dispatch` is for turn-based input: the caller gets the typed outcome immediately. `app.enqueue` is for real-time input: the action waits for the start of the next tick, and a refusal becomes an `Action.Rejected` event. Both are for code outside the simulation. A system, a script or a handler issues an action with the `Actions` service, `(yield* Action.Actions).enqueue(...)`, so AI plays by the same rules as players. `handles(action)` of the same service says whether the game has a handler for an action, which `enqueue` throws without.
+- A handler is told where the action came from, beside its payload: `function* (payload, { from })`. In a game of several peers `from` is the name of the peer that issued it, on every peer alike; in a game of one it is undefined, as it is for an action the simulation issues itself. Who may do a thing is checked against that, and not against a name in the payload, which whoever sent it wrote. It is in the log, kept with an action that waits in a save, and told with a refusal: `Action.Rejected` has it, so that a UI shows a player their own.
 - Dispatching an action with no handler, or with the wrong payload, does not compile.
 
 ### Payloads, saves and the network
 
 - The payload type comes from the schema, and every payload is checked against it before the handler runs, including refinements the compiler cannot see (an amount between 1 and 10, say). A mismatch is an `Action.InvalidPayload` failure.
-- Input that arrives as data goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. An unknown name or a malformed payload is a failure or a `Rejected` event, never a crash.
+- Input that arrives as data goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. An unknown name or a malformed payload is a failure or a `Rejected` event, never a crash. Either takes who issued it as a third argument, for a program that brings actions in on someone else's behalf, a server for its clients: `app.enqueueByName(name, json, client)`.
 - `app.actionLog` holds what came into the game from outside, in the order it came, with payloads in JSON form (a bigint or a date in the payload is converted for you): every dispatched action that was accepted, and every action enqueued through the app, marked `queued` and, if it was refused when its turn came, `refused` with the reason in a few words. Checkpoints of the world's hash are among them. What the simulation issued itself through `Actions` is not in the log: a replay's own systems issue it again. `Action.encodeLog` and `Action.decodeLog` turn the log into text and back; `Action.isCheckpoint(entry)` tells the two kinds of entry apart.
 - `App.replay(freshApp, log, { delta, ticks })` reproduces the game in an app made with the same seed and started from the same state, and checks itself as it goes; see below.
 - `Action.define<Payload>()("Name")` still defines an action with no schema. Only the compiler checks it, so keep those for actions that never leave the program.
@@ -1094,6 +1095,16 @@ Every peer runs the same simulation, and what they send each other is the action
 - The session steps the app. `app.tick` and `app.dispatch` throw from then on, and say why: either would move this machine's game and nobody else's. A driver is given the session in the app's place, `Driver.frames(session, { hz: 60 })`, and draws the game through it; a driver at another rate than the session's `delta` is refused.
 - A tick hears the devices first, as an app's own does, and a key that is pressed while the peer waits for another is in its next message.
 - What the simulation issues itself with `Actions`, a bot's move, is not sent: every peer's own simulation issues it.
+- Every peer's handler is told which peer issued an action, `{ from }`, beside the payload. The session stamps it from the message it came in, so a player's move need not say whose it is, and cannot say it is someone else's:
+
+  ```ts
+  const pass = Action.handler(Pass, function* (_, { from }) {
+    const turn = yield* Turn;
+    if (turn.player !== from) return yield* Effect.fail(new NotYourTurn());
+    turn.player = other(from);
+  });
+  ```
+
 - Every peer is made alike: the same plugins, the same seed, the same state to start from. A session begins at whatever tick its app is at, so a game can go on from a save that every peer loaded.
 - The log of a peer is an ordinary log. Every peer's is the same, entry for entry, and `App.replay` plays it back into a game of one.
 - `app.divert(take)` is what a session is made with, for a session of another kind: it hands over what comes in from outside, and returns the one way left to queue an action and to run a tick.
@@ -1161,19 +1172,9 @@ A session holds no socket. What carries its messages is a service, `Transport`, 
 - There is no default. A game of several peers that is given no transport does not compile, as with any service: every way of reaching the others is a choice.
 - It asks little of a wire: that every message arrives, in whatever order. A message that arrives twice is dropped by the session.
 - `Transport.layerBroadcastChannel(name)` is the transport between the tabs, the windows and the workers of one browser, or the threads of one process. Every peer that opens the same name hears every other, with no server. It reaches no other machine. The channel is closed with the layer's scope, so the layer is provided to the whole program, and a transport that is used after its scope has closed throws and says so, in place of a game that waits for ever.
-- `Transport.text(wire)` makes a transport of anything that carries text, for a wire of the game's own. A message travels as `Lockstep.encode` writes it, and a text that is not a message is dropped and counted in `dropped`: nothing that comes off a wire is trusted. Through a WebSocket, to a relay that passes each message on to the others in a room, which is the game's to run:
-
-  ```ts
-  const socket = new WebSocket(url);
-  const transport = Transport.text({
-    send: (text) => socket.send(text),
-    listen(onText) {
-      socket.onmessage = (event) => onText(String(event.data));
-      return () => socket.close();
-    },
-  });
-  program.pipe(Effect.provide(Transport.layer(transport)));
-  ```
+- `Transport.layerWebSocket(url)` is the transport between machines: a WebSocket to [a relay](#a-relay), which passes each message on to the other peers of the room. The address says the room and the peer, as `Relay.address` writes it. What is sent before the socket has opened is kept and sent when it has. It uses the `WebSocket` every platform has, a page, a worker and Node 22 alike, and is closed with its layer's scope.
+- A socket that closes for any other reason is the end of the game over it: `send` and `receive` throw `Transport.Closed` from then on, with the close code and what the relay said, so the tick fails and its driver stops. It does not connect again, since a message lost on the way would be lost for good.
+- `Transport.text(wire)` makes a transport of anything else that carries text, a data channel or a port: `{ send(text), listen(onText) }`. A message travels as `Lockstep.encode` writes it, and a text that is not a message is dropped and counted in `dropped`: nothing that comes off a wire is trusted.
 
 - `Transport.makeHub({ delay, seed })` is a network in memory, for tests. `hub.layer(peer)` is a peer's end of it. Nothing is lost and nothing happens until the test says so: a message is on its way for as many steps as its delay, a number or a range from which each message's is drawn, so that they overtake each other, and time passes when the test calls `hub.step()`. The same seed is the same network.
 
@@ -1186,6 +1187,71 @@ A session holds no socket. What carries its messages is a service, `Transport`, 
   ```
 
 - The frame loop rests while its tab is hidden, and a peer that rests is waited for. Two peers in one browser are two windows side by side, not two tabs of one.
+
+### A relay
+
+```ts
+// What a peer connects to.
+const url = Relay.address("wss://relay.example.com/rooms", {
+  room: "blue",
+  peer: "ada",
+});
+// "wss://relay.example.com/rooms/blue?peer=ada"
+
+// What a host does with a peer that asks to come in, and with what one sent.
+const member = Relay.join(request.url, present); // Exit<Member, Refused>
+const deliveries = Relay.forward(member, data, present); // Exit<Delivery[], Refused>
+for (const { to, text } of deliveries.value) socketOf(to).send(text);
+```
+
+Peers on different machines meet at a relay: each opens a WebSocket to it, at an address that names a room and the peer, and what one sends the relay passes on to the others in the room. It runs no game and keeps nothing of one.
+
+`arcadekit/Relay` is the relay as a handler, and no server: plain functions that say what to do with a connection and with what it sent, for whatever accepts the sockets to call. It imports Effect alone, so it runs wherever that does.
+
+- `Relay.join(url, present, options)` says whether a peer may come in, from the address it asked for and whoever is in the room already, and gives its `Member`, `{ room, peer }`, for the host to keep with the connection. It is refused when the address names no room or no peer, when the name is taken in that room, when the room is full (`maxPeers`, 8 unless told), or when the room lets in only `peers` this is not one of.
+- `Relay.forward(member, data, present, options)` says what to pass on of something a member sent: one text for every other member of its room. What is passed on is the message as the relay read it, written out again, so nothing rides along. It is refused when it is not a message, when it is longer than `maxLength` (65,536 characters unless told), or when it says it is from anyone but the member that sent it.
+- A refusal is a `Relay.Refused`. A host closes the socket with it, `socket.close(refused.code, refused.reason)`: the reason is a few words, `"name taken"`, since a close frame carries 123 bytes at most, and `Transport.layerWebSocket` hands it to the peer it was closed on. Its `message` says more, with the names, for a log, and `status` is the HTTP status for a host that turns the request away instead; a page is told nothing of that, so a host that wants the peer to know why accepts the socket and closes it.
+- **The relay vouches for the sender.** A peer says who it is once, when it connects, and is held to it: a message in another's name is refused and the socket closed. So the `from` [a handler is told](#actions-the-rules-layer) is the peer the relay let in under that name.
+- Whether to let that peer in under that name is the host's to decide before it calls `join`, with whatever the request carries: a token, a session, a list of players. The relay asks nothing of it.
+- `present` is whoever is connected, as the host knows them. The functions keep nothing between two calls, which is what a host that is put to sleep between two messages needs: on Cloudflare a Durable Object reads its members back from its sockets' attachments, and `Relay.Member` is the schema to keep one with; behind an API gateway they are the rows of a table of connections.
+- `Relay.make(options)` keeps them itself, for a host that stays in memory: `relay.connect(url, send)` gives a connection to `receive` what the peer sent and to `close`. `examples/relay.ts` is that behind a WebSocket server under Node, forty lines, and `pnpm --filter arcadekit relay` runs it: two machines on one network play through it as it is.
+- A room is named by its address and belongs to nobody: the first peer to ask opens it, and it is gone when the last has left.
+
+**On Cloudflare, with [Alchemy](https://alchemy.run).** `examples/relay-cloudflare` is the relay as a Worker and a Durable Object per room, declared and deployed with Alchemy: three files, of which `src/room.ts` is the host.
+
+```ts
+export default class Room extends Cloudflare.DurableObject<Room>()(
+  "Rooms",
+  Effect.gen(function* () {
+    const state = yield* Cloudflare.DurableObjectState;
+    return Effect.gen(function* () {
+      const present = /* every socket of the room, with the member it carries */;
+      return {
+        fetch: Effect.gen(function* () {
+          const joined = Relay.join(request.url, members(yield* present));
+          if (Exit.isFailure(joined)) return turnedAway(joined);
+          const [response, socket] = yield* Cloudflare.upgrade();
+          yield* socket.setAttachment(Relay.Member, joined.value);
+          return response;
+        }),
+        webSocketMessage: Effect.fn(function* (socket, data) {
+          const from = yield* socket.getAttachment(Relay.Member);
+          const deliveries = Relay.forward(from, data, members(yield* present));
+          if (Exit.isFailure(deliveries)) return yield* close(socket, deliveries);
+          for (const { to, text } of deliveries.value) yield* socketOf(to).send(text);
+        }),
+      };
+    });
+  })
+) {}
+```
+
+- The room keeps nothing in memory. Cloudflare puts a Durable Object to sleep between two messages and keeps its sockets open, and each socket carries its member as an attachment, which is read back on every call: that is all `join` and `forward` ask to be told.
+- `pnpm --filter arcadekit relay:cloudflare` runs it on this machine, in workerd, with no Cloudflare account: `alchemy dev`, with the stack's state kept in a folder beside it. `alchemy deploy`, from `examples/relay-cloudflare`, puts it on an account.
+- `pnpm --filter arcadekit relay:check <address>` checks a relay wherever it runs: two peers of a small game play through it and have to end on the same world, a second peer of a taken name has to be refused, and so does a message in another's name. It passes against the Node relay (`ws://localhost:8787`) and against this one under `alchemy dev` (`ws://localhost:1337/rooms`). It has not been run against a deployed Worker: that needs an account.
+- A peer that is refused there is turned away with the HTTP status, before there is a socket, and so learns only that it did not connect. Accepting the socket and closing it with the reason, as the Node relay does, left the socket half-closed under workerd.
+- Alchemy and its Cloudflare package are dev dependencies of this package, for that example alone, as React is for the page's. They are a beta (2.0.0-beta.87), and ask for Effect 4.1.4, which is what the repository now installs.
+- Behind an API gateway on AWS the same two functions are called from a function per event, with who is connected kept in a table: `join` on connect, `forward` on a message, and the row deleted on disconnect. There is no example of that here.
 
 ### Peers that come apart
 
@@ -1234,16 +1300,20 @@ Lockstep rests on every peer's simulation going the same way. One system that re
 | `src/View.ts` | The view bridge: the values a UI may see, published once per frame when they changed, and the actions it sends |
 | `src/Lockstep.ts` | A session of several peers: the messages they exchange, the tick that waits for every peer's, and the hashes they compare |
 | `src/Rollback.ts` | The session that does not wait: it runs ahead of the network and goes back when it was wrong |
-| `src/Transport.ts` | What carries a session's messages: the service, what joins a session to it, a transport over text, the one between tabs, and a network in memory for tests |
+| `src/Transport.ts` | What carries a session's messages: the service, what joins a session to it, the transport between machines, the one between tabs, one over any text, and a network in memory for tests |
+| `src/Relay.ts` | The relay between machines, as a handler: who may come into a room, and what to pass on of what a member sent |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, and a world that is restored compared with a new one that loaded the same snapshot. `test/peers.ts` is the game and the network those of several peers share |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep, rollback, rewind, restore, transport, relay, origin and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, peers with a system that is not deterministic, and a world that is restored compared with a new one that loaded the same snapshot. `test/peers.ts` is the game and the network those of several peers share |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
+| `examples/relay.ts` | A relay under Node: `Relay.make()` behind a WebSocket server (`ws`, a dev dependency for this and for the relay's tests) |
+| `examples/relay-cloudflare/` | The relay on Cloudflare, declared with Alchemy: a Worker, and a Durable Object per room that reads who is connected back from its sockets |
+| `examples/relay-check.ts` | Checks a relay at an address: two peers play through it, and a taken name and a message in another's name have to be refused |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
 | `examples/page/` | A game in a page: played with the keyboard and the pointer, drawn on a canvas, heard through a cue of the page's, one of the level's and music that follows the game, with a level whose assets come and go, started with `Browser.runMain` around `App.run`. Its menu and heads-up display are built twice on the view bridge: `ui-dom.ts` with the DOM and `ui-react.ts` with React, both from `protocol.ts`, the views and actions they share with `game.ts` |
 
@@ -1448,14 +1518,14 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A frame system of the game's own that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps: there is no helper for it in this package. [`@arcadekit/three`](../three/README.md#between-two-ticks) does it for what it draws, with `smooth: true`, and keeps the place before to itself.
 - `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
 - `arcadekit/Browser` is one entry for everything a page has.
-- No transport here leaves the machine. `Transport.layerBroadcastChannel` reaches the tabs and workers of one browser, and `Transport.text` makes a transport of a WebSocket or a data channel that the game opens itself: the relay, or whatever introduces the peers to each other, is the game's to run. The roadmap has it, with the decision it waits for.
+- The relay is a handler, and hosting it is the game's. The examples have a WebSocket server under Node and a Durable Object on Cloudflare, declared with Alchemy, and neither is a package to install: a game copies the one it needs. The Cloudflare one was run under `alchemy dev` and never deployed from here, and there is none for AWS. A relay does not say who has come and gone, does not slow a peer that sends too much, and does not ask who a peer is: letting a peer in under a name is the host's to settle before `Relay.join`.
 - A rollback session keeps a snapshot of the whole world for each tick it is not sure of, and loads one to go back. For a very large world that is the cost of every such tick: nothing keeps only what changed.
 - A game played with rollback is drawn and heard as it is predicted. A sound for something that is then taken back was played, an event of a tick that is run again is heard again by the frame stage, and its change queries visit everything after each rewind. Nothing tells what draws which ticks are final but `session.confirmed`.
 - A script is started again by every rewind, and what a service of the game's own holds is not put back. With rollback, what the simulation reads is in the world.
 - Peers that have come apart stop. Nothing brings them back together: a game that wants to go on has every peer load one peer's save and makes its sessions again.
 - A session's peers are fixed when it is made. Nobody joins a game in progress or leaves one, and a peer that stops is waited for.
-- Every message has to arrive. One that is lost stops the game for everyone: nothing asks for it again, and nothing says that a peer has gone quiet but `session.waitingFor`.
-- A handler is not told which peer issued an action. A game puts the player in the payload, and a peer can put another's name there.
+- Every message has to arrive. One that is lost stops the game for everyone: nothing asks for it again, and a transport whose socket has closed does not connect again. Nothing says that a peer has gone quiet but `session.waitingFor`.
+- Who issued an action is who its message says it is from, and only a relay vouches for that. Through `Transport.layerBroadcastChannel`, or a transport of the game's own that does not, a peer can send a message in another's name. The peers that took it and the one whose name it was then hold different games, and stop with `Lockstep.Drifted`: it is found, not prevented.
 - A game in a session ticks all the time. One that ticks when it is needed, `ticks: "whenNeeded"`, is not for several peers yet: a session does not say when it is settled.
 
 - Plugins cannot be added or removed while the app runs, and one plugin cannot replace or disable another's systems.
@@ -1469,7 +1539,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A singleton cannot be watched for changes: a change query is of entities.
 - An entity points at one target per relation, and a query cannot ask for what points at a given entity: `world.sources` gives those as a list.
 - A run condition is given to one system at a time: a plugin cannot be given one for all its systems. A script is not stopped by a state; it asks.
-- A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
+- A schema checks a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check, which is told who that is.
 - A refused action does not undo what is outside the world: an object held in a field that the handler changed in place, a call to a service of the game's own, a script it started.
 - Accessors are generated with `new Function`, which a strict Content Security Policy blocks. The obvious fallback is about 40x slower than raw columns.
 - `Effect.sleep`, promises and other real-time waits resume outside the tick. Scripts should wait with `Script.nextTick`, `Script.sleep` (game time) or an event's `wait`.

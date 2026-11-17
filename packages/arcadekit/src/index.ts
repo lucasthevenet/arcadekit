@@ -40,6 +40,7 @@ export * as Lockstep from "./Lockstep";
 export * as Migrate from "./Migrate";
 export * as Plugin from "./Plugin";
 export * as Query from "./Query";
+export * as Relay from "./Relay";
 export * as Resource from "./Resource";
 export * as Rollback from "./Rollback";
 export * as Save from "./Save";

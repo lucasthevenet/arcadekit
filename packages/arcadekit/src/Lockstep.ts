@@ -475,7 +475,7 @@ export const build = <E>(
     // peer in order of name, and each peer's in the order it issued them.
     for (const name of peers) {
       for (const action of held.get(name)!.get(tick) ?? []) {
-        reins.deliver(action.name, action.payload);
+        reins.deliver(action.name, action.payload, name);
       }
     }
     const exit = reins.tickExit(delta);

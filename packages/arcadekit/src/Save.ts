@@ -50,10 +50,14 @@ export interface Save {
   readonly delta: number;
   /** `world.snapshot()`. */
   readonly world: Uint8Array;
-  /** The actions waiting for the next tick, in order, payloads in JSON form. */
+  /**
+   * The actions waiting for the next tick, in order, payloads in JSON form,
+   * each with who issued it if it came with a name.
+   */
   readonly queued: readonly {
     readonly name: string;
     readonly payload: unknown;
+    readonly from?: string;
   }[];
   readonly events: readonly SavedEvents[];
   /**
@@ -109,7 +113,7 @@ export interface Contents {
   delta: number;
   world: SnapshotContents;
   /** The actions that were waiting, payloads in JSON form. */
-  queued: { name: string; payload: unknown }[];
+  queued: { name: string; payload: unknown; from?: string }[];
   /** The events that were waiting, payloads in JSON form. */
   events: {
     name: string;
@@ -230,7 +234,11 @@ const Header = Schema.fromJsonString(
     elapsed: Schema.Finite,
     delta: Schema.Finite,
     queued: Schema.Array(
-      Schema.Struct({ name: Schema.String, payload: Schema.Unknown })
+      Schema.Struct({
+        name: Schema.String,
+        payload: Schema.Unknown,
+        from: Schema.optionalKey(Schema.String),
+      })
     ),
     events: Schema.Array(
       Schema.Struct({

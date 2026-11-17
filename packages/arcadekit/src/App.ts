@@ -204,10 +204,23 @@ export interface Any {
    */
   readonly dispatchByName: (
     name: string,
-    payload: unknown
+    payload: unknown,
+    from?: string
   ) => Exit.Exit<unknown, unknown>;
-  /** As `enqueue`, for actions that arrive as data. Problems become `Action.Rejected` events. */
-  readonly enqueueByName: (name: string, payload: unknown) => void;
+  /**
+   * As `enqueue`, for actions that arrive as data. Problems become
+   * `Action.Rejected` events.
+   *
+   * `from` says who issued it, for whoever brings an action in on someone
+   * else's behalf, a server for its clients: the handler is told, and the
+   * log keeps it. It is not for an app in a session, where what a peer
+   * issues is stamped with the peer's own name.
+   */
+  readonly enqueueByName: (
+    name: string,
+    payload: unknown,
+    from?: string
+  ) => void;
   /**
    * What came into the game from outside, in the order it came, with
    * checkpoints of the world's hash among it: every dispatched action that
@@ -301,9 +314,9 @@ export interface TickOptions {
 export interface Diverted<E = never> {
   /**
    * Queues an action for the next tick and logs it, as `enqueueByName` did:
-   * by its name, with its payload in JSON form.
+   * by its name, with its payload in JSON form, and with who issued it.
    */
-  readonly deliver: (name: string, payload: unknown) => void;
+  readonly deliver: (name: string, payload: unknown, from?: string) => void;
   /** Runs one tick, as `tickExit` did. It reads no device. */
   readonly tickExit: (delta: number) => Exit.Exit<void, E>;
 }
@@ -768,11 +781,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       readonly payload: unknown;
       readonly encoded: boolean;
       readonly entry: { refused?: string } | undefined;
+      /** Who issued it, if it came with a name. */
+      readonly from: string | undefined;
     }[] = [];
     if (save !== undefined) {
       // In the JSON form they were saved in, checked again when applied.
-      for (const { name, payload } of save.queued) {
-        queued.push({ name, payload, encoded: true, entry: undefined });
+      for (const { from, name, payload } of save.queued) {
+        queued.push({ name, payload, encoded: true, entry: undefined, from });
       }
     }
     const actionLog: Action.LogEntry[] = [];
@@ -820,15 +835,26 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
      * becomes of it is decided when it is applied, and a replay enqueues it
      * again at the same point and lets its own simulation decide.
      */
-    const arrived = (name: string, payload: unknown) => {
+    const arrived = (
+      name: string,
+      payload: unknown,
+      from: string | undefined
+    ) => {
       start();
       const entry: {
         readonly tick: number;
         readonly name: string;
         readonly payload: unknown;
+        readonly from?: string;
         readonly queued: true;
         refused?: string;
-      } = { tick: time.tick, name, payload, queued: true };
+      } = {
+        tick: time.tick,
+        name,
+        payload,
+        ...(from === undefined ? {} : { from }),
+        queued: true,
+      };
       actionLog.push(entry);
       return entry;
     };
@@ -866,25 +892,36 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         payload,
         encoded: false,
         entry: Exit.isSuccess(json)
-          ? arrived(action.name, json.value)
+          ? arrived(action.name, json.value, undefined)
           : undefined,
+        from: undefined,
       });
     };
     /** Queues an action that arrived as data for the next tick, and logs it. */
-    const deliver = (name: string, payload: unknown): void => {
+    const deliver = (name: string, payload: unknown, from?: string): void => {
       queued.push({
         name,
         payload,
         encoded: true,
-        entry: arrived(name, payload),
+        entry: arrived(name, payload, from),
+        from,
       });
     };
-    const enqueueByName = (name: string, payload: unknown): void => {
+    const enqueueByName = (
+      name: string,
+      payload: unknown,
+      from?: string
+    ): void => {
       if (diverted === undefined) {
-        deliver(name, payload);
-      } else {
-        diverted(name, payload);
+        deliver(name, payload, from);
+        return;
       }
+      if (from !== undefined) {
+        throw new Error(
+          `enqueueByName("${name}") was given who issued it, "${from}", on an app that a session has taken over. What a peer issues is stamped with that peer's own name, by its session, and nobody speaks for another.`
+        );
+      }
+      diverted(name, payload);
     };
     /**
      * From inside the simulation: the `Actions` service. Not logged, because
@@ -902,6 +939,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         payload,
         encoded: false,
         entry: undefined,
+        from: undefined,
       });
     };
 
@@ -1301,7 +1339,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       name: string,
       payload: unknown,
       encoded: boolean,
-      dispatched: boolean
+      dispatched: boolean,
+      from: string | undefined
     ): Exit.Exit<unknown, unknown> => {
       const handler = handlers.get(name);
       if (handler === undefined) {
@@ -1348,7 +1387,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       world.reader = events.reader;
       let fiber: Fiber.Fiber<unknown, unknown>;
       try {
-        fiber = runFork(handler.handle(value));
+        fiber = runFork(handler.handle(value, { from }));
       } finally {
         events.reader = undefined;
         world.reader = undefined;
@@ -1371,7 +1410,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         events.commit();
         commands.apply();
         if (dispatched) {
-          actionLog.push({ tick: time.tick, name, payload: logged });
+          actionLog.push({
+            tick: time.tick,
+            name,
+            payload: logged,
+            ...(from === undefined ? {} : { from }),
+          });
         }
       }
       return exit;
@@ -1520,14 +1564,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         // same point in the timeline as an action dispatched between ticks.
         if (queued.length > 0) {
           const batch = queued.splice(0);
-          for (const { encoded, entry, name, payload } of batch) {
-            const exit = apply(name, payload, encoded, false);
+          for (const { encoded, entry, from, name, payload } of batch) {
+            const exit = apply(name, payload, encoded, false, from);
             if (Exit.isFailure(exit)) {
               const error = Cause.squash(exit.cause);
               if (entry !== undefined) {
                 entry.refused = describe(error);
               }
-              events.emit(Action.Rejected, { action: name, payload, error });
+              events.emit(Action.Rejected, {
+                action: name,
+                payload,
+                error,
+                from,
+              });
             }
           }
         }
@@ -1613,10 +1662,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
             `${commands.size} commands are queued and not applied. They are applied at the end of a tick: save after one.`
           );
         }
-        const waiting: { name: string; payload: unknown }[] = [];
-        for (const { encoded, name, payload } of queued) {
+        const waiting: { name: string; payload: unknown; from?: string }[] = [];
+        for (const { encoded, from, name, payload } of queued) {
+          const issuer = from === undefined ? {} : { from };
           if (encoded) {
-            waiting.push({ name, payload });
+            waiting.push({ name, payload, ...issuer });
             continue;
           }
           const codec = handlers.get(name)?.action.codec;
@@ -1631,7 +1681,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
               `The action "${name}" is waiting for the next tick with a payload its schema does not take: ${describe(Cause.squash(json.cause))}`
             );
           }
-          waiting.push({ name, payload: json.value });
+          waiting.push({ name, payload: json.value, ...issuer });
         }
         const pending = events.save();
         if (Exit.isFailure(pending)) {
@@ -1809,12 +1859,15 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         if (!handlers.has(action.name)) {
           throw new Error(`No handler for action "${action.name}"`);
         }
-        return apply(action.name, payload, false, true) as Exit.Exit<any, any>;
+        return apply(action.name, payload, false, true, undefined) as Exit.Exit<
+          any,
+          any
+        >;
       },
       enqueue,
-      dispatchByName(name, payload) {
+      dispatchByName(name, payload, from) {
         assertBetweenTicks(name);
-        return apply(name, payload, true, true);
+        return apply(name, payload, true, true, from);
       },
       enqueueByName,
       divert(take) {
@@ -1984,14 +2037,14 @@ export const replay = (
       } else if (entry.queued === true) {
         // Enqueued again at the point it arrived, so that it takes its turn
         // among the actions the replay's own simulation issues.
-        app.enqueueByName(entry.name, entry.payload);
+        app.enqueueByName(entry.name, entry.payload, entry.from);
         waiting.push({
           index: next,
           entry,
           mine: app.actionLog.at(-1) as Action.Logged,
         });
       } else {
-        const exit = app.dispatchByName(entry.name, entry.payload);
+        const exit = app.dispatchByName(entry.name, entry.payload, entry.from);
         if (Exit.isFailure(exit)) {
           throw new ReplayDiverged({
             index: next,

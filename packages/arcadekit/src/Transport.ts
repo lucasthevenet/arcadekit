@@ -19,13 +19,13 @@
  * session has to say.
  *
  * It asks little of a wire: that every message arrives, in whatever order.
- * `Transport.text` makes a transport of anything that carries text, a
- * WebSocket or a data channel; `Transport.layerBroadcastChannel` is the
- * one between the tabs and workers of one browser; and `Transport.makeHub`
- * is a network in memory, for tests, which delays and reorders as it is
- * told.
+ * `Transport.layerWebSocket` is the one between machines, through a relay
+ * (`arcadekit/Relay`); `Transport.layerBroadcastChannel` the one between
+ * the tabs and workers of one browser; `Transport.text` makes a transport
+ * of anything else that carries text; and `Transport.makeHub` is a network
+ * in memory, for tests, which delays and reorders as it is told.
  */
-import { Context, Effect, Exit, Layer } from "effect";
+import { Context, Data, Effect, Exit, Layer } from "effect";
 
 import type { Tickable } from "./Driver";
 import { Rng } from "./ecs/random";
@@ -208,6 +208,128 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
             );
           }
           return held.over;
+        };
+        return {
+          send: (message) => use().send(message),
+          receive: () => use().receive(),
+        };
+      }
+    )
+  );
+
+/**
+ * A transport's socket is no longer open: the relay closed it, or the
+ * network did. `send` and `receive` throw it from then on, so the tick
+ * that uses the transport fails with it and its driver stops, in place of
+ * a game that waits for messages that cannot come.
+ */
+export class Closed extends Data.TaggedError("TransportClosed")<{
+  /** The address the socket was opened to. */
+  readonly url: string;
+  /** The WebSocket close code: 1006 when the connection was lost or never made. */
+  readonly code: number;
+  /** What whoever closed it said, if anything: a relay says why it refused. */
+  readonly reason: string;
+}> {
+  override get message(): string {
+    return `The transport's socket to ${this.url} is closed (code ${this.code}${this.reason === "" ? "" : `: ${this.reason}`}). Every message has to arrive, so the game cannot go on over it.`;
+  }
+}
+
+/**
+ * The transport between machines: a WebSocket to a relay, which passes
+ * each message on to the other peers of the room. `url` is the relay's
+ * address for this peer in its room, as `Relay.address` writes it:
+ *
+ *   Transport.layerWebSocket(
+ *     Relay.address("wss://relay.example.com/rooms", { room: "blue", peer: "ada" })
+ *   )
+ *
+ * - The socket is opened when the layer is built. What is sent before it is
+ *   open is kept and sent when it is.
+ * - It is closed with the layer's scope, so the layer is provided to the
+ *   whole program, and a transport that is used after that says so.
+ * - Once the socket has closed for any other reason, `send` and `receive`
+ *   throw `Transport.Closed`, with the code and what the relay said. It
+ *   does not connect again: a message that was lost on the way would be
+ *   lost for good, and nothing asks for one again.
+ *
+ * It uses the `WebSocket` every platform has: a page, a worker, Node 22.
+ */
+export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
+  Layer.effect(
+    Transport,
+    Effect.map(
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const socket = new WebSocket(url);
+          const held: {
+            readonly socket: WebSocket;
+            over: TextTransport | undefined;
+            open: boolean;
+            closed: Closed | undefined;
+          } = { socket, over: undefined, open: true, closed: undefined };
+          // What was sent before the socket opened.
+          let waiting: string[] | undefined = [];
+          socket.onopen = () => {
+            const kept = waiting ?? [];
+            waiting = undefined;
+            for (const sent of kept) {
+              socket.send(sent);
+            }
+          };
+          socket.onclose = (event: CloseEvent) => {
+            held.closed ??= new Closed({
+              url,
+              code: event.code,
+              reason: event.reason,
+            });
+          };
+          // A connection that could not be made, or was cut, may say so
+          // here alone: not every platform follows it with a close.
+          socket.onerror = () => {
+            held.closed ??= new Closed({ url, code: 1006, reason: "" });
+          };
+          held.over = text({
+            send(sent) {
+              if (waiting === undefined) {
+                socket.send(sent);
+              } else {
+                waiting.push(sent);
+              }
+            },
+            listen(onText) {
+              socket.onmessage = (event: MessageEvent<unknown>) => {
+                // A frame that is not text is dropped as what is not a message.
+                onText(event.data as string);
+              };
+              return () => {
+                socket.onmessage = null;
+              };
+            },
+          });
+          return held;
+        }),
+        (held) =>
+          Effect.sync(() => {
+            held.open = false;
+            held.over?.close();
+            held.socket.onclose = null;
+            held.socket.onerror = null;
+            held.socket.close(1000);
+          })
+      ),
+      (held): Shape => {
+        const use = (): TextTransport => {
+          if (!held.open) {
+            throw new Error(
+              `The transport to ${url} was used after its scope had closed, and its socket with it. A layer that listens lasts as long as what it is provided to: provide it to the whole program, the one that makes the session and drives it, and not to Transport.connect alone.`
+            );
+          }
+          if (held.closed !== undefined) {
+            throw held.closed;
+          }
+          return held.over!;
         };
         return {
           send: (message) => use().send(message),

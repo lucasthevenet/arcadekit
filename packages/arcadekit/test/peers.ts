@@ -61,6 +61,14 @@ export const Take = Action.define(
   Schema.Struct({ by: Player, coin: EntityId })
 );
 export const Fire = Action.define("ls/Fire", Schema.Struct({}));
+/** A gift to oneself: whose purse it goes to is whoever issued it. */
+export const Tip = Action.define(
+  "ls/Tip",
+  Schema.Struct({ amount: Schema.Int })
+);
+export class Stranger extends Data.TaggedError("Stranger")<{
+  readonly from: string | undefined;
+}> {}
 export const Mint = Action.define(
   "ls/Mint",
   Schema.Struct({ on: Schema.Date })
@@ -91,6 +99,13 @@ export const take = Action.handler(Take, function* ({ by, coin }) {
     purse.grace += held.value;
   }
   return held.value;
+});
+export const tip = Action.handler(Tip, function* ({ amount }, { from }) {
+  if (from !== "ada" && from !== "grace") {
+    return yield* Effect.fail(new Stranger({ from }));
+  }
+  (yield* Purse)[from] += amount;
+  return from;
 });
 export const fire = Action.handler(Fire, function* () {
   (yield* Commands).spawn(Coin.of({ value: 100, x: 0 }));
@@ -170,15 +185,23 @@ export const Controls = Input.bind(
 
 export const DELTA = 1 / 30;
 
+/** What the game is made with, and loaded with. */
+export const gameOptions = (seed = 5, checkpointEvery = 1) => ({
+  systems: [Tally, Drift, Bot, Fault, Controls, Hear] as const,
+  handlers: [drop, take, tip, fire, mint, whisper] as const,
+  components: [Coin, Purse],
+  seed,
+  checkpointEvery,
+});
 export const game = (seed = 5, checkpointEvery = 1) =>
-  App.make({
-    systems: [Tally, Drift, Bot, Fault, Controls, Hear],
-    handlers: [drop, take, fire, mint, whisper],
-    components: [Coin, Purse],
-    seed,
-    checkpointEvery,
-  });
+  App.make(gameOptions(seed, checkpointEvery));
 export type Game = Effect.Success<ReturnType<typeof game>>;
+
+/** What each of the two players has in the purse. */
+export const purseOf = (app: Game): { ada: number; grace: number } => {
+  const { ada, grace } = app.world.singleton(Purse);
+  return { ada, grace };
+};
 
 export interface Peer {
   readonly name: string;
@@ -330,6 +353,9 @@ export const players = (seed: number) => {
     const roll = dice.int(1, 6);
     if (roll <= 2) {
       peer.app.enqueue(Drop, { by, value: dice.int(1, 9) });
+    } else if (roll === 4) {
+      // Whose it is, the payload does not say.
+      peer.app.enqueue(Tip, { amount: 1 });
     } else if (roll === 3) {
       const coins = coinsOf(peer);
       if (coins.length > 0) {

@@ -66,6 +66,7 @@ describe("a rollback session", () => {
         tick: 5,
         name: "ls/Drop",
         payload: { by: "ada", value: 9 },
+        from: "ada",
         queued: true,
       };
       expect(moves(ada.app.actionLog).at(-1)).toEqual(move);
@@ -252,6 +253,7 @@ describe("a rollback session", () => {
           tick: 2,
           name: "ls/Drop",
           payload: { by: "grace", value: 2 },
+          from: "grace",
           queued: true,
         },
       ]);

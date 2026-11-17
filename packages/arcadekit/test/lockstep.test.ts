@@ -129,6 +129,7 @@ describe("a lockstep session", () => {
           tick: 7,
           name: "ls/Drop",
           payload: { by: "ada", value: 7 },
+          from: "ada",
           queued: true,
         },
       ];
@@ -288,7 +289,7 @@ describe("a lockstep session", () => {
       catchUp(peers, net);
       // Heard before the tick that ran when 2 had, so stamped 2 + 2.
       const expected = [
-        { tick: 4, name: "ls/Fire", payload: {}, queued: true },
+        { tick: 4, name: "ls/Fire", payload: {}, from: "ada", queued: true },
       ];
       expect(moves(ada.app.actionLog)).toEqual(expected);
       expect(moves(grace.app.actionLog)).toEqual(expected);
@@ -312,7 +313,7 @@ describe("a lockstep session", () => {
       }
       catchUp(peers, net);
       expect(moves(grace.app.actionLog)).toEqual([
-        { tick: 2, name: "ls/Fire", payload: {}, queued: true },
+        { tick: 2, name: "ls/Fire", payload: {}, from: "ada", queued: true },
       ]);
       expect(ada.app.actionLog).toEqual(grace.app.actionLog);
     });
@@ -450,6 +451,7 @@ describe("a lockstep session", () => {
           tick: 0,
           name: "ls/Drop",
           payload: { by: "ada", value: 3 },
+          from: "ada",
           queued: true,
         },
       ]);
