@@ -20,9 +20,11 @@
  *   pnpm --filter arcadekit bench:compare "$PWD/../base"
  *
  * Both builds run this checkout's `bench/core.ts`, which is copied into
- * the base, so that the two are asked the same thing; a variant the base
- * cannot run is new, and compared with nothing. Each run is a process of
- * its own. `bench/verdict.ts` holds the rule, and says why it is the rule.
+ * the base for as long as the comparison lasts, under a name of its own,
+ * so that the two are asked the same thing and the base is left as it was
+ * found; a variant the base cannot run is new, and compared with nothing.
+ * Each run is a process of its own. `bench/verdict.ts` holds the rule, and
+ * says why it is the rule.
  *
  * A commit that slows a variant on purpose says so in its message, and the
  * check then reports the variant and does not fail on it:
@@ -30,7 +32,7 @@
  *   Bench-slower: each, eachMany
  */
 import { execFileSync } from "node:child_process";
-import { appendFileSync, copyFileSync, existsSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -98,20 +100,25 @@ for (const name of only ?? []) {
   }
 }
 
-// The base is asked what this checkout asks.
-copyFileSync(
-  path.join(head, "bench", "core.ts"),
-  path.join(base, "bench", "core.ts")
-);
+// The base is asked what this checkout asks: its copy of the variants, kept
+// there under a name that is no file of the base's, and taken away again
+// however the comparison ends. A checkout left with a file of its own
+// changed would refuse to be moved to another commit.
+const ASKED = "core.compared.ts";
+const asked = path.join(base, "bench", ASKED);
+copyFileSync(path.join(head, "bench", "core.ts"), asked);
+process.on("exit", () => {
+  rmSync(asked, { force: true });
+});
 
 /** One run of a variant by a build: the median milliseconds of a pass. */
 const run = (build: string, name: string): number =>
   JSON.parse(
-    execFileSync(process.execPath, ["--import", "tsx", "bench/core.ts", name], {
-      cwd: build,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    })
+    execFileSync(
+      process.execPath,
+      ["--import", "tsx", `bench/${build === base ? ASKED : "core.ts"}`, name],
+      { cwd: build, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+    )
       .trim()
       .split("\n")
       .pop()!
