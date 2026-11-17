@@ -6,6 +6,7 @@ This is the `next` branch: a revamped arcadekit, designed fresh. The package liv
 
 - [Conventions](docs/conventions.md): how code here is written, with references into Effect's documentation.
 - [Roadmap](docs/roadmap.md): what to build next, in order.
+- [The docs site](website/README.md): a guide, the concepts and the reference, from `docs/` and the packages' READMEs. `pnpm dev:docs` serves it.
 
 ## Development
 

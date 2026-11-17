@@ -1,0 +1,207 @@
+---
+# The tab's title, before the site's name. The hero's is the same, with its last word in the
+# accent colour (components/hero.astro). The page is laid out as foldkit.dev's: a section for each
+# thing the kit is, each a line in the monospace face over its title, and the reasons to pick it
+# or not.
+title: Effect for browser games
+description: A framework for browser games of any genre, on Effect 4. An entity component system whose ticks are deterministic, so a game saves, replays and plays over the network as it is.
+template: splash
+# The landing page is no page of a sequence, and its text is the site's own, not a file to edit.
+prev: false
+next: false
+editUrl: false
+eyebrow: An entity component system on Effect 4 · Alpha
+hero:
+  title: Effect for browser <span class="accent">games.</span>
+  tagline: arcadekit is a framework for browser games of any genre. Your game is entities, components and systems, run by Effect, one fixed tick at a time. The same inputs give the same game, so it saves, replays and plays over the network as it is.
+  actions:
+    - text: Get started
+      link: /making-a-game
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/lucasthevenet/arcadekit
+      icon: github
+      variant: secondary
+---
+
+import { Card, CardGrid, LinkButton } from "@astrojs/starlight/components";
+import KitStats from "../../components/kit-stats.astro";
+
+<p class="eyebrow">The shape</p>
+
+## Systems are Effects. Loops are plain.
+
+A system is one Effect per tick: it asks for the time, the world's random numbers and the game's services with `yield*`, and fails with typed errors. Inside it, the loop over entities is a plain function over typed arrays, because an Effect per entity would be 25 times slower.
+
+```ts
+const Position = Component.define("game/Position", {
+  x: Field.f32,
+  y: Field.f32,
+});
+const Velocity = Component.define("game/Velocity", {
+  x: Field.f32,
+  y: Field.f32,
+});
+
+const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+
+const Movement = System.make("game/Movement", function* () {
+  const { delta } = yield* Time;
+  (yield* Moving).each((position, velocity) => {
+    position.x += velocity.x * delta;
+    position.y += velocity.y * delta;
+  });
+});
+
+Browser.runMain(App.run({ systems: [Movement] }, { hz: 60 }), {
+  target: canvas,
+});
+```
+
+<div class="links">
+  <LinkButton
+    href="/concepts/entities-and-systems"
+    variant="minimal"
+    icon="right-arrow"
+  >
+    Learn about entities and systems
+  </LinkButton>
+</div>
+
+<p class="eyebrow">Determinism</p>
+
+## The same inputs, the same game.
+
+A tick reads its time from `Time`, its randomness from a seeded `Random`, and its input from actions that are logged. Nothing else reaches it. So the world's hash after a tick is the same on every machine, and everything below comes from that.
+
+<CardGrid>
+  <Card title="Replays">
+    The log of a game plays it again in a fresh app, and checks the world's hash
+    as it goes. A system that read the clock is found at the tick it did.
+    [Explore replays](/guides/replays)
+  </Card>
+  <Card title="Saves">
+    A save is a snapshot of the world and what waits in the game. Loaded, it
+    goes on exactly as it was, and an older save is migrated or refused with the
+    reason. [Explore saves](/guides/saving-and-loading)
+  </Card>
+  <Card title="Several players">
+    Peers send each other only their players' actions. Lockstep waits for them,
+    rollback runs ahead and goes back when it guessed wrong. [Explore several
+    players](/concepts/several-players)
+  </Card>
+</CardGrid>
+
+<p class="eyebrow">Ticks and frames</p>
+
+## Drawing never changes the game.
+
+The rules tick at a fixed rate. What draws, plays sound and tells a UI runs between ticks, in the frame stage, with the world frozen. What the devices say reaches the game as actions, before a tick. A game that is drawn is the same game as one that is not, so a server or a replay runs the rules alone, under Node.
+
+<div class="links">
+  <LinkButton
+    href="/concepts/ticks-and-frames"
+    variant="minimal"
+    icon="right-arrow"
+  >
+    Learn about ticks and frames
+  </LinkButton>
+</div>
+
+<p class="eyebrow">Around the rules</p>
+
+## What a game needs.
+
+Each is a plugin the rules never import.
+
+<CardGrid>
+  <Card title="Input">
+    The keyboard, the pointer and gamepads, bound to the game's own actions. A
+    replay reads no device. [Explore input](/guides/input)
+  </Card>
+  <Card title="Three.js">
+    `@arcadekit/three` draws ten thousand moving objects as instances, with
+    nothing allocated per object per frame. [Explore
+    drawing](/guides/drawing-with-three)
+  </Card>
+  <Card title="Sound">
+    Cues played from the game's events, and music kept to what the game is, with
+    fades. [Explore sound](/guides/sound)
+  </Card>
+  <Card title="A UI">
+    Any UI library, joined by a bridge: the game publishes views, the UI sends
+    actions. [Explore the bridge](/guides/ui)
+  </Card>
+  <Card title="Assets">
+    A level's files, loaded as a scoped resource while the game is in it.
+    [Explore assets](/guides/assets)
+  </Card>
+  <Card title="Tests">
+    Devices, sound, a display, files and a network, all as stand-ins a test
+    turns by hand, in Node. [Explore testing](/guides/testing)
+  </Card>
+</CardGrid>
+
+<p class="eyebrow">Fit</p>
+
+## Is it a fit?
+
+arcadekit asks for a shape: the rules as systems over a world, and Effect around them.
+
+<div class="fit">
+<div>
+
+### A strong fit
+
+- **Games that need replays, saves or network play.** Determinism is the default, so all three come with the shape.
+- **Games with many things moving.** Typed-array columns and raw loops keep a hundred thousand entities in a quarter of a millisecond.
+- **Developers who already use Effect.** Services, layers, schemas and typed errors hold a game together.
+
+</div>
+<div>
+
+### Think twice when
+
+- **You want a visual editor.** arcadekit is code first: there is no scene editor and no asset pipeline.
+- **Your game needs physics.** There is no physics engine: a collision is what your systems compute.
+- **You need it stable.** The design is a first cut and changes when that improves it.
+
+</div>
+</div>
+
+<p class="eyebrow">Status</p>
+
+## Project status.
+
+arcadekit is alpha. This is a revamped design, built fresh, and the roadmap says what comes next and in what order.
+
+<KitStats />
+
+<div class="links">
+  <LinkButton href="/roadmap" variant="minimal" icon="right-arrow">
+    Read the roadmap
+  </LinkButton>
+</div>
+
+<div class="start">
+
+<p class="eyebrow">Your first game</p>
+
+## Start with a tick.
+
+Define a component, write a system, step it in a test, then run it in a page.
+
+<div class="links">
+  <LinkButton href="/making-a-game" icon="right-arrow">
+    Get started
+  </LinkButton>
+  <LinkButton
+    href="https://github.com/lucasthevenet/arcadekit"
+    variant="secondary"
+    icon="github"
+  >
+    View on GitHub
+  </LinkButton>
+</div>
+
+</div>

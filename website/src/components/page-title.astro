@@ -1,0 +1,11 @@
+---
+// A page's title, set in the display face. A reference page's title is a name the code writes,
+// such as `EntityPool` or `arcadekit/core`, so it keeps its case where the others are capitals.
+// It replaces Starlight's PageTitle.
+const { entry } = Astro.locals.starlightRoute;
+const asWritten = entry.id.startsWith("reference/");
+---
+
+<h1 id="_top" class:list={["page-title", { "as-written": asWritten }]}>
+  {entry.data.title}
+</h1>
