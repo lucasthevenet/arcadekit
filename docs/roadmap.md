@@ -60,6 +60,53 @@ Only with a benchmark that shows the need.
 - **A documentation site.** Built from the README, these documents and the doc comments.
 - **Plugins that can be switched off.** Removing a plugin's systems while the app runs, for tools and for tests.
 
+## To revisit before a stable release
+
+Not a milestone: a list that is added to as the work goes, and gone through before the first stable version. Each line is a thing that goes wrong with no error, and that only someone who knows how the inside works would avoid: nothing in the types or at run time stops it, and the README's sentence about it is all there is. Before a stable release each one is closed, by code that stops it or by a design that leaves no room for it, or kept on purpose and said plainly where a game's author will read it.
+
+What is merely not built yet is not here: that is the READMEs' "Not done yet". When a line here is closed, take it out in the same commit.
+
+The order systems run in:
+
+- **The order systems are listed in is not the order they run in.** A system that says `System.before(other)` is pulled ahead of where `other` was listed, and a plugin's systems are listed before the app's own. Everything `@arcadekit/three` draws with runs before `Three.Render`, which `Three.plugin` lists first: so a frame system of the game's that says nothing runs after the scene is drawn, though it is listed above what draws.
+- **`Assets.during` that is only listed runs after the scene is drawn**, for that reason. A look made of its bundle appears a frame late and is drawn one frame more after the level is left. The README of `arcadekit` says to list it before the systems that draw with the bundle, which here does nothing: it takes `System.before(thatSystem)`. To close it: have what draws from a bundle order itself after the system that keeps it, or have `Assets.during` say when in the frame it runs.
+- **A system that reacts through a change query, listed before the system that makes the change, reacts a tick late.** In a game that ticks when needed, one such system gets the one tick that follows the last and two in a row are a tick short: the game rests with work undone.
+
+Ticks, frames and real time:
+
+- **A game that ticks when needed rests when the app sees nothing waiting**, and it sees actions, states, scripts and events. A system that does something every tick with none of those waiting, a clock that counts down in a field, say, stops when the game rests, and nothing says so.
+- **A game that steps its app by hand does what a driver would have done**: `app.input()` before a tick, and a tick when its UI has sent something. Left out, keys and what a UI sent are never heard, with no error.
+- **`smooth: true` draws a tick behind.** A game stepped by hand and drawn with `app.frame(0)` shows the tick before the one it just ran. A test that looks at what is drawn has to know.
+- **`Effect.sleep`, a promise, or any wait in real time resumes outside the tick**, and a fiber started with `Effect.forkDetach` is not watched by the app. Either changes the game at a moment no replay repeats. Scripts wait with `Script.nextTick`, `Script.sleep` or an event's `wait`; nothing refuses the others.
+- **`Assets.load` in a script** resumes in whatever tick the file arrives in. It is not refused there.
+
+What a replay, a save and the hash do not hold:
+
+- **A write through a raw column is not seen by anything.** In the frame and input stages it changes the game unless `verifyFrames` is on; through a query that says it only reads, it is written all the same; and no change query hears of it.
+- **A refused action does not undo what is outside the world**: an object in a field changed in place, a call to a service of the game's own, a script it started.
+- **A save holds no scripts, and the log does not say when one was started by hand** or the delta and number of ticks it was recorded at. Whoever loads or replays has to know and supply them.
+- **The hash is of the world only**: not the events waiting, what change queries have yet to visit, the actions queued, or how far a script has got. Two games with the same hash can go different ways.
+- **An entity handle kept across 1,024 reuses of its slot names a newer entity.**
+
+Values that have to be right and are not checked:
+
+- **A field left out of `Component.of` is NaN, not 0.** Only a component added with no value at all is zeroed. A `Transform3d.Position.of({ x: 1 })` draws nowhere.
+- **A `Transform3d.Rotation` has to be a unit quaternion.** One that is not draws skewed.
+- **An instance's colour is in the renderer's linear colour space**, not a hex code's bytes over 255, and from 0 to 1. Either mistake draws the wrong colour and no more.
+- **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
+- **A texture made by `Three.texture` cannot be turned over in `prepare`**: Three.js does not read `flipY` of a texture made of a bitmap, and setting it does nothing.
+- **`ui.send` takes any action.** One the game has no handler for throws when it is issued, in the input stage, and not where it was sent or when it was compiled.
+- **Two systems made with `Sound.cues` that play the same cue play it twice.** The merging of a frame's cues is per system.
+
+Who lets go of what:
+
+- **A geometry and a material given to `Three.instances` are the game's to dispose of**, and so is whatever `make` of `Three.objects` made, through `free`. Nothing here does, and nothing says when one was forgotten.
+- **A loader of Three.js that fetches for itself**, a glTF file's pictures, say, does not go through `Assets.Loader`: a test's files in memory do not serve it, and an interrupted load does not give those requests up.
+
+Tests:
+
+- **`toEqual` finds two tagged errors that differ only in their `message` equal.** A test that compares a failure that way checks everything but the reason. [Conventions](./conventions.md#tests) says how to compare; nothing stops the other way.
+
 ## Decisions waiting to be made
 
 Not work yet; each needs an answer before the item that depends on it.
