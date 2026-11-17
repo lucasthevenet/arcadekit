@@ -90,7 +90,7 @@ const reports = (app: App.Any): unknown[] =>
     .map((entry) => entry.payload);
 
 describe("the input stage", () => {
-  it("runs when app.input is called, in order, and not in the tick or the frame", () => {
+  it("runs before a tick, by whoever steps the app or else by the tick itself, in order, and not in the frame", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
@@ -116,11 +116,48 @@ describe("the input stage", () => {
         expect(app.inputOrder).toEqual(["First", "Second", "Sometimes"]);
         expect(app.systemOrder).toEqual(["Tick"]);
         expect(app.frameOrder).toEqual(["Draw"]);
+        // A tick hears the devices first. Nobody ran the stage, so the
+        // tick does; a frame never does.
         app.tick(1);
         app.frame(0);
-        expect(ran).toEqual(["Tick", "Draw"]);
+        expect(ran).toEqual(["First", "Second", "Tick", "Draw"]);
+        // Run by whoever steps the app, as a driver does, it is not run
+        // again by the tick that follows, and is by the one after that.
+        ran.length = 0;
         app.input();
-        expect(ran).toEqual(["Tick", "Draw", "First", "Second"]);
+        expect(ran).toEqual(["First", "Second"]);
+        app.tick(1);
+        app.tick(1);
+        expect(ran).toEqual([
+          "First",
+          "Second",
+          "Tick",
+          "First",
+          "Second",
+          "Tick",
+        ]);
+        // A tick told to read nothing runs none of it, as a replay's does
+        // not: and what it did not hear is not owed to it later.
+        ran.length = 0;
+        app.tick(1, { input: false });
+        expect(Exit.isSuccess(app.tickExit(1, { input: false }))).toBe(true);
+        expect(ran).toEqual(["Tick", "Tick"]);
+        app.tick(1, { input: true });
+        expect(ran).toEqual(["Tick", "Tick", "First", "Second", "Tick"]);
+        // Heard by hand before a tick that reads nothing, the next tick
+        // hears for itself all the same.
+        ran.length = 0;
+        app.input();
+        app.tick(1, { input: false });
+        app.tick(1);
+        expect(ran).toEqual([
+          "First",
+          "Second",
+          "Tick",
+          "First",
+          "Second",
+          "Tick",
+        ]);
         // A condition is asked there as anywhere.
         app.world.singleton(Phase).next = "paused";
         app.tick(1);
@@ -304,7 +341,7 @@ describe("the input stage", () => {
             seed: 3,
           });
           app.world.spawn(Ship.of({ x: 1, shots: 0 }));
-          app.tick(1);
+          app.tick(1, { input: false });
           const before = app.world.hash();
           expect(() => app.input(), what).toThrow(what);
           expect(app.world.hash(), what).toBe(before);
@@ -709,7 +746,8 @@ describe("the input stage", () => {
           const app = yield* App.make({ handlers: [emit], systems: [Hear] });
           for (let i = 0; i < ticks; i++) {
             app.enqueue(Emit, {});
-            app.tick(1);
+            // As a replay ticks: reading nothing.
+            app.tick(1, { input: false });
           }
           return app;
         };
@@ -731,6 +769,107 @@ describe("the input stage", () => {
         }
         expect(heard).toBe(3);
       })
+    );
+  });
+
+  it("is run by a tick that nobody ran it for: a game stepped by hand hears its keys with no more than a tick", () => {
+    const source = Input.makeManualSource();
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
+        // No `app.input()` anywhere.
+        source.press("ArrowRight");
+        app.tick(1);
+        app.tick(1);
+        expect(ship(app).x).toBe(20);
+        source.release("ArrowRight");
+        source.tap("Space");
+        app.tick(1);
+        expect(ship(app)).toEqual({ x: 20, shots: 1 });
+        // Each tick read the devices once, and reported what had changed.
+        expect(reports(app)).toEqual([
+          { down: ["ArrowRight"] },
+          { up: ["ArrowRight"], tapped: ["Space"] },
+        ]);
+        // Under a driver, which runs the stage itself before each tick,
+        // it is not run a second time: one report for one change.
+        const step = Driver.fixedStep(app, { hz: 10 });
+        source.press("ArrowLeft");
+        step(0.3);
+        expect(app.time.tick).toBe(6);
+        expect(reports(app).slice(2)).toEqual([{ down: ["ArrowLeft"] }]);
+        expect(ship(app).x).toBeCloseTo(17, 5);
+      }).pipe(withSource(source))
+    );
+  });
+
+  it("stops the tick that ran it when it fails: the tick does not run, and the next hears first again", () => {
+    class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
+    run(
+      Effect.gen(function* () {
+        let broken = true;
+        let ran = 0;
+        const Read = System.make("Read", function* () {
+          ran++;
+          if (broken) {
+            return yield* Effect.fail(new NoKeyboard());
+          }
+        }).pipe(System.inStage("input"));
+        let ticked = 0;
+        const Tick = System.make("Tick", function* () {
+          ticked++;
+        });
+        const app = yield* App.make({ systems: [Read, Tick] });
+        const exit = app.tickExit(1);
+        expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(
+          NoKeyboard
+        );
+        expect([ran, ticked, app.time.tick]).toEqual([1, 0, 0]);
+        expect(() => app.tick(1)).toThrow(NoKeyboard);
+        expect([ran, ticked, app.time.tick]).toEqual([2, 0, 0]);
+        // Told to read nothing, the tick runs.
+        app.tick(1, { input: false });
+        expect([ran, ticked, app.time.tick]).toEqual([2, 1, 1]);
+        broken = false;
+        app.tick(1);
+        expect([ran, ticked, app.time.tick]).toEqual([3, 2, 2]);
+      })
+    );
+  });
+
+  it("is not run by a replay, whatever the devices of the machine it is replayed on say", () => {
+    const source = Input.makeManualSource();
+    let log: readonly Action.LogEntry[] = [];
+    let hash = 0;
+    run(
+      Effect.gen(function* () {
+        const app = yield* App.make({ plugins: [Flying], checkpointEvery: 1 });
+        source.press("ArrowRight");
+        app.tick(1);
+        app.tick(1);
+        log = app.actionLog.slice();
+        hash = app.world.hash();
+        expect(ship(app).x).toBe(20);
+      }).pipe(withSource(source))
+    );
+    // Replayed where another key is held, and a third is pressed.
+    const here = Input.makeManualSource();
+    here.press("ArrowLeft");
+    here.tap("Space");
+    run(
+      Effect.gen(function* () {
+        const again = yield* App.make({
+          plugins: [Flying],
+          checkpointEvery: 1,
+        });
+        App.replay(again, log, { delta: 1, ticks: 2 });
+        expect(again.world.hash()).toBe(hash);
+        expect(ship(again)).toEqual({ x: 20, shots: 0 });
+        expect(reports(again)).toEqual([{ down: ["ArrowRight"] }]);
+        // Played on from there, by hand, it hears the machine it is on.
+        again.tick(1);
+        expect(ship(again).shots).toBe(1);
+      }).pipe(withSource(here))
     );
   });
 
@@ -1321,13 +1460,23 @@ describe("the picture of the devices in the world", () => {
         source.release("ArrowRight");
         step();
         expect(ship(app).x).toBe(10);
-        // A tool says it is down. No device does.
+        // A tool says it is down. No device does. A tick that reads no
+        // device takes the tool's word.
+        app.dispatch(Input.Report, { down: ["ArrowRight"] });
+        app.tick(1, { input: false });
+        expect(ship(app).x).toBe(20);
+        // One that reads them, as a tick does unless told, is told the
+        // key is up before it runs.
         app.dispatch(Input.Report, { down: ["ArrowRight"] });
         app.tick(1);
         expect(ship(app).x).toBe(20);
+        expect(reports(app).at(-1)).toEqual({ up: ["ArrowRight"] });
+        app.dispatch(Input.Report, { down: ["ArrowRight"] });
+        app.tick(1, { input: false });
+        expect(ship(app).x).toBe(30);
         step();
         expect(reports(app).at(-1)).toEqual({ up: ["ArrowRight"] });
-        expect(ship(app).x).toBe(20);
+        expect(ship(app).x).toBe(30);
       }).pipe(withSource(source))
     );
   });
@@ -1463,7 +1612,8 @@ describe("the picture of the devices in the world", () => {
         seen.length = 0;
         app.dispatch(Input.Report, { down: ["Space"] });
         app.dispatch(Probe, {});
-        app.tick(1);
+        // A tick that reads no device, so that the report stands.
+        app.tick(1, { input: false });
         app.dispatch(Probe, {});
         expect(seen).toEqual([
           "handler 4: down pressed",

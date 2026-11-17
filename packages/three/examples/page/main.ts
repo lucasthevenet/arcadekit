@@ -1,7 +1,7 @@
 /**
  * Ten thousand moving objects in a page: motes that drift and spin in a
  * box, each one instance of one mesh and of a colour of its own, and a ship
- * that is an object of its own, steered with the arrow keys. Through the middle of the box a ring
+ * that is an object of its own, a glTF model, steered with the arrow keys. Through the middle of the box a ring
  * of cards turns in a plane: they are placed as a flat game places things,
  * with two numbers and an angle. A card's face is a picture, loaded as an
  * asset: C puts the deck away, which lets the picture go, and brings it
@@ -36,16 +36,14 @@ import {
   AmbientLight,
   BoxGeometry,
   Color,
-  ConeGeometry,
   DirectionalLight,
   DoubleSide,
-  Mesh,
   MeshStandardMaterial,
   PlaneGeometry,
 } from "three";
 
 // In a game of your own this is "@arcadekit/three".
-import { Three } from "../../src/index";
+import { Gltf, Three } from "../../src/index";
 
 const { Position, Rotation, Scale } = Transform3d;
 const COUNT =
@@ -241,17 +239,18 @@ const Cards = Three.instances("page/Cards", {
   smooth: true,
 });
 
+// The ship is a model: a .gltf with its buffer and its picture beside it,
+// which are fetched with it, through the game's loader of assets. It is
+// kept for as long as the page; every ship is a copy of its scene, and
+// they share what it is made of.
+const Fleet = Assets.bundle("page/Fleet", {
+  ship: Gltf.model("/ship.gltf"),
+});
+const KeepFleet = Assets.during(Effect.succeed(true), Fleet);
 const Ships = Three.objects("page/Ships", {
   of: Ship,
-  make: () =>
-    new Mesh(
-      new ConeGeometry(2, 6, 12),
-      new MeshStandardMaterial({ color: "#ffd866" })
-    ),
-  free: (ship) => {
-    ship.geometry.dispose();
-    ship.material.dispose();
-  },
+  from: Fleet,
+  make: (_entity, { ship }) => ship.scene.clone(),
   smooth: true,
 });
 
@@ -290,7 +289,7 @@ const Look = Plugin.make("page/Look", {
       scene.add(new AmbientLight("#8090b0", 1.2), sun);
     })
   ),
-  systems: [KeepDeck, Motes, Cards, Ships, Orbit, Hud],
+  systems: [KeepDeck, KeepFleet, Motes, Cards, Ships, Orbit, Hud],
 });
 
 // --- the entry point -------------------------------------------------------------

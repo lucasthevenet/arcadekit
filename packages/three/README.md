@@ -59,14 +59,18 @@ Browser.runMain(
 ## Entries
 
 ```ts
-import { Three } from "@arcadekit/three"; // or
+import { Gltf, Three } from "@arcadekit/three"; // or
+import * as Gltf from "@arcadekit/three/Gltf";
 import * as Three from "@arcadekit/three/Three";
 ```
 
 | Entry | What it has | Imports |
 | --- | --- | --- |
-| `@arcadekit/three` | The module below, as `import { Three } from "@arcadekit/three"` | `arcadekit`, `effect`, `three` |
+| `@arcadekit/three` | The modules below, as `import { Gltf, Three } from "@arcadekit/three"` | `arcadekit`, `effect`, `three` |
 | `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances`, `objects` and `texture` | `arcadekit`, `effect`, `three` |
+| `@arcadekit/three/Gltf` | `model`, the asset that is a glTF file, and `mesh` | `arcadekit`, `effect`, `three`, and its glTF loader, `three/addons` |
+
+- Models are a module of their own because they bring the glTF loader of Three.js with them, which a game with no models need not carry. Nothing in `Three` imports it.
 
 - `arcadekit`, `effect` and `three` are peer dependencies: a game has one copy of each, so a component or a service of arcadekit's is the same object here as in the game.
 - Only what belongs to the page imports this package: the plugin that says how the game looks, and the module that starts it. Where things are is `arcadekit/Transform3d` or `arcadekit/Transform2d`, in the game's own package.
@@ -211,7 +215,42 @@ const Forest = Assets.bundle("game/Forest", {
 - It is a picture of colours, in sRGB, and the right way up for the geometries of Three.js. The function it is given second is handed the texture once, before it is ever sent to the renderer, to say otherwise or to set how it repeats and is filtered.
 - Which way up it is cannot be changed there: a bitmap is flipped when it is made, and Three.js does not read `flipY` of a texture made of one.
 - A file that is no picture fails the bundle, as any asset that cannot be made does, with `Assets.AssetFailed` naming the URL.
-- A model, a font, or anything else Three.js has a loader for is an asset of your own, `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be disposed of.
+- A model is [`Gltf.model`](#models). A font, or anything else Three.js has a loader for, is an asset of your own, `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be disposed of.
+
+## Models
+
+```ts
+import * as Gltf from "@arcadekit/three/Gltf";
+
+const Fleet = Assets.bundle("game/Fleet", {
+  ship: Gltf.model("/ship.glb"),
+  rock: Gltf.model("/rocks/rock.gltf"), // with rock.bin and rock.png beside it
+});
+
+// An object each, a copy of the model's scene.
+const Ships = Three.objects("game/Ships", {
+  of: Ship,
+  from: Fleet,
+  make: (entity, { ship }) => ship.scene.clone(),
+});
+
+// Or a crowd, each an instance of one of its meshes.
+const Rocks = Three.instances("game/Rocks", {
+  of: Rock,
+  from: Fleet,
+  look: ({ rock }) => Gltf.mesh(rock, "Boulder"),
+});
+```
+
+`Gltf.model(url)` is an [asset](../arcadekit/README.md#assets) that is a glTF model, `.glb` or `.gltf`: it goes in a bundle, is loaded with it, and is what the glTF loader of Three.js gives, with its `scene`, its `scenes` and its `animations`.
+
+- The buffers and pictures a `.gltf` names beside itself are fetched here, through `Assets.Loader`, at once with each other, and handed to Three.js with the model, which then fetches nothing for itself. So a test's files in memory serve a whole model, one that is missing fails the bundle with its own URL, and a level that is left while its model is still on its way gives those requests up.
+- When the scope it was loaded in closes, every geometry, material and texture of the model is disposed of, and its pictures closed.
+- A model is one for the whole bundle. An object made of it with `scene.clone()` shares its geometries and materials: that is cheap, there is nothing to `free`, and what changes one copy's material changes them all.
+- `Gltf.mesh(model, name)` is a mesh of the model, by the name of the node it is on, as an editor shows it, or its own where its node has none; the first when no name is given. A mesh of several materials is several meshes under that name, and the first is given. A mesh has a geometry and a material, which is what `Three.instances` takes as a `look`. It throws, naming the meshes there are, when none has the name.
+- `Gltf.model(url, { prepare })` hands the loader to `prepare` before the model is read, for what a compressed model needs: `loader.setDRACOLoader(...)`, `setKTX2Loader`, `setMeshoptDecoder`.
+- Its pictures are decoded by the page, as `Three.texture`'s are, so a model with pictures is for a page. One without loads anywhere.
+- A file that is no model fails the bundle with `Assets.AssetFailed`, which says what was wrong with it.
 
 ## Objects
 
@@ -350,7 +389,9 @@ const Follow = System.make("game/Follow", function* () {
 - The two transforms do not mix: an entity placed in the plane is not turned by a quaternion, and one placed in three dimensions is not turned by an angle.
 - One kind of entity is one geometry and one material: given when the system is made, or made of one bundle's assets while that bundle is loaded. A look does not change for any other reason, a setting of the player's, say, and an entity cannot say for itself which of several looks it has: that is a kind per look.
 - While a kind's bundle is loading nothing of the kind is drawn: there is no look to stand in for the one that is on its way.
-- The one asset here is a texture. A model is an asset of the game's own, made with `Assets.make` around a loader of Three.js, and what such a loader fetches for itself, a glTF file's pictures, say, does not come through `Assets.Loader`.
+- A model is drawn as it stands. Its animations are loaded and not played: there is no mixer here, and one that is skinned needs more than `scene.clone()` to be copied, which is the game's to bring (`SkeletonUtils.clone` of Three.js).
+- A compressed model, with Draco, meshopt or KTX2 pictures, needs its decoder given to the loader in `prepare`, and that decoder fetches its own files, which do not come through `Assets.Loader`.
+- An asset of the game's own made around another loader of Three.js, an FBX's, say, fetches what that loader fetches for itself: only a glTF model's files are brought through `Assets.Loader` here.
 - Instances are in no order, so a material that needs its instances sorted back to front is not served.
 - A mesh of instances is never culled as a whole unless `prepare` says how.
 - Nothing is a child of anything: an entity's place is its place in the scene. An object that hangs from another is the game's to arrange in `make`.

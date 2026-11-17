@@ -120,9 +120,10 @@ describe("the entries of @arcadekit/three", () => {
       }
     }
     expect(manifest.exports).toEqual(expected);
-    expect(Object.keys(manifest.exports)).toEqual([".", "./Three"]);
+    expect(Object.keys(manifest.exports)).toEqual([".", "./Gltf", "./Three"]);
     // Every source file is a module or the entry that gives them all.
     expect(Object.keys(sources).toSorted()).toEqual([
+      "../src/Gltf.ts",
       "../src/Three.ts",
       "../src/index.ts",
     ]);
@@ -171,8 +172,19 @@ describe("the entries of @arcadekit/three", () => {
 
   it("the package's own entry gives each module as its entry does: the same module, not a copy", () => {
     const main = Main as Record<string, unknown>;
-    expect(Object.keys(main).toSorted()).toEqual(["Three"]);
+    expect(Object.keys(main).toSorted()).toEqual(["Gltf", "Three"]);
     expect(main.Three).toBe(modules["../src/Three.ts"]);
+    expect(main.Gltf).toBe(modules["../src/Gltf.ts"]);
+    // The loader of models comes with the module of models, and with no
+    // other: a game that has none need not carry it.
+    expect(reach(sourceOf("./Gltf")).packages).toContain(
+      "three/addons/loaders/GLTFLoader.js"
+    );
+    expect(
+      reach(sourceOf("./Three")).packages.filter((one) =>
+        one.startsWith("three/")
+      )
+    ).toEqual([]);
   });
 
   it("is built on the game's own arcadekit, not on a copy of it", () => {

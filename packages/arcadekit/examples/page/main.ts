@@ -14,6 +14,8 @@
  * `?ui=react` shows.
  *
  *   pnpm --filter arcadekit page
+ *
+ * `?stream` plays the music as a stream.
  */
 import { Effect } from "effect";
 
@@ -49,7 +51,14 @@ Browser.runMain(
     target: document.querySelector("#game")!,
     preventDefault: ["ArrowLeft", "ArrowRight", "Space"],
     // The sounds the page has for as long as it lasts, by name, played once
-    // it has been touched. The level's own are in its bundle.
-    sounds: { start: "/start.wav", theme: "/theme.wav" },
+    // it has been touched. The level's own are in its bundle. The theme is
+    // short and goes round, so it is fetched whole and decoded; `?stream`
+    // plays it as a long piece would be played, fetched as it goes.
+    sounds: {
+      start: "/start.wav",
+      theme: new URLSearchParams(location.search).has("stream")
+        ? Browser.stream("/theme.wav")
+        : "/theme.wav",
+    },
   }
 );

@@ -874,6 +874,8 @@ describe("a page's sound", () => {
     readonly levels: (readonly [string, ...number[]])[];
     /** When it was told to stop, if it was. */
     stopped: number | undefined;
+    /** There, and true, while it is to play to its end and no further. */
+    once?: true;
   }
   /** A stand-in for the page's audio, which notes what it is asked. */
   const makeAudio = () => {
@@ -900,29 +902,54 @@ describe("a page's sound", () => {
         readonly volume: number;
         readonly into: unknown;
       }[],
-      /** Every source that was started to play over and over. */
+      /** Every source that was started as a channel's track. */
       loops: [] as Looped[],
       resumed: 0,
       suspended: 0,
       closed: 0,
+      /** What was streamed into it, each with the volume it plays at. */
+      streams: [] as { readonly media: unknown; readonly gain: Gain }[],
+      createMediaElementSource(media: unknown) {
+        return {
+          connect(to: unknown) {
+            audio.streams.push({ media, gain: to as Gain });
+            return to;
+          },
+        };
+      },
       createBufferSource() {
         let gain: Gain | undefined;
         let looped: Looped | undefined;
+        let loop = false;
         const source = {
           buffer: undefined as unknown,
-          loop: false,
+          get loop(): boolean {
+            return loop;
+          },
+          set loop(value: boolean) {
+            loop = value;
+            if (looped !== undefined) {
+              if (value) {
+                delete looped.once;
+              } else {
+                looped.once = true;
+              }
+            }
+          },
           playbackRate: { value: 1 },
           connect(to: unknown) {
             gain = to as Gain;
             return to;
           },
           start() {
-            if (source.loop) {
+            // A track's volume is led there; a cue's is set.
+            if (source.loop || (gain?.levels.length ?? 0) > 0) {
               looped = {
                 buffer: source.buffer,
                 into: gain?.into,
                 levels: gain?.levels ?? [],
                 stopped: undefined,
+                ...(source.loop ? {} : { once: true as const }),
               };
               audio.loops.push(looped);
               return;
@@ -1002,16 +1029,50 @@ describe("a page's sound", () => {
         : Promise.resolve({ samples: data.byteLength });
     };
   /** Builds the layer into a scope of the test's, and gives what it provides. */
+  /** A stand-in for what plays a streamed track, which notes what it is asked. */
+  const makeMedia = (url: string, broken: boolean) => {
+    const media = {
+      url,
+      loop: false,
+      playing: false,
+      plays: 0,
+      pauses: 0,
+      play(): Promise<void> {
+        media.plays++;
+        if (broken) {
+          return Promise.reject(
+            new Error("The element has no supported sources.")
+          );
+        }
+        media.playing = true;
+        return Promise.resolve();
+      },
+      pause(): void {
+        media.pauses++;
+        media.playing = false;
+      },
+    };
+    return media;
+  };
   const build = async (
-    files: Readonly<Record<string, string>>,
+    files: Readonly<Record<string, string | Sound.Clip>>,
     options: {
       readonly volume?: number;
       readonly loader?: Assets.LoaderShape;
       readonly decode?: (data: ArrayBuffer) => Promise<unknown>;
+      /** Whether what is streamed cannot be played. */
+      readonly brokenMedia?: boolean;
+      /** Whether the audio is one that takes no stream. */
+      readonly noStreams?: boolean;
     } = {}
   ) => {
     const page = new Listened();
     const audio = makeAudio();
+    if (options.noStreams === true) {
+      delete (audio as { createMediaElementSource?: unknown })
+        .createMediaElementSource;
+    }
+    const streamed: ReturnType<typeof makeMedia>[] = [];
     const display = Driver.makeManualDisplay();
     let made = 0;
     /** The length of each file that was given to be decoded. */
@@ -1028,6 +1089,11 @@ describe("a page's sound", () => {
             return audio;
           },
           decode,
+          media: (url) => {
+            const media = makeMedia(url, options.brokenMedia === true);
+            streamed.push(media);
+            return media;
+          },
           ...(options.volume === undefined ? {} : { volume: options.volume }),
         })
       ).pipe(
@@ -1054,6 +1120,7 @@ describe("a page's sound", () => {
       display,
       decoded,
       logged,
+      streamed,
       made: () => made,
       output: Context.get(context, Sound.Output),
       close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
@@ -1297,6 +1364,222 @@ describe("a page's sound", () => {
       ["set", 0, 50],
       ["ramp", 0.5, 50],
     ]);
+  });
+
+  it("plays a track to its end and no further when it is asked to, and over and over when it is asked that after all", async () => {
+    const { audio, output, page } = await build({
+      fanfare: "/coin.wav",
+      theme: "/thud.wav",
+    });
+    page.send("pointerdown");
+    output.music("score", "fanfare", 1, 0.5, true);
+    expect(audio.loops).toEqual([
+      {
+        buffer: { samples: 3 },
+        into: audio.destination,
+        levels: [
+          ["set", 0, 0],
+          ["ramp", 1, 0.5],
+        ],
+        stopped: undefined,
+        once: true,
+      },
+    ]);
+    // It is a track all the same, and not a cue: it is on its channel, and
+    // another track fades it out if it has not ended.
+    expect(audio.started).toEqual([]);
+    audio.currentTime = 1;
+    output.music("score", "theme", 1, 2);
+    expect(audio.loops[0]!.stopped).toBe(3);
+    expect(audio.loops[1]!.once).toBeUndefined();
+    // The track that is playing, asked to stop at its end after all, and
+    // then to go on again: the one source, told so.
+    output.music("score", "theme", 1, 2, true);
+    expect(audio.loops.length).toBe(2);
+    expect(audio.loops[1]!.once).toBe(true);
+    output.music("score", "theme", 1, 2, false);
+    expect(audio.loops[1]!.once).toBeUndefined();
+    expect(audio.loops.length).toBe(2);
+  });
+
+  it("streams a track that is given as a stream: fetched as it plays, and faded and stopped as any track", async () => {
+    const { audio, decoded, logged, made, output, page, streamed } =
+      await build(
+        { theme: Browser.stream("/theme.ogg"), coin: "/coin.wav" },
+        { volume: 0.5 }
+      );
+    // Only the file that is to be decoded was fetched, and nothing was
+    // said of the other.
+    expect(decoded).toEqual([3]);
+    expect(logged).toEqual([]);
+    // Asked for before the first touch, it waits for it, as any track.
+    output.music("score", "theme", 0.8, 2);
+    expect(made()).toBe(0);
+    expect(streamed).toEqual([]);
+    audio.currentTime = 10;
+    page.send("keydown", { code: "Enter" });
+    expect(streamed.length).toBe(1);
+    expect(streamed[0]).toMatchObject({
+      url: "/theme.ogg",
+      loop: true,
+      playing: true,
+      plays: 1,
+    });
+    // It plays into the page's audio, on a volume of its own, led from
+    // silence as a decoded track's is; and it is no decoded track.
+    expect(audio.streams.length).toBe(1);
+    expect(audio.streams[0]!.media).toBe(streamed[0]);
+    expect(audio.streams[0]!.gain.into).toBe(audio.destination);
+    expect(audio.streams[0]!.gain.levels).toEqual([
+      ["set", 0, 10],
+      ["ramp", 0.4, 12],
+    ]);
+    expect(audio.loops).toEqual([]);
+    expect(audio.started).toEqual([]);
+
+    // Softer, and to its end and no further: the one stream, told so.
+    audio.currentTime = 20;
+    output.music("score", "theme", 0.2, 1, true);
+    expect(streamed.length).toBe(1);
+    expect(streamed[0]!.loop).toBe(false);
+    expect(audio.streams[0]!.gain.levels.slice(2)).toEqual([
+      ["cancel", 20],
+      ["set", 0.4, 20],
+      ["ramp", 0.1, 21],
+    ]);
+    output.music("score", "theme", 0.2, 1);
+    expect(streamed[0]!.loop).toBe(true);
+
+    // Another track, at once: the stream is silenced and stopped, and
+    // the other starts.
+    output.music("score", "coin", 1, 0);
+    expect(audio.streams[0]!.gain.levels.at(-1)).toEqual(["ramp", 0, 20]);
+    expect(streamed[0]).toMatchObject({ playing: false, pauses: 1 });
+    expect(audio.loops.length).toBe(1);
+
+    // Back to it, and away over a moment: it is a new stream, and is
+    // stopped when the moment has gone, and not before.
+    output.music("score", "theme", 1, 0);
+    expect(streamed.length).toBe(2);
+    expect(audio.loops[0]!.stopped).toBe(20);
+    output.music("score", undefined, 0, 0.02);
+    expect(streamed[1]!.playing).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(streamed[1]).toMatchObject({ playing: false, pauses: 1 });
+    expect(streamed[0]!.pauses).toBe(1);
+  });
+
+  it("takes a stream as it is, on any channel, and plays none as a cue", async () => {
+    const { audio, display, logged, output, page, streamed } = await build({
+      theme: Browser.stream("/theme.ogg"),
+    });
+    const wind = Browser.stream("/wind.ogg");
+    // A clip like any other, named for where it is.
+    expect(wind).toBeInstanceOf(Sound.Clip);
+    expect(wind.name).toBe("/wind.ogg");
+    page.send("pointerdown");
+    output.music("air", wind, 0.3, 0);
+    output.music("score", "theme", 1, 0);
+    expect(streamed.map((media) => media.url)).toEqual([
+      "/wind.ogg",
+      "/theme.ogg",
+    ]);
+    // One channel stops; the other plays on.
+    output.music("air", undefined, 0, 0);
+    expect(streamed.map((media) => media.playing)).toEqual([false, true]);
+    // What was stopped is done with: the page hidden and seen again
+    // starts only what was playing.
+    display.hide();
+    display.show();
+    expect(streamed.map((media) => [media.playing, media.plays])).toEqual([
+      [false, 1],
+      [true, 2],
+    ]);
+    // A cue is to be heard at once, and a stream is not there yet.
+    output.play(wind, 1, 1);
+    output.play("theme", 1, 1);
+    output.play(wind, 1, 1);
+    expect(audio.started).toEqual([]);
+    expect(streamed.length).toBe(2);
+    expect(logged).toEqual([
+      'The sound "/wind.ogg" is streamed, which is for a channel\'s track: as a cue it is not played. A cue is a file given by its URL, or Browser.sound.',
+      'The sound "/theme.ogg" is streamed, which is for a channel\'s track: as a cue it is not played. A cue is a file given by its URL, or Browser.sound.',
+    ]);
+    // Asked to play once from the start, it is started so.
+    output.music("jingle", Browser.stream("/jingle.ogg"), 1, 0, true);
+    expect(streamed.at(-1)).toMatchObject({
+      url: "/jingle.ogg",
+      loop: false,
+      playing: true,
+    });
+  });
+
+  it("stops what is streamed while the page is hidden and when its scope closes, and starts it when the page is seen again", async () => {
+    const { audio, close, display, output, page, streamed } = await build({
+      theme: Browser.stream("/theme.ogg"),
+      other: Browser.stream("/other.ogg"),
+    });
+    page.send("pointerdown");
+    output.music("score", "theme", 1, 0);
+    output.music("air", "other", 1, 0);
+    // One of the two is on its way out when the page is hidden.
+    output.music("air", undefined, 0, 30);
+    display.hide();
+    // It keeps a time of its own, which the audio's sleep does not stop.
+    expect(audio.suspended).toBe(1);
+    expect(streamed.map((media) => media.playing)).toEqual([false, false]);
+    display.show();
+    expect(streamed.map((media) => [media.playing, media.plays])).toEqual([
+      [true, 2],
+      [true, 2],
+    ]);
+    // One more on its way out, for a moment that has not gone when the
+    // scope closes.
+    output.music("score", undefined, 0, 0.01);
+    const before = streamed.map((media) => media.pauses);
+    await close();
+    expect(streamed.map((media) => media.playing)).toEqual([false, false]);
+    expect(streamed.map((media) => media.pauses)).toEqual(
+      before.map((pauses) => pauses + 1)
+    );
+    // Nothing is left waiting to stop one, and nothing is started after.
+    output.music("score", "other", 1, 0);
+    display.show();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(streamed.length).toBe(2);
+    expect(streamed.map((media) => media.plays)).toEqual([2, 2]);
+    expect(streamed.map((media) => media.pauses)).toEqual(
+      before.map((pauses) => pauses + 1)
+    );
+  });
+
+  it("says once of a stream that cannot be played, and of an audio that takes none", async () => {
+    const broken = await build(
+      { theme: Browser.stream("/gone.ogg") },
+      { brokenMedia: true }
+    );
+    broken.page.send("pointerdown");
+    broken.output.music("score", "theme", 1, 0);
+    broken.output.music("score", undefined, 0, 0);
+    broken.output.music("score", "theme", 1, 0);
+    await settle();
+    expect(broken.logged).toEqual([
+      'The sound "/gone.ogg" will not be played: The element has no supported sources.',
+    ]);
+    const deaf = await build(
+      { theme: Browser.stream("/theme.ogg"), coin: "/coin.wav" },
+      { noStreams: true }
+    );
+    deaf.page.send("pointerdown");
+    deaf.output.music("score", "theme", 1, 0);
+    deaf.output.music("score", "theme", 0.5, 0);
+    expect(deaf.streamed).toEqual([]);
+    expect(deaf.logged).toEqual([
+      'The sound "/theme.ogg" is streamed, and the page\'s audio cannot take a stream: it will not be played.',
+    ]);
+    // What it can play, it plays.
+    deaf.output.music("score", "coin", 1, 0);
+    expect(deaf.audio.loops.length).toBe(1);
   });
 
   it("sleeps while the page is hidden, music and all, and wakes when it is seen again", async () => {

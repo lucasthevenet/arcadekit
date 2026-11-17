@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 639 tests, 74 of them of @arcadekit/three
+pnpm test                          # 658 tests, 83 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -533,7 +533,7 @@ Browser.runMain(
 [`@arcadekit/three`](../three/README.md) is the plugin that draws a game with Three.js, in a package of its own. It is made of what is above: systems of the frame stage that read the world and cannot change it, a service that holds the scene from one frame to the next, and a renderer that comes from outside as the display does.
 
 - Where a thing is drawn comes from [`Transform3d` or `Transform2d`](#where-a-thing-is), which are this package's. The rules import nothing of `@arcadekit/three`, so a server and a replay install neither it nor Three.js.
-- `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over. With `color`, each instance is drawn in a colour that a component of the game's gives it, and with `from`, in a look made of a bundle's assets for as long as they are loaded: `Three.texture(url)` is the asset that is a texture. `Three.objects` keeps an Object3D per entity for the few things that are more than that. With `smooth: true` either draws each entity between its last two places, at `Frame.alpha` of the way, so that a game whose ticks and frames do not line up moves evenly.
+- `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over. With `color`, each instance is drawn in a colour that a component of the game's gives it, and with `from`, in a look made of a bundle's assets for as long as they are loaded: `Three.texture(url)` is the asset that is a texture, and `Gltf.model(url)`, from `@arcadekit/three/Gltf`, the one that is a glTF model. `Three.objects` keeps an Object3D per entity for the few things that are more than that. With `smooth: true` either draws each entity between its last two places, at `Frame.alpha` of the way, so that a game whose ticks and frames do not line up moves evenly.
 - A game that draws with something else does not install it.
 
 ## Input
@@ -569,13 +569,13 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
 
 The keyboard, the pointer and the gamepads are outside the game. What they say reaches it as actions, through the same [log](#payloads-saves-and-the-network) as everything else that comes from outside. So a replay needs no devices at all: it is given no source and reads none, and the actions are in its log.
 
-**The input stage.** An app has a third stage beside the tick and the frame. A system made with `System.inStage("input")` runs when `app.input()` is called, which `Driver.fixedStep` does just before each tick, and so `Driver.frames` and `Driver.interval` with it.
+**The input stage.** An app has a third stage beside the tick and the frame. A system made with `System.inStage("input")` runs just before a tick. `Driver.fixedStep` calls `app.input()` there, and so `Driver.frames` and `Driver.interval` with it; and a tick that finds nobody did runs the stage itself, so a game that steps its app by hand with `app.tick(delta)` hears its keys and its UI with no more than that.
 
 - The devices are read once per run, and every system of the stage is given that one sample as `Input.Devices`: the buttons that are `down`, the ones `pressed` and `released` since the sample before, the `axes`, and the ones that `moved`. A frame in which no tick is due reads nothing, and what was pressed meanwhile is there for the next tick, so a quick tap is never lost between two frames.
 - The world is frozen there, as in the frame stage, and whatever would change the game throws. What a system makes of the devices it issues with `Actions.enqueue`, which is logged and applied at the start of the tick that follows.
 - It hears events from a place of its own, each once, as the frame stage does: what a tick's systems emitted, what its actions emitted, and `Action.Rejected`, so a system that issued an action hears that it was refused. They are kept for it until it has run, the first tick's among them, and for up to 600 ticks when it does not run at all, as in a replay.
 - `Input.Devices` is no part of the game, so a system in the tick or in the frame stage cannot read it: its fields throw there and say what to read.
-- A replay and a server never call `app.input()`. The simulation cannot tell whether its devices are read: a game played from a keyboard and its replay have the same hash at every tick.
+- A replay does not run it: what the devices said is in its log, and `App.replay` ticks with `app.tick(delta, { input: false })`, a tick that reads nothing, whatever the machine it runs on is doing. Anything else that runs a game again from a log does the same. The simulation cannot tell whether its devices are read: a game played from a keyboard and its replay have the same hash at every tick.
 
 **The picture.** `Input.plugin` keeps what the devices say in the world, for systems to read.
 
@@ -618,8 +618,7 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
   );
   // With the app that gives:
   source.press("Space");
-  app.input();
-  app.tick(1 / 60);
+  app.tick(1 / 60); // hears the devices first
   ```
 
 - Reading the devices when nothing changed costs 1.4 µs a tick. A tick in which a key went down or up costs 5.2 µs in all: the reading, the action and the tick that applies it. See the [benchmark](#benchmark-100000-entities-pos--vel--dt).
@@ -769,6 +768,7 @@ const Score = Sound.music(
 Music is not an event. It is what the game, as it is, should sound like, for as long as it is so. `Sound.music(name, body)` makes a system of the frame stage that says so each frame, and the player starts, fades and stops what that takes.
 
 - The body gives a track: a name the output knows, or one with a `volume` and a `fade` of its own, or `undefined` for silence. A track plays over and over until the body says another.
+- `{ track: "fanfare", once: true }` plays to its end and no further. It is still what the channel is playing: it is not started again while the body says the same, another track fades it out if it has not ended, and it plays again from its start once the body has said something else in between. A sound that only marks a moment, and need not be faded or stopped, is a [cue](#sound).
 - Nothing happens while it says the same. When it says another track the first fades out and the second fades in, over `fade` seconds; another volume is the same track, turned up or down as long. Half a second when nothing says.
 - It is worked out from the game and kept nowhere in it. A game that is loaded from a save, or an app that starts in the middle of a level, has its music from its first frame, and a game with music has the same hash, log and save as one with none.
 - The system's name is its channel. Two systems are two channels, which play together: the score, and the wind.
@@ -818,6 +818,7 @@ The output is Web Audio, and `Browser.runMain` and `Browser.layer` provide it. `
 - Music is never late: it is what should be playing. A track that was asked for before the first touch, or before its file was there, starts when it can.
 - `volume` is how loud everything is played, and `rate` is a cue's speed, and so its pitch.
 - A cue or a track that has no file, or whose file could not be fetched or decoded, is said once through Effect's logger and plays nothing.
+- A long piece of music is streamed: `sounds: { theme: Browser.stream("/theme.ogg") }`, or `Browser.stream(url)` as it is wherever a track is said. A file given by its URL, and `Browser.sound`, are fetched whole and held decoded, which for minutes of music is tens of megabytes; a stream is fetched as it plays and decoded as it goes. It is no asset and is in no bundle: nothing is fetched until it is played, and there is nothing to let go. It is started, faded and stopped as any track, and is for a track only: played as a cue it is said once through the logger and not played.
 - While the page is hidden its audio sleeps, music and all, and wakes when the page is seen again: the frame loop rests then, and a game that stands still is not heard.
 - A page with no files of its own still has sound, for the clips of its levels. `sounds: false` is a page with none: no audio is made, and the game is told that nothing is heard.
 - When the page goes away the audio is closed, and a request still on its way is given up.
@@ -1256,15 +1257,15 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
 - A game picks one of the two transforms for a thing, and a plugin written for one does not read the other: code that should work in both asks for both. A `Transform2d` has no depth: what is in front of what in a flat game is for what draws it to say.
-- A cue is played once and left to end: it cannot be stopped, and nothing is heard from where it is. A track only plays over and over: one that is to play once and end, a fanfare, is a cue, and is not faded.
-- A sound is decoded whole into memory, a track too: there is no streaming, so a long piece of music is as large there as it is long.
+- A cue is played once and left to end: it cannot be stopped, and nothing is heard from where it is. A track that plays once says nothing when it has ended: the body that asked for it cannot tell, and what follows it is for the game to say.
+- A streamed track that goes round may be heard to join where it does: the page's own player is not exact about it. A short piece that has to go round without a seam is given by its URL and decoded. A stream is fetched by the page and not through `Assets.Loader`, so a test plays `Sound.clip(name)` in its place.
 - A channel fades in a straight line, from one track to the next in the same time. Two tracks are not kept in step, a track does not start where the last one was, and nothing is timed to a beat.
 - A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.
 - A page's audio sleeps while the page is hidden, always, as its frame loop does. A game that is to be heard in the background cannot say so.
 - The first sound a page can make is the one its user's first key or press sets off. Nothing is heard before that.
 - A view is worked out and compared whole, every frame a UI is there. A game with a view that is costly to work out says when it is worth it with `System.runIf`.
 - The UI is not told what became of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and the game can publish as a view.
-- What the UI sends is applied by the next tick, which under a driver is the frame it was sent in or the one after. A game that steps its app by hand runs the input stage and a tick itself when its UI has sent something.
+- What the UI sends is applied by the next tick, which under a driver is the frame it was sent in or the one after. A game that steps its app by hand runs a tick itself when its UI has sent something.
 - A view's value is an object of this program, with no schema: a UI in another thread or on another machine is not served.
 - `ui.send` takes any action. That the game has a handler for it is checked when it is issued, where a missing one throws, and not by the compiler.
 - An asset is a picture, text, JSON or bytes. A font is for whoever draws with it to decode, with `Assets.make`.
@@ -1276,7 +1277,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A button that is pressed twice between two readings of the devices was pressed once.
 - The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
 - Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
-- Only a driver runs the input stage. A game that steps its app by hand, as the duel example does under Node, calls `app.input()` before its tick itself.
+- A tick reads the devices unless it is told not to. What runs a game again from its log by hand, with `dispatchByName` and `tick`, says `{ input: false }` as `App.replay` does, or the machine's own keys join in.
 - A game that ticks when it is needed rests when nothing is waiting, and what is waiting is what the app can see: actions, states, scripts and events. A system that reacts to a change through a change query, listed before the system that makes the change, reacts a tick late, and the one tick that follows the last is all it is given; two such systems in a row are a tick short. Order them with `System.after`.
 - The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
 - The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and `arcadekit/Browser` against stand-ins for `requestAnimationFrame`, the document and the window.

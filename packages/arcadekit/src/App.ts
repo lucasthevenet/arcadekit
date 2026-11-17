@@ -142,8 +142,16 @@ export interface Any {
   readonly frameOrder: readonly string[];
   /** The names of the input stage's systems, in the order they run. */
   readonly inputOrder: readonly string[];
-  /** Runs one tick. Throws if a system fails, or if the app has stopped. */
-  readonly tick: (delta: number) => void;
+  /**
+   * Runs one tick. Throws if a system fails, or if the app has stopped.
+   *
+   * A tick hears the devices first: if the input stage has not run since
+   * the tick before, it is run now, as a driver would have, so a game that
+   * steps its app by hand need not remember `app.input()`. `{ input: false
+   * }` is a tick that reads nothing, for what runs a game again from its
+   * log, where every action is already written: `App.replay` ticks so.
+   */
+  readonly tick: (delta: number, options?: TickOptions) => void;
   /**
    * Whether the game is at rest: a tick now would find nothing waiting for
    * it. It is false while an action waits to be applied, a state waits to
@@ -174,9 +182,10 @@ export interface Any {
    * `System.inStage("input")`, which turn what the devices say into
    * actions. The devices are read once, here, and the systems are given
    * that one picture of them as `Input.Devices`. What they issue with
-   * `Actions.enqueue` is logged and applied at the start of the next tick,
-   * so a driver calls this just before each tick. A replay does not call
-   * it: the actions are in its log.
+   * `Actions.enqueue` is logged and applied at the start of the next tick.
+   * A driver calls this just before each tick, and a tick that finds it
+   * was not called since the tick before runs it itself. A replay does
+   * neither: the actions are in its log.
    *
    * The world is frozen while it runs, as for `frame`. Throws if a system
    * fails, or if the app has stopped. Only between ticks.
@@ -226,13 +235,29 @@ export interface Any {
  * @param R  services available to scripts, beyond the built-in ones
  * @param HU a union of the app's action handlers
  */
+const NO_INPUT: TickOptions = { input: false };
+
+/** How a tick is run. */
+export interface TickOptions {
+  /**
+   * Whether the tick runs the input stage first when nothing has since the
+   * tick before. True when left out. False for a tick that must read no
+   * device and hear no UI: a replay's, or a simulation run again from a
+   * log.
+   */
+  readonly input?: boolean;
+}
+
 export interface App<E = never, R = never, HU = never> extends Any {
   /**
    * Runs one tick and returns the outcome, with system failures as a typed
    * `Exit`. An app that has stopped on a failed script runs nothing and
    * returns a defect, `ScriptFailed`.
    */
-  readonly tickExit: (delta: number) => Exit.Exit<void, E>;
+  readonly tickExit: (
+    delta: number,
+    options?: TickOptions
+  ) => Exit.Exit<void, E>;
   /** As `frame`, with the outcome returned and a system's failure typed. */
   readonly frameExit: (alpha: number, delta?: number) => Exit.Exit<void, E>;
   /** As `input`, with the outcome returned and a system's failure typed. */
@@ -1110,6 +1135,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     let ticking = false;
     // The stage that is running between two ticks, if one is.
     let between: "frame" | "input" | undefined;
+    // Whether the input stage has run since the last tick.
+    let heard = false;
     const busy = (): string =>
       ticking
         ? "tick"
@@ -1313,16 +1340,31 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       // One picture of the devices for the whole stage.
       Object.assign(devices, source.sample());
+      heard = true;
       return runBetween("input");
     };
 
-    const tickExit = (delta: number): Exit.Exit<void, TickError<S, P>> => {
+    const tickExit = (
+      delta: number,
+      options?: TickOptions
+    ): Exit.Exit<void, TickError<S, P>> => {
       if (ticking || between !== undefined) {
         throw new Error(`App.tick was called from inside a ${busy()}`);
       }
       if (stopped !== undefined) {
         return Exit.die(stopped);
       }
+      // A tick hears the devices first. Whoever steps the app may have
+      // seen to it, as a driver does; if not, it is seen to here.
+      if (!heard && inputSystems.length > 0 && options?.input !== false) {
+        const exit = inputExit();
+        if (Exit.isFailure(exit)) {
+          // The tick did not run, and the next one is to hear first too.
+          heard = false;
+          return exit;
+        }
+      }
+      heard = false;
       start();
       ticking = true;
       try {
@@ -1497,8 +1539,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return checkpoint();
       },
       tickExit,
-      tick(delta) {
-        const exit = tickExit(delta);
+      tick(delta, options) {
+        const exit = tickExit(delta, options);
         if (Exit.isFailure(exit)) {
           throw Cause.squash(exit.cause);
         }
@@ -1730,7 +1772,8 @@ export const replay = (
   };
   for (let i = 0; i < options.ticks; i++) {
     applyDue();
-    app.tick(options.delta);
+    // A replay reads no device: what the devices said is in the log.
+    app.tick(options.delta, NO_INPUT);
     checkQueued();
   }
   applyDue();

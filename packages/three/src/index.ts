@@ -9,3 +9,4 @@
  * rules write and this package only reads.
  */
 export * as Three from "./Three";
+export * as Gltf from "./Gltf";

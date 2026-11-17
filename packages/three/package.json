@@ -32,6 +32,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./Gltf": {
+      "source": "./src/Gltf.ts",
+      "types": "./dist/Gltf.d.ts",
+      "default": "./dist/Gltf.js"
+    },
     "./Three": {
       "source": "./src/Three.ts",
       "types": "./dist/Three.d.ts",
