@@ -356,7 +356,12 @@ const decodeOffline = (data: ArrayBuffer): Promise<unknown> =>
 /** One channel of music: what it is to play, and what it is playing. */
 interface Channel {
   wanted:
-    | { readonly track: Sound.Playable; readonly volume: number }
+    | {
+        readonly track: Sound.Playable;
+        readonly volume: number;
+        /** Whether it plays to its end and no further. */
+        readonly once: boolean;
+      }
     | undefined;
   /** How many seconds the change that was last asked for takes. */
   fade: number;
@@ -388,8 +393,9 @@ interface Channel {
  *   would wait and be heard with every other that waited, all at once.
  * - Music is not late, it is what should be playing: a track that was
  *   asked for before the first touch, or before its file was there, starts
- *   when it can. It plays over and over, and a change of track or of
- *   volume is a fade of as long as was asked.
+ *   when it can. It plays over and over, or once to its end if it was
+ *   asked so, and a change of track or of volume is a fade of as long as
+ *   was asked.
  * - A cue or a track that has no file, or whose file could not be fetched
  *   or decoded, is said once, through Effect's logger, and plays nothing.
  * - While the display it is given, `Driver.Display`, says the page is
@@ -473,7 +479,7 @@ export const layerSound = (
           }
           const source = audio.createBufferSource();
           source.buffer = buffer;
-          source.loop = true;
+          source.loop = !wanted.once;
           const gain = audio.createGain();
           gain.gain.setValueAtTime(0, now);
           gain.gain.linearRampToValueAtTime(wanted.volume * master, now + fade);
@@ -482,7 +488,8 @@ export const layerSound = (
           source.start();
           channel.playing = { track: wanted.track, source, gain };
         } else {
-          // The same track, louder or softer.
+          // The same track, louder or softer, and over and over or not.
+          channel.playing.source.loop = !wanted.once;
           const level = channel.playing.gain.gain;
           level.cancelScheduledValues(now);
           level.setValueAtTime(level.value, now);
@@ -584,13 +591,16 @@ export const layerSound = (
           gain.connect(audio.destination);
           source.start();
         },
-        music(name, track, volume, fade) {
+        music(name, track, volume, fade, once) {
           let channel = channels.get(name);
           if (channel === undefined) {
             channel = { wanted: undefined, fade, playing: undefined };
             channels.set(name, channel);
           }
-          channel.wanted = track === undefined ? undefined : { track, volume };
+          channel.wanted =
+            track === undefined
+              ? undefined
+              : { track, volume, once: once === true };
           channel.fade = fade;
           settle(channel);
         },

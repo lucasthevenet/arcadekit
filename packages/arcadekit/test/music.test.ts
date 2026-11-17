@@ -191,6 +191,67 @@ describe("Sound.music", () => {
     ]);
   });
 
+  it("plays a track once when the body says so, and not again while it says the same", () => {
+    const sound = Sound.makeRecorder();
+    // A fanfare in the cave, for as long as the game is there; hushed, the
+    // same piece goes round and round, softly.
+    const Fanfare = Sound.music("mu/Fanfare", function* () {
+      if ((yield* Level).value !== "cave") {
+        return undefined;
+      }
+      return (yield* Hush).on === 1
+        ? { track: "fanfare", volume: 0.5 }
+        : { track: "fanfare", once: true };
+    });
+    const { app, step } = play([Fanfare], sound);
+    step(Go, { to: "cave" });
+    expect(sound.scored).toEqual([
+      {
+        channel: "mu/Fanfare",
+        track: "fanfare",
+        volume: 1,
+        fade: 0.5,
+        once: true,
+      },
+    ]);
+    // However long after: it has ended by now, and is not begun again.
+    for (let i = 0; i < 20; i++) {
+      app.tick(0.1);
+      app.frame(0);
+    }
+    expect(sound.scored.length).toBe(1);
+    // Over and over is another thing to be told, of the same track.
+    step(SetHush, { on: true });
+    expect(sound.scored.slice(1)).toEqual([
+      { channel: "mu/Fanfare", track: "fanfare", volume: 0.5, fade: 0.5 },
+    ]);
+    // Once again, at the same volume, is told too.
+    const Twice = Sound.music("mu/Twice", function* () {
+      return (yield* Hush).on === 1
+        ? { track: "fanfare", once: true }
+        : "fanfare";
+    });
+    const other = Sound.makeRecorder();
+    const second = play([Twice], other);
+    second.app.frame(0);
+    second.step(SetHush, { on: true });
+    expect(other.scored.map((one) => one.once)).toEqual([undefined, true]);
+    // Left and come back to, it plays again from its start.
+    step(Go, { to: "menu" });
+    step(SetHush, { on: false });
+    step(Go, { to: "cave" });
+    expect(sound.scored.slice(2)).toEqual([
+      { channel: "mu/Fanfare", track: undefined, volume: 0, fade: 0.5 },
+      {
+        channel: "mu/Fanfare",
+        track: "fanfare",
+        volume: 1,
+        fade: 0.5,
+        once: true,
+      },
+    ]);
+  });
+
   it("is worked out from the game and kept nowhere in it: a game that is loaded has its music from its first frame, and is the same game as one with none", () => {
     const sound = Sound.makeRecorder();
     const heard = play([Score], sound);
@@ -412,14 +473,25 @@ describe("Sound.Player.music", () => {
     expect(say(undefined, { fade: 2 })).toBe(1);
     expect(say(undefined)).toBe(0);
     expect(say("buzz")).toBe(1);
+    // Once, and over and over, are two things to be told of one track;
+    // each said again is no change, and silence is neither.
+    expect(say("buzz", { once: true })).toBe(1);
+    expect(say("buzz", { once: true })).toBe(0);
+    expect(say("buzz", { once: false })).toBe(1);
+    expect(say("buzz")).toBe(0);
+    expect(say(undefined, { once: true })).toBe(1);
+    expect(say(undefined)).toBe(0);
     expect(sound.scored).toEqual([
       { channel: "ui", track: "hum", volume: 0.3, fade: 0 },
       { channel: "ui", track: "hum", volume: 0.6, fade: 0.5 },
       { channel: "ui", track: "buzz", volume: 0.6, fade: 0.5 },
       { channel: "ui", track: undefined, volume: 0, fade: 2 },
       { channel: "ui", track: "buzz", volume: 1, fade: 0.5 },
+      { channel: "ui", track: "buzz", volume: 1, fade: 0.5, once: true },
+      { channel: "ui", track: "buzz", volume: 1, fade: 0.5 },
+      { channel: "ui", track: undefined, volume: 0, fade: 0.5 },
     ]);
-    expect(said.length).toBe(9);
+    expect(said.length).toBe(15);
   });
 });
 
@@ -715,10 +787,26 @@ describe("Sound.makeRecorder", () => {
       b: "wind",
     });
     sound.music("a", undefined, 0, 2);
+    sound.music("c", "fanfare", 1, 0, true);
+    sound.music("c", wind, 1, 0, true);
+    sound.music("c", "fanfare", 1, 0, false);
+    sound.music("c", undefined, 0, 0, true);
     expect(sound.scored).toEqual([
       { channel: "a", track: "theme", volume: 1, fade: 0.5 },
       { channel: "b", track: "wind", volume: 0.2, fade: 0, clip: wind },
       { channel: "a", track: undefined, volume: 0, fade: 2 },
+      { channel: "c", track: "fanfare", volume: 1, fade: 0, once: true },
+      {
+        channel: "c",
+        track: "wind",
+        volume: 1,
+        fade: 0,
+        clip: wind,
+        once: true,
+      },
+      { channel: "c", track: "fanfare", volume: 1, fade: 0 },
+      // Silence is not once or over and over.
+      { channel: "c", track: undefined, volume: 0, fade: 0 },
     ]);
     expect(sound.scored[1]!.clip).toBe(wind);
     expect(wind.data).toEqual({ samples: 3 });

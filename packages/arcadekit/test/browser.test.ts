@@ -874,6 +874,8 @@ describe("a page's sound", () => {
     readonly levels: (readonly [string, ...number[]])[];
     /** When it was told to stop, if it was. */
     stopped: number | undefined;
+    /** There, and true, while it is to play to its end and no further. */
+    once?: true;
   }
   /** A stand-in for the page's audio, which notes what it is asked. */
   const makeAudio = () => {
@@ -900,7 +902,7 @@ describe("a page's sound", () => {
         readonly volume: number;
         readonly into: unknown;
       }[],
-      /** Every source that was started to play over and over. */
+      /** Every source that was started as a channel's track. */
       loops: [] as Looped[],
       resumed: 0,
       suspended: 0,
@@ -908,21 +910,36 @@ describe("a page's sound", () => {
       createBufferSource() {
         let gain: Gain | undefined;
         let looped: Looped | undefined;
+        let loop = false;
         const source = {
           buffer: undefined as unknown,
-          loop: false,
+          get loop(): boolean {
+            return loop;
+          },
+          set loop(value: boolean) {
+            loop = value;
+            if (looped !== undefined) {
+              if (value) {
+                delete looped.once;
+              } else {
+                looped.once = true;
+              }
+            }
+          },
           playbackRate: { value: 1 },
           connect(to: unknown) {
             gain = to as Gain;
             return to;
           },
           start() {
-            if (source.loop) {
+            // A track's volume is led there; a cue's is set.
+            if (source.loop || (gain?.levels.length ?? 0) > 0) {
               looped = {
                 buffer: source.buffer,
                 into: gain?.into,
                 levels: gain?.levels ?? [],
                 stopped: undefined,
+                ...(source.loop ? {} : { once: true as const }),
               };
               audio.loops.push(looped);
               return;
@@ -1297,6 +1314,42 @@ describe("a page's sound", () => {
       ["set", 0, 50],
       ["ramp", 0.5, 50],
     ]);
+  });
+
+  it("plays a track to its end and no further when it is asked to, and over and over when it is asked that after all", async () => {
+    const { audio, output, page } = await build({
+      fanfare: "/coin.wav",
+      theme: "/thud.wav",
+    });
+    page.send("pointerdown");
+    output.music("score", "fanfare", 1, 0.5, true);
+    expect(audio.loops).toEqual([
+      {
+        buffer: { samples: 3 },
+        into: audio.destination,
+        levels: [
+          ["set", 0, 0],
+          ["ramp", 1, 0.5],
+        ],
+        stopped: undefined,
+        once: true,
+      },
+    ]);
+    // It is a track all the same, and not a cue: it is on its channel, and
+    // another track fades it out if it has not ended.
+    expect(audio.started).toEqual([]);
+    audio.currentTime = 1;
+    output.music("score", "theme", 1, 2);
+    expect(audio.loops[0]!.stopped).toBe(3);
+    expect(audio.loops[1]!.once).toBeUndefined();
+    // The track that is playing, asked to stop at its end after all, and
+    // then to go on again: the one source, told so.
+    output.music("score", "theme", 1, 2, true);
+    expect(audio.loops.length).toBe(2);
+    expect(audio.loops[1]!.once).toBe(true);
+    output.music("score", "theme", 1, 2, false);
+    expect(audio.loops[1]!.once).toBeUndefined();
+    expect(audio.loops.length).toBe(2);
   });
 
   it("sleeps while the page is hidden, music and all, and wakes when it is seen again", async () => {

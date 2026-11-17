@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 643 tests, 74 of them of @arcadekit/three
+pnpm test                          # 645 tests, 74 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -768,6 +768,7 @@ const Score = Sound.music(
 Music is not an event. It is what the game, as it is, should sound like, for as long as it is so. `Sound.music(name, body)` makes a system of the frame stage that says so each frame, and the player starts, fades and stops what that takes.
 
 - The body gives a track: a name the output knows, or one with a `volume` and a `fade` of its own, or `undefined` for silence. A track plays over and over until the body says another.
+- `{ track: "fanfare", once: true }` plays to its end and no further. It is still what the channel is playing: it is not started again while the body says the same, another track fades it out if it has not ended, and it plays again from its start once the body has said something else in between. A sound that only marks a moment, and need not be faded or stopped, is a [cue](#sound).
 - Nothing happens while it says the same. When it says another track the first fades out and the second fades in, over `fade` seconds; another volume is the same track, turned up or down as long. Half a second when nothing says.
 - It is worked out from the game and kept nowhere in it. A game that is loaded from a save, or an app that starts in the middle of a level, has its music from its first frame, and a game with music has the same hash, log and save as one with none.
 - The system's name is its channel. Two systems are two channels, which play together: the score, and the wind.
@@ -1255,7 +1256,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 
 - [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
 - A game picks one of the two transforms for a thing, and a plugin written for one does not read the other: code that should work in both asks for both. A `Transform2d` has no depth: what is in front of what in a flat game is for what draws it to say.
-- A cue is played once and left to end: it cannot be stopped, and nothing is heard from where it is. A track only plays over and over: one that is to play once and end, a fanfare, is a cue, and is not faded.
+- A cue is played once and left to end: it cannot be stopped, and nothing is heard from where it is. A track that plays once says nothing when it has ended: the body that asked for it cannot tell, and what follows it is for the game to say.
 - A sound is decoded whole into memory, a track too: there is no streaming, so a long piece of music is as large there as it is long.
 - A channel fades in a straight line, from one track to the next in the same time. Two tracks are not kept in step, a track does not start where the last one was, and nothing is timed to a beat.
 - A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.

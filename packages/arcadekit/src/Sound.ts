@@ -96,16 +96,18 @@ export interface OutputShape {
    */
   readonly play: (cue: Playable, volume: number, rate: number) => void;
   /**
-   * Says what a channel is to play from now on, over and over: `track` at
-   * `volume`, reached over `fade` seconds from whatever it was playing,
-   * which fades out as long. No track is silence. It is told only when
-   * one of the two changes.
+   * Says what a channel is to play from now on: `track` at `volume`,
+   * reached over `fade` seconds from whatever it was playing, which fades
+   * out as long. It plays over and over, or with `once` to its end and no
+   * further. No track is silence. It is told only when one of these
+   * changes.
    */
   readonly music: (
     channel: string,
     track: Playable | undefined,
     volume: number,
-    fade: number
+    fade: number,
+    once?: boolean
   ) => void;
 }
 
@@ -145,6 +147,8 @@ export interface Scored {
   readonly fade: number;
   /** The clip itself, when it was one. */
   readonly clip?: Clip;
+  /** There, and true, for a track that is to play once and end. */
+  readonly once?: true;
 }
 
 export interface Recorder extends OutputShape {
@@ -183,18 +187,21 @@ export const makeRecorder = (): Recorder => {
           : { cue: cue.name, volume, rate, clip: cue }
       );
     },
-    music(channel, track, volume, fade) {
+    music(channel, track, volume, fade, once) {
       if (track === undefined) {
         playing.delete(channel);
         scored.push({ channel, track, volume, fade });
         return;
       }
       playing.set(channel, nameOf(track));
-      scored.push(
-        typeof track === "string"
-          ? { channel, track, volume, fade }
-          : { channel, track: track.name, volume, fade, clip: track }
-      );
+      scored.push({
+        channel,
+        track: nameOf(track),
+        volume,
+        fade,
+        ...(typeof track === "string" ? {} : { clip: track }),
+        ...(once === true ? { once } : {}),
+      });
     },
   };
 };
@@ -219,6 +226,13 @@ export interface MusicOptions {
    * 0 is at once.
    */
   readonly fade?: number;
+  /**
+   * Whether the track plays to its end and no further, where it would
+   * play over and over: a fanfare. It is not started again while the
+   * channel is told the same track; told another, or silence, and then
+   * this one again, it plays again from its start.
+   */
+  readonly once?: boolean;
 }
 
 export interface PlayerShape {
@@ -230,10 +244,10 @@ export interface PlayerShape {
    */
   readonly play: (cue: Playable, options?: Options) => void;
   /**
-   * Says what a channel is to be playing, over and over: a track, or
-   * `undefined` for silence. Said again with the same track and volume it
-   * does nothing, so a system says it every frame; said with another, the
-   * output fades from the one to the other. A channel is any name:
+   * Says what a channel is to be playing, over and over or with `once` to
+   * its end: a track, or `undefined` for silence. Said again with the
+   * same track and volume it does nothing, so a system says it every
+   * frame; said with another, the output fades from the one to the other. A channel is any name:
    * `Sound.music` uses its system's. Between ticks only, as `play`.
    */
   readonly music: (
@@ -262,14 +276,14 @@ const playerLayer = Layer.effect(
     // What each channel was last told: the output hears of a change only.
     const channels = new Map<
       string,
-      { track: Playable | undefined; volume: number }
+      { track: Playable | undefined; volume: number; once: boolean }
     >();
     // An app that goes leaves nothing playing in an output that stays.
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         for (const [channel, told] of channels) {
           if (told.track !== undefined) {
-            output.music(channel, undefined, 0, 0);
+            output.music(channel, undefined, 0, 0, false);
           }
         }
         channels.clear();
@@ -293,20 +307,32 @@ const playerLayer = Layer.effect(
         }
         const volume =
           track === undefined ? 0 : Math.max(0, options?.volume ?? 1);
+        const once = track !== undefined && options?.once === true;
         const told = channels.get(channel);
         if (told === undefined) {
           // A channel that was never told anything is silent already.
           if (track === undefined) {
             return;
           }
-          channels.set(channel, { track, volume });
-        } else if (told.track === track && told.volume === volume) {
+          channels.set(channel, { track, volume, once });
+        } else if (
+          told.track === track &&
+          told.volume === volume &&
+          told.once === once
+        ) {
           return;
         } else {
           told.track = track;
           told.volume = volume;
+          told.once = once;
         }
-        output.music(channel, track, volume, Math.max(0, options?.fade ?? 0.5));
+        output.music(
+          channel,
+          track,
+          volume,
+          Math.max(0, options?.fade ?? 0.5),
+          once
+        );
       },
     };
   })
@@ -523,6 +549,10 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  * - A track plays over and over until the body says another, or nothing.
  *   It is a name the output knows, a clip, or either with a `volume` and
  *   a `fade` of its own.
+ * - With `once: true` a track plays to its end and no further: a fanfare
+ *   for as long as the game is won, `{ track: "fanfare", once: true }`. It
+ *   is not started again while the body says the same, and it fades like
+ *   any other when the body says something else before it has ended.
  * - It is worked out from the game and kept nowhere in it: a game that is
  *   loaded from a save, or an app that starts in the middle of a level,
  *   has its music from its first frame.
@@ -562,6 +592,7 @@ export const music = <Eff extends Effect.Effect<any, any, any>>(
       player.music(name, picked.track, {
         volume: picked.volume ?? 1,
         fade: picked.fade ?? options.fade ?? 0.5,
+        once: picked.once === true,
       });
     } else {
       player.music(name, picked, options);
