@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 711 tests, 93 of them of @arcadekit/three
+pnpm test                          # 719 tests, 93 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -1096,6 +1096,28 @@ Every peer runs the same simulation, and what they send each other is the action
 - The log of a peer is an ordinary log. Every peer's is the same, entry for entry, and `App.replay` plays it back into a game of one.
 - `app.divert(take)` is what a session is made with, for a session of another kind: it hands over what comes in from outside, and returns the one way left to queue an action and to run a tick.
 
+### Peers that come apart
+
+```ts
+const exit = session.tickExit(); // Exit<boolean, E | Lockstep.Drifted>
+session.drifted; // why the session stopped, once it has
+
+// The peers are no longer playing the same game. At tick 120 the hashes of
+// their worlds are: ada 2860666740, grace 3734032547 (found by "ada"). They
+// last agreed at tick 60, so they came apart in one of the 60 ticks after it: ...
+```
+
+Lockstep rests on every peer's simulation going the same way. One system that reads the clock, `Math.random` or the order of a `Set`, and the peers hold different games, each sure of its own. So the peers compare: each tells the others the [checkpoints](#replays-that-check-themselves) its log records, the hash of its world at a tick, in the messages it sends anyway.
+
+- When every peer has said its hash for a tick and they are not all the same, the session stops. Its tick fails with `Lockstep.Drifted`, and so does every tick after it; `session.drifted` is the same value, for a UI to show. `session.tick()` throws it, which stops a driver.
+- The report says the tick, the hash every peer had at it, by name, so that with three or more the one that is not as the others stands out, and `agreedAt`, the last tick at which they were all the same. With a checkpoint every tick that is the tick before they came apart.
+- It is found within a known number of ticks. A checkpoint travels with the peer's message for the tick `delay` ahead, which no peer runs without. So no peer runs more than `checkpointEvery - 1 + delay` ticks past the first whose world differed, however slow the network, `delay` being the largest any peer has: with a checkpoint every tick and a delay of 2, two ticks.
+- The state the peers start from is compared before anyone's first tick, whatever `checkpointEvery` is: a session records a checkpoint when it begins. Peers made with another seed, or with something else spawned at the start, never run a tick, and the report says they did not start from the same state.
+- After that the peers compare what their logs record, every 60 ticks unless the app was told otherwise, and with `checkpointEvery: 0` nothing more. Peers with different schedules compare the ticks both record, and a checkpoint one peer takes by hand, `app.checkpoint()`, is not held against the others.
+- A peer that stops says its hash first, so the others stop with the same report in place of waiting for it.
+- It costs a message 30 bytes or so per checkpoint and the session a comparison: the hash is the one the app takes for its log anyway.
+- What is compared is the world's hash, so what the [hash](#the-worlds-hash) does not cover is found only when it shows in the world: an event that one peer alone has waiting, or a system's own variables.
+
 ## Files
 
 | File | What it is |
@@ -1119,14 +1141,14 @@ Every peer runs the same simulation, and what they send each other is the action
 | `src/Assets.ts` | Assets and bundles of them, loading as a scoped resource, and the store that keeps a level's while the level lasts |
 | `src/Sound.ts` | Cues played from the game's events and music kept to what the game is, both in the frame stage, clips, the player, and where sound goes |
 | `src/View.ts` | The view bridge: the values a UI may see, published once per frame when they changed, and the actions it sends |
-| `src/Lockstep.ts` | A session of several peers: the messages they exchange, and the tick that waits for every peer's |
+| `src/Lockstep.ts` | A session of several peers: the messages they exchange, the tick that waits for every peer's, and the hashes they compare |
 | `src/Schemas.ts` | Schemas for framework types, such as `EntityId` |
 | `src/System.ts`, `src/Query.ts`, `src/Resource.ts`, `src/Services.ts` | The rest of the user-facing API |
 | `src/Driver.ts` | The fixed step, the frame loop that follows the display, and a timer: each runs the ticks that are due and then the frame stage |
 | `src/index.ts` | The `arcadekit` entry: `import { App, System } from "arcadekit"`. Every other module here is an entry too, `arcadekit/App` and so on |
 | `src/Browser.ts` | The `arcadekit/Browser` entry: a page's display, devices, pictures and sound, and `Browser.runMain` |
 | `src/ecs/index.ts` | The `arcadekit/ecs` entry: the storage core alone |
-| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, and peers of one game joined by a network that delays and reorders |
+| `test/` | Storage, runtime, rules, plugin, schema, random, hash, replay, transaction, snapshot, field, save, migration, change, singleton, relation, state, frame, read-only query, driver, input, asset, entry point, browser, view, sound, music, transform, page, lockstep and entries tests, the two transforms among them, including randomized comparisons of the storage, of change queries and of relations against simple models, the generator checked against its published algorithm, and replays of a faulty build of a game, a game played from a keyboard and replayed with none, peers of one game joined by a network that delays and reorders, and peers with a system that is not deterministic |
 | `bench/accessors.ts` | Accessor objects vs raw columns vs alternatives |
 | `examples/demo.ts` | A real-time simulation, started with `NodeRuntime.runMain` around `App.run` |
 | `examples/duel.ts` | A turn-based game built from two plugins, which makes its app and steps it one move at a time |
@@ -1329,7 +1351,8 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A frame system of the game's own that draws between two ticks works the place out itself, from a velocity or a previous position the simulation keeps: there is no helper for it in this package. [`@arcadekit/three`](../three/README.md#between-two-ticks) does it for what it draws, with `smooth: true`, and keeps the place before to itself.
 - `arcadekit/ecs` has no helper for writing a query: `world.view` is given a description written out as an object, `{ terms, withDefs, withoutDefs }`. `Query.all` and its kind are Effect's side of it, in `arcadekit`.
 - `arcadekit/Browser` is one entry for everything a page has.
-- Nothing carries a session's messages yet: a game hands them to whatever it has. Nor do the peers compare their worlds: two that have come apart go on, each with a game of its own. Both are next on the roadmap, and predicting a move before the others have heard of it after them.
+- Nothing carries a session's messages yet: a game hands them to whatever it has. That is on the roadmap, after predicting a move before the others have heard of it.
+- Peers that have come apart stop. Nothing brings them back together: a game that wants to go on has every peer load one peer's save and makes its sessions again.
 - A session's peers are fixed when it is made. Nobody joins a game in progress or leaves one, and a peer that stops is waited for.
 - Every message has to arrive. One that is lost stops the game for everyone: nothing asks for it again.
 - A handler is not told which peer issued an action. A game puts the player in the payload, and a peer can put another's name there.

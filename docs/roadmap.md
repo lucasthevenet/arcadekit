@@ -36,9 +36,10 @@ These are plugins, not part of the core: a game that draws with something else l
 
 ## 6. More than one player
 
-Lockstep is done: `arcadekit/Lockstep`. A session takes its app over, puts what its player issues in a message for the tick a few ahead, and runs a tick once it holds every peer's message for it, so every peer applies the same actions on the same ticks in the same order; in a test, peers joined by a network that delays and reorders are hash-equal at every tick, and their logs are the same. The package's [README](../packages/arcadekit/README.md#more-than-one-player) describes it. A session holds no socket: it is given what arrived and gives what to send. What is left:
+Lockstep is done: `arcadekit/Lockstep`. A session takes its app over, puts what its player issues in a message for the tick a few ahead, and runs a tick once it holds every peer's message for it, so every peer applies the same actions on the same ticks in the same order; in a test, peers joined by a network that delays and reorders are hash-equal at every tick, and their logs are the same. The package's [README](../packages/arcadekit/README.md#more-than-one-player) describes it. A session holds no socket: it is given what arrived and gives what to send.
 
-- **Drift detection.** Peers compare hashes and stop with a useful report when they differ. Done when a deliberately non-deterministic system is caught within a known number of ticks.
+Drift detection is done too, in the same sessions: the peers send each other the checkpoints their logs record, and when every peer has said its hash for a tick and they are not all the same, each stops with `Lockstep.Drifted`, which says the tick, every peer's hash and when they last agreed. A system that is not deterministic is caught within `checkpointEvery - 1 + delay` ticks, which a test holds it to, and peers that do not start from the same state before their first. What is left:
+
 - **Rollback.** Predict, and when a late action arrives, restore a snapshot and re-run. Done when a game feels immediate under simulated latency and still ends hash-equal.
 - **A transport.** A service with a test implementation first, a real one second.
 
@@ -83,7 +84,8 @@ Ticks, frames and real time:
 Several peers:
 
 - **A payload its schema refuses is refused on the peer that issued it alone.** It has no JSON form to send, so the other peers never hear of it, and the `Action.Rejected` it becomes is an event on one machine. A system of the tick that reads that event and writes what it read has the peers come apart. To close it: refuse such a payload where it is enqueued, as a value or by throwing, in a game of one too.
-- **Nothing says that the peers of a session were made alike.** The same plugins, the same seed, the same `delta`, the same names: each peer is told its own, and one that was told otherwise plays another game from its first tick. Comparing hashes will find a different world; a different `delta` shows only once a system has used it.
+- **Not everything that makes peers alike is compared.** Each peer is told its own plugins, seed, `delta` and names. Another seed, or a world that does not start the same, is found before the first tick, since the peers compare the hash they start from. Another `delta`, a system one peer lacks, or another list of names is found only when it has changed a world, at the checkpoint after: and a list of names that leaves a peer out is never found, since that peer is not heard. To close it: have the peers compare a hash of what they were made with, the names and the delta among it, with the state they start from.
+- **What the hash does not cover can differ between peers for as long as it does not reach the world**: the events waiting to be read, what a change query has yet to visit, a system's own variables, a service's state. The report then names the tick it reached the world, not the tick it began.
 
 What a replay, a save and the hash do not hold:
 

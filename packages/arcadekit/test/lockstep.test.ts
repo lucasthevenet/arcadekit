@@ -1,6 +1,6 @@
-import { Data, Effect, Exit, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Schema } from "effect";
 import type { Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -94,6 +94,26 @@ const Bot = System.make("ls/Bot", function* () {
     });
   }
 });
+/**
+ * A bug of the kind that drift detection is for: on one tick, in the worlds
+ * it is set for, a system moves a coin by a number that is not the game's.
+ */
+let glitch: { tick: number; worlds: Set<EcsWorld> | "all" } | undefined;
+const Fault = System.make("ls/Fault", function* () {
+  if (glitch === undefined || (yield* Time).tick !== glitch.tick) {
+    return;
+  }
+  if (glitch.worlds !== "all" && !glitch.worlds.has(yield* World)) {
+    return;
+  }
+  let first = true;
+  (yield* Coins).each((coin) => {
+    if (first) {
+      coin.x += 1 + Math.random();
+      first = false;
+    }
+  });
+});
 /** What each app's input stage heard refused, in the order it heard it. */
 const refusals: string[] = [];
 const Hear = System.make("ls/Hear", function* () {
@@ -105,13 +125,13 @@ const Controls = Input.bind("ls/Controls", Input.onPress("Space", Fire, {}));
 
 const DELTA = 1 / 30;
 
-const game = (seed = 5) =>
+const game = (seed = 5, checkpointEvery = 1) =>
   App.make({
-    systems: [Drift, Bot, Controls, Hear],
+    systems: [Drift, Bot, Fault, Controls, Hear],
     handlers: [drop, take, fire, mint, whisper],
     components: [Coin, Purse],
     seed,
-    checkpointEvery: 1,
+    checkpointEvery,
   });
 type Game = Effect.Success<ReturnType<typeof game>>;
 
@@ -128,6 +148,8 @@ interface Setup {
   readonly delay?: number;
   /** The seed of each peer's game, by name: all the same unless told. */
   readonly seeds?: Readonly<Record<string, number>>;
+  /** How often each peer's log records a checkpoint, by name: 1 unless told. */
+  readonly checkpointEvery?: Readonly<Record<string, number>>;
   /** Whether each peer is given the names the other way round from the last. */
   readonly shuffled?: boolean;
 }
@@ -143,9 +165,10 @@ const withPeers = <A>(
         const peers: Peer[] = [];
         for (const name of names) {
           const source = Input.makeManualSource();
-          const app = yield* game(setup.seeds?.[name]).pipe(
-            Effect.provideService(Input.Source, source)
-          );
+          const app = yield* game(
+            setup.seeds?.[name],
+            setup.checkpointEvery?.[name]
+          ).pipe(Effect.provideService(Input.Source, source));
           const session = Lockstep.make(app, {
             peer: name,
             peers:
@@ -393,7 +416,13 @@ describe("a lockstep session", () => {
       // Its first tick speaks for every tick up to the one its delay
       // reaches, and what was issued is in the last of them.
       expect(ada.session.outgoing()).toEqual([
-        { from: "ada", tick: 0, actions: [] },
+        {
+          from: "ada",
+          tick: 0,
+          actions: [],
+          // The state it starts from, for the others to compare.
+          checkpoints: [{ tick: 0, hash: ada.app.world.hash() }],
+        },
         { from: "ada", tick: 1, actions: [] },
         {
           from: "ada",
@@ -569,6 +598,7 @@ describe("a lockstep session", () => {
           actions: [
             { name: "ls/Mint", payload: { on: "2026-11-17T00:00:00.000Z" } },
           ],
+          checkpoints: [{ tick: 0, hash: ada.app.world.hash() }],
         },
       ]);
       net.send(["grace"], said);
@@ -817,10 +847,16 @@ describe("a lockstep session", () => {
               delay: 1,
             })
           ) as [Lockstep.Session, Lockstep.Session];
+          const logged = apps[0].actionLog.length;
           expect(ada.tick()).toBe(false);
-          expect(ada.outgoing().map((message) => message.tick)).toEqual([
-            9, 10,
+          const said = ada.outgoing();
+          expect(said.map((message) => message.tick)).toEqual([9, 10]);
+          // The checkpoint its log ends with is where it starts: it is
+          // sent, and not taken a second time.
+          expect(said[0]!.checkpoints).toEqual([
+            { tick: 9, hash: apps[0].world.hash() },
           ]);
+          expect(apps[0].actionLog.length).toBe(logged);
           grace.tick();
           for (const message of grace.outgoing()) {
             ada.receive(message);
@@ -829,6 +865,281 @@ describe("a lockstep session", () => {
           expect(apps[0].time.tick).toBe(10);
         })
       )
+    );
+  });
+});
+
+/**
+ * Rounds of a game that is expected to stop: every peer is handed what
+ * arrived and tries its tick, until every one of them has failed. Returns
+ * what each failed with, by name.
+ */
+const untilStopped = (
+  peers: readonly Peer[],
+  net: Network,
+  rounds: number
+): Map<string, unknown> => {
+  const stopped = new Map<string, unknown>();
+  for (let i = 0; i < rounds && stopped.size < peers.length; i++) {
+    net.round();
+    for (const peer of peers) {
+      for (const message of net.arrivals(peer.name)) {
+        peer.session.receive(message);
+      }
+      const exit = peer.session.tickExit();
+      if (Exit.isFailure(exit)) {
+        stopped.set(peer.name, Cause.squash(exit.cause));
+      }
+      net.send(
+        peers.filter((other) => other !== peer).map((other) => other.name),
+        peer.session.outgoing()
+      );
+    }
+  }
+  return stopped;
+};
+
+describe("peers that have come apart", () => {
+  afterEach(() => {
+    glitch = undefined;
+  });
+
+  it("are caught within checkpointEvery - 1 + delay ticks of a system that is not deterministic", () => {
+    const at = 23;
+    for (const every of [1, 4, 10]) {
+      for (const delay of [0, 1, 3]) {
+        for (const lag of [
+          { min: 0, max: 0 },
+          { min: 0, max: 4 },
+        ]) {
+          withPeers(
+            ["ada", "grace"],
+            { delay, checkpointEvery: { ada: every, grace: every } },
+            (peers) => {
+              glitch = { tick: at, worlds: "all" };
+              const net = network(every * 10 + delay, lag);
+              peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
+              const stopped = untilStopped(peers, net, 600);
+              const where = `checkpointEvery ${every}, delay ${delay}, lag ${lag.max}`;
+              // The first checkpoint at or after the tick that differed.
+              const checkpoint = Math.ceil(at / every) * every;
+              for (const peer of peers) {
+                const reason = stopped.get(peer.name);
+                expect(reason, where).toBeInstanceOf(Lockstep.Drifted);
+                const drifted = reason as Lockstep.Drifted;
+                expect(drifted.tick, where).toBe(checkpoint);
+                expect(drifted.peer, where).toBe(peer.name);
+                expect(drifted.agreedAt, where).toBe(checkpoint - every);
+                expect(Object.keys(drifted.hashes), where).toEqual([
+                  "ada",
+                  "grace",
+                ]);
+                expect(drifted.hashes.ada, where).not.toBe(
+                  drifted.hashes.grace
+                );
+                // No further than this, however slow the network.
+                expect(peer.app.time.tick, where).toBeGreaterThanOrEqual(
+                  checkpoint
+                );
+                expect(peer.app.time.tick, where).toBeLessThanOrEqual(
+                  checkpoint + delay
+                );
+                expect(peer.app.time.tick, where).toBeLessThanOrEqual(
+                  at + every - 1 + delay
+                );
+              }
+              // Both say the same of who had what.
+              expect(
+                (stopped.get("ada") as Lockstep.Drifted).hashes,
+                where
+              ).toEqual((stopped.get("grace") as Lockstep.Drifted).hashes);
+            }
+          );
+        }
+      }
+    }
+  });
+
+  it("stop for good, and say so in words", () => {
+    withPeers(["ada", "grace"], { delay: 1 }, (peers) => {
+      glitch = { tick: 9, worlds: "all" };
+      const net = network(1, { min: 0, max: 0 });
+      const [ada] = peers as [Peer];
+      ada.app.enqueue(Drop, { by: "ada", value: 3 });
+      expect(ada.session.drifted).toBeUndefined();
+      const stopped = untilStopped(peers, net, 100);
+      const drifted = stopped.get("ada") as Lockstep.Drifted;
+      expect(ada.session.drifted).toBe(drifted);
+      const { tick } = ada.app.time;
+      // Every tick fails with it from then on, and runs nothing.
+      expect(ada.session.tickExit()).toEqual(Exit.fail(drifted));
+      expect(() => ada.session.tick()).toThrow(Lockstep.Drifted);
+      expect(ada.app.time.tick).toBe(tick);
+      expect(drifted.message).toBe(
+        `The peers are no longer playing the same game. At tick 9 the hashes of their worlds are: ada ${drifted.hashes.ada}, grace ${drifted.hashes.grace} (found by "ada"). They last agreed at tick 8, so they came apart in one of the 1 ticks after it: look for a system, a handler or a script that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta).`
+      );
+    });
+  });
+
+  it("stop a peer in the very call that ran the tick, when the others' word for it was in already", () => {
+    withPeers(["ada", "grace"], { delay: 2 }, (peers) => {
+      const [ada] = peers as [Peer];
+      const start = ada.app.world.hash();
+      // Grace, by hand: every message up to tick 5, and a hash for tick 2
+      // that is not ada's.
+      for (let tick = 0; tick <= 5; tick++) {
+        ada.session.receive({
+          from: "grace",
+          tick,
+          actions: [],
+          ...(tick === 0 ? { checkpoints: [{ tick: 0, hash: start }] } : {}),
+          ...(tick === 4 ? { checkpoints: [{ tick: 2, hash: 12_345 }] } : {}),
+        });
+      }
+      expect(ada.session.tickExit()).toEqual(Exit.succeed(true));
+      expect(ada.session.drifted).toBeUndefined();
+      const exit = ada.session.tickExit();
+      expect(ada.app.time.tick).toBe(2);
+      expect(exit).toEqual(
+        Exit.fail(
+          new Lockstep.Drifted({
+            tick: 2,
+            peer: "ada",
+            hashes: { ada: ada.app.world.hash(), grace: 12_345 },
+            agreedAt: 0,
+          })
+        )
+      );
+    });
+  });
+
+  it("let go of the checkpoints that were answered, and in time of the ones that never are", () => {
+    withPeers(["ada", "grace"], {}, (peers) => {
+      const net = network(2, { min: 0, max: 4 });
+      for (let i = 0; i < 200; i++) {
+        round(peers, net);
+      }
+      // What is left is what the other has not had the time to answer.
+      expect(peers[0]!.session.unanswered).toBeLessThanOrEqual(2 * 2 + 2);
+      expect(peers[0]!.app.time.tick).toBeGreaterThan(30);
+    });
+    // Nobody answers a peer that plays alone.
+    withApp(game(), (app) => {
+      const session = Lockstep.make(app, {
+        peer: "ada",
+        peers: ["ada"],
+        delta: DELTA,
+      });
+      for (let i = 0; i < 700; i++) {
+        session.tick();
+      }
+      expect(app.time.tick).toBe(700);
+      expect(session.unanswered).toBe(601);
+    });
+  });
+
+  it("are caught before their first tick when they do not start from the same state", () => {
+    withPeers(
+      ["ada", "grace"],
+      { seeds: { ada: 1, grace: 2 }, checkpointEvery: { ada: 60, grace: 60 } },
+      (peers) => {
+        const net = network(1, { min: 0, max: 3 });
+        const stopped = untilStopped(peers, net, 100);
+        for (const peer of peers) {
+          const drifted = stopped.get(peer.name) as Lockstep.Drifted;
+          expect(drifted).toBeInstanceOf(Lockstep.Drifted);
+          expect(drifted.tick).toBe(0);
+          expect(drifted.agreedAt).toBeUndefined();
+          expect(drifted.message).toMatch(
+            /did not start from the same state: check that every peer was made with the same plugins and the same seed/u
+          );
+          expect(peer.app.time.tick).toBe(0);
+        }
+      }
+    );
+  });
+
+  it("compare the state they start from even when their logs record no checkpoint", () => {
+    withPeers(
+      ["ada", "grace"],
+      { seeds: { ada: 1, grace: 2 }, checkpointEvery: { ada: 0, grace: 0 } },
+      (peers) => {
+        const stopped = untilStopped(peers, network(1, { min: 0, max: 0 }), 50);
+        expect(stopped.get("ada")).toBeInstanceOf(Lockstep.Drifted);
+        expect(stopped.get("grace")).toBeInstanceOf(Lockstep.Drifted);
+        expect(peers[0]!.app.time.tick).toBe(0);
+      }
+    );
+    // And nothing after it: with no checkpoints there is nothing to compare.
+    withPeers(
+      ["ada", "grace"],
+      { checkpointEvery: { ada: 0, grace: 0 } },
+      (peers) => {
+        glitch = { tick: 9, worlds: "all" };
+        peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
+        const stopped = untilStopped(peers, network(1, { min: 0, max: 0 }), 50);
+        expect(stopped.size).toBe(0);
+        expect(peers[0]!.app.world.hash()).not.toBe(peers[1]!.app.world.hash());
+      }
+    );
+  });
+
+  it("are all stopped when one of three has gone its own way, and the report says which", () => {
+    withPeers(["ada", "grace", "edsger"], { delay: 2 }, (peers) => {
+      const [ada, grace, edsger] = peers as [Peer, Peer, Peer];
+      glitch = { tick: 12, worlds: new Set([grace.app.world]) };
+      const net = network(6, { min: 0, max: 3 });
+      ada.app.enqueue(Drop, { by: "ada", value: 3 });
+      const stopped = untilStopped(peers, net, 300);
+      expect(stopped.size).toBe(3);
+      const reports = [ada, grace, edsger].map(
+        (peer) => stopped.get(peer.name) as Lockstep.Drifted
+      );
+      for (const report of reports) {
+        expect(report).toBeInstanceOf(Lockstep.Drifted);
+        expect(report.tick).toBe(12);
+        expect(report.agreedAt).toBe(11);
+      }
+      // Every report has every peer's hash: two agree and one does not.
+      for (const report of reports) {
+        expect(Object.keys(report.hashes)).toEqual(["ada", "edsger", "grace"]);
+        expect(report.hashes.ada).toBe(report.hashes.edsger);
+        expect(report.hashes.grace).not.toBe(report.hashes.ada);
+        expect(report.hashes).toEqual(reports[0]!.hashes);
+      }
+    });
+  });
+
+  it("compare the checkpoints they both have, when one records more than the other", () => {
+    withPeers(
+      ["ada", "grace"],
+      { delay: 1, checkpointEvery: { ada: 2, grace: 6 } },
+      (peers) => {
+        const net = network(3, { min: 0, max: 2 });
+        const act = players(4);
+        const [ada, grace] = peers as [Peer, Peer];
+        for (let i = 0; i < 100; i++) {
+          act(ada);
+          act(grace);
+          round(peers, net);
+          if (i === 40) {
+            // One taken by hand, at a tick of nobody's schedule.
+            ada.app.checkpoint();
+          }
+        }
+        // A healthy game is not stopped by what one peer alone recorded.
+        expect(ada.session.drifted).toBeUndefined();
+        expect(grace.session.drifted).toBeUndefined();
+        expect(ada.app.time.tick).toBeGreaterThan(40);
+        const at = ada.app.time.tick + 3;
+        glitch = { tick: at, worlds: "all" };
+        const stopped = untilStopped(peers, net, 100);
+        // Caught at the first tick both record: a multiple of 6.
+        const drifted = stopped.get("grace") as Lockstep.Drifted;
+        expect(drifted).toBeInstanceOf(Lockstep.Drifted);
+        expect(drifted.tick).toBe(Math.ceil(at / 6) * 6);
+        expect(drifted.agreedAt).toBe(drifted.tick - 6);
+      }
     );
   });
 });
@@ -843,6 +1154,16 @@ describe("a message between peers", () => {
     expect(Lockstep.decode(Lockstep.encode(message))).toEqual(
       Exit.succeed(message)
     );
+    const checked: Lockstep.Message = {
+      ...message,
+      checkpoints: [
+        { tick: 10, hash: 0 },
+        { tick: 12, hash: 4_294_967_295 },
+      ],
+    };
+    expect(Lockstep.decode(Lockstep.encode(checked))).toEqual(
+      Exit.succeed(checked)
+    );
   });
 
   it("is refused when it is not one", () => {
@@ -855,6 +1176,21 @@ describe("a message between peers", () => {
       JSON.stringify({ from: "ada", tick: -1, actions: [] }),
       JSON.stringify({ from: "ada", tick: 1.5, actions: [] }),
       JSON.stringify({ from: "ada", tick: 1, actions: [{ payload: 1 }] }),
+      JSON.stringify({ from: "ada", tick: 1, actions: [], checkpoints: 3 }),
+      ...[-1, 4_294_967_296, 0.5].map((hash) =>
+        JSON.stringify({
+          from: "ada",
+          tick: 1,
+          actions: [],
+          checkpoints: [{ tick: 0, hash }],
+        })
+      ),
+      JSON.stringify({
+        from: "ada",
+        tick: 1,
+        actions: [],
+        checkpoints: [{ tick: -1, hash: 1 }],
+      }),
     ]) {
       expect(Exit.isFailure(Lockstep.decode(text)), text).toBe(true);
     }
