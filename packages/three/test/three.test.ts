@@ -1542,12 +1542,13 @@ describe("an entity drawn between two ticks", () => {
     for (let i = 0; i < 10; i++) {
       advance(1 / 120);
     }
-    expect(app.time.tick).toBe(0);
+    // At rest, after the two ticks a new game runs.
+    expect(app.time.tick).toBe(2);
     expect(xAt(mesh(), 1)).toBe(0);
     // Told to go: the tick runs in that frame, and it is on its way.
     app.enqueue(Go, {});
     advance(1 / 120);
-    expect(app.time.tick).toBe(1);
+    expect(app.time.tick).toBe(3);
     expect(xAt(mesh(), 1)).toBe(0);
     advance(1 / 120);
     expect(xAt(mesh(), 1)).toBe(5);
@@ -1556,7 +1557,7 @@ describe("an entity drawn between two ticks", () => {
     for (let i = 0; i < 10; i++) {
       advance(1 / 120);
     }
-    expect(app.time.tick).toBe(2);
+    expect(app.time.tick).toBe(4);
     expect(xAt(mesh(), 1)).toBe(10);
   });
 

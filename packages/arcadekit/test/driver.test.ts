@@ -623,9 +623,10 @@ describe("ticking when needed", () => {
       )
     );
     let now = turn(display, 120, 0);
-    // Two seconds of frames, and the ball has not rolled: nothing asked
-    // for a tick.
-    expect(app.time.tick).toBe(0);
+    // Two seconds of frames. A game that has just been made runs a tick,
+    // in which it could have asked for more, and the one that follows the
+    // last; then nothing asks, and the ball rolls no further.
+    expect(app.time.tick).toBe(2);
     expect(alphas.length).toBe(120);
     expect(alphas.at(-1)).toBe(1);
     expect(display.pending).toBe(1);
@@ -634,13 +635,13 @@ describe("ticking when needed", () => {
     // six ticks, and one more.
     app.spawnScript(Effect.flatMap(Script, (script) => script.sleep(0.1)));
     now = turn(display, 60, now);
-    expect(app.time.tick).toBe(7);
+    expect(app.time.tick).toBe(9);
     // Hidden, it asks for nothing; shown, it is at rest as it was.
     display.hide();
     expect(display.pending).toBe(0);
     display.show();
     now = turn(display, 30, now + 5000);
-    expect(app.time.tick).toBe(7);
+    expect(app.time.tick).toBe(9);
     expect(display.pending).toBe(1);
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(display.pending).toBe(0);

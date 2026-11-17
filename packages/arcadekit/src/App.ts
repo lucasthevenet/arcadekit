@@ -63,6 +63,7 @@ import {
   Frame,
   Random,
   Script,
+  Ticks,
   Time,
   World,
 } from "./Services";
@@ -159,9 +160,11 @@ export interface Any {
    * waits that some system has not had its chance at.
    *
    * A driver told to tick only when needed asks this, so that a game that
-   * moves when its player does stands still in between. Systems that do
-   * something every tick whether or not anything is waiting are not
-   * counted: a game that has them runs in real time.
+   * moves when its player does stands still in between. A system that
+   * does something every tick while a condition of its own holds is not
+   * seen unless it says so, with `Ticks.more`, each tick it has more to
+   * do; and an app that has not ticked yet, new or just loaded, is not
+   * settled, so that every system gets a tick to say so in.
    */
   readonly settled: boolean;
   /**
@@ -834,6 +837,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }),
       Context.add(Commands, commands),
       Context.add(Script, { nextTick, sleep, spawn }),
+      Context.add(Ticks, {
+        more() {
+          wanted = true;
+        },
+      }),
       Context.add(Events, events),
       Context.add(Action.Actions, { enqueue: enqueueFromInside }),
       Context.add(Random, random),
@@ -1052,6 +1060,13 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         nextTick: Effect.sync(notInFrame("Script.nextTick")),
         sleep: notInFrame("Script.sleep"),
         spawn: notInFrame("Script.spawn"),
+      }),
+      Context.add(Ticks, {
+        more() {
+          throw new Error(
+            "Ticks.more was called in the frame stage or the input stage. Whether the game ticks again is the game's to say, from a system of the tick: what draws it, or reads the devices, runs between ticks and decides nothing of it. A key that should wake the game issues an action."
+          );
+        },
       })
     ) as Context.Context<any>;
     const runFrameFork = Effect.runForkWith(frameContext);
@@ -1137,6 +1152,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     let between: "frame" | "input" | undefined;
     // Whether the input stage has run since the last tick.
     let heard = false;
+    // Whether the game asked for its next tick: `Ticks.more`. An app that
+    // has not ticked yet has not been asked, and is taken to want one.
+    let wanted = true;
     const busy = (): string =>
       ticking
         ? "tick"
@@ -1365,6 +1383,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         }
       }
       heard = false;
+      // Each tick is asked afresh: one in which nobody asks is the last.
+      wanted = false;
       start();
       ticking = true;
       try {
@@ -1516,6 +1536,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       },
       get settled() {
         if (
+          wanted ||
           queued.length > 0 ||
           waiters.size > 0 ||
           dispatcher.pending > 0 ||

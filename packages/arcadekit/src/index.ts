@@ -51,6 +51,7 @@ export {
   Frame,
   Random,
   Script,
+  Ticks,
   Time,
   World,
 } from "./Services";

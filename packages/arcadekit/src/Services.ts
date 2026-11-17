@@ -77,6 +77,41 @@ export class Script extends Context.Service<
   }
 >()("arcadekit/Script") {}
 
+/**
+ * How a system says that the game has more to do, to a driver that ticks
+ * only when needed.
+ *
+ *   const Countdown = System.make("Countdown", function*() {
+ *     const clock = yield* Clock
+ *     if (clock.left > 0) {
+ *       clock.left -= (yield* Time).delta
+ *       ;(yield* Ticks).more()     // not at rest: the next tick is needed
+ *     }
+ *   })
+ *
+ * A game that moves when its player does rests when nothing is waiting,
+ * and what an app can see waiting is actions, states, scripts and events.
+ * A system that does something every tick for as long as a condition of
+ * its own holds, a clock that runs, a body in flight, is not among them:
+ * it asks for the next tick itself, each tick it has more to do. The tick
+ * in which nobody asks is the last, and the game rests.
+ *
+ * - It is asked in the tick, by a system, a handler or a script. Between
+ *   ticks it throws: what draws the game does not decide when it ticks.
+ * - Under a driver that ticks in real time it does nothing, and costs
+ *   nothing to leave in.
+ * - What was asked is not saved. An app that has just been made, or loaded
+ *   from a save, runs one tick before it rests, in which every system can
+ *   ask again.
+ */
+export class Ticks extends Context.Service<
+  Ticks,
+  {
+    /** The game has more to do: the tick after this one is needed. */
+    readonly more: () => void;
+  }
+>()("arcadekit/Ticks") {}
+
 /** The app's event channels. Usually reached by yielding an event definition. */
 export class Events extends Context.Service<Events, EventBus>()(
   "arcadekit/Events"
@@ -107,6 +142,7 @@ export type BuiltIn =
   | Frame
   | Commands
   | Script
+  | Ticks
   | Events
   | Actions
   | Random

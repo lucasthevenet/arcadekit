@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 660 tests, 83 of them of @arcadekit/three
+pnpm test                          # 665 tests, 83 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -265,7 +265,7 @@ app.dispatch(Heal, { amount: 5 }); // typed from Combat's handler
 
 A string that identifies something at run time carries the name of the feature it belongs to.
 
-- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
+- The built-in services are keyed `"arcadekit/World"`, `"arcadekit/Time"`, `"arcadekit/Frame"`, `"arcadekit/Commands"`, `"arcadekit/Script"`, `"arcadekit/Ticks"`, `"arcadekit/Events"`, `"arcadekit/Random"` and `"arcadekit/Actions"`, so a game is free to key a service of its own `"World"`. The screen a frame loop follows is keyed `"arcadekit/Display"`, the devices `"arcadekit/Input.Devices"` and where they come from `"arcadekit/Input.Source"`.
 - The bridge to a UI is `"arcadekit/View.Bridge"` and an app's end of it `"arcadekit/View.Port"`; the plugin is `"arcadekit/View"`, its system `"arcadekit/View.Send"`, and the system that publishes a view is named after it, `"View.publish(game/Hud)"`.
 - Where sound goes is `"arcadekit/Sound.Output"` and an app's player of cues `"arcadekit/Sound.Player"`; the plugin is `"arcadekit/Sound"`.
 - An app's assets are kept under `"arcadekit/Assets.Store"` and fetched through `"arcadekit/Assets.Loader"`; the plugin is `"arcadekit/Assets"`, and the system that keeps a bundle is named after it, `"Assets.during(game/Forest)"`.
@@ -496,10 +496,12 @@ A game of turns, a puzzle or a menu has nothing to do between two moves, and a g
 - The [input stage](#input) runs every frame, so a key, a button of the UI's or a message is heard in the frame it comes in, and the tick it asks for runs in that frame.
 - It ticks while the app is not settled, at `hz` like any game, and once more after, for the systems that react a tick late to what a system listed after them did. Then it rests: no tick runs and the game's time stands still.
 - `app.settled` says whether anything is waiting: an action to apply, a state to enter, a script that waits for the next tick or sleeps, a fiber that is due, or an event that some system has not had its chance at. Looking changes nothing.
+- A system that has work of its own says so. One that does something every tick for as long as a condition of its own holds, a clock that runs down, a body in flight, is none of those: it asks for the next tick itself, `(yield* Ticks).more()`, each tick it has more to do. The tick in which nobody asks is the last. A handler and a script may ask too; between ticks it throws, since what draws the game does not decide when it ticks; and under a driver that ticks in real time it does nothing.
+- An app that has just been made, or loaded from a save, is not settled: it runs one tick, in which every system can ask, and the one that follows it, before it rests. What was asked is not in a save.
 - A script that sleeps keeps the game ticking for as long as it sleeps, at `hz`, so what takes the game's time (a piece sliding for three tenths of a second) takes it. A script that should let the game rest waits for an event.
 - The frame stage runs every frame, at rest too. It is told the frame is all the way to the last tick, a `Frame.alpha` of 1: what draws between two ticks draws the game where it is.
 - Resting is no part of the game. Its log holds the actions and the ticks they were applied in, and a replay given how many ticks it ran, `app.time.tick`, runs them one after the other and ends on the same hash.
-- What is not counted: a system that does something every tick whether or not anything is waiting. A game that has one runs in real time, which is what leaving `ticks` out is.
+- What is not counted: a system that does something every tick and does not say so. Its work stops when the game rests, and nothing tells it apart from one that had nothing to do.
 - A frame of a game at rest costs 5.3 µs with the picture of the devices, a state and a view: the devices read, the app asked, and the frame stage.
 
 ### Drawing with Three.js
@@ -1278,7 +1280,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
 - Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
 - A tick reads the devices unless it is told not to. What runs a game again from its log by hand, with `dispatchByName` and `tick`, says `{ input: false }` as `App.replay` does, or the machine's own keys join in.
-- A game that ticks when it is needed rests when nothing is waiting, and what is waiting is what the app can see: actions, states, scripts and events. A system that reacts to a change through a change query, listed before the system that makes the change, reacts a tick late, and the one tick that follows the last is all it is given; two such systems in a row are a tick short. Order them with `System.after`.
+- A game that ticks when it is needed rests when nothing is waiting, and what is waiting is what the app can see, actions, states, scripts and events, and what a system said with `Ticks.more`. A system that has work every tick and does not say so stops with the game. A system that reacts to a change through a change query, listed before the system that makes the change, reacts a tick late, and the one tick that follows the last is all it is given; two such systems in a row are a tick short. Order them with `System.after`, or have the one that changed something ask for a tick.
 - The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
 - The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and `arcadekit/Browser` against stand-ins for `requestAnimationFrame`, the document and the window.
 - Neither the frame stage nor the input stage can stop a write through the raw columns of `eachChunk`. `verifyFrames` finds one afterwards, at the cost of a hash of the world per system of those stages. A draw from `world.random` there is found when the stage ends, not where it is made.
