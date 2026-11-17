@@ -4,7 +4,7 @@
 
 The first cut of the revamped arcadekit: an entity component system with Effect 4 around it, for games of any genre.
 
-- A storage core with archetype tables, typed-array columns, opt-in sparse components, cached queries and a command buffer. A world keeps the names of the components it stores, and nothing is shared between worlds.
+- A storage core with archetype tables, typed-array columns, opt-in sparse components, cached queries and a command buffer. A world keeps the names of the components it stores, and nothing is shared between worlds. A number left out of a component's value, which JavaScript and a cast allow, is 0 in the world as in a component added with no value, and never NaN; `world.set` leaves a number it names and is given no value for as it was.
 - Change queries: `Query.changed` and `Query.added` visit only the entities that had a component written, or gained one, since the system last looked, and `Query.removed` gives the ones that lost one. Every system sees every change once, a visit costs next to nothing when nothing changed, and what a query has yet to visit is saved with a game.
 - Singletons: `Singleton.define` declares data the world holds one of, such as whose turn it is, and `yield*` gives its value to read and write. It is saved with the world and counted in its hash, and a refused action's writes to it are taken back.
 - Relations: `Component.relation` declares a component that points at another entity and says what that entity's despawn does to whoever points at it: despawned with it, like a parent's children, or left without the relation. Nothing is left pointing at an entity that is gone, and `world.sources` gives who points at one.

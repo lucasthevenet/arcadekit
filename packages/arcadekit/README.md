@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 678 tests, 92 of them of @arcadekit/three
+pnpm test                          # 680 tests, 92 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -171,7 +171,7 @@ const Rules = Plugin.make("game/Rules", {
 - `Transform3d.plugin` lists them. A plugin that stores them depends on it, as the plugin of a renderer that reads them does.
 - `Transform3d.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis, which is a direction of any length. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
 - A `Rotation` is its turn and not its length: a quaternion of any length stands for the turn of the one of length 1 along it, and what reads one takes it so. One that a game's rules let drift from length 1 is drawn as the same turn, and all zeros, which is what a `Rotation` added with no value is, as not turned at all.
-- A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A field left out of `of` is not 0, so a flat game gives every `z`.
+- A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A number left out of a value is 0 as well. `of` takes every field, so the compiler asks for each, and a flat game gives every `z`; from JavaScript, or past a cast, a number that is left out is 0 in the world, and never NaN. `world.set` writes the fields it is given: a number it names and gives no value for is left as it was.
 - [`@arcadekit/three`](../three/README.md) draws from them, and has no components of its own.
 
 **A flat game** has `Transform2d`: the same three components with no third dimension.

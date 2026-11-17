@@ -139,12 +139,12 @@ const writeRow = (
 ): void => {
   for (let f = 0; f < def.fields.length; f++) {
     const name = def.fields[f];
+    // A number that is not given is 0, whether the whole value was left
+    // out or the one field, which JavaScript and a cast allow: written as
+    // it came, an undefined would be NaN in a column of floats.
+    const given = value === undefined ? undefined : value[name!];
     cols[name!]![row] =
-      value === undefined
-        ? isBoxed(def.kinds[f]!)
-          ? undefined
-          : 0
-        : value[name!];
+      given === undefined && !isBoxed(def.kinds[f]!) ? 0 : given;
   }
 };
 
@@ -2363,7 +2363,12 @@ export class World {
       this.saveRow(def, cols, row);
     }
     for (const key in value) {
-      cols[key]![row] = value[key] as any;
+      const given = value[key];
+      // A number named and not given is left as it was: `set` writes the
+      // fields it is handed, and an undefined would be NaN among floats.
+      if (given !== undefined || isBoxed(def.schema[key]!.kind)) {
+        cols[key]![row] = given as any;
+      }
     }
     this._changed[def.id]?.note(index);
     return true;
