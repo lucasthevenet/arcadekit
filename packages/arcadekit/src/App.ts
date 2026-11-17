@@ -929,7 +929,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         return system.condition === undefined
           ? system.run
           : Effect.flatMap(system.condition, (holds) =>
-              holds ? system.run : Effect.void
+              holds ? system.run : (system.idle ?? Effect.void)
             );
       });
     /** Makes one move of a state: the hooks for leaving, the move, the hooks for entering. */
@@ -983,6 +983,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         world.reader = running;
         // A system with no condition is asked nothing.
         if (system.condition !== undefined && !(yield* system.condition)) {
+          // What it does in place of running, if it was given anything.
+          if (system.idle !== undefined) {
+            yield* system.idle;
+            commands.apply();
+          }
           continue;
         }
         yield* system.run;
@@ -1070,9 +1075,14 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           events.reader = `${FRAME_READER}${running}`;
           world.reader = events.reader;
           if (system.condition !== undefined && !(yield* system.condition)) {
-            continue;
+            if (system.idle === undefined) {
+              continue;
+            }
+            // What it does in place of running, held to the same.
+            yield* system.idle;
+          } else {
+            yield* system.run;
           }
-          yield* system.run;
           if (verifyFrames && world.hash() !== frameHash) {
             return yield* Effect.die(
               new FrameChangedWorld({

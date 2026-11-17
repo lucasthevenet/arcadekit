@@ -89,14 +89,14 @@ What a replay, a save and the hash do not hold:
 
 Values that have to be right and are not checked:
 
-- **A field left out of `Component.of` is NaN, not 0.** Only a component added with no value at all is zeroed. A `Transform3d.Position.of({ x: 1 })` draws nowhere.
+- **A field left out of `Component.of` is NaN, not 0, where the compiler is not asked.** In TypeScript it does not compile: `of` takes every field. From JavaScript, or past a cast, a float that was left out is NaN, an integer is 0, and a `Transform3d.Position` with no `z` draws nowhere. Only a component added with no value at all is zeroed.
 - **A `Transform3d.Rotation` has to be a unit quaternion.** One that is not draws skewed.
 - **An instance's colour is in the renderer's linear colour space**, not a hex code's bytes over 255, and from 0 to 1. Either mistake draws the wrong colour and no more.
 - **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
 - **A texture made by `Three.texture` cannot be turned over in `prepare`**: Three.js does not read `flipY` of a texture made of a bitmap, and setting it does nothing.
 - **`ui.send` takes any action.** One the game has no handler for throws when it is issued, in the input stage, and not where it was sent or when it was compiled.
 - **Two systems made with `Sound.cues` that play the same cue play it twice.** The merging of a frame's cues is per system.
-- **A `Sound.music` system that does not run says nothing, and its channel plays on.** One gated with `System.runIf` to a level goes on playing that level's music after the level is left. For silence its body has to run and return `undefined`. `View.publish` keeps its last value the same way. To close it: have a system that is gated say so to what it keeps, or give `Sound.music` its condition itself.
+- **A view that is not published keeps the value it had.** `View.publish` under `System.runIf` leaves the UI showing what was so when the system last ran, a score from a level that was left, say. `System.otherwise` says what it should see then; nothing asks for it.
 - **Two `Sound.music` systems are two channels, by their names.** Two that were meant to be one score, a menu's and a level's, play on top of each other, each fading as if it were alone.
 - **A cue asked for before the page was first touched is dropped; a track is kept.** The first sound of a game that starts with a cue is not heard. Nothing says so.
 
@@ -108,10 +108,6 @@ Who lets go of what:
 Reported, and not settled:
 
 - **A page's sound after a laptop's lid was shut and opened.** With the example page of `arcadekit` on a MacBook: music playing, the lid shut and opened, the game played again, and the sound took a moment to come back and then came with its first notes all at once, as if they had been queued. Other apps on the same machine did not do it. One cause was found and closed: cues played while the page's audio was asleep or still waking were started all the same, and were heard together when it woke; they are dropped now. That was reproduced only with an audio made slow to wake in headless Chromium, never with a real lid, and it was not heard again on the machine after the change. Before a stable release: shut a real lid, on more than one browser, and listen. If it is still there, look at what the audio's clock does across the sleep (`currentTime` against the wall clock, and `state`), and at whether the looping track should be started afresh when the page is seen again in place of being woken.
-
-Tests:
-
-- **`toEqual` finds two tagged errors that differ only in their `message` equal.** A test that compares a failure that way checks everything but the reason. [Conventions](./conventions.md#tests) says how to compare; nothing stops the other way.
 
 ## Decisions waiting to be made
 

@@ -826,11 +826,12 @@ describe("a texture", () => {
     expect(Exit.isFailure(exit)).toBe(true);
     const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
     expect(error).toBeInstanceOf(Assets.AssetFailed);
-    // One at a time: two such errors with different messages are equal to
-    // `toEqual`.
-    expect((error as Assets.AssetFailed).url).toBe("/bark.png");
-    expect((error as Assets.AssetFailed).message).toBe(
-      "It could not be made a texture: The source image could not be decoded."
+    expect(error).toEqual(
+      new Assets.AssetFailed({
+        url: "/bark.png",
+        message:
+          "It could not be made a texture: The source image could not be decoded.",
+      })
     );
   });
 

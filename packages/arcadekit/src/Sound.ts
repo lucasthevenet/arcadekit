@@ -535,9 +535,10 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  * - `fade` is how many seconds a change takes, half a second when left
  *   out.
  * - Where sound goes nowhere the body is not run at all.
- * - It needs `Sound.plugin`. Under `System.runIf` it says nothing while
- *   its condition does not hold, and the channel goes on playing what it
- *   was last told: for silence, the body returns `undefined`.
+ * - It needs `Sound.plugin`. Under `System.runIf` its channel is silent
+ *   while the condition does not hold, as if the body had said so: music
+ *   that is for a level stops when the level is left. Run again, the body
+ *   says what plays, from the start of the track.
  */
 export const music = <Eff extends Effect.Effect<any, any, any>>(
   name: string,
@@ -565,8 +566,13 @@ export const music = <Eff extends Effect.Effect<any, any, any>>(
     } else {
       player.music(name, picked, options);
     }
-  }).pipe(System.inStage("frame")) as System.System<
-    Effect.Error<Eff>,
-    Effect.Services<Eff> | Player
-  >;
+  }).pipe(
+    System.inStage("frame"),
+    // Not run, it is not asked, and there is nothing it says should play.
+    System.otherwise(
+      Effect.map(Player, (player) => {
+        player.music(name, undefined, options);
+      })
+    )
+  ) as System.System<Effect.Error<Eff>, Effect.Services<Eff> | Player>;
 };
