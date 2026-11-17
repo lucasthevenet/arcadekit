@@ -57,17 +57,19 @@ const built = existsSync(
   path.join(REPO_ROOT, "packages/arcadekit/dist/Sound.d.ts")
 );
 
+// Read from the packages' built declarations, which CI's tests run before building.
 describe.runIf(built)("a module's page", () => {
-  const sound = readModule(
-    REPO_ROOT,
-    "packages/arcadekit",
-    "arcadekit",
-    "Sound",
-    "packages/arcadekit/src/Sound.ts"
-  );
+  const readSound = () =>
+    readModule(
+      REPO_ROOT,
+      "packages/arcadekit",
+      "arcadekit",
+      "Sound",
+      "packages/arcadekit/src/Sound.ts"
+    );
 
   it("lists what the module exports, each with its signature and its comment", () => {
-    const clip = sound.exports.find((item) => item.name === "clip");
+    const clip = readSound().exports.find((item) => item.name === "clip");
     expect(clip?.parts[0]?.signature).toBe(
       "const clip: (name: string, data?: unknown) => Clip;"
     );
@@ -75,7 +77,7 @@ describe.runIf(built)("a module's page", () => {
   });
 
   it("links each export to the line of the source that writes it", () => {
-    const clip = sound.exports.find((item) => item.name === "clip");
+    const clip = readSound().exports.find((item) => item.name === "clip");
     expect(clip?.parts[0]?.source?.file).toBe(
       "packages/arcadekit/src/Sound.ts"
     );
@@ -97,7 +99,7 @@ describe.runIf(built)("a module's page", () => {
   });
 
   it("starts with the module's comment and how to import it", () => {
-    const page = renderModule(sound, "https://github.com/o/r", "main");
+    const page = renderModule(readSound(), "https://github.com/o/r", "main");
     expect(page.startsWith("Sound: a service")).toBe(true);
     expect(page).toContain('import * as Sound from "arcadekit/Sound"');
     expect(page).toContain("## Values\n\n### clip");
