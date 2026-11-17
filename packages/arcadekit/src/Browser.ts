@@ -90,13 +90,15 @@ export interface Options {
   /** The gamepads, read once per sample. `navigator.getGamepads`, when left out. */
   readonly gamepads?: () => ArrayLike<GamepadLike | null>;
   /**
-   * The files of the sounds the page has for as long as it lasts, by the
-   * name a cue or a track is played by, as `Browser.layerSound` takes
-   * them. Left out, the page still plays the sounds a level's bundle
-   * holds, `Browser.sound`. `false` is a page with no sound at all: no
-   * audio is made, and the game is told that nothing is heard.
+   * The sounds the page has for as long as it lasts, by the name a cue or
+   * a track is played by, as `Browser.layerSound` takes them: each the URL
+   * of a file, which is fetched and decoded, or a clip, such as
+   * `Browser.stream(url)` for a long piece of music. Left out, the page
+   * still plays the sounds a level's bundle holds, `Browser.sound`.
+   * `false` is a page with no sound at all: no audio is made, and the
+   * game is told that nothing is heard.
    */
-  readonly sounds?: Readonly<Record<string, string>> | false;
+  readonly sounds?: Readonly<Record<string, string | Sound.Clip>> | false;
   /** How loud everything is played: 1, as it asks, when left out. */
   readonly volume?: number;
   /** Makes the page's audio. `new AudioContext()`, when left out. */
@@ -106,6 +108,11 @@ export interface Options {
    * plays nothing and so needs no touch, when left out.
    */
   readonly decode?: (data: ArrayBuffer) => Promise<unknown>;
+  /**
+   * Makes what plays a streamed track, of its URL. An `<audio>` element,
+   * when left out.
+   */
+  readonly media?: (url: string) => MediaLike;
 }
 
 const isPad = (code: string): boolean => code.startsWith("Pad");
@@ -342,11 +349,63 @@ export interface AudioLike {
     };
     connect(to: unknown): unknown;
   };
+  /** Brings what a streamed track plays into the audio, so that it is faded as any track is. */
+  createMediaElementSource?(media: any): { connect(to: unknown): unknown };
   /** Stops its clock, and with it everything that sounds, until it is resumed. */
   suspend?(): Promise<unknown>;
   resume?(): Promise<unknown>;
   close(): Promise<unknown>;
 }
+
+/** As much of what plays a streamed track as is used: an `<audio>` element is one. */
+export interface MediaLike {
+  loop: boolean;
+  play(): Promise<unknown>;
+  pause(): void;
+}
+
+/** What a clip that is streamed holds: where it is, and nothing of it. */
+class Streamed {
+  constructor(readonly url: string) {}
+}
+
+/**
+ * A track that is streamed: a `Sound.Clip` that holds only where its file
+ * is. Played on a channel, the page fetches it as it plays and decodes it
+ * as it goes, where a file given by its URL, and `Browser.sound`, are
+ * fetched whole and held decoded: a long piece of music is tens of
+ * megabytes that way, and a few hundred kilobytes this.
+ *
+ *   // By a name, for as long as the page lasts:
+ *   Browser.runMain(game, { sounds: { theme: Browser.stream("/theme.ogg") } })
+ *
+ *   // Or as it is, where a level's music is said:
+ *   const ForestTheme = Browser.stream("/forest.ogg")
+ *   const Score = Sound.music("game/Score", function*() {
+ *     return (yield* Level).value === "forest" ? ForestTheme : undefined
+ *   })
+ *
+ * - It is no asset, and is in no bundle: nothing is fetched until it is
+ *   played, so there is nothing to load and nothing to let go, and it does
+ *   not come through `Assets.Loader`. A test plays `Sound.clip(name)`.
+ * - It is for a channel's track. Played as a cue it is said once, through
+ *   Effect's logger, and not played: a cue is to be heard at once.
+ * - Started, faded and stopped as any track, and with `once` played to its
+ *   end. One that goes round may be heard to join where it does: a short
+ *   piece that has to go round without a seam is better decoded.
+ */
+export const stream = (url: string): Sound.Clip =>
+  Sound.clip(url, new Streamed(url));
+
+const audioElement = (url: string): MediaLike => {
+  const element = new Audio();
+  // Asked for before the address is given: a file from elsewhere that
+  // may be shared is then heard, where it would be silence.
+  element.crossOrigin = "anonymous";
+  element.preload = "auto";
+  element.src = url;
+  return element;
+};
 
 // Decoding needs no touch, only playing does: a context that plays nothing
 // decodes a file as soon as it is there.
@@ -368,8 +427,11 @@ interface Channel {
   playing:
     | {
         readonly track: Sound.Playable;
-        readonly source: ReturnType<AudioLike["createBufferSource"]>;
         readonly gain: ReturnType<AudioLike["createGain"]>;
+        /** Says whether it goes round, or plays to its end and no further. */
+        readonly loop: (on: boolean) => void;
+        /** Stops it, `fade` seconds from `now`, which is when it is silent. */
+        readonly end: (now: number, fade: number) => void;
       }
     | undefined;
 }
@@ -408,8 +470,11 @@ interface Channel {
  *   and `Browser.layer` do, unless told `sounds: false`.
  */
 export const layerSound = (
-  files: Readonly<Record<string, string>> = {},
-  options: Pick<Options, "audio" | "decode" | "volume" | "window"> = {}
+  files: Readonly<Record<string, string | Sound.Clip>> = {},
+  options: Pick<
+    Options,
+    "audio" | "decode" | "media" | "volume" | "window"
+  > = {}
 ): Layer.Layer<never> =>
   Layer.effect(
     Sound.Output,
@@ -424,6 +489,11 @@ export const layerSound = (
           : (): AudioLike => new AudioContext());
       const master = options.volume ?? 1;
       const decode = options.decode ?? decodeOffline;
+      const media = options.media ?? audioElement;
+      // What is being streamed now, to be stopped with the page's audio
+      // and started with it, and what waits to stop one.
+      const streaming = new Set<MediaLike>();
+      const timers = new Set<ReturnType<typeof setTimeout>>();
       const buffers = new Map<string, unknown>();
       const missing = new Set<string>();
       const channels = new Map<string, Channel>();
@@ -434,7 +504,7 @@ export const layerSound = (
       const failed = (cue: string, error: unknown): void => {
         report(
           Effect.logWarning(
-            `The sound "${cue}" (${files[cue]}) will not be played: ${describe(error)}`
+            `The sound "${cue}" (${String(files[cue])}) will not be played: ${describe(error)}`
           )
         );
       };
@@ -443,15 +513,76 @@ export const layerSound = (
         if (typeof sound !== "string") {
           return sound.data;
         }
-        if (!Object.hasOwn(files, sound) && !missing.has(sound)) {
-          missing.add(sound);
-          report(
-            Effect.logWarning(
-              `The sound "${sound}" was played and has no file. The page's sounds are: ${Object.keys(files).join(", ") || "none"}.`
-            )
-          );
+        if (!Object.hasOwn(files, sound)) {
+          if (!missing.has(sound)) {
+            missing.add(sound);
+            report(
+              Effect.logWarning(
+                `The sound "${sound}" was played and has no file. The page's sounds are: ${Object.keys(files).join(", ") || "none"}.`
+              )
+            );
+          }
+          return undefined;
         }
-        return buffers.get(sound);
+        // A name is a file that was decoded, or a clip under that name.
+        const file = files[sound]!;
+        return typeof file === "string" ? buffers.get(sound) : file.data;
+      };
+      /** Starts a streamed track, silent, on a volume of its own. */
+      const startStream = (
+        context: AudioLike,
+        streamed: Streamed,
+        once: boolean,
+        gain: ReturnType<AudioLike["createGain"]>
+      ): Pick<NonNullable<Channel["playing"]>, "end" | "loop"> | undefined => {
+        if (context.createMediaElementSource === undefined) {
+          if (!missing.has(streamed.url)) {
+            missing.add(streamed.url);
+            report(
+              Effect.logWarning(
+                `The sound "${streamed.url}" is streamed, and the page's audio cannot take a stream: it will not be played.`
+              )
+            );
+          }
+          return undefined;
+        }
+        const element = media(streamed.url);
+        element.loop = !once;
+        context.createMediaElementSource(element).connect(gain);
+        streaming.add(element);
+        // It may not be there, or not be a sound: said once, as of a file.
+        element.play().catch((error: unknown) => {
+          if (!closed && !missing.has(streamed.url)) {
+            missing.add(streamed.url);
+            report(
+              Effect.logWarning(
+                `The sound "${streamed.url}" will not be played: ${describe(error)}`
+              )
+            );
+          }
+        });
+        const stop = (): void => {
+          streaming.delete(element);
+          element.pause();
+        };
+        return {
+          loop: (on) => {
+            element.loop = on;
+          },
+          // What plays it has no clock to be told a time on: it is stopped
+          // when the time has gone.
+          end: (_now, fade) => {
+            if (fade <= 0) {
+              stop();
+              return;
+            }
+            const timer = setTimeout(() => {
+              timers.delete(timer);
+              stop();
+            }, fade * 1000);
+            timers.add(timer);
+          },
+        };
       };
       /** Brings a channel from what it is playing to what it is to play. */
       const settle = (channel: Channel): void => {
@@ -465,7 +596,7 @@ export const layerSound = (
           level.cancelScheduledValues(now);
           level.setValueAtTime(level.value, now);
           level.linearRampToValueAtTime(0, now + fade);
-          playing.source.stop(now + fade);
+          playing.end(now, fade);
           channel.playing = undefined;
         }
         if (wanted === undefined) {
@@ -477,19 +608,36 @@ export const layerSound = (
           if (buffer === undefined) {
             return;
           }
-          const source = audio.createBufferSource();
-          source.buffer = buffer;
-          source.loop = !wanted.once;
           const gain = audio.createGain();
+          // Silent, and on its way to its volume, before it is started.
           gain.gain.setValueAtTime(0, now);
           gain.gain.linearRampToValueAtTime(wanted.volume * master, now + fade);
-          source.connect(gain);
-          gain.connect(audio.destination);
-          source.start();
-          channel.playing = { track: wanted.track, source, gain };
+          let started: Pick<NonNullable<Channel["playing"]>, "end" | "loop">;
+          if (buffer instanceof Streamed) {
+            const stream = startStream(audio, buffer, wanted.once, gain);
+            if (stream === undefined) {
+              return;
+            }
+            gain.connect(audio.destination);
+            started = stream;
+          } else {
+            const source = audio.createBufferSource();
+            source.buffer = buffer;
+            source.loop = !wanted.once;
+            source.connect(gain);
+            gain.connect(audio.destination);
+            source.start();
+            started = {
+              loop: (on) => {
+                source.loop = on;
+              },
+              end: (at, after) => source.stop(at + after),
+            };
+          }
+          channel.playing = { track: wanted.track, gain, ...started };
         } else {
           // The same track, louder or softer, and over and over or not.
-          channel.playing.source.loop = !wanted.once;
+          channel.playing.loop(!wanted.once);
           const level = channel.playing.gain.gain;
           level.cancelScheduledValues(now);
           level.setValueAtTime(level.value, now);
@@ -505,7 +653,10 @@ export const layerSound = (
       // is still on its way when the scope closes is given up.
       yield* Effect.forkScoped(
         Effect.forEach(
-          Object.entries(files),
+          // A name that is a clip's has no file to fetch.
+          Object.entries(files).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string"
+          ),
           ([cue, url]) =>
             Effect.match(loader.bytes(url), {
               onSuccess: (bytes) => {
@@ -536,10 +687,18 @@ export const layerSound = (
             // is heard rests with it. Watched from now on, since before
             // there is audio there is nothing to put to sleep.
             unwatch = display.onVisibilityChange(() => {
+              // What is streamed keeps its own time, and is stopped and
+              // started with the audio it plays into.
               if (display.hidden()) {
                 void audio?.suspend?.();
+                for (const element of streaming) {
+                  element.pause();
+                }
               } else {
                 void audio?.resume?.();
+                for (const element of streaming) {
+                  element.play().catch(() => {});
+                }
               }
             });
           }
@@ -562,6 +721,14 @@ export const layerSound = (
             page.removeEventListener(type, wake);
           }
           unwatch?.();
+          for (const timer of timers) {
+            clearTimeout(timer);
+          }
+          timers.clear();
+          for (const element of streaming) {
+            element.pause();
+          }
+          streaming.clear();
           buffers.clear();
           channels.clear();
           void audio?.close();
@@ -580,6 +747,18 @@ export const layerSound = (
           // is seen again: a cue started now would wait, and be heard with
           // every other that waited, all at once, when the audio wakes.
           if (audio.state !== undefined && audio.state !== "running") {
+            return;
+          }
+          if (buffer instanceof Streamed) {
+            // To be heard at once, a cue is decoded and waiting.
+            if (!missing.has(buffer.url)) {
+              missing.add(buffer.url);
+              report(
+                Effect.logWarning(
+                  `The sound "${buffer.url}" is streamed, which is for a channel's track: as a cue it is not played. A cue is a file given by its URL, or Browser.sound.`
+                )
+              );
+            }
             return;
           }
           const source = audio.createBufferSource();

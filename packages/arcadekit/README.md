@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 654 tests, 83 of them of @arcadekit/three
+pnpm test                          # 658 tests, 83 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -818,6 +818,7 @@ The output is Web Audio, and `Browser.runMain` and `Browser.layer` provide it. `
 - Music is never late: it is what should be playing. A track that was asked for before the first touch, or before its file was there, starts when it can.
 - `volume` is how loud everything is played, and `rate` is a cue's speed, and so its pitch.
 - A cue or a track that has no file, or whose file could not be fetched or decoded, is said once through Effect's logger and plays nothing.
+- A long piece of music is streamed: `sounds: { theme: Browser.stream("/theme.ogg") }`, or `Browser.stream(url)` as it is wherever a track is said. A file given by its URL, and `Browser.sound`, are fetched whole and held decoded, which for minutes of music is tens of megabytes; a stream is fetched as it plays and decoded as it goes. It is no asset and is in no bundle: nothing is fetched until it is played, and there is nothing to let go. It is started, faded and stopped as any track, and is for a track only: played as a cue it is said once through the logger and not played.
 - While the page is hidden its audio sleeps, music and all, and wakes when the page is seen again: the frame loop rests then, and a game that stands still is not heard.
 - A page with no files of its own still has sound, for the clips of its levels. `sounds: false` is a page with none: no audio is made, and the game is told that nothing is heard.
 - When the page goes away the audio is closed, and a request still on its way is given up.
@@ -1257,7 +1258,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
 - A game picks one of the two transforms for a thing, and a plugin written for one does not read the other: code that should work in both asks for both. A `Transform2d` has no depth: what is in front of what in a flat game is for what draws it to say.
 - A cue is played once and left to end: it cannot be stopped, and nothing is heard from where it is. A track that plays once says nothing when it has ended: the body that asked for it cannot tell, and what follows it is for the game to say.
-- A sound is decoded whole into memory, a track too: there is no streaming, so a long piece of music is as large there as it is long.
+- A streamed track that goes round may be heard to join where it does: the page's own player is not exact about it. A short piece that has to go round without a seam is given by its URL and decoded. A stream is fetched by the page and not through `Assets.Loader`, so a test plays `Sound.clip(name)` in its place.
 - A channel fades in a straight line, from one track to the next in the same time. Two tracks are not kept in step, a track does not start where the last one was, and nothing is timed to a beat.
 - A cue is merged with the same cue of the same frame by the system that plays it. Two systems made with `Sound.cues` that both play one cue play it twice.
 - A page's audio sleeps while the page is hidden, always, as its frame loop does. A game that is to be heard in the background cannot say so.
