@@ -157,10 +157,13 @@ const Rocks = Three.instances("game/Rocks", {
 
 - Any component kept in a table with the fields `r`, `g` and `b` is a colour, whatever else it has. Anything else given as one throws when the system is made, and is a type error before that.
 - The material's own colour is multiplied by it, so a white material is drawn in exactly the instance's.
-- The numbers are from 0 to 1 in the renderer's working colour space, which is linear: what `new Color("#ff6188")` of Three.js has as its `r`, `g` and `b`, and not that hex code's own three bytes divided by 255.
+- The numbers are a colour as a hex code writes it: `#ff6188` is an `r` of `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`, from 0 to 1 in fields of floats. A component whose three fields are whole numbers, `Field.u8`, holds the bytes themselves, 0 to 255. The three are all one or all the other, which is checked when the system is made.
+- A renderer works in linear colour, so each number is converted, through a table of 4,081 entries and not with a raised power per instance: a byte exactly, and a float to a sixteenth of a byte.
+- A number off either end, a 255 in a field of floats or a 300 in one of whole numbers, is no colour: the frame fails with an error that names the entity and its three numbers, where it would have drawn white or something brighter and said nothing.
+- `colorSpace: "srgb-linear"` says the numbers are the renderer's own instead, what `new Color("#ff6188")` of Three.js has as its `r`, `g` and `b`, by the name Three.js gives that space. They are handed over as they are, bytes over 255, and nothing is checked: a number over 1 is brighter than white, which a renderer that blooms can show. `"srgb"`, the other name, is what is assumed.
 - An entity is then one of the kind only while it has the colour too. One with no colour is not drawn by this system.
-- The colours are read from the raw columns in the same pass as the places, into a buffer of their own beside the matrices, which grows with them and of which only the part that is drawn is sent. It costs about 2 ns more per entity, and nothing is allocated.
-- With `smooth: true` a colour changes evenly between two ticks, as a place does, and `snap` does not apply to it: a colour is never too far to go to.
+- The colours are read from the raw columns in the same pass as the places, into a buffer of their own beside the matrices, which grows with them and of which only the part that is drawn is sent. It costs about 6 ns more per entity, 2 of them the reading and the writing and the rest the conversion, and nothing is allocated.
+- With `smooth: true` a colour changes evenly between two ticks, as a place does, and `snap` does not apply to it: a colour is never too far to go to. It changes in the numbers the game has, and is converted then: halfway between two hex codes is the code halfway between them.
 
 ### A look made of assets
 
@@ -365,8 +368,9 @@ const Follow = System.make("game/Follow", function* () {
 | `Three.instances`, smooth: all three | 71.8 | 7,300 |
 | `Three.instances`, smooth, flat: a position | 23.1 | 7,300 |
 | `Three.instances`, smooth, flat: all three | 82.5 | 7,300 |
-| `Three.instances`, a colour each: a position | 11.0 | 7,300 |
-| `Three.instances`, a colour each, smooth: a position | 47.9 | 7,600 |
+| `Three.instances`, a colour each: a position | 14.7 | 7,400 |
+| `Three.instances`, a colour each, as the renderer has it: a position | 10.9 | 7,400 |
+| `Three.instances`, a colour each, smooth: a position | 44.7 | 7,800 |
 | `Three.instances`, a look made of assets: a position | 8.7 | 8,000 |
 | `Three.objects`: an Object3D each, all three copied | 163.0 | 5,700 |
 | `Three.objects`, flat: an Object3D each, all three copied | 167.8 | 5,700 |
@@ -375,7 +379,7 @@ const Follow = System.make("game/Follow", function* () {
 - Ten thousand moving objects, drawn where the last tick left them, cost 0.08 to 0.36 ms of a frame. The seven kilobytes are the frame itself, the same for one entity as for ten thousand: under one byte per object. They were five before a flat game's four loops were added: eight queries are asked for each frame where there were four.
 - A flat entity that is not turned costs a little less than one in three dimensions. One that is turned costs twice as much, 36 ns: a sine and a cosine each, where a quaternion is a few multiplications. A flat game with a crowd that spins pays 0.36 ms for ten thousand.
 - Drawn between two ticks, an entity costs about three times as much for a place, 27 ns, and four times for all three, 72 ns: each value is read, kept, and blended with the one before, in a pass of its own before the matrix is written. Ten thousand of them cost 0.27 to 0.83 ms of a frame, and still nothing is allocated per entity.
-- A colour each costs 2 ns more per entity: three more reads and three more writes. Blended between two ticks it costs 22 ns more, as much as blending the place does, since it is the same pass over three other numbers.
+- A colour each costs about 6 ns more per entity: three more reads, three looks in the table that converts it, one test that it is a colour, and three writes. As the renderer has it, with `colorSpace: "srgb-linear"`, it costs 2 ns: the reads and the writes. Blended between two ticks it costs 22 ns more, as much as blending the place does, since it is the same pass over three other numbers.
 - A look that is made of assets costs an entity nothing: the loops are the same. What it costs is asked once a frame, by the system and again before the scene is drawn, whether the assets are still there, and with the system that keeps the bundle that is under a kilobyte and too little time to measure here.
 - A test holds the system to that, with and without `smooth` and with a colour each: 10,000 moving objects, of all eight kinds, may grow the heap by less than 4 bytes each per tick and frame, where one number allocated per object would be 12.
 - An object each costs ten to twenty times an instance, most of it Three.js keeping an object's Euler angles in step with its quaternion. That is the price of an object, and why a crowd is instances.

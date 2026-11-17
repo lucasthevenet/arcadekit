@@ -201,6 +201,8 @@ const makeTrees = (
     of: Tree,
     from: Forest,
     capacity: 2,
+    // The renderer's own numbers, as they are.
+    colorSpace: "srgb-linear",
     ...more,
     look: ({ bark }) => {
       log.push(`look ${bark.load}`);

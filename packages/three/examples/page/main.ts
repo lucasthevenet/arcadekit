@@ -79,12 +79,19 @@ const Tint = Component.define("page/Tint", {
 const Drifting = Query.all(Position, Velocity, Tint);
 const Spinning = Query.all(Rotation, Spin);
 
-// Numbers as the renderer has them, linear: what `new Color("#78dce8")` of
-// Three.js holds. The rules know them as numbers and nothing else.
+/** A hex code's three bytes, each over 255: what a `Tint` holds. */
+const code = (hex: number) => ({
+  r: (hex >> 16) / 255,
+  g: ((hex >> 8) & 255) / 255,
+  b: (hex & 255) / 255,
+});
+
+// The rules know a colour as three numbers and nothing else. What draws
+// them converts each for the renderer.
 const WALLS = [
-  ["x", { r: 0.188, g: 0.716, b: 0.807 }],
-  ["y", { r: 1, g: 0.686, b: 0.133 }],
-  ["z", { r: 1, g: 0.12, b: 0.246 }],
+  ["x", code(0x78_dc_e8)],
+  ["y", code(0xff_d8_66)],
+  ["z", code(0xff_61_88)],
 ] as const;
 
 const Drift = System.make("Drift", function* () {
@@ -175,7 +182,7 @@ const Rules = Plugin.make("page/Rules", {
         Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
         Spin.of({ rate: speed() / 4, angle: 0 }),
         Scale.of({ x: size, y: size, z: size }),
-        Tint.of({ r: 0.6, g: 0.6, b: 0.6 })
+        Tint.of(code(0xcb_cb_cb))
       );
     }
     for (let i = 0; i < CARDS; i++) {
