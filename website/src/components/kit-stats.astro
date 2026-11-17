@@ -1,0 +1,36 @@
+---
+// The kit in numbers, for the landing page's status: the package's version, its entries (each
+// subpath of its `exports`, which is a module, or `arcadekit` and `arcadekit/ecs`), the packages
+// of the repository, and the guides.
+import { getCollection } from "astro:content";
+
+import kit from "../../../packages/arcadekit/package.json";
+
+const pages = await getCollection("docs");
+const entries = Object.keys(kit.exports).filter(
+  (subpath) => subpath !== "./package.json"
+);
+const stats = [
+  { label: "Version", value: `v${kit.version}` },
+  { label: "Entries", value: entries.length },
+  {
+    label: "Packages",
+    value: pages.filter((page) => page.id.startsWith("reference/")).length,
+  },
+  {
+    label: "Guides",
+    value: pages.filter((page) => page.id.startsWith("guides/")).length,
+  },
+];
+---
+
+<dl class="kit-stats not-content">
+  {
+    stats.map(({ label, value }) => (
+      <div>
+        <dt>{label}</dt>
+        <dd>{value}</dd>
+      </div>
+    ))
+  }
+</dl>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>arcadekit</title>
+  <!--
+    The mark: a D-pad, an arrow cut in each arm. The header draws it in lime and the image script
+    draws the icons from it (src/components/site-title.astro, scripts/generate-images.mjs). Here it
+    is near-black in a light browser tab, and lime in a dark one.
+  -->
+  <style>
+    path { fill: #090b0e; }
+    @media (prefers-color-scheme: dark) { path { fill: #c9ff3d; } }
+  </style>
+  <path fill-rule="evenodd" d="M8 1H16V8H23V16H16V23H8V16H1V8H8ZM12 3 14.6 6.4H9.4ZM12 21 14.6 17.6H9.4ZM3 12 6.4 9.4V14.6ZM21 12 17.6 9.4V14.6Z" />
+</svg>

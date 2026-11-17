@@ -4,8 +4,10 @@
   "description": "Reusable primitives for building browser games with Effect and Three.js",
   "type": "module",
   "scripts": {
-    "build": "pnpm typecheck && pnpm build:packages",
-    "build:packages": "pnpm -r --if-present run build",
+    "build": "pnpm typecheck && pnpm build:packages && pnpm build:docs",
+    "build:packages": "pnpm --filter './packages/*' --if-present run build",
+    "build:docs": "pnpm --filter @arcadekit/website build",
+    "dev:docs": "pnpm --filter @arcadekit/website dev",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run --passWithNoTests",
     "lint:packages": "bash scripts/lint-packages.sh",

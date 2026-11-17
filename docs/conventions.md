@@ -36,7 +36,7 @@ Everything in the package is one of two kinds, and the first decision for any ne
 
 The boundary is the system. A system is one Effect per tick; the loops inside it are plain.
 
-```ts
+```ts sketch
 const Movement = System.make("Movement", function* () {
   // Effect code: ask for what the system needs.
   const moving = yield* Moving;
@@ -78,7 +78,7 @@ Import Effect's modules from the package root, `import { Context, Effect, Layer 
 - **Write the arrow function.** `Effect.map((x) => f(x))`, not `Effect.map(f)`, and no `flow`. Passing a function by name can lose its generics and gives worse stack traces. This is from Effect's [code style guidelines](https://effect.website/docs/v4/code-style/guidelines).
 - **Fail with `Effect.fail`, and return it**: `return yield* Effect.fail(new NotYourTurn(...))`. A tagged error can also be yielded on its own (`yield* new NotYourTurn()`), and Effect treats the two alike; this package writes the failure out, so that it reads as one to someone who has not met yieldable errors, and looks the same whatever kind of value the error is. Without `return`, TypeScript does not know the code below is unreachable.
 
-```ts
+```ts sketch
 export const loadLevel = Effect.fn("Level.load")(function* (name: string) {
   const assets = yield* Assets;
   return yield* assets.read(`levels/${name}.json`);
@@ -99,7 +99,7 @@ export const loadLevel = Effect.fn("Level.load")(function* (name: string) {
 - **Do not build a layer by hand** with `Layer.build`. `App.make` is the one place that does.
 - **A program is started with the platform's `runMain`**, which reports a failure and interrupts the program cleanly, closing the app's scope: `NodeRuntime.runMain` under Node, and in a page `Browser.runMain`, which is `BrowserRuntime.runMain` with the page's display and devices provided. A game that runs in real time gives it `App.run(options, { hz })`, the entry point, and one that moves when its player does `App.run(options, { hz, ticks: "whenNeeded" })`: `Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas })`. What the game needs from outside is provided to `App.run`, so that it lasts as long as the game. A program that steps its app itself gives it `Effect.scoped(program)`. `Effect.runSync` and `Effect.runPromise` are for tests and benchmarks. Inside a program, an Effect is yielded, never run. See [Running Effects](https://effect.website/docs/v4/getting-started/running-effects); `examples/` are the examples.
 
-```ts
+```ts sketch
 export class Audio extends Context.Service<
   Audio,
   { readonly play: (cue: string) => Effect.Effect<void> }
@@ -123,7 +123,7 @@ Effect separates two kinds of failure, and so does this package. See [Two Types 
 - **Tags are unique across the package.** Two error classes with the same tag are caught by the same `catchTag`, and nothing warns you.
 - **Handle by tag**: `Effect.catchTag`, `Effect.catchTags`, or `Effect.catch` for everything expected.
 
-```ts
+```ts sketch
 export class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
   readonly waitingFor: number;
 }> {}
@@ -151,7 +151,7 @@ The package's own values behave like Effect's, using the same three mechanisms.
 - **Pipeable.** A value that is refined step by step has `.pipe()`: `Query.all(A).pipe(Query.without(B))`, `System.make(...).pipe(System.after(Other))`. A class that extends `Effectable.Class` has it already; anything else implements `pipe() { return pipeArguments(this, arguments); }`. API: [Pipeable](https://effect.website/docs/v4/api/effect/Pipeable).
 - **Dual.** A function that refines a value works both ways: `System.after(system, other)` and `system.pipe(System.after(other))`. Define it with `dual` and write both signatures out. See [Dual APIs](https://effect.website/docs/v4/code-style/dual) and [Function](https://effect.website/docs/v4/api/effect/Function).
 
-```ts
+```ts sketch
 export const inStage: {
   (stage: Stage): <E, R>(self: System<E, R>) => System<E, R>;
   <E, R>(self: System<E, R>, stage: Stage): System<E, R>;
