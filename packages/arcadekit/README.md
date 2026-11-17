@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 658 tests, 83 of them of @arcadekit/three
+pnpm test                          # 659 tests, 83 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -672,7 +672,7 @@ A game's menus and its heads-up display are built with whatever the game chooses
 - Two values are compared as data, field by field and however deep. So a body returns a new object each frame, and the UI is told only when something in it differs: a value that did not change costs the UI nothing, not a call.
 - It reads what a frame system can (singletons, states, queries, events, assets) and cannot change the game. In the tick, publishing throws.
 - Several ticks and one frame are one publication, of the latest value.
-- It takes `System.runIf`: a view that is not published keeps the value it had. `System.otherwise` says what a UI should see then, if that is not it.
+- It takes `System.runIf`: a view that is not published keeps the value it had, which is what a view that is costly to work out, and is worked out now and then, wants. One that belongs to a part of the game, and should not be seen when the game is elsewhere, says so: `System.otherwise(View.reset(Hud))` publishes the value the view was defined with while its system does not run.
 - A frame system of the game's own publishes through `(yield* View.Port).publish(view, value)`, which says whether the value was news.
 - Where no UI is there, on a server, in a replay, in most tests, no body runs at all.
 

@@ -306,6 +306,67 @@ describe("a view", () => {
     expect(Shown.stage).toBe("frame");
   });
 
+  it("is put back to its first value while its system does not run, when the system says so", () => {
+    const Quit = Action.define("vw/Quit", Schema.Struct({}));
+    const Shown = View.publish(Hud, function* () {
+      return { gold: (yield* Purse).gold, coins: 0 };
+    }).pipe(
+      System.runIf(State.is(Phase, "playing")),
+      System.otherwise(View.reset(Hud))
+    );
+    const Rules = Plugin.make("vw/Reset", {
+      plugins: [View.plugin],
+      components: [Purse, Phase],
+      systems: [Shown],
+      handlers: [
+        Action.handler(Start, function* () {
+          (yield* Phase).set("playing");
+        }),
+        Action.handler(Quit, function* () {
+          (yield* Phase).set("title");
+        }),
+      ],
+    });
+    const ui = View.makeBridge();
+    const { heard } = listen(ui, Hud);
+    const made = App.make({ plugins: [Rules] });
+    const app = run(made.pipe(Effect.provide(View.layer(ui))));
+    const step = (action?: typeof Start | typeof Quit): void => {
+      if (action !== undefined) {
+        app.dispatch(action, {});
+      }
+      app.tick(1);
+      app.frame(0);
+    };
+    app.world.singleton(Purse).gold = 9;
+    // At the title it is what it was defined as, and nobody is told so.
+    step();
+    step();
+    expect(heard).toEqual([]);
+    step(Start);
+    expect(heard).toEqual([{ gold: 9, coins: 0 }]);
+    // The game goes back to the title: the gold of the game that was left
+    // is not left on the screen. Told once, however long it stays there.
+    step(Quit);
+    step();
+    step();
+    expect(heard).toEqual([{ gold: 9, coins: 0 }, Hud.initial]);
+    expect(ui.get(Hud)).toBe(Hud.initial);
+    step(Start);
+    expect(heard.at(-1)).toEqual({ gold: 9, coins: 0 });
+    // Where no UI is there, it publishes to nobody and asks nothing more
+    // than the port.
+    const alone = run(made);
+    alone.dispatch(Start, {});
+    alone.tick(1);
+    alone.frame(0);
+    alone.dispatch(Quit, {});
+    alone.tick(1);
+    alone.frame(0);
+    const needs: Effect.Effect<void, never, View.Port> = View.reset(Hud);
+    expect(Effect.isEffect(needs)).toBe(true);
+  });
+
   it("can be published by a frame system of the game's own, through the port, and not from the tick", () => {
     const told: boolean[] = [];
     const Own = System.make("vw/Own", function* () {
