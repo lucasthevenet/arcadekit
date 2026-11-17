@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 669 tests, 83 of them of @arcadekit/three
+pnpm test                          # 672 tests, 86 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -163,13 +163,14 @@ const Rules = Plugin.make("game/Rules", {
 | Component | Fields | Named |
 | --- | --- | --- |
 | `Transform3d.Position` | `x`, `y`, `z`, in the units of the game's space | `"arcadekit/Transform3d.Position"` |
-| `Transform3d.Rotation` | `x`, `y`, `z`, `w`: a unit quaternion | `"arcadekit/Transform3d.Rotation"` |
+| `Transform3d.Rotation` | `x`, `y`, `z`, `w`: a quaternion | `"arcadekit/Transform3d.Rotation"` |
 | `Transform3d.Scale` | `x`, `y`, `z`: 1 is the size a thing is made at | `"arcadekit/Transform3d.Scale"` |
 
 - They are ordinary components: 32-bit floats in columns of a table, written by the game's systems with a loop over `eachChunk`, saved, hashed and replayed. Nothing here draws, and the module imports no renderer.
 - An entity has the ones it needs. One that is only somewhere has a `Position`; `Rotation` and `Scale` are for the ones that turn or have a size of their own.
 - `Transform3d.plugin` lists them. A plugin that stores them depends on it, as the plugin of a renderer that reads them does.
-- `Transform3d.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis of length 1. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
+- `Transform3d.axisAngle(x, y, z, angle)` gives the value of a `Rotation` that turns by `angle` radians about an axis, which is a direction of any length. It makes an object, so it is for a spawn or a `world.set`, not for a loop over columns.
+- A `Rotation` is its turn and not its length: a quaternion of any length stands for the turn of the one of length 1 along it, and what reads one takes it so. One that a game's rules let drift from length 1 is drawn as the same turn, and all zeros, which is what a `Rotation` added with no value is, as not turned at all.
 - A component added with no value is all zeros: a `Position` at the origin, and a `Rotation` that [`@arcadekit/three`](../three/README.md) draws as not turned. A field left out of `of` is not 0, so a flat game gives every `z`.
 - [`@arcadekit/three`](../three/README.md) draws from them, and has no components of its own.
 

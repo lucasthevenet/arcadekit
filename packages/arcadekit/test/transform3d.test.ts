@@ -89,6 +89,22 @@ describe("Transform3d", () => {
       const { w, x, y, z } = Transform3d.axisAngle(0.6, 0.8, 0, angle);
       expect(Math.hypot(x, y, z, w)).toBeCloseTo(1, 12);
     }
+    // The axis is a direction: of any length, it is the same turn.
+    for (const by of [0.001, 2, 300]) {
+      const long = Transform3d.axisAngle(0.6 * by, 0, 0.8 * by, 1.3);
+      const unit = Transform3d.axisAngle(0.6, 0, 0.8, 1.3);
+      expect(long.x).toBeCloseTo(unit.x, 12);
+      expect(long.y).toBe(0);
+      expect(long.z).toBeCloseTo(unit.z, 12);
+      expect(long.w).toBeCloseTo(unit.w, 12);
+    }
+    // About no axis at all there is no turn, whatever the angle.
+    expect(Transform3d.axisAngle(0, 0, 0, 2)).toEqual({
+      x: 0,
+      y: 0,
+      z: 0,
+      w: 1,
+    });
     // It is what a Rotation is given.
     const world = run(App.make({ plugins: [Transform3d.plugin] })).world;
     const turned = world.spawn(Rotation.of(quarter));

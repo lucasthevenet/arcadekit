@@ -89,7 +89,8 @@ commands.spawn(
 
 What is drawn where comes from arcadekit's own components, [`arcadekit/Transform3d` and `arcadekit/Transform2d`](../arcadekit/README.md#where-a-thing-is): this package has none of its own, and only reads them.
 
-- An entity is drawn where its `Transform3d.Position` says, in the units of the scene. `Transform3d.Rotation`, a unit quaternion, and `Transform3d.Scale`, where 1 is the size of the geometry, are for the entities that turn or have a size of their own: one without them is drawn upright, at the size of its geometry, and costs less to draw.
+- An entity is drawn where its `Transform3d.Position` says, in the units of the scene. `Transform3d.Rotation`, a quaternion of any length, and `Transform3d.Scale`, where 1 is the size of the geometry, are for the entities that turn or have a size of their own: one without them is drawn upright, at the size of its geometry, and costs less to draw.
+- A `Rotation` is drawn as the turn it stands for, whatever its length: one that the game's rules let drift from length 1, or never made of it, is neither skewed nor sized by that, and an object of `Three.objects` is given a quaternion of length 1. All zeros is not turned at all. It costs an instance about 3 ns: one division.
 - The plugins that hold a game's rules write them and import nothing of this package. A server and a replay that run those rules do not install it, or Three.js.
 - `Three.plugin` depends on `Transform3d.plugin`, which lists them, and on `Transform2d.plugin`.
 - A `Rotation` whose four fields are 0, which is what one added with no value is, draws as not turned.
@@ -300,7 +301,7 @@ const Rocks = Three.instances("game/Rocks", {
 A game ticks sixty times a second and a screen shows as many frames as it likes, so the two do not line up: some frames follow one tick, some two, some none. Drawn where the last tick left it, a thing that moves evenly is seen to stutter. With `smooth: true`, `Three.instances` and `Three.objects` draw each entity between its last two places: at [`Frame.alpha`](../arcadekit/README.md#the-tick-and-the-frame) of the way from where it was a tick ago to where it is.
 
 - It is what a game that runs in real time wants, and it is off unless asked for, because of what it means: the picture is up to one tick behind the game. Just after a tick, at an `alpha` of 0, an entity is drawn where it was before the tick. A game that is stepped by hand and drawn with `app.frame(0)`, as a test does, would see its last tick only at the next. A game that ticks when its player moves, run with `ticks: "whenNeeded"`, is told an `alpha` of 1 while it rests, and is drawn where it is.
-- Places and sizes go straight from one to the other. A turn goes by the shorter way: a quaternion towards whichever of the other and its opposite is nearer, and is made of length 1 again; a flat game's angle by the shorter way round.
+- Places and sizes go straight from one to the other. A turn goes by the shorter way: a quaternion towards whichever of the other and its opposite is nearer; a flat game's angle by the shorter way round.
 - An entity that was not drawn in the frame before is drawn where it is: one that is new, one in a slot that was another's, one that was hidden, and every entity in the first frame, after a load, or after a frame the system did not run in.
 - `snap` is how far an entity may go in one tick and still be drawn on the way. One that went further, off one edge of the world and in at the other, say, is drawn where it is. Left out, any distance is a move. It is one distance per kind, in the units of the scene.
 - When several ticks ran since the last frame, an entity comes from where it was last drawn from, which is further back than a tick: for that one frame it moves faster than it did. When none ran, it is between the same two places as the frame before.
@@ -354,14 +355,14 @@ const Follow = System.make("game/Follow", function* () {
 | --- | --- | --- |
 | `Three.instances`: a position | 9.8 | 6,700 |
 | `Three.instances`: a position and a scale | 11.2 | 7,400 |
-| `Three.instances`: a position and a rotation | 12.8 | 7,400 |
+| `Three.instances`: a position and a rotation | 15.0 | 7,400 |
 | `Three.instances`: all three | 18.2 | 7,100 |
 | `Three.instances`, flat: a position | 8.0 | 7,300 |
 | `Three.instances`, flat: a position and a scale | 8.3 | 7,100 |
 | `Three.instances`, flat: a position and a rotation | 35.7 | 7,200 |
 | `Three.instances`, flat: all three | 35.9 | 7,200 |
 | `Three.instances`, smooth: a position | 26.9 | 7,300 |
-| `Three.instances`, smooth: all three | 81.3 | 7,300 |
+| `Three.instances`, smooth: all three | 71.8 | 7,300 |
 | `Three.instances`, smooth, flat: a position | 23.1 | 7,300 |
 | `Three.instances`, smooth, flat: all three | 82.5 | 7,300 |
 | `Three.instances`, a colour each: a position | 11.0 | 7,300 |
@@ -373,7 +374,7 @@ const Follow = System.make("game/Follow", function* () {
 
 - Ten thousand moving objects, drawn where the last tick left them, cost 0.08 to 0.36 ms of a frame. The seven kilobytes are the frame itself, the same for one entity as for ten thousand: under one byte per object. They were five before a flat game's four loops were added: eight queries are asked for each frame where there were four.
 - A flat entity that is not turned costs a little less than one in three dimensions. One that is turned costs twice as much, 36 ns: a sine and a cosine each, where a quaternion is a few multiplications. A flat game with a crowd that spins pays 0.36 ms for ten thousand.
-- Drawn between two ticks, an entity costs about three times as much for a place, 27 ns, and four and a half times for all three, 81 ns: each value is read, kept, and blended with the one before, in a pass of its own before the matrix is written. Ten thousand of them cost 0.27 to 0.83 ms of a frame, and still nothing is allocated per entity.
+- Drawn between two ticks, an entity costs about three times as much for a place, 27 ns, and four times for all three, 72 ns: each value is read, kept, and blended with the one before, in a pass of its own before the matrix is written. Ten thousand of them cost 0.27 to 0.83 ms of a frame, and still nothing is allocated per entity.
 - A colour each costs 2 ns more per entity: three more reads and three more writes. Blended between two ticks it costs 22 ns more, as much as blending the place does, since it is the same pass over three other numbers.
 - A look that is made of assets costs an entity nothing: the loops are the same. What it costs is asked once a frame, by the system and again before the scene is drawn, whether the assets are still there, and with the system that keeps the bundle that is under a kilobyte and too little time to measure here.
 - A test holds the system to that, with and without `smooth` and with a colour each: 10,000 moving objects, of all eight kinds, may grow the heap by less than 4 bytes each per tick and frame, where one number allocated per object would be 12.
@@ -395,6 +396,5 @@ const Follow = System.make("game/Follow", function* () {
 - Instances are in no order, so a material that needs its instances sorted back to front is not served.
 - A mesh of instances is never culled as a whole unless `prepare` says how.
 - Nothing is a child of anything: an entity's place is its place in the scene. An object that hangs from another is the game's to arrange in `make`.
-- A `Rotation` has to be a unit quaternion. One that is not draws skewed, and nothing checks.
 - `Three.layerRenderer` takes a renderer that is ready to draw. `WebGPURenderer` has to be initialised first, which is the game's to wait for.
 - No test in CI opens a page: `Three.layerWebGL` itself, the one line that makes a `WebGLRenderer`, is tried by hand in headless Chromium with the example page.

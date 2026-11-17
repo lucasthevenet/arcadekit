@@ -130,14 +130,46 @@ const matrixOf = (app: App.Any, entity: Entity): string => {
   const scale = app.world.get(entity, Scale);
   const matrix = new Matrix4().compose(
     new Vector3(position.x, position.y, position.z),
-    rotation === undefined
-      ? new Quaternion()
-      : new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
+    turnOf(rotation),
     scale === undefined
       ? new Vector3(1, 1, 1)
       : new Vector3(scale.x, scale.y, scale.z)
   );
   return Array.from(new Float32Array(matrix.elements)).join(" ");
+};
+
+/**
+ * The turn a `Rotation` stands for, as Three.js wants it, of length 1:
+ * the game's may be of any length, and all zeros is not turned at all.
+ */
+const turnOf = (
+  rotation: { x: number; y: number; z: number; w: number } | undefined
+): Quaternion =>
+  rotation === undefined
+    ? new Quaternion()
+    : new Quaternion(
+        rotation.x,
+        rotation.y,
+        rotation.z,
+        rotation.w
+      ).normalize();
+
+/** The same turn, as a quaternion so many times as long. */
+const stretched = (
+  turn: { x: number; y: number; z: number; w: number },
+  by: number
+) => ({ x: turn.x * by, y: turn.y * by, z: turn.z * by, w: turn.w * by });
+
+/** Checks that an object is turned as a `Rotation` says, to six decimals. */
+const expectTurned = (
+  object: Object3D,
+  rotation: { x: number; y: number; z: number; w: number } | undefined
+): void => {
+  const want = turnOf(rotation);
+  expect(object.quaternion.x).toBeCloseTo(want.x, 6);
+  expect(object.quaternion.y).toBeCloseTo(want.y, 6);
+  expect(object.quaternion.z).toBeCloseTo(want.z, 6);
+  expect(object.quaternion.w).toBeCloseTo(want.w, 6);
 };
 
 /**
@@ -286,7 +318,7 @@ describe("Three.instances", () => {
     expect(mesh.geometry).toBe(geometry);
     expect(mesh.material).toBe(material);
     expect(mesh.count).toBe(4);
-    expect(drawn(mesh)).toEqual(expected(app, rocks));
+    expectDrawn(mesh, app, rocks);
     // One by hand, so that the test does not only agree with Three.js: a
     // rock that is only somewhere is drawn there, upright.
     expect(drawn(mesh)).toContain("1 0 0 0 0 1 0 0 0 0 1 0 1 2 3 1");
@@ -310,6 +342,52 @@ describe("Three.instances", () => {
       "1 0 0 0 0 1 0 0 0 0 1 0 1 2 3 1",
       "2 0 0 0 0 2 0 0 0 0 2 0 4 5 6 1",
     ]);
+  });
+
+  it("draws a rotation of any length as the turn it stands for, neither skewed nor sized by it", () => {
+    const renderer = makeRenderer();
+    const { app } = start(App.make({ plugins: [Look] }), renderer);
+    const quarter = Transform3d.axisAngle(0, 0, 1, Math.PI / 2);
+    const rocks = [
+      // Three times too long, and a hundredth of what it should be.
+      app.world.spawn(
+        Rock,
+        Position.of({ x: 1, y: 0, z: 0 }),
+        Rotation.of(stretched(quarter, 3))
+      ),
+      app.world.spawn(
+        Rock,
+        Position.of({ x: 2, y: 0, z: 0 }),
+        Rotation.of(stretched(quarter, 0.01)),
+        Scale.of({ x: 2, y: 3, z: 4 })
+      ),
+      app.world.spawn(
+        Rock,
+        Position.of({ x: 3, y: 0, z: 0 }),
+        Rotation.of(stretched(Transform3d.axisAngle(0.6, 0, 0.8, 1.2), 40)),
+        Scale.of({ x: 0.5, y: 1, z: 6 })
+      ),
+    ];
+    app.frame(0);
+    const mesh = meshOf(renderer.scene, "th/Rocks");
+    // As Three.js draws the same turns made of length 1.
+    expectDrawn(mesh, app, rocks);
+    // And by hand. A quarter turn about z takes x to y and y to the
+    // opposite of x, and leaves z: at the size it has, and no other.
+    const rows = byPlace(
+      [0, 1, 2].map((i) =>
+        Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
+      )
+    );
+    const byHand = [
+      [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1],
+      [0, 2, 0, 0, -3, 0, 0, 0, 0, 0, 4, 0, 2, 0, 0, 1],
+    ];
+    for (const [i, row] of byHand.entries()) {
+      for (let k = 0; k < 16; k++) {
+        expect(rows[i]![k], `rock ${i}, element ${k}`).toBeCloseTo(row[k]!, 5);
+      }
+    }
   });
 
   it("follows the entities as they move, come and go, and gain and lose a rotation or a scale", () => {
@@ -365,7 +443,7 @@ describe("Three.instances", () => {
       app.frame(0);
       const mesh = meshOf(renderer.scene, "th/Rocks");
       expect(mesh.count).toBe(alive.length);
-      expect(drawn(mesh)).toEqual(expected(app, alive));
+      expectDrawn(mesh, app, alive);
     }
     // All four kinds of table were drawn from along the way.
     expect(
@@ -1455,6 +1533,83 @@ describe("an entity drawn between two ticks", () => {
     expect(alive.some((one) => !one.flat)).toBe(true);
   });
 
+  it("blends two rotations of any length into a turn, drawn neither skewed nor sized by them", () => {
+    const { app, mesh } = play(Smoothed);
+    const { world } = app;
+    const quarter = Transform3d.axisAngle(0.6, 0, 0.8, Math.PI / 2);
+    const rock = world.spawn(
+      Rock,
+      Position.of({ x: 0, y: 1, z: 0 }),
+      Rotation.of({ x: 0, y: 0, z: 0, w: 3 }),
+      Scale.of({ x: 2, y: 3, z: 4 })
+    );
+    const bare = world.spawn(
+      Rock,
+      Position.of({ x: 0, y: 2, z: 0 }),
+      Rotation.of({ x: 0, y: 0, z: 0, w: 0.2 })
+    );
+    app.frame(0);
+    world.set(rock, Rotation, stretched(quarter, 3));
+    world.set(bare, Rotation, stretched(quarter, 0.2));
+    app.tick(1);
+    app.frame(0.5);
+    // Half of the quarter turn, at the size the entity has and no other.
+    const turn = new Quaternion().setFromAxisAngle(
+      new Vector3(0.6, 0, 0.8),
+      Math.PI / 4
+    );
+    const eighth = new Matrix4().compose(
+      new Vector3(5, 1, 0),
+      turn,
+      new Vector3(2, 3, 4)
+    ).elements;
+    const eighthBare = new Matrix4().compose(
+      new Vector3(5, 2, 0),
+      turn,
+      new Vector3(1, 1, 1)
+    ).elements;
+    for (let k = 0; k < 16; k++) {
+      expect(rowAt(mesh(), 1)[k], `element ${k}`).toBeCloseTo(eighth[k]!, 5);
+      expect(rowAt(mesh(), 2)[k], `element ${k}`).toBeCloseTo(
+        eighthBare[k]!,
+        5
+      );
+    }
+    // From one length to another, it is still a turn about that axis:
+    // each column is as long as the entity is large along it.
+    world.set(bare, Rotation, stretched(quarter, 5));
+    world.set(bare, Rotation, { x: 0, y: 0, z: 0, w: 5 });
+    world.set(rock, Rotation, { x: 0, y: 0, z: 0, w: 0.1 });
+    app.tick(1);
+    app.frame(0.25);
+    for (const [y, sizes] of [
+      [1, [2, 3, 4]],
+      [2, [1, 1, 1]],
+    ] as const) {
+      const row = rowAt(mesh(), y);
+      for (let column = 0; column < 3; column++) {
+        expect(
+          Math.hypot(
+            row[column * 4]!,
+            row[column * 4 + 1]!,
+            row[column * 4 + 2]!
+          ),
+          `height ${y}, column ${column}`
+        ).toBeCloseTo(sizes[column]!, 5);
+      }
+      // The axis of the turn stays where it is.
+      const axis = new Vector3(0.6, 0, 0.8).applyMatrix4(
+        new Matrix4()
+          .fromArray(row)
+          .setPosition(0, 0, 0)
+          .scale(new Vector3(1 / sizes[0], 1 / sizes[1], 1 / sizes[2]))
+      );
+      expect(axis.x).toBeCloseTo(0.6, 5);
+      expect(axis.y).toBeCloseTo(0, 5);
+      expect(axis.z).toBeCloseTo(0.8, 5);
+    }
+  });
+
   it("places an object of Three.objects the same way", () => {
     const made = new Map<Entity, Object3D>();
     const Ships = Three.objects("th/SmoothShips", {
@@ -1510,6 +1665,19 @@ describe("an entity drawn between two ticks", () => {
     app.frame(0.5);
     expect(made.get(ship)!.position.x).toBe(1010);
     expect(made.size).toBe(2);
+    // Between two rotations of any length an object is turned, and its
+    // quaternion is of length 1, as Three.js needs it.
+    const quarter = Transform3d.axisAngle(0, 0, 1, Math.PI / 2);
+    world.set(ship, Rotation, { x: 0, y: 0, z: 0, w: 6 });
+    app.tick(1);
+    app.frame(1);
+    world.set(ship, Rotation, stretched(quarter, 6));
+    app.tick(1);
+    app.frame(0.5);
+    expect(made.get(ship)!.quaternion.x).toBeCloseTo(half.x, 6);
+    expect(made.get(ship)!.quaternion.y).toBeCloseTo(half.y, 6);
+    expect(made.get(ship)!.quaternion.z).toBeCloseTo(half.z, 6);
+    expect(made.get(ship)!.quaternion.w).toBeCloseTo(half.w, 6);
   });
 
   it("is drawn where it is once a game that ticks when it is needed has come to rest", () => {
@@ -1920,6 +2088,47 @@ describe("Three.objects", () => {
   const objectOf = (entity: Entity): Object3D | undefined =>
     made.findLast((one) => one.entity === entity)?.object;
 
+  it("turns an object by the turn a rotation of any length stands for, with a quaternion of length 1", () => {
+    const { app } = fresh();
+    const quarter = Transform3d.axisAngle(0, 0, 1, Math.PI / 2);
+    const long = app.world.spawn(
+      Ship,
+      Position.of({ x: 1, y: 0, z: 0 }),
+      Rotation.of(stretched(quarter, 7)),
+      Scale.of({ x: 2, y: 3, z: 4 })
+    );
+    const short = app.world.spawn(
+      Ship,
+      Position.of({ x: 2, y: 0, z: 0 }),
+      Rotation.of(stretched(quarter, 0.001))
+    );
+    // All zeros is not turned at all.
+    const still = app.world.spawn(
+      Ship,
+      Position.of({ x: 3, y: 0, z: 0 }),
+      Rotation
+    );
+    app.frame(0);
+    for (const ship of [long, short]) {
+      const object = objectOf(ship)!;
+      expect(object.quaternion.length()).toBeCloseTo(1, 6);
+      expect(object.quaternion.x).toBeCloseTo(0, 6);
+      expect(object.quaternion.y).toBeCloseTo(0, 6);
+      expect(object.quaternion.z).toBeCloseTo(Math.SQRT1_2, 6);
+      expect(object.quaternion.w).toBeCloseTo(Math.SQRT1_2, 6);
+    }
+    expect(objectOf(still)!.quaternion.toArray()).toEqual([0, 0, 0, 1]);
+    // So what Three.js draws of it is turned and sized, and not skewed.
+    objectOf(long)!.updateMatrix();
+    const wanted = [0, 2, 0, 0, -3, 0, 0, 0, 0, 0, 4, 0, 1, 0, 0, 1];
+    for (let k = 0; k < 16; k++) {
+      expect(objectOf(long)!.matrix.elements[k], `element ${k}`).toBeCloseTo(
+        wanted[k]!,
+        5
+      );
+    }
+  });
+
   it("makes one object per entity, once, adds it to the scene and puts it where the entity is", () => {
     const { app, renderer } = fresh();
     const turn = Transform3d.axisAngle(0, 1, 0, 0.75);
@@ -1942,9 +2151,7 @@ describe("Three.objects", () => {
     expect(objectOf(plain)!.quaternion.toArray()).toEqual([0, 0, 0, 1]);
     expect(objectOf(plain)!.scale.toArray()).toEqual([1, 1, 1]);
     expect(objectOf(whole)!.position.toArray()).toEqual([-1, -2, -3]);
-    expect(objectOf(whole)!.quaternion.toArray()).toEqual(
-      Array.from(new Float32Array([turn.x, turn.y, turn.z, turn.w]))
-    );
+    expectTurned(objectOf(whole)!, turn);
     expect(objectOf(whole)!.scale.toArray()).toEqual([2, 3, 4]);
     // It moves with its entity, and is not made again.
     app.world.set(plain, Position, { x: 10, y: 20, z: 30 });
@@ -2123,11 +2330,7 @@ describe("Three.objects", () => {
           position.z,
         ]);
         const rotation = world.get(entity, Rotation);
-        expect(object.quaternion.toArray()).toEqual(
-          rotation === undefined
-            ? [0, 0, 0, 1]
-            : [rotation.x, rotation.y, rotation.z, rotation.w]
-        );
+        expectTurned(object, rotation);
         const scale = world.get(entity, Scale);
         expect(object.scale.toArray()).toEqual(
           scale === undefined ? [1, 1, 1] : [scale.x, scale.y, scale.z]

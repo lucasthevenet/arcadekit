@@ -560,7 +560,7 @@ class Lerp2 extends Blend {
 
 /**
  * A turn in three dimensions: from one quaternion towards the other by the
- * shorter way, and made of length 1 again.
+ * shorter way. What comes out is not of length 1, and need not be.
  */
 class Nlerp4 extends Blend {
   private readonly out = {
@@ -622,13 +622,12 @@ class Nlerp4 extends Blend {
       const by = py + (b * near - py) * alpha;
       const bz = pz + (c * near - pz) * alpha;
       const bw = pw + (d * near - pw) * alpha;
-      const length = Math.sqrt(bx * bx + by * by + bz * bz + bw * bw);
-      // All zeros stands for not turned, and stays so.
-      const scale = length > 0 ? 1 / length : 0;
-      ox[i] = bx * scale;
-      oy[i] = by * scale;
-      oz[i] = bz * scale;
-      ow[i] = bw * scale;
+      // Of whatever length it comes out: what draws it takes the turn a
+      // quaternion stands for, and all zeros for not turned.
+      ox[i] = bx;
+      oy[i] = by;
+      oz[i] = bz;
+      ow[i] = bw;
     }
     return out;
   }
@@ -1205,9 +1204,14 @@ class Instances implements Kept {
       const b = qy[i]!;
       const c = qz[i]!;
       const d = qw[i]!;
-      const a2 = a + a;
-      const b2 = b + b;
-      const c2 = c + c;
+      // Twice over its length squared, which is 2 for a quaternion of
+      // length 1: one of any other length draws as the turn it stands
+      // for, and not skewed. All zeros is no turn at all.
+      const n = a * a + b * b + c * c + d * d;
+      const s = n > 0 ? 2 / n : 0;
+      const a2 = a * s;
+      const b2 = b * s;
+      const c2 = c * s;
       out[at] = 1 - (b * b2 + c * c2);
       out[at + 1] = a * b2 + d * c2;
       out[at + 2] = a * c2 - d * b2;
@@ -1253,9 +1257,14 @@ class Instances implements Kept {
       const b = qy[i]!;
       const c = qz[i]!;
       const d = qw[i]!;
-      const a2 = a + a;
-      const b2 = b + b;
-      const c2 = c + c;
+      // Twice over its length squared, which is 2 for a quaternion of
+      // length 1: one of any other length draws as the turn it stands
+      // for, and not skewed. All zeros is no turn at all.
+      const n = a * a + b * b + c * c + d * d;
+      const s = n > 0 ? 2 / n : 0;
+      const a2 = a * s;
+      const b2 = b * s;
+      const c2 = c * s;
       const u = sx[i]!;
       const v = sy[i]!;
       const w = sz[i]!;
@@ -1904,7 +1913,20 @@ class Objects<O extends Object3D> implements Kept {
     const { objects, stamp, turnedAt } = this;
     for (let i = start; i < end; i++) {
       const index = entityIndex(entities[i]!);
-      objects[index]!.quaternion.set(x[i]!, y[i]!, z[i]!, w[i]!);
+      // An Object3D's quaternion has to be of length 1, which the game's
+      // may not be: it is given the turn that one stands for. All zeros
+      // is no turn at all.
+      const a = x[i]!;
+      const b = y[i]!;
+      const c = z[i]!;
+      const d = w[i]!;
+      const n = a * a + b * b + c * c + d * d;
+      if (n > 0) {
+        const s = 1 / Math.sqrt(n);
+        objects[index]!.quaternion.set(a * s, b * s, c * s, d * s);
+      } else {
+        objects[index]!.quaternion.identity();
+      }
       turnedAt[index] = stamp;
     }
   };
