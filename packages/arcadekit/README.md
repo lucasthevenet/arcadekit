@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 645 tests, 74 of them of @arcadekit/three
+pnpm test                          # 654 tests, 83 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -533,7 +533,7 @@ Browser.runMain(
 [`@arcadekit/three`](../three/README.md) is the plugin that draws a game with Three.js, in a package of its own. It is made of what is above: systems of the frame stage that read the world and cannot change it, a service that holds the scene from one frame to the next, and a renderer that comes from outside as the display does.
 
 - Where a thing is drawn comes from [`Transform3d` or `Transform2d`](#where-a-thing-is), which are this package's. The rules import nothing of `@arcadekit/three`, so a server and a replay install neither it nor Three.js.
-- `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over. With `color`, each instance is drawn in a colour that a component of the game's gives it, and with `from`, in a look made of a bundle's assets for as long as they are loaded: `Three.texture(url)` is the asset that is a texture. `Three.objects` keeps an Object3D per entity for the few things that are more than that. With `smooth: true` either draws each entity between its last two places, at `Frame.alpha` of the way, so that a game whose ticks and frames do not line up moves evenly.
+- `Three.instances` draws every entity of a kind as one instance of one mesh, from the raw columns, with nothing allocated per entity per frame: ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over. With `color`, each instance is drawn in a colour that a component of the game's gives it, and with `from`, in a look made of a bundle's assets for as long as they are loaded: `Three.texture(url)` is the asset that is a texture, and `Gltf.model(url)`, from `@arcadekit/three/Gltf`, the one that is a glTF model. `Three.objects` keeps an Object3D per entity for the few things that are more than that. With `smooth: true` either draws each entity between its last two places, at `Frame.alpha` of the way, so that a game whose ticks and frames do not line up moves evenly.
 - A game that draws with something else does not install it.
 
 ## Input

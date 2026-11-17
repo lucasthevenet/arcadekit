@@ -103,7 +103,7 @@ Values that have to be right and are not checked:
 Who lets go of what:
 
 - **A geometry and a material given to `Three.instances` are the game's to dispose of**, and so is whatever `make` of `Three.objects` made, through `free`. Nothing here does, and nothing says when one was forgotten.
-- **A loader of Three.js that fetches for itself**, a glTF file's pictures, say, does not go through `Assets.Loader`: a test's files in memory do not serve it, and an interrupted load does not give those requests up.
+- **A loader of Three.js that fetches for itself** does not go through `Assets.Loader`: a test's files in memory do not serve it, and an interrupted load does not give those requests up. A glTF model's own files no longer are such, since `Gltf.model` fetches them; what is left is the decoder a compressed model is given in `prepare`, and any asset of the game's own made around another loader, an FBX's, say.
 
 Reported, and not settled:
 
