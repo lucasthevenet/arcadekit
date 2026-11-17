@@ -74,7 +74,7 @@ The order systems run in:
 Ticks, frames and real time:
 
 - **A game that ticks when needed rests when the app sees nothing waiting**, and it sees actions, states, scripts and events. A system that does something every tick with none of those waiting, a clock that counts down in a field, say, stops when the game rests, and nothing says so.
-- **A game that steps its app by hand does what a driver would have done**: `app.input()` before a tick, and a tick when its UI has sent something. Left out, keys and what a UI sent are never heard, with no error.
+- **A tick reads the devices unless it is told not to.** `App.replay` tells it. Whatever else runs a game again from a log by hand, a rollback or a tool, has to say `{ input: false }` itself, or the keys of the machine it runs on are reported into the game it is re-running, and nothing says so. And a game that steps its app by hand still has to run a tick when its UI has sent something: nothing ticks for it.
 - **`smooth: true` draws a tick behind.** A game stepped by hand and drawn with `app.frame(0)` shows the tick before the one it just ran. A test that looks at what is drawn has to know.
 - **`Effect.sleep`, a promise, or any wait in real time resumes outside the tick**, and a fiber started with `Effect.forkDetach` is not watched by the app. Either changes the game at a moment no replay repeats. Scripts wait with `Script.nextTick`, `Script.sleep` or an event's `wait`; nothing refuses the others.
 - **`Assets.load` in a script** resumes in whatever tick the file arrives in. It is not refused there.

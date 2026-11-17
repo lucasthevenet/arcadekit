@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install
-pnpm test                          # 639 tests, 74 of them of @arcadekit/three
+pnpm test                          # 643 tests, 74 of them of @arcadekit/three
 pnpm typecheck
 pnpm --filter arcadekit demo       # real-time simulation
 pnpm --filter arcadekit duel       # turn-based game
@@ -569,13 +569,13 @@ Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas });
 
 The keyboard, the pointer and the gamepads are outside the game. What they say reaches it as actions, through the same [log](#payloads-saves-and-the-network) as everything else that comes from outside. So a replay needs no devices at all: it is given no source and reads none, and the actions are in its log.
 
-**The input stage.** An app has a third stage beside the tick and the frame. A system made with `System.inStage("input")` runs when `app.input()` is called, which `Driver.fixedStep` does just before each tick, and so `Driver.frames` and `Driver.interval` with it.
+**The input stage.** An app has a third stage beside the tick and the frame. A system made with `System.inStage("input")` runs just before a tick. `Driver.fixedStep` calls `app.input()` there, and so `Driver.frames` and `Driver.interval` with it; and a tick that finds nobody did runs the stage itself, so a game that steps its app by hand with `app.tick(delta)` hears its keys and its UI with no more than that.
 
 - The devices are read once per run, and every system of the stage is given that one sample as `Input.Devices`: the buttons that are `down`, the ones `pressed` and `released` since the sample before, the `axes`, and the ones that `moved`. A frame in which no tick is due reads nothing, and what was pressed meanwhile is there for the next tick, so a quick tap is never lost between two frames.
 - The world is frozen there, as in the frame stage, and whatever would change the game throws. What a system makes of the devices it issues with `Actions.enqueue`, which is logged and applied at the start of the tick that follows.
 - It hears events from a place of its own, each once, as the frame stage does: what a tick's systems emitted, what its actions emitted, and `Action.Rejected`, so a system that issued an action hears that it was refused. They are kept for it until it has run, the first tick's among them, and for up to 600 ticks when it does not run at all, as in a replay.
 - `Input.Devices` is no part of the game, so a system in the tick or in the frame stage cannot read it: its fields throw there and say what to read.
-- A replay and a server never call `app.input()`. The simulation cannot tell whether its devices are read: a game played from a keyboard and its replay have the same hash at every tick.
+- A replay does not run it: what the devices said is in its log, and `App.replay` ticks with `app.tick(delta, { input: false })`, a tick that reads nothing, whatever the machine it runs on is doing. Anything else that runs a game again from a log does the same. The simulation cannot tell whether its devices are read: a game played from a keyboard and its replay have the same hash at every tick.
 
 **The picture.** `Input.plugin` keeps what the devices say in the world, for systems to read.
 
@@ -618,8 +618,7 @@ The keyboard, the pointer and the gamepads are outside the game. What they say r
   );
   // With the app that gives:
   source.press("Space");
-  app.input();
-  app.tick(1 / 60);
+  app.tick(1 / 60); // hears the devices first
   ```
 
 - Reading the devices when nothing changed costs 1.4 µs a tick. A tick in which a key went down or up costs 5.2 µs in all: the reading, the action and the tick that applies it. See the [benchmark](#benchmark-100000-entities-pos--vel--dt).
@@ -1264,7 +1263,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - The first sound a page can make is the one its user's first key or press sets off. Nothing is heard before that.
 - A view is worked out and compared whole, every frame a UI is there. A game with a view that is costly to work out says when it is worth it with `System.runIf`.
 - The UI is not told what became of an action it sent. A refusal is an `Action.Rejected` event, which a frame system can read and the game can publish as a view.
-- What the UI sends is applied by the next tick, which under a driver is the frame it was sent in or the one after. A game that steps its app by hand runs the input stage and a tick itself when its UI has sent something.
+- What the UI sends is applied by the next tick, which under a driver is the frame it was sent in or the one after. A game that steps its app by hand runs a tick itself when its UI has sent something.
 - A view's value is an object of this program, with no schema: a UI in another thread or on another machine is not served.
 - `ui.send` takes any action. That the game has a handler for it is checked when it is issued, where a missing one throws, and not by the compiler.
 - An asset is a picture, text, JSON or bytes. A font is for whoever draws with it to decode, with `Assets.make`.
@@ -1276,7 +1275,7 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - A button that is pressed twice between two readings of the devices was pressed once.
 - The pointer's place is in CSS pixels of its target. A canvas that is drawn larger or smaller than its own size has to convert.
 - Bindings are fixed when the system is made. A game that lets its player choose the keys writes a system of the input stage that looks them up.
-- Only a driver runs the input stage. A game that steps its app by hand, as the duel example does under Node, calls `app.input()` before its tick itself.
+- A tick reads the devices unless it is told not to. What runs a game again from its log by hand, with `dispatchByName` and `tick`, says `{ input: false }` as `App.replay` does, or the machine's own keys join in.
 - A game that ticks when it is needed rests when nothing is waiting, and what is waiting is what the app can see: actions, states, scripts and events. A system that reacts to a change through a change query, listed before the system that makes the change, reacts a tick late, and the one tick that follows the last is all it is given; two such systems in a row are a tick short. Order them with `System.after`.
 - The frame loop always pauses while the tab is hidden. A game that has to go on in the background, such as one peer of several, cannot say so.
 - The example page is opened in a browser by hand. No test in CI runs a page: the frame loop is tested against a display turned by hand, and `arcadekit/Browser` against stand-ins for `requestAnimationFrame`, the document and the window.

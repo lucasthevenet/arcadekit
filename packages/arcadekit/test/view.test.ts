@@ -357,6 +357,38 @@ describe("a view", () => {
 });
 
 describe("what the UI sends", () => {
+  it("is heard by a game that is stepped by hand with a tick and nothing else, and by a replay not at all", () => {
+    const ui = View.makeBridge();
+    const app = play(ui);
+    app.world.singleton(Purse).gold = 5;
+    ui.send(Buy, { price: 3 });
+    ui.send(Start, {});
+    // No `app.input()`: the tick hears what was sent before it runs, and
+    // applies it.
+    app.tick(1);
+    expect(app.world.view(Coins).count()).toBe(1);
+    expect(app.world.singleton(Purse).gold).toBe(3);
+    const log = app.actionLog.slice();
+    expect(
+      log
+        .filter((entry) => !Action.isCheckpoint(entry))
+        .map((entry) => (Action.isCheckpoint(entry) ? "" : entry.name))
+    ).toEqual(["vw/Buy", "vw/Start"]);
+    // A replay with a UI of its own that is sending things is told what
+    // the log says and nothing else.
+    const other = View.makeBridge();
+    const again = play(other);
+    again.world.singleton(Purse).gold = 5;
+    other.send(Buy, { price: 1 });
+    other.send(Buy, { price: 1 });
+    App.replay(again, log, { delta: 1, ticks: 1 });
+    expect(again.world.hash()).toBe(app.world.hash());
+    expect(again.world.view(Coins).count()).toBe(1);
+    expect(
+      again.actionLog.filter((entry) => !Action.isCheckpoint(entry)).length
+    ).toBe(2);
+  });
+
   it("is issued before the next tick, in the order it was sent, and is in the log like any input", () => {
     const ui = View.makeBridge();
     const app = play(ui);

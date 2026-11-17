@@ -12,7 +12,11 @@ import { Context, Effect } from "effect";
 /** Anything with a `tick`, so drivers work with every App type. */
 export interface Tickable {
   readonly tick: (delta: number) => void;
-  /** An app's input stage: run just before each tick, if it is there. */
+  /**
+   * An app's input stage: run just before each tick, if it is there. An
+   * app's own tick would run it too; a driver does it first, so that it
+   * can ask whether the game is settled once a move has come in.
+   */
   readonly input?: () => void;
   /** An app's frame stage: run after the ticks of each call, if it is there. */
   readonly frame?: (alpha: number, delta?: number) => void;
