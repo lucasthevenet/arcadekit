@@ -41,6 +41,7 @@ export * as Migrate from "./Migrate";
 export * as Plugin from "./Plugin";
 export * as Query from "./Query";
 export * as Resource from "./Resource";
+export * as Rollback from "./Rollback";
 export * as Save from "./Save";
 export * as Singleton from "./Singleton";
 export * as Sound from "./Sound";

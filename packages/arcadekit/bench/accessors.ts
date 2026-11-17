@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
  *
  *   pnpm --filter arcadekit bench
  */
-import { Data, Effect, Schema } from "effect";
+import { Data, Effect, Exit, Schema } from "effect";
 
 import { World } from "../src/ecs/world";
 import {
@@ -408,6 +408,40 @@ const atRest = (): number =>
   );
 
 /** Median milliseconds of a frame of `count` systems that read the world or do nothing. */
+/** A game of 100,000 moving entities, captured or put back. */
+const rewinding = (back: boolean): number =>
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const Movement = System.make("Movement", function* () {
+          (yield* Moving).eachChunk((start, end, pos, vel) => {
+            for (let n = start; n < end; n++) {
+              pos.x[n] = pos.x[n]! + vel.x[n]! * DT;
+            }
+          });
+        });
+        const app = yield* App.make({ systems: [Movement] });
+        populate(app.world);
+        app.tick(DT);
+        const moment = app.capture();
+        if (Exit.isFailure(moment)) {
+          throw new Error("the game could not be captured");
+        }
+        let sink = 0;
+        const ms = back
+          ? measure(() => {
+              app.rewind(moment.value);
+              sink += app.time.tick;
+            })
+          : measure(() => {
+              sink += Exit.isSuccess(app.capture()) ? 1 : 0;
+            });
+        void sink;
+        return ms;
+      })
+    )
+  );
+
 const drawing = (count: number, reading: boolean, verify: boolean): number =>
   Effect.runSync(
     Effect.scoped(
@@ -923,6 +957,33 @@ const variants: Record<
       void sink;
       return ms;
     },
+  },
+
+  restore: {
+    label: "world.restore(): the same snapshot, into its own world",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const bytes = world.snapshot();
+      let sink = 0;
+      const ms = measure(() => {
+        world.restore(bytes);
+        sink += world.entityCount;
+      });
+      void sink;
+      return ms;
+    },
+  },
+
+  // What predicting a tick costs: the game is captured before a tick the
+  // session is not sure of, and put back when the tick was wrong.
+  capture: {
+    label: "app.capture(): a game of those 100,000 entities",
+    run: () => rewinding(false),
+  },
+  rewind: {
+    label: "app.rewind(): back to that moment",
+    run: () => rewinding(true),
   },
 
   // The frame stage: systems that draw, run between ticks with the world

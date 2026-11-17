@@ -97,6 +97,11 @@
       "types": "./dist/Resource.d.ts",
       "default": "./dist/Resource.js"
     },
+    "./Rollback": {
+      "source": "./src/Rollback.ts",
+      "types": "./dist/Rollback.d.ts",
+      "default": "./dist/Rollback.js"
+    },
     "./Save": {
       "source": "./src/Save.ts",
       "types": "./dist/Save.d.ts",

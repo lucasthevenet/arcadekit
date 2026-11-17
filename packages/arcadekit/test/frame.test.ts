@@ -91,6 +91,7 @@ describe("a frozen world", () => {
     });
     expect(sum).toBe(12);
     // Changing.
+    const bytes = new EcsWorld().snapshot();
     const changes: [string, () => unknown][] = [
       ["World.spawn()", () => world.spawn(Ball)],
       ["World.despawn()", () => world.despawn(ball)],
@@ -103,6 +104,7 @@ describe("a frozen world", () => {
       ["Commands.add()", () => commands.add(ball, Glow)],
       ["Commands.remove()", () => commands.remove(ball, Glow)],
       ["World.begin()", () => world.begin()],
+      ["World.restore()", () => world.restore(bytes)],
       [
         'An assignment to "fr/Ball.x"',
         () =>

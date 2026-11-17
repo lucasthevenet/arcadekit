@@ -1,294 +1,28 @@
-import { Cause, Data, Effect, Exit, Schema } from "effect";
-import type { Scope } from "effect";
+import { Data, Effect, Exit } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { App, Driver, Input, Lockstep, System, Time } from "../src/index";
 import {
-  Action,
-  App,
-  Commands,
-  Component,
-  Driver,
-  EcsWorld,
-  EntityId,
-  Field,
-  Input,
-  Lockstep,
-  Query,
-  Random,
-  Singleton,
-  System,
-  Time,
-  World,
-} from "../src/index";
-import type { Entity } from "../src/index";
-
-// --- a small game: players drop coins, which drift about, and take them --------
-
-const Coin = Component.define("ls/Coin", { value: Field.i32, x: Field.f32 });
-const Coins = Query.all(Coin);
-const Purse = Singleton.define(
-  "ls/Purse",
-  { ada: Field.i32, grace: Field.i32, taken: Field.i32 },
-  { ada: 0, grace: 0, taken: 0 }
-);
-
-const Player = Schema.Literals(["ada", "grace", "edsger"]);
-const Drop = Action.define(
-  "ls/Drop",
-  Schema.Struct({ by: Player, value: Schema.Int })
-);
-const Take = Action.define(
-  "ls/Take",
-  Schema.Struct({ by: Player, coin: EntityId })
-);
-const Fire = Action.define("ls/Fire", Schema.Struct({}));
-const Mint = Action.define("ls/Mint", Schema.Struct({ on: Schema.Date }));
-const Whisper = Action.define<{ readonly to: string }>()("ls/Whisper");
-
-class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
-  readonly coin: Entity;
-}> {}
-
-const drop = Action.handler(Drop, function* ({ value }) {
-  const random = yield* Random;
-  return (yield* Commands).spawn(Coin.of({ value, x: random.next() }));
-});
-const take = Action.handler(Take, function* ({ by, coin }) {
-  const world = yield* World;
-  const held = world.get(coin, Coin);
-  if (held === undefined) {
-    return yield* Effect.fail(new NoSuchCoin({ coin }));
-  }
-  (yield* Commands).despawn(coin);
-  const purse = yield* Purse;
-  purse.taken += 1;
-  if (by === "ada") {
-    purse.ada += held.value;
-  } else {
-    purse.grace += held.value;
-  }
-  return held.value;
-});
-const fire = Action.handler(Fire, function* () {
-  (yield* Commands).spawn(Coin.of({ value: 100, x: 0 }));
-});
-const mint = Action.handler(Mint, function* ({ on }) {
-  (yield* Commands).spawn(Coin.of({ value: on.getUTCFullYear(), x: 0 }));
-});
-const whisper = Action.handler(Whisper, function* () {
-  // Nothing: it is here to be enqueued.
-});
-
-const Drift = System.make("ls/Drift", function* () {
-  const random = yield* Random;
-  (yield* Coins).each((coin) => {
-    coin.x += random.next() - 0.5;
-  });
-});
-/** The simulation's own player: it drops a coin now and then. */
-const Bot = System.make("ls/Bot", function* () {
-  if ((yield* Time).tick % 7 === 3) {
-    (yield* Action.Actions).enqueue(Drop, {
-      by: "edsger" as const,
-      value: 1,
-    });
-  }
-});
-/**
- * A bug of the kind that drift detection is for: on one tick, in the worlds
- * it is set for, a system moves a coin by a number that is not the game's.
- */
-let glitch: { tick: number; worlds: Set<EcsWorld> | "all" } | undefined;
-const Fault = System.make("ls/Fault", function* () {
-  if (glitch === undefined || (yield* Time).tick !== glitch.tick) {
-    return;
-  }
-  if (glitch.worlds !== "all" && !glitch.worlds.has(yield* World)) {
-    return;
-  }
-  let first = true;
-  (yield* Coins).each((coin) => {
-    if (first) {
-      coin.x += 1 + Math.random();
-      first = false;
-    }
-  });
-});
-/** What each app's input stage heard refused, in the order it heard it. */
-const refusals: string[] = [];
-const Hear = System.make("ls/Hear", function* () {
-  for (const refusal of (yield* Action.Rejected).read()) {
-    refusals.push(refusal.action);
-  }
-}).pipe(System.inStage("input"));
-const Controls = Input.bind("ls/Controls", Input.onPress("Space", Fire, {}));
-
-const DELTA = 1 / 30;
-
-const game = (seed = 5, checkpointEvery = 1) =>
-  App.make({
-    systems: [Drift, Bot, Fault, Controls, Hear],
-    handlers: [drop, take, fire, mint, whisper],
-    components: [Coin, Purse],
-    seed,
-    checkpointEvery,
-  });
-type Game = Effect.Success<ReturnType<typeof game>>;
-
-interface Peer {
-  readonly name: string;
-  readonly app: Game;
-  readonly session: Lockstep.Session;
-  /** The world's hash after each tick this peer ran: `hashes[0]` is after the first. */
-  readonly hashes: number[];
-  readonly source: Input.ManualSource;
-}
-
-interface Setup {
-  readonly delay?: number;
-  /** The seed of each peer's game, by name: all the same unless told. */
-  readonly seeds?: Readonly<Record<string, number>>;
-  /** How often each peer's log records a checkpoint, by name: 1 unless told. */
-  readonly checkpointEvery?: Readonly<Record<string, number>>;
-  /** Whether each peer is given the names the other way round from the last. */
-  readonly shuffled?: boolean;
-}
-
-const withPeers = <A>(
-  names: readonly string[],
-  setup: Setup,
-  use: (peers: Peer[]) => A
-): A =>
-  Effect.runSync(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const peers: Peer[] = [];
-        for (const name of names) {
-          const source = Input.makeManualSource();
-          const app = yield* game(
-            setup.seeds?.[name],
-            setup.checkpointEvery?.[name]
-          ).pipe(Effect.provideService(Input.Source, source));
-          const session = Lockstep.make(app, {
-            peer: name,
-            peers:
-              setup.shuffled === true && peers.length % 2 === 1
-                ? names.toReversed()
-                : names,
-            delta: DELTA,
-            ...(setup.delay === undefined ? {} : { delay: setup.delay }),
-          });
-          peers.push({ name, app, session, hashes: [], source });
-        }
-        return use(peers);
-      })
-    )
-  );
-
-const withApp = <T, A>(
-  make: Effect.Effect<T, never, Scope.Scope>,
-  use: (app: T) => A
-): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
-
-/**
- * A network that is nothing like a wire: every message takes a random
- * number of rounds to arrive, so they overtake each other, and the ones
- * that arrive together arrive shuffled. Nothing is lost. Messages travel
- * as text.
- */
-const network = (seed: number, lag: { min: number; max: number }) => {
-  const dice = new EcsWorld({ seed }).random;
-  let now = 0;
-  let inFlight: { at: number; to: string; text: string }[] = [];
-  return {
-    get inFlight() {
-      return inFlight.length;
-    },
-    round(): void {
-      now++;
-    },
-    send(to: readonly string[], messages: readonly Lockstep.Message[]): void {
-      for (const message of messages) {
-        for (const name of to) {
-          inFlight.push({
-            at: now + dice.int(lag.min, lag.max),
-            to: name,
-            text: Lockstep.encode(message),
-          });
-        }
-      }
-    },
-    arrivals(to: string): Lockstep.Message[] {
-      const due = inFlight.filter((m) => m.to === to && m.at <= now);
-      inFlight = inFlight.filter((m) => !(m.to === to && m.at <= now));
-      return dice.shuffle(due).map((m) => {
-        const message = Lockstep.decode(m.text);
-        if (Exit.isFailure(message)) {
-          throw new Error("a message did not survive the wire");
-        }
-        return message.value;
-      });
-    },
-  };
-};
-type Network = ReturnType<typeof network>;
-
-/** One round: every peer is handed what arrived, tries its tick, and sends. */
-const round = (
-  peers: readonly Peer[],
-  net: Network,
-  only: readonly Peer[] = peers
-): void => {
-  net.round();
-  for (const peer of only) {
-    for (const message of net.arrivals(peer.name)) {
-      peer.session.receive(message);
-    }
-    if (peer.session.tick()) {
-      peer.hashes.push(peer.app.world.hash());
-    }
-    net.send(
-      peers.filter((other) => other !== peer).map((other) => other.name),
-      peer.session.outgoing()
-    );
-  }
-};
-
-/** Brings every peer to the tick the furthest has reached. */
-const catchUp = (peers: readonly Peer[], net: Network): number => {
-  const furthest = Math.max(...peers.map((peer) => peer.app.time.tick));
-  for (let i = 0; i < 1000; i++) {
-    const behind = peers.filter((peer) => peer.app.time.tick < furthest);
-    if (behind.length === 0) {
-      return furthest;
-    }
-    round(peers, net, behind);
-  }
-  throw new Error("the peers never caught up with each other");
-};
-
-const coinsOf = (peer: Peer): Entity[] => peer.app.world.view(Coins).entities();
-
-/** Each peer's player does something at random, from what its own world holds. */
-const players = (seed: number) => {
-  const dice = new EcsWorld({ seed }).random;
-  return (peer: Peer): void => {
-    const by = peer.name as "ada" | "grace";
-    const roll = dice.int(1, 6);
-    if (roll <= 2) {
-      peer.app.enqueue(Drop, { by, value: dice.int(1, 9) });
-    } else if (roll === 3) {
-      const coins = coinsOf(peer);
-      if (coins.length > 0) {
-        // Both players go for the oldest coin: one of them is refused.
-        peer.app.enqueue(Take, { by, coin: coins[0]! });
-      }
-    }
-  };
-};
-
-const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
-  log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
+  catchUp,
+  Coin,
+  coinsOf,
+  DELTA,
+  Drop,
+  game,
+  Mint,
+  moves,
+  network,
+  players,
+  Purse,
+  refusals,
+  round,
+  setGlitch,
+  untilStopped,
+  Whisper,
+  withApp,
+  withPeers,
+} from "./peers";
+import type { Peer } from "./peers";
 
 describe("a lockstep session", () => {
   it("keeps two peers hash-equal at every tick, over a network that delays and reorders", () => {
@@ -869,39 +603,9 @@ describe("a lockstep session", () => {
   });
 });
 
-/**
- * Rounds of a game that is expected to stop: every peer is handed what
- * arrived and tries its tick, until every one of them has failed. Returns
- * what each failed with, by name.
- */
-const untilStopped = (
-  peers: readonly Peer[],
-  net: Network,
-  rounds: number
-): Map<string, unknown> => {
-  const stopped = new Map<string, unknown>();
-  for (let i = 0; i < rounds && stopped.size < peers.length; i++) {
-    net.round();
-    for (const peer of peers) {
-      for (const message of net.arrivals(peer.name)) {
-        peer.session.receive(message);
-      }
-      const exit = peer.session.tickExit();
-      if (Exit.isFailure(exit)) {
-        stopped.set(peer.name, Cause.squash(exit.cause));
-      }
-      net.send(
-        peers.filter((other) => other !== peer).map((other) => other.name),
-        peer.session.outgoing()
-      );
-    }
-  }
-  return stopped;
-};
-
 describe("peers that have come apart", () => {
   afterEach(() => {
-    glitch = undefined;
+    setGlitch(undefined);
   });
 
   it("are caught within checkpointEvery - 1 + delay ticks of a system that is not deterministic", () => {
@@ -916,7 +620,7 @@ describe("peers that have come apart", () => {
             ["ada", "grace"],
             { delay, checkpointEvery: { ada: every, grace: every } },
             (peers) => {
-              glitch = { tick: at, worlds: "all" };
+              setGlitch({ tick: at, worlds: "all" });
               const net = network(every * 10 + delay, lag);
               peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
               const stopped = untilStopped(peers, net, 600);
@@ -962,7 +666,7 @@ describe("peers that have come apart", () => {
 
   it("stop for good, and say so in words", () => {
     withPeers(["ada", "grace"], { delay: 1 }, (peers) => {
-      glitch = { tick: 9, worlds: "all" };
+      setGlitch({ tick: 9, worlds: "all" });
       const net = network(1, { min: 0, max: 0 });
       const [ada] = peers as [Peer];
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
@@ -1075,7 +779,7 @@ describe("peers that have come apart", () => {
       ["ada", "grace"],
       { checkpointEvery: { ada: 0, grace: 0 } },
       (peers) => {
-        glitch = { tick: 9, worlds: "all" };
+        setGlitch({ tick: 9, worlds: "all" });
         peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
         const stopped = untilStopped(peers, network(1, { min: 0, max: 0 }), 50);
         expect(stopped.size).toBe(0);
@@ -1087,7 +791,7 @@ describe("peers that have come apart", () => {
   it("are all stopped when one of three has gone its own way, and the report says which", () => {
     withPeers(["ada", "grace", "edsger"], { delay: 2 }, (peers) => {
       const [ada, grace, edsger] = peers as [Peer, Peer, Peer];
-      glitch = { tick: 12, worlds: new Set([grace.app.world]) };
+      setGlitch({ tick: 12, worlds: new Set([grace.app.world]) });
       const net = network(6, { min: 0, max: 3 });
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
       const stopped = untilStopped(peers, net, 300);
@@ -1132,7 +836,7 @@ describe("peers that have come apart", () => {
         expect(grace.session.drifted).toBeUndefined();
         expect(ada.app.time.tick).toBeGreaterThan(40);
         const at = ada.app.time.tick + 3;
-        glitch = { tick: at, worlds: "all" };
+        setGlitch({ tick: at, worlds: "all" });
         const stopped = untilStopped(peers, net, 100);
         // Caught at the first tick both record: a multiple of 6.
         const drifted = stopped.get("grace") as Lockstep.Drifted;

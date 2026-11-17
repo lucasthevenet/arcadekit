@@ -1,0 +1,418 @@
+import { Data, Effect, Exit, Logger, Schema } from "effect";
+import { describe, expect, it } from "vitest";
+
+import {
+  Action,
+  App,
+  Commands,
+  Component,
+  EcsWorld,
+  Event,
+  Field,
+  Plugin,
+  Query,
+  Save,
+  Script,
+  System,
+  Ticks,
+  Time,
+} from "../src/index";
+import type { Entity } from "../src/index";
+import {
+  Coin,
+  DELTA,
+  Drop,
+  game,
+  moves,
+  Take,
+  Whisper,
+  withApp,
+} from "./peers";
+import type { Game } from "./peers";
+
+/** A stretch of a game, played by a seed: the same moves for the same seed. */
+const stretch = (app: Game, seed: number, ticks: number): number[] => {
+  const dice = new EcsWorld({ seed }).random;
+  const hashes: number[] = [];
+  for (let i = 0; i < ticks; i++) {
+    const roll = dice.int(1, 5);
+    if (roll <= 2) {
+      app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
+    } else if (roll === 3) {
+      const coins = app.world.view(Query.all(Coin)).entities();
+      if (coins.length > 0) {
+        app.enqueue(Take, { by: "grace", coin: dice.pick(coins) });
+        // And once more, which is refused: the coin is gone by then.
+        app.enqueue(Take, { by: "ada", coin: coins[0]! });
+      }
+    }
+    app.tick(DELTA);
+    hashes.push(app.world.hash());
+  }
+  return hashes;
+};
+
+const captured = (app: App.Any): App.Moment => {
+  const moment = app.capture();
+  if (Exit.isFailure(moment)) {
+    throw new Error("the game could not be captured");
+  }
+  return moment.value;
+};
+
+describe("a game that is put back to a moment", () => {
+  it("is the game it was, and goes on as that game did", () => {
+    for (const seed of [1, 2, 3]) {
+      withApp(game(), (app) => {
+        stretch(app, seed, 40);
+        // Something is waiting at this moment: an action for the next tick.
+        app.enqueue(Drop, { by: "ada", value: 4 });
+        const moment = captured(app);
+        expect(moment.tick).toBe(40);
+        const then = {
+          save: app.save(),
+          log: structuredClone(app.actionLog),
+          time: { ...app.time },
+          settled: app.settled,
+        };
+        const first = stretch(app, seed + 10, 30);
+        const firstLog = structuredClone(app.actionLog);
+        // Another way from the same moment, and back again.
+        app.rewind(moment);
+        stretch(app, seed + 20, 45);
+        expect(app.world.hash()).not.toBe(first.at(-1));
+        app.rewind(moment);
+        expect({
+          save: app.save(),
+          log: app.actionLog,
+          time: { ...app.time },
+          settled: app.settled,
+        }).toEqual(then);
+        // The same moves from there give the same game, tick for tick,
+        // and the same log, the refusals in it among them.
+        expect(stretch(app, seed + 10, 30)).toEqual(first);
+        expect(app.actionLog).toEqual(firstLog);
+        expect(
+          moves(app.actionLog).some((entry) => entry.refused !== undefined)
+        ).toBe(true);
+      });
+    }
+  });
+
+  it("is the same game as one that never went anywhere else", () => {
+    const straight = withApp(game(), (app) => [
+      ...stretch(app, 5, 25),
+      ...stretch(app, 6, 25),
+    ]);
+    const wandering = withApp(game(), (app) => {
+      const before = stretch(app, 5, 25);
+      const moment = captured(app);
+      stretch(app, 99, 17);
+      app.rewind(moment);
+      return [...before, ...stretch(app, 6, 25)];
+    });
+    expect(wandering).toEqual(straight);
+  });
+
+  it("can be a moment before the game had started", () => {
+    withApp(game(), (app) => {
+      const moment = captured(app);
+      expect(app.actionLog).toEqual([]);
+      const first = stretch(app, 8, 5);
+      const log = structuredClone(app.actionLog);
+      // The log begins with the hash of the state the game starts from.
+      expect(log[0]).toEqual({ tick: 0, hash: expect.any(Number) });
+      app.rewind(moment);
+      expect(app.actionLog).toEqual([]);
+      expect(stretch(app, 8, 5)).toEqual(first);
+      // It starts again, and says so again.
+      expect(app.actionLog).toEqual(log);
+    });
+  });
+
+  it("is as settled as it was", () => {
+    // A clock that runs for three ticks, and asks for each of them.
+    const Clock = System.make("rw/Clock", function* () {
+      if ((yield* Time).tick < 3) {
+        (yield* Ticks).more();
+      }
+    });
+    withApp(App.make({ systems: [Clock] }), (app) => {
+      app.tick(DELTA);
+      expect(app.settled).toBe(false);
+      const moment = captured(app);
+      app.tick(DELTA);
+      app.tick(DELTA);
+      expect(app.settled).toBe(true);
+      app.rewind(moment);
+      // The clock had asked for the next tick, and is owed it again.
+      expect(app.settled).toBe(false);
+    });
+  });
+
+  it("needs no schema for what is waiting, where a save does", () => {
+    withApp(game(), (app) => {
+      app.dispatch(Drop, { by: "ada", value: 1 });
+      // An action with a type and no schema, waiting for the next tick.
+      app.enqueue(Whisper, { to: "grace" });
+      expect(Exit.isFailure(app.save())).toBe(true);
+      const moment = captured(app);
+      app.tick(DELTA);
+      expect(moves(app.actionLog).map((entry) => entry.name)).toEqual([
+        "ls/Drop",
+        "ls/Whisper",
+      ]);
+      app.rewind(moment);
+      // It is waiting again, to be applied by the tick that follows.
+      expect(app.settled).toBe(false);
+      app.tick(DELTA);
+      expect(app.time.tick).toBe(1);
+    });
+  });
+
+  it("takes back what became of an action that was waiting", () => {
+    withApp(game(), (app) => {
+      app.tick(DELTA);
+      // No such coin: the tick that applies it will refuse it.
+      app.enqueue(Take, { by: "ada", coin: 77 as Entity });
+      const moment = captured(app);
+      const entry = () => moves(app.actionLog).at(-1)!;
+      expect(entry().refused).toBeUndefined();
+      const logged = app.actionLog.length;
+      app.tick(DELTA);
+      expect(entry().refused).toBeDefined();
+      expect(app.actionLog.length).toBeGreaterThan(logged);
+      app.rewind(moment);
+      // Not yet applied, so not yet refused, and the log is as long as it was.
+      expect(entry().refused).toBeUndefined();
+      expect(app.actionLog.length).toBe(logged);
+      app.tick(DELTA);
+      expect(entry().refused).toBeDefined();
+    });
+  });
+
+  it("puts back the events that were waiting, and everyone's place in them", () => {
+    const Rang = Event.define("rw/Rang", Schema.Struct({ n: Schema.Int }));
+    const heard: number[][] = [];
+    // Listed before the system that emits: it hears each event a tick late.
+    const Listen = System.make("rw/Listen", function* () {
+      heard.push((yield* Rang).read().map((rang) => rang.n));
+    });
+    const Ring = System.make("rw/Ring", function* () {
+      (yield* Rang).emit({ n: (yield* Time).tick });
+    });
+    withApp(App.make({ systems: [Listen, Ring] }), (app) => {
+      app.tick(DELTA);
+      app.tick(DELTA);
+      const moment = captured(app);
+      app.tick(DELTA);
+      app.tick(DELTA);
+      expect(heard).toEqual([[], [1], [2], [3]]);
+      app.rewind(moment);
+      heard.length = 0;
+      app.tick(DELTA);
+      app.tick(DELTA);
+      // Each once, from where it was: 2 was waiting, and 3 is rung again.
+      expect(heard).toEqual([[2], [3]]);
+    });
+  });
+
+  it("starts each plugin's scripts again, and stops the ones that were started by hand", () => {
+    const starts: string[] = [];
+    const beat = (name: string) =>
+      Effect.gen(function* () {
+        const script = yield* Script;
+        starts.push(`${name} starts`);
+        for (;;) {
+          yield* script.nextTick;
+          starts.push(`${name} ${(yield* Time).tick}`);
+        }
+      });
+    const Listed = Plugin.make("rw/Listed", { scripts: [beat("listed")] });
+    withApp(App.make({ plugins: [Listed] }), (app) => {
+      app.spawnScript(beat("by hand"));
+      app.tick(DELTA);
+      const moment = captured(app);
+      app.tick(DELTA);
+      expect(starts).toEqual([
+        "listed starts",
+        "by hand starts",
+        "listed 1",
+        "by hand 1",
+        "listed 2",
+        "by hand 2",
+      ]);
+      starts.length = 0;
+      app.rewind(moment);
+      app.tick(DELTA);
+      app.tick(DELTA);
+      // The listed one from its beginning, as after a load. The other is
+      // gone: nothing says it was ever started.
+      expect(starts).toEqual(["listed starts", "listed 2", "listed 3"]);
+    });
+  });
+
+  it("lets an app that had stopped on a failed script run again", () => {
+    class Tripped extends Data.TaggedError("Tripped")<{}> {}
+    const Trip = Effect.gen(function* () {
+      const script = yield* Script;
+      while ((yield* Time).tick < 2) {
+        yield* script.nextTick;
+      }
+      return yield* Effect.fail(new Tripped());
+    });
+    const Fragile = Plugin.make("rw/Fragile", { scripts: [Trip] });
+    withApp(
+      App.make({ plugins: [Fragile], onScriptFailure: "stop" }).pipe(
+        // The failure is logged, and this test does not want to read it.
+        Effect.provide(Logger.layer([]))
+      ),
+      (app) => {
+        app.tick(DELTA);
+        const moment = captured(app);
+        expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
+        expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
+        app.rewind(moment);
+        expect(app.time.tick).toBe(1);
+        // It runs, up to where the script fails again.
+        expect(() => app.tick(DELTA)).toThrow(App.ScriptFailed);
+        expect(app.time.tick).toBe(2);
+      }
+    );
+  });
+
+  it("has what draws start over, and the simulation go on from where it was", () => {
+    const Dot = Component.define("rw/Dot", { x: Field.f32 });
+    const NewDots = Query.all(Dot).pipe(Query.added(Dot));
+    const seen = { tick: [] as number[], frame: [] as number[] };
+    const Count = System.make("rw/Count", function* () {
+      seen.tick.push((yield* NewDots).entities().length);
+    });
+    const Draw = System.make("rw/Draw", function* () {
+      seen.frame.push((yield* NewDots).entities().length);
+    }).pipe(System.inStage("frame"));
+    const Grow = System.make("rw/Grow", function* () {
+      (yield* Commands).spawn(Dot.of({ x: 1 }));
+    });
+    withApp(
+      App.make({ systems: [Count, Draw, Grow], components: [Dot] }),
+      (app) => {
+        for (let i = 0; i < 3; i++) {
+          app.tick(DELTA);
+          app.frame(0);
+        }
+        const moment = captured(app);
+        app.tick(DELTA);
+        app.frame(0);
+        expect(seen).toEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
+        app.rewind(moment);
+        seen.tick.length = 0;
+        seen.frame.length = 0;
+        app.tick(DELTA);
+        app.frame(0);
+        // The system of the tick sees the one dot it had yet to see. What
+        // draws sees every dot again: all four are new to it.
+        expect(seen).toEqual({ tick: [1], frame: [4] });
+      }
+    );
+  });
+
+  it("throws away commands that were queued and never applied", () => {
+    withApp(game(), (app) => {
+      app.dispatch(Drop, { by: "ada", value: 1 });
+      const moment = captured(app);
+      const count = app.world.entityCount;
+      const queued = app.commands.spawn(Coin.of({ value: 2, x: 0 }));
+      app.rewind(moment);
+      expect(app.commands.size).toBe(0);
+      expect(app.world.entityCount).toBe(count);
+      expect(app.world.isAlive(queued)).toBe(false);
+      app.tick(DELTA);
+      expect(app.world.entityCount).toBe(count);
+    });
+  });
+
+  it("is refused with a moment of another app, and in the middle of a tick", () => {
+    const moment = withApp(game(), (app) => captured(app));
+    withApp(game(), (app) => {
+      expect(() => app.rewind(moment)).toThrow(
+        /a moment that this app did not capture.*save it and load the save/u
+      );
+      expect(() => app.rewind({ tick: 0 })).toThrow(/did not capture/u);
+    });
+    let inside: App.Any | undefined;
+    const Meddle = System.make("rw/Meddle", function* () {
+      yield* Effect.sync(() => {
+        if (inside !== undefined && inside.time.tick === 2) {
+          inside.capture();
+        }
+      });
+    });
+    withApp(App.make({ systems: [Meddle] }), (app) => {
+      inside = app;
+      app.tick(DELTA);
+      expect(() => app.tick(DELTA)).toThrow(
+        /capture\(\) was called during a tick/u
+      );
+    });
+    const taken: App.Moment[] = [];
+    const Undo = System.make("rw/Undo", function* () {
+      yield* Effect.sync(() => {
+        if (inside !== undefined && taken.length > 0) {
+          inside.rewind(taken[0]!);
+        }
+      });
+    });
+    withApp(App.make({ systems: [Undo] }), (app) => {
+      inside = app;
+      app.tick(DELTA);
+      taken.push(captured(app));
+      expect(() => app.tick(DELTA)).toThrow(
+        /rewind\(\) was called during a tick/u
+      );
+    });
+  });
+
+  it("cannot be captured with commands queued, or with a field that cannot be saved", () => {
+    const Holder = Component.define("rw/Holder", {
+      thing: Field.json<unknown>(),
+    });
+    withApp(App.make({ components: [Holder] }), (app) => {
+      app.commands.spawn(Holder.of({ thing: 1 }));
+      expect(app.capture()).toEqual(
+        Exit.fail(
+          new Save.SaveRefused({
+            message:
+              "1 commands are queued and not applied. They are applied at the end of a tick: capture after one.",
+          })
+        )
+      );
+      app.commands.apply();
+      expect(Exit.isSuccess(app.capture())).toBe(true);
+      app.world.spawn(Holder.of({ thing: () => 1 }));
+      const refused = app.capture();
+      expect(Exit.isFailure(refused)).toBe(true);
+      expect(String(Exit.isFailure(refused) ? refused.cause : "")).toMatch(
+        /rw\/Holder/u
+      );
+    });
+  });
+
+  it("is not for an action's handler to call", () => {
+    let inside: App.Any | undefined;
+    const Back = Action.define("rw/Back", Schema.Struct({}));
+    const taken: App.Moment[] = [];
+    const back = Action.handler(Back, function* () {
+      yield* Effect.sync(() => inside!.rewind(taken[0]!));
+    });
+    withApp(App.make({ handlers: [back] }), (app) => {
+      inside = app;
+      taken.push(captured(app));
+      const exit = app.dispatch(Back, {});
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(String(Exit.isFailure(exit) ? exit.cause : "")).toMatch(
+        /rewind\(\) was called from the handler of "rw\/Back"/u
+      );
+    });
+  });
+});

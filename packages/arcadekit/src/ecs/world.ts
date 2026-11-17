@@ -87,6 +87,11 @@ interface Single {
   /** One row. */
   readonly columns: Columns;
   /**
+   * The value it has in a world that has not written it, once the world
+   * was told: what `restore` puts back when the snapshot does not hold it.
+   */
+  initial: unknown;
+  /**
    * False until it is first written. Until then it holds its initial value,
    * and is as good as absent: not saved, and not in the hash.
    */
@@ -792,12 +797,16 @@ export class ChangeLog {
  * `remove`, or by being despawned. Once per removal, oldest first.
  */
 export class RemovedReader {
+  private readonly restored: number;
+
   /** @internal */
   constructor(
     private readonly world: World,
     private readonly log: ChangeLog,
     private readonly cursor: ChangeCursor
-  ) {}
+  ) {
+    this.restored = world._restored;
+  }
 
   /**
    * The ids of the entities that lost the component since the last call.
@@ -805,6 +814,11 @@ export class RemovedReader {
    * the component removed still is.
    */
   read(): Entity[] {
+    if (this.restored !== this.world._restored) {
+      throw new Error(
+        "A reader of removed components was used after its world was restored from a snapshot. Ask for it again: world.removed(component), or yield* the query."
+      );
+    }
     const { cursor, log } = this;
     const count = log.waiting(cursor.at);
     if (count === 0) {
@@ -937,6 +951,8 @@ type Callback = (...args: any[]) => void;
 type OnRun = (table: Table, start: number, end: number) => void;
 
 export class QueryView<D extends Terms = Terms> {
+  /** The world's count of restores when this view was made. */
+  private readonly restored: number;
   private readonly tables: Table[] = [];
   /** Indexed by table index: position in `tables`, or -1 when it does not match. */
   private readonly slotOf: number[] = [];
@@ -1002,6 +1018,7 @@ export class QueryView<D extends Terms = Terms> {
     /** For a change query: what a save knows this reader by. */
     key = ""
   ) {
+    this.restored = world._restored;
     const requireSparse = (def: ComponentDef<any>): SparseSet => {
       const set = world._sparse(def);
       if (!this.sparseWith.includes(set)) {
@@ -1073,6 +1090,11 @@ export class QueryView<D extends Terms = Terms> {
 
   /** Picks up tables created since the last run. */
   private refresh(): void {
+    if (this.restored !== this.world._restored) {
+      throw new Error(
+        "A query's view was used after its world was restored from a snapshot. What it held is gone with the tables it was made of. Ask for it again: world.view(spec), or yield* the query, as a system does every tick."
+      );
+    }
     const all = this.world.tables;
     for (; this.scanned < all.length; this.scanned++) {
       const table = all[this.scanned]!;
@@ -1848,6 +1870,11 @@ export class World {
 
   /** @internal Depth of query iteration in progress. */
   _iterating = 0;
+  /**
+   * @internal How many times `restore` has put a snapshot back. A view
+   * made before the last of them holds tables that are gone.
+   */
+  _restored = 0;
 
   /**
    * Who is asking: the reader a change query, or `removed`, is for when it
@@ -2465,6 +2492,13 @@ export class World {
   singleton<S extends Schema>(spec: SingletonSpec<S>): ValueOf<S> {
     const found = this.singles[spec.component.id];
     if (found !== undefined) {
+      if (found.initial === undefined) {
+        // Made by a load, which knew its fields and not its initial value.
+        found.initial = spec.initial;
+        if (!found.written) {
+          writeRow(spec.component, found.columns, 0, spec.initial);
+        }
+      }
       return found.value;
     }
     if (!spec.component.single) {
@@ -2473,6 +2507,7 @@ export class World {
       );
     }
     const single = this.single(spec.component);
+    single.initial = spec.initial;
     writeRow(spec.component, single.columns, 0, spec.initial);
     return single.value;
   }
@@ -2484,7 +2519,7 @@ export class World {
       this.register(def);
       const columns = makeColumns(def, 1);
       const value = {};
-      single = { def, columns, written: false, value };
+      single = { def, columns, initial: undefined, written: false, value };
       const made = single;
       for (const field of def.fields) {
         const column = columns[field]!;
@@ -3118,6 +3153,83 @@ export class World {
     }
     writer.u32(END);
     return writer.finish();
+  }
+
+  /**
+   * Puts a snapshot back into this world, in place of everything it holds:
+   * the world is emptied and then loaded, as `load` loads a new one. It is
+   * for a snapshot this world took itself, or one of a world made alike,
+   * since it knows only the components it has met.
+   *
+   * What it holds afterwards is what a new world that loaded the snapshot
+   * would: the same hash, the same order of iteration, the same ids to
+   * come, the same random numbers. A singleton's value stays the object it
+   * was, with what the snapshot says in it, or its initial value if the
+   * snapshot does not hold it. `world.random` stays the generator it was.
+   *
+   * What was made of the old tables does not survive it. A view or a
+   * `removed` reader that was asked for before throws when it is used: ask
+   * again, as a system does every tick. What change queries had yet to
+   * visit is forgotten, as in a new world: `restoreChanges` takes back what
+   * `saveChanges` gave when the snapshot was taken.
+   *
+   * Not while a query is iterating, in a transaction, or while the world is
+   * frozen. Every problem is a `SnapshotError`, as for `load`, and a world
+   * whose restore failed part of the way is not fit for use.
+   */
+  restore(bytes: Uint8Array): void {
+    if (this._recording) {
+      throw new Error(
+        "World.restore() was called between begin() and commit() or rollback(). A transaction puts back what it wrote itself; restore a snapshot outside one."
+      );
+    }
+    // Not in a frozen world either, nor in the middle of a loop.
+    this.assertNotIterating("restore");
+    let placed = 0;
+    for (const table of this.tables) {
+      placed += table.count;
+    }
+    if (placed !== this.alive) {
+      throw new Error(
+        `World.restore() was called while ${this.alive - placed} entities were spawned through a CommandBuffer that has not been applied. Their ids would outlive the world they were given in: apply the buffer, or roll it back, first.`
+      );
+    }
+    // The entities.
+    this.recTable.fill(FREE);
+    this.recRow.fill(0);
+    this.gens.fill(0);
+    this.freeList.length = 0;
+    this.nextIndex = 0;
+    this.alive = 0;
+    // Where their data is.
+    this.tables.length = 0;
+    this.tableByKey.clear();
+    this.sparseById.clear();
+    this.sparseList.length = 0;
+    this.sparseByName = undefined;
+    this.relations.length = 0;
+    this.relationList = [];
+    // What was made of those: views, and what they had yet to visit.
+    this._restored++;
+    this.views.clear();
+    this.watchViews.clear();
+    this.watchViewsByKey.clear();
+    this.removedReaders.clear();
+    this._changed.length = 0;
+    this.addedLogs.length = 0;
+    this.removedLogs.length = 0;
+    this.logs.length = 0;
+    this.writeLogs.length = 0;
+    this._watched = 0;
+    this.lateLogs = [];
+    // The singletons stay the objects they are, as if never written.
+    for (const single of this.singles) {
+      if (single !== undefined) {
+        single.written = false;
+        writeRow(single.def, single.columns, 0, single.initial);
+      }
+    }
+    this.load(bytes);
   }
 
   /**
