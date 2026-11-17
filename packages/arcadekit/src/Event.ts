@@ -32,6 +32,10 @@ import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
 
+/**
+ * A system's handle to one kind of event, from `yield* SomeEvent`: it emits
+ * them, and reads those it has not seen yet.
+ */
 export interface EventHandle<P> {
   /** Queues an event. Synchronous, so it can be called inside query loops. */
   readonly emit: (payload: P) => void;
@@ -369,6 +373,10 @@ export interface EventGuard {
   readonly emits: ReadonlySet<string>;
 }
 
+/**
+ * Where an app's events wait to be read, with each reader's place in them.
+ * The app holds one; a game reads and emits through an `EventHandle`.
+ */
 export class EventBus {
   /**
    * Who is asking for handles right now. The app sets this before each

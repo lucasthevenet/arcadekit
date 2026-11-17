@@ -144,6 +144,10 @@ export const decode = (text: string): Exit.Exit<Message, Schema.SchemaError> =>
     Schema.SchemaError
   >;
 
+/**
+ * How a lockstep session is set up: this peer, every peer, and how many
+ * ticks ahead an action is sent.
+ */
 export interface Options {
   /** This peer's name. */
   readonly peer: string;

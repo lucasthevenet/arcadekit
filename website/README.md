@@ -1,12 +1,12 @@
 # Docs site
 
-The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose own pages, the walkthrough, the concepts and the guides, are under [`src/content/docs/`](src/content/docs). The reference is the repository's own markdown, the packages' READMEs, the roadmap and the conventions, read where it is: no file is copied, so there is one text to keep right.
+The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose own pages, the walkthrough, the concepts and the guides, are under [`src/content/docs/`](src/content/docs). The reference is made from the code: a page for each module, from its doc comments, and the repository's own markdown, the packages' READMEs, the roadmap and the conventions, read where it is. No text is copied, so there is one to keep right.
 
 The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's](https://alchemy.run) are, in three topics, each with a sidebar of its own ([starlight-sidebar-topics](https://starlight-sidebar-topics.netlify.app)):
 
 - **Learn**: the walkthrough, the concepts, and the examples.
 - **Guides**: a guide for each task, and testing.
-- **Reference**: each package's README, then the roadmap and the conventions.
+- **Reference**: for each package, its README as an overview, then a page for each of its modules; then the roadmap and the conventions.
 
 | Address | File |
 | --- | --- |
@@ -14,6 +14,7 @@ The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's]
 | `/<path>`, such as `/making-a-game`, `/concepts/determinism` and `/guides/input` | `src/content/docs/<path>.md`: the walkthrough, the concepts and the guides |
 | `/roadmap` and `/conventions` | `docs/roadmap.md` and `docs/conventions.md`, the project's own |
 | `/reference/<package>`, such as `/reference/arcadekit` and `/reference/three` | `packages/<package>/README.md`, which npm shows too |
+| `/reference/<package>/<Module>`, such as `/reference/arcadekit/Sound` | the module's doc comments, from `packages/<package>/dist/<Module>.d.ts` ([The reference of a module](#the-reference-of-a-module)) |
 
 ```bash
 pnpm dev:docs     # from the repo root: Astro's dev server, which reloads a page as its file changes
@@ -40,6 +41,17 @@ Every `ts` block of a page under `src/content/docs/` is compiled against the pac
 - A block fenced ` ```ts sketch ` is a sketch, with `/* … */` where a game's own code goes. It is highlighted as TypeScript and nothing compiles it.
 
 An error is reported at the page and line it is on. The READMEs' blocks and the landing page's are not compiled: they show parts of a game, not whole ones.
+
+## The reference of a module
+
+Each module a package exports, every entry of its `package.json` `exports` but the package's own, has a page made from its doc comments, as [Effect's API pages](https://effect.website/docs/v4/api/effect) are made from Effect's ([`src/lib/api.ts`](src/lib/api.ts)):
+
+- It is read from the package's built declarations, `dist/<Module>.d.ts`, so every export's signature is written out, inferred or not. `pnpm dev:docs`, `pnpm build:docs` and the site's typecheck build the packages first. A change to a doc comment shows in `pnpm dev:docs` after a restart.
+- The page starts with the source file's first doc comment, then how to import the module, then every export, under a heading for its kind (values, classes, interfaces, types, namespaces), in the order of the source. A doc comment's `@category` puts its export under that heading instead, before the kinds.
+- Each export has its doc comment, its signature (all of them, for an overloaded function) and a link to the line of the source that writes it, which the declarations' source map gives.
+- A doc comment is written for an editor's tooltip, with an example as lines indented under a blank line: the page shows each such run as a `ts` block. `@param` lines are a list. An export whose comment says `@internal` is left off.
+
+An export with no doc comment is listed with its signature alone, so give each export a comment.
 
 ## Its look
 

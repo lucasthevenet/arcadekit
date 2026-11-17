@@ -119,6 +119,7 @@ export const OUTLINE: readonly (Group & {
   { topic: "guides", label: "More", section: "guides", items: [] },
   {
     topic: "reference",
+    // A group for each package, with its overview and its modules (packageGroups).
     label: "Packages",
     section: "packages",
     items: ["reference/arcadekit", "reference/three"],
@@ -172,9 +173,41 @@ export const outlinedGroups = (
         });
   return OUTLINE.map(({ section, ...group }) => ({
     ...group,
+    section,
     items: [...group.items, ...rest(section)],
-  })).filter((group) => group.items.length > 0);
+  }))
+    .flatMap(({ section, ...group }) =>
+      section === "packages" ? packageGroups(pages, group) : [group]
+    )
+    .filter((group) => group.items.length > 0);
 };
+
+/**
+ * The packages' group as a group for each package, named after it: its README as its
+ * overview, then a page for each of its modules.
+ */
+const packageGroups = (
+  pages: SitePages,
+  group: Group & { readonly topic: TopicId }
+): (Group & { readonly topic: TopicId })[] =>
+  group.items.flatMap((item) => {
+    const page = pages.packages.find((p) => p.slug === item);
+    if (page === undefined) {
+      return [];
+    }
+    return [
+      {
+        topic: group.topic,
+        label: page.title,
+        items: [
+          { label: "Overview", link: page.link },
+          ...pages.modules
+            .filter((module) => module.folder === page.folder)
+            .map((module) => module.slug),
+        ],
+      },
+    ];
+  });
 
 const toItem = (item: string | Link): SidebarItem =>
   typeof item === "string" ? item : { label: item.label, link: item.link };

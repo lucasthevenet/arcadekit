@@ -336,6 +336,14 @@ export interface Diverted<E = never> {
   readonly tickExit: (delta: number) => Exit.Exit<void, E>;
 }
 
+/**
+ * A running game: its world, its time, the actions waiting for the next
+ * tick, and what runs a tick and a frame. Made with `App.make`, `App.load`
+ * or, in a page, `App.run`.
+ *
+ * `E` is what a tick can fail with, `R` what its systems need, and `HU`
+ * the actions its handlers take.
+ */
 export interface App<E = never, R = never, HU = never> extends Any {
   /**
    * Takes the app over, for what decides on which tick an action is applied
@@ -456,6 +464,11 @@ export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
   }
 }
 
+/**
+ * What an app is made of and how it runs, as `App.make` and `App.load` take
+ * it: its plugins, its own systems, handlers and components, and its
+ * version.
+ */
 export interface Options<
   S extends Systems = readonly [],
   H extends Handlers = readonly [],

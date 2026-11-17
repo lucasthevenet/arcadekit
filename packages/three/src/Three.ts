@@ -94,6 +94,7 @@ interface Kept {
   readonly settle?: () => void;
 }
 
+/** The scene and its camera, as a system gets them from `yield* Three.Scene`. */
 export interface SceneShape {
   /** The scene everything is drawn into. Lights and the rest are added to it. */
   readonly scene: ThreeScene;
@@ -151,6 +152,10 @@ const sceneLayer = Layer.effect(
 
 // --- the renderer ----------------------------------------------------------------
 
+/**
+ * What draws: a renderer of Three.js, or a test's that notes what it was
+ * asked to draw.
+ */
 export interface RendererShape {
   /** Draws the scene as the camera sees it. Called once per frame. */
   readonly render: (scene: ThreeScene, camera: Camera) => void;
@@ -181,6 +186,7 @@ export interface RendererLike {
   dispose(): void;
 }
 
+/** How a page's renderer follows its canvas. */
 export interface FitOptions {
   /**
    * Whether the picture follows the size the canvas has on the page: when
@@ -325,6 +331,7 @@ interface Angle {
   readonly angle: { readonly [row: number]: number };
 }
 
+/** Which entities a drawing system draws. */
 export interface Which {
   /**
    * The component that says an entity is one of these, or several, all of
@@ -1833,6 +1840,10 @@ export interface ObjectsShared<O extends Object3D = Object3D> extends Which {
   readonly free?: (object: O, entity: Entity) => void;
 }
 
+/**
+ * How `Three.objects` makes, updates and frees the object of each entity it
+ * draws.
+ */
 export interface ObjectsOptions<
   O extends Object3D = Object3D,
 > extends ObjectsShared<O> {

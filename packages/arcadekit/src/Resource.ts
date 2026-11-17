@@ -7,6 +7,11 @@
  */
 import { Context, Layer } from "effect";
 
+/**
+ * Makes a resource: a value with a default, which a layer can override.
+ *
+ *   const Gravity = Resource.make("game/Gravity", { defaultValue: () => 9.81 })
+ */
 export const make = <A>(
   key: string,
   options: { readonly defaultValue: () => A }

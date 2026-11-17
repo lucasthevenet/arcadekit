@@ -61,6 +61,10 @@ export class Query<D extends Terms>
 export const all = <const D extends Terms>(...terms: D): Query<D> =>
   new Query(terms, [], []);
 
+/**
+ * Narrows a query to entities that also have these components, without
+ * reading their data: `Query.all(Position).pipe(Query.with(Player))`.
+ */
 const with_: {
   (
     ...defs: readonly ComponentDef<any>[]
@@ -280,5 +284,9 @@ export class Removed extends Effectable.Class<RemovedReader, never, World> {
   }
 }
 
+/**
+ * The entities that lost a component since this system last asked:
+ * `(yield* Query.removed(Burning))`.
+ */
 export const removed = (component: ComponentDef<any>): Removed =>
   new Removed(component);

@@ -13,6 +13,10 @@
  */
 import type * as Scheduler from "effect/Scheduler";
 
+/**
+ * Holds the work fibers have queued until the tick flushes it, in the order
+ * it was queued.
+ */
 export class TickDispatcher implements Scheduler.SchedulerDispatcher {
   private buckets: [priority: number, tasks: Array<() => void>][] = [];
   private flushing = false;
@@ -79,6 +83,11 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
   }
 }
 
+/**
+ * The scheduler an app runs its fibers on: it never pauses a fiber of its
+ * own accord, and runs what was queued only when the tick flushes its
+ * dispatcher.
+ */
 export class TickScheduler implements Scheduler.Scheduler {
   readonly executionMode = "sync" as const;
   readonly dispatcher: TickDispatcher;

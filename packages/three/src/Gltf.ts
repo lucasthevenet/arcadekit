@@ -44,6 +44,7 @@ import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
  */
 export type Model = GLTF;
 
+/** How a model is loaded. */
 export interface ModelOptions {
   /**
    * Handed the loader before it reads the model, once per loading: to give

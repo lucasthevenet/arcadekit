@@ -161,6 +161,9 @@ importers:
       playwright:
         specifier: 1.63.0
         version: 1.63.0
+      rolldown:
+        specifier: 1.2.19
+        version: 1.2.19
       satteri:
         specifier: ^0.11.7
         version: 0.11.7

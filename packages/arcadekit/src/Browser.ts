@@ -67,6 +67,10 @@ export interface PointerTarget extends EventTarget {
   };
 }
 
+/**
+ * How `Browser.runMain` and `Browser.layer` connect a game to the page:
+ * what the pointer is measured against, the gamepads, and sound.
+ */
 export interface Options {
   /**
    * What the pointer is pressed on, and what its place is measured from:

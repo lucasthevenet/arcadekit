@@ -39,7 +39,15 @@ const INDEX_RANGE = 2 ** INDEX_BITS;
 export const GENERATIONS = 2 ** (53 - INDEX_BITS);
 
 // `&` takes a number's low 32 bits, whatever is above them: the index.
+/**
+ * An entity's index: its slot in the world, which a despawned entity's
+ * successor reuses.
+ */
 export const entityIndex = (entity: Entity): number => entity & INDEX_MASK;
+/**
+ * An entity's generation: how many entities had its index before it, which
+ * tells it apart from them.
+ */
 export const entityGeneration = (entity: Entity): number =>
   Math.floor(entity / INDEX_RANGE);
 export const makeEntity = (index: number, generation: number): Entity =>
@@ -49,6 +57,10 @@ export const makeEntity = (index: number, generation: number): Entity =>
 // Fields
 // ---------------------------------------------------------------------------
 
+/**
+ * How a field is stored: a typed array of numbers, an entity, or a value of
+ * any kind.
+ */
 export type FieldKind =
   | "f32"
   | "f64"
@@ -97,6 +109,10 @@ export interface FieldDef<T, C> {
 
 const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
 
+/**
+ * The kinds of field a component is made of. A number goes in a typed
+ * array; anything else says what a snapshot and the hash do with it.
+ */
 export const Field = {
   f32: field<number, Float32Array>("f32"),
   f64: field<number, Float64Array>("f64"),
@@ -220,6 +236,11 @@ export interface ReadOnlyTerm {
   readonly _reads: true;
 }
 
+/**
+ * How a component is stored: in the tables of the entities that have it,
+ * or `"sparse"`, in a set of its own, for one that is added and removed
+ * often.
+ */
 export type Storage = "table" | "sparse";
 
 /**
@@ -323,6 +344,10 @@ export interface ComponentDef<
   readonly of: (value: ValueOf<S>) => ComponentValue<S>;
 }
 
+/**
+ * A component with its value, as `spawn` and `add` take it:
+ * `Position.of({ x: 0, y: 0 })`.
+ */
 export interface ComponentValue<S extends Schema = Schema> {
   readonly def: ComponentDef<S>;
   readonly value: ValueOf<S>;
@@ -699,6 +724,7 @@ const define = <
   return def;
 };
 
+/** Defines components: data, a tag, or a relation to another entity. */
 export const Component = {
   /** Define a data component. Numeric fields become typed-array columns. */
   define: <

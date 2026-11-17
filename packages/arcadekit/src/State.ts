@@ -36,6 +36,10 @@ type Fields = {
   readonly entered: FieldDef<number, Uint8Array>;
 };
 
+/**
+ * A system's handle to a state, from `yield* SomeState`: which state the
+ * game is in, and a way to ask for another.
+ */
 export interface StateHandle<V extends string> {
   /** The state the game is in. */
   readonly value: V;

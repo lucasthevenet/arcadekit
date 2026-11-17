@@ -124,6 +124,10 @@ export interface Origin {
   readonly from: string | undefined;
 }
 
+/**
+ * How an action is applied: the action, and what it does with a payload
+ * and who issued it. Made with `Action.handler`.
+ */
 export interface Handler<N extends string, P, A, E, R> {
   readonly action: ActionDef<N, P, unknown>;
   readonly handle: (payload: P, origin: Origin) => Effect.Effect<A, E, R>;
@@ -206,6 +210,10 @@ export interface Checkpoint {
 /** An entry of `app.actionLog`: an applied action, or a checkpoint. */
 export type LogEntry = Logged | Checkpoint;
 
+/**
+ * Whether an entry of the log is a checkpoint, the world's hash at a tick,
+ * rather than an action.
+ */
 export const isCheckpoint = (entry: LogEntry): entry is Checkpoint =>
   "hash" in entry;
 

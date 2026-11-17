@@ -35,6 +35,11 @@ export interface SavedEvents {
   readonly read: Readonly<Record<string, number>>;
 }
 
+/**
+ * A game held between two ticks, made by `app.save()`: its world as a
+ * snapshot, its time, what was waiting for the next tick, and how long its
+ * log was. `Save.encode` turns it into bytes, and `App.load` goes on from it.
+ */
 export interface Save {
   /**
    * The version of the game that wrote the save: the `version` its app was

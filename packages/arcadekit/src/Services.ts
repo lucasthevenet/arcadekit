@@ -15,6 +15,7 @@ export class World extends Context.Service<World, EcsWorld>()(
   "arcadekit/World"
 ) {}
 
+/** The game's time, as `Time` gives it to a system. */
 export interface TimeState {
   /** Seconds simulated by the current tick. */
   delta: number;
@@ -29,6 +30,7 @@ export class Time extends Context.Service<Time, Readonly<TimeState>>()(
   "arcadekit/Time"
 ) {}
 
+/** The frame being drawn, as `Frame` gives it to a system of the frame stage. */
 export interface FrameState {
   /**
    * How far this frame is between the last tick and the next: from 0, just

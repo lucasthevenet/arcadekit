@@ -268,6 +268,10 @@ export const layer = (bridge: Bridge): Layer.Layer<never> =>
 
 // --- the app's end of the bridge ---------------------------------------------------
 
+/**
+ * The app's end of the bridge to a UI: what a system of the frame stage
+ * publishes views through.
+ */
 export interface PortShape {
   /** Whether a UI is there to be told. False on a server, in a replay, in most tests. */
   readonly connected: boolean;

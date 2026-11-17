@@ -5,10 +5,11 @@
   "description": "The arcadekit docs site (arcadekit.dev), built from docs/ and the packages' READMEs",
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
+    "packages": "pnpm -w run build:packages",
+    "dev": "pnpm run packages && astro dev",
+    "build": "pnpm run packages && astro build",
     "preview": "astro preview",
-    "typecheck": "astro sync && tsc -p . && node scripts/check-snippets.mjs",
+    "typecheck": "pnpm run packages && astro sync && tsc -p . && node scripts/check-snippets.mjs",
     "snippets": "node scripts/check-snippets.mjs",
     "images": "node scripts/generate-images.mjs",
     "plan": "alchemy plan",
@@ -32,6 +33,7 @@
     "astro": "^7.4.12",
     "effect": "~4.1.4",
     "playwright": "1.63.0",
+    "rolldown": "1.2.19",
     "satteri": "^0.11.7",
     "starlight-sidebar-topics": "^0.9.0",
     "three": "^0.187.0"

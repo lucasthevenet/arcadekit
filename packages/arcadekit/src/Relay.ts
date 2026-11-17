@@ -89,6 +89,10 @@ export class Refused extends Data.TaggedError("RelayRefused")<{
   readonly code: number;
 }> {}
 
+/**
+ * How a relay's rooms are kept: how many peers one takes, and which names
+ * it lets in.
+ */
 export interface Options {
   /**
    * The most peers a room takes: 8 when left out. One more is refused

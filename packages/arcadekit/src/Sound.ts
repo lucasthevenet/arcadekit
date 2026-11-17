@@ -89,6 +89,10 @@ const nameOf = (sound: Playable): string =>
 
 // --- where sound goes ------------------------------------------------------------
 
+/**
+ * What plays sound: an output, such as a page's Web Audio. The player
+ * tells it what to play once a frame has run.
+ */
 export interface OutputShape {
   /**
    * Starts a cue now: at `volume`, where 1 is the cue as it was recorded,
@@ -151,6 +155,10 @@ export interface Scored {
   readonly once?: true;
 }
 
+/**
+ * An output that notes what it is told and plays nothing, from
+ * `Sound.makeRecorder()`.
+ */
 export interface Recorder extends OutputShape {
   /** Every cue it was asked to play, oldest first. */
   readonly played: Played[];
@@ -238,6 +246,7 @@ export interface MusicOptions {
   readonly once?: boolean;
 }
 
+/** The player, as a system of the frame stage gets it from `yield* Sound.Player`. */
 export interface PlayerShape {
   /** Whether sound goes anywhere. False on a server, in a replay, in most tests. */
   readonly audible: boolean;
@@ -445,6 +454,10 @@ const Flush = System.make("arcadekit/Sound.Flush", function* () {
   (yield* Player)._flush();
 }).pipe(System.inStage("postFrame"));
 
+/**
+ * Plays what the frame's systems ask for. A game that has cues or music
+ * lists it among its plugins.
+ */
 export const plugin = Plugin.make("arcadekit/Sound", {
   layer: playerLayer,
   systems: [Flush],

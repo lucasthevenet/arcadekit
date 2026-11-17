@@ -161,6 +161,10 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
 
 // --- where bytes come from ---------------------------------------------------------
 
+/**
+ * What fetches an asset's bytes. In a page it is `fetch`; a test provides
+ * one that reads from memory.
+ */
 export interface LoaderShape {
   /** The bytes at a URL. Interrupting it gives up the request. */
   readonly bytes: (url: string) => Effect.Effect<Uint8Array, AssetFailed>;

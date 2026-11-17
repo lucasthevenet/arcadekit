@@ -34,6 +34,10 @@ import type * as Lockstep from "./Lockstep";
 import { build } from "./Lockstep";
 import type * as Save from "./Save";
 
+/**
+ * How a rollback session is set up: this peer, every peer, and how far it
+ * runs ahead of what it has heard.
+ */
 export interface Options {
   /** This peer's name. */
   readonly peer: string;

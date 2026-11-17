@@ -123,6 +123,11 @@ export interface Resolved {
   readonly scripts: boolean;
 }
 
+/**
+ * A system: one Effect that runs once per tick, or once per frame, in its
+ * stage. Made with `System.make`; `E` is what it can fail with and `R` what
+ * it needs.
+ */
 export interface System<out E = never, out R = never> extends Pipeable {
   readonly name: string;
   readonly stage: Stage;

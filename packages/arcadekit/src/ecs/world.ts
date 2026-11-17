@@ -437,6 +437,10 @@ export class RelationIndex {
 // Change logs (one per watched component and kind of change)
 // ---------------------------------------------------------------------------
 
+/**
+ * What a change query visits: entities whose component was written, added
+ * or removed.
+ */
 export type ChangeKind = "changed" | "added" | "removed";
 
 /** A reader's place in a change log. @internal */
@@ -896,6 +900,7 @@ const describeSpec = (spec: QuerySpec<any>): string => {
 // Queries
 // ---------------------------------------------------------------------------
 
+/** The components a query reads, in the order its loop is given them. */
 export type Terms = readonly ComponentDef<any>[];
 
 /**
@@ -1022,6 +1027,10 @@ interface Members {
 type Callback = (...args: any[]) => void;
 type OnRun = (table: Table, start: number, end: number) => void;
 
+/**
+ * A query over one world: what a system gets from `yield* SomeQuery`, to
+ * loop over with `each`.
+ */
 export class QueryView<D extends Terms = Terms> {
   /** The world's count of restores when this view was made. */
   private readonly restored: number;
@@ -1942,6 +1951,11 @@ export class QueryView<D extends Terms = Terms> {
 // World
 // ---------------------------------------------------------------------------
 
+/**
+ * The storage core: entities, the tables of their components, sparse
+ * sets, singletons and change logs. Plain synchronous code with no Effect;
+ * an app holds one and gives it to systems as the `World` service.
+ */
 export class World {
   private recTable = new Int32Array(1024).fill(FREE);
   private recRow = new Int32Array(1024);

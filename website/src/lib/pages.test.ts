@@ -123,18 +123,46 @@ describe("the sidebar", () => {
     ]);
     // Every page is in a topic.
     const listed = JSON.stringify(topics);
-    for (const page of pages.repository) {
+    for (const page of [...pages.docs, ...pages.modules]) {
       expect(listed).toContain(`"${page.slug}"`);
+    }
+    for (const page of pages.packages) {
+      expect(listed).toContain(`"${page.link}"`);
     }
   });
 
-  it("lists the packages, then the roadmap and the conventions, in Reference", () => {
-    const groups = labelled(outlinedGroups(discoverPages()));
-    expect(groups.Packages).toStrictEqual([
-      "reference/arcadekit",
-      "reference/three",
+  it("lists each package with its overview and its modules, then the project, in Reference", () => {
+    const groups = outlinedGroups(discoverPages()).filter(
+      (group) => group.topic === "reference"
+    );
+    expect(groups.map((group) => group.label)).toStrictEqual([
+      "arcadekit",
+      "@arcadekit/three",
+      "The project",
     ]);
-    expect(groups["The project"]).toStrictEqual(["roadmap", "conventions"]);
+    expect(groups[0]?.items.slice(0, 2)).toStrictEqual([
+      { label: "Overview", link: "/reference/arcadekit" },
+      "reference/arcadekit/Action",
+    ]);
+    expect(groups[1]?.items).toStrictEqual([
+      { label: "Overview", link: "/reference/three" },
+      "reference/three/Gltf",
+      "reference/three/Three",
+    ]);
+    expect(groups[2]?.items).toStrictEqual(["roadmap", "conventions"]);
+  });
+
+  it("has a page for each module a package exports, but the package's own entry", () => {
+    const modules = discoverPages().modules;
+    expect(modules.map((page) => page.link)).toContain(
+      "/reference/arcadekit/Sound"
+    );
+    expect(modules.map((page) => page.link)).not.toContain(
+      "/reference/arcadekit/index"
+    );
+    expect(modules.find((page) => page.name === "Sound")?.file).toBe(
+      "packages/arcadekit/src/Sound.ts"
+    );
   });
 });
 

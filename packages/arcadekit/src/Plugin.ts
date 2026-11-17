@@ -35,7 +35,9 @@ import type { Listed } from "./ecs/component";
 import type { BuiltIn } from "./Services";
 import type * as System from "./System";
 
+/** Any system, whatever it fails with or needs. */
 export type AnySystem = System.System<any, any>;
+/** Any action handler, whatever its action, its result or its needs. */
 export type AnyHandler = Action.Handler<any, any, any, any, any>;
 
 /**
@@ -74,19 +76,26 @@ export interface Plugin<
   };
 }
 
+/** Any plugin, whatever its types. */
 export type Any = Plugin<any, any, any, any, any, any>;
 
 // Distributive, so they work on a union of plugins and give `never` for none.
+/** What a plugin's systems can fail with, or a union's. */
 export type TickErrorOf<T> =
   T extends Plugin<infer X, any, any, any, any, any> ? X : never;
+/** A plugin's action handlers, or a union's. */
 export type HandlerOf<T> =
   T extends Plugin<any, infer X, any, any, any, any> ? X : never;
+/** The services a plugin's layer provides, or a union's. */
 export type ProvidedOf<T> =
   T extends Plugin<any, any, infer X, any, any, any> ? X : never;
+/** What building a plugin's layer or running its setup can fail with. */
 export type ErrorOf<T> =
   T extends Plugin<any, any, any, infer X, any, any> ? X : never;
+/** What a plugin's layer needs that its dependencies do not provide. */
 export type LayerNeedsOf<T> =
   T extends Plugin<any, any, any, any, infer X, any> ? X : never;
+/** What a plugin's systems, handlers and setup need. */
 export type NeedsOf<T> =
   T extends Plugin<any, any, any, any, any, infer X> ? X : never;
 
@@ -101,6 +110,20 @@ type LayerNeeds<L> = L extends Layer.Layer<any, any, infer RIn> ? RIn : never;
 type EffectError<T> = T extends Effect.Effect<any, infer E, any> ? E : never;
 type EffectNeeds<T> = T extends Effect.Effect<any, any, infer R> ? R : never;
 
+/**
+ * Makes a plugin: a feature of a game, with the plugins it depends on, its
+ * systems, its action handlers, its components, the services its layer
+ * provides, what it does at the start, and its scripts.
+ *
+ *   const Combat = Plugin.make("game/Combat", {
+ *     plugins: [Physics],
+ *     components: [Health, Damage],
+ *     systems: [ApplyDamage, Die],
+ *     handlers: [Attack],
+ *   })
+ *
+ * A plugin that two others depend on is installed once.
+ */
 export const make = <
   S extends readonly AnySystem[] = readonly [],
   H extends readonly AnyHandler[] = readonly [],
