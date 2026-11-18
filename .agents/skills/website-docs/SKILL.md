@@ -20,9 +20,12 @@ A package's README is neither. It is what GitHub and npm show: a sentence or two
    - a link: "Links";
    - how a module's page is made from its doc comments: "The reference of a module";
    - the site's look, its images, or deploying it: the section of that name.
-2. Write it in the voice of [Effect's](https://effect.website/docs) and [Alchemy's](https://alchemy.run) docs:
+2. Write it to these rules:
    - Open a page with what the thing is and what it is for, the term in bold: "A **system** is ...".
-   - Address the reader as "you", and say what the library does in the present tense, with the words a TypeScript developer already knows: "defaults to", "interpolate", "release", "is responsible for".
+   - Address the reader as "you", and say what the library does in the present tense and the active voice.
+   - Use the words a TypeScript developer already knows: "defaults to", "interpolate", "release", "read-only", "requires", "is responsible for". Not coined phrasing such as "when left out", "let go", "only reads" or "is the game's to".
+   - Keep sentences short and direct: one fact per sentence, the subject first, no inverted or archaic constructions ("Of a frame's three stages it is in the first").
+   - Describe arcadekit as it is: no history of what it once did, no plans, and no comparison with other libraries to justify a design.
    - Give a section a heading that names its task or its subject ("Defining a component", "Field types"), show the code, then explain it.
    - Put options in a table with their defaults, and caveats in a list where the reader meets them.
    - Name things as the site's concepts and guides already name them. They are the map of what a game's author sees.
