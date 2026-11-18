@@ -1,18 +1,17 @@
 # Docs site
 
-The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose own pages, the walkthrough, the concepts and the guides, are under [`src/content/docs/`](src/content/docs). The reference is made from the code: a page for each module, from its doc comments, and the repository's own markdown, the packages' READMEs, the roadmap and the conventions, read where it is. No text is copied, so there is one to keep right.
+The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose own pages, the walkthrough, the concepts and the guides, are under [`src/content/docs/`](src/content/docs). The reference is made from the code: a page for each module, from its doc comments, and the packages' READMEs, read where they are. No text is copied, so there is one to keep right.
 
 The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's](https://alchemy.run) are, in three topics, each with a sidebar of its own ([starlight-sidebar-topics](https://starlight-sidebar-topics.netlify.app)):
 
 - **Learn**: the walkthrough, the concepts, and the examples.
 - **Guides**: a guide for each task, and testing.
-- **Reference**: for each package, its README as an overview, then a page for each of its modules; then the roadmap and the conventions.
+- **Reference**: for each package, its README as an overview, then a page for each of its modules.
 
 | Address | File |
 | --- | --- |
 | `/` | [`src/content/docs/index.mdx`](src/content/docs/index.mdx), the landing page, whose text is the site's own |
 | `/<path>`, such as `/making-a-game`, `/concepts/determinism` and `/guides/input` | `src/content/docs/<path>.md`: the walkthrough, the concepts and the guides |
-| `/roadmap` and `/conventions` | `ROADMAP.md` and `docs/conventions.md`, the project's own |
 | `/reference/<package>`, such as `/reference/arcadekit` and `/reference/three` | `packages/<package>/README.md`, which npm shows too |
 | `/reference/<package>/<Module>`, such as `/reference/arcadekit/Sound` | the module's doc comments, from `packages/<package>/dist/<Module>.d.ts` ([The reference of a module](#the-reference-of-a-module)) |
 
@@ -27,7 +26,7 @@ pnpm --filter @arcadekit/website preview    # serve the built site
 
 A markdown file under [`src/content/docs/`](src/content/docs) is a page as soon as it exists, at its path there. It is a Starlight page, with a frontmatter that gives its `title` and its `description`, the line under a shared link. Its body starts after the frontmatter, with no `# ` heading: Starlight writes the title.
 
-The roadmap, `ROADMAP.md`, a file directly in `docs/` and a new package's README are pages too, read where they are: [`src/lib/pages.ts`](src/lib/pages.ts) finds them. They have no frontmatter, since GitHub would show it: such a file starts with a `# ` heading, its title, then a paragraph, its description, and one that doesn't fails the build. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
+A new package's README is a page too, read where it is: [`src/lib/pages.ts`](src/lib/pages.ts) finds them. It has no frontmatter, since GitHub would show it: it starts with a `# ` heading, its title, then a paragraph, its description, and one that doesn't fails the build. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one. The repository's other markdown, the roadmap and the agents' skills, is not on the site: a page links to it on GitHub, by its relative path.
 
 [`src/lib/sidebar.ts`](src/lib/sidebar.ts) places each page in its topic. Its `OUTLINE` names the pages in order, in groups: a page it doesn't name goes at the end of its folder's group, so a new concept is listed at the end of Concepts, a new guide under Guides' "More" and a new package under Packages, until the outline places it. A page the outline names that doesn't exist fails the build.
 

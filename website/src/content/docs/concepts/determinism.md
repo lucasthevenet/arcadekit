@@ -45,7 +45,7 @@ The frame stage draws and plays sound with the world frozen. A game that is draw
 
 ## What is not checked
 
-Some ways to break determinism aren't caught by the types or at run time: a fiber started with `Effect.forkDetach`, a write through a raw column during the frame stage, a script that keeps its progress in its own variables when the game is loaded. The roadmap keeps the list, under [To revisit before a stable release](/roadmap#to-revisit-before-a-stable-release).
+Some ways to break determinism aren't caught by the types or at run time: a fiber started with `Effect.forkDetach`, a write through a raw column during the frame stage, a script that keeps its progress in its own variables when the game is loaded. The roadmap keeps the list, under [To revisit before a stable release](../../../../../ROADMAP.md#to-revisit-before-a-stable-release), on GitHub.
 
 ## Read more
 

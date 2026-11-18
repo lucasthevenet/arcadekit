@@ -12,8 +12,7 @@ import { REPO_ROOT } from "./site.ts";
 const REPO_URL = "https://github.com/lucasthevenet/arcadekit";
 const KIT = "packages/arcadekit/README.md";
 const THREE = "packages/three/README.md";
-const ROADMAP = "ROADMAP.md";
-const CONVENTIONS = "docs/conventions.md";
+const GUIDE = "website/src/content/docs/guides/input.md";
 
 const makeRewriter = () => {
   const reported: DeadLink[] = [];
@@ -25,8 +24,7 @@ const makeRewriter = () => {
       ["website/src/content/docs/index.mdx", "/"],
       [KIT, "/reference/arcadekit"],
       [THREE, "/reference/three"],
-      [ROADMAP, "/roadmap"],
-      [CONVENTIONS, "/conventions"],
+      [GUIDE, "/guides/input"],
     ]),
     onDeadLink: (link) => reported.push(link),
   });
@@ -48,8 +46,12 @@ describe("a relative link in a README", () => {
     expect(rewrite("../arcadekit/README.md", THREE)).toBe(
       "/reference/arcadekit"
     );
-    expect(rewrite("../../ROADMAP.md", KIT)).toBe("/roadmap");
-    expect(rewrite("docs/conventions.md", ROADMAP)).toBe("/conventions");
+    expect(rewrite("../../website/src/content/docs/guides/input.md", KIT)).toBe(
+      "/guides/input"
+    );
+    expect(rewrite("../../../../../packages/three/README.md", GUIDE)).toBe(
+      "/reference/three"
+    );
     expect(deadLinks()).toStrictEqual([]);
   });
 
@@ -64,13 +66,19 @@ describe("a relative link in a README", () => {
     expect(rewrite("../arcadekit/README.md#input", THREE)).toBe(
       "/reference/arcadekit#input"
     );
-    expect(rewrite("../../ROADMAP.md?plain=1#housekeeping", KIT)).toBe(
-      "/roadmap?plain=1#housekeeping"
-    );
+    expect(
+      rewrite(
+        "../../website/src/content/docs/guides/input.md?plain=1#bindings",
+        KIT
+      )
+    ).toBe("/guides/input?plain=1#bindings");
   });
 
   it("goes to GitHub when the file is not a page", () => {
     const { rewrite, deadLinks } = makeRewriter();
+    expect(rewrite("../../ROADMAP.md", KIT)).toBe(
+      `${REPO_URL}/blob/main/ROADMAP.md`
+    );
     expect(rewrite("src/App.ts", KIT)).toBe(
       `${REPO_URL}/blob/main/packages/arcadekit/src/App.ts`
     );
@@ -131,9 +139,12 @@ describe("the plugin", () => {
 describe("a full link", () => {
   it("goes to the page when it names a page's file on GitHub", () => {
     const { rewrite } = makeRewriter();
-    expect(rewrite(`${REPO_URL}/blob/main/ROADMAP.md#housekeeping`, KIT)).toBe(
-      "/roadmap#housekeeping"
-    );
+    expect(
+      rewrite(
+        `${REPO_URL}/blob/main/website/src/content/docs/guides/input.md#bindings`,
+        KIT
+      )
+    ).toBe("/guides/input#bindings");
     expect(rewrite(`${REPO_URL}/tree/main/packages/three`, KIT)).toBe(
       "/reference/three"
     );

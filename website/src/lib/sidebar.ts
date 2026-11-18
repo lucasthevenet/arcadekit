@@ -31,8 +31,7 @@ export type TopicId = "learn" | "guides" | "reference";
 
 /**
  * Where the pages the outline doesn't name go: the group whose `section` is the folder of
- * src/content/docs/ they are in, `"project"` for the roadmap or a file of `docs/`, or `"packages"` for a
- * package's README.
+ * src/content/docs/ they are in, or `"packages"` for a package's README.
  */
 type Section = string;
 
@@ -123,12 +122,6 @@ export const OUTLINE: readonly (Group & {
     label: "Packages",
     section: "packages",
     items: ["reference/arcadekit", "reference/three"],
-  },
-  {
-    topic: "reference",
-    label: "The project",
-    section: "project",
-    items: ["roadmap", "conventions"],
   },
 ];
 

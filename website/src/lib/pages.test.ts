@@ -29,7 +29,7 @@ describe("the site's pages", () => {
   const pages = discoverPages();
 
   it("has a page for each file under src/content/docs/, at its path there", () => {
-    const own = pages.docs.filter((page) => page.section !== "project");
+    const own = pages.docs;
     const links = own.map((page) => page.link);
     expect(links).toContain("/making-a-game");
     expect(links).toContain("/guides/input");
@@ -40,13 +40,12 @@ describe("the site's pages", () => {
     }
   });
 
-  it("has the roadmap and the conventions, read where they are", () => {
-    expect(pages.repository.map((page) => [page.file, page.link])).toEqual(
-      expect.arrayContaining([
-        ["docs/conventions.md", "/conventions"],
-        ["ROADMAP.md", "/roadmap"],
-      ])
-    );
+  it("reads no markdown of the repository but the packages' READMEs: the roadmap is not a page", () => {
+    expect(pages.repository.map((page) => page.file)).toStrictEqual([
+      "packages/arcadekit/README.md",
+      "packages/three/README.md",
+    ]);
+    expect(pages.all.map((page) => page.link)).not.toContain("/roadmap");
   });
 
   it("has each package's README at /reference/<its folder>", () => {
@@ -131,14 +130,13 @@ describe("the sidebar", () => {
     }
   });
 
-  it("lists each package with its overview and its modules, then the project, in Reference", () => {
+  it("lists each package with its overview and its modules in Reference", () => {
     const groups = outlinedGroups(discoverPages()).filter(
       (group) => group.topic === "reference"
     );
     expect(groups.map((group) => group.label)).toStrictEqual([
       "arcadekit",
       "@arcadekit/three",
-      "The project",
     ]);
     expect(groups[0]?.items.slice(0, 2)).toStrictEqual([
       { label: "Overview", link: "/reference/arcadekit" },
@@ -149,7 +147,6 @@ describe("the sidebar", () => {
       "reference/three/Gltf",
       "reference/three/Three",
     ]);
-    expect(groups[2]?.items).toStrictEqual(["roadmap", "conventions"]);
   });
 
   it("has a page for each module a package exports, but the package's own entry", () => {

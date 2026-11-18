@@ -1,6 +1,6 @@
 # Roadmap
 
-What to build next, in order, and why in that order. The package's [README](packages/arcadekit/README.md) says what exists today; [conventions](docs/conventions.md) says how to write what comes next.
+What to build next, in order, and why in that order. The package's [README](packages/arcadekit/README.md) says what exists today; the [`arcadekit-development` skill](.agents/skills/arcadekit-development/SKILL.md) says how to write what comes next.
 
 Each item says what it is for, what has to be true for it to be done, and what it depends on. An item is not done until it has tests that fail when it is broken, and an entry in the README.
 
