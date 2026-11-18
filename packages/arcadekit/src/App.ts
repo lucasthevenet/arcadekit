@@ -175,8 +175,9 @@ export interface Any {
   /**
    * Whether the game is at rest: a tick now would find nothing waiting for
    * it. It is false while an action waits to be applied, a state waits to
-   * be entered, a script waits for the next tick or sleeps, or an event
-   * waits that some system has not had its chance at.
+   * be entered, a script waits for the next tick or sleeps, a fiber is due,
+   * or an event waits that some system has not had its chance at. Looking
+   * changes nothing.
    *
    * A driver told to tick only when needed asks this, so that a game that
    * moves when its player does stands still in between. A system that
@@ -639,7 +640,7 @@ export interface RunOptions<
    * Runs once, when the app is made and before its first frame, with the
    * app: to wire what is outside the game to it (a button that dispatches,
    * a menu that saves), or to keep hold of it. What it acquires is let go
-   * with the app.
+   * with the app, and what it needs and can fail with are `run`'s.
    */
   readonly ready?: (app: A) => Effect.Effect<void, E2, R2>;
 }
@@ -647,11 +648,7 @@ export interface RunOptions<
 /**
  * The entry point: makes the app and runs it until it is interrupted.
  *
- *   BrowserRuntime.runMain(
- *     App.run({ plugins: [Game] }, { hz: 60 }).pipe(
- *       Effect.provide(Input.layerBrowser({ target: canvas }))
- *     )
- *   )
+ *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas })
  *
  * It is `App.make` and `Driver.frames` in a scope of their own: the app is
  * made, `ready` runs if there is one, and the frame loop follows the
@@ -665,7 +662,7 @@ export interface RunOptions<
  *
  * What the game needs from outside is provided to it as to `App.make`,
  * and stays provided for as long as it runs, which is what a layer that
- * listens, such as `Input.layerBrowser`, needs. It fails with what
+ * listens, such as `Browser.layer`, needs. It fails with what
  * `App.make` and `ready` can fail with, and dies with what a tick throws.
  *
  * It runs wherever there is a display, which outside a page is a timer:

@@ -269,7 +269,10 @@ export type Status<A> =
   | { readonly _tag: "Absent" }
   | { readonly _tag: "Loading" }
   | { readonly _tag: "Ready"; readonly assets: A }
-  /** It could not be loaded. It is tried again when it is next asked for afresh. */
+  /**
+   * It could not be loaded, which is logged once. Nothing is kept of what
+   * did load, and it is tried again when it is next asked for afresh.
+   */
   | { readonly _tag: "Failed"; readonly error: AssetFailed };
 
 const ABSENT: Status<never> = { _tag: "Absent" };
@@ -324,8 +327,16 @@ export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
  *   }))                                   // let go here
  *
  * It waits in real time, so it is for the entry point and for a plugin's
- * `layer`, which is built before the game starts, and not for a system or
- * a script.
+ * `layer`, which is built before the game starts and holds what it loads
+ * for as long as the app:
+ *
+ *   Layer.effect(Fonts, Assets.load(Common))
+ *
+ * **Gotchas**
+ *
+ * It is not for a system or a script, and nothing refuses it there: a
+ * script that loads resumes in whatever tick the file arrives in, and a
+ * replay of it fetches the file again.
  *
  * @category Running
  */
@@ -381,7 +392,18 @@ export interface StoreShape {
 
 /**
  * The bundles an app has loaded. `Assets.plugin` provides it,
- * `Assets.during` works it, and `yield*` on a bundle reads it.
+ * `Assets.during` works it, and `yield*` on a bundle reads it. A system of
+ * the game's own, in the frame stage or the input stage, keeps a bundle
+ * with it too: the bundle stays loaded while anyone holds it.
+ *
+ *   const store = yield* Assets.Store
+ *   store.hold(Forest, "game/Map")    // loading from now, if nobody held it
+ *   store.drop(Forest, "game/Map")    // let go, if nobody else holds it
+ *
+ * A load is given what the app was given from outside and none of the
+ * app's own services, so nothing it does is the game's doing: the random
+ * numbers a loader draws, to wait a while before it tries again, are not
+ * the world's.
  *
  * @category Services
  */

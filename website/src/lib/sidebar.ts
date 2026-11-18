@@ -84,6 +84,7 @@ export const OUTLINE: readonly (Group & {
     label: "The simulation",
     items: [
       "guides/components",
+      "guides/transforms",
       "guides/queries",
       "guides/systems",
       "guides/system-access",

@@ -16,13 +16,17 @@
  *
  * A game uses one of the two for a thing, not both. They are different
  * components, with different names, and nothing keeps one in step with
- * the other.
+ * the other: a system that queries `Transform3d.Position` does not find
+ * an entity that has only `Transform2d.Position`. A save names each as
+ * the world does, by the module and the component:
+ * `"arcadekit/Transform2d.Position"`.
  */
 import { Component, Field } from "./ecs/component";
 import * as Plugin from "./Plugin";
 
 /**
- * Where an entity is, in the units of the game's space.
+ * Where an entity is, in the units of the game's space. Added with no
+ * value, it is at the origin.
  *
  * @category Components
  */
@@ -44,6 +48,12 @@ export const Rotation = Component.define("arcadekit/Transform2d.Rotation", {
 
 /**
  * How large an entity is, along each axis: 1 is the size it is made at.
+ *
+ * **Gotchas**
+ *
+ * Added with no value it is all zeros, as any component is, which is no
+ * size at all: what draws from it draws nothing. Give it its value where
+ * it is added.
  *
  * @category Components
  */

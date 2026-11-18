@@ -18,16 +18,27 @@ The simulation reads nothing the replay won't have.
 
 | Instead of | Use |
 | --- | --- |
-| `Date.now()`, `performance.now()` | `Time`: the game's time, which passes by one fixed step a tick |
+| `Date.now()`, `performance.now()`, Effect's `Clock` | `Time`: the game's time, which passes by one fixed step a tick |
 | `Math.random()` | `Random`: seeded, the same numbers on every machine |
-| `setTimeout`, `Effect.sleep`, a promise | `Script.sleep`, `Script.nextTick`, or an event's `wait` |
+| `setTimeout`, `Effect.sleep`, a `Schedule`, a promise | `Script.sleep`, `Script.nextTick`, or an event's `wait` |
+| `Effect.forkChild` in a system | `Script.spawn` |
 | Reading a key in a tick | An action, issued in the input stage and logged |
 | Loading a file in a tick | An action whose payload is what the file held |
+| Playing a sound in a tick | An event, which a cue of the frame stage plays |
+| Drawing in a tick | A system of the frame stage |
 | A field changed between ticks from outside | An action |
 
-The seed is given at the entry point, `App.run({ plugins, seed: Date.now() }, ...)`. Everything inside the rules stays repeatable.
+- **Randomness.** `const random = yield* Random` gives the world's generator, and its methods are plain calls, such as `random.next()`. Its state is in the world, so a replay draws the same numbers. Inside an app Effect's own `Random` is seeded from it too, at the cost of an Effect per draw. The seed is given at the entry point, `App.run({ plugins, seed: Date.now() }, ...)`. Everything inside the rules stays repeatable.
+- **Waiting.** A timer, a promise, `Effect.sleep` and a `Schedule` all resume outside the tick, at a moment no replay repeats. A [script](../guides/scripts.md) waits on the game's time.
+- **Fibers.** A child started with `Effect.forkChild` in a system is interrupted when the tick's fiber ends. `Script.spawn` starts a script the app watches: it reports a failure, and interrupts the script when its scope closes.
+- **Order.** The simulation doesn't depend on the order of a `Map` or a `Set` it didn't fill itself in a fixed order. And two systems that touch the same thing give a different game in another order: a system can say what it reads and writes, and the app then lists the pairs whose order nothing says. See [systems](../guides/systems.md#saying-what-a-system-touches).
+- **Devices, files, sound and drawing** follow real time, so they are outside the tick: in the input stage and the frame stage. A tick can't tell whether a file was loaded, a sound was heard or a frame was drawn. See [ticks and frames](ticks-and-frames.md).
 
-Order matters too: two systems that touch the same thing give a different game in another order. A system can say what it reads and writes, and the app then lists the pairs whose order nothing says. See [systems](../guides/systems.md#saying-what-a-system-touches).
+## What runs in real time
+
+An app runs its fibers on a scheduler of its own, so a fiber resumes only when a tick lets it. Don't provide another `Scheduler` to code inside an app.
+
+What has to go on in real time while the game runs, as loading does, is not code inside the app. A service started in a plugin's `layer`, which is built before the app's scheduler is in place, forks it with the context it found there, `Effect.context` and then `Effect.runForkWith`, less the app's own services. Those are the game's: inside an app Effect's `Random` is the world's generator, and whatever runs in real time and draws from it has changed the game. [Assets](../guides/assets.md) are loaded that way.
 
 ## The world's hash
 
@@ -45,7 +56,16 @@ The frame stage draws and plays sound with the world frozen. A game that is draw
 
 ## What is not checked
 
-Some ways to break determinism aren't caught by the types or at run time: a fiber started with `Effect.forkDetach`, a write through a raw column during the frame stage, a script that keeps its progress in its own variables when the game is loaded.
+Some ways to break determinism aren't caught by the types or at run time:
+
+- A wait in real time, `Effect.sleep` or a promise, resumes outside the tick. Nothing refuses it.
+- A fiber started with `Effect.forkDetach` outlives the tick, and the app doesn't watch it: its failure is silent unless whoever started it looks.
+- [`Assets.load`](../guides/assets.md) in a script resumes in whatever tick the file arrives in.
+- A write through a raw column during the frame stage or the input stage is found only by an app made with `verifyFrames`.
+- A tick reads the devices unless it is told not to. A tool that runs a game again from its log by hand says `app.tick(delta, { input: false })`, as `App.replay` does, or the keys of the machine it runs on join in.
+- A script that keeps its progress in its own variables starts over when the game is loaded.
+
+In a game of several peers a break of these rules doesn't go unnoticed for long: the peers compare the hashes of their worlds, and a session stops with `Lockstep.Drifted`, which says the tick they last agreed at. A test of such a game runs two apps of it side by side and compares their hashes. See [several players](several-players.md).
 
 ## Read more
 

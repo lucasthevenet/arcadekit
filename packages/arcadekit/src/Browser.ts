@@ -307,12 +307,17 @@ const listen = (
  *   document is hidden.
  * - A key's code is `KeyboardEvent.code`. A key held down went down once,
  *   and every key and pointer button goes up when the page loses focus.
- * - `PointerX` and `PointerY` are CSS pixels from the top left of `target`.
- *   Presses are heard on `target`, moves and releases on the whole page.
- * - Gamepads are read when the app samples, once per tick.
+ * - The pointer is a mouse, a pen or a finger. `PointerX` and `PointerY`
+ *   are CSS pixels from the top left of `target`. Presses are heard on
+ *   `target`, moves and releases on the whole page.
+ * - The buttons of a mouse held together are followed one by one, though
+ *   a page tells of all but the first press and the last release as moves.
+ * - Gamepads are read when the app samples, once per tick. One that is
+ *   unplugged lets go of everything.
  * - It listens from when it is built until its scope closes, so provide it
  *   to the whole program and not to `App.make` alone. `Browser.runMain`
- *   does.
+ *   does. Provided to `App.make` alone it is let go as soon as the app is
+ *   made, and the first reading of the devices throws and says so.
  *
  * @category Layers
  */
