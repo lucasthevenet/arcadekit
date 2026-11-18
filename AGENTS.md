@@ -2,7 +2,7 @@ This is arcadekit: primitives for browser games on Effect 4 and Three.js, an ent
 
 arcadekit is alpha, with no users to protect, so a better design wins over compatibility. Say what breaks in the changeset, the commit and the PR.
 
-Every session reads this file, so it holds only what every task needs, and `scripts/agents.test.ts` holds it to a size. What one kind of work needs is in a skill, read when the work is of that kind.
+Every session reads this file, so it holds only what every task needs. What one kind of work needs is in a skill, read when the work is of that kind.
 
 ## What to read, and when
 
@@ -50,7 +50,6 @@ A change is not done until it has been run and shown to work. Reasoning that it 
 | The loops of `@arcadekit/three` that draw | Also `pnpm --filter @arcadekit/three bench` |
 | A package's exports or build, or what a module imports | Also `pnpm build:packages && pnpm lint:packages` |
 | `website/`, or a doc comment | `pnpm --filter @arcadekit/website typecheck` and `pnpm build:docs` |
-| This file, a skill, the roadmap | `pnpm test scripts/agents.test.ts` |
 
 CI runs `pnpm check`, `pnpm test` and `pnpm build`, on a pull request `pnpm build:packages && pnpm lint:packages`, and the `Benchmarks` workflow when the storage core changes. `pnpm check` is formatting plus oxlint's default rules; there are no style rules.
 
