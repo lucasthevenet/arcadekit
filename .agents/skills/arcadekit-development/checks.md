@@ -20,7 +20,7 @@ Which kind of check a rule gets:
 | --- | --- |
 | What a caller may write | A type, with a type test: `// @ts-expect-error` above the line that must not compile |
 | What code may do as it runs | A refusal there, thrown or `Effect.die`, whose message says who, what, and what to do instead |
-| What a file may import or contain | A rule of the Oxlint plugin in `tooling/lint/plugin.ts`, turned on in `oxlint.config.ts`, with its cases in `plugin.test.ts` |
+| What a file may import or contain | A rule of the Oxlint plugin in `tooling/lint/plugin.ts`, turned on in `oxlint.config.ts` |
 | What the sources hold together (every file behind an entry, the exports a module gives) | A test that reads the sources, as `test/entries.test.ts` does |
 | What every member of a kind must do (every writer, every way into the world) | A test with a list of them that a new one is added to |
 | What must stay fast | A variant of the benchmark, which `bench:compare` holds |

@@ -1,6 +1,5 @@
 // The Oxlint plugin `arcadekit`: the rules of what a source file of a published package may
-// import or contain. oxlint.config.ts turns them on for packages/*/src, and plugin.test.ts shows
-// each one going red.
+// import or contain. oxlint.config.ts turns them on for packages/*/src.
 import type { RuleTester } from "oxlint/plugins-dev";
 
 import { mayReach, packages } from "./entries.ts";
