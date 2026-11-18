@@ -47,7 +47,7 @@ export const OUTLINE: readonly (Group & {
     topic: "learn",
     label: "Get started",
     section: "",
-    items: [{ label: "Overview", link: "/" }, "making-a-game"],
+    items: [{ label: "Overview", link: "/" }, "making-a-game", "not-done-yet"],
   },
   {
     topic: "learn",
@@ -124,6 +124,7 @@ export const OUTLINE: readonly (Group & {
     ],
   },
   { topic: "guides", label: "Testing", items: ["guides/testing"] },
+  { topic: "guides", label: "Performance", items: ["guides/performance"] },
   { topic: "guides", label: "More", section: "guides", items: [] },
   {
     topic: "reference",

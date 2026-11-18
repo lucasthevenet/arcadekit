@@ -25,6 +25,16 @@
  * The first is the noise, counted as the comparison goes, with nothing
  * assumed about its shape: on a machine where the runs are far apart, fewer
  * of them are told apart, and a difference has to be plainer to count.
+ *
+ * What it finds, on a machine as noisy as that one: a slowdown of 15%, nine
+ * times in ten. The first time it was run it found one that the full
+ * benchmark had shown and that had been put down to the machine: a change
+ * query's visit of one entity, a fifth slower.
+ *
+ * What it does not: a slowdown of less than `FLOOR`, or several such one
+ * after the other; and anything outside the storage core, a tick or an
+ * action's dispatch, which `pnpm --filter arcadekit bench` reports and
+ * nothing compares.
  */
 
 /** How much slower the fastest run has to be, beyond the noise: a twentieth. */
