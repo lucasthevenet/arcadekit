@@ -65,9 +65,14 @@ export class Singleton<S extends Schema>
  * - The name is one of the world's component names, prefixed with the
  *   feature it belongs to. List the singleton in a plugin's `components`,
  *   so that a save which names it can be loaded.
- * - Until it is written it holds `initial`, and is as good as absent: a
- *   world that has only read it hashes the same as one that never asked.
- * - No entity has it, and no query visits it.
+ * - Until it is written it holds `initial`, and is as good as absent: not
+ *   saved, and a world that has only read it hashes the same as one that
+ *   never asked. A game loaded from a save in which it had never been
+ *   written starts it at the `initial` of the build that loads.
+ * - No entity has it, and no query visits it: spawning or adding it
+ *   throws.
+ * - A migration changes it by name with `Migrate`, as it changes a
+ *   component.
  *
  * @category Constructors
  */

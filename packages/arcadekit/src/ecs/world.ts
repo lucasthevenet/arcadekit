@@ -1817,7 +1817,12 @@ export class QueryView<D extends Terms = Terms> {
    * conditions, each table is split into runs of consecutive matching rows.
    *
    * Sparse data terms arrive as `{ columns, indexOf }` because their rows do
-   * not line up with the table's.
+   * not line up with the table's. After the columns comes `entities`, the
+   * ids of the table's rows.
+   *
+   * Under `noUncheckedIndexedAccess` a read from a column is `number |
+   * undefined` and needs an assertion, `pos.x[i]!`. Nothing of the raw
+   * path spares it: a read that checked would be a call per read.
    *
    * Raw columns cannot say which rows were written. Where a change query
    * watches one of this query's terms, every row handed out counts as
@@ -2114,6 +2119,11 @@ export class World {
 
   // --- entities ------------------------------------------------------------
 
+  /**
+   * Whether the entity an id names is alive. It is false for good once the
+   * entity is despawned: its slot is given out again with another
+   * generation, and so under another id.
+   */
   isAlive(entity: Entity): boolean {
     const index = entityIndex(entity);
     // The generation, compared without rounding it down: a number that is
@@ -2274,6 +2284,11 @@ export class World {
     }
   }
 
+  /**
+   * Makes an entity with these components and returns its id. Like every
+   * change to which entities exist, it throws while a query is iterating
+   * and inside a transaction: queue it on a `CommandBuffer` there.
+   */
   spawn(...inputs: readonly ComponentInput[]): Entity {
     this.assertNotIterating("spawn");
     if (this.guard !== undefined) {
@@ -2387,6 +2402,12 @@ export class World {
 
   // --- components ----------------------------------------------------------
 
+  /**
+   * Gives an entity a component, or, given a value, writes the one it has.
+   * A relation is given another target this way. False when the entity is
+   * gone, or when a relation's target is: what that target's despawn would
+   * have done is then done at once.
+   */
   add(entity: Entity, input: ComponentInput): boolean {
     this.assertNotIterating("add");
     if (this.guard !== undefined) {
@@ -2459,6 +2480,7 @@ export class World {
     return true;
   }
 
+  /** Takes a component off an entity. False when it did not have it. */
   remove(entity: Entity, def: ComponentDef<any>): boolean {
     this.assertNotIterating("remove");
     if (this.guard !== undefined) {
@@ -2497,6 +2519,7 @@ export class World {
     return true;
   }
 
+  /** Whether an entity is alive and has a component. */
   has(entity: Entity, def: ComponentDef<any>): boolean {
     if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
       this.refuse(`read "${def.name}" through the world`, "read");
@@ -2534,7 +2557,11 @@ export class World {
     );
   }
 
-  /** Writes some or all fields of a component the entity already has. */
+  /**
+   * Writes some or all fields of a component the entity already has. A
+   * relation's `target` is not written this way, which throws: add the
+   * relation again.
+   */
   set<S extends Schema>(
     entity: Entity,
     def: ComponentDef<S>,
