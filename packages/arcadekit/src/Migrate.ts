@@ -13,8 +13,9 @@
  *     },
  *   ]
  *
- * Each changes the contents in place. A component or field that is not
- * there is an error, so a migration that does not fit its save says so.
+ * Each changes the contents in place, and entities keep their ids. A
+ * component or field that is not there is an error, so a migration that
+ * does not fit its save says so.
  * A singleton is changed the same way, by its name: it is in the save if
  * the game had written it.
  */

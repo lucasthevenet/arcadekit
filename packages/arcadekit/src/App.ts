@@ -218,7 +218,8 @@ export interface Any {
    * As `dispatch`, for actions that arrive as data: network messages, saved
    * games, replays. The payload is expected in its JSON form and is validated
    * against the action's schema; an unknown name or a bad payload is a
-   * failure, never a crash.
+   * failure, `Action.UnknownAction` or `Action.InvalidPayload`, never a
+   * crash. `from` says who issued it, as for `enqueueByName`.
    */
   readonly dispatchByName: (
     name: string,
@@ -250,8 +251,9 @@ export interface Any {
   readonly actionLog: readonly Action.LogEntry[];
   /**
    * The game as it stands, to load later with `App.load`: the world, the
-   * time, the actions waiting for the next tick and the events waiting to
-   * be read. Only between ticks.
+   * time, the actions waiting for the next tick, the events waiting to be
+   * read, what change queries had yet to visit, and how long the log was.
+   * It holds no script. Only between ticks.
    *
    * Fails with `SaveRefused`, which says what is in the way: an action or an
    * event with no schema is waiting, a field holds a value it cannot save,
@@ -401,15 +403,28 @@ export interface App<E = never, R = never, HU = never> extends Any {
   ) => Fiber.Fiber<A, E2>;
   /**
    * Applies an action now and returns the outcome. A refusal comes back as a
-   * typed failure and leaves the game unchanged. Only between ticks.
+   * typed failure and leaves the game unchanged. An accepted action is
+   * logged, and a refused one is not.
+   *
+   * For code outside the simulation, and only between ticks: it throws
+   * during a tick, during the frame stage or the input stage, and from a
+   * handler. It throws on an app that a session has taken over, where it
+   * would move this machine's game alone: use `enqueue`.
    */
   readonly dispatch: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>, any>,
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<ResultFor<HU, N>, FailureFor<HU, N>>;
   /**
-   * Queues an action for the start of the next tick. Use this for real-time
-   * input and from inside systems. A refusal becomes an `Action.Rejected` event.
+   * Queues an action for the start of the next tick, and logs it. Use this
+   * for real-time input. A refusal becomes an `Action.Rejected` event, and
+   * is marked on the action's entry of the log.
+   *
+   * For code outside the simulation. A system, a script or a handler issues
+   * an action with `Actions.enqueue`, which does not log it: logged, it
+   * would be applied twice on replay, once from the log and once by the
+   * replay's own simulation. On an app that a session has taken over, the
+   * action goes to every peer, and one with no schema throws.
    */
   readonly enqueue: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>, any>,
@@ -592,7 +607,15 @@ export const make = <
  *
  * Fails with `LoadRefused` when the save's world cannot be loaded: it names
  * a component no plugin lists, or one whose fields have changed, or its
- * bytes are damaged.
+ * bytes are damaged. So it does when the save is of another version of the
+ * game and `migrations` do not bring it up to this one: see `Save.migrate`.
+ *
+ * **Gotchas**
+ *
+ * - A script that was started by hand, with `app.spawnScript` or
+ *   `Script.spawn`, is not started again: whoever loads the game starts it.
+ * - What a service of the game's own held is not in the save, and a
+ *   `transient` field is undefined afterwards.
  *
  * @category Constructors
  */
@@ -2220,6 +2243,17 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
  *
  * Actions that the game's systems, scripts and handlers issued are not in
  * the log: the replay's own issue them again.
+ *
+ * **Gotchas**
+ *
+ * - The log does not say the delta or the number of ticks it was recorded
+ *   at, nor when a script was started by hand with `app.spawnScript`:
+ *   whoever replays supplies them.
+ * - It runs neither the frame stage nor the input stage: each tick is run
+ *   with `{ input: false }`.
+ * - A log with no checkpoints, from an app made with `checkpointEvery: 0`,
+ *   is checked by its actions alone: a replay that has gone another way
+ *   runs on until an action happens to be refused, or to its end.
  *
  * @category Running
  */
