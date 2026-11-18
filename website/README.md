@@ -40,7 +40,7 @@ Every `ts` block of a page under `src/content/docs/` is compiled against the pac
 - A file whose title ends in `.test.ts` is run with Vitest: a page that shows a test shows one that passes.
 - A block fenced ` ```ts sketch ` is a sketch, with `/* … */` where a game's own code goes. It is highlighted as TypeScript and nothing compiles it.
 
-An error is reported at the page and line it is on. The READMEs' blocks and the landing page's are not compiled: they show parts of a game, not whole ones.
+An error is reported at the page and line it is on. The landing page's blocks are not compiled: they show parts of a game, not whole ones.
 
 ## The reference of a module
 
@@ -64,13 +64,9 @@ The site is styled after [polycombo.io](https://polycombo.io): one dark theme, s
 
 ## How it reads the repository
 
-Starlight serves the entries of its `docs` collection, which its own loader reads from `src/content/docs/`: the site's own pages. [`src/lib/loader.ts`](src/lib/loader.ts) adds each README and each file of `docs/` that `pages.ts` finds as an entry of the same collection, read where it is ([`src/content.config.ts`](src/content.config.ts)):
+Starlight serves the entries of its `docs` collection, which its own loader reads from `src/content/docs/`: the site's own pages. [`src/lib/loader.ts`](src/lib/loader.ts) adds the reference as entries of the same collection ([`src/content.config.ts`](src/content.config.ts)): its index and each package's page, made from the packages' manifests, and each module's page, made from its doc comments. No markdown of the repository outside `src/content/docs/` is a page: a package's README is what GitHub and npm show, a short description and links to the site.
 
-- Starlight writes a page's title from its frontmatter, and the files have none, since GitHub would show it. The entry's title is the file's first line, its `# ` heading, and its content is the rest of the file, so the page has one title. A reference page with no README is titled with its import path or its module's name.
-- Its description is the file's first paragraph, which the page's `<meta>` tags give a shared link.
-- Its edit link goes to the file on GitHub.
-
-The loader renders each file with the site's Markdown processor, [Sätteri](https://satteri.bruits.org), Astro's own, with the plugins in `src/lib/` that [What it adds to a page](#what-it-adds-to-a-page) lists. Starlight's own transforms, such as a heading's anchor link, apply only to the folders its `markdown.processedDirs` names: here the repository's root.
+The loader renders each page it makes with the site's Markdown processor, [Sätteri](https://satteri.bruits.org), Astro's own, with the plugins in `src/lib/` that [What it adds to a page](#what-it-adds-to-a-page) lists. Starlight's own transforms, such as a heading's anchor link, apply only to the folders its `markdown.processedDirs` names: here the repository's root.
 
 ## Links
 

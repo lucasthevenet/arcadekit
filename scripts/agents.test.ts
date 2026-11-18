@@ -16,6 +16,8 @@ const ALWAYS_READ = 6000;
 const READ_WHOLE = 12_000;
 /** A skill's description is in every session too. */
 const DESCRIPTION = 400;
+/** A package's README says what the package is and where its docs are. */
+const README = 2000;
 
 /** Where a path that a file names may start: the root, and each package. */
 const BASES = ["", "packages/arcadekit", "packages/three", "website"];
@@ -109,6 +111,19 @@ describe("what every session reads", () => {
     expect(realpathSync(path.join(ROOT, ".claude/skills"))).toBe(
       realpathSync(path.join(ROOT, SKILLS))
     );
+  });
+});
+
+describe("a package's README", () => {
+  it("is a description and links: what it would explain is on the site", () => {
+    for (const folder of ["packages/arcadekit", "packages/three"]) {
+      const text = read(path.join(folder, "README.md"));
+      expect(
+        Buffer.byteLength(text),
+        `${folder}/README.md explains nothing. Say it on a page of website/src/content/docs/, or in a doc comment, and link to the site.`
+      ).toBeLessThanOrEqual(README);
+      expect(text, folder).toContain("https://arcadekit.dev");
+    }
   });
 });
 

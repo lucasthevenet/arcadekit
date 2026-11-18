@@ -1,8 +1,8 @@
 # To revisit before a stable release
 
-Not a milestone of the [roadmap](../ROADMAP.md): a list that is added to as the work goes, and gone through before the first stable version. Each line is a thing that goes wrong with no error, and that only someone who knows how the inside works would avoid: nothing in the types or at run time stops it, and the README's sentence about it is all there is. Before a stable release each one is closed, by code that stops it or by a design that leaves no room for it, or kept on purpose and said plainly where a game's author will read it.
+Not a milestone of the [roadmap](../ROADMAP.md): a list that is added to as the work goes, and gone through before the first stable version. Each line is a thing that goes wrong with no error, and that only someone who knows how the inside works would avoid: nothing in the types or at run time stops it, and a sentence of its guide is all there is. Before a stable release each one is closed, by code that stops it or by a design that leaves no room for it, or kept on purpose and said plainly where a game's author will read it.
 
-When you come across one, while building, testing or writing a README sentence that begins "it is the game's to", add a line under its area in the same commit, with what would close it if you know. When a line here is closed, take it out in the same commit. What is merely not built yet is not here: that is the READMEs' "Not done yet".
+When you come across one, while building, testing or writing a sentence of a guide that begins "it is the game's to", add a line under its area in the same commit, with what would close it if you know. When a line here is closed, take it out in the same commit. What is merely not built yet is not here: that is the site's [Not done yet](../website/src/content/docs/not-done-yet.md).
 
 Before changing an area, read its section: these are the mistakes the code will not stop.
 
