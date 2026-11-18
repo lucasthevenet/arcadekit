@@ -40,11 +40,11 @@ describe("the site's pages", () => {
     }
   });
 
-  it("has the roadmap and the conventions, read where they are in docs/", () => {
+  it("has the roadmap and the conventions, read where they are", () => {
     expect(pages.repository.map((page) => [page.file, page.link])).toEqual(
       expect.arrayContaining([
         ["docs/conventions.md", "/conventions"],
-        ["docs/roadmap.md", "/roadmap"],
+        ["ROADMAP.md", "/roadmap"],
       ])
     );
   });

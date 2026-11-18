@@ -12,7 +12,7 @@ The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's]
 | --- | --- |
 | `/` | [`src/content/docs/index.mdx`](src/content/docs/index.mdx), the landing page, whose text is the site's own |
 | `/<path>`, such as `/making-a-game`, `/concepts/determinism` and `/guides/input` | `src/content/docs/<path>.md`: the walkthrough, the concepts and the guides |
-| `/roadmap` and `/conventions` | `docs/roadmap.md` and `docs/conventions.md`, the project's own |
+| `/roadmap` and `/conventions` | `ROADMAP.md` and `docs/conventions.md`, the project's own |
 | `/reference/<package>`, such as `/reference/arcadekit` and `/reference/three` | `packages/<package>/README.md`, which npm shows too |
 | `/reference/<package>/<Module>`, such as `/reference/arcadekit/Sound` | the module's doc comments, from `packages/<package>/dist/<Module>.d.ts` ([The reference of a module](#the-reference-of-a-module)) |
 
@@ -27,7 +27,7 @@ pnpm --filter @arcadekit/website preview    # serve the built site
 
 A markdown file under [`src/content/docs/`](src/content/docs) is a page as soon as it exists, at its path there. It is a Starlight page, with a frontmatter that gives its `title` and its `description`, the line under a shared link. Its body starts after the frontmatter, with no `# ` heading: Starlight writes the title.
 
-A file directly in `docs/` and a new package's README are pages too, read where they are: [`src/lib/pages.ts`](src/lib/pages.ts) finds them. They have no frontmatter, since GitHub would show it: such a file starts with a `# ` heading, its title, then a paragraph, its description, and one that doesn't fails the build. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
+The roadmap, `ROADMAP.md`, a file directly in `docs/` and a new package's README are pages too, read where they are: [`src/lib/pages.ts`](src/lib/pages.ts) finds them. They have no frontmatter, since GitHub would show it: such a file starts with a `# ` heading, its title, then a paragraph, its description, and one that doesn't fails the build. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
 
 [`src/lib/sidebar.ts`](src/lib/sidebar.ts) places each page in its topic. Its `OUTLINE` names the pages in order, in groups: a page it doesn't name goes at the end of its folder's group, so a new concept is listed at the end of Concepts, a new guide under Guides' "More" and a new package under Packages, until the outline places it. A page the outline names that doesn't exist fails the build.
 
@@ -74,7 +74,7 @@ The loader renders each file with the site's Markdown processor, [Sätteri](http
 
 ## Links
 
-The pages are also read on GitHub, and the READMEs on npm, so their links stay written for those: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as `docs/roadmap.md`. A page of the site's own links to another by its relative path (`../guides/input.md`), to a README by its address on the site (`/reference/arcadekit#sound`), and to any other file of the repository by its relative path. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
+The pages are also read on GitHub, and the READMEs on npm, so their links stay written for those: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as `ROADMAP.md`. A page of the site's own links to another by its relative path (`../guides/input.md`), to a README by its address on the site (`/reference/arcadekit#sound`), and to any other file of the repository by its relative path. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
 
 - a link to a file that is a page goes to that page;
 - a link to any other file or folder of the repository goes to it on GitHub.

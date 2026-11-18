@@ -31,7 +31,7 @@ export type TopicId = "learn" | "guides" | "reference";
 
 /**
  * Where the pages the outline doesn't name go: the group whose `section` is the folder of
- * src/content/docs/ they are in, `"project"` for a file of `docs/`, or `"packages"` for a
+ * src/content/docs/ they are in, `"project"` for the roadmap or a file of `docs/`, or `"packages"` for a
  * package's README.
  */
 type Section = string;

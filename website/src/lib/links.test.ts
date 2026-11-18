@@ -12,7 +12,7 @@ import { REPO_ROOT } from "./site.ts";
 const REPO_URL = "https://github.com/lucasthevenet/arcadekit";
 const KIT = "packages/arcadekit/README.md";
 const THREE = "packages/three/README.md";
-const ROADMAP = "docs/roadmap.md";
+const ROADMAP = "ROADMAP.md";
 const CONVENTIONS = "docs/conventions.md";
 
 const makeRewriter = () => {
@@ -48,8 +48,8 @@ describe("a relative link in a README", () => {
     expect(rewrite("../arcadekit/README.md", THREE)).toBe(
       "/reference/arcadekit"
     );
-    expect(rewrite("../../docs/roadmap.md", KIT)).toBe("/roadmap");
-    expect(rewrite("./conventions.md", ROADMAP)).toBe("/conventions");
+    expect(rewrite("../../ROADMAP.md", KIT)).toBe("/roadmap");
+    expect(rewrite("docs/conventions.md", ROADMAP)).toBe("/conventions");
     expect(deadLinks()).toStrictEqual([]);
   });
 
@@ -64,7 +64,7 @@ describe("a relative link in a README", () => {
     expect(rewrite("../arcadekit/README.md#input", THREE)).toBe(
       "/reference/arcadekit#input"
     );
-    expect(rewrite("../../docs/roadmap.md?plain=1#housekeeping", KIT)).toBe(
+    expect(rewrite("../../ROADMAP.md?plain=1#housekeeping", KIT)).toBe(
       "/roadmap?plain=1#housekeeping"
     );
   });
@@ -131,9 +131,9 @@ describe("the plugin", () => {
 describe("a full link", () => {
   it("goes to the page when it names a page's file on GitHub", () => {
     const { rewrite } = makeRewriter();
-    expect(
-      rewrite(`${REPO_URL}/blob/main/docs/roadmap.md#housekeeping`, KIT)
-    ).toBe("/roadmap#housekeeping");
+    expect(rewrite(`${REPO_URL}/blob/main/ROADMAP.md#housekeeping`, KIT)).toBe(
+      "/roadmap#housekeeping"
+    );
     expect(rewrite(`${REPO_URL}/tree/main/packages/three`, KIT)).toBe(
       "/reference/three"
     );

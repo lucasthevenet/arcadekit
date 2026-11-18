@@ -4,7 +4,8 @@
 //   and the guides, each at its path there (`guides/input.md` at `/guides/input`). They are
 //   Starlight's own pages, with a frontmatter, and Starlight's loader reads them.
 // - The repository's own markdown, read where it is (loader.ts):
-//   - each file directly in `docs/`, the roadmap and the conventions, at `/<name>`;
+//   - the roadmap, `ROADMAP.md` at the root, at `/roadmap`, and each file directly in `docs/`,
+//     the conventions, at `/<name>`;
 //   - each package's README, at `/reference/<package>`: `packages/arcadekit/README.md` at
 //     `/reference/arcadekit`. It is a package's overview, and npm shows it too.
 // - Each module of a package, at `/reference/<package>/<Module>`, made from its doc comments
@@ -16,6 +17,8 @@ import path from "node:path";
 import { REPO_ROOT, WEBSITE_DIR } from "./site.ts";
 
 const DOCS = "docs";
+/** The project's pages at the repository's root, each at `/<its name in lower case>`. */
+const ROOT_PAGES = ["ROADMAP.md"];
 /** The site's own pages, relative to the repository's root. */
 const SITE_DOCS = `${WEBSITE_DIR}/src/content/docs`;
 const PACKAGES = "packages";
@@ -47,7 +50,7 @@ export interface RepositoryPage extends SitePage {
 export interface DocPage extends SitePage {
   /**
    * Its top folder under src/content/docs/, such as `guides`, `""` for a file directly in it, or
-   * `"project"` for a file of `docs/`.
+   * `"project"` for the roadmap or a file of `docs/`.
    */
   readonly section: string;
 }
@@ -149,15 +152,20 @@ const sitePages = (): DocPage[] =>
     return { file: `${SITE_DOCS}/${file}`, slug, link: `/${slug}`, section };
   });
 
-/** The files directly in `docs/`, the roadmap and the conventions, read where they are. */
-const projectPages = (): (RepositoryPage & DocPage)[] =>
-  readdirSync(path.join(REPO_ROOT, DOCS))
+/** The project's own pages, read where they are: the roadmap, and the files directly in `docs/`. */
+const projectPages = (): (RepositoryPage & DocPage)[] => [
+  ...ROOT_PAGES.map((file) => ({
+    ...readPage(file, file.replace(/\.md$/u, "").toLowerCase()),
+    section: "project",
+  })),
+  ...readdirSync(path.join(REPO_ROOT, DOCS))
     .filter((file) => file.endsWith(".md"))
     .toSorted()
     .map((file) => ({
       ...readPage(`${DOCS}/${file}`, file.replace(/\.md$/u, "")),
       section: "project",
-    }));
+    })),
+];
 
 /** Each package's README, at `/reference/<folder>`. */
 const packagePages = (): PackagePage[] =>

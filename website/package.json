@@ -2,7 +2,7 @@
   "name": "@arcadekit/website",
   "version": "0.0.0",
   "private": true,
-  "description": "The arcadekit docs site (arcadekit.dev), built from docs/ and the packages' READMEs",
+  "description": "The arcadekit docs site (arcadekit.dev), built from the roadmap, docs/ and the packages' READMEs",
   "type": "module",
   "scripts": {
     "packages": "pnpm -w run build:packages",
