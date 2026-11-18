@@ -1,9 +1,22 @@
 # Tests
 
+## Showing that a change works
+
+A change is not done until it has been run and shown to work. Reasoning that it should work is not that.
+
+- **Run it.** The tests, then whatever a user of it would run: `pnpm --filter arcadekit demo` and `duel`, the pages with `pnpm --filter arcadekit page` and `pnpm --filter @arcadekit/three page` (Chromium and Playwright are installed in a cloud session), and the relay, `pnpm --filter arcadekit relay`, with `pnpm --filter arcadekit relay:check <address>`. Use these, and the drivers the tests already have (`Input.makeManualSource`, `Driver.makeManualDisplay`, `View.makeBridge`, `Sound.makeRecorder`, `Transport.makeHub`), before writing a script of your own.
+- **The simulation's evidence is its hash.** A change to what a tick does is checked by running two apps of the same game side by side and comparing `world.hash()` after every tick, by replaying the log with `App.replay`, and, for peers, by the shuffled, late network of `test/peers.ts`.
+- **The repository's property tests are random operations against a model that is obviously right**, with a seeded generator so that a failure repeats, as `test/storage.test.ts` and `test/restore.test.ts` are. A change to the storage core, a query, the hash, a snapshot, a rewind or a session adds to one or extends one.
+- **Every bug that is fixed comes with a test that fails without the fix.** Break the code a new test covers and see it go red. Several bugs in this package were found only because a deliberate break went unnoticed.
+- **A test waits for what it expects, with a limit, and never for a fixed time.** A frame loop is turned by hand.
+- **Name things as the READMEs and the site's concepts and guides name them.** They are the map of what a game author sees.
+- **The examples and the benchmarks are type-checked and not published.** `packages/arcadekit/examples/` and `bench/` are compiled by `tsconfig.examples.json`. The relay's example on Cloudflare, `examples/relay-cloudflare/`, is declared with Alchemy, a beta and a dev dependency for that alone, and run on this machine with `pnpm --filter arcadekit relay:cloudflare`. The page's UI is built twice, with the DOM and with React, a dev dependency for that alone; `test/page.test.ts` mounts both in a document and plays the game through them. `pnpm --filter arcadekit bench:parallel` measures loops shared between workers, and is no part of the package.
+
+## Writing a test
+
 - **A test name is a sentence** about the thing under test: `it("are dropped a tick after they were emitted, read or not")` inside `describe("events")`.
 - **Test through the public API**, the way a game would use it. Build an app, tick it, look at the world.
 - **Compare against something obviously right.** The storage tests run thousands of random operations against a `Map` and compare; a new data structure gets the same.
-- **Check that a test can fail.** Break the code it covers and see it go red. Several bugs in this package were found only because a deliberate break went unnoticed.
 - **A type error is tested with `// @ts-expect-error` on the line directly above the expression that errors.** The formatter moves expressions, so put the comment inside the call, above the argument.
 - **Compare a failure whole**: `expect(error).toEqual(new Assets.AssetFailed({ url, message }))`. To `toEqual` alone, two tagged errors that differ only in their `message` are equal, since it is the one field of an error that is not an enumerable property; `scripts/vitest-setup.ts`, which `pnpm test` runs before every test file, compares it. A test in `test/assets.test.ts` fails if that is ever lost.
 - **Assets are tested with files in memory**, `Assets.layerMemory({ ... })`, and with assets made by `Assets.make` that note when they are made and let go. A test of loading that takes time provides a `Loader` whose files arrive when the test says, and waits a turn of the event loop for them.
