@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { packageCategory, renderIndex, renderPackage } from "./reference.ts";
+import {
+  MODULE_GROUPS,
+  moduleGroups,
+  packageCategory,
+  renderIndex,
+  renderPackage,
+} from "./reference.ts";
 import type { ReferencePackage } from "./reference.ts";
 
 const REPO_URL = "https://github.com/lucasthevenet/arcadekit";
@@ -52,5 +58,58 @@ describe("a package's page", () => {
         "- [Three](/reference/three/Three)",
       ].join("\n\n")
     );
+  });
+
+  it("lists the modules of a package with groups under each group, in the package's order", () => {
+    const modules = (MODULE_GROUPS.arcadekit ?? [])
+      .flatMap((group) => group.modules)
+      .toReversed();
+    const blocks = renderPackage({ ...kit, modules }, REPO_URL, "main").split(
+      "\n\n"
+    );
+    expect(blocks.filter((block) => block.startsWith("#"))).toStrictEqual([
+      "## Modules",
+      "### Core",
+      "### Storage",
+      "### Browser",
+      "### Media",
+      "### Saves",
+      "### Net",
+    ]);
+    expect(blocks.at(-3)).toBe(
+      "- [Save](/reference/arcadekit/Save)\n- [Migrate](/reference/arcadekit/Migrate)"
+    );
+  });
+});
+
+describe("the groups of a package's modules", () => {
+  const groups = MODULE_GROUPS.arcadekit ?? [];
+  const every = groups.flatMap((group) => group.modules);
+
+  it("names each module once", () => {
+    expect(new Set(every).size).toBe(every.length);
+  });
+
+  it("lists a module no group names under Other, last", () => {
+    expect(
+      moduleGroups({ folder: "arcadekit", modules: [...every, "Physics"] }).at(
+        -1
+      )
+    ).toStrictEqual({ label: "Other", modules: ["Physics"] });
+  });
+
+  it("refuses a group that names a module the package doesn't have", () => {
+    expect(() =>
+      moduleGroups({
+        folder: "arcadekit",
+        modules: every.filter((name) => name !== "Sound"),
+      })
+    ).toThrow("names Sound, which arcadekit doesn't export");
+  });
+
+  it("gives a package with no groups one list", () => {
+    expect(moduleGroups(physics)).toStrictEqual([
+      { modules: ["Body", "World"] },
+    ]);
   });
 });

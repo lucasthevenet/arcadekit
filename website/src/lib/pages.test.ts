@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { discoverPages, firstParagraph } from "./pages.ts";
 import type { DocPage, SitePages } from "./pages.ts";
+import { MODULE_GROUPS, moduleGroups } from "./reference.ts";
 import { outlinedGroups, sidebarTopics } from "./sidebar.ts";
 import { REPO_ROOT } from "./site.ts";
 
@@ -141,15 +142,33 @@ describe("the sidebar", () => {
       "arcadekit",
       "@arcadekit/three",
     ]);
-    expect(groups[0]?.items.slice(0, 2)).toStrictEqual([
+    expect(groups[0]?.items.slice(0, 3)).toStrictEqual([
       { label: "Overview", link: "/reference/arcadekit" },
-      "reference/arcadekit/Action",
+      {
+        label: "Core",
+        items: expect.arrayContaining([
+          "reference/arcadekit/App",
+          "reference/arcadekit/System",
+        ]),
+      },
+      { label: "Storage", items: ["reference/arcadekit/ecs"] },
     ]);
     expect(groups[1]?.items).toStrictEqual([
       { label: "Overview", link: "/reference/three" },
       "reference/three/Gltf",
       "reference/three/Three",
     ]);
+  });
+
+  it("lists every module of a package with groups under one of them", () => {
+    for (const page of discoverPages().packages) {
+      if (MODULE_GROUPS[page.folder] === undefined) {
+        continue;
+      }
+      const labels = moduleGroups(page).map((group) => group.label);
+      // A new module goes under a group in MODULE_GROUPS of src/lib/reference.ts.
+      expect(labels, page.folder).not.toContain("Other");
+    }
   });
 
   it("has a page for each module a package exports, but the package's own entry", () => {
