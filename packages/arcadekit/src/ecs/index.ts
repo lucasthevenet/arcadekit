@@ -1,5 +1,5 @@
 /**
- * The storage core on its own: the package's `arcadekit/ecs` entry.
+ * The `arcadekit/ecs` entry point: the storage core on its own.
  *
  *   import { Component, Field, World } from "arcadekit/ecs"
  *
@@ -10,12 +10,12 @@
  *     .view({ terms: [Position], withDefs: [], withoutDefs: [] })
  *     .each((pos) => { pos.x += 1 })
  *
- * It is plain synchronous TypeScript and imports nothing: no Effect, and
- * nothing else of this package. What `arcadekit` gives of it is the same
- * object there, so a world made here is one `arcadekit` knows and a
- * component is the same component. `arcadekit` calls the world `EcsWorld`,
- * beside its service `World`, and does not give `entityIndex` and
- * `entityGeneration`, which are here alone.
+ * The core is plain synchronous TypeScript with no imports: no Effect, and
+ * nothing else from this package. The root entry exports the same objects, so a
+ * world created here is one `arcadekit` accepts and a component is the same
+ * component. The root entry exports the world class as `EcsWorld`, next to the
+ * `World` service, and leaves out `entityIndex` and `entityGeneration`, which
+ * are only available here.
  */
 export { Component, entityGeneration, entityIndex, Field } from "./component";
 export type {

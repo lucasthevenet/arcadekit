@@ -1,14 +1,14 @@
 /**
- * Everything of the package but `Browser`, each module by its name:
+ * Every module of the package except `Browser`, each exported under its name:
  *
  *   import { App, Input, System } from "arcadekit"
  *
- * A module here is the module of its own entry, the same object:
- * `import * as Input from "arcadekit/Input"`. Three modules are given by
- * the names of their exports instead: `EntityId` of `Schemas`, the
- * services of `Services`, and the two classes of `TickScheduler`. The
- * storage core, `arcadekit/ecs`, is given by the names a game uses of it,
- * with its world as `EcsWorld`, beside the service `World`.
+ * Each module is the same object as its own entry point: `import * as Input
+ * from "arcadekit/Input"`. Three modules are exported as their members instead:
+ * `EntityId` from `Schemas`, the services from `Services`, and the two classes
+ * from `TickScheduler`. The storage core, `arcadekit/ecs`, is exported as the
+ * members a game uses, with its world class as `EcsWorld`, alongside the
+ * `World` service.
  */
 export * as Action from "./Action";
 export * as App from "./App";

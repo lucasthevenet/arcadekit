@@ -1,5 +1,5 @@
 /**
- * The services every system and script can ask for with `yield*`.
+ * The services every system and script can access with `yield*`.
  */
 import { Context } from "effect";
 import type { Effect, Fiber } from "effect";
@@ -11,7 +11,7 @@ import type { EventBus } from "./Event";
 import type { Devices } from "./Input";
 
 /**
- * The ECS world. Most systems use queries and Commands instead of this.
+ * The ECS world. Most systems use queries and `Commands` instead.
  *
  * @category Services
  */
@@ -20,21 +20,21 @@ export class World extends Context.Service<World, EcsWorld>()(
 ) {}
 
 /**
- * The game's time, as `Time` gives it to a system.
+ * The game's time, as `Time` provides it to a system.
  *
  * @category Models
  */
 export interface TimeState {
-  /** Seconds simulated by the current tick. */
+  /** The seconds the current tick simulates. */
   delta: number;
-  /** Total simulated seconds. */
+  /** The total simulated seconds. */
   elapsed: number;
-  /** Number of ticks run so far. */
+  /** The number of ticks run so far. */
   tick: number;
 }
 
 /**
- * Game time. Driven by the tick, not the wall clock, so it is deterministic.
+ * Game time. The tick drives it, not the wall clock, so it is deterministic.
  *
  * @category Services
  */
@@ -43,7 +43,7 @@ export class Time extends Context.Service<Time, Readonly<TimeState>>()(
 ) {}
 
 /**
- * The frame being drawn, as `Frame` gives it to a system of the frame stage.
+ * The frame being drawn, as `Frame` provides it to a frame-stage system.
  *
  * @category Models
  */
@@ -53,16 +53,16 @@ export interface FrameState {
    * after a tick, up to 1, just before the next.
    */
   alpha: number;
-  /** Real seconds since the frame before this one. */
+  /** The real seconds since the previous frame. */
   delta: number;
-  /** Number of frames run so far, this one included. */
+  /** The number of frames run so far, including this one. */
   count: number;
 }
 
 /**
- * What a system of the frame stage is told about the frame it draws. Real
- * time, so not for the simulation: a system that runs in the tick reads
- * `Time`, and asking for a field of this there throws.
+ * The frame a frame-stage system is drawing. It is real time, so keep it out of
+ * the simulation: a system that runs in the tick reads `Time`, and reading a
+ * field of this there throws.
  *
  * @category Services
  */
@@ -80,7 +80,7 @@ export class Commands extends Context.Service<Commands, CommandBuffer>()(
 ) {}
 
 /**
- * How a long-running script (a coroutine) waits, and how a system starts one.
+ * Lets a long-running script (a coroutine) wait, and lets a system start one.
  *
  *   const Fountain = Effect.gen(function*() {
  *     const script = yield* Script
@@ -90,18 +90,17 @@ export class Commands extends Context.Service<Commands, CommandBuffer>()(
  *     }
  *   })
  *
- * A script advances only during ticks. It waits with `nextTick`, `sleep`
- * or an event's `wait`.
+ * A script advances only during ticks. It waits with `nextTick`, `sleep` or an
+ * event's `wait`.
  *
  * **Gotchas**
  *
- * - `Effect.sleep`, a promise or a timer resumes a script outside the
- *   tick, at a moment no replay repeats. Nothing refuses them.
- * - Under a driver that ticks only when needed, a script that sleeps or
- *   waits for a tick keeps the game ticking. One that should let it rest
- *   waits for an event.
- * - It is the simulation's: in the frame stage and the input stage it
- *   throws.
+ * - `Effect.sleep`, a promise or a timer resumes a script outside the tick, at
+ *   a moment no replay reproduces. Nothing prevents them.
+ * - Under a driver that ticks only when needed, a script that sleeps or waits
+ *   for a tick keeps the game ticking. A script that should let the game rest
+ *   waits for an event instead.
+ * - It belongs to the simulation: in the frame and input stages it throws.
  *
  * @category Services
  */
@@ -110,15 +109,15 @@ export class Script extends Context.Service<
   {
     /** Suspends the fiber until the next tick. */
     readonly nextTick: Effect.Effect<void>;
-    /** Suspends the fiber for a span of game time. */
+    /** Suspends the fiber for a duration of game time. */
     readonly sleep: (seconds: number) => Effect.Effect<void>;
     /**
-     * Starts a script from a system, a handler or another script. It first
-     * runs when the tick flushes its scheduler, after the systems.
+     * Starts a script from a system, a handler or another script. It first runs
+     * when the tick flushes its scheduler, after the systems.
      *
-     * The app watches it as it does one started with `app.spawnScript`: a
-     * failure is reported, and it is interrupted when the app's scope closes.
-     * A fiber started with `Effect.forkDetach` is not watched.
+     * The app supervises it like a script started with `app.spawnScript`: a
+     * failure is reported, and it is interrupted when the app's scope closes. A
+     * fiber started with `Effect.forkDetach` isn't supervised.
      */
     readonly spawn: <A, E, R>(
       effect: Effect.Effect<A, E, R>
@@ -127,8 +126,8 @@ export class Script extends Context.Service<
 >()("arcadekit/Script") {}
 
 /**
- * How a system says that the game has more to do, to a driver that ticks
- * only when needed.
+ * Lets a system tell a driver that ticks only when needed that the game has
+ * more to do.
  *
  *   const Countdown = System.make("Countdown", function*() {
  *     const clock = yield* Clock
@@ -138,33 +137,32 @@ export class Script extends Context.Service<
  *     }
  *   })
  *
- * A game that moves when its player does rests when nothing is waiting,
- * and what an app can see waiting is actions, states, scripts and events.
- * A system that does something every tick for as long as a condition of
- * its own holds, a clock that runs, a body in flight, is not among them:
- * it asks for the next tick itself, each tick it has more to do. The tick
- * in which nobody asks is the last, and the game rests.
+ * A game that moves only when its player does rests when nothing is pending,
+ * and the pending work an app can see is actions, state transitions, scripts
+ * and events. A system that acts every tick while a condition of its own holds,
+ * such as a running clock or a body in flight, isn't among them: it requests
+ * the next tick itself, each tick it has more to do. The first tick in which no
+ * one requests another is the last, and the game rests.
  *
- * - It is asked in the tick, by a system, a handler or a script. Between
- *   ticks it throws: what draws the game does not decide when it ticks.
- * - Under a driver that ticks in real time it does nothing, and costs
- *   nothing to leave in.
- * - What was asked is not saved. An app that has just been made, or loaded
- *   from a save, runs one tick before it rests, in which every system can
- *   ask again.
+ * - Call it during the tick, from a system, a handler or a script. Between
+ *   ticks it throws: the code that draws the game doesn't decide when it ticks.
+ * - Under a driver that ticks in real time it does nothing, and costs nothing
+ *   to leave in.
+ * - Requests aren't saved. An app that was just created, or loaded from a save,
+ *   runs one tick before it rests, in which every system can request again.
  *
  * @category Services
  */
 export class Ticks extends Context.Service<
   Ticks,
   {
-    /** The game has more to do: the tick after this one is needed. */
+    /** Signals that the game has more to do: the tick after this one is needed. */
     readonly more: () => void;
   }
 >()("arcadekit/Ticks") {}
 
 /**
- * The app's event channels. Usually reached by yielding an event definition.
+ * The app's event channels. Usually accessed by yielding an event definition.
  *
  * @category Services
  */
@@ -173,28 +171,27 @@ export class Events extends Context.Service<Events, EventBus>()(
 ) {}
 
 /**
- * Seeded randomness: the world's generator, `world.random`.
+ * Seeded randomness from the world's generator, `world.random`.
  *
  *   const random = yield* Random
- *   random.next()          // from 0 up to, not including, 1
- *   random.int(1, 6)       // a whole number, both ends included
+ *   random.next()          // from 0 up to, but not including, 1
+ *   random.int(1, 6)       // an integer, both ends inclusive
  *   random.pick(items)
  *   random.shuffle(items)  // in place
  *
- * Its methods are plain calls, fine inside a loop. The app is seeded with
- * `App.make({ seed })`, and the same seed gives the same numbers on every
- * machine. The generator's state is part of the world, so it is in the
+ * Its methods are plain calls, cheap enough for a loop. Seed the app with
+ * `App.make({ seed })`; the same seed produces the same numbers on every
+ * machine. The generator's state is part of the world, so it is included in the
  * world's hash and a replay draws the same numbers.
  *
- * - It is the one source of randomness in a simulation. With no seed, the
- *   seed is 0: a game is repeatable until it is given a seed from outside.
- * - Effect's own `Random` module is seeded from the same generator inside
- *   an app, so `Random.next` from `"effect"`, or anything built on it,
- *   replays too. It costs an Effect per draw, so it is not for loops.
- * - In the frame stage and the input stage it is a generator of the app's
- *   own, which is no part of the world: what draws can be random and
- *   change nothing.
- * - It is not for secrets: a few outputs give away the rest.
+ * - It is the only source of randomness in a simulation. The seed defaults to
+ *   0, so a game is repeatable until you seed it from outside.
+ * - Inside an app, Effect's own `Random` module is seeded from the same
+ *   generator, so `Random.next` from `"effect"`, and anything built on it,
+ *   replays too. It costs an Effect per draw, so avoid it in loops.
+ * - In the frame and input stages it is the app's own generator, separate from
+ *   the world, so drawing can be random without changing the game.
+ * - It is not suitable for secrets: a few outputs reveal the rest.
  *
  * @category Services
  */
@@ -203,7 +200,7 @@ export class Random extends Context.Service<Random, Rng>()(
 ) {}
 
 /**
- * Services the app provides itself.
+ * The services the app provides itself.
  *
  * @category Type-level
  */

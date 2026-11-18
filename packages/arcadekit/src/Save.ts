@@ -1,6 +1,6 @@
 /**
- * A saved game: the world as a snapshot, and with it everything else that
- * decides what the next tick does.
+ * Saved games: the world as a snapshot, plus everything else that determines
+ * what the next tick does.
  *
  *   const saved = app.save()                       // Exit<Save, SaveRefused>
  *   const bytes = Save.encode(save)                // for a file or the network
@@ -8,15 +8,15 @@
  *   const loaded = Save.decode(bytes)              // Exit<Save, LoadRefused>
  *   const app = yield* App.load(save, { plugins }) // the game, where it was
  *
- * A save is taken between two ticks. It holds the world, the game's time,
- * the actions waiting for the next tick, the events waiting to be read and
- * what change queries had yet to visit. It does not hold scripts: a plugin
- * lists its scripts, and they start again when the app is loaded. One that
- * was started by hand does not.
+ * A save is taken between two ticks. It holds the world, the game time, the
+ * actions queued for the next tick, the events waiting to be read, and what
+ * change queries haven't visited yet. It doesn't hold scripts: the scripts a
+ * plugin lists restart when the app is loaded, and scripts started by hand
+ * don't.
  *
- * What was logged after a save is the tail of the game. A game that keeps
- * its last save and the log since can come back to where it is by loading
- * the save and replaying only that tail, however long it has been running:
+ * Everything logged after a save is the game's tail. A game that keeps its last
+ * save and the log since can return to the present by loading the save and
+ * replaying only that tail, however long it has been running:
  *
  *   const tail = app.actionLog.slice(save.logLength)
  *   App.replay(loaded, tail, { delta, ticks: app.time.tick - save.tick })
@@ -28,7 +28,7 @@ import type { SnapshotContents, SnapshotProblem } from "./ecs/snapshot";
 import type { SavedChanges } from "./ecs/world";
 
 /**
- * The events of one kind that were waiting to be read when a game was saved.
+ * The events of one type that were waiting to be read when the game was saved.
  *
  * @category Models
  */
@@ -36,35 +36,35 @@ export interface SavedEvents {
   readonly name: string;
   /** Each event's payload in its JSON form, oldest first. */
   readonly payloads: readonly unknown[];
-  /** Per system or handler that had read some: how many of them it had read. */
+  /** For each system or handler that had read some, how many it had read. */
   readonly read: Readonly<Record<string, number>>;
 }
 
 /**
- * A game held between two ticks, made by `app.save()`: its world as a
- * snapshot, its time, what was waiting for the next tick, and how long its
- * log was. `Save.encode` turns it into bytes, and `App.load` goes on from it.
+ * A game captured between two ticks, made by `app.save()`: its world as a
+ * snapshot, its time, what was queued for the next tick, and the length of its
+ * log. `Save.encode` turns it into bytes, and `App.load` continues from it.
  *
  * @category Models
  */
 export interface Save {
   /**
    * The version of the game that wrote the save: the `version` its app was
-   * made with, 0 when it was given none. A game raises it when it changes
-   * its components, and gives `App.load` a migration from each older one.
+   * created with, defaulting to 0. Increment it when you change the game's
+   * components, and give `App.load` a migration from each older version.
    */
   readonly version: number;
-  /** How many ticks had run. */
+  /** The number of ticks run. */
   readonly tick: number;
-  /** Game time, in seconds. */
+  /** The game time, in seconds. */
   readonly elapsed: number;
   /** The seconds the last tick simulated. */
   readonly delta: number;
   /** `world.snapshot()`. */
   readonly world: Uint8Array;
   /**
-   * The actions waiting for the next tick, in order, payloads in JSON form,
-   * each with who issued it if it came with a name.
+   * The actions queued for the next tick, in order, with payloads in JSON form,
+   * each with the peer that issued it if it has one.
    */
   readonly queued: readonly {
     readonly name: string;
@@ -73,21 +73,21 @@ export interface Save {
   }[];
   readonly events: readonly SavedEvents[];
   /**
-   * What change queries had yet to visit, with how far each system and
-   * handler had got: `world.saveChanges()`.
+   * What change queries haven't visited yet, with each system's and handler's
+   * position: `world.saveChanges()`.
    */
   readonly changes: readonly SavedChanges[];
   /**
-   * How many entries the app's action log held. Everything logged from
-   * there on is the tail to replay after loading this save.
+   * The number of entries in the app's action log. Everything logged after that
+   * is the tail to replay after loading this save.
    */
   readonly logLength: number;
 }
 
 /**
- * A game could not be saved as it stands. The message says what is in the
- * way and names it: a queued action or a waiting event with no schema, a
- * field that holds what it cannot save, a command that is still queued.
+ * The game can't be saved in its current state. The message names what is in
+ * the way: a queued action or a waiting event without a schema, a field holding
+ * a value that can't be saved, or a command still queued.
  *
  * @category Errors
  */
@@ -96,14 +96,14 @@ export class SaveRefused extends Data.TaggedError("SaveRefused")<{
 }> {}
 
 /**
- * A save could not be loaded. `problem` says which kind of trouble it is:
+ * A save couldn't be loaded. `problem` identifies the kind of failure:
  *
  * - one of a snapshot's problems;
- * - `"not a save"`: the bytes are not a saved game at all;
+ * - `"not a save"`: the bytes aren't a saved game at all;
  * - `"newer version"`: a later version of the game wrote the save;
- * - `"no migration"`: an earlier one did, and the game has no migration
- *   from that version;
- * - `"migration failed"`: it has one, and the migration threw.
+ * - `"no migration"`: an earlier version wrote it, and the game has no
+ *   migration from that version;
+ * - `"migration failed"`: a migration threw.
  *
  * @category Errors
  */
@@ -118,10 +118,10 @@ export class LoadRefused extends Data.TaggedError("LoadRefused")<{
 }> {}
 
 /**
- * A save in a plain form that describes itself, for a migration to change.
- * The world is its contents as the snapshot lists them, components by name
- * with their fields, so it can be read whatever the game's components are
- * now. `Migrate` has the usual changes to it.
+ * A save in a plain, self-describing form, for a migration to edit. The world
+ * is listed as the snapshot describes it, components by name with their fields,
+ * so it can be read whatever the game's current components are. `Migrate`
+ * provides the common changes.
  *
  * @category Models
  */
@@ -130,20 +130,20 @@ export interface Contents {
   elapsed: number;
   delta: number;
   world: SnapshotContents;
-  /** The actions that were waiting, payloads in JSON form. */
+  /** The actions that were queued, with payloads in JSON form. */
   queued: { name: string; payload: unknown; from?: string }[];
-  /** The events that were waiting, payloads in JSON form. */
+  /** The events that were waiting, with payloads in JSON form. */
   events: {
     name: string;
     payloads: unknown[];
     read: Record<string, number>;
   }[];
   /**
-   * What change queries had yet to visit, by component name. A component
-   * that a migration renames or removes keeps its old name here, and what
-   * is under a name the game no longer has is left out when the save is
-   * loaded: the queries that watch the component then start over, with
-   * every entity counting as changed.
+   * What change queries haven't visited yet, by component name. A component a
+   * migration renames or removes keeps its old name here, and entries under a
+   * name the game no longer has are dropped when the save is loaded: the
+   * queries watching the component then start over, with every entity counting
+   * as changed.
    */
   changes: {
     component: string;
@@ -154,16 +154,16 @@ export interface Contents {
 }
 
 /**
- * How a save written by version `from` of a game becomes one of version
- * `from + 1`. It changes the contents it is given in place.
+ * Turns a save written by version `from` of a game into one of version `from +
+ * 1`, by editing the contents it receives in place.
  *
  * **Gotchas**
  *
- * - A migration makes a new game of an old save: the log recorded before
- *   it no longer replays against it.
- * - A load does not check the payloads of the waiting actions and events
- *   against the schemas the game has now. A migration that goes with a
- *   changed schema changes those payloads too.
+ * - A migration turns an old save into a new game: the log recorded before it
+ *   no longer replays against it.
+ * - Loading doesn't validate queued actions' and waiting events' payloads
+ *   against the game's current schemas. A migration that accompanies a schema
+ *   change must update those payloads too.
  *
  * @category Models
  */
@@ -173,13 +173,13 @@ export interface Migration {
 }
 
 /**
- * Brings a save up to a version of the game, one migration at a time. A
- * save of that version already is returned as it is.
+ * Migrates a save to a version of the game, one migration at a time. A save
+ * already at that version is returned unchanged.
  *
- * Fails with `LoadRefused`: `"newer version"` for a save from a later
- * version, `"no migration"` when a step is missing, `"migration failed"`
- * when a migration throws, and a snapshot's own problems when the save's
- * world cannot be read or written back.
+ * Fails with `LoadRefused`: `"newer version"` for a save from a later version,
+ * `"no migration"` when a step is missing, `"migration failed"` when a
+ * migration throws, and a snapshot's own problems when the save's world can't
+ * be read or written back.
  *
  * @category Migrations
  */
@@ -293,8 +293,8 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 /**
- * A save as bytes: a short header, everything but the world as JSON text,
- * then the world's snapshot as it is.
+ * Encodes a save as bytes: a short header, everything but the world as JSON
+ * text, then the world's snapshot unchanged.
  *
  * @category Codecs
  */
@@ -318,11 +318,11 @@ const refuse = (
   Exit.fail(new LoadRefused({ problem, message }));
 
 /**
- * Reads a save back from bytes. This checks the save's own shape; the
- * world inside it is checked when the save is loaded.
+ * Decodes a save from bytes. It checks the save's own structure; the world
+ * inside is checked when the save is loaded.
  *
- * Fails with `LoadRefused`: `"not a save"`, `"newer format"` for a save
- * written by a later arcadekit, `"truncated"` or `"corrupt"`.
+ * Fails with `LoadRefused`: `"not a save"`, `"newer format"` for a save written
+ * by a later version of arcadekit, `"truncated"` or `"corrupt"`.
  *
  * @category Codecs
  */

@@ -1,7 +1,7 @@
 /**
- * Drivers decide when the app ticks. The app itself only knows `tick(delta)`,
- * which is what makes the same game runnable in real time, turn by turn, or
- * as fast as possible in a test.
+ * Drivers decide when the app ticks. The app itself only exposes `tick(delta)`,
+ * which is what lets the same game run in real time, turn by turn, or as fast
+ * as possible in a test.
  *
  *   const step = Driver.fixedStep(app, { hz: 60 })   // by hand: step(seconds)
  *   yield* Driver.frames(app, { hz: 60 })            // in a page, once per repaint
@@ -10,56 +10,55 @@
 import { Context, Effect } from "effect";
 
 /**
- * Anything with a `tick`, so drivers work with every App type.
+ * Anything with a `tick`, so drivers work with every kind of app.
  *
  * @category Models
  */
 export interface Tickable {
   readonly tick: (delta: number) => void;
   /**
-   * An app's input stage: run just before each tick, if it is there. An
-   * app's own tick would run it too; a driver does it first, so that it
-   * can ask whether the game is settled once a move has come in.
+   * An app's input stage, run just before each tick if present. An app's own
+   * tick would run it too; a driver runs it first, so it can check whether the
+   * game is settled after input arrives.
    */
   readonly input?: () => void;
-  /** An app's frame stage: run after the ticks of each call, if it is there. */
+  /** An app's frame stage, run after each call's ticks if present. */
   readonly frame?: (alpha: number, delta?: number) => void;
   /**
-   * Whether nothing is waiting for a tick: an app says so. Asked only when
-   * ticking when needed; what does not say is taken to need every tick.
+   * Whether nothing is waiting for a tick, as the app reports it. Only read
+   * when ticking when needed; a tickable without it is treated as needing every
+   * tick.
    */
   readonly settled?: boolean;
 }
 
 /**
- * How a driver steps an app.
+ * Options for how a driver steps an app.
  *
  * @category Options
  */
 export interface StepOptions {
-  /** How many ticks a second the game runs at, whatever the rate of frames. */
+  /** The ticks per second the game runs at, whatever the frame rate. */
   readonly hz: number;
   /**
-   * The most ticks one call runs after a stall, 5 when left out. The ticks
-   * still owed after them are dropped: a page that froze does not run to
-   * catch up.
+   * The maximum ticks one call runs after a stall. Defaults to 5. Ticks still
+   * owed after that are dropped, so a page that froze doesn't race to catch up.
    */
   readonly maxStepsPerCall?: number;
   /**
    * When the game ticks.
    *
-   * `"always"`, when left out: at `hz`, in real time.
+   * `"always"`, the default: at `hz`, in real time.
    *
-   * `"whenNeeded"`: only while something is waiting for a tick, for a game
-   * that moves when its player does. The input stage runs every frame, so
-   * a key, a button of the UI or a message is heard at once. While the app
-   * is not settled (an action waits, a state is to be entered, a script
-   * waits for a tick, an event has not been heard by every system) it
-   * ticks at `hz` as any game does, and once more after, for the systems
-   * that react a tick late to what a system after them did. Then it rests:
-   * no tick runs, the game's time stands still, and the frame stage goes
-   * on drawing it, told that the frame is all the way to the last tick
-   * (`Frame.alpha` of 1).
+   * `"whenNeeded"`: only while something is waiting for a tick, for a game that
+   * moves only when its player does. The input stage runs every frame, so a key
+   * press, a UI button or a message is handled immediately. While the app isn't
+   * settled (an action is queued, a state transition is pending, a script is
+   * waiting for a tick, or an event hasn't been read by every system) it ticks
+   * at `hz` like any game, plus one more tick for systems that react a tick
+   * late to what a later system did. Then it rests: no tick runs, game time
+   * stands still, and the frame stage keeps drawing, with the frame at the last
+   * tick (`Frame.alpha` of 1).
    */
   readonly ticks?: "always" | "whenNeeded";
 }
@@ -67,20 +66,21 @@ export interface StepOptions {
 const EPSILON = 1e-9;
 
 /**
- * Fixed-timestep stepping. Feed it real elapsed seconds, once per frame; it
- * runs zero or more ticks of exactly `1 / hz`, each after the app's input
- * stage, then the app's frame stage, and returns how many ticks it ran.
+ * Steps an app on a fixed timestep. Call it once per frame with the real
+ * elapsed seconds; it runs zero or more ticks of exactly `1 / hz`, each after
+ * the app's input stage, then runs the app's frame stage, and returns the
+ * number of ticks it ran.
  *
- * The input stage reads the devices once per tick, so that a tick sees one
- * picture of them, and a frame in which no tick is due reads nothing: what
- * was pressed meanwhile is there for the next tick.
+ * The input stage reads the devices once per tick, so each tick sees one
+ * consistent state of them, and a frame with no tick due reads nothing: input
+ * from that frame is there for the next tick.
  *
- * The simulation ticks at a fixed rate whatever the rate of frames, and the
- * frame stage is told how far its frame is between the last tick and the
- * next (`Frame.alpha`), so that it can draw what moves in between.
+ * The simulation ticks at a fixed rate whatever the frame rate, and the frame
+ * stage receives how far its frame is between the last tick and the next
+ * (`Frame.alpha`), so it can interpolate what moves.
  *
- * With `ticks: "whenNeeded"` it ticks only while the app has something
- * waiting, and rests in between: see `StepOptions`.
+ * With `ticks: "whenNeeded"`, it ticks only while the app has pending work, and
+ * rests in between: see `StepOptions`.
  *
  * @category Running
  */
@@ -138,9 +138,9 @@ export const fixedStep = (
  * Ticks on a timer until interrupted, then stops the timer. In a page, use
  * `frames`, which follows the display.
  *
- * Each turn of the timer is a call of `fixedStep`'s: the input stage and
- * the ticks that are due, then the frame stage. If a tick or a frame
- * throws, the timer is stopped and it dies with what was thrown.
+ * Each timer callback is one `fixedStep` call: the input stage and the ticks
+ * that are due, then the frame stage. If a tick or a frame throws, the timer
+ * stops and the effect dies with the thrown error.
  *
  * @category Running
  */
@@ -165,29 +165,29 @@ export const interval = (
   });
 
 /**
- * What a frame loop needs of the screen it draws to: to be called back when
- * the next frame is due, and to know whether anyone can see it.
+ * What a frame loop needs from the screen it draws to: a callback when the next
+ * frame is due, and whether anyone can see it.
  *
  * @category Services
  */
 export interface DisplayShape {
   /**
-   * Asks to be called once, when the next frame is due, with the time in
-   * milliseconds. Returns what takes the request back.
+   * Requests a single callback when the next frame is due, with the time in
+   * milliseconds. Returns a function that cancels the request.
    */
   readonly request: (callback: (now: number) => void) => () => void;
-  /** Whether nobody can see the game: its tab is hidden. */
+  /** Whether the game is invisible because its tab is hidden. */
   readonly hidden: () => boolean;
   /**
-   * Calls `listener` whenever `hidden` may have changed. Returns what stops
-   * it.
+   * Calls `listener` whenever `hidden` may have changed. Returns a function
+   * that stops listening.
    */
   readonly onVisibilityChange: (listener: () => void) => () => void;
 }
 
 /**
- * A screen there is none of: a timer of 60 frames a second, never hidden.
- * It holds nothing.
+ * A display for environments without a screen: a 60 frames per second timer,
+ * never hidden. It holds no state.
  */
 const timerDisplay: DisplayShape = {
   request(callback) {
@@ -199,12 +199,11 @@ const timerDisplay: DisplayShape = {
 };
 
 /**
- * The screen a frame loop follows. Nothing has to provide it: the default
- * is a timer of 60 frames a second, which is all there is under Node, in a
- * worker or on a server. A page provides its own, `requestAnimationFrame`
- * and the document's visibility, with `Browser.layer()` or
- * `Browser.runMain` from `arcadekit/Browser`. A test provides one it turns
- * by hand:
+ * The screen a frame loop follows. Nothing has to provide it: the default is a
+ * 60 frames per second timer, which is all there is under Node, in a worker or
+ * on a server. A page provides its own, based on `requestAnimationFrame` and
+ * the document's visibility, with `Browser.layer()` or `Browser.runMain` from
+ * `arcadekit/Browser`. A test provides one it advances by hand:
  *
  *   const display = Driver.makeManualDisplay()
  *   Driver.frames(app, { hz: 60 }).pipe(Effect.provideService(Driver.Display, display))
@@ -217,31 +216,31 @@ export const Display: Context.Reference<DisplayShape> =
   });
 
 /**
- * A display turned by hand, for tests and tools.
+ * A display advanced by hand, for tests and tools.
  *
  * @category Testing
  */
 export interface ManualDisplay extends DisplayShape {
   /**
-   * A frame is due, at `now` milliseconds: calls whoever asked for it, and
-   * returns how many did. What they ask for meanwhile waits for the next.
+   * Signals that a frame is due at `now` milliseconds: calls every pending
+   * callback, and returns how many it called. Callbacks requested meanwhile
+   * wait for the next frame.
    */
   readonly frame: (now: number) => number;
-  /** The tab is hidden: `hidden` says so, and whoever watches is told. */
+  /** Hides the tab: `hidden` returns true, and listeners are notified. */
   readonly hide: () => void;
-  /** The tab is shown again. */
+  /** Shows the tab again. */
   readonly show: () => void;
-  /** How many requests for a frame are waiting. */
+  /** The number of pending frame requests. */
   readonly pending: number;
-  /** How many listeners are watching for a change of visibility. */
+  /** The number of listeners watching for visibility changes. */
   readonly watching: number;
 }
 
 /**
- * A display that does nothing until it is told to: `frame(now)` runs the
- * frame that was asked for, `hide()` and `show()` are the tab going away and
- * coming back, and `pending` and `watching` say what a frame loop has left
- * behind.
+ * Makes a display that does nothing until told to: `frame(now)` runs the
+ * requested frame, `hide()` and `show()` simulate the tab being hidden and
+ * shown, and `pending` and `watching` show what a frame loop left behind.
  *
  * @category Testing
  */
@@ -297,30 +296,30 @@ export const makeManualDisplay = (): ManualDisplay => {
 };
 
 /**
- * The frame loop: follows the display until interrupted. Each time a frame
- * is due it runs the ticks that are due, at a fixed `hz`, and then the
- * app's frame stage, as `fixedStep` does. In a page, with the page's
- * display, a frame is due once per repaint (`requestAnimationFrame`).
+ * Runs the frame loop: follows the display until interrupted. Each time a frame
+ * is due, it runs the ticks that are due at a fixed `hz`, then the app's frame
+ * stage, as `fixedStep` does. In a page, with the page's display, a frame is
+ * due once per repaint (`requestAnimationFrame`).
  *
  *   const app = yield* App.make({ plugins: [Game] })
  *   yield* Driver.frames(app, { hz: 60 })
  *
- * - The first frame draws the game as it stands and runs no tick: time is
- *   counted from it.
- * - While the tab is hidden the loop asks for no frame, and the time spent
- *   hidden does not count: a game that comes back is where it was left.
- * - Interrupting it takes back the frame it had asked for and stops
- *   watching the tab, so nothing is left running. It is interrupted with
- *   the fiber that runs it, which is how closing a scope stops it.
- * - If a tick or a frame throws, it stops the same way and dies with what
- *   was thrown.
- * - With `ticks: "whenNeeded"`, for a game that moves when its player
- *   does, every frame is drawn and a tick runs only while something is
- *   waiting for one:
+ * - The first frame draws the game as it is and runs no tick: time is measured
+ *   from it.
+ * - While the tab is hidden, the loop requests no frames, and the hidden time
+ *   doesn't count: a game that becomes visible again resumes where it was.
+ * - Interrupting it cancels its pending frame request and stops watching the
+ *   tab, so nothing is left running. It is interrupted with the fiber that runs
+ *   it, which is how closing a scope stops it.
+ * - If a tick or a frame throws, it stops the same way and dies with the thrown
+ *   error.
+ * - With `ticks: "whenNeeded"`, for a game that moves only when its player
+ *   does, every frame is drawn but a tick runs only while something is waiting
+ *   for one:
  *
  *     yield* Driver.frames(app, { hz: 60, ticks: "whenNeeded" })
  *
- * It reaches the screen through `Display`, which a test replaces.
+ * It reaches the screen through `Display`, which a test can replace.
  *
  * @category Running
  */

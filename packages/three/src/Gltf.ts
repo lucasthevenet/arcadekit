@@ -1,6 +1,5 @@
 /**
- * Models: a glTF file as an asset. This is the package's
- * `@arcadekit/three/Gltf` entry.
+ * The `@arcadekit/three/Gltf` entry point, which loads glTF files as assets.
  *
  *   import * as Gltf from "@arcadekit/three/Gltf"
  *
@@ -8,29 +7,29 @@
  *     ship: Gltf.model("/ship.glb"),
  *   })
  *
- *   // An object each, made of the model while the bundle is loaded.
+ *   // One object per entity, made from the model while the bundle is loaded.
  *   const Ships = Three.objects("game/Ships", {
  *     of: Ship,
  *     from: Fleet,
  *     make: (entity, { ship }) => ship.scene.clone(),
  *   })
  *
- *   // Or a crowd, each an instance of one of its meshes.
+ *   // Or a crowd, each entity an instance of one of the model's meshes.
  *   const Rocks = Three.instances("game/Rocks", {
  *     of: Rock,
  *     from: Fleet,
  *     look: ({ ship }) => Gltf.mesh(ship, "Hull"),
  *   })
  *
- * A model is loaded as any asset is: with its bundle, through
- * `Assets.Loader`, and let go with the scope it was loaded in, its
- * geometries, materials and textures disposed of. That goes for the files
- * a `.gltf` names beside itself, its buffers and its pictures, too: they
- * are fetched here, through the same loader, and handed to Three.js with
- * the model, which then fetches nothing for itself.
+ * A model loads like any asset: with its bundle, through `Assets.Loader`, and
+ * is released with the scope it was loaded in, which disposes of its
+ * geometries, materials and textures. The same applies to the files a `.gltf`
+ * references alongside it, its buffers and images: this module fetches them
+ * through the same loader and hands them to Three.js with the model, so
+ * Three.js fetches nothing itself.
  *
- * It is a module of its own because it brings the glTF loader of Three.js
- * with it, which a game with no models need not carry.
+ * It is a separate entry point because it pulls in Three.js's glTF loader,
+ * which a game without models doesn't need.
  */
 import * as Assets from "arcadekit/Assets";
 import { Effect } from "effect";
@@ -39,23 +38,23 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
 
 /**
- * A model that was loaded: what the glTF loader of Three.js gives. `scene`
- * is its default scene, `scenes` all of them, `animations` its clips.
+ * A loaded model, as Three.js's glTF loader returns it. `scene` is its default
+ * scene, `scenes` all of them, and `animations` its clips.
  *
  * @category Models
  */
 export type Model = GLTF;
 
 /**
- * How a model is loaded.
+ * Options for loading a model.
  *
  * @category Options
  */
 export interface ModelOptions {
   /**
-   * Handed the loader before it reads the model, once per loading: to give
-   * it what a compressed model needs, `setDRACOLoader`, `setKTX2Loader` or
-   * `setMeshoptDecoder`, which are the game's to bring.
+   * Receives the loader before it reads the model, once per load. Use it to
+   * configure what a compressed model needs, with `setDRACOLoader`,
+   * `setKTX2Loader` or `setMeshoptDecoder`, which your game supplies.
    */
   readonly prepare?: (loader: GLTFLoader) => void;
 }
@@ -66,7 +65,7 @@ const MAGIC = 0x46_54_6c_67;
 const JSON_CHUNK = 0x4e_4f_53_4a;
 const BIN_CHUNK = 0x00_4e_49_42;
 
-/** As much of a glTF document as is read and rewritten here. */
+/** The parts of a glTF document this module reads and rewrites. */
 interface Document {
   buffers?: { uri?: string; byteLength: number }[];
   bufferViews?: { buffer: number; byteOffset?: number; byteLength: number }[];
@@ -76,7 +75,7 @@ interface Document {
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
 
-/** A model's document, and the binary chunk that came in the same file, if one did. */
+/** Returns a model's document, and the binary chunk from the same file, if any. */
 const read = (
   data: Uint8Array
 ): { readonly document: Document; readonly binary: Uint8Array | undefined } => {
@@ -106,7 +105,7 @@ const read = (
   return { document, binary };
 };
 
-/** The bytes of a `data:` URI, and the type it says they are of. */
+/** Returns the bytes of a `data:` URI, and the media type it declares. */
 const fromDataUri = (
   uri: string
 ): { readonly bytes: Uint8Array; readonly type: string } => {
@@ -125,13 +124,13 @@ const fromDataUri = (
   return { bytes, type };
 };
 
-/** Where a file a model names is, given where the model is. */
+/** Resolves the location of a file a model references, relative to the model. */
 const beside = (model: string, uri: string): string =>
   /^[a-z][a-z0-9+.-]*:/iu.test(uri) || uri.startsWith("/")
     ? uri
     : model.slice(0, model.lastIndexOf("/") + 1) + uri;
 
-/** What kind of picture some bytes are, told from how they begin. */
+/** Detects an image's type from its first bytes. */
 const pictureType = (bytes: Uint8Array): string | undefined => {
   const starts = (...head: number[]): boolean =>
     head.every((byte, i) => bytes[i] === byte);
@@ -153,9 +152,9 @@ const pictureType = (bytes: Uint8Array): string | undefined => {
 const aligned = (length: number): number => (length + 3) & ~3;
 
 /**
- * A model and every file it names, as one binary glTF: its buffers joined
- * into one, its pictures put in that buffer too. What is in the file
- * already is taken from it; what is beside it is fetched through the
+ * Packs a model and every file it references into a single binary glTF: its
+ * buffers joined into one, with its images in that buffer too. Content already
+ * in the file is taken from it; files alongside it are fetched through the
  * loader.
  */
 const pack = (
@@ -181,7 +180,10 @@ const pack = (
     if (!named && binary !== undefined) {
       return data.slice().buffer;
     }
-    /** The bytes a URI stands for: in the URI itself, or beside the model. */
+    /**
+     * Returns the bytes a URI refers to, embedded in the URI itself or in a
+     * file alongside the model.
+     */
     const fetched = (
       uri: string
     ): Effect.Effect<
@@ -326,29 +328,27 @@ const dispose = (model: Model): void => {
 // --- the asset -----------------------------------------------------------------------
 
 /**
- * An asset that is a model: a glTF file, `.glb` or `.gltf`, loaded with
- * its bundle and disposed of with the scope it was loaded in.
+ * Makes a model asset: a glTF file, `.glb` or `.gltf`, loaded with its bundle
+ * and disposed of with the scope it was loaded in.
  *
  *   const Fleet = Assets.bundle("game/Fleet", {
  *     ship: Gltf.model("/ship.glb"),
- *     rock: Gltf.model("/rocks/rock.gltf"),   // with rock.bin and rock.png beside it
+ *     rock: Gltf.model("/rocks/rock.gltf"),   // with rock.bin and rock.png alongside it
  *   })
  *
- * - The buffers and pictures a `.gltf` names are fetched through
- *   `Assets.Loader`, from beside the model, at once with each other: a
- *   test's files in memory serve them, one that is missing fails the
- *   bundle with its own URL, and a level that is left while its model is
- *   still on its way gives those requests up.
- * - A file that is no model fails the bundle with `Assets.AssetFailed`,
- *   which says what was wrong with it.
- * - What a compressed model needs is given to the loader in `prepare`.
- * - A model is one for the whole bundle: an object made of it shares its
- *   geometries and materials, so `model.scene.clone()` is cheap, there is
- *   nothing to free, and what changes one copy's material changes them
- *   all.
- * - Its pictures are decoded by the page, as `Three.texture`'s are, and
- *   closed when the model is let go: a model with pictures is for a page,
- *   and one without loads anywhere.
+ * - The buffers and images a `.gltf` references are fetched through
+ *   `Assets.Loader`, relative to the model, in parallel. A test's in-memory
+ *   files serve them, a missing one fails the bundle with its own URL, and
+ *   leaving a level while its model is still loading cancels those requests.
+ * - A file that isn't a valid model fails the bundle with `Assets.AssetFailed`,
+ *   which says what was wrong.
+ * - Configure what a compressed model needs on the loader in `prepare`.
+ * - A bundle loads each model once: objects made from it share its geometries
+ *   and materials, so `model.scene.clone()` is cheap and there is nothing to
+ *   free, but changing one copy's material changes them all.
+ * - Its images are decoded by the page, as `Three.texture`'s are, and closed
+ *   when the model is released: a model with images requires a page, and one
+ *   without loads anywhere.
  *
  * @category Constructors
  */
@@ -381,16 +381,16 @@ export const model = (
   );
 
 /**
- * A mesh of a model, by its name, or the first there is: what
+ * Returns a model's mesh by name, or its first mesh. This is what
  * `Three.instances` takes as a look, since a mesh has a geometry and a
  * material.
  *
  *   look: ({ rock }) => Gltf.mesh(rock, "Boulder")
  *
- * The name is that of the node the mesh is on, as an editor shows it, or
- * the mesh's own where its node has none. A mesh of several materials is
- * several meshes under that name, and the first is given. Throws, naming
- * the meshes there are, when none has it.
+ * The name is the name of the node the mesh is on, as an editor shows it, or
+ * the mesh's own name when its node has none. A mesh with several materials is
+ * several meshes under that name, and the first is returned. Throws, listing
+ * the available meshes, when none has the name.
  *
  * @category Utilities
  */

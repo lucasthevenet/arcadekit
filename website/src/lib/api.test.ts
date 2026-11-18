@@ -73,7 +73,7 @@ describe.runIf(built)("a module's page", () => {
     expect(clip?.parts[0]?.signature).toBe(
       "const clip: (name: string, data?: unknown) => Clip;"
     );
-    expect(clip?.parts[0]?.doc).toContain("A clip of your own making");
+    expect(clip?.parts[0]?.doc).toContain("Makes a clip by hand");
   });
 
   it("links each export to the line of the source that writes it", () => {
@@ -100,7 +100,7 @@ describe.runIf(built)("a module's page", () => {
 
   it("starts with the module's comment and how to import it", () => {
     const page = renderModule(readSound(), "https://github.com/o/r", "main");
-    expect(page.startsWith("Sound: a service")).toBe(true);
+    expect(page.startsWith("Sound plays named cues")).toBe(true);
     expect(page).toContain('import * as Sound from "arcadekit/Sound"');
     expect(page).toContain("## Constructors\n\n### clip");
   });

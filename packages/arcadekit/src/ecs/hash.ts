@@ -1,12 +1,12 @@
 /**
- * The arithmetic behind `World.hash`: a 32-bit hash built one 32-bit word at
- * a time, with 32-bit integer arithmetic only, so it gives the same number on
+ * The arithmetic behind `World.hash`: a 32-bit hash built one 32-bit word at a
+ * time, using only 32-bit integer arithmetic, so it produces the same number on
  * every machine and in every JavaScript engine.
  *
- * `add` is the step of MurmurHash3. For a given state, two different words
- * always give two different states, and for a given word so do two different
- * states. A change to one word of the input therefore always changes the
- * result: it cannot cancel out further on.
+ * `add` is the MurmurHash3 mixing step. For a given state, two different words
+ * always produce two different states, and for a given word, so do two
+ * different states. A change to one word of the input therefore always changes
+ * the result: it can't cancel out later.
  *
  * No Effect dependency.
  */
@@ -21,7 +21,7 @@ export const add = (state: number, word: number): number => {
   return (Math.imul((h << 13) | (h >>> 19), 5) + 0xe6546b64) | 0;
 };
 
-/** Scrambles a state so that every bit of it depends on every bit of the input. */
+/** Scrambles a state so every bit of it depends on every bit of the input. */
 export const finish = (state: number): number => {
   let h = state;
   h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
@@ -73,7 +73,7 @@ const DATA_STRING = 5;
 const DATA_BIGINT = 6;
 const DATA_JSON = 7;
 
-/** The JSON text of an array or an object. A function or a symbol has none. */
+/** Returns the JSON text of an array or an object. A function or a symbol has none. */
 const jsonText = (value: unknown): string => {
   try {
     return JSON.stringify(value) ?? "";
@@ -85,10 +85,10 @@ const jsonText = (value: unknown): string => {
 };
 
 /**
- * Folds one value of plain data into a hash state. Text, a number, a
- * boolean, a bigint, null and undefined are hashed by value. An array or an
- * object is hashed as the text `JSON.stringify` gives for it, which is the
- * form a snapshot saves it in.
+ * Folds one value of plain data into a hash state. Strings, numbers, booleans,
+ * bigints, null and undefined are hashed by value. An array or an object is
+ * hashed as its `JSON.stringify` text, which is the form a snapshot saves it
+ * in.
  */
 export const addData = (state: number, value: unknown): number => {
   switch (typeof value) {
@@ -119,10 +119,10 @@ export const addData = (state: number, value: unknown): number => {
 /**
  * Folds `count` 32-bit words into a hash state, in order.
  *
- * Four states take every fourth word each and are folded together at the
- * end. One state would have to wait for each step to finish before starting
- * the next; four overlap, which measured about a third faster. A changed
- * word still always changes the result.
+ * Four states each take every fourth word, and are folded together at the end.
+ * A single state would wait for each step to finish before starting the next;
+ * four overlap, which measured about a third faster. A changed word still
+ * always changes the result.
  */
 const addWords = (state: number, words: Uint32Array, count: number): number => {
   let a = state;
@@ -142,7 +142,7 @@ const addWords = (state: number, words: Uint32Array, count: number): number => {
   return add(add(add(a, b), c), d);
 };
 
-/** As `addWords`, for the bits of 32-bit floats. */
+/** Like `addWords`, for the bits of 32-bit floats. */
 const addFloat32s = (
   state: number,
   words: Uint32Array,
@@ -171,8 +171,8 @@ const addFloat32s = (
 };
 
 /**
- * Folds rows `[0, count)` of a column into a hash state, in order. This is
- * the loop that decides what hashing a big world costs.
+ * Folds rows `[0, count)` of a column into a hash state, in order. This loop
+ * determines what hashing a large world costs.
  */
 export const addColumn = (
   state: number,
@@ -263,8 +263,8 @@ export const addColumn = (
 };
 
 /**
- * As `addColumn`, but each row is folded into its own state, `states[i]`.
- * Used where the order of the rows must not matter.
+ * Like `addColumn`, but folds each row into its own state, `states[i]`. Used
+ * where the order of the rows must not matter.
  */
 export const addColumnPerRow = (
   states: Int32Array,
@@ -331,8 +331,8 @@ const KIND_CODE: Record<FieldKind, number> = {
 };
 
 /**
- * A component's identity as the hash sees it: its name, and the name and
- * kind of each of its fields, in the order they were defined.
+ * Returns a component's identity as the hash sees it: its name, and the name
+ * and type of each field, in definition order.
  */
 export const shapeOf = (
   name: string,

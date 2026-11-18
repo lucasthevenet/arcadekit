@@ -1,5 +1,5 @@
 /**
- * Plugins: one value that bundles everything a feature needs.
+ * Plugins bundle everything a feature needs into a single value.
  *
  *   const Physics = Plugin.make("Physics", {
  *     systems: [Movement, Collision],
@@ -18,14 +18,14 @@
  * A plugin that several others depend on is installed once: its systems are
  * registered once and its layer is built once.
  *
- * Events and actions are plain values, so a plugin does not list them: it
- * exports them from its module like anything else. It does list two things
- * that loading a saved game needs:
+ * Events and actions are plain values, so a plugin doesn't list them; its
+ * module exports them like anything else. A plugin does list two things that
+ * loading a saved game needs:
  *
  *   const Weather = Plugin.make("Weather", {
- *     components: [Cloud, Wind],          // so a save that names them can be read
+ *     components: [Cloud, Wind],          // so a save that contains them can be loaded
  *     scripts: [Storms],                  // started with the app, and again after a load
- *     setup: spawnTheFirstClouds          // a fresh start only: a load has them already
+ *     setup: spawnTheFirstClouds          // a fresh start only: a load already has them
  *   })
  */
 import type { Effect, Layer } from "effect";
@@ -36,27 +36,27 @@ import type { BuiltIn } from "./Services";
 import type * as System from "./System";
 
 /**
- * Any system, whatever it fails with or needs.
+ * Any system, whatever its error and requirements.
  *
  * @category Type-level
  */
 export type AnySystem = System.System<any, any>;
 /**
- * Any action handler, whatever its action, its result or its needs.
+ * Any action handler, whatever its action, result and requirements.
  *
  * @category Type-level
  */
 export type AnyHandler = Action.Handler<any, any, any, any, any>;
 
 /**
- * A plugin, as `Plugin.make` gives it and `App.make` installs it.
+ * A plugin, as `Plugin.make` returns it and `App.make` installs it.
  *
  * @param TickE    what the plugin's systems can fail with
  * @param Han      the plugin's action handlers (so `dispatch` can be typed)
  * @param Provided services its layer provides to the whole app
  * @param E        what building its layer or running its setup can fail with
- * @param RIn      what its layer needs that its declared dependencies do not provide
- * @param Needs    what its systems, handlers and setup need
+ * @param RIn      what its layer requires that its dependencies don't provide
+ * @param Needs    what its systems, handlers and setup require
  *
  * @category Models
  */
@@ -97,7 +97,7 @@ export type Any = Plugin<any, any, any, any, any, any>;
 
 // Distributive, so they work on a union of plugins and give `never` for none.
 /**
- * What a plugin's systems can fail with, or a union's.
+ * The error a plugin's systems can fail with, or a union's.
  *
  * @category Type-level
  */
@@ -118,21 +118,21 @@ export type HandlerOf<T> =
 export type ProvidedOf<T> =
   T extends Plugin<any, any, infer X, any, any, any> ? X : never;
 /**
- * What building a plugin's layer or running its setup can fail with.
+ * The error that building a plugin's layer or running its setup can fail with.
  *
  * @category Type-level
  */
 export type ErrorOf<T> =
   T extends Plugin<any, any, any, infer X, any, any> ? X : never;
 /**
- * What a plugin's layer needs that its dependencies do not provide.
+ * What a plugin's layer requires that its dependencies don't provide.
  *
  * @category Type-level
  */
 export type LayerNeedsOf<T> =
   T extends Plugin<any, any, any, any, infer X, any> ? X : never;
 /**
- * What a plugin's systems, handlers and setup need.
+ * What a plugin's systems, handlers and setup require.
  *
  * @category Type-level
  */
@@ -152,8 +152,8 @@ type EffectNeeds<T> = T extends Effect.Effect<any, any, infer R> ? R : never;
 
 /**
  * Makes a plugin: a feature of a game, with the plugins it depends on, its
- * systems, its action handlers, its components, the services its layer
- * provides, what it does at the start, and its scripts.
+ * systems, action handlers and components, the services its layer provides,
+ * what it does at startup, and its scripts.
  *
  *   const Combat = Plugin.make("game/Combat", {
  *     plugins: [Physics],
@@ -162,9 +162,9 @@ type EffectNeeds<T> = T extends Effect.Effect<any, any, infer R> ? R : never;
  *     handlers: [Attack],
  *   })
  *
- * A plugin that two others depend on is installed once. Two different
- * plugins of one name are refused when the app is made. A layer or a setup
- * that fails makes `App.make` fail with that error.
+ * A plugin that two others depend on is installed once. Two different plugins
+ * with the same name are refused when the app is created. If a layer or a setup
+ * fails, `App.make` fails with that error.
  *
  * @category Constructors
  */
@@ -178,34 +178,34 @@ export const make = <
 >(
   name: string,
   options: {
-    /** Plugins this one depends on. They are installed first. */
+    /** The plugins this one depends on, installed first. */
     readonly plugins?: readonly [...P];
     readonly systems?: readonly [...S];
     readonly handlers?: readonly [...H];
     /**
-     * Services for the whole app. While it builds it can use the built-in
-     * services and anything the plugins listed above provide. What it
-     * acquires is released when the app's scope closes.
+     * Services for the whole app. While it builds, it can use the built-in
+     * services and anything the plugins listed above provide. What it acquires
+     * is released when the app's scope closes.
      */
     readonly layer?: L;
     /**
-     * Runs once when a game starts afresh, after every plugin's layer is
-     * built. For spawning the initial entities. Must not wait. It does not
-     * run when the app is loaded from a save, which holds those entities.
+     * Runs once when a game starts fresh, after every plugin's layer is built,
+     * to spawn the initial entities. It must not wait. It doesn't run when the
+     * app is loaded from a save, which already holds those entities.
      */
     readonly setup?: SU;
     /**
-     * The components, singletons and states this plugin's feature stores.
-     * A world knows them by name, so loading a save needs every one the
-     * save names to be listed by some plugin, or by the app.
+     * The components, singletons and states this plugin's feature stores. A
+     * world identifies them by name, so loading a save requires every one it
+     * contains to be listed by some plugin, or by the app.
      */
     readonly components?: readonly Listed[];
     /**
-     * Long-running scripts, started when the app starts: after `setup` on a
-     * fresh start, and again from their beginning when the app is loaded
-     * from a save. A save cannot hold a script in mid-flight, so a script
-     * listed here keeps what it must not lose in the world, and picks up
-     * from what it finds there. It runs and is watched as any script is.
+     * Long-running scripts, started with the app: after `setup` on a fresh
+     * start, and again from the beginning when the app is loaded from a save. A
+     * save can't hold a script mid-flight, so a script listed here keeps
+     * whatever it must not lose in the world, and resumes from what it finds
+     * there. It runs and is supervised like any other script.
      */
     readonly scripts?: readonly [...SC];
   }

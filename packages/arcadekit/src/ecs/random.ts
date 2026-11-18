@@ -1,15 +1,16 @@
 /**
  * A seeded random number generator.
  *
- * The same seed gives the same numbers on every machine and in every
+ * The same seed produces the same numbers on every machine and in every
  * JavaScript engine: the generator is xoshiro128**, which uses only 32-bit
  * integer arithmetic, and a float is one of its outputs divided by 2^32.
  *
- * Its whole state is four 32-bit numbers in `state`. A world owns one
- * generator (`world.random`), so the state is part of the world: it is in
- * the world's hash, and copying it resumes the sequence where it was.
+ * Its entire state is four 32-bit numbers in `state`. Each world owns one
+ * generator (`world.random`), so its state is part of the world: it is included
+ * in the world's hash, and copying it resumes the sequence where it left off.
  *
- * It is not for secrets: anyone who sees a few outputs can work out the rest.
+ * It is not suitable for secrets: anyone who sees a few outputs can predict the
+ * rest.
  *
  * No Effect dependency.
  */
@@ -27,24 +28,24 @@ const mix = (value: number): number => {
 const GOLDEN = 0x9e3779b9;
 
 /**
- * A seeded random number generator, xoshiro128**: the same seed gives the
- * same numbers on every machine. A world owns one, as `world.random`.
+ * A seeded random number generator, xoshiro128**: the same seed produces the
+ * same numbers on every machine. Each world owns one, as `world.random`.
  *
  * @category Models
  */
 export class Rng {
   /**
-   * The generator's whole state. Copy it to save the generator, and write it
+   * The generator's entire state. Copy it to save the generator, and write it
    * back with `state.set` to resume from there.
    */
   readonly state: Uint32Array = new Uint32Array(4);
 
-  /** @param seed a whole number from 0 to `Number.MAX_SAFE_INTEGER`. */
+  /** @param seed an integer from 0 to `Number.MAX_SAFE_INTEGER`. */
   constructor(seed = 0) {
     this.seed(seed);
   }
 
-  /** Restarts the sequence from a seed. Different seeds give different sequences. */
+  /** Restarts the sequence from a seed. Different seeds produce different sequences. */
   seed(seed: number): void {
     if (!Number.isSafeInteger(seed) || seed < 0) {
       throw new Error(
@@ -63,7 +64,7 @@ export class Rng {
     state[3] = mix(high + 4 * GOLDEN);
   }
 
-  /** The next 32 random bits, as a whole number from 0 to 2^32 - 1. */
+  /** Returns the next 32 random bits, as an integer from 0 to 2^32 - 1. */
   bits(): number {
     const s = this.state;
     const s0 = s[0]!;
@@ -83,13 +84,13 @@ export class Rng {
     return result;
   }
 
-  /** A number from 0 up to, but not including, 1. */
+  /** Returns a number from 0 up to, but not including, 1. */
   next(): number {
     return this.bits() / TWO_32;
   }
 
   /**
-   * A whole number from `min` to `max`, both included: `int(1, 6)` rolls a
+   * Returns an integer from `min` to `max`, both inclusive: `int(1, 6)` rolls a
    * die. Every value is equally likely.
    */
   int(min: number, max: number): number {
@@ -115,7 +116,7 @@ export class Rng {
     return min + (drawn % range);
   }
 
-  /** One of the items, each equally likely. An empty list is an error. */
+  /** Returns one of the items, each equally likely. Throws on an empty list. */
   pick<T>(items: ArrayLike<T>): T {
     if (items.length === 0) {
       throw new Error("Random.pick was given an empty list.");
@@ -124,8 +125,7 @@ export class Rng {
   }
 
   /**
-   * Puts the items of an array in a random order, in place, and returns the
-   * same array. Every order is equally likely.
+   * Shuffles an array in place and returns it. Every order is equally likely.
    */
   shuffle<T>(items: T[]): T[] {
     for (let i = items.length - 1; i > 0; i--) {

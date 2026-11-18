@@ -1,21 +1,20 @@
 /**
- * An Effect scheduler owned by the game loop.
+ * An Effect scheduler driven by the game loop.
  *
- * Effect's default scheduler does two things that are wrong for a game tick:
+ * Effect's default scheduler does two things a game tick can't allow:
  *
  * 1. It pauses a fiber after 2048 operations and resumes it later from
- *    `setImmediate`/a timer, so a heavy tick could be split across frames.
+ *    `setImmediate` or a timer, so a heavy tick could be split across frames.
  * 2. It decides on its own when queued fibers resume.
  *
- * This scheduler never auto-yields, and it only runs queued work when the
- * game loop calls `dispatcher.flush()`. Fiber resumption therefore happens at
- * one known point in every tick, in a deterministic order.
+ * This scheduler never yields on its own, and runs queued work only when the
+ * game loop calls `dispatcher.flush()`. Fibers therefore resume at one known
+ * point in every tick, in a deterministic order.
  */
 import type * as Scheduler from "effect/Scheduler";
 
 /**
- * Holds the work fibers have queued until the tick flushes it, in the order
- * it was queued.
+ * Holds the work that fibers have queued, in order, until the tick flushes it.
  *
  * @category Models
  */
@@ -24,8 +23,9 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
   private flushing = false;
 
   /**
-   * A fiber that keeps rescheduling itself (for example
-   * `Effect.forever(Effect.yieldNow)`) would otherwise hang the tick.
+   * Caps the rounds of a flush, since a fiber that keeps rescheduling itself
+   * (for example `Effect.forever(Effect.yieldNow)`) would otherwise hang the
+   * tick.
    */
   maxRounds = 10_000;
 
@@ -37,7 +37,7 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
     return total;
   }
 
-  /** Lower priority numbers run first, matching Effect's own scheduler. */
+  /** Lower priority numbers run first, as in Effect's own scheduler. */
   scheduleTask(task: () => void, priority: number): void {
     const { buckets } = this;
     let index = 0;
@@ -86,9 +86,8 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
 }
 
 /**
- * The scheduler an app runs its fibers on: it never pauses a fiber of its
- * own accord, and runs what was queued only when the tick flushes its
- * dispatcher.
+ * The scheduler an app runs its fibers on. It never pauses a fiber on its own,
+ * and runs queued work only when the tick flushes its dispatcher.
  *
  * @category Models
  */
@@ -100,12 +99,12 @@ export class TickScheduler implements Scheduler.Scheduler {
     this.dispatcher = dispatcher;
   }
 
-  /** Never pause a fiber in the middle of a tick. */
+  /** Never pauses a fiber in the middle of a tick. */
   shouldYield(): boolean {
     return false;
   }
 
-  /** Every fiber shares the one dispatcher, so one flush drains them all. */
+  /** Every fiber shares one dispatcher, so a single flush drains them all. */
   makeDispatcher(): TickDispatcher {
     return this.dispatcher;
   }

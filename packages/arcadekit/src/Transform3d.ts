@@ -1,8 +1,8 @@
 /**
- * Where a thing is in three dimensions: its position, which way it is
- * turned, and how large it is. Three components of the game, for whatever
- * needs to know where things are: the rules that move them, what draws
- * them, what is heard from them. A flat game has `Transform2d`.
+ * Position, rotation and scale in three dimensions. These components serve
+ * everything that needs to know where things are: the rules that move them, the
+ * renderer that draws them, and the sound that plays from them. For a 2D game,
+ * use `Transform2d`.
  *
  *   commands.spawn(
  *     Rock,
@@ -10,23 +10,22 @@
  *     Transform3d.Rotation.of(Transform3d.axisAngle(0, 0, 1, Math.PI / 2))
  *   )
  *
- * They are ordinary components: columns of 32-bit floats, written by the
- * game's systems, saved, hashed and replayed. Nothing here draws. A
- * renderer reads them: `@arcadekit/three` draws an entity where its
- * `Position` says, turned and sized by its `Rotation` and `Scale` if it
- * has them.
+ * They are ordinary components: columns of 32-bit floats that the game's
+ * systems write, and that are saved, hashed and replayed. Nothing here draws. A
+ * renderer reads them: `@arcadekit/three` draws an entity at its `Position`,
+ * rotated and scaled by its `Rotation` and `Scale` if it has them.
  *
- * An entity has the ones it needs: one that is only somewhere has a
- * `Position`, and `Rotation` and `Scale` are for the ones that turn or
- * have a size of their own. A save names each as the world does, by the
- * module and the component: `"arcadekit/Transform3d.Position"`.
+ * Give an entity only the components it needs: `Position` alone for something
+ * that only has a location, plus `Rotation` and `Scale` for things that turn or
+ * have a size of their own. A save names each by module and component, as the
+ * world does: `"arcadekit/Transform3d.Position"`.
  */
 import { Component, Field } from "./ecs/component";
 import * as Plugin from "./Plugin";
 
 /**
- * Where an entity is, in the units of the game's space. A game that is
- * flat gives every `z` as 0. Added with no value, it is at the origin.
+ * An entity's position, in the game's units. Added without a value, it is at
+ * the origin.
  *
  * @category Components
  */
@@ -37,14 +36,13 @@ export const Position = Component.define("arcadekit/Transform3d.Position", {
 });
 
 /**
- * Which way an entity is turned, as a quaternion. `axisAngle` makes one.
+ * An entity's rotation, as a quaternion. `axisAngle` creates one.
  *
- * It is the turn that matters and not the length. A quaternion of any
- * length stands for the turn of the one of length 1 along it, and what
- * reads a `Rotation` takes it so: one that a game's rules let drift from
- * length 1, or never made of it, is drawn as the same turn. All four
- * fields 0, which is what a `Rotation` added with no value is, stands for
- * not turned at all.
+ * Only the direction of the quaternion matters, not its length. A quaternion of
+ * any length represents the same rotation as the unit quaternion in its
+ * direction, and everything that reads a `Rotation` normalizes it, so one that
+ * drifts from length 1 still draws as the same rotation. All four fields at 0,
+ * which is a `Rotation` added without a value, means no rotation.
  *
  * @category Components
  */
@@ -56,13 +54,12 @@ export const Rotation = Component.define("arcadekit/Transform3d.Rotation", {
 });
 
 /**
- * How large an entity is, along each axis: 1 is the size it is made at.
+ * An entity's size along each axis, where 1 is its original size.
  *
  * **Gotchas**
  *
- * Added with no value it is all zeros, as any component is, which is no
- * size at all: what draws from it draws nothing. Give it its value where
- * it is added.
+ * Added without a value it is all zeros, like any component, which means no
+ * size at all: a renderer draws nothing. Give it a value when you add it.
  *
  * @category Components
  */
@@ -73,11 +70,14 @@ export const Scale = Component.define("arcadekit/Transform3d.Scale", {
 });
 
 /**
- * The value of a `Rotation` that turns by `angle` radians about an axis:
- * `Transform3d.axisAngle(0, 1, 0, Math.PI)`. The axis is a direction, of
- * any length but none; about no axis at all, three zeros, it is no turn.
- * What it gives is of length 1. It makes an object, so it is for a spawn
- * or a `world.set`, not for a loop over columns.
+ * Returns the `Rotation` that turns by `angle` radians about an axis:
+ * `Transform3d.axisAngle(0, 1, 0, Math.PI)`. The axis is a direction of any
+ * non-zero length; a zero axis gives no rotation. The result has length 1.
+ *
+ * **Gotchas**
+ *
+ * It allocates an object, so use it for a spawn or a `world.set`, not in a loop
+ * over columns.
  *
  * @category Utilities
  */
@@ -98,9 +98,9 @@ export const axisAngle = (
 };
 
 /**
- * Lists the three components, so that a save which names them can be read.
- * The plugin that holds a game's rules depends on it, and so does one that
- * draws from them, as `Three.plugin` of `@arcadekit/three` does.
+ * Registers the three components, so a save that contains them can be loaded.
+ * The plugin that holds a game's rules depends on it, as does any plugin that
+ * draws from them, such as `Three.plugin` from `@arcadekit/three`.
  *
  * @category Plugins
  */

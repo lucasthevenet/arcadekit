@@ -1,6 +1,6 @@
 /**
- * Assets: what a game loads to be drawn and heard. Loading is a scoped
- * resource: what was loaded is let go when the scope it was loaded in
+ * Assets are the files a game loads to be drawn and heard. Loading is a scoped
+ * resource: loaded assets are released when the scope they were loaded in
  * closes.
  *
  *   const Forest = Assets.bundle("game/Forest", {
@@ -12,9 +12,9 @@
  *
  *   const { backdrop, layout } = yield* Assets.load(Forest)
  *
- * For a level, the scope is the level's. `Assets.during` loads a bundle
- * while a condition holds, a state of the game as a rule, and lets it go
- * when it holds no longer:
+ * For a level, the scope is the level's. `Assets.during` loads a bundle while a
+ * condition holds, typically a state of the game, and releases it when the
+ * condition no longer holds:
  *
  *   const Game = Plugin.make("Game", {
  *     plugins: [Assets.plugin],
@@ -22,15 +22,15 @@
  *   })
  *
  *   const Draw = System.make("Draw", function*() {
- *     const forest = yield* Forest               // what is loaded of it now
+ *     const forest = yield* Forest               // the bundle's current status
  *     if (forest._tag === "Ready") draw(forest.assets.backdrop)
  *   }).pipe(System.inStage("frame"))
  *
- * Loading takes real time, so it is no part of the simulation: nothing in
- * a tick waits for an asset or can tell whether one is there. What the
- * game itself needs from a file (where the walls are) comes in as an
- * action, issued by a system of the input stage once the asset is ready,
- * and is in the log from then on.
+ * Loading takes real time, so it isn't part of the simulation: nothing in a
+ * tick waits for an asset or can tell whether one is loaded. What the game
+ * itself needs from a file, such as where the walls are, enters as an action,
+ * issued by an input-stage system once the asset is ready, and is in the log
+ * from then on.
  */
 import {
   Cause,
@@ -61,12 +61,13 @@ import {
 import * as System from "./System";
 
 /**
- * An asset could not be loaded: it is not there, or it is not what it was said to be.
+ * An asset couldn't be loaded: it is missing, or it isn't what it claimed to
+ * be.
  *
  * @category Errors
  */
 export class AssetFailed extends Data.TaggedError("AssetFailed")<{
-  /** Where the asset was to come from. */
+  /** The URL the asset was loaded from. */
   readonly url: string;
   /** What went wrong. */
   readonly message: string;
@@ -78,15 +79,15 @@ const describe = (error: unknown): string =>
 // --- one asset ---------------------------------------------------------------
 
 /**
- * Something to load: where its bytes are, and what is made of them.
+ * Something to load: where its bytes are, and how to decode them.
  *
  * @category Models
  */
 export interface Asset<out A> {
   readonly url: string;
   /**
-   * Makes the asset of its bytes, in the scope it is loaded in: what has
-   * to be let go is let go when that scope closes.
+   * Decodes the asset from its bytes, in the scope it is loaded in: anything
+   * that must be released is released when that scope closes.
    */
   readonly decode: (
     bytes: Uint8Array
@@ -94,8 +95,8 @@ export interface Asset<out A> {
 }
 
 /**
- * An asset of a kind of your own. `decode` makes it of its bytes; give it
- * `Effect.acquireRelease` if what it makes has to be let go.
+ * Makes an asset of a custom type. `decode` builds it from its bytes; use
+ * `Effect.acquireRelease` if what it builds must be released.
  *
  *   const sound = (url: string) => Assets.make(url, (bytes, at) =>
  *     Effect.acquireRelease(decodeAudio(bytes, at), (buffer) => free(buffer))
@@ -112,7 +113,7 @@ export const make = <A>(
 ): Asset<A> => ({ url, decode: (bytes) => decode(bytes, url) });
 
 /**
- * A file as it is.
+ * Makes an asset of a file's raw bytes.
  *
  * @category Constructors
  */
@@ -120,7 +121,7 @@ export const bytes = (url: string): Asset<Uint8Array> =>
   make(url, (data) => Effect.succeed(data));
 
 /**
- * A file of text, which has to be UTF-8.
+ * Makes an asset of a UTF-8 text file.
  *
  * @category Constructors
  */
@@ -143,8 +144,8 @@ export const text = (url: string): Asset<string> =>
   );
 
 /**
- * A file of JSON that a schema describes. It comes from outside the
- * program, so it is checked: one that does not fit fails to load.
+ * Makes an asset of a JSON file that a schema describes. It comes from outside
+ * the program, so it is validated: a file that doesn't match fails to load.
  *
  * @category Constructors
  */
@@ -182,13 +183,13 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
 // --- where bytes come from ---------------------------------------------------------
 
 /**
- * What fetches an asset's bytes. In a page it is `fetch`; a test provides
- * one that reads from memory.
+ * Fetches an asset's bytes. In a page it uses `fetch`; a test provides one that
+ * reads from memory.
  *
  * @category Services
  */
 export interface LoaderShape {
-  /** The bytes at a URL. Interrupting it gives up the request. */
+  /** Returns the bytes at a URL. Interrupting it cancels the request. */
   readonly bytes: (url: string) => Effect.Effect<Uint8Array, AssetFailed>;
 }
 
@@ -209,9 +210,9 @@ const fetching: LoaderShape = {
 };
 
 /**
- * Where the bytes of an asset come from. Nothing has to provide it: the
- * default is `fetch`, which a page and Node both have. A test provides
- * files of its own with `Assets.layerMemory`.
+ * Where asset bytes come from. Nothing has to provide it: the default is
+ * `fetch`, available in pages and Node alike. A test provides its own files
+ * with `Assets.layerMemory`.
  *
  * @category Services
  */
@@ -221,8 +222,8 @@ export const Loader: Context.Reference<LoaderShape> =
   });
 
 /**
- * A loader of files held in memory, by URL, for a test or a tool. A file
- * given as text is its UTF-8 bytes. A URL that is not among them fails.
+ * A loader of in-memory files by URL, for a test or a tool. A file given as
+ * text is encoded as UTF-8. A URL not in the list fails.
  *
  * @category Testing
  */
@@ -251,7 +252,7 @@ export const layerMemory = (
 type Entries = Readonly<Record<string, Asset<any>>>;
 
 /**
- * What a bundle is once loaded: each asset under its name.
+ * A loaded bundle: each asset under its name.
  *
  * @category Type-level
  */
@@ -260,18 +261,18 @@ export type Loaded<B extends Entries> = {
 };
 
 /**
- * What an app holds of a bundle at the moment.
+ * A bundle's current status in an app.
  *
  * @category Models
  */
 export type Status<A> =
-  /** Nobody has asked for it. */
+  /** No one has requested it. */
   | { readonly _tag: "Absent" }
   | { readonly _tag: "Loading" }
   | { readonly _tag: "Ready"; readonly assets: A }
   /**
-   * It could not be loaded, which is logged once. Nothing is kept of what
-   * did load, and it is tried again when it is next asked for afresh.
+   * It couldn't be loaded, which is logged once. Nothing that did load is kept,
+   * and it is retried the next time it is requested afresh.
    */
   | { readonly _tag: "Failed"; readonly error: AssetFailed };
 
@@ -279,9 +280,9 @@ const ABSENT: Status<never> = { _tag: "Absent" };
 const LOADING: Status<never> = { _tag: "Loading" };
 
 /**
- * Assets that are loaded together and let go together: a level's, a
- * menu's. It is an Effect, so in a system of the frame stage or the input
- * stage `yield*` gives what the app holds of it now.
+ * Assets that are loaded and released together, such as a level's or a menu's.
+ * It is an Effect, so in a frame-stage or input-stage system `yield*` returns
+ * its current status in the app.
  *
  * @category Models
  */
@@ -307,9 +308,9 @@ export class Bundle<B extends Entries> extends Effectable.Class<
 }
 
 /**
- * Names assets that belong together. The name is what the app calls the
- * bundle in its log, and what the system that loads it is named after, so
- * prefix it with the feature it belongs to.
+ * Groups assets that belong together. The name identifies the bundle in the
+ * app's log and names the system that loads it, so prefix it with the feature
+ * it belongs to.
  *
  * @category Constructors
  */
@@ -317,26 +318,26 @@ export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
   new Bundle(name, assets);
 
 /**
- * Loads a bundle into the scope it is run in: every asset at once, and all
- * of them let go when that scope closes. It fails with the first asset
- * that does, giving up the rest.
+ * Loads a bundle into the scope it runs in: every asset in parallel, all
+ * released when that scope closes. It fails with the first asset that fails,
+ * cancelling the rest.
  *
  *   const level = Effect.scoped(Effect.gen(function*() {
  *     const { layout } = yield* Assets.load(Forest)
  *     ...
- *   }))                                   // let go here
+ *   }))                                   // released here
  *
- * It waits in real time, so it is for the entry point and for a plugin's
- * `layer`, which is built before the game starts and holds what it loads
- * for as long as the app:
+ * It waits in real time, so use it in the entry point or in a plugin's `layer`,
+ * which is built before the game starts and holds what it loads for the app's
+ * lifetime:
  *
  *   Layer.effect(Fonts, Assets.load(Common))
  *
  * **Gotchas**
  *
- * It is not for a system or a script, and nothing refuses it there: a
- * script that loads resumes in whatever tick the file arrives in, and a
- * replay of it fetches the file again.
+ * Don't use it in a system or a script, though nothing prevents it: a script
+ * that loads resumes in whatever tick the file arrives in, and a replay fetches
+ * the file again.
  *
  * @category Running
  */
@@ -369,41 +370,40 @@ export const load: <B extends Entries>(
 // --- an app's assets -----------------------------------------------------------------
 
 /**
- * An app's store of bundles. All three are for the stages between ticks,
- * the frame stage and the input stage: in the tick each throws, since what
- * is loaded, and when, is no part of the game.
+ * An app's store of bundles. All three operations are for the stages between
+ * ticks, the frame and input stages: during the tick each throws, since what is
+ * loaded, and when, isn't part of the game.
  *
  * @category Services
  */
 export interface StoreShape {
-  /** What the app holds of a bundle now. */
+  /** Returns a bundle's current status in the app. */
   readonly status: <B extends Entries>(bundle: Bundle<B>) => Status<Loaded<B>>;
   /**
-   * `holder` wants the bundle. The first to want it starts it loading, in
-   * a scope of its own.
+   * Registers `holder` as using the bundle. The first holder starts loading it,
+   * in a scope of its own.
    */
   readonly hold: (bundle: Bundle<Entries>, holder: string) => void;
   /**
-   * `holder` no longer wants it. When nobody does, its scope closes: what
-   * was loaded is let go, and what was still loading is given up.
+   * Releases `holder`'s use of the bundle. When no holder remains, its scope
+   * closes: loaded assets are released, and pending loads are cancelled.
    */
   readonly drop: (bundle: Bundle<Entries>, holder: string) => void;
 }
 
 /**
- * The bundles an app has loaded. `Assets.plugin` provides it,
- * `Assets.during` works it, and `yield*` on a bundle reads it. A system of
- * the game's own, in the frame stage or the input stage, keeps a bundle
- * with it too: the bundle stays loaded while anyone holds it.
+ * The bundles an app has loaded. `Assets.plugin` provides it, `Assets.during`
+ * drives it, and `yield*` on a bundle reads it. Your own frame-stage or
+ * input-stage system can hold a bundle too: it stays loaded while anyone holds
+ * it.
  *
  *   const store = yield* Assets.Store
- *   store.hold(Forest, "game/Map")    // loading from now, if nobody held it
- *   store.drop(Forest, "game/Map")    // let go, if nobody else holds it
+ *   store.hold(Forest, "game/Map")    // starts loading, if nobody held it
+ *   store.drop(Forest, "game/Map")    // released, if nobody else holds it
  *
- * A load is given what the app was given from outside and none of the
- * app's own services, so nothing it does is the game's doing: the random
- * numbers a loader draws, to wait a while before it tries again, are not
- * the world's.
+ * A load receives the services provided to the app from outside, but none of
+ * the app's own, so nothing it does affects the game: the random numbers a
+ * loader draws, to back off before retrying, don't come from the world.
  *
  * @category Services
  */
@@ -512,7 +512,7 @@ const storeLayer = Layer.effect(
       }
     };
 
-    /** Gives up what is loading, and lets go of what was loaded. */
+    /** Cancels pending loads, and releases loaded assets. */
     const letGo = (entry: Held): Effect.Effect<void> =>
       Effect.suspend(() => {
         const { fiber, scope } = entry;
@@ -566,32 +566,31 @@ const storeLayer = Layer.effect(
 );
 
 /**
- * Gives an app a store for the bundles it loads. A plugin whose systems
- * use `Assets.during`, or read a bundle, lists it in `plugins`.
+ * Gives an app a store for the bundles it loads. A plugin whose systems use
+ * `Assets.during`, or read a bundle, lists it in `plugins`.
  *
- * Whatever is still loaded when the app's scope closes is let go with it.
+ * Anything still loaded when the app's scope closes is released with it.
  *
  * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/Assets", { layer: storeLayer });
 
 /**
- * A system that keeps a bundle loaded while a condition holds:
+ * Makes a system that keeps a bundle loaded while a condition holds:
  *
  *   Assets.during(State.is(Level, "forest"), Forest)
  *
- * The condition is one of `System.runIf`'s: an Effect that gives a
- * boolean. From the frame after it starts to hold, the bundle is loading,
- * in a scope of its own. From the frame after it stops, that scope is
- * closed: what was loaded is let go, and what was still loading is given
- * up. So a level's assets are there for as long as the level, and leaving
- * it frees them.
+ * The condition is the same as `System.runIf`'s: an Effect that returns a
+ * boolean. From the frame after it starts holding, the bundle loads in a scope
+ * of its own. From the frame after it stops, that scope closes: loaded assets
+ * are released, and pending loads are cancelled. A level's assets therefore
+ * last as long as the level, and leaving it frees them.
  *
- * It is a system of a frame, since assets are for what draws the game: a
- * replay or a server, which run no frame, load nothing. Of a frame's three
- * stages it is in the first, `"preFrame"`, so every system that draws with
- * the bundle finds it as it is in that frame, wherever the two are listed.
- * One per bundle; to keep a bundle for several states, give a condition
+ * It is a frame system, since assets serve what draws the game: a replay or a
+ * server, which run no frames, load nothing. It runs in the first of a frame's
+ * three stages, `"preFrame"`, so every system that draws with the bundle sees
+ * the same status within a frame, whatever order they are listed in. Use one
+ * per bundle; to keep a bundle loaded across several states, give a condition
  * that holds in each.
  *
  * @category Systems

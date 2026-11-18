@@ -1,27 +1,26 @@
 /**
- * Resources: values with a default, which a layer can override, built on
- * `Context.Reference`.
+ * Resources are configuration values with a default that a layer can override,
+ * built on `Context.Reference`.
  *
  *   const Gravity = Resource.make("game/Gravity", { defaultValue: () => 9.81 })
  *   const g = yield* Gravity                      // 9.81 unless overridden
  *   App.make({ systems }).pipe(Effect.provide(Resource.layer(Gravity, 1.62)))
  *
- * A resource is configuration. It is not in the world, so it is not saved
- * or hashed. Game state of which there is one is a singleton,
- * `Singleton.define`.
+ * A resource lives outside the world, so it is neither saved nor hashed. For
+ * game state that exists once, use a singleton instead (`Singleton.define`).
  */
 import { Context, Layer } from "effect";
 
 /**
- * Makes a resource: a value with a default, which a layer can override.
- * Nothing has to provide it.
+ * Makes a resource: a value with a default that a layer can override. Nothing
+ * has to provide it.
  *
  *   const Gravity = Resource.make("game/Gravity", { defaultValue: () => 9.81 })
  *
  * **Gotchas**
  *
- * The default is made once and shared by every app in the process: do not
- * change it in place.
+ * The default is created once and shared by every app in the process, so don't
+ * mutate it.
  *
  * @category Constructors
  */
@@ -31,7 +30,7 @@ export const make = <A>(
 ): Context.Reference<A> => Context.Reference<A>(key, options);
 
 /**
- * A layer that overrides a resource's default value.
+ * Returns a layer that overrides a resource's default value.
  *
  * @category Layers
  */

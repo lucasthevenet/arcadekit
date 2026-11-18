@@ -1,9 +1,9 @@
 /**
- * A transport: what carries a session's messages to the other peers.
+ * Transports carry a session's messages to the other peers.
  *
- * A session of several peers holds no socket. It is given the messages
- * that arrived and gives the ones to send, and the transport is the
- * service that does the carrying:
+ * A multiplayer session holds no socket. It receives the messages that arrived
+ * and returns the ones to send, and the transport is the service that carries
+ * them:
  *
  *   const program = Effect.gen(function* () {
  *     const app = yield* App.make({ plugins: [Game], seed })
@@ -14,16 +14,16 @@
  *     Effect.provide(Transport.layerBroadcastChannel("game/room-7"))
  *   )
  *
- * `Transport.connect` gives what a driver steps: each tick it hands the
- * session what has arrived, runs the session's tick, and sends what the
- * session has to say.
+ * `Transport.connect` returns what a driver steps: each tick, it passes the
+ * session what has arrived, runs the session's tick, and sends what the session
+ * produced.
  *
- * It asks little of a wire: that every message arrives, in whatever order.
- * `Transport.layerWebSocket` is the one between machines, through a relay
- * (`arcadekit/Relay`); `Transport.layerBroadcastChannel` the one between
- * the tabs and workers of one browser; `Transport.text` makes a transport
- * of anything else that carries text; and `Transport.makeHub` is a network
- * in memory, for tests, which delays and reorders as it is told.
+ * A transport needs little from its channel: every message must arrive, in any
+ * order. `Transport.layerWebSocket` connects machines through a relay
+ * (`arcadekit/Relay`); `Transport.layerBroadcastChannel` connects the tabs and
+ * workers of one browser; `Transport.text` creates a transport over anything
+ * else that carries text; and `Transport.makeHub` is an in-memory network for
+ * tests, which delays and reorders messages as configured.
  */
 import { Context, Data, Effect, Exit, Layer } from "effect";
 
@@ -32,10 +32,10 @@ import { Rng } from "./ecs/random";
 import * as Lockstep from "./Lockstep";
 
 /**
- * What a transport does. Both are plain calls: nothing here waits, so the
- * tick that uses them stays one synchronous step. What listens behind a
- * transport, a channel or a socket, fills a list in its own time, and
- * `receive` hands the list over.
+ * The operations of a transport. Both are plain calls: nothing here waits, so a
+ * tick that uses them stays one synchronous step. Whatever listens behind the
+ * transport, a channel or a socket, fills a buffer in its own time, and
+ * `receive` returns the buffer.
  *
  * @category Services
  */
@@ -43,17 +43,16 @@ export interface Shape {
   /** Sends a message to every other peer. */
   readonly send: (message: Lockstep.Message) => void;
   /**
-   * The messages that have arrived since it was last asked, in the order
-   * they came. They are taken: asked again, it gives the ones that came
-   * since.
+   * Returns the messages that have arrived since the last call, in arrival
+   * order, and removes them: the next call returns only newer ones.
    */
   readonly receive: () => readonly Lockstep.Message[];
 }
 
 /**
- * The transport of this peer. A game of several peers is given one, and
- * one that is given none does not compile: there is no default, since
- * every way of reaching the others is a choice.
+ * This peer's transport. A multiplayer game must be given one, and one without
+ * doesn't compile: there is no default, since every way of reaching the other
+ * peers is an explicit choice.
  *
  * @category Services
  */
@@ -62,7 +61,7 @@ export class Transport extends Context.Service<Transport, Shape>()(
 ) {}
 
 /**
- * A layer that provides a transport made by hand.
+ * Returns a layer that provides a hand-made transport.
  *
  * @category Layers
  */
@@ -70,8 +69,8 @@ export const layer = (transport: Shape): Layer.Layer<Transport> =>
   Layer.succeed(Transport, transport);
 
 /**
- * A session joined to the transport: what a driver steps in the session's
- * place. Its `tick` says whether the session's tick ran.
+ * A session connected to a transport, which a driver steps in the session's
+ * place. Its `tick` returns whether the session's tick ran.
  *
  * @category Models
  */
@@ -82,11 +81,10 @@ export interface Connected extends Tickable {
 }
 
 /**
- * Joins a session to the transport. Each tick of what it gives hands the
- * session every message that has arrived, runs the session's tick, and
- * sends what the session has to say, whether the tick ran, waited or
- * failed: a session that stops because the peers have come apart says so
- * to the others first.
+ * Connects a session to the transport. Each tick of the result passes the
+ * session every message that has arrived, runs the session's tick, and sends
+ * what the session produced, whether the tick ran, waited or failed: a session
+ * that stops because the peers drifted apart tells the others first.
  *
  *   yield* Driver.frames(yield* Transport.connect(session), { hz: 60 })
  *
@@ -119,9 +117,8 @@ export const connect: (
 );
 
 /**
- * Something that carries text to the other peers: a WebSocket to a relay
- * that passes each message on to the others in a room, a data channel, a
- * port.
+ * A channel that carries text to the other peers: a WebSocket to a relay that
+ * forwards each message to the others in a room, a data channel, or a port.
  *
  * @category Models
  */
@@ -129,14 +126,14 @@ export interface Wire {
   /** Sends a text to every other peer. */
   readonly send: (text: string) => void;
   /**
-   * Calls `onText` with each text that arrives from another peer. Returns
-   * what stops it.
+   * Calls `onText` with each text that arrives from another peer. Returns a
+   * function that stops listening.
    */
   readonly listen: (onText: (text: string) => void) => () => void;
 }
 
 /**
- * A transport over a wire, and what stops it listening.
+ * A transport over a wire, with a way to stop listening.
  *
  * @category Models
  */
@@ -144,22 +141,22 @@ export interface TextTransport extends Shape {
   /** Stops listening to the wire. */
   readonly close: () => void;
   /**
-   * How many texts arrived that were not a message, and were dropped.
+   * The number of texts that arrived but weren't messages, and were dropped.
    * Nothing that comes off a wire is trusted.
    */
   readonly dropped: number;
 }
 
 /**
- * A transport over anything that carries text. A message is sent as
- * `Lockstep.encode` writes it, and a text that arrives is read with
- * `Lockstep.decode`: one that is not a message is dropped and counted.
+ * Makes a transport over anything that carries text. Messages are sent in the
+ * format `Lockstep.encode` writes, and arriving text is read with
+ * `Lockstep.decode`: text that isn't a message is dropped and counted.
  *
- * The wire has to deliver every message, in whatever order. A WebSocket
- * does; a data channel has to be told to.
+ * The wire must deliver every message, in any order. A WebSocket does; a data
+ * channel must be configured to.
  *
- * It vouches for no sender, and it says nothing when it is used after
- * `close`, or after its wire has closed, unless whoever made it does.
+ * It authenticates no sender, and doesn't report being used after `close` or
+ * after its wire closed, unless your code does.
  *
  * @category Constructors
  */
@@ -191,17 +188,17 @@ export const text = (wire: Wire): TextTransport => {
 };
 
 /**
- * The transport between the tabs, the windows and the workers of one
- * browser, or the threads of one process: a `BroadcastChannel`. Every
- * peer that opens the same name hears every other. It needs no server,
- * and reaches no other machine.
+ * The transport between the tabs, windows and workers of one browser, or the
+ * threads of one process, over a `BroadcastChannel`. Every peer that opens the
+ * same name hears every other. It needs no server, and doesn't reach other
+ * machines.
  *
- * The channel is opened when the layer is built and closed with its
- * scope, so it is provided to the whole program, as whatever listens is. A
- * transport that is used after that throws and says so.
+ * The channel opens when the layer is built and closes with its scope, so
+ * provide the layer to the whole program, along with everything that listens. A
+ * transport used after that throws and says so.
  *
- * Nothing vouches for the sender here, as a relay does: a peer can send a
- * message in another's name, and the peers then stop as drifted.
+ * Unlike a relay, nothing authenticates the sender here: a peer can send a
+ * message in another peer's name, and the peers then stop as drifted.
  *
  * @category Layers
  */
@@ -252,20 +249,20 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
   );
 
 /**
- * A transport's socket is no longer open: the relay closed it, or the
- * network did. `send` and `receive` throw it from then on, so the tick
- * that uses the transport fails with it and its driver stops, in place of
- * a game that waits for messages that cannot come. Only the peer whose
- * socket closed is told: the others wait.
+ * A transport's socket is no longer open: the relay or the network closed it.
+ * `send` and `receive` throw this error from then on, so the tick that uses the
+ * transport fails with it and its driver stops, instead of the game waiting for
+ * messages that can never arrive. Only the peer whose socket closed is
+ * notified: the others wait.
  *
  * @category Errors
  */
 export class Closed extends Data.TaggedError("TransportClosed")<{
   /** The address the socket was opened to. */
   readonly url: string;
-  /** The WebSocket close code: 1006 when the connection was lost or never made. */
+  /** The WebSocket close code: 1006 when the connection was lost or never established. */
   readonly code: number;
-  /** What whoever closed it said, if anything: a relay says why it refused. */
+  /** The reason given by whoever closed the socket, if any: a relay explains why it refused. */
   readonly reason: string;
 }> {
   override get message(): string {
@@ -274,24 +271,24 @@ export class Closed extends Data.TaggedError("TransportClosed")<{
 }
 
 /**
- * The transport between machines: a WebSocket to a relay, which passes
- * each message on to the other peers of the room. `url` is the relay's
- * address for this peer in its room, as `Relay.address` writes it:
+ * The transport between machines: a WebSocket to a relay, which forwards each
+ * message to the other peers of the room. `url` is the relay's address for this
+ * peer in its room, as `Relay.address` writes it:
  *
  *   Transport.layerWebSocket(
  *     Relay.address("wss://relay.example.com/rooms", { room: "blue", peer: "ada" })
  *   )
  *
- * - The socket is opened when the layer is built. What is sent before it is
- *   open is kept and sent when it is.
- * - It is closed with the layer's scope, so the layer is provided to the
- *   whole program, and a transport that is used after that says so.
- * - Once the socket has closed for any other reason, `send` and `receive`
- *   throw `Transport.Closed`, with the code and what the relay said. It
- *   does not connect again: a message that was lost on the way would be
- *   lost for good, and nothing asks for one again.
+ * - The socket opens when the layer is built. Messages sent before it opens are
+ *   buffered and sent once it does.
+ * - It closes with the layer's scope, so provide the layer to the whole
+ *   program; a transport used after that says so.
+ * - Once the socket closes for any other reason, `send` and `receive` throw
+ *   `Transport.Closed`, with the close code and the relay's reason. It doesn't
+ *   reconnect: a message lost in transit would be lost for good, and nothing
+ *   requests it again.
  *
- * It uses the `WebSocket` every platform has: a page, a worker, Node 22.
+ * It uses the standard `WebSocket`, available in pages, workers and Node 22.
  *
  * @category Layers
  */
@@ -379,46 +376,46 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
   );
 
 /**
- * How a hub treats what is sent through it.
+ * Options for how a hub treats the messages sent through it.
  *
  * @category Testing
  */
 export interface HubOptions {
   /**
-   * How many steps a message takes to arrive: a number, or a range from
-   * which each message's is drawn, so that one sent later can arrive
-   * first. 0 when left out: it is there the next time it is asked for.
+   * How many steps a message takes to arrive: a number, or a range each
+   * message's delay is drawn from, so a message sent later can arrive first.
+   * Defaults to 0: the message is there on the next `receive`.
    */
   readonly delay?: number | { readonly min: number; readonly max: number };
-  /** Where the delays are drawn from: the same seed, the same network. */
+  /** The seed delays are drawn from: the same seed produces the same network. */
   readonly seed?: number;
 }
 
 /**
- * A network in memory, for tests: every peer has a port, and what one
- * sends reaches every other.
+ * An in-memory network for tests: every peer has a port, and what one sends
+ * reaches every other.
  *
  * @category Testing
  */
 export interface Hub {
   /**
-   * A peer's end of the network. A peer hears what is sent from the
+   * Returns a peer's end of the network. A peer receives messages sent from the
    * moment it has a port.
    */
   readonly port: (peer: string) => Shape;
-  /** A layer that provides a peer's end. */
+  /** Returns a layer that provides a peer's end. */
   readonly layer: (peer: string) => Layer.Layer<Transport>;
-  /** Time passes: one step. A message that was `delay` steps away is one nearer. */
+  /** Advances time by one step: every message in transit is one step closer. */
   readonly step: () => void;
-  /** How many messages are on their way and have not been taken. */
+  /** The number of messages in transit or not yet received. */
   readonly inFlight: number;
 }
 
 /**
- * A network made by hand. Nothing is lost, and nothing happens until the
- * test says so: a message is on its way for as many steps as its delay,
- * and time passes when `step` is called. Messages travel as text, so one
- * that would not survive a wire does not survive this.
+ * Makes an in-memory network. Nothing is lost, and nothing happens until the
+ * test says so: a message is in transit for as many steps as its delay, and
+ * time advances when `step` is called. Messages travel as text, so a message
+ * that wouldn't survive a wire doesn't survive this either.
  *
  *   const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 1 })
  *   const ada = yield* Transport.connect(session).pipe(Effect.provide(hub.layer("ada")))

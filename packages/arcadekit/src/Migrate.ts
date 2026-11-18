@@ -1,11 +1,11 @@
 /**
- * Changes to an old save's world, so that it fits the components a game has
- * now. A migration is given the save in a plain form that describes itself
+ * Functions that update an old save's world to match the game's current
+ * components. A migration receives the save in a plain, self-describing form
  * (`Save.Contents`), and these functions edit its world:
  *
  *   const migrations: Save.Migration[] = [
  *     {
- *       from: 1,                                   // takes version 1 to version 2
+ *       from: 1,                                   // migrates version 1 to version 2
  *       migrate: ({ world }) => {
  *         Migrate.renameComponent(world, "game/Hp", "game/Health")
  *         Migrate.addField(world, "game/Health", "armor", "i32", 0)
@@ -13,11 +13,10 @@
  *     },
  *   ]
  *
- * Each changes the contents in place, and entities keep their ids. A
- * component or field that is not there is an error, so a migration that
- * does not fit its save says so.
- * A singleton is changed the same way, by its name: it is in the save if
- * the game had written it.
+ * Each function edits the contents in place, and entities keep their ids. Each
+ * throws when the component or field it targets doesn't exist, so a migration
+ * that doesn't match its save says so. Singletons are migrated the same way, by
+ * name, and are present in the save only if the game wrote them.
  */
 import type { Column, FieldKind } from "./ecs/component";
 import type {
@@ -39,7 +38,7 @@ const componentOf = (
   return component;
 };
 
-/** Every set of columns the save holds for a component, with its row count. */
+/** Returns every set of columns the save holds for a component, with its row count. */
 const columnsOf = (
   world: SnapshotContents,
   name: string
@@ -99,7 +98,7 @@ const column = (kind: FieldKind, count: number, value: unknown): Column => {
 };
 
 /**
- * Gives a component another name. Its data is untouched.
+ * Renames a component. Its data is unchanged.
  *
  * @category Migrations
  */
@@ -129,7 +128,7 @@ export const renameComponent = (
 };
 
 /**
- * Gives a field another name. Its values are untouched.
+ * Renames a field. Its values are unchanged.
  *
  * @category Migrations
  */
@@ -154,10 +153,9 @@ export const renameField = (
 };
 
 /**
- * Adds a field to a component, with the same value for every entity that
- * has the component. It goes after the fields that are there, or before the
- * field named in `before`: a component's fields are in the order it defines
- * them in.
+ * Adds a field to a component, with the same value for every entity that has
+ * the component. The field goes after the existing ones, or before the field
+ * named in `before`: a component's fields are in definition order.
  *
  * @category Migrations
  */
@@ -187,7 +185,7 @@ export const addField = (
 };
 
 /**
- * Takes a field, and its values, out of a component.
+ * Removes a field, and its values, from a component.
  *
  * @category Migrations
  */
@@ -207,9 +205,9 @@ export const removeField = (
 };
 
 /**
- * Gives a field another kind, and each of its values a new one worked out
- * from the old: `mapField(world, "game/Hp", "points", "f32", (hp) => hp / 2)`.
- * A `ref` field's old value is what its codec had made of it.
+ * Changes a field's type, and computes each new value from the old one:
+ * `mapField(world, "game/Hp", "points", "f32", (hp) => hp / 2)`. For a `ref`
+ * field, the old value is its encoded form.
  *
  * @category Migrations
  */
@@ -239,9 +237,9 @@ export const mapField = (
 };
 
 /**
- * Takes a component, and everyone's values of it, out of the save. The
- * entities stay. Two tables that now hold the same components become one,
- * the later one's rows after the earlier one's.
+ * Removes a component, and every entity's values of it, from the save. The
+ * entities remain. Two tables that now hold the same components are merged,
+ * with the later table's rows after the earlier one's.
  *
  * @category Migrations
  */

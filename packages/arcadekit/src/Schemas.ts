@@ -1,20 +1,20 @@
 /**
- * Schemas for the framework's own types, for use in action payloads.
+ * Schemas for arcadekit's own types, for use in action payloads.
  *
  *   const Attack = Action.define("duel/Attack", Schema.Struct({ target: EntityId }))
  *
- * `arcadekit` gives `EntityId` by its name, in place of this module:
- * `import { EntityId } from "arcadekit"`.
+ * The root entry exports `EntityId` directly: `import { EntityId } from
+ * "arcadekit"`.
  */
 import { Schema } from "effect";
 
 import type { Entity } from "./ecs/component";
 
 /**
- * An entity id: a whole number from 0 up to, not including, 2^53.
+ * An entity id: an integer from 0 up to, but not including, 2^53.
  *
- * This checks the shape only. Whether the entity still exists depends on the
- * world, so that check belongs in the handler.
+ * The schema checks the shape only. Whether the entity still exists depends on
+ * the world, so check that in the handler.
  *
  * @category Schemas
  */
