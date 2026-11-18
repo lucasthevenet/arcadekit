@@ -1,9 +1,9 @@
 ---
 title: "Events and actions"
-description: "An event is what the simulation says happened. An action is what someone asks the game to do. This guide covers both, and how an action is checked, applied or refused."
+description: "An event records something the simulation did. An action is a request to change the game. Learn how to use both, and how actions are validated, applied or refused."
 ---
 
-An event is what the simulation says happened. An action is what someone asks the game to do. This guide covers both, and how an action is checked, applied or refused.
+An **event** records something that happened in the simulation. An **action** is a request to change the game. This guide covers both, and how an action is validated, applied or refused.
 
 ## Events
 
@@ -30,25 +30,25 @@ const Ground = System.make("physics/Ground", function* () {
 
 const Dust = System.make("fx/Dust", function* () {
   for (const { entity } of (yield* Landed).read()) {
-    // everything this system hasn't seen yet
+    // every event this system hasn't seen
   }
 });
 ```
 
-- Every system sees every event exactly once, whatever order systems run in. A system that runs before the one that emits sees the event on the next tick.
-- An event is dropped once every system has had its chance.
-- The frame stage and the input stage each hear every event once too, however many ticks ran between two frames. That is how sound and a UI follow the game.
-- A script waits for one with `yield* landed.wait`, where `landed` is `yield* Landed`. A system never waits: it reads what there is and finishes within its tick.
+- Every system sees every event exactly once, whatever order systems run in. A system that runs before the emitter sees the event on the next tick.
+- An event is dropped once every system has had a chance to read it.
+- The frame and input stages also see every event once, however many ticks ran between two frames. That is how sound and UI follow the game.
+- A script waits for an event with `yield* landed.wait`, where `landed` is `yield* Landed`. A system never waits: it reads what is there and finishes within its tick.
 
-An event is a fact. Name it in the past tense, with the feature it belongs to in front: `"physics/Landed"`. The name is its identity in an app: two different events with one name are refused when the second is first used.
+An event is a fact: name it in the past tense, prefixed with its feature, such as `"physics/Landed"`. The name identifies the event within an app, and a second, different event with the same name is refused when it is first used.
 
-A system that `System.runIf` switches off doesn't rely on an event for anything it must not miss. The events of the ticks it sat out are gone when it runs again. It watches the state instead, with a [change query](queries.md) or a singleton.
+A system that `System.runIf` can switch off shouldn't rely on events for anything it must not miss: the events from the ticks it skipped are gone when it runs again. Have it watch the game's state instead, with a [change query](queries.md) or a singleton.
 
-The payload's type comes from the schema. Emitting checks nothing, so it stays cheap inside a loop. The schema is for when an event leaves the program, in a save: `Event.encode` and `Event.decode` turn a payload into JSON and back, each as an `Exit` that fails with `Event.InvalidEvent`. `Event.define<Payload>("Name")` defines one with a type and no schema, for an event that never needs writing down. A game can't be saved while one of those waits to be read.
+The payload's type comes from the schema. Emitting validates nothing, so it stays cheap inside a loop. The schema is used when an event leaves the program, in a save: `Event.encode` and `Event.decode` convert a payload to JSON and back, each returning an `Exit` that fails with `Event.InvalidEvent`. `Event.define<Payload>("Name")` defines an event with a type and no schema, for events that never need to be serialized. A game can't be saved while such an event is waiting to be read.
 
 ## Actions
 
-An action is how anything outside the simulation changes the game: a player's move, a button of the UI, a message from another machine.
+An action is how anything outside the simulation changes the game: a player's move, a UI button, a message from another machine.
 
 ```ts
 import { Action, Commands, EntityId, World } from "arcadekit";
@@ -70,46 +70,46 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 });
 ```
 
-The handler is listed in a plugin's `handlers`. Then the app takes the action two ways:
+List the handler in a plugin's `handlers`. The app then accepts the action in two ways:
 
-- **`app.dispatch(Strike, payload)`** applies it now and returns an `Exit`: the handler's result, or why it was refused. For turn-based input.
-- **`app.enqueue(Strike, payload)`** queues it for the start of the next tick. A refusal becomes an `Action.Rejected` event. For real-time input.
+- **`app.dispatch(Strike, payload)`** applies it immediately and returns an `Exit`: the handler's result, or why it was refused. Use it for turn-based input.
+- **`app.enqueue(Strike, payload)`** queues it for the start of the next tick, where a refusal becomes an `Action.Rejected` event. Use it for real-time input.
 
-Dispatching an action with no handler, or with the wrong payload, doesn't compile.
+Dispatching an action that has no handler, or with the wrong payload, is a compile error.
 
-Both are for code outside the simulation: the entry point, the network, a test. Once a game has started, they are the only way such code changes it: what it writes into `app.world` directly isn't in the log, and a [replay](replays.md) can't repeat it. `dispatch` works only between ticks, and throws during a tick or a frame. In a game of several peers it is `enqueue` alone: `dispatch` would move one machine's game, and throws. See [lockstep and rollback](lockstep-and-rollback.md).
+Both are for code outside the simulation: the entry point, the network, a test. Once a game has started, they are the only way such code should change it: anything written into `app.world` directly isn't logged, so a [replay](replays.md) can't reproduce it. `dispatch` only works between ticks, and throws during a tick or a frame. In a multiplayer game, use `enqueue` only: `dispatch` would change one machine's game, and throws. See [lockstep and rollback](lockstep-and-rollback.md).
 
-The payload's type comes from the schema, and its JSON form is what the log and a save hold and what another machine is sent. A bigint or a date in a payload is converted on the way. `Action.define<Payload>()("Name")` defines an action with a type and no schema. Only the compiler checks it, it can't be saved while it waits for a tick, and it can't be sent to another peer, so keep those for actions that never leave the program.
+The payload's type comes from the schema, and its JSON encoding is what the log and saves store and what other peers receive. Bigints and dates in a payload are converted along the way. `Action.define<Payload>()("Name")` defines an action with a type and no schema. Only the compiler checks it, it can't be saved while queued, and it can't be sent to other peers, so reserve it for actions that never leave the program.
 
 ## Checking and refusing
 
-The payload is checked against the schema before the handler runs, including refinements the compiler can't see, such as a number between 1 and 10. A mismatch is an `Action.InvalidPayload`.
+Before the handler runs, the payload is validated against the schema, including refinements the compiler can't see, such as a number between 1 and 10. A mismatch is an `Action.InvalidPayload`.
 
-The handler checks the rules and refuses with a typed error: a class with a tag, made with `Data.TaggedError`, that the handler fails with and returns, `return yield* Effect.fail(new NoSuchFighter())`. Without the `return`, TypeScript doesn't know the code below is unreachable. Whoever dispatched handles the refusal by its tag, and the `Exit`'s type says which there can be. Give each error a tag of its own: two classes with one tag are caught as one, and nothing warns of it.
+The handler checks the game's rules and refuses with a typed error: a tagged class made with `Data.TaggedError`, failed and returned with `return yield* Effect.fail(new NoSuchFighter())`. Without the `return`, TypeScript doesn't know the code below is unreachable. The caller handles the refusal by its tag, and the `Exit`'s type lists the possible errors. Give each error its own tag: two classes with the same tag are caught as one, with no warning.
 
-A refusal changes nothing, even after the handler has written. So a handler can check as it goes. Taken back are:
+A refusal changes nothing, even after the handler has written to the world, so a handler can check as it goes. A refusal rolls back:
 
-- what it wrote to components, and the random numbers it drew;
-- the commands it queued, and a spawn among them gives its id back, so the next entities get the ids they would have had;
+- its writes to components, and the random numbers it drew;
+- the commands it queued, and any spawn among them returns its id, so the next entities get the ids they would have had;
 - the events it emitted and the actions it enqueued;
-- its place in the events it read and in its change queries: the next action hears what this one heard.
+- its position in the events it read and in its change queries, so the next action sees what this one saw.
 
-The same goes for a handler that dies of a bug half-way. A refused action is not in the log, so a replay never runs it, and anything it left behind would make the replay differ.
+The same applies to a handler that dies from a bug halfway through. A refused action isn't logged, so a replay never runs it, and anything it left behind would make the replay diverge.
 
-What a refusal doesn't take back is what is outside the world: an object held in a field and changed in place, a call to a service of the game's own, a script the handler started. Replace the object, and do the other two after the last check. Nor does it take back a write forced through a raw column that the query said it [only reads](queries.md).
+A refusal doesn't roll back anything outside the world: an object held in a field and mutated in place, a call to one of your own services, or a script the handler started. Replace the object instead of mutating it, and make the other two calls after the last check. It also doesn't undo a write forced through a raw column the query declared [read-only](queries.md#read-only-access).
 
-A handler has a few rules of its own:
+Handlers follow a few rules of their own:
 
-- It finishes at once. It doesn't wait.
-- It changes which entities exist through `Commands`. `world.spawn`, `despawn`, `add` and `remove` throw inside one.
+- A handler finishes immediately; it doesn't wait.
+- It changes which entities exist through `Commands`. `world.spawn`, `despawn`, `add` and `remove` throw inside a handler.
 - It reads its own writes while it runs.
-- It can't dispatch another action. It issues one with `Actions.enqueue`, and a refusal takes that back too.
+- It can't dispatch another action. It issues one with `Actions.enqueue`, and a refusal rolls that back too.
 
-An accepted action costs one save of what it is about to write, and no copy back: one row for a `world.set`, about 0.2 µs, and for a loop the columns of the query's terms in each table it visits, but for the terms the query only reads. The world has the same on its own, for code that isn't a handler: `world.begin()`, then `world.commit()` or `world.rollback()`.
+An accepted action costs one copy of what it is about to write, and no copy back: one row for a `world.set`, about 0.2 µs, and for a loop, the columns of the query's terms in each table it visits, excluding the terms it only reads. The world offers the same mechanism for code outside handlers: `world.begin()`, then `world.commit()` or `world.rollback()`.
 
-## Who issued it
+## Who issued an action
 
-A handler is told where the action came from, beside the payload:
+A handler receives the action's origin alongside the payload:
 
 ```ts sketch
 const pass = Action.handler(Pass, function* (_, { from }) {
@@ -121,31 +121,33 @@ const pass = Action.handler(Pass, function* (_, { from }) {
 });
 ```
 
-In a game of several peers, `from` is the name of the peer that issued it, the same on every peer. In a game of one it is undefined, as it is for an action the simulation issues itself. Check who may do a thing against `from`, never against a name in the payload, which whoever sent it wrote.
+In a multiplayer game, `from` is the name of the peer that issued the action, identical on every peer. In a single-player game it is `undefined`, as it is for actions the simulation issues itself. Check permissions against `from`, never against a name in the payload, which the sender controls.
 
-`from` is kept in the log and in a save, with an action that waits. `Action.Rejected` has it too, beside the action's name, its payload and the error, so a UI shows a player their own refusals.
+`from` is kept in the log and in a save for queued actions. `Action.Rejected` carries it too, alongside the action's name, payload and error, so a UI can show players their own refusals.
 
-## Actions the game issues itself
+A schema validates a payload's shape. Whether an entity id in it is still alive, or belongs to the player who sent it, is for the handler to check.
 
-A system, a script or a handler issues an action with the `Actions` service, so a bot plays by the same rules as a player:
+## Actions issued by the game
+
+A system, script or handler issues actions through the `Actions` service, so bots follow the same rules as players:
 
 ```ts sketch
 (yield * Action.Actions).enqueue(Strike, { attacker, target });
 ```
 
-It is applied at the start of the next tick. `handles(action)` of the same service says whether the game has a handler for an action, which `enqueue` throws without.
+The action is applied at the start of the next tick. The service's `handles(action)` reports whether the game has a handler for an action; `enqueue` throws without one.
 
-What the simulation issues itself isn't logged: a replay's own systems issue it again. So a system never calls `app.enqueue`: that would put the action in the log, and a replay would apply it twice.
+Actions the simulation issues itself aren't logged, because a replay's own systems issue them again. That's why a system never calls `app.enqueue`: the action would be logged, and a replay would apply it twice.
 
-The frame stage and the input stage are the other way round. They are outside the simulation and a replay runs neither, so what a system of theirs issues with `Actions.enqueue` is logged, as a key or a button of the UI is.
+The frame and input stages work the other way round. They are outside the simulation and a replay runs neither, so what their systems issue with `Actions.enqueue` is logged, like a key press or a UI button.
 
 ## Actions as data
 
-Input that arrives as JSON goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. An unknown name or a bad payload is a failure, `Action.UnknownAction` or `Action.InvalidPayload`, or an `Action.Rejected` event, never a crash.
+Input that arrives as JSON goes through `app.dispatchByName(name, json)` or `app.enqueueByName(name, json)`. An unknown name or an invalid payload is a failure, `Action.UnknownAction` or `Action.InvalidPayload`, or an `Action.Rejected` event, never a crash.
 
-Either takes who issued it as a third argument, for a program that brings actions in on someone else's behalf, a server for its clients: `app.enqueueByName(name, json, client)`.
+Both accept the issuer as a third argument, for a program that relays actions on someone else's behalf, such as a server for its clients: `app.enqueueByName(name, json, client)`.
 
-`app.actionLog` holds every action that came from outside, in JSON form, with checkpoints of the world's hash among them. `Action.encodeLog` and `Action.decodeLog` turn it into text and back. See [replays](replays.md).
+`app.actionLog` holds every action from outside the simulation, in JSON form, with checkpoints of the world's hash among them. `Action.encodeLog` and `Action.decodeLog` convert it to text and back. See [replays](replays.md).
 
 ## Read more
 

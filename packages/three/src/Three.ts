@@ -1673,7 +1673,7 @@ class Instances implements Kept {
     }
   }
 
-  /** How many instances there is room for now. */
+  /** How many instances the buffer currently has room for. */
   get room(): number {
     return this.capacity;
   }

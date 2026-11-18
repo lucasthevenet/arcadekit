@@ -1,72 +1,72 @@
 ---
 title: "Determinism"
-description: "A tick gives the same result from the same inputs, on every machine and in every JavaScript engine. Saves, replays and network play all stand on that."
+description: "A tick produces the same result from the same inputs, on every machine and in every JavaScript engine. Saves, replays and online play are built on that guarantee."
 ---
 
-A tick gives the same result from the same inputs, on every machine and in every JavaScript engine. Saves, replays and network play all stand on that.
+A tick produces the same result from the same inputs, on every machine and in every JavaScript engine. Saves, replays and online play are all built on that guarantee.
 
-## What it buys
+## What determinism gives you
 
-- **Replays.** The app logs every action that came from outside. A new app with the same seed, given that log, plays the same game, and checks itself against the world's hash as it goes.
-- **Saves.** A save is a snapshot of the world plus the log since. Loading the snapshot and replaying the tail brings the game back to the present.
-- **Several players.** Peers send each other only the actions their players issue. Each runs the same simulation, so each ends on the same world.
-- **Tests that repeat.** A failing test fails the same way every time, and a bug is a seed and a log.
+- **Replays.** The app logs every action from outside the simulation. A new app with the same seed, given that log, plays the same game, and verifies itself against the world's hash along the way.
+- **Saves.** A save is a snapshot of the world, and the log continues from it. Loading the snapshot and replaying the rest of the log brings the game back to the present.
+- **Online play.** Peers exchange only the actions their players issue. Each runs the same simulation, so each ends on the same world.
+- **Reproducible tests.** A failing test fails the same way every time, and a bug report is a seed and a log.
 
-## What a game must do
+## Rules for your simulation
 
-The simulation reads nothing the replay won't have.
+The simulation must not read anything a replay won't have.
 
 | Instead of | Use |
 | --- | --- |
-| `Date.now()`, `performance.now()`, Effect's `Clock` | `Time`: the game's time, which passes by one fixed step a tick |
-| `Math.random()` | `Random`: seeded, the same numbers on every machine |
+| `Date.now()`, `performance.now()`, Effect's `Clock` | `Time`: game time, which advances one fixed step per tick |
+| `Math.random()` | `Random`: seeded, with the same numbers on every machine |
 | `setTimeout`, `Effect.sleep`, a `Schedule`, a promise | `Script.sleep`, `Script.nextTick`, or an event's `wait` |
 | `Effect.forkChild` in a system | `Script.spawn` |
-| Reading a key in a tick | An action, issued in the input stage and logged |
-| Loading a file in a tick | An action whose payload is what the file held |
-| Playing a sound in a tick | An event, which a cue of the frame stage plays |
-| Drawing in a tick | A system of the frame stage |
-| A field changed between ticks from outside | An action |
+| Reading a key during a tick | An action, issued in the input stage and logged |
+| Loading a file during a tick | An action whose payload is the file's contents |
+| Playing a sound during a tick | An event, played as a cue in the frame stage |
+| Drawing during a tick | A frame-stage system |
+| Changing a field between ticks from outside | An action |
 
-- **Randomness.** `const random = yield* Random` gives the world's generator, and its methods are plain calls, such as `random.next()`. Its state is in the world, so a replay draws the same numbers. Inside an app Effect's own `Random` is seeded from it too, at the cost of an Effect per draw. The seed is given at the entry point, `App.run({ plugins, seed: Date.now() }, ...)`. Everything inside the rules stays repeatable.
-- **Waiting.** A timer, a promise, `Effect.sleep` and a `Schedule` all resume outside the tick, at a moment no replay repeats. A [script](../guides/scripts.md) waits on the game's time.
-- **Fibers.** A child started with `Effect.forkChild` in a system is interrupted when the tick's fiber ends. `Script.spawn` starts a script the app watches: it reports a failure, and interrupts the script when its scope closes.
-- **Order.** The simulation doesn't depend on the order of a `Map` or a `Set` it didn't fill itself in a fixed order. And two systems that touch the same thing give a different game in another order: a system can say what it reads and writes, and the app then lists the pairs whose order nothing says. See [systems](../guides/systems.md#saying-what-a-system-touches).
-- **Devices, files, sound and drawing** follow real time, so they are outside the tick: in the input stage and the frame stage. A tick can't tell whether a file was loaded, a sound was heard or a frame was drawn. See [ticks and frames](ticks-and-frames.md).
+- **Randomness.** `const random = yield* Random` gives you the world's generator, whose methods are plain calls, such as `random.next()`. Its state is part of the world, so a replay draws the same numbers. Inside an app, Effect's own `Random` is seeded from it too, at the cost of an Effect per draw. Pass the seed at the entry point, `App.run({ plugins, seed: Date.now() }, ...)`, and everything inside the rules stays reproducible.
+- **Waiting.** A timer, a promise, `Effect.sleep` and a `Schedule` all resume outside the tick, at a moment no replay can reproduce. A [script](../guides/scripts.md) waits on game time instead.
+- **Fibers.** A fiber started with `Effect.forkChild` in a system is interrupted when the tick's fiber ends. `Script.spawn` starts a script the app supervises: it reports failures, and interrupts the script when its scope closes.
+- **Ordering.** Don't let the simulation depend on the iteration order of a `Map` or `Set` unless you filled it in a fixed order. Two systems that touch the same data produce a different game in a different order. Systems can declare what they read and write, and the app then lists the pairs whose order is undeclared. See [systems](../guides/systems.md#declaring-what-a-system-touches).
+- **Devices, files, sound and rendering** follow real time, so they live outside the tick, in the input and frame stages. A tick can't tell whether a file was loaded, a sound was heard or a frame was drawn. See [ticks and frames](ticks-and-frames.md).
 
-## What runs in real time
+## Real-time work
 
-An app runs its fibers on a scheduler of its own, so a fiber resumes only when a tick lets it. Don't provide another `Scheduler` to code inside an app.
+An app runs its fibers on its own scheduler, so a fiber resumes only when a tick lets it. Don't provide a different `Scheduler` to code inside an app.
 
-What has to go on in real time while the game runs, as loading does, is not code inside the app. A service started in a plugin's `layer`, which is built before the app's scheduler is in place, forks it with the context it found there, `Effect.context` and then `Effect.runForkWith`, less the app's own services. Those are the game's: inside an app Effect's `Random` is the world's generator, and whatever runs in real time and draws from it has changed the game. [Assets](../guides/assets.md) are loaded that way.
+Work that must continue in real time while the game runs, such as loading, runs outside the app's scheduler. A service started in a plugin's `layer`, which is built before the app's scheduler is installed, forks that work with the context it received, using `Effect.context` and then `Effect.runForkWith`, minus the app's own services. Those services belong to the game: inside an app, Effect's `Random` is the world's generator, and real-time code that drew from it would change the game. [Assets](../guides/assets.md) load this way.
 
 ## The world's hash
 
-`app.world.hash()` is one number for everything in the world a simulation can tell apart: every entity and field, the order queries visit them in, the ids to come, every singleton that was written, and the state of the random generator. Two worlds built by the same operations hash the same, and one field changed always changes it.
+`app.world.hash()` is a single number for everything in the world a simulation can observe: every entity and field, the order queries visit them in, the ids the next entities will get, every singleton that has been written, and the state of the random generator. Two worlds built by the same operations hash the same, and changing one field always changes the hash.
 
-The app records the hash in its log every `checkpointEvery` ticks, 60 unless told. A replay compares its own world at each one and stops at the first that differs, with `App.ReplayDiverged`, which says the tick and when the two last agreed. [Replays](../guides/replays.md#the-worlds-hash) says what the hash covers and what it costs.
+The app records the hash in its log every `checkpointEvery` ticks, 60 by default. A replay compares its own world at each checkpoint and stops at the first mismatch with `App.ReplayDiverged`, which reports the tick and when the two last agreed. [Replays](../guides/replays.md#the-worlds-hash) covers what the hash includes and what it costs.
 
-## Refusals leave nothing behind
+## Refused actions leave no trace
 
-A refused action is not in the log, so a replay never runs it. Anything it left in the world would make the replay differ. So a handler runs in a transaction: what it wrote, the numbers it drew, the commands it queued and the events it emitted are all taken back when it refuses. [Events and actions](../guides/events-and-actions.md#checking-and-refusing) says what is not taken back.
+A refused action isn't in the log, so a replay never runs it, and anything it left in the world would make the replay diverge. That's why a handler runs in a transaction: on refusal, its writes, the random numbers it drew, the commands it queued and the events it emitted are all rolled back. [Events and actions](../guides/events-and-actions.md#checking-and-refusing) lists what isn't rolled back.
 
-## What the frame stage can't break
+## Rendering can't break determinism
 
-The frame stage draws and plays sound with the world frozen. A game that is drawn has the same hash, log and save as one that isn't, so a replay or a server runs it without drawing anything.
+The frame stage draws and plays sound while the world is read-only. A drawn game has the same hash, log and save as one that isn't drawn, so a replay or a server runs it without rendering anything.
 
-## What is not checked
+## What isn't checked
 
-Some ways to break determinism aren't caught by the types or at run time:
+Some ways to break determinism aren't caught by the type checker or at run time:
 
-- A wait in real time, `Effect.sleep` or a promise, resumes outside the tick. Nothing refuses it.
-- A fiber started with `Effect.forkDetach` outlives the tick, and the app doesn't watch it: its failure is silent unless whoever started it looks.
+- A real-time wait, `Effect.sleep` or a promise, resumes outside the tick. Nothing refuses it.
+- A fiber started with `Effect.forkDetach` outlives the tick and isn't supervised by the app: its failure is silent unless whoever started it observes it.
 - [`Assets.load`](../guides/assets.md) in a script resumes in whatever tick the file arrives in.
-- A write through a raw column during the frame stage or the input stage is found only by an app made with `verifyFrames`.
-- A tick reads the devices unless it is told not to. A tool that runs a game again from its log by hand says `app.tick(delta, { input: false })`, as `App.replay` does, or the keys of the machine it runs on join in.
-- A script that keeps its progress in its own variables starts over when the game is loaded.
-- The hash is of the world only: not the events waiting to be read, what a change query has yet to visit, the actions queued, or how far a script has got. Two games with the same hash can still go different ways.
+- A write through a raw column during the frame or input stage is only detected by an app created with `verifyFrames`.
+- A tick reads the devices unless told not to. A tool that re-runs a game from its log by hand passes `app.tick(delta, { input: false })`, as `App.replay` does, or the keys of the machine it runs on leak into the game.
+- A script that keeps its progress in its own variables restarts from the beginning when the game is loaded.
+- The hash covers only the world: not the events waiting to be read, what change queries haven't visited, queued actions, or how far a script has got. Two games with the same hash can still diverge.
 
-In a game of several peers a break of these rules doesn't go unnoticed for long: the peers compare the hashes of their worlds, and a session stops with `Lockstep.Drifted`, which says the tick they last agreed at. A test of such a game runs two apps of it side by side and compares their hashes. See [several players](several-players.md).
+In a multiplayer game, a broken rule is caught quickly: peers compare the hashes of their worlds, and every session stops with `Lockstep.Drifted`, which reports the last tick they agreed on. To test such a game, run two apps side by side and compare their hashes. See [several players](several-players.md).
 
 ## Read more
 

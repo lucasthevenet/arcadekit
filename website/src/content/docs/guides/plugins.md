@@ -1,11 +1,11 @@
 ---
 title: "Plugins"
-description: "A plugin is one value that bundles a feature: its systems, its action handlers, its components, the services it provides, and what it does at the start. A game is a plugin of plugins."
+description: "A plugin bundles a feature into one value: its systems, action handlers, components, services and startup logic. A game is a plugin made of plugins."
 ---
 
-A plugin is one value that bundles a feature: its systems, its action handlers, its components, the services it provides, and what it does at the start. A game is a plugin of plugins.
+A **plugin** bundles a feature into one value: its systems, its action handlers, its components, the services it provides, and its startup logic. A game is a plugin made of plugins.
 
-## Making one
+## Creating a plugin
 
 ```ts
 import {
@@ -38,7 +38,7 @@ const Movement = System.make("physics/Movement", function* () {
 });
 
 export const Physics = Plugin.make("physics/Physics", {
-  components: [Position, Velocity], // so a save that names them loads
+  components: [Position, Velocity], // so saves containing them load
   systems: [Movement],
   layer: Layer.succeed(Bounds, { width: 10 }), // services for the whole app
   setup: Effect.gen(function* () {
@@ -57,31 +57,31 @@ const program = Effect.gen(function* () {
 });
 ```
 
-| Option | What it is |
+| Option | Description |
 | --- | --- |
-| `plugins` | The plugins this one depends on. Each is installed once, however many depend on it |
+| `plugins` | The plugins this one depends on. Each is installed once, however many plugins depend on it |
 | `systems` | Its systems, registered after its dependencies' |
-| `handlers` | Its action handlers, which `app.dispatch` is typed from |
-| `components` | Its components, singletons and states, so a save that names them can be loaded |
-| `layer` | Services for the whole app, built once. What it acquires is let go when the app's scope closes |
-| `setup` | An Effect that runs on a fresh start, not on a load, which has what it spawned |
+| `handlers` | Its action handlers, from which `app.dispatch` is typed |
+| `components` | Its components, singletons and states, so saves containing them can load |
+| `layer` | Services for the whole app, built once. Resources it acquires are released when the app's scope closes |
+| `setup` | An Effect that runs on a fresh start, but not on a load, since the save already holds what it spawned |
 | `scripts` | Scripts started with the app, after `setup`, and again after a load |
 
-Events and actions are plain values, so a plugin doesn't list them. It exports them from its module.
+Events and actions are plain values, so a plugin doesn't list them: it exports them from its module.
 
 ## Services
 
-A service is how a game's code reaches what is outside it: sound, storage, the network. A system asks for the service and never imports the module that does the work, so a test can swap it.
+A service is how your game's code reaches the outside world: sound, storage, the network. A system asks for the service and never imports the module that does the work, so a test can swap it.
 
-A plugin's `layer` is where its services are built. While it builds, it can use the built-in services and what the plugin's dependencies provide: a layer that needs another plugin's service lists that plugin in `plugins`. What has to be let go is acquired with `Effect.acquireRelease` inside `Layer.effect`, and released when the app's scope closes.
+A plugin's `layer` builds its services. While building, it can use the built-in services and whatever the plugin's dependencies provide: a layer that needs another plugin's service lists that plugin in `plugins`. Acquire resources that need releasing with `Effect.acquireRelease` inside `Layer.effect`; they are released when the app's scope closes.
 
-Whatever the systems, handlers and setups need that no plugin provides stays a requirement of `App.make`. It is provided the usual Effect way, and a missing one is the usual compile error:
+Anything your systems, handlers and setups need that no plugin provides remains a requirement of `App.make`. Provide it the usual Effect way, and a missing one is the usual compile error:
 
 ```ts sketch
 App.make({ plugins: [Sfx] }).pipe(Effect.provide(AudioLive));
 ```
 
-A layer or setup that fails makes `App.make` fail with that error.
+If a layer or setup fails, `App.make` fails with that error.
 
 ## Configuration
 
@@ -94,29 +94,29 @@ const Gravity = Resource.make("physics/Gravity", { defaultValue: () => -9.81 });
 const OnTheMoon = Resource.layer(Gravity, -1.62);
 ```
 
-A system reads it with `yield* Gravity`. It is configuration, not game state, and isn't saved. Game state of which there is one is a [singleton](components.md#singletons): it is in the world, so it is saved, hashed, and put back when an action is refused.
+A system reads it with `yield* Gravity`. It is configuration, not game state, and isn't saved. Game state that exists once belongs in a [singleton](components.md#singletons), which lives in the world and is therefore saved, hashed, and restored when an action is refused.
 
-A resource's default is made once and shared by every app in the process, so nothing changes it in place.
+A resource's default is created once and shared by every app in the process, so never mutate it.
 
-## How a game is laid out
+## Project layout
 
-A folder for each plugin, and a file at the root that makes the app:
+Give each plugin its own folder, and make the app in a file at the root:
 
 ```
 game/
-  main.ts           the game's own plugin, and App.run
+  main.ts           your game's own plugin, and App.run
   physics/
-    index.ts        the plugin, and what other plugins use of it
-    loops.ts        its raw loops: plain functions, importing nothing
+    index.ts        the plugin, and what other plugins use from it
+    loops.ts        its raw loops: plain functions with no imports
   look/
-    index.ts        what draws, which the rules never import
+    index.ts        rendering, which the rules never import
 ```
 
-- A plugin's `index.ts` exports `plugin`, and the components, queries, systems, events and actions that other plugins build on. Another plugin imports that file and nothing else of the folder, `import * as Physics from "../physics/index"`, and lists `Physics.plugin` in its `plugins`.
-- A plugin's raw loops, the bodies of its `eachChunk` calls, go in a `loops.ts` of their own: plain functions of a range of rows, columns and numbers, which import nothing and close over nothing, so whatever runs one, a worker included, needs only to have imported it. Such a loop does not read a field that holds an object, and a sparse component filters it and is not its data. A plugin with no such loop has no `loops.ts`.
-- What draws, what plays and the UI are plugins of their own, which the rules never import. So a server or a replay runs the rules alone.
+- A plugin's `index.ts` exports `plugin`, and the components, queries, systems, events and actions other plugins build on. Other plugins import only that file, `import * as Physics from "../physics/index"`, and list `Physics.plugin` in their `plugins`.
+- A plugin's raw loops, the bodies of its `eachChunk` calls, go in their own `loops.ts`: plain functions of a range of rows, columns and numbers, with no imports and no closures, so they can be tested and run on their own. Such a loop doesn't read fields that hold objects, and uses sparse components only as filters, not as data. A plugin without such loops has no `loops.ts`.
+- Rendering, sound and UI are plugins of their own, which the rules never import, so a server or a replay runs the rules alone.
 
-The system stays in `index.ts`. It reads what the loop needs, the time, a resource or a singleton, and passes it in:
+The system itself stays in `index.ts`. It reads what the loop needs, such as the time, a resource or a singleton, and passes it in:
 
 ```ts title="physics/loops.ts"
 export const fall = (
@@ -156,13 +156,9 @@ export const plugin = Plugin.make("physics/Physics", {
 });
 ```
 
-A loop that draws from `Random`, spawns or despawns through `Commands`, emits an event, or reads a `json` or `transient` field is not one of these: it stays in its system.
+A loop that draws from `Random`, spawns or despawns through `Commands`, emits an event, or reads a `json` or `transient` field doesn't belong in `loops.ts`: it stays in its system.
 
-[`examples/demo`](../../../../../packages/arcadekit/examples/demo) is laid out this way.
-
-## Not done yet
-
-Nothing runs on a worker yet. Loops kept in a `loops.ts` are what running systems on workers will need: a worker has no closure of the main thread's, so what runs on one is a loop it imported itself. How a worker will come to import a game's loops, and so which files a game adds for it, is not decided.
+[`examples/demo`](../../../../../packages/arcadekit/examples/demo) follows this layout.
 
 ## Read more
 

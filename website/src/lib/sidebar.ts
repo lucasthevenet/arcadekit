@@ -48,7 +48,7 @@ export const OUTLINE: readonly (Group & {
     topic: "learn",
     label: "Get started",
     section: "",
-    items: [{ label: "Overview", link: "/" }, "making-a-game", "not-done-yet"],
+    items: [{ label: "Overview", link: "/" }, "making-a-game"],
   },
   {
     topic: "learn",

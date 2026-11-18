@@ -1,15 +1,15 @@
 ---
 title: "Testing"
-description: "A game made with arcadekit runs under Node with nothing but its plugins, so its tests need no browser."
+description: "An arcadekit game runs under Node with nothing but its plugins, so its tests need no browser. Learn how to step an app and use stand-ins for devices, sound, files, rendering and the network."
 ---
 
-A game made with arcadekit runs under Node with nothing but its plugins, so its tests need no browser. This guide covers stepping an app in a test, and the stand-ins for what a page has: devices, sound, a display, files, a UI, a renderer and a network. A test works each stand-in by hand, so it says when a thing happens and sees what was asked.
+An arcadekit game runs under Node with nothing but its plugins, so its tests need no browser. This guide covers stepping an app in a test, and the stand-ins for what a page provides: devices, sound, a display, files, a UI, a renderer and a network. A test drives each stand-in by hand, so it controls when things happen and can inspect what was requested.
 
-The examples use [Vitest](https://vitest.dev). Any runner works.
+The examples use [Vitest](https://vitest.dev), but any test runner works.
 
 ## Stepping an app
 
-An app is made inside a scope. A test makes it, steps it with `tick`, and looks at the world:
+An app is created inside a scope. A test creates it, steps it with `tick`, and inspects the world:
 
 ```ts title="rules.test.ts"
 import { Action, App, Field, Plugin, Singleton } from "arcadekit";
@@ -46,14 +46,14 @@ it("adds points", () =>
   ));
 ```
 
-`app.dispatch` returns an action's outcome at once, for a test of a rule and its refusals. `app.conflicts` lists systems whose order nothing says; holding it to empty catches an order that only works by accident. See [systems](systems.md#saying-what-a-system-touches).
+`app.dispatch` returns an action's outcome immediately, for testing a rule and its refusals. `app.conflicts` lists systems with no declared order; asserting that it is empty catches an order that only works by accident. See [systems](systems.md#declaring-what-a-system-touches).
 
-- Game time is `Time`, and a test advances it by ticking: `app.tick(1 / 60)` is a sixtieth of a second of the game, however long the test took. Effect's `TestClock` does not move it.
-- To Vitest's `toEqual`, two errors made with `Data.TaggedError` that differ only in their `message` are equal, since `message` is not an enumerable property. A test that compares a failure compares its `message` as well.
+- Game time is `Time`, and a test advances it by ticking: `app.tick(1 / 60)` is a sixtieth of a second of game time, however long the test takes. Effect's `TestClock` doesn't affect it.
+- Vitest's `toEqual` treats two `Data.TaggedError` errors that differ only in their `message` as equal, since `message` isn't enumerable. When a test compares a failure, it compares the `message` too.
 
 ## Devices
 
-By default an app has no devices. A test provides a source worked by hand:
+By default, an app has no devices. A test provides a source it drives by hand:
 
 ```ts title="rules.test.ts"
 import { Input } from "arcadekit";
@@ -71,13 +71,13 @@ it("hears a key", () =>
   ));
 ```
 
-`source.press`, `release`, `tap` and `move` say what the devices do. The tick that follows hears it, as a page's would.
+`source.press`, `release`, `tap` and `move` simulate the devices, and the following tick receives the input, as a page's would.
 
-A test of what a game does with a key need not go through a device. It dispatches the action the key is bound to, or `Input.Report`, the action that keeps the picture of the devices. Where a source is provided as well, the next tick reads it and puts right a report made by hand: `app.tick(delta, { input: false })` is a tick that reads nothing and takes the report's word.
+To test what a game does with a key, you don't need a device. Dispatch the action the key is bound to, or `Input.Report`, the action that updates the device state. When a source is also provided, the next tick reads it and overrides a report made by hand: `app.tick(delta, { input: false })` runs a tick that reads no devices and keeps the report.
 
 ## Sound
 
-`Sound.makeRecorder()` is an output that plays nothing and notes what it was asked: its cues in `played`, what each music channel was told in `scored`, and what each is playing now in `playing`.
+`Sound.makeRecorder()` is an output that plays nothing and records what it was asked: cues in `played`, what each music channel was told in `scored`, and what each is playing now in `playing`.
 
 ```ts title="rules.test.ts"
 import { Sound } from "arcadekit";
@@ -96,19 +96,19 @@ it("plays nothing when nothing happens", () =>
   ));
 ```
 
-A sound that a page loads with `Browser.sound(url)` is, in a test, an asset made with `Assets.make` that gives `Sound.clip(name)`. One that a page streams with `Browser.stream(url)` is `Sound.clip(name)` itself. The recorder notes each by that name.
+In a test, replace a sound a page loads with `Browser.sound(url)` by an asset made with `Assets.make` that produces `Sound.clip(name)`, and a sound a page streams with `Browser.stream(url)` by `Sound.clip(name)` itself. The recorder records each by that name.
 
 ## The frame stage
 
-`app.frame(alpha)` runs the frame stage by hand. `App.make({ verifyFrames: true })` takes the world's hash before the stage and after each of its systems, and fails with `App.FrameChangedWorld` if one changed the game through a raw column. That costs a hash per system, so it is for tests.
+`app.frame(alpha)` runs the frame stage by hand. `App.make({ verifyFrames: true })` hashes the world before the stage and after each of its systems, and fails with `App.FrameChangedWorld` if one changed the game through a raw column. It costs a hash per system, so use it in tests.
 
-A program that runs its own frame loop is given a display turned by hand, `Driver.makeManualDisplay()`, provided as `Driver.Display`, and never real timers. `display.frame(ms)` says a frame is due, and `display.hide()` and `display.show()` that the tab went away and came back. `display.pending` and `display.watching` count the frames asked for and the listeners on the tab, so a test sees that a loop it stopped left nothing behind.
+To test a program that runs its own frame loop, provide a display you drive by hand, `Driver.makeManualDisplay()`, as `Driver.Display`, instead of real timers. `display.frame(ms)` signals that a frame is due, and `display.hide()` and `display.show()` simulate the tab being hidden and shown again. `display.pending` and `display.watching` count the requested frames and the listeners on the tab, so a test can check that a stopped loop left nothing behind.
 
 ## Files
 
-`Assets.layerMemory({ "/level.json": "..." })` serves a test's files from memory in place of `fetch`.
+`Assets.layerMemory({ "/level.json": "..." })` serves a test's files from memory instead of `fetch`.
 
-A test of loading that takes time, a loading screen or a level left before its files came, provides an `Assets.Loader` of its own whose files arrive when the test says:
+To test slow loading, such as a loading screen, or a level left before its files arrived, provide your own `Assets.Loader` whose files arrive when the test decides:
 
 ```ts
 import { Assets } from "arcadekit";
@@ -126,17 +126,17 @@ export const slowLoader: Assets.LoaderShape = {
 export const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 ```
 
-It is provided with `Effect.provideService(Assets.Loader, slowLoader)`. The test steps the app while the files are on their way, calls `arrive.get("/forest.png")?.(bytes)`, and waits for `settle()` before it looks. Such a test is asynchronous: it runs with `Effect.runPromise`. To see that a level's assets are let go when the level is left, give it an asset made with `Assets.make` whose `decode` notes when it is made and, with `Effect.acquireRelease`, when it is let go.
+Provide it with `Effect.provideService(Assets.Loader, slowLoader)`. The test steps the app while the files are in flight, calls `arrive.get("/forest.png")?.(bytes)`, and awaits `settle()` before inspecting. Such a test is asynchronous, so run it with `Effect.runPromise`. To check that a level's assets are released when the level ends, give it an asset made with `Assets.make` whose `decode` records when it is created and, with `Effect.acquireRelease`, when it is released.
 
 ## A UI
 
-A test of the game is the UI. It makes a bridge with `View.makeBridge()`, provides it with `Effect.provide(View.layer(ui))`, reads a view with `get` or `subscribe`, acts with `send`, and steps the app.
+To test the game, the test acts as the UI. It creates a bridge with `View.makeBridge()`, provides it with `Effect.provide(View.layer(ui))`, reads views with `get` or `subscribe`, acts with `send`, and steps the app.
 
-A test of a UI mounts it on a bridge in a document, with `// @vitest-environment happy-dom` at the top of its file, and counts what the UI was told and what changed in the document, with a `MutationObserver`. See [a UI](ui.md).
+To test a UI, mount it on a bridge in a document, with `// @vitest-environment happy-dom` at the top of the file, and count what the UI was told and what changed in the document with a `MutationObserver`. See [a UI](ui.md).
 
-## What is drawn
+## Rendering
 
-A game drawn with [`@arcadekit/three`](drawing-with-three.md) is given a renderer that draws nothing and notes the scene it was handed:
+Give a game drawn with [`@arcadekit/three`](drawing-with-three.md) a renderer that draws nothing and records the scene it receives:
 
 ```ts
 import { Three } from "@arcadekit/three";
@@ -151,11 +151,11 @@ export const noRenderer = Layer.succeed(Three.Renderer, {
 });
 ```
 
-Three.js makes its scenes and meshes under Node as in a page. After `app.frame(alpha)`, a test looks at what was put in the scene. A mesh of instances has the name of its system, so `scene.getObjectByName("game/Rocks")` finds it.
+Three.js builds scenes and meshes under Node as it does in a page. After `app.frame(alpha)`, a test inspects what was added to the scene. An instanced mesh is named after its system, so `scene.getObjectByName("game/Rocks")` finds it.
 
 ## Several peers
 
-`Transport.makeHub({ delay, seed })` is a network in memory. Nothing is lost and nothing moves until the test calls `hub.step()`. A message stays on its way for its delay, a number or a range, so messages overtake each other, and the same seed is the same network.
+`Transport.makeHub({ delay, seed })` is an in-memory network. Nothing is lost, and nothing moves until the test calls `hub.step()`. Each message stays in flight for its delay, a number or a range, so messages can overtake each other, and the same seed always produces the same network.
 
 ```ts sketch
 const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 1 });
@@ -169,7 +169,7 @@ for (let i = 0; i < 600; i++) {
   ada.tick();
   grace.tick();
 }
-// No more input: let what is on its way arrive, then bring the peer that is behind level.
+// No more input: let messages in flight arrive, then let the peer that is behind catch up.
 for (let i = 0; i < 30; i++) {
   hub.step();
   ada.tick();
@@ -183,12 +183,12 @@ expect(adaApp.world.hash()).toBe(graceApp.world.hash());
 expect(adaApp.actionLog).toEqual(graceApp.actionLog);
 ```
 
-Compare peers once the game has come to rest and both are at the same tick: stop issuing input, step some more, then tick only the peer that is behind. A game of one given the same log by `App.replay` has to end on the same hash. `hub.layer(peer)` may be provided to `Transport.connect` alone; a layer that listens, `Transport.layerBroadcastChannel` or `Transport.layerWebSocket`, may not: it is gone with that line.
+Compare peers once the game has settled and both are at the same tick: stop issuing input, step a while longer, then tick only the peer that is behind. A single-player game replaying the same log with `App.replay` must end on the same hash. You can provide `hub.layer(peer)` to `Transport.connect` alone, but not a layer that listens, such as `Transport.layerBroadcastChannel` or `Transport.layerWebSocket`, which would be released with that line.
 
 ## Replays as tests
 
-A game played in a test, then replayed into a fresh app with `App.replay`, has to end on the same hash. That catches a system that reads the clock or `Math.random` at the tick it does it. See [replays](replays.md).
+Play a game in a test, replay it into a fresh app with `App.replay`, and assert that both end on the same hash. This catches a system that reads the clock or `Math.random`, at the tick it does so. See [replays](replays.md).
 
 ## Read more
 
-- The package's own tests, [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of it. [`test/page.test.ts`](../../../../../packages/arcadekit/test/page.test.ts) mounts the example page's two UIs in a document and plays the game through them.
+- arcadekit's own tests, in [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of the package. [`test/page.test.ts`](../../../../../packages/arcadekit/test/page.test.ts) mounts the example page's two UIs in a document and plays the game through them.

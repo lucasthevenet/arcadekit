@@ -1,11 +1,11 @@
 ---
 title: "Textures and models"
-description: "A level's look is made of its files: Three.texture and Gltf.model are assets of a bundle, and the instances and objects made of them are drawn while the bundle is loaded."
+description: "Build a level's look from its files: Three.texture and Gltf.model are bundle assets, and instances and objects built from them are drawn while the bundle is loaded."
 ---
 
-A geometry and a material given to [`Three.instances`](instances-and-objects.md) are there when the system is made. A level's are not: its textures and models are [assets](assets.md) of its bundle, loaded when the game enters it and let go when it leaves. A kind whose look is made of them says which bundle it comes `from`.
+A geometry and material passed to [`Three.instances`](instances-and-objects.md) exist when the system is created. A level's look is different: its textures and models are [assets](assets.md) of its bundle, loaded when the game enters the level and released when it leaves. A kind whose look is built from them names the bundle it comes `from`.
 
-## A look made of assets
+## Looks built from assets
 
 ```ts
 import { Three } from "@arcadekit/three";
@@ -39,13 +39,14 @@ const Look = Plugin.make("game/Look", {
 });
 ```
 
-- The entities are drawn while the app holds the bundle loaded, and at no other time: before it is loaded, while it is loading and after it failed, no mesh of theirs is in the scene. Who keeps it loaded is not this system's business: `Assets.during`, as a rule.
-- `look` is called once each time the bundle is loaded, with its assets under their names and with their types, and returns the geometry and the material. Everything else is as for any instances: `color`, `smooth`, `capacity`, `prepare`, which is handed each mesh that is made.
-- When the bundle is let go the mesh is taken out of the scene and disposed of, and then `free` is handed what `look` returned, anything it returned beyond the two included, to dispose of what it made. The assets are the bundle's to let go. The same happens when the app's scope closes.
-- Entered again, the level is loaded again, and the look is made again of what is loaded now. The mesh starts with the room the last one had grown to.
-- It needs `Assets.plugin`, which the type of the system says: left out, the app asks for the store of assets from outside, and a program that gives it none does not compile. A kind whose look is there from the start asks nothing of it.
+- The entities are drawn while the app has the bundle loaded, and at no other time: before it loads, while it is loading, and after it fails, none of their meshes are in the scene. Keeping it loaded is another system's job, usually `Assets.during`.
+- `look` is called once each time the bundle loads, with its assets under their names and with their types, and returns the geometry and material. Everything else works as for any instances: `color`, `smooth`, `capacity`, and `prepare`, which receives each mesh created.
+- When the bundle is released, the mesh is removed from the scene and disposed, then `free` receives everything `look` returned, including anything beyond the geometry and material, so you can dispose of what you created. The assets themselves are released by the bundle. The same happens when the app's scope closes.
+- When the level is entered again, the bundle loads again and the look is rebuilt from the new assets. The new mesh starts with the capacity the previous one had grown to.
+- It requires `Assets.plugin`, as the system's type shows: without it, the app requires the asset store from outside, and a program that doesn't provide one doesn't compile. A kind whose look exists from the start has no such requirement.
+- Nothing of the kind is drawn while its bundle is loading.
 
-Nothing is ever drawn with assets that were let go. `Assets.during` is of the stage before a frame's own, `"preFrame"`: the instances appear in the frame the bundle is loaded and are gone in the frame it is let go, wherever the two systems are listed. For a system of the game's own that lets a bundle go later in the frame, `Three.Render` asks, just before it draws, whether what each such kind was made of is still there, and takes out what is not.
+Nothing is ever drawn with released assets. `Assets.during` runs in `"preFrame"`, before the frame's own stage, so instances appear in the frame the bundle loads and disappear in the frame it is released, wherever the two systems are listed. For a system of your own that releases a bundle later in the frame, `Three.Render` checks just before rendering that each such kind's assets are still loaded, and removes those that aren't.
 
 ## Textures
 
@@ -62,18 +63,18 @@ const Forest = Assets.bundle("game/Forest", {
       texture.wrapS = texture.wrapT = RepeatWrapping;
     },
   }),
-  // As the file has it, which a model's own coordinates expect.
+  // As the file stores it, which a model's own UVs expect.
   skin: Three.texture("/skin.png", { flipY: false }),
 });
 ```
 
-`Three.texture(url)` is an asset that is a `Texture` of Three.js: it goes in a bundle beside the level's other files, is fetched and decoded with them, and is disposed of, with the picture it was made of, when the scope it was loaded in closes.
+`Three.texture(url)` is an asset that produces a Three.js `Texture`: it goes in a bundle alongside the level's other files, is downloaded and decoded with them, and is disposed, along with its image, when the scope it was loaded in closes.
 
-- It is decoded by the page's `createImageBitmap`, off the thread the game runs on. Node has none, so a texture is for a page.
-- It is a picture of colours, in sRGB. `prepare` is handed the texture once, before it is ever sent to the renderer, to say otherwise or to set how it repeats and is filtered.
-- It is the right way up for the geometries of Three.js, as a `TextureLoader` gives it. `flipY: false` leaves it as the file has it.
-- Which way up is said there, where the texture is made, and not in `prepare`: a bitmap is turned over when it is decoded, and Three.js does not read `flipY` of a texture made of one. Set in `prepare` it would do nothing, so the load fails with an error that says where to say it.
-- A file that is no picture fails the bundle, as any asset that cannot be made does, with `Assets.AssetFailed` naming the URL.
+- It is decoded with the page's `createImageBitmap`, off the game's thread. Node has no `createImageBitmap`, so textures are for pages.
+- It is treated as a colour image, in sRGB. `prepare` receives the texture once, before it is uploaded to the renderer, to change that or to set wrapping and filtering.
+- It is oriented the right way up for Three.js geometries, as `TextureLoader` would give it. `flipY: false` keeps the file's orientation.
+- Orientation is set here, where the texture is created, not in `prepare`: an `ImageBitmap` is flipped while it is decoded, and Three.js ignores `flipY` on textures made from one. Setting it in `prepare` would do nothing, so the load fails with an error explaining where to set it.
+- A file that isn't an image fails the bundle, like any asset that can't be created, with `Assets.AssetFailed` naming the URL.
 
 ## Models
 
@@ -90,7 +91,7 @@ const Fleet = Assets.bundle("game/Fleet", {
   rock: Gltf.model("/rocks/rock.gltf"), // with rock.bin and rock.png beside it
 });
 
-// An object each, a copy of the model's scene.
+// One object each: a copy of the model's scene.
 const Ships = Three.objects("game/Ships", {
   of: Ship,
   from: Fleet,
@@ -105,30 +106,31 @@ const Rocks = Three.instances("game/Rocks", {
 });
 ```
 
-`Gltf.model(url)` is an asset that is a glTF model, `.glb` or `.gltf`: it goes in a bundle, is loaded with it, and is what the glTF loader of Three.js gives, with its `scene`, its `scenes` and its `animations`.
+`Gltf.model(url)` is an asset that produces a glTF model, from a `.glb` or `.gltf` file: it goes in a bundle, loads with it, and produces what Three.js's glTF loader returns, with its `scene`, `scenes` and `animations`.
 
-- The buffers and pictures a `.gltf` names beside itself are fetched through `Assets.Loader`, at once with each other, and handed to Three.js with the model, which then fetches nothing for itself. So a test's files in memory serve a whole model, one that is missing fails the bundle with its own URL, and a level that is left while its model is still on its way gives those requests up.
-- When the scope it was loaded in closes, every geometry, material and texture of the model is disposed of, and its pictures closed.
-- A model is one for the whole bundle. An object made of it with `scene.clone()` shares its geometries and materials: that is cheap, there is nothing to `free`, and what changes one copy's material changes them all.
-- `Gltf.mesh(model, name)` is a mesh of the model, by the name of the node it is on, as an editor shows it, or its own where its node has none; the first when no name is given. A mesh of several materials is several meshes under that name, and the first is given. A mesh has a geometry and a material, which is what `Three.instances` takes as a `look`. It throws, naming the meshes there are, when none has the name.
-- `Gltf.model(url, { prepare })` hands the loader to `prepare` before the model is read, for what a compressed model needs: `loader.setDRACOLoader(...)`, `setKTX2Loader`, `setMeshoptDecoder`.
-- Its pictures are decoded by the page, as `Three.texture`'s are, so a model with pictures is for a page. One without loads anywhere.
-- A file that is no model fails the bundle with `Assets.AssetFailed`, which says what was wrong with it.
+- The buffers and images a `.gltf` file references are fetched through `Assets.Loader`, in parallel, and handed to Three.js with the model, so Three.js fetches nothing itself. A test's in-memory files therefore serve a whole model, a missing file fails the bundle with its own URL, and leaving a level while its model is downloading cancels those requests.
+- When the scope it was loaded in closes, every geometry, material and texture of the model is disposed, and its images closed.
+- A model is shared across the whole bundle. An object made with `scene.clone()` shares its geometries and materials: that is cheap, there is nothing to `free`, and changing one copy's material changes them all.
+- `Gltf.mesh(model, name)` returns one of the model's meshes, by the name of its node, as an editor shows it, or by its own name when its node has none; without a name, the first mesh. A mesh with several materials is several meshes under that name, and the first is returned. A mesh has a geometry and a material, which is exactly what `Three.instances` accepts from `look`. It throws, listing the available meshes, when no mesh has the name.
+- `Gltf.model(url, { prepare })` passes the loader to `prepare` before the model is parsed, for what compressed models need: `loader.setDRACOLoader(...)`, `setKTX2Loader`, `setMeshoptDecoder`. Those decoders fetch their own files, outside `Assets.Loader`.
+- A model's animations are loaded but not played, and `scene.clone()` doesn't copy a skinned model correctly: use `SkeletonUtils.clone` from Three.js for that.
+- Its images are decoded by the page, as with `Three.texture`, so a model with images is for pages. A model without images loads anywhere.
+- A file that isn't a model fails the bundle with `Assets.AssetFailed`, explaining what was wrong with it.
 
-## Objects made of assets
+## Objects built from assets
 
-Objects name the bundle they come `from` as instances do, and `make` is handed its assets as well as the entity, as `Ships` is above.
+Objects name the bundle they come `from` just as instances do, and `make` receives its assets as well as the entity, as `Ships` does above.
 
-- There are objects while the app holds the bundle loaded. The frame it is, every entity of the kind gets its object, made of what is loaded; when it is let go, every object is taken out of the scene and handed to `free`, before the scene is next drawn. Loaded again, each is made again.
-- The rest is as for [objects](instances-and-objects.md#objects) and as for instances made of assets: it needs `Assets.plugin`, and nothing is drawn with what was let go.
+- Objects exist while the app has the bundle loaded. On the frame it loads, every entity of the kind gets an object built from the loaded assets; when it is released, every object is removed from the scene and passed to `free` before the scene is next rendered. When it loads again, each object is rebuilt.
+- Everything else works as for [objects](instances-and-objects.md#objects) and for instances built from assets: it requires `Assets.plugin`, and nothing is drawn with released assets.
 
-## Another loader's files
+## Other file types
 
-A font, or anything else Three.js has a loader for, is an asset of your own, `Assets.make(url, decode)`, with `Effect.acquireRelease` for what has to be disposed of.
+A font, or any file Three.js has a loader for, is an asset of your own, `Assets.make(url, decode)`, with `Effect.acquireRelease` for anything that needs disposing.
 
-A loader of Three.js that fetches for itself does not go through `Assets.Loader`: a test's files in memory do not serve it, and a load that is given up does not give those requests up. A glTF model's own files are brought through it here. What is left is the decoder a compressed model is given in `prepare`, which fetches its own files, and an asset of the game's own made around another loader, an FBX's, say.
+A Three.js loader that fetches files itself bypasses `Assets.Loader`: a test's in-memory files don't serve it, and cancelling a load doesn't cancel its requests. This applies to an asset you build around another loader, such as the FBX loader.
 
 ## Read more
 
-- [Assets](assets.md), for bundles and what keeps them loaded.
+- [Assets](assets.md), for bundles and how they stay loaded.
 - [`Three.texture`](/reference/three/Three#texture) and [`Gltf`](/reference/three/Gltf) in the API reference.

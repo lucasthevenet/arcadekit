@@ -1,16 +1,16 @@
 ---
 title: "Entities and systems"
-description: "arcadekit is an entity component system (ECS) with Effect around it. This page explains the parts and why the line between Effect code and plain code is where it is."
+description: "arcadekit is an entity component system (ECS) with Effect around it. Learn its parts, how the world stores them, and where Effect code ends and plain code begins."
 ---
 
-arcadekit is an entity component system (ECS) with Effect around it. This page explains the parts and why the line between Effect code and plain code is where it is.
+arcadekit is an **entity component system** (ECS) with Effect around it. This page introduces its parts, explains how the world stores them, and shows where Effect code ends and plain code begins.
 
 ## The parts
 
 - An **entity** is a number, its id. It has no data of its own.
-- A **component** is a kind of data an entity can have: `Position`, `Health`, `Burning`. An entity has any set of components, and gains or loses them as the game goes.
-- A **system** is the game's code. It asks for the entities that have some components, with a **query**, and does something to each of them, once per tick.
-- A **singleton** is data there is one of per world: the score, whose turn it is.
+- A **component** is a kind of data an entity can have: `Position`, `Health`, `Burning`. An entity can have any set of components, and gains or loses them as the game runs.
+- A **system** is your game's logic. It uses a **query** to find the entities that have certain components, and processes each of them once per tick.
+- A **singleton** is data that exists once per world: the score, whose turn it is.
 - The **world** holds all of it.
 
 ```ts
@@ -36,17 +36,17 @@ const Movement = System.make("game/Movement", function* () {
 });
 ```
 
-## How the world stores them
+## How the world stores data
 
-Entities with the same set of components share a table, and each field of a component is a column of that table: a `Float32Array` for an `f32` field. A query visits the tables that match, row by row. So a loop over a hundred thousand entities reads arrays of numbers in order, which is about as fast as JavaScript goes.
+Entities with the same set of components share a table, and each field of a component is a column of that table: a `Float32Array` for an `f32` field. A query visits the matching tables row by row. A loop over a hundred thousand entities therefore reads arrays of numbers in order, which is about as fast as JavaScript gets.
 
-A component that is added and removed often, a tag such as `Stunned`, or that few entities have, can be stored `"sparse"` instead, in a set of its own. Gaining or losing it then doesn't move the entity to another table.
+A component that is added and removed often, such as a `Stunned` tag, or that few entities have, can use `"sparse"` storage instead, in a set of its own. Adding or removing it then doesn't move the entity to another table.
 
-The storage core is `arcadekit/ecs`. It is plain synchronous TypeScript and imports nothing, not even Effect.
+The storage core is `arcadekit/ecs`. It is plain synchronous TypeScript with no imports, not even Effect.
 
-## An entity's id
+## Entity ids
 
-An id is two numbers in one: an index, which is the slot the entity lives in, and above it a generation, which counts how often that slot was given out before. A slot that comes free is given out again with the next generation, so an id that was kept across the reuse names nobody: `isAlive` is false of it, `get` gives nothing, and a [relation](../guides/components.md#relations) that held it is gone.
+An id packs two numbers: an **index**, the slot the entity occupies, and a **generation**, which counts how many times that slot was used before. When a slot is freed and reused, the new entity gets the next generation. An id kept from before the reuse refers to no entity: `isAlive` returns false, `get` returns nothing, and any [relation](../guides/components.md#relations) that held it is removed.
 
 ```ts
 import {
@@ -64,30 +64,30 @@ const Position = Component.define("game/Position", {
 
 const world = new World();
 const rock = world.spawn(Position.of({ x: 0, y: 0 }));
-entityIndex(rock); // the slot it lives in
-entityGeneration(rock); // how often that slot was given out before
+entityIndex(rock); // the slot it occupies
+entityGeneration(rock); // how many times that slot was used before
 world.despawn(rock);
-world.isAlive(rock); // false, now and for good
+world.isAlive(rock); // false, permanently
 ```
 
-- **An id never names another entity than its own.** The index has 22 bits and the generation 31. A slot that is given out again every tick, as a bullet's is, lasts more than a year at sixty ticks a second, and when its generations are used up it is given out no more.
-- A world holds at most 4,194,304 entities at a time, which is what 22 bits of index are. A spawn past that throws.
-- An id is a whole number below 2^53. It is a whole number in JSON, in a save and in an action's payload, where [`EntityId`](/reference/arcadekit/Schemas) is its schema.
-- An array that holds ids is a `Float64Array`, which holds every such number exactly: a table's `entities`, which `eachChunk` hands out, and the column of a `Field.entity` are. A `Uint32Array` cuts short the id of an entity whose slot was given out more than 1,023 times, and nothing says so.
-- `entityIndex` and `entityGeneration`, of `arcadekit/ecs`, read the two halves. A shift sees 32 bits and no more.
+- **An id never refers to another entity.** The index has 22 bits and the generation 31. A slot reused every tick, as a bullet's is, lasts more than a year at sixty ticks a second, and is retired once its generations run out.
+- A world holds at most 4,194,304 entities at a time, the range of a 22-bit index. Spawning past that throws.
+- An id is an integer below 2^53. It is an integer in JSON, in a save and in an action's payload, where [`EntityId`](/reference/arcadekit/Schemas) is its schema.
+- Arrays of ids are `Float64Array`s, which hold every id exactly: a table's `entities`, which `eachChunk` passes to your loop, and the column of a `Field.entity`. A `Uint32Array` silently truncates the id of an entity whose slot was reused more than 1,023 times.
+- `entityIndex` and `entityGeneration`, from `arcadekit/ecs`, read the two parts. Bitwise operators see only 32 bits.
 
-## Effect on the outside, plain loops inside
+## Effect outside, plain loops inside
 
-A system is one Effect per tick. Inside it, the loop over entities is a plain function.
+A system is one Effect per tick, and the loop over entities inside it is a plain function.
 
-- **The system is Effect** because it needs what Effect gives: services (`Time`, `Random`, a game's own), typed errors, and a scheduler the app controls. It runs a handful of times a tick, so what Effect costs doesn't matter.
-- **The loop is plain** because it runs once per entity. Measured, an Effect per entity is about 25 times slower than a loop over columns.
+- **The system is an Effect** because it needs what Effect provides: services (`Time`, `Random`, your own), typed errors, and a scheduler the app controls. It runs a handful of times per tick, so Effect's overhead doesn't matter.
+- **The loop is plain** because it runs once per entity. An Effect per entity measures about 25 times slower than a loop over columns.
 
-So a loop never `yield*`s. A system takes what it needs from its services before the loop, and the loop uses it as a plain value.
+So a loop never uses `yield*`. A system takes what it needs from its services before the loop, and the loop uses it as a plain value.
 
-## Changing which entities exist
+## Spawning and despawning
 
-Nothing spawns, despawns, adds or removes a component while a query is iterating: the world throws. A system asks `Commands` for it, and the change is applied when the system is done:
+The world throws if anything spawns, despawns, adds or removes a component while a query is iterating. A system uses `Commands` instead, which applies the change when the system finishes:
 
 ```ts
 import { Commands, Component, Field, Query, System, Time } from "arcadekit";
@@ -107,22 +107,22 @@ const Expiry = System.make("game/Expiry", function* () {
 });
 ```
 
-Writing a field in place is fine. It is changing the shape of the world that waits.
+Writing a field in place is always fine. Only changes to the shape of the world are deferred.
 
 ## Plugins
 
-A feature is a plugin: its systems, its components, the actions it handles, the services it provides and what it does at the start. A plugin names the plugins it depends on, and a game is a plugin of plugins. See [plugins](../guides/plugins.md).
+Each feature is a **plugin**: its systems, its components, the actions it handles, the services it provides, and its startup logic. A plugin lists the plugins it depends on, and a game is a plugin made of plugins. See [plugins](../guides/plugins.md).
 
-## Names
+## Naming
 
-A string that identifies something at run time carries the name of the feature it belongs to: a component is `"physics/Position"`, a system `"game/Movement"`, an event `"physics/Collided"`. Everything the kit names itself begins with `arcadekit/`, such as the service `"arcadekit/World"` and the system `"arcadekit/Input.Read"`, so a game is free to key a service of its own `"World"`.
+Every string that identifies something at run time starts with the name of the feature it belongs to: a component is `"physics/Position"`, a system `"game/Movement"`, an event `"physics/Collided"`. Everything arcadekit names itself starts with `arcadekit/`, such as the service `"arcadekit/World"` and the system `"arcadekit/Input.Read"`, so your game is free to name its own service `"World"`.
 
-## Where this comes from
+## Inspiration
 
-The design follows [Bevy](https://bevy.org), an ECS built around systems, queries, commands, events, resources and plugins. The interface is written with Effect's idioms rather than translated from Rust.
+The design follows [Bevy](https://bevy.org), an ECS built around systems, queries, commands, events, resources and plugins. The API is written in Effect's idioms rather than translated from Rust.
 
 ## Read more
 
 - [Components](../guides/components.md) and [queries](../guides/queries.md) in the guides.
-- [Systems](../guides/systems.md): their order, their stages, and saying what they read and write.
-- [`Field`](/reference/arcadekit/Field) in the API reference, for every kind of field.
+- [Systems](../guides/systems.md): ordering, stages, and declaring what a system reads and writes.
+- [`Field`](/reference/arcadekit/Field) in the API reference, for every field type.

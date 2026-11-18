@@ -1,11 +1,11 @@
 ---
-title: "Between two ticks"
-description: "A game's ticks and a screen's frames do not line up. With smooth: true, @arcadekit/three draws each entity between its last two places, so what moves evenly is seen to."
+title: "Interpolation"
+description: "Ticks and frames don't line up. With smooth: true, @arcadekit/three draws each entity between its last two positions, so steady motion looks steady."
 ---
 
-A game ticks sixty times a second and a screen shows as many frames as it likes, so the two do not line up: some frames follow one tick, some two, some none. Drawn where the last tick left it, a thing that moves evenly is seen to stutter. See [ticks and frames](../concepts/ticks-and-frames.md).
+A game ticks sixty times a second while a screen shows as many frames as it can, so ticks and frames don't line up: some frames follow one tick, some two, some none. An entity drawn where the last tick left it stutters even when it moves at a steady speed. See [ticks and frames](../concepts/ticks-and-frames.md).
 
-With `smooth: true`, `Three.instances` and `Three.objects` draw each entity between its last two places: at `Frame.alpha` of the way from where it was a tick ago to where it is.
+With `smooth: true`, `Three.instances` and `Three.objects` **interpolate** each entity between its last two positions: they draw it `Frame.alpha` of the way from where it was a tick ago to where it is now.
 
 ```ts
 import { Three } from "@arcadekit/three";
@@ -19,38 +19,38 @@ const Rocks = Three.instances("game/Rocks", {
   geometry: new IcosahedronGeometry(1),
   material: new MeshStandardMaterial({ color: "#8a8f98" }),
   smooth: true,
-  snap: 50, // further than this in one tick is not a move, it is a jump
+  snap: 50, // moving further than this in one tick is a jump, not motion
 });
 ```
 
-## The picture is a tick behind
+## The picture lags one tick
 
-It is what a game that runs in real time wants, and it is off unless asked for, because of what it means: the picture is up to one tick behind the game.
+Interpolation is what a real-time game wants, but it is off by default because of what it implies: the picture is up to one tick behind the game.
 
-- Just after a tick, at an `alpha` of 0, an entity is drawn where it was before the tick.
-- A game that is stepped by hand and drawn with `app.frame(0)`, as a test does, would see its last tick only at the next.
-- A game that ticks when its player moves, run with `ticks: "whenNeeded"`, is told an `alpha` of 1 while it rests, and is drawn where it is.
+- Just after a tick, at an `alpha` of 0, an entity is drawn where it was before that tick.
+- A game stepped by hand and drawn with `app.frame(0)`, as a test does, shows its last tick only on the next one.
+- A game that ticks when its player moves, run with `ticks: "whenNeeded"`, receives an `alpha` of 1 while it rests, so it is drawn where it is.
 
-## What is drawn on the way
+## How values are interpolated
 
-- Places and sizes go straight from one to the other. A turn goes by the shorter way: a quaternion towards whichever of the other and its opposite is nearer; a flat game's angle by the shorter way round.
-- An entity that was not drawn in the frame before is drawn where it is: one that is new, one in a slot that was another's, one that was hidden, and every entity in the first frame, after a load, or after a frame the system did not run in.
-- `snap` is how far an entity may go in one tick and still be drawn on the way. One that went further, off one edge of the world and in at the other, say, is drawn where it is. Left out, any distance is a move. It is one distance per kind, in the units of the scene.
-- When several ticks ran since the last frame, an entity comes from where it was last drawn from, which is further back than a tick: for that one frame it moves faster than it did. When none ran, it is between the same two places as the frame before.
-- A place changed with no tick, by an action dispatched between two or by hand, is where the entity goes to from where it was coming from.
-- A [colour of an instance](instances-and-objects.md#a-colour-each) changes evenly too, however far it goes.
+- Positions and scales are interpolated linearly. Rotations take the shorter path: a quaternion towards whichever of the target and its negation is closer, and a flat game's angle the shorter way round.
+- An entity not drawn in the previous frame is drawn where it is: a new entity, one reusing another's slot, one that was hidden, and every entity in the first frame, after a load, or after a frame in which the system didn't run.
+- `snap` is how far an entity can move in one tick and still be interpolated. An entity that moved further, such as one that wrapped from one edge of the world to the other, is drawn where it is. Without `snap`, any distance counts as motion. It is one distance per kind, in scene units.
+- When several ticks ran since the last frame, an entity starts from where it was last drawn, which is more than a tick back: for that one frame it moves faster. When no tick ran, it stays between the same two positions as in the previous frame.
+- A position changed without a tick, by an action dispatched between ticks or by hand, becomes the target, interpolated from where the entity was coming from.
+- An [instance's colour](instances-and-objects.md#per-instance-colour) is interpolated too, however far it changes.
 
-## What it keeps, and what it costs
+## What it stores, and what it costs
 
-What it keeps, the value each component had a tick ago, is the renderer's own, by entity, and no part of the world: a game drawn this way has the same hash, log and save as one that is not drawn at all.
+The previous value of each component is stored by the renderer, per entity, and isn't part of the world: a game drawn this way has the same hash, log and save as one that isn't drawn at all.
 
-It costs a frame about 18 ns more per entity for a place, and 63 ns more for a place, a turn and a size.
+It costs about 18 ns more per entity per frame for a position, and 63 ns more for position, rotation and scale.
 
-## A frame system of your own
+## In your own frame systems
 
-A frame system of the game's own that draws between two ticks works the place out itself, at `(yield* Frame).alpha`, from a velocity or a previous position the simulation keeps. arcadekit has no helper for it.
+To interpolate in a frame system of your own, compute the position at `(yield* Frame).alpha` from a velocity or a previous position your simulation keeps, as the frame example in [ticks and frames](../concepts/ticks-and-frames.md#the-frame) does.
 
 ## Read more
 
-- [Instances and objects](instances-and-objects.md), which take `smooth` and `snap`.
+- [Instances and objects](instances-and-objects.md), which accept `smooth` and `snap`.
 - [`Three`](/reference/three/Three) in the API reference.

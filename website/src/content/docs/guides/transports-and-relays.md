@@ -1,33 +1,33 @@
 ---
 title: "Transports and relays"
-description: "A session holds no socket. This guide covers the transports that carry its messages: between the tabs of one browser, between machines through a relay, and over a wire of the game's own."
+description: "A session holds no socket. Transports carry its messages: between tabs of one browser, between machines through a relay, or over a channel of your own."
 ---
 
-A session holds no socket. What carries its messages is a service, `Transport`, with two plain calls: `send(message)` to every other peer, and `receive()`, which gives what has arrived since it was last asked. Between machines, the messages go through a relay.
+A session holds no socket. Its messages are carried by a service, **`Transport`**, with two plain calls: `send(message)` to every other peer, and `receive()`, which returns what has arrived since the last call. Between machines, messages pass through a **relay**.
 
-## Joining a session to a transport
+## Connecting a session to a transport
 
-`Transport.connect(session)` gives what a driver steps in the session's place. Each tick it hands the session what arrived, runs the tick, and sends what the session has to say, whether the tick ran, waited or failed: a session that stops because the peers have come apart says so to the others first.
+`Transport.connect(session)` returns what a driver steps in the session's place. Each tick, it passes the session what arrived, runs the tick, and sends what the session produced, whether the tick ran, waited or failed: a session that stops because peers drifted apart tells the others first.
 
-There is no default transport. A game of several peers that is given none doesn't compile: every way of reaching the others is a choice.
+There is no default transport. A multiplayer game without one doesn't compile: every way of reaching the other peers is an explicit choice.
 
-| Transport | Between |
+| Transport | Connects |
 | --- | --- |
-| `Transport.layerBroadcastChannel(name)` | The tabs, windows and workers of one browser. No server |
+| `Transport.layerBroadcastChannel(name)` | The tabs, windows and workers of one browser, with no server |
 | `Transport.layerWebSocket(url)` | Machines, through a relay |
 | `Transport.text(wire)` | Anything that carries text: a data channel, a port |
 | `Transport.makeHub(options)` | Peers in one test, in memory. See [testing](testing.md) |
 
-A transport asks little of a wire: that every message arrives, in whatever order. One that arrives twice is dropped by the session.
+A transport needs little from its channel: every message must arrive, in any order. Duplicates are dropped by the session.
 
-Provide the transport's layer to the whole program, as below. Provided to `Transport.connect` alone, it would close as soon as the session was joined, and the first tick would throw and say so.
+Provide the transport's layer to the whole program, as below. Provided to `Transport.connect` alone, it closes as soon as the session connects, and the first tick throws with an explanation.
 
-## In one browser
+## Within one browser
 
-Every peer that opens `Transport.layerBroadcastChannel` with the same name hears every other: the tabs, the windows and the workers of one browser, or the threads of one process. It reaches no other machine.
+Every peer that opens `Transport.layerBroadcastChannel` with the same name hears every other: the tabs, windows and workers of one browser, or the threads of one process. It doesn't reach other machines.
 
-- The frame loop rests while its tab is hidden, and a peer that rests is waited for. Two peers in one browser are two windows side by side, not two tabs of one. A game can't say yet that it has to go on in the background.
-- Nothing vouches for the sender here: a peer can send a message in [another's name](../concepts/several-players.md#who-did-it).
+- The frame loop pauses while its tab is hidden, and the other peers wait for a paused peer. To run two peers in one browser, use two windows side by side, not two tabs.
+- Nothing authenticates the sender here: a peer can send a message in [another peer's name](../concepts/several-players.md#who-issued-an-action).
 
 ## Between machines
 
@@ -58,27 +58,27 @@ const program = Effect.gen(function* () {
 Browser.runMain(program, { target: document.querySelector("canvas")! });
 ```
 
-`Transport.layerWebSocket` opens a WebSocket to a relay, which passes each message on to the other peers of the room. The address names the room and the peer. What is sent before the socket opens is kept and sent when it does. It uses the `WebSocket` every platform has: a page, a worker and Node 22 alike.
+`Transport.layerWebSocket` opens a WebSocket to a relay, which forwards each message to the room's other peers. The address names the room and the peer. Messages sent before the socket opens are buffered and sent once it does. It uses the standard `WebSocket`, available in pages, workers and Node 22 alike.
 
-A socket that closes for any other reason than its layer's scope ends the game over it:
+When the socket closes for any reason other than its layer's scope closing, the game ends for that peer:
 
-- `send` and `receive` throw `Transport.Closed` from then on, so the next tick fails and its driver stops. It carries the close code and what the relay said: `"name taken"` for a peer whose name is in the room already.
-- It doesn't connect again. A message lost on the way would be lost for good, and a peer that came back would have missed messages nobody sends twice.
-- The peer whose socket closed is told. The others are told nothing, and wait.
+- `send` and `receive` throw `Transport.Closed` from then on, so the next tick fails and its driver stops. The error carries the close code and the relay's reason: `"name taken"` when the peer's name is already in the room.
+- It doesn't reconnect: a message lost in transit would be lost for good, and a returning peer would have missed messages nobody resends.
+- The peer whose socket closed is notified. The others aren't, and wait for it.
 
-## A relay
+## Relays
 
-A relay passes what one peer of a room sends on to the others. It runs no game and keeps nothing of one.
+A relay forwards what one peer of a room sends to the others. It runs no game and stores nothing about one.
 
-- A room is named by its address and belongs to nobody: the first peer to ask opens it, and it is gone when the last has left.
-- **The relay vouches for the sender.** A peer says who it is once, when it connects, and is held to it: a message in another's name is refused and the socket closed. So the `from` a handler is told is the peer the relay let in under that name.
-- Whether that peer may have that name is the relay's host to check. A relay whose host doesn't is one on which anyone is anyone.
+- A room is identified by its address and owned by nobody: the first peer to connect opens it, and it closes when the last peer leaves.
+- **The relay authenticates the sender.** A peer declares its name once, when it connects, and is held to it: a message in another peer's name is refused and the socket closed. The `from` a handler receives is therefore the peer the relay admitted under that name.
+- Deciding whether that peer may use that name is the relay host's responsibility. A relay whose host doesn't check lets anyone claim any name.
 
-`arcadekit/Relay` is the relay as plain functions, for whatever accepts the sockets to call, and hosting it is the game's. See [hosting a relay](hosting-a-relay.md).
+`arcadekit/Relay` implements the relay as plain functions, which whatever accepts the sockets calls. You host it yourself; see [hosting a relay](hosting-a-relay.md).
 
-## A transport of your own
+## Custom transports
 
-`Transport.text(wire)` makes a transport of anything else that carries text:
+`Transport.text(wire)` creates a transport over anything else that carries text:
 
 ```ts
 import { Transport } from "arcadekit";
@@ -97,12 +97,12 @@ const transport = Transport.text({
 export const layer = Transport.layer(transport);
 ```
 
-- A message travels as `Lockstep.encode` writes it. A text that isn't a message is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
-- The wire has to deliver every message. A WebSocket does; a data channel has to be told to.
-- `transport.close()` stops listening. Unlike the two layers, a transport made this way says nothing when it is used after that, unless the game makes it.
-- It vouches for no sender, unless what is at the other end of the wire does.
+- Messages travel in the format `Lockstep.encode` writes. Text that isn't a message is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
+- The channel must deliver every message. A WebSocket does; a data channel must be configured to.
+- `transport.close()` stops listening. Unlike the two layers, a transport created this way doesn't report being used after that, unless your game makes it.
+- It authenticates no sender, unless whatever is at the other end of the channel does.
 
-A transport that carries no text is a `Transport.Shape` of the game's own, given to `Transport.layer`. Neither of its calls waits, so that a tick stays one synchronous step: what listens behind it fills a list in its own time, and `receive` hands the list over.
+A transport that doesn't carry text is a `Transport.Shape` of your own, passed to `Transport.layer`. Neither of its calls waits, so a tick stays one synchronous step: whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
 
 ## Read more
 

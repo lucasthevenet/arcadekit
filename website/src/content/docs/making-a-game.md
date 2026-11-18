@@ -1,11 +1,11 @@
 ---
 title: "Making a game"
-description: "This page builds a small game from nothing: coins fall, a basket catches them, and three missed coins end the game. It runs in a test first, then in a page."
+description: "Build a small game from scratch: coins fall, a basket catches them, and three missed coins end the game. You run it in a test first, then in a page."
 ---
 
-This page builds a small game from nothing: coins fall, a basket catches them, and three missed coins end the game. It runs in a test first, then in a page.
+In this walkthrough you build a small game from scratch: coins fall, a basket catches them, and three missed coins end the game. You run it in a test first, then in a page.
 
-Along the way it uses most of what arcadekit has: components, a singleton, systems, an action and its refusal, an event, a script, a plugin, a replay, input, and a frame stage that draws. Each has a guide of its own, linked at the end.
+Along the way you use most of arcadekit: components, a singleton, systems, an action and its refusal, an event, a script, a plugin, a replay, input, and a frame stage that draws. Each has its own guide, linked at the end.
 
 ## Install
 
@@ -14,13 +14,13 @@ pnpm add arcadekit effect @effect/platform-browser
 pnpm add -D vitest
 ```
 
-arcadekit is built on [Effect](https://effect.website) 4. `@effect/platform-browser` is what runs a game in a page. A game that also runs under Node, as a test or a server does, needs nothing more.
+arcadekit is built on [Effect](https://effect.website) 4. `@effect/platform-browser` runs your game in a page. Running under Node, in a test or on a server, needs nothing more.
 
 ## The rules
 
-A game's rules are a plugin: its components, its systems, the actions a player may take, and what runs at the start.
+A game's rules are a plugin: its components, its systems, the actions a player can take, and what runs at startup.
 
-Start with the data. A coin is an entity with a place and a speed. The basket is not an entity: there is one, so it is a singleton.
+Start with the data. A coin is an entity with a position and a falling speed. There is only one basket, so instead of an entity it is a singleton.
 
 ```ts title="rules.ts"
 import {
@@ -52,9 +52,9 @@ export const Basket = Singleton.define(
 );
 ```
 
-A component's fields are numbers in typed arrays. A component's name, `"catch/Position"`, is its identity: it is how a save names it.
+A component's fields are stored as numbers in typed arrays. Its name, `"catch/Position"`, is its identity, and saves refer to it by that name.
 
-Now the systems. A system runs once per tick, as one Effect, and loops over what its query finds with a plain function. It reads the time from `Time`, never from the clock.
+Next come the systems. A system runs once per tick as one Effect, and loops over the entities its query matches with a plain function. It reads the time from `Time`, never from the system clock.
 
 ```ts title="rules.ts"
 const BASKET_WIDTH = 1;
@@ -76,7 +76,7 @@ const Drop = System.make("catch/Drop", function* () {
 });
 ```
 
-When a coin reaches the ground, it is caught or missed. Either way it goes. An entity is despawned through `Commands`, which applies the change once the system is done, so the loop never sees the world change under it.
+When a coin reaches the ground, it is either caught or missed, and despawned in both cases. You despawn an entity through `Commands`, which applies the change after the system finishes, so the world never changes under a running loop.
 
 ```ts title="rules.ts"
 export const Caught = Event.define(
@@ -103,11 +103,11 @@ const Land = System.make("catch/Land", function* () {
 });
 ```
 
-`Caught` is an event: what the rules say happened, for whoever wants to know. The rules don't play a sound. What the game sounds like reads this event later.
+`Caught` is an event: a record that something happened, for any system that wants to react. The rules don't play sounds themselves; the sound plugin reads this event later.
 
 ## What a player can do
 
-A player changes the game only through actions. An action has a name and a payload, checked against a schema before its handler runs: here, a direction of -1, 0 or 1. The handler applies it or refuses it with a typed error. A refused action changes nothing.
+Players change the game only through actions. An action has a name and a payload, which is validated against a schema before its handler runs: here, a direction of -1, 0 or 1. The handler either applies the action or refuses it with a typed error, and a refused action changes nothing.
 
 ```ts title="rules.ts"
 export const Move = Action.define(
@@ -130,7 +130,7 @@ const move = Action.handler(Move, function* ({ dx }) {
 
 ## Coins that keep coming
 
-A script is code that runs across many ticks. This one drops a coin every second, somewhere random. Random numbers come from `Random`, which is seeded, so the same seed drops the same coins.
+A script is code that runs across many ticks. This one drops a coin at a random position every second. Random numbers come from the seeded `Random` service, so the same seed always drops the same coins.
 
 ```ts title="rules.ts"
 const Rain = Effect.gen(function* () {
@@ -147,7 +147,7 @@ const Rain = Effect.gen(function* () {
 });
 ```
 
-`script.sleep(1)` waits one second of game time, which passes only as the game ticks.
+`script.sleep(1)` waits one second of game time, which only advances as the game ticks.
 
 ## The plugin
 
@@ -160,11 +160,11 @@ export const Rules = Plugin.make("catch/Rules", {
 });
 ```
 
-Systems run in the order they are listed. `components` lists what a save may name, so that one can be loaded.
+Systems run in the order they are listed. `components` lists every component a save may contain, so the game can load it.
 
 ## Test it
 
-An app can be made and stepped by hand, one tick at a time. That is how a test plays a game, under Node, with no page.
+You can create an app and step it by hand, one tick at a time. That is how a test plays a game under Node, without a page.
 
 ```ts title="rules.test.ts"
 import { App } from "arcadekit";
@@ -200,9 +200,9 @@ it("refuses a move once the game is over", () =>
   ));
 ```
 
-`app.dispatch` applies an action now and returns its outcome. `app.enqueue` is the other way: the action waits for the start of the next tick, which is what a game that runs in real time wants.
+`app.dispatch` applies an action immediately and returns its outcome. `app.enqueue` queues the action for the start of the next tick instead, which is what a real-time game needs.
 
-A game that changes only by its actions, its systems and its seed can be played again. The app logs every action that came from outside, and `App.replay` plays the log into a new app, checking the world's hash as it goes:
+A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation, and `App.replay` plays the log into a new app, verifying the world's hash along the way:
 
 ```ts title="rules.test.ts"
 it("plays the same game again from its log", () =>
@@ -221,15 +221,15 @@ it("plays the same game again from its log", () =>
   ));
 ```
 
-If anything in the rules read the clock or `Math.random`, the replay would stop at the first tick where the two worlds differ, with `App.ReplayDiverged`.
+If anything in the rules read the clock or called `Math.random`, the replay would stop at the first tick where the two worlds differ, with `App.ReplayDiverged`.
 
 ## Play it in a page
 
-The page adds what the rules don't have: keys, and a picture.
+The page adds what the rules leave out: keyboard input and rendering.
 
-Keys become actions. `Input.bind` makes a system of the input stage, which runs before each tick and issues the game's own actions. They are logged like any other, so a replay needs no keyboard.
+Keys become actions. `Input.bind` creates an input-stage system, which runs before each tick and issues your game's actions. They are logged like any other action, so a replay needs no keyboard.
 
-Drawing happens in the frame stage, between ticks, with the world frozen. A system there reads what it likes and changes nothing, so a game that is drawn is the same game as one that is not.
+Drawing happens in the frame stage, between ticks, where the world is read-only. A frame system can read anything and change nothing, so drawing never affects the simulation.
 
 ```ts title="main.ts"
 import { App, Input, Plugin, Query, System } from "arcadekit";
@@ -285,13 +285,13 @@ Browser.runMain(
 );
 ```
 
-`App.run` makes the app and runs it at sixty ticks a second, drawing once per repaint, until the page goes away. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed comes from outside, at the entry point: the rules themselves stay repeatable.
+`App.run` creates the app and runs it at sixty ticks a second, drawing once per repaint, until the page closes. `Browser.runMain` starts it in the page, with the page's keyboard, pointer and gamepads. The seed is picked at the entry point, so the rules themselves stay deterministic.
 
-Serve `main.ts` with any bundler, [Vite](https://vite.dev) for instance, from a page with a `<canvas>`.
+Serve `main.ts` with any bundler, such as [Vite](https://vite.dev), from a page with a `<canvas>`.
 
 ## Where to go next
 
-- [Entities and systems](concepts/entities-and-systems.md) and [ticks and frames](concepts/ticks-and-frames.md) explain the shape this page used.
-- [Determinism](concepts/determinism.md) says what a game must not do for its replays, saves and network play to work.
-- The guides go further, a task at a time: [drawing with Three.js](guides/drawing-with-three.md), [sound](guides/sound.md), [a UI](guides/ui.md), [saving](guides/saving-and-loading.md), [several players](guides/lockstep-and-rollback.md).
-- [`examples/page`](../../../../packages/arcadekit/examples/page) is a fuller game in a page, with assets, sound, music and a UI built two ways.
+- [Entities and systems](concepts/entities-and-systems.md) and [ticks and frames](concepts/ticks-and-frames.md) explain the structure this walkthrough used.
+- [Determinism](concepts/determinism.md) covers the rules your game follows so that replays, saves and online play work.
+- The guides cover one task each: [drawing with Three.js](guides/drawing-with-three.md), [sound](guides/sound.md), [a UI](guides/ui.md), [saving](guides/saving-and-loading.md), [several players](guides/lockstep-and-rollback.md).
+- [`examples/page`](../../../../packages/arcadekit/examples/page) is a fuller game in a page, with assets, sound, music, and a UI built two ways.

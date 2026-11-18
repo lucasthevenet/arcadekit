@@ -17,7 +17,6 @@ npm install arcadekit effect
 - [Website](https://arcadekit.dev): the walkthrough, the concepts and the guides.
 - [Making a game](https://arcadekit.dev/making-a-game): a game built a file at a time.
 - [Reference](https://arcadekit.dev/reference/arcadekit): the API of each module.
-- [Not done yet](https://arcadekit.dev/not-done-yet): what the kit does not do.
 - [Examples](https://github.com/lucasthevenet/arcadekit/tree/main/packages/arcadekit/examples): a simulation in real time, a duel in turns, a game in a page, and a relay.
 - [Releases](https://github.com/lucasthevenet/arcadekit/releases): what changed, and what breaks.
 - [Issues](https://github.com/lucasthevenet/arcadekit/issues): bug reports and feature requests.

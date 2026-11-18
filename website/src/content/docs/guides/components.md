@@ -1,11 +1,11 @@
 ---
 title: "Components"
-description: "A component is a kind of data an entity can have. This guide covers its name, the kinds of field, tags, singletons, relations, and the components for where a thing is."
+description: "A component is a kind of data an entity can have. Learn how to define components, choose field types, and use tags, singletons and relations."
 ---
 
-A component is a kind of data an entity can have. This guide covers its name, the kinds of field, tags, singletons, relations, and the components for where a thing is.
+A **component** is a kind of data an entity can have, such as a position, health, or a `Stunned` tag. This guide covers defining components, field types, tags and sparse storage, singletons, and relations.
 
-## Defining one
+## Defining a component
 
 ```ts
 import { Component, Field } from "arcadekit";
@@ -25,33 +25,33 @@ const Hero = Component.define("game/Hero", {
 });
 ```
 
-The name, `"game/Hero"`, is the component's identity in a world. A save names its components that way, so give each a prefix of its feature and keep it once a game has saves.
+The first argument, `"game/Hero"`, is the component's name. It identifies the component within a world and in saves, so prefix it with the feature it belongs to, and keep it unchanged once your game has saves.
 
-- A world that meets two different components with one name refuses the second, where it is spawned, added, queued or queried.
-- Nothing is shared between worlds, so two apps in one process, or a module evaluated twice, can each define a component with the same name.
-- The name is part of the component's type, which is how the compiler tells two components with the same fields apart. Write it as a literal: a name built at run time is just `string`.
+- A world refuses a second, different component with the same name, wherever it first meets it: a spawn, an add, a command or a query.
+- Worlds share nothing, so two apps in one process, or a module evaluated twice, can each define a component with the same name.
+- The name is part of the component's type, which lets the compiler tell apart two components with the same fields. Write it as a string literal: a name built at run time has the type `string`.
 
-## The kinds of field
+## Field types
 
-A number goes in a typed field: `f32`, `f64`, `i32`, `u32`, `u16`, `u8`, or `entity` for [an id](../concepts/entities-and-systems.md#an-entitys-id), which takes eight bytes. Each is a column of a typed array, which is what makes a loop over many entities fast.
+Numeric fields are stored in typed arrays: `f32`, `f64`, `i32`, `u32`, `u16`, `u8`, and `entity` for an [entity id](../concepts/entities-and-systems.md#entity-ids), which takes eight bytes. Each field is a column of a typed array, which is what makes loops over many entities fast.
 
-Anything else says, where it is defined, what a snapshot and the hash do with it:
+Other values use a field type that declares how snapshots and the hash treat them:
 
 | Field | Holds | Saved and hashed |
 | --- | --- | --- |
-| `Field.json<T>()` | Plain data: text, a number, a boolean, a bigint, null or undefined, or an array or object made of text, numbers, booleans and null | As it is. An array or object as the text `JSON.stringify` gives for it |
-| `Field.schema(schema)` | Any value an Effect schema describes: a `Date`, a bigint inside an object, a class with a schema | In the schema's JSON form |
-| `Field.ref<T>(codec)` | Any value, with an `encode` and `decode` of your own to plain data and back | In its encoded form |
-| `Field.transient<T>()` | A handle or a cache another system can make again | No. It is undefined in a world loaded from a snapshot |
+| `Field.json<T>()` | Plain data: a string, number, boolean, bigint, `null` or `undefined`, or an array or object of strings, numbers, booleans and `null` | As is. Arrays and objects as the text `JSON.stringify` produces |
+| `Field.schema(schema)` | Any value an Effect schema describes: a `Date`, a bigint inside an object, a class with a schema | In the schema's JSON encoding |
+| `Field.ref<T>(codec)` | Any value, with your own `encode` and `decode` to plain data and back | In its encoded form |
+| `Field.transient<T>()` | A handle or cache that another system can rebuild | Neither. It is `undefined` in a world loaded from a snapshot |
 
-- The hash covers exactly what a snapshot saves, in the form it is saved in, so a world that loads a snapshot hashes the same.
-- A value that isn't plain data in a `json` field, or one a codec or schema won't take, can't be saved: the snapshot is refused and names the field. A loaded value that a codec refuses is refused the same way.
-- What comes back from a `json` field is what JSON makes of it: a `Date` inside an object comes back as text. Give such a value a schema.
-- A `schema` or `ref` field is encoded once per value for every hash, and an array or object in a `json` field is turned into text. Keep them for what is small or rare. Numbers that change every tick belong in typed fields.
+- The hash covers exactly what a snapshot saves, in its saved form, so a world loaded from a snapshot has the same hash.
+- A snapshot fails, naming the field, when it meets a value it can't encode: a non-plain value in a `json` field, or one a codec or schema rejects. Loading fails the same way when a codec rejects a value.
+- A `json` field returns what JSON makes of a value: a `Date` inside an object comes back as a string. Give such values a schema instead.
+- Every hash encodes each `schema` and `ref` value, and stringifies each array or object in a `json` field. Use these fields for small or rarely changing data, and keep numbers that change every tick in numeric fields.
 
-## Making and changing entities
+## Creating and changing entities
 
-`Hero.of({...})` is a value of a component, for a spawn. A system spawns through `Commands`, and code outside the simulation (a test, the entry point) through `app.world`:
+`Hero.of({...})` creates a component value for a spawn. A system spawns through `Commands`; code outside the simulation, such as a test or the entry point, uses `app.world`:
 
 ```ts
 import { App, Commands, Component, Field, Plugin } from "arcadekit";
@@ -75,19 +75,19 @@ const program = Effect.gen(function* () {
   app.world.set(rock, Position, { y: 3 });
   app.world.get(rock, Position)?.x; // 4
   app.world.despawn(rock);
-  app.world.isAlive(rock); // false, for good
+  app.world.isAlive(rock); // false, permanently
 });
 ```
 
-An id that was kept past its entity's despawn [names nobody](../concepts/entities-and-systems.md#an-entitys-id), even once its slot is given to a new entity.
+An id kept after its entity is despawned [refers to no entity](../concepts/entities-and-systems.md#entity-ids), even once its slot is reused.
 
-Once a game is running, changes should come from the simulation (a system, a handler, a script) so that a replay has them. See [determinism](../concepts/determinism.md).
+Once a game is running, make changes from the simulation (a system, a handler or a script) so that a replay reproduces them. See [determinism](../concepts/determinism.md).
 
-A component added with no value is all zeros, and a number left out of a value is 0, never NaN. `world.set` writes the fields it is given and leaves the others as they are.
+A component added without a value is all zeros, and a number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged.
 
 ## Tags and sparse storage
 
-A tag is a component with no fields. A component that is added and removed often, or that few entities have, is better stored in a sparse set, so that gaining or losing it doesn't move the entity between tables:
+A **tag** is a component with no fields. A component that is added and removed often, or that few entities have, works better in sparse storage, where adding or removing it doesn't move the entity between tables:
 
 ```ts
 import { Component } from "arcadekit";
@@ -97,7 +97,7 @@ const Stunned = Component.tag("game/Stunned", { storage: "sparse" });
 
 ## Singletons
 
-A singleton is data there is one of per world: the score, whose turn it is, the level being played. `yield*` gives the world's value, an object whose fields are read and written in place, with no entity, no query and no loop. Its fields are a component's, of the same kinds, and its third argument is the value it has in a world that has not written it.
+A **singleton** is data that exists once per world: the score, whose turn it is, the current level. `yield*` gives you the world's value, an object whose fields you read and write in place, with no entity, query or loop involved. Its fields are component fields, of the same types, and the third argument is its initial value.
 
 ```ts
 import { Component, Field, Plugin, Singleton, System } from "arcadekit";
@@ -115,23 +115,23 @@ const Bonus = System.make("game/Bonus", function* () {
 });
 
 const Rules = Plugin.make("game/Rules", {
-  components: [Coin, Score], // a singleton is listed with the components
+  components: [Coin, Score], // singletons are listed with the components
   systems: [Bonus],
 });
 ```
 
-A singleton is in the world, so it is saved, hashed, and put back when an action is refused.
+A singleton lives in the world, so it is saved, hashed, and restored when an action is refused.
 
-- Until it is written it has its initial value and is neither saved nor hashed. Reading it changes nothing, so a plugin that only reads a singleton doesn't change the hash of the game it watches.
-- A game loaded from a save in which it had never been written starts it at the initial value of the build that loads.
-- Its name is one of the world's component names. It is listed in a plugin's `components` so that a save which names it can be loaded, and a [migration](saving-and-loading.md) changes it by name with `Migrate`, as it changes a component.
-- No entity has it and no query visits it: spawning or adding it throws.
+- Until it is first written, it holds its initial value and is neither saved nor hashed. Reading it changes nothing, so a plugin that only reads a singleton doesn't change the hash of the game it observes.
+- Loading a save in which a singleton was never written gives it the initial value of the build that loads it.
+- Its name is one of the world's component names. List it in a plugin's `components` so that saves containing it can load, and rename or change it in a [migration](saving-and-loading.md) with `Migrate`, as you would a component.
+- No entity can have it and no query visits it: spawning or adding it throws.
 
-A `Resource` is the other kind of single value: configuration with a default that a layer can override, such as gravity. It is not game state and isn't saved.
+A `Resource` is the other kind of single value: configuration with a default that a layer can override, such as gravity. It isn't game state and isn't saved.
 
 ## Relations
 
-A relation is a component that points at another entity, its `target`, and stays correct when that entity goes: a parent and its children, a target, an owner. Use one, and not a bare `Field.entity`, for a reference that must not dangle.
+A **relation** is a component that points at another entity, its `target`, and stays consistent when that entity is despawned: a parent and its children, a target, an owner. Use a relation rather than a bare `Field.entity` for any reference that must never dangle.
 
 ```ts
 import { App, Component, Field, Plugin } from "arcadekit";
@@ -142,10 +142,10 @@ const Position = Component.define("game/Position", {
   y: Field.f32,
 });
 const ChildOf = Component.relation("scene/ChildOf", {
-  onTargetDespawn: "despawn", // a child goes with its parent
+  onTargetDespawn: "despawn", // a child is despawned with its parent
 });
 const Targets = Component.relation("ai/Targets", {
-  onTargetDespawn: "remove", // whoever aimed at it aims at nothing
+  onTargetDespawn: "remove", // whoever aimed at it now aims at nothing
   storage: "sparse",
   fields: { since: Field.f32 }, // fields of its own, beside the target
 });
@@ -164,25 +164,25 @@ const program = Effect.gen(function* () {
   );
   world.get(turret, ChildOf)?.target; // its parent
   world.sources(tank, ChildOf); // the tank's children
-  world.add(turret, ChildOf.of({ target: truck })); // another parent
-  world.despawn(truck); // the turret goes with it, and whatever hangs from the turret
+  world.add(turret, ChildOf.of({ target: truck })); // a new parent
+  world.despawn(truck); // despawns the turret too, and everything attached to it
 });
 ```
 
-- `onTargetDespawn` says what a target's despawn does to whoever points at it. `"despawn"` takes them with it, and what points at them in turn, however deep. `"remove"` takes the relation off them and leaves them be.
-- Either way nothing is left pointing at an entity that is gone, so a dangling reference can't be read as a live entity. A plain `Field.entity` is not kept this way: it holds whatever id was written to it, and whoever reads it checks `world.isAlive`.
-- `world.sources(target, ChildOf)` gives the entities that point at one, in order of index. The world keeps track of who points at whom, so neither this nor a despawn looks at any other entity.
-- A target is changed by adding the relation again, never by assigning: assigning to it, in `each` or with `world.set`, throws, and its raw column is typed as read-only. Fields of a relation's own are written like any others.
-- A relation needs a target that is alive. Given none, it is refused where the mistake is. Given one that is gone already, what that entity's despawn would have done is done at once: the child doesn't outlive the call, or the relation isn't added.
-- An entity has one target per relation. Another kind of link is another relation.
-- A despawn goes through relations in order of name and through the entities that point in order of index, so the same world always loses the same entities in the same order.
-- In a system or an action's handler, a relation is added, removed and given another target through `Commands`, like everything else that changes which entities exist.
+- `onTargetDespawn` controls what happens to the entities pointing at a target when it is despawned. `"despawn"` despawns them too, along with whatever points at them, at any depth. `"remove"` removes the relation from them and leaves them otherwise untouched.
+- Either way, nothing is left pointing at a despawned entity, so a dangling reference can never be read as a live one. A plain `Field.entity` gets no such guarantee: it holds whatever id was written, and readers check `world.isAlive` themselves.
+- `world.sources(target, ChildOf)` returns the entities pointing at a target, ordered by index. The world tracks these links, so neither this call nor a despawn scans other entities.
+- To change a target, add the relation again. Assigning to `target`, in `each` or with `world.set`, throws, and its raw column is typed read-only. A relation's own fields are written like any others.
+- A relation requires a live target. Without one, it is refused where the mistake happens. With a target that is already despawned, the despawn behaviour applies immediately: the child doesn't survive the call, or the relation isn't added.
+- An entity has one target per relation. A different kind of link is a different relation.
+- A despawn follows relations ordered by name and the pointing entities ordered by index, so the same world always loses the same entities in the same order.
+- In a system or an action handler, add, remove and retarget relations through `Commands`, like any other structural change.
 
-In every other way a relation is a component: kept in tables or in a sparse set, read in a query, watched with `Query.added` and `Query.removed`, saved in a snapshot and counted in the hash. Who points at whom is worked out from it, and worked out again by a world that loads a snapshot, which refuses one whose relation points at nothing.
+In every other way, a relation is a component: stored in tables or a sparse set, read in queries, watched with `Query.added` and `Query.removed`, saved in snapshots and included in the hash. The links between entities are derived from it, and rebuilt when a world loads a snapshot, which refuses a relation pointing at no entity.
 
-## Where a thing is
+## Transforms
 
-`Transform3d` is three components for where a thing is in three dimensions, `Position`, `Rotation` and `Scale`, and `Transform2d` is the same for a flat game. They are in arcadekit, not in a renderer, so the rules that move things and whatever draws them agree. [Where a thing is](transforms.md) is their guide.
+`Transform3d` provides three components for an entity's place in three dimensions, `Position`, `Rotation` and `Scale`, and `Transform2d` provides the same for flat games. They live in arcadekit rather than in a renderer, so your rules and whatever draws them agree on where things are. See [transforms](transforms.md).
 
 ## Read more
 
