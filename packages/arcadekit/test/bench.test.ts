@@ -141,7 +141,7 @@ describe("the verdict on a variant", () => {
     ).toBeLessThan(CHANCE);
   });
 
-  it("is held to a twentieth and to one in a thousand, as the README says", () => {
+  it("is held to a twentieth and to one in a thousand, as its comment says", () => {
     expect(FLOOR).toBe(0.05);
     expect(CHANCE).toBe(0.001);
   });

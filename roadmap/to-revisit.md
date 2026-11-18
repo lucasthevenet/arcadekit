@@ -39,9 +39,11 @@ Before changing an area, read its section: these are the mistakes the code will 
 - **A refused action does not undo what is outside the world**: an object in a field changed in place, a call to a service of the game's own, a script it started.
 - **A save holds no scripts, and the log does not say when one was started by hand** or the delta and number of ticks it was recorded at. Whoever loads or replays has to know and supply them.
 - **The hash is of the world only**: not the events waiting, what change queries have yet to visit, the actions queued, or how far a script has got. Two games with the same hash can go different ways.
+- **A waiting event's payload is not checked when a save is loaded.** After a change to an event's schema, a save that holds one in the old form loads, and the event throws when a system first asks for it. To close it: decode the waiting events as the save is loaded, and refuse the save with the reason.
 
 ## Values that have to be right and are not checked
 
+- **A `Transform3d.Scale` or `Transform2d.Scale` added with no value is all zeros, and its entity is drawn as nothing.** A component added with no value is zeros, which is a place and a turn that are right and a size that is not. To close it: a component that can say what it is when nothing is said, or a renderer that says so once.
 - **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
 - **What a frame that failed said of a channel stands until a frame ends.** Systems that say something else of it in the next frame are refused as if two had spoken at once, unless the failure was that refusal itself. A game under a driver stops at a failed frame; a test that steps on after one has to know.
 

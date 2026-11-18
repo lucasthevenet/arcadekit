@@ -146,6 +146,7 @@ A change query is for what changes now and then. A system that wants every entit
 
 - A write is noticed per entity: by `world.set`, by adding a component with a value, and by assigning to a field in `each`. A component an entity has just gained counts as written. Reading notes nothing.
 - `eachChunk` hands out raw columns and can't tell a read from a write, so every row it hands out counts as written, unless the query says it only reads that component.
+- A write through a raw column that the query said it only reads is written all the same: the compiler does not see it, nothing refuses it, and no change query hears of it.
 - For the same reason a change query can't `eachChunk` over a component it watches itself without saying it only reads it: that throws, since the query would take its own visit for a change.
 - Only a watched component is noticed. One that no query watches costs nothing more to write.
 - A system that writes what it watches sees its own writes the next time it runs.
@@ -163,4 +164,4 @@ Systems don't run on workers. When they do, a sparse component will be only a fi
 
 ## Read more
 
-- [`Query`](/reference/arcadekit/Query) in the API reference, and [the benchmark](../../../../../packages/arcadekit/README.md#benchmark-100000-entities-pos--vel--dt) in the package's README.
+- [`Query`](/reference/arcadekit/Query) in the API reference, and what each way to loop costs, in [performance](performance.md).

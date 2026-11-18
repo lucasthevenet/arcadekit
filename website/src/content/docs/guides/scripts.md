@@ -58,6 +58,8 @@ A fiber started with `Effect.forkDetach` is the caller's to observe. The app doe
 
 A save can't hold a script in mid-flight. A plugin lists its `scripts`, and they start again from their beginning when a game is loaded. So a script keeps what it must not lose in the world, and picks up from what it finds there. The same goes for a rewind under rollback.
 
+A script started by hand, with `app.spawnScript` or `Script.spawn`, is not started again by a load, and a rewind stops it: the game starts it again, from what it finds in the world.
+
 ## Read more
 
 - [`Script`](/reference/arcadekit/Services#script) in the API reference.

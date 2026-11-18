@@ -158,6 +158,10 @@ Sound follows real time and is no part of the game. A game that is heard has the
 
 `Sound.clip(name, data)` makes a clip by hand, for an output of your own or for a test, which needs nothing to play: a recorder notes a clip by its `name`, and the clip itself as `clip`.
 
+## When a frame fails
+
+What a frame that failed said of a channel stands until a frame ends. Systems that say something else of the channel in the next frame are refused as if two had spoken at once, unless the failure was that refusal itself. A game under a driver stops at a failed frame; a test that steps on after one has to know.
+
 ## With rollback
 
 In a game of several peers played with [rollback](lockstep-and-rollback.md), a tick can be run again, and what the frame stage did for it is done again: the events of that tick are heard again, and a sound is played twice. A sound for something that is then taken back was played. The frame stage is not told which ticks are final: a game that must not play early asks its session, `session.confirmed`.

@@ -263,8 +263,8 @@ export interface Any {
   /**
    * The game as it stands, kept in memory to come back to with `rewind`:
    * the world, the time, the actions waiting for the next tick, the events
-   * waiting to be read, what change queries had yet to visit, and how long
-   * the log was. Only between ticks.
+   * waiting to be read, with every reader's place in them, what change
+   * queries had yet to visit, and how long the log was. Only between ticks.
    *
    * It is not a save. It holds the waiting actions and events as they are,
    * so none of them needs a schema, and it is of this app and this run of

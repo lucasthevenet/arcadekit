@@ -113,7 +113,7 @@ game/
 ```
 
 - A plugin's `index.ts` exports `plugin`, and the components, queries, systems, events and actions that other plugins build on. Another plugin imports that file and nothing else of the folder, `import * as Physics from "../physics/index"`, and lists `Physics.plugin` in its `plugins`.
-- A plugin's raw loops, the bodies of its `eachChunk` calls, go in a `loops.ts` of their own: plain functions of a range of rows, columns and numbers, which import nothing and close over nothing, so whatever runs one needs only to have imported it. A plugin with no such loop has no `loops.ts`.
+- A plugin's raw loops, the bodies of its `eachChunk` calls, go in a `loops.ts` of their own: plain functions of a range of rows, columns and numbers, which import nothing and close over nothing, so whatever runs one, a worker included, needs only to have imported it. Such a loop does not read a field that holds an object, and a sparse component filters it and is not its data. A plugin with no such loop has no `loops.ts`.
 - What draws, what plays and the UI are plugins of their own, which the rules never import. So a server or a replay runs the rules alone.
 
 The system stays in `index.ts`. It reads what the loop needs, the time, a resource or a singleton, and passes it in:

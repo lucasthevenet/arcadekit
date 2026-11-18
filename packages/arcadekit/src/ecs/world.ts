@@ -3316,8 +3316,9 @@ export class World {
   // --- snapshots -----------------------------------------------------------
 
   /**
-   * The whole world as bytes: every table and sparse set, the ids to come,
-   * and the state of the random generator. A world that loads them hashes
+   * The whole world as bytes: every table and sparse set, every singleton
+   * that has been written, the ids to come, and the state of the random
+   * generator. A world that loads them hashes
    * the same as this one and behaves the same from then on: the same order
    * of iteration, the same ids for the next entities, the same random
    * numbers.
@@ -3842,6 +3843,7 @@ export class World {
    * - the order queries visit entities in (tables in creation order, rows
    *   ascending);
    * - the ids the next entities will get;
+   * - every singleton that has been written, by name;
    * - the state of the random number generator.
    *
    * Two worlds built by the same operations in the same order hash equal, on
@@ -3849,13 +3851,17 @@ export class World {
    * Two different worlds hash equal by chance once in about four billion.
    *
    * It does not depend on what cannot be told apart: how much room a table
-   * has, which queries have been made, or the order components were defined
-   * in. A `json` field counts as the plain data it holds, a `ref` field as
+   * has, what is left in a column past its last row, which queries have
+   * been made, the order a sparse component's members joined in, or the
+   * order components were defined in. Every NaN counts as the same NaN,
+   * since its bits are the one thing engines do not agree on; 0 and -0 are
+   * different. A `json` field counts as the plain data it holds, a `ref` field as
    * what its codec makes of each value, and a `transient` field not at all:
    * the hash covers exactly what a snapshot saves.
    *
    * Measured, it costs about 1.4 ns per 32-bit field per entity in a table,
-   * so 0.7 ms for 100,000 entities with four float fields, and about four
+   * an entity's id being two of them: 0.8 ms for 100,000 entities with four
+   * float fields, and about four
    * times that per field of a sparse component.
    */
   hash(): number {

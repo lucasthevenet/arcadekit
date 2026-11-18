@@ -83,6 +83,8 @@ An id that was kept past its entity's despawn [names nobody](../concepts/entitie
 
 Once a game is running, changes should come from the simulation (a system, a handler, a script) so that a replay has them. See [determinism](../concepts/determinism.md).
 
+A component added with no value is all zeros, and a number left out of a value is 0, never NaN. `world.set` writes the fields it is given and leaves the others as they are.
+
 ## Tags and sparse storage
 
 A tag is a component with no fields. A component that is added and removed often, or that few entities have, is better stored in a sparse set, so that gaining or losing it doesn't move the entity between tables:
@@ -180,29 +182,7 @@ In every other way a relation is a component: kept in tables or in a sparse set,
 
 ## Where a thing is
 
-`Transform3d` is three components for where a thing is in three dimensions, and `Transform2d` is the same for a flat game. They are in arcadekit, not in a renderer, so the rules that move things and whatever draws them agree.
-
-```ts
-import { Commands, Component, Plugin, Transform3d } from "arcadekit";
-import { Effect } from "effect";
-
-const Rock = Component.tag("game/Rock");
-
-const Rules = Plugin.make("game/Rules", {
-  plugins: [Transform3d.plugin], // lists the three, so a save that names them loads
-  components: [Rock],
-  setup: Effect.gen(function* () {
-    (yield* Commands).spawn(
-      Rock,
-      Transform3d.Position.of({ x: 0, y: 4, z: 0 }),
-      Transform3d.Rotation.of(Transform3d.axisAngle(0, 0, 1, Math.PI / 2)),
-      Transform3d.Scale.of({ x: 2, y: 2, z: 2 })
-    );
-  }),
-});
-```
-
-An entity has the ones it needs. One that is only somewhere has a `Position`. `Transform2d` has `Position` (`x`, `y`), `Rotation` (`angle`) and `Scale` (`x`, `y`).
+`Transform3d` is three components for where a thing is in three dimensions, `Position`, `Rotation` and `Scale`, and `Transform2d` is the same for a flat game. They are in arcadekit, not in a renderer, so the rules that move things and whatever draws them agree. [Where a thing is](transforms.md) is their guide.
 
 ## Read more
 

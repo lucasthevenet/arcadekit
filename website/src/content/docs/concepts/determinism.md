@@ -44,11 +44,11 @@ What has to go on in real time while the game runs, as loading does, is not code
 
 `app.world.hash()` is one number for everything in the world a simulation can tell apart: every entity and field, the order queries visit them in, the ids to come, every singleton that was written, and the state of the random generator. Two worlds built by the same operations hash the same, and one field changed always changes it.
 
-The app records the hash in its log every `checkpointEvery` ticks, 60 unless told. A replay compares its own world at each one and stops at the first that differs, with `App.ReplayDiverged`, which says the tick and when the two last agreed.
+The app records the hash in its log every `checkpointEvery` ticks, 60 unless told. A replay compares its own world at each one and stops at the first that differs, with `App.ReplayDiverged`, which says the tick and when the two last agreed. [Replays](../guides/replays.md#the-worlds-hash) says what the hash covers and what it costs.
 
 ## Refusals leave nothing behind
 
-A refused action is not in the log, so a replay never runs it. Anything it left in the world would make the replay differ. So a handler runs in a transaction: what it wrote, the numbers it drew, the commands it queued and the events it emitted are all taken back when it refuses.
+A refused action is not in the log, so a replay never runs it. Anything it left in the world would make the replay differ. So a handler runs in a transaction: what it wrote, the numbers it drew, the commands it queued and the events it emitted are all taken back when it refuses. [Events and actions](../guides/events-and-actions.md#checking-and-refusing) says what is not taken back.
 
 ## What the frame stage can't break
 
@@ -64,6 +64,7 @@ Some ways to break determinism aren't caught by the types or at run time:
 - A write through a raw column during the frame stage or the input stage is found only by an app made with `verifyFrames`.
 - A tick reads the devices unless it is told not to. A tool that runs a game again from its log by hand says `app.tick(delta, { input: false })`, as `App.replay` does, or the keys of the machine it runs on join in.
 - A script that keeps its progress in its own variables starts over when the game is loaded.
+- The hash is of the world only: not the events waiting to be read, what a change query has yet to visit, the actions queued, or how far a script has got. Two games with the same hash can still go different ways.
 
 In a game of several peers a break of these rules doesn't go unnoticed for long: the peers compare the hashes of their worlds, and a session stops with `Lockstep.Drifted`, which says the tick they last agreed at. A test of such a game runs two apps of it side by side and compares their hashes. See [several players](several-players.md).
 

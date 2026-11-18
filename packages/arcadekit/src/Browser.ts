@@ -500,8 +500,9 @@ interface Channel {
  *   page is seen again: the frame loop rests then, and a game that stands
  *   still is not heard. `Browser.layer` gives it the page's.
  * - A page with no Web Audio plays nothing.
- * - When its scope closes the audio is closed and the page is no longer
- *   listened to, so it is provided to the whole program. `Browser.runMain`
+ * - When its scope closes the audio is closed, a request for a file that
+ *   is still on its way is given up, and the page is no longer listened
+ *   to, so it is provided to the whole program. `Browser.runMain`
  *   and `Browser.layer` do, unless told `sounds: false`.
  *
  * @category Layers

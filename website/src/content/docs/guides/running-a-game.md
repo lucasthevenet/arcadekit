@@ -59,6 +59,10 @@ A game that needs services of its own is given them first, `App.run(...).pipe(Ef
 
 `Effect.runSync` and `Effect.runPromise` are for tests. Inside a program an Effect is yielded, never run.
 
+## Under a Content Security Policy
+
+Nothing in the package makes code from text: no `eval` and no `new Function`. A page whose policy has no `'unsafe-eval'` runs a game as it is. That was checked in headless Chromium, with `script-src 'self'`; other browsers were not tried.
+
 ## Under Node
 
 The same game runs under Node, with no import but `arcadekit`. There the display is a timer:

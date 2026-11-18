@@ -169,8 +169,21 @@ for (let i = 0; i < 600; i++) {
   ada.tick();
   grace.tick();
 }
+// No more input: let what is on its way arrive, then bring the peer that is behind level.
+for (let i = 0; i < 30; i++) {
+  hub.step();
+  ada.tick();
+  grace.tick();
+}
+while (adaApp.time.tick !== graceApp.time.tick) {
+  hub.step();
+  (adaApp.time.tick < graceApp.time.tick ? ada : grace).tick();
+}
 expect(adaApp.world.hash()).toBe(graceApp.world.hash());
+expect(adaApp.actionLog).toEqual(graceApp.actionLog);
 ```
+
+Compare peers once the game has come to rest and both are at the same tick: stop issuing input, step some more, then tick only the peer that is behind. A game of one given the same log by `App.replay` has to end on the same hash. `hub.layer(peer)` may be provided to `Transport.connect` alone; a layer that listens, `Transport.layerBroadcastChannel` or `Transport.layerWebSocket`, may not: it is gone with that line.
 
 ## Replays as tests
 
