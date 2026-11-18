@@ -47,7 +47,7 @@ export const OUTLINE: readonly (Group & {
     topic: "learn",
     label: "Get started",
     section: "",
-    items: [{ label: "Overview", link: "/" }, "making-a-game"],
+    items: [{ label: "Overview", link: "/" }, "making-a-game", "not-done-yet"],
   },
   {
     topic: "learn",
@@ -84,8 +84,10 @@ export const OUTLINE: readonly (Group & {
     label: "The simulation",
     items: [
       "guides/components",
+      "guides/transforms",
       "guides/queries",
       "guides/systems",
+      "guides/system-access",
       "guides/events-and-actions",
       "guides/states",
       "guides/scripts",
@@ -102,6 +104,9 @@ export const OUTLINE: readonly (Group & {
       "guides/sound",
       "guides/ui",
       "guides/drawing-with-three",
+      "guides/instances-and-objects",
+      "guides/textures-and-models",
+      "guides/between-two-ticks",
     ],
   },
   {
@@ -112,9 +117,14 @@ export const OUTLINE: readonly (Group & {
   {
     topic: "guides",
     label: "Several players",
-    items: ["guides/lockstep-and-rollback", "guides/transports-and-relays"],
+    items: [
+      "guides/lockstep-and-rollback",
+      "guides/transports-and-relays",
+      "guides/hosting-a-relay",
+    ],
   },
   { topic: "guides", label: "Testing", items: ["guides/testing"] },
+  { topic: "guides", label: "Performance", items: ["guides/performance"] },
   { topic: "guides", label: "More", section: "guides", items: [] },
   {
     topic: "reference",

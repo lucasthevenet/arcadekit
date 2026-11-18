@@ -39,7 +39,11 @@ export interface Tickable {
 export interface StepOptions {
   /** How many ticks a second the game runs at, whatever the rate of frames. */
   readonly hz: number;
-  /** The most ticks one call runs after a stall. 5 when left out. */
+  /**
+   * The most ticks one call runs after a stall, 5 when left out. The ticks
+   * still owed after them are dropped: a page that froze does not run to
+   * catch up.
+   */
   readonly maxStepsPerCall?: number;
   /**
    * When the game ticks.
@@ -133,6 +137,10 @@ export const fixedStep = (
 /**
  * Ticks on a timer until interrupted, then stops the timer. In a page, use
  * `frames`, which follows the display.
+ *
+ * Each turn of the timer is a call of `fixedStep`'s: the input stage and
+ * the ticks that are due, then the frame stage. If a tick or a frame
+ * throws, the timer is stopped and it dies with what was thrown.
  *
  * @category Running
  */

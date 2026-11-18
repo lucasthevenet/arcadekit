@@ -1,5 +1,10 @@
 /**
  * Schemas for the framework's own types, for use in action payloads.
+ *
+ *   const Attack = Action.define("duel/Attack", Schema.Struct({ target: EntityId }))
+ *
+ * `arcadekit` gives `EntityId` by its name, in place of this module:
+ * `import { EntityId } from "arcadekit"`.
  */
 import { Schema } from "effect";
 

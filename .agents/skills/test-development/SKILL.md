@@ -9,7 +9,7 @@ A change is not done until it has been run and shown to work. Reasoning that it 
 
 1. Say what the change is to do, as what a game would see of it: that is what is tested, through the public API.
 2. Select every branch the test touches, and read its file before writing. Read no branch it does not touch:
-   - a test that needs something from outside the game, which a stand-in gives it (assets, the devices, a page, what draws, sound, a UI, a frame loop): [stand-ins.md](stand-ins.md);
+   - a test that needs something from outside the game, which a stand-in gives it (assets, the devices, a page, what draws, sound, a UI, a frame loop): [stand-ins.md](stand-ins.md), which sends its reader to the site's guide to testing;
    - a test of several peers, of what speaks to another machine, or of what a platform forbids: [peers.md](peers.md).
 3. Write the test in the file that already tests the module, `test/<name>.test.ts`, as "Writing a test" says. A test is code of the repository: what the `arcadekit-development` skill says of the code under test holds for its test.
 4. See it fail. Break the code the test covers, or take the fix out, and see it go red.
@@ -34,4 +34,4 @@ The task is complete when each thing the change is to do has a test that was see
 - **A type error is tested with `// @ts-expect-error` on the line directly above the expression that errors.** The formatter moves expressions, so put the comment inside the call, above the argument.
 - **Compare a failure whole**: `expect(error).toEqual(new Assets.AssetFailed({ url, message }))`. To `toEqual` alone, two tagged errors that differ only in their `message` are equal, since it is the one field of an error that is not an enumerable property; `scripts/vitest-setup.ts`, which `pnpm test` runs before every test file, compares it. A test in `test/assets.test.ts` fails if that is ever lost.
 - **A test that is itself an Effect** can use `it.effect` from `@effect/vitest`; see Effect's [testing example](https://github.com/Effect-TS/effect/blob/main/ai-docs/src/09_testing/10_effect-tests.ts). It is not installed yet. Do not use `TestClock` for game time: game time is `Time`, and a test advances it by ticking.
-- **Name things as the READMEs and the site's concepts and guides name them.** They are the map of what a game author sees.
+- **Name things as the site's concepts and guides name them.** They are the map of what a game author sees.

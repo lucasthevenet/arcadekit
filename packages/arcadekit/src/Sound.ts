@@ -295,7 +295,8 @@ export interface PlayerShape {
    * what a frame's systems ask is played when they have all run. A cue
    * asked for several times in one frame, by whichever of them, is played
    * once, as the loudest asked; cues are played in the order they were
-   * first asked for. For the stages between ticks: in the tick it throws,
+   * first asked for. For the stages between ticks: asked for in the input
+   * stage, it is heard with the frame that follows; in the tick it throws,
    * since the simulation does not play.
    */
   readonly play: (cue: Playable, options?: Options) => void;
@@ -500,6 +501,11 @@ const Flush = System.make("arcadekit/Sound.Flush", function* () {
  * Plays what the frame's systems ask for. A game that has cues or music
  * lists it among its plugins.
  *
+ * It provides `Sound.Player`, and a system of the stage after a frame's
+ * own, `"postFrame"`, which tells the output what the frame's systems
+ * asked for once they have all run. When the app's scope closes, every
+ * channel that was playing is told silence at once.
+ *
  * @category Plugins
  */
 export const plugin = Plugin.make("arcadekit/Sound", {
@@ -550,6 +556,7 @@ export interface Line {
  *
  * The cue is a name or a clip, either with a volume and a rate, or a
  * function of the event's payload that gives one of those, or nothing.
+ * Several lines may be of one event, and each hears it.
  *
  * @category Constructors
  */
@@ -736,7 +743,9 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  * - Every such system is of one score, on the channel `"music"`: of a
  *   menu's and a level's, the one that has something to play is heard,
  *   and a track that both play goes on from the one to the other. Two
- *   that say different tracks in one frame is a bug, and throws.
+ *   that say different tracks in one frame, or one track at two volumes,
+ *   is a bug: the frame fails where the second is said, with an error
+ *   that names the channel and both.
  * - What plays beside the score has a `channel` of its own, any name:
  *   `Sound.music("game/Wind", body, { channel: "wind" })`. Two channels
  *   play together.
@@ -745,8 +754,9 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  * - Where sound goes nowhere the body is not run at all.
  * - It needs `Sound.plugin`. Under `System.runIf` it says nothing should
  *   play while the condition does not hold, as if the body had said so:
- *   music that is for a level stops when the level is left, unless
- *   another system of its channel plays. Run again, the body says what
+ *   music that is for a level stops when the level is left, with the
+ *   fade it was given, unless another system of its channel plays. Run
+ *   again, the body says what
  *   plays, from the start of the track.
  *
  * @category Systems

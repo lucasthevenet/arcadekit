@@ -54,22 +54,52 @@ export const u16 = Field.u16;
  */
 export const u8 = Field.u8;
 /**
- * Another entity: a target, a parent. Its id is saved and hashed as a
- * number, and is no longer alive once that entity is despawned.
+ * Another entity: a target, a parent. Its id is kept in a `Float64Array`,
+ * eight bytes a row, and is saved and hashed as a number.
+ *
+ * **When to use**
+ *
+ * Use when whoever reads the id checks it. For a reference that must not
+ * dangle, use `Component.relation`, which the world keeps correct.
+ *
+ * **Gotchas**
+ *
+ * The field holds whatever id was written to it. That id is no longer
+ * alive once its entity is despawned, and whether it is alive is for
+ * whoever reads it to check, with `isAlive`.
  *
  * @category Fields
  */
 export const entity = Field.entity;
 /**
- * Plain data, saved and hashed as JSON: text, a number, a boolean, null,
- * or an array or object made of them. `Field.json<string>()`.
+ * Plain data, saved and hashed as it is: text, a number, a boolean, a
+ * bigint, null or undefined, or an array or object made of text, numbers,
+ * booleans and null. `Field.json<string>()`.
+ *
+ * **Gotchas**
+ *
+ * - An array or an object is saved and hashed as the text
+ *   `JSON.stringify` gives for it, once for every hash, and comes back as
+ *   what JSON makes of that text: a Date inside an object comes back as
+ *   text. Give such a value a schema, with `Field.schema`.
+ * - A value that is not plain data cannot be saved: the snapshot is
+ *   refused and names the field.
  *
  * @category Fields
  */
 export const json = Field.json;
 /**
- * A value of any kind, saved and hashed through the encoding it is given:
- * what `Field.schema` is built on.
+ * A value of any kind, saved and hashed through the codec it is given, an
+ * `encode` to plain data and a `decode` back: what `Field.schema` is built
+ * on.
+ *
+ * **Gotchas**
+ *
+ * - A value its `encode` refuses cannot be saved: the snapshot is refused
+ *   and names the field. A loaded value its `decode` refuses is refused
+ *   the same way.
+ * - The value is encoded once for every hash of the world, so keep a
+ *   field like this for what is small or rare.
  *
  * @category Fields
  */

@@ -19,17 +19,33 @@
  *   (cd ../base && pnpm install --frozen-lockfile)
  *   pnpm --filter arcadekit bench:compare "$PWD/../base"
  *
+ * The `Benchmarks` workflow, `.github/workflows/bench.yml`, runs it on a
+ * pull request that touches the storage core, against what the pull request
+ * would be merged into.
+ *
  * Both builds run this checkout's `bench/core.ts`, which is copied into
  * the base for as long as the comparison lasts, under a name of its own,
  * so that the two are asked the same thing and the base is left as it was
  * found; a variant the base cannot run is new, and compared with nothing.
  * Each run is a process of its own. `bench/verdict.ts` holds the rule, and
- * says why it is the rule.
+ * says why it is the rule, what it finds and what it does not.
+ *
+ * A variant whose two builds are within 2.5% of each other after six runs
+ * each is not run again, which is most variants of most changes: the whole
+ * check took five minutes for two builds that were the same, and eight for
+ * two of which eight variants differed. The workflow's first run, on the
+ * pull request that added it, took seven and a half minutes on GitHub's own
+ * machine: the variants that pull request's commits name as slowed on
+ * purpose were found slower in fifteen runs of fifteen, a program of ten
+ * components 36% faster, and the rest the same.
  *
  * A commit that slows a variant on purpose says so in its message, and the
  * check then reports the variant and does not fail on it:
  *
  *   Bench-slower: each, eachMany
+ *
+ * It travels with the commit, so nothing is left to take out afterwards.
+ * The list may go on over the lines that follow, indented.
  */
 import { execFileSync } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, rmSync } from "node:fs";

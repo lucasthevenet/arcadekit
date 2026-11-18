@@ -1,15 +1,15 @@
 ---
 title: "Transports and relays"
-description: "A session holds no socket."
+description: "A session holds no socket. This guide covers the transports that carry its messages: between the tabs of one browser, between machines through a relay, and over a wire of the game's own."
 ---
 
 A session holds no socket. What carries its messages is a service, `Transport`, with two plain calls: `send(message)` to every other peer, and `receive()`, which gives what has arrived since it was last asked. Between machines, the messages go through a relay.
 
 ## Joining a session to a transport
 
-`Transport.connect(session)` gives what a driver steps in the session's place. Each tick it hands the session what arrived, runs the tick, and sends what the session has to say.
+`Transport.connect(session)` gives what a driver steps in the session's place. Each tick it hands the session what arrived, runs the tick, and sends what the session has to say, whether the tick ran, waited or failed: a session that stops because the peers have come apart says so to the others first.
 
-There is no default transport. A game of several peers that is given none doesn't compile.
+There is no default transport. A game of several peers that is given none doesn't compile: every way of reaching the others is a choice.
 
 | Transport | Between |
 | --- | --- |
@@ -18,7 +18,16 @@ There is no default transport. A game of several peers that is given none doesn'
 | `Transport.text(wire)` | Anything that carries text: a data channel, a port |
 | `Transport.makeHub(options)` | Peers in one test, in memory. See [testing](testing.md) |
 
-Provide the transport's layer to the whole program, as below. Provided to `Transport.connect` alone, it would close as soon as the session was joined.
+A transport asks little of a wire: that every message arrives, in whatever order. One that arrives twice is dropped by the session.
+
+Provide the transport's layer to the whole program, as below. Provided to `Transport.connect` alone, it would close as soon as the session was joined, and the first tick would throw and say so.
+
+## In one browser
+
+Every peer that opens `Transport.layerBroadcastChannel` with the same name hears every other: the tabs, the windows and the workers of one browser, or the threads of one process. It reaches no other machine.
+
+- The frame loop rests while its tab is hidden, and a peer that rests is waited for. Two peers in one browser are two windows side by side, not two tabs of one. A game can't say yet that it has to go on in the background.
+- Nothing vouches for the sender here: a peer can send a message in [another's name](../concepts/several-players.md#who-did-it).
 
 ## Between machines
 
@@ -49,28 +58,53 @@ const program = Effect.gen(function* () {
 Browser.runMain(program, { target: document.querySelector("canvas")! });
 ```
 
-The address names the room and the peer. What is sent before the socket opens is kept and sent when it does. A socket that closes for any other reason ends the game over it: the next tick fails with `Transport.Closed`, which carries the close code and what the relay said.
+`Transport.layerWebSocket` opens a WebSocket to a relay, which passes each message on to the other peers of the room. The address names the room and the peer. What is sent before the socket opens is kept and sent when it does. It uses the `WebSocket` every platform has: a page, a worker and Node 22 alike.
+
+A socket that closes for any other reason than its layer's scope ends the game over it:
+
+- `send` and `receive` throw `Transport.Closed` from then on, so the next tick fails and its driver stops. It carries the close code and what the relay said: `"name taken"` for a peer whose name is in the room already.
+- It doesn't connect again. A message lost on the way would be lost for good, and a peer that came back would have missed messages nobody sends twice.
+- The peer whose socket closed is told. The others are told nothing, and wait.
 
 ## A relay
 
 A relay passes what one peer of a room sends on to the others. It runs no game and keeps nothing of one.
 
-`arcadekit/Relay` is the relay as plain functions, for whatever accepts the sockets to call. It imports Effect alone, so it runs wherever that does:
+- A room is named by its address and belongs to nobody: the first peer to ask opens it, and it is gone when the last has left.
+- **The relay vouches for the sender.** A peer says who it is once, when it connects, and is held to it: a message in another's name is refused and the socket closed. So the `from` a handler is told is the peer the relay let in under that name.
+- Whether that peer may have that name is the relay's host to check. A relay whose host doesn't is one on which anyone is anyone.
 
-- `Relay.join(url, present)` says whether a peer may come in, from the address it asked for and who is in the room already. It refuses a name that is taken, a full room, or an address with no room or peer.
-- `Relay.forward(member, data, present)` says what to pass on of what a member sent: one text for every other member of the room. It refuses what isn't a message, what is too long, and a message in another peer's name.
-- A refusal is a `Relay.Refused`, with the `code` and `reason` to close the socket with.
+`arcadekit/Relay` is the relay as plain functions, for whatever accepts the sockets to call, and hosting it is the game's. See [hosting a relay](hosting-a-relay.md).
 
-**The relay vouches for the sender.** A peer says who it is once, when it connects, and is held to it. So the `from` a handler is told is the peer the relay let in under that name. Whether that peer may have that name is the host's to check before it calls `join`.
+## A transport of your own
 
-## Hosting one
+`Transport.text(wire)` makes a transport of anything else that carries text:
 
-`Relay.make()` keeps who is connected itself, for a host that stays in memory. Under Node, behind a WebSocket server, that is about forty lines: [`examples/relay.ts`](../../../../../packages/arcadekit/examples/relay.ts), run with `pnpm --filter arcadekit relay`.
+```ts
+import { Transport } from "arcadekit";
 
-A host that is put to sleep between messages calls `join` and `forward` itself and keeps who is connected where it lasts. [`examples/relay-cloudflare`](../../../../../packages/arcadekit/examples/relay-cloudflare) is the relay as a Durable Object per room, declared with [Alchemy](https://alchemy.run): each socket carries its member as an attachment. It has been run with `alchemy dev` and not yet deployed from the repository.
+declare const channel: RTCDataChannel;
 
-`pnpm --filter arcadekit relay:check <address>` checks a relay wherever it runs: two peers play a small game through it and must end on the same world, and a taken name and a message in another's name must be refused.
+const transport = Transport.text({
+  send: (text) => channel.send(text),
+  listen(onText) {
+    const hear = (event: MessageEvent<string>) => onText(event.data);
+    channel.addEventListener("message", hear);
+    return () => channel.removeEventListener("message", hear);
+  },
+});
+
+export const layer = Transport.layer(transport);
+```
+
+- A message travels as `Lockstep.encode` writes it. A text that isn't a message is dropped and counted in `transport.dropped`: nothing that comes off a wire is trusted.
+- The wire has to deliver every message. A WebSocket does; a data channel has to be told to.
+- `transport.close()` stops listening. Unlike the two layers, a transport made this way says nothing when it is used after that, unless the game makes it.
+- It vouches for no sender, unless what is at the other end of the wire does.
+
+A transport that carries no text is a `Transport.Shape` of the game's own, given to `Transport.layer`. Neither of its calls waits, so that a tick stays one synchronous step: what listens behind it fills a list in its own time, and `receive` hands the list over.
 
 ## Read more
 
+- [Hosting a relay](hosting-a-relay.md).
 - [`Transport`](/reference/arcadekit/Transport) and [`Relay`](/reference/arcadekit/Relay) in the API reference.

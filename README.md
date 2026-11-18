@@ -2,11 +2,12 @@
 
 A framework for building games of any genre on Effect 4, built around an entity component system.
 
-A revamped arcadekit, designed fresh. The package lives in `packages/arcadekit`; its [README](packages/arcadekit/README.md) describes the design, what works and what is not done yet. [`@arcadekit/three`](packages/three/README.md), in `packages/three`, is the plugin that draws a game with Three.js.
+Two packages are published from here: [`arcadekit`](packages/arcadekit), the kit, and [`@arcadekit/three`](packages/three), the plugin that draws a game with Three.js.
 
-- [How code here is written](.agents/skills/arcadekit-development/SKILL.md): the `arcadekit-development` skill, with references into Effect's documentation. [AGENTS.md](AGENTS.md) says which skill a kind of work reads.
+- [Website](https://arcadekit.dev): the walkthrough, the concepts, the guides and the reference. Its pages are in [`website/src/content/docs/`](website/src/content/docs/), and `pnpm dev:docs` serves it.
+- [Not done yet](website/src/content/docs/not-done-yet.md): what the kit does not do.
 - [Roadmap](ROADMAP.md): what to build next, in order, with [what it waits on](roadmap/decisions.md) and [what to revisit before a stable release](roadmap/to-revisit.md).
-- [The docs site](website/README.md): a walkthrough, the concepts, the guides and the reference. `pnpm dev:docs` serves it.
+- [AGENTS.md](AGENTS.md): how to work on the repository, and which skill of [`.agents/skills/`](.agents/skills/) a kind of work reads.
 
 ## Development
 

@@ -1,8 +1,8 @@
 # To revisit before a stable release
 
-Not a milestone of the [roadmap](../ROADMAP.md): a list that is added to as the work goes, and gone through before the first stable version. Each line is a thing that goes wrong with no error, and that only someone who knows how the inside works would avoid: nothing in the types or at run time stops it, and the README's sentence about it is all there is. Before a stable release each one is closed, by code that stops it or by a design that leaves no room for it, or kept on purpose and said plainly where a game's author will read it.
+Not a milestone of the [roadmap](../ROADMAP.md): a list that is added to as the work goes, and gone through before the first stable version. Each line is a thing that goes wrong with no error, and that only someone who knows how the inside works would avoid: nothing in the types or at run time stops it, and a sentence of its guide is all there is. Before a stable release each one is closed, by code that stops it or by a design that leaves no room for it, or kept on purpose and said plainly where a game's author will read it.
 
-When you come across one, while building, testing or writing a README sentence that begins "it is the game's to", add a line under its area in the same commit, with what would close it if you know. When a line here is closed, take it out in the same commit. What is merely not built yet is not here: that is the READMEs' "Not done yet".
+When you come across one, while building, testing or writing a sentence of a guide that begins "it is the game's to", add a line under its area in the same commit, with what would close it if you know. When a line here is closed, take it out in the same commit. What is merely not built yet is not here: that is the site's [Not done yet](../website/src/content/docs/not-done-yet.md).
 
 Before changing an area, read its section: these are the mistakes the code will not stop.
 
@@ -39,9 +39,11 @@ Before changing an area, read its section: these are the mistakes the code will 
 - **A refused action does not undo what is outside the world**: an object in a field changed in place, a call to a service of the game's own, a script it started.
 - **A save holds no scripts, and the log does not say when one was started by hand** or the delta and number of ticks it was recorded at. Whoever loads or replays has to know and supply them.
 - **The hash is of the world only**: not the events waiting, what change queries have yet to visit, the actions queued, or how far a script has got. Two games with the same hash can go different ways.
+- **A waiting event's payload is not checked when a save is loaded.** After a change to an event's schema, a save that holds one in the old form loads, and the event throws when a system first asks for it. To close it: decode the waiting events as the save is loaded, and refuse the save with the reason.
 
 ## Values that have to be right and are not checked
 
+- **A `Transform3d.Scale` or `Transform2d.Scale` added with no value is all zeros, and its entity is drawn as nothing.** A component added with no value is zeros, which is a place and a turn that are right and a size that is not. To close it: a component that can say what it is when nothing is said, or a renderer that says so once.
 - **An entity with both a `Transform3d.Position` and a `Transform2d.Position` is drawn from the first**, and its `Transform2d` rotation and scale are then not read.
 - **What a frame that failed said of a channel stands until a frame ends.** Systems that say something else of it in the next frame are refused as if two had spoken at once, unless the failure was that refusal itself. A game under a driver stops at a failed frame; a test that steps on after one has to know.
 

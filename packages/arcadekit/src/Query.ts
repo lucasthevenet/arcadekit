@@ -141,15 +141,31 @@ export const without: {
  *   entity that matches. A system that was not run misses nothing: what
  *   changed meanwhile is there when it runs again.
  * - `each`, `eachChunk` and `entities` are visits. `count` only looks.
+ * - An entity is visited once, however often it was written, and in the
+ *   order any query visits entities in. One that has lost the component
+ *   since, or was despawned, is not visited.
  * - A write is noticed per entity by `world.set`, by adding the component
  *   with a value, and by assigning to a field in `each`. `eachChunk` hands
  *   out raw columns and cannot tell, so every row it is handed counts as
- *   written. Reading notes nothing.
+ *   written, unless the query says it only reads the component, with
+ *   `Query.reads`. Reading notes nothing.
+ * - Only a watched component is noticed: one that no query watches costs
+ *   nothing more to write.
  * - A system that writes what it watches sees its own writes the next time.
+ * - A refused action's writes are not changes: they are taken back with
+ *   the rest, and so are the visits its handler made.
  * - Outside a system or a handler (in a script, a test, the entry point)
  *   there is one place per query, shared by whoever uses it there.
  * - With several components, or with `Query.added` as well, an entity is
  *   visited when any one of them fired.
+ * - What a query has yet to visit is saved by `app.save()`, with each
+ *   reader's place in it. It is not in the world's snapshot or its hash.
+ *
+ * **Gotchas**
+ *
+ * A change query cannot `eachChunk` over a component it watches itself,
+ * which throws: it would take its own visit for a change. Visit it with
+ * `each`, or say the loop only reads the component, with `Query.reads`.
  *
  * @category Combinators
  */
@@ -241,9 +257,13 @@ export type Reading<D extends Terms, R> = {
  * - In an action's handler its columns are not copied for a rollback:
  *   there is nothing to put back.
  *
- * The word is the query's own. Raw columns are typed arrays all the same,
- * and a loop that writes one past the compiler has written it: no change
- * query hears of it, and no refusal takes it back.
+ * Leaving it out is never wrong, only slower. The word is the query's own:
+ * raw columns are typed arrays all the same, and a loop that writes one
+ * past the compiler has written it. No change query hears of it, and no
+ * refusal takes it back.
+ *
+ * Given a component that is not one of the query's terms, it throws: to
+ * require a component without its data, use `Query.with`.
  *
  * @category Combinators
  */

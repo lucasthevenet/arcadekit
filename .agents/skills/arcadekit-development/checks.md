@@ -11,8 +11,7 @@ The repository already works this way, and a new rule joins these:
 - a frozen world, which refuses a change from the frame and input stages;
 - `Lockstep.Drifted`, which stops peers whose worlds have come apart;
 - `bench:compare`, which fails on a storage core that got slower;
-- the site's typecheck, which compiles the code of every page, and its build, which fails on a dead link;
-- `scripts/agents.test.ts`, which holds `AGENTS.md` and the skills to a size, and what they link to and name to what exists.
+- the site's typecheck, which compiles the code of every page, and its build, which fails on a dead link.
 
 Which kind of check a rule gets:
 

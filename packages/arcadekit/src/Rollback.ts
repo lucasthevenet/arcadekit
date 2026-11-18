@@ -26,6 +26,11 @@
  * stepped by a driver, and stops with `Lockstep.Drifted` when the peers
  * have come apart.
  *
+ * The peers end the same game: every peer applies every action on the tick
+ * it is stamped with, whenever it heard of it. On the way a peer may see a
+ * move accepted that is then refused, once the message it had not heard is
+ * in.
+ *
  * Going back is `app.rewind`, to what `app.capture` kept before each tick
  * the session was not sure of. What a rewind does not put back is what a
  * save does not hold: see `App.rewind`.
@@ -69,7 +74,8 @@ export interface Options {
 /**
  * One peer of a game of several, which predicts. It is a lockstep session
  * and more: `tickExit` can also fail with `Save.SaveRefused`, when the game
- * could not be captured before a tick it was not sure of.
+ * could not be captured before a tick it was not sure of. That tick is not
+ * run.
  *
  * @param E what a tick of its app can fail with
  *
@@ -93,7 +99,7 @@ export interface Session<E = never> extends Lockstep.Session<
   /**
    * How many moments it holds to go back to: one for each tick it ran and
    * is not sure of yet, so never more than `ahead`. Each is a snapshot of
-   * the world.
+   * the whole world. A tick that every peer had spoken for is not captured.
    */
   readonly kept: number;
 }

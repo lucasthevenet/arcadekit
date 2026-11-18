@@ -9,9 +9,10 @@
  *   const app = yield* App.load(save, { plugins }) // the game, where it was
  *
  * A save is taken between two ticks. It holds the world, the game's time,
- * the actions waiting for the next tick and the events waiting to be read.
- * It does not hold scripts: a plugin lists its scripts, and they start
- * again when the app is loaded.
+ * the actions waiting for the next tick, the events waiting to be read and
+ * what change queries had yet to visit. It does not hold scripts: a plugin
+ * lists its scripts, and they start again when the app is loaded. One that
+ * was started by hand does not.
  *
  * What was logged after a save is the tail of the game. A game that keeps
  * its last save and the log since can come back to where it is by loading
@@ -155,6 +156,14 @@ export interface Contents {
 /**
  * How a save written by version `from` of a game becomes one of version
  * `from + 1`. It changes the contents it is given in place.
+ *
+ * **Gotchas**
+ *
+ * - A migration makes a new game of an old save: the log recorded before
+ *   it no longer replays against it.
+ * - A load does not check the payloads of the waiting actions and events
+ *   against the schemas the game has now. A migration that goes with a
+ *   changed schema changes those payloads too.
  *
  * @category Models
  */
@@ -311,6 +320,9 @@ const refuse = (
 /**
  * Reads a save back from bytes. This checks the save's own shape; the
  * world inside it is checked when the save is loaded.
+ *
+ * Fails with `LoadRefused`: `"not a save"`, `"newer format"` for a save
+ * written by a later arcadekit, `"truncated"` or `"corrupt"`.
  *
  * @category Codecs
  */

@@ -11,8 +11,11 @@
  *     .each((pos) => { pos.x += 1 })
  *
  * It is plain synchronous TypeScript and imports nothing: no Effect, and
- * nothing else of this package. Everything here is the same object when it
- * is reached through `arcadekit`, where the world is called `EcsWorld`.
+ * nothing else of this package. What `arcadekit` gives of it is the same
+ * object there, so a world made here is one `arcadekit` knows and a
+ * component is the same component. `arcadekit` calls the world `EcsWorld`,
+ * beside its service `World`, and does not give `entityIndex` and
+ * `entityGeneration`, which are here alone.
  */
 export { Component, entityGeneration, entityIndex, Field } from "./component";
 export type {

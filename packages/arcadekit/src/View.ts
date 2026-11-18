@@ -36,7 +36,8 @@
  * Neither side holds the other. The UI holds the bridge, which holds
  * values and no world; the game publishes to whoever is there, and where
  * nobody is, on a server or in a replay, says nothing and computes
- * nothing.
+ * nothing. A game with a UI and the same game with none have the same
+ * hash, log and save, given the same actions.
  */
 import { Context, Effect, Equal, Layer } from "effect";
 
@@ -107,7 +108,8 @@ export interface Bridge {
   /**
    * Calls `listener` each time a view is published with a new value, and
    * returns what stops it. It is not called with the value the view has
-   * now: read that with `get`.
+   * now: read that with `get`. A listener that throws fails the frame, as
+   * any bug in the frame stage does, once every other listener was told.
    */
   readonly subscribe: <A>(
     view: View<A>,
@@ -394,8 +396,10 @@ export const plugin = Plugin.make("arcadekit/View", {
  *
  * - The body reads what a system of the frame stage can: singletons,
  *   states, queries, events, assets. It cannot change the game.
- * - Two values are compared as data, field by field, so a body returns a
- *   new object each frame and the UI is told only when a field differs.
+ * - Two values are compared as data, field by field and however deep, so
+ *   a body returns a new object each frame and the UI is told only when a
+ *   field differs.
+ * - Several ticks and one frame are one publication, of the latest value.
  * - Where no UI is there, the body is not run at all.
  * - It takes `System.runIf` like any system: a view that is not published
  *   keeps the value it had. That is what a view that is costly to work

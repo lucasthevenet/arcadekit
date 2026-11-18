@@ -16,7 +16,8 @@
  * in. An event emitted by a later system is seen by an earlier one on the next
  * tick, so an event emitted while systems are running is kept until the end
  * of the following tick. One emitted between ticks is dropped at the end of
- * the next tick.
+ * the next tick. Events are not kept for a system that `System.runIf` has
+ * switched off: when it runs again, those of the ticks it sat out are gone.
  *
  * Give an event a schema and it can be written down, for a save, a tool or
  * another machine:
@@ -150,6 +151,8 @@ const convert = <A>(
 
 /**
  * An event's payload in its JSON form, for a save, a tool or the network.
+ * Fails with `InvalidEvent` when the event has no schema, or its schema
+ * does not take the payload.
  *
  * @category Codecs
  */
@@ -161,6 +164,8 @@ export const encode = <P>(
 
 /**
  * An event's payload read back from its JSON form, checked against its schema.
+ * Fails with `InvalidEvent` when the event has no schema, or the data does
+ * not match it.
  *
  * @category Codecs
  */

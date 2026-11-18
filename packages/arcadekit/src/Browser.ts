@@ -307,12 +307,17 @@ const listen = (
  *   document is hidden.
  * - A key's code is `KeyboardEvent.code`. A key held down went down once,
  *   and every key and pointer button goes up when the page loses focus.
- * - `PointerX` and `PointerY` are CSS pixels from the top left of `target`.
- *   Presses are heard on `target`, moves and releases on the whole page.
- * - Gamepads are read when the app samples, once per tick.
+ * - The pointer is a mouse, a pen or a finger. `PointerX` and `PointerY`
+ *   are CSS pixels from the top left of `target`. Presses are heard on
+ *   `target`, moves and releases on the whole page.
+ * - The buttons of a mouse held together are followed one by one, though
+ *   a page tells of all but the first press and the last release as moves.
+ * - Gamepads are read when the app samples, once per tick. One that is
+ *   unplugged lets go of everything.
  * - It listens from when it is built until its scope closes, so provide it
  *   to the whole program and not to `App.make` alone. `Browser.runMain`
- *   does.
+ *   does. Provided to `App.make` alone it is let go as soon as the app is
+ *   made, and the first reading of the devices throws and says so.
  *
  * @category Layers
  */
@@ -495,8 +500,9 @@ interface Channel {
  *   page is seen again: the frame loop rests then, and a game that stands
  *   still is not heard. `Browser.layer` gives it the page's.
  * - A page with no Web Audio plays nothing.
- * - When its scope closes the audio is closed and the page is no longer
- *   listened to, so it is provided to the whole program. `Browser.runMain`
+ * - When its scope closes the audio is closed, a request for a file that
+ *   is still on its way is given up, and the page is no longer listened
+ *   to, so it is provided to the whole program. `Browser.runMain`
  *   and `Browser.layer` do, unless told `sounds: false`.
  *
  * @category Layers

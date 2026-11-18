@@ -128,7 +128,8 @@ export interface SceneShape {
  *     })
  *   )
  *
- * It is what draws the game, not the game: nothing in a tick reads it.
+ * It is what draws the game, not the game: nothing in a tick reads it, and
+ * none of it is saved.
  *
  * @category Services
  */
@@ -171,8 +172,12 @@ export interface RendererShape {
 
 /**
  * What draws the scene. It comes from outside the app, since it needs a
- * canvas: `Three.layerWebGL({ canvas })` in a page. A test provides one
- * that draws nothing and notes what it was asked.
+ * canvas: `Three.layerWebGL({ canvas })` in a page. A game that installs
+ * `Three.plugin` and provides none does not compile. A test provides one
+ * that draws nothing, or notes what it was asked, and looks at what was
+ * put in the scene, which Three.js makes under Node as in a page:
+ *
+ *   Layer.succeed(Three.Renderer, { render(scene, camera) {} })
  *
  * @category Services
  */
@@ -299,6 +304,11 @@ export const layerWebGL = (
  *
  *   System.make("Follow", ...).pipe(System.inStage("frame"))
  *
+ * Just before it draws, it asks of every kind that is made of a bundle's
+ * assets whether they are still there, and takes out of the scene what is
+ * not: nothing is drawn with assets that were let go, whichever of the
+ * system that lets a bundle go and the one that draws with it runs first.
+ *
  * @category Systems
  */
 export const Render = System.make("arcadekit/three/Render", function* () {
@@ -316,6 +326,10 @@ export const Render = System.make("arcadekit/three/Render", function* () {
  *
  * The app then needs a `Three.Renderer` from outside:
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
+ *
+ * It depends on `Transform3d.plugin` and on `Transform2d.plugin`, which
+ * list the components that say where a thing is. This package has none of
+ * its own.
  *
  * @category Plugins
  */
@@ -373,13 +387,15 @@ export interface Which {
    * Draws each entity between its last two places, and not where the last
    * tick left it: at `Frame.alpha` of the way from where it was a tick ago
    * to where it is. A game whose ticks and frames do not line up then
-   * moves evenly, a tick behind. Off unless told: see `Three.instances`.
+   * moves evenly, up to a tick behind. Off unless told: `Three.instances`
+   * says what is drawn on the way.
    */
   readonly smooth?: boolean;
   /**
    * With `smooth`, how far an entity may go in one tick and still be drawn
    * on the way. One that went further, off one edge and in at the other,
-   * say, is drawn where it is. Any distance, when left out.
+   * say, is drawn where it is. Any distance, when left out. It is one
+   * distance per kind, in the units of the scene.
    */
   readonly snap?: number;
 }
@@ -824,8 +840,8 @@ export interface TextureOptions {
 
 /**
  * An asset that is a picture to draw with: a `Texture` of Three.js, in a
- * bundle with the rest of a level's, and disposed of when the scope it was
- * loaded in closes.
+ * bundle with the rest of a level's, and disposed of, with the picture it
+ * was made of, when the scope it was loaded in closes.
  *
  *   const Forest = Assets.bundle("game/Forest", {
  *     bark: Three.texture("/bark.png"),
@@ -846,6 +862,8 @@ export interface TextureOptions {
  *   that says so.
  * - It is decoded off the page's thread, by `createImageBitmap`, which a
  *   page has and Node does not.
+ * - A file that is no picture fails the bundle with `Assets.AssetFailed`,
+ *   which names the URL.
  *
  * @category Constructors
  */
@@ -967,7 +985,13 @@ export interface InstancesShared extends Which {
    * unless `colorSpace` says otherwise: `#ff6188` is an `r` of
    * `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`. Fields
    * of floats hold 0 to 1; fields of whole numbers (`Field.u8`) hold the
-   * bytes themselves, 0 to 255.
+   * bytes themselves, 0 to 255. The three are all one or all the other,
+   * and a component that is no colour, one that is sparse or lacks a
+   * field, throws when the system is made.
+   *
+   * With `smooth` a colour changes evenly between two ticks, as a place
+   * does, however far it goes: `snap` does not apply to it. It changes in
+   * the numbers the game has, and is converted then.
    */
   readonly color?: ColorComponent;
   /**
@@ -1690,11 +1714,36 @@ type Needs = Frame | Scene | Time | World;
  *   per entity straight into the mesh's instance buffer. Nothing is made
  *   per entity: no object, no matrix, no vector. The buffer is allocated
  *   again only to double when it is full.
- * - The entities are drawn where the last tick left them.
- * - The mesh is made on the first frame, added to the scene, and removed
- *   and disposed of with the app. The geometry and the material are yours:
- *   to share between several, and to dispose of.
+ * - A `Rotation` is drawn as the turn it stands for, whatever its length:
+ *   it neither skews nor sizes the instance. One whose four fields are 0,
+ *   which is what one added with no value is, is no turn at all.
+ * - The entities are drawn where the last tick left them, unless `smooth`
+ *   says otherwise.
+ * - The mesh is made on the first frame, named after the system, added to
+ *   the scene, and removed and disposed of with the app. The geometry and
+ *   the material are yours: to share between several, and to dispose of.
  * - It needs `Three.plugin`, and its name is one of the app's systems'.
+ *
+ * With `smooth: true` each entity is drawn between its last two places,
+ * at `Frame.alpha` of the way from where it was a tick ago to where it is:
+ *
+ * - The picture is then up to one tick behind the game: just after a
+ *   tick, at an `alpha` of 0, an entity is drawn where it was before the
+ *   tick. A game that ticks when it is needed is told an `alpha` of 1
+ *   while it rests, and is drawn where it is.
+ * - Places, sizes and colours go straight from one to the other. A turn
+ *   goes by the shorter way.
+ * - An entity that was not drawn in the frame before is drawn where it
+ *   is: one that is new, one in a slot that was another's, one that was
+ *   hidden, and every entity in the first frame, after a load, or after a
+ *   frame the system did not run in. So is one that went further in a
+ *   tick than `snap`.
+ * - When several ticks ran since the last frame, an entity comes from
+ *   where it was last drawn from; when none ran, it is between the same
+ *   two places as the frame before. A place changed with no tick is where
+ *   the entity goes to from where it was coming from.
+ * - What is kept for it, the value each component had a tick ago, is no
+ *   part of the world: the game's hash, log and save are the same.
  *
  * A look that is made of assets, a level's texture, say, is given as the
  * bundle it comes `from` and what makes it of them:
@@ -1717,7 +1766,9 @@ type Needs = Frame | Scene | Time | World;
  *   after: no mesh is in the scene then.
  * - `look` is called once each time the bundle is loaded, and `free` with
  *   what it returned when the bundle is let go or the app's scope closes.
- * - It needs `Assets.plugin` as well.
+ *   A mesh made of a bundle that is loaded again starts with the room the
+ *   last one had grown to.
+ * - It needs `Assets.plugin` as well, which the type of the system says.
  *
  * @category Systems
  */
@@ -2219,15 +2270,22 @@ class Objects<O extends Object3D> implements Kept {
  *   the entity no longer does, or is gone, the object is taken out, and
  *   `free` is called with it.
  * - Each frame every object is given its entity's `Position`, and its
- *   `Rotation` and `Scale` if the entity has them. What else there is to
- *   an object is the game's to set, in `make` or in a system of its own.
+ *   `Rotation` and `Scale` if the entity has them. A rotation of any
+ *   length is given as a quaternion of length 1, and an entity that loses
+ *   one of the two is drawn as one that never had it. What else there is
+ *   to an object is the game's to set, in `make` or in a system of its
+ *   own.
  * - An entity placed by a flat game's `Transform2d` has its object's x and
  *   y set, its turn about the third axis, and its size along x and y.
- *   Where the object is along the third axis is left as `make` gave it,
- *   which is how one kind is put in front of another.
+ *   Where the object is along the third axis, how it is tipped and how
+ *   deep it is are left as `make` gave them, which is how one kind is put
+ *   in front of another.
+ * - An entity that takes a despawned one's slot gets an object of its own.
  * - Nothing is kept in the world. A game that is loaded from a save, or an
  *   app that starts with entities, has its objects made on the first
  *   frame.
+ * - With `smooth: true` an object is placed between its entity's last two
+ *   places, as `Three.instances` draws an instance.
  * - It needs `Three.plugin`, and its name is one of the app's systems'.
  *
  * Objects that are made of a level's assets name the bundle they come
@@ -2240,7 +2298,8 @@ class Objects<O extends Object3D> implements Kept {
  *   })
  *
  * - There are objects while the app holds the bundle loaded: each is made
- *   the frame it is, and all are let go, through `free`, when it is not.
+ *   the frame it is, and all are let go, through `free`, when it is not,
+ *   before the scene is next drawn. Loaded again, each is made again.
  * - It needs `Assets.plugin` as well.
  *
  * @category Systems

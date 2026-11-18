@@ -204,6 +204,9 @@ const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
  * stack trace on every call, which is fine for request handlers but not for
  * something that runs sixty times a second.
  *
+ * A system finishes within its tick: one that waits throws, and the error
+ * names it. What takes many ticks is a script, started with `Script.spawn`.
+ *
  * @category Constructors
  */
 export const make = <Eff extends Effect.Effect<any, any, any>>(
@@ -265,6 +268,14 @@ export const inStage: {
  * stage has run already, and naming it is no error; one in a later stage
  * is.
  *
+ * **Gotchas**
+ *
+ * A system keeps its place in the list unless another has to run before
+ * it, and that one is pulled forward to just ahead of it: ahead, too, of
+ * every system listed between the two, which said nothing. It may then run
+ * before a system it reads from, with no error. `app.conflicts` finds such
+ * a pair when both have said what they read and write.
+ *
  * @category Combinators
  */
 export const after: {
@@ -286,6 +297,14 @@ export const after: {
  * slots a system in ahead of one that belongs to a plugin it depends on.
  * One in a later stage runs after it already, and naming it is no error;
  * one in an earlier stage is.
+ *
+ * **Gotchas**
+ *
+ * A system listed after the other is pulled forward to just ahead of it:
+ * ahead, too, of every system listed between the two, which said nothing,
+ * and a plugin's systems are listed before the app's own. It may then run
+ * before a system it reads from, with no error. `app.conflicts` finds such
+ * a pair when both have said what they read and write.
  *
  * @category Combinators
  */
@@ -393,8 +412,8 @@ export const triggered = <E, R>(
  * not run. This is how it says what that thing should be then.
  *
  * - It runs in the system's place, in its stage and as the system: with
- *   its place in events and changes, and in a tick its commands are
- *   applied.
+ *   its place in events and changes. In a tick its commands are applied,
+ *   and in a frame it may change nothing.
  * - It is not asked for while the system has no condition, or while every
  *   condition holds. Given twice, both run, in the order given.
  * - What it needs and can fail with are the system's too.
@@ -439,14 +458,29 @@ export const otherwise: {
  * from `Random`, issues actions or starts scripts.
  *
  * - It is all of what the system does. The app holds a system that said
- *   it to it: a query, a singleton, an event, a command or a draw that
- *   was left out throws where it is made, and names what to add. So what
- *   is said can be relied on, by `app.conflicts` and by what comes after.
+ *   it to it: a query, a singleton, an event, a read or a write through
+ *   the world, a command, an action or a script that was left out throws
+ *   where it is made, names the system and says what to add. A draw from
+ *   `Random` is found when the system has run. So what is said can be
+ *   relied on, by `app.conflicts` and by what comes after.
+ * - What a system may write it may read. A query it did not name is let
+ *   through when everything it touches is within what the system said.
  * - What a condition given with `System.runIf(State.is(...))` reads is
- *   known, and need not be said.
+ *   known, and need not be said. A condition of the game's own is the
+ *   system's to say, as is what `System.otherwise` does.
+ * - `Time` and `Ticks` are not said, nor is the picture of the devices,
+ *   `Input.Keyboard` and its kind.
  * - A system that has not said may do anything, as before, and is told of
- *   in `app.undeclared`.
+ *   in `app.undeclared`. Scripts and handlers are not systems, and are
+ *   held to nothing.
  * - Given twice, both hold.
+ *
+ * **Gotchas**
+ *
+ * A system is held as it runs, and no sooner. One that touches what it
+ * left out only when some condition of the game holds is refused in the
+ * first tick in which it does, which may be long into a game and never in
+ * a test.
  *
  * @category Combinators
  */
@@ -771,6 +805,17 @@ const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
  * `app.conflicts` is this for an app's systems. A game settles a conflict
  * by saying the order, which changes nothing when it is the order they run
  * in already.
+ *
+ * **Gotchas**
+ *
+ * - It does not say which way round is right. A system that `"watches"`,
+ *   listed ahead of the one that writes what it watches, reacts a tick
+ *   late; the pair is listed until its order is said, and an order said
+ *   the wrong way round is taken at its word.
+ * - A despawn is said by one component, and the entity's other components
+ *   go with it, as does whatever hangs from it by a relation. A system
+ *   that visits those through components the first never named is not
+ *   found to be in conflict with it.
  *
  * @category Utilities
  */

@@ -82,6 +82,27 @@ export class Commands extends Context.Service<Commands, CommandBuffer>()(
 /**
  * How a long-running script (a coroutine) waits, and how a system starts one.
  *
+ *   const Fountain = Effect.gen(function*() {
+ *     const script = yield* Script
+ *     for (let wave = 1; wave <= 5; wave++) {
+ *       (yield* Commands).spawn(Velocity.of({ x: 0, y: wave }))
+ *       yield* script.sleep(0.5)       // half a second of game time
+ *     }
+ *   })
+ *
+ * A script advances only during ticks. It waits with `nextTick`, `sleep`
+ * or an event's `wait`.
+ *
+ * **Gotchas**
+ *
+ * - `Effect.sleep`, a promise or a timer resumes a script outside the
+ *   tick, at a moment no replay repeats. Nothing refuses them.
+ * - Under a driver that ticks only when needed, a script that sleeps or
+ *   waits for a tick keeps the game ticking. One that should let it rest
+ *   waits for an event.
+ * - It is the simulation's: in the frame stage and the input stage it
+ *   throws.
+ *
  * @category Services
  */
 export class Script extends Context.Service<
@@ -164,6 +185,16 @@ export class Events extends Context.Service<Events, EventBus>()(
  * `App.make({ seed })`, and the same seed gives the same numbers on every
  * machine. The generator's state is part of the world, so it is in the
  * world's hash and a replay draws the same numbers.
+ *
+ * - It is the one source of randomness in a simulation. With no seed, the
+ *   seed is 0: a game is repeatable until it is given a seed from outside.
+ * - Effect's own `Random` module is seeded from the same generator inside
+ *   an app, so `Random.next` from `"effect"`, or anything built on it,
+ *   replays too. It costs an Effect per draw, so it is not for loops.
+ * - In the frame stage and the input stage it is a generator of the app's
+ *   own, which is no part of the world: what draws can be random and
+ *   change nothing.
+ * - It is not for secrets: a few outputs give away the rest.
  *
  * @category Services
  */

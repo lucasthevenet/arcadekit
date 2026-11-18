@@ -29,7 +29,8 @@
  *
  *   const PlayCard = Action.define("PlayCard", Schema.Struct({ card: EntityId, target: EntityId }))
  *
- * Every action that comes from outside goes into `app.actionLog`, with a
+ * Every action that comes from outside goes into `app.actionLog`, but for
+ * a dispatched one that was refused, which changed nothing, with a
  * checkpoint of the world's hash every so many ticks. An action a system or
  * a script issues itself, with the `Actions` service, does not: a replay's
  * own simulation issues it again. Replaying the log into a fresh
@@ -85,11 +86,19 @@ export interface ActionDef<N extends string, P, VE = never> {
  * Defines an action.
  *
  * With a schema, the payload type is inferred from it and every payload is
- * validated: `Action.define("Strike", Schema.Struct({ ... }))`.
+ * validated: `Action.define("Strike", Schema.Struct({ ... }))`. The log and
+ * a save hold the payload in its JSON form, and another peer is sent that:
+ * a bigint or a date in it is converted on the way.
  *
  * Without one, only the compiler checks the payload, which is fine for
  * actions that never leave the program. Curried so the payload type can be
  * given while the name is inferred: `Action.define<Payload>()("Strike")`.
+ *
+ * **Gotchas**
+ *
+ * An action with no schema cannot be saved while it waits for a tick:
+ * `app.save()` fails with `SaveRefused`. It cannot be sent to the other
+ * peers of a session either: `app.enqueue` throws.
  *
  * @category Constructors
  */
@@ -156,6 +165,14 @@ export interface Handler<N extends string, P, A, E, R> {
  *
  * Beside the payload it is told where the action came from, `{ from }`:
  * in a game of several peers, the peer that issued it.
+ *
+ * **Gotchas**
+ *
+ * - A handler cannot dispatch another action, which throws. It issues one
+ *   with `Actions.enqueue`, and a refusal takes that back too.
+ * - A refusal takes back what the handler did to the world, and nothing
+ *   outside it: not an object held in a field and changed in place, a call
+ *   to a service of the game's own, or a script it started.
  *
  *   const pass = Action.handler(Pass, function* (_, { from }) {
  *     const turn = yield* Turn
@@ -310,6 +327,12 @@ export const Rejected = Event.define<{
  * rules as players. The action is applied at the start of the next tick. It
  * is not logged: it is the simulation's own doing, and a replay does it
  * again. Code outside the simulation uses `app.dispatch` or `app.enqueue`.
+ *
+ * **Gotchas**
+ *
+ * A system of the frame stage or the input stage is outside the simulation,
+ * and a replay runs neither. What it issues here is logged, as
+ * `app.enqueue` logs it.
  *
  * @category Services
  */

@@ -507,9 +507,12 @@ const Read = System.make("arcadekit/Input.Read", function* () {
  * - The devices are read once per tick, in the input stage, and what
  *   changed is one action, `Input.Report`, in the log. So every system of a
  *   tick sees the same picture, and a replay sees the same as the game.
- * - The picture is a singleton of the world: saved with a game, counted in
- *   its hash once something was pressed, and untouched while nothing
- *   changes.
+ * - The picture is a singleton of the world: saved with a game, put back
+ *   when an action is refused, counted in its hash once something was
+ *   pressed, and untouched while nothing changes.
+ * - The devices are the truth. A game loaded from a save in which a key
+ *   was held, where the key is no longer down, lets it go at the first
+ *   reading.
  * - It is one picture, of one player's devices. A game of several players
  *   on several machines binds its devices to actions that say whose they
  *   are, with `Input.bind`.
@@ -645,9 +648,12 @@ class View<A> extends Effectable.Class<A, never, World | Time> {
  *   keys.released("Space")    // went up in this tick
  *
  * `pressed` and `released` are true for the one tick that first sees the
- * change, so a system that runs every tick sees each exactly once. A key
- * that went down and up between two ticks was pressed and released in the
- * same tick, and is not down.
+ * change, so a system that runs every tick sees each exactly once, and so
+ * do the handlers of the actions that tick applies: an action bound to a
+ * key sees the press that issued it. A key that went down and up between
+ * two ticks was pressed and released in the same tick, and is not down. A
+ * held key that was let go and pressed again between two ticks was
+ * released and pressed in the same tick, and is down.
  *
  * @category Views
  */

@@ -15,13 +15,18 @@
  * renderer reads them: `@arcadekit/three` draws an entity where its
  * `Position` says, turned and sized by its `Rotation` and `Scale` if it
  * has them.
+ *
+ * An entity has the ones it needs: one that is only somewhere has a
+ * `Position`, and `Rotation` and `Scale` are for the ones that turn or
+ * have a size of their own. A save names each as the world does, by the
+ * module and the component: `"arcadekit/Transform3d.Position"`.
  */
 import { Component, Field } from "./ecs/component";
 import * as Plugin from "./Plugin";
 
 /**
  * Where an entity is, in the units of the game's space. A game that is
- * flat gives every `z` as 0.
+ * flat gives every `z` as 0. Added with no value, it is at the origin.
  *
  * @category Components
  */
@@ -52,6 +57,12 @@ export const Rotation = Component.define("arcadekit/Transform3d.Rotation", {
 
 /**
  * How large an entity is, along each axis: 1 is the size it is made at.
+ *
+ * **Gotchas**
+ *
+ * Added with no value it is all zeros, as any component is, which is no
+ * size at all: what draws from it draws nothing. Give it its value where
+ * it is added.
  *
  * @category Components
  */

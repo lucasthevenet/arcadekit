@@ -25,6 +25,16 @@
  * which hold every whole number below 2^53 exactly, and is a whole number
  * in JSON.
  *
+ * **Gotchas**
+ *
+ * - A world holds at most 4,194,304 entities at a time, which is what 22
+ *   bits of index are. A spawn past that throws.
+ * - An array that holds ids is a `Float64Array`. A `Uint32Array` cuts
+ *   short the id of an entity whose slot was given out more than 1,023
+ *   times, and holds what is left as if it were one.
+ * - Read the two halves with `entityIndex` and `entityGeneration`: a
+ *   shift sees 32 bits and no more.
+ *
  * @category Models
  */
 export type Entity = number & { readonly _brand: "Entity" };
@@ -337,7 +347,9 @@ export type AccessorMode = "writes" | "notes" | "reads" | "frozen";
  * @param St where its data is kept
  * @param N  its name. Two components can have the same fields, and it is
  *           by their names that the compiler tells them apart: which of a
- *           query's terms `Query.reads` was given, for one.
+ *           query's terms `Query.reads` was given, for one. A name built
+ *           at run time is just `string`, and such a component is told
+ *           apart from nothing.
  *
  * @category Models
  */
@@ -764,7 +776,15 @@ const define = <
  * @category Constructors
  */
 export const Component = {
-  /** Define a data component. Numeric fields become typed-array columns. */
+  /**
+   * Define a data component. Numeric fields become typed-array columns.
+   *
+   * `name` is its identity in a world and in a save, prefixed with the
+   * feature it belongs to: `"physics/Position"`. A world that meets two
+   * different components with one name refuses the second. With `storage:
+   * "sparse"` it is kept in a set of its own, for a component that is
+   * added and removed often or that few entities have.
+   */
   define: <
     const N extends string,
     S extends Schema,
@@ -777,6 +797,7 @@ export const Component = {
   /**
    * Define a singleton: data the world holds one of, with the value it has
    * until it is written. Its name is one of the world's component names.
+   * No entity has it: spawning or adding it throws.
    */
   singleton: <S extends Schema>(
     name: string,
@@ -798,7 +819,18 @@ export const Component = {
    * `"remove"` takes the relation off them (a target, an owner). Either
    * way nothing is left pointing at an entity that is gone.
    *
-   * `fields` are fields of the relation's own, beside `target`.
+   * `fields` are fields of the relation's own, beside `target`, and are
+   * written like any others. The target is not:
+   *
+   * - It is changed by adding the relation again, `add(entity,
+   *   ChildOf.of({ target }))`. Assigning to it, in `each` or with `set`,
+   *   throws, and its raw column is typed as read-only.
+   * - It has to be alive. A relation given with no target is refused where
+   *   the mistake is. Given one that is gone already, what that entity's
+   *   despawn would have done is done at once: the holder is despawned,
+   *   or the relation is not added.
+   * - An entity has one target per relation. Another kind of link is
+   *   another relation.
    */
   relation: <
     const N extends string,

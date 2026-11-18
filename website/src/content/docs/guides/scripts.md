@@ -36,19 +36,29 @@ A script waits three ways:
 - `script.sleep(seconds)`, for game time, which passes only as the game ticks;
 - `yield* event.wait`, until an event arrives.
 
-A script advances only during ticks. It never waits on the clock: `Effect.sleep`, a promise or a timer would resume it outside a tick, at a moment no replay repeats.
+A script advances only during ticks. It never waits on the clock: `Effect.sleep`, a promise or a timer would resume it outside a tick, at a moment no replay repeats. Nothing refuses them.
+
+In a game that [ticks only when needed](running-a-game.md), a script that sleeps or waits for a tick keeps the game ticking. One that should let it rest waits for an event.
 
 ## Starting one
 
 - `app.spawnScript(Fountain)` from outside: it runs now, up to its first wait.
-- `(yield* Script).spawn(Fountain)` from a system: it first runs when the tick flushes, after the systems.
-- A plugin's `scripts` start with the app.
+- `(yield* Script).spawn(Fountain)` from a system, a handler or another script: it first runs when the tick flushes, after the systems.
+- A plugin's `scripts` start with the app, after its `setup`.
 
-The app watches every script started these ways. One that fails is logged with its cause. With `App.make({ onScriptFailure: "stop" })` the app stops instead, with `App.ScriptFailed`.
+## When one fails
+
+The app watches every script started these ways. One that fails is logged at once, with its cause, through Effect's logger, so the loggers provided to `App.make` receive it. One that is interrupted has not failed, and every script still running is interrupted when the app's scope closes.
+
+The game goes on without the failed script. With `App.make({ onScriptFailure: "stop" })` the app stops instead: the tick the script failed in runs to its end and then fails with `App.ScriptFailed`, a defect that carries the script's cause, and so does every tick after it, without running anything. A driver stops on it.
+
+A fiber started with `Effect.forkDetach` is the caller's to observe. The app doesn't report its failure or interrupt it, and nothing stops it changing the game at a moment no replay repeats.
 
 ## Scripts and saves
 
 A save can't hold a script in mid-flight. A plugin lists its `scripts`, and they start again from their beginning when a game is loaded. So a script keeps what it must not lose in the world, and picks up from what it finds there. The same goes for a rewind under rollback.
+
+A script started by hand, with `app.spawnScript` or `Script.spawn`, is not started again by a load, and a rewind stops it: the game starts it again, from what it finds in the world.
 
 ## Read more
 
