@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-import { sourceCondition } from "./scripts/source-condition.ts";
+import { sourceCondition } from "./tooling/build/source-condition.ts";
 
 // `pnpm test`. The kit is tested from src/, with no build.
 export default defineConfig({
@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     // What every test file starts with: see the file.
     setupFiles: [
-      new URL("./scripts/vitest-setup.ts", import.meta.url).pathname,
+      new URL("./tooling/build/vitest-setup.ts", import.meta.url).pathname,
     ],
   },
 });

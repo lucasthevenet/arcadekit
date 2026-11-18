@@ -64,10 +64,6 @@ const imported = (text: string): string[] => {
   return found;
 };
 
-/** A source without its comments, where a page may be spoken of. */
-const code = (text: string): string =>
-  text.replaceAll(/\/\*[\s\S]*?\*\//gu, "").replaceAll(/^\s*\/\/.*$/gmu, "");
-
 const resolve = (from: string, specifier: string): string => {
   const parts = from.split("/").slice(0, -1);
   for (const part of specifier.split("/")) {
@@ -116,12 +112,7 @@ const sourceOf = (subpath: string): string =>
   `../${manifest.exports[subpath]!.source.slice("./".length)}`;
 const isEffect = (name: string): boolean =>
   name === "effect" || name.startsWith("effect/");
-/** The entry of what only a page can use. */
-const isBrowser = (subpath: string): boolean => subpath === "./Browser";
 const entries = Object.keys(manifest.exports);
-// What a page has and Node does not.
-const page =
-  /\b(?:requestAnimationFrame|cancelAnimationFrame|createImageBitmap|AudioContext|OfflineAudioContext|navigator|document|window|addEventListener)\b/u;
 
 describe("the package's entries", () => {
   it("are the package itself, every module, and the storage core", () => {
@@ -169,53 +160,27 @@ describe("the package's entries", () => {
     );
   });
 
-  it("arcadekit/ecs is the storage core alone: it imports no package, and nothing outside src/ecs", () => {
-    const { files, packages } = reach(sourceOf("./ecs"));
-    expect(packages).toEqual([]);
-    expect(files.filter((file) => !file.startsWith("../src/ecs/"))).toEqual([]);
-    // All of the storage core is behind it.
-    expect(files).toEqual(
+  // What a source may import or name, by the entry it is behind, is held by
+  // the Oxlint rules of tooling/lint/plugin.ts, file by file: arcadekit/ecs
+  // imports no package and nothing outside src/ecs, no entry but
+  // arcadekit/Browser imports anything but Effect, reaches src/Browser.ts or
+  // names what only a page has, and no source makes code from text.
+
+  it("arcadekit/ecs is all of the storage core", () => {
+    expect(reach(sourceOf("./ecs")).files).toEqual(
       Object.keys(sources)
         .filter((file) => file.startsWith("../src/ecs/"))
         .toSorted()
     );
   });
 
-  it("no entry but arcadekit/Browser imports anything but Effect, or reaches what only a page has", () => {
-    for (const name of entries.filter((one) => !isBrowser(one))) {
-      const { files, packages } = reach(sourceOf(name));
-      expect(
-        packages.filter((one) => !isEffect(one)),
-        name
-      ).toEqual([]);
-      expect(files, name).not.toContain("../src/Browser.ts");
-      // Nor does any of it name what a page has and Node does not.
-      expect(
-        files.filter((file) => page.test(code(sources[file]!))),
-        name
-      ).toEqual([]);
-    }
-    // The package's own entry is all of them but that one.
+  it("the package's own entry reaches every source but src/Browser.ts and the storage core's index", () => {
     const main = reach(sourceOf(".")).files;
     expect(
       Object.keys(sources)
         .filter((file) => !main.includes(file))
         .toSorted()
     ).toEqual(["../src/Browser.ts", "../src/ecs/index.ts"]);
-  });
-
-  it("no source makes code from text, which a strict Content Security Policy forbids", () => {
-    // `eval`, and the constructors that compile their argument. What
-    // `each` hands out was once classes made this way: see `makeAccessor`.
-    const generates =
-      /\beval\s*\(|\bnew\s+(?:Async)?(?:Generator)?Function\b|\bFunction\s*\(/u;
-    for (const [file, text] of Object.entries(sources)) {
-      expect(code(text), file).not.toMatch(generates);
-    }
-    // And the pattern is one that would find it.
-    expect('return new Function("return 1")').toMatch(generates);
-    expect("const made = Function(source)").toMatch(generates);
-    expect("eval (source)").toMatch(generates);
   });
 
   it("arcadekit/Browser is the one entry that imports a browser package, which is an optional peer", () => {
@@ -227,8 +192,6 @@ describe("the package's entries", () => {
     expect(
       manifest.peerDependenciesMeta["@effect/platform-browser"]?.optional
     ).toBe(true);
-    // It is where the package names the page: that is what it is for.
-    expect(page.test(code(sources["../src/Browser.ts"]!))).toBe(true);
     // Only its own file is its own: the rest is the game's, shared.
     const main = reach(sourceOf(".")).files;
     expect(files.filter((file) => !main.includes(file))).toEqual([

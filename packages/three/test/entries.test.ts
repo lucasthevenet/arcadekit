@@ -145,15 +145,8 @@ describe("the entries of @arcadekit/three", () => {
   });
 
   it("imports arcadekit, Effect and Three.js, which a game has one of each: all three are peers, and nothing is a dependency", () => {
-    for (const name of Object.keys(manifest.exports)) {
-      const { packages } = reach(sourceOf(name));
-      expect(
-        packages.filter(
-          (one) => !["arcadekit", "effect", "three"].includes(packageOf(one))
-        ),
-        name
-      ).toEqual([]);
-    }
+    // That it imports nothing else is the Oxlint rule
+    // `arcadekit/entry-imports` (tooling/lint/plugin.ts).
     expect(
       reach(sourceOf("./Three")).packages.map((one) => packageOf(one))
     ).toContain("three");

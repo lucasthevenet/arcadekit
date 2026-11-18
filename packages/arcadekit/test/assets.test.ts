@@ -141,7 +141,7 @@ const makeGame = () => {
 
 describe("a failure, in these tests", () => {
   it("is not equal to one that differs only in its reason, which toEqual alone would not see", () => {
-    // scripts/vitest-setup.ts sees to it: without it the first of these
+    // tooling/build/vitest-setup.ts sees to it: without it the first of these
     // passes whatever the two messages are.
     const failed = (url: string, message: string) =>
       new Assets.AssetFailed({ url, message });
