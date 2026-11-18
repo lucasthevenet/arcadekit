@@ -32,7 +32,10 @@ import { Rng } from "./ecs/random";
 import * as Lockstep from "./Lockstep";
 
 /**
- * What a transport does. Both are plain calls: nothing here waits.
+ * What a transport does. Both are plain calls: nothing here waits, so the
+ * tick that uses them stays one synchronous step. What listens behind a
+ * transport, a channel or a socket, fills a list in its own time, and
+ * `receive` hands the list over.
  *
  * @category Services
  */
@@ -155,6 +158,9 @@ export interface TextTransport extends Shape {
  * The wire has to deliver every message, in whatever order. A WebSocket
  * does; a data channel has to be told to.
  *
+ * It vouches for no sender, and it says nothing when it is used after
+ * `close`, or after its wire has closed, unless whoever made it does.
+ *
  * @category Constructors
  */
 export const text = (wire: Wire): TextTransport => {
@@ -191,7 +197,11 @@ export const text = (wire: Wire): TextTransport => {
  * and reaches no other machine.
  *
  * The channel is opened when the layer is built and closed with its
- * scope, so it is provided to the whole program, as whatever listens is.
+ * scope, so it is provided to the whole program, as whatever listens is. A
+ * transport that is used after that throws and says so.
+ *
+ * Nothing vouches for the sender here, as a relay does: a peer can send a
+ * message in another's name, and the peers then stop as drifted.
  *
  * @category Layers
  */
@@ -245,7 +255,8 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
  * A transport's socket is no longer open: the relay closed it, or the
  * network did. `send` and `receive` throw it from then on, so the tick
  * that uses the transport fails with it and its driver stops, in place of
- * a game that waits for messages that cannot come.
+ * a game that waits for messages that cannot come. Only the peer whose
+ * socket closed is told: the others wait.
  *
  * @category Errors
  */

@@ -117,7 +117,11 @@ export const OUTLINE: readonly (Group & {
   {
     topic: "guides",
     label: "Several players",
-    items: ["guides/lockstep-and-rollback", "guides/transports-and-relays"],
+    items: [
+      "guides/lockstep-and-rollback",
+      "guides/transports-and-relays",
+      "guides/hosting-a-relay",
+    ],
   },
   { topic: "guides", label: "Testing", items: ["guides/testing"] },
   { topic: "guides", label: "More", section: "guides", items: [] },

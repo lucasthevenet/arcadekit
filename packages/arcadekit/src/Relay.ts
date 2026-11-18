@@ -34,6 +34,9 @@
  * host's to decide before it calls `join`: a token in the request, a
  * session, whatever it has.
  *
+ * A room belongs to nobody: the first peer to ask opens it, and it is gone
+ * when the last has left. The relay does not say who has come and gone.
+ *
  * The room is named in the address and is one object of the host's, as in
  * PartyServer, which gives each room a Durable Object, and as matchbox's
  * signalling server names a room in the URL its peers connect to. The
@@ -150,12 +153,14 @@ export const address = (base: string, member: Member): string =>
  * connection.
  *
  * The room is the last part of the address's path and the peer its `peer`
- * query, as `address` writes them. It is refused when the address names
- * neither, when the name is taken in that room, when the room is full, or
- * when the room lets in only names this is not one of.
+ * query, as `address` writes them, each 64 characters at most. It is
+ * refused when the address names neither, when the name is taken in that
+ * room, when the room is full, or when the room lets in only names this is
+ * not one of.
  *
  * It does not ask whether the peer is who it says: that is the host's to
- * settle before it calls this, with whatever the request carries.
+ * settle before it calls this, with whatever the request carries. Whoever
+ * asks first under a free name is let in.
  *
  * @category Hosting
  */

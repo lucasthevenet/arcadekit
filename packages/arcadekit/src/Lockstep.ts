@@ -25,7 +25,8 @@
  * `app.enqueue`, a key bound to an action, a button of the UI. Each is put
  * in this peer's message for the tick `delay` ticks ahead, and applied on
  * that tick by every peer, this one among them. So the game issues its
- * input as a game of one does.
+ * input as a game of one does. What the simulation issues itself with
+ * `Actions`, a bot's move, is not sent: every peer's own issues it.
  *
  * A session holds no socket and no timer. It is given the messages that
  * arrived and gives the ones to send, and a transport carries them.
@@ -33,7 +34,14 @@
  * The peers also tell each other the checkpoints their logs record: the
  * hash of the world at a tick. A peer that hears another hash than its own
  * for the same tick stops, and its tick fails with `Drifted`, which says at
- * which tick, who had what, and when they last agreed.
+ * which tick, who had what, and when they last agreed. The state they start
+ * from is compared before anyone's first tick, whatever the app's
+ * `checkpointEvery`: a session records a checkpoint when it begins. After
+ * that they compare the ticks that every peer's log records, and with
+ * `checkpointEvery: 0` nothing more.
+ *
+ * Every peer's log is an ordinary log, the same entry for entry, and
+ * `App.replay` plays it back into a game of one.
  */
 import { Cause, Data, Exit, Schema } from "effect";
 
@@ -109,7 +117,13 @@ const MessageSchema = Schema.fromJsonString(
  * every `checkpointEvery` ticks and travels with the message for the tick
  * `delay` ahead, which no peer runs without: so no peer runs more than
  * `checkpointEvery - 1 + delay` ticks past the first whose world differed,
- * `delay` being the largest any peer has.
+ * `delay` being the largest any peer has. A session that runs ahead,
+ * `Rollback`, sends a tick's hash once every peer has spoken for it, so
+ * there it is `checkpointEvery - 1 + delay + 2 × ahead` ticks.
+ *
+ * What is compared is the world's hash. What it does not cover, an event
+ * one peer alone has waiting or a system's own variables, is found only
+ * when it shows in the world.
  *
  * @category Errors
  */
@@ -177,7 +191,8 @@ export interface Options {
   /**
    * How many ticks lie between an action being issued and its being
    * applied: 2 when left out. A message has that long to reach the other
-   * peers before they have to wait for it. A whole number, 0 or more.
+   * peers before they have to wait for it. A whole number, 0 or more. Each
+   * peer may have its own.
    */
   readonly delay?: number;
 }
@@ -214,7 +229,8 @@ export interface Session<E = never> extends Tickable {
    * Runs the next tick, if this peer has every peer's message for it, and
    * says whether it did. Before that it hears the devices, as an app's own
    * tick does, and what they issue is in the message it makes for the tick
-   * `delay` ticks ahead.
+   * `delay` ticks ahead. What is issued while it waits for a peer is in the
+   * next message it makes.
    *
    * Throws if a system fails, or if the peers have come apart. Given a
    * number, as a driver gives one, it has to be the session's `delta`.
@@ -259,7 +275,23 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  * state to start from.
  *
  * From here on the session steps the app: the app's own `tick` and
- * `dispatch` throw, since either would move this peer's game alone.
+ * `dispatch` throw, since either would move this peer's game alone. The
+ * session begins at whatever tick the app is at, so a game can go on from
+ * a save that every peer loaded.
+ *
+ * **Gotchas**
+ *
+ * - It throws when the options could not be a game: a peer that is not
+ *   among `peers`, two peers of one name, a `delay` that is not a whole
+ *   number of ticks, or a `delta` that is not more than 0.
+ * - An action that is to reach the other peers has a schema. Enqueuing one
+ *   that was defined with a type alone throws.
+ * - A payload its schema refuses has no JSON form to send: it is refused on
+ *   the peer that issued it alone, and the others never hear of it.
+ * - Each peer is told its own plugins, seed, `delta` and names, and none of
+ *   them is compared, only the worlds they make. Another `delta` or another
+ *   list of names is found once it has changed a world, and a list that
+ *   leaves a peer out is never found.
  *
  * @category Constructors
  */
