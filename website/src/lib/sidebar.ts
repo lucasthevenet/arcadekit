@@ -188,7 +188,7 @@ export const outlinedGroups = (
 
 /**
  * The packages' group as a group for each package, named after it: its page, which lists its
- * modules, then a page for each of them, in a group for each of its subjects when it has some
+ * modules, then a page for each of them, in a group for each of its groups when it has some
  * (moduleGroups).
  */
 const packageGroups = (

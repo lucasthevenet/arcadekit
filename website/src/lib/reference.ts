@@ -1,7 +1,7 @@
 // The reference's index and each package's page, made from the packages' manifests as Effect's
 // API reference is (effect.website/docs/v4/api): the index lists the packages under their
 // category, each with how many modules it has and its description, and a package's page lists
-// its modules, under their subject when MODULE_GROUPS gives the package subjects. A module's own
+// its modules, under their group when MODULE_GROUPS gives the package groups. A module's own
 // page is made from its doc comments (api.ts).
 
 /** A package as the reference lists it, from its `package.json`. */
@@ -29,25 +29,26 @@ export const packageCategory = (folder: string): string =>
 
 const RANK = [...new Set(Object.values(PACKAGE_CATEGORIES)), OTHER];
 
-/** A subject of a package's modules, with the modules listed under it. */
+/** A group of a package's modules, with the modules listed under it. */
 export interface ModuleGroup {
   readonly label: string;
   readonly modules: readonly string[];
 }
 
 /**
- * The subjects a package's modules are listed under, on its page and in the sidebar, by its
- * folder, in this order. They follow the guides' groups. A package not here lists its modules in
- * one list, and a module its package's subjects don't name is listed under Other, last.
+ * The groups a package's modules are listed under, on its page and in the sidebar, by its folder,
+ * in this order, as Effect's reference lists its own: Core, then a group for each subsystem. A
+ * package not here lists its modules in one list, and a module its package's groups don't name is
+ * listed under Other, last.
  */
 export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
   arcadekit: [
     {
-      label: "The simulation",
+      label: "Core",
       modules: [
         "Action",
         "App",
-        "ecs",
+        "Driver",
         "Event",
         "Field",
         "Plugin",
@@ -58,30 +59,24 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
         "Singleton",
         "State",
         "System",
+        "TickScheduler",
         "Transform2d",
         "Transform3d",
+        "View",
       ],
     },
-    {
-      label: "Running a game",
-      modules: ["Browser", "Driver", "TickScheduler"],
-    },
-    {
-      label: "Input and output",
-      modules: ["Assets", "Input", "Sound", "View"],
-    },
-    { label: "Saves and replays", modules: ["Migrate", "Save"] },
-    {
-      label: "Several players",
-      modules: ["Lockstep", "Relay", "Rollback", "Transport"],
-    },
+    { label: "Storage", modules: ["ecs"] },
+    { label: "Browser", modules: ["Browser"] },
+    { label: "Media", modules: ["Assets", "Input", "Sound"] },
+    { label: "Saves", modules: ["Migrate", "Save"] },
+    { label: "Net", modules: ["Lockstep", "Relay", "Rollback", "Transport"] },
   ],
 };
 
 /**
- * A package's modules by subject: each group of MODULE_GROUPS that has a module, with its modules
- * in the package's order, then Other. A package with no subjects is one group with no label. A
- * subject that names a module the package doesn't have throws, so the groups can't keep a module
+ * A package's modules by group: each group of MODULE_GROUPS that has a module, with its modules
+ * in the package's order, then Other. A package with no groups is one group with no label. A
+ * group that names a module the package doesn't have throws, so the groups can't keep a module
  * that is gone.
  */
 export const moduleGroups = (

@@ -60,7 +60,7 @@ describe("a package's page", () => {
     );
   });
 
-  it("lists the modules of a package with subjects under each subject, in the package's order", () => {
+  it("lists the modules of a package with groups under each group, in the package's order", () => {
     const modules = (MODULE_GROUPS.arcadekit ?? [])
       .flatMap((group) => group.modules)
       .toReversed();
@@ -69,11 +69,12 @@ describe("a package's page", () => {
     );
     expect(blocks.filter((block) => block.startsWith("#"))).toStrictEqual([
       "## Modules",
-      "### The simulation",
-      "### Running a game",
-      "### Input and output",
-      "### Saves and replays",
-      "### Several players",
+      "### Core",
+      "### Storage",
+      "### Browser",
+      "### Media",
+      "### Saves",
+      "### Net",
     ]);
     expect(blocks.at(-3)).toBe(
       "- [Save](/reference/arcadekit/Save)\n- [Migrate](/reference/arcadekit/Migrate)"
@@ -81,15 +82,15 @@ describe("a package's page", () => {
   });
 });
 
-describe("the subjects of a package's modules", () => {
-  const subjects = MODULE_GROUPS.arcadekit ?? [];
-  const every = subjects.flatMap((group) => group.modules);
+describe("the groups of a package's modules", () => {
+  const groups = MODULE_GROUPS.arcadekit ?? [];
+  const every = groups.flatMap((group) => group.modules);
 
   it("names each module once", () => {
     expect(new Set(every).size).toBe(every.length);
   });
 
-  it("lists a module no subject names under Other, last", () => {
+  it("lists a module no group names under Other, last", () => {
     expect(
       moduleGroups({ folder: "arcadekit", modules: [...every, "Physics"] }).at(
         -1
@@ -97,7 +98,7 @@ describe("the subjects of a package's modules", () => {
     ).toStrictEqual({ label: "Other", modules: ["Physics"] });
   });
 
-  it("refuses a subject that names a module the package doesn't have", () => {
+  it("refuses a group that names a module the package doesn't have", () => {
     expect(() =>
       moduleGroups({
         folder: "arcadekit",
@@ -106,7 +107,7 @@ describe("the subjects of a package's modules", () => {
     ).toThrow("names Sound, which arcadekit doesn't export");
   });
 
-  it("gives a package with no subjects one list", () => {
+  it("gives a package with no groups one list", () => {
     expect(moduleGroups(physics)).toStrictEqual([
       { modules: ["Body", "World"] },
     ]);

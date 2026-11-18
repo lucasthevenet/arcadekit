@@ -145,20 +145,13 @@ describe("the sidebar", () => {
     expect(groups[0]?.items.slice(0, 3)).toStrictEqual([
       { label: "Overview", link: "/reference/arcadekit" },
       {
-        label: "The simulation",
+        label: "Core",
         items: expect.arrayContaining([
           "reference/arcadekit/App",
           "reference/arcadekit/System",
         ]),
       },
-      {
-        label: "Running a game",
-        items: [
-          "reference/arcadekit/Browser",
-          "reference/arcadekit/Driver",
-          "reference/arcadekit/TickScheduler",
-        ],
-      },
+      { label: "Storage", items: ["reference/arcadekit/ecs"] },
     ]);
     expect(groups[1]?.items).toStrictEqual([
       { label: "Overview", link: "/reference/three" },
@@ -167,13 +160,13 @@ describe("the sidebar", () => {
     ]);
   });
 
-  it("lists every module of a package with subjects under one of them", () => {
+  it("lists every module of a package with groups under one of them", () => {
     for (const page of discoverPages().packages) {
       if (MODULE_GROUPS[page.folder] === undefined) {
         continue;
       }
       const labels = moduleGroups(page).map((group) => group.label);
-      // A new module goes under a subject in MODULE_GROUPS of src/lib/reference.ts.
+      // A new module goes under a group in MODULE_GROUPS of src/lib/reference.ts.
       expect(labels, page.folder).not.toContain("Other");
     }
   });
