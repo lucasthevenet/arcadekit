@@ -1,10 +1,10 @@
 /**
- * The rules layer: "action in, events out".
+ * Actions are the rules layer: actions in, events out.
  *
- * An action is a request to change the game that comes from outside the
- * simulation: a player's move, a network message, an AI decision. A handler
- * validates it against the current state and either applies it or refuses it
- * with a typed error.
+ * An action is a request to change the game from outside the simulation: a
+ * player's move, a network message, an AI decision. A handler validates it
+ * against the current state, and either applies it or refuses it with a typed
+ * error.
  *
  *   const PlayCard = Action.define<{ card: Entity; target: Entity }>()("PlayCard")
  *
@@ -17,25 +17,23 @@
  *
  *   const result = app.dispatch(PlayCard, { card, target })   // Exit<void, NotYourTurn>
  *
- * A refused action changes nothing. Its handler runs in a transaction of the
- * world, so a refusal at any point takes back what it wrote to components,
- * the random numbers it drew, the commands it queued, the events it emitted
- * and the actions it enqueued, and unreads the events it read. A handler
- * changes which entities exist
- * through Commands; calling `world.spawn` and the like in one is an error.
+ * A refused action changes nothing. Its handler runs in a world transaction, so
+ * a refusal at any point rolls back the component writes, the random numbers
+ * drawn, the commands queued, the events emitted and the actions enqueued, and
+ * marks the events it read as unread. A handler spawns and despawns entities
+ * through `Commands`; calling `world.spawn` and similar methods in one throws.
  *
- * Give an action a schema and its payload is checked on every path into the
- * game, and stored in the log in a form that is safe to turn into JSON:
+ * Give an action a schema and its payload is validated on every path into the
+ * game, and stored in the log in a JSON-safe form:
  *
  *   const PlayCard = Action.define("PlayCard", Schema.Struct({ card: EntityId, target: EntityId }))
  *
- * Every action that comes from outside goes into `app.actionLog`, but for
- * a dispatched one that was refused, which changed nothing, with a
- * checkpoint of the world's hash every so many ticks. An action a system or
- * a script issues itself, with the `Actions` service, does not: a replay's
- * own simulation issues it again. Replaying the log into a fresh
- * app reproduces the game, and stops at the first checkpoint that does not
- * match.
+ * Every action from outside the simulation goes into `app.actionLog`, except a
+ * dispatched action that was refused, which changed nothing, along with a
+ * checkpoint of the world's hash at a regular interval of ticks. An action a
+ * system or a script issues itself, with the `Actions` service, isn't logged: a
+ * replay's own simulation issues it again. Replaying the log into a fresh app
+ * reproduces the game, and stops at the first checkpoint that doesn't match.
  */
 import { Context, Data, Effect, Schema } from "effect";
 import type { Exit } from "effect";
@@ -43,18 +41,18 @@ import type { Exit } from "effect";
 import * as Event from "./Event";
 
 /**
- * The payload did not match the action's schema. The handler was not run.
+ * The payload didn't match the action's schema. The handler didn't run.
  *
  * @category Errors
  */
 export class InvalidPayload extends Data.TaggedError("InvalidPayload")<{
   readonly action: string;
-  /** What was wrong, as reported by the schema. */
+  /** What was wrong, as the schema reported it. */
   readonly message: string;
 }> {}
 
 /**
- * An action arrived by name and the app has no handler for that name.
+ * An action arrived by name, and the app has no handler for that name.
  *
  * @category Errors
  */
@@ -72,8 +70,8 @@ export class UnknownAction extends Data.TaggedError("UnknownAction")<{
 export interface ActionDef<N extends string, P, VE = never> {
   readonly name: N;
   /**
-   * Checks the payload and converts it to and from JSON. Derived from the
-   * schema the action was defined with; undefined for a type-only action.
+   * Validates the payload and converts it to and from JSON. Derived from the
+   * action's schema; undefined for an action defined with only a type.
    */
   readonly codec: Schema.Codec<P, unknown> | undefined;
   /** Type-only: keeps the payload type attached and invariant. */
@@ -87,18 +85,18 @@ export interface ActionDef<N extends string, P, VE = never> {
  *
  * With a schema, the payload type is inferred from it and every payload is
  * validated: `Action.define("Strike", Schema.Struct({ ... }))`. The log and
- * a save hold the payload in its JSON form, and another peer is sent that:
- * a bigint or a date in it is converted on the way.
+ * saves hold the payload in its JSON form, and that form is what other peers
+ * receive, so a bigint or a date in it is converted along the way.
  *
- * Without one, only the compiler checks the payload, which is fine for
- * actions that never leave the program. Curried so the payload type can be
- * given while the name is inferred: `Action.define<Payload>()("Strike")`.
+ * Without one, only the compiler checks the payload, which is fine for actions
+ * that never leave the program. It is curried so you can pass the payload type
+ * while the name is inferred: `Action.define<Payload>()("Strike")`.
  *
  * **Gotchas**
  *
- * An action with no schema cannot be saved while it waits for a tick:
- * `app.save()` fails with `SaveRefused`. It cannot be sent to the other
- * peers of a session either: `app.enqueue` throws.
+ * An action without a schema can't be saved while it waits for a tick:
+ * `app.save()` fails with `SaveRefused`. It can't be sent to the other peers of
+ * a session either: `app.enqueue` throws.
  *
  * @category Constructors
  */
@@ -125,31 +123,27 @@ export function define(
 }
 
 /**
- * Where an action came from, which a handler is told beside its payload.
+ * Where an action came from, which a handler receives alongside its payload.
  *
- * It is stamped on the way in by whatever brought the action, and is no
- * part of the payload, so whoever issued the action does not get to say:
- * a session stamps each peer's actions with that peer's name. (bevy_replicon
- * hands a server its clients' messages the same way, wrapped in a
- * `FromClient` that holds the sender's id, and bevy_ggrs gives each
- * player's input under that player's handle.)
+ * Whatever delivered the action stamps it on the way in. It isn't part of the
+ * payload, so the issuer can't claim another identity: a session stamps each
+ * peer's actions with that peer's name.
  *
  * @category Models
  */
 export interface Origin {
   /**
-   * Who issued the action: the name of a peer of the session, or whatever
-   * name it was given with `enqueueByName` or `dispatchByName`. Undefined
-   * for an action this program issued itself: one enqueued or dispatched
-   * through the app in a game of one, or issued by the simulation with
-   * `Actions`.
+   * The peer that issued the action: a peer name of the session, or the name
+   * passed to `enqueueByName` or `dispatchByName`. Undefined for an action this
+   * program issued itself: one enqueued or dispatched through the app in a
+   * single-player game, or issued by the simulation with `Actions`.
    */
   readonly from: string | undefined;
 }
 
 /**
- * How an action is applied: the action, and what it does with a payload
- * and who issued it. Made with `Action.handler`.
+ * How an action is applied: the action, and what it does with a payload and its
+ * issuer. Made with `Action.handler`.
  *
  * @category Models
  */
@@ -159,26 +153,26 @@ export interface Handler<N extends string, P, A, E, R> {
 }
 
 /**
- * Defines how an action is checked against the rules and applied. Must finish
- * synchronously. For an action with a schema, the payload it receives has
- * already been validated.
+ * Defines how an action is validated against the rules and applied. It must
+ * complete synchronously. For an action with a schema, the payload it receives
+ * is already validated.
  *
- * Beside the payload it is told where the action came from, `{ from }`:
- * in a game of several peers, the peer that issued it.
- *
- * **Gotchas**
- *
- * - A handler cannot dispatch another action, which throws. It issues one
- *   with `Actions.enqueue`, and a refusal takes that back too.
- * - A refusal takes back what the handler did to the world, and nothing
- *   outside it: not an object held in a field and changed in place, a call
- *   to a service of the game's own, or a script it started.
+ * Alongside the payload, it receives where the action came from, `{ from }`: in
+ * a multiplayer game, the peer that issued it.
  *
  *   const pass = Action.handler(Pass, function* (_, { from }) {
  *     const turn = yield* Turn
  *     if (turn.player !== from) return yield* Effect.fail(new NotYourTurn())
  *     ...
  *   })
+ *
+ * **Gotchas**
+ *
+ * - A handler can't dispatch another action, which throws. It issues one with
+ *   `Actions.enqueue` instead, and a refusal rolls that back too.
+ * - A refusal rolls back what the handler did to the world, and nothing outside
+ *   it: not an object held in a field and mutated in place, not a call to your
+ *   game's own service, and not a script it started.
  *
  * @category Constructors
  */
@@ -202,45 +196,42 @@ export const handler = <
 });
 
 /**
- * One action that came from outside the simulation, as recorded in
- * `app.actionLog`: one that was dispatched and accepted, or one that was
- * enqueued.
+ * One action from outside the simulation, as recorded in `app.actionLog`: a
+ * dispatched action that was accepted, or an enqueued one.
  *
  * @category Models
  */
 export interface Logged {
-  /** How many ticks had completed when the action was dispatched or enqueued. */
+  /** The number of ticks completed when the action was dispatched or enqueued. */
   readonly tick: number;
   readonly name: string;
   /** For an action with a schema, the payload in its JSON form. */
   readonly payload: unknown;
   /**
-   * Who issued it, when it came with a name: a peer of the session. Absent
-   * on an action this program issued itself.
+   * The peer that issued it, when it came with a name. Absent for an action
+   * this program issued itself.
    */
   readonly from?: string;
   /**
-   * Present on an action that was enqueued: it was applied at the start of
-   * the next tick, and a replay enqueues it again. Absent on one that was
-   * dispatched.
+   * Present on an enqueued action: it was applied at the start of the next
+   * tick, and a replay enqueues it again. Absent on a dispatched one.
    */
   readonly queued?: true;
   /**
-   * Present on an enqueued action that was refused when its turn came: why,
-   * in a few words. A refused action that was dispatched is not logged.
+   * Present on an enqueued action that was refused when its turn came, with a
+   * short reason. A dispatched action that was refused isn't logged.
    */
   readonly refused?: string;
 }
 
 /**
- * What the world's hash was at one point of the game, as recorded in
- * `app.actionLog`. A replay compares its own world against it, which is how
- * it notices that it has gone another way.
+ * The world's hash at one point in the game, as recorded in `app.actionLog`. A
+ * replay compares its own world against it to detect divergence.
  *
  * @category Models
  */
 export interface Checkpoint {
-  /** How many ticks had completed when the hash was taken. */
+  /** The number of ticks completed when the hash was taken. */
   readonly tick: number;
   /** `world.hash()` at that point. */
   readonly hash: number;
@@ -254,7 +245,7 @@ export interface Checkpoint {
 export type LogEntry = Logged | Checkpoint;
 
 /**
- * Whether an entry of the log is a checkpoint, the world's hash at a tick,
+ * Returns whether a log entry is a checkpoint, the world's hash at a tick,
  * rather than an action.
  *
  * @category Guards
@@ -286,7 +277,7 @@ const LogSchema = Schema.fromJsonString(
 );
 
 /**
- * Turns an action log into text, for a save file or the network.
+ * Encodes an action log as text, for a save file or the network.
  *
  * @category Codecs
  */
@@ -294,9 +285,9 @@ export const encodeLog = (log: readonly LogEntry[]): string =>
   JSON.stringify(log);
 
 /**
- * Reads an action log back from text. This checks the log's own shape; each
- * payload is checked against its action's schema, and each checkpoint
- * against the world, when the log is replayed.
+ * Decodes an action log from text. It checks the log's own structure; each
+ * payload is validated against its action's schema, and each checkpoint against
+ * the world, when the log is replayed.
  *
  * @category Codecs
  */
@@ -309,8 +300,8 @@ export const decodeLog = (
   >;
 
 /**
- * Emitted when a queued action is refused. (An action dispatched directly
- * returns its failure to the caller instead.)
+ * Emitted when a queued action is refused. A directly dispatched action returns
+ * its failure to the caller instead.
  *
  * @category Events
  */
@@ -318,21 +309,21 @@ export const Rejected = Event.define<{
   readonly action: string;
   readonly payload: unknown;
   readonly error: unknown;
-  /** Who had issued it, as its handler would have been told. */
+  /** The peer that issued it, as its handler would have received it. */
   readonly from: string | undefined;
 }>("Action.Rejected");
 
 /**
  * Lets systems, scripts and handlers issue actions, so AI plays by the same
  * rules as players. The action is applied at the start of the next tick. It
- * is not logged: it is the simulation's own doing, and a replay does it
+ * isn't logged, since it is the simulation's own doing and a replay does it
  * again. Code outside the simulation uses `app.dispatch` or `app.enqueue`.
  *
  * **Gotchas**
  *
- * A system of the frame stage or the input stage is outside the simulation,
- * and a replay runs neither. What it issues here is logged, as
- * `app.enqueue` logs it.
+ * A frame-stage or input-stage system is outside the simulation, and a replay
+ * runs neither stage, so what it issues here is logged, as `app.enqueue` logs
+ * it.
  *
  * @category Services
  */
@@ -344,8 +335,8 @@ export class Actions extends Context.Service<
       payload: P
     ) => void;
     /**
-     * Whether the game has a handler for an action. One it has none for
-     * cannot be issued: `enqueue` throws.
+     * Returns whether the game has a handler for an action. An action without
+     * one can't be issued: `enqueue` throws.
      */
     readonly handles: (action: ActionDef<string, any, unknown>) => boolean;
   }

@@ -1,14 +1,13 @@
 /**
- * The bytes of a world's snapshot: how they are written and read back.
+ * The binary format of a world's snapshot: how it is written and read back.
  * `World.snapshot` and `World.load` decide what goes in; this file is the
  * encoding.
  *
- * Whole numbers are little-endian. A column of numbers is the bytes of its
- * typed array, as they are in memory, which is the same thing on every
- * machine JavaScript runs on today. A value of a `json` field, or of a `ref`
- * field once its codec has encoded it, is a tag byte and then the value;
- * an array or an object is its JSON text. A `transient` field is not
- * written.
+ * Integers are little-endian. A numeric column is the bytes of its typed array,
+ * as they are in memory, which is the same on every machine JavaScript runs on
+ * today. A `json` field's value, or a `ref` field's value once its codec has
+ * encoded it, is a tag byte followed by the value; an array or an object is its
+ * JSON text. A `transient` field isn't written.
  *
  * No Effect dependency.
  */
@@ -16,7 +15,7 @@ import { isBoxed } from "./component";
 import type { Column, FieldKind, RefCodec } from "./component";
 
 /**
- * Why a snapshot could not be taken, or could not be loaded.
+ * Why a snapshot couldn't be taken or loaded.
  *
  * @category Models
  */
@@ -31,16 +30,16 @@ export type SnapshotProblem =
   | "cannot be saved";
 
 /**
- * A snapshot could not be taken or loaded. `problem` says which kind of
- * trouble it is, for code; the message says it for a person, with the name
- * of the component or field where there is one.
+ * A snapshot couldn't be taken or loaded. `problem` identifies the kind of
+ * failure for code, and the message explains it for a person, naming the
+ * component or field where there is one.
  *
  * @category Errors
  */
 export class SnapshotError extends Error {
   override readonly name = "SnapshotError";
   readonly problem: SnapshotProblem;
-  /** The component the problem is with, when it is with one. */
+  /** The component the problem concerns, if any. */
   readonly component: string | undefined;
 
   constructor(problem: SnapshotProblem, message: string, component?: string) {
@@ -53,19 +52,18 @@ export class SnapshotError extends Error {
 /** "AKWS": arcadekit world snapshot. */
 export const MAGIC = 0x53574b41;
 /**
- * Format 2 added singletons. Format 3 widened an entity's id: a slot's
- * generation is four bytes where it was two, and an id is eight where it
- * was four, in a table's list of entities and in an `entity` field. An id
- * of an older format is the same number in a narrower place, and formats 1
- * and 2 are read as well.
+ * Format 2 added singletons. Format 3 widened entity ids: a slot's generation
+ * is four bytes instead of two, and an id is eight bytes instead of four, both
+ * in a table's entity list and in an `entity` field. An older id is the same
+ * number stored in fewer bytes, and formats 1 and 2 are still read.
  */
 export const FORMAT = 3;
-/** The last four bytes, so that a snapshot cut short at a boundary still shows. */
+/** The last four bytes, so a snapshot truncated at a boundary is still detected. */
 export const END = 0x21444e45;
 
 const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
-/** Bytes per element of a column of numbers. */
+/** Bytes per element of a numeric column. */
 export const WIDTH: Record<
   Exclude<FieldKind, "json" | "ref" | "transient">,
   number
@@ -79,7 +77,7 @@ export const WIDTH: Record<
   u8: 1,
 };
 
-/** How a component's data is kept, by the byte a snapshot writes for it. */
+/** How a component's data is stored, by the byte a snapshot writes for it. */
 export const STORAGES = ["table", "sparse", "singleton"] as const;
 
 export const KIND_CODES: readonly FieldKind[] = [
@@ -162,7 +160,7 @@ export class Writer {
     this.at += utf8.length;
   }
 
-  /** The first `count` elements of a typed array, as its bytes. */
+  /** Writes the first `count` elements of a typed array as bytes. */
   numbers(column: ArrayBufferView, count: number, width: number): void {
     const length = count * width;
     this.room(length);
@@ -174,10 +172,10 @@ export class Writer {
   }
 
   /**
-   * One value of plain data. A string, a number, a boolean, a bigint, null
-   * and undefined are written as they are, exactly: -0 and NaN too. An
-   * array or an object is written as its JSON text. Returns false for a
-   * value that has none: a function, a symbol, an object JSON cannot write.
+   * Writes one value of plain data. Strings, numbers, booleans, bigints, null
+   * and undefined are written exactly, including -0 and NaN. An array or an
+   * object is written as its JSON text. Returns false for a value with no such
+   * form: a function, a symbol, or an object JSON can't serialize.
    */
   value(value: unknown): boolean {
     switch (typeof value) {
@@ -225,7 +223,7 @@ export class Writer {
     }
   }
 
-  /** The bytes written, in an array of exactly their length. */
+  /** Returns the bytes written, in an array of exactly their length. */
   finish(): Uint8Array {
     return this.bytes.slice(0, this.at);
   }
@@ -247,12 +245,12 @@ export class Reader {
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   }
 
-  /** How many bytes are left to read. */
+  /** The number of bytes left to read. */
   get left(): number {
     return this.bytes.length - this.at;
   }
 
-  /** Refuses to go on unless `count` more bytes are there. */
+  /** Throws unless at least `count` more bytes remain. */
   need(count: number): void {
     if (count > this.left) {
       throw new SnapshotError(
@@ -282,9 +280,9 @@ export class Reader {
   }
 
   /**
-   * A count of things that each take at least `each` bytes. Checked against
-   * what is left before anything is allocated for it, so that a damaged
-   * count cannot ask for the moon.
+   * Reads a count of items that each take at least `each` bytes. It is checked
+   * against the remaining bytes before anything is allocated, so a damaged
+   * count can't request an absurd allocation.
    */
   count(each: number): number {
     const value = this.u32();
@@ -374,8 +372,8 @@ export class Reader {
 }
 
 /**
- * Writes rows `[0, count)` of a column. Returns the row it could not write,
- * or -1. A `transient` field writes nothing.
+ * Writes rows `[0, count)` of a column. Returns the first row it couldn't
+ * write, or -1. A `transient` field writes nothing.
  */
 export const writeColumn = (
   writer: Writer,
@@ -409,8 +407,8 @@ export const writeColumn = (
 };
 
 /**
- * Reads rows `[0, count)` of a column. A `transient` field reads nothing
- * and stays undefined. A codec that refuses a value throws what it throws.
+ * Reads rows `[0, count)` of a column. A `transient` field reads nothing and
+ * stays undefined. If a codec rejects a value, its error propagates.
  */
 export const readColumn = (
   reader: Reader,
@@ -452,27 +450,28 @@ export const readColumn = (
  */
 export interface SnapshotComponent {
   name: string;
-  /** Where its data is: in tables, in a sparse set, or one value for the world. */
+  /** Where its data is stored: in tables, in a sparse set, or as a single value for the world. */
   storage: "table" | "sparse" | "singleton";
   fields: { name: string; kind: FieldKind }[];
 }
 
 /**
- * One table of a snapshot: the components its entities have, and their rows.
+ * One table of a snapshot: its entities' components, and their rows.
  *
  * @category Models
  */
 export interface SnapshotTable {
-  /** Names of the table's components. */
+  /** The names of the table's components. */
   components: string[];
   /** The id of the entity in each row. */
   entities: Float64Array;
-  /** Per component name, per field name: one value per row. */
+  /** For each component name and field name, one value per row. */
   columns: Record<string, Record<string, Column>>;
 }
 
 /**
- * One sparse component of a snapshot: who has it, and their values.
+ * One sparse component of a snapshot: the entities that have it, and their
+ * values.
  *
  * @category Models
  */
@@ -480,29 +479,28 @@ export interface SnapshotSparse {
   component: string;
   /** The index (not the id) of each entity that has the component. */
   members: Uint32Array;
-  /** Per field name: one value per member. */
+  /** For each field name, one value per member. */
   columns: Record<string, Column>;
 }
 
 /**
- * One singleton of a snapshot: the value the world held of it.
+ * One singleton of a snapshot: the world's value for it.
  *
  * @category Models
  */
 export interface SnapshotSingleton {
   component: string;
-  /** Per field name: a column of the one value. */
+  /** For each field name, a column holding the single value. */
   columns: Record<string, Column>;
 }
 
 /**
- * Everything a snapshot holds, read without knowing the program's
- * components: a snapshot describes its own. This is the form a migration
- * works on, to make an old save fit the components a game has now.
+ * Everything a snapshot holds, read without the program's component
+ * definitions, since a snapshot describes its own. Migrations work on this
+ * form, to make an old save match the game's current components.
  *
- * A `json` field's column holds the plain data itself. A `ref` field's
- * column holds what its codec had made of each value. A `transient` field
- * has no column.
+ * A `json` field's column holds the plain data itself. A `ref` field's column
+ * holds each value as its codec encoded it. A `transient` field has no column.
  *
  * @category Models
  */
@@ -554,7 +552,7 @@ const damaged = (how: string): SnapshotError =>
   new SnapshotError("corrupt", `The snapshot is damaged: ${how}.`);
 
 /**
- * Reads a snapshot into its contents. Needs no component definitions.
+ * Reads a snapshot into its contents, without needing component definitions.
  *
  * @category Codecs
  */
@@ -702,10 +700,10 @@ const byName = (a: { name: string }, b: { name: string }): number =>
   a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 
 /**
- * Writes contents back into the bytes of a snapshot. What it is given has
- * to hang together: every component a table or a sparse set names is
- * listed, and every field that is saved has a column of one value per row.
- * `World.load` checks the rest when it reads the result.
+ * Writes contents back into snapshot bytes. The contents must be consistent:
+ * every component a table or a sparse set names is listed, and every saved
+ * field has a column with one value per row. `World.load` checks the rest when
+ * it reads the result.
  *
  * @category Codecs
  */

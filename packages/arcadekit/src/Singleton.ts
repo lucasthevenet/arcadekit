@@ -1,6 +1,6 @@
 /**
- * Singletons: one instance of some data per world, such as whose turn it
- * is, without a query and a loop to read it.
+ * Singletons hold data that exists once per world, such as whose turn it is, so
+ * you can read it without a query and a loop.
  *
  *   const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 })
  *
@@ -8,11 +8,10 @@
  *   if (turn.player !== mine) return yield* Effect.fail(new NotYourTurn())
  *   turn.player = turn.player === 1 ? 2 : 1
  *
- * The value is the world's. It is saved with the world and counted in its
- * hash, and what a refused action wrote to it is taken back with the rest.
- * A `Resource` is the other kind of single value: configuration with a
- * default that a layer can override, which is not game state and is not
- * saved.
+ * The value belongs to the world: it is saved with it and included in its hash,
+ * and a refused action's writes to it are rolled back with everything else. For
+ * configuration that isn't game state, use a `Resource`: a value with a default
+ * that a layer can override, which isn't saved.
  */
 import { Effect, Effectable } from "effect";
 
@@ -26,8 +25,8 @@ import type {
 import { World } from "./Services";
 
 /**
- * A singleton's definition. It is an Effect, so `yield*` gives the world's
- * value of it: an object whose fields are read and written in place.
+ * A singleton's definition. It is an Effect, so `yield*` returns the world's
+ * value: an object whose fields you read and write in place.
  *
  * @category Models
  */
@@ -44,7 +43,7 @@ export class Singleton<S extends Schema>
     super();
   }
 
-  /** The singleton's name: one of the world's component names. */
+  /** The singleton's name, which is one of the world's component names. */
   get name(): string {
     return this.component.name;
   }
@@ -57,22 +56,20 @@ export class Singleton<S extends Schema>
 }
 
 /**
- * Defines a singleton: its name, its fields, and the value it has in a
- * world that has not written it.
+ * Defines a singleton: its name, its fields, and its value in a world that
+ * hasn't written it.
  *
- * - The fields are a component's: numbers in typed fields, and `Field.json`,
+ * - The fields are a component's: typed numeric fields, and `Field.json`,
  *   `Field.schema` or `Field.transient` for anything else.
- * - The name is one of the world's component names, prefixed with the
- *   feature it belongs to. List the singleton in a plugin's `components`,
- *   so that a save which names it can be loaded.
- * - Until it is written it holds `initial`, and is as good as absent: not
- *   saved, and a world that has only read it hashes the same as one that
- *   never asked. A game loaded from a save in which it had never been
- *   written starts it at the `initial` of the build that loads.
- * - No entity has it, and no query visits it: spawning or adding it
- *   throws.
- * - A migration changes it by name with `Migrate`, as it changes a
- *   component.
+ * - The name is one of the world's component names, prefixed with the feature
+ *   it belongs to. List the singleton in a plugin's `components`, so a save
+ *   that contains it can be loaded.
+ * - Until it is written, it holds `initial` and behaves as if absent: it isn't
+ *   saved, and a world that has only read it hashes the same as one that never
+ *   did. A game loaded from a save where it was never written starts it at the
+ *   `initial` of the build that loads it.
+ * - No entity has it, and no query visits it: spawning or adding it throws.
+ * - A migration changes it by name with `Migrate`, as it does a component.
  *
  * @category Constructors
  */

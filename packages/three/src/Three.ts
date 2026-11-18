@@ -1,11 +1,10 @@
 /**
- * Draws a game with Three.js. This is the package's `@arcadekit/three/Three`
- * entry.
+ * The `@arcadekit/three/Three` entry point, which draws a game with Three.js.
  *
  *   import * as Transform3d from "arcadekit/Transform3d"
  *   import * as Three from "@arcadekit/three/Three"
  *
- *   // The rules: a rock is somewhere. They know nothing of how it looks.
+ *   // The rules: a rock has a position. They know nothing about how it looks.
  *   commands.spawn(Rock, Transform3d.Position.of({ x: 0, y: 4, z: 0 }))
  *
  *   // The page: every rock is one instance of one mesh.
@@ -25,26 +24,26 @@
  *     )
  *   )
  *
- * Everything here is a system of the frame stage: it runs between ticks,
- * with the world frozen, and reads it. A game that is drawn is the same
- * game as one that is not, and a server or a replay installs none of this.
+ * Everything here is a frame-stage system: it runs between ticks, with the
+ * world frozen, and only reads it. A game that is drawn is the same game as one
+ * that isn't, and a server or a replay installs none of this.
  *
- * What is drawn is told from the components an entity has, and where from
+ * What is drawn depends on an entity's components, and where it is drawn on
  * arcadekit's own `Transform3d.Position`, with `Transform3d.Rotation` and
- * `Transform3d.Scale` for the entities that have them. A flat game's
- * `Transform2d` is drawn the same way, in the plane of x and y:
+ * `Transform3d.Scale` for entities that have them. A 2D game's `Transform2d` is
+ * drawn the same way, in the x-y plane:
  *
- * - `Three.instances` draws every entity of a kind as one instance of one
- *   mesh. It reads the columns raw and writes one matrix each into the
- *   mesh's buffer: no object is made per entity, and nothing is allocated
- *   per entity per frame.
- * - `Three.objects` keeps one Object3D per entity, made when the entity
- *   first matches and let go when it no longer does, and copies the
- *   entity's place into it each frame. For the few things that are more
- *   than a copy of a mesh.
- * - Either takes a look that is there from the start, or one made of a
- *   bundle's assets (`from`), which is there while the bundle is loaded.
- *   `Three.texture` is the asset that is a texture.
+ * - `Three.instances` draws every entity of a kind as one instance of one mesh.
+ *   It reads the columns directly and writes one matrix each into the mesh's
+ *   buffer: no object is created per entity, and nothing is allocated per
+ *   entity per frame.
+ * - `Three.objects` keeps one Object3D per entity, created when the entity
+ *   first matches and released when it stops matching, and copies the entity's
+ *   transform into it each frame. Use it for the few things that are more than
+ *   a copy of a mesh.
+ * - Either takes a look available from the start, or one built from a bundle's
+ *   assets (`from`), available while the bundle is loaded. `Three.texture` is
+ *   the texture asset.
  * - `Three.Render` then draws the scene, through `Three.Renderer`.
  */
 import * as Assets from "arcadekit/Assets";
@@ -83,13 +82,13 @@ import type {
 
 // --- the scene -------------------------------------------------------------------
 
-/** What a system of this module has made of the game, and lets go with the app. */
+/** What a system of this module has created, released with the app. */
 interface Kept {
   readonly dispose: () => void;
   /**
-   * Asked just before the scene is drawn, of what is made of assets: are
-   * they still there? What is not is taken out of the scene now, so that
-   * nothing is drawn with what was let go since its system ran.
+   * Called just before the scene is drawn, for things built from assets: are
+   * the assets still loaded? Anything whose assets aren't is removed from the
+   * scene now, so nothing is drawn with assets released since its system ran.
    */
   readonly settle?: () => void;
 }
@@ -100,11 +99,11 @@ interface Kept {
  * @category Services
  */
 export interface SceneShape {
-  /** The scene everything is drawn into. Lights and the rest are added to it. */
+  /** The scene everything is drawn into. Add lights and anything else to it. */
   readonly scene: ThreeScene;
   /**
-   * What the scene is seen through. A perspective camera at (0, 0, 10)
-   * looking at the origin, until it is moved or replaced.
+   * The camera the scene is viewed through. Defaults to a perspective camera at
+   * (0, 0, 10) looking at the origin, until it is moved or replaced.
    */
   camera: Camera;
   /**
@@ -116,9 +115,9 @@ export interface SceneShape {
 }
 
 /**
- * An app's scene and its camera. `Three.plugin` provides it; a plugin that
- * depends on that one sets the scene up in its `layer`, and a system of the
- * frame stage moves the camera:
+ * An app's scene and camera. `Three.plugin` provides it; a plugin that depends
+ * on that one sets up the scene in its `layer`, and a frame-stage system moves
+ * the camera:
  *
  *   const Lights = Layer.effectDiscard(
  *     Effect.map(Three.Scene, ({ scene, camera }) => {
@@ -128,7 +127,7 @@ export interface SceneShape {
  *     })
  *   )
  *
- * It is what draws the game, not the game: nothing in a tick reads it, and
+ * It belongs to the rendering, not the game: nothing in a tick reads it, and
  * none of it is saved.
  *
  * @category Services
@@ -160,8 +159,8 @@ const sceneLayer = Layer.effect(
 // --- the renderer ----------------------------------------------------------------
 
 /**
- * What draws: a renderer of Three.js, or a test's that notes what it was
- * asked to draw.
+ * What draws: a Three.js renderer, or a test's renderer that records what it
+ * was asked to draw.
  *
  * @category Services
  */
@@ -171,11 +170,11 @@ export interface RendererShape {
 }
 
 /**
- * What draws the scene. It comes from outside the app, since it needs a
- * canvas: `Three.layerWebGL({ canvas })` in a page. A game that installs
- * `Three.plugin` and provides none does not compile. A test provides one
- * that draws nothing, or notes what it was asked, and looks at what was
- * put in the scene, which Three.js makes under Node as in a page:
+ * What draws the scene. It comes from outside the app, since it needs a canvas:
+ * `Three.layerWebGL({ canvas })` in a page. A game that installs `Three.plugin`
+ * without providing one doesn't compile. A test provides one that draws
+ * nothing, or records what it was asked, and inspects the scene, which Three.js
+ * builds under Node as in a page:
  *
  *   Layer.succeed(Three.Renderer, { render(scene, camera) {} })
  *
@@ -186,13 +185,13 @@ export class Renderer extends Context.Service<Renderer, RendererShape>()(
 ) {}
 
 /**
- * As much of a Three.js renderer as is used. `WebGLRenderer` is one, and so
- * is `WebGPURenderer`.
+ * The parts of a Three.js renderer that are used. `WebGLRenderer` and
+ * `WebGPURenderer` both satisfy it.
  *
  * @category Models
  */
 export interface RendererLike {
-  /** The canvas. Its size on the page is what the picture is fitted to. */
+  /** The canvas. The image is fitted to its size on the page. */
   readonly domElement: {
     readonly clientWidth?: number;
     readonly clientHeight?: number;
@@ -204,21 +203,21 @@ export interface RendererLike {
 }
 
 /**
- * How a page's renderer follows its canvas.
+ * Options for how a page's renderer follows its canvas.
  *
  * @category Options
  */
 export interface FitOptions {
   /**
-   * Whether the picture follows the size the canvas has on the page: when
-   * that changes, the renderer is resized, without touching the canvas's
-   * style, and a perspective camera is given the new aspect. On unless
-   * told otherwise. A camera of another kind is the game's to fit.
+   * Whether the image follows the canvas's size on the page: when that changes,
+   * the renderer is resized, without touching the canvas's style, and a
+   * perspective camera gets the new aspect ratio. Defaults to true. Fitting any
+   * other kind of camera is up to your game.
    */
   readonly fit?: boolean;
   /**
-   * How many pixels are drawn per CSS pixel. The page's own
-   * (`devicePixelRatio`), up to 2, when left out.
+   * How many pixels are drawn per CSS pixel. Defaults to the page's
+   * `devicePixelRatio`, capped at 2.
    */
   readonly pixelRatio?: number;
 }
@@ -227,12 +226,13 @@ const isPerspective = (camera: Camera): camera is PerspectiveCamera =>
   (camera as { isPerspectiveCamera?: boolean }).isPerspectiveCamera === true;
 
 /**
- * A layer of a renderer of your own making, which is disposed of when the
+ * Returns a layer for a renderer you create, which is disposed of when the
  * scope it is provided to closes:
  *
  *   Three.layerRenderer(() => new WebGPURenderer({ canvas }))
  *
- * Provide it to the whole program, as `Browser.runMain` is given the page.
+ * Provide it to the whole program, as the page is provided with
+ * `Browser.runMain`.
  *
  * @category Layers
  */
@@ -286,8 +286,9 @@ export const layerRenderer = (
   );
 
 /**
- * A page's renderer: a `WebGLRenderer` on the canvas it is given, with the
- * parameters Three.js takes, fitted to the canvas unless told otherwise.
+ * Returns a layer for a page's renderer: a `WebGLRenderer` on the given canvas,
+ * with the parameters Three.js accepts, fitted to the canvas unless configured
+ * otherwise.
  *
  * @category Layers
  */
@@ -297,17 +298,17 @@ export const layerWebGL = (
   layerRenderer(() => new WebGLRenderer(parameters), parameters);
 
 /**
- * Draws the scene, once per frame. It is a system of the stage after a
- * frame's own, `"postFrame"`, so it runs after every system of the frame
- * stage, wherever each is listed and with nothing said: `Three.instances`
- * and `Three.objects`, and a system of the game's that moves the camera.
+ * Draws the scene once per frame. It runs in the stage after a frame's own,
+ * `"postFrame"`, so it runs after every frame-stage system, regardless of where
+ * each is listed and without any ordering: `Three.instances` and
+ * `Three.objects`, and your own system that moves the camera.
  *
  *   System.make("Follow", ...).pipe(System.inStage("frame"))
  *
- * Just before it draws, it asks of every kind that is made of a bundle's
- * assets whether they are still there, and takes out of the scene what is
- * not: nothing is drawn with assets that were let go, whichever of the
- * system that lets a bundle go and the one that draws with it runs first.
+ * Just before drawing, it checks whether the assets of every kind built from a
+ * bundle are still loaded, and removes from the scene whatever isn't: nothing
+ * is drawn with released assets, whichever runs first of the system that
+ * releases a bundle and the one that draws with it.
  *
  * @category Systems
  */
@@ -320,16 +321,15 @@ export const Render = System.make("arcadekit/three/Render", function* () {
 }).pipe(System.inStage("postFrame"));
 
 /**
- * Gives an app a scene and draws it each frame. The plugin that says how
- * the game looks lists it in `plugins`, and its systems, made with
+ * Gives an app a scene and draws it each frame. The plugin that defines how the
+ * game looks lists it in `plugins`, and its systems, made with
  * `Three.instances` and `Three.objects`, are drawn.
  *
  * The app then needs a `Three.Renderer` from outside:
  * `Effect.provide(Three.layerWebGL({ canvas }))`.
  *
- * It depends on `Transform3d.plugin` and on `Transform2d.plugin`, which
- * list the components that say where a thing is. This package has none of
- * its own.
+ * It depends on `Transform3d.plugin` and `Transform2d.plugin`, which register
+ * the transform components. This package defines no components of its own.
  *
  * @category Plugins
  */
@@ -341,11 +341,11 @@ export const plugin = Plugin.make("arcadekit/three", {
 
 // --- which entities ----------------------------------------------------------------
 
-/** A column of numbers, as a loop reads it. */
+/** A numeric column, as a loop reads it. */
 interface Numbers {
   readonly [row: number]: number;
 }
-/** The columns of a component of three numbers, as a loop reads them. */
+/** The columns of a three-number component, as a loop reads them. */
 interface Xyz {
   readonly x: Numbers;
   readonly y: Numbers;
@@ -360,7 +360,7 @@ interface Rgb {
 interface Xyzw extends Xyz {
   readonly w: { readonly [row: number]: number };
 }
-/** The columns of a flat game's position, or of its scale. */
+/** The columns of a 2D position or scale. */
 interface Xy {
   readonly x: { readonly [row: number]: number };
   readonly y: { readonly [row: number]: number };
@@ -376,26 +376,26 @@ interface Angle {
  */
 export interface Which {
   /**
-   * The component that says an entity is one of these, or several, all of
-   * which it has to have. It is drawn while it has them and a
-   * `Transform3d.Position`, or a `Transform2d.Position`.
+   * The component that marks an entity as one of these, or several, all of
+   * which it must have. It is drawn while it has them and a
+   * `Transform3d.Position` or a `Transform2d.Position`.
    */
   readonly of: ComponentDef<any> | readonly ComponentDef<any>[];
-  /** Components an entity must not have to be drawn: one that hides it, say. */
+  /** Components that prevent an entity from being drawn: one that hides it, for example. */
   readonly without?: readonly ComponentDef<any>[];
   /**
-   * Draws each entity between its last two places, and not where the last
-   * tick left it: at `Frame.alpha` of the way from where it was a tick ago
-   * to where it is. A game whose ticks and frames do not line up then
-   * moves evenly, up to a tick behind. Off unless told: `Three.instances`
-   * says what is drawn on the way.
+   * Interpolates each entity between its last two positions, instead of drawing
+   * it where the last tick left it: at `Frame.alpha` of the way from where it
+   * was a tick ago to where it is now. A game whose ticks and frames don't line
+   * up then moves smoothly, up to a tick behind. Defaults to false:
+   * `Three.instances` describes what is interpolated.
    */
   readonly smooth?: boolean;
   /**
-   * With `smooth`, how far an entity may go in one tick and still be drawn
-   * on the way. One that went further, off one edge and in at the other,
-   * say, is drawn where it is. Any distance, when left out. It is one
-   * distance per kind, in the units of the scene.
+   * With `smooth`, how far an entity may move in one tick and still be
+   * interpolated. One that moved further, for example wrapping from one edge to
+   * the other, is drawn where it is. Defaults to no limit. It is one distance
+   * per kind, in scene units.
    */
   readonly snap?: number;
 }
@@ -409,32 +409,32 @@ const required = (which: Which): readonly ComponentDef<any>[] =>
 // value it has, by the entity's index. It is the renderer's own, never the
 // world's: a game that is drawn smoothly is the same game.
 
-/** What the stores of one system agree on, for the frame that is being drawn. */
+/** What one system's stores agree on, for the frame being drawn. */
 interface Clock {
   /**
-   * The app's frame, counted from 2: 0 in a store means never seen. It is
-   * the app's count and not the system's own, so that an entity is known
-   * to have been drawn in the frame before, and not merely the last time
-   * the system ran.
+   * The app's frame number, counted from 2, since 0 in a store means never
+   * seen. It is the app's count, not the system's, so the store knows the
+   * entity was drawn in the previous frame, not merely the last time the system
+   * ran.
    */
   stamp: number;
-  /** Whether a tick ran since the frame before: what was current is now a tick old. */
+  /** Whether a tick ran since the previous frame, which makes the current values a tick old. */
   shift: boolean;
   /** How far the frame is between the last two ticks. */
   alpha: number;
 }
 
-/** The two values of one component, per entity, and the columns they are blended into. */
+/** One component's two values per entity, and the columns they are blended into. */
 abstract class Blend {
   protected readonly clock: Clock;
   private readonly width: number;
-  /** Per entity index: the entity whose values these are, by its id. */
+  /** For each entity index, the id of the entity these values belong to. */
   protected owner = new Float64Array(0);
-  /** Per entity index: the frame its entity was last drawn in. */
+  /** For each entity index, the frame its entity was last drawn in. */
   protected seen = new Uint32Array(0);
   protected prev = new Float32Array(0);
   protected cur = new Float32Array(0);
-  /** How many rows the blended columns have room for. */
+  /** The number of rows the blended columns have room for. */
   protected rows = 0;
 
   constructor(clock: Clock, width: number) {
@@ -475,18 +475,18 @@ abstract class Blend {
     }
   }
 
-  /** Makes the blended columns anew, with this many rows. */
+  /** Reallocates the blended columns with this many rows. */
   protected abstract widen(rows: number): void;
 }
 
-/** A place or a size in three dimensions: each number goes straight from one to the other. */
+/** A 3D position or size: each number is interpolated linearly. */
 class Lerp3 extends Blend {
   private readonly out = {
     x: new Float32Array(0),
     y: new Float32Array(0),
     z: new Float32Array(0),
   };
-  /** The square of how far is too far to have gone in a tick. */
+  /** The square of the distance that is too far to have moved in one tick. */
   private readonly snap: number;
 
   constructor(clock: Clock, snap = Infinity) {
@@ -504,7 +504,7 @@ class Lerp3 extends Blend {
     return this.run(start, end, from.x, from.y, from.z, entities);
   }
 
-  /** As `blend`, of three columns whatever they are called: a colour's, for one. */
+  /** Like `blend`, for any three columns, such as a colour's. */
   run(
     start: number,
     end: number,
@@ -557,7 +557,7 @@ class Lerp3 extends Blend {
   }
 }
 
-/** A flat game's place or size. */
+/** A 2D position or size. */
 class Lerp2 extends Blend {
   private readonly out = { x: new Float32Array(0), y: new Float32Array(0) };
   private readonly snap: number;
@@ -610,8 +610,8 @@ class Lerp2 extends Blend {
 }
 
 /**
- * A turn in three dimensions: from one quaternion towards the other by the
- * shorter way. What comes out is not of length 1, and need not be.
+ * A 3D rotation: from one quaternion towards the other along the shorter arc.
+ * The result isn't normalized, and doesn't need to be.
  */
 class Nlerp4 extends Blend {
   private readonly out = {
@@ -686,7 +686,7 @@ class Nlerp4 extends Blend {
 
 const TURN = Math.PI * 2;
 
-/** A flat game's turn: from one angle to the other by the shorter way round. */
+/** A 2D rotation: from one angle to the other the shorter way round. */
 class Arc extends Blend {
   private readonly out = { angle: new Float32Array(0) };
 
@@ -728,7 +728,7 @@ class Arc extends Blend {
   }
 }
 
-/** Everything one system keeps to draw its entities between two ticks. */
+/** Everything one system keeps to interpolate its entities between two ticks. */
 class Smooth {
   private readonly clock: Clock = { stamp: 0, shift: false, alpha: 0 };
   private tick = -1;
@@ -750,7 +750,7 @@ class Smooth {
     this.color = new Lerp3(this.clock);
   }
 
-  /** A frame begins: which it is, which tick the game is at, and how far towards the next. */
+  /** Starts a frame: its number, the game's tick, and how far it is towards the next. */
   begin(tick: number, alpha: number, frame: number): void {
     this.clock.stamp = frame + 1;
     this.clock.shift = tick !== this.tick;
@@ -764,14 +764,13 @@ const smoothOf = (which: Which): Smooth | undefined =>
 
 // --- what is made of assets ----------------------------------------------------------
 
-/** The assets of a bundle, whatever they are. */
+/** The assets of a bundle, whatever their types. */
 // `any`: an asset is of whatever its `decode` makes.
 type Entries = Readonly<Record<string, Assets.Asset<any>>>;
 
 /**
- * What a system makes of a bundle's assets: there while the app holds the
- * bundle loaded, let go when it does not, and made again of what is loaded
- * next.
+ * What a system builds from a bundle's assets: available while the app has the
+ * bundle loaded, released when it doesn't, and rebuilt from the next load.
  */
 class FromAssets<T extends Kept> implements Kept {
   private assets: unknown;
@@ -783,13 +782,13 @@ class FromAssets<T extends Kept> implements Kept {
     private readonly make: (assets: any) => T
   ) {}
 
-  /** The assets the app holds now, if it holds them. */
+  /** Returns the assets the app currently holds, if any. */
   private held(): unknown {
     const status = this.store.status(this.bundle);
     return status._tag === "Ready" ? status.assets : undefined;
   }
 
-  /** What is made of the assets the app holds now, if it holds them. */
+  /** Returns what is built from the assets the app currently holds, if it holds them. */
   now(): T | undefined {
     // Loaded again is loaded anew: other pictures, though of the same files.
     const assets = this.held();
@@ -819,29 +818,29 @@ class FromAssets<T extends Kept> implements Kept {
 }
 
 /**
- * What `Three.texture` is told of a picture.
+ * Options for an image loaded with `Three.texture`.
  *
  * @category Options
  */
 export interface TextureOptions {
   /**
-   * Called once with the texture, before it is ever sent to the renderer:
-   * to say it is not colours, or how it repeats and is filtered.
+   * Called once with the texture, before it is first uploaded to the renderer:
+   * to mark it as non-colour data, or to set its wrapping and filtering.
    */
   readonly prepare?: (texture: Texture) => void;
   /**
-   * Whether the picture is turned over as it is decoded, so that its
-   * first row is at the top of a geometry of Three.js: `true` when left
-   * out, as a `TextureLoader` gives it. `false` leaves it as the file has
-   * it, which is what a model's own coordinates expect.
+   * Whether the image is flipped vertically on decode, so its first row is at
+   * the top of a Three.js geometry. Defaults to `true`, as a `TextureLoader`
+   * does. `false` leaves it as stored in the file, which is what a model's own
+   * UV coordinates expect.
    */
   readonly flipY?: boolean;
 }
 
 /**
- * An asset that is a picture to draw with: a `Texture` of Three.js, in a
- * bundle with the rest of a level's, and disposed of, with the picture it
- * was made of, when the scope it was loaded in closes.
+ * Makes a texture asset: a Three.js `Texture`, in a bundle with the rest of a
+ * level's assets, disposed of along with its image when the scope it was loaded
+ * in closes.
  *
  *   const Forest = Assets.bundle("game/Forest", {
  *     bark: Three.texture("/bark.png"),
@@ -852,17 +851,16 @@ export interface TextureOptions {
  *     }),
  *   })
  *
- * - It is a picture of colours, sRGB, unless `prepare`, which is handed
- *   the texture once, says otherwise.
- * - It is the right way up for the geometries of Three.js, unless
- *   `flipY: false` says to leave it as the file has it. That is said
- *   here and not in `prepare`: a bitmap is turned over when it is
- *   decoded, and Three.js does not read `flipY` of one after. Setting it
- *   in `prepare` would do nothing, so it fails the load with an error
- *   that says so.
- * - It is decoded off the page's thread, by `createImageBitmap`, which a
- *   page has and Node does not.
- * - A file that is no picture fails the bundle with `Assets.AssetFailed`,
+ * - It is an sRGB colour image, unless `prepare`, which receives the texture
+ *   once, says otherwise.
+ * - It is oriented for Three.js geometries, unless `flipY: false` keeps it as
+ *   stored in the file. This is set here and not in `prepare`: a bitmap is
+ *   flipped when it is decoded, and Three.js ignores a bitmap's `flipY`
+ *   afterwards. Setting it in `prepare` would do nothing, so it fails the load
+ *   with an error that explains this.
+ * - It is decoded off the page's main thread by `createImageBitmap`, which
+ *   pages have and Node doesn't.
+ * - A file that isn't an image fails the bundle with `Assets.AssetFailed`,
  *   which names the URL.
  *
  * @category Constructors
@@ -917,17 +915,17 @@ export const texture = (
 // --- instances -------------------------------------------------------------------
 
 /**
- * How finely a colour is converted: the table has one more entry than
- * this. Sixteen steps to each of a byte's 255, so that a byte is at a step
- * exactly, and a float is within a thirty-second of a byte of one.
+ * How finely a colour is converted; the table has one more entry than this.
+ * Sixteen steps for each of a byte's 255, so every byte value falls exactly on
+ * a step, and any float is within a thirty-second of a byte of one.
  */
 const STEPS = 4080;
 
 /**
- * What a number of an sRGB colour is in linear colour, which is what a
- * renderer works in: the curve of the standard, at each of the table's
- * steps from 0 to 1. A raised power per number per instance per frame
- * would cost more than the rest of the instance does.
+ * The linear value of each sRGB channel value, which is what a renderer works
+ * in: the standard's transfer curve, at each of the table's steps from 0 to 1.
+ * Computing a power per channel per instance per frame would cost more than the
+ * rest of the instance.
  */
 const LINEAR = /* @__PURE__ */ (() => {
   const table = new Float32Array(STEPS + 1);
@@ -938,13 +936,13 @@ const LINEAR = /* @__PURE__ */ (() => {
   return table;
 })();
 
-/** Whether a field holds whole numbers: a colour's are then bytes. */
+/** Returns whether a field holds integers, in which case a colour's values are bytes. */
 const isWhole = (kind: string): boolean =>
   kind === "u8" || kind === "u16" || kind === "u32" || kind === "i32";
 
 /**
- * A component of the game's that is a colour: three numbers, `r`, `g` and
- * `b`, kept in a table. What else it has is not read.
+ * A game component that is a colour: three numbers, `r`, `g` and `b`, stored in
+ * a table. Any other fields are ignored.
  *
  * @category Models
  */
@@ -957,7 +955,7 @@ export type ColorComponent = ComponentDef<any, "table"> & {
 };
 
 /**
- * How an instance looks: the one geometry and the one material of its mesh.
+ * How an instance looks: its mesh's geometry and material.
  *
  * @category Models
  */
@@ -967,74 +965,70 @@ export interface Look {
 }
 
 /**
- * What `Three.instances` is told, however its look is come by.
+ * The options of `Three.instances`, wherever its look comes from.
  *
  * @category Models
  */
 export interface InstancesShared extends Which {
   /**
-   * A component of the game's that gives each instance a colour of its
-   * own: its `r`, `g` and `b`, from 0 to 1, by which the material's own
-   * colour is multiplied. An entity is then one of these only while it has
-   * that component too.
+   * A game component that gives each instance its own colour: its `r`, `g` and
+   * `b`, from 0 to 1, which multiply the material's own colour. An entity is
+   * then only drawn while it has that component too.
    *
    *   const Paint = Component.define("game/Paint", { r: Field.f32, g: Field.f32, b: Field.f32 })
    *   Three.instances("game/Rocks", { of: Rock, geometry, material, color: Paint })
    *
-   * The numbers are a colour as a hex code or a style sheet writes it,
-   * unless `colorSpace` says otherwise: `#ff6188` is an `r` of
-   * `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`. Fields
-   * of floats hold 0 to 1; fields of whole numbers (`Field.u8`) hold the
-   * bytes themselves, 0 to 255. The three are all one or all the other,
-   * and a component that is no colour, one that is sparse or lacks a
-   * field, throws when the system is made.
+   * The values are a colour as a hex code or a style sheet writes it, unless
+   * `colorSpace` says otherwise: `#ff6188` is an `r` of `0xff / 255`, a `g` of
+   * `0x61 / 255` and a `b` of `0x88 / 255`. Float fields hold 0 to 1; integer
+   * fields (`Field.u8`) hold the bytes themselves, 0 to 255. All three fields
+   * must be of one kind or the other, and a component that isn't a colour, is
+   * sparse or lacks a field throws when the system is created.
    *
-   * With `smooth` a colour changes evenly between two ticks, as a place
-   * does, however far it goes: `snap` does not apply to it. It changes in
-   * the numbers the game has, and is converted then.
+   * With `smooth`, a colour changes smoothly between two ticks, like a
+   * position, however far it changes: `snap` doesn't apply to it. It is
+   * interpolated in the game's values, then converted.
    */
   readonly color?: ColorComponent;
   /**
-   * The colour space the numbers of `color` are in, by the names Three.js
-   * gives them.
+   * The colour space of `color`'s values, using Three.js's names.
    *
-   * - `"srgb"`, when left out: what a hex code holds, and what a colour
-   *   picker shows. Each number is converted for the renderer, which
-   *   works in linear colour, through a table: a byte exactly, and a
-   *   float to a sixteenth of a byte, finer than a screen shows. A number that is not from
-   *   0 to 1, or from 0 to 255 in a field of whole numbers, is no colour,
-   *   and fails the frame with an error that names the entity.
-   * - `"srgb-linear"`: the renderer's own working space, what
-   *   `new Color("#ff6188")` of Three.js has as its `r`, `g` and `b`. The
-   *   numbers are handed over as they are and nothing is checked: a
-   *   number over 1 is brighter than white, which a renderer that blooms
-   *   can show.
+   * - `"srgb"`, the default: what a hex code holds and a colour picker shows.
+   *   Each value is converted for the renderer, which works in linear colour,
+   *   through a lookup table: exact for a byte, and within a sixteenth of a
+   *   byte for a float, finer than a screen can show. A value outside 0 to 1,
+   *   or 0 to 255 in an integer field, isn't a colour, and fails the frame with
+   *   an error that names the entity.
+   * - `"srgb-linear"`: the renderer's own working space, the `r`, `g` and `b`
+   *   of Three.js's `new Color("#ff6188")`. The values are passed through
+   *   unchecked: a value over 1 is brighter than white, which a renderer with
+   *   bloom can show.
    */
   readonly colorSpace?: "srgb" | "srgb-linear";
   /**
-   * How many instances there is room for at first: 256 when left out. The
-   * room doubles when it runs out, which is the one time the system
+   * How many instances there is room for initially. Defaults to 256. The
+   * capacity doubles when it runs out, which is the only time the system
    * allocates.
    */
   readonly capacity?: number;
   /**
-   * Called once with the mesh, when it is made: to have it cast a shadow,
-   * or to put it on a layer. The mesh is not culled, since its instances
-   * are anywhere; a game that knows where they are can say otherwise here.
+   * Called once with the mesh when it is created: to make it cast shadows, or
+   * to put it on a layer. The mesh isn't frustum culled, since its instances
+   * can be anywhere; a game that knows where they are can change that here.
    */
   readonly prepare?: (mesh: InstancedMesh) => void;
 }
 
 /**
- * Instances whose look is there when the system is made.
+ * Options for instances whose look exists when the system is created.
  *
  * @category Options
  */
 export interface InstancesOptions extends InstancesShared, Look {}
 
 /**
- * Instances whose look is made of assets that are loaded later, and let go
- * again: a level's.
+ * Options for instances whose look is built from assets that are loaded later
+ * and released again, such as a level's.
  *
  * @category Options
  */
@@ -1042,23 +1036,22 @@ export interface InstancesFromOptions<
   B extends Entries,
   L extends Look = Look,
 > extends InstancesShared {
-  /** The bundle the look is made of. The instances are drawn while it is loaded. */
+  /** The bundle the look is built from. The instances are drawn while it is loaded. */
   readonly from: Assets.Bundle<B>;
   /**
-   * Makes the look of the bundle's assets, once each time they are
-   * loaded. What it returns beyond a geometry and a material is kept for
-   * `free`.
+   * Builds the look from the bundle's assets, once each time they are loaded.
+   * Anything it returns besides a geometry and a material is kept for `free`.
    */
   readonly look: (assets: Assets.Loaded<B>) => L;
   /**
-   * Called when the assets are let go, or the app's scope closes, after
-   * the mesh was taken out of the scene: to dispose of what `look` made.
-   * The assets themselves are the bundle's to let go.
+   * Called when the assets are released, or the app's scope closes, after the
+   * mesh is removed from the scene: to dispose of what `look` created.
+   * Releasing the assets themselves is the bundle's job.
    */
   readonly free?: (look: L) => void;
 }
 
-/** The eight loops of a kind: placed, sized, turned or all three, in space or in the plane. */
+/** The eight loops of a kind: positioned, scaled, rotated or all three, in 3D or 2D. */
 type Loop =
   | "placed"
   | "sized"
@@ -1077,21 +1070,21 @@ class Instances implements Kept {
   private array: Float32Array;
   private capacity: number;
   private count = 0;
-  /** The part of the buffer that is sent to the renderer: reused every frame. */
+  /** The part of the buffer uploaded to the renderer, reused every frame. */
   private readonly range = { start: 0, count: 0 };
-  /** What draws the entities between two ticks, when the system was asked to. */
+  /** What interpolates the entities between two ticks, when the system was asked to. */
   private readonly smooth: Smooth | undefined;
   /** The instances' colours, three numbers each, for a kind that has them. */
   private colors: Float32Array | undefined;
   private readonly colorRange = { start: 0, count: 0 };
-  /** Whether a colour's numbers are converted from sRGB, or handed over. */
+  /** Whether a colour's values are converted from sRGB, or passed through. */
   private readonly curved: boolean;
-  /** What a colour's number is multiplied by: for one that is from 0 to 1. */
+  /** What a colour's value is multiplied by, to bring it into the 0 to 1 range. */
   private readonly gain: number;
   private readonly name: string;
   /**
-   * The eight loops as the system gives them to its queries: as they are,
-   * or, for a kind with a colour, each followed by the colours of its rows.
+   * The eight loops as the system passes them to its queries: as is, or, for a
+   * kind with a colour, each followed by the colours of its rows.
    */
   readonly loops: Record<Loop, (...columns: any[]) => void>;
 
@@ -1279,7 +1272,7 @@ class Instances implements Kept {
     );
   }
 
-  /** Makes room for `rows` more instances, and says where the first goes. */
+  /** Makes room for `rows` more instances, and returns where the first goes. */
   private reserve(rows: number): number {
     const at = this.count;
     const needed = at + rows;
@@ -1311,7 +1304,7 @@ class Instances implements Kept {
     this.smooth?.begin(tick, alpha, frame);
   }
 
-  /** Entities with a position alone: drawn upright, at the geometry's size. */
+  /** Entities with only a position: drawn unrotated, at the geometry's size. */
   readonly placed = (
     start: number,
     end: number,
@@ -1346,7 +1339,7 @@ class Instances implements Kept {
     }
   };
 
-  /** Entities with a position and a size. */
+  /** Entities with a position and a scale. */
   readonly sized = (
     start: number,
     end: number,
@@ -1384,7 +1377,7 @@ class Instances implements Kept {
     }
   };
 
-  /** Entities that are turned: a matrix of the position and the quaternion. */
+  /** Rotated entities: a matrix from the position and the quaternion. */
   readonly turned = (
     start: number,
     end: number,
@@ -1434,7 +1427,7 @@ class Instances implements Kept {
     }
   };
 
-  /** Entities with all three: what `Matrix4.compose` gives, written out. */
+  /** Entities with all three: what `Matrix4.compose` computes, written out. */
   readonly whole = (
     start: number,
     end: number,
@@ -1493,7 +1486,7 @@ class Instances implements Kept {
   // A flat game's entities: in the plane of x and y, turned about the axis
   // that comes out of it. The same four loops, with fewer columns.
 
-  /** Flat entities with a position alone. */
+  /** 2D entities with only a position. */
   readonly placedFlat = (
     start: number,
     end: number,
@@ -1528,7 +1521,7 @@ class Instances implements Kept {
     }
   };
 
-  /** Flat entities with a position and a size. */
+  /** 2D entities with a position and a scale. */
   readonly sizedFlat = (
     start: number,
     end: number,
@@ -1566,7 +1559,7 @@ class Instances implements Kept {
     }
   };
 
-  /** Flat entities that are turned: a sine and a cosine each. */
+  /** Rotated 2D entities: a sine and a cosine each. */
   readonly turnedFlat = (
     start: number,
     end: number,
@@ -1606,7 +1599,7 @@ class Instances implements Kept {
     }
   };
 
-  /** Flat entities with all three. */
+  /** 2D entities with all three. */
   readonly wholeFlat = (
     start: number,
     end: number,
@@ -1651,7 +1644,7 @@ class Instances implements Kept {
     }
   };
 
-  /** Tells the mesh how many instances it has, and the renderer what to send. */
+  /** Sets the mesh's instance count, and the range to upload to the renderer. */
   finish(): void {
     const { count, mesh, range } = this;
     mesh.count = count;
@@ -1684,17 +1677,20 @@ class Instances implements Kept {
   }
 }
 
-/** The instances of a look made of assets, while those assets are loaded. */
+/** The instances of a look built from assets, while those assets are loaded. */
 interface Sourced extends Kept {
   readonly instances: Instances;
 }
 
-/** What a system of this module asks of an app, and what one that draws from a bundle asks besides. */
+/**
+ * What a system of this module requires from an app, and what one that draws
+ * from a bundle requires in addition.
+ */
 type Needs = Frame | Scene | Time | World;
 
 /**
- * Draws every entity of a kind as one instance of one mesh: a system of
- * the frame stage.
+ * Makes a frame-stage system that draws every entity of a kind as one instance
+ * of one mesh.
  *
  *   const Rocks = Three.instances("game/Rocks", {
  *     of: Rock,
@@ -1702,51 +1698,50 @@ type Needs = Frame | Scene | Time | World;
  *     material: new MeshStandardMaterial({ color: "#8a8f98" }),
  *   })
  *
- * An entity is drawn while it has what `of` says and a
- * `Transform3d.Position`, and is turned and sized by `Transform3d.Rotation`
- * and `Transform3d.Scale` if it has them. One that has a
- * `Transform2d.Position` instead is drawn in the plane of x and y, at 0 of
- * the third axis, turned and sized by its `Transform2d.Rotation` and
- * `Transform2d.Scale`. An entity with both positions is drawn once, from
- * the one of three dimensions.
+ * An entity is drawn while it has what `of` specifies and a
+ * `Transform3d.Position`, and is rotated and scaled by `Transform3d.Rotation`
+ * and `Transform3d.Scale` if it has them. One that has a `Transform2d.Position`
+ * instead is drawn in the x-y plane, at z = 0, rotated and scaled by its
+ * `Transform2d.Rotation` and `Transform2d.Scale`. An entity with both positions
+ * is drawn once, from the 3D one.
  *
- * - Each frame it reads the columns raw (`eachChunk`) and writes one matrix
- *   per entity straight into the mesh's instance buffer. Nothing is made
- *   per entity: no object, no matrix, no vector. The buffer is allocated
- *   again only to double when it is full.
- * - A `Rotation` is drawn as the turn it stands for, whatever its length:
- *   it neither skews nor sizes the instance. One whose four fields are 0,
- *   which is what one added with no value is, is no turn at all.
- * - The entities are drawn where the last tick left them, unless `smooth`
- *   says otherwise.
- * - The mesh is made on the first frame, named after the system, added to
- *   the scene, and removed and disposed of with the app. The geometry and
- *   the material are yours: to share between several, and to dispose of.
- * - It needs `Three.plugin`, and its name is one of the app's systems'.
+ * - Each frame, it reads the columns directly (`eachChunk`) and writes one
+ *   matrix per entity straight into the mesh's instance buffer. Nothing is
+ *   created per entity: no object, matrix or vector. The buffer is only
+ *   reallocated to double when it is full.
+ * - A `Rotation` is drawn as the rotation it represents, whatever its length:
+ *   it neither skews nor scales the instance. One whose four fields are 0, as
+ *   when added without a value, means no rotation.
+ * - Entities are drawn where the last tick left them, unless `smooth` is set.
+ * - The mesh is created on the first frame, named after the system, added to
+ *   the scene, and removed and disposed of with the app. The geometry and the
+ *   material are yours to share between systems and to dispose of.
+ * - It requires `Three.plugin`, and its name must be unique among the app's
+ *   systems.
  *
- * With `smooth: true` each entity is drawn between its last two places,
- * at `Frame.alpha` of the way from where it was a tick ago to where it is:
+ * With `smooth: true`, each entity is interpolated between its last two
+ * positions, at `Frame.alpha` of the way from where it was a tick ago to where
+ * it is now:
  *
- * - The picture is then up to one tick behind the game: just after a
- *   tick, at an `alpha` of 0, an entity is drawn where it was before the
- *   tick. A game that ticks when it is needed is told an `alpha` of 1
- *   while it rests, and is drawn where it is.
- * - Places, sizes and colours go straight from one to the other. A turn
- *   goes by the shorter way.
- * - An entity that was not drawn in the frame before is drawn where it
- *   is: one that is new, one in a slot that was another's, one that was
- *   hidden, and every entity in the first frame, after a load, or after a
- *   frame the system did not run in. So is one that went further in a
- *   tick than `snap`.
- * - When several ticks ran since the last frame, an entity comes from
- *   where it was last drawn from; when none ran, it is between the same
- *   two places as the frame before. A place changed with no tick is where
- *   the entity goes to from where it was coming from.
- * - What is kept for it, the value each component had a tick ago, is no
- *   part of the world: the game's hash, log and save are the same.
+ * - The image is then up to one tick behind the game: just after a tick, at an
+ *   `alpha` of 0, an entity is drawn where it was before the tick. A game that
+ *   ticks only when needed receives an `alpha` of 1 while it rests, and is
+ *   drawn where it is.
+ * - Positions, scales and colours are interpolated linearly. A rotation takes
+ *   the shorter arc.
+ * - An entity that wasn't drawn in the previous frame is drawn where it is: a
+ *   new entity, one in a slot that belonged to another, one that was hidden,
+ *   and every entity on the first frame, after a load, or after a frame the
+ *   system didn't run in. So is one that moved further in a tick than `snap`.
+ * - When several ticks ran since the last frame, an entity moves from where it
+ *   was last drawn; when none ran, it is between the same two positions as in
+ *   the previous frame. A position changed without a tick becomes the
+ *   destination from where the entity was coming from.
+ * - What is kept for interpolation, each component's value a tick ago, isn't
+ *   part of the world: the game's hash, log and save are unaffected.
  *
- * A look that is made of assets, a level's texture, say, is given as the
- * bundle it comes `from` and what makes it of them:
+ * A look built from assets, such as a level's texture, is given as the bundle
+ * it comes `from` and a function that builds it:
  *
  *   const Rocks = Three.instances("game/Rocks", {
  *     of: Rock,
@@ -1761,14 +1756,14 @@ type Needs = Frame | Scene | Time | World;
  *     },
  *   })
  *
- * - The entities are drawn while the app holds the bundle loaded, which
- *   `Assets.during` or the game's own system sees to, and not before or
- *   after: no mesh is in the scene then.
- * - `look` is called once each time the bundle is loaded, and `free` with
- *   what it returned when the bundle is let go or the app's scope closes.
- *   A mesh made of a bundle that is loaded again starts with the room the
- *   last one had grown to.
- * - It needs `Assets.plugin` as well, which the type of the system says.
+ * - The entities are drawn while the app has the bundle loaded, which
+ *   `Assets.during` or your own system manages, and not before or after: no
+ *   mesh is in the scene then.
+ * - `look` is called once each time the bundle loads, and `free` with its
+ *   result when the bundle is released or the app's scope closes. A mesh built
+ *   from a reloaded bundle starts with the capacity the previous one had grown
+ *   to.
+ * - It also requires `Assets.plugin`, as the system's type reflects.
  *
  * @category Systems
  */
@@ -1934,22 +1929,22 @@ export const instances: {
 // --- objects ---------------------------------------------------------------------
 
 /**
- * What `Three.objects` is told, whatever its objects are made of.
+ * The options of `Three.objects`, wherever its objects come from.
  *
  * @category Models
  */
 export interface ObjectsShared<O extends Object3D = Object3D> extends Which {
   /**
-   * Called when the entity is no longer one of these, or the app's scope
-   * closes, after the object was taken out of the scene: to dispose of
-   * what `make` made for this one object.
+   * Called when the entity stops matching, or the app's scope closes, after the
+   * object is removed from the scene: to dispose of what `make` created for
+   * this object.
    */
   readonly free?: (object: O, entity: Entity) => void;
 }
 
 /**
- * How `Three.objects` makes, updates and frees the object of each entity it
- * draws.
+ * Options for how `Three.objects` creates, updates and frees each entity's
+ * object.
  *
  * @category Options
  */
@@ -1957,15 +1952,15 @@ export interface ObjectsOptions<
   O extends Object3D = Object3D,
 > extends ObjectsShared<O> {
   /**
-   * Makes the object of an entity, the first frame the entity is one of
-   * these. It is added to the scene, and given the entity's place.
+   * Creates an entity's object, on the first frame the entity matches. The
+   * object is added to the scene, and given the entity's transform.
    */
   readonly make: (entity: Entity) => O;
 }
 
 /**
- * Objects that are made of assets which are loaded later, and let go
- * again: a level's models.
+ * Options for objects built from assets that are loaded later and released
+ * again, such as a level's models.
  *
  * @category Options
  */
@@ -1973,41 +1968,41 @@ export interface ObjectsFromOptions<
   B extends Entries,
   O extends Object3D = Object3D,
 > extends ObjectsShared<O> {
-  /** The bundle the objects are made of. There are objects while it is loaded. */
+  /** The bundle the objects are built from. Objects exist while it is loaded. */
   readonly from: Assets.Bundle<B>;
   /**
-   * Makes the object of an entity of the bundle's assets: the first frame
-   * the entity is one of these and the assets are loaded, and again each
-   * time they are loaded anew.
+   * Creates an entity's object from the bundle's assets: on the first frame the
+   * entity matches and the assets are loaded, and again each time they are
+   * reloaded.
    */
   readonly make: (entity: Entity, assets: Assets.Loaded<B>) => O;
 }
 
-/** Either of the two, as the class that keeps the objects sees it. */
+/** Either set of options, as the class that keeps the objects sees them. */
 interface ObjectsOf<O extends Object3D> extends ObjectsShared<O> {
   // `any`: the assets of whichever bundle, or none.
   readonly make: (entity: Entity, assets: any) => O;
 }
 
-/** One object per entity, by the entity's index, and the loops that place them. */
+/** One object per entity, by entity index, and the loops that position them. */
 class Objects<O extends Object3D> implements Kept {
   private readonly scene: ThreeScene;
   private readonly options: ObjectsOf<O>;
-  /** What the objects are made of, for a kind that is made of assets. */
+  /** What the objects are built from, for a kind built from assets. */
   private readonly assets: unknown;
   private readonly objects: (O | undefined)[] = [];
-  /** Per entity index: the entity the object there was made for, by its id. */
+  /** For each entity index, the id of the entity its object was created for. */
   private owner = new Float64Array(0);
-  /** Per entity index: the frame its entity was last found in, turned, and sized. */
+  /** For each entity index, the frame its entity was last found in, rotated, and scaled. */
   private seen = new Uint32Array(0);
   private turnedAt = new Uint32Array(0);
   private sizedAt = new Uint32Array(0);
-  /** Per entity index: 1 when its entity is placed by a flat game's components. */
+  /** For each entity index, 1 when its entity is positioned by 2D components. */
   private flat = new Uint8Array(0);
-  /** The entity indexes that have an object, in no order. */
+  /** The entity indexes that have an object, unordered. */
   private readonly live: number[] = [];
   private stamp = 0;
-  /** What places the objects between two ticks, when the system was asked to. */
+  /** What interpolates the objects between two ticks, when the system was asked to. */
   private readonly smooth: Smooth | undefined;
 
   constructor(scene: ThreeScene, options: ObjectsOf<O>, assets: unknown) {
@@ -2043,7 +2038,7 @@ class Objects<O extends Object3D> implements Kept {
     this.options.free?.(object, this.owner[index] as Entity);
   }
 
-  /** Makes the object of an entity that has none, or whose slot held another's. */
+  /** Creates the object of an entity that has none, or whose slot held another entity's. */
   private adopt(index: number, entity: Entity): O {
     if (this.objects[index] === undefined) {
       this.live.push(index);
@@ -2210,7 +2205,7 @@ class Objects<O extends Object3D> implements Kept {
     }
   };
 
-  /** Lets go of the objects whose entities were not found this frame. */
+  /** Releases the objects whose entities weren't found this frame. */
   finish(): void {
     const { flat, live, objects, seen, sizedAt, stamp, turnedAt } = this;
     for (let k = live.length - 1; k >= 0; k--) {
@@ -2253,43 +2248,41 @@ class Objects<O extends Object3D> implements Kept {
 }
 
 /**
- * Keeps one Object3D per entity of a kind, where the entity is: a system
- * of the frame stage.
+ * Makes a frame-stage system that keeps one Object3D per entity of a kind, at
+ * the entity's transform.
  *
  *   const Ships = Three.objects("game/Ships", {
  *     of: Ship,
  *     make: () => new Mesh(hull, paint),
  *   })
  *
- * For the few things that are more than a copy of one mesh: a model with
- * parts, a light, something that carries the camera. A crowd is
+ * Use it for the few things that are more than a copy of one mesh: a model with
+ * parts, a light, or something that carries the camera. For crowds, use
  * `Three.instances`.
  *
- * - `make` is called the first frame an entity has what `of` says and a
- *   `Transform3d.Position`, and its object is added to the scene. The frame
- *   the entity no longer does, or is gone, the object is taken out, and
+ * - `make` is called on the first frame an entity has what `of` specifies and a
+ *   `Transform3d.Position`, and its object is added to the scene. On the frame
+ *   the entity stops matching, or is despawned, the object is removed, and
  *   `free` is called with it.
- * - Each frame every object is given its entity's `Position`, and its
- *   `Rotation` and `Scale` if the entity has them. A rotation of any
- *   length is given as a quaternion of length 1, and an entity that loses
- *   one of the two is drawn as one that never had it. What else there is
- *   to an object is the game's to set, in `make` or in a system of its
- *   own.
- * - An entity placed by a flat game's `Transform2d` has its object's x and
- *   y set, its turn about the third axis, and its size along x and y.
- *   Where the object is along the third axis, how it is tipped and how
- *   deep it is are left as `make` gave them, which is how one kind is put
- *   in front of another.
- * - An entity that takes a despawned one's slot gets an object of its own.
- * - Nothing is kept in the world. A game that is loaded from a save, or an
- *   app that starts with entities, has its objects made on the first
- *   frame.
- * - With `smooth: true` an object is placed between its entity's last two
- *   places, as `Three.instances` draws an instance.
- * - It needs `Three.plugin`, and its name is one of the app's systems'.
+ * - Each frame, every object receives its entity's `Position`, and its
+ *   `Rotation` and `Scale` if the entity has them. A rotation of any length is
+ *   applied as a unit quaternion, and an entity that loses either is drawn as
+ *   if it never had it. Anything else about an object is up to your game, in
+ *   `make` or in a system of its own.
+ * - For an entity positioned by a 2D `Transform2d`, the object's x and y, its
+ *   rotation about the z axis, and its scale along x and y are set. Its z
+ *   position, tilt and depth scale are left as `make` set them, which is how
+ *   you layer one kind in front of another.
+ * - An entity that reuses a despawned entity's slot gets its own object.
+ * - Nothing is kept in the world. A game loaded from a save, or an app that
+ *   starts with entities, has its objects created on the first frame.
+ * - With `smooth: true`, an object is interpolated between its entity's last
+ *   two transforms, as `Three.instances` draws an instance.
+ * - It requires `Three.plugin`, and its name must be unique among the app's
+ *   systems.
  *
- * Objects that are made of a level's assets name the bundle they come
- * `from`, and `make` is handed what it holds:
+ * Objects built from a level's assets name the bundle they come `from`, and
+ * `make` receives its contents:
  *
  *   const Deer = Three.objects("game/Deer", {
  *     of: Deer,
@@ -2297,10 +2290,10 @@ class Objects<O extends Object3D> implements Kept {
  *     make: (entity, { deer }) => clone(deer),
  *   })
  *
- * - There are objects while the app holds the bundle loaded: each is made
- *   the frame it is, and all are let go, through `free`, when it is not,
- *   before the scene is next drawn. Loaded again, each is made again.
- * - It needs `Assets.plugin` as well.
+ * - Objects exist while the app has the bundle loaded: each is created in the
+ *   frame it loads, and all are released, through `free`, when it isn't, before
+ *   the scene is next drawn. When it reloads, each is created again.
+ * - It also requires `Assets.plugin`.
  *
  * @category Systems
  */

@@ -1,6 +1,6 @@
 /**
- * Events: how systems, handlers and scripts tell each other that something
- * happened, without knowing about each other.
+ * Events let systems, handlers and scripts signal that something happened,
+ * without knowing about each other.
  *
  *   const Collided = Event.define<{ a: Entity; b: Entity }>("Collided")
  *
@@ -13,20 +13,20 @@
  *   const hits = yield* collided.wait       // suspend until some arrive
  *
  * Every system sees every event exactly once, whatever order the systems run
- * in. An event emitted by a later system is seen by an earlier one on the next
- * tick, so an event emitted while systems are running is kept until the end
- * of the following tick. One emitted between ticks is dropped at the end of
- * the next tick. Events are not kept for a system that `System.runIf` has
- * switched off: when it runs again, those of the ticks it sat out are gone.
+ * in. An earlier system sees an event emitted by a later one on the next tick,
+ * so an event emitted while systems are running is kept until the end of the
+ * following tick. An event emitted between ticks is dropped at the end of the
+ * next tick. Events aren't kept for a system that `System.runIf` has disabled:
+ * when it runs again, the events from the ticks it skipped are gone.
  *
- * Give an event a schema and it can be written down, for a save, a tool or
- * another machine:
+ * Give an event a schema to make it serializable, for a save, a tool or another
+ * machine:
  *
  *   const Collided = Event.define("Collided", Schema.Struct({ a: EntityId, b: EntityId }))
  *
- * The payload type comes from the schema. Emitting stays a plain call with
- * no check: the schema is used when the event leaves the program, by
- * `Event.encode` and `Event.decode`.
+ * The payload type is inferred from the schema. Emitting is still a plain call
+ * with no validation: the schema is only used when the event leaves the
+ * program, by `Event.encode` and `Event.decode`.
  */
 import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
 
@@ -34,25 +34,25 @@ import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
 
 /**
- * A system's handle to one kind of event, from `yield* SomeEvent`: it emits
- * them, and reads those it has not seen yet.
+ * A system's handle to one event type, from `yield* SomeEvent`: it emits
+ * events, and reads the ones it hasn't seen yet.
  *
  * @category Models
  */
 export interface EventHandle<P> {
   /** Queues an event. Synchronous, so it can be called inside query loops. */
   readonly emit: (payload: P) => void;
-  /** The events not yet seen through this handle, oldest first. */
+  /** Returns the events not yet seen through this handle, oldest first. */
   readonly read: () => readonly P[];
   /**
    * Suspends until at least one unseen event exists, then returns them all.
-   * For scripts: a system that waits would not finish within its tick.
+   * Meant for scripts: a system that waits would not finish within its tick.
    */
   readonly wait: Effect.Effect<readonly P[]>;
 }
 
 /**
- * An event type. It is an Effect, so `yield*` gives a handle to its channel
+ * An event type. It is an Effect, so `yield*` returns a handle to its channel
  * in the current app.
  *
  * @category Models
@@ -64,8 +64,8 @@ export class EventDef<P> extends Effectable.Class<
 > {
   readonly name: string;
   /**
-   * Converts a payload to and from JSON. Derived from the schema the event
-   * was defined with; undefined for an event with a type and no schema.
+   * Converts a payload to and from JSON. Derived from the event's schema;
+   * undefined for an event defined with only a type.
    */
   readonly codec: Schema.Codec<P, unknown> | undefined;
   private effect: Effect.Effect<EventHandle<P>, never, Events> | undefined;
@@ -86,15 +86,15 @@ export class EventDef<P> extends Effectable.Class<
 /**
  * Defines an event type.
  *
- * With a schema, the payload type is inferred from it and the event can be
- * written down: `Event.define("Collided", Schema.Struct({ ... }))`.
+ * With a schema, the payload type is inferred from it and the event is
+ * serializable: `Event.define("Collided", Schema.Struct({ ... }))`.
  *
- * Without one, give the payload's type: `Event.define<Payload>("Collided")`.
- * Such an event stays inside the program, and a game cannot be saved while
- * one is waiting to be read.
+ * Without one, pass the payload type: `Event.define<Payload>("Collided")`. Such
+ * an event stays inside the program, and a game can't be saved while one is
+ * waiting to be read.
  *
- * An event's name is its identity in an app: two different events with one
- * name are refused when the second is first used.
+ * An event's name is its identity within an app: when two different events
+ * share a name, the second is refused the first time it is used.
  *
  * @category Constructors
  */
@@ -114,7 +114,7 @@ export function define(
 }
 
 /**
- * An event's payload could not be turned into JSON, or read back from it.
+ * An event's payload couldn't be encoded to JSON, or decoded from it.
  *
  * @category Errors
  */
@@ -150,9 +150,9 @@ const convert = <A>(
 };
 
 /**
- * An event's payload in its JSON form, for a save, a tool or the network.
- * Fails with `InvalidEvent` when the event has no schema, or its schema
- * does not take the payload.
+ * Encodes an event's payload to its JSON form, for a save, a tool or the
+ * network. Fails with `InvalidEvent` when the event has no schema, or its
+ * schema rejects the payload.
  *
  * @category Codecs
  */
@@ -163,9 +163,9 @@ export const encode = <P>(
   convert(def, (codec) => Schema.encodeUnknownExit(codec)(payload));
 
 /**
- * An event's payload read back from its JSON form, checked against its schema.
- * Fails with `InvalidEvent` when the event has no schema, or the data does
- * not match it.
+ * Decodes an event's payload from its JSON form, validated against its schema.
+ * Fails with `InvalidEvent` when the event has no schema, or the data doesn't
+ * match it.
  *
  * @category Codecs
  */
@@ -178,19 +178,18 @@ export const decode = <P>(
 const EMPTY: readonly never[] = Object.freeze([]);
 
 /**
- * What the name of a reader starts with when it is a system of the frame
- * stage, or of the input stage. Such a reader is not part of the
- * simulation: it cannot emit, it is not saved, and events are kept for it
- * until the frame stage next runs.
+ * The prefix of a reader's name when it is a frame-stage or input-stage system.
+ * Such a reader isn't part of the simulation: it can't emit, it isn't saved,
+ * and events are kept for it until the frame stage next runs.
  *
  * @category Constants
  */
 export const FRAME_READER = "frame:";
 
 /**
- * How many ticks events are kept for a stage between ticks that has
- * stopped running, or never ran, before the app takes it to be gone: ten
- * seconds at 60 Hz. A replay and a server run neither stage.
+ * How many ticks events are kept for a between-ticks stage that has stopped
+ * running, or never ran, before the app treats it as gone: ten seconds at 60
+ * Hz. A replay and a server run neither stage.
  */
 const FRAME_PATIENCE = 600;
 
@@ -200,8 +199,8 @@ interface ChannelState {
   offset: number;
   /**
    * Sequence number of the oldest event the simulation can still read. It
-   * is `offset` unless older events are being kept for the frame stage,
-   * which the simulation must not be able to tell.
+   * equals `offset` unless older events are kept for the frame stage, which the
+   * simulation must not be able to observe.
    */
   tickOffset: number;
   /** One past the newest event the frame stage has had its chance to read. */
@@ -223,8 +222,8 @@ interface ChannelState {
 }
 
 /**
- * The reads made while an action's handler runs, for a refusal to take
- * back: each handle that moved, and where it was. One for the whole bus.
+ * The reads made while an action's handler runs, for a refusal to roll back:
+ * each handle that moved, and its previous position. One per bus.
  */
 interface ReadLog {
   /** True from `mark` until `rollback` or `commit`. */
@@ -356,16 +355,16 @@ class Handle<P> implements EventHandle<P> {
 }
 
 /**
- * A snapshot of how many events each channel held, for rolling back.
+ * A record of how many events each channel held, for rolling back.
  *
  * @category Models
  */
 export type EventMark = Map<object, number>;
 
 /**
- * Everything a bus holds at one moment, kept in memory to come back to:
- * the events as they are, with no need of a schema, and how far everyone
- * had read. Opaque: `capture` makes it and `rewind` takes it.
+ * Everything a bus holds at one moment, kept in memory to return to: the events
+ * as they are, without needing a schema, and every reader's position. Opaque:
+ * `capture` creates it and `rewind` consumes it.
  *
  * @category Models
  */
@@ -405,8 +404,8 @@ export interface EventGuard {
 }
 
 /**
- * Where an app's events wait to be read, with each reader's place in them.
- * The app holds one; a game reads and emits through an `EventHandle`.
+ * Where an app's events wait to be read, with each reader's position. The app
+ * holds one; a game reads and emits through an `EventHandle`.
  *
  * @category Models
  */
@@ -553,9 +552,9 @@ export class EventBus {
   }
 
   /**
-   * A handle for the current reader. Systems and handlers get the same
-   * handle every tick, starting from the oldest event still kept. Anyone
-   * else gets a new handle that starts from now.
+   * Returns a handle for the current reader. Systems and handlers get the same
+   * handle every tick, starting from the oldest event still kept. Any other
+   * caller gets a new handle that starts from now.
    */
   handle<P>(def: EventDef<P>): EventHandle<P> {
     const channel = this.channel(def);
@@ -592,7 +591,7 @@ export class EventBus {
     this.channel(def).buffer.push(payload);
   }
 
-  /** Number of events of a type currently kept. For tests and tooling. */
+  /** Returns the number of events of a type currently kept. For tests and tooling. */
   pending<P>(def: EventDef<P>): number {
     return this.channel(def).size;
   }

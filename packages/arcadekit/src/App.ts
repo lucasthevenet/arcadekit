@@ -1,6 +1,6 @@
 /**
- * The app ties the pieces together: a world, the built-in services, plugins,
- * an ordered list of systems, action handlers, and a `tick`.
+ * The app ties the pieces together: a world, the built-in services, plugins, an
+ * ordered list of systems, action handlers, and a `tick`.
  *
  * Services come from plugins' layers. Anything systems and handlers need that
  * no plugin provides is an ordinary Effect requirement of `App.make`:
@@ -12,10 +12,9 @@
  * One tick:
  *   1. apply queued actions (refused ones become `Action.Rejected` events)
  *   2. advance game time
- *   3. inside ONE fiber: enter the states that were asked for, running the
- *      hooks for leaving and entering; then run every system in order,
- *      but for the ones whose condition does not hold, applying queued
- *      commands after each
+ *   3. inside ONE fiber: enter any requested states, running their exit and
+ *      enter hooks; then run every system in order, except those whose
+ *      condition doesn't hold, applying queued commands after each
  *   4. resume scripts that were waiting for this tick or for an event
  *   5. flush the scheduler, so every fiber that became runnable runs now
  *   6. apply commands queued by scripts, and drop events everyone has seen
@@ -23,15 +22,15 @@
  * The world's hash is recorded in the action log before the first action or
  * tick, and at the end of every `checkpointEvery`th tick.
  *
- * Between ticks, `frame` runs the systems of the frame stage, which draw
- * the game: with the world frozen, so that they cannot change it, and told
- * how far the frame is between two ticks. And `input`, just before a tick,
- * runs the systems of the input stage, which are told what the devices say
- * and turn it into actions: the same way, with the world frozen.
+ * Between ticks, `frame` runs the frame-stage systems, which draw the game with
+ * the world frozen, so they can't change it, and receive how far the frame is
+ * between two ticks. `input`, just before a tick, runs the input-stage systems,
+ * which receive the devices' state and turn it into actions, also with the
+ * world frozen.
  *
- * A script that fails is logged with its cause. An app made with
- * `onScriptFailure: "stop"` also stops: that tick and every later one fail
- * with `ScriptFailed`.
+ * A failed script is logged with its cause. An app created with
+ * `onScriptFailure: "stop"` also stops: that tick and every later one fail with
+ * `ScriptFailed`.
  */
 import {
   Cause,
@@ -93,9 +92,9 @@ type AllHandlers<H extends Handlers, P extends Plugins> =
 type Provided<P extends Plugins> = Plugin.ProvidedOf<P[number]>;
 
 /**
- * What has to come from outside: whatever systems, handlers and setups need
- * that neither a plugin nor the app provides, plus whatever plugin layers
- * need that their declared dependencies do not provide.
+ * What must come from outside: whatever systems, handlers and setups need that
+ * neither a plugin nor the app provides, plus whatever plugin layers need that
+ * their declared dependencies don't provide.
  */
 type External<S extends Systems, H extends Handlers, P extends Plugins> =
   | Exclude<
@@ -128,8 +127,8 @@ type FailureFor<HU, N extends string> =
     : never;
 
 /**
- * The part of an app that does not depend on its systems or handlers. Every
- * app is one of these, so use it for code that works with any app.
+ * The part of an app that doesn't depend on its systems or handlers. Every app
+ * satisfies it, so use it for code that works with any app.
  *
  * @category Models
  */
@@ -143,83 +142,82 @@ export interface Any {
   readonly plugins: readonly string[];
   /** System names in the order they run. */
   readonly systemOrder: readonly string[];
-  /** The names of the frame stage's systems, in the order they run. */
+  /** The names of the frame-stage systems, in the order they run. */
   readonly frameOrder: readonly string[];
-  /** The names of the input stage's systems, in the order they run. */
+  /** The names of the input-stage systems, in the order they run. */
   readonly inputOrder: readonly string[];
   /**
-   * The pairs of the tick's systems whose order matters and is not said:
-   * both touch the same component, singleton, state or event, one of them
-   * to write it, and nothing but the order they were listed in decides
-   * which runs first. `System.conflicts` says how it is worked out. Only
-   * the systems that said what they read and write, with `System.access`,
-   * can be in one. A game settles a conflict with `System.after` or
-   * `System.before`, and a test holds the list to empty.
+   * The pairs of tick systems whose order matters but isn't specified: both
+   * touch the same component, singleton, state or event, at least one of them
+   * writes it, and only the order they were listed in decides which runs first.
+   * `System.conflicts` explains how it is computed. Only systems that declared
+   * their access with `System.access` can appear. Resolve a conflict with
+   * `System.after` or `System.before`, and assert in a test that the list is
+   * empty.
    */
   readonly conflicts: readonly System.Conflict[];
   /**
-   * The names of the tick's systems, hooks among them, that have not said
-   * what they read and write: `conflicts` knows nothing of them.
+   * The names of the tick's systems, hooks included, that haven't declared
+   * their access: `conflicts` knows nothing about them.
    */
   readonly undeclared: readonly string[];
   /**
    * Runs one tick. Throws if a system fails, or if the app has stopped.
    *
-   * A tick hears the devices first: if the input stage has not run since
-   * the tick before, it is run now, as a driver would have, so a game that
-   * steps its app by hand need not remember `app.input()`. `{ input: false
-   * }` is a tick that reads nothing, for what runs a game again from its
-   * log, where every action is already written: `App.replay` ticks so.
+   * A tick reads the devices first: if the input stage hasn't run since the
+   * previous tick, it runs now, as a driver would have run it, so a game that
+   * steps its app by hand doesn't need to call `app.input()`. `{ input: false
+   * }` runs a tick that reads nothing, for re-running a game from its log,
+   * where every action is already recorded: `App.replay` ticks this way.
    */
   readonly tick: (delta: number, options?: TickOptions) => void;
   /**
-   * Whether the game is at rest: a tick now would find nothing waiting for
-   * it. It is false while an action waits to be applied, a state waits to
-   * be entered, a script waits for the next tick or sleeps, a fiber is due,
-   * or an event waits that some system has not had its chance at. Looking
-   * changes nothing.
+   * Whether the game is at rest: a tick now would find no pending work. It is
+   * false while an action is queued, a state transition is pending, a script is
+   * waiting for the next tick or sleeping, a fiber is due, or an event is
+   * waiting that some system hasn't had a chance to read. Reading it changes
+   * nothing.
    *
-   * A driver told to tick only when needed asks this, so that a game that
-   * moves when its player does stands still in between. A system that
-   * does something every tick while a condition of its own holds is not
-   * seen unless it says so, with `Ticks.more`, each tick it has more to
-   * do; and an app that has not ticked yet, new or just loaded, is not
-   * settled, so that every system gets a tick to say so in.
+   * A driver set to tick only when needed checks it, so a game that moves only
+   * when its player does stands still in between. A system that acts every tick
+   * while a condition of its own holds isn't visible unless it signals so, with
+   * `Ticks.more`, each tick it has more to do; and an app that hasn't ticked
+   * yet, new or just loaded, isn't settled, so every system gets a tick to
+   * signal.
    */
   readonly settled: boolean;
   /**
-   * Runs the frame stage once: the systems made with
-   * `System.inStage("frame")`, which draw the game as it stands between
-   * two ticks. `alpha` says how far between them the frame is, from 0 just
-   * after a tick up to 1 just before the next, and `delta` how many real
-   * seconds have passed since the frame before; both reach the systems as
-   * the `Frame` service. A driver calls this after the ticks of each frame.
+   * Runs the frame stage once: the systems made with `System.inStage("frame")`,
+   * which draw the game as it is between two ticks. `alpha` is how far between
+   * them the frame is, from 0 just after a tick up to 1 just before the next,
+   * and `delta` the real seconds since the previous frame; both reach the
+   * systems as the `Frame` service. A driver calls this after each frame's
+   * ticks.
    *
-   * The world is frozen while it runs, and whatever would change the game
-   * throws. Throws if a system fails, or if the app has stopped. Only
-   * between ticks.
+   * The world is frozen while it runs, and anything that would change the game
+   * throws. Throws if a system fails, or if the app has stopped. Only between
+   * ticks.
    */
   readonly frame: (alpha: number, delta?: number) => void;
   /**
-   * Runs the input stage once: the systems made with
-   * `System.inStage("input")`, which turn what the devices say into
-   * actions. The devices are read once, here, and the systems are given
-   * that one picture of them as `Input.Devices`. What they issue with
-   * `Actions.enqueue` is logged and applied at the start of the next tick.
-   * A driver calls this just before each tick, and a tick that finds it
-   * was not called since the tick before runs it itself. A replay does
-   * neither: the actions are in its log.
+   * Runs the input stage once: the systems made with `System.inStage("input")`,
+   * which turn the devices' state into actions. The devices are read once,
+   * here, and the systems receive that single sample as `Input.Devices`. What
+   * they issue with `Actions.enqueue` is logged and applied at the start of the
+   * next tick. A driver calls this just before each tick, and a tick that finds
+   * it wasn't called since the previous tick runs it itself. A replay does
+   * neither, since the actions are in its log.
    *
    * The world is frozen while it runs, as for `frame`. Throws if a system
    * fails, or if the app has stopped. Only between ticks.
    */
   readonly input: () => void;
   /**
-   * As `dispatch`, for actions that arrive as data: network messages, saved
-   * games, replays. The payload is expected in its JSON form and is validated
-   * against the action's schema; an unknown name or a bad payload is a
-   * failure, `Action.UnknownAction` or `Action.InvalidPayload`, never a
-   * crash. `from` says who issued it, as for `enqueueByName`.
+   * Like `dispatch`, for actions that arrive as data: network messages, saved
+   * games, replays. The payload is expected in its JSON form and validated
+   * against the action's schema; an unknown name or an invalid payload is a
+   * failure, `Action.UnknownAction` or `Action.InvalidPayload`, never a crash.
+   * `from` names the issuer, as for `enqueueByName`.
    */
   readonly dispatchByName: (
     name: string,
@@ -227,13 +225,13 @@ export interface Any {
     from?: string
   ) => Exit.Exit<unknown, unknown>;
   /**
-   * As `enqueue`, for actions that arrive as data. Problems become
+   * Like `enqueue`, for actions that arrive as data. Problems become
    * `Action.Rejected` events.
    *
-   * `from` says who issued it, for whoever brings an action in on someone
-   * else's behalf, a server for its clients: the handler is told, and the
-   * log keeps it. It is not for an app in a session, where what a peer
-   * issues is stamped with the peer's own name.
+   * `from` names the issuer, for code that brings actions in on someone else's
+   * behalf, such as a server for its clients: the handler receives it, and the
+   * log records it. Don't use it on an app in a session, where each peer's
+   * actions are stamped with that peer's own name.
    */
   readonly enqueueByName: (
     name: string,
@@ -241,60 +239,59 @@ export interface Any {
     from?: string
   ) => void;
   /**
-   * What came into the game from outside, in the order it came, with
-   * checkpoints of the world's hash among it: every dispatched action that
-   * was accepted, and every action enqueued through the app, whatever
-   * became of it. What a system, a script or a handler issued with
-   * `Actions.enqueue` is not here, because a replay's own simulation issues
-   * it again. Enough to replay the game, and to check the replay.
+   * Everything that entered the game from outside, in arrival order,
+   * interleaved with checkpoints of the world's hash: every dispatched action
+   * that was accepted, and every action enqueued through the app, whatever its
+   * outcome. Actions a system, a script or a handler issued with
+   * `Actions.enqueue` aren't here, because a replay's own simulation issues
+   * them again. It is enough to replay the game, and to verify the replay.
    */
   readonly actionLog: readonly Action.LogEntry[];
   /**
-   * The game as it stands, to load later with `App.load`: the world, the
-   * time, the actions waiting for the next tick, the events waiting to be
-   * read, what change queries had yet to visit, and how long the log was.
-   * It holds no script. Only between ticks.
+   * Saves the game as it is, to load later with `App.load`: the world, the
+   * time, the actions queued for the next tick, the events waiting to be read,
+   * what change queries haven't visited yet, and the length of the log. It
+   * holds no scripts. Only between ticks.
    *
-   * Fails with `SaveRefused`, which says what is in the way: an action or an
-   * event with no schema is waiting, a field holds a value it cannot save,
-   * or commands are queued and not applied.
+   * Fails with `SaveRefused`, which names what is in the way: a queued action
+   * or a waiting event without a schema, a field holding a value that can't be
+   * saved, or commands queued but not applied.
    */
   readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
   /**
-   * The game as it stands, kept in memory to come back to with `rewind`:
-   * the world, the time, the actions waiting for the next tick, the events
-   * waiting to be read, with every reader's place in them, what change
-   * queries had yet to visit, and how long the log was. Only between ticks.
+   * Captures the game as it is, in memory, to return to with `rewind`: the
+   * world, the time, the actions queued for the next tick, the events waiting
+   * to be read with every reader's position, what change queries haven't
+   * visited yet, and the length of the log. Only between ticks.
    *
-   * It is not a save. It holds the waiting actions and events as they are,
-   * so none of them needs a schema, and it is of this app and this run of
-   * the program alone. It is what predicting a tick and running it again
-   * is made of: `Rollback` captures before a tick it is not sure of.
+   * It isn't a save. It holds the queued actions and events as they are, so
+   * none of them needs a schema, and it belongs to this app in this run of the
+   * program only. It is the building block for predicting a tick and
+   * resimulating it: `Rollback` captures before each uncertain tick.
    *
-   * Fails with `SaveRefused` when the world cannot be put into a snapshot:
-   * a field holds a value it cannot save, or commands are queued and not
-   * applied.
+   * Fails with `SaveRefused` when the world can't be snapshotted: a field holds
+   * a value that can't be saved, or commands are queued but not applied.
    */
   readonly capture: () => Exit.Exit<Moment, Save.SaveRefused>;
   /**
-   * Puts the game back as it was when `moment` was captured, in place: the
-   * same app, world and services, holding what they held then. The log is
-   * cut back to the length it had. Only between ticks, and only with a
-   * moment of this app.
+   * Restores the game, in place, to when `moment` was captured: the same app,
+   * world and services, holding what they held then. The log is truncated to
+   * its length at that time. Only between ticks, and only with a moment of this
+   * app.
    *
-   * What a moment does not hold is as for a save. Every script the app
-   * watches is interrupted, and each plugin's scripts start again from
-   * their beginning, as after a load: a script keeps what it must not lose
-   * in the world. What a service of the game's own holds is left as it is.
-   * A field that is `transient` is undefined afterwards. And what runs
-   * between ticks starts over: the frame stage's and the input stage's
-   * change queries visit everything again.
+   * A moment holds what a save holds, and no more. Every script the app
+   * supervises is interrupted, and each plugin's scripts restart from the
+   * beginning, as after a load, so a script keeps whatever it must not lose in
+   * the world. State held by your game's own services is left as is. A
+   * `transient` field is undefined afterwards. And what runs between ticks
+   * starts over: frame-stage and input-stage change queries visit everything
+   * again.
    */
   readonly rewind: (moment: Moment) => void;
   /**
-   * Records the world's hash in the action log now, and returns it. For the
-   * points a game wants checked beyond the ones `checkpointEvery` gives it,
-   * such as the moment it is saved. Only between ticks.
+   * Records the world's hash in the action log now, and returns it. Use it for
+   * points the game wants verified beyond the ones `checkpointEvery` records,
+   * such as when it is saved. Only between ticks.
    */
   readonly checkpoint: () => number;
 }
@@ -307,42 +304,40 @@ export interface Any {
 const NO_INPUT: TickOptions = { input: false };
 
 /**
- * A game at one moment, held in memory: what `app.capture()` gives and
- * `app.rewind()` takes. It says which tick it is of, and the rest is the
- * app's own.
+ * A game at one moment, held in memory: what `app.capture()` returns and
+ * `app.rewind()` takes. It exposes its tick; the rest is internal to the app.
  *
  * @category Models
  */
 export interface Moment {
-  /** How many ticks had run when it was captured. */
+  /** The number of ticks run when it was captured. */
   readonly tick: number;
 }
 
 /**
- * How a tick is run.
+ * Options for running a tick.
  *
  * @category Options
  */
 export interface TickOptions {
   /**
-   * Whether the tick runs the input stage first when nothing has since the
-   * tick before. True when left out. False for a tick that must read no
-   * device and hear no UI: a replay's, or a simulation run again from a
-   * log.
+   * Whether the tick first runs the input stage, if it hasn't run since the
+   * previous tick. Defaults to true. False for a tick that must read no device
+   * and receive no UI input: a replay's, or a simulation re-run from a log.
    */
   readonly input?: boolean;
 }
 
 /**
- * What `divert` gives whoever took an app over: the two things the app no
- * longer does for anyone else.
+ * What `divert` returns to the code that took over an app: the two operations
+ * the app no longer performs for anyone else.
  *
  * @category Models
  */
 export interface Diverted<E = never> {
   /**
-   * Queues an action for the next tick and logs it, as `enqueueByName` did:
-   * by its name, with its payload in JSON form, and with who issued it.
+   * Queues an action for the next tick and logs it, as `enqueueByName` did: by
+   * name, with its payload in JSON form, and with its issuer.
    */
   readonly deliver: (name: string, payload: unknown, from?: string) => void;
   /** Runs one tick, as `tickExit` did. It reads no device. */
@@ -350,48 +345,48 @@ export interface Diverted<E = never> {
 }
 
 /**
- * A running game: its world, its time, the actions waiting for the next
- * tick, and what runs a tick and a frame. Made with `App.make`, `App.load`
- * or, in a page, `App.run`.
+ * A running game: its world, its time, the actions queued for the next tick,
+ * and what runs a tick and a frame. Made with `App.make`, `App.load` or, in a
+ * page, `App.run`.
  *
- * `E` is what a tick can fail with, `R` what its systems need, and `HU`
- * the actions its handlers take.
+ * `E` is what a tick can fail with, `R` what its systems need, and `HU` the
+ * actions its handlers accept.
  *
  * @category Models
  */
 export interface App<E = never, R = never, HU = never> extends Any {
   /**
-   * Takes the app over, for what decides on which tick an action is applied
-   * and when a tick runs: a session of several peers, each of which has to
+   * Takes over the app, for code that decides on which tick an action is
+   * applied and when a tick runs: a multiplayer session, where every peer must
    * apply the same actions on the same ticks.
    *
-   * From then on an action enqueued from outside is not queued for the next
-   * tick. It is handed to `take`, by its name and with its payload in JSON
-   * form: one given to `enqueue` or `enqueueByName`, and one issued with
-   * `Actions.enqueue` in the input stage or the frame stage, so a key that
-   * is bound to an action and a button of the UI are taken too. What the
-   * simulation issues itself is not: every peer's own issues it.
+   * From then on, an action enqueued from outside isn't queued for the next
+   * tick. It is passed to `take`, by name and with its payload in JSON form:
+   * any action given to `enqueue` or `enqueueByName`, and any issued with
+   * `Actions.enqueue` in the input or frame stage, so key bindings and UI
+   * buttons are covered too. What the simulation issues itself isn't passed on,
+   * since every peer's simulation issues it.
    *
-   * What it returns is the one way left to queue an action and to run a
-   * tick. `tick`, `tickExit`, `dispatch` and `dispatchByName` throw from
-   * then on: each would move this machine's game and nobody else's. An app
-   * is taken over once.
+   * The returned object is the only remaining way to queue an action and to run
+   * a tick. `tick`, `tickExit`, `dispatch` and `dispatchByName` throw from then
+   * on, since each would advance this machine's game and no one else's. An app
+   * can be taken over once.
    */
   readonly divert: (
     take: (name: string, payload: unknown) => void
   ) => Diverted<E>;
   /**
    * Runs one tick and returns the outcome, with system failures as a typed
-   * `Exit`. An app that has stopped on a failed script runs nothing and
-   * returns a defect, `ScriptFailed`.
+   * `Exit`. An app stopped by a failed script runs nothing and returns a
+   * defect, `ScriptFailed`.
    */
   readonly tickExit: (
     delta: number,
     options?: TickOptions
   ) => Exit.Exit<void, E>;
-  /** As `frame`, with the outcome returned and a system's failure typed. */
+  /** Like `frame`, but returns the outcome, with a system's failure typed. */
   readonly frameExit: (alpha: number, delta?: number) => Exit.Exit<void, E>;
-  /** As `input`, with the outcome returned and a system's failure typed. */
+  /** Like `input`, but returns the outcome, with a system's failure typed. */
   readonly inputExit: () => Exit.Exit<void, E>;
   /**
    * Starts a long-running fiber (a coroutine). It runs immediately up to its
@@ -403,28 +398,28 @@ export interface App<E = never, R = never, HU = never> extends Any {
   ) => Fiber.Fiber<A, E2>;
   /**
    * Applies an action now and returns the outcome. A refusal comes back as a
-   * typed failure and leaves the game unchanged. An accepted action is
-   * logged, and a refused one is not.
+   * typed failure and leaves the game unchanged. An accepted action is logged;
+   * a refused one isn't.
    *
-   * For code outside the simulation, and only between ticks: it throws
-   * during a tick, during the frame stage or the input stage, and from a
-   * handler. It throws on an app that a session has taken over, where it
-   * would move this machine's game alone: use `enqueue`.
+   * For code outside the simulation, and only between ticks: it throws during a
+   * tick, during the frame or input stage, and from a handler. It also throws
+   * on an app a session has taken over, where it would advance this machine's
+   * game alone: use `enqueue` instead.
    */
   readonly dispatch: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>, any>,
     payload: PayloadFor<HU, N>
   ) => Exit.Exit<ResultFor<HU, N>, FailureFor<HU, N>>;
   /**
-   * Queues an action for the start of the next tick, and logs it. Use this
-   * for real-time input. A refusal becomes an `Action.Rejected` event, and
-   * is marked on the action's entry of the log.
+   * Queues an action for the start of the next tick, and logs it. Use it for
+   * real-time input. A refusal becomes an `Action.Rejected` event, and is
+   * marked on the action's log entry.
    *
-   * For code outside the simulation. A system, a script or a handler issues
-   * an action with `Actions.enqueue`, which does not log it: logged, it
-   * would be applied twice on replay, once from the log and once by the
-   * replay's own simulation. On an app that a session has taken over, the
-   * action goes to every peer, and one with no schema throws.
+   * For code outside the simulation. A system, a script or a handler issues an
+   * action with `Actions.enqueue`, which doesn't log it: if logged, it would be
+   * applied twice on replay, once from the log and once by the replay's own
+   * simulation. On an app a session has taken over, the action goes to every
+   * peer, and one without a schema throws.
    */
   readonly enqueue: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>, any>,
@@ -433,40 +428,40 @@ export interface App<E = never, R = never, HU = never> extends Any {
 }
 
 /**
- * What a system that said what it reads and writes is held to while it
- * runs: `System.access` is all of what it does, so whatever it left out is
- * refused where it is done.
+ * What a system with declared access is held to while it runs: `System.access`
+ * covers everything it does, so anything it left out is refused where it
+ * happens.
  */
 interface Hold {
   /** For a message: `System "Movement"`. */
   readonly who: string;
-  /** What the world refuses of its components, singletons and commands. */
+  /** What the world refuses for its components, singletons and commands. */
   readonly world: Guard;
-  /** What the bus refuses of its events. */
+  /** What the bus refuses for its events. */
   readonly events: EventGuard;
   readonly random: boolean;
   readonly actions: boolean;
   readonly scripts: boolean;
 }
 
-/** What a refusal ends with: how a system says more. */
+/** The closing advice of a refusal: how a system declares more. */
 const ADVICE =
   " A system that says what it reads and writes says all of it: add this to its System.access, or leave the system without one.";
 
-/** An error in a few words, for a log entry or a message. */
+/** Summarizes an error in a few words, for a log entry or a message. */
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
 
 /**
- * A script failed in an app that was told to stop on one. It is the defect
- * every tick of that app fails with from then on.
+ * A script failed in an app configured to stop on script failure. Every later
+ * tick of that app fails with this defect.
  *
  * @category Errors
  */
 export class ScriptFailed extends Data.TaggedError("ScriptFailed")<{
   /** Why the script failed. */
   readonly cause: Cause.Cause<unknown>;
-  /** How many ticks had run when it failed. */
+  /** The number of ticks run when it failed. */
   readonly tick: number;
 }> {
   override get message(): string {
@@ -475,20 +470,19 @@ export class ScriptFailed extends Data.TaggedError("ScriptFailed")<{
 }
 
 /**
- * A system of the frame stage, or of the input stage, changed the world,
- * which it must not: found by an app made with `verifyFrames`. It is a
- * defect, not a failure to handle: those stages run between ticks, and a
- * game that depends on having been drawn, or on its devices having been
- * read, does not replay.
+ * A frame-stage or input-stage system changed the world, which it must not do,
+ * as detected by an app created with `verifyFrames`. It is a defect, not a
+ * failure to handle: those stages run between ticks, and a game that depends on
+ * having been drawn, or on its devices having been read, doesn't replay.
  *
  * @category Errors
  */
 export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
   /** The stage the system belongs to. */
   readonly stage: "frame" | "input";
-  /** The system after which the world was no longer what it had been. */
+  /** The system after which the world had changed. */
   readonly system: string;
-  /** Which frame it was, counted from 1: for the input stage, the last one drawn. */
+  /** The frame number, counted from 1: for the input stage, the last frame drawn. */
   readonly frame: number;
 }> {
   override get message(): string {
@@ -497,9 +491,8 @@ export class FrameChangedWorld extends Data.TaggedError("FrameChangedWorld")<{
 }
 
 /**
- * What an app is made of and how it runs, as `App.make` and `App.load` take
- * it: its plugins, its own systems, handlers and components, and its
- * version.
+ * Options for creating an app, as `App.make` and `App.load` take them: its
+ * plugins, its own systems, handlers and components, and its version.
  *
  * @category Options
  */
@@ -510,67 +503,65 @@ export interface Options<
 > {
   readonly plugins?: readonly [...P];
   /**
-   * Components and singletons that belong to the app itself, not to a
-   * plugin. A world knows them by name, so loading a save needs every one
-   * the save names to be listed here or by a plugin.
+   * Components and singletons that belong to the app itself, not to a plugin. A
+   * world identifies them by name, so loading a save requires every one it
+   * contains to be listed here or by a plugin.
    */
   readonly components?: readonly Listed[];
   /**
-   * The version of the game: a whole number that is raised when the game
-   * changes its components or what its saves hold, 0 when left out. A save
-   * records it. `App.load` reads a save of this version as it is, brings an
-   * older one up to it with `migrations`, and refuses a newer one.
+   * The game's version: an integer you increment when the game changes its
+   * components or what its saves contain. Defaults to 0. A save records it.
+   * `App.load` loads a save of this version as is, migrates an older one with
+   * `migrations`, and refuses a newer one.
    */
   readonly version?: number;
   /**
-   * How a save of an older version becomes one of the next: one migration
-   * per version, each from `from` to `from + 1`. Only `App.load` uses them.
+   * How a save of an older version becomes one of the next: one migration per
+   * version, each from `from` to `from + 1`. Only `App.load` uses them.
    */
   readonly migrations?: readonly Save.Migration[];
   /** Systems and handlers that belong to the app itself, not to a plugin. */
   readonly systems?: readonly [...S];
   readonly handlers?: readonly [...H];
   /**
-   * Where the app's random sequence starts: a whole number from 0 to
-   * `Number.MAX_SAFE_INTEGER`, 0 when left out. Two apps with the same seed
-   * draw the same numbers from `Random`; a replay needs the seed its game
-   * was played with.
+   * Where the app's random sequence starts: an integer from 0 to
+   * `Number.MAX_SAFE_INTEGER`. Defaults to 0. Two apps with the same seed draw
+   * the same numbers from `Random`, and a replay needs the seed its game was
+   * played with.
    */
   readonly seed?: number;
   /**
    * How often the world's hash is recorded in the action log: at the end of
-   * every tick whose number divides by this, and once before the first
-   * action or tick. A replay of the log compares its own world at each of
-   * these, so a smaller number finds a divergence closer to where it
-   * happened, for one hash of the world a time. The default is 60. A
-   * turn-based game wants 1; 0 records none.
+   * every tick whose number is a multiple of this, and once before the first
+   * action or tick. A replay compares its own world at each of these, so a
+   * smaller number catches divergence closer to where it happened, at the cost
+   * of one world hash each time. Defaults to 60. A turn-based game wants 1; 0
+   * records none.
    */
   readonly checkpointEvery?: number;
   /**
-   * What a script's failure does, beyond being logged with its cause through
-   * Effect's logger. `"log"`, the default, lets the game go on without the
+   * What a script failure does, beyond being logged with its cause through
+   * Effect's logger. `"log"`, the default, lets the game continue without the
    * script. `"stop"` stops the app: the tick the script failed in, and every
-   * tick after it, fails with `ScriptFailed`, which stops a driver. A script
-   * that is interrupted has not failed.
+   * tick after it, fails with `ScriptFailed`, which stops a driver. An
+   * interrupted script hasn't failed.
    */
   readonly onScriptFailure?: "log" | "stop";
   /**
-   * Checks that the frame stage leaves the world as it found it, and the
-   * input stage too: the
-   * world's hash is taken before the stage and after each of its systems,
-   * and `frame` dies with `FrameChangedWorld`, which names the system, if
-   * they differ. Most ways to change the world from there throw where they
-   * are made, and a draw from `world.random` is found when the frame ends
-   * whether this is on or not. This finds the one that is left, a write
-   * through raw columns, and says which system made either. It costs a
-   * hash of the world per frame system per frame, so it is for development
-   * and tests.
+   * Verifies that the frame and input stages leave the world unchanged: the
+   * world's hash is taken before the stage and after each of its systems, and
+   * `frame` dies with `FrameChangedWorld`, naming the system, if they differ.
+   * Most ways to change the world from those stages already throw where they
+   * happen, and a draw from `world.random` is detected at the end of the frame
+   * either way. This catches the remaining one, a write through raw columns,
+   * and names the system responsible for either. It costs one world hash per
+   * frame system per frame, so use it in development and tests.
    */
   readonly verifyFrames?: boolean;
 }
 
 /**
- * Starts a game afresh: every plugin's `setup` runs, then its scripts start.
+ * Starts a fresh game: every plugin's `setup` runs, then its scripts start.
  *
  * @category Constructors
  */
@@ -592,30 +583,29 @@ export const make = <
   >;
 
 /**
- * Brings a game back from a save, where it was: its world, its time, the
- * actions that were waiting for the next tick and the events that were
- * waiting to be read. Give it the plugins and options the game was made
- * with.
+ * Restores a game from a save: its world, its time, the actions queued for the
+ * next tick and the events waiting to be read. Pass the plugins and options the
+ * game was created with.
  *
- * No plugin's `setup` runs: the save holds what setup spawned. Every
- * plugin's scripts start again from their beginning, since a save cannot
- * hold a script in mid-flight.
+ * No plugin's `setup` runs, since the save holds what setup spawned. Every
+ * plugin's scripts restart from the beginning, since a save can't hold a script
+ * mid-flight.
  *
- * The app's action log starts empty. What the game logged after the save
- * (`log.slice(save.logLength)`) is replayed with `App.replay`, which checks
- * it against the log's checkpoints as it goes.
+ * The app's action log starts empty. Replay what the game logged after the save
+ * (`log.slice(save.logLength)`) with `App.replay`, which verifies it against
+ * the log's checkpoints as it goes.
  *
- * Fails with `LoadRefused` when the save's world cannot be loaded: it names
- * a component no plugin lists, or one whose fields have changed, or its
- * bytes are damaged. So it does when the save is of another version of the
- * game and `migrations` do not bring it up to this one: see `Save.migrate`.
+ * Fails with `LoadRefused` when the save's world can't be loaded: it contains a
+ * component no plugin lists, or one whose fields have changed, or its bytes are
+ * damaged. It also fails when the save is from another version of the game and
+ * `migrations` don't bring it up to this one: see `Save.migrate`.
  *
  * **Gotchas**
  *
- * - A script that was started by hand, with `app.spawnScript` or
- *   `Script.spawn`, is not started again: whoever loads the game starts it.
- * - What a service of the game's own held is not in the save, and a
- *   `transient` field is undefined afterwards.
+ * - A script started by hand, with `app.spawnScript` or `Script.spawn`, isn't
+ *   restarted: whoever loads the game starts it.
+ * - State held by your game's own services isn't in the save, and a `transient`
+ *   field is undefined afterwards.
  *
  * @category Constructors
  */
@@ -633,7 +623,7 @@ export const load = <
 > => build(options, save);
 
 /**
- * How `App.run` drives the app it makes.
+ * Options for how `App.run` drives the app it creates.
  *
  * @category Options
  */
@@ -643,50 +633,49 @@ export interface RunOptions<
   R2 = never,
   SV extends Save.Save | undefined = undefined,
 > {
-  /** How many ticks a second the game runs at, whatever the rate of frames. */
+  /** The ticks per second the game runs at, whatever the frame rate. */
   readonly hz: number;
-  /** The most ticks one frame runs after a stall. 5 when left out. */
+  /** The maximum ticks one frame runs after a stall. Defaults to 5. */
   readonly maxStepsPerCall?: number;
   /**
-   * `"whenNeeded"` for a game that moves when its player does: it is drawn
-   * every frame and ticks only while something is waiting for a tick, as
-   * `Driver.frames` describes. `"always"`, a game in real time, when left
-   * out.
+   * `"whenNeeded"` for a game that moves only when its player does: it is drawn
+   * every frame, but only ticks while something is waiting for a tick, as
+   * `Driver.frames` describes. Defaults to `"always"`, for a real-time game.
    */
   readonly ticks?: "always" | "whenNeeded";
   /**
-   * A save to go on from, in place of a fresh start: the app is made with
+   * A save to continue from, instead of a fresh start: the app is created with
    * `App.load`, and `run` can fail with `Save.LoadRefused`.
    */
   readonly save?: SV;
   /**
-   * Runs once, when the app is made and before its first frame, with the
-   * app: to wire what is outside the game to it (a button that dispatches,
-   * a menu that saves), or to keep hold of it. What it acquires is let go
-   * with the app, and what it needs and can fail with are `run`'s.
+   * Runs once with the app, after it is created and before its first frame: to
+   * connect things outside the game to it (a button that dispatches, a menu
+   * that saves), or to keep a reference to it. Whatever it acquires is released
+   * with the app, and its requirements and errors become `run`'s.
    */
   readonly ready?: (app: A) => Effect.Effect<void, E2, R2>;
 }
 
 /**
- * The entry point: makes the app and runs it until it is interrupted.
+ * Creates the app and runs it until interrupted. This is the usual entry point.
  *
  *   Browser.runMain(App.run({ plugins: [Game] }, { hz: 60 }), { target: canvas })
  *
  * It is `App.make` and `Driver.frames` in a scope of their own: the app is
- * made, `ready` runs if there is one, and the frame loop follows the
- * display, running the ticks that are due, at `hz`, and then the frame
- * stage, once per repaint. It never ends by itself.
+ * created, `ready` runs if given, and the frame loop follows the display,
+ * running the ticks that are due at `hz`, then the frame stage, once per
+ * repaint. It never ends on its own.
  *
  * Interrupting it stops the loop and closes that scope, so nothing is left
- * running: no frame asked for, no script, and whatever the plugins' layers
- * and `ready` acquired let go. The platform's `runMain` interrupts it when
- * the page goes away, or the process is told to stop.
+ * running: no pending frame, no script, and everything the plugins' layers and
+ * `ready` acquired is released. The platform's `runMain` interrupts it when the
+ * page closes or the process is told to stop.
  *
- * What the game needs from outside is provided to it as to `App.make`,
- * and stays provided for as long as it runs, which is what a layer that
- * listens, such as `Browser.layer`, needs. It fails with what
- * `App.make` and `ready` can fail with, and dies with what a tick throws.
+ * Provide what the game needs from outside as you would to `App.make`; it stays
+ * provided for as long as the game runs, which is what a listening layer such
+ * as `Browser.layer` needs. It fails with what `App.make` and `ready` can fail
+ * with, and dies with whatever a tick throws.
  *
  * It runs wherever there is a display, which outside a page is a timer:
  * `NodeRuntime.runMain(App.run(...))` runs the same game under Node.
@@ -890,7 +879,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       readonly payload: unknown;
       readonly encoded: boolean;
       readonly entry: { refused?: string } | undefined;
-      /** Who issued it, if it came with a name. */
+      /** The issuer, if it came with a name. */
       readonly from: string | undefined;
     }[] = [];
     if (save !== undefined) {
@@ -902,7 +891,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const actionLog: Action.LogEntry[] = [];
     // The moments this app has captured: `rewind` takes no other.
     const moments = new WeakSet<Moment>();
-    /** What a moment holds beside its tick. */
+    /** What a moment holds beyond its tick. */
     interface Captured extends Moment {
       readonly elapsed: number;
       readonly delta: number;
@@ -940,9 +929,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
     };
     /**
-     * Logs an action that was enqueued from outside, as it arrives. What
-     * becomes of it is decided when it is applied, and a replay enqueues it
-     * again at the same point and lets its own simulation decide.
+     * Logs an action enqueued from outside as it arrives. Its outcome is
+     * decided when it is applied, and a replay enqueues it again at the same
+     * point and lets its own simulation decide.
      */
     const arrived = (
       name: string,
@@ -971,7 +960,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       handlers.has(action.name);
     // Who has taken over what comes from outside, if anyone has: `divert`.
     let diverted: ((name: string, payload: unknown) => void) | undefined;
-    /** From outside the simulation: `app.enqueue`. */
+    /** Enqueues from outside the simulation: `app.enqueue`. */
     const enqueue = (
       action: Action.ActionDef<string, any, any>,
       payload: unknown
@@ -1032,7 +1021,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
       diverted(name, payload);
     };
-    /** An action issued by a system that said its access, and not this. */
+    /** Refuses an action issued by a system whose declared access doesn't include actions. */
     const refuseAction = (name: string): void => {
       if (held !== undefined && !held.actions) {
         throw new Error(
@@ -1041,8 +1030,8 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
     };
     /**
-     * From inside the simulation: the `Actions` service. Not logged, because
-     * a replay's own systems, scripts and handlers issue it again.
+     * Enqueues from inside the simulation: the `Actions` service. Not logged,
+     * because a replay's own systems, scripts and handlers issue it again.
      */
     const enqueueFromInside = (
       action: Action.ActionDef<string, any, any>,
@@ -1267,7 +1256,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       });
     }
     const randomWas = new Uint32Array(4);
-    /** Holds whoever runs next to what it said, if it said. */
+    /** Holds the next runner to its declared access, if it declared one. */
     const hold = (to: Hold | undefined): void => {
       held = to;
       world.guard = to?.world;
@@ -1276,7 +1265,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         randomWas.set(world.random.state);
       }
     };
-    /** The system has run. A draw it did not say it makes is found here. */
+    /** Called after the system has run. An undeclared random draw is detected here. */
     const release = (): void => {
       const was = held;
       if (was === undefined) {
@@ -1301,7 +1290,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     const report = System.conflicts(allSystems);
 
     let running = "";
-    /** Runs one system as itself: with its own place in events and changes. */
+    /** Runs one system as itself, with its own positions in events and changes. */
     const runSystem = (
       system: Plugin.AnySystem
     ): Effect.Effect<void, unknown, unknown> =>
@@ -1319,7 +1308,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
           release
         );
       });
-    /** Makes one move of a state: the hooks for leaving, the move, the hooks for entering. */
+    /** Makes one state transition: the exit hooks, the transition, then the enter hooks. */
     const makeMove = Effect.fnUntraced(function* (
       state: State.State<string>,
       move: State.Move
@@ -1340,7 +1329,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         commands.apply();
       }
     });
-    /** The states that were asked for are entered, and their hooks run. */
+    /** Enters the requested states, and runs their hooks. */
     const enterStates = Effect.gen(function* () {
       for (const state of states.states) {
         // One move a tick, but for a game's first: entering the state it
@@ -1544,7 +1533,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     // The action whose handler is running, if one is.
     let applying: string | undefined;
 
-    /** Takes back everything a handler did since the three marks were taken. */
+    /** Rolls back everything a handler did since the three marks were taken. */
     const undo = (
       commandMark: number,
       eventMark: ReturnType<EventBus["mark"]>,
@@ -1557,12 +1546,11 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
     };
 
     /**
-     * Validates a payload and runs its handler to completion. The handler
-     * runs in a transaction of the world: a refusal takes back what it wrote
-     * to components, the random numbers it drew, what it read of events and
-     * of changes, and what it queued, emitted
-     * and enqueued. With `dispatched`, an accepted action is logged; an
-     * enqueued one was logged, if it came from outside, when it arrived.
+     * Validates a payload and runs its handler to completion. The handler runs
+     * in a world transaction: a refusal rolls back its component writes, the
+     * random numbers it drew, what it read of events and changes, and what it
+     * queued, emitted and enqueued. With `dispatched`, an accepted action is
+     * logged; an enqueued one was logged on arrival, if it came from outside.
      */
     const apply = (
       name: string,
@@ -1668,7 +1656,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       }
     };
 
-    /** Runs one of the two stages between ticks, with the world frozen. */
+    /** Runs one of the two between-ticks stages, with the world frozen. */
     const runBetween = (
       stage: "frame" | "input"
     ): Exit.Exit<void, TickError<S, P>> => {
@@ -2161,19 +2149,19 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
   >;
 
 /**
- * A world's hash is not the one recorded for the same point of the game.
- * The two have been different worlds since some tick after `agreedAt`.
+ * A world's hash differs from the one recorded at the same point in the game.
+ * The worlds have differed since some tick after `agreedAt`.
  *
  * @category Errors
  */
 export class HashMismatch extends Data.TaggedError("HashMismatch")<{
   /** The tick both hashes were taken at. */
   readonly tick: number;
-  /** The hash that was recorded. */
+  /** The recorded hash. */
   readonly expected: number;
-  /** The hash of the world that was compared with it. */
+  /** The hash of the world compared against it. */
   readonly actual: number;
-  /** The tick of the last checkpoint that did match, if one did. */
+  /** The tick of the last matching checkpoint, if any. */
   readonly agreedAt: number | undefined;
 }> {
   override get message(): string {
@@ -2186,12 +2174,12 @@ export class HashMismatch extends Data.TaggedError("HashMismatch")<{
 }
 
 /**
- * A replayed log did not behave as it did when it was recorded.
+ * A replayed log didn't behave as it did when it was recorded.
  *
  * @category Errors
  */
 export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
-  /** Position in the log of the entry that did not hold. */
+  /** The position in the log of the entry that failed to match. */
   readonly index: number;
   readonly entry: Action.LogEntry;
   /**
@@ -2200,7 +2188,7 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
    */
   readonly reason: unknown;
 }> {
-  /** The tick of the entry that did not hold. */
+  /** The tick of the entry that failed to match. */
   get tick(): number {
     return this.entry.tick;
   }
@@ -2224,36 +2212,35 @@ export class ReplayDiverged extends Data.TaggedError("ReplayDiverged")<{
 }
 
 /**
- * Re-applies a recorded action log to a fresh app, ticking with a fixed
- * delta. With the same systems, the same seed and the same starting state,
- * the result is the same game.
+ * Re-applies a recorded action log to a fresh app, ticking with a fixed delta.
+ * With the same systems, the same seed and the same starting state, the result
+ * is the same game.
  *
- * The replay checks itself against the log, and throws `ReplayDiverged` at
- * the first entry that does not hold:
+ * The replay verifies itself against the log, and throws `ReplayDiverged` at
+ * the first entry that doesn't match:
  *
- * - A checkpoint whose hash is not the hash of the replay's world. The
- *   replay stops at that tick, before applying anything recorded after it.
- *   With a checkpoint every tick, that is the tick it diverged on.
- * - A dispatched action that is refused. The log only holds dispatched
- *   actions that were accepted, so the log was altered or the game has
- *   changed since.
- * - An enqueued action that is refused where the game accepted it, or the
- *   other way round. It is enqueued again at the point it arrived, and the
- *   replay stops after the tick that applied it.
+ * - A checkpoint whose hash differs from the replay's world. The replay stops
+ *   at that tick, before applying anything recorded after it. With a checkpoint
+ *   every tick, that is the tick it diverged on.
+ * - A dispatched action that is refused. The log only holds dispatched actions
+ *   that were accepted, so either the log was altered or the game changed
+ *   since.
+ * - An enqueued action refused where the game accepted it, or vice versa. It is
+ *   enqueued again at the point it arrived, and the replay stops after the tick
+ *   that applied it.
  *
- * Actions that the game's systems, scripts and handlers issued are not in
- * the log: the replay's own issue them again.
+ * Actions the game's systems, scripts and handlers issued aren't in the log:
+ * the replay's own simulation issues them again.
  *
  * **Gotchas**
  *
- * - The log does not say the delta or the number of ticks it was recorded
- *   at, nor when a script was started by hand with `app.spawnScript`:
- *   whoever replays supplies them.
- * - It runs neither the frame stage nor the input stage: each tick is run
- *   with `{ input: false }`.
- * - A log with no checkpoints, from an app made with `checkpointEvery: 0`,
- *   is checked by its actions alone: a replay that has gone another way
- *   runs on until an action happens to be refused, or to its end.
+ * - The log doesn't record the delta or the number of ticks, nor when a script
+ *   was started by hand with `app.spawnScript`: whoever replays supplies them.
+ * - It runs neither the frame stage nor the input stage: every tick runs with
+ *   `{ input: false }`.
+ * - A log without checkpoints, from an app created with `checkpointEvery: 0`,
+ *   is verified by its actions alone: a replay that has diverged runs until an
+ *   action happens to be refused, or to the end.
  *
  * @category Running
  */

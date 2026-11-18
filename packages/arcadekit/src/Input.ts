@@ -1,14 +1,14 @@
 /**
- * Input: the keyboard, the pointer and the gamepads, as the game sees them.
+ * Input from the keyboard, the pointer and gamepads, as the game sees it.
  *
- * The devices are outside the game. What they say reaches it as actions,
- * through the same log as everything else that comes from outside, so a
- * replay needs no devices at all: the actions are in its log.
+ * The devices are outside the game. Their input reaches it as actions, through
+ * the same log as everything else from outside, so a replay needs no devices at
+ * all: the actions are in its log.
  *
- * There are two ways in, and a game uses either or both.
+ * A game reads input in either or both of two ways.
  *
- * The picture: `Input.plugin` keeps what is held down, and where the
- * pointer and the sticks are, in the world. A system reads it:
+ * **State.** `Input.plugin` keeps the held buttons, and the pointer and stick
+ * positions, in the world. A system reads them:
  *
  *   const Steer = System.make("Steer", function*() {
  *     const keys = yield* Input.Keyboard
@@ -17,8 +17,8 @@
  *     const pointer = yield* Input.Pointer  // pointer.x, pointer.y, pointer.down()
  *   })
  *
- * Bindings: the devices are turned into the game's own actions, and the
- * game knows nothing of keys:
+ * **Bindings.** Device input is mapped to the game's own actions, and the game
+ * knows nothing about keys:
  *
  *   const Controls = Input.bind("game/Controls",
  *     Input.onPress(["Space", Input.padButton(0, 0)], Jump),
@@ -27,20 +27,20 @@
  *     }))
  *   )
  *
- * Both run in the input stage, `System.inStage("input")`: just before a
- * tick, with the world frozen, told what the devices say as `Input.Devices`.
- * A system of that stage that needs more than a binding (to find what the
- * pointer is over, say) reads `Input.Devices` and the world and issues the
+ * Both run in the input stage, `System.inStage("input")`: just before a tick,
+ * with the world frozen, receiving the devices' state as `Input.Devices`. An
+ * input-stage system that needs more than a binding, for example to find what
+ * the pointer is over, reads `Input.Devices` and the world and issues the
  * action itself, with `Actions.enqueue`.
  *
- * Where the devices come from is `Input.Source`. A page's keyboard,
- * pointer and gamepads are in the package's other entry, which only a page
- * imports:
+ * `Input.Source` supplies the devices. A page's keyboard, pointer and gamepads
+ * come from the package's other entry point, which only a page imports:
  *
  *   import * as Browser from "arcadekit/Browser"
  *   Browser.runMain(App.run(...), { target: canvas })
  *
- * Nothing provides one to a replay or a server, and none is read there.
+ * Nothing provides a source to a replay or a server, and no devices are read
+ * there.
  */
 import { Context, Effect, Effectable, Schema } from "effect";
 
@@ -59,27 +59,31 @@ import * as System from "./System";
 // browser gives it, `KeyboardEvent.code`: "KeyA", "Space", "ArrowLeft".
 
 /**
- * The axis of the pointer's place across, in CSS pixels from the left of its target.
+ * The axis of the pointer's horizontal position, in CSS pixels from the left of
+ * its target.
  *
  * @category Actions
  */
 export const pointerX = "PointerX";
 /**
- * The axis of the pointer's place down, in CSS pixels from the top of its target.
+ * The axis of the pointer's vertical position, in CSS pixels from the top of
+ * its target.
  *
  * @category Actions
  */
 export const pointerY = "PointerY";
 
 /**
- * The code of a button of the pointer: 0 the main one, 1 the middle, 2 the secondary.
+ * Returns the code of a pointer button: 0 for the primary, 1 for the middle, 2
+ * for the secondary.
  *
  * @category Actions
  */
 export const pointerButton = (button = 0): string => `Pointer${button}`;
 
 /**
- * The code of a button of a gamepad, both numbered as the browser numbers them.
+ * Returns the code of a gamepad button, both numbered as the browser numbers
+ * them.
  *
  * @category Actions
  */
@@ -87,7 +91,8 @@ export const padButton = (pad: number, button: number): string =>
   `Pad${pad}Button${button}`;
 
 /**
- * The code of an axis of a gamepad: a stick's two are 0 and 1, the next stick's 2 and 3.
+ * Returns the code of a gamepad axis: the first stick's are 0 and 1, the next
+ * stick's 2 and 3.
  *
  * @category Actions
  */
@@ -97,20 +102,21 @@ export const padAxis = (pad: number, axis: number): string =>
 // --- the devices -------------------------------------------------------------
 
 /**
- * What the devices say at one moment, and what they did since the moment before.
+ * The state of the devices at one moment, and what changed since the previous
+ * sample.
  *
  * @category Models
  */
 export interface Sample {
-  /** The buttons that are down. */
+  /** The buttons held down. */
   readonly down: ReadonlySet<string>;
-  /** The buttons that went down since the sample before, down still or not. */
+  /** The buttons that went down since the previous sample, whether or not they are still down. */
   readonly pressed: readonly string[];
-  /** The buttons that went up since the sample before. */
+  /** The buttons that went up since the previous sample. */
   readonly released: readonly string[];
-  /** The value of every axis that has one. An axis that is not here is at 0. */
+  /** The value of every non-zero axis. An axis missing here is at 0. */
   readonly axes: ReadonlyMap<string, number>;
-  /** The axes whose value is not what it was at the sample before. */
+  /** The axes whose value changed since the previous sample. */
   readonly moved: readonly string[];
 }
 
@@ -121,8 +127,8 @@ export interface Sample {
  */
 export interface SourceShape {
   /**
-   * What the devices say now, and what they did since this was last
-   * called. An app calls it once per run of its input stage.
+   * Returns the devices' current state, and what changed since the last call.
+   * An app calls it once per run of its input stage.
    */
   readonly sample: () => Sample;
 }
@@ -135,17 +141,16 @@ const NOTHING: Sample = {
   moved: [],
 };
 
-/** No devices at all, which is another thing than devices with nothing pressed. */
+/** No devices at all, which differs from devices with nothing pressed. */
 const noSource: SourceShape = { sample: () => NOTHING };
 
 /**
- * Where an app's input stage takes its samples from. Nothing has to provide
- * it: the default has no devices, which is what a replay, a server and
- * most tests want. With no devices the picture `Input.plugin` keeps is
- * left as it is: what it says is whatever was last reported to it, from
- * a log or from another machine. A page provides its own, with `Browser.layer()` from
- * `arcadekit/Browser`, and a test that plays provides a source it works by
- * hand, `Input.makeManualSource()`.
+ * Where an app's input stage takes its samples from. Nothing has to provide it:
+ * the default has no devices, which suits a replay, a server and most tests.
+ * Without devices, the state `Input.plugin` keeps is left unchanged: it holds
+ * whatever was last reported to it, from a log or another machine. A page
+ * provides its own with `Browser.layer()` from `arcadekit/Browser`, and a test
+ * that simulates input provides one it controls, `Input.makeManualSource()`.
  *
  * @category Services
  */
@@ -155,12 +160,12 @@ export const Source: Context.Reference<SourceShape> =
   });
 
 /**
- * What the devices say, for a system of the input stage: one sample, taken
- * when the stage began, the same for every system of that run.
+ * The devices' state, for an input-stage system: one sample, taken when the
+ * stage began, shared by every system in that run.
  *
- * It is no part of the game, so nothing else can read it: in the tick and
- * in the frame stage its fields throw. A system there reads the picture
- * the game has, `Input.Keyboard`, `Input.Pointer` or `Input.Gamepad`.
+ * It isn't part of the game, so nothing else can read it: in the tick and in
+ * the frame stage its fields throw. Systems there read the game's input state
+ * instead: `Input.Keyboard`, `Input.Pointer` or `Input.Gamepad`.
  *
  * @category Services
  */
@@ -169,26 +174,26 @@ export class Devices extends Context.Service<Devices, Sample>()(
 ) {}
 
 /**
- * A source worked by hand, for a test, a tool or controls drawn on the screen.
+ * A source controlled by hand, for a test, a tool or on-screen controls.
  *
  * @category Testing
  */
 export interface ManualSource extends SourceShape {
-  /** A button goes down. Nothing happens if it is down already. */
+  /** Presses a button. Does nothing if it is already down. */
   readonly press: (code: string) => void;
-  /** A button goes up. Nothing happens if it is up already. */
+  /** Releases a button. Does nothing if it is already up. */
   readonly release: (code: string) => void;
-  /** A button goes down and up again at once. */
+  /** Presses and releases a button at once. */
   readonly tap: (code: string) => void;
-  /** An axis takes a value. */
+  /** Sets an axis's value. */
   readonly move: (code: string, value: number) => void;
-  /** Every button that is down and that `only` takes, all of them without it, goes up. */
+  /** Releases every held button that `only` accepts, or every held button without it. */
   readonly releaseAll: (only?: (code: string) => boolean) => void;
 }
 
 /**
- * A source that says what it is told: `press`, `release`, `tap` and `move`,
- * with the codes a device would give.
+ * Makes a source that reports what it is told with `press`, `release`, `tap`
+ * and `move`, using the codes a device would produce.
  *
  *   const source = Input.makeManualSource()
  *   const app = yield* App.make({ plugins: [Game] }).pipe(
@@ -257,7 +262,7 @@ export const makeManualSource = (): ManualSource => {
 // --- the picture in the world ---------------------------------------------------
 
 /**
- * What the world holds of one button: whether it is down, the tick it last
+ * What the world stores for one button: whether it is down, the tick it last
  * went down in, and the tick it last went up in.
  */
 type Marks = readonly [down: number, pressedAt: number, releasedAt: number];
@@ -272,9 +277,12 @@ const NEVER = -1;
 const Held = Singleton.define(
   "arcadekit/Input",
   {
-    /** Every button that is down, and the ones that went up in the last tick that heard of any. */
+    /**
+     * Every button held down, and the ones that went up in the last tick that
+     * received a report.
+     */
     buttons: Field.json<Buttons>(),
-    /** Every axis that is not at 0. */
+    /** Every axis not at 0. */
     axes: Field.json<Axes>(),
   },
   { buttons: {}, axes: {} }
@@ -283,27 +291,26 @@ const Held = Singleton.define(
 const ReportSchema = Schema.Struct({
   /** Buttons that went up. */
   up: Schema.optionalKey(Schema.Array(Schema.String)),
-  /** Buttons that went down, and are down. */
+  /** Buttons that went down, and are still down. */
   down: Schema.optionalKey(Schema.Array(Schema.String)),
-  /** Buttons that went down and up again in between: pressed, and not held. */
+  /** Buttons that went down and up again between samples: pressed, but not held. */
   tapped: Schema.optionalKey(Schema.Array(Schema.String)),
-  /** The axes that moved, and where to. */
+  /** The axes that moved, and their new values. */
   axes: Schema.optionalKey(Schema.Record(Schema.String, Schema.Finite)),
 });
 type ReportPayload = typeof ReportSchema.Type;
 
 /**
- * What the devices did since the game last heard: the action that keeps
- * the picture in the world. `Input.plugin` issues it from the input stage
- * and handles it. A test, a tool or another machine can send it too.
- * Where there are devices, what it says lasts until the input stage next
- * reads them; where there are none, it stays.
+ * What the devices did since the game's last report: the action that keeps the
+ * input state in the world. `Input.plugin` issues it from the input stage and
+ * handles it. A test, a tool or another machine can send it too. Where there
+ * are devices, it holds until the input stage next reads them; where there are
+ * none, it persists.
  *
- * The lists are applied in the order they are written here: what went up,
- * then what went down, then what was tapped. So a held button that is in
- * `up` and in `down` was let go and pressed again, and is held; and one
- * that is in `up` and in `tapped` went up, and was then pressed and let go
- * again.
+ * The lists are applied in the order they are declared here: what went up, then
+ * what went down, then what was tapped. So a held button in both `up` and
+ * `down` was released and pressed again, and is held; and one in both `up` and
+ * `tapped` went up, then was pressed and released again.
  *
  * @category Actions
  */
@@ -317,7 +324,7 @@ const sorted = <V>(record: Readonly<Record<string, V>>): Record<string, V> => {
   return out;
 };
 
-/** The buttons after a report, or undefined if they are as they were. */
+/** Returns the buttons after a report, or undefined if they are unchanged. */
 const nextButtons = (
   before: Buttons,
   payload: ReportPayload,
@@ -359,7 +366,7 @@ const nextButtons = (
   return changed ? sorted(after) : undefined;
 };
 
-/** The axes after a report, or undefined if they are as they were. */
+/** Returns the axes after a report, or undefined if they are unchanged. */
 const nextAxes = (before: Axes, moves: Axes | undefined): Axes | undefined => {
   if (moves === undefined) {
     return undefined;
@@ -397,7 +404,7 @@ const report = Action.handler(Report, function* (payload) {
   }
 });
 
-/** What has to be reported for the picture to be what the devices say. */
+/** Returns what must be reported for the input state to match the devices. */
 const difference = (
   buttons: Buttons,
   axes: Axes,
@@ -465,9 +472,8 @@ const reported = new WeakMap<
 >();
 
 /**
- * Reads the devices into the game: compares what they say with the picture
- * the game will have at its next tick, and reports the difference, if there
- * is one, as an action.
+ * Reads the devices into the game: compares their state with the input state
+ * the game will have at its next tick, and reports any difference as an action.
  */
 const Read = System.make("arcadekit/Input.Read", function* () {
   // Where there are no devices there is nothing to bring the picture up
@@ -500,22 +506,22 @@ const Read = System.make("arcadekit/Input.Read", function* () {
 }).pipe(System.inStage("input"));
 
 /**
- * Keeps a picture of the devices in the world: which buttons are down,
- * which went down or up in this tick, and where the axes are. Systems read
- * it with `Input.Keyboard`, `Input.Pointer` and `Input.Gamepad`.
+ * Keeps the devices' state in the world: which buttons are down, which went
+ * down or up in this tick, and where the axes are. Systems read it with
+ * `Input.Keyboard`, `Input.Pointer` and `Input.Gamepad`.
  *
- * - The devices are read once per tick, in the input stage, and what
- *   changed is one action, `Input.Report`, in the log. So every system of a
- *   tick sees the same picture, and a replay sees the same as the game.
- * - The picture is a singleton of the world: saved with a game, put back
- *   when an action is refused, counted in its hash once something was
- *   pressed, and untouched while nothing changes.
- * - The devices are the truth. A game loaded from a save in which a key
- *   was held, where the key is no longer down, lets it go at the first
- *   reading.
- * - It is one picture, of one player's devices. A game of several players
- *   on several machines binds its devices to actions that say whose they
- *   are, with `Input.bind`.
+ * - The devices are read once per tick, in the input stage, and what changed
+ *   becomes one action in the log, `Input.Report`. Every system in a tick
+ *   therefore sees the same state, and a replay sees the same as the game.
+ * - The state is a singleton of the world: saved with the game, restored when
+ *   an action is refused, included in the hash once something was pressed, and
+ *   untouched while nothing changes.
+ * - The devices are the source of truth. When a game is loaded from a save in
+ *   which a key was held, and the key is no longer down, it is released on the
+ *   first read.
+ * - It holds one state, for one player's devices. A multiplayer game across
+ *   machines binds its devices to actions that identify their player, with
+ *   `Input.bind`.
  *
  * @category Plugins
  */
@@ -531,11 +537,11 @@ export const plugin = Plugin.make("arcadekit/Input", {
  * @category Models
  */
 export interface KeyboardView {
-  /** Whether a key is held down. Its code is `KeyboardEvent.code`. */
+  /** Returns whether a key is held down. Its code is the `KeyboardEvent.code`. */
   readonly down: (code: string) => boolean;
-  /** Whether it went down in this tick, held still or not. */
+  /** Returns whether it went down in this tick, whether or not it is still held. */
   readonly pressed: (code: string) => boolean;
-  /** Whether it went up in this tick. */
+  /** Returns whether it went up in this tick. */
   readonly released: (code: string) => boolean;
 }
 
@@ -545,11 +551,11 @@ export interface KeyboardView {
  * @category Models
  */
 export interface PointerView {
-  /** CSS pixels from the left of the target the page was listening on. */
+  /** CSS pixels from the left of the target the page listens on. */
   readonly x: number;
-  /** CSS pixels from its top. */
+  /** CSS pixels from the top of that target. */
   readonly y: number;
-  /** Whether a button is held down: 0, the main one, when none is given. */
+  /** Returns whether a button is held down; defaults to 0, the primary button. */
   readonly down: (button?: number) => boolean;
   readonly pressed: (button?: number) => boolean;
   readonly released: (button?: number) => boolean;
@@ -561,7 +567,7 @@ export interface PointerView {
  * @category Models
  */
 export interface GamepadView {
-  /** Where an axis is, from -1 to 1, and 0 when there is no such gamepad. */
+  /** Returns an axis's position, from -1 to 1, or 0 when there is no such gamepad. */
   readonly axis: (axis: number) => number;
   readonly down: (button: number) => boolean;
   readonly pressed: (button: number) => boolean;
@@ -622,7 +628,7 @@ const viewsOf = (world: EcsWorld, time: Readonly<TimeState>): Views => {
   return made;
 };
 
-/** One view of the picture. It is an Effect, so `yield*` gives the view. */
+/** One view of the input state. It is an Effect, so `yield*` returns the view. */
 class View<A> extends Effectable.Class<A, never, World | Time> {
   private effect: Effect.Effect<A, never, World | Time> | undefined;
 
@@ -640,27 +646,27 @@ class View<A> extends Effectable.Class<A, never, World | Time> {
 }
 
 /**
- * The keyboard, as the game has it this tick. Needs `Input.plugin`.
+ * The keyboard's state in the current tick. Requires `Input.plugin`.
  *
  *   const keys = yield* Input.Keyboard
  *   keys.down("ArrowLeft")    // held
  *   keys.pressed("Space")     // went down in this tick
  *   keys.released("Space")    // went up in this tick
  *
- * `pressed` and `released` are true for the one tick that first sees the
- * change, so a system that runs every tick sees each exactly once, and so
- * do the handlers of the actions that tick applies: an action bound to a
- * key sees the press that issued it. A key that went down and up between
- * two ticks was pressed and released in the same tick, and is not down. A
- * held key that was let go and pressed again between two ticks was
- * released and pressed in the same tick, and is down.
+ * `pressed` and `released` are true only in the first tick that sees the
+ * change, so a system that runs every tick sees each exactly once, as do the
+ * handlers of the actions applied in that tick: an action bound to a key sees
+ * the press that issued it. A key pressed and released between two ticks is
+ * both pressed and released in the same tick, and isn't down. A held key
+ * released and pressed again between two ticks is both released and pressed in
+ * the same tick, and is down.
  *
  * @category Views
  */
 export const Keyboard: View<KeyboardView> = new View((all) => all.keyboard);
 
 /**
- * The pointer, as the game has it this tick. Needs `Input.plugin`.
+ * The pointer's state in the current tick. Requires `Input.plugin`.
  *
  * @category Views
  */
@@ -669,7 +675,8 @@ export const Pointer: View<PointerView> = new View((all) => all.pointer);
 const padViews: View<GamepadView>[] = [];
 
 /**
- * A gamepad, the first when none is said, as the game has it this tick. Needs `Input.plugin`.
+ * A gamepad's state in the current tick, defaulting to the first. Requires
+ * `Input.plugin`.
  *
  * @category Views
  */
@@ -684,19 +691,21 @@ type Enqueue = <N extends string, P>(
 ) => void;
 
 /**
- * What a binding sends: a payload, or how to make one of what the devices say.
+ * What a binding sends: a payload, or a function that builds one from the
+ * devices' state.
  *
  * @category Type-level
  */
 export type PayloadOf<P> = P | ((devices: Sample) => P);
 
-/** Left out for an action that takes no payload. */
+/** Omitted for an action that takes no payload. */
 type PayloadArgument<P> = undefined extends P
   ? [payload?: PayloadOf<P>]
   : [payload: PayloadOf<P>];
 
 /**
- * One line of `Input.bind`: when this happens to the devices, issue that action.
+ * One entry of `Input.bind`: when this happens on the devices, issue that
+ * action.
  *
  * @category Models
  */
@@ -733,12 +742,12 @@ const binding =
   };
 
 /**
- * Issues an action when a button goes down: a key, by its code, or
- * `Input.pointerButton(n)` or `Input.padButton(pad, n)`. Given several
- * codes, any of them does, and the action is issued once.
+ * Issues an action when a button goes down: a key by its code, or
+ * `Input.pointerButton(n)` or `Input.padButton(pad, n)`. Given several codes,
+ * any of them triggers it, and the action is issued once.
  *
- * The payload is a value, or a function of what the devices say, for an
- * action that needs to know where the pointer is.
+ * The payload is a value, or a function of the devices' state, for an action
+ * that needs the pointer's position.
  *
  * @category Constructors
  */
@@ -752,26 +761,27 @@ export const onPress = binding((devices) => devices.pressed);
 export const onRelease = binding((devices) => devices.released);
 
 /**
- * Issues an action when an axis moves: `Input.pointerX`, `Input.pointerY`
- * or `Input.padAxis(pad, n)`. Given several, once when any of them does.
+ * Issues an action when an axis moves: `Input.pointerX`, `Input.pointerY` or
+ * `Input.padAxis(pad, n)`. Given several, it is issued once when any of them
+ * moves.
  *
  * @category Constructors
  */
 export const onMove = binding((devices) => devices.moved);
 
 /**
- * Makes a system of the input stage out of bindings: each tick it issues
- * the actions of the bindings whose moment has come, in the order they
- * were given. The actions are logged and applied at the start of the tick,
- * as any action from outside is, so a replay has them and reads no device.
+ * Makes an input-stage system from bindings: each tick, it issues the actions
+ * of the bindings that triggered, in the order given. Like any action from
+ * outside, they are logged and applied at the start of the tick, so a replay
+ * has them and reads no device.
  *
  *   const Controls = Input.bind("game/Controls",
  *     Input.onPress("Space", Jump),
  *     Input.onRelease("Space", Land)
  *   )
  *
- * The game's handlers know nothing of keys, so the keys can change without
- * the game changing. It does not need `Input.plugin`.
+ * The game's handlers know nothing about keys, so you can remap keys without
+ * changing the game. It doesn't require `Input.plugin`.
  *
  * @category Systems
  */

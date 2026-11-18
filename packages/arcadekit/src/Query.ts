@@ -1,10 +1,10 @@
 /**
- * Query descriptions that can be yielded inside systems:
+ * Query descriptions that systems yield to iterate over entities:
  *
  *   const Moving = Query.all(Position, Velocity).pipe(Query.without(Stunned))
  *   const moving = yield* Moving
  *
- * A query can ask for what changed, and then visits nothing else:
+ * A query can ask only for what changed, and then visits nothing else:
  *
  *   const Moved = Query.all(Position, Sprite).pipe(Query.changed(Position))
  *   const Born = Query.all(Sprite).pipe(Query.added(Sprite))
@@ -13,8 +13,8 @@
  *   (yield* Moved).each((pos, sprite) => { ... })   // written since this system last looked
  *   for (const entity of (yield* Gone).read()) { ... }
  *
- * Each system has its own place in what changed, so every system sees every
- * change once, however often it runs.
+ * Each system tracks its own position in what changed, so every system sees
+ * every change once, however often it runs.
  */
 import { Effect, Effectable } from "effect";
 import { dual } from "effect/Function";
@@ -24,11 +24,11 @@ import type { QuerySpec, QueryView, RemovedReader, Terms } from "./ecs/world";
 import { World } from "./Services";
 
 /**
- * An immutable, world-independent query description.
+ * An immutable query description, independent of any world.
  *
  * It extends `Effectable.Class`, which makes it an Effect: `yield*` works on
- * it, `.pipe()` comes for free, and the `World` requirement shows up in the
- * type of any system that uses it.
+ * it, `.pipe()` is available, and the `World` requirement appears in the type
+ * of any system that uses it.
  *
  * @category Models
  */
@@ -60,7 +60,8 @@ export class Query<D extends Terms>
 }
 
 /**
- * Entities that have all of these components; their data is passed to the loop.
+ * Matches entities that have all of these components, and passes their data to
+ * the loop.
  *
  * @category Constructors
  */
@@ -98,12 +99,12 @@ const with_: {
 );
 
 export {
-  /** Also require these components, without reading their data. */
+  /** Also requires these components, without reading their data. */
   with_ as with,
 };
 
 /**
- * Exclude entities that have any of these components.
+ * Excludes entities that have any of these components.
  *
  * @category Combinators
  */
@@ -132,40 +133,40 @@ export const without: {
 );
 
 /**
- * Visit only the entities that had one of these components written since
- * whoever is asking last visited. A component an entity has just gained
- * counts as written. The components are required, as with `Query.with`.
+ * Visits only the entities that had one of these components written since the
+ * reader last visited. A component an entity has just gained counts as written.
+ * The components are required, as with `Query.with`.
  *
- * - Each system, and each action's handler, has its own place in what
- *   changed, and sees every change once. The first time, it sees every
- *   entity that matches. A system that was not run misses nothing: what
- *   changed meanwhile is there when it runs again.
- * - `each`, `eachChunk` and `entities` are visits. `count` only looks.
- * - An entity is visited once, however often it was written, and in the
- *   order any query visits entities in. One that has lost the component
- *   since, or was despawned, is not visited.
- * - A write is noticed per entity by `world.set`, by adding the component
- *   with a value, and by assigning to a field in `each`. `eachChunk` hands
- *   out raw columns and cannot tell, so every row it is handed counts as
- *   written, unless the query says it only reads the component, with
- *   `Query.reads`. Reading notes nothing.
- * - Only a watched component is noticed: one that no query watches costs
- *   nothing more to write.
- * - A system that writes what it watches sees its own writes the next time.
- * - A refused action's writes are not changes: they are taken back with
- *   the rest, and so are the visits its handler made.
- * - Outside a system or a handler (in a script, a test, the entry point)
- *   there is one place per query, shared by whoever uses it there.
- * - With several components, or with `Query.added` as well, an entity is
+ * - Each system, and each action's handler, tracks its own position, and sees
+ *   every change once. On its first visit, it sees every matching entity. A
+ *   system that was skipped misses nothing: what changed in the meantime is
+ *   there when it runs again.
+ * - `each`, `eachChunk` and `entities` count as visits. `count` only peeks.
+ * - An entity is visited once however often it was written, in the usual query
+ *   order. An entity that has since lost the component, or was despawned, isn't
+ *   visited.
+ * - A write is detected per entity by `world.set`, by adding the component with
+ *   a value, and by assigning to a field in `each`. `eachChunk` hands out raw
+ *   columns and can't detect writes, so every row it hands out counts as
+ *   written, unless the query declares that it only reads the component with
+ *   `Query.reads`. Reading records nothing.
+ * - Only watched components are tracked: writing a component no query watches
+ *   costs nothing extra.
+ * - A system that writes what it watches sees its own writes next time.
+ * - A refused action's writes aren't changes: they are rolled back with
+ *   everything else, as are the visits its handler made.
+ * - Outside a system or a handler (in a script, a test, the entry point) there
+ *   is one position per query, shared by every caller there.
+ * - With several components, or combined with `Query.added`, an entity is
  *   visited when any one of them fired.
- * - What a query has yet to visit is saved by `app.save()`, with each
- *   reader's place in it. It is not in the world's snapshot or its hash.
+ * - `app.save()` saves what a query has yet to visit, with each reader's
+ *   position. It isn't part of the world's snapshot or hash.
  *
  * **Gotchas**
  *
- * A change query cannot `eachChunk` over a component it watches itself,
- * which throws: it would take its own visit for a change. Visit it with
- * `each`, or say the loop only reads the component, with `Query.reads`.
+ * A change query can't `eachChunk` over a component it watches, and throws: it
+ * would mistake its own visit for a change. Iterate with `each`, or declare
+ * that the loop only reads the component with `Query.reads`.
  *
  * @category Combinators
  */
@@ -194,9 +195,9 @@ export const changed: {
 );
 
 /**
- * Visit only the entities that gained one of these components since whoever
- * is asking last visited: by being spawned with it, or by `add`. Otherwise
- * as `Query.changed`.
+ * Visits only the entities that gained one of these components since the reader
+ * last visited, by being spawned with it or by `add`. Otherwise works like
+ * `Query.changed`.
  *
  * @category Combinators
  */
@@ -225,9 +226,9 @@ export const added: {
 );
 
 /**
- * A query's terms, with the ones it only reads marked as such: `R` is the
- * components `Query.reads` was given, or `never` for all of them. Components
- * are told apart by their names, which are in their types.
+ * A query's terms, with the read-only ones marked as such: `R` is the
+ * components passed to `Query.reads`, or `never` for all of them. Components
+ * are distinguished by name, which is part of their type.
  *
  * @category Type-level
  */
@@ -242,28 +243,28 @@ export type Reading<D extends Terms, R> = {
   : never;
 
 /**
- * Says which of a query's terms the query only reads, or, given none, that
- * it only reads any of them:
+ * Declares which of a query's terms it only reads, or, given none, that it
+ * reads all of them without writing:
  *
  *   const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity))
  *   const Drawn = Query.all(Position, Sprite).pipe(Query.reads())
  *
- * - `each` hands out an accessor for such a term whose fields cannot be
- *   assigned to: the compiler refuses it, and it throws.
- * - `eachChunk` hands out its columns typed as read-only, and does not
- *   count their rows as written. So a system that reads a watched
- *   component in a raw loop does not set off the queries that watch it,
- *   and a change query may read, raw, what it watches itself.
- * - In an action's handler its columns are not copied for a rollback:
- *   there is nothing to put back.
+ * - `each` hands out an accessor for such a term whose fields can't be
+ *   assigned: the compiler rejects it, and it throws at run time.
+ * - `eachChunk` hands out its columns typed as read-only, and doesn't count
+ *   their rows as written. So a system that reads a watched component in a raw
+ *   loop doesn't trigger the queries that watch it, and a change query can read
+ *   what it watches through raw columns.
+ * - In an action's handler, its columns aren't copied for a rollback, since
+ *   there is nothing to restore.
  *
- * Leaving it out is never wrong, only slower. The word is the query's own:
- * raw columns are typed arrays all the same, and a loop that writes one
- * past the compiler has written it. No change query hears of it, and no
- * refusal takes it back.
+ * Leaving it out is never wrong, only slower. The declaration is the query's
+ * own: raw columns are typed arrays regardless, and a loop that writes one past
+ * the compiler has still written it. No change query sees that write, and no
+ * refusal rolls it back.
  *
- * Given a component that is not one of the query's terms, it throws: to
- * require a component without its data, use `Query.with`.
+ * Throws when given a component that isn't one of the query's terms: to require
+ * a component without its data, use `Query.with`.
  *
  * @category Combinators
  */
@@ -304,11 +305,11 @@ export const reads: {
 );
 
 /**
- * The entities that lost a component since whoever is asking last read:
- * `(yield* Query.removed(Sprite)).read()` gives their ids, oldest first,
- * once per removal. An entity that was despawned lost all it had, and its
- * id is no longer alive. Removals are noticed from the first time a reader
- * asks, and each system and handler has its own place in them.
+ * The entities that lost a component since the reader last read: `(yield*
+ * Query.removed(Sprite)).read()` returns their ids, oldest first, once per
+ * removal. A despawned entity lost everything it had, and its id is no longer
+ * alive. Removals are tracked from the reader's first read, and each system and
+ * handler tracks its own position.
  *
  * @category Models
  */
@@ -327,7 +328,7 @@ export class Removed extends Effectable.Class<RemovedReader, never, World> {
 }
 
 /**
- * The entities that lost a component since this system last asked:
+ * Returns the entities that lost a component since this system last asked:
  * `(yield* Query.removed(Burning))`.
  *
  * @category Constructors

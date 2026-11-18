@@ -1,56 +1,46 @@
 /**
- * A relay: what passes a game's messages on between peers on different
- * machines.
+ * Relays pass a game's messages between peers on different machines.
  *
- * Each peer opens a WebSocket to the relay, at an address that names a room
- * and the peer. What one sends, the relay passes on to the others in the
- * room. It runs no game and keeps no state of one: it is given text and
- * hands text on.
+ * Each peer opens a WebSocket to the relay, at an address that names a room and
+ * the peer. The relay forwards what one peer sends to the others in its room.
+ * It runs no game and keeps no game state: it receives text and forwards text.
  *
- * It is a handler, and no server: three plain functions that say what to do
- * with a connection and with what it sent, for whatever accepts the
- * sockets to call. That may keep its connections anywhere, with the socket
- * itself where the platform lets go of everything else between two
- * messages:
+ * The relay is a handler, not a server: plain functions that decide what to do
+ * with a connection and with what it sends, called by whatever accepts the
+ * sockets. The host can store its connections anywhere, including on the socket
+ * itself, on platforms that discard everything else between two messages:
  *
- *   // a peer asks to connect: who is it, and may it come in?
+ *   // a peer asks to connect: who is it, and may it join?
  *   const member = Relay.join(request.url, present)        // Exit<Member, Refused>
  *
  *   // a member sent something: what goes to whom?
  *   const deliveries = Relay.forward(member, data, present) // Exit<Delivery[], Refused>
  *   for (const { to, text } of deliveries.value) socketOf(to).send(text)
  *
- * `present` is whoever is connected to that room, as the host knows them:
- * on Cloudflare, what a Durable Object reads back from its sockets'
- * attachments; behind an API gateway, the rows of a table of connections.
- * `Relay.make()` keeps them itself, for a host that stays in memory, a
- * Node server or a test.
+ * `present` is everyone connected to that room, as the host tracks them: on
+ * Cloudflare, what a Durable Object reads back from its sockets' attachments;
+ * behind an API Gateway, the rows of a connections table. `Relay.make()` tracks
+ * them itself, for a host that stays in memory, such as a Node server or a
+ * test.
  *
- * What the relay adds to a wire is that it vouches for the sender. A peer
- * says who it is once, when it connects, and the relay holds it to that:
- * a message that says it is from anyone else is refused, and the socket
- * with it. So `from`, which a handler is told, is who the relay let in
- * under that name. Whether to let that peer in under that name is the
- * host's to decide before it calls `join`: a token in the request, a
- * session, whatever it has.
+ * The relay authenticates the sender. A peer declares its name once, when it
+ * connects, and is held to it: a message that claims to be from anyone else is
+ * refused, and its socket closed. The `from` a handler receives is therefore
+ * the peer the relay admitted under that name. Deciding whether to admit that
+ * peer under that name is the host's responsibility, before it calls `join`,
+ * using a token in the request, a session, or whatever it has.
  *
- * A room belongs to nobody: the first peer to ask opens it, and it is gone
- * when the last has left. The relay does not say who has come and gone.
- *
- * The room is named in the address and is one object of the host's, as in
- * PartyServer, which gives each room a Durable Object, and as matchbox's
- * signalling server names a room in the URL its peers connect to. The
- * sender is the server's to say, as it is wherever a server stands between
- * players.
+ * A room belongs to nobody: the first peer to connect opens it, and it closes
+ * when the last one leaves. The relay doesn't announce who joins or leaves.
  */
 import { Data, Exit, Schema } from "effect";
 
 import * as Lockstep from "./Lockstep";
 
 /**
- * Who a connection is: the room it is in, and the peer it speaks for. A
- * host keeps this with the connection, and hands the relay everyone in a
- * room when it asks what to do.
+ * A connection's identity: its room, and the peer it speaks for. A host stores
+ * this with the connection, and passes the relay everyone in a room when it
+ * asks what to do.
  *
  * @category Schemas
  */
@@ -71,16 +61,15 @@ export interface Delivery {
 }
 
 /**
- * The relay will not have it: a peer that may not come in, or something a
- * member sent that it will not pass on.
+ * The relay refuses a peer that may not join, or a message it won't forward.
  *
- * A host closes the socket with `code` and `reason`:
+ * The host closes the socket with `code` and `reason`:
  * `socket.close(refused.code, refused.reason)`. The reason is a few words,
- * since a close frame carries 123 bytes at most, and it is what the peer's
- * transport is told. `message` says more, with the names, for a log or for
- * the body of an HTTP answer with `status`. A page is told nothing of a
- * request to connect that was turned away with a status, so a host that
- * wants the peer to know why accepts the socket and closes it.
+ * since a close frame carries at most 123 bytes, and is what the peer's
+ * transport receives. `message` gives more detail, with names, for a log or for
+ * the body of an HTTP response with `status`. A page learns nothing from a
+ * connection request rejected with a status, so a host that wants the peer to
+ * know why accepts the socket and then closes it.
  *
  * @category Errors
  */
@@ -94,37 +83,36 @@ export class Refused extends Data.TaggedError("RelayRefused")<{
     | "speaks for another"
     | "too long";
   readonly message: string;
-  /** For a request to connect that is turned away: 400, 403 or 409. */
+  /** For a rejected connection request: 400, 403 or 409. */
   readonly status: number;
-  /** For a socket that is closed: 1007, 1008 or 1009. */
+  /** For a closed socket: 1007, 1008 or 1009. */
   readonly code: number;
 }> {}
 
 /**
- * How a relay's rooms are kept: how many peers one takes, and which names
- * it lets in.
+ * Options for a relay's rooms: how many peers each admits, and which names.
  *
  * @category Options
  */
 export interface Options {
   /**
-   * The most peers a room takes: 8 when left out. One more is refused
+   * The maximum number of peers in a room. Defaults to 8. One more is refused
    * with `"room full"`.
    */
   readonly maxPeers?: number;
   /**
-   * The only names a room lets in, for a game that knows its players.
-   * Anyone, when left out.
+   * The only names a room admits, for a game that knows its players. Defaults
+   * to any name.
    */
   readonly peers?: readonly string[];
   /**
-   * The longest text a member may send, in characters: 65,536 when left
-   * out. A longer one is refused with `"too long"`.
+   * The longest text a member may send, in characters. Defaults to 65,536. A
+   * longer one is refused with `"too long"`.
    */
   readonly maxLength?: number;
 }
 
-/** A room's or a peer's name is this long at most. */
+/** The maximum length of a room's or a peer's name. */
 const NAME_LENGTH = 64;
 
 const refuse = (
@@ -136,8 +124,8 @@ const refuse = (
   Exit.fail(new Refused({ reason, message, status, code }));
 
 /**
- * The address a peer connects to: the relay's own, then the room, and the
- * peer's name as a query.
+ * Returns the address a peer connects to: the relay's address, then the room,
+ * with the peer's name as a query parameter.
  *
  *   Relay.address("wss://relay.example.com/rooms", { room: "blue", peer: "ada" })
  *   // "wss://relay.example.com/rooms/blue?peer=ada"
@@ -148,19 +136,18 @@ export const address = (base: string, member: Member): string =>
   `${base.replace(/\/+$/u, "")}/${encodeURIComponent(member.room)}?peer=${encodeURIComponent(member.peer)}`;
 
 /**
- * Whether a peer may come in, from the address it asked for and whoever is
- * in that room already. Its member is what the host keeps with the
+ * Decides whether a peer may join, from the address it requested and who is
+ * already in that room. The returned member is what the host stores with the
  * connection.
  *
- * The room is the last part of the address's path and the peer its `peer`
- * query, as `address` writes them, each 64 characters at most. It is
- * refused when the address names neither, when the name is taken in that
- * room, when the room is full, or when the room lets in only names this is
- * not one of.
+ * The room is the last segment of the address's path and the peer its `peer`
+ * query parameter, as `address` writes them, each at most 64 characters. The
+ * peer is refused when the address lacks either, when the name is taken in that
+ * room, when the room is full, or when the room only admits other names.
  *
- * It does not ask whether the peer is who it says: that is the host's to
- * settle before it calls this, with whatever the request carries. Whoever
- * asks first under a free name is let in.
+ * It doesn't verify that the peer is who it claims to be: the host must settle
+ * that before calling it, using whatever the request carries. Whoever first
+ * asks for a free name is admitted.
  *
  * @category Hosting
  */
@@ -229,14 +216,14 @@ export const join = (
 const decoder = new TextDecoder();
 
 /**
- * What to do with something a member sent: the text to pass on to every
+ * Decides what to do with a member's message: the text to forward to every
  * other member of its room.
  *
- * What is passed on is the message as the relay read it, written out again,
- * so nothing rides along that is not part of one. It is refused, and the
- * host closes the socket with the refusal's `code`, when it is not a
- * message, when it is longer than the relay takes, or when it says it is
- * from anyone but the member that sent it.
+ * The forwarded text is the message as the relay parsed it, re-serialized, so
+ * nothing extra rides along. The message is refused, and the host closes the
+ * socket with the refusal's `code`, when it isn't a message, when it is longer
+ * than the relay accepts, or when it claims to be from anyone but the member
+ * that sent it.
  *
  * @category Hosting
  */
@@ -284,47 +271,47 @@ export const forward = (
 };
 
 /**
- * A peer's connection to a relay that keeps its rooms in memory.
+ * A peer's connection to an in-memory relay.
  *
  * @category Models
  */
 export interface Connection {
   readonly member: Member;
   /**
-   * Takes what the peer sent, and sends it on to the others in the room.
-   * Fails when it is refused, for the host to close the socket.
+   * Takes what the peer sent, and forwards it to the others in the room. Fails
+   * when the message is refused, so the host can close the socket.
    */
   readonly receive: (
     data: string | ArrayBuffer | ArrayBufferView
   ) => Exit.Exit<void, Refused>;
-  /** The peer is gone: its name is free again. */
+  /** Ends the connection: the peer's name is free again. */
   readonly close: () => void;
 }
 
 /**
- * A relay that keeps who is connected itself.
+ * A relay that tracks connected peers itself.
  *
  * @category Models
  */
 export interface Server {
   /**
-   * A peer asks to connect, at `url`: `send` is how the relay sends to it.
-   * Fails when the peer may not come in.
+   * Connects a peer at `url`, with `send` for the relay to reach it. Fails when
+   * the peer may not join.
    */
   readonly connect: (
     url: string,
     send: (text: string) => void
   ) => Exit.Exit<Connection, Refused>;
-  /** Who is in a room, in the order they came in. */
+  /** Returns who is in a room, in the order they joined. */
   readonly members: (room: string) => readonly Member[];
-  /** How many rooms have anyone in them. */
+  /** The number of rooms with anyone in them. */
   readonly rooms: number;
 }
 
 /**
- * A relay for a host that stays in memory: a Node server, a Durable Object
- * that does not hibernate, a test. It keeps who is connected, and is told
- * of each socket as it comes and goes.
+ * Makes a relay for a host that stays in memory, such as a Node server, a
+ * Durable Object that doesn't hibernate, or a test. It tracks connected peers,
+ * and is told about each socket as it opens and closes.
  *
  *   const relay = Relay.make()
  *   server.on("connection", (socket, request) => {

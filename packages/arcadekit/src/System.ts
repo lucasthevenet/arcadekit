@@ -1,5 +1,6 @@
 /**
- * Systems: one Effect per system per tick, with plain synchronous loops inside.
+ * Systems are one Effect per system per tick, with plain synchronous loops
+ * inside.
  *
  *   const Movement = System.make("Movement", function*() {
  *     const moving = yield* Moving
@@ -23,21 +24,20 @@ import type { EventDef } from "./Event";
  */
 export const stages = ["preUpdate", "update", "postUpdate"] as const;
 /**
- * The stages of a frame, in the order they run, as a tick has three:
- * `"preFrame"` for what a frame's systems stand on, such as which assets
- * are loaded; `"frame"`, where the game is drawn and heard; and
- * `"postFrame"` for what has to come after all of that, such as putting
- * the picture on the screen.
+ * The stages of a frame, in the order they run, mirroring the three of a tick:
+ * `"preFrame"` for what a frame's systems depend on, such as which assets are
+ * loaded; `"frame"`, where the game is drawn and heard; and `"postFrame"` for
+ * what must come after all of that, such as presenting the image on screen.
  *
  * @category Constants
  */
 export const frameStages = ["preFrame", "frame", "postFrame"] as const;
 /**
- * A stage of the tick, or one of those that run between ticks and must not
- * change the world: `"input"`, which reads the devices and turns what they
- * say into actions, just before a tick, when `app.input` is called; and
- * the three of a frame, `"preFrame"`, `"frame"` and `"postFrame"`, which
- * draw the game, when `app.frame` is called.
+ * A stage of the tick, or one of the stages that run between ticks and must not
+ * change the world: `"input"`, which reads the devices and turns their input
+ * into actions just before a tick, when `app.input` is called; and the three
+ * frame stages, `"preFrame"`, `"frame"` and `"postFrame"`, which draw the game
+ * when `app.frame` is called.
  *
  * @category Models
  */
@@ -47,7 +47,7 @@ export type Stage =
   | (typeof frameStages)[number];
 
 /**
- * Whether a stage is one of a frame's.
+ * Returns whether a stage is a frame stage.
  *
  * @category Guards
  */
@@ -56,59 +56,59 @@ export const isFrameStage = (
 ): stage is (typeof frameStages)[number] =>
   (frameStages as readonly string[]).includes(stage);
 
-/** Every stage, in the order they run where more than one is run together. */
+/** Every stage, in the order they run when several run together. */
 const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
 
 /**
- * What sets a hook off: a state being entered or left. `State.onEnter` and
- * `State.onExit` make one.
+ * What triggers a hook: entering or leaving a state. `State.onEnter` and
+ * `State.onExit` create one.
  *
  * @category Models
  */
 export interface Trigger {
-  /** The state, as `State.define` gave it. */
+  /** The state, as `State.define` returned it. */
   readonly state: { readonly name: string };
   readonly on: "enter" | "exit";
   readonly value: string;
 }
 
 /**
- * What a system's access is said of: a component, a singleton or a state,
- * or an event.
+ * What a system's access declaration can name: a component, a singleton or a
+ * state, or an event.
  *
  * @category Models
  */
 export type Touched = ComponentDef<any> | SingletonSpec<any> | EventDef<any>;
 
 /**
- * What a system says it reads and writes: `System.access` takes one. It is
- * all of what the system does to the game: once a system has said it, the
- * app holds the system to it, and whatever it left out throws where it is
- * done and names what to add.
+ * What a system declares it reads and writes, as `System.access` takes it. It
+ * covers everything the system does to the game: once a system declares it, the
+ * app enforces it, and anything left out throws where it happens and names what
+ * to add.
  *
  * @category Models
  */
 export interface Access {
   /**
-   * The queries it visits: `Query.all(...)` and its kind, and
-   * `Query.removed(...)`. A query's terms are written, but for the ones it
-   * says it only reads (`Query.reads`); what it requires, excludes or
-   * watches for changes is read.
+   * The queries it iterates: `Query.all(...)` and similar, and
+   * `Query.removed(...)`. A query's terms count as written, except the ones it
+   * declares read-only (`Query.reads`); what it requires, excludes or watches
+   * for changes counts as read.
    */
   readonly queries?: readonly (
     | QuerySpec<any>
     | { readonly component: ComponentDef<any> }
   )[];
   /**
-   * What it reads and does not change: a component it reads through
-   * `World`, a singleton or a state, an event it reads.
+   * What it reads without changing: a component it reads through `World`, a
+   * singleton or a state, or an event it reads.
    */
   readonly reads?: readonly Touched[];
   /**
-   * What it changes: a component it sets through `World` or spawns, adds
-   * or removes through `Commands`, a singleton or a state it writes, an
-   * event it emits. A despawn is a change of whatever the entity has that
-   * is named here: a system that despawns bullets writes `Bullet`.
+   * What it changes: a component it sets through `World` or spawns, adds or
+   * removes through `Commands`, a singleton or a state it writes, or an event
+   * it emits. A despawn changes whatever components of the entity are named
+   * here: a system that despawns bullets writes `Bullet`.
    */
   readonly writes?: readonly Touched[];
   /** Whether it draws from `Random`. */
@@ -120,15 +120,15 @@ export interface Access {
 }
 
 /**
- * How a system touches a thing: it reads it, it reads it through a change
- * query and so reacts to whoever writes it, or it writes it.
+ * How a system touches something: it reads it, reads it through a change query
+ * and so reacts to whoever writes it, or writes it.
  *
  * @category Models
  */
 export type Touch = "reads" | "watches" | "writes";
 
 /**
- * A system's access, worked out: every thing it touches, by name.
+ * A system's resolved access: everything it touches, by name.
  *
  * @category Models
  */
@@ -138,9 +138,9 @@ export interface Resolved {
     string,
     { readonly def: ComponentDef<any>; readonly touch: Touch }
   >;
-  /** Events: read, or emitted, which is `"writes"`. */
+  /** Events: read, or emitted, which counts as `"writes"`. */
   readonly events: ReadonlyMap<string, Touch>;
-  /** The queries it named, which it may ask for as they are. */
+  /** The queries it declared, which it may request exactly as declared. */
   readonly queries: readonly QuerySpec<any>[];
   readonly random: boolean;
   readonly actions: boolean;
@@ -149,8 +149,7 @@ export interface Resolved {
 
 /**
  * A system: one Effect that runs once per tick, or once per frame, in its
- * stage. Made with `System.make`; `E` is what it can fail with and `R` what
- * it needs.
+ * stage. Made with `System.make`; `E` is its error and `R` its requirements.
  *
  * @category Models
  */
@@ -163,29 +162,29 @@ export interface System<out E = never, out R = never> extends Pipeable {
   readonly before: readonly string[];
   readonly run: Effect.Effect<void, E, R>;
   /**
-   * Whether the system runs this tick, asked just before it would: every
-   * condition given with `runIf`, in the order given. Undefined for a
-   * system that runs every tick, which is asked nothing.
+   * Whether the system runs this tick, checked just before it would: every
+   * condition given with `runIf`, in order. Undefined for a system that runs
+   * every tick, which checks nothing.
    */
   readonly condition: Effect.Effect<boolean, E, R> | undefined;
   /**
-   * What the system does in place of running, each time its condition does
-   * not hold: `System.otherwise` gives it. Undefined for a system that then
-   * does nothing, as most do.
+   * What the system does instead of running, each time its condition doesn't
+   * hold, as `System.otherwise` sets it. Undefined for a system that does
+   * nothing then, as most do.
    */
   readonly idle: Effect.Effect<void, E, R> | undefined;
   /**
-   * For a hook, what sets it off. A hook runs when that happens, at the
-   * start of a tick, and not with the tick's other systems.
+   * For a hook, what triggers it. A hook runs when that happens, at the start
+   * of a tick, separately from the tick's other systems.
    */
   readonly trigger: Trigger | undefined;
   /**
-   * What the system said it reads and writes, with `System.access`.
-   * Undefined for one that has not said: it may do anything, and nothing
-   * is known of it.
+   * What the system declared it reads and writes, with `System.access`.
+   * Undefined for a system that declared nothing: it may do anything, and
+   * nothing is known about it.
    */
   readonly access: Access | undefined;
-  /** What its conditions read, which it need not say again. */
+  /** What its conditions read, which it doesn't need to declare again. */
   readonly implied: readonly Touched[];
 }
 
@@ -199,13 +198,14 @@ const build = <E, R>(parts: Omit<System<E, R>, "pipe">): System<E, R> => ({
 /**
  * Defines a system from a generator.
  *
- * The body is wrapped with `Effect.gen` once, and the same Effect value is
- * re-run every tick. `Effect.fn` is deliberately not used here: it captures a
- * stack trace on every call, which is fine for request handlers but not for
- * something that runs sixty times a second.
+ * The body is wrapped with `Effect.gen` once, and the same Effect value runs
+ * again every tick. It doesn't use `Effect.fn`, which captures a stack trace on
+ * every call: that suits a request handler, but not something that runs sixty
+ * times a second.
  *
- * A system finishes within its tick: one that waits throws, and the error
- * names it. What takes many ticks is a script, started with `Script.spawn`.
+ * A system must finish within its tick: one that waits throws, and the error
+ * names it. Work that spans many ticks belongs in a script, started with
+ * `Script.spawn`.
  *
  * @category Constructors
  */
@@ -233,26 +233,25 @@ export const make = <Eff extends Effect.Effect<any, any, any>>(
 /**
  * Moves a system to another stage.
  *
- * `System.inStage("frame")` makes it a system of the frame stage, which is
- * for drawing: it runs once per `app.frame`, between ticks, with the world
- * frozen. It reads the world through queries, events and change queries,
- * each from a place of its own, and `yield* Frame` tells it how far the
- * frame is between two ticks. Whatever would change the game there throws.
+ * `System.inStage("frame")` makes it a frame-stage system, for drawing: it runs
+ * once per `app.frame`, between ticks, with the world frozen. It reads the
+ * world through queries, events and change queries, each tracking its own
+ * position, and `yield* Frame` tells it how far the frame is between two ticks.
+ * Anything that would change the game throws there.
  *
- * A frame has two more stages, around that one, as a tick has three.
- * `"preFrame"` runs before every system of `"frame"`, for what they stand
- * on: `Assets.during` is there, so that a frame's systems all find the
- * same assets loaded. `"postFrame"` runs after them all, for what needs
- * everything drawn: a renderer puts the picture on the screen there. All
- * three are the frame stage as far as what a system may do goes.
+ * Like a tick, a frame has three stages. `"preFrame"` runs before every
+ * `"frame"` system, for what they depend on: `Assets.during` runs there, so all
+ * of a frame's systems see the same assets loaded. `"postFrame"` runs after
+ * them all, for what needs everything drawn: a renderer presents the image
+ * there. All three follow the frame stage's rules for what a system may do.
  *
- * `System.inStage("input")` makes it a system of the input stage, which is
- * for bringing the outside in: it runs once per `app.input`, just before a
- * tick, with the world frozen. `yield* Input.Devices` tells it what the
- * keyboard, the pointer and the gamepads say now, and what it makes of
- * that it issues as actions with `Actions.enqueue`, which are logged and
- * applied at the start of the tick. A replay runs no input stage: the
- * actions are in its log.
+ * `System.inStage("input")` makes it an input-stage system, for bringing
+ * outside input in: it runs once per `app.input`, just before a tick, with the
+ * world frozen. `yield* Input.Devices` gives it the current state of the
+ * keyboard, the pointer and gamepads, and it issues whatever it derives from
+ * that as actions with `Actions.enqueue`, which are logged and applied at the
+ * start of the tick. A replay runs no input stage, since the actions are in its
+ * log.
  *
  * @category Combinators
  */
@@ -264,17 +263,17 @@ export const inStage: {
 );
 
 /**
- * Orders a system after another one in the same stage. One in an earlier
- * stage has run already, and naming it is no error; one in a later stage
- * is.
+ * Orders a system after another one in the same stage. Naming a system in an
+ * earlier stage, which has already run, isn't an error; naming one in a later
+ * stage is.
  *
  * **Gotchas**
  *
- * A system keeps its place in the list unless another has to run before
- * it, and that one is pulled forward to just ahead of it: ahead, too, of
- * every system listed between the two, which said nothing. It may then run
- * before a system it reads from, with no error. `app.conflicts` finds such
- * a pair when both have said what they read and write.
+ * A system keeps its position in the list unless another must run before it, in
+ * which case that one moves forward to just ahead of it, and so ahead of every
+ * undeclared system listed between the two. It may then run before a system it
+ * reads from, with no error. `app.conflicts` finds such a pair when both have
+ * declared their access.
  *
  * @category Combinators
  */
@@ -294,17 +293,17 @@ export const after: {
 
 /**
  * Orders a system before another one in the same stage. This is how a plugin
- * slots a system in ahead of one that belongs to a plugin it depends on.
- * One in a later stage runs after it already, and naming it is no error;
- * one in an earlier stage is.
+ * inserts a system ahead of one from a plugin it depends on. Naming a system in
+ * a later stage, which already runs after it, isn't an error; naming one in an
+ * earlier stage is.
  *
  * **Gotchas**
  *
- * A system listed after the other is pulled forward to just ahead of it:
- * ahead, too, of every system listed between the two, which said nothing,
- * and a plugin's systems are listed before the app's own. It may then run
- * before a system it reads from, with no error. `app.conflicts` finds such
- * a pair when both have said what they read and write.
+ * A system listed after the other moves forward to just ahead of it, and so
+ * ahead of every undeclared system listed between the two, and a plugin's
+ * systems are listed before the app's own. It may then run before a system it
+ * reads from, with no error. `app.conflicts` finds such a pair when both have
+ * declared their access.
  *
  * @category Combinators
  */
@@ -323,21 +322,21 @@ export const before: {
 );
 
 /**
- * Runs a system only on the ticks when a condition holds:
+ * Runs a system only on ticks when a condition holds:
  *
  *   System.make("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
  *
- * The condition is an Effect that gives a boolean, asked each tick just
- * before the system would run. `State.is` makes one from a state; any
- * other can read whatever a system can. Given several, the system runs
- * when all of them hold, and they are asked in order until one does not.
+ * The condition is an Effect that returns a boolean, checked each tick just
+ * before the system would run. `State.is` creates one from a state; any other
+ * condition can read whatever a system can. Given several, the system runs when
+ * all of them hold, and they are checked in order until one fails.
  *
- * - A system with no condition is asked nothing, and costs what it did.
- * - A system that does not run does not read. The events of the ticks it
- *   sat out are gone when it runs again, as they are for any system an
- *   event is older than; what its change queries have yet to visit is
- *   kept, however long it was away.
- * - What the condition needs and can fail with are the system's too.
+ * - A system without a condition checks nothing, and costs nothing extra.
+ * - A system that doesn't run doesn't read. The events from the ticks it
+ *   skipped are gone when it runs again, as for any system that falls behind an
+ *   event; what its change queries haven't visited is kept, however long it was
+ *   disabled.
+ * - The condition's requirements and errors become the system's.
  *
  * @category Combinators
  */
@@ -371,7 +370,7 @@ export const runIf: {
   }
 );
 
-/** What a condition reads, when whoever made it said: see `reading`. */
+/** What a condition reads, when its creator declared it: see `reading`. */
 const conditionReads = new WeakMap<object, readonly Touched[]>();
 
 /**
@@ -398,8 +397,8 @@ export const triggered = <E, R>(
 ): System<E, R> => build({ ...self, trigger });
 
 /**
- * Gives a system something to do in place of running, each time its
- * condition does not hold:
+ * Gives a system something to do instead of running, each time its condition
+ * doesn't hold:
  *
  *   const Hud = System.make("Hud", drawHud).pipe(
  *     System.inStage("frame"),
@@ -407,16 +406,16 @@ export const triggered = <E, R>(
  *     System.otherwise(hideHud)
  *   )
  *
- * A system that keeps something outside itself as it should be, a picture
- * on the screen, a track that plays, leaves it as it last was when it is
- * not run. This is how it says what that thing should be then.
+ * A system that maintains something outside itself, such as an image on screen
+ * or a playing track, leaves it as it last was when it doesn't run. This sets
+ * what that thing should be instead.
  *
- * - It runs in the system's place, in its stage and as the system: with
- *   its place in events and changes. In a tick its commands are applied,
- *   and in a frame it may change nothing.
- * - It is not asked for while the system has no condition, or while every
- *   condition holds. Given twice, both run, in the order given.
- * - What it needs and can fail with are the system's too.
+ * - It runs in the system's place, in its stage and as the system, with its
+ *   positions in events and changes. In a tick its commands are applied, and in
+ *   a frame it can't change anything.
+ * - It doesn't run while the system has no condition, or while every condition
+ *   holds. Given twice, both run, in order.
+ * - Its requirements and errors become the system's.
  *
  * @category Combinators
  */
@@ -441,7 +440,7 @@ export const otherwise: {
 );
 
 /**
- * Says what a system reads and writes:
+ * Declares what a system reads and writes:
  *
  *   const Movement = System.make("Movement", function* () {
  *     const moving = yield* Moving
@@ -452,35 +451,34 @@ export const otherwise: {
  *     System.access({ queries: [Coins], reads: [Collided], writes: [Score] })
  *   )
  *
- * Most of it is the system's queries. Beside them it names what it reads
- * and what it changes some other way: a singleton or a state, an event, a
- * component it reaches through `World` or `Commands`; and whether it draws
- * from `Random`, issues actions or starts scripts.
+ * It mostly lists the system's queries. Alongside them, it names what the
+ * system reads and changes in other ways: a singleton or a state, an event, a
+ * component it reaches through `World` or `Commands`; and whether it draws from
+ * `Random`, issues actions or starts scripts.
  *
- * - It is all of what the system does. The app holds a system that said
- *   it to it: a query, a singleton, an event, a read or a write through
- *   the world, a command, an action or a script that was left out throws
- *   where it is made, names the system and says what to add. A draw from
- *   `Random` is found when the system has run. So what is said can be
- *   relied on, by `app.conflicts` and by what comes after.
- * - What a system may write it may read. A query it did not name is let
- *   through when everything it touches is within what the system said.
- * - What a condition given with `System.runIf(State.is(...))` reads is
- *   known, and need not be said. A condition of the game's own is the
- *   system's to say, as is what `System.otherwise` does.
- * - `Time` and `Ticks` are not said, nor is the picture of the devices,
- *   `Input.Keyboard` and its kind.
- * - A system that has not said may do anything, as before, and is told of
- *   in `app.undeclared`. Scripts and handlers are not systems, and are
- *   held to nothing.
- * - Given twice, both hold.
+ * - It covers everything the system does. The app enforces it: a query, a
+ *   singleton, an event, a read or write through the world, a command, an
+ *   action or a script that was left out throws where it happens, names the
+ *   system and says what to add. A draw from `Random` is detected after the
+ *   system has run. So the declaration can be relied on, by `app.conflicts` and
+ *   anything else.
+ * - What a system may write, it may also read. An undeclared query is allowed
+ *   when everything it touches is within the declaration.
+ * - What a `System.runIf(State.is(...))` condition reads is known, and needn't
+ *   be declared. A condition of your own must be declared by the system, as
+ *   must what `System.otherwise` does.
+ * - `Time` and `Ticks` aren't declared, nor are the input views,
+ *   `Input.Keyboard` and similar.
+ * - A system without a declaration may do anything, and is listed in
+ *   `app.undeclared`. Scripts and handlers aren't systems, and aren't held to
+ *   anything.
+ * - Given twice, both declarations apply.
  *
  * **Gotchas**
  *
- * A system is held as it runs, and no sooner. One that touches what it
- * left out only when some condition of the game holds is refused in the
- * first tick in which it does, which may be long into a game and never in
- * a test.
+ * Enforcement happens as the system runs, not earlier. A system that touches
+ * something it left out only under some game condition is refused in the first
+ * tick where that happens, which may be deep into a game and never in a test.
  *
  * @category Combinators
  */
@@ -512,8 +510,8 @@ const STRENGTH: Readonly<Record<Touch, number>> = {
 };
 
 /**
- * A system's access, worked out from what it said: undefined for a system
- * that has not said.
+ * Returns a system's resolved access, from what it declared: undefined for a
+ * system without a declaration.
  *
  * @category Utilities
  */
@@ -587,7 +585,8 @@ export const accessOf = (system: System<any, any>): Resolved | undefined => {
 };
 
 /**
- * Wraps each run in a tracing span named after the system. Use in dev builds.
+ * Wraps each run in a tracing span named after the system. Use it in
+ * development builds.
  *
  * @category Combinators
  */
@@ -701,19 +700,19 @@ export const order = (
 };
 
 /**
- * Two systems whose order matters, and that nothing decides but the order
- * they happened to be listed in.
+ * Two systems whose order matters, decided only by the order they happen to be
+ * listed in.
  *
  * @category Models
  */
 export interface Conflict {
-  /** The one that runs first, as things stand. */
+  /** The one that currently runs first. */
   readonly first: string;
   /** The one that runs after it. */
   readonly second: string;
-  /** What both touch, one of them at least to write it, in order of name. */
+  /** What both touch, with at least one writing it, sorted by name. */
   readonly over: readonly {
-    /** A component's, a singleton's, a state's or an event's name, or a service's. */
+    /** The name of a component, singleton, state, event, or service. */
     readonly what: string;
     readonly kind: "component" | "event" | "service";
     readonly first: Touch;
@@ -730,14 +729,13 @@ export interface Report {
   /** In the order the systems run in. */
   readonly conflicts: readonly Conflict[];
   /**
-   * The systems of the tick, hooks among them, that have not said what
-   * they read and write. Nothing is known of them, and none is in a
-   * conflict.
+   * The tick's systems, hooks included, that haven't declared their access.
+   * Nothing is known about them, and none appears in a conflict.
    */
   readonly undeclared: readonly string[];
 }
 
-/** What two systems both touch, one at least to write it. */
+/** Returns what two systems both touch, with at least one writing it. */
 const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
   const over: Conflict["over"][number][] = [];
   const clash = (
@@ -780,42 +778,40 @@ const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
 };
 
 /**
- * Checks the order of systems for conflicts: the pairs that touch the same
- * thing, one of them at least to write it, in an order that nothing says.
+ * Checks systems for ordering conflicts: pairs that touch the same thing, at
+ * least one of them writing it, in an order nothing specifies.
  *
- * Systems run in the order they are listed in unless `System.after` or
- * `System.before` says otherwise, and a plugin's are listed before the
- * app's own. So which of two systems runs first is often an accident, and
- * where one writes what the other reads, the accident decides what the
- * game does: whether a system sees this tick's positions or the last
- * tick's, or reacts to a change in the tick it was made in or the one
- * after. This finds those, among the systems that said what they read and
- * write with `System.access`.
+ * Systems run in the order they are listed unless `System.after` or
+ * `System.before` says otherwise, and a plugin's systems are listed before the
+ * app's own. So which of two systems runs first is often accidental, and where
+ * one writes what the other reads, the accident decides what the game does:
+ * whether a system sees this tick's positions or last tick's, or reacts to a
+ * change in the same tick or the next. This finds those pairs, among the
+ * systems that declared their access with `System.access`.
  *
- * - A pair is in conflict when both touch a component, a singleton, a
- *   state or an event and one writes it; or both draw from `Random`, both
- *   issue actions, or both start scripts.
- * - It is not one when its order is said: one is `after` or `before` the
- *   other, directly or through others; or they are in different stages,
- *   which run one after the other; or one is a hook, which runs before a
- *   tick's systems. Hooks of one moment are checked among themselves.
- * - The systems of the frame stage and of the input stage change nothing,
- *   and are left out.
+ * - A pair conflicts when both touch a component, a singleton, a state or an
+ *   event and one writes it; or both draw from `Random`, both issue actions, or
+ *   both start scripts.
+ * - A pair doesn't conflict when its order is specified: one is `after` or
+ *   `before` the other, directly or transitively; or they are in different
+ *   stages, which run in sequence; or one is a hook, which runs before a tick's
+ *   systems. Hooks for the same transition are checked among themselves.
+ * - Frame-stage and input-stage systems change nothing, and are excluded.
  *
- * `app.conflicts` is this for an app's systems. A game settles a conflict
- * by saying the order, which changes nothing when it is the order they run
- * in already.
+ * `app.conflicts` runs this on an app's systems. Resolve a conflict by
+ * specifying the order, which changes nothing when it is already the order they
+ * run in.
  *
  * **Gotchas**
  *
- * - It does not say which way round is right. A system that `"watches"`,
- *   listed ahead of the one that writes what it watches, reacts a tick
- *   late; the pair is listed until its order is said, and an order said
- *   the wrong way round is taken at its word.
- * - A despawn is said by one component, and the entity's other components
- *   go with it, as does whatever hangs from it by a relation. A system
- *   that visits those through components the first never named is not
- *   found to be in conflict with it.
+ * - It doesn't say which order is right. A system that `"watches"`, listed
+ *   ahead of the one that writes what it watches, reacts a tick late; the pair
+ *   is reported until its order is specified, and an order specified the wrong
+ *   way round is trusted.
+ * - A despawn is declared through one component, but the entity's other
+ *   components go with it, as does anything attached to it by a relation. A
+ *   system that reaches those through components the first never named isn't
+ *   detected as conflicting with it.
  *
  * @category Utilities
  */
@@ -843,7 +839,7 @@ export const conflicts = (systems: readonly System<any, any>[]): Report => {
         }
       }
     }
-    /** Whether it was said, directly or through others, that `first` runs before `second`. */
+    /** Returns whether `first` was specified to run before `second`, directly or transitively. */
     const said = (first: string, second: string): boolean => {
       const seen = new Set<string>();
       const pending = [second];

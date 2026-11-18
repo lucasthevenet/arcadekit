@@ -1,7 +1,7 @@
 /**
- * Where a thing is in a flat game: its position, how far it is turned, and
- * how large it is. The same three components as `Transform3d`, for a game
- * that has two dimensions and no use for a third.
+ * Position, rotation and scale for a 2D game. These are the same three
+ * components as `Transform3d`, for a game that has no use for a third
+ * dimension.
  *
  *   commands.spawn(
  *     Card,
@@ -9,24 +9,23 @@
  *     Transform2d.Rotation.of({ angle: Math.PI / 6 })
  *   )
  *
- * They are ordinary components: columns of 32-bit floats, written by the
- * game's systems, saved, hashed and replayed. Nothing here draws. A
- * renderer reads them: `@arcadekit/three` draws an entity in the plane of
- * x and y, turned about the axis that comes out of it.
+ * They are ordinary components: columns of 32-bit floats that the game's
+ * systems write, and that are saved, hashed and replayed. Nothing here draws. A
+ * renderer reads them: `@arcadekit/three` draws the entity in the x-y plane,
+ * rotated about the axis perpendicular to it.
  *
- * A game uses one of the two for a thing, not both. They are different
- * components, with different names, and nothing keeps one in step with
- * the other: a system that queries `Transform3d.Position` does not find
- * an entity that has only `Transform2d.Position`. A save names each as
- * the world does, by the module and the component:
- * `"arcadekit/Transform2d.Position"`.
+ * Use one module or the other for an entity, not both. They are distinct
+ * components with distinct names, and nothing keeps them in sync: a system that
+ * queries `Transform3d.Position` doesn't find an entity that only has
+ * `Transform2d.Position`. A save names each by module and component, as the
+ * world does: `"arcadekit/Transform2d.Position"`.
  */
 import { Component, Field } from "./ecs/component";
 import * as Plugin from "./Plugin";
 
 /**
- * Where an entity is, in the units of the game's space. Added with no
- * value, it is at the origin.
+ * An entity's position, in the game's units. Added without a value, it is at
+ * the origin.
  *
  * @category Components
  */
@@ -36,9 +35,9 @@ export const Position = Component.define("arcadekit/Transform2d.Position", {
 });
 
 /**
- * How far an entity is turned, in radians: a positive angle turns from the
- * x axis towards the y axis, which is anticlockwise where y points up and
- * clockwise where it points down.
+ * An entity's rotation, in radians. A positive angle turns from the x axis
+ * towards the y axis, which is anticlockwise when y points up and clockwise
+ * when it points down.
  *
  * @category Components
  */
@@ -47,13 +46,12 @@ export const Rotation = Component.define("arcadekit/Transform2d.Rotation", {
 });
 
 /**
- * How large an entity is, along each axis: 1 is the size it is made at.
+ * An entity's size along each axis, where 1 is its original size.
  *
  * **Gotchas**
  *
- * Added with no value it is all zeros, as any component is, which is no
- * size at all: what draws from it draws nothing. Give it its value where
- * it is added.
+ * Added without a value it is all zeros, like any component, which means no
+ * size at all: a renderer draws nothing. Give it a value when you add it.
  *
  * @category Components
  */
@@ -63,9 +61,9 @@ export const Scale = Component.define("arcadekit/Transform2d.Scale", {
 });
 
 /**
- * Lists the three components, so that a save which names them can be read.
- * The plugin that holds a game's rules depends on it, and so does one that
- * draws from them, as `Three.plugin` of `@arcadekit/three` does.
+ * Registers the three components, so a save that contains them can be loaded.
+ * The plugin that holds a game's rules depends on it, as does any plugin that
+ * draws from them, such as `Three.plugin` from `@arcadekit/three`.
  *
  * @category Plugins
  */

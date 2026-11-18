@@ -1,6 +1,6 @@
 /**
- * States: a game is in the menu, playing or paused, and systems run only in
- * some of those.
+ * States model the mode a game is in, such as the menu, playing or paused, and
+ * let systems run only in some of them.
  *
  *   const Phase = State.define("game/Phase", ["menu", "playing", "paused"])
  *
@@ -15,12 +15,12 @@
  *   phase.value                     // "menu"
  *   phase.set("playing")            // entered at the start of the next tick
  *
- * A state is a singleton of the world: it is saved with a game, with what
- * was asked for, counted in the world's hash, and put back when the action
- * that set it is refused.
+ * A state is a singleton of the world: it is saved with the game, including any
+ * pending transition, included in the world's hash, and rolled back when the
+ * action that set it is refused.
  *
- * A state makes one move a tick, and with several states, the ones asked
- * for are entered in order of name.
+ * A state makes at most one transition per tick, and when several states have
+ * pending transitions, they are entered in order of name.
  */
 import { Effect, Effectable } from "effect";
 
@@ -30,43 +30,43 @@ import type { World as EcsWorld } from "./ecs/world";
 import { World } from "./Services";
 import * as System from "./System";
 
-/** What the world holds of a state. */
+/** What the world stores for a state. */
 type Fields = {
-  /** The state the game is in. */
+  /** The current state. */
   readonly value: FieldDef<string, string[]>;
-  /** The state that was asked for and is not entered yet, or null. */
+  /** The requested state that hasn't been entered yet, or null. */
   readonly next: FieldDef<string | null, (string | null)[]>;
-  /** 1 once the hooks for entering the first state have run. */
+  /** 1 once the enter hooks of the first state have run. */
   readonly entered: FieldDef<number, Uint8Array>;
 };
 
 /**
- * A system's handle to a state, from `yield* SomeState`: which state the
- * game is in, and a way to ask for another.
+ * A system's handle to a state, from `yield* SomeState`: the current state, and
+ * a way to request another.
  *
  * @category Models
  */
 export interface StateHandle<V extends string> {
-  /** The state the game is in. */
+  /** The current state. */
   readonly value: V;
-  /** The state that was asked for and has not been entered yet, if one was. */
+  /** The requested state that hasn't been entered yet, if any. */
   readonly next: V | undefined;
-  /** Whether the game is in one of these states. */
+  /** Returns whether the game is in one of these states. */
   readonly is: (...values: readonly V[]) => boolean;
   /**
-   * Asks for a state. The game enters it at the start of the next tick:
-   * the hooks for leaving the old state run, then the ones for entering
-   * the new, and from that tick on systems run as the new state has them.
-   * One move a tick: the last ask before it counts. Asking for the state
-   * the game is in already takes back an earlier ask, and is not a move.
+   * Requests a state. The game enters it at the start of the next tick: the
+   * exit hooks of the old state run, then the enter hooks of the new one, and
+   * from that tick on systems run according to the new state. There is one
+   * transition per tick, so the last request before it wins. Requesting the
+   * current state cancels an earlier request, and isn't a transition.
    */
   readonly set: (value: V) => void;
 }
 
 /**
- * A state's definition. It is an Effect, so `yield*` gives a handle to the
- * world's value of it. It is also the singleton that holds that value, so
- * it is listed in a plugin's `components` like one.
+ * A state's definition. It is an Effect, so `yield*` returns a handle to the
+ * world's value. It is also the singleton that holds that value, so you list it
+ * in a plugin's `components` like one.
  *
  * @category Models
  */
@@ -110,11 +110,11 @@ export class State<V extends string>
 }
 
 /**
- * Defines a state: its name, the values it can take, and the one a game
- * starts in, which is the first when none is given.
+ * Defines a state: its name, its possible values, and the one a game starts in,
+ * which defaults to the first.
  *
- * The name is one of the world's component names. List the state in a
- * plugin's `components`, so that a save which names it can be loaded.
+ * The name is one of the world's component names. List the state in a plugin's
+ * `components`, so a save that contains it can be loaded.
  *
  * @category Constructors
  */
@@ -138,7 +138,7 @@ const known = new WeakMap<EcsWorld, Registry>();
 
 /** @internal */
 export interface Registry {
-  /** In order of name, so that transitions happen in the same order everywhere. */
+  /** Sorted by name, so transitions happen in the same order everywhere. */
   states: State<any>[];
   readonly handles: Map<State<any>, StateHandle<any>>;
 }
@@ -194,7 +194,8 @@ export const handleOf = <V extends string>(
 };
 
 /**
- * A state's move from one value to another; from nowhere on a game's first tick.
+ * A state's transition from one value to another, or from nothing on a game's
+ * first tick.
  *
  * @category Models
  */
@@ -202,8 +203,8 @@ export interface Move {
   readonly from: string | undefined;
   readonly to: string;
   /**
-   * On a game's first tick: the state that was asked for before it, which
-   * is entered next, in the same tick.
+   * On a game's first tick, the state requested before it, which is entered
+   * next in the same tick.
    */
   readonly followedBy?: string;
 }
@@ -246,7 +247,8 @@ export const enter = (world: EcsWorld, state: State<any>, move: Move): void => {
 };
 
 /**
- * A condition for `System.runIf`: the game is in one of these states.
+ * Returns a condition for `System.runIf` that holds while the game is in one of
+ * these states.
  *
  *   System.make("Movement", ...).pipe(System.runIf(State.is(Phase, "playing")))
  *
@@ -264,19 +266,17 @@ export const is = <V extends string>(
   );
 
 /**
- * Makes a system a hook: it runs once when the game enters a state, at the
- * start of the tick in which it does, before that tick's other systems. It
- * no longer runs every tick.
+ * Turns a system into an enter hook: it runs once when the game enters a state,
+ * at the start of that tick, before the tick's other systems. It no longer runs
+ * every tick.
  *
- * The hooks of the state a game starts in run on its first tick, before
- * any move that was asked for ahead of it, which is made in the same tick.
- * They do not run again when a saved game is loaded: the save holds what
- * they did.
+ * The enter hooks of the initial state run on the game's first tick, before any
+ * transition requested ahead of it, which happens in the same tick. They don't
+ * run again when a saved game is loaded, since the save holds their effects.
  *
- * Hooks of one moment run in the order they were given, or as
- * `System.after` and `System.before` say, and the commands of each are
- * applied before the next. What a hook asks for, with `set`, waits for the
- * next tick.
+ * Hooks for the same transition run in the order given, or as `System.after`
+ * and `System.before` specify, and each hook's commands are applied before the
+ * next runs. A state a hook requests with `set` waits for the next tick.
  *
  * @category Combinators
  */
@@ -286,9 +286,9 @@ export const onEnter =
     System.triggered(self, { state, on: "enter", value });
 
 /**
- * Makes a system a hook: it runs once when the game leaves a state, at the
- * start of the tick in which it does, before the hooks for the state it
- * enters. `yield*` on the state still gives the one being left.
+ * Turns a system into an exit hook: it runs once when the game leaves a state,
+ * at the start of that tick, before the enter hooks of the next state. `yield*`
+ * on the state still returns the one being left.
  *
  * @category Combinators
  */
