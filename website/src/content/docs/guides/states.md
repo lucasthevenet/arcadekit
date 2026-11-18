@@ -1,11 +1,11 @@
 ---
 title: "States"
-description: "A game is in the menu, playing or paused, and its systems run in only some of those. A state is one of a few named values."
+description: "A state is one of a few named values, such as menu, playing or paused. Systems run only in some states, and hooks run when the game enters or leaves one."
 ---
 
-A game is in the menu, playing or paused, and its systems run in only some of those. A state is one of a few named values. A system says when it runs with a condition, and what has to happen once, on the way into a state or out of it, is a hook.
+A game is in a menu, playing or paused, and many of its systems should only run in some of those. A **state** is one of a few named values. A system declares when it runs with a condition, and work that happens once, on entering or leaving a state, is a **hook**.
 
-## Defining one
+## Defining a state
 
 ```ts
 import { Action, Plugin, State, System } from "arcadekit";
@@ -33,48 +33,48 @@ const resume = Action.handler(Resume, function* () {
 });
 
 const Rules = Plugin.make("game/Rules", {
-  components: [Phase], // a state is listed with the components
+  components: [Phase], // states are listed with the components
   systems: [Movement, StartLevel],
   handlers: [resume],
 });
 ```
 
-The game starts in the first value, or in one given as a third argument to `State.define`.
+The game starts in the first value, or in the one passed as the third argument to `State.define`.
 
-## Moving between states
+## Changing state
 
-`yield* Phase` gives a handle: `value`, `is(...values)`, `set(value)`, and `next`, the state asked for and not entered yet.
+`yield* Phase` gives you a handle with `value`, `is(...values)`, `set(value)`, and `next`, the requested state that hasn't been entered.
 
-`set` asks. The game enters the state at the start of the next tick:
+`set` requests a change, and the game enters the new state at the start of the next tick:
 
-1. the hooks for leaving the old state run, seeing the old state;
+1. the exit hooks of the old state run, still seeing the old state;
 2. the state changes;
-3. the hooks for entering the new one run;
-4. the tick's systems run, as the new state has them.
+3. the enter hooks of the new state run;
+4. the tick's systems run, according to the new state.
 
-One move a tick: the last ask before it counts. Asking for the state the game is in takes an earlier ask back, and is not a move. With several states, the ones asked for are entered in order of name.
+There is one transition per tick, and the last request before it wins. Requesting the current state cancels an earlier request and isn't a transition. With several states, the requested ones are entered in order of name.
 
 ## Hooks
 
-`State.onEnter(Phase, "playing")` and `State.onExit(Phase, "playing")` make a system a hook: it runs at that moment and no longer every tick. Hooks of one moment run in the order they were given, or as `System.after` and `System.before` say, and the commands of each are applied before the next.
+`State.onEnter(Phase, "playing")` and `State.onExit(Phase, "playing")` turn a system into a hook: it runs at that moment instead of every tick. Hooks for the same moment run in the order they were given, or as `System.after` and `System.before` specify, and each hook's commands are applied before the next runs.
 
-On the game's first tick, the hooks for the state it starts in run, followed in the same tick by a move that was asked for before it. A game loaded from a save doesn't run them again: the save holds what they did.
+On the game's first tick, the enter hooks of the initial state run, followed in the same tick by any transition requested before it. A game loaded from a save doesn't run them again, since the save already holds their effects.
 
-What a hook asks for waits for the next tick.
+A transition requested by a hook waits for the next tick.
 
 ## Conditions
 
-`System.runIf(condition)` runs a system only when the condition holds. `State.is(Phase, "playing", "paused")` is one; any Effect that gives a boolean is another, and can read whatever a system can. Given several, a system runs when all hold. What a condition needs and can fail with are the system's.
+`System.runIf(condition)` runs a system only when the condition holds. `State.is(Phase, "playing", "paused")` is one condition; any Effect that returns a boolean is another, and can read anything a system can. With several conditions, the system runs when all hold. A condition's requirements and errors become the system's.
 
-A system with no condition is asked nothing. A condition costs about 0.35 µs a tick, and a system that doesn't run costs that and no more.
+A system without conditions is never asked. A condition costs about 0.35 µs per tick, and a system that doesn't run costs that and nothing more.
 
-A system that doesn't run doesn't read. The events of the ticks it sat out are gone when it runs again, so a system that can be switched off doesn't rely on an event for what it must not miss: it watches the state of the game, with a change query or a singleton. What its change queries have yet to visit is kept, however long it was away.
+A system that doesn't run doesn't read. The events from the ticks it skipped are gone when it runs again, so a system that can be switched off shouldn't rely on events for anything it must not miss: it should watch the game's state, with a change query or a singleton. Its change queries keep their pending changes, however long it was inactive.
 
-`System.otherwise(effect)` gives a system something to do in place of running, each time its condition doesn't hold. A system that keeps something outside itself as it should be leaves it as it last was when it isn't run, and this is how it says what that thing should be then. Music uses it, so that music not asked for stops; a view uses it to go back to its initial value. It runs as the system, in its stage: in a tick its commands are applied, and in a frame it may change nothing.
+`System.otherwise(effect)` gives a system something to do instead of running, on each tick its condition fails. A system that keeps something outside itself up to date leaves it as it last was when it doesn't run, and `otherwise` declares what it should be instead. Music uses it so that unrequested music stops, and a view uses it to return to its initial value. It runs as the system, in its stage: in a tick its commands are applied, and in a frame it can change nothing.
 
-## Saved with the game
+## Saving
 
-A state is a singleton of the world: saved, with what was asked for, hashed, and put back when an action that set it is refused.
+A state is a singleton in the world: saved along with any pending request, hashed, and restored when an action that set it is refused.
 
 ## Read more
 

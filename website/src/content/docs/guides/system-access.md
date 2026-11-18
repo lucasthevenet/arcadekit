@@ -1,13 +1,13 @@
 ---
 title: "What a system reads and writes"
-description: "A system can say what it reads and writes. The app holds it to that, and can then list the pairs of systems whose order matters and that nothing says."
+description: "A system can declare what it reads and writes. The app enforces the declaration, and lists the pairs of systems whose order matters but isn't declared."
 ---
 
-A system can say what it reads and writes. The app holds it to that, and can then list the pairs of systems whose order matters and that nothing says.
+A system can declare what it reads and writes. The app enforces the declaration, and can then list the pairs of systems whose order matters but isn't declared.
 
-## Saying it
+## Declaring access
 
-`System.access` says it. Most of it is the system's queries, which already say which terms they only read. Beside them it names what it touches some other way:
+`System.access` takes the declaration. Most of it is the system's queries, which already state which terms they only read. Alongside them, you list what the system touches in other ways:
 
 ```ts
 import {
@@ -46,66 +46,66 @@ const Scoring = System.make("game/Scoring", function* () {
 }).pipe(System.access({ reads: [Hit], writes: [Score] }));
 ```
 
-| It says | For |
+| Option | Declares |
 | --- | --- |
-| `queries` | The queries it visits, `Query.removed` among them. A query's terms are written, but for the ones it [only reads](queries.md); what it requires, excludes or watches for changes is read |
-| `reads` | What it reads and doesn't change: a singleton, a state, an event it reads, a component it reads through `World` |
+| `queries` | The queries it runs, including `Query.removed`. A query's terms count as written, except the ones it [only reads](queries.md#read-only-access); what it requires, excludes or watches counts as read |
+| `reads` | What it reads without changing: a singleton, a state, an event it reads, a component it reads through `World` |
 | `writes` | What it changes: a singleton, a state, an event it emits, a component it sets through `World` or spawns, adds or removes through `Commands` |
 | `random: true` | It draws from `Random` |
 | `actions: true` | It issues actions with `Actions.enqueue` |
 | `scripts: true` | It starts scripts with `Script.spawn` |
 
-Some things are not said:
+Some things don't need declaring:
 
-- What a condition given with `System.runIf(State.is(...))` reads is known. A condition of the game's own is the system's to say, as is what `System.otherwise` does.
-- `Time` and `Ticks`, and the devices, `Input.Keyboard` and its kind.
+- What a `System.runIf(State.is(...))` condition reads is known. A condition of your own must be declared by the system, as must whatever `System.otherwise` does.
+- `Time`, `Ticks`, and the devices, such as `Input.Keyboard`.
 
-A system of a plugin says what it touches, so that whichever game installs it can check its order.
+Declare access in a plugin's systems, so that any game that installs the plugin can check its order.
 
-## What the app holds a system to
+## Enforcement
 
-What a system said is all of what it does. A query, a singleton, an event, a read or a write through the world, a command, an action or a script that was left out throws where it is made, names the system and says what to add. So what a system says can be relied on.
+A declaration is the complete list of what a system does. Accessing a query, singleton or event, reading or writing through the world, issuing a command, an action or a script that isn't declared throws where it happens, names the system, and says what to add. So you can rely on a declaration.
 
-- A draw from `Random` that was left out is found when the system has run.
-- A system is held as it runs, and no sooner. One that touches what it left out only when some condition of the game holds is refused in the first tick in which it does, which may be an hour into a game and never in a test.
-- What a system may write it may read. A query it didn't name is let through when everything the query touches is within what the system said.
-- A despawn takes everything an entity has, whatever was said. It is held to this much: the entity has a component the system said it writes. A system that despawns bullets says `writes: [Bullet]`.
-- Scripts and handlers are not systems, and are held to nothing.
-- A system that hasn't said may do anything, and costs a tick nothing more. One that has costs it about 50 ns: a tick of ten systems that do nothing takes 6.1 µs when each has said, against 5.6. Nothing is checked inside a loop.
+- An undeclared draw from `Random` is detected once the system has run.
+- A system is checked as it runs, not before. A system that touches something undeclared only under some game condition is refused on the first tick it does so, which may be an hour into a game and never in a test.
+- Whatever a system may write, it may also read. An undeclared query is allowed when everything it touches is within the declaration.
+- A despawn removes everything an entity has, whatever was declared. The check is that the entity has a component the system declares it writes: a system that despawns bullets declares `writes: [Bullet]`.
+- Scripts and handlers aren't systems and aren't checked.
+- A system without a declaration may do anything, at no extra cost. One with a declaration costs about 50 ns per tick: a tick of ten empty systems takes 6.1 µs when each has a declaration, against 5.6 µs. Nothing is checked inside a loop.
 
 ## Checking the order
 
-Which of two systems runs first is often an accident of [where they were listed](systems.md#order). `app.conflicts` lists the pairs for which the accident decides something, and `app.undeclared` the systems that haven't said, which are in no check:
+Which of two systems runs first is often an accident of [where they were listed](systems.md#ordering). `app.conflicts` lists the pairs where that accident matters, and `app.undeclared` lists the systems with no declaration, which no check covers:
 
 ```ts sketch
 app.conflicts;
 // [{
-//   first: "game/Movement", // runs first, as things stand
+//   first: "game/Movement", // currently runs first
 //   second: "game/Aiming",
 //   over: [{ what: "game/Position", kind: "component", first: "writes", second: "reads" }],
 // }]
 ```
 
-- Two systems are in conflict when both touch a component, a singleton, a state or an event, one of them at least to write it; or both draw from `Random`, both issue actions, or both start scripts.
-- They are not when their order is said: one is `after` or `before` the other, directly or through others; they are in different stages; or one is a hook, which runs before a tick's systems. Hooks of one moment are checked among themselves.
-- The systems of the frame stage and of the input stage change nothing, and are in neither list.
+- Two systems conflict when both touch a component, singleton, state or event and at least one writes it, or when both draw from `Random`, both issue actions, or both start scripts.
+- They don't conflict when their order is declared (one is `after` or `before` the other, directly or through others), when they are in different stages, or when one is a hook, which runs before a tick's systems. Hooks for the same moment are checked against each other.
+- Frame and input stage systems change nothing, and appear in neither list.
 
-A conflict is settled by saying the order, with `System.after` or `System.before`, which changes nothing when it is the order they run in already. A test holds the list to empty, and `app.undeclared` too in a game that wants every system to have said:
+Resolve a conflict by declaring the order with `System.after` or `System.before`, which changes nothing if that is already the running order. A test can require the list to be empty, and `app.undeclared` too, in a game where every system declares its access:
 
 ```ts sketch
 expect(app.conflicts).toEqual([]);
 expect(app.undeclared).toEqual([]);
 ```
 
-`System.conflicts(systems)` is the same check of any list of systems, and `System.accessOf(system)` is what one of them said, worked out.
+`System.conflicts(systems)` runs the same check on any list of systems, and `System.accessOf(system)` returns one system's resolved declaration.
 
-## What the check doesn't find
+## What the check doesn't catch
 
-- **Which way round is right.** `"watches"` is a read through a change query. A system listed ahead of the one that writes what it watches reacts a tick late, and the pair is in the list until its order is said. An order said the wrong way round is taken at its word. In a game that [ticks only when needed](running-a-game.md), the tick such a system is late by may not come: the game rests with work undone, unless the system that made the change asks for a tick with `Ticks.more`.
-- **What a despawn takes.** A despawn is said by one component, and the entity's other components go with it, as does whatever hangs from it by a relation. A system that visits those through components the first never named is not found to be in conflict with it.
-- **A system that hasn't said.** It is in `app.undeclared` and in no pair.
+- **Which order is right.** `"watches"` is a read through a change query. A system listed before the one that writes what it watches reacts a tick late, and the pair stays in the list until you declare an order. A declared order is trusted even if it's the wrong way round. In a game that [ticks only when needed](running-a-game.md), the late tick may never come: the game rests with work undone, unless the system that made the change requests a tick with `Ticks.more`.
+- **What a despawn removes.** A despawn is declared through one component, but the entity's other components go with it, as does everything attached to it by a relation. A system that visits those through components the first never declared isn't found to conflict with it.
+- **Systems without a declaration.** They appear in `app.undeclared` and in no pair.
 
 ## Read more
 
-- [Systems](systems.md): their order and their stages.
+- [Systems](systems.md): ordering and stages.
 - [`System`](/reference/arcadekit/System) in the API reference.

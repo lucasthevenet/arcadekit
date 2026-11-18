@@ -1,11 +1,11 @@
 ---
 title: "Scripts"
-description: "A script is an Effect that runs across many ticks: ordinary sequential code that waits for time to pass or for something to happen. A cutscene, a wave of enemies, a tutorial step."
+description: "A script is an Effect that runs across many ticks: sequential code that waits for game time to pass or for an event. Use it for cutscenes, enemy waves and tutorial steps."
 ---
 
-A script is an Effect that runs across many ticks: ordinary sequential code that waits for time to pass or for something to happen. A cutscene, a wave of enemies, a tutorial step.
+A **script** is an Effect that runs across many ticks: ordinary sequential code that waits for game time to pass or for something to happen. Use scripts for cutscenes, waves of enemies, or tutorial steps.
 
-## Writing one
+## Writing a script
 
 ```ts
 import { Commands, Component, Field, Script } from "arcadekit";
@@ -30,35 +30,35 @@ const Fountain = Effect.gen(function* () {
 });
 ```
 
-A script waits three ways:
+A script can wait in three ways:
 
-- `script.nextTick`, until the next tick;
-- `script.sleep(seconds)`, for game time, which passes only as the game ticks;
-- `yield* event.wait`, until an event arrives.
+- `script.nextTick` waits until the next tick;
+- `script.sleep(seconds)` waits for game time, which only advances as the game ticks;
+- `yield* event.wait` waits until an event arrives.
 
-A script advances only during ticks. It never waits on the clock: `Effect.sleep`, a promise or a timer would resume it outside a tick, at a moment no replay repeats. Nothing refuses them.
+A script only advances during ticks. It never waits on the system clock: `Effect.sleep`, a promise or a timer would resume it outside a tick, at a moment no replay can reproduce. Nothing refuses them, so avoid them in scripts.
 
-In a game that [ticks only when needed](running-a-game.md), a script that sleeps or waits for a tick keeps the game ticking. One that should let it rest waits for an event.
+In a game that [ticks only when needed](running-a-game.md), a script that sleeps or waits for a tick keeps the game ticking. A script that should let the game rest waits for an event instead.
 
-## Starting one
+## Starting a script
 
-- `app.spawnScript(Fountain)` from outside: it runs now, up to its first wait.
-- `(yield* Script).spawn(Fountain)` from a system, a handler or another script: it first runs when the tick flushes, after the systems.
+- `app.spawnScript(Fountain)` starts it from outside the simulation: it runs immediately, up to its first wait.
+- `(yield* Script).spawn(Fountain)` starts it from a system, a handler or another script: it first runs when the tick flushes, after the systems.
 - A plugin's `scripts` start with the app, after its `setup`.
 
-## When one fails
+## Failures
 
-The app watches every script started these ways. One that fails is logged at once, with its cause, through Effect's logger, so the loggers provided to `App.make` receive it. One that is interrupted has not failed, and every script still running is interrupted when the app's scope closes.
+The app supervises every script started these ways. A script that fails is logged immediately, with its cause, through Effect's logger, so loggers provided to `App.make` receive it. An interrupted script hasn't failed, and every running script is interrupted when the app's scope closes.
 
-The game goes on without the failed script. With `App.make({ onScriptFailure: "stop" })` the app stops instead: the tick the script failed in runs to its end and then fails with `App.ScriptFailed`, a defect that carries the script's cause, and so does every tick after it, without running anything. A driver stops on it.
+By default, the game continues without the failed script. With `App.make({ onScriptFailure: "stop" })` the app stops instead: the tick the script failed in runs to its end and then fails with `App.ScriptFailed`, a defect carrying the script's cause, as does every later tick, without running anything. A driver stops on it.
 
-A fiber started with `Effect.forkDetach` is the caller's to observe. The app doesn't report its failure or interrupt it, and nothing stops it changing the game at a moment no replay repeats.
+A fiber started with `Effect.forkDetach` is the caller's to observe. The app doesn't report its failure or interrupt it, and nothing stops it changing the game at a moment no replay can reproduce.
 
 ## Scripts and saves
 
-A save can't hold a script in mid-flight. A plugin lists its `scripts`, and they start again from their beginning when a game is loaded. So a script keeps what it must not lose in the world, and picks up from what it finds there. The same goes for a rewind under rollback.
+A save can't capture a script mid-run. A plugin's `scripts` restart from the beginning when a game is loaded, so a script keeps anything it must not lose in the world, and resumes from what it finds there. The same applies after a rollback rewind.
 
-A script started by hand, with `app.spawnScript` or `Script.spawn`, is not started again by a load, and a rewind stops it: the game starts it again, from what it finds in the world.
+A script started by hand, with `app.spawnScript` or `Script.spawn`, isn't restarted by a load, and a rewind stops it: your game starts it again, from what it finds in the world.
 
 ## Read more
 

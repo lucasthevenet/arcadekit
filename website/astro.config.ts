@@ -25,7 +25,7 @@ import {
 import { tableNames } from "./src/lib/tables.ts";
 
 const DESCRIPTION =
-  "A framework for browser games of any genre, on Effect 4: an entity component system whose ticks are deterministic, so a game saves, replays and plays over the network as it is.";
+  "A framework for browser games of any genre, built on Effect 4: an entity component system with deterministic ticks, so every game can save, replay and play online.";
 
 // The pages are found when this config is read: restart `astro dev` after adding one.
 const pages = discoverPages();

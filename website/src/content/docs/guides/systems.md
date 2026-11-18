@@ -1,11 +1,11 @@
 ---
 title: "Systems"
-description: "A system is the game's code: one Effect per tick, with plain loops inside. This guide covers the order systems run in, their stages, running only some of the time, random numbers, and saying what a system touches."
+description: "A system is your game's logic: one Effect per tick, with plain loops inside. Learn how systems are ordered, staged, run conditionally, and use random numbers."
 ---
 
-A system is the game's code: one Effect per tick, with plain loops inside. This guide covers the order systems run in, their stages, running only some of the time, random numbers, and saying what a system touches.
+A **system** is your game's logic: one Effect per tick, with plain loops inside. This guide covers system order, stages, running conditionally, random numbers, and declaring what a system touches.
 
-## Making one
+## Creating a system
 
 ```ts
 import { Component, Field, Query, System, Time } from "arcadekit";
@@ -22,15 +22,15 @@ const Movement = System.make("game/Movement", function* () {
 });
 ```
 
-The body asks for what it needs with `yield*`: queries, singletons, events, `Time`, `Random`, `Commands`, `World`, and any service of the game's own. Whatever it needs that no plugin provides is a requirement of the app, and a missing one doesn't compile.
+The body gets what it needs with `yield*`: queries, singletons, events, `Time`, `Random`, `Commands`, `World`, and any service of your own. Anything it needs that no plugin provides becomes a requirement of the app, and a missing one is a compile error.
 
-A system finishes within its tick: one that waits throws, and the error names it. Work that takes many ticks is a [script](scripts.md). A system changes which entities exist only through `Commands`, and reacts to what changed with a [change query](queries.md), not by comparing with a copy it keeps. It issues an action with the [`Actions` service](events-and-actions.md), never with `app.enqueue`, which would put the action in the log and have a replay apply it twice.
+A system finishes within its tick: a system that waits throws, and the error names it. Work that spans many ticks belongs in a [script](scripts.md). A system changes which entities exist only through `Commands`, and reacts to changes with a [change query](queries.md) rather than by comparing against a copy it keeps. It issues actions with the [`Actions` service](events-and-actions.md), never with `app.enqueue`, which would log the action and make a replay apply it twice.
 
-## Order
+## Ordering
 
-Systems run in the order they are listed. A plugin's systems come before the app's own, and a plugin's dependencies' before it.
+Systems run in the order they are listed. A plugin's systems run before the app's own, and a plugin's dependencies' systems before the plugin's.
 
-`System.after(other)` and `System.before(other)` say that a system runs after or before another:
+`System.after(other)` and `System.before(other)` declare that a system runs after or before another:
 
 ```ts sketch
 const Expiry = System.make("game/Expiry", function* () {
@@ -38,13 +38,13 @@ const Expiry = System.make("game/Expiry", function* () {
 }).pipe(System.after(Movement));
 ```
 
-These order systems within a stage. Saying an order that is already true changes nothing, so say it wherever it matters.
+These order systems within a stage. Declaring an order that already holds changes nothing, so declare it wherever it matters.
 
-Each system keeps its place in the list unless another has to run before it, and that one is then pulled forward to just ahead of it. The system that moved now runs ahead of everything listed between the two, which said nothing: it may now run before a system it reads from, with no error. [Checking the order](system-access.md#checking-the-order) finds such a pair when both systems have said what they touch.
+Each system keeps its place in the list unless another system must run before it, in which case that one moves to just ahead of it. The system that moved now runs ahead of everything listed between the two, which declared nothing, so it may now run before a system it reads from, with no error. [Checking the order](system-access.md#checking-the-order) finds such a pair when both systems declare what they touch.
 
 ## Stages
 
-A tick has three stages, `"preUpdate"`, `"update"` and `"postUpdate"`, each run whole before the next. A frame has three too, `"preFrame"`, `"frame"` and `"postFrame"`. And there is the input stage, before each tick. A system is in `"update"` unless it says otherwise:
+A tick has three stages, `"preUpdate"`, `"update"` and `"postUpdate"`, each run in full before the next. A frame has three too, `"preFrame"`, `"frame"` and `"postFrame"`. The input stage runs before each tick. A system runs in `"update"` unless you place it elsewhere:
 
 ```ts sketch
 const Draw = System.make("game/Draw", function* () {
@@ -52,15 +52,15 @@ const Draw = System.make("game/Draw", function* () {
 }).pipe(System.inStage("frame"));
 ```
 
-`"preFrame"` is for what every system of a frame stands on, such as which assets are loaded, and `"postFrame"` for what needs everything drawn, such as a renderer's last step.
+`"preFrame"` is for what every frame system depends on, such as which assets are loaded, and `"postFrame"` is for what needs everything drawn first, such as a renderer's final pass.
 
-The frame stage and the input stage are outside the simulation, and a replay runs neither. So an action issued there with `Actions.enqueue` is logged, as one from outside is.
+The frame and input stages are outside the simulation, and a replay runs neither. An action issued there with `Actions.enqueue` is therefore logged, like any input from outside.
 
-`app.systemOrder` and `app.frameOrder` list the systems in the order they run. See [ticks and frames](../concepts/ticks-and-frames.md) for what each stage may do.
+`app.systemOrder` and `app.frameOrder` list systems in running order. See [ticks and frames](../concepts/ticks-and-frames.md) for what each stage allows.
 
-## Running only some of the time
+## Running conditionally
 
-`System.runIf(condition)` runs a system only on the ticks when the condition holds. A condition is any Effect that gives a boolean. The usual one is a state:
+`System.runIf(condition)` runs a system only on ticks where the condition holds. A condition is any Effect that returns a boolean. The most common one checks a state:
 
 ```ts sketch
 const Movement = System.make("game/Movement", function* () {
@@ -68,11 +68,11 @@ const Movement = System.make("game/Movement", function* () {
 }).pipe(System.runIf(State.is(Phase, "playing")));
 ```
 
-A system that keeps something outside itself as it should be, music or a picture, can say what to do while it doesn't run with `System.otherwise(effect)`. See [states](states.md).
+A system that keeps something outside itself up to date, such as music or a view, can declare what to do while it doesn't run with `System.otherwise(effect)`. See [states](states.md).
 
-## Work of a system's own
+## Requesting ticks
 
-A game that [ticks only when needed](running-a-game.md) rests when nothing is waiting, and what the app can see waiting is actions, states, scripts and events. A system that has work every tick for a while, a clock that runs down or a body in flight, is none of those. It asks for the next tick itself, each tick it has more to do:
+A game that [ticks only when needed](running-a-game.md) rests when nothing is pending, and the app sees actions, states, scripts and events as pending work. A system with work to do on every tick for a while, such as a countdown or a body in flight, is none of those, so it requests the next tick itself on every tick it has more to do:
 
 ```ts
 import { Field, Singleton, System, Ticks, Time } from "arcadekit";
@@ -88,11 +88,11 @@ const Countdown = System.make("game/Countdown", function* () {
 });
 ```
 
-Nothing tells a system that counts down and never asks from one with nothing to do: it stops when the game rests, with no error. In a game that ticks in real time `more` does nothing, so a system that might ever run in a game that rests says it. A handler or a script asks the same way.
+Nothing distinguishes a countdown system that never requests a tick from one with nothing to do: it stops when the game rests, with no error. In a game that ticks in real time, `more` does nothing, so call it in any system that might run in a game that rests. Handlers and scripts request ticks the same way.
 
 ## Random numbers
 
-`Random` is the one source of randomness in a simulation:
+`Random` is the only source of randomness in a simulation:
 
 ```ts
 import { App, Component, Field, Query, Random, System } from "arcadekit";
@@ -104,9 +104,9 @@ const Sparks = Query.all(Spark);
 const Scatter = System.make("game/Scatter", function* () {
   const random = yield* Random;
   (yield* Sparks).each((spark) => {
-    spark.x += random.next() - 0.5; // from 0 up to, not including, 1
+    spark.x += random.next() - 0.5; // from 0 inclusive to 1 exclusive
   });
-  const roll = random.int(1, 6); // a whole number, both ends included
+  const roll = random.int(1, 6); // an integer, both ends inclusive
   const cue = random.pick(["thud", "clang"]);
   const deck = random.shuffle([1, 2, 3, 4]); // in place
 });
@@ -117,16 +117,16 @@ const program = Effect.gen(function* () {
 ```
 
 - Its methods are plain calls, so they are fine inside a loop. A draw costs about 4 ns.
-- The same seed gives the same numbers on every machine and in every JavaScript engine. With no seed, the seed is 0, so a game is repeatable until it is given a seed from outside, such as the time at the entry point.
-- `int` gives every value equal odds, and `shuffle` every order.
-- The generator's state is four numbers in the world, `app.world.random.state`, so it is in the world's hash. A replay made with the same seed draws the same numbers, and copying the state back resumes the sequence where it was.
-- Effect's own `Random` module is seeded from the same generator inside an app, so `Random.next` from `"effect"`, or anything built on it, replays too. It costs an Effect per draw, so it isn't for loops.
-- In the frame stage and the input stage, `Random` is a generator of its own, which is no part of the world: what draws can be random and change nothing.
-- It isn't for secrets: a few outputs give away the rest.
+- The same seed produces the same numbers on every machine and in every JavaScript engine. Without a seed, the seed is 0, so a game stays reproducible until you pass a seed from outside, such as the current time at the entry point.
+- `int` gives every value equal probability, and `shuffle` every permutation.
+- The generator's state is four numbers in the world, `app.world.random.state`, so it is part of the world's hash. A replay with the same seed draws the same numbers, and copying the state back resumes the sequence where it was.
+- Inside an app, Effect's own `Random` module is seeded from the same generator, so `Random.next` from `"effect"`, and anything built on it, replays too. It costs an Effect per draw, so don't use it in loops.
+- In the frame and input stages, `Random` is a separate generator that isn't part of the world, so rendering can be random without changing the game.
+- It isn't suitable for secrets: a few outputs reveal the rest.
 
-## Saying what a system touches
+## Declaring what a system touches
 
-A system can say what it reads and writes, with `System.access`: its queries, and beside them what it touches some other way.
+A system can declare what it reads and writes with `System.access`: its queries, plus anything it touches some other way.
 
 ```ts sketch
 const Movement = System.make("game/Movement", function* () {
@@ -134,7 +134,7 @@ const Movement = System.make("game/Movement", function* () {
 }).pipe(System.access({ queries: [Moving] }));
 ```
 
-The app holds the system to what it said, and can then check the order: `app.conflicts` lists the pairs of systems that touch the same thing, one of them to write it, in an order nothing says. A system of a plugin says what it touches, so that whichever game installs it can check its order. See [what a system reads and writes](system-access.md).
+The app holds the system to its declaration and can then check the order: `app.conflicts` lists the pairs of systems that touch the same data, at least one of them writing it, with no declared order. Declare access in a plugin's systems, so that any game installing the plugin can check its order. See [what a system reads and writes](system-access.md).
 
 ## Read more
 

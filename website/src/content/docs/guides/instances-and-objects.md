@@ -1,11 +1,11 @@
 ---
 title: "Instances and objects"
-description: "The two systems of @arcadekit/three that draw a kind of thing: Three.instances draws a crowd as one mesh, and Three.objects keeps one Object3D per entity."
+description: "@arcadekit/three draws each kind of entity with one of two systems: Three.instances draws a crowd as one mesh, and Three.objects keeps one Object3D per entity."
 ---
 
-[`@arcadekit/three`](drawing-with-three.md) draws a kind of thing with one of two systems of the frame stage. `Three.instances` draws every entity of a kind as one instance of one mesh: it is for a crowd. `Three.objects` keeps one `Object3D` per entity: it is for the few things that are more than a copy of one mesh.
+[`@arcadekit/three`](drawing-with-three.md) draws each kind of entity with one of two frame-stage systems. **`Three.instances`** draws every entity of a kind as an instance of one mesh, for crowds. **`Three.objects`** keeps one `Object3D` per entity, for the few entities that are more than a copy of one mesh.
 
-Both tell what to draw from the components an entity has, and where from its [`Transform3d` or `Transform2d`](drawing-with-three.md#where-a-thing-is). The rules say what a thing is, never how it looks.
+Both decide what to draw from the components an entity has, and where from its [`Transform3d` or `Transform2d`](drawing-with-three.md#position-rotation-and-scale). The rules say what an entity is, never how it looks.
 
 ## Instances
 
@@ -21,7 +21,7 @@ const Hidden = Component.tag("game/Hidden");
 const geometry = new IcosahedronGeometry(1);
 
 const Rocks = Three.instances("game/Rocks", {
-  of: [Rock, Lit], // or one: Rock
+  of: [Rock, Lit], // or a single component: Rock
   without: [Hidden],
   geometry,
   material: new MeshStandardMaterial({ color: "#8a8f98" }),
@@ -32,27 +32,27 @@ const Rocks = Three.instances("game/Rocks", {
 });
 ```
 
-`Three.instances` draws every entity of a kind as one instance of one `InstancedMesh`. An entity is one of them while it has every component `of` names, none of `without`, and a `Position`.
+`Three.instances` draws every entity of a kind as an instance of one `InstancedMesh`. An entity belongs to the kind while it has every component in `of`, none in `without`, and a `Position`.
 
-- Each frame it reads the columns raw and writes one matrix per entity straight into the mesh's instance buffer. No object, matrix or vector is made per entity, and nothing is allocated per entity per frame. Ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over.
-- The buffer has room for `capacity` instances, 256 unless told, and doubles when it runs out. That is the one time the system allocates.
-- The mesh is made on the first frame, named after the system, and added to the scene. It is not culled, since its instances are wherever the entities are. `prepare` is handed the mesh once, to say otherwise or to set anything else.
-- The entities are drawn where the last tick left them, or, with `smooth: true`, [between their last two places](between-two-ticks.md).
-- A geometry and a material given this way are there when the system is made. A level's are [made of its assets](textures-and-models.md), while its bundle is loaded.
+- Each frame, it reads the columns raw and writes one matrix per entity straight into the mesh's instance buffer. It creates no object, matrix or vector per entity, and allocates nothing per entity per frame. Ten thousand moving objects cost 0.1 to 0.4 ms of a frame before Three.js takes over.
+- The buffer has room for `capacity` instances, 256 by default, and doubles when it fills up. That is the only time the system allocates.
+- The mesh is created on the first frame, named after the system, and added to the scene. It isn't frustum-culled, since its instances can be anywhere; `prepare` receives the mesh once, to change that or set anything else. Instances are drawn in no particular order.
+- Entities are drawn where the last tick left them or, with `smooth: true`, [interpolated between their last two positions](between-two-ticks.md).
+- A geometry and material passed this way exist when the system is created. A level's are [built from its assets](textures-and-models.md) while its bundle is loaded.
 
-When the app's scope closes the mesh is taken out of the scene and disposed of. The geometry and the material are yours, to share between several kinds and to dispose of. Nothing here does, and nothing says when one was forgotten.
+When the app's scope closes, the mesh is removed from the scene and disposed. The geometry and material are yours: share them between kinds, and dispose of them yourself. Nothing here disposes of them, or warns when you forget.
 
-## A colour each
+## Per-instance colour
 
 ```ts title="look.ts"
-// The rules: a colour is three numbers, as a place is.
+// The rules: a colour is three numbers, like a position.
 const Paint = Component.define("game/Paint", {
   r: Field.f32,
   g: Field.f32,
   b: Field.f32,
 });
 
-// The page: every rock is drawn in its own.
+// The page: every rock is drawn in its own colour.
 const Painted = Three.instances("game/Painted", {
   of: Rock,
   geometry,
@@ -61,17 +61,17 @@ const Painted = Three.instances("game/Painted", {
 });
 ```
 
-`color` names a component of the game's that gives each instance a colour of its own. `@arcadekit/three` defines none: what colour a thing is, a team's or how hurt it is, is the game's to say, and its rules write it as they write a place.
+`color` names one of your game's components to give each instance its own colour. `@arcadekit/three` defines none: what colour an entity is, such as its team's or how damaged it is, is up to your game, whose rules write it as they write a position.
 
-- Any component kept in a table with the fields `r`, `g` and `b` is a colour, whatever else it has. Anything else given as one throws when the system is made, and is a type error before that.
-- An entity is then one of the kind only while it has the colour too. One with no colour is not drawn by this system.
-- The material's own colour is multiplied by it, so a white material is drawn in exactly the instance's.
-- The numbers are a colour as a hex code writes it: `#ff6188` is an `r` of `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`, from 0 to 1 in fields of floats. A component whose three fields are whole numbers, `Field.u8`, holds the bytes themselves, 0 to 255. The three are all one or all the other, which is checked when the system is made.
-- A renderer works in linear colour, so each number is converted: a byte exactly, and a float to a sixteenth of a byte.
-- A number off either end, a 255 in a field of floats or a 300 in one of whole numbers, is no colour: the frame fails with an error that names the entity and its three numbers.
-- `colorSpace: "srgb-linear"` says the numbers are the renderer's own instead, what `new Color("#ff6188")` of Three.js has as its `r`, `g` and `b`. They are handed over as they are, bytes over 255, and nothing is checked: a number over 1 is brighter than white, which a renderer that blooms can show. `"srgb"`, the other name Three.js gives, is what is assumed.
-- It costs about 6 ns more per entity, most of it the conversion, and nothing is allocated.
-- With `smooth: true` a colour changes evenly between two ticks, as a place does, and `snap` does not apply to it: a colour is never too far to go to. It changes in the numbers the game has, and is converted then: halfway between two hex codes is the code halfway between them.
+- Any table-stored component with `r`, `g` and `b` fields is a colour, whatever else it has. Anything else passed as one throws when the system is created, and is a type error before that.
+- An entity then belongs to the kind only while it has the colour too. One without a colour isn't drawn by this system.
+- The material's colour is multiplied by it, so a white material is drawn in exactly the instance's colour.
+- The numbers are a colour as a hex code writes it: `#ff6188` is an `r` of `0xff / 255`, a `g` of `0x61 / 255` and a `b` of `0x88 / 255`, from 0 to 1 in float fields. A component with integer fields, `Field.u8`, holds the bytes themselves, 0 to 255. The three fields must all be floats or all integers, which is checked when the system is created.
+- Renderers work in linear colour, so each value is converted: a byte exactly, and a float to within a sixteenth of a byte.
+- A value out of range, such as 255 in a float field or 300 in an integer one, isn't a colour: the frame fails with an error naming the entity and its three values.
+- `colorSpace: "srgb-linear"` declares that the values are already in the renderer's space, what `new Color("#ff6188")` of Three.js holds as its `r`, `g` and `b`. They are passed through as they are, bytes divided by 255, and unchecked: a value over 1 is brighter than white, which a renderer with bloom can show. `"srgb"`, Three.js's other name, is the default.
+- It costs about 6 ns more per entity, mostly the conversion, and allocates nothing.
+- With `smooth: true`, a colour is interpolated between two ticks like a position, and `snap` doesn't apply to it: a colour change is never too large to interpolate. It is interpolated in your game's values and then converted, so halfway between two hex codes is the hex code halfway between them.
 
 ## Objects
 
@@ -90,19 +90,20 @@ const Ships = Three.objects("game/Ships", {
 });
 ```
 
-`Three.objects` keeps one `Object3D` per entity of a kind: a model with parts, a light, something that carries the camera. It takes `of`, `without`, `smooth` and `snap` as instances do.
+`Three.objects` keeps one `Object3D` per entity of a kind: a model with parts, a light, something that carries the camera. It accepts `of`, `without`, `smooth` and `snap`, like instances.
 
-- `make` is called the first frame an entity is one of these, and its object is added to the scene. The frame it no longer is, or is gone, the object is taken out and `free` is called with it. Whatever is left when the app's scope closes is freed then.
-- Each frame every object is given its entity's `Position`, and its `Rotation` and `Scale` if the entity has them. A rotation of any length is given as a quaternion of length 1. An entity that loses one is drawn as one that never had it.
-- What else there is to an object is the game's: set in `make`, or by a frame system of its own.
-- An entity placed with `Transform2d` has its object's x and y set, its turn about the third axis, and its size along x and y, and nothing else: where the object is along the third axis, how it is tipped and how deep it is stay as `make` left them.
-- An entity that takes a despawned one's slot gets an object of its own.
-- Nothing of this is in the world. A game loaded from a save, or an app that starts with entities, has its objects made on the first frame.
-- It finds what is new and what is gone by looking at every entity of the kind each frame, which it does anyway to place them. It watches no component for changes, so it adds nothing to what a tick costs.
+- `make` is called on the first frame an entity belongs to the kind, and its object is added to the scene. On the frame it no longer belongs, or is despawned, the object is removed and passed to `free`. Anything left when the app's scope closes is freed then.
+- Each frame, every object receives its entity's `Position`, and its `Rotation` and `Scale` if the entity has them. A rotation of any length is applied as a unit quaternion. An entity that loses one is drawn as if it never had it.
+- Everything else about an object is up to your game: set it in `make`, or in a frame system of your own, including its colour, which is its material's.
+- For an entity placed with `Transform2d`, its object gets x and y, its rotation about the third axis, and its scale along x and y. Its position on the third axis, its tilt and its depth stay as `make` left them.
+- Objects are flat in the scene: an entity's position is its position in the scene, not relative to a parent. Attach child objects to an object in `make`.
+- An entity that reuses a despawned entity's slot gets its own object.
+- None of this is stored in the world. A game loaded from a save, or an app that starts with entities, creates its objects on the first frame.
+- It finds new and removed entities by visiting every entity of the kind each frame, which it does anyway to place them. It watches no component for changes, so it adds nothing to the cost of a tick.
 
-What `make` made is the game's to dispose of, through `free`. Nothing here does, and nothing says when one was forgotten.
+What `make` creates is yours to dispose of, through `free`. Nothing here disposes of it, or warns when you forget.
 
-Objects made of a level's assets, a model, say, name the bundle they come `from`: see [textures and models](textures-and-models.md).
+Objects built from a level's assets, such as a model, name the bundle they come `from`: see [textures and models](textures-and-models.md).
 
 ## Read more
 
