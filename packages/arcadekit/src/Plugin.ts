@@ -49,6 +49,8 @@ export type AnySystem = System.System<any, any>;
 export type AnyHandler = Action.Handler<any, any, any, any, any>;
 
 /**
+ * A plugin, as `Plugin.make` gives it and `App.make` installs it.
+ *
  * @param TickE    what the plugin's systems can fail with
  * @param Han      the plugin's action handlers (so `dispatch` can be typed)
  * @param Provided services its layer provides to the whole app
@@ -160,7 +162,9 @@ type EffectNeeds<T> = T extends Effect.Effect<any, any, infer R> ? R : never;
  *     handlers: [Attack],
  *   })
  *
- * A plugin that two others depend on is installed once.
+ * A plugin that two others depend on is installed once. Two different
+ * plugins of one name are refused when the app is made. A layer or a setup
+ * that fails makes `App.make` fail with that error.
  *
  * @category Constructors
  */
@@ -180,7 +184,8 @@ export const make = <
     readonly handlers?: readonly [...H];
     /**
      * Services for the whole app. While it builds it can use the built-in
-     * services and anything the plugins listed above provide.
+     * services and anything the plugins listed above provide. What it
+     * acquires is released when the app's scope closes.
      */
     readonly layer?: L;
     /**
@@ -190,9 +195,9 @@ export const make = <
      */
     readonly setup?: SU;
     /**
-     * The components and singletons this plugin's feature stores. A world
-     * knows them by name, so loading a save needs every one the save names
-     * to be listed by some plugin, or by the app.
+     * The components, singletons and states this plugin's feature stores.
+     * A world knows them by name, so loading a save needs every one the
+     * save names to be listed by some plugin, or by the app.
      */
     readonly components?: readonly Listed[];
     /**
@@ -200,7 +205,7 @@ export const make = <
      * fresh start, and again from their beginning when the app is loaded
      * from a save. A save cannot hold a script in mid-flight, so a script
      * listed here keeps what it must not lose in the world, and picks up
-     * from what it finds there.
+     * from what it finds there. It runs and is watched as any script is.
      */
     readonly scripts?: readonly [...SC];
   }

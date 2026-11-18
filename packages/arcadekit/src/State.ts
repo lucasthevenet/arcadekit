@@ -15,8 +15,12 @@
  *   phase.value                     // "menu"
  *   phase.set("playing")            // entered at the start of the next tick
  *
- * A state is a singleton of the world: it is saved with a game, counted in
- * the world's hash, and put back when the action that set it is refused.
+ * A state is a singleton of the world: it is saved with a game, with what
+ * was asked for, counted in the world's hash, and put back when the action
+ * that set it is refused.
+ *
+ * A state makes one move a tick, and with several states, the ones asked
+ * for are entered in order of name.
  */
 import { Effect, Effectable } from "effect";
 
@@ -53,7 +57,8 @@ export interface StateHandle<V extends string> {
    * Asks for a state. The game enters it at the start of the next tick:
    * the hooks for leaving the old state run, then the ones for entering
    * the new, and from that tick on systems run as the new state has them.
-   * Asking for the state the game is in already takes back an earlier ask.
+   * One move a tick: the last ask before it counts. Asking for the state
+   * the game is in already takes back an earlier ask, and is not a move.
    */
   readonly set: (value: V) => void;
 }
@@ -264,8 +269,14 @@ export const is = <V extends string>(
  * no longer runs every tick.
  *
  * The hooks of the state a game starts in run on its first tick, before
- * any move that was asked for ahead of it. They do not run again when a
- * saved game is loaded: the save holds what they did.
+ * any move that was asked for ahead of it, which is made in the same tick.
+ * They do not run again when a saved game is loaded: the save holds what
+ * they did.
+ *
+ * Hooks of one moment run in the order they were given, or as
+ * `System.after` and `System.before` say, and the commands of each are
+ * applied before the next. What a hook asks for, with `set`, waits for the
+ * next tick.
  *
  * @category Combinators
  */
