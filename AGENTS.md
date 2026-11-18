@@ -9,7 +9,8 @@ Every session reads this file, so it holds only what every task needs, and `scri
 | The work | Read first |
 | --- | --- |
 | Code of a package, a test, an example, a benchmark, or a game built on them | The `arcadekit-development` skill, then the branches it selects |
-| A page of the docs site, a package's README, a doc comment | The `arcadekit-docs` skill |
+| A page of the docs site, the site itself, a package's README | The `website-docs` skill |
+| The doc comment of an export | The `jsdocs` skill |
 | A changeset, a commit of a finished change, a pull request | The `pull-requests` skill |
 | Choosing what to build | `ROADMAP.md`, and `roadmap/decisions.md` for what an item waits on |
 | An area where things go wrong with no error | Its section of `roadmap/to-revisit.md` |

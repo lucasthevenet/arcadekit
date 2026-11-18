@@ -12,7 +12,7 @@ A pull request is ready when a reviewer can judge the change from it, without ru
    - a changeset, for a change to a published package: `.changeset/README.md` says how one is written, and what a bump means below 1.0;
    - the README entry that `ROADMAP.md` asks of a finished item, and the item taken off the roadmap;
    - a line of `roadmap/to-revisit.md` for what the change leaves that goes wrong with no error, and the line taken out for what it closes;
-   - the site's pages, when what they show changed: the `arcadekit-docs` skill.
+   - the site's pages, when what they show changed, with the `website-docs` skill, and the doc comment of each export that was added or changed, with the `jsdocs` skill.
 3. **Run the checks** that the table in `AGENTS.md` lists for the change, and fix what they find in the change, never in the check.
 4. **Show the evidence** in the description:
    - the checks that were run and what they said, and which could not be run;

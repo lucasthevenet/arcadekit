@@ -11,7 +11,7 @@ When this guide and Effect's own guidance disagree, this guide wins inside the s
 
 1. Decide which of the two kinds of code the change is, below.
 2. Select every branch the change touches, and read its file before editing. Read no branch the change does not touch:
-   - a new module, an entry, a name, an export's doc comment, or a package of its own: [modules.md](modules.md);
+   - a new module, an entry, a name, or a package of its own: [modules.md](modules.md);
    - Effect code, its errors, or a value a system yields or pipes: [effects.md](effects.md);
    - a service, a resource, a layer, or how a program starts: [services.md](services.md);
    - data that comes in from outside or goes out: [schema.md](schema.md);
@@ -97,7 +97,7 @@ The folders are a contract, and most of it is checked. The stages are boundaries
 
 ## Comments
 
-- Every export has a doc comment: see [modules.md](modules.md).
+- Every export has a doc comment, which is its reference: the `jsdocs` skill says how one is written.
 - Inside the code, write no comment by default. Write one only for a why the code cannot say: an invariant, an order that matters, a number that was measured, the engine a design came from. Keep it to a line or two.
 - No comment, doc, README sentence or rule explains a workaround or why the right thing was not done. Say that in the reply or the PR. If the debt stays, it is a line of [to-revisit.md](../../../roadmap/to-revisit.md) or of "Where the code does not follow this yet", below, with what would close it.
 
