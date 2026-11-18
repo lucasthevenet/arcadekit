@@ -22,4 +22,4 @@ Public declarations use a multiline block with one self-contained practical desc
 
 The task is complete when every changed public declaration satisfies each applicable reference, has a `@category` of the list, reads right on its page, and the checks above pass or are reported as not run.
 
-Adapted from the [`jsdocs` skill of Effect](https://github.com/Effect-TS/effect/tree/main/.agents/skills/jsdocs) (MIT), and fitted to what this repository's reference reads: `website/src/lib/api.ts`.
+What the reference reads of a doc comment is defined in `website/src/lib/api.ts`.
