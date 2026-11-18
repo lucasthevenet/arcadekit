@@ -10,6 +10,7 @@ import type { StarlightUserConfig } from "@astrojs/starlight/types";
 import type { StarlightSidebarTopicsUserConfig } from "starlight-sidebar-topics";
 
 import type { SitePages } from "./pages.ts";
+import { moduleGroups } from "./reference.ts";
 import { BRANCH, REPO_URL } from "./site.ts";
 
 type Topic = StarlightSidebarTopicsUserConfig[number];
@@ -21,10 +22,10 @@ interface Link {
   readonly link: string;
 }
 
-/** A group of pages by their slug and links, in order. */
+/** A group of pages by their slug and links, in order, and of the groups inside it. */
 export interface Group {
   readonly label: string;
-  readonly items: readonly (string | Link)[];
+  readonly items: readonly (string | Link | Group)[];
 }
 
 export type TopicId = "learn" | "guides" | "reference";
@@ -187,7 +188,8 @@ export const outlinedGroups = (
 
 /**
  * The packages' group as a group for each package, named after it: its page, which lists its
- * modules, then a page for each of them.
+ * modules, then a page for each of them, in a group for each of its subjects when it has some
+ * (moduleGroups).
  */
 const packageGroups = (
   pages: SitePages,
@@ -204,16 +206,25 @@ const packageGroups = (
         label: page.title,
         items: [
           { label: "Overview", link: page.link },
-          ...pages.modules
-            .filter((module) => module.folder === page.folder)
-            .map((module) => module.slug),
+          ...moduleGroups(page).flatMap(
+            ({ label, modules }): (string | Group)[] => {
+              const slugs = modules.map((name) => `${page.slug}/${name}`);
+              return label === undefined ? slugs : [{ label, items: slugs }];
+            }
+          ),
         ],
       },
     ];
   });
 
-const toItem = (item: string | Link): SidebarItem =>
-  typeof item === "string" ? item : { label: item.label, link: item.link };
+const toItem = (item: string | Link | Group): SidebarItem => {
+  if (typeof item === "string") {
+    return item;
+  }
+  return "link" in item
+    ? { label: item.label, link: item.link }
+    : { label: item.label, items: item.items.map(toItem) };
+};
 
 /** The Learn, Guides and Reference topics, each linking to its first page. */
 export const sidebarTopics = (pages: SitePages): Topic[] => {

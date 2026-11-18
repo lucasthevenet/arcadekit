@@ -1,7 +1,8 @@
 // The reference's index and each package's page, made from the packages' manifests as Effect's
 // API reference is (effect.website/docs/v4/api): the index lists the packages under their
 // category, each with how many modules it has and its description, and a package's page lists
-// its modules. A module's own page is made from its doc comments (api.ts).
+// its modules, under their subject when MODULE_GROUPS gives the package subjects. A module's own
+// page is made from its doc comments (api.ts).
 
 /** A package as the reference lists it, from its `package.json`. */
 export interface ReferencePackage {
@@ -27,6 +28,87 @@ export const packageCategory = (folder: string): string =>
   PACKAGE_CATEGORIES[folder] ?? OTHER;
 
 const RANK = [...new Set(Object.values(PACKAGE_CATEGORIES)), OTHER];
+
+/** A subject of a package's modules, with the modules listed under it. */
+export interface ModuleGroup {
+  readonly label: string;
+  readonly modules: readonly string[];
+}
+
+/**
+ * The subjects a package's modules are listed under, on its page and in the sidebar, by its
+ * folder, in this order. They follow the guides' groups. A package not here lists its modules in
+ * one list, and a module its package's subjects don't name is listed under Other, last.
+ */
+export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
+  arcadekit: [
+    {
+      label: "The simulation",
+      modules: [
+        "Action",
+        "App",
+        "ecs",
+        "Event",
+        "Field",
+        "Plugin",
+        "Query",
+        "Resource",
+        "Schemas",
+        "Services",
+        "Singleton",
+        "State",
+        "System",
+        "Transform2d",
+        "Transform3d",
+      ],
+    },
+    {
+      label: "Running a game",
+      modules: ["Browser", "Driver", "TickScheduler"],
+    },
+    {
+      label: "Input and output",
+      modules: ["Assets", "Input", "Sound", "View"],
+    },
+    { label: "Saves and replays", modules: ["Migrate", "Save"] },
+    {
+      label: "Several players",
+      modules: ["Lockstep", "Relay", "Rollback", "Transport"],
+    },
+  ],
+};
+
+/**
+ * A package's modules by subject: each group of MODULE_GROUPS that has a module, with its modules
+ * in the package's order, then Other. A package with no subjects is one group with no label. A
+ * subject that names a module the package doesn't have throws, so the groups can't keep a module
+ * that is gone.
+ */
+export const moduleGroups = (
+  item: Pick<ReferencePackage, "folder" | "modules">
+): readonly { readonly label?: string; readonly modules: string[] }[] => {
+  const groups = MODULE_GROUPS[item.folder];
+  if (groups === undefined) {
+    return [{ modules: [...item.modules] }];
+  }
+  const named = groups.flatMap((group) => group.modules);
+  const missing = named.filter((name) => !item.modules.includes(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `MODULE_GROUPS of website/src/lib/reference.ts names ${missing.join(", ")}, which ${item.folder} doesn't export`
+    );
+  }
+  return [
+    ...groups.map((group) => ({
+      label: group.label,
+      modules: item.modules.filter((name) => group.modules.includes(name)),
+    })),
+    {
+      label: OTHER,
+      modules: item.modules.filter((name) => !named.includes(name)),
+    },
+  ].filter((group) => group.modules.length > 0);
+};
 
 /** Where a package's page is served. */
 export const packageLink = (folder: string) => `/reference/${folder}`;
@@ -68,7 +150,10 @@ export const renderPackage = (
       `[Source](${repoUrl}/tree/${branch}/packages/${item.folder})`,
     ].join(" · "),
     "## Modules",
-    item.modules
-      .map((name) => `- [${name}](${packageLink(item.folder)}/${name})`)
-      .join("\n"),
+    ...moduleGroups(item).flatMap((group) => [
+      ...(group.label === undefined ? [] : [`### ${group.label}`]),
+      group.modules
+        .map((name) => `- [${name}](${packageLink(item.folder)}/${name})`)
+        .join("\n"),
+    ]),
   ].join("\n\n");
