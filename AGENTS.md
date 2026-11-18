@@ -8,7 +8,8 @@ Every session reads this file, so it holds only what every task needs, and `scri
 
 | The work | Read first |
 | --- | --- |
-| Code of a package, a test, an example, a benchmark, or a game built on them | The `arcadekit-development` skill, then the branches it selects |
+| Code of a package, an example, a benchmark, or a game built on them | The `arcadekit-development` skill, then the branches it selects |
+| A test, or showing that a change works | The `test-development` skill |
 | A page of the docs site, the site itself, a package's README | The `website-docs` skill |
 | The doc comment of an export | The `jsdocs` skill |
 | A changeset, a commit of a finished change, a pull request | The `pull-requests` skill |

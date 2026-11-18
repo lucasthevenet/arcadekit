@@ -1,6 +1,6 @@
 ---
 name: arcadekit-development
-description: How code in arcadekit is written. Use when adding, changing or reviewing code of `packages/arcadekit` or `packages/three`, a test of either, an example or a benchmark, or a game built on them.
+description: How code in arcadekit is written. Use when adding, changing or reviewing code of `packages/arcadekit` or `packages/three`, an example or a benchmark, or a game built on them.
 ---
 
 How code in arcadekit is written, so that it reads like Effect code and like the rest of the package.
@@ -19,14 +19,14 @@ When this guide and Effect's own guidance disagree, this guide wins inside the s
    - anything a tick runs: [determinism.md](determinism.md);
    - `src/ecs/` or a loop that runs once per entity: [storage-core.md](storage-core.md);
    - the types of an export: [types.md](types.md);
-   - a test, or showing that a change works: [tests.md](tests.md);
    - a new rule, or a correction that could be a check: [checks.md](checks.md);
    - a complex feature that an engine has solved before: [design.md](design.md);
    - an Effect API remembered from Effect 3: [effect-3.md](effect-3.md).
 3. Read what the code will not stop in the area the change is in, and no other area: the section of [to-revisit.md](../../../roadmap/to-revisit.md) on the order systems run in, on ticks, frames and real time, on several peers, on what a save and the hash do not hold, or on who lets go of what.
 4. Look up each API the change uses, as below, and read nearby source and tests for what this guide does not say.
+5. Test the change and show that it works, with the `test-development` skill.
 
-The task is complete when the change follows each selected branch, has been run and shown to work as [tests.md](tests.md) says, and the checks that `AGENTS.md` lists for it pass or are reported as not run.
+The task is complete when the change follows each selected branch, has been run and shown to work as the `test-development` skill says, and the checks that `AGENTS.md` lists for it pass or are reported as not run.
 
 ## The rules the design depends on
 
