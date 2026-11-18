@@ -1,12 +1,20 @@
 # Effect code
 
+## Where to look up Effect
+
+Effect's own guidance is how Effect code is written here, and this file says only where the package decides something or departs from it. Look an API up in this order:
+
+1. **The installed source.** `packages/arcadekit/node_modules/effect/src/<Module>.ts` is the version this repository builds against, and every export has a doc comment with examples. It cannot be out of date.
+2. **Effect's guide for writing Effect code**, [LLMS.md](https://github.com/Effect-TS/effect/blob/main/LLMS.md), and the runnable examples it links to under [ai-docs/src](https://github.com/Effect-TS/effect/tree/main/ai-docs/src). This is the closest thing Effect has to a house style.
+3. **The v4 documentation**: the [guides](https://effect.website/docs/v4/guides) and the [API reference](https://effect.website/docs/v4/api/effect).
+4. **The migration notes**, [MIGRATION.md](https://github.com/Effect-TS/effect/blob/main/MIGRATION.md), when something you remember from Effect 3 does not exist. Most tutorials, answers and examples on the web are Effect 3. See [Effect 3 habits](effect-3.md).
+
+Do not use any other copy of Effect's documentation. Effect's own guide says the same: mirrors and older pages are often wrong for v4.
+
 ## Writing Effects
 
-- **`Effect.gen` with `yield*`** for a block of Effect code. See [Using Generators](https://effect.website/docs/v4/getting-started/using-generators).
 - **`Effect.fn("Module.name")`** for a reusable function that returns an Effect and is worth seeing in a trace. **`Effect.fnUntraced`** for one that is not, which is most of a library's internals. Do not write a function whose whole body is `return Effect.gen(...)`: that is what these two are for. See the [Effect.fn example](https://github.com/Effect-TS/effect/blob/main/ai-docs/src/01_effect/01_basics/02_effect-fn.ts).
 - **Not for anything that runs every tick.** `Effect.fn` records a stack trace on each call. A system is built once with `Effect.gen` and the same Effect value is run every tick; `System.make` does this for you.
-- **`.pipe()` to add behaviour** to an Effect or a domain value: `effect.pipe(Effect.withSpan("load"), Effect.catchTag("NotFound", ...))`. See [Building Pipelines](https://effect.website/docs/v4/getting-started/building-pipelines).
-- **Write the arrow function.** `Effect.map((x) => f(x))`, not `Effect.map(f)`, and no `flow`. Passing a function by name can lose its generics and gives worse stack traces. This is from Effect's [code style guidelines](https://effect.website/docs/v4/code-style/guidelines).
 - **Fail with `Effect.fail`, and return it**: `return yield* Effect.fail(new NotYourTurn(...))`. A tagged error can also be yielded on its own (`yield* new NotYourTurn()`), and Effect treats the two alike; this package writes the failure out, so that it reads as one to someone who has not met yieldable errors, and looks the same whatever kind of value the error is. Without `return`, TypeScript does not know the code below is unreachable.
 
 ```ts sketch
@@ -25,13 +33,6 @@ Effect separates two kinds of failure, and so does this package. See [Two Types 
   - `Schema.TaggedError` for one that has to be written down or sent somewhere, because it can be encoded.
 - **A bug is a defect, and is not caught.** Calling `dispatch` during a tick, registering two systems with one name, changing the world while a query is iterating. Synchronous code throws an `Error` whose message says what to do instead; Effect code uses `Effect.die`. Nothing in the package recovers from a defect.
 - **Tags are unique across the package.** Two error classes with the same tag are caught by the same `catchTag`, and nothing warns you.
-- **Handle by tag**: `Effect.catchTag`, `Effect.catchTags`, or `Effect.catch` for everything expected.
-
-```ts sketch
-export class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
-  readonly waitingFor: number;
-}> {}
-```
 
 References: [Expected Errors](https://effect.website/docs/v4/error-management/expected-errors), [Unexpected Errors](https://effect.website/docs/v4/error-management/unexpected-errors), [Yieldable Errors](https://effect.website/docs/v4/error-management/yieldable-errors); [error handling example](https://github.com/Effect-TS/effect/blob/main/ai-docs/src/01_effect/04_errors/01_error-handling.ts); API for [Data](https://effect.website/docs/v4/api/effect/Data) and [Exit](https://effect.website/docs/v4/api/effect/Exit).
 
@@ -53,3 +54,20 @@ export const inStage: {
 ```
 
 Values like these are immutable descriptions. `System.after` returns a new system; it does not change the one it was given.
+
+## Schema at the boundary
+
+Data that comes from outside the program, or leaves it, has a `Schema`: an action's payload, a save file, a network message. Nothing outside is trusted, and nothing is checked by hand.
+
+- **Decode with the `Exit` forms** (`Schema.decodeUnknownExit`) in synchronous code, so a mismatch is a value and not an exception.
+- **Store and send the JSON form.** `Schema.toCodecJson(schema)` gives a codec whose encoded side is JSON, converting the values Schema knows how to convert (a bigint, a date).
+- **Use the `Predicate` module** for a type guard that is not worth a schema, not a hand-written `isString`.
+- **Inside the simulation there are no schemas.** Component data is columns of numbers. A schema checks what comes in; after that it is trusted.
+
+References: Schema [introduction](https://effect.website/docs/v4/schema/introduction), [basic usage](https://effect.website/docs/v4/schema/basic-usage), [filters](https://effect.website/docs/v4/schema/filters), [canonical codecs](https://effect.website/docs/v4/schema/canonical-codecs) and [class APIs](https://effect.website/docs/v4/schema/classes); the full guide, [SCHEMA.md](https://github.com/Effect-TS/effect/blob/main/packages/effect/SCHEMA.md); API for [Schema](https://effect.website/docs/v4/api/effect/Schema) and [Predicate](https://effect.website/docs/v4/api/effect/Predicate).
+
+## What the tick replaces of Effect
+
+- **The scheduler.** `src/TickScheduler.ts` replaces Effect's, so a fiber only resumes when the tick flushes it. That is why a tick is deterministic, and why no other `Scheduler` is provided to code inside an app. What has to go on in real time while the game runs is forked by a service in a plugin's `layer`, with the context it found there less the app's own services, as `src/Assets.ts` does. API: [Scheduler](https://effect.website/docs/v4/api/effect/Scheduler), [Fiber](https://effect.website/docs/v4/api/effect/Fiber).
+- **Events.** `src/Event.ts` has its own implementation and does not use Effect's `PubSub`: each system keeps a read position from one tick to the next, and a refused action has to be able to take back the events it emitted and the reads it made.
+- **A test of what several peers must agree on** runs two apps side by side and compares their hashes, as `test/lockstep.test.ts` does.

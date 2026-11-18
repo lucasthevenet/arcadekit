@@ -18,7 +18,7 @@ Every session reads this file, so it holds only what every task needs, and `scri
 
 A skill is `.agents/skills/<name>/SKILL.md`; `.claude/skills` links to the folder.
 
-Read a long file by its section, never whole. `packages/arcadekit/README.md` is the package's reference, 1,700 lines of it: list its sections with `grep -n '^##' packages/arcadekit/README.md` and read the one the work is about. The same goes for `packages/three/README.md` and `website/README.md`.
+What arcadekit does is documented in two places and no other: the site's pages, `website/src/content/docs/`, for how and why, and the doc comment of each export, for what it does exactly. A skill says only what a contributor needs beside them, and a README only what its package is. Say a thing once, where its reader looks for it.
 
 ## Layout
 
@@ -32,7 +32,7 @@ Read a long file by its section, never whole. `packages/arcadekit/README.md` is 
 
 Whatever is in this repository is what the next change copies, whether a person or an agent writes it. Add only what is fit to be copied, and expect to spend most of a change on showing that it works.
 
-- **A check before a sentence.** A rule that matters is held by something that runs: a type, a test, a lint rule in `oxlint.config.ts`, or a refusal at run time whose message says what to do instead. Prose, here, in a skill or in a README, is for what no check holds yet.
+- **A check before a sentence.** A rule that matters is held by something that runs: a type, a test, a lint rule in `oxlint.config.ts`, or a refusal at run time whose message says what to do instead. Prose, here, in a skill or on a page, is for what no check holds yet.
 - **When you are corrected, ask first whether the correction can be a check**, and propose that check, in the same PR when it is small. Apply a single correction to the case it was about. It becomes a line of this file or of a skill only when no check can hold it, and then it says what would.
 - **Fix the cause.** A workaround is not a fix, and code that is already here is not precedent for one.
 - **Never disable, weaken or skip a check to get a change through**: no `oxlint-disable`, `@ts-ignore`, `it.skip`, a `describe.runIf` that is false in CI, an assertion loosened until it passes, a writer left out of a test's list, or `Bench-slower:` for a slowdown nobody chose. If a check seems wrong, stop and say so in the reply or the PR. A type test's `// @ts-expect-error` is not this.
