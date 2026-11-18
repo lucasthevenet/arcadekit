@@ -45,9 +45,9 @@ The frame stage draws and plays sound with the world frozen. A game that is draw
 
 ## What is not checked
 
-Some ways to break determinism aren't caught by the types or at run time: a fiber started with `Effect.forkDetach`, a write through a raw column during the frame stage, a script that keeps its progress in its own variables when the game is loaded. The roadmap keeps the list, under [To revisit before a stable release](../../../../../ROADMAP.md#to-revisit-before-a-stable-release), on GitHub.
+Some ways to break determinism aren't caught by the types or at run time: a fiber started with `Effect.forkDetach`, a write through a raw column during the frame stage, a script that keeps its progress in its own variables when the game is loaded.
 
 ## Read more
 
 - [Saving and loading](../guides/saving-and-loading.md) and [replays](../guides/replays.md).
-- [Randomness](/reference/arcadekit#randomness) and [the world's hash](/reference/arcadekit#the-worlds-hash) in the reference.
+- [`Random`](/reference/arcadekit/Services#random) and the world's [`hash`](/reference/arcadekit/ecs#world) in the API reference.

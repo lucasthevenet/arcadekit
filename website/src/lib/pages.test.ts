@@ -1,9 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { discoverPages, firstParagraph, splitTitle } from "./pages.ts";
+import { discoverPages, firstParagraph } from "./pages.ts";
 import type { DocPage, SitePages } from "./pages.ts";
 import { outlinedGroups, sidebarTopics } from "./sidebar.ts";
 import { REPO_ROOT } from "./site.ts";
@@ -40,30 +40,33 @@ describe("the site's pages", () => {
     }
   });
 
-  it("reads no markdown of the repository but the packages' READMEs: the roadmap is not a page", () => {
-    expect(pages.repository.map((page) => page.file)).toStrictEqual([
-      "packages/arcadekit/README.md",
-      "packages/three/README.md",
-    ]);
-    expect(pages.all.map((page) => page.link)).not.toContain("/roadmap");
-  });
-
-  it("has each package's README at /reference/<its folder>", () => {
+  it("has the reference's index at /reference, and each package's page at /reference/<its folder>, from its package.json", () => {
+    expect(pages.reference.link).toBe("/reference");
     expect(pages.packages.map((page) => [page.file, page.link])).toStrictEqual([
-      ["packages/arcadekit/README.md", "/reference/arcadekit"],
-      ["packages/three/README.md", "/reference/three"],
+      ["packages/arcadekit/package.json", "/reference/arcadekit"],
+      ["packages/three/package.json", "/reference/three"],
     ]);
     expect(pages.packages.map((page) => page.title)).toStrictEqual([
       "arcadekit",
       "@arcadekit/three",
     ]);
+    expect(pages.packages[1]?.modules).toStrictEqual(["Gltf", "Three"]);
   });
 
-  it("renders each file below its title, which Starlight writes", () => {
-    for (const page of pages.repository) {
-      expect(page.body.startsWith("# ")).toBe(false);
-      expect(page.title).not.toBe("");
+  it("has no page that mentions the roadmap, which is the repository's and not the docs'", () => {
+    const own = readdirSync(path.join(REPO_ROOT, "website/src/content/docs"), {
+      recursive: true,
+    })
+      .map(String)
+      .filter((file) => /\.mdx?$/u.test(file));
+    for (const file of own) {
+      const text = readFileSync(
+        path.join(REPO_ROOT, "website/src/content/docs", file),
+        "utf-8"
+      );
+      expect(text, file).not.toMatch(/roadmap/iu);
     }
+    expect(pages.all.map((page) => page.file)).not.toContain("ROADMAP.md");
   });
 
   it("names files that exist, each served at an address of its own", () => {
@@ -125,12 +128,12 @@ describe("the sidebar", () => {
     for (const page of [...pages.docs, ...pages.modules]) {
       expect(listed).toContain(`"${page.slug}"`);
     }
-    for (const page of pages.packages) {
+    for (const page of [pages.reference, ...pages.packages]) {
       expect(listed).toContain(`"${page.link}"`);
     }
   });
 
-  it("lists each package with its overview and its modules in Reference", () => {
+  it("lists each package with its page and its modules in Reference", () => {
     const groups = outlinedGroups(discoverPages()).filter(
       (group) => group.topic === "reference"
     );
@@ -159,20 +162,6 @@ describe("the sidebar", () => {
     );
     expect(modules.find((page) => page.name === "Sound")?.file).toBe(
       "packages/arcadekit/src/Sound.ts"
-    );
-  });
-});
-
-describe("a page's title", () => {
-  it("is the heading on its file's first line, which its body leaves out", () => {
-    expect(
-      splitTitle("# arcadekit/thing\n\nLoads a thing.\n", "thing.md")
-    ).toStrictEqual({ title: "arcadekit/thing", body: "Loads a thing.\n" });
-  });
-
-  it("must be there", () => {
-    expect(() => splitTitle("Loads a thing.\n\n# Later\n", "thing.md")).toThrow(
-      'thing.md must start with a "# " heading'
     );
   });
 });

@@ -74,4 +74,4 @@ A state is a singleton of the world: saved, hashed, and put back when an action 
 
 ## Read more
 
-- [States and run conditions](/reference/arcadekit#states-and-run-conditions) in the reference.
+- [`State`](/reference/arcadekit/State) in the API reference.

@@ -31,7 +31,7 @@ export type TopicId = "learn" | "guides" | "reference";
 
 /**
  * Where the pages the outline doesn't name go: the group whose `section` is the folder of
- * src/content/docs/ they are in, or `"packages"` for a package's README.
+ * src/content/docs/ they are in, or `"packages"` for a package's page.
  */
 type Section = string;
 
@@ -118,7 +118,7 @@ export const OUTLINE: readonly (Group & {
   { topic: "guides", label: "More", section: "guides", items: [] },
   {
     topic: "reference",
-    // A group for each package, with its overview and its modules (packageGroups).
+    // A group for each package, with its page and its modules (packageGroups).
     label: "Packages",
     section: "packages",
     items: ["reference/arcadekit", "reference/three"],
@@ -176,8 +176,8 @@ export const outlinedGroups = (
 };
 
 /**
- * The packages' group as a group for each package, named after it: its README as its
- * overview, then a page for each of its modules.
+ * The packages' group as a group for each package, named after it: its page, which lists its
+ * modules, then a page for each of them.
  */
 const packageGroups = (
   pages: SitePages,
@@ -230,9 +230,12 @@ export const sidebarTopics = (pages: SitePages): Topic[] => {
     {
       id: "reference",
       label: "Reference",
-      link: "/reference/arcadekit",
+      link: "/reference",
       icon: "document",
-      items: topic("reference"),
+      items: [
+        { label: "API Reference", link: "/reference" },
+        ...topic("reference"),
+      ],
     },
   ];
 };

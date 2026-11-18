@@ -69,5 +69,5 @@ A replay compares its own world at each checkpoint, and stops at the first that 
 
 ## Read more
 
-- [Replays that check themselves](/reference/arcadekit#replays-that-check-themselves) in the reference.
+- [`App`](/reference/arcadekit/App) in the API reference.
 - [Determinism](../concepts/determinism.md), for what a game must not do.

@@ -52,4 +52,4 @@ A save can't hold a script in mid-flight. A plugin lists its `scripts`, and they
 
 ## Read more
 
-- [Scripts](/reference/arcadekit#scripts) in the reference.
+- [`Script`](/reference/arcadekit/Services#script) in the API reference.

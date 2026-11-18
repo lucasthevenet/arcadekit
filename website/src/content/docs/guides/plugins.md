@@ -114,4 +114,4 @@ game/
 
 ## Read more
 
-- [Plugins](/reference/arcadekit#plugins) in the reference.
+- [`Plugin`](/reference/arcadekit/Plugin) in the API reference.

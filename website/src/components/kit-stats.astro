@@ -15,7 +15,7 @@ const stats = [
   { label: "Entries", value: entries.length },
   {
     label: "Packages",
-    value: pages.filter((page) => page.id.startsWith("reference/")).length,
+    value: pages.filter((page) => /^reference\/[^/]+$/u.test(page.id)).length,
   },
   {
     label: "Guides",

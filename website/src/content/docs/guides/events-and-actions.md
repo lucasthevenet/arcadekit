@@ -115,5 +115,5 @@ Input that arrives as JSON goes through `app.dispatchByName(name, json)` or `app
 
 ## Read more
 
-- [Events](/reference/arcadekit#events) and [actions](/reference/arcadekit#actions-the-rules-layer) in the reference.
+- [`Event`](/reference/arcadekit/Event) and [`Action`](/reference/arcadekit/Action) in the API reference.
 - [`examples/duel.ts`](../../../../../packages/arcadekit/examples/duel.ts), a turn-based game built on actions.

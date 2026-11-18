@@ -73,4 +73,4 @@ A host that is put to sleep between messages calls `join` and `forward` itself a
 
 ## Read more
 
-- [Carrying the messages](/reference/arcadekit#carrying-the-messages) and [a relay](/reference/arcadekit#a-relay) in the reference.
+- [`Transport`](/reference/arcadekit/Transport) and [`Relay`](/reference/arcadekit/Relay) in the API reference.

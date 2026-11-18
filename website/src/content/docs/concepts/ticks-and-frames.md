@@ -53,5 +53,5 @@ A game of turns, a puzzle or a menu has nothing to do between moves. With `ticks
 
 ## Read more
 
-- [The tick and the frame](/reference/arcadekit#the-tick-and-the-frame) in the reference.
+- [`App`](/reference/arcadekit/App) and [`Driver`](/reference/arcadekit/Driver) in the API reference.
 - [Input](../guides/input.md), [sound](../guides/sound.md) and [drawing with Three.js](../guides/drawing-with-three.md).

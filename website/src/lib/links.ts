@@ -1,11 +1,9 @@
-// Makes the links the READMEs already have work on the site.
+// Makes a page's links to files of the repository work on the site.
 //
-// A README is read on GitHub, on npm and here, and its links are written for the first two: a
-// relative link to another file of the repository (`../../README.md`, `worker/README.md`,
-// `../../../../../examples/survivor-demo/alchemy.run.ts`), or a full GitHub URL where the file
-// isn't in the npm package (`https://github.com/.../blob/main/CONTEXT.md`). Here a page is
-// served at another address than its file's, so neither kind would land right. This plugin
-// rewrites each one as the page is rendered, and leaves the READMEs alone:
+// A page links to another file of the repository by its relative path (`../guides/input.md`,
+// `../../../../../packages/arcadekit/src/App.ts`) or by its full GitHub URL, as it would on
+// GitHub. Here a page is served at another address than its file's, so neither kind would land
+// right. This plugin rewrites each one as the page is rendered:
 // - a link to a file that is a page of the site goes to that page;
 // - a link to any other file or folder of the repository goes to it on GitHub;
 // - a link of either kind to nothing in the repository is a dead link, which the build reports
@@ -85,9 +83,9 @@ export const createLinkRewriter = (options: LinkOptions) => {
     "u"
   );
 
-  /** The page a file or folder of the repository is served as, if it is one. */
+  /** The page a file or folder of the repository is served as, if it is one: a package's folder is its page. */
   const pageOf = (file: string): string | undefined =>
-    pageLinks.get(file) ?? pageLinks.get(`${file}/README.md`);
+    pageLinks.get(file) ?? pageLinks.get(`${file}/package.json`);
 
   /** Records a dead link, and reports it the first time. Returns the link as it was written. */
   const deadLink = (href: string, file: string): string => {

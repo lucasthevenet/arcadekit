@@ -94,4 +94,4 @@ A game that is heard has the same hash, log and save as one that is not. A repla
 
 ## Read more
 
-- [Sound](/reference/arcadekit#sound) and [music](/reference/arcadekit#music) in the reference, with what is not done: a cue that can be stopped, sound heard from where it is, music in time.
+- [`Sound`](/reference/arcadekit/Sound) in the API reference. What is not done yet: a cue that can be stopped, sound heard from where it is, music in time.
