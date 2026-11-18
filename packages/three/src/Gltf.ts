@@ -336,13 +336,19 @@ const dispose = (model: Model): void => {
  *
  * - The buffers and pictures a `.gltf` names are fetched through
  *   `Assets.Loader`, from beside the model, at once with each other: a
- *   test's files in memory serve them, and one that is missing fails the
- *   bundle with its own URL.
+ *   test's files in memory serve them, one that is missing fails the
+ *   bundle with its own URL, and a level that is left while its model is
+ *   still on its way gives those requests up.
+ * - A file that is no model fails the bundle with `Assets.AssetFailed`,
+ *   which says what was wrong with it.
  * - What a compressed model needs is given to the loader in `prepare`.
  * - A model is one for the whole bundle: an object made of it shares its
- *   geometries and materials, so `model.scene.clone()` is cheap, and what
- *   changes one copy's material changes them all.
- * - Its pictures are decoded by the page, as `Three.texture`'s are.
+ *   geometries and materials, so `model.scene.clone()` is cheap, there is
+ *   nothing to free, and what changes one copy's material changes them
+ *   all.
+ * - Its pictures are decoded by the page, as `Three.texture`'s are, and
+ *   closed when the model is let go: a model with pictures is for a page,
+ *   and one without loads anywhere.
  *
  * @category Constructors
  */

@@ -104,6 +104,9 @@ export const OUTLINE: readonly (Group & {
       "guides/sound",
       "guides/ui",
       "guides/drawing-with-three",
+      "guides/instances-and-objects",
+      "guides/textures-and-models",
+      "guides/between-two-ticks",
     ],
   },
   {
