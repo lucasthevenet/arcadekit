@@ -91,4 +91,4 @@ Nothing brings peers back together. A game that wants to go on has every peer lo
 
 ## Read more
 
-- [More than one player](/reference/arcadekit#more-than-one-player), [rollback](/reference/arcadekit#without-waiting-rollback) and [peers that come apart](/reference/arcadekit#peers-that-come-apart) in the reference.
+- [`Lockstep`](/reference/arcadekit/Lockstep) and [`Rollback`](/reference/arcadekit/Rollback) in the API reference.

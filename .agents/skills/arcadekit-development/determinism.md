@@ -1,0 +1,19 @@
+# Determinism
+
+A tick gives the same result from the same inputs, on every machine and every replay. Code that a tick runs:
+
+- reads time from `Time`, never `Date.now()`, `performance.now()` or Effect's `Clock`;
+- waits with `Script`, never `Effect.sleep`, a `Schedule`, a timer or a promise, all of which resume outside the tick;
+- takes randomness from `Random` (`const random = yield* Random`, then plain calls such as `random.next()`), never `Math.random()`. The generator's state is in the world, so a replay draws the same numbers. Effect's own `Random` is seeded from it inside an app, at the cost of an Effect per draw;
+- does not depend on the order of a `Map` or `Set` it did not fill itself in a fixed order;
+- does not read a device. What the keyboard, the pointer and the gamepads say comes in as actions, issued in the input stage, `System.inStage("input")`, which runs before a tick with the world frozen and is told what the devices say as `Input.Devices`. A system in the tick reads the picture the game has of them, `Input.Keyboard`, `Input.Pointer` and `Input.Gamepad`, which those actions keep and a replay therefore has too;
+- does not load, and cannot tell whether anything was loaded. A file arrives when it arrives, and a replay loads none. Assets belong to what draws: `Assets.during` is a system of the frame stage, and a bundle read in the tick throws. What the game needs from a file comes in as the payload of an action, issued from the input stage once the file is there;
+- makes no sound. It emits an event for what happened, and a system of the frame stage, made with `Sound.cues`, plays what the event sounds like. A replay is silent and the same game;
+- is not what draws. Drawing, and anything else that follows real time, is a system of the frame stage, `System.inStage("frame")`. It runs between ticks with the world frozen, reads real time from `Frame`, and changes nothing: a game that has been drawn is the same game. What it has to remember from one frame to the next (a mesh, a sound that is playing) it keeps in a service of its own, not in the world;
+- does not start a fiber with `Effect.forkChild` from a system: a child is interrupted when the tick's fiber ends. Use `Script.spawn`, which the app watches: it reports a failure and interrupts the script when its scope closes. `Effect.forkDetach` also survives the tick, but the app cannot see that fiber, so its failure is silent unless the caller observes it.
+
+In a game of several peers a break of these rules does not go unnoticed for long: the peers compare the hashes of their worlds, and a session stops with `Lockstep.Drifted`, which says the tick they last agreed at. A test of a game that is to be played by several runs two apps of it side by side and compares their hashes, as `test/lockstep.test.ts` does.
+
+The scheduler is why this holds. `src/TickScheduler.ts` replaces Effect's, so a fiber only resumes when the tick flushes it. Do not provide another `Scheduler` to code inside an app. What has to go on in real time while the game runs, as loading does, is not code inside the app: a service started in a plugin's `layer`, which is built before the app's scheduler is in place, forks it with the context it found there (`Effect.context`, then `Effect.runForkWith`), less the app's own services, as `src/Assets.ts` does. Those are the game's: inside an app Effect's `Random` is the world's generator, and whatever runs in real time and draws from it has changed the game. API: [Scheduler](https://effect.website/docs/v4/api/effect/Scheduler), [Fiber](https://effect.website/docs/v4/api/effect/Fiber); guide: [Fibers](https://effect.website/docs/v4/concurrency/fibers).
+
+Events have their own implementation in `src/Event.ts` and do not use Effect's `PubSub`. Each system keeps a read position from one tick to the next, and a refused action has to be able to take back the events it emitted and the reads it made.

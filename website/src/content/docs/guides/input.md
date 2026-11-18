@@ -95,4 +95,4 @@ The world is frozen in the input stage, as in the frame stage: a system there is
 
 ## Read more
 
-- [Input](/reference/arcadekit#input) in the reference, with what is not read yet: a trigger's pressure, the wheel, typed text, more than one finger.
+- [`Input`](/reference/arcadekit/Input) in the API reference. What is not read yet: a trigger's pressure, the wheel, typed text, more than one finger.

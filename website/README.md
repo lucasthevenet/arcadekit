@@ -1,19 +1,19 @@
 # Docs site
 
-The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose own pages, the walkthrough, the concepts and the guides, are under [`src/content/docs/`](src/content/docs). The reference is made from the code: a page for each module, from its doc comments, and the repository's own markdown, the packages' READMEs, the roadmap and the conventions, read where it is. No text is copied, so there is one to keep right.
+The arcadekit docs, [arcadekit.dev](https://arcadekit.dev): an [Astro](https://astro.build) site with the [Starlight](https://starlight.astro.build) theme, whose own pages, the walkthrough, the concepts and the guides, are under [`src/content/docs/`](src/content/docs). The reference is made from the code, as [Effect's](https://effect.website/docs/v4/api) is: an index of the packages and a page for each, from their `package.json`, and a page for each module, from its doc comments. No text is copied, so there is one to keep right.
 
 The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's](https://alchemy.run) are, in three topics, each with a sidebar of its own ([starlight-sidebar-topics](https://starlight-sidebar-topics.netlify.app)):
 
 - **Learn**: the walkthrough, the concepts, and the examples.
 - **Guides**: a guide for each task, and testing.
-- **Reference**: for each package, its README as an overview, then a page for each of its modules; then the roadmap and the conventions.
+- **Reference**: the index of the packages, then for each package its page, which lists its modules, and a page for each module.
 
 | Address | File |
 | --- | --- |
 | `/` | [`src/content/docs/index.mdx`](src/content/docs/index.mdx), the landing page, whose text is the site's own |
 | `/<path>`, such as `/making-a-game`, `/concepts/determinism` and `/guides/input` | `src/content/docs/<path>.md`: the walkthrough, the concepts and the guides |
-| `/roadmap` and `/conventions` | `docs/roadmap.md` and `docs/conventions.md`, the project's own |
-| `/reference/<package>`, such as `/reference/arcadekit` and `/reference/three` | `packages/<package>/README.md`, which npm shows too |
+| `/reference` | the index of the packages, under their category, each with how many modules it has and its description ([`src/lib/reference.ts`](src/lib/reference.ts)) |
+| `/reference/<package>`, such as `/reference/arcadekit` and `/reference/three` | `packages/<package>/package.json`: its description, npm, its source, and its modules |
 | `/reference/<package>/<Module>`, such as `/reference/arcadekit/Sound` | the module's doc comments, from `packages/<package>/dist/<Module>.d.ts` ([The reference of a module](#the-reference-of-a-module)) |
 
 ```bash
@@ -27,7 +27,7 @@ pnpm --filter @arcadekit/website preview    # serve the built site
 
 A markdown file under [`src/content/docs/`](src/content/docs) is a page as soon as it exists, at its path there. It is a Starlight page, with a frontmatter that gives its `title` and its `description`, the line under a shared link. Its body starts after the frontmatter, with no `# ` heading: Starlight writes the title.
 
-A file directly in `docs/` and a new package's README are pages too, read where they are: [`src/lib/pages.ts`](src/lib/pages.ts) finds them. They have no frontmatter, since GitHub would show it: such a file starts with a `# ` heading, its title, then a paragraph, its description, and one that doesn't fails the build. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one.
+A new package under `packages/` that exports a module is in the reference as soon as it exists: [`src/lib/pages.ts`](src/lib/pages.ts) finds it, and `PACKAGE_CATEGORIES` in [`src/lib/reference.ts`](src/lib/reference.ts) says which heading of the index it is under, Other if none. The pages are found when the site starts, so restart `pnpm dev:docs` after adding one. No markdown of the repository outside `src/content/docs/` is a page, the packages' READMEs included: a page links to such a file on GitHub, by its relative path.
 
 [`src/lib/sidebar.ts`](src/lib/sidebar.ts) places each page in its topic. Its `OUTLINE` names the pages in order, in groups: a page it doesn't name goes at the end of its folder's group, so a new concept is listed at the end of Concepts, a new guide under Guides' "More" and a new package under Packages, until the outline places it. A page the outline names that doesn't exist fails the build.
 
@@ -74,7 +74,7 @@ The loader renders each file with the site's Markdown processor, [Sätteri](http
 
 ## Links
 
-The pages are also read on GitHub, and the READMEs on npm, so their links stay written for those: a relative link to another file of the repository, or a full GitHub URL for a file the npm package doesn't have, such as `docs/roadmap.md`. A page of the site's own links to another by its relative path (`../guides/input.md`), to a README by its address on the site (`/reference/arcadekit#sound`), and to any other file of the repository by its relative path. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
+A page links to another by its relative path (`../guides/input.md`), to the reference by its address on the site (`/reference/arcadekit/Sound`), and to any other file of the repository by its relative path, as it would on GitHub. [`src/lib/links.ts`](src/lib/links.ts) rewrites them as a page is rendered:
 
 - a link to a file that is a page goes to that page;
 - a link to any other file or folder of the repository goes to it on GitHub.

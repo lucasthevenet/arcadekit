@@ -125,4 +125,4 @@ A conflict is settled by saying the order, with `System.after` or `System.before
 
 ## Read more
 
-- [States and run conditions](/reference/arcadekit#states-and-run-conditions) and [what a system reads and writes](/reference/arcadekit#what-a-system-reads-and-writes) in the reference.
+- [`System`](/reference/arcadekit/System) and [`State`](/reference/arcadekit/State) in the API reference.

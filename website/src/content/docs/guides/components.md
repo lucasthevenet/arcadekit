@@ -152,4 +152,4 @@ An entity has the ones it needs. One that is only somewhere has a `Position`. `T
 
 ## Read more
 
-- [Fields](/reference/arcadekit#fields), [an entity's id](/reference/arcadekit#an-entitys-id), [singletons](/reference/arcadekit#singletons), [relations](/reference/arcadekit#relations) and [where a thing is](/reference/arcadekit#where-a-thing-is) in the reference.
+- [`Field`](/reference/arcadekit/Field), [`Entity`](/reference/arcadekit/ecs#entity), [`Component`](/reference/arcadekit/ecs#component), [`Singleton`](/reference/arcadekit/Singleton) and [`Transform3d`](/reference/arcadekit/Transform3d) in the API reference.

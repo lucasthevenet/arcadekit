@@ -115,5 +115,5 @@ const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
 
 ## Read more
 
-- [The view bridge](/reference/arcadekit#the-view-bridge) in the reference.
+- [`View`](/reference/arcadekit/View) in the API reference.
 - [`examples/page`](../../../../../packages/arcadekit/examples/page) builds its menu and heads-up display twice on one bridge, with the DOM and with React.

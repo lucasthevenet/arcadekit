@@ -87,4 +87,4 @@ Every refusal is a `Save.LoadRefused` that says why: a newer version, a missing 
 
 ## Read more
 
-- [Saving and loading](/reference/arcadekit#saving-and-loading), [versions and migrations](/reference/arcadekit#versions-and-migrations) and [snapshots](/reference/arcadekit#snapshots) in the reference.
+- [`Save`](/reference/arcadekit/Save) and [`Migrate`](/reference/arcadekit/Migrate) in the API reference.

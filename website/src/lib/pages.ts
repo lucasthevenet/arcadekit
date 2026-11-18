@@ -3,19 +3,17 @@
 // - The site's own pages, under src/content/docs/: the landing page, the walkthrough, the concepts
 //   and the guides, each at its path there (`guides/input.md` at `/guides/input`). They are
 //   Starlight's own pages, with a frontmatter, and Starlight's loader reads them.
-// - The repository's own markdown, read where it is (loader.ts):
-//   - each file directly in `docs/`, the roadmap and the conventions, at `/<name>`;
-//   - each package's README, at `/reference/<package>`: `packages/arcadekit/README.md` at
-//     `/reference/arcadekit`. It is a package's overview, and npm shows it too.
+// - The reference: its index at `/reference`, and each package's page at `/reference/<package>`,
+//   made from its `package.json` (reference.ts), with its description and its modules.
 // - Each module of a package, at `/reference/<package>/<Module>`, made from its doc comments
 //   (api.ts): `arcadekit/Sound` at `/reference/arcadekit/Sound`.
 // The folders are read whole, so a new page or a new package is a page without a change here.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import type { ReferencePackage } from "./reference.ts";
 import { REPO_ROOT, WEBSITE_DIR } from "./site.ts";
 
-const DOCS = "docs";
 /** The site's own pages, relative to the repository's root. */
 const SITE_DOCS = `${WEBSITE_DIR}/src/content/docs`;
 const PACKAGES = "packages";
@@ -25,7 +23,7 @@ const HOME = `${WEBSITE_DIR}/src/content/docs/index.mdx`;
 
 /** A page of the site. Paths are relative to the repository's root. */
 export interface SitePage {
-  /** The file it is written in, such as `docs/guides/input.md`. Its relative links are read from where it is. */
+  /** The file it is written in, such as `website/src/content/docs/guides/input.md`. Its relative links are read from where it is. */
   readonly file: string;
   /** Its id in Starlight's `docs` collection, which is its address without the slash: `guides/input`. */
   readonly slug: string;
@@ -33,52 +31,33 @@ export interface SitePage {
   readonly link: string;
 }
 
-/** A page whose file is the repository's own markdown, written for GitHub. */
-export interface RepositoryPage extends SitePage {
-  /** The file's `# ` heading, its first line, such as `Input`. */
+/** A page the loader adds to the site, with its markdown made by the site's code. */
+export interface LoadedPage extends SitePage {
   readonly title: string;
-  /** Its first paragraph as plain text, for the page's description. Empty if it has none. */
+  /** Its description, the line under a shared link. Empty if it has none. */
   readonly description: string;
-  /** Its markdown after the title, which the page renders below the title Starlight writes. */
+  /** Its markdown, which the page renders below the title Starlight writes. */
   readonly body: string;
 }
 
-/** A page of the docs: the walkthrough, a concept or a guide, the roadmap or the conventions. */
+/** A page of the docs: the walkthrough, a concept or a guide. */
 export interface DocPage extends SitePage {
   /**
-   * Its top folder under src/content/docs/, such as `guides`, `""` for a file directly in it, or
-   * `"project"` for a file of `docs/`.
+   * Its top folder under src/content/docs/, such as `guides`, or `""` for a file directly in it.
    */
   readonly section: string;
 }
 
-/** The README of a package of the repository, such as `@arcadekit/three`. */
-export interface PackagePage extends RepositoryPage {
-  /** Its folder under `packages/`, such as `three`. */
-  readonly folder: string;
+/** A package's page in the reference, made from its `package.json`. */
+export interface PackagePage extends SitePage, ReferencePackage {
+  /** Its name, as npm has it: `@arcadekit/three`. */
+  readonly title: string;
 }
 
 const toPosix = (file: string) => file.split(path.sep).join("/");
 
 const read = (file: string) =>
   readFileSync(path.join(REPO_ROOT, file), "utf-8");
-
-const TITLE = /^# (?<title>.+)\n+/u;
-
-/** A file's title, the `# ` heading on its first line, and its markdown after it. */
-export const splitTitle = (
-  markdown: string,
-  file: string
-): { readonly title: string; readonly body: string } => {
-  const match = TITLE.exec(markdown);
-  const title = match?.groups?.title?.trim();
-  if (match === null || title === undefined) {
-    throw new Error(
-      `${file} must start with a "# " heading: it is its page's title`
-    );
-  }
-  return { title, body: markdown.slice(match[0].length) };
-};
 
 /** Markdown's inline marks removed: links keep their text, code and emphasis their content. */
 const plainText = (markdown: string) =>
@@ -120,20 +99,6 @@ export const firstParagraph = (markdown: string): string => {
   return description.trim() || paragraph;
 };
 
-/** A file of the repository as a page, read from disk now. */
-export const readPage = (file: string, slug: string): RepositoryPage => {
-  const markdown = read(file);
-  const { title, body } = splitTitle(markdown, file);
-  return {
-    file,
-    slug,
-    link: `/${slug}`,
-    title,
-    description: firstParagraph(markdown),
-    body,
-  };
-};
-
 /** Every markdown file under a folder of the repository, however deep. */
 const markdownUnder = (dir: string): string[] =>
   readdirSync(path.join(REPO_ROOT, dir), { recursive: true })
@@ -149,27 +114,51 @@ const sitePages = (): DocPage[] =>
     return { file: `${SITE_DOCS}/${file}`, slug, link: `/${slug}`, section };
   });
 
-/** The files directly in `docs/`, the roadmap and the conventions, read where they are. */
-const projectPages = (): (RepositoryPage & DocPage)[] =>
-  readdirSync(path.join(REPO_ROOT, DOCS))
-    .filter((file) => file.endsWith(".md"))
-    .toSorted()
-    .map((file) => ({
-      ...readPage(`${DOCS}/${file}`, file.replace(/\.md$/u, "")),
-      section: "project",
+interface Manifest {
+  readonly name: string;
+  readonly description?: string;
+  readonly exports?: Record<string, { readonly source?: string }>;
+}
+
+const manifestOf = (folder: string): Manifest =>
+  JSON.parse(read(`${PACKAGES}/${folder}/package.json`)) as Manifest;
+
+/** Its entries but its own, each a module: `./Sound` with its source. */
+const entriesOf = (manifest: Manifest) =>
+  Object.entries(manifest.exports ?? {})
+    .filter(([key, entry]) => key !== "." && entry.source !== undefined)
+    .map(([key, entry]) => ({
+      name: key.replace(/^\.\//u, ""),
+      source: String(entry.source).replace(/^\.\//u, ""),
     }));
 
-/** Each package's README, at `/reference/<folder>`. */
+/** Each package that exports a module, at `/reference/<folder>`. */
 const packagePages = (): PackagePage[] =>
   readdirSync(path.join(REPO_ROOT, PACKAGES))
     .toSorted()
     .filter((folder) =>
-      existsSync(path.join(REPO_ROOT, PACKAGES, folder, "README.md"))
+      existsSync(path.join(REPO_ROOT, PACKAGES, folder, "package.json"))
     )
-    .map((folder) => ({
-      ...readPage(`${PACKAGES}/${folder}/README.md`, `${REFERENCE}/${folder}`),
-      folder,
-    }));
+    .flatMap((folder) => {
+      const manifest = manifestOf(folder);
+      const modules = entriesOf(manifest).map((entry) => entry.name);
+      if (modules.length === 0) {
+        return [];
+      }
+      const slug = `${REFERENCE}/${folder}`;
+      return [
+        {
+          file: `${PACKAGES}/${folder}/package.json`,
+          slug,
+          link: `/${slug}`,
+          folder,
+          name: manifest.name,
+          title: manifest.name,
+          description: manifest.description ?? "",
+          modules,
+        },
+      ];
+    });
 
 /** A module of a package, whose page is made from its doc comments (api.ts). */
 export interface ModulePage extends SitePage {
@@ -185,39 +174,33 @@ export interface ModulePage extends SitePage {
  * exports but the package's own. `file` is the module's source, which its edit link opens.
  */
 const modulePages = (packages: readonly PackagePage[]): ModulePage[] =>
-  packages.flatMap((page) => {
-    const manifest = JSON.parse(
-      read(`${PACKAGES}/${page.folder}/package.json`)
-    ) as {
-      readonly name: string;
-      readonly exports?: Record<string, { readonly source?: string }>;
-    };
-    return Object.entries(manifest.exports ?? {})
-      .filter(([key, entry]) => key !== "." && entry.source !== undefined)
-      .map(([key, entry]) => {
-        const name = key.replace(/^\.\//u, "");
-        const slug = `${REFERENCE}/${page.folder}/${name}`;
-        return {
-          file: `${PACKAGES}/${page.folder}/${String(entry.source).replace(/^\.\//u, "")}`,
-          slug,
-          link: `/${slug}`,
-          name,
-          folder: page.folder,
-          packageName: manifest.name,
-        };
-      });
-  });
+  packages.flatMap((page) =>
+    entriesOf(manifestOf(page.folder)).map(({ name, source }) => {
+      const slug = `${REFERENCE}/${page.folder}/${name}`;
+      return {
+        file: `${PACKAGES}/${page.folder}/${source}`,
+        slug,
+        link: `/${slug}`,
+        name,
+        folder: page.folder,
+        packageName: page.name,
+      };
+    })
+  );
 
 /** Every page of the site, found on disk. */
 export const discoverPages = () => {
   const home: SitePage = { file: HOME, slug: "index", link: "/" };
-  const project = projectPages();
-  /** The pages of the Learn and Guides topics, and the project's own. */
-  const docs: readonly DocPage[] = [...sitePages(), ...project];
+  /** The pages of the Learn and Guides topics. */
+  const docs: readonly DocPage[] = sitePages();
   const packages = packagePages();
-  /** The pages read from the repository, which loader.ts adds to the site. */
-  const repository: readonly RepositoryPage[] = [...project, ...packages];
-  const all: readonly SitePage[] = [home, ...docs, ...packages];
+  /** The reference's index, which lists the packages. */
+  const reference: SitePage = {
+    file: `${WEBSITE_DIR}/src/lib/reference.ts`,
+    slug: REFERENCE,
+    link: `/${REFERENCE}`,
+  };
+  const all: readonly SitePage[] = [home, ...docs, reference, ...packages];
   /** The modules' pages, made from their doc comments by the loader. */
   const modules = modulePages(packages);
 
@@ -232,7 +215,7 @@ export const discoverPages = () => {
     files.set(page.slug, page.file);
   }
 
-  return { home, docs, packages, modules, repository, all };
+  return { home, docs, reference, packages, modules, all };
 };
 
 export type SitePages = ReturnType<typeof discoverPages>;

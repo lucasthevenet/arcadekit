@@ -76,4 +76,4 @@ They come through `Assets.Loader`, which is `fetch` unless told otherwise. A tes
 
 ## Read more
 
-- [Assets](/reference/arcadekit#assets) in the reference.
+- [`Assets`](/reference/arcadekit/Assets) in the API reference.

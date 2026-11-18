@@ -114,4 +114,4 @@ A change query is for what changes now and then. A system that wants every entit
 
 ## Read more
 
-- [Change queries](/reference/arcadekit#change-queries), [two ways to loop](/reference/arcadekit#two-ways-to-loop) and [the benchmark](/reference/arcadekit#benchmark-100000-entities-pos--vel--dt) in the reference.
+- [`Query`](/reference/arcadekit/Query) in the API reference, and [the benchmark](../../../../../packages/arcadekit/README.md#benchmark-100000-entities-pos--vel--dt) in the package's README.

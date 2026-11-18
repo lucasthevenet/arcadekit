@@ -112,5 +112,5 @@ const program = Effect.gen(function* () {
 
 ## Read more
 
-- [In a page](/reference/arcadekit#in-a-page) and [a game that moves when its player does](/reference/arcadekit#a-game-that-moves-when-its-player-does) in the reference.
+- [`Browser`](/reference/arcadekit/Browser) and [`Driver`](/reference/arcadekit/Driver) in the API reference.
 - [`examples/page`](../../../../../packages/arcadekit/examples/page), started with `Browser.runMain`, and [`examples/demo`](../../../../../packages/arcadekit/examples/demo), started under Node.

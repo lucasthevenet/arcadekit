@@ -38,9 +38,9 @@ The peers send each other the world's hash at their checkpoints. When every peer
 
 ## What is not done
 
-The peers of a session are fixed when it is made: nobody joins a game in progress or leaves one. Every message has to arrive: a socket that drops ends the game over it. A game in a session ticks all the time, not only when needed. The [reference](/reference/arcadekit#not-done-yet) has the rest.
+The peers of a session are fixed when it is made: nobody joins a game in progress or leaves one. Every message has to arrive: a socket that drops ends the game over it. A game in a session ticks all the time, not only when needed. The package's [README](../../../../../packages/arcadekit/README.md#not-done-yet) has the rest.
 
 ## Read more
 
 - [Lockstep and rollback](../guides/lockstep-and-rollback.md) and [transports and relays](../guides/transports-and-relays.md).
-- [More than one player](/reference/arcadekit#more-than-one-player) in the reference.
+- [`Lockstep`](/reference/arcadekit/Lockstep), [`Rollback`](/reference/arcadekit/Rollback) and [`Transport`](/reference/arcadekit/Transport) in the API reference.

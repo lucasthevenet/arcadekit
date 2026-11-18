@@ -1661,7 +1661,7 @@ That is how it stays: the raw path has no API that spares the assertion. One tha
 
 ## Not done yet
 
-The [roadmap](../../docs/roadmap.md) puts these in order.
+The [roadmap](../../ROADMAP.md) puts these in order.
 
 - [`@arcadekit/three`](../three/README.md) draws a game with Three.js, and says what it does not do yet; the example page of this package draws on a canvas by hand.
 - A game picks one of the two transforms for a thing, and a plugin written for one does not read the other: code that should work in both asks for both. A `Transform2d` has no depth: what is in front of what in a flat game is for what draws it to say.
@@ -1723,4 +1723,4 @@ The [roadmap](../../docs/roadmap.md) puts these in order.
 - Only scripts started with `app.spawnScript` or `Script.spawn` are watched. Effect has no hook that would let the app see a fiber started with `Effect.forkDetach`.
 - The check on benchmarks in CI is of the storage core alone, and lets through a slowdown of less than a twentieth: see [Benchmarks in CI](#benchmarks-in-ci).
 - A world holds at most 4,194,304 entities at once, and an id takes eight bytes wherever it is kept.
-- Systems run in sequence on one thread. Running them side by side on workers was measured and not built: `pnpm --filter arcadekit bench:parallel` shares a loop's rows between four threads over shared memory, and a flock of 100,000 goes from 3.7 ms to 1.3 ms, where the 100,000 entities of the benchmark above move in a quarter of a millisecond on one. The [roadmap](../../docs/roadmap.md#7-speed-and-scale) has the numbers and what it waits on.
+- Systems run in sequence on one thread. Running them side by side on workers was measured and not built: `pnpm --filter arcadekit bench:parallel` shares a loop's rows between four threads over shared memory, and a flock of 100,000 goes from 3.7 ms to 1.3 ms, where the 100,000 entities of the benchmark above move in a quarter of a millisecond on one. The [roadmap](../../ROADMAP.md#7-speed-and-scale) has the numbers and what it waits on.

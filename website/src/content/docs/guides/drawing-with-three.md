@@ -98,5 +98,5 @@ A flat game places things with `Transform2d`, and the same systems draw them in 
 
 ## Read more
 
-- [The `@arcadekit/three` reference](/reference/three), with colours, textures, models, the benchmark, and what is not done yet.
+- [`@arcadekit/three`](/reference/three) in the API reference, with [`Three`](/reference/three/Three) and [`Gltf`](/reference/three/Gltf).
 - [`packages/three/examples/page`](../../../../../packages/three/examples/page): ten thousand moving objects.
