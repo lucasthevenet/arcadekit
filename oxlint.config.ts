@@ -233,5 +233,19 @@ export default defineConfig({
         "arcadekit/no-code-from-text": "error",
       },
     },
+    {
+      // Where the app runs plugins, systems, handlers and scripts of any
+      // type: their types can't follow them into one app, and a few casts
+      // claim them back. Off until a second wave, with
+      // typescript/consistent-type-assertions.
+      files: [
+        "packages/arcadekit/src/App.ts",
+        "packages/arcadekit/src/Plugin.ts",
+      ],
+      rules: {
+        "effecttsgo/any-unknown-in-error-context": "off",
+        "effecttsgo/unsafe-effect-type-assertion": "off",
+      },
+    },
   ],
 });
