@@ -84,6 +84,7 @@ export class State<V extends string>
     first: V
   ) {
     super();
+
     const spec = Component.singleton(
       name,
       {
@@ -93,6 +94,7 @@ export class State<V extends string>
       },
       { value: first, next: null, entered: 0 }
     );
+
     this.component = spec.component;
     this.initial = spec.initial;
   }
@@ -104,6 +106,7 @@ export class State<V extends string>
       if (world.guard !== undefined) {
         world.singleton(this);
       }
+
       return handleOf(world, this);
     }));
   }
@@ -124,11 +127,13 @@ export const define = <const V extends string>(
   initial?: NoInfer<V>
 ): State<V> => {
   const first = initial ?? values[0];
+
   if (!values.includes(first)) {
     throw new Error(
       `The state "${name}" cannot start in "${first}". Its values are: ${values.join(", ")}.`
     );
   }
+
   return new State(name, values, first);
 };
 
@@ -146,10 +151,12 @@ export interface Registry {
 /** @internal The states of a world that anyone has asked for. */
 export const registryOf = (world: EcsWorld): Registry => {
   let registry = known.get(world);
+
   if (registry === undefined) {
     registry = { states: [], handles: new Map() };
     known.set(world, registry);
   }
+
   return registry;
 };
 
@@ -160,10 +167,13 @@ export const handleOf = <V extends string>(
 ): StateHandle<V> => {
   const registry = registryOf(world);
   const found = registry.handles.get(state);
+
   if (found !== undefined) {
     return found as StateHandle<V>;
   }
+
   const held = world.singleton(state);
+
   const handle: StateHandle<V> = {
     get value() {
       return held.value as V;
@@ -178,18 +188,22 @@ export const handleOf = <V extends string>(
           `The state "${state.name}" has no value "${value}". Its values are: ${state.values.join(", ")}.`
         );
       }
+
       // Only a write when something changes: a write is what puts a
       // singleton in the world's hash.
       const next = value === held.value ? null : value;
+
       if (held.next !== next) {
         held.next = next;
       }
     },
   };
+
   registry.handles.set(state, handle);
   registry.states = [...registry.states, state].toSorted((a, b) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0
   );
+
   return handle;
 };
 
@@ -220,11 +234,13 @@ export const pending = (
   state: State<any>
 ): Move | undefined => {
   const held = world.singleton(state);
+
   if (held.entered === 0) {
     return held.next === null
       ? { from: undefined, to: held.value }
       : { from: undefined, to: held.value, followedBy: held.next };
   }
+
   return held.next === null ? undefined : { from: held.value, to: held.next };
 };
 
@@ -236,11 +252,15 @@ export const pending = (
  */
 export const enter = (world: EcsWorld, state: State<any>, move: Move): void => {
   const held = world.singleton(state);
+
   if (move.from === undefined) {
     held.entered = 1;
+
     return;
   }
+
   held.value = move.to;
+
   if (held.next === move.to) {
     held.next = null;
   }

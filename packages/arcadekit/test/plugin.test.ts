@@ -22,10 +22,12 @@ const Position = Component.define("pl/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Velocity = Component.define("pl/Velocity", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Health = Component.define("pl/Health", { hp: Field.i32 });
 
 const Bumped = Event.define<{ readonly entity: Entity }>("pl/Bumped");
@@ -83,33 +85,41 @@ const Physics = Plugin.make("Physics", {
 class Fragile extends Data.TaggedError("Fragile")<{
   readonly entity: Entity;
 }> {}
+
 class NothingToHeal extends Data.TaggedError("NothingToHeal")<{}> {}
 
 const Heal = Action.define<{ readonly amount: number }>()("Heal");
 
 const heal = Action.handler(Heal, function* ({ amount }) {
   const wounded = yield* Query.all(Health);
+
   if (wounded.count() === 0) {
     return yield* Effect.fail(new NothingToHeal());
   }
+
   let total = 0;
   wounded.each((health) => {
     health.hp += amount;
     total += health.hp;
   });
+
   return total;
 });
 
 const BumpDamage = System.make("BumpDamage", function* () {
   const world = yield* World;
+
   for (const { entity } of (yield* Bumped).read()) {
     const health = world.get(entity, Health);
+
     if (health === undefined) {
       continue;
     }
+
     if (health.hp <= 1) {
       return yield* Effect.fail(new Fragile({ entity }));
     }
+
     world.set(entity, Health, { hp: health.hp - 1 });
   }
 }).pipe(System.after("Walls"));
@@ -138,6 +148,7 @@ describe("plugins", () => {
       const healed: Exit.Exit<number, NothingToHeal> = app.dispatch(Heal, {
         amount: 5,
       });
+
       expect(healed).toEqual(Exit.succeed(7));
 
       // So is the tick's failure type.
@@ -148,13 +159,17 @@ describe("plugins", () => {
 
   it("can be combined with systems and handlers the app defines itself", () => {
     const Ping = Action.define<{}>()("Ping");
+
     const ping = Action.handler(Ping, function* () {
       return "pong";
     });
+
     const seen: number[] = [];
+
     const Watch = System.make("Watch", function* () {
       seen.push((yield* Bumped).read().length);
     }).pipe(System.after(Walls));
+
     withApp(
       App.make({ plugins: [Physics], systems: [Watch], handlers: [ping] }),
       (app) => {
@@ -171,9 +186,11 @@ describe("plugins", () => {
     let built = 0;
     let released = 0;
     const order: string[] = [];
+
     class Clock extends Context.Service<Clock, { readonly id: number }>()(
       "pl/Clock"
     ) {}
+
     const Core = Plugin.make("Core", {
       systems: [
         System.make("CoreSystem", function* () {
@@ -189,7 +206,9 @@ describe("plugins", () => {
       ),
       setup: Effect.sync(() => void order.push("setup:Core")),
     });
+
     type NeedsClock = Plugin.Plugin<never, never, Clock, never, never, Clock>;
+
     const plugin = (
       name: string,
       plugins: readonly (Plugin.Plugin<never, never, Clock> | NeedsClock)[]
@@ -203,6 +222,7 @@ describe("plugins", () => {
         ],
         setup: Effect.sync(() => void order.push(`setup:${name}`)),
       });
+
     const Left = plugin("Left", [Core]);
     const Right = plugin("Right", [Core]);
     const Top = plugin("Top", [Left, Right]);
@@ -235,6 +255,7 @@ describe("plugins", () => {
       Arena,
       { readonly wall: Entity; readonly width: number }
     >()("pl/Arena") {}
+
     const ArenaPlugin = Plugin.make("Arena", {
       plugins: [Physics],
       layer: Layer.effect(
@@ -244,17 +265,21 @@ describe("plugins", () => {
           const commands = yield* Commands; // built in
           const wall = commands.spawn(Position.of({ x: width, y: 0 }));
           commands.apply();
+
           return { wall, width };
         })
       ),
     });
+
     const seen: string[] = [];
+
     const Look = System.make("Look", function* () {
       const arena = yield* Arena;
       seen.push(
         `wall ${(yield* World).get(arena.wall, Position)!.x} of ${arena.width}`
       );
     });
+
     withApp(App.make({ plugins: [ArenaPlugin], systems: [Look] }), (app) => {
       app.tick(1);
       expect(seen).toEqual(["wall 10 of 10"]);
@@ -266,23 +291,28 @@ describe("plugins", () => {
       Audio,
       { readonly play: (sound: string) => void }
     >()("pl/Audio") {}
+
     const played: string[] = [];
+
     const Sfx = Plugin.make("Sfx", {
       plugins: [Physics],
       systems: [
         System.make("BumpSound", function* () {
           const audio = yield* Audio;
+
           for (const _ of (yield* Bumped).read()) {
             audio.play("boing");
           }
         }).pipe(System.after(Walls)),
       ],
     });
+
     const provided = App.make({ plugins: [Sfx] }).pipe(
       Effect.provide(
         Layer.succeed(Audio, { play: (sound) => void played.push(sound) })
       )
     );
+
     withApp(provided, (app) => app.tick(1));
     expect(played).toEqual(["boing"]);
 
@@ -299,11 +329,14 @@ describe("plugins", () => {
     class Speed extends Context.Service<Speed, { readonly limit: number }>()(
       "pl/Speed"
     ) {}
+
     const speedFromBounds = Layer.effect(
       Speed,
       Effect.map(Effect.service(Bounds), ({ width }) => ({ limit: width * 2 }))
     );
+
     const limits: number[] = [];
+
     const ReadSpeed = System.make("ReadSpeed", function* () {
       limits.push((yield* Speed).limit);
     });
@@ -313,6 +346,7 @@ describe("plugins", () => {
       layer: speedFromBounds,
       systems: [ReadSpeed],
     });
+
     withApp(App.make({ plugins: [Declared] }), (app) => app.tick(1));
     expect(limits).toEqual([20]);
 
@@ -323,6 +357,7 @@ describe("plugins", () => {
       layer: speedFromBounds,
       systems: [ReadSpeed],
     });
+
     expect(() =>
       withApp(
         // @ts-expect-error Bounds is needed by Undeclared's layer and not declared
@@ -345,16 +380,20 @@ describe("plugins", () => {
     class NoSaveFile extends Data.TaggedError("NoSaveFile")<{
       readonly path: string;
     }> {}
+
     class BadConfig extends Data.TaggedError("BadConfig")<{}> {}
+
     const Loader = Plugin.make("Loader", {
       setup: Effect.fail(new NoSaveFile({ path: "slot1" })),
     });
+
     const Config = Plugin.make("Config", {
       layer: Layer.effectDiscard(Effect.fail(new BadConfig())),
     });
 
     const make: Effect.Effect<unknown, NoSaveFile | BadConfig, Scope.Scope> =
       App.make({ plugins: [Loader, Config] });
+
     expect(Effect.runSyncExit(Effect.scoped(make))).toEqual(
       Exit.fail(new BadConfig())
     );
@@ -367,9 +406,11 @@ describe("plugins", () => {
         yield* (yield* Script).nextTick;
       }),
     });
+
     const exit = Effect.runSyncExit(
       Effect.scoped(App.make({ plugins: [Slow] }))
     );
+
     expect(Exit.isFailure(exit)).toBe(true);
     expect(String(exit)).toMatch(
       /setup of plugin \\?"Slow\\?" did not finish synchronously/

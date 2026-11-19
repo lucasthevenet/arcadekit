@@ -22,20 +22,24 @@ import {
 import type { ComponentDef, Entity } from "../src/index";
 
 const Body = Component.define("rl/Body", { x: Field.f32 });
+
 /** A child goes with its parent. */
 const ChildOf = Component.relation("rl/ChildOf", {
   onTargetDespawn: "despawn",
 });
+
 /** Whoever aims at something that is gone aims at nothing. */
 const Targets = Component.relation("rl/Targets", {
   onTargetDespawn: "remove",
   storage: "sparse",
 });
+
 /** A relation with data of its own, in a table. */
 const Owes = Component.relation("rl/Owes", {
   onTargetDespawn: "remove",
   fields: { amount: Field.i32 },
 });
+
 /** Children kept in a sparse set. */
 const HeldBy = Component.relation("rl/HeldBy", {
   onTargetDespawn: "despawn",
@@ -46,6 +50,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
 const body = (world: EcsWorld, x = 0): Entity => world.spawn(Body.of({ x }));
+
 const childOf = (world: EcsWorld, parent: Entity): Entity =>
   world.spawn(Body.of({ x: 0 }), ChildOf.of({ target: parent }));
 
@@ -67,6 +72,7 @@ const expectNoDangling = (world: EcsWorld): void => {
       expect(world.isAlive(row.target)).toBe(true);
       byTarget.set(row.target, [...(byTarget.get(row.target) ?? []), entity]);
     });
+
     for (const [target, sources] of byTarget) {
       expect(world.sources(target, relation)).toEqual(
         sources.toSorted((a, b) => (a & 0x3f_ff_ff) - (b & 0x3f_ff_ff))
@@ -100,6 +106,7 @@ describe("a relation", () => {
         expect(child.target[i]).toBe(parent);
         expect([first, second]).toContain(ids[i]);
       }
+
       if (start < 0) {
         // Never run: it is the compiler that refuses it.
         // @ts-expect-error a relation's target is not written through its column
@@ -126,9 +133,11 @@ describe("a relation", () => {
     expect(world.entityCount).toBe(8);
 
     expect(world.despawn(root)).toBe(true);
+
     for (const gone of [root, ...kids, ...grandkids, great]) {
       expect(world.isAlive(gone)).toBe(false);
     }
+
     expect(world.isAlive(bystander)).toBe(true);
     expect(world.isAlive(adopted)).toBe(true);
     expect(world.entityCount).toBe(2);
@@ -150,17 +159,21 @@ describe("a relation", () => {
   it("takes a relation away, and not its holder, when it was told to remove", () => {
     const world = new EcsWorld();
     const prey = body(world, 1);
+
     const hunters = [0, 1, 2].map(() =>
       world.spawn(Body.of({ x: 5 }), Targets.of({ target: prey }))
     );
+
     const debtor = world.spawn(Owes.of({ target: prey, amount: 30 }));
     world.despawn(prey);
+
     for (const hunter of hunters) {
       expect(world.isAlive(hunter)).toBe(true);
       expect(world.has(hunter, Targets)).toBe(false);
       expect(world.get(hunter, Targets)).toBeUndefined();
       expect(world.get(hunter, Body)).toEqual({ x: 5 });
     }
+
     expect(world.isAlive(debtor)).toBe(true);
     expect(world.has(debtor, Owes)).toBe(false);
     // The slot is used again: nothing was left pointing at it to mistake
@@ -183,15 +196,18 @@ describe("a relation", () => {
       const world = new EcsWorld();
       const target = body(world);
       const [held, child, both] = [body(world), body(world), body(world)];
+
       const steps = [
         () => world.add(held, HeldBy.of({ target })),
         () => world.add(child, ChildOf.of({ target })),
         () => world.add(both, HeldBy.of({ target })),
         () => world.add(both, ChildOf.of({ target })),
       ];
+
       for (const step of heldFirst ? steps : steps.toReversed()) {
         step();
       }
+
       const lost = [world.removed(ChildOf), world.removed(HeldBy)];
       world.despawn(target);
       expect(world.entityCount).toBe(0);
@@ -199,8 +215,10 @@ describe("a relation", () => {
       // then the one that was only held.
       expect(lost[0]!.read()).toEqual([child, both]);
       expect(lost[1]!.read()).toEqual([both, held]);
+
       return [0, 1, 2, 3].map(() => world.spawn(Body) & 0x3f_ff_ff);
     };
+
     expect(build(true)).toEqual([1, 3, 2, 0]);
     expect(build(false)).toEqual([1, 3, 2, 0]);
   });
@@ -283,9 +301,11 @@ describe("a relation", () => {
   it("works the same kept in a sparse set", () => {
     const world = new EcsWorld();
     const hand = body(world);
+
     const cards = [0, 1, 2].map(() =>
       world.spawn(Body, HeldBy.of({ target: hand }))
     );
+
     const other = body(world);
     world.add(cards[1]!, HeldBy.of({ target: other }));
     expect(world.sources(hand, HeldBy)).toEqual([cards[0], cards[2]]);
@@ -319,9 +339,11 @@ describe("a relation", () => {
 
     let last = body(world);
     const first = last;
+
     for (let n = 0; n < 10_000; n++) {
       last = childOf(world, last);
     }
+
     expect(world.entityCount).toBe(10_001);
     world.despawn(first);
     expect(world.entityCount).toBe(0);
@@ -381,13 +403,17 @@ describe("relations and a snapshot", () => {
     const world = new EcsWorld({ seed: 4 });
     const parents = [body(world, 1), body(world, 2)];
     const children = [0, 1, 2, 3, 4, 5].map((n) => body(world, 10 + n));
+
     for (const n of order) {
       world.add(children[n]!, ChildOf.of({ target: parents[n % 2]! }));
       world.add(children[n]!, Targets.of({ target: children[(n + 1) % 6]! }));
     }
+
     world.add(children[5]!, Owes.of({ target: parents[0]!, amount: 7 }));
+
     return world;
   };
+
   const listed = [Body, ChildOf, Targets, Owes, HeldBy];
 
   it("go on the same after a load: the same entities go, and the same ids come back", () => {
@@ -400,11 +426,13 @@ describe("relations and a snapshot", () => {
     expect(copy.sources(parents[0]!, ChildOf)).toEqual(
       world.sources(parents[0]!, ChildOf)
     );
+
     for (const each of [world, copy]) {
       each.despawn(parents[0]!);
       each.spawn(Body.of({ x: 100 }));
       each.spawn(Body.of({ x: 101 }));
     }
+
     expect(copy.hash()).toBe(world.hash());
     expect(copy.entityCount).toBe(world.entityCount);
     expect(copy.view(Query.all(Body)).entities()).toEqual(
@@ -416,6 +444,7 @@ describe("relations and a snapshot", () => {
   it("do not depend on the order the relations were made in", () => {
     const one = family([0, 1, 2, 3, 4, 5]);
     const other = family([5, 3, 1, 4, 2, 0]);
+
     // The tables hold the children in another order, so compare what goes.
     const survivors = (world: EcsWorld): number[] => {
       const parent = world.view(Query.all(Body)).entities()[0]!;
@@ -424,8 +453,10 @@ describe("relations and a snapshot", () => {
       world.view(Query.all(Body)).each((row) => {
         xs.push(row.x);
       });
+
       return xs.toSorted((a, b) => a - b);
     };
+
     expect(survivors(other)).toEqual(survivors(one));
     // And the slots they left are reused in the same order.
     expect([body(other), body(other), body(other)]).toEqual([
@@ -438,16 +469,20 @@ describe("relations and a snapshot", () => {
   it("refuses a snapshot whose relation points at an entity that is not there", () => {
     const world = family([0, 1, 2]);
     const contents = readSnapshot(world.snapshot());
+
     const table = contents.tables.find((each) =>
       each.components.includes("rl/ChildOf")
     )!;
+
     (table.columns["rl/ChildOf"]!.target as Uint32Array)[0] = 4000;
     let error: unknown;
+
     try {
       new EcsWorld().load(writeSnapshot(contents), listed);
     } catch (thrown) {
       error = thrown;
     }
+
     expect(error).toBeInstanceOf(SnapshotError);
     expect((error as SnapshotError).problem).toBe("corrupt");
     expect((error as SnapshotError).message).toMatch(
@@ -465,20 +500,26 @@ describe("relations against a simple model", () => {
       /** Per relation: who points at whom. */
       const model = relations.map(() => new Map<Entity, Entity>());
       const alive = new Set<Entity>();
+
       /** What a despawn does, worked out the slow way. */
       const kill = (entity: Entity): void => {
         const pending = [entity];
+
         while (pending.length > 0) {
           const next = pending.pop()!;
+
           if (!alive.delete(next)) {
             continue;
           }
+
           for (const [r, relation] of relations.entries()) {
             model[r]!.delete(next);
+
             for (const [source, target] of model[r]!) {
               if (target !== next) {
                 continue;
               }
+
               if (relation.relation === "despawn") {
                 pending.push(source);
               } else {
@@ -488,6 +529,7 @@ describe("relations against a simple model", () => {
           }
         }
       };
+
       const relate = (r: number, source: Entity, target: Entity): void => {
         if (alive.has(target)) {
           model[r]!.set(source, target);
@@ -497,7 +539,9 @@ describe("relations against a simple model", () => {
           model[r]!.delete(source);
         }
       };
+
       const graveyard: Entity[] = [];
+
       const anyone = (): Entity =>
         graveyard.length > 0 && dice.next() < 0.1
           ? dice.pick(graveyard)
@@ -505,10 +549,12 @@ describe("relations against a simple model", () => {
 
       for (let step = 0; step < 4000; step++) {
         const roll = dice.int(0, 9);
+
         if (roll < 3 || alive.size < 3) {
           const r = dice.int(0, relations.length - 1);
           const target = alive.size > 0 ? anyone() : undefined;
           const related = target !== undefined && dice.next() < 0.7;
+
           const entity = related
             ? world.spawn(
                 Body,
@@ -517,7 +563,9 @@ describe("relations against a simple model", () => {
                   : relations[r]!.of({ target } as never)
               )
             : world.spawn(Body);
+
           alive.add(entity);
+
           if (related) {
             relate(r, entity, target);
           }
@@ -546,9 +594,11 @@ describe("relations against a simple model", () => {
 
         if (step % 50 === 0 || step > 3990) {
           expect(world.entityCount).toBe(alive.size);
+
           for (const entity of alive) {
             expect(world.isAlive(entity)).toBe(true);
           }
+
           for (const [r, relation] of all.entries()) {
             const held = new Map<Entity, Entity>();
             world.view(Query.all(relation)).each((row, entity) => {
@@ -556,6 +606,7 @@ describe("relations against a simple model", () => {
             });
             expect(held).toEqual(model[r]);
           }
+
           expectNoDangling(world);
         }
       }
@@ -566,21 +617,28 @@ describe("relations against a simple model", () => {
 // --- in an app --------------------------------------------------------------------
 
 const Fell = Action.define("rl/Fell", Schema.Struct({ tree: EntityId }));
+
 const Graft = Action.define(
   "rl/Graft",
   Schema.Struct({ branch: EntityId, onto: EntityId })
 );
+
 const fell = Action.handler(Fell, function* ({ tree }) {
   (yield* Commands).despawn(tree);
 });
+
 const graft = Action.handler(Graft, function* ({ branch, onto }) {
   const world = yield* World;
+
   if (!world.isAlive(onto)) {
     return yield* Effect.fail("no such tree" as const);
   }
+
   (yield* Commands).add(branch, ChildOf.of({ target: onto }));
+
   return world.sources(onto, ChildOf).length;
 });
+
 /** Every tick, each tree that has branches grows one more. */
 const Grow = System.make("Grow", function* () {
   const world = yield* World;
@@ -599,10 +657,13 @@ const orchard = Effect.gen(function* () {
     handlers: [fell, graft],
     checkpointEvery: 1,
   });
+
   const trees = [0, 1, 2].map(() => app.world.spawn(Body));
+
   for (const tree of trees) {
     app.world.spawn(Body, ChildOf.of({ target: tree }));
   }
+
   return { app, trees };
 });
 
@@ -613,13 +674,13 @@ describe("relations in an app", () => {
         const { app, trees } = yield* orchard;
         app.tick(1);
         app.tick(1);
-        expect(app.world.sources(trees[0]!, ChildOf).length).toBe(3);
+        expect(app.world.sources(trees[0]!, ChildOf)).toHaveLength(3);
         const branch = app.world.sources(trees[0]!, ChildOf)[0]!;
         // A handler changes who points at whom through Commands.
         expect(app.dispatch(Graft, { branch, onto: trees[1]! })).toEqual(
           Exit.succeed(3)
         );
-        expect(app.world.sources(trees[1]!, ChildOf).length).toBe(4);
+        expect(app.world.sources(trees[1]!, ChildOf)).toHaveLength(4);
         app.dispatch(Fell, { tree: trees[0]! });
         expect(app.world.isAlive(trees[0]!)).toBe(false);
         expect(app.world.isAlive(branch)).toBe(true);
@@ -643,24 +704,30 @@ describe("relations in an app", () => {
         const { app, trees } = yield* orchard;
         app.tick(1);
         const save = app.save();
+
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
+
         const read = Save.decode(Save.encode(save.value));
+
         if (Exit.isFailure(read)) {
           throw new Error("the save did not decode");
         }
+
         const loaded = yield* App.load(read.value, {
           components: [Body, ChildOf],
           systems: [Grow],
           handlers: [fell, graft],
           checkpointEvery: 1,
         });
+
         for (const each of [app, loaded]) {
           each.dispatch(Fell, { tree: trees[2]! });
           each.tick(1);
           each.tick(1);
         }
+
         expect(loaded.world.hash()).toBe(app.world.hash());
         expect(loaded.world.sources(trees[0]!, ChildOf)).toEqual(
           app.world.sources(trees[0]!, ChildOf)

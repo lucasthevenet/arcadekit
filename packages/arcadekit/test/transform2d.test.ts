@@ -31,10 +31,12 @@ describe("Transform2d", () => {
     expect(Position.fields).toEqual(["x", "y"]);
     expect(Rotation.fields).toEqual(["angle"]);
     expect(Scale.fields).toEqual(["x", "y"]);
+
     for (const component of [Position, Rotation, Scale]) {
       expect(new Set(component.kinds)).toEqual(new Set(["f32"]));
       expect(component.storage).toBe("table");
     }
+
     // One module, whichever entry it is reached through.
     expect(Entry.Position).toBe(Position);
     expect(Entry.plugin).toBe(Transform2d.plugin);
@@ -44,13 +46,16 @@ describe("Transform2d", () => {
     expect(Position).not.toBe(Transform3d.Position);
     expect(Rotation).not.toBe(Transform3d.Rotation);
     expect(Scale).not.toBe(Transform3d.Scale);
+
     const { world } = run(
       App.make({ plugins: [Transform3d.plugin, Transform2d.plugin] })
     );
+
     const both = world.spawn(
       Position.of({ x: 1, y: 2 }),
       Transform3d.Position.of({ x: 7, y: 8, z: 9 })
     );
+
     world.set(both, Position, { x: 3, y: 4 });
     expect(world.get(both, Position)).toEqual({ x: 3, y: 4 });
     expect(world.get(both, Transform3d.Position)).toEqual({ x: 7, y: 8, z: 9 });
@@ -61,6 +66,7 @@ describe("Transform2d", () => {
 
   it("is moved and turned by a system with a loop over its columns", () => {
     const Moving = Query.all(Position, Rotation);
+
     const Drift = System.make("t2/Drift", function* () {
       const { delta } = yield* Time;
       (yield* Moving).eachChunk((start, end, position, rotation) => {
@@ -71,13 +77,16 @@ describe("Transform2d", () => {
         }
       });
     });
+
     const app = run(
       App.make({ plugins: [Transform2d.plugin], systems: [Drift] })
     );
+
     const card = app.world.spawn(
       Position.of({ x: 1, y: 2 }),
       Rotation.of({ angle: 0.25 })
     );
+
     // Added with no value: at the origin, and not turned.
     const fresh = app.world.spawn(Position, Rotation);
     app.tick(0.5);
@@ -92,28 +101,36 @@ describe("Transform2d", () => {
       plugins: [Transform2d.plugin],
       components: [Card],
     });
+
     expect(Transform2d.plugin.name).toBe("arcadekit/Transform2d");
     expect(Transform2d.plugin.components).toEqual([Position, Rotation, Scale]);
     const made = run(App.make({ plugins: [Rules] }));
+
     const card = made.world.spawn(
       Card,
       Position.of({ x: 1, y: 2 }),
       Rotation.of({ angle: 1.5 }),
       Scale.of({ x: 2, y: 3 })
     );
+
     const save = made.save();
+
     if (Exit.isFailure(save)) {
       throw new Error("The game could not be saved");
     }
+
     const read = Save.decode(Save.encode(save.value));
+
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
+
     const loaded = run(App.load(read.value, { plugins: [Rules] }));
     expect(loaded.world.hash()).toBe(made.world.hash());
     expect(loaded.world.get(card, Position)).toEqual({ x: 1, y: 2 });
     expect(loaded.world.get(card, Rotation)).toEqual({ angle: 1.5 });
     expect(loaded.world.get(card, Scale)).toEqual({ x: 2, y: 3 });
+
     // The other transform's plugin does not list them: each its own.
     const without = Effect.runSyncExit(
       Effect.scoped(
@@ -127,6 +144,7 @@ describe("Transform2d", () => {
         })
       )
     );
+
     expect(Exit.isFailure(without)).toBe(true);
   });
 });

@@ -72,12 +72,14 @@ const inLinkOrHeading = (node: MdastNode, ctx: MdastVisitorContext) => {
       return true;
     }
   }
+
   return false;
 };
 
 export const createLinkRewriter = (options: LinkOptions) => {
   const { repoRoot, repoUrl, branch, pageLinks, onDeadLink } = options;
   const dead = new Map<string, DeadLink>();
+
   const onGitHub = new RegExp(
     `^${escapeRegExp(repoUrl)}/(?:blob|tree)/${escapeRegExp(branch)}/(?<file>[^?#]+)(?<rest>.*)$`,
     "u"
@@ -90,11 +92,13 @@ export const createLinkRewriter = (options: LinkOptions) => {
   /** Records a dead link, and reports it the first time. Returns the link as it was written. */
   const deadLink = (href: string, file: string): string => {
     const key = `${file}\n${href}`;
+
     if (!dead.has(key)) {
       const link: DeadLink = { file, href };
       dead.set(key, link);
       onDeadLink?.(link);
     }
+
     return href;
   };
 
@@ -108,17 +112,22 @@ export const createLinkRewriter = (options: LinkOptions) => {
    */
   const rewrite = (href: string, file: string): string => {
     const github = onGitHub.exec(href)?.groups;
+
     if (github?.file !== undefined) {
       const target = path.posix
         .normalize(decodeURI(github.file))
         .replace(/\/$/u, "");
+
       const page = pageOf(target);
+
       if (page !== undefined) {
         return `${page}${github.rest}`;
       }
+
       // It stays a link to GitHub, where a file this checkout doesn't have is a 404.
       return inRepository(target) ? href : deadLink(href, file);
     }
+
     if (HAS_SCHEME.test(href) || href.startsWith("/") || href.startsWith("#")) {
       return href;
     }
@@ -127,19 +136,25 @@ export const createLinkRewriter = (options: LinkOptions) => {
     const cut = href.search(/[?#]/u);
     const relative = cut === -1 ? href : href.slice(0, cut);
     const rest = cut === -1 ? "" : href.slice(cut);
+
     const target = path.posix
       .normalize(path.posix.join(path.posix.dirname(file), decodeURI(relative)))
       .replace(/\/$/u, "");
+
     if (!inRepository(target)) {
       return deadLink(href, file);
     }
+
     const page = pageOf(target);
+
     if (page !== undefined) {
       return `${page}${rest}`;
     }
+
     const kind = statSync(path.join(repoRoot, target)).isDirectory()
       ? "tree"
       : "blob";
+
     return `${repoUrl}/${kind}/${branch}/${encodeURI(target)}${rest}`;
   };
 
@@ -150,19 +165,23 @@ export const createLinkRewriter = (options: LinkOptions) => {
   const issueLinks = (text: string): TextPart[] => {
     const parts: TextPart[] = [];
     let end = 0;
+
     for (const match of text.matchAll(ISSUE_NUMBER)) {
       if (match.index > end) {
         parts.push({ text: text.slice(end, match.index) });
       }
+
       parts.push({
         text: match[0],
         href: `${repoUrl}/issues/${match.groups?.number}`,
       });
       end = match.index + match[0].length;
     }
+
     if (end < text.length) {
       parts.push({ text: text.slice(end) });
     }
+
     return parts;
   };
 
@@ -178,34 +197,41 @@ export const createLinkRewriter = (options: LinkOptions) => {
     if (context.fileURL === undefined) {
       return null;
     }
+
     const file = toPosix(
       path.relative(repoRoot, fileURLToPath(context.fileURL))
     );
+
     if (file.startsWith("..")) {
       return null;
     }
+
     return defineMdastPlugin({
       name: "arcadekit:repository-links",
       link(node, ctx) {
         const href = rewrite(node.url, file);
+
         if (href !== node.url) {
           ctx.setField(node, "url", href);
         }
       },
       definition(node, ctx) {
         const href = rewrite(node.url, file);
+
         if (href !== node.url) {
           ctx.setField(node, "url", href);
         }
       },
       text(node, ctx) {
         const parts = issueLinks(node.value);
+
         if (
           parts.every((part) => part.href === undefined) ||
           inLinkOrHeading(node, ctx)
         ) {
           return;
         }
+
         ctx.replaceNode(
           node,
           parts.map(({ text, href }): MdastContent =>

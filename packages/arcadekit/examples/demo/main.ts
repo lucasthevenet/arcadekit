@@ -27,6 +27,7 @@ const { Frozen, Gravity, Position, Velocity } = Physics;
 // The demo itself is a plugin too: the ones it is made of, and the one
 // component no plugin of its has.
 const Name = Component.define("demo/Name", { value: Field.json<string>() });
+
 const Demo = Plugin.make("Demo", {
   plugins: [Physics.plugin, Lifetime.plugin, Sketch.plugin],
   components: [Name],
@@ -38,6 +39,7 @@ const Fountain = Effect.gen(function* () {
   const commands = yield* Commands;
   // Seeded: the same seed sprays the same fountain on every run and machine.
   const random = yield* Random;
+
   for (let wave = 1; wave <= 5; wave++) {
     for (let i = 0; i < 100; i++) {
       commands.spawn(
@@ -46,8 +48,10 @@ const Fountain = Effect.gen(function* () {
         Lifetime.Lifetime.of({ seconds: 1 + random.next() })
       );
     }
+
     yield* script.sleep(0.5);
   }
+
   return "fountain finished";
 });
 
@@ -73,22 +77,26 @@ const program = Effect.gen(function* () {
             Position.of({ x: 0, y: 100 }),
             Velocity
           );
+
           app.world.add(rock, Frozen);
 
           // 1. As fast as possible: three seconds of game time at a fixed 60 Hz.
           const fountain = app.spawnScript(Fountain);
           const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
           const started = performance.now();
+
           for (let second = 1; second <= 3; second++) {
             step(1);
             console.log(
               `t=${app.time.elapsed.toFixed(2)}s tick=${app.time.tick} entities=${app.world.entityCount} ` +
                 `rock.y=${app.world.get(rock, Position)!.y.toFixed(1)}`
             );
+
             if (second === 1) {
               app.world.remove(rock, Frozen);
             } // the rock starts falling
           }
+
           console.log(
             `180 ticks took ${(performance.now() - started).toFixed(1)} ms; script: ${fountain.pollUnsafe()}`
           );

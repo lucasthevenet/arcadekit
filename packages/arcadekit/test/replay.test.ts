@@ -26,21 +26,27 @@ const Coins = Query.all(Coin);
 
 const Drop = Action.define("rp/Drop", Schema.Struct({ value: Schema.Int }));
 const Take = Action.define("rp/Take", Schema.Struct({ coin: EntityId }));
+
 class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
   readonly coin: Entity;
 }> {}
 
 const drop = Action.handler(Drop, function* ({ value }) {
   const random = yield* Random;
+
   return (yield* Commands).spawn(Coin.of({ value, x: random.next() }));
 });
+
 const take = Action.handler(Take, function* ({ coin }) {
   const world = yield* World;
   const held = world.get(coin, Coin);
+
   if (held === undefined) {
     return yield* Effect.fail(new NoSuchCoin({ coin }));
   }
+
   (yield* Commands).despawn(coin);
+
   return held.value;
 });
 
@@ -60,13 +66,16 @@ const fault = (onTick: number, kind: "nudge" | "lose") =>
     if ((yield* Time).tick !== onTick) {
       return;
     }
+
     const commands = yield* Commands;
     let first = true;
     (yield* Coins).each((coin, entity) => {
       if (!first) {
         return;
       }
+
       first = false;
+
       if (kind === "nudge") {
         coin.x += 1e-6;
       } else {
@@ -99,6 +108,7 @@ const withApp = <T, A>(
 
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
   log.filter((entry): entry is Action.Logged => !Action.isCheckpoint(entry));
+
 const checkpoints = (log: readonly Action.LogEntry[]): Action.Checkpoint[] =>
   log.filter((entry) => Action.isCheckpoint(entry));
 
@@ -112,10 +122,13 @@ const record = (options: Options & { readonly ticks: number }) =>
     const coins: Entity[] = [];
     const hashes: number[] = [];
     const starting = app.world.hash();
+
     for (let tick = 0; tick < options.ticks; tick++) {
       const roll = dice.int(1, 6);
+
       if (roll <= 2 || tick < 3) {
         const exit = app.dispatch(Drop, { value: dice.int(1, 9) });
+
         if (Exit.isSuccess(exit)) {
           coins.push(exit.value);
         }
@@ -124,9 +137,11 @@ const record = (options: Options & { readonly ticks: number }) =>
         const [coin] = coins.splice(dice.int(1, coins.length - 1), 1);
         app.enqueue(Take, { coin: coin! });
       }
+
       app.tick(1 / 60);
       hashes.push(app.world.hash());
     }
+
     return {
       log: [...app.actionLog],
       hashes,
@@ -144,14 +159,17 @@ const replayInto = (
 ) =>
   withApp(game(options), (app) => {
     let stopped: App.ReplayDiverged | undefined;
+
     try {
       App.replay(app, log, { delta: 1 / 60, ticks });
     } catch (error) {
       if (!(error instanceof App.ReplayDiverged)) {
         throw error;
       }
+
       stopped = error;
     }
+
     return {
       stopped,
       tick: app.time.tick,
@@ -178,14 +196,17 @@ describe("checkpoints", () => {
     // the first move, and each later checkpoint ahead of the moves that
     // were made once its tick had completed.
     expect(Action.isCheckpoint(recorded.log[0]!)).toBe(true);
+
     for (let i = 1; i < recorded.log.length; i++) {
       expect(recorded.log[i]!.tick).toBeGreaterThanOrEqual(
         recorded.log[i - 1]!.tick
       );
     }
+
     const third = recorded.log.findIndex(
       (entry) => Action.isCheckpoint(entry) && entry.tick === 3
     );
+
     expect(recorded.log.slice(0, third).every((entry) => entry.tick < 3)).toBe(
       true
     );
@@ -202,12 +223,14 @@ describe("checkpoints", () => {
         Effect.gen(function* () {
           const script = yield* Script;
           const commands = yield* Commands;
+
           for (;;) {
             yield* script.nextTick;
             commands.spawn(Coin.of({ value: 1, x: 0 }));
           }
         })
       );
+
       for (let tick = 1; tick <= 5; tick++) {
         app.tick(1 / 60);
         expect(app.world.entityCount).toBe(tick);
@@ -227,11 +250,13 @@ describe("checkpoints", () => {
           ...(checkpointEvery === undefined ? {} : { checkpointEvery }),
         }).log
       ).map((entry) => entry.tick);
+
     expect(ticksOf()).toEqual([0, 60, 120]);
     expect(ticksOf(1)).toEqual(Array.from({ length: 131 }, (_, i) => i));
     expect(ticksOf(50)).toEqual([0, 50, 100]);
     expect(ticksOf(1000)).toEqual([0]);
     expect(ticksOf(0)).toEqual([]);
+
     for (const bad of [-1, 1.5, Number.NaN, Infinity]) {
       expect(() => withApp(game({ checkpointEvery: bad }), () => 0)).toThrow(
         /checkpointEvery must be a whole number of ticks/
@@ -243,6 +268,7 @@ describe("checkpoints", () => {
     // Whichever comes first: a tick, a move, a queued move, a move by name,
     // or a move that is refused.
     type Game = Effect.Success<ReturnType<typeof game>>;
+
     const firsts: ((app: Game, coin: Entity) => void)[] = [
       (app) => app.tick(1),
       (app) => app.dispatchByName("rp/Drop", { value: 1 }),
@@ -254,6 +280,7 @@ describe("checkpoints", () => {
       (app) => app.dispatchByName("rp/Drop", { value: "not a number" }),
       (app, coin) => app.dispatch(Take, { coin }),
     ];
+
     for (const first of firsts) {
       withApp(game(), (app) => {
         expect(app.actionLog).toEqual([]);
@@ -262,7 +289,7 @@ describe("checkpoints", () => {
         const starting = app.world.hash();
         first(app, coin);
         expect(app.actionLog[0]).toEqual({ tick: 0, hash: starting });
-        expect(checkpoints(app.actionLog).length).toBe(1);
+        expect(checkpoints(app.actionLog)).toHaveLength(1);
       });
     }
   });
@@ -297,6 +324,7 @@ describe("checkpoints", () => {
     });
 
     let inside: unknown;
+
     const Asks = System.make("Asks", function* () {
       try {
         asking!.checkpoint();
@@ -304,6 +332,7 @@ describe("checkpoints", () => {
         inside = error;
       }
     });
+
     let asking: App.Any | undefined;
     withApp(App.make({ systems: [Asks] }), (app) => {
       asking = app;
@@ -332,9 +361,11 @@ describe("checkpoints", () => {
       const refused = Action.decodeLog(JSON.stringify([entry]));
       expect(Exit.isFailure(refused), JSON.stringify(entry)).toBe(true);
     }
+
     const largest = Action.decodeLog(
       JSON.stringify([{ tick: 0, hash: 2 ** 32 - 1 }])
     );
+
     expect(Exit.isSuccess(largest)).toBe(true);
     expect(Action.isCheckpoint({ tick: 1, hash: 0 })).toBe(true);
     expect(Action.isCheckpoint({ tick: 1, name: "x", payload: 0 })).toBe(false);
@@ -350,6 +381,7 @@ describe("a replay that checks itself", () => {
       expect(replayed.tick).toBe(150);
       expect(replayed.hash).toBe(recorded.hashes.at(-1));
     }
+
     // Recording as it replays, it writes the same log again.
     const recorded = record({ ticks: 40, checkpointEvery: 1 });
     expect(replayInto({ checkpointEvery: 1 }, recorded.log, 40).log).toEqual(
@@ -362,11 +394,13 @@ describe("a replay that checks itself", () => {
     // replays it, a coin's position is off by a millionth on tick 40. No
     // rule is broken by that, and no action is refused because of it.
     const recorded = record({ ticks: 120, checkpointEvery: 1 });
+
     const replayed = replayInto(
       { faulty: fault(40, "nudge") },
       recorded.log,
       recorded.ticks
     );
+
     const stopped = replayed.stopped!;
     expect(stopped).toBeInstanceOf(App.ReplayDiverged);
     expect(stopped.tick).toBe(40);
@@ -395,10 +429,12 @@ describe("a replay that checks itself", () => {
     // game takes that coin on tick 100.
     const recorded = record({ ticks: 100, checkpointEvery: 1 });
     const oldest = recorded.coins[0]!;
+
     const log = [
       ...recorded.log,
       { tick: 100, name: "rp/Take", payload: { coin: oldest } },
     ];
+
     const blind = replayInto({ faulty: fault(40, "lose") }, moves(log), 110);
     // Somewhere after the fault: at the first move that named a coin the
     // faulty game no longer had, by tick 100 at the latest.
@@ -419,34 +455,41 @@ describe("a replay that checks itself", () => {
       moves(recorded.log),
       100
     );
+
     expect(silent.stopped).toBeUndefined();
     expect(silent.hash).not.toBe(recorded.hashes.at(-1));
   });
 
   it("stops at the first checkpoint after it diverged when they are further apart, and names the last that matched", () => {
     const recorded = record({ ticks: 120, checkpointEvery: 10 });
+
     const replayed = replayInto(
       { faulty: fault(43, "nudge") },
       recorded.log,
       recorded.ticks
     );
+
     expect(replayed.stopped!.tick).toBe(50);
     expect(replayed.tick).toBe(50);
     const reason = replayed.stopped!.reason as App.HashMismatch;
     expect(reason.agreedAt).toBe(40);
     expect(reason.expected).toBe(recorded.hashes[49]);
+
     // A fault on a checkpoint's own tick is caught by that checkpoint.
     const onIt = replayInto(
       { faulty: fault(50, "nudge") },
       recorded.log,
       recorded.ticks
     );
+
     expect(onIt.stopped!.tick).toBe(50);
+
     const after = replayInto(
       { faulty: fault(51, "nudge") },
       recorded.log,
       recorded.ticks
     );
+
     expect(after.stopped!.tick).toBe(60);
     expect((after.stopped!.reason as App.HashMismatch).agreedAt).toBe(50);
   });
@@ -469,28 +512,34 @@ describe("a replay that checks itself", () => {
     // The right seed, but something in the world that the game did not have.
     const crowded = withApp(game({ seed: 5 }), (app) => {
       app.world.spawn(Coin.of({ value: 1, x: 0 }));
+
       try {
         App.replay(app, recorded.log, { delta: 1 / 60, ticks: 30 });
       } catch (error) {
         return error as App.ReplayDiverged;
       }
     });
+
     expect(crowded!.tick).toBe(0);
     expect(replayInto({ seed: 5 }, recorded.log, 30).stopped).toBeUndefined();
   });
 
   it("catches a log that was edited into another game the rules allow", () => {
     const recorded = record({ ticks: 60, checkpointEvery: 1 });
+
     const edit = (change: (log: any[]) => void) => {
       const log = structuredClone(recorded.log) as any[];
       change(log);
+
       return replayInto({}, log, recorded.ticks).stopped;
     };
+
     const drops = recorded.log.flatMap((entry, index) =>
       !Action.isCheckpoint(entry) && entry.name === "rp/Drop" && entry.tick > 5
         ? [index]
         : []
     );
+
     const at = drops[0]!;
     const { tick } = recorded.log[at]!;
 
@@ -498,6 +547,7 @@ describe("a replay that checks itself", () => {
     const changed = edit((log) => {
       log[at].payload.value += 1;
     });
+
     expect(changed!.reason).toBeInstanceOf(App.HashMismatch);
     expect(changed!.tick).toBe(tick + 1);
     expect((changed!.reason as App.HashMismatch).agreedAt).toBe(tick);
@@ -506,10 +556,13 @@ describe("a replay that checks itself", () => {
     const removed = edit((log) => {
       log.splice(at, 1);
     });
+
     expect(removed!.tick).toBe(tick + 1);
+
     const added = edit((log) => {
       log.splice(at, 0, { tick, name: "rp/Drop", payload: { value: 3 } });
     });
+
     expect(added!.tick).toBe(tick + 1);
 
     // A checkpoint that was altered is itself the entry that does not hold.
@@ -517,8 +570,10 @@ describe("a replay that checks itself", () => {
       const index = log.findIndex(
         (entry) => entry.tick === 20 && "hash" in entry
       );
+
       log[index].hash ^= 1;
     });
+
     expect(forged!.tick).toBe(20);
     expect((forged!.reason as App.HashMismatch).agreedAt).toBe(19);
   });
@@ -531,11 +586,14 @@ describe("a replay that checks itself", () => {
         if (tick === 8) {
           app.world.spawn(Coin.of({ value: 7, x: 0 }));
         }
+
         app.dispatch(Drop, { value: 1 });
         app.tick(1 / 60);
       }
+
       return [...app.actionLog];
     });
+
     const replayed = replayInto({}, recorded, 20);
     expect(replayed.stopped!.tick).toBe(9);
     expect((replayed.stopped!.reason as App.HashMismatch).agreedAt).toBe(8);
@@ -543,10 +601,12 @@ describe("a replay that checks itself", () => {
 
   it("says so when the log has a checkpoint the replay never reaches", () => {
     const recorded = record({ ticks: 30, checkpointEvery: 10 });
+
     // The moves of the first 25 ticks, and every checkpoint, the one at 30 too.
     const log = recorded.log.filter(
       (entry) => Action.isCheckpoint(entry) || entry.tick <= 25
     );
+
     const short = replayInto({}, log, 25);
     expect(short.stopped!.tick).toBe(30);
     expect(Action.isCheckpoint(short.stopped!.entry)).toBe(true);
@@ -565,8 +625,10 @@ describe("a replay that checks itself", () => {
       app.enqueue(Take, { coin }); // refused: the coin is gone by then
       app.tick(1 / 60);
       app.tick(1 / 60);
+
       return [...app.actionLog];
     });
+
     expect(moves(recorded).map((entry) => entry.refused)).toEqual([
       undefined,
       undefined,
@@ -602,11 +664,13 @@ const Tally = Component.define("rp/Tally", {
   value: Field.f64,
   rejections: Field.u32,
 });
+
 const Tallies = Query.all(Tally);
 
 const Double = Action.define("rp/Double", Schema.Struct({}));
 const Add = Action.define("rp/Add", Schema.Struct({ by: Schema.Int }));
 const Chain = Action.define("rp/Chain", Schema.Struct({ by: Schema.Int }));
+
 class TooBig extends Data.TaggedError("TooBig")<{}> {}
 
 // Doubling and adding do not commute, so the tally gives away any change in
@@ -617,15 +681,18 @@ const double = Action.handler(Double, function* () {
     tally.value *= 2;
     refuse = tally.value > 1e12;
   });
+
   if (refuse) {
     return yield* Effect.fail(new TooBig());
   }
 });
+
 const add = Action.handler(Add, function* ({ by }) {
   (yield* Tallies).each((tally) => {
     tally.value += by;
   });
 });
+
 /** A handler that issues another action. */
 const chain = Action.handler(Chain, function* ({ by }) {
   (yield* Action.Actions).enqueue(Add, { by });
@@ -635,13 +702,16 @@ const chain = Action.handler(Chain, function* ({ by }) {
 const Bot = System.make("Bot", function* () {
   const { tick } = yield* Time;
   const actions = yield* Action.Actions;
+
   if (tick % 3 === 0) {
     actions.enqueue(Add, { by: 7 });
   }
+
   if (tick % 4 === 0) {
     actions.enqueue(Double, {});
   }
 });
+
 /** Counts refusals in the world, so that a refusal a replay misses shows. */
 const Referee = System.make("Referee", function* () {
   const refused = (yield* Action.Rejected).read().length;
@@ -649,11 +719,13 @@ const Referee = System.make("Referee", function* () {
     tally.rejections += refused;
   });
 });
+
 /** A script that makes a move of its own now and then. */
 const Heckler = Effect.gen(function* () {
   const script = yield* Script;
   const actions = yield* Action.Actions;
   const random = yield* Random;
+
   for (;;) {
     yield* script.sleep(random.int(1, 3));
     actions.enqueue(Add, { by: random.int(1, 9) });
@@ -671,6 +743,7 @@ const busy = (checkpointEvery = 1) =>
     (app) => {
       const tally = app.world.spawn(Tally.of({ value: 1, rejections: 0 }));
       app.spawnScript(Heckler);
+
       return { app, tally };
     }
   );
@@ -692,12 +765,14 @@ describe("the action log", () => {
       // 1 + 1000 at once, then (+1, +100, doubled) when the tick starts.
       app.tick(1);
       expect(app.world.get(tally, Tally)!.value).toBe((1001 + 1 + 100) * 2);
+
       // The tick ran the bot and the script, and none of their moves is logged.
       for (let i = 0; i < 12; i++) {
         app.tick(1);
       }
+
       expect(app.world.get(tally, Tally)!.value).toBeGreaterThan(10_000);
-      expect(app.actionLog.length).toBe(4);
+      expect(app.actionLog).toHaveLength(4);
     });
   });
 
@@ -731,8 +806,10 @@ describe("the action log", () => {
       { tick: 0, name: "b", payload: null, queued: true },
       { tick: 1, name: "c", payload: [1], queued: true, refused: "Because" },
     ];
+
     const loaded = Action.decodeLog(Action.encodeLog(log));
     expect(Exit.isSuccess(loaded) && loaded.value).toEqual(log);
+
     for (const entry of [
       { tick: 0, name: "a", payload: 1, queued: false },
       { tick: 0, name: "a", payload: 1, queued: "yes" },
@@ -749,10 +826,12 @@ describe("a game whose simulation issues actions itself", () => {
   /** Outside moves mixed in with the bot's, the script's and a handler's. */
   const play = (app: Effect.Success<ReturnType<typeof busy>>["app"]) => {
     const dice = new EcsWorld({ seed: 77 }).random;
+
     for (let tick = 0; tick < 90; tick++) {
       for (let n = dice.int(0, 3); n > 0; n--) {
         const by = dice.int(1, 5);
         const move = dice.int(1, 6);
+
         if (move === 1) {
           app.enqueue(Add, { by });
         } else if (move === 2) {
@@ -767,6 +846,7 @@ describe("a game whose simulation issues actions itself", () => {
           app.enqueue(Chain, { by });
         }
       }
+
       app.tick(1);
     }
   };
@@ -774,12 +854,14 @@ describe("a game whose simulation issues actions itself", () => {
   it("replays from its log, checkpoint by checkpoint", () => {
     const recorded = withApp(busy(), ({ app, tally }) => {
       play(app);
+
       return {
         log: [...app.actionLog],
         hash: app.world.hash(),
         tally: app.world.get(tally, Tally)!,
       };
     });
+
     // The game was a busy one: the tally was doubled past its limit and
     // back-pressure refused moves, and the referee counted them.
     expect(recorded.tally.rejections).toBeGreaterThan(10);
@@ -792,12 +874,14 @@ describe("a game whose simulation issues actions itself", () => {
 
     const replayed = withApp(busy(), ({ app, tally }) => {
       App.replay(app, recorded.log, { delta: 1, ticks: 90 });
+
       return {
         log: [...app.actionLog],
         hash: app.world.hash(),
         tally: app.world.get(tally, Tally)!,
       };
     });
+
     expect(replayed.hash).toBe(recorded.hash);
     expect(replayed.tally).toEqual(recorded.tally);
     // The replay's own log is the game's, entry for entry, marks included.
@@ -812,18 +896,23 @@ describe("a game whose simulation issues actions itself", () => {
       for (let i = 0; i < 9; i++) {
         app.tick(1);
       }
+
       return [...app.actionLog];
     });
+
     expect(moves(recorded)).toEqual([]);
     const withBotMoves = [...recorded];
+
     const at = withBotMoves.findIndex(
       (entry) => Action.isCheckpoint(entry) && entry.tick === 3
     );
+
     withBotMoves.splice(at + 1, 0, {
       tick: 3,
       name: "rp/Add",
       payload: { by: 7 },
     });
+
     const stopped = withApp(busy(), ({ app }) => {
       try {
         App.replay(app, withBotMoves, { delta: 1, ticks: 9 });
@@ -831,6 +920,7 @@ describe("a game whose simulation issues actions itself", () => {
         return error as App.ReplayDiverged;
       }
     });
+
     expect(stopped!.reason).toBeInstanceOf(App.HashMismatch);
     expect(stopped!.tick).toBe(4);
     // And as it is recorded, it replays.
@@ -851,6 +941,7 @@ describe("a game whose simulation issues actions itself", () => {
         tally: app.world.spawn(Tally.of({ value: 1, rejections: 0 })),
       })
     );
+
     const play = (first: "enqueue" | "dispatch") =>
       withApp(make, ({ app, tally }) => {
         if (first === "enqueue") {
@@ -860,15 +951,19 @@ describe("a game whose simulation issues actions itself", () => {
           app.dispatch(Chain, { by: 10 });
           app.enqueue(Double, {});
         }
+
         app.tick(1);
+
         return {
           value: app.world.get(tally, Tally)!.value,
           log: [...app.actionLog],
         };
       });
+
     const replay = (log: readonly Action.LogEntry[]) =>
       withApp(make, ({ app, tally }) => {
         App.replay(app, log, { delta: 1, ticks: 1 });
+
         return app.world.get(tally, Tally)!.value;
       });
 

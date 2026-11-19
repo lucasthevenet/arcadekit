@@ -25,10 +25,12 @@ const Position = Component.define("policy/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Velocity = Component.define("policy/Velocity", {
   x: Field.f64,
   y: Field.f64,
 });
+
 // One field of every kind a column can be.
 const Sheet = Component.define("policy/Sheet", {
   hp: Field.i32,
@@ -40,15 +42,18 @@ const Sheet = Component.define("policy/Sheet", {
   born: Field.schema(Schema.Date),
   cache: Field.transient<{ readonly seen: number }>(),
 });
+
 const Burning = Component.define(
   "policy/Burning",
   { seconds: Field.f32 },
   { storage: "sparse" }
 );
+
 const Follows = Component.relation("policy/Follows", {
   onTargetDespawn: "remove",
   fields: { since: Field.u32 },
 });
+
 const Stats = Singleton.define(
   "policy/Stats",
   { moved: Field.u32, burnt: Field.u32 },
@@ -64,13 +69,16 @@ const Drawn = Query.all(Position);
 
 /** Why the game refused what it refused, each reason once. */
 const refusals: string[] = [];
+
 const refused = (attempt: () => void): void => {
   let reason = "it was not refused";
+
   try {
     attempt();
   } catch (error) {
     reason = (error as Error).message;
   }
+
   if (!refusals.includes(reason)) {
     refusals.push(reason);
   }
@@ -107,10 +115,12 @@ const Fire = System.make("policy/Fire", function* () {
     burning.seconds -= delta;
     position.y -= 1;
     stats.burnt += 1;
+
     if (burning.seconds <= 0) {
       commands.remove(entity, Burning);
     }
   });
+
   if (tick === 2) {
     // A query that only reads refuses a write, and says which field.
     (yield* Moving).each((_, velocity) => {
@@ -128,6 +138,7 @@ const Following = System.make("policy/Following", function* () {
     follows.since += 1;
     position.x += sheet.level;
     sheet.gold += velocity.x > 0 ? 1 : 0;
+
     if (tick === 2) {
       // A relation's target is the world's to change.
       refused(() => {
@@ -138,6 +149,7 @@ const Following = System.make("policy/Following", function* () {
 });
 
 let noticed = 0;
+
 const Watching = System.make("policy/Watching", function* () {
   (yield* Moved).each((position, sheet) => {
     noticed += 1;
@@ -146,6 +158,7 @@ const Watching = System.make("policy/Watching", function* () {
 }).pipe(System.after(Following));
 
 let drawn = 0;
+
 const Draw = System.make("policy/Draw", function* () {
   (yield* Drawn).each((position) => {
     drawn += position.x;
@@ -157,13 +170,16 @@ const Draw = System.make("policy/Draw", function* () {
 }).pipe(System.inStage("frame"));
 
 class TooPoor extends Data.TaggedError("policy/TooPoor")<{}> {}
+
 const Tax = Action.define("policy/Tax", Schema.Struct({ amount: Schema.Int }));
+
 const tax = Action.handler(Tax, function* ({ amount }) {
   let poorest = Infinity;
   (yield* Sheets).each((sheet) => {
     sheet.gold -= amount;
     poorest = Math.min(poorest, sheet.gold);
   });
+
   // A u32 wraps: a sheet that could not pay holds a huge number.
   if (poorest > 1_000_000) {
     return yield* Effect.fail(new TooPoor());
@@ -199,6 +215,7 @@ export const play = (): Record<string, unknown> =>
         const app = yield* App.make(options);
         const { world } = app;
         let leader: Entity | undefined;
+
         for (let i = 0; i < 40; i++) {
           const entity = world.spawn(
             Position.of({ x: i, y: 2 * i }),
@@ -222,30 +239,40 @@ export const play = (): Record<string, unknown> =>
               ? [Follows.of({ target: leader, since: i })]
               : [])
           );
+
           leader ??= entity;
         }
+
         const outcomes: string[] = [];
+
         for (let tick = 0; tick < 6; tick++) {
           app.tick(1 / 60);
           app.frame(0.5);
+
           if (tick === 1 || tick === 3) {
             // The first is paid; the second cannot be, and is taken back.
             const exit = app.dispatch(Tax, { amount: tick === 1 ? 1 : 1000 });
             outcomes.push(Exit.isSuccess(exit) ? "paid" : "refused");
           }
         }
+
         const saved = app.save();
+
         if (Exit.isFailure(saved)) {
           return { failed: "save" };
         }
+
         const bytes = Save.encode(saved.value);
         const read = Save.decode(bytes);
+
         if (Exit.isFailure(read)) {
           return { failed: "decode" };
         }
+
         const again = yield* App.load(read.value, options);
         again.tick(1 / 60);
         app.tick(1 / 60);
+
         return {
           hash: world.hash(),
           loaded: again.world.hash(),
@@ -256,6 +283,7 @@ export const play = (): Record<string, unknown> =>
             .entities()
             .map((entity) => {
               const sheet = world.get(entity, Sheet)!;
+
               return [sheet.hp, sheet.gold, sheet.name, sheet.born.getTime()];
             }),
           noticed,

@@ -16,18 +16,22 @@ interface SubpathExport {
 
 export const entries = (dir: string): Record<string, string> => {
   const pkg = JSON.parse(
-    readFileSync(path.join(dir, "package.json"), "utf-8")
+    readFileSync(path.join(dir, "package.json"), "utf8")
   ) as {
     readonly name: string;
     readonly exports: Readonly<Record<string, SubpathExport>>;
   };
+
   const result: Record<string, string> = {};
+
   for (const [subpath, target] of Object.entries(pkg.exports)) {
     if (subpath === "./package.json") {
       continue;
     }
+
     const name = subpath === "." ? "index" : subpath.slice("./".length);
     const keys = Object.keys(target).join(",");
+
     if (
       !(subpath === "." || subpath.startsWith("./")) ||
       keys !== "source,types,default" ||
@@ -38,7 +42,9 @@ export const entries = (dir: string): Record<string, string> => {
         `${pkg.name}: exports["${subpath}"] must be { source, types: "./dist/${name}.d.ts", default: "./dist/${name}.js" }`
       );
     }
+
     result[name] = target.source;
   }
+
   return result;
 };

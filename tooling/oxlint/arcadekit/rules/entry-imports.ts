@@ -17,21 +17,28 @@ export const entryImportsRule = defineRule({
   },
   create: (context) => {
     const source = sourceOf(context.filename);
+
     if (source === undefined) {
       return {};
     }
+
     const { rules, file } = source;
     const own: EntryRule = rules.ofFile(file);
+
     const check = (node: ImportSource): void => {
       if (node.type !== "Literal") {
         return;
       }
+
       const specifier = node.value;
+
       if (typeof specifier !== "string") {
         return;
       }
+
       if (specifier.startsWith(".")) {
         const target = resolve(file, specifier);
+
         if (!mayReach(own, rules.ofFile(target))) {
           context.report({
             node,
@@ -45,6 +52,7 @@ export const entryImportsRule = defineRule({
         });
       }
     };
+
     return {
       ImportDeclaration: (node) => check(node.source),
       ExportNamedDeclaration: (node) => {

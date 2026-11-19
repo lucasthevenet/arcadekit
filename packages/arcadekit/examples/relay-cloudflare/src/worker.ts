@@ -14,18 +14,22 @@ export default Cloudflare.Worker(
   { main: import.meta.url },
   Effect.gen(function* () {
     const rooms = yield* Room;
+
     return {
       fetch: Effect.gen(function* () {
         const request = yield* HttpServerRequest;
+
         if (request.headers.upgrade !== "websocket") {
           return HttpServerResponse.text(
             "This is a relay for arcadekit games. Connect to /rooms/<room>?peer=<name> with a WebSocket.",
             { status: 426 }
           );
         }
+
         // One object per room, by the room's name: the last part of the path.
         const { pathname } = new URL(request.url, "https://relay");
         const room = pathname.split("/").findLast((part) => part !== "") ?? "";
+
         return yield* rooms.getByName(room).fetch(request);
       }),
     };

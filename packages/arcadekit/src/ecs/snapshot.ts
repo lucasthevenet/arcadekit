@@ -50,7 +50,8 @@ export class SnapshotError extends Error {
 }
 
 /** "AKWS": arcadekit world snapshot. */
-export const MAGIC = 0x53574b41;
+export const MAGIC = 0x53_57_4b_41;
+
 /**
  * Format 2 added singletons. Format 3 widened entity ids: a slot's generation
  * is four bytes instead of two, and an id is eight bytes instead of four, both
@@ -58,8 +59,9 @@ export const MAGIC = 0x53574b41;
  * number stored in fewer bytes, and formats 1 and 2 are still read.
  */
 export const FORMAT = 3;
+
 /** The last four bytes, so a snapshot truncated at a boundary is still detected. */
-export const END = 0x21444e45;
+export const END = 0x21_44_4e_45;
 
 const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
@@ -117,6 +119,7 @@ export class Writer {
         "Snapshots are written as the bytes of typed arrays, which this big-endian machine lays out the other way round."
       );
     }
+
     this.bytes = new Uint8Array(Math.max(64, capacity));
     this.view = new DataView(this.bytes.buffer);
   }
@@ -125,10 +128,13 @@ export class Writer {
     if (this.at + count <= this.bytes.length) {
       return;
     }
+
     let size = this.bytes.length * 2;
+
     while (size < this.at + count) {
       size *= 2;
     }
+
     const bytes = new Uint8Array(size);
     bytes.set(this.bytes.subarray(0, this.at));
     this.bytes = bytes;
@@ -181,43 +187,59 @@ export class Writer {
     switch (typeof value) {
       case "undefined": {
         this.u8(TAG_UNDEFINED);
+
         return true;
       }
+
       case "boolean": {
         this.u8(value ? TAG_TRUE : TAG_FALSE);
+
         return true;
       }
+
       case "number": {
         this.u8(TAG_NUMBER);
         this.f64(value);
+
         return true;
       }
+
       case "string": {
         this.u8(TAG_STRING);
         this.text(value);
+
         return true;
       }
+
       case "bigint": {
         this.u8(TAG_BIGINT);
         this.text(value.toString());
+
         return true;
       }
+
       default: {
         if (value === null) {
           this.u8(TAG_NULL);
+
           return true;
         }
+
         let json: string | undefined;
+
         try {
           json = JSON.stringify(value);
         } catch {
           return false;
         }
+
         if (json === undefined) {
           return false;
         }
+
         this.u8(TAG_JSON);
         this.text(json);
+
         return true;
       }
     }
@@ -241,6 +263,7 @@ export class Reader {
         "Snapshots hold the bytes of typed arrays, which this big-endian machine reads the other way round."
       );
     }
+
     this.bytes = bytes;
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   }
@@ -262,6 +285,7 @@ export class Reader {
 
   u8(): number {
     this.need(1);
+
     return this.bytes[this.at++]!;
   }
 
@@ -269,6 +293,7 @@ export class Reader {
     this.need(4);
     const value = this.view.getUint32(this.at, true);
     this.at += 4;
+
     return value;
   }
 
@@ -276,6 +301,7 @@ export class Reader {
     this.need(8);
     const value = this.view.getFloat64(this.at, true);
     this.at += 8;
+
     return value;
   }
 
@@ -286,19 +312,24 @@ export class Reader {
    */
   count(each: number): number {
     const value = this.u32();
+
     if (each > 0) {
       this.need(value * each);
     }
+
     return value;
   }
 
   text(): string {
     const length = this.count(1);
+
     try {
       const value = decoder.decode(
         this.bytes.subarray(this.at, this.at + length)
       );
+
       this.at += length;
+
       return value;
     } catch {
       throw new SnapshotError(
@@ -320,27 +351,35 @@ export class Reader {
 
   value(): unknown {
     const tag = this.u8();
+
     switch (tag) {
       case TAG_UNDEFINED: {
         return undefined;
       }
+
       case TAG_NULL: {
         return null;
       }
+
       case TAG_FALSE: {
         return false;
       }
+
       case TAG_TRUE: {
         return true;
       }
+
       case TAG_NUMBER: {
         return this.f64();
       }
+
       case TAG_STRING: {
         return this.text();
       }
+
       case TAG_BIGINT: {
         const digits = this.text();
+
         try {
           return BigInt(digits);
         } catch {
@@ -350,8 +389,10 @@ export class Reader {
           );
         }
       }
+
       case TAG_JSON: {
         const json = this.text();
+
         try {
           return JSON.parse(json);
         } catch {
@@ -361,6 +402,7 @@ export class Reader {
           );
         }
       }
+
       default: {
         throw new SnapshotError(
           "corrupt",
@@ -384,14 +426,19 @@ export const writeColumn = (
 ): number => {
   if (!isBoxed(kind)) {
     writer.numbers(column as Float32Array, count, WIDTH[kind as "f32"]);
+
     return -1;
   }
+
   if (kind === "transient") {
     return -1;
   }
+
   const values = column as unknown[];
+
   for (let row = 0; row < count; row++) {
     let value = values[row];
+
     if (kind === "ref") {
       try {
         value = codec!.encode(value);
@@ -399,10 +446,12 @@ export const writeColumn = (
         return row;
       }
     }
+
     if (!writer.value(value)) {
       return row;
     }
   }
+
   return -1;
 };
 
@@ -423,16 +472,22 @@ export const readColumn = (
     const ids = new Uint32Array(count);
     reader.numbers(ids, count, 4);
     (column as Float64Array).set(ids);
+
     return;
   }
+
   if (!isBoxed(kind)) {
     reader.numbers(column as Float32Array, count, WIDTH[kind as "f32"]);
+
     return;
   }
+
   if (kind === "transient") {
     return;
   }
+
   const values = column as unknown[];
+
   for (let row = 0; row < count; row++) {
     const value = reader.value();
     values[row] = kind === "ref" ? codec!.decode(value) : value;
@@ -524,24 +579,31 @@ const columnOf = (kind: FieldKind, count: number): Column => {
     case "f32": {
       return new Float32Array(count);
     }
+
     case "f64": {
       return new Float64Array(count);
     }
+
     case "i32": {
       return new Int32Array(count);
     }
+
     case "u32": {
       return new Uint32Array(count);
     }
+
     case "entity": {
       return new Float64Array(count);
     }
+
     case "u16": {
       return new Uint16Array(count);
     }
+
     case "u8": {
       return new Uint8Array(count);
     }
+
     default: {
       return Array.from({ length: count }, () => undefined);
     }
@@ -558,26 +620,33 @@ const damaged = (how: string): SnapshotError =>
  */
 export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
   const reader = new Reader(bytes);
+
   if (reader.left < 8 || reader.u32() !== MAGIC) {
     throw new SnapshotError(
       "not a snapshot",
       "These bytes are not a snapshot of a world."
     );
   }
+
   const format = reader.u32();
+
   if (format < 1 || format > FORMAT) {
     throw new SnapshotError(
       "newer format",
       `The snapshot is in format ${format}, and this version reads formats 1 to ${FORMAT}.`
     );
   }
+
   const random = new Uint32Array(4);
+
   for (let word = 0; word < 4; word++) {
     random[word] = reader.u32();
   }
+
   // See `FORMAT`: before format 3 a generation was two bytes and an id four.
   const narrow = format < 3;
   const generations = new Uint32Array(reader.count(narrow ? 2 : 4));
+
   if (narrow) {
     const read = new Uint16Array(generations.length);
     reader.numbers(read, read.length, 2);
@@ -585,45 +654,60 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
   } else {
     reader.numbers(generations, generations.length, 4);
   }
+
   const freed: number[] = [];
+
   for (let i = reader.count(4); i > 0; i--) {
     freed.push(reader.u32());
   }
 
   const components: SnapshotComponent[] = [];
+
   for (let c = reader.count(9); c > 0; c--) {
     const name = reader.text();
     const storage = STORAGES[reader.u8()];
+
     if (storage === undefined) {
       throw damaged("a component is kept in a way this version does not know");
     }
+
     const fields: SnapshotComponent["fields"] = [];
+
     for (let f = reader.count(5); f > 0; f--) {
       const field = reader.text();
       const kind = KIND_CODES[reader.u8()];
+
       if (kind === undefined) {
         throw damaged("a field is of a kind this version does not know");
       }
+
       fields.push({ name: field, kind });
     }
+
     components.push({ name, storage, fields });
   }
+
   const componentAt = (): SnapshotComponent => {
     const component = components[reader.u32()];
+
     if (component === undefined) {
       throw damaged("it refers to a component it does not list");
     }
+
     return component;
   };
+
   const readFields = (
     component: SnapshotComponent,
     count: number
   ): Record<string, Column> => {
     const columns: Record<string, Column> = {};
+
     for (const { kind, name } of component.fields) {
       if (kind === "transient") {
         continue;
       }
+
       const column = columnOf(kind, count);
       // A ref field stays in its encoded form: there is no codec here.
       readColumn(
@@ -636,16 +720,21 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
       );
       columns[name] = column;
     }
+
     return columns;
   };
 
   const tables: SnapshotTable[] = [];
+
   for (let t = reader.count(8); t > 0; t--) {
     const of: SnapshotComponent[] = [];
+
     for (let d = reader.count(4); d > 0; d--) {
       of.push(componentAt());
     }
+
     const entities = new Float64Array(reader.count(narrow ? 4 : 8));
+
     if (narrow) {
       const read = new Uint32Array(entities.length);
       reader.numbers(read, read.length, 4);
@@ -653,17 +742,22 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
     } else {
       reader.numbers(entities, entities.length, 8);
     }
+
     const columns: SnapshotTable["columns"] = {};
+
     for (const component of of) {
       columns[component.name] = readFields(component, entities.length);
     }
+
     tables.push({
       components: of.map((component) => component.name),
       entities,
       columns,
     });
   }
+
   const sparse: SnapshotSparse[] = [];
+
   for (let s = reader.count(8); s > 0; s--) {
     const component = componentAt();
     const members = new Uint32Array(reader.count(4));
@@ -674,7 +768,9 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
       columns: readFields(component, members.length),
     });
   }
+
   const singletons: SnapshotSingleton[] = [];
+
   for (let s = format >= 2 ? reader.count(4) : 0; s > 0; s--) {
     const component = componentAt();
     singletons.push({
@@ -682,9 +778,11 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
       columns: readFields(component, 1),
     });
   }
+
   if (reader.left !== 4 || reader.u32() !== END) {
     throw damaged("it does not end where it should");
   }
+
   return {
     random,
     generations,
@@ -710,42 +808,54 @@ const byName = (a: { name: string }, b: { name: string }): number =>
 export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
   const components = contents.components.toSorted(byName);
   const indexOf = new Map<string, number>();
+
   for (const [index, component] of components.entries()) {
     if (indexOf.has(component.name)) {
       throw damaged(`it lists the component "${component.name}" twice`);
     }
+
     indexOf.set(component.name, index);
   }
+
   const named = (name: string): SnapshotComponent => {
     const index = indexOf.get(name);
+
     if (index === undefined) {
       throw damaged(`it holds data for "${name}", which it does not list`);
     }
+
     return components[index]!;
   };
 
   const writer = new Writer(1024);
   writer.u32(MAGIC);
   writer.u32(FORMAT);
+
   for (let word = 0; word < 4; word++) {
     writer.u32(contents.random[word] ?? 0);
   }
+
   writer.u32(contents.generations.length);
   writer.numbers(contents.generations, contents.generations.length, 4);
   writer.u32(contents.freed.length);
+
   for (const index of contents.freed) {
     writer.u32(index);
   }
+
   writer.u32(components.length);
+
   for (const component of components) {
     writer.text(component.name);
     writer.u8(STORAGES.indexOf(component.storage));
     writer.u32(component.fields.length);
+
     for (const field of component.fields) {
       writer.text(field.name);
       writer.u8(KIND_CODES.indexOf(field.kind));
     }
   }
+
   const writeFields = (
     component: SnapshotComponent,
     columns: Record<string, Column> | undefined,
@@ -755,18 +865,22 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
       if (kind === "transient") {
         continue;
       }
+
       const column = columns?.[name];
+
       if (column === undefined || column.length !== count) {
         throw damaged(
           `"${component.name}.${name}" has no column of ${count} values`
         );
       }
+
       const row = writeColumn(
         writer,
         kind === "ref" ? "json" : kind,
         column,
         count
       );
+
       if (row !== -1) {
         throw new SnapshotError(
           "cannot be saved",
@@ -778,14 +892,18 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
   };
 
   writer.u32(contents.tables.length);
+
   for (const table of contents.tables) {
     const of = table.components.map((name) => named(name)).toSorted(byName);
     writer.u32(of.length);
+
     for (const component of of) {
       writer.u32(indexOf.get(component.name)!);
     }
+
     writer.u32(table.entities.length);
     writer.numbers(table.entities, table.entities.length, 8);
+
     for (const component of of) {
       writeFields(
         component,
@@ -794,24 +912,32 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
       );
     }
   }
+
   const sets = contents.sparse
     .filter((set) => set.members.length > 0)
     .toSorted((a, b) => byName({ name: a.component }, { name: b.component }));
+
   writer.u32(sets.length);
+
   for (const set of sets) {
     writer.u32(indexOf.get(named(set.component).name)!);
     writer.u32(set.members.length);
     writer.numbers(set.members, set.members.length, 4);
     writeFields(named(set.component), set.columns, set.members.length);
   }
+
   const singletons = contents.singletons.toSorted((a, b) =>
     byName({ name: a.component }, { name: b.component })
   );
+
   writer.u32(singletons.length);
+
   for (const single of singletons) {
     writer.u32(indexOf.get(named(single.component).name)!);
     writeFields(named(single.component), single.columns, 1);
   }
+
   writer.u32(END);
+
   return writer.finish();
 };

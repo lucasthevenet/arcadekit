@@ -88,20 +88,24 @@ export const chance = (
   losers: number
 ): number => {
   let share = 1;
+
   for (let i = 0; i < beaten; i++) {
     share *= (winners - i) / (winners + losers - i);
   }
+
   return share;
 };
 
 /** How many of `runs` are faster than `than`. */
 const faster = (runs: readonly number[], than: number): number => {
   let count = 0;
+
   for (const run of runs) {
     if (run < than) {
       count++;
     }
   }
+
   return count;
 };
 
@@ -117,7 +121,9 @@ export const judge = (
   if (head.length === 0) {
     throw new Error("judge() was given no run of the head to judge.");
   }
+
   const best = Math.min(...head);
+
   if (base.length === 0) {
     return {
       outcome: "new",
@@ -129,6 +135,7 @@ export const judge = (
       chance: 1,
     };
   }
+
   const was = Math.min(...base);
   const ratio = best / was;
   // Which way round it looks, and how plainly.
@@ -137,6 +144,7 @@ export const judge = (
   const of = slower ? base.length : head.length;
   const share = chance(beaten, of, slower ? head.length : base.length);
   const plain = share <= CHANCE;
+
   return {
     outcome:
       plain && ratio > 1 + FLOOR
@@ -168,7 +176,9 @@ export const settled = (
   if (base.length === 0 || head.length === 0) {
     return false;
   }
+
   const ratio = Math.min(...head) / Math.min(...base);
+
   return ratio < 1 + FLOOR / 2 && ratio > 1 / (1 + FLOOR / 2);
 };
 
@@ -184,22 +194,28 @@ export const settled = (
 export const onPurpose = (log: string): Set<string> => {
   const named = new Set<string>();
   const lines = log.split("\n");
+
   for (let at = 0; at < lines.length; at++) {
     const match = /^\s*Bench-slower:(.*)$/iu.exec(lines[at]!);
+
     if (match === null) {
       continue;
     }
+
     let names = match[1]!;
+
     // As a trailer is continued: by lines that begin with a space.
     while (at + 1 < lines.length && /^\s+\S/u.test(lines[at + 1]!)) {
       names += ` ${lines[++at]!}`;
     }
+
     for (const name of names.split(/[\s,]+/u)) {
       if (name !== "") {
         named.add(name);
       }
     }
   }
+
   return named;
 };
 
@@ -225,6 +241,7 @@ export const table = (lines: readonly Line[]): string => {
     ["slower", "slower on purpose", "faster", "new", "the same"].indexOf(
       line.verdict.outcome
     );
+
   const rows = lines
     .map((line, at) => ({ line, at }))
     .toSorted((a, b) => rank(a.line) - rank(b.line) || a.at - b.at)
@@ -233,6 +250,7 @@ export const table = (lines: readonly Line[]): string => {
         ? `| ${label} (\`${name}\`) | | ${verdict.head.toFixed(2)} ${unit} | | | new |`
         : `| ${label} (\`${name}\`) | ${verdict.base.toFixed(2)} | ${verdict.head.toFixed(2)} ${unit} | ${percent(verdict.ratio)} | ${verdict.beaten} of ${verdict.of}, ${rarity(verdict.chance)} | ${verdict.outcome === "slower" ? "**slower**" : verdict.outcome} |`
     );
+
   return [
     "| Variant | Base | Head | Change | Runs that beat every run of the other, and how often by chance | |",
     "| --- | ---: | ---: | ---: | --- | --- |",

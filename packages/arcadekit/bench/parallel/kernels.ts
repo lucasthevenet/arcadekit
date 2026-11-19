@@ -41,35 +41,43 @@ export const kernels: Record<string, Kernel> = {
       let near = 1e30;
       const x = px[i]!;
       const y = py[i]!;
+
       for (let k = -4; k <= 4; k++) {
         if (k === 0) {
           continue;
         }
+
         let j = i + k;
+
         if (j < 0) {
           j += count;
         } else if (j >= count) {
           j -= count;
         }
+
         const dx = px[j]! - x;
         const dy = py[j]! - y;
         cx += dx;
         cy += dy;
         const d = dx * dx + dy * dy;
+
         if (d < near) {
           near = d;
           ax = -dx;
           ay = -dy;
         }
       }
+
       const inv = 1 / Math.sqrt(near + 1e-6);
       let nvx = vx[i]! + (cx * 0.125 * 0.5 + ax * inv) * dt;
       let nvy = vy[i]! + (cy * 0.125 * 0.5 + ay * inv) * dt;
       const speed = Math.sqrt(nvx * nvx + nvy * nvy);
+
       if (speed > 4) {
         nvx *= 4 / speed;
         nvy *= 4 / speed;
       }
+
       vx[i] = nvx * 0.999;
       vy[i] = nvy * 0.999;
     }
@@ -81,7 +89,9 @@ export const JOB = 0;
 export const DONE = 1;
 export const KERNEL = 2;
 export const SPIN = 3;
+
 /** Each worker's range of rows starts here: its start, then its end. */
 export const RANGES = 8;
+
 /** How many integers there are, ahead of the numbers the kernels are given. */
 export const INTEGERS = 64;

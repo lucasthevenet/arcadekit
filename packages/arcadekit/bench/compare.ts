@@ -75,30 +75,40 @@ const usage = (problem: string): never => {
 };
 
 const args = process.argv.slice(2);
+
 const option = (name: string): string | undefined => {
   const at = args.indexOf(name);
+
   if (at === -1) {
     return undefined;
   }
+
   const [, value] = args.splice(at, 2);
+
   return value ?? usage(`${name} is given a value.`);
 };
+
 const runs = Number(option("--runs") ?? 15);
 const only = option("--only")?.split(",");
 const since = option("--since");
+
 if (!Number.isInteger(runs) || runs < 1) {
   usage("--runs is given a whole number, 1 or more.");
 }
+
 if (args.length !== 1) {
   usage("bench:compare is given one checkout to compare with.");
 }
+
 // A path that is not absolute is from where the command was typed, which
 // under pnpm is not where the script runs.
 const baseRoot = path.resolve(process.env.INIT_CWD ?? process.cwd(), args[0]!);
 const base = path.join(baseRoot, "packages", "arcadekit");
+
 if (!existsSync(path.join(base, "src", "ecs", "world.ts"))) {
   usage(`${baseRoot} is not a checkout of this repository.`);
 }
+
 if (!existsSync(path.join(baseRoot, "node_modules"))) {
   usage(
     `${baseRoot} has no dependencies installed: run pnpm install --frozen-lockfile there first.`
@@ -108,6 +118,7 @@ if (!existsSync(path.join(baseRoot, "node_modules"))) {
 const names = Object.keys(variants).filter(
   (name) => only === undefined || only.includes(name)
 );
+
 for (const name of only ?? []) {
   if (variants[name] === undefined) {
     usage(
@@ -122,7 +133,9 @@ for (const name of only ?? []) {
 // changed would refuse to be moved to another commit.
 const ASKED = "core.compared.ts";
 const asked = path.join(base, "bench", ASKED);
+
 copyFileSync(path.join(head, "bench", "core.ts"), asked);
+
 process.on("exit", () => {
   rmSync(asked, { force: true });
 });
@@ -142,6 +155,7 @@ const run = (build: string, name: string): number =>
 
 const git = (...command: string[]): string =>
   execFileSync("git", command, { cwd: head, encoding: "utf8" });
+
 const meant = onPurpose(
   git(
     "log",
@@ -153,21 +167,26 @@ const meant = onPurpose(
 const samples = new Map(
   names.map((name) => [name, { base: [] as number[], head: [] as number[] }])
 );
+
 /** The variants the base cannot run, and the ones that need no more runs. */
 const fresh = new Set<string>();
 const done = new Set<string>();
+
 /** After this many runs each, a variant whose builds are as fast is let go. */
 const ENOUGH = 6;
 
 console.log(
   `Comparing ${names.length} variants of bench/core.ts, up to ${runs} runs each by each build.`
 );
+
 for (let round = 0; round < runs; round++) {
   for (const name of names) {
     if (done.has(name)) {
       continue;
     }
+
     const of = samples.get(name)!;
+
     // Turn and turn about, and each first in its turn.
     for (const build of round % 2 === 0 ? [base, head] : [head, base]) {
       if (build === head) {
@@ -179,14 +198,17 @@ for (let round = 0; round < runs; round++) {
           if (round > 0) {
             throw error;
           }
+
           fresh.add(name);
         }
       }
     }
+
     if (round + 1 >= ENOUGH && !fresh.has(name) && settled(of.base, of.head)) {
       done.add(name);
     }
   }
+
   console.log(
     `  round ${round + 1} of ${runs}: ${names.length - done.size} variants still running`
   );
@@ -196,6 +218,7 @@ const lines: Line[] = names.map((name) => {
   const variant = variants[name]!;
   const of = samples.get(name)!;
   const { unit } = inUnit(variant, 0);
+
   return {
     name,
     label: variant.label,
@@ -207,7 +230,9 @@ const lines: Line[] = names.map((name) => {
     ),
   };
 });
+
 const failed = failures(lines);
+
 const report = [
   failed.length === 0
     ? "### The storage core is no slower"
@@ -223,8 +248,11 @@ const report = [
         `If the change is meant to slow ${failed.length === 1 ? "it" : "them"}, a commit of it says so, with a line in its message: \`Bench-slower: ${failed.join(", ")}\`.`,
       ]),
 ].join("\n");
+
 console.log(`\n${report}\n`);
+
 if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${report}\n`);
 }
+
 process.exit(failed.length === 0 ? 0 : 1);

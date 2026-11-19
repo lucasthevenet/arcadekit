@@ -18,7 +18,7 @@ import {
   Transform2d,
   Transform3d,
 } from "arcadekit";
-import { System } from "arcadekit";
+import type { System } from "arcadekit";
 import type { Frame, Time, World } from "arcadekit";
 import type { ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer, Scope } from "effect";
@@ -44,8 +44,10 @@ const measure = (frame: () => void): { ns: number; bytes: number } => {
   for (let i = 0; i < 300; i++) {
     frame();
   }
+
   const times: number[] = [];
   const grown: number[] = [];
+
   for (let i = 0; i < 301; i++) {
     const heap = process.memoryUsage().heapUsed;
     const started = performance.now();
@@ -53,6 +55,7 @@ const measure = (frame: () => void): { ns: number; bytes: number } => {
     times.push(performance.now() - started);
     grown.push(process.memoryUsage().heapUsed - heap);
   }
+
   return { ns: (median(times) * 1e6) / N, bytes: median(grown) };
 };
 
@@ -67,15 +70,18 @@ const variant = (
   also: readonly System.System<never, Assets.Store>[] = []
 ): void => {
   const scope = Effect.runSync(Scope.make());
+
   const app = Effect.runSync(
     App.make({
       plugins: [Three.plugin, Assets.plugin],
       systems: [...also, system],
     }).pipe(Effect.provide(noRenderer), Scope.provide(scope))
   );
+
   for (let i = 0; i < N; i++) {
     app.world.spawn(Thing, ...parts());
   }
+
   const { bytes, ns } = measure(() => app.frame(0));
   console.log(
     `${name.padEnd(58)} ${ns.toFixed(1).padStart(6)} ns/entity ${String(bytes).padStart(8)} bytes/frame`
@@ -84,49 +90,62 @@ const variant = (
 
 const place = () =>
   Position.of({ x: Math.random(), y: Math.random(), z: Math.random() });
+
 const turn = () => Rotation.of(Transform3d.axisAngle(0, 1, 0, Math.random()));
 const size = () => Scale.of({ x: 2, y: 2, z: 2 });
+
 const instanced = (name: string) =>
   Three.instances(name, { of: Thing, geometry, material, capacity: N });
 
 console.log(`${N} entities, one frame:`);
+
 variant("instances: a position", () => [place()], instanced("a"));
+
 variant(
   "instances: a position and a scale",
   () => [place(), size()],
   instanced("b")
 );
+
 variant(
   "instances: a position and a rotation",
   () => [place(), turn()],
   instanced("c")
 );
+
 variant(
   "instances: all three",
   () => [place(), turn(), size()],
   instanced("d")
 );
+
 // A flat game's entities: fewer columns, and a sine and a cosine for a turn.
 const placeFlat = () =>
   Transform2d.Position.of({ x: Math.random(), y: Math.random() });
+
 const turnFlat = () => Transform2d.Rotation.of({ angle: Math.random() * 6 });
 const sizeFlat = () => Transform2d.Scale.of({ x: 2, y: 2 });
+
 variant("instances, flat: a position", () => [placeFlat()], instanced("f"));
+
 variant(
   "instances, flat: a position and a scale",
   () => [placeFlat(), sizeFlat()],
   instanced("g")
 );
+
 variant(
   "instances, flat: a position and a rotation",
   () => [placeFlat(), turnFlat()],
   instanced("h")
 );
+
 variant(
   "instances, flat: all three",
   () => [placeFlat(), turnFlat(), sizeFlat()],
   instanced("i")
 );
+
 variant(
   "objects: an Object3D each, all three copied",
   () => [place(), turn(), size()],
@@ -150,17 +169,21 @@ const smoothed = (name: string) =>
     capacity: N,
     smooth: true,
   });
+
 variant("instances, smooth: a position", () => [place()], smoothed("k"));
+
 variant(
   "instances, smooth: all three",
   () => [place(), turn(), size()],
   smoothed("l")
 );
+
 variant(
   "instances, smooth, flat: a position",
   () => [placeFlat()],
   smoothed("m")
 );
+
 variant(
   "instances, smooth, flat: all three",
   () => [placeFlat(), turnFlat(), sizeFlat()],
@@ -173,8 +196,10 @@ const Paint = Component.define("bench/Paint", {
   g: Field.f32,
   b: Field.f32,
 });
+
 const paint = () =>
   Paint.of({ r: Math.random(), g: Math.random(), b: Math.random() });
+
 variant(
   "instances, a colour each: a position",
   () => [place(), paint()],
@@ -186,6 +211,7 @@ variant(
     color: Paint,
   })
 );
+
 variant(
   "instances, a colour each, as the renderer has it: a position",
   () => [place(), paint()],
@@ -198,6 +224,7 @@ variant(
     colorSpace: "srgb-linear",
   })
 );
+
 variant(
   "instances, a colour each, smooth: a position",
   () => [place(), paint()],
@@ -218,12 +245,14 @@ const Level = Assets.bundle("bench/Level", {
   // An asset that needs no file, since none is fetched here.
   bark: Assets.make("/bark.png", () => Effect.succeed(material)),
 });
+
 const Sourced = Three.instances("q", {
   of: Thing,
   from: Level,
   look: ({ bark }) => ({ geometry, material: bark }),
   capacity: N,
 });
+
 variant(
   "instances, a look made of assets: a position",
   () => [place()],
@@ -235,16 +264,20 @@ variant(
 // out by Three.js and copied into the mesh, as its documentation shows.
 {
   const scope = Effect.runSync(Scope.make());
+
   const app = Effect.runSync(
     App.make({
       plugins: [Plugin.make("bench/Bare", { plugins: [Transform3d.plugin] })],
     }).pipe(Scope.provide(scope))
   );
+
   const entities = Array.from({ length: N }, () =>
     app.world.spawn(Thing, place(), turn(), size())
   );
+
   const mesh = new InstancedMesh(geometry, material, N);
   const dummy = new Object3D();
+
   const { bytes, ns } = measure(() => {
     for (let i = 0; i < N; i++) {
       const entity = entities[i]!;
@@ -257,8 +290,10 @@ variant(
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
     }
+
     mesh.instanceMatrix.needsUpdate = true;
   });
+
   console.log(
     `${"by hand: world.get and setMatrixAt, per entity".padEnd(58)} ${ns.toFixed(1).padStart(6)} ns/entity ${String(bytes).padStart(8)} bytes/frame`
   );

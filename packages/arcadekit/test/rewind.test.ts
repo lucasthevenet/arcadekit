@@ -34,29 +34,36 @@ import type { Game } from "./peers";
 const stretch = (app: Game, seed: number, ticks: number): number[] => {
   const dice = new EcsWorld({ seed }).random;
   const hashes: number[] = [];
+
   for (let i = 0; i < ticks; i++) {
     const roll = dice.int(1, 5);
+
     if (roll <= 2) {
       app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
     } else if (roll === 3) {
       const coins = app.world.view(Query.all(Coin)).entities();
+
       if (coins.length > 0) {
         app.enqueue(Take, { by: "grace", coin: dice.pick(coins) });
         // And once more, which is refused: the coin is gone by then.
         app.enqueue(Take, { by: "ada", coin: coins[0]! });
       }
     }
+
     app.tick(DELTA);
     hashes.push(app.world.hash());
   }
+
   return hashes;
 };
 
 const captured = (app: App.Any): App.Moment => {
   const moment = app.capture();
+
   if (Exit.isFailure(moment)) {
     throw new Error("the game could not be captured");
   }
+
   return moment.value;
 };
 
@@ -69,12 +76,14 @@ describe("a game that is put back to a moment", () => {
         app.enqueue(Drop, { by: "ada", value: 4 });
         const moment = captured(app);
         expect(moment.tick).toBe(40);
+
         const then = {
           save: app.save(),
           log: structuredClone(app.actionLog),
           time: { ...app.time },
           settled: app.settled,
         };
+
         const first = stretch(app, seed + 10, 30);
         const firstLog = structuredClone(app.actionLog);
         // Another way from the same moment, and back again.
@@ -104,13 +113,16 @@ describe("a game that is put back to a moment", () => {
       ...stretch(app, 5, 25),
       ...stretch(app, 6, 25),
     ]);
+
     const wandering = withApp(game(), (app) => {
       const before = stretch(app, 5, 25);
       const moment = captured(app);
       stretch(app, 99, 17);
       app.rewind(moment);
+
       return [...before, ...stretch(app, 6, 25)];
     });
+
     expect(wandering).toEqual(straight);
   });
 
@@ -137,6 +149,7 @@ describe("a game that is put back to a moment", () => {
         (yield* Ticks).more();
       }
     });
+
     withApp(App.make({ systems: [Clock] }), (app) => {
       app.tick(DELTA);
       expect(app.settled).toBe(false);
@@ -185,7 +198,7 @@ describe("a game that is put back to a moment", () => {
       app.rewind(moment);
       // Not yet applied, so not yet refused, and the log is as long as it was.
       expect(entry().refused).toBeUndefined();
-      expect(app.actionLog.length).toBe(logged);
+      expect(app.actionLog).toHaveLength(logged);
       app.tick(DELTA);
       expect(entry().refused).toBeDefined();
     });
@@ -194,13 +207,16 @@ describe("a game that is put back to a moment", () => {
   it("puts back the events that were waiting, and everyone's place in them", () => {
     const Rang = Event.define("rw/Rang", Schema.Struct({ n: Schema.Int }));
     const heard: number[][] = [];
+
     // Listed before the system that emits: it hears each event a tick late.
     const Listen = System.make("rw/Listen", function* () {
       heard.push((yield* Rang).read().map((rang) => rang.n));
     });
+
     const Ring = System.make("rw/Ring", function* () {
       (yield* Rang).emit({ n: (yield* Time).tick });
     });
+
     withApp(App.make({ systems: [Listen, Ring] }), (app) => {
       app.tick(DELTA);
       app.tick(DELTA);
@@ -219,15 +235,18 @@ describe("a game that is put back to a moment", () => {
 
   it("starts each plugin's scripts again, and stops the ones that were started by hand", () => {
     const starts: string[] = [];
+
     const beat = (name: string) =>
       Effect.gen(function* () {
         const script = yield* Script;
         starts.push(`${name} starts`);
+
         for (;;) {
           yield* script.nextTick;
           starts.push(`${name} ${(yield* Time).tick}`);
         }
       });
+
     const Listed = Plugin.make("rw/Listed", { scripts: [beat("listed")] });
     withApp(App.make({ plugins: [Listed] }), (app) => {
       app.spawnScript(beat("by hand"));
@@ -254,13 +273,17 @@ describe("a game that is put back to a moment", () => {
 
   it("lets an app that had stopped on a failed script run again", () => {
     class Tripped extends Data.TaggedError("Tripped")<{}> {}
+
     const Trip = Effect.gen(function* () {
       const script = yield* Script;
+
       while ((yield* Time).tick < 2) {
         yield* script.nextTick;
       }
+
       return yield* Effect.fail(new Tripped());
     });
+
     const Fragile = Plugin.make("rw/Fragile", { scripts: [Trip] });
     withApp(
       App.make({ plugins: [Fragile], onScriptFailure: "stop" }).pipe(
@@ -285,15 +308,19 @@ describe("a game that is put back to a moment", () => {
     const Dot = Component.define("rw/Dot", { x: Field.f32 });
     const NewDots = Query.all(Dot).pipe(Query.added(Dot));
     const seen = { tick: [] as number[], frame: [] as number[] };
+
     const Count = System.make("rw/Count", function* () {
       seen.tick.push((yield* NewDots).entities().length);
     });
+
     const Draw = System.make("rw/Draw", function* () {
       seen.frame.push((yield* NewDots).entities().length);
     }).pipe(System.inStage("frame"));
+
     const Grow = System.make("rw/Grow", function* () {
       (yield* Commands).spawn(Dot.of({ x: 1 }));
     });
+
     withApp(
       App.make({ systems: [Count, Draw, Grow], components: [Dot] }),
       (app) => {
@@ -301,6 +328,7 @@ describe("a game that is put back to a moment", () => {
           app.tick(DELTA);
           app.frame(0);
         }
+
         const moment = captured(app);
         app.tick(DELTA);
         app.frame(0);
@@ -341,6 +369,7 @@ describe("a game that is put back to a moment", () => {
       expect(() => app.rewind({ tick: 0 })).toThrow(/did not capture/u);
     });
     let inside: App.Any | undefined;
+
     const Meddle = System.make("rw/Meddle", function* () {
       yield* Effect.sync(() => {
         if (inside !== undefined && inside.time.tick === 2) {
@@ -348,6 +377,7 @@ describe("a game that is put back to a moment", () => {
         }
       });
     });
+
     withApp(App.make({ systems: [Meddle] }), (app) => {
       inside = app;
       app.tick(DELTA);
@@ -356,6 +386,7 @@ describe("a game that is put back to a moment", () => {
       );
     });
     const taken: App.Moment[] = [];
+
     const Undo = System.make("rw/Undo", function* () {
       yield* Effect.sync(() => {
         if (inside !== undefined && taken.length > 0) {
@@ -363,6 +394,7 @@ describe("a game that is put back to a moment", () => {
         }
       });
     });
+
     withApp(App.make({ systems: [Undo] }), (app) => {
       inside = app;
       app.tick(DELTA);
@@ -377,6 +409,7 @@ describe("a game that is put back to a moment", () => {
     const Holder = Component.define("rw/Holder", {
       thing: Field.json<unknown>(),
     });
+
     withApp(App.make({ components: [Holder] }), (app) => {
       app.commands.spawn(Holder.of({ thing: 1 }));
       expect(app.capture()).toEqual(
@@ -402,9 +435,11 @@ describe("a game that is put back to a moment", () => {
     let inside: App.Any | undefined;
     const Back = Action.define("rw/Back", Schema.Struct({}));
     const taken: App.Moment[] = [];
+
     const back = Action.handler(Back, function* () {
       yield* Effect.sync(() => inside!.rewind(taken[0]!));
     });
+
     withApp(App.make({ handlers: [back] }), (app) => {
       inside = app;
       taken.push(captured(app));

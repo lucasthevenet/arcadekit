@@ -37,23 +37,30 @@ describe("how often by chance", () => {
       const size = winners + losers;
       let deals = 0;
       let extreme = 0;
+
       for (let mask = 0; mask < 1 << size; mask++) {
         const first: number[] = [];
         const second: number[] = [];
+
         for (let run = 0; run < size; run++) {
           (((mask >> run) & 1) === 1 ? first : second).push(run);
         }
+
         if (first.length !== winners) {
           continue;
         }
+
         deals++;
         const best = Math.min(...second);
+
         if (first.filter((run) => run < best).length >= beaten) {
           extreme++;
         }
       }
+
       return extreme / deals;
     };
+
     for (const [winners, losers] of [
       [4, 4],
       [5, 5],
@@ -206,14 +213,17 @@ describe("the verdict on a variant", () => {
     let slower = 0;
     let faster = 0;
     const comparisons = 20_000;
+
     for (let i = 0; i < comparisons; i++) {
       const { outcome } = judge(
         runsOf(random, 100, 15),
         runsOf(random, 100, 15)
       );
+
       slower += outcome === "slower" ? 1 : 0;
       faster += outcome === "faster" ? 1 : 0;
     }
+
     // Twenty are allowed by the rule's own arithmetic, and the floor leaves
     // fewer: forty would be one comparison in five hundred.
     expect(slower).toBeLessThan(40);
@@ -224,6 +234,7 @@ describe("the verdict on a variant", () => {
     const random = new Rng(11);
     let found = 0;
     const comparisons = 2000;
+
     for (let i = 0; i < comparisons; i++) {
       found +=
         judge(runsOf(random, 100, 15), runsOf(random, 115, 15)).outcome ===
@@ -231,6 +242,7 @@ describe("the verdict on a variant", () => {
           ? 1
           : 0;
     }
+
     expect(found / comparisons).toBeGreaterThan(0.9);
   });
 });
@@ -265,6 +277,7 @@ describe("what a change slows on purpose", () => {
       "bench-slower: hash",
       "Not-a-trailer: raw",
     ].join("\n");
+
     expect(Array.from(onPurpose(log)).toSorted()).toEqual([
       "each",
       "eachMany",
@@ -290,7 +303,9 @@ describe("the report", () => {
     unit: "ns/entity",
     verdict,
   });
+
   const base = Array.from({ length: 15 }, (_, i) => 10 + i / 100);
+
   const lines = [
     line("same", judge(base, base)),
     line(

@@ -12,20 +12,25 @@ import type { ComponentDef, Entity } from "../src/index";
 
 const Body = Component.define("rs/Body", { x: Field.f32, y: Field.f32 });
 const Marked = Component.tag("rs/Marked");
+
 const Aura = Component.define(
   "rs/Aura",
   { power: Field.i32, note: Field.json<unknown>() },
   { storage: "sparse" }
 );
+
 const Chilled = Component.tag("rs/Chilled", { storage: "sparse" });
+
 const ChildOf = Component.relation("rs/ChildOf", {
   onTargetDespawn: "despawn",
 });
+
 const Score = Component.singleton(
   "rs/Score",
   { points: Field.i32, name: Field.json<string>() },
   { points: 7, name: "nobody" }
 );
+
 const Level = Component.singleton(
   "rs/Level",
   { number: Field.u8 },
@@ -52,20 +57,24 @@ const play = (
   const dice = new EcsWorld({ seed }).random;
   const commands = new CommandBuffer(world);
   let serial = seed * 1000;
+
   const valueFor = (def: ComponentDef<any>) =>
     def === Body
       ? Body.of({ x: ++serial, y: dice.next() })
       : def === Aura
         ? Aura.of({ power: ++serial, note: serial % 3 === 0 ? [serial] : "n" })
         : def;
+
   for (let step = 0; step < steps; step++) {
     const alive = world.view(Query.all()).entities();
     const choice = alive.length === 0 ? 0 : dice.int(0, 11);
     const entity = alive.length === 0 ? undefined : dice.pick(alive);
+
     if (choice <= 1 || entity === undefined) {
       const inputs = optional
         .filter(() => dice.int(0, 1) === 1)
         .map((def) => valueFor(def));
+
       if (choice === 0) {
         world.spawn(...inputs);
       } else {
@@ -76,6 +85,7 @@ const play = (
       world.despawn(entity);
     } else if (choice === 3 || choice === 4) {
       const def = dice.pick(optional);
+
       if (world.has(entity, def)) {
         world.remove(entity, def);
       } else {
@@ -105,6 +115,7 @@ const play = (
     } else {
       world.add(entity, valueFor(Body));
     }
+
     after();
   }
 };
@@ -145,16 +156,19 @@ const future = (world: EcsWorld, seed: number, steps = 150): unknown[] => {
     ]);
   });
   seen.push(world.random.next(), world.spawn());
+
   return seen;
 };
 
 const known = [...optional, ChildOf, Score.component, Level.component];
+
 const loaded = (bytes: Uint8Array): EcsWorld => {
   const world = new EcsWorld({ seed: 999 });
   world.load(bytes, known);
   // A new world is told what its singletons start as when it is asked.
   world.singleton(Score);
   world.singleton(Level);
+
   return world;
 };
 
@@ -189,15 +203,18 @@ describe("a world that is restored from a snapshot", () => {
     world.singleton(Score);
     world.singleton(Level);
     const taken: { bytes: Uint8Array; held: unknown }[] = [];
+
     for (let i = 0; i < 5; i++) {
       play(world, 40 + i, 60);
       taken.push({ bytes: world.snapshot(), held: contents(world) });
     }
+
     for (const at of [4, 0, 3, 3, 1, 4, 2, 0]) {
       play(world, 70 + at, 25);
       world.restore(taken[at]!.bytes);
       expect(contents(world), `snapshot ${at}`).toEqual(taken[at]!.held);
     }
+
     expect(future(world, 90)).toEqual(future(loaded(taken[0]!.bytes), 90));
   });
 
@@ -282,6 +299,7 @@ describe("a world that is restored from a snapshot", () => {
     const gone = world.removed(Body, "watcher");
     world.spawn(Body.of({ x: 2, y: 2 }));
     world.restore(bytes);
+
     for (const use of [
       () => before.each(() => {}),
       () => before.eachChunk(() => {}),
@@ -293,6 +311,7 @@ describe("a world that is restored from a snapshot", () => {
         /view was used after its world was restored.*Ask for it again/u
       );
     }
+
     expect(() => gone.read()).toThrow(/after its world was restored/u);
     const after = world.view(Bodies);
     expect(after).not.toBe(before);
@@ -392,11 +411,13 @@ describe("a world that is restored from a snapshot", () => {
     const other = new EcsWorld();
     other.spawn(Component.tag("rs/Stranger"));
     let refused: unknown;
+
     try {
       world.restore(other.snapshot());
     } catch (error) {
       refused = error;
     }
+
     expect(refused).toBeInstanceOf(SnapshotError);
     expect((refused as SnapshotError).problem).toBe("unknown component");
   });

@@ -36,7 +36,9 @@ const Fighter = Component.define("duel/Fighter", {
   hp: Field.i32,
   energy: Field.i32,
 });
+
 const Name = Component.define("duel/Name", { value: Field.json<string>() });
+
 // One per game, not one per entity: whose turn it is.
 const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 });
 
@@ -48,7 +50,9 @@ const Struck = Event.define(
   "duel/Struck",
   Schema.Struct({ target: EntityId, amount: Schema.Int })
 );
+
 const Fell = Event.define("duel/Fell", Schema.Struct({ entity: EntityId }));
+
 const TurnEnded = Event.define(
   "duel/TurnEnded",
   Schema.Struct({ next: Schema.Literals([1, 2]) })
@@ -61,6 +65,7 @@ const Strike = Action.define(
   "Strike",
   Schema.Struct({ attacker: EntityId, target: EntityId })
 );
+
 const Pass = Action.define(
   "Pass",
   Schema.Struct({ player: Schema.Literals([1, 2]) })
@@ -69,10 +74,12 @@ const Pass = Action.define(
 class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
   readonly waitingFor: number;
 }> {}
+
 class TooTired extends Data.TaggedError("TooTired")<{
   readonly energy: number;
   readonly cost: number;
 }> {}
+
 class NoSuchFighter extends Data.TaggedError("NoSuchFighter")<{}> {}
 
 const STRIKE_COST = 2;
@@ -82,30 +89,38 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const world = yield* World;
   const me = world.get(attacker, Fighter);
   const them = world.get(target, Fighter);
+
   if (me === undefined || them === undefined) {
     return yield* Effect.fail(new NoSuchFighter());
   }
+
   const turn = yield* Turn;
+
   if (me.player !== turn.player) {
     return yield* Effect.fail(new NotYourTurn({ waitingFor: turn.player }));
   }
+
   if (me.energy < STRIKE_COST) {
     return yield* Effect.fail(
       new TooTired({ energy: me.energy, cost: STRIKE_COST })
     );
   }
+
   // Every check has passed. Only now does anything change.
   world.set(attacker, Fighter, { energy: me.energy - STRIKE_COST });
   world.set(target, Fighter, { hp: them.hp - STRIKE_DAMAGE });
   (yield* Struck).emit({ target, amount: STRIKE_DAMAGE });
+
   return them.hp - STRIKE_DAMAGE;
 });
 
 const pass = Action.handler(Pass, function* ({ player }) {
   const turn = yield* Turn;
+
   if (player !== turn.player) {
     return yield* Effect.fail(new NotYourTurn({ waitingFor: turn.player }));
   }
+
   const next = player === 1 ? 2 : 1;
   turn.player = next;
   (yield* TurnEnded).emit({ next });
@@ -116,8 +131,10 @@ const Casualties = System.make("Casualties", function* () {
   const world = yield* World;
   const commands = yield* Commands;
   const fell = yield* Fell;
+
   for (const { target } of (yield* Struck).read()) {
     const fighter = world.get(target, Fighter);
+
     if (fighter !== undefined && fighter.hp <= 0) {
       commands.despawn(target);
       fell.emit({ entity: target });
@@ -127,6 +144,7 @@ const Casualties = System.make("Casualties", function* () {
 
 const Rest = System.make("Rest", function* () {
   const fighters = yield* Fighters;
+
   for (const { next } of (yield* TurnEnded).read()) {
     fighters.each((fighter) => {
       if (fighter.player === next) {
@@ -161,12 +179,14 @@ const Commentary = Plugin.make("Commentary", {
     System.make("CallHits", function* () {
       const narrator = yield* Narrator;
       const world = yield* World;
+
       for (const { amount, target } of (yield* Struck).read()) {
         narrator.say(`${world.get(target, Name)?.value} takes ${amount}!`);
       }
     }).pipe(System.before(Casualties)),
     System.make("CallEnd", function* () {
       const narrator = yield* Narrator;
+
       for (const _ of (yield* Fell).read()) {
         narrator.say("And that is the end of the fight.");
       }
@@ -191,6 +211,7 @@ const standing = (app: App.Any): string => {
   app.world.view(Query.all(Name, Fighter)).each((name, fighter) => {
     out.push(`${name.value} hp=${fighter.hp} energy=${fighter.energy}`);
   });
+
   return out.join(", ");
 };
 
@@ -210,6 +231,7 @@ const program = Effect.gen(function* () {
       world.view(Query.all(Name, Fighter)).each((name) => {
         winner = name.value;
       });
+
       return `${winner} wins`;
     })
   );
@@ -231,12 +253,15 @@ const program = Effect.gen(function* () {
             case "NotYourTurn": {
               return `refused, it is player ${error.waitingFor}'s turn`;
             }
+
             case "TooTired": {
               return `refused, needs ${error.cost} energy and has ${error.energy}`;
             }
+
             case "NoSuchFighter": {
               return "refused, that fighter is not in the game";
             }
+
             case "InvalidPayload": {
               return `refused, malformed move (${error.message})`;
             }
@@ -245,9 +270,11 @@ const program = Effect.gen(function* () {
         onSuccess: (hpLeft) => `hits, target is left with ${hpLeft} hp`,
       }
     );
+
     console.log(`${who} strikes: ${outcome}`);
     app.tick(1);
   });
+
   const passTurn = (player: 1 | 2) => {
     app.dispatch(Pass, { player });
     app.tick(1);
@@ -272,21 +299,27 @@ const program = Effect.gen(function* () {
   // replay installs only the rules, so it is silent.
   const saved = Action.encodeLog(app.actionLog);
   console.log(`saved: ${saved}`);
+
   // A fresh app in a scope of its own, closed when the replay is over.
   const replay = Effect.fnUntraced(function* (text: string) {
     const loaded = Action.decodeLog(text);
+
     if (Exit.isFailure(loaded)) {
       return "not a save file";
     }
+
     const headless = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
     seat(headless);
+
     try {
       App.replay(headless, loaded.value, { delta: 1, ticks: app.time.tick });
+
       return `${standing(headless)} (${standing(headless) === standing(app) ? "identical" : "DIFFERENT"})`;
     } catch (error) {
       return `stopped: ${(error as Error).message}`;
     }
   }, Effect.scoped);
+
   console.log(`replayed -> ${yield* replay(saved)}`);
   // Someone edits the save so that a player who does not exist passes.
   console.log(
@@ -302,9 +335,11 @@ const program = Effect.gen(function* () {
   // A save is the game as it stands, as bytes. Loaded into the rules alone,
   // it is the same fight at the same point: no replay, and no setup run.
   const save = app.save();
+
   if (Exit.isSuccess(save)) {
     const file = Save.encode(save.value);
     const read = Save.decode(file);
+
     if (Exit.isSuccess(read)) {
       const loaded = yield* App.load(read.value, { plugins: [Rules] });
       console.log(

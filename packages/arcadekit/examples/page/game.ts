@@ -42,20 +42,25 @@ const Star = Component.define("page/Star", {
   y: Field.f32,
   speed: Field.f32,
 });
+
 const Stars = Query.all(Star);
+
 // One of each per game: where the basket is, and how many stars it caught.
 const Basket = Singleton.define(
   "page/Basket",
   { x: Field.f32, caught: Field.i32 },
   { x: WIDTH / 2, caught: 0 }
 );
+
 const Phase = State.define("page/Phase", ["title", "playing", "paused"]);
+
 // What happened, said by the simulation for whoever wants to know. It
 // knows nothing of the sounds they are played as.
 const Caught = Event.define(
   "page/Caught",
   Schema.Struct({ stars: Schema.Int })
 );
+
 const Started = Event.define("page/Started", Schema.Struct({}));
 const playing = System.runIf(State.is(Phase, "playing"));
 
@@ -67,16 +72,21 @@ const Steer = System.make("Steer", function* () {
   const basket = yield* Basket;
   const { delta } = yield* Time;
   let { x } = basket;
+
   if (keys.down("ArrowLeft")) {
     x -= BASKET.speed * delta;
   }
+
   if (keys.down("ArrowRight")) {
     x += BASKET.speed * delta;
   }
+
   if (pointer.down()) {
     ({ x } = pointer);
   }
+
   x = Math.min(WIDTH - BASKET.width / 2, Math.max(BASKET.width / 2, x));
+
   if (x !== basket.x) {
     basket.x = x;
   }
@@ -90,19 +100,23 @@ const Fall = System.make("Fall", function* () {
   (yield* Stars).each((star) => {
     const before = star.y;
     star.y += star.speed * delta;
+
     // Caught if it crossed the basket's line this tick, over the basket.
     const got =
       before < BASKET.y &&
       star.y >= BASKET.y &&
       Math.abs(star.x - basket.x) <= BASKET.width / 2;
+
     if (got) {
       caught++;
     }
+
     if (got || star.y > HEIGHT) {
       star.y = 0;
       star.x = random.next() * WIDTH;
     }
   });
+
   if (caught > 0) {
     basket.caught += caught;
     (yield* Caught).emit({ stars: caught });
@@ -123,11 +137,13 @@ const Layout = Schema.Struct({
   slowest: Schema.Finite,
   fastest: Schema.Finite,
 });
+
 const Scatter = Action.define("page/Scatter", Layout);
 
 const handlers = [
   Action.handler(Start, function* () {
     const phase = yield* Phase;
+
     if (phase.is("title")) {
       phase.set("playing");
       (yield* Started).emit({});
@@ -135,13 +151,17 @@ const handlers = [
   }),
   Action.handler(Quit, function* () {
     const phase = yield* Phase;
+
     if (phase.is("title")) {
       return;
     }
+
     const commands = yield* Commands;
+
     for (const star of (yield* Stars).entities()) {
       commands.despawn(star);
     }
+
     const basket = yield* Basket;
     basket.x = WIDTH / 2;
     basket.caught = 0;
@@ -149,6 +169,7 @@ const handlers = [
   }),
   Action.handler(TogglePause, function* () {
     const phase = yield* Phase;
+
     if (!phase.is("title")) {
       phase.set(phase.is("playing") ? "paused" : "playing");
     }
@@ -156,6 +177,7 @@ const handlers = [
   Action.handler(Scatter, function* ({ fastest, slowest, stars }) {
     const commands = yield* Commands;
     const random = yield* Random;
+
     for (let i = 0; i < stars; i++) {
       commands.spawn(
         Star.of({
@@ -184,12 +206,14 @@ const Level = Assets.bundle("page/Level", {
   // The level's own sound, loaded and let go with the rest of it.
   caught: Browser.sound("/caught.wav"),
 });
+
 const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
 
 // A system of the input stage: once the level's file is there, and the sky
 // is still empty, it issues the action that fills it.
 const Begin = System.make("Begin", function* () {
   const level = yield* Level;
+
   if (level._tag === "Ready" && (yield* Stars).count() === 0) {
     (yield* Action.Actions).enqueue(Scatter, level.assets.layout);
   }
@@ -219,6 +243,7 @@ const Draw = System.make("Draw", function* () {
   canvas.fillStyle = "#c8d0e0";
   canvas.font = "16px system-ui, sans-serif";
   canvas.textAlign = "center";
+
   if (phase.is("title")) {
     canvas.fillText("Press Enter", WIDTH / 2, HEIGHT / 2);
   } else if (level._tag !== "Ready") {
@@ -247,6 +272,7 @@ const Draw = System.make("Draw", function* () {
 // simulation never plays: a replay of this game is silent, and the same.
 // "start" is a sound the page has for as long as it lasts, by its name.
 const Cues = Sound.cues("page/Cues", Sound.on(Started, "start"));
+
 // The level's cues are made of what its bundle holds, each time it is
 // loaded, and are silent while it is not.
 const LevelCues = Sound.cues("page/LevelCues", Level, ({ caught }) => [
@@ -256,15 +282,18 @@ const LevelCues = Sound.cues("page/LevelCues", Level, ({ caught }) => [
     rate: 1 + (stars - 1) / 4,
   })),
 ]);
+
 // Music is not an event but what the game, as it is, should sound like:
 // said each frame, and started, turned down and stopped as that changes.
 const Score = Sound.music(
   "page/Score",
   function* () {
     const phase = (yield* Phase).value;
+
     if (phase === "title") {
       return undefined;
     }
+
     return { track: "theme", volume: phase === "paused" ? 0.1 : 0.4 };
   },
   { fade: 0.6 }
@@ -277,6 +306,7 @@ const Score = Sound.music(
 const ShowMenu = View.publish(Menu, function* () {
   return { phase: (yield* Phase).value };
 });
+
 const ShowHud = View.publish(Hud, function* () {
   return {
     caught: (yield* Basket).caught,

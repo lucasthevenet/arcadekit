@@ -80,28 +80,35 @@ const read = (
   data: Uint8Array
 ): { readonly document: Document; readonly binary: Uint8Array | undefined } => {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+
   if (data.byteLength < 12 || view.getUint32(0, true) !== MAGIC) {
     return {
       document: JSON.parse(new TextDecoder().decode(data)) as Document,
       binary: undefined,
     };
   }
+
   let document: Document | undefined;
   let binary: Uint8Array | undefined;
+
   for (let at = 12; at + 8 <= data.byteLength;) {
     const length = view.getUint32(at, true);
     const type = view.getUint32(at + 4, true);
     const chunk = data.subarray(at + 8, at + 8 + length);
+
     if (type === JSON_CHUNK) {
       document = JSON.parse(new TextDecoder().decode(chunk)) as Document;
     } else if (type === BIN_CHUNK) {
       binary = chunk;
     }
+
     at += 8 + length;
   }
+
   if (document === undefined) {
     throw new Error("It is a binary glTF with no JSON in it.");
   }
+
   return { document, binary };
 };
 
@@ -113,14 +120,18 @@ const fromDataUri = (
   const head = uri.slice("data:".length, comma);
   const body = uri.slice(comma + 1);
   const type = head.split(";")[0] ?? "";
+
   if (comma === -1 || !head.endsWith(";base64")) {
     throw new Error("It is a data URI that is not base64.");
   }
+
   const text = atob(body);
   const bytes = new Uint8Array(text.length);
+
   for (let i = 0; i < text.length; i++) {
     bytes[i] = text.codePointAt(i)!;
   }
+
   return { bytes, type };
 };
 
@@ -134,18 +145,23 @@ const beside = (model: string, uri: string): string =>
 const pictureType = (bytes: Uint8Array): string | undefined => {
   const starts = (...head: number[]): boolean =>
     head.every((byte, i) => bytes[i] === byte);
+
   if (starts(0x89, 0x50, 0x4e, 0x47)) {
     return "image/png";
   }
+
   if (starts(0xff, 0xd8, 0xff)) {
     return "image/jpeg";
   }
+
   if (starts(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57) {
     return "image/webp";
   }
+
   if (starts(0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30)) {
     return "image/ktx2";
   }
+
   return undefined;
 };
 
@@ -171,15 +187,19 @@ const pack = (
           message: `It is not a glTF model: ${describe(error)}`,
         }),
     });
+
     const buffers = document.buffers ?? [];
     const images = document.images ?? [];
+
     const named =
       buffers.some((buffer) => buffer.uri !== undefined) ||
       images.some((image) => image.uri !== undefined);
+
     // A binary glTF that names no file is whole as it is.
     if (!named && binary !== undefined) {
       return data.slice().buffer;
     }
+
     /**
      * Returns the bytes a URI refers to, embedded in the URI itself or in a
      * file alongside the model.
@@ -203,6 +223,7 @@ const pack = (
             bytes,
             type: "",
           }));
+
     const [bufferBytes, imageBytes] = yield* Effect.all(
       [
         Effect.forEach(
@@ -224,26 +245,34 @@ const pack = (
       ],
       { concurrency: "unbounded" }
     );
+
     // Every buffer after the other, each starting on a multiple of four.
     const offsets: number[] = [];
     let length = 0;
+
     for (const bytes of bufferBytes) {
       offsets.push(length);
       length += aligned(bytes.byteLength);
     }
+
     const views = (document.bufferViews ??= []);
+
     for (const view of views) {
       view.byteOffset = (view.byteOffset ?? 0) + (offsets[view.buffer] ?? 0);
       view.buffer = 0;
     }
+
     // And each picture after them, as a view of its own.
     const pictures: { readonly at: number; readonly bytes: Uint8Array }[] = [];
+
     for (let i = 0; i < images.length; i++) {
       const file = imageBytes[i];
       const image = images[i]!;
+
       if (file === undefined) {
         continue;
       }
+
       pictures.push({ at: length, bytes: file.bytes });
       views.push({
         buffer: 0,
@@ -255,6 +284,7 @@ const pack = (
       delete image.uri;
       length += aligned(file.bytes.byteLength);
     }
+
     document.buffers = [{ byteLength: length }];
     const text = new TextEncoder().encode(JSON.stringify(document));
     const jsonLength = aligned(text.byteLength);
@@ -273,12 +303,15 @@ const pack = (
     const start = 20 + jsonLength;
     out.setUint32(start, length, true);
     out.setUint32(start + 4, BIN_CHUNK, true);
+
     for (let i = 0; i < bufferBytes.length; i++) {
       packed.set(bufferBytes[i]!, start + 8 + offsets[i]!);
     }
+
     for (const picture of pictures) {
       packed.set(picture.bytes, start + 8 + picture.at);
     }
+
     return packed.buffer;
   });
 
@@ -294,12 +327,15 @@ const dispose = (model: Model): void => {
   const geometries = new Set<BufferGeometry>();
   const materials = new Set<Material>();
   const textures = new Set<Texture>();
+
   for (const scene of model.scenes) {
     scene.traverse((object: Object3D) => {
       const { geometry, material } = object as Partial<Mesh>;
+
       if (geometry !== undefined) {
         geometries.add(geometry);
       }
+
       for (const one of Array.isArray(material) ? material : [material]) {
         if (one !== undefined) {
           materials.add(one);
@@ -307,17 +343,21 @@ const dispose = (model: Model): void => {
       }
     });
   }
+
   for (const material of materials) {
     for (const value of Object.values(material)) {
       if (isTexture(value)) {
         textures.add(value);
       }
     }
+
     material.dispose();
   }
+
   for (const geometry of geometries) {
     geometry.dispose();
   }
+
   for (const texture of textures) {
     texture.dispose();
     // The picture it was made of, where that is one to close.
@@ -361,6 +401,7 @@ export const model = (
       // Fetched before anything is held: a loading that is given up gives
       // these requests up, which what is being acquired would not.
       const packed = yield* pack(data, at, yield* Assets.Loader);
+
       return yield* Effect.acquireRelease(
         Effect.tryPromise({
           try: () =>
@@ -396,6 +437,7 @@ export const model = (
  */
 export const mesh = (of: Model, name?: string): Mesh => {
   const found: Mesh[] = [];
+
   for (const scene of of.scenes) {
     scene.traverse((object: Object3D) => {
       if ((object as Partial<Mesh>).isMesh === true) {
@@ -403,10 +445,12 @@ export const mesh = (of: Model, name?: string): Mesh => {
       }
     });
   }
+
   const wanted =
     name === undefined
       ? found[0]
       : found.find((one) => one.name === name || one.parent?.name === name);
+
   if (wanted === undefined) {
     throw new Error(
       name === undefined
@@ -414,5 +458,6 @@ export const mesh = (of: Model, name?: string): Mesh => {
         : `Gltf.mesh found no mesh named "${name}" in the model. Its meshes are: ${found.map((one) => `"${one.name}"`).join(", ") || "none"}.`
     );
   }
+
   return wanted;
 };

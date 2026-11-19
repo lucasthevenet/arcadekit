@@ -10,6 +10,7 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     const stage = yield* Alchemy.Stage;
+
     const site = yield* Cloudflare.Website.StaticSite("Docs", {
       command: "pnpm run build",
       outdir: "dist",

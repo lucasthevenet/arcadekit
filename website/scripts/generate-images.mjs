@@ -16,13 +16,16 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 const publicDir = path.resolve(import.meta.dirname, "..", "public");
+
 // The mark's shape, from the one file that holds it, drawn here in the colour each image asks for.
 const markPath = /\sd="(?<d>[^"]+)"/u.exec(
-  readFileSync(path.join(publicDir, "favicon.svg"), "utf-8")
+  readFileSync(path.join(publicDir, "favicon.svg"), "utf8")
 )?.groups?.d;
+
 if (markPath === undefined) {
   throw new Error("public/favicon.svg has no path: it must hold the mark");
 }
+
 const mark = (fill) =>
   `<svg viewBox="0 0 24 24"><path fill-rule="evenodd" fill="${fill}" d="${markPath}"/></svg>`;
 
@@ -36,10 +39,13 @@ const RAMP = ["#c9ff3d", "#9fe557", "#e6cf48", "#ff9b45", "#ff684f", "#ff3f68"];
 
 // The site's faces, from the packages it serves them from, embedded in the page Chromium draws.
 const require = createRequire(import.meta.url);
+
 const font = (family, weight, file) => {
   const data = readFileSync(require.resolve(file)).toString("base64");
+
   return `@font-face { font-family: "${family}"; font-weight: ${weight}; src: url(data:font/woff2;base64,${data}) format("woff2"); }`;
 };
+
 const FONTS = [
   font(
     "Inter",
@@ -114,12 +120,14 @@ const IMAGES = [
 ];
 
 const browser = await chromium.launch();
+
 try {
   await Promise.all(
     IMAGES.map(async (image) => {
       const tab = await browser.newPage({
         viewport: { width: image.width, height: image.height },
       });
+
       await tab.setContent(image.html, { waitUntil: "load" });
       await tab.screenshot({ path: path.join(publicDir, image.file) });
       console.log(`Wrote public/${image.file}`);

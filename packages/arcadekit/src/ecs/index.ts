@@ -18,6 +18,7 @@
  * are only available here.
  */
 export { Component, entityGeneration, entityIndex, Field } from "./component";
+
 export type {
   ComponentDef,
   ComponentInput,
@@ -32,8 +33,11 @@ export type {
   Storage,
   ValueOf,
 } from "./component";
+
 export { Rng } from "./random";
+
 export { readSnapshot, SnapshotError, writeSnapshot } from "./snapshot";
+
 export type {
   SnapshotComponent,
   SnapshotContents,
@@ -42,7 +46,9 @@ export type {
   SnapshotSparse,
   SnapshotTable,
 } from "./snapshot";
+
 export { CommandBuffer, QueryView, RemovedReader, World } from "./world";
+
 export type {
   ChangeKind,
   EntityColumn,

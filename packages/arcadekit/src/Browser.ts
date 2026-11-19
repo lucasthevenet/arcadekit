@@ -41,11 +41,13 @@ const describe = (error: unknown): string =>
 export const display: Driver.DisplayShape = {
   request(callback) {
     const id = requestAnimationFrame(callback);
+
     return () => cancelAnimationFrame(id);
   },
   hidden: () => document.visibilityState === "hidden",
   onVisibilityChange(listener) {
     document.addEventListener("visibilitychange", listener);
+
     return () => document.removeEventListener("visibilitychange", listener);
   },
 };
@@ -140,6 +142,7 @@ const listen = (
   const target: PointerTarget = options.target ?? page;
   const prevented = new Set(options.preventDefault ?? []);
   const deadzone = options.deadzone ?? 0.1;
+
   const gamepads =
     options.gamepads ??
     ((): ArrayLike<GamepadLike | null> =>
@@ -147,7 +150,9 @@ const listen = (
       typeof navigator.getGamepads === "function"
         ? navigator.getGamepads()
         : []);
+
   const stops: (() => void)[] = [];
+
   const on = <E extends Event>(
     where: EventTarget,
     type: string,
@@ -158,10 +163,12 @@ const listen = (
       where.removeEventListener(type, listener as EventListener)
     );
   };
+
   on(page, "keydown", (event: KeyboardEvent) => {
     if (prevented.has(event.code)) {
       event.preventDefault();
     }
+
     // A key held down repeats; it went down once.
     if (!event.repeat) {
       state.press(event.code);
@@ -171,15 +178,18 @@ const listen = (
     if (prevented.has(event.code)) {
       event.preventDefault();
     }
+
     state.release(event.code);
   });
   // A page that loses the keyboard is not told when a key goes up.
   on(page, "blur", () => state.releaseAll((code) => !isPad(code)));
+
   const place = (event: PointerEvent): void => {
     const box = target.getBoundingClientRect?.();
     state.move(Input.pointerX, event.clientX - (box?.left ?? 0));
     state.move(Input.pointerY, event.clientY - (box?.top ?? 0));
   };
+
   // A page reports one press, when the first button goes down, and one
   // release, when the last goes up. A button that changes while another is
   // held comes as a move, and `buttons` says which are down by then: a bit
@@ -191,16 +201,20 @@ const listen = (
     [8, 3],
     [16, 4],
   ];
+
   // Whether a press on the target began what is held now.
   let held = false;
+
   const letGo = (): void => {
     held = false;
     state.releaseAll(isPointer);
   };
+
   /** Syncs the buttons held down with the ones the page reports. */
   const follow = (buttons: number): void => {
     for (const [bit, button] of BITS) {
       const code = Input.pointerButton(button);
+
       if ((buttons & bit) === 0) {
         state.release(code);
       } else {
@@ -208,10 +222,12 @@ const listen = (
       }
     }
   };
+
   on(target, "pointerdown", (event: PointerEvent) => {
     place(event);
     held = true;
     state.press(Input.pointerButton(event.button));
+
     if (event.buttons > 0) {
       follow(event.buttons);
     }
@@ -219,9 +235,11 @@ const listen = (
   // On the page, so that a button let go outside the target is let go.
   on(page, "pointermove", (event: PointerEvent) => {
     place(event);
+
     if (!held || typeof event.buttons !== "number") {
       return;
     }
+
     if (event.buttons === 0) {
       // Let go where the page could not hear of it.
       letGo();
@@ -232,6 +250,7 @@ const listen = (
   on(page, "pointerup", (event: PointerEvent) => {
     place(event);
     state.release(Input.pointerButton(event.button));
+
     if (event.buttons === 0) {
       letGo();
     } else if (event.buttons > 0) {
@@ -242,31 +261,39 @@ const listen = (
 
   // Gamepads send no events worth having: they are read when sampled.
   let known = new Set<string>();
+
   const round = (value: number): number =>
     Math.abs(value) < deadzone ? 0 : Math.round(value * 100) / 100;
+
   const readPads = (): void => {
     const seen = new Set<string>();
     const pads = gamepads();
+
     for (let p = 0; p < pads.length; p++) {
       const pad = pads[p];
+
       if (pad === null || pad === undefined || !pad.connected) {
         continue;
       }
+
       for (let b = 0; b < pad.buttons.length; b++) {
         const code = Input.padButton(pad.index, b);
         seen.add(code);
+
         if (pad.buttons[b]!.pressed) {
           state.press(code);
         } else {
           state.release(code);
         }
       }
+
       for (let a = 0; a < pad.axes.length; a++) {
         const code = Input.padAxis(pad.index, a);
         seen.add(code);
         state.move(code, round(pad.axes[a]!));
       }
     }
+
     // A gamepad that was unplugged lets go of everything.
     for (const code of known) {
       if (!seen.has(code)) {
@@ -274,9 +301,12 @@ const listen = (
         state.move(code, 0);
       }
     }
+
     known = seen;
   };
+
   let stopped = false;
+
   return {
     source: {
       sample() {
@@ -285,12 +315,15 @@ const listen = (
             "The page's devices were read after Browser.layer was let go: its listeners are gone, so it would say nothing for ever. A layer lasts as long as what it is provided to. Provide it to the whole program, as Browser.runMain does, or with App.run(...).pipe(Effect.provide(Browser.layer())), not to App.make alone."
           );
         }
+
         readPads();
+
         return state.sample();
       },
     },
     stop() {
       stopped = true;
+
       for (const stop of stops) {
         stop();
       }
@@ -336,6 +369,7 @@ export const layer = (options: Options = {}): Layer.Layer<never> => {
       )
     )
   ) as Layer.Layer<never>;
+
   return options.sounds === false
     ? page
     : Layer.merge(
@@ -440,6 +474,7 @@ const audioElement = (url: string): MediaLike => {
   element.crossOrigin = "anonymous";
   element.preload = "auto";
   element.src = url;
+
   return element;
 };
 
@@ -521,11 +556,13 @@ export const layerSound = (
       const loader = yield* Assets.Loader;
       const report = Effect.runForkWith(yield* Effect.context<never>());
       const page: EventTarget = options.window ?? globalThis;
+
       const make =
         options.audio ??
         (typeof AudioContext === "undefined"
           ? undefined
           : (): AudioLike => new AudioContext());
+
       const master = options.volume ?? 1;
       const decode = options.decode ?? decodeOffline;
       const media = options.media ?? audioElement;
@@ -542,6 +579,7 @@ export const layerSound = (
       let closed = false;
       // Whether it was said that a cue came before the first touch.
       let early = false;
+
       const failed = (cue: string, error: unknown): void => {
         report(
           Effect.logWarning(
@@ -549,11 +587,13 @@ export const layerSound = (
           )
         );
       };
+
       /** Returns what is played for a name or a clip, if it is available. */
       const bufferOf = (sound: Sound.Playable): unknown => {
         if (typeof sound !== "string") {
           return sound.data;
         }
+
         if (!Object.hasOwn(files, sound)) {
           if (!missing.has(sound)) {
             missing.add(sound);
@@ -563,12 +603,16 @@ export const layerSound = (
               )
             );
           }
+
           return undefined;
         }
+
         // A name is a file that was decoded, or a clip under that name.
         const file = files[sound]!;
+
         return typeof file === "string" ? buffers.get(sound) : file.data;
       };
+
       /** Starts a streamed track, silent, with its own volume. */
       const startStream = (
         context: AudioLike,
@@ -585,8 +629,10 @@ export const layerSound = (
               )
             );
           }
+
           return undefined;
         }
+
         const element = media(streamed.url);
         element.loop = !once;
         context.createMediaElementSource(element).connect(gain);
@@ -602,10 +648,12 @@ export const layerSound = (
             );
           }
         });
+
         const stop = (): void => {
           streaming.delete(element);
           element.pause();
         };
+
         return {
           loop: (on) => {
             element.loop = on;
@@ -615,23 +663,29 @@ export const layerSound = (
           end: (_now, fade) => {
             if (fade <= 0) {
               stop();
+
               return;
             }
+
             const timer = setTimeout(() => {
               timers.delete(timer);
               stop();
             }, fade * 1000);
+
             timers.add(timer);
           },
         };
       };
+
       /** Moves a channel from what it is playing to what it should play. */
       const settle = (channel: Channel): void => {
         if (audio === undefined) {
           return;
         }
+
         const { fade, playing, wanted } = channel;
         const now = audio.currentTime;
+
         if (playing !== undefined && playing.track !== wanted?.track) {
           const level = playing.gain.gain;
           level.cancelScheduledValues(now);
@@ -640,25 +694,32 @@ export const layerSound = (
           playing.end(now, fade);
           channel.playing = undefined;
         }
+
         if (wanted === undefined) {
           return;
         }
+
         if (channel.playing === undefined) {
           const buffer = bufferOf(wanted.track);
+
           // Not here yet: it starts when its file is.
           if (buffer === undefined) {
             return;
           }
+
           const gain = audio.createGain();
           // Silent, and on its way to its volume, before it is started.
           gain.gain.setValueAtTime(0, now);
           gain.gain.linearRampToValueAtTime(wanted.volume * master, now + fade);
           let started: Pick<NonNullable<Channel["playing"]>, "end" | "loop">;
+
           if (buffer instanceof Streamed) {
             const stream = startStream(audio, buffer, wanted.once, gain);
+
             if (stream === undefined) {
               return;
             }
+
             gain.connect(audio.destination);
             started = stream;
           } else {
@@ -675,6 +736,7 @@ export const layerSound = (
               end: (at, after) => source.stop(at + after),
             };
           }
+
           channel.playing = { track: wanted.track, gain, ...started };
         } else {
           // The same track, louder or softer, and over and over or not.
@@ -685,11 +747,13 @@ export const layerSound = (
           level.linearRampToValueAtTime(wanted.volume * master, now + fade);
         }
       };
+
       const settleAll = (): void => {
         for (const channel of channels.values()) {
           settle(channel);
         }
       };
+
       // Every file at once, for as long as the layer lasts: a request that
       // is still on its way when the scope closes is given up.
       yield* Effect.forkScoped(
@@ -718,11 +782,13 @@ export const layerSound = (
           { concurrency: "unbounded", discard: true }
         )
       );
+
       // The first touch makes the audio; a later one wakes it, should the
       // browser have put it to sleep.
       const wake = (): void => {
         if (audio === undefined) {
           audio = make?.();
+
           if (audio !== undefined) {
             // Hidden, nobody plays the game and its frame loop rests: what
             // is heard rests with it. Watched from now on, since before
@@ -732,17 +798,20 @@ export const layerSound = (
               // started with the audio it plays into.
               if (display.hidden()) {
                 void audio?.suspend?.();
+
                 for (const element of streaming) {
                   element.pause();
                 }
               } else {
                 void audio?.resume?.();
+
                 for (const element of streaming) {
                   element.play().catch(() => {});
                 }
               }
             });
           }
+
           // What should have been playing all along starts now.
           settleAll();
         } else if (audio.state !== undefined && audio.state !== "running") {
@@ -750,7 +819,9 @@ export const layerSound = (
           void audio.resume?.();
         }
       };
+
       const touches = ["pointerdown", "keydown"];
+
       for (const type of touches) {
         page.addEventListener(type, wake);
       }
@@ -758,17 +829,23 @@ export const layerSound = (
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           closed = true;
+
           for (const type of touches) {
             page.removeEventListener(type, wake);
           }
+
           unwatch?.();
+
           for (const timer of timers) {
             clearTimeout(timer);
           }
+
           timers.clear();
+
           for (const element of streaming) {
             element.pause();
           }
+
           streaming.clear();
           buffers.clear();
           channels.clear();
@@ -776,9 +853,11 @@ export const layerSound = (
           audio = undefined;
         })
       );
+
       return {
         play(cue, volume, rate) {
           const buffer = bufferOf(cue);
+
           // Before the first touch, before the file is here, or after
           // the layer was let go, which empties the buffers.
           if (audio === undefined || buffer === undefined) {
@@ -798,14 +877,17 @@ export const layerSound = (
                 )
               );
             }
+
             return;
           }
+
           // Asleep, or still waking, as it is for a moment after the page
           // is seen again: a cue started now would wait, and be heard with
           // every other that waited, all at once, when the audio wakes.
           if (audio.state !== undefined && audio.state !== "running") {
             return;
           }
+
           if (buffer instanceof Streamed) {
             // To be heard at once, a cue is decoded and waiting.
             if (!missing.has(buffer.url)) {
@@ -816,8 +898,10 @@ export const layerSound = (
                 )
               );
             }
+
             return;
           }
+
           const source = audio.createBufferSource();
           source.buffer = buffer;
           source.playbackRate.value = rate;
@@ -829,10 +913,12 @@ export const layerSound = (
         },
         music(name, track, volume, fade, once) {
           let channel = channels.get(name);
+
           if (channel === undefined) {
             channel = { wanted: undefined, fade, playing: undefined };
             channels.set(name, channel);
           }
+
           channel.wanted =
             track === undefined
               ? undefined

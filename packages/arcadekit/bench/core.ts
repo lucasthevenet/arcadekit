@@ -27,6 +27,7 @@ import type { Entity, QuerySpec, Terms } from "../src/ecs/index";
 // module each time, which measured a tenth slower over these loops.
 const N = 100_000;
 const DT = 1 / 60;
+
 /** How many entities the variants loop over, and the step they move them by. */
 export const sizes = { entities: N, step: DT } as const;
 
@@ -34,17 +35,21 @@ export const Position = Component.define("bench/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+
 export const Velocity = Component.define("bench/Velocity", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const tags = [0, 1, 2, 3, 4].map((i) => Component.tag(`bench/Tag${i}`));
 const Frozen = Component.tag("bench/Frozen", { storage: "sparse" });
+
 const Heat = Component.define(
   "bench/Heat",
   { degrees: Field.f32 },
   { storage: "sparse" }
 );
+
 const Aims = Component.relation("bench/Aims", { onTargetDespawn: "remove" });
 const Child = Component.relation("bench/Child", { onTargetDespawn: "despawn" });
 
@@ -55,12 +60,14 @@ const query = <const D extends Terms>(
 ): QuerySpec<D> => ({ terms, withDefs: [], withoutDefs: [], ...more });
 
 const Moving = query([Position, Velocity]);
+
 /** Visits only the entities whose position was written since its last visit. */
 const Repositioned = query([Velocity], { changedDefs: [Position] });
 
 /** Gives the sparse tag to one entity in every `n`. */
 const tagEvery = (world: World, n: number): void => {
   const all = world.view(query([Position])).entities();
+
   for (let i = 0; i < all.length; i += n) {
     world.add(all[i]!, Frozen);
   }
@@ -91,14 +98,18 @@ export const measure = (
     before?.();
     run();
   }
+
   const samples: number[] = [];
+
   for (let i = 0; i < runs; i++) {
     before?.();
     const start = performance.now();
     run();
     samples.push(performance.now() - start);
   }
+
   samples.sort((a, b) => a - b);
+
   return samples[samples.length >> 1]!;
 };
 
@@ -130,12 +141,14 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const view = world.view(Moving);
+
       return measure(() => {
         view.eachChunk((start, end, pos, vel) => {
           const px = pos.x;
           const py = pos.y;
           const vx = vel.x;
           const vy = vel.y;
+
           for (let i = start; i < end; i++) {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
@@ -151,6 +164,7 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const view = world.view(Moving);
+
       return measure(() => {
         view.each((pos, vel) => {
           pos.x += vel.x * DT;
@@ -171,6 +185,7 @@ export const variants: Record<string, Variant> = {
       const positions = world.view(query([Position]));
       const velocities = world.view(query([Velocity]));
       let sink = 0;
+
       for (let pass = 0; pass < 80; pass++) {
         positions.each((pos) => {
           sink += pos.x;
@@ -191,7 +206,9 @@ export const variants: Record<string, Variant> = {
           sink += vel.x + entity;
         });
       }
+
       void sink;
+
       return measure(() => {
         view.each((pos, vel) => {
           pos.x += vel.x * DT;
@@ -211,35 +228,44 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const view = world.view(Moving);
+
       const Health = Component.define("bench/Health", {
         hp: Field.i32,
         max: Field.i32,
       });
+
       const Spin = Component.define("bench/Spin", {
         angle: Field.f64,
         speed: Field.f64,
       });
+
       const Colour = Component.define("bench/Colour", {
         r: Field.u8,
         g: Field.u8,
         b: Field.u8,
       });
+
       const Team = Component.define("bench/Team", {
         side: Field.u16,
         rank: Field.u16,
       });
+
       const Owner = Component.define("bench/Owner", {
         by: Field.entity,
         since: Field.u32,
       });
+
       const Label = Component.define("bench/Label", {
         text: Field.json<string>(),
       });
+
       const Mass = Component.define("bench/Mass", {
         kg: Field.f32,
         drag: Field.f32,
       });
+
       const Age = Component.define("bench/Age", { seconds: Field.f32 });
+
       for (let i = 0; i < 2000; i++) {
         world.spawn(
           Health.of({ hp: i, max: i }),
@@ -252,12 +278,14 @@ export const variants: Record<string, Variant> = {
           Age.of({ seconds: 0 })
         );
       }
+
       const wounds = world.view(query([Health, Team]));
       const turning = world.view(query([Spin, Age]));
       const painted = world.view(query([Colour, Label]));
       const owned = world.view(query([Owner, Mass]));
       const falling = world.view(query([Mass, Age, Spin]));
       let sink = 0;
+
       for (let pass = 0; pass < 400; pass++) {
         wounds.each((health, team) => {
           health.hp = Math.min(health.max, health.hp + team.rank);
@@ -277,7 +305,9 @@ export const variants: Record<string, Variant> = {
           spin.speed -= mass.drag * age.seconds * DT;
         });
       }
+
       void sink;
+
       return measure(() => {
         view.each((pos, vel) => {
           pos.x += vel.x * DT;
@@ -293,6 +323,7 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world, true);
       const view = world.view(Moving);
+
       return measure(() => {
         view.each((pos, vel) => {
           pos.x += vel.x * DT;
@@ -308,12 +339,14 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world, true);
       const view = world.view(Moving);
+
       return measure(() => {
         view.eachChunk((start, end, pos, vel) => {
           const px = pos.x;
           const py = pos.y;
           const vx = vel.x;
           const vy = vel.y;
+
           for (let i = start; i < end; i++) {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
@@ -329,9 +362,11 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       tagEvery(world, 100);
+
       const view = world.view(
         query([Position, Velocity], { withoutDefs: [Frozen] })
       );
+
       return measure(() => {
         view.each((pos, vel) => {
           pos.x += vel.x * DT;
@@ -347,15 +382,18 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       tagEvery(world, 100);
+
       const view = world.view(
         query([Position, Velocity], { withoutDefs: [Frozen] })
       );
+
       return measure(() => {
         view.eachChunk((start, end, pos, vel) => {
           const px = pos.x;
           const py = pos.y;
           const vx = vel.x;
           const vy = vel.y;
+
           for (let i = start; i < end; i++) {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
@@ -372,10 +410,13 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       tagEvery(world, 100);
+
       const view = world.view(
         query([Position, Velocity], { withDefs: [Frozen] })
       );
+
       view._path = "mask";
+
       return measure(() => {
         view.each((pos, vel) => {
           pos.x += vel.x * DT;
@@ -392,10 +433,13 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       tagEvery(world, 100);
+
       const view = world.view(
         query([Position, Velocity], { withDefs: [Frozen] })
       );
+
       view._path = "sorted";
+
       return measure(() => {
         view.each((pos, vel) => {
           pos.x += vel.x * DT;
@@ -411,15 +455,18 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       tagEvery(world, 2);
+
       const view = world.view(
         query([Position, Velocity], { withoutDefs: [Frozen] })
       );
+
       return measure(() => {
         view.eachChunk((start, end, pos, vel) => {
           const px = pos.x;
           const py = pos.y;
           const vx = vel.x;
           const vy = vel.y;
+
           for (let i = start; i < end; i++) {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
@@ -436,10 +483,13 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       let sink = 0;
+
       const ms = measure(() => {
         sink ^= world.hash();
       });
+
       void sink;
+
       return ms;
     },
   },
@@ -450,10 +500,13 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world, true);
       let sink = 0;
+
       const ms = measure(() => {
         sink ^= world.hash();
       });
+
       void sink;
+
       return ms;
     },
   },
@@ -465,14 +518,19 @@ export const variants: Record<string, Variant> = {
     run: () => {
       const world = new World();
       populate(world);
+
       for (const entity of world.view(query([Position])).entities()) {
         world.add(entity, Heat.of({ degrees: 1 }));
       }
+
       let sink = 0;
+
       const ms = measure(() => {
         sink ^= world.hash();
       });
+
       void sink;
+
       return ms;
     },
   },
@@ -484,10 +542,13 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       let sink = 0;
+
       const ms = measure(() => {
         sink += world.snapshot().length;
       });
+
       void sink;
+
       return ms;
     },
   },
@@ -499,12 +560,15 @@ export const variants: Record<string, Variant> = {
       populate(world);
       const bytes = world.snapshot();
       let sink = 0;
+
       const ms = measure(() => {
         const fresh = new World();
         fresh.load(bytes, [Position, Velocity]);
         sink += fresh.entityCount;
       });
+
       void sink;
+
       return ms;
     },
   },
@@ -516,11 +580,14 @@ export const variants: Record<string, Variant> = {
       populate(world);
       const bytes = world.snapshot();
       let sink = 0;
+
       const ms = measure(() => {
         world.restore(bytes);
         sink += world.entityCount;
       });
+
       void sink;
+
       return ms;
     },
   },
@@ -536,6 +603,7 @@ export const variants: Record<string, Variant> = {
       populate(world);
       const view = world.view(Moving);
       const watcher = world.view(Repositioned);
+
       return measure(
         () => {
           view.each((pos, vel) => {
@@ -556,6 +624,7 @@ export const variants: Record<string, Variant> = {
       populate(world);
       const view = world.view(Moving);
       world.view(Repositioned).eachChunk(() => {});
+
       return measure(() => {
         view.each((pos, vel) => {
           pos.x += vel.x * DT;
@@ -571,6 +640,7 @@ export const variants: Record<string, Variant> = {
       populate(world);
       const view = world.view(Moving);
       const watcher = world.view(Repositioned);
+
       return measure(
         () => {
           view.eachChunk((start, end, pos, vel) => {
@@ -578,6 +648,7 @@ export const variants: Record<string, Variant> = {
             const py = pos.y;
             const vx = vel.x;
             const vy = vel.y;
+
             for (let i = start; i < end; i++) {
               px[i]! += vx[i]! * DT;
               py[i]! += vy[i]! * DT;
@@ -595,11 +666,14 @@ export const variants: Record<string, Variant> = {
     run: () => {
       const world = new World();
       populate(world);
+
       // Velocity is written from Position, which the query only reads.
       const view = world.view(
         query([Position, Velocity], { readDefs: [Position] })
       );
+
       const watcher = world.view(Repositioned);
+
       return measure(
         () => {
           view.eachChunk((start, end, pos, vel) => {
@@ -607,6 +681,7 @@ export const variants: Record<string, Variant> = {
             const py = pos.y;
             const vx = vel.x;
             const vy = vel.y;
+
             for (let i = start; i < end; i++) {
               vx[i]! += px[i]! * DT;
               vy[i]! += py[i]! * DT;
@@ -628,6 +703,7 @@ export const variants: Record<string, Variant> = {
       const watcher = world.view(Repositioned);
       watcher.eachChunk(() => {});
       let sink = 0;
+
       const ms = measure(
         () => {
           // A thousand visits a sample: one is too short to time.
@@ -640,7 +716,9 @@ export const variants: Record<string, Variant> = {
         2000,
         500
       );
+
       void sink;
+
       return ms / 1000;
     },
   },
@@ -654,6 +732,7 @@ export const variants: Record<string, Variant> = {
       watcher.eachChunk(() => {});
       const target = world.view(Moving).entities()[N >> 1]!;
       let sink = 0;
+
       const ms = measure(
         () => {
           for (let i = 0; i < 1000; i++) {
@@ -666,7 +745,9 @@ export const variants: Record<string, Variant> = {
         2000,
         500
       );
+
       void sink;
+
       return ms / 1000;
     },
   },
@@ -680,6 +761,7 @@ export const variants: Record<string, Variant> = {
       watcher.eachChunk(() => {});
       const all = world.view(Moving).entities();
       let sink = 0;
+
       const ms = measure(
         () => {
           watcher.each((vel) => {
@@ -694,7 +776,9 @@ export const variants: Record<string, Variant> = {
           }
         }
       );
+
       void sink;
+
       return ms;
     },
   },
@@ -706,6 +790,7 @@ export const variants: Record<string, Variant> = {
       const writer = world.view(query([Position]));
       const watcher = world.view(Repositioned);
       let sink = 0;
+
       const ms = measure(
         () => {
           watcher.each((vel) => {
@@ -719,7 +804,9 @@ export const variants: Record<string, Variant> = {
             pos.x += 1;
           })
       );
+
       void sink;
+
       return ms;
     },
   },
@@ -733,6 +820,7 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const made: Entity[] = [];
+
       return measure(
         () => {
           for (let i = 0; i < 1000; i++) {
@@ -743,9 +831,11 @@ export const variants: Record<string, Variant> = {
               )
             );
           }
+
           for (let i = 0; i < 1000; i++) {
             world.despawn(made[i]!);
           }
+
           made.length = 0;
         },
         2000,
@@ -762,6 +852,7 @@ export const variants: Record<string, Variant> = {
       populate(world);
       const anchor = world.spawn(Position.of({ x: 0, y: 0 }));
       const made: Entity[] = [];
+
       return measure(
         () => {
           for (let i = 0; i < 1000; i++) {
@@ -773,9 +864,11 @@ export const variants: Record<string, Variant> = {
               )
             );
           }
+
           for (let i = 0; i < 1000; i++) {
             world.despawn(made[i]!);
           }
+
           made.length = 0;
         },
         2000,
@@ -790,11 +883,13 @@ export const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const parents: Entity[] = [];
+
       return measure(
         () => {
           for (let i = 0; i < 100; i++) {
             world.despawn(parents[i]!);
           }
+
           parents.length = 0;
         },
         2000,
@@ -803,6 +898,7 @@ export const variants: Record<string, Variant> = {
           for (let i = 0; i < 100; i++) {
             const parent = world.spawn(Position.of({ x: i, y: i }));
             parents.push(parent);
+
             for (let c = 0; c < 10; c++) {
               world.spawn(
                 Position.of({ x: c, y: c }),
@@ -819,10 +915,12 @@ export const variants: Record<string, Variant> = {
 // Run as a program: one variant, and its median on the last line.
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const variant = variants[process.argv[2] ?? ""];
+
   if (variant === undefined) {
     throw new Error(
       `bench/core.ts is given the name of a variant, one of: ${Object.keys(variants).join(", ")}.`
     );
   }
+
   console.log(JSON.stringify(variant.run()));
 }

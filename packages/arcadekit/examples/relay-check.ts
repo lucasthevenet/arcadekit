@@ -12,11 +12,11 @@
 import { NodeRuntime } from "@effect/platform-node";
 import { Context, Effect, Layer, Schema } from "effect";
 
+import type { Lockstep } from "../src/index";
 import {
   Action,
   App,
   Field,
-  Lockstep,
   Relay,
   Rollback,
   Singleton,
@@ -24,10 +24,12 @@ import {
 } from "../src/index";
 
 const base = process.argv[2];
+
 if (base === undefined) {
   console.error("usage: relay:check <the relay's address, ws:// or wss://>");
   process.exit(2);
 }
+
 // A room of its own for each run, so that two checks do not meet.
 const room = `check-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -36,11 +38,14 @@ const Purse = Singleton.define(
   { ada: Field.i32, grace: Field.i32 },
   { ada: 0, grace: 0 }
 );
+
 const Tip = Action.define("check/Tip", Schema.Struct({ amount: Schema.Int }));
+
 const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
     return yield* Effect.fail(new Error(`a tip from ${from}`));
   }
+
   (yield* Purse)[from] += amount;
 });
 
@@ -66,45 +71,57 @@ const closed = (transport: Transport.Shape) =>
         if (error instanceof Transport.Closed) {
           return error;
         }
+
         throw error;
       }
+
       yield* wait(10);
     }
+
     return yield* Effect.die(new Error("the relay left the socket open"));
   });
 
 const check = Effect.gen(function* () {
   // --- two peers play a game through it ------------------------------------
   const seats = [];
+
   for (const peer of ["ada", "grace"]) {
     const app = yield* App.make({
       handlers: [tip],
       components: [Purse],
       checkpointEvery: 1,
     });
+
     const session = Rollback.make(app, {
       peer,
       peers: ["ada", "grace"],
       delta: 1 / 30,
     });
+
     const transport = yield* Layer.build(
       Transport.layerWebSocket(Relay.address(base, { room, peer }))
     );
+
     const connected = yield* Transport.connect(session).pipe(
       Effect.provide(transport)
     );
+
     seats.push({ peer, app, session, connected });
   }
+
   const [ada, grace] = seats as [(typeof seats)[0], (typeof seats)[0]];
+
   for (let round = 0; round < 60; round++) {
     for (const seat of seats) {
       if (round < 40 && round % 5 === (seat.peer === "ada" ? 0 : 2)) {
         seat.app.enqueue(Tip, { amount: 1 });
       }
+
       seat.connected.tick();
       yield* wait(5);
     }
   }
+
   // To rest: a tick at a time, with longer between two than a message takes.
   for (
     let i = 0;
@@ -116,7 +133,9 @@ const check = Effect.gen(function* () {
     yield* wait(30);
     (ada.app.time.tick <= grace.app.time.tick ? ada : grace).connected.tick();
   }
+
   const purse = { ...ada.app.world.singleton(Purse) };
+
   if (
     ada.app.time.tick !== grace.app.time.tick ||
     ada.app.world.hash() !== grace.app.world.hash() ||
@@ -129,6 +148,7 @@ const check = Effect.gen(function* () {
       )
     );
   }
+
   console.log(
     `✓ two peers played ${ada.app.time.tick} ticks through it and hold the same world (${ada.session.rewinds + grace.session.rewinds} rewinds)`
   );
@@ -137,11 +157,13 @@ const check = Effect.gen(function* () {
   // A host either closes the socket and says why, or turns the request
   // away before there is a socket, which a peer sees as no connection.
   const taken = yield* closed(yield* open("ada"));
+
   if (taken.reason !== "name taken" && taken.code !== 1006) {
     return yield* Effect.die(
       new Error(`a second "ada" was closed with: ${taken.message}`)
     );
   }
+
   console.log(
     taken.code === 1006
       ? "✓ a second peer of the same name was turned away at the door"
@@ -157,6 +179,7 @@ const check = Effect.gen(function* () {
   liar.send(forged);
   const refused = yield* closed(liar);
   yield* wait(100);
+
   if (refused.reason !== "speaks for another" || honest.receive().length > 0) {
     return yield* Effect.die(
       new Error(
@@ -164,6 +187,7 @@ const check = Effect.gen(function* () {
       )
     );
   }
+
   console.log(
     `✓ a message in another's name was refused, and not passed on (${refused.code}: ${refused.reason})`
   );

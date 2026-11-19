@@ -7,9 +7,11 @@ import { getCollection } from "astro:content";
 import kit from "../../../packages/arcadekit/package.json";
 
 const pages = await getCollection("docs");
+
 const entries = Object.keys(kit.exports).filter(
   (subpath) => subpath !== "./package.json"
 );
+
 const stats = [
   { label: "Version", value: `v${kit.version}` },
   { label: "Entries", value: entries.length },

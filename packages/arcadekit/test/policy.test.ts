@@ -5,6 +5,7 @@ import { generates, play } from "./policy-game";
 // Node's own, declared here, since the tests are compiled with no types
 // but their own.
 declare const process: { readonly execPath: string };
+
 const { execFileSync } = (await import(
   /* @vite-ignore */ "node:child_process" as string
 )) as {

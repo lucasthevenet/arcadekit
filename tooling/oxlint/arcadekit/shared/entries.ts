@@ -15,10 +15,13 @@
 
 const isEffect = (name: string): boolean =>
   name === "effect" || name.startsWith("effect/");
+
 const isArcadekit = (name: string): boolean =>
   name === "arcadekit" || name.startsWith("arcadekit/");
+
 const isThree = (name: string): boolean =>
   name === "three" || name.startsWith("three/");
+
 const isPlatformBrowser = (name: string): boolean =>
   name === "@effect/platform-browser" ||
   name.startsWith("@effect/platform-browser/");
@@ -38,16 +41,19 @@ const ecs: EntryRule = {
   page: false,
   says: "arcadekit/ecs is the storage core alone, plain TypeScript: it imports no package, and no file outside src/ecs",
 };
+
 const browser: EntryRule = {
   may: (name) => isEffect(name) || isPlatformBrowser(name),
   page: true,
   says: "arcadekit/Browser imports Effect, and may import @effect/platform-browser",
 };
+
 const rest: EntryRule = {
   may: isEffect,
   page: false,
   says: "every entry of arcadekit but arcadekit/Browser imports Effect and nothing else, and does not reach src/Browser.ts: what only a page can use goes there",
 };
+
 const three: EntryRule = {
   may: (name) => isArcadekit(name) || isEffect(name) || isThree(name),
   // Three.js draws in a page.
@@ -81,6 +87,7 @@ export const packages: readonly PackageRules[] = [
       if (/^src\/ecs(?:\/|$)/u.test(file)) {
         return ecs;
       }
+
       return /^src\/Browser(?:\.ts)?$/u.test(file) ? browser : rest;
     },
   },

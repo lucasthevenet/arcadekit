@@ -2,6 +2,7 @@ import { Cause, Data, Effect, Exit, Logger, Schema } from "effect";
 import type { Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
+import type { Save } from "../src/index";
 import {
   Action,
   App,
@@ -15,7 +16,6 @@ import {
   Plugin,
   Query,
   Random,
-  Save,
   Script,
   Singleton,
   State,
@@ -26,11 +26,13 @@ import {
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship);
+
 const Score = Singleton.define(
   "in/Score",
   { points: Field.i32 },
   { points: 0 }
 );
+
 const Phase = State.define("in/Phase", ["playing", "paused"]);
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
@@ -58,14 +60,17 @@ const Steer = System.make("Steer", function* () {
     if (keys.down("ArrowLeft")) {
       ship.x -= 10 * delta;
     }
+
     if (keys.down("ArrowRight")) {
       ship.x += 10 * delta;
     }
+
     if (keys.pressed("Space")) {
       ship.shots += 1;
     }
   });
 });
+
 const Flying = Plugin.make("Flying", {
   plugins: [Input.plugin],
   components: [Ship],
@@ -74,13 +79,16 @@ const Flying = Plugin.make("Flying", {
     commands.spawn(Ship.of({ x: 0, shots: 0 }));
   }),
 });
+
 const ship = (app: App.Any): { x: number; shots: number } => {
   let found = { x: Number.NaN, shots: Number.NaN };
   app.world.view(Ships).each((one) => {
     found = { x: one.x, shots: one.shots };
   });
+
   return found;
 };
+
 const reports = (app: App.Any): unknown[] =>
   app.actionLog
     .filter(
@@ -94,15 +102,19 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
+
         const note = (name: string, stage: System.Stage) =>
           System.make(name, function* () {
             ran.push(name);
           }).pipe(System.inStage(stage));
+
         const Second = note("Second", "input");
         const First = note("First", "input").pipe(System.before(Second));
+
         const Sometimes = note("Sometimes", "input").pipe(
           System.runIf(State.is(Phase, "paused"))
         );
+
         const app = yield* App.make({
           components: [Phase],
           systems: [
@@ -113,6 +125,7 @@ describe("the input stage", () => {
             Sometimes,
           ],
         });
+
         expect(app.inputOrder).toEqual(["First", "Second", "Sometimes"]);
         expect(app.systemOrder).toEqual(["Tick"]);
         expect(app.frameOrder).toEqual(["Draw"]);
@@ -177,19 +190,23 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const seen: unknown[] = [];
+
         const A = System.make("A", function* () {
           seen.push(told(yield* Input.Devices));
         }).pipe(System.inStage("input"));
+
         const B = System.make("B", function* () {
           // Pressed while the stage runs: not in this run's sample.
           source.press("KeyZ");
           seen.push(told(yield* Input.Devices));
         }).pipe(System.inStage("input"));
+
         const app = yield* App.make({ systems: [A, B] });
         source.press("KeyA");
         source.tap("Space");
         source.move(Input.pointerX, 12.5);
         app.input();
+
         const first = {
           down: ["KeyA"],
           pressed: ["KeyA", "Space"],
@@ -197,9 +214,11 @@ describe("the input stage", () => {
           axes: { PointerX: 12.5 },
           moved: ["PointerX"],
         };
+
         expect(seen).toEqual([first, first]);
         source.release("KeyA");
         app.input();
+
         const second = {
           down: ["KeyZ"],
           pressed: ["KeyZ"],
@@ -207,6 +226,7 @@ describe("the input stage", () => {
           axes: { PointerX: 12.5 },
           moved: [],
         };
+
         expect(seen.slice(2)).toEqual([second, second]);
       }).pipe(withSource(source))
     );
@@ -216,9 +236,11 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const seen: unknown[] = [];
+
         const A = System.make("A", function* () {
           seen.push(told(yield* Input.Devices));
         }).pipe(System.inStage("input"));
+
         const app = yield* App.make({ systems: [A] });
         app.input();
         expect(seen).toEqual([
@@ -231,12 +253,15 @@ describe("the input stage", () => {
   it("does not read the devices when no system would hear of them", () => {
     let samples = 0;
     const inner = Input.makeManualSource();
+
     const source: Input.SourceShape = {
       sample() {
         samples++;
+
         return inner.sample();
       },
     };
+
     run(
       Effect.gen(function* () {
         const Tick = System.make("Tick", function* () {});
@@ -244,9 +269,11 @@ describe("the input stage", () => {
         app.input();
         app.tick(1);
         expect(samples).toBe(0);
+
         const Listen = System.make("Listen", function* () {
           yield* Input.Devices;
         }).pipe(System.inStage("input"));
+
         const listening = yield* App.make({ systems: [Listen] });
         listening.input();
         listening.input();
@@ -262,22 +289,28 @@ describe("the input stage", () => {
           const Peek = System.make("Peek", function* () {
             return (yield* Input.Devices).down.size > 0 ? undefined : undefined;
           }).pipe(System.inStage(stage));
+
           const app = yield* App.make({ systems: [Peek] });
+
           const peek = (): void =>
             stage === "frame" ? app.frame(0) : app.tick(1);
+
           expect(peek, stage).toThrow(
             /Input\.Devices was read outside the input stage/
           );
           expect(peek, stage).toThrow(/Input\.Keyboard/);
         }
+
         // And the input stage is not told about a frame.
         const Blink = System.make("Blink", function* () {
           return (yield* Frame).alpha > 0 ? undefined : undefined;
         }).pipe(System.inStage("input"));
+
         const app = yield* App.make({ systems: [Blink] });
         expect(() => app.input()).toThrow(
           /Frame was read by a system of the input stage/
         );
+
         // Every field of both says so.
         for (const field of ["pressed", "released", "axes", "moved"] as const) {
           const Peek = System.make("Peek", function* () {
@@ -285,13 +318,16 @@ describe("the input stage", () => {
               ? undefined
               : undefined;
           });
+
           const one = yield* App.make({ systems: [Peek] });
           expect(() => one.tick(1), field).toThrow(/outside the input stage/);
         }
+
         for (const field of ["delta", "count"] as const) {
           const Peek = System.make("Peek", function* () {
             return (yield* Frame)[field] === 0 ? undefined : undefined;
           }).pipe(System.inStage("input"));
+
           const one = yield* App.make({ systems: [Peek] });
           expect(() => one.input(), field).toThrow(/of the input stage/);
         }
@@ -302,9 +338,11 @@ describe("the input stage", () => {
   it("cannot change the game: whatever would throws, and names what did", () => {
     const Pinged = Event.define("in/Pinged", Schema.Struct({}));
     const Bump = Action.define("in/Bump", Schema.Struct({}));
+
     const bump = Action.handler(Bump, function* () {
       (yield* Score).points += 1;
     });
+
     const attempts: Record<string, Effect.Effect<unknown, never, any>> = {
       'assignment to "in/Ship.x"': Effect.map(Ships, (ships) =>
         ships.each((one) => {
@@ -327,12 +365,14 @@ describe("the input stage", () => {
         world.random.next()
       ),
     };
+
     for (const [what, attempt] of Object.entries(attempts)) {
       run(
         Effect.gen(function* () {
           const Vandal = System.make("Vandal", function* () {
             yield* attempt;
           }).pipe(System.inStage("input"));
+
           const app = yield* App.make({
             components: [Ship, Score, Phase],
             handlers: [bump],
@@ -340,6 +380,7 @@ describe("the input stage", () => {
             checkpointEvery: 1,
             seed: 3,
           });
+
           app.world.spawn(Ship.of({ x: 1, shots: 0 }));
           app.tick(1, { input: false });
           const before = app.world.hash();
@@ -354,14 +395,17 @@ describe("the input stage", () => {
         })
       );
     }
+
     // Nor can it be reached around: the app says where it is.
     run(
       Effect.gen(function* () {
         let app: App.App<never, never, typeof bump> | undefined;
         let reach: () => unknown = () => undefined;
+
         const Reach = System.make("Reach", function* () {
           reach();
         }).pipe(System.inStage("input"));
+
         app = yield* App.make({
           components: [Score],
           handlers: [bump],
@@ -391,9 +435,11 @@ describe("the input stage", () => {
         expect(made.world.singleton(Score).points).toBe(0);
         // And the input stage is not run from inside a tick.
         let nested: App.Any | undefined;
+
         const Nested = System.make("Nested", function* () {
           nested?.input();
         });
+
         nested = yield* App.make({ systems: [Nested, Reach] });
         expect(() => nested!.tick(1)).toThrow(
           /App\.input was called from inside a tick/
@@ -412,21 +458,26 @@ describe("the input stage", () => {
             }
           });
         }).pipe(System.inStage("input"));
+
         const app = yield* App.make({
           systems: [Scribble],
           verifyFrames: true,
         });
+
         app.world.spawn(Ship.of({ x: 1, shots: 0 }));
         const exit = app.inputExit();
         expect(Exit.isFailure(exit)).toBe(true);
+
         const error = Cause.squash(
           (exit as Exit.Failure<void, never>).cause
         ) as App.FrameChangedWorld;
+
         expect(error).toBeInstanceOf(App.FrameChangedWorld);
         expect(error.stage).toBe("input");
         expect(error.system).toBe("Scribble");
         expect(error.message).toMatch(/^The input stage changed the world/);
         expect(error.message).toMatch(/reads the devices before a tick/);
+
         // A frame system that does the same is still called a frame system.
         const Smudge = System.make("Smudge", function* () {
           (yield* Ships).eachChunk((start, end, ships) => {
@@ -435,14 +486,18 @@ describe("the input stage", () => {
             }
           });
         }).pipe(System.inStage("frame"));
+
         const drawn = yield* App.make({
           systems: [Smudge],
           verifyFrames: true,
         });
+
         drawn.world.spawn(Ship.of({ x: 1, shots: 0 }));
+
         const smudged = Cause.squash(
           (drawn.frameExit(0) as Exit.Failure<void, never>).cause
         ) as App.FrameChangedWorld;
+
         expect(smudged.stage).toBe("frame");
         expect(smudged.message).toMatch(
           /^The frame stage changed the world: its hash was not the same after system "Smudge" ran in frame 1 as before/
@@ -459,25 +514,32 @@ describe("the input stage", () => {
           "in/Bump",
           Schema.Struct({ by: Schema.Int })
         );
+
         const bump = Action.handler(Bump, function* ({ by }) {
           (yield* Score).points += by;
         });
+
         const Press = System.make("Press", function* () {
           const devices = yield* Input.Devices;
+
           if (devices.pressed.includes("Enter")) {
             (yield* Action.Actions).enqueue(Bump, { by: 5 });
           }
         }).pipe(System.inStage("input"));
+
         const seen: number[] = [];
+
         const Look = System.make("Look", function* () {
           seen.push((yield* Score).points);
         });
+
         const app = yield* App.make({
           components: [Score],
           handlers: [bump],
           systems: [Press, Look],
           checkpointEvery: 0,
         });
+
         source.press("Enter");
         app.input();
         expect(app.world.singleton(Score).points).toBe(0);
@@ -490,7 +552,7 @@ describe("the input stage", () => {
         app.input();
         app.tick(1);
         expect(seen).toEqual([5, 5]);
-        expect(app.actionLog.length).toBe(1);
+        expect(app.actionLog).toHaveLength(1);
       }).pipe(withSource(source))
     );
   });
@@ -500,15 +562,19 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const order: string[] = [];
+
         const Listen = System.make("Listen", function* () {
           order.push(`input ${told(yield* Input.Devices).pressed.join("+")}`);
         }).pipe(System.inStage("input"));
+
         const Tick = System.make("Tick", function* () {
           order.push(`tick ${(yield* Time).tick}`);
         });
+
         const Draw = System.make("Draw", function* () {
           order.push("frame");
         }).pipe(System.inStage("frame"));
+
         const app = yield* App.make({ systems: [Listen, Tick, Draw] });
         const step = Driver.fixedStep(app, { hz: 10 });
         // Frames of 40 ms against ticks of 100 ms.
@@ -542,18 +608,22 @@ describe("the input stage", () => {
           "in/Landed",
           Schema.Struct({ at: Schema.Int })
         );
+
         const Land = System.make("Land", function* () {
           (yield* Landed).emit({ at: (yield* Time).tick });
         });
+
         const heard: number[] = [];
         const also: number[] = [];
         const drawn: number[] = [];
+
         const hear = (name: string, into: number[], stage: System.Stage) =>
           System.make(name, function* () {
             for (const landed of (yield* Landed).read()) {
               into.push(landed.at);
             }
           }).pipe(System.inStage(stage));
+
         const app = yield* App.make({
           systems: [
             Land,
@@ -561,15 +631,19 @@ describe("the input stage", () => {
             hear("Also", also, "input"),
           ],
         });
+
         const plain = yield* App.make({ systems: [Land] });
+
         for (let i = 0; i < 3; i++) {
           app.input();
           app.tick(1);
           plain.tick(1);
         }
+
         // Each system of the stage hears each event, once.
         expect(heard).toEqual([1, 2]);
         expect(also).toEqual([1, 2]);
+
         // What draws the game still hears every event of a frame of
         // several ticks: the input stage ran before each, and is not it.
         const both = yield* App.make({
@@ -579,6 +653,7 @@ describe("the input stage", () => {
             hear("Draw", drawn, "frame"),
           ],
         });
+
         const step = Driver.fixedStep(both, { hz: 10 });
         step(0.1);
         step(0.3);
@@ -597,14 +672,18 @@ describe("the input stage", () => {
 
   it("hears what a tick's actions emitted, and that an action it issued was refused", () => {
     class TooMuch extends Data.TaggedError("TooMuch")<{}> {}
+
     const Done = Event.define("in/Done", Schema.Struct({ by: Schema.Int }));
     const Try = Action.define("in/Try", Schema.Struct({ by: Schema.Int }));
+
     const attempt = Action.handler(Try, function* ({ by }) {
       if (by > 5) {
         return yield* Effect.fail(new TooMuch());
       }
+
       (yield* Done).emit({ by });
     });
+
     const hear = (
       name: string,
       stage: System.Stage,
@@ -615,10 +694,12 @@ describe("the input stage", () => {
         for (const event of (yield* Done).read()) {
           done.push(event.by);
         }
+
         for (const event of (yield* Action.Rejected).read()) {
           refused.push(`${event.action} ${(event.error as TooMuch)._tag}`);
         }
       }).pipe(System.inStage(stage));
+
     run(
       Effect.gen(function* () {
         // An app with an input stage and no frame stage; one with both;
@@ -628,10 +709,12 @@ describe("the input stage", () => {
         const both: number[] = [];
         const drawn: number[] = [];
         const drawnRefused: string[] = [];
+
         const alone = yield* App.make({
           handlers: [attempt],
           systems: [hear("Hear", "input", heard, refused)],
         });
+
         const together = yield* App.make({
           handlers: [attempt],
           systems: [
@@ -639,13 +722,16 @@ describe("the input stage", () => {
             hear("Draw", "frame", drawn, drawnRefused),
           ],
         });
+
         const bare = yield* App.make({ handlers: [attempt] });
         // And one with a frame stage and no input stage.
         const onlyDrawn: number[] = [];
+
         const shown = yield* App.make({
           handlers: [attempt],
           systems: [hear("Draw", "frame", onlyDrawn, [])],
         });
+
         for (const by of [1, 9, 3]) {
           for (const app of [alone, together, bare, shown]) {
             // What the action emits, it emits before the tick's systems
@@ -656,6 +742,7 @@ describe("the input stage", () => {
             app.frame(0);
           }
         }
+
         alone.input();
         together.input();
         // Each event once, the first tick's among them, and the refusal.
@@ -669,16 +756,20 @@ describe("the input stage", () => {
         expect(alone.world.hash()).toBe(bare.world.hash());
         const saves = [alone, together, bare].map((app) => app.save());
         expect(saves.every((save) => Exit.isSuccess(save))).toBe(true);
+
         const events = saves.map(
           (save) => (save as Exit.Success<Save.Save>).value.events
         );
+
         expect(events[0]).toEqual(events[2]);
         expect(events[1]).toEqual(events[2]);
+
         // Heard, they are kept no longer.
         for (let i = 0; i < 3; i++) {
           alone.input();
           alone.tick(1);
         }
+
         expect(alone.events.pending(Done)).toBe(0);
         expect(heard).toEqual([1, 3]);
       })
@@ -688,9 +779,11 @@ describe("the input stage", () => {
   it("keeps an event until the stages have had their chance at it, and no longer", () => {
     const Done = Event.define("in/Once", Schema.Struct({ at: Schema.Int }));
     const Emit = Action.define("in/EmitOnce", Schema.Struct({}));
+
     const emit = Action.handler(Emit, function* () {
       (yield* Done).emit({ at: (yield* Time).tick + 1 });
     });
+
     // A system that first listens late hears what is still kept: only
     // what its stage has not yet had its chance at.
     const late = (
@@ -705,15 +798,18 @@ describe("the input stage", () => {
           }
         }
       }).pipe(System.inStage(stage));
+
     run(
       Effect.gen(function* () {
         for (const stage of ["input", "frame"] as const) {
           let listening = false;
           const heard: number[] = [];
+
           const app = yield* App.make({
             handlers: [emit],
             systems: [late(stage, () => listening, heard)],
           });
+
           for (let tick = 1; tick <= 6; tick++) {
             listening = tick === 6;
             app.input();
@@ -721,6 +817,7 @@ describe("the input stage", () => {
             app.tick(1);
             app.frame(0);
           }
+
           app.input();
           // The input stage runs before a tick, so what it has not had
           // its chance at is the tick before; the frame stage runs after.
@@ -733,24 +830,31 @@ describe("the input stage", () => {
   it("keeps events for a stage that is late, and stops for one that is never run, as a replay never runs it", () => {
     const Done = Event.define("in/Kept", Schema.Struct({}));
     const Emit = Action.define("in/Emit", Schema.Struct({}));
+
     const emit = Action.handler(Emit, function* () {
       (yield* Done).emit({});
     });
+
     run(
       Effect.gen(function* () {
         let heard = 0;
+
         const Hear = System.make("Hear", function* () {
           heard += (yield* Done).read().length;
         }).pipe(System.inStage("input"));
+
         const ticked = function* (ticks: number) {
           const app = yield* App.make({ handlers: [emit], systems: [Hear] });
+
           for (let i = 0; i < ticks; i++) {
             app.enqueue(Emit, {});
             // As a replay ticks: reading nothing.
             app.tick(1, { input: false });
           }
+
           return app;
         };
+
         // Late by a hundred ticks: every one of their events is there.
         const late = yield* ticked(100);
         late.input();
@@ -761,12 +865,14 @@ describe("the input stage", () => {
         const gone = yield* ticked(700);
         gone.input();
         expect(heard).toBe(0);
+
         // Run again, it hears again from then on.
         for (let i = 0; i < 3; i++) {
           gone.enqueue(Emit, {});
           gone.tick(1);
           gone.input();
         }
+
         expect(heard).toBe(3);
       })
     );
@@ -805,20 +911,26 @@ describe("the input stage", () => {
 
   it("stops the tick that ran it when it fails: the tick does not run, and the next hears first again", () => {
     class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
+
     run(
       Effect.gen(function* () {
         let broken = true;
         let ran = 0;
+
         const Read = System.make("Read", function* () {
           ran++;
+
           if (broken) {
             return yield* Effect.fail(new NoKeyboard());
           }
         }).pipe(System.inStage("input"));
+
         let ticked = 0;
+
         const Tick = System.make("Tick", function* () {
           ticked++;
         });
+
         const app = yield* App.make({ systems: [Read, Tick] });
         const exit = app.tickExit(1);
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(
@@ -862,6 +974,7 @@ describe("the input stage", () => {
           plugins: [Flying],
           checkpointEvery: 1,
         });
+
         App.replay(again, log, { delta: 1, ticks: 2 });
         expect(again.world.hash()).toBe(hash);
         expect(ship(again)).toEqual({ x: 20, shots: 0 });
@@ -875,11 +988,13 @@ describe("the input stage", () => {
 
   it("gives a system's failure back typed, and a stopped app runs none of it", () => {
     class NoKeyboard extends Data.TaggedError("NoKeyboard")<{}> {}
+
     run(
       Effect.gen(function* () {
         const Fail = System.make("Fail", function* () {
           return yield* Effect.fail(new NoKeyboard());
         }).pipe(System.inStage("input"));
+
         const app = yield* App.make({ systems: [Fail] });
         const exit = app.inputExit();
         expect(Exit.isFailure(exit)).toBe(true);
@@ -890,6 +1005,7 @@ describe("the input stage", () => {
         expect(app.world.frozen).toBe(false);
         // An app that has stopped on a failed script reads no devices.
         let samples = 0;
+
         const stopping = yield* App.make({
           systems: [
             System.make("Listen", function* () {
@@ -902,10 +1018,12 @@ describe("the input stage", () => {
           withSource({
             sample() {
               samples++;
+
               return Input.makeManualSource().sample();
             },
           })
         );
+
         stopping.input();
         expect(samples).toBe(1);
         stopping.spawnScript(Effect.fail("broken"));
@@ -915,10 +1033,12 @@ describe("the input stage", () => {
           Cause.squash((stopped as Exit.Failure<void, never>).cause)
         ).toBeInstanceOf(App.ScriptFailed);
         expect(samples).toBe(1);
+
         // A system that waits has not finished within the stage.
         const Wait = System.make("Wait", function* () {
           yield* Effect.never;
         }).pipe(System.inStage("input"));
+
         const waiting = yield* App.make({ systems: [Wait] });
         expect(() => waiting.input()).toThrow(
           /System "Wait" did not finish within the input stage/
@@ -935,9 +1055,11 @@ describe("the input stage", () => {
           System.inStage("input"),
           State.onEnter(Phase, "paused")
         );
+
         const exit = yield* Effect.exit(
           App.make({ components: [Phase], systems: [Hook] })
         );
+
         expect(Exit.isFailure(exit)).toBe(true);
         expect(
           (Cause.squash((exit as Exit.Failure<never, never>).cause) as Error)
@@ -951,9 +1073,11 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         const drawn: number[] = [];
+
         const Jitter = System.make("Jitter", function* () {
           drawn.push((yield* Random).next());
         }).pipe(System.inStage("input"));
+
         const app = yield* App.make({ systems: [Jitter], seed: 5 });
         const state = Array.from(app.world.random.state);
         app.input();
@@ -971,6 +1095,7 @@ describe("the picture of the devices in the world", () => {
     run(
       Effect.gen(function* () {
         const seen: string[] = [];
+
         const look = (name: string) =>
           System.make(name, function* () {
             const keys = yield* Input.Keyboard;
@@ -978,14 +1103,17 @@ describe("the picture of the devices in the world", () => {
               `${name} ${(yield* Time).tick}:${keys.down("KeyA") ? " down" : ""}${keys.pressed("KeyA") ? " pressed" : ""}${keys.released("KeyA") ? " released" : ""}`
             );
           });
+
         const app = yield* App.make({
           plugins: [Input.plugin],
           systems: [look("First"), look("Second")],
         });
+
         const step = (): void => {
           app.input();
           app.tick(1);
         };
+
         step();
         source.press("KeyA");
         step();
@@ -1090,6 +1218,7 @@ describe("the picture of the devices in the world", () => {
     run(
       Effect.gen(function* () {
         let seen: unknown;
+
         const Look = System.make("Look", function* () {
           const pointer = yield* Input.Pointer;
           const pad = yield* Input.Gamepad();
@@ -1105,10 +1234,12 @@ describe("the picture of the devices in the world", () => {
             key: keys.down("Pointer0"),
           };
         });
+
         const app = yield* App.make({
           plugins: [Input.plugin],
           systems: [Look],
         });
+
         app.input();
         app.tick(1);
         expect(seen).toEqual({
@@ -1175,6 +1306,7 @@ describe("the picture of the devices in the world", () => {
 
   it("goes through the action log, so a replay needs no devices at all", () => {
     const source = Input.makeManualSource();
+
     const { hashes, log, played, ticks } = run(
       Effect.gen(function* () {
         const app = yield* App.make({
@@ -1182,12 +1314,15 @@ describe("the picture of the devices in the world", () => {
           checkpointEvery: 1,
           seed: 9,
         });
+
         const step = Driver.fixedStep(app, { hz: 10 });
         const tickHashes: number[] = [];
+
         const frame = (): void => {
           step(0.1);
           tickHashes.push(app.world.hash());
         };
+
         frame();
         source.press("ArrowRight");
         frame();
@@ -1212,6 +1347,7 @@ describe("the picture of the devices in the world", () => {
           },
           { tapped: ["Space"] },
         ]);
+
         return {
           hashes: tickHashes,
           log: Action.encodeLog(app.actionLog),
@@ -1220,6 +1356,7 @@ describe("the picture of the devices in the world", () => {
         };
       }).pipe(withSource(source))
     );
+
     // Right for 3 ticks, left for 3, a tenth of a second each; two shots.
     expect(played.x).toBeCloseTo(0, 5);
     expect(played.shots).toBe(2);
@@ -1230,32 +1367,38 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         const decoded = Action.decodeLog(log);
         expect(Exit.isSuccess(decoded)).toBe(true);
+
         const entries = (decoded as Exit.Success<readonly Action.LogEntry[]>)
           .value;
+
         const again = yield* App.make({
           plugins: [Flying],
           checkpointEvery: 1,
           seed: 9,
         });
+
         App.replay(again, entries, { delta: 0.1, ticks });
         expect(ship(again)).toEqual(played);
         expect(again.world.hash()).toBe(hashes.at(-1));
         // Checked against every tick's checkpoint on the way.
         expect(
-          entries.filter((entry) => Action.isCheckpoint(entry)).length
-        ).toBe(ticks + 1);
+          entries.filter((entry) => Action.isCheckpoint(entry))
+        ).toHaveLength(ticks + 1);
+
         // A log that says another key was held is another game.
         const other = yield* App.make({
           plugins: [Flying],
           checkpointEvery: 1,
           seed: 9,
         });
+
         const altered = entries.map((entry) =>
           !Action.isCheckpoint(entry) &&
           JSON.stringify(entry.payload) === '{"down":["ArrowRight"]}'
             ? { ...entry, payload: { down: ["ArrowLeft"] } }
             : entry
         );
+
         expect(() => App.replay(other, altered, { delta: 0.1, ticks })).toThrow(
           App.ReplayDiverged
         );
@@ -1268,28 +1411,34 @@ describe("the picture of the devices in the world", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
+
         const Bare = Plugin.make("Bare", {
           components: [Ship],
           setup: Effect.map(Commands, (commands) => {
             commands.spawn(Ship.of({ x: 0, shots: 0 }));
           }),
         });
+
         const bare = yield* App.make({ plugins: [Bare], checkpointEvery: 0 });
+
         for (let i = 0; i < 3; i++) {
           app.input();
           app.tick(1);
           bare.tick(1);
         }
+
         expect(app.actionLog).toEqual([]);
         expect(app.world.hash()).toBe(bare.world.hash());
         source.press("KeyQ");
         app.input();
         app.tick(1);
+
         // Held still: one report, however long it is held.
         for (let i = 0; i < 5; i++) {
           app.input();
           app.tick(1);
         }
+
         expect(reports(app)).toEqual([{ down: ["KeyQ"] }]);
         expect(app.world.hash()).not.toBe(bare.world.hash());
       }).pipe(withSource(source))
@@ -1326,14 +1475,17 @@ describe("the picture of the devices in the world", () => {
         held.tick(1);
         expect(repressed.world.hash()).not.toBe(held.world.hash());
         let seen = "";
+
         const Look = System.make("Look", function* () {
           const keys = yield* Input.Keyboard;
           seen = `${keys.down("KeyA")} ${keys.pressed("KeyA")} ${keys.released("KeyA")}`;
         });
+
         const looking = yield* App.make({
           plugins: [Input.plugin],
           systems: [Look],
         });
+
         looking.dispatch(Input.Report, { down: ["KeyA"] });
         looking.tick(1);
         looking.dispatch(Input.Report, { down: ["KeyA"], up: ["KeyA"] });
@@ -1343,11 +1495,13 @@ describe("the picture of the devices in the world", () => {
         // nothing: a key that is down did not go down again.
         one.tick(1);
         const before = one.world.hash();
+
         const again = one.dispatch(Input.Report, {
           down: ["KeyA"],
           up: ["KeyZ"],
           axes: { PointerX: 0 },
         });
+
         expect(Exit.isSuccess(again)).toBe(true);
         expect(one.world.hash()).toBe(before);
         const fresh = yield* App.make({ plugins: [Input.plugin] });
@@ -1380,12 +1534,14 @@ describe("the picture of the devices in the world", () => {
         never.tick(1);
         // Still remembered: it went up in the tick that just ran.
         expect(app.world.hash()).not.toBe(never.world.hash());
+
         // The next report, of anything, drops it: even one that says it
         // went up, which it did long ago.
         const late = app.dispatch(Input.Report, {
           up: ["KeyA"],
           axes: { PointerX: 4 },
         });
+
         expect(Exit.isSuccess(late)).toBe(true);
         never.dispatch(Input.Report, { axes: { PointerX: 4 } });
         expect(app.world.hash()).toBe(never.world.hash());
@@ -1396,11 +1552,13 @@ describe("the picture of the devices in the world", () => {
   it("is left as it is where there are no devices: reports from elsewhere drive a game through a driver", () => {
     // A game played from a keyboard, through a driver, and its reports.
     const source = Input.makeManualSource();
+
     const { hashes, log } = run(
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
         const step = Driver.fixedStep(app, { hz: 10 });
         const seen: number[] = [];
+
         const moves: (() => void)[] = [
           () => source.press("ArrowRight"),
           () => {},
@@ -1408,14 +1566,17 @@ describe("the picture of the devices in the world", () => {
           () => source.release("ArrowRight"),
           () => {},
         ];
+
         for (const move of moves) {
           move();
           step(0.1);
           seen.push(app.world.hash());
         }
+
         return { hashes: seen, log: app.actionLog as Action.Logged[] };
       }).pipe(withSource(source))
     );
+
     // The same game with no devices, given those reports as they came,
     // and run by the same driver, which runs its input stage too: as a
     // peer on another machine is, or a recording played back at speed.
@@ -1423,13 +1584,16 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
         const step = Driver.fixedStep(app, { hz: 10 });
+
         for (let tick = 0; tick < hashes.length; tick++) {
           for (const entry of log.filter((one) => one.tick === tick)) {
             app.enqueueByName(entry.name, entry.payload);
           }
+
           step(0.1);
           expect(app.world.hash(), `tick ${tick + 1}`).toBe(hashes[tick]);
         }
+
         // Nothing was reported of devices that are not there.
         expect(reports(app)).toEqual(log.map((entry) => entry.payload));
         // And a key said to be held stays held, however often it is read.
@@ -1440,7 +1604,7 @@ describe("the picture of the devices in the world", () => {
         app.input();
         step(0.1);
         expect(ship(app).x).toBeCloseTo(before - 2, 5);
-        expect(reports(app).length).toBe(log.length + 1);
+        expect(reports(app)).toHaveLength(log.length + 1);
       })
     );
   });
@@ -1450,10 +1614,12 @@ describe("the picture of the devices in the world", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
+
         const step = (): void => {
           app.input();
           app.tick(1);
         };
+
         // The key has a history: down, and up again.
         source.press("ArrowRight");
         step();
@@ -1486,6 +1652,7 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Input.plugin] });
         const before = app.world.hash();
+
         for (const payload of [
           { down: "KeyA" },
           { axes: { PointerX: "left" } },
@@ -1498,9 +1665,11 @@ describe("the picture of the devices in the world", () => {
             Cause.squash((exit as Exit.Failure<unknown, unknown>).cause)
           ).toBeInstanceOf(Action.InvalidPayload);
         }
+
         const exit = app.dispatch(Input.Report, {
           axes: { PointerX: Number.POSITIVE_INFINITY },
         });
+
         expect(Exit.isFailure(exit)).toBe(true);
         expect(app.world.hash()).toBe(before);
       })
@@ -1509,6 +1678,7 @@ describe("the picture of the devices in the world", () => {
 
   it("is saved with a game, and brought up to date by the devices when it is loaded", () => {
     const source = Input.makeManualSource();
+
     const save = run(
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Flying] });
@@ -1519,9 +1689,11 @@ describe("the picture of the devices in the world", () => {
         expect(ship(app).x).toBe(10);
         const taken = app.save();
         expect(Exit.isSuccess(taken)).toBe(true);
+
         return (taken as Exit.Success<Save.Save>).value;
       }).pipe(withSource(source))
     );
+
     // Loaded with no devices and never asked to read any: the key is held.
     run(
       Effect.gen(function* () {
@@ -1543,7 +1715,7 @@ describe("the picture of the devices in the world", () => {
         expect(reports(app)).toEqual([{ up: ["ArrowRight"] }]);
         app.input();
         app.tick(1);
-        expect(reports(app).length).toBe(1);
+        expect(reports(app)).toHaveLength(1);
       }).pipe(withSource(later))
     );
     // Loaded where there is no pointer either: its place goes back to 0.
@@ -1561,18 +1733,21 @@ describe("the picture of the devices in the world", () => {
   it("says in a handler what its tick's systems will be told: the tick an action is applied in is the one to come", () => {
     const seen: string[] = [];
     const Probe = Action.define("in/Probe", Schema.Struct({}));
+
     const probe = Action.handler(Probe, function* () {
       const keys = yield* Input.Keyboard;
       seen.push(
         `handler ${(yield* Time).tick + 1}:${keys.down("Space") ? " down" : ""}${keys.pressed("Space") ? " pressed" : ""}${keys.released("Space") ? " released" : ""}`
       );
     });
+
     const Look = System.make("Look", function* () {
       const keys = yield* Input.Keyboard;
       seen.push(
         `system ${(yield* Time).tick}:${keys.down("Space") ? " down" : ""}${keys.pressed("Space") ? " pressed" : ""}${keys.released("Space") ? " released" : ""}`
       );
     });
+
     // The key is bound to the action, so both arrive in the same tick: the
     // report first, since the plugin's system runs before the binding.
     const Controls = Input.bind(
@@ -1580,6 +1755,7 @@ describe("the picture of the devices in the world", () => {
       Input.onPress("Space", Probe, {}),
       Input.onRelease("Space", Probe, {})
     );
+
     const source = Input.makeManualSource();
     run(
       Effect.gen(function* () {
@@ -1588,10 +1764,12 @@ describe("the picture of the devices in the world", () => {
           handlers: [probe],
           systems: [Controls, Look],
         });
+
         const step = (): void => {
           app.input();
           app.tick(1);
         };
+
         source.press("Space");
         step();
         // Held, and an action that comes a tick later: the press is past.
@@ -1632,16 +1810,20 @@ describe("the picture of the devices in the world", () => {
         const one = yield* App.make({ plugins: [Flying] }).pipe(
           withSource(left)
         );
+
         const two = yield* App.make({ plugins: [Flying] }).pipe(
           withSource(right)
         );
+
         left.press("ArrowLeft");
         right.press("ArrowRight");
+
         for (const app of [one, two]) {
           app.input();
           app.tick(1);
           app.tick(1);
         }
+
         expect(ship(one).x).toBe(-20);
         expect(ship(two).x).toBe(20);
       })
@@ -1650,27 +1832,34 @@ describe("the picture of the devices in the world", () => {
 
   it("is read by a handler and by what draws the game, as by a system", () => {
     class NotHeld extends Data.TaggedError("NotHeld")<{}> {}
+
     const Shoot = Action.define("in/Shoot", Schema.Struct({}));
+
     const shoot = Action.handler(Shoot, function* () {
       if (!(yield* Input.Keyboard).down("Space")) {
         return yield* Effect.fail(new NotHeld());
       }
+
       (yield* Score).points += 1;
     });
+
     const source = Input.makeManualSource();
     run(
       Effect.gen(function* () {
         const drawn: string[] = [];
+
         const Draw = System.make("Draw", function* () {
           const pointer = yield* Input.Pointer;
           drawn.push(`${pointer.x},${pointer.y} ${pointer.down()}`);
         }).pipe(System.inStage("frame"));
+
         const app = yield* App.make({
           plugins: [Input.plugin],
           components: [Score],
           handlers: [shoot],
           systems: [Draw],
         });
+
         expect(Exit.isFailure(app.dispatch(Shoot, {}))).toBe(true);
         source.press("Space");
         source.move(Input.pointerX, 3);
@@ -1698,12 +1887,15 @@ describe("the picture of the devices in the world", () => {
 describe("bindings", () => {
   const Jump = Action.define()("in/Jump");
   const Land = Action.define("in/Land", Schema.Struct({}));
+
   const Fire = Action.define(
     "in/Fire",
     Schema.Struct({ x: Schema.Finite, y: Schema.Finite })
   );
+
   const Aim = Action.define("in/Aim", Schema.Struct({ x: Schema.Finite }));
   const done: string[] = [];
+
   const handlers = [
     Action.handler(Jump, function* () {
       done.push(`jump at ${(yield* Time).tick}`);
@@ -1718,6 +1910,7 @@ describe("bindings", () => {
       done.push(`aim ${x}`);
     }),
   ] as const;
+
   const Controls = Input.bind(
     "in/Controls",
     Input.onPress(["Space", Input.padButton(0, 0)], Jump),
@@ -1730,6 +1923,7 @@ describe("bindings", () => {
       x: devices.axes.get(Input.pointerX) ?? 0,
     }))
   );
+
   const Game = Plugin.make("Game", { handlers, systems: [Controls] });
 
   it("issue the game's own actions when their moment comes, once each, in the order they were given", () => {
@@ -1739,10 +1933,12 @@ describe("bindings", () => {
         done.length = 0;
         const app = yield* App.make({ plugins: [Game], checkpointEvery: 0 });
         expect(app.inputOrder).toEqual(["in/Controls"]);
+
         const step = (): void => {
           app.input();
           app.tick(1);
         };
+
         step();
         expect(done).toEqual([]);
         // Two of its codes at once is one press.
@@ -1752,7 +1948,7 @@ describe("bindings", () => {
         expect(done).toEqual(["jump at 1"]);
         // Held: nothing more.
         step();
-        expect(done.length).toBe(1);
+        expect(done).toHaveLength(1);
         source.release("Space");
         source.move(Input.pointerX, 40);
         source.move(Input.pointerY, 30);
@@ -1765,7 +1961,7 @@ describe("bindings", () => {
         source.press(Input.pointerButton(1));
         source.release(Input.padButton(0, 0));
         step();
-        expect(done.length).toBe(4);
+        expect(done).toHaveLength(4);
         // A tap is a press and a release.
         source.tap("Space");
         step();
@@ -1788,6 +1984,7 @@ describe("bindings", () => {
 
   it("are in the log as those actions, so a replay has them and reads no device", () => {
     const source = Input.makeManualSource();
+
     const log = run(
       Effect.gen(function* () {
         done.length = 0;
@@ -1799,9 +1996,11 @@ describe("bindings", () => {
         source.tap(Input.pointerButton());
         app.input();
         app.tick(1);
+
         return app.actionLog;
       }).pipe(withSource(source))
     );
+
     const played = [...done];
     expect(played).toEqual(["jump at 0", "aim 7", "fire 7,0"]);
     expect(log.filter((entry) => !Action.isCheckpoint(entry))).toEqual([

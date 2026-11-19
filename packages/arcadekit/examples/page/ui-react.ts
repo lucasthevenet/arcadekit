@@ -21,6 +21,7 @@ const useView = <A>(ui: View.Bridge, view: View.View<A>): A =>
 
 const HudLine = ({ ui }: { readonly ui: View.Bridge }): ReactNode => {
   const { caught, level } = useView(ui, Hud);
+
   return h(
     "p",
     { className: "hud" },
@@ -30,6 +31,7 @@ const HudLine = ({ ui }: { readonly ui: View.Bridge }): ReactNode => {
 
 const MenuBar = ({ ui }: { readonly ui: View.Bridge }): ReactNode => {
   const { phase } = useView(ui, Menu);
+
   return h(
     "nav",
     null,
@@ -66,5 +68,6 @@ export const mount = (root: Element, ui: View.Bridge): (() => void) => {
     h(HudLine, { key: "hud", ui }),
     h(MenuBar, { key: "menu", ui }),
   ]);
+
   return () => react.unmount();
 };

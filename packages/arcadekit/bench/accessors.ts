@@ -50,6 +50,7 @@ import type { Variant } from "./core";
 // reads them at no cost.
 const N = 100_000;
 const DT = 1 / 60;
+
 if (N !== sizes.entities || DT !== sizes.step) {
   throw new Error("bench/accessors.ts and bench/core.ts differ on N or DT.");
 }
@@ -62,13 +63,17 @@ const Nudge = Action.define(
   "bench/Nudge",
   Schema.Struct({ target: EntityId, refuse: Schema.Boolean })
 );
+
 const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
   const world = yield* WorldService;
   const position = world.get(target, Position);
+
   if (position === undefined) {
     return yield* Effect.fail(new Refused());
   }
+
   world.set(target, Position, { x: position.x + 1 });
+
   if (refuse) {
     return yield* Effect.fail(new Refused());
   }
@@ -78,11 +83,13 @@ const Sweep = Action.define(
   "bench/Sweep",
   Schema.Struct({ refuse: Schema.Boolean })
 );
+
 const sweep = Action.handler(Sweep, function* ({ refuse }) {
   (yield* Moving).each((pos, vel) => {
     pos.x += vel.x * DT;
     pos.y += vel.y * DT;
   });
+
   if (refuse) {
     return yield* Effect.fail(new Refused());
   }
@@ -91,19 +98,24 @@ const sweep = Action.handler(Sweep, function* ({ refuse }) {
 // A handler that looks at every entity and writes none. Without the word
 // that it only reads, its transaction copies the columns it is handed.
 const Scan = Action.define("bench/Scan", Schema.Struct({}));
+
 const scanPlain = Action.handler(Scan, function* () {
   let sum = 0;
   (yield* Moving).each((pos, vel) => {
     sum += pos.x + vel.x;
   });
+
   return sum;
 });
+
 const MovingRead = Moving.pipe(Query.reads());
+
 const scanReads = Action.handler(Scan, function* () {
   let sum = 0;
   (yield* MovingRead).each((pos, vel) => {
     sum += pos.x + vel.x;
   });
+
   return sum;
 });
 
@@ -122,10 +134,12 @@ const dispatching = <P>(
           handlers: [nudge, sweep],
           checkpointEvery: 0,
         });
+
         populate(app.world);
         const target = app.world.view(Moving).entities()[N >> 1]!;
         const given = payload(target);
         const dispatch = app.dispatch as (a: unknown, p: unknown) => unknown;
+
         return measure(() => dispatch(action, given), runs, warmup);
       })
     )
@@ -144,8 +158,10 @@ const idling = (power: "on" | "off"): number =>
             yield* Time;
           }).pipe(System.runIf(State.is(Power, "on")))
         );
+
         const app = yield* App.make({ systems });
         app.spawnScript(Effect.map(Power, (held) => held.set(power)));
+
         return measure(() => app.tick(DT), 50_000, 20_000);
       })
     )
@@ -162,27 +178,33 @@ const listening = (changing: boolean): number =>
     Effect.scoped(
       Effect.gen(function* () {
         const source = Input.makeManualSource();
+
         const app = yield* App.make({
           plugins: [Input.plugin],
           checkpointEvery: 0,
         }).pipe(Effect.provideService(Input.Source, source));
+
         for (const code of ["ArrowLeft", "ShiftLeft", "Pointer0"]) {
           source.press(code);
         }
+
         source.move(Input.pointerX, 120);
         source.move(Input.pointerY, 80);
         app.input();
         app.tick(DT);
         let down = false;
+
         return changing
           ? measure(
               () => {
                 down = !down;
+
                 if (down) {
                   source.press("Space");
                 } else {
                   source.release("Space");
                 }
+
                 app.input();
                 app.tick(DT);
                 // The log is the game's to keep; here it would only grow.
@@ -211,15 +233,19 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
           { score: Field.i32, lives: Field.i32, level: Field.i32 },
           { score: 0, lives: 3, level: 1 }
         );
+
         const Hud = View.define("bench/Hud", {
           score: 0,
           lives: 3,
           level: 1,
           phase: "playing",
         });
+
         let frames = 0;
+
         const Show = View.publish(Hud, function* () {
           const stats = yield* Stats;
+
           return {
             score: mode === "new" ? frames : stats.score,
             lives: stats.lives,
@@ -227,20 +253,24 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
             phase: "playing",
           };
         });
+
         const ui = View.makeBridge();
         let heard = 0;
         ui.subscribe(Hud, () => {
           heard++;
         });
+
         const made = App.make({
           plugins: [View.plugin],
           components: [Stats],
           systems: [Show],
           checkpointEvery: 0,
         });
+
         const app = yield* mode === "nobody"
           ? made
           : made.pipe(Effect.provide(View.layer(ui)));
+
         return measure(
           () => {
             frames++;
@@ -265,21 +295,25 @@ const sounding = (happening: boolean): number =>
       Effect.gen(function* () {
         const Scored = Event.define("bench/Scored", Schema.Struct({}));
         const Bounced = Event.define("bench/Bounced", Schema.Struct({}));
+
         const Score = System.make("bench/Score", function* () {
           if (happening) {
             (yield* Scored).emit({});
           }
         });
+
         const Cues = Sound.cues(
           "bench/Cues",
           Sound.on(Scored, "coin"),
           Sound.on(Bounced, { cue: "thud", volume: 0.5 })
         );
+
         const app = yield* App.make({
           plugins: [Sound.plugin],
           systems: [Score, Cues],
           checkpointEvery: 0,
         }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
+
         return measure(
           () => app.frame(0),
           50_000,
@@ -300,17 +334,20 @@ const scoring = (): number =>
     Effect.scoped(
       Effect.gen(function* () {
         const Phase = State.define("bench/MusicPhase", ["playing", "title"]);
+
         const Score = Sound.music("bench/Music", function* () {
           return (yield* Phase).value === "playing"
             ? { track: "theme", volume: 0.5 }
             : undefined;
         });
+
         const app = yield* App.make({
           plugins: [Sound.plugin],
           components: [Phase],
           systems: [Score],
           checkpointEvery: 0,
         }).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
+
         return measure(() => app.frame(0), 50_000, 20_000);
       })
     )
@@ -328,10 +365,13 @@ const atRest = (): number =>
       Effect.gen(function* () {
         const Phase = State.define("bench/RestPhase", ["title", "playing"]);
         const Shown = View.define("bench/Shown", { phase: "title" });
+
         const Show = View.publish(Shown, function* () {
           return { phase: (yield* Phase).value as string };
         });
+
         const source = Input.makeManualSource();
+
         const app = yield* App.make({
           plugins: [Input.plugin, View.plugin],
           components: [Phase],
@@ -341,16 +381,20 @@ const atRest = (): number =>
           Effect.provideService(Input.Source, source),
           Effect.provide(View.layer(View.makeBridge()))
         );
+
         const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
+
         // The first tick enters the state, and one more follows it.
         for (let i = 0; i < 10; i++) {
           advance(DT);
         }
+
         if (app.time.tick !== 2) {
           throw new Error(
             `The game did not come to rest: tick ${app.time.tick}`
           );
         }
+
         return measure(() => advance(DT), 50_000, 20_000);
       })
     )
@@ -369,14 +413,18 @@ const rewinding = (back: boolean): number =>
             }
           });
         });
+
         const app = yield* App.make({ systems: [Movement] });
         populate(app.world);
         app.tick(DT);
         const moment = app.capture();
+
         if (Exit.isFailure(moment)) {
           throw new Error("the game could not be captured");
         }
+
         let sink = 0;
+
         const ms = back
           ? measure(() => {
               app.rewind(moment.value);
@@ -385,7 +433,9 @@ const rewinding = (back: boolean): number =>
           : measure(() => {
               sink += Exit.isSuccess(app.capture()) ? 1 : 0;
             });
+
         void sink;
+
         return ms;
       })
     )
@@ -396,14 +446,17 @@ const drawing = (count: number, reading: boolean, verify: boolean): number =>
     Effect.scoped(
       Effect.gen(function* () {
         let sink = 0;
+
         const systems = Array.from({ length: count }, (_, i) =>
           System.make(`Draw${i}`, function* () {
             const moving = yield* Moving;
             yield* Time;
+
             if (reading) {
               moving.eachChunk((start, end, pos, vel) => {
                 const px = pos.x;
                 const vx = vel.x;
+
                 for (let n = start; n < end; n++) {
                   sink += px[n]! + vx[n]! * DT;
                 }
@@ -411,14 +464,19 @@ const drawing = (count: number, reading: boolean, verify: boolean): number =>
             }
           }).pipe(System.inStage("frame"))
         );
+
         const app = yield* App.make({ systems, verifyFrames: verify });
+
         if (reading) {
           populate(app.world);
         }
+
         const ms = reading
           ? measure(() => app.frame(0.5))
           : measure(() => app.frame(0.5), 50_000, 20_000);
+
         void sink;
+
         return ms;
       })
     )
@@ -433,7 +491,9 @@ const scanned = (handler: typeof scanPlain): number =>
           handlers: [handler],
           checkpointEvery: 0,
         });
+
         populate(app.world);
+
         return measure(() => app.dispatch(Scan, {}), 300, 80);
       })
     )
@@ -456,6 +516,7 @@ const MovementRaw = System.make("MovementRaw", function* () {
     const py = pos.y;
     const vx = vel.x;
     const vy = vel.y;
+
     for (let i = start; i < end; i++) {
       px[i]! += vx[i]! * delta;
       py[i]! += vy[i]! * delta;
@@ -474,6 +535,7 @@ const variants: Record<string, Variant> = {
         pos: { x: i, y: i },
         vel: { x: 1, y: 2 },
       }));
+
       return measure(() => {
         for (let i = 0; i < objects.length; i++) {
           const o = objects[i]!;
@@ -491,6 +553,7 @@ const variants: Record<string, Variant> = {
       const world = new World();
       populate(world);
       const view = world.view(Moving);
+
       const perEntity = Effect.gen(function* () {
         let px!: Float32Array;
         let py!: Float32Array;
@@ -502,6 +565,7 @@ const variants: Record<string, Variant> = {
           vx = vel.x;
           vy = vel.y;
         });
+
         for (let i = 0; i < N; i++) {
           yield* Effect.sync(() => {
             px[i]! += vx[i]! * DT;
@@ -509,6 +573,7 @@ const variants: Record<string, Variant> = {
           });
         }
       });
+
       return measure(() => Effect.runSync(perEntity), 60, 20);
     },
   },
@@ -521,6 +586,7 @@ const variants: Record<string, Variant> = {
           Effect.gen(function* () {
             const app = yield* App.make({ systems: [Movement] });
             populate(app.world);
+
             return measure(() => app.tick(DT));
           })
         )
@@ -535,6 +601,7 @@ const variants: Record<string, Variant> = {
           Effect.gen(function* () {
             const app = yield* App.make({ systems: [MovementRaw] });
             populate(app.world);
+
             return measure(() => app.tick(DT));
           })
         )
@@ -555,7 +622,9 @@ const variants: Record<string, Variant> = {
                 yield* Time;
               })
             );
+
             const app = yield* App.make({ systems });
+
             return measure(() => app.tick(DT), 50_000, 20_000);
           })
         )
@@ -575,7 +644,9 @@ const variants: Record<string, Variant> = {
                 yield* Time;
               }).pipe(System.access({ queries: [Moving] }))
             );
+
             const app = yield* App.make({ systems });
+
             return measure(() => app.tick(DT), 50_000, 20_000);
           })
         )
@@ -713,22 +784,28 @@ const variants: Record<string, Variant> = {
 };
 
 const only = process.argv[2];
+
 if (only === undefined) {
   const self = fileURLToPath(import.meta.url);
   const results: Record<string, number> = {};
+
   for (const [name, variant] of Object.entries(variants)) {
     // Best of three processes: on a shared machine the fastest run is the
     // one least disturbed by its neighbours.
     let ms = Infinity;
+
     for (let attempt = 0; attempt < 3; attempt++) {
       const out = execFileSync(
         process.execPath,
         ["--import", "tsx", self, name],
         { encoding: "utf8" }
       );
+
       ms = Math.min(ms, JSON.parse(out.trim().split("\n").pop()!) as number);
     }
+
     results[name] = ms;
+
     const text = name.startsWith("idle")
       ? `${(ms * 1000).toFixed(2).padStart(8)} µs per tick`
       : variant.unit === "matches"
@@ -738,10 +815,13 @@ if (only === undefined) {
           : variant.unit === "visit"
             ? `${(ms * 1e6).toFixed(1).padStart(8)} ns per visit`
             : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
+
     console.log(`${variant.label.padEnd(54)} ${text}`);
   }
+
   const ratio = (a: string, b: string) =>
     (results[a]! / results[b]!).toFixed(1) + "x";
+
   console.log("");
   console.log(
     `accessors (realistic) vs raw columns:   ${ratio("eachMany", "raw")}`

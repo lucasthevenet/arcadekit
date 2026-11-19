@@ -191,12 +191,14 @@ export const migrate = (
   if (save.version === version) {
     return Exit.succeed(save);
   }
+
   if (save.version > version) {
     return refuse(
       "newer version",
       `The save was written by version ${save.version} of the game, and this is version ${version}. A game cannot read what a later version of itself wrote.`
     );
   }
+
   try {
     const contents: Contents = {
       tick: save.tick,
@@ -216,14 +218,17 @@ export const migrate = (
         readers: { ...changes.readers },
       })),
     };
+
     for (let from = save.version; from < version; from++) {
       const step = migrations.find((migration) => migration.from === from);
+
       if (step === undefined) {
         return refuse(
           "no migration",
           `The save was written by version ${save.version} of the game, and this is version ${version}. There is no migration from version ${from} to version ${from + 1}.`
         );
       }
+
       try {
         step.migrate(contents);
       } catch (error) {
@@ -233,6 +238,7 @@ export const migrate = (
         );
       }
     }
+
     return Exit.succeed({
       version,
       tick: contents.tick,
@@ -248,15 +254,17 @@ export const migrate = (
     if (error instanceof SnapshotError) {
       return refuse(error.problem, error.message);
     }
+
     throw error;
   }
 };
 
 /** "AKSV": arcadekit save. */
-const MAGIC = 0x56534b41;
+const MAGIC = 0x56_53_4b_41;
 const FORMAT = 1;
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
 const Header = Schema.fromJsonString(
   Schema.Struct({
     version: Count,
@@ -308,6 +316,7 @@ export const encode = (save: Save): Uint8Array => {
   view.setUint32(8, json.length, true);
   bytes.set(json, 12);
   bytes.set(world, 12 + json.length);
+
   return bytes;
 };
 
@@ -328,34 +337,45 @@ const refuse = (
  */
 export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
   if (bytes.length < 12 || view.getUint32(0, true) !== MAGIC) {
     return refuse("not a save", "These bytes are not a saved game.");
   }
+
   const format = view.getUint32(4, true);
+
   if (format !== FORMAT) {
     return refuse(
       "newer format",
       `The save is in format ${format}, and this version reads format ${FORMAT}.`
     );
   }
+
   const length = view.getUint32(8, true);
+
   if (length > bytes.length - 12) {
     return refuse("truncated", "The save ends short of what it says it holds.");
   }
+
   let text: string;
+
   try {
     text = textDecoder.decode(bytes.subarray(12, 12 + length));
   } catch {
     return refuse("corrupt", "The save is damaged: its text is not text.");
   }
+
   const header = Schema.decodeUnknownExit(Header)(text);
+
   if (Exit.isFailure(header)) {
     const error = Cause.squash(header.cause);
+
     return refuse(
       "corrupt",
       `The save is damaged: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+
   return Exit.succeed({
     ...header.value,
     world: bytes.slice(12 + length),

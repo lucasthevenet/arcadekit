@@ -9,15 +9,18 @@ const dates: RefCodec<Date> = {
     if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
       throw new TypeError("not a date");
     }
+
     return value.toISOString();
   },
   decode: (data) => {
     if (typeof data !== "string" || Number.isNaN(Date.parse(data))) {
       throw new TypeError(`"${String(data)}" is not a date`);
     }
+
     return new Date(data);
   },
 };
+
 const sets: RefCodec<Set<string>> = {
   encode: (value) => [...value].toSorted(),
   decode: (data) => new Set(data as string[]),
@@ -30,6 +33,7 @@ const Profile = Schema.Struct({
   gold: Schema.BigInt,
   title: Schema.optional(Schema.String),
 });
+
 type Profile = typeof Profile.Type;
 
 // Every kind of field that is not a number, in a table and in a sparse set.
@@ -41,6 +45,7 @@ const fields = {
   handle: Field.transient<{ readonly id: number }>(),
   hp: Field.i32,
 };
+
 const Card = Component.define("fld/Card", fields);
 const Badge = Component.define("fld/Badge", fields, { storage: "sparse" });
 const both = [Card, Badge] as ComponentDef<any>[];
@@ -67,17 +72,20 @@ type Row = Omit<ReturnType<typeof card>, "handle"> & {
 const populated = (count = 9) => {
   const world = new EcsWorld({ seed: 1 });
   const entities: Entity[] = [];
+
   for (let n = 0; n < count; n++) {
     const entity = world.spawn(Card.of(card(n)));
     world.add(entity, Badge.of(card(n + 50)));
     entities.push(entity);
   }
+
   return { world, entities };
 };
 
 const reload = (world: EcsWorld, components = both): EcsWorld => {
   const copy = new EcsWorld();
   copy.load(world.snapshot(), components);
+
   return copy;
 };
 
@@ -110,6 +118,7 @@ describe("a field that is not a number", () => {
   it("is saved and loaded as what it held, or not at all when it is transient", () => {
     const { entities, world } = populated();
     const copy = reload(world);
+
     for (const def of both) {
       for (const [n, entity] of entities.entries()) {
         const then = world.get(entity, def) as Row;
@@ -141,6 +150,7 @@ describe("a field that is not a number", () => {
     const { entities, world } = populated(5);
     const base = world.hash();
     const seen = new Set([base]);
+
     const changes: Record<string, unknown> = {
       data: { other: true },
       when: new Date(0),
@@ -148,9 +158,11 @@ describe("a field that is not a number", () => {
       profile: { ...card(0).profile, level: 42 },
       hp: -1,
     };
+
     for (const def of both) {
       for (const entity of entities) {
         const original = world.get(entity, def)!;
+
         for (const [field, value] of Object.entries(changes)) {
           world.set(entity, def, { [field]: value });
           const changed = world.hash();
@@ -159,12 +171,14 @@ describe("a field that is not a number", () => {
           world.set(entity, def, { [field]: original[field] });
           expect(world.hash(), `${def.name}.${field} restored`).toBe(base);
         }
+
         world.set(entity, def, { handle: { id: 999 } });
         expect(world.hash(), `${def.name}.handle`).toBe(base);
         world.set(entity, def, { handle: undefined });
         expect(world.hash(), `${def.name}.handle`).toBe(base);
       }
     }
+
     expect(seen.size).toBe(1 + both.length * entities.length * 5);
   });
 
@@ -172,8 +186,10 @@ describe("a field that is not a number", () => {
     const hashWith = (tags: Set<string>, when: Date): number => {
       const world = new EcsWorld();
       world.spawn(Card.of({ ...card(1), tags, when }));
+
       return world.hash();
     };
+
     const base = hashWith(new Set(["a", "b"]), new Date(5));
     // Another Set with the same members, added in another order.
     expect(hashWith(new Set(["b", "a"]), new Date(5))).toBe(base);
@@ -198,6 +214,7 @@ describe("a field that is not a number", () => {
   it("is part of what its component is: a snapshot does not load into another kind", () => {
     const { world } = populated(2);
     const bytes = world.snapshot();
+
     const retyped = (data: ComponentDef<any>) => {
       try {
         new EcsWorld().load(bytes, [data, Badge]);
@@ -205,9 +222,11 @@ describe("a field that is not a number", () => {
         return error as SnapshotError;
       }
     };
+
     const transient = retyped(
       Component.define("fld/Card", { ...fields, data: Field.transient() })
     );
+
     expect(transient!.problem).toBe("component changed");
     expect(transient!.message).toContain("data: json");
     expect(transient!.message).toContain("data: transient");
@@ -230,12 +249,14 @@ describe("a field that is not a number", () => {
     ) => {
       const { entities, world } = populated(3);
       world.set(entities[1]!, def, change);
+
       try {
         world.snapshot();
       } catch (error) {
         return error as SnapshotError;
       }
     };
+
     const date = refused({ when: new Date(Number.NaN) })!;
     expect(date).toBeInstanceOf(SnapshotError);
     expect(date.problem).toBe("cannot be saved");
@@ -259,20 +280,25 @@ describe("a field that is not a number", () => {
         if (typeof data !== "number") {
           throw new TypeError("a date is saved as a number here");
         }
+
         return new Date(data);
       },
     };
+
     const Changed = Component.define("fld/Card", {
       ...fields,
       when: Field.ref(strict),
     });
+
     const { world } = populated(2);
     let error: unknown;
+
     try {
       new EcsWorld().load(world.snapshot(), [Changed, Badge]);
     } catch (caught) {
       error = caught;
     }
+
     expect(error).toBeInstanceOf(SnapshotError);
     expect((error as SnapshotError).problem).toBe("component changed");
     expect((error as SnapshotError).component).toBe("fld/Card");
@@ -287,18 +313,22 @@ describe("a field that is not a number", () => {
     world.spawn(Note.of({ v: { key: "value" } }));
     const bytes = world.snapshot();
     const text = new TextEncoder().encode('{"key":"value"}');
+
     const at = bytes.findIndex((_, i) =>
       text.every((byte, k) => bytes[i + k] === byte)
     );
+
     expect(at).toBeGreaterThan(0);
     // The opening brace becomes a letter: still text, no longer JSON.
     bytes[at] = 0x78;
     let error: unknown;
+
     try {
       new EcsWorld().load(bytes, [Note]);
     } catch (caught) {
       error = caught;
     }
+
     expect(error).toBeInstanceOf(SnapshotError);
     expect((error as SnapshotError).problem).toBe("corrupt");
     expect((error as SnapshotError).message).toMatch(/is not JSON/);
@@ -307,6 +337,7 @@ describe("a field that is not a number", () => {
   it("saves plain data in a json field as JSON does: what comes back is what JSON makes of it", () => {
     const world = new EcsWorld();
     const Note = Component.define("fld/Note", { v: Field.json<unknown>() });
+
     const values: unknown[] = [
       { a: 1, b: [true, null, "x", { c: [] }] },
       [],
@@ -323,6 +354,7 @@ describe("a field that is not a number", () => {
       // the undefined member is dropped, and NaN inside becomes null.
       { when: new Date(0), gone: undefined, bad: Number.NaN },
     ];
+
     const entities = values.map((v) => world.spawn(Note.of({ v })));
     const copy = new EcsWorld();
     copy.load(world.snapshot(), [Note]);

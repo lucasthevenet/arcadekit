@@ -38,8 +38,10 @@ export type Entity = number & { readonly _brand: "Entity" };
 
 export const INDEX_BITS = 22;
 export const INDEX_MASK = (1 << INDEX_BITS) - 1;
+
 /** The number of indexes: what an id's generation is multiplied by. */
 const INDEX_RANGE = 2 ** INDEX_BITS;
+
 /**
  * The number of generations a slot has, from 0 up to this minus one. Once a
  * slot's last generation is used, the slot is retired.
@@ -54,6 +56,7 @@ export const GENERATIONS = 2 ** (53 - INDEX_BITS);
  * @category Utilities
  */
 export const entityIndex = (entity: Entity): number => entity & INDEX_MASK;
+
 /**
  * Returns an entity's generation: how many entities held its index before it,
  * which distinguishes it from them.
@@ -62,6 +65,7 @@ export const entityIndex = (entity: Entity): number => entity & INDEX_MASK;
  */
 export const entityGeneration = (entity: Entity): number =>
   Math.floor(entity / INDEX_RANGE);
+
 export const makeEntity = (index: number, generation: number): Entity =>
   (generation * INDEX_RANGE + index) as Entity;
 
@@ -178,25 +182,32 @@ export const makeColumn = (kind: FieldKind, capacity: number): Column => {
     case "f32": {
       return new Float32Array(capacity);
     }
+
     case "f64": {
       return new Float64Array(capacity);
     }
+
     case "i32": {
       return new Int32Array(capacity);
     }
+
     case "u32": {
       return new Uint32Array(capacity);
     }
+
     case "entity": {
       // An id is a whole number below 2^53, which a 64-bit float holds.
       return new Float64Array(capacity);
     }
+
     case "u16": {
       return new Uint16Array(capacity);
     }
+
     case "u8": {
       return new Uint8Array(capacity);
     }
+
     case "json":
     case "ref":
     case "transient": {
@@ -211,15 +222,18 @@ export const growColumn = (
   capacity: number
 ): Column => {
   const next = makeColumn(kind, capacity);
+
   if (isBoxed(kind)) {
     const from = old as any[];
     const to = next as any[];
+
     for (let i = 0; i < from.length; i++) {
       to[i] = from[i];
     }
   } else {
     (next as Float32Array).set(old as Float32Array);
   }
+
   return next;
 };
 
@@ -512,11 +526,13 @@ const defineF32: DefineField = (target, name, row, noting, refusal) => {
               // comparison, and no call. `noted` is read through the log
               // each time: the log replaces it when it grows.
               const index = noting.entities[row.i]! & INDEX_MASK;
+
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
             },
   });
+
   return (to) => {
     column = to as Float32Array;
   };
@@ -536,11 +552,13 @@ const defineF64: DefineField = (target, name, row, noting, refusal) => {
           : (value: number) => {
               column[row.i] = value;
               const index = noting.entities[row.i]! & INDEX_MASK;
+
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
             },
   });
+
   return (to) => {
     column = to as Float64Array;
   };
@@ -560,11 +578,13 @@ const defineI32: DefineField = (target, name, row, noting, refusal) => {
           : (value: number) => {
               column[row.i] = value;
               const index = noting.entities[row.i]! & INDEX_MASK;
+
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
             },
   });
+
   return (to) => {
     column = to as Int32Array;
   };
@@ -584,11 +604,13 @@ const defineU32: DefineField = (target, name, row, noting, refusal) => {
           : (value: number) => {
               column[row.i] = value;
               const index = noting.entities[row.i]! & INDEX_MASK;
+
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
             },
   });
+
   return (to) => {
     column = to as Uint32Array;
   };
@@ -608,11 +630,13 @@ const defineU16: DefineField = (target, name, row, noting, refusal) => {
           : (value: number) => {
               column[row.i] = value;
               const index = noting.entities[row.i]! & INDEX_MASK;
+
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
             },
   });
+
   return (to) => {
     column = to as Uint16Array;
   };
@@ -632,11 +656,13 @@ const defineU8: DefineField = (target, name, row, noting, refusal) => {
           : (value: number) => {
               column[row.i] = value;
               const index = noting.entities[row.i]! & INDEX_MASK;
+
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
             },
   });
+
   return (to) => {
     column = to as Uint8Array;
   };
@@ -657,11 +683,13 @@ const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
           : (value: unknown) => {
               column[row.i] = value;
               const index = noting.entities[row.i]! & INDEX_MASK;
+
               if (noting.log.noted[index] !== 1) {
                 noting.log.note(index);
               }
             },
   });
+
   return (to) => {
     column = to as unknown[];
   };
@@ -692,6 +720,7 @@ export const makeAccessor = (
   row: Row
 ): Accessor => {
   const { fields, kinds, name } = def;
+
   const noting: Noting | undefined =
     mode === "notes"
       ? {
@@ -699,7 +728,9 @@ export const makeAccessor = (
           log: undefined as unknown as WriteLog,
         }
       : undefined;
+
   const target = {};
+
   const binders = fields.map((field, f) =>
     DEFINE_FIELD[kinds[f]!](
       target,
@@ -716,12 +747,14 @@ export const makeAccessor = (
             : undefined
     )
   );
+
   return {
     fields: Object.create(target) as object,
     bind(columns, entities, log) {
       for (let f = 0; f < binders.length; f++) {
         binders[f]!(columns[fields[f]!]!);
       }
+
       if (noting !== undefined) {
         noting.entities = entities!;
         noting.log = log!;
@@ -744,6 +777,7 @@ const define = <
   }
 ): ComponentDef<S, St, N> => {
   const fields = Object.keys(schema);
+
   const def: ComponentDef<S, St, N> = {
     id: nextId++,
     name,
@@ -757,6 +791,7 @@ const define = <
     relation: options?.relation,
     of: (value) => ({ def, value }),
   };
+
   return def;
 };
 

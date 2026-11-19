@@ -41,13 +41,16 @@ const run = async (
       ? new ArrayBuffer(count * 4)
       : new SharedArrayBuffer(count * 4)
   );
+
   const [px, py, vx, vy] = columns.map((buffer) => new Float32Array(buffer));
+
   for (let i = 0; i < count; i++) {
     px![i] = (i * 7919) % 1000;
     py![i] = (i * 104_729) % 1000;
     vx![i] = 1;
     vy![i] = 2;
   }
+
   const control = new SharedArrayBuffer(INTEGERS * 4 + 8 * 8);
   const signals = new Int32Array(control, 0, INTEGERS);
   const numbers = new Float64Array(control, INTEGERS * 4, 8);
@@ -55,6 +58,7 @@ const run = async (
   numbers[1] = count;
   signals[KERNEL] = Object.keys(kernels).indexOf(kernel);
   signals[SPIN] = mode === "spin" ? 1 : 0;
+
   const pool = Array.from(
     { length: workers },
     (_, id) =>
@@ -63,11 +67,13 @@ const run = async (
         workerData: { columns, control, id },
       })
   );
+
   // Until they are up and waiting.
   await new Promise((resolve) => {
     setTimeout(resolve, 400);
   });
   const loop = kernels[kernel]!;
+
   const pass =
     workers === 0
       ? (): void => loop(0, count, px!, py!, vx!, vy!, DT, count)
@@ -75,14 +81,17 @@ const run = async (
           // The table cut into as many runs of rows as there are threads.
           // The main thread takes the last, and then waits for the rest.
           const share = Math.ceil(count / (workers + 1));
+
           for (let id = 0; id < workers; id++) {
             signals[RANGES + id * 2] = id * share;
             signals[RANGES + id * 2 + 1] = Math.min(count, (id + 1) * share);
           }
+
           Atomics.store(signals, DONE, 0);
           Atomics.add(signals, JOB, 1);
           Atomics.notify(signals, JOB);
           loop(workers * share, count, px!, py!, vx!, vy!, DT, count);
+
           if (mode === "spin") {
             while (Atomics.load(signals, DONE) < workers) {
               // Spinning.
@@ -97,30 +106,39 @@ const run = async (
             }
           }
         };
+
   for (let i = 0; i < 80; i++) {
     pass();
   }
+
   const samples: number[] = [];
+
   for (let i = 0; i < 300; i++) {
     const start = performance.now();
     pass();
     samples.push(performance.now() - start);
   }
+
   samples.sort((a, b) => a - b);
   let sum = 0;
+
   for (let i = 0; i < count; i++) {
     sum += px![i]! + vx![i]!;
   }
+
   Atomics.store(signals, JOB, -1);
   Atomics.notify(signals, JOB);
   await Promise.all(pool.map((worker) => worker.terminate()));
+
   return { ms: samples[samples.length >> 1]!, sum: Math.fround(sum) };
 };
 
 const [kernel, count, workers, mode, backing] = process.argv.slice(2);
+
 if (kernel === undefined) {
   const self = fileURLToPath(import.meta.url);
   const lines: (readonly [string, number, number, string, string?])[] = [];
+
   for (const [name, size] of [
     ["move", 1000],
     ["move", 100_000],
@@ -129,14 +147,18 @@ if (kernel === undefined) {
     ["flock", 400_000],
   ] as const) {
     lines.push([name, size, 0, "wait", "plain"], [name, size, 0, "wait"]);
+
     for (const threads of [1, 3]) {
       lines.push([name, size, threads, "wait"], [name, size, threads, "spin"]);
     }
   }
+
   const sums = new Map<string, number>();
+
   for (const [name, size, threads, how, memory] of lines) {
     let ms = Infinity;
     let sum = 0;
+
     for (let attempt = 0; attempt < 3; attempt++) {
       const out = JSON.parse(
         execFileSync(
@@ -157,17 +179,21 @@ if (kernel === undefined) {
           .split("\n")
           .pop()!
       ) as { readonly ms: number; readonly sum: number };
+
       ms = Math.min(ms, out.ms);
       ({ sum } = out);
     }
+
     // However the rows were shared out, what is left is what one thread leaves.
     const key = `${name} ${size}`;
     const same = sums.get(key) ?? sum;
     sums.set(key, same);
+
     const what =
       threads === 0
         ? `one thread, ${memory === "plain" ? "ordinary" : "shared"} memory`
         : `${threads} worker${threads === 1 ? "" : "s"} and the main thread, ${how === "spin" ? "spinning" : "asleep between"}`;
+
     console.log(
       `${name.padEnd(5)} ${String(size).padStart(7)} entities, ${what.padEnd(46)} ${(ms * 1000).toFixed(1).padStart(9)} µs${sum === same ? "" : "   NOT THE SAME RESULT"}`
     );

@@ -26,6 +26,7 @@ const kinds = {
   other: Field.entity,
   note: Field.json<unknown>(),
 };
+
 const Body = Component.define("hash/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("hash/Sheet", kinds);
 const Marked = Component.tag("hash/Marked");
@@ -56,24 +57,31 @@ const nudged = (kind: string, value: unknown): unknown => {
     case "f32": {
       scratch32[0] = value as number;
       scratch32Bits[0]! += 1;
+
       return scratch32[0];
     }
+
     case "f64": {
       scratch64[0] = value as number;
       scratch64Bits[0]! += 1n;
+
       return scratch64[0];
     }
+
     case "i32": {
       return (value as number) + 1;
     }
+
     case "u32":
     case "entity": {
       return (value as number) - 1;
     }
+
     case "u16":
     case "u8": {
       return (value as number) - 1;
     }
+
     default: {
       return `${String(value)}!`;
     }
@@ -83,12 +91,15 @@ const nudged = (kind: string, value: unknown): unknown => {
 describe("the hash of a world", () => {
   it("is a whole number from 0 to 2^32 - 1, and does not change the world it reads", () => {
     const world = new EcsWorld({ seed: 4 });
+
     const check = (): number => {
       const hash = world.hash();
       expect(Number.isInteger(hash) && hash >= 0 && hash < 2 ** 32).toBe(true);
       expect(world.hash()).toBe(hash);
+
       return hash;
     };
+
     const empty = check();
     world.spawn(Body.of({ x: 1, y: 2 }), Aura.of(sheet(1)));
     expect(check()).not.toBe(empty);
@@ -103,11 +114,13 @@ describe("the hash of a world", () => {
 
   it("is the same number on every machine: the hash of this world is written down", () => {
     const world = new EcsWorld({ seed: 2026 });
+
     const a = world.spawn(
       Body.of({ x: 1.5, y: -2 }),
       Sheet.of(sheet(3)),
       Marked
     );
+
     const b = world.spawn(Body.of({ x: 0, y: 1e-3 }));
     world.add(a, Aura.of(sheet(9)));
     world.add(b, Chilled);
@@ -123,15 +136,18 @@ describe("the hash of a world", () => {
       const first = history(seed, 400);
       const second = history(seed, 400);
       expect(second).toEqual(first);
+
       // Every operation of the history changes something a simulation can
       // see, so no two neighbouring steps may share a hash.
       for (let i = 1; i < first.length; i++) {
         expect(first[i]).not.toBe(first[i - 1]);
       }
+
       // A step can undo the one before it, which brings an earlier hash
       // back, but most of 400 steps lead somewhere new.
       expect(new Set(first).size).toBeGreaterThan(300);
     }
+
     expect(history(1, 50)).not.toEqual(history(2, 50));
   });
 
@@ -141,24 +157,30 @@ describe("the hash of a world", () => {
     for (const size of [1, 2, 3, 4, 5, 6, 7, 8, 9, 33]) {
       const world = new EcsWorld();
       const entities: Entity[] = [];
+
       for (let n = 0; n < size; n++) {
         const entity = world.spawn(
           Body.of({ x: n, y: -n }),
           Sheet.of(sheet(n))
         );
+
         world.add(entity, Aura.of(sheet(n + 100)));
         entities.push(entity);
       }
+
       const base = world.hash();
       const seen = new Set([base]);
       let changes = 0;
+
       for (const entity of entities) {
         for (const def of [Body, Sheet, Aura] as ComponentDef<any>[]) {
           const original = world.get(entity, def)!;
+
           for (let f = 0; f < def.fields.length; f++) {
             const field = def.fields[f]!;
             const kind = def.kinds[f]!;
             const values = [nudged(kind, original[field])];
+
             if (kind === "f32" || kind === "f64") {
               // The smallest change is in a float's lowest bit; the sign is
               // its highest, in the other half of a 64-bit one.
@@ -167,6 +189,7 @@ describe("the hash of a world", () => {
                 (original[field] as number) * 2 + 1024
               );
             }
+
             for (const value of values) {
               world.set(entity, def, { [field]: value });
               const changed = world.hash();
@@ -179,6 +202,7 @@ describe("the hash of a world", () => {
           }
         }
       }
+
       // No two different changes gave the same hash either.
       expect(seen.size).toBe(changes + 1);
       // 2 + 8 + 8 fields, and two more changes for each of the 2 + 2 + 2 floats.
@@ -191,8 +215,10 @@ describe("the hash of a world", () => {
       const world = new EcsWorld();
       world.spawn(Sheet.of({ ...sheet(1), note, single, double }));
       world.spawn(Aura.of({ ...sheet(2), note, single, double }));
+
       return world.hash();
     };
+
     const notes = [1, "1", true, 1n, null, undefined, "", 0, false, -1, 1.5];
     expect(new Set(notes.map((note) => hashOf(note))).size).toBe(notes.length);
     // 0 and -0 are different numbers to a simulation: 1 / x tells them apart.
@@ -200,9 +226,11 @@ describe("the hash of a world", () => {
     expect(hashOf("n", 0, -0)).not.toBe(hashOf("n", 0, 0));
     expect(hashOf(-0)).not.toBe(hashOf(0));
     expect(hashOf("ab")).not.toBe(hashOf("ba"));
+
     // An empty field is still a field: which of two rows is the empty one.
     const emptyAt = (row: number, storage: "table" | "sparse"): number => {
       const world = new EcsWorld();
+
       for (const index of [0, 1]) {
         const entity = world.spawn();
         const value = { ...sheet(0), note: index === row ? undefined : "x" };
@@ -211,8 +239,10 @@ describe("the hash of a world", () => {
           storage === "table" ? Sheet.of(value) : Aura.of(value)
         );
       }
+
       return world.hash();
     };
+
     expect(emptyAt(0, "table")).not.toBe(emptyAt(1, "table"));
     expect(emptyAt(0, "sparse")).not.toBe(emptyAt(1, "sparse"));
     expect(hashOf(Number.NaN, Number.NaN, Number.NaN)).not.toBe(hashOf(0));
@@ -226,21 +256,25 @@ describe("the hash of a world", () => {
       doubleLow: number
     ): number => {
       const world = new EcsWorld();
+
       for (let n = 0; n < 6; n++) {
         world.add(world.spawn(Sheet.of(sheet(n))), Aura.of(sheet(n)));
       }
+
       const overwrite = (columns: {
         readonly single: Float32Array;
         readonly double: Float64Array;
       }): void => {
         const singles = new Uint32Array(columns.single.buffer);
         const doubles = new DataView(columns.double.buffer);
+
         for (const row of [0, 5]) {
           singles[row] = single;
           doubles.setUint32(row * 8, doubleLow, true);
           doubles.setUint32(row * 8 + 4, doubleHigh, true);
         }
       };
+
       world.view(Query.all(Sheet)).eachChunk((_start, _end, columns) => {
         overwrite(columns);
       });
@@ -250,12 +284,16 @@ describe("the hash of a world", () => {
       expect(
         world.get(world.view(Query.all(Sheet)).entities()[0]!, Sheet)
       ).toMatchObject({ single: Number.NaN, double: Number.NaN });
+
       return world.hash();
     };
-    const quiet = withNaNBits(0x7fc00000, 0x7ff80000, 0);
-    expect(withNaNBits(0xffc00000, 0xfff80000, 0)).toBe(quiet);
-    expect(withNaNBits(0x7f800001, 0x7ff00000, 1)).toBe(quiet);
-    expect(withNaNBits(0x7fffffff, 0x7fffffff, 0xffffffff)).toBe(quiet);
+
+    const quiet = withNaNBits(0x7f_c0_00_00, 0x7f_f8_00_00, 0);
+    expect(withNaNBits(0xff_c0_00_00, 0xff_f8_00_00, 0)).toBe(quiet);
+    expect(withNaNBits(0x7f_80_00_01, 0x7f_f0_00_00, 1)).toBe(quiet);
+    expect(withNaNBits(0x7f_ff_ff_ff, 0x7f_ff_ff_ff, 0xff_ff_ff_ff)).toBe(
+      quiet
+    );
   });
 
   it("follows which entity and which field a value is in, not just the values", () => {
@@ -268,8 +306,10 @@ describe("the hash of a world", () => {
       const b = world.spawn(Body.of({ x: second[0], y: second[1] }));
       world.add(a, Aura.of({ ...sheet(1), single: first[0] }));
       world.add(b, Aura.of({ ...sheet(1), single: second[0] }));
+
       return world.hash();
     };
+
     const base = build([1, 2], [3, 4]);
     expect(build([3, 4], [1, 2])).not.toBe(base); // swapped between entities
     expect(build([2, 1], [3, 4])).not.toBe(base); // swapped between fields
@@ -282,8 +322,10 @@ describe("the hash of a world", () => {
       const entities = [0, 1, 2].map(() => world.spawn(Body));
       world.add(entities[index]!, Aura.of(sheet(5)));
       world.add(entities[(index + 1) % 3]!, Chilled);
+
       return world.hash();
     };
+
     expect(new Set([sparseOn(0), sparseOn(1), sparseOn(2)]).size).toBe(3);
   });
 
@@ -294,6 +336,7 @@ describe("the hash of a world", () => {
     ) => {
       // Defined in the order given, so the ids differ from one call to the next.
       const defs = new Map<string, ComponentDef<any>>();
+
       for (const name of names) {
         defs.set(
           name,
@@ -302,8 +345,10 @@ describe("the hash of a world", () => {
             : Component.define(name, second)
         );
       }
+
       return defs;
     };
+
     const hashWith = (defs: Map<string, ComponentDef<any>>): number => {
       const world = new EcsWorld();
       const a = defs.get("hash/order/A")!;
@@ -314,11 +359,14 @@ describe("the hash of a world", () => {
       );
       world.spawn(b);
       world.spawn(a.of({ v: 7 }));
+
       return world.hash();
     };
+
     const base = hashWith(
       define(["hash/order/A", "hash/order/B"], { p: Field.f32, q: Field.f32 })
     );
+
     // The same components, defined the other way round.
     expect(
       hashWith(
@@ -354,14 +402,18 @@ describe("the hash of a world", () => {
     // another table, which put it last in its own: which one differs.
     const build = (traveller: 0 | 1) => {
       const world = new EcsWorld();
+
       const pair = [
         world.spawn(Body.of({ x: 1, y: 1 })),
         world.spawn(Body.of({ x: 2, y: 2 })),
       ] as const;
+
       world.add(pair[traveller], Marked);
       world.remove(pair[traveller], Marked);
+
       return { world, order: world.view(Query.all(Body)).entities(), pair };
     };
+
     const first = build(0);
     const second = build(1);
     expect(first.order).toEqual([first.pair[1], first.pair[0]]);
@@ -373,6 +425,7 @@ describe("the hash of a world", () => {
   it("covers a table that has emptied, because its place decides where later entities are visited", () => {
     const build = (visitMarkedFirst: boolean) => {
       const world = new EcsWorld();
+
       if (visitMarkedFirst) {
         // Creates the table of marked bodies before the table of bodies.
         const early = world.spawn(Body, Marked);
@@ -382,8 +435,10 @@ describe("the hash of a world", () => {
         world.add(early, Marked);
         world.remove(early, Marked);
       }
+
       return world;
     };
+
     const first = build(true);
     const second = build(false);
     // The same one entity with the same data in both...
@@ -391,12 +446,15 @@ describe("the hash of a world", () => {
       second.view(Query.all(Body)).entities()
     );
     expect(first.hash()).not.toBe(second.hash());
+
     // ...and the difference is real: the next marked body is visited first
     // in one world and last in the other.
     const later = [first, second].map((world) => {
       const marked = world.spawn(Body, Marked);
+
       return world.view(Query.all(Body)).entities().indexOf(marked);
     });
+
     expect(later).toEqual([0, 1]);
   });
 
@@ -409,8 +467,10 @@ describe("the hash of a world", () => {
       const b = world.spawn(Body);
       world.despawn(reverse ? b : a);
       world.despawn(reverse ? a : b);
+
       return world;
     };
+
     const first = emptied(false);
     const second = emptied(true);
     expect(first.entityCount).toBe(0);
@@ -420,11 +480,14 @@ describe("the hash of a world", () => {
     // The same slot freed once or twice: the next entity gets another generation.
     const reused = (times: number) => {
       const world = new EcsWorld();
+
       for (let i = 0; i < times; i++) {
         world.despawn(world.spawn(Body));
       }
+
       return world;
     };
+
     expect(reused(1).hash()).not.toBe(reused(2).hash());
     expect(reused(2).hash()).toBe(reused(2).hash());
     expect(reused(1).spawn()).not.toBe(reused(2).spawn());
@@ -433,12 +496,15 @@ describe("the hash of a world", () => {
     // nothing freed, but one of the two is the slot's second tenant.
     const tenant = (reused: boolean) => {
       const world = new EcsWorld();
+
       if (reused) {
         const gone = world.spawn(Body);
         world.despawn(gone);
       }
+
       return { world, entity: world.spawn(Body.of({ x: 1, y: 1 })) };
     };
+
     const fresh = tenant(false);
     const later = tenant(true);
     expect(fresh.entity).not.toBe(later.entity);
@@ -466,11 +532,13 @@ describe("the hash of a world", () => {
     expect(world.hash()).not.toBe(before);
     world.random.state.set(state);
     expect(world.hash()).toBe(before);
+
     for (let word = 0; word < 4; word++) {
       world.random.state[word]! ^= 1;
       expect(world.hash()).not.toBe(before);
       world.random.state[word]! ^= 1;
     }
+
     const other = new EcsWorld({ seed: 11 });
     other.spawn(Body.of({ x: 1, y: 1 }));
     expect(other.hash()).not.toBe(before);
@@ -480,29 +548,37 @@ describe("the hash of a world", () => {
     const build = (noise: boolean): EcsWorld => {
       const world = new EcsWorld({ seed: 3 });
       const entities: Entity[] = [];
+
       for (let n = 0; n < 40; n++) {
         entities.push(world.spawn(Body.of({ x: n, y: n }), Sheet.of(sheet(n))));
       }
+
       if (noise) {
         // A query that meets the sparse components in another order first.
         world.view(Query.all(Body).pipe(Query.without(Chilled, Aura))).count();
       }
+
       // Members join the sparse sets in another order: the same members.
       const joining = noise ? entities.toReversed() : entities;
+
       for (const entity of joining) {
         if (entity % 3 === 0) {
           world.add(entity, Aura.of(sheet(entity)));
         }
+
         if (entity % 4 === 0) {
           world.add(entity, Chilled);
         }
       }
+
       if (noise) {
         // Queries: they cache tables, keep masks and create empty sparse sets.
         const Unused = Component.tag("hash/Unused", { storage: "sparse" });
+
         const view = world.view(
           Query.all(Body).pipe(Query.with(Aura), Query.without(Chilled, Unused))
         );
+
         view.each((body) => void body.x);
         view.eachChunk(() => {});
         view.count();
@@ -518,8 +594,10 @@ describe("the hash of a world", () => {
         world.add(entities[5]!, Unused);
         world.remove(entities[5]!, Unused);
       }
+
       return world;
     };
+
     expect(build(true).hash()).toBe(build(false).hash());
   });
 
@@ -529,14 +607,18 @@ describe("the hash of a world", () => {
     const build = (ghost: number): EcsWorld => {
       const world = new EcsWorld();
       world.spawn(Body.of({ x: 1, y: 1 }), Sheet.of(sheet(1)));
+
       const gone = world.spawn(
         Body.of({ x: ghost, y: ghost }),
         Sheet.of(sheet(ghost))
       );
+
       world.add(gone, Aura.of(sheet(ghost)));
       world.despawn(gone);
+
       return world;
     };
+
     expect(build(7).hash()).toBe(build(8).hash());
   });
 
@@ -545,8 +627,10 @@ describe("the hash of a world", () => {
       const world = new EcsWorld();
       world.spawn(Sheet.of({ ...sheet(1), note }));
       world.add(world.spawn(), Aura.of({ ...sheet(2), note }));
+
       return world.hash();
     };
+
     const values: unknown[] = [
       { hp: 1 },
       { hp: 2 },
@@ -565,6 +649,7 @@ describe("the hash of a world", () => {
       { a: { b: [1, { c: true }] } },
       { a: { b: [1, { c: false }] } },
     ];
+
     expect(new Set(values.map((value) => hashOf(value))).size).toBe(
       values.length
     );
@@ -584,11 +669,14 @@ describe("the hash of a world", () => {
       const entities = [0, 1, 2].map(() => world.spawn(Body));
       world.add(entities[marked]!, Marked);
       world.add(entities[chilled]!, Chilled);
+
       return world.hash();
     };
+
     const all = [0, 1, 2].flatMap((marked) =>
       [0, 1, 2].map((chilled) => build(marked, chilled))
     );
+
     expect(new Set(all).size).toBe(9);
   });
 });
@@ -607,6 +695,7 @@ const history = (seed: number, steps: number): number[] => {
   const hashes: number[] = [];
   let serial = 0;
   const optional = [Body, Sheet, Marked, Aura, Chilled] as ComponentDef<any>[];
+
   const valueFor = (def: ComponentDef<any>) =>
     def === Body
       ? Body.of({ x: ++serial, y: dice.next() })
@@ -615,13 +704,16 @@ const history = (seed: number, steps: number): number[] => {
         : def === Aura
           ? Aura.of(sheet(++serial))
           : def;
+
   for (let step = 0; step < steps; step++) {
     const choice = alive.length === 0 ? 0 : dice.int(0, 7);
     const entity = alive.length === 0 ? undefined : dice.pick(alive);
+
     if (choice <= 1 || entity === undefined) {
       const inputs = optional
         .filter(() => dice.int(0, 1) === 1)
         .map((def) => valueFor(def));
+
       alive.push(
         choice === 0 ? world.spawn(...inputs) : commands.spawn(...inputs)
       );
@@ -631,6 +723,7 @@ const history = (seed: number, steps: number): number[] => {
       alive.splice(alive.indexOf(entity), 1);
     } else if (choice === 3 || choice === 4) {
       const def = dice.pick(optional);
+
       if (world.has(entity, def)) {
         world.remove(entity, def);
       } else {
@@ -640,6 +733,7 @@ const history = (seed: number, steps: number): number[] => {
       world.random.next();
     } else {
       const def = dice.pick([Body, Sheet, Aura] as ComponentDef<any>[]);
+
       if (world.has(entity, def)) {
         const f = dice.int(0, def.fields.length - 1);
         const field = def.fields[f]!;
@@ -650,8 +744,10 @@ const history = (seed: number, steps: number): number[] => {
         world.add(entity, valueFor(def));
       }
     }
+
     hashes.push(world.hash());
   }
+
   return hashes;
 };
 
@@ -673,19 +769,23 @@ describe("the hash of an app's world", () => {
     const bodies = yield* Query.all(Body);
     bodies.each((body, entity) => {
       body.x += random.next();
+
       if (random.int(1, 20) === 1) {
         commands.despawn(entity);
       }
     });
     commands.spawn(Body.of({ x: 0, y: random.next() }));
   });
+
   const hashes = (make: Effect.Effect<App.Any, never, Scope.Scope>) =>
     withApp(make, (app) => {
       const out: number[] = [];
+
       for (let i = 0; i < 100; i++) {
         app.tick(1 / 60);
         out.push(app.world.hash());
       }
+
       return out;
     });
 
@@ -700,8 +800,10 @@ describe("the hash of an app's world", () => {
   it("shows the first tick at which one of them does something else", () => {
     // The same game, but on tick 40 one machine rounds a number differently.
     let tick = 0;
+
     const Wrong = System.make("Wrong", function* () {
       tick++;
+
       if (tick === 40) {
         let first = true;
         (yield* Query.all(Body)).each((body) => {
@@ -712,6 +814,7 @@ describe("the hash of an app's world", () => {
         });
       }
     });
+
     const honest = hashes(App.make({ systems: [Drift], seed: 5 }));
     const faulty = hashes(App.make({ systems: [Drift, Wrong], seed: 5 }));
     const firstDifference = honest.findIndex((hash, i) => hash !== faulty[i]);

@@ -24,10 +24,12 @@ const Position = Component.define("rt/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Velocity = Component.define("rt/Velocity", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Lifetime = Component.define("rt/Lifetime", { seconds: Field.f32 });
 const Stunned = Component.tag("rt/Stunned", { storage: "sparse" });
 
@@ -55,11 +57,13 @@ describe("systems", () => {
         Position.of({ x: 0, y: 0 }),
         Velocity.of({ x: 2, y: 4 })
       );
+
       const b = app.world.spawn(
         Position.of({ x: 0, y: 0 }),
         Velocity.of({ x: 2, y: 4 }),
         Stunned
       );
+
       app.tick(0.5);
       app.tick(0.5);
       expect(app.world.get(a, Position)).toEqual({ x: 2, y: 4 });
@@ -70,10 +74,12 @@ describe("systems", () => {
 
   it("are ordered by stage, then by `after`, then by registration", () => {
     const log: string[] = [];
+
     const sys = (name: string) =>
       System.make(name, function* () {
         yield* Effect.sync(() => log.push(name));
       });
+
     const systems = [
       sys("render").pipe(System.inStage("postUpdate")),
       sys("c").pipe(System.after("a")),
@@ -81,6 +87,7 @@ describe("systems", () => {
       sys("a").pipe(System.after("b")),
       sys("input").pipe(System.inStage("preUpdate")),
     ];
+
     withApp(App.make({ systems }), (app) => {
       expect(app.systemOrder).toEqual(["input", "b", "a", "c", "render"]);
       app.tick(1);
@@ -99,6 +106,7 @@ describe("systems", () => {
     // `before` slots a system in ahead of one registered earlier.
     const names = (list: readonly System.System<any, any>[]) =>
       System.order(list).map((s) => s.name);
+
     expect(
       names([sys("p"), sys("q"), sys("r").pipe(System.before("p"))])
     ).toEqual(["r", "p", "q"]);
@@ -124,6 +132,7 @@ describe("systems", () => {
     const Spawner = System.make("Spawner", function* () {
       const commands = yield* Commands;
       const { tick } = yield* Time;
+
       if (tick === 1) {
         commands.spawn(
           Position.of({ x: 0, y: 0 }),
@@ -131,7 +140,9 @@ describe("systems", () => {
         );
       }
     });
+
     const counts: number[] = [];
+
     const Reaper = System.make("Reaper", function* () {
       const commands = yield* Commands;
       const { delta } = yield* Time;
@@ -139,6 +150,7 @@ describe("systems", () => {
       counts.push(mortal.count());
       mortal.each((life, entity) => {
         life.seconds -= delta;
+
         // Despawning directly here would throw; the command is applied after the loop.
         if (life.seconds <= 0) {
           commands.despawn(entity);
@@ -158,11 +170,13 @@ describe("systems", () => {
 
   it("read and write sparse components as query data, with either loop style", () => {
     const Health = Component.define("rt/Health", { hp: Field.f32 });
+
     const Burning = Component.define(
       "rt/Burning",
       { seconds: Field.f32, dps: Field.f32 },
       { storage: "sparse" }
     );
+
     const OnFire = Query.all(Health, Burning);
 
     const Burn = System.make("Burn", function* () {
@@ -172,15 +186,18 @@ describe("systems", () => {
         health.hp -= burning.dps * delta;
       });
     });
+
     const Extinguish = System.make("Extinguish", function* () {
       const onFire = yield* OnFire;
       const commands = yield* Commands;
       const { delta } = yield* Time;
       onFire.eachChunk((start, end, _health, burning, entities) => {
         const { seconds } = burning.columns;
+
         for (let i = start; i < end; i++) {
           const row = burning.indexOf(entities[i]!);
           seconds[row]! -= delta;
+
           // Removing a sparse component is cheap: the entity stays in its table.
           if (seconds[row]! <= 0) {
             commands.remove(entities[i]!, Burning);
@@ -194,11 +211,14 @@ describe("systems", () => {
         Health.of({ hp: 100 }),
         Burning.of({ seconds: 2, dps: 10 })
       );
+
       const rock = app.world.spawn(Health.of({ hp: 100 }));
       const tables = app.world.tables.length;
+
       for (let i = 0; i < 4; i++) {
         app.tick(1);
       }
+
       expect(app.world.get(torch, Health)).toEqual({ hp: 80 });
       expect(app.world.get(rock, Health)).toEqual({ hp: 100 });
       expect(app.world.has(torch, Burning)).toBe(false);
@@ -209,9 +229,11 @@ describe("systems", () => {
   it("read resources with defaults that a layer can override", () => {
     const Gravity = Resource.make("rt/Gravity", { defaultValue: () => 9.81 });
     const seen: number[] = [];
+
     const ReadGravity = System.make("ReadGravity", function* () {
       seen.push(yield* Gravity);
     });
+
     withApp(App.make({ systems: [ReadGravity] }), (app) => app.tick(1));
     withApp(
       App.make({ systems: [ReadGravity] }).pipe(
@@ -227,18 +249,22 @@ describe("systems", () => {
       Audio,
       { readonly play: (sound: string) => void }
     >()("rt/Audio") {}
+
     const played: string[] = [];
+
     const Beep = System.make("Beep", function* () {
       const audio = yield* Audio;
       const things = yield* Query.all(Position);
       audio.play(`beep x${things.count()}`);
     });
+
     // Written inline on purpose: this is how layers are usually provided.
     const make = App.make({ systems: [Beep] }).pipe(
       Effect.provide(
         Layer.succeed(Audio, { play: (sound) => void played.push(sound) })
       )
     );
+
     withApp(make, (app) => {
       app.world.spawn(Position.of({ x: 1, y: 1 }));
       app.tick(1);
@@ -259,16 +285,19 @@ describe("systems", () => {
     class OutOfBounds extends Data.TaggedError("OutOfBounds")<{
       readonly x: number;
     }> {}
+
     const Bounds = System.make("Bounds", function* () {
       const things = yield* Query.all(Position);
       let worst = 0;
       things.each((pos) => {
         worst = Math.max(worst, pos.x);
       });
+
       if (worst > 100) {
         return yield* Effect.fail(new OutOfBounds({ x: worst }));
       }
     });
+
     withApp(App.make({ systems: [Bounds] }), (app) => {
       app.world.spawn(Position.of({ x: 5, y: 0 }));
       expect(Exit.isSuccess(app.tickExit(1))).toBe(true);
@@ -284,6 +313,7 @@ describe("systems", () => {
       const script = yield* Script;
       yield* script.nextTick;
     });
+
     withApp(App.make({ systems: [Lazy] }), (app) => {
       expect(() => app.tick(1)).toThrow(
         /"Lazy" did not finish within the tick/
@@ -307,6 +337,7 @@ describe("the built-in services", () => {
       Random,
       Action.Actions,
     ].map((service) => service.key);
+
     expect(keys).toEqual([
       "arcadekit/World",
       "arcadekit/Time",
@@ -323,11 +354,13 @@ describe("the built-in services", () => {
       GameWorld,
       { readonly size: number }
     >()("World") {}
+
     const Probe = System.make("Probe", function* () {
       const world = yield* World;
       const mine = yield* GameWorld;
       world.spawn(Lifetime.of({ seconds: mine.size }));
     });
+
     withApp(
       App.make({ systems: [Probe] }).pipe(
         Effect.provideService(GameWorld, { size: 7 })
@@ -344,9 +377,11 @@ describe("the tick scheduler", () => {
   // 10,000 flatMaps is far past Effect's default budget of 2048 operations.
   const busy = Effect.gen(function* () {
     let total = 0;
+
     for (let i = 0; i < 10_000; i++) {
       total += yield* Effect.sync(() => 1);
     }
+
     return total;
   });
 
@@ -354,9 +389,11 @@ describe("the tick scheduler", () => {
     const fiber = Effect.runFork(busy);
     // Not done synchronously: it yielded and will resume from a timer.
     expect(fiber.pollUnsafe()).toBeUndefined();
+
     const exit = await new Promise<Exit.Exit<number>>((resolve) =>
       fiber.addObserver(resolve)
     );
+
     expect(exit).toEqual(Exit.succeed(10_000));
   });
 
@@ -367,9 +404,11 @@ describe("the tick scheduler", () => {
 
   it("lets a heavy system finish inside its tick", () => {
     let total = 0;
+
     const Heavy = System.make("Heavy", function* () {
       total = yield* busy;
     });
+
     withApp(App.make({ systems: [Heavy] }), (app) => {
       app.tick(1);
       expect(total).toBe(10_000);
@@ -416,15 +455,19 @@ describe("the tick scheduler", () => {
 describe("scripts", () => {
   it("advance only during ticks, in a fixed order", () => {
     const log: string[] = [];
+
     const script = (name: string, waits: number) =>
       Effect.gen(function* () {
         const { nextTick } = yield* Script;
+
         for (let i = 0; i < waits; i++) {
           yield* nextTick;
           log.push(`${name}@${(yield* Time).tick}`);
         }
+
         return name;
       });
+
     withApp(App.make({ systems: [] }), (app) => {
       const a = app.spawnScript(script("a", 2));
       const b = app.spawnScript(script("b", 1));
@@ -446,8 +489,10 @@ describe("scripts", () => {
       const bomb = commands.spawn(Position.of({ x: 3, y: 3 }));
       yield* script.sleep(1);
       commands.despawn(bomb);
+
       return (yield* Time).tick;
     });
+
     withApp(App.make({ systems: [Movement] }), (app) => {
       const fiber = app.spawnScript(Bomb);
       const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
@@ -462,11 +507,14 @@ describe("scripts", () => {
 
   it("can be started from a system with forkDetach", () => {
     const log: string[] = [];
+
     const Starter = System.make("Starter", function* () {
       const { tick } = yield* Time;
+
       if (tick !== 1) {
         return;
       }
+
       yield* Effect.forkDetach(
         Effect.gen(function* () {
           const { nextTick } = yield* Script;
@@ -476,6 +524,7 @@ describe("scripts", () => {
         })
       );
     });
+
     withApp(App.make({ systems: [Starter] }), (app) => {
       app.tick(1);
       expect(log).toEqual(["started@1"]);
@@ -486,6 +535,7 @@ describe("scripts", () => {
 
   it("are interrupted when the app's scope closes", () => {
     let cleanedUp = false;
+
     const fiber = withApp(App.make({ systems: [] }), (app) =>
       app.spawnScript(
         Effect.gen(function* () {
@@ -497,6 +547,7 @@ describe("scripts", () => {
         }).pipe(Effect.scoped)
       )
     );
+
     expect(cleanedUp).toBe(true);
     const exit = fiber.pollUnsafe();
     expect(exit !== undefined && Exit.isFailure(exit)).toBe(true);
@@ -510,6 +561,7 @@ const capturedLogs = () => {
     readonly message: string;
     readonly cause: Cause.Cause<unknown>;
   }[] = [];
+
   const logger = Logger.make<unknown, void>((options) => {
     entries.push({
       level: options.logLevel,
@@ -517,6 +569,7 @@ const capturedLogs = () => {
       cause: options.cause,
     });
   });
+
   return { entries, layer: Logger.layer([logger]) };
 };
 
@@ -529,9 +582,11 @@ describe("a script that fails", () => {
   const trips = (ticks: number, on = "a wire") =>
     Effect.gen(function* () {
       const { nextTick } = yield* Script;
+
       for (let i = 0; i < ticks; i++) {
         yield* nextTick;
       }
+
       return yield* Effect.fail(new Tripped({ on }));
     });
 
@@ -544,7 +599,7 @@ describe("a script that fails", () => {
         app.tick(1);
         expect(logs.entries).toEqual([]);
         app.tick(1);
-        expect(logs.entries.length).toBe(1);
+        expect(logs.entries).toHaveLength(1);
         const [entry] = logs.entries;
         expect(entry!.level).toBe("Error");
         expect(entry!.message).toBe("A script failed at tick 2");
@@ -560,7 +615,7 @@ describe("a script that fails", () => {
         app.tick(1);
         app.tick(1);
         expect(app.time.tick).toBe(4);
-        expect(logs.entries.length).toBe(1);
+        expect(logs.entries).toHaveLength(1);
       }
     );
   });
@@ -578,7 +633,7 @@ describe("a script that fails", () => {
           new Error("a bug")
         );
         app.spawnScript(trips(0, "the doorstep"));
-        expect(logs.entries.length).toBe(2);
+        expect(logs.entries).toHaveLength(2);
         expect(Cause.squash(logs.entries[1]!.cause)).toEqual(
           new Tripped({ on: "the doorstep" })
         );
@@ -603,10 +658,12 @@ describe("a script that fails", () => {
         const forever = Effect.gen(function* () {
           yield* Effect.forever((yield* Script).nextTick);
         });
+
         app.spawnScript(Effect.succeed("done at once"));
         app.spawnScript(
           Effect.gen(function* () {
             yield* (yield* Script).nextTick;
+
             return "done later";
           })
         );
@@ -627,18 +684,23 @@ describe("a script that fails", () => {
     const logs = capturedLogs();
     const order: string[] = [];
     let cleanedUp = false;
+
     const Starter = System.make("Starter", function* () {
       const script = yield* Script;
+
       if ((yield* Time).tick !== 1) {
         return;
       }
+
       const fiber = yield* script.spawn(
         Effect.gen(function* () {
           order.push("script started");
           yield* script.nextTick;
+
           return yield* Effect.fail(new Tripped({ on: "a system's script" }));
         })
       );
+
       // It has not run yet: it starts when the tick flushes, after the systems.
       order.push(`spawned, running: ${fiber.pollUnsafe() === undefined}`);
       yield* script.spawn(
@@ -650,9 +712,11 @@ describe("a script that fails", () => {
         }).pipe(Effect.scoped)
       );
     });
+
     const After = System.make("After", function* () {
       order.push(`After@${(yield* Time).tick}`);
     });
+
     withApp(
       App.make({ systems: [Starter, After] }).pipe(Effect.provide(logs.layer)),
       (app) => {
@@ -675,16 +739,18 @@ describe("a script that fails", () => {
     );
     // The other script was still running, and the scope's end interrupted it.
     expect(cleanedUp).toBe(true);
-    expect(logs.entries.length).toBe(1);
+    expect(logs.entries).toHaveLength(1);
   });
 
   it("is not watched when it was started with forkDetach, which is the caller's fiber", () => {
     const logs = capturedLogs();
+
     const Starter = System.make("Starter", function* () {
       if ((yield* Time).tick === 1) {
         yield* Effect.forkDetach(trips(1));
       }
     });
+
     withApp(
       App.make({ systems: [Starter], onScriptFailure: "stop" }).pipe(
         Effect.provide(logs.layer)
@@ -702,9 +768,11 @@ describe("a script that fails", () => {
   it("stops the app when it was told to: the tick ends, fails with ScriptFailed, and no later tick runs", () => {
     const logs = capturedLogs();
     let ran = 0;
+
     const Counter = System.make("Counter", function* () {
       ran++;
     });
+
     withApp(
       App.make({ systems: [Counter], onScriptFailure: "stop" }).pipe(
         Effect.provide(logs.layer)
@@ -716,15 +784,19 @@ describe("a script that fails", () => {
             yield* (yield* Script).nextTick;
             yield* (yield* Script).nextTick;
             commands.spawn(Lifetime.of({ seconds: 1 }));
+
             return yield* Effect.fail(new Tripped({ on: "tick two" }));
           })
         );
+
         expect(app.tickExit(1)).toEqual(Exit.void);
 
         const exit = app.tickExit(1);
+
         const failure = Exit.isFailure(exit)
           ? Cause.squash(exit.cause)
           : undefined;
+
         expect(failure).toBeInstanceOf(App.ScriptFailed);
         const stopped = failure as App.ScriptFailed;
         expect(stopped.tick).toBe(2);
@@ -761,9 +833,11 @@ describe("a script that fails", () => {
 
   it("stops the app before its next tick when it fails between ticks, and keeps the first failure", () => {
     let ran = 0;
+
     const Counter = System.make("Counter", function* () {
       ran++;
     });
+
     const logs = capturedLogs();
     withApp(
       App.make({ systems: [Counter], onScriptFailure: "stop" }).pipe(
@@ -774,9 +848,11 @@ describe("a script that fails", () => {
         app.spawnScript(trips(0, "first"));
         app.spawnScript(trips(0, "second"));
         const exit = app.tickExit(1);
+
         const stopped = (
           Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
         ) as App.ScriptFailed;
+
         expect(stopped).toBeInstanceOf(App.ScriptFailed);
         expect(stopped.tick).toBe(1);
         expect(Cause.squash(stopped.cause)).toEqual(
@@ -784,18 +860,20 @@ describe("a script that fails", () => {
         );
         expect(ran).toBe(1);
         expect(app.time.tick).toBe(1);
-        expect(logs.entries.length).toBe(2);
+        expect(logs.entries).toHaveLength(2);
       }
     );
   });
 
   it("does not hide a system's failure in the tick they both fail in", () => {
     class Jammed extends Data.TaggedError("Jammed")<{}> {}
+
     const Jam = System.make("Jam", function* () {
       if ((yield* Time).tick === 2) {
         return yield* Effect.fail(new Jammed());
       }
     });
+
     withApp(
       App.make({ systems: [Jam], onScriptFailure: "stop" }).pipe(
         Effect.provide(capturedLogs().layer)
@@ -819,6 +897,7 @@ describe("a script that fails", () => {
     const originalLog = console.log;
     console.error = (...args: unknown[]) => void seen.push(args);
     console.log = (...args: unknown[]) => void seen.push(args);
+
     try {
       withApp(App.make({ systems: [] }), (app) => {
         app.spawnScript(trips(1, "the default logger"));
@@ -828,6 +907,7 @@ describe("a script that fails", () => {
       console.error = original;
       console.log = originalLog;
     }
+
     const text = seen.flat().join(" ");
     expect(text).toMatch(/A script failed at tick 1/);
     expect(text).toMatch(/Tripped/);
@@ -838,6 +918,7 @@ describe("determinism", () => {
   it("replays identically from the same inputs", () => {
     const run = () => {
       const trace: string[] = [];
+
       const Bounce = System.make("Bounce", function* () {
         const moving = yield* Moving;
         moving.each((pos, vel) => {
@@ -846,6 +927,7 @@ describe("determinism", () => {
           }
         });
       }).pipe(System.after(Movement));
+
       withApp(App.make({ systems: [Movement, Bounce] }), (app) => {
         for (let i = 0; i < 50; i++) {
           app.world.spawn(
@@ -853,10 +935,12 @@ describe("determinism", () => {
             Velocity.of({ x: (i % 7) - 3, y: 0 })
           );
         }
+
         app.spawnScript(
           Effect.gen(function* () {
             const script = yield* Script;
             const commands = yield* Commands;
+
             for (let i = 0; i < 20; i++) {
               yield* script.sleep(0.1);
               commands.spawn(
@@ -874,8 +958,10 @@ describe("determinism", () => {
         });
         trace.push(`ticks=${app.time.tick} entities=${app.world.entityCount}`);
       });
+
       return trace;
     };
+
     const first = run();
     expect(first).toHaveLength(71);
     expect(run()).toEqual(first);
@@ -888,9 +974,11 @@ describe("the fixed-step driver", () => {
       const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
       expect(step(1)).toBe(60);
       expect(step(1)).toBe(60);
+
       for (let i = 0; i < 1000; i++) {
         step(0.001);
       }
+
       expect(app.time.tick).toBe(180);
       expect(step(0.01)).toBe(0);
       expect(step(0.01)).toBe(1);

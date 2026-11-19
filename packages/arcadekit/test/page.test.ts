@@ -19,6 +19,7 @@ declare global {
   // React asks for this before it lets a test wrap its work in `act`.
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 /** Lets what is waiting on a promise or a timer run. */
@@ -61,6 +62,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   const ui = View.makeBridge();
   // What the UI is handed: the bridge, counting how often it is told.
   let told = 0;
+
   const handed: View.Bridge = {
     ...ui,
     subscribe: (view, listener) =>
@@ -69,23 +71,29 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
         listener(value);
       }),
   };
+
   const root = document.createElement("div");
   document.body.append(root);
   let unmount = (): void => {};
+
   // The UI is there before the game is.
   await act(async () => {
     unmount = mount(root, handed);
   });
+
   const before = {
     buttons: Array.from(root.querySelectorAll("button"))
       .filter((button) => !button.hidden)
       .map((button) => button.textContent),
     hud: root.querySelector(".hud")?.textContent,
   };
+
   let records = 0;
+
   const changes = new MutationObserver((list) => {
     records += list.length;
   });
+
   changes.observe(root, {
     attributes: true,
     characterData: true,
@@ -95,6 +103,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
   const source = Input.makeManualSource();
   const sound = Sound.makeRecorder();
   const scope = Effect.runSync(Scope.make());
+
   const app = Effect.runSync(
     App.make({ plugins: [Game], seed: 3 }).pipe(
       Effect.provide(Layer.succeed(Screen, { canvas })),
@@ -105,6 +114,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
       Scope.provide(scope)
     )
   );
+
   return {
     ui,
     root,
@@ -118,6 +128,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
       await settle();
       const count = records + changes.takeRecords().length;
       records = 0;
+
       return count;
     },
     buttons: () =>
@@ -129,9 +140,11 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
       const button = Array.from(root.querySelectorAll("button")).find(
         (one) => !one.hidden && one.textContent === label
       );
+
       if (button === undefined) {
         throw new Error(`There is no button "${label}"`);
       }
+
       await act(async () => {
         button.click();
       });
@@ -195,10 +208,12 @@ describe.each([
     // The UI is told when one is and at no other time: a frame in which
     // nothing it shows changed changes nothing in the document.
     let quiet = 0;
+
     for (let i = 0; i < 900 && page.ui.get(Hud).caught < 3; i++) {
       const told = page.told();
       await page.step();
       const changed = await page.changed();
+
       if (page.told() === told) {
         quiet++;
         expect(changed).toBe(0);
@@ -206,6 +221,7 @@ describe.each([
         expect(changed).toBeGreaterThan(0);
       }
     }
+
     const { caught } = page.ui.get(Hud);
     expect(caught).toBeGreaterThanOrEqual(3);
     expect(page.hud()).toBe(`Caught ${caught}`);
@@ -215,7 +231,7 @@ describe.each([
     expect(heard[0]!.clip!.data).toEqual({ samples: 2 });
     expect(heard.length).toBeGreaterThanOrEqual(1);
     expect(heard.length).toBeLessThanOrEqual(caught);
-    expect(page.sound.played.length).toBe(1 + heard.length);
+    expect(page.sound.played).toHaveLength(1 + heard.length);
     expect(quiet).toBeGreaterThan(50);
     // Told of the menu once, of the level twice, and once per catch.
     expect(page.told()).toBeLessThanOrEqual(3 + caught);
@@ -247,7 +263,7 @@ describe.each([
     // nothing says that anything did.
     page.source.tap("Enter");
     await page.step(2);
-    expect(page.sound.played.filter((one) => one.cue === "start").length).toBe(
+    expect(page.sound.played.filter((one) => one.cue === "start")).toHaveLength(
       1
     );
 
@@ -258,17 +274,17 @@ describe.each([
     expect(page.ui.get(Menu)).toEqual({ phase: "title" });
     // Back at the title there is no music.
     expect(page.sound.playing.size).toBe(0);
-    expect(page.sound.scored.length).toBe(4);
+    expect(page.sound.scored).toHaveLength(4);
 
     // Taken out, it listens no more and leaves nothing behind.
     await page.unmount();
-    expect(page.root.childNodes.length).toBe(0);
+    expect(page.root.childNodes).toHaveLength(0);
     const told = page.told();
     page.ui.send(Start, {});
     await page.step(2);
     expect(page.ui.get(Menu)).toEqual({ phase: "playing" });
     expect(page.told()).toBe(told);
-    expect(page.root.childNodes.length).toBe(0);
+    expect(page.root.childNodes).toHaveLength(0);
     await page.close();
   });
 });
@@ -279,16 +295,20 @@ describe("the page's UI", () => {
     import: "default",
     eager: true,
   });
+
   /** What a file imports from, type-only imports among them. */
   const imported = (file: string): string[] => {
     const found: string[] = [];
+
     const pattern =
       /^\s*(?:import|export)\s(?:[^"';]*?\sfrom\s*)?["']([^"']+)["']/gmu;
+
     for (const match of sources[`../examples/page/${file}`]!.matchAll(
       pattern
     )) {
       found.push(match[1]!);
     }
+
     return found.toSorted();
   };
 
@@ -301,12 +321,14 @@ describe("the page's UI", () => {
       "react",
       "react-dom/client",
     ]);
+
     // Of the bridge they import the type alone: they are handed the bridge.
     for (const file of ["ui-dom.ts", "ui-react.ts"]) {
       expect(sources[`../examples/page/${file}`]).toContain(
         'import type * as View from "../../src/View";'
       );
     }
+
     // And what they share with the game is keys: no component, no system.
     expect(imported("protocol.ts")).toEqual([
       "../../src/Action",

@@ -11,11 +11,13 @@ export const sourceCondition = (): Plugin => ({
   configEnvironment(name, config) {
     const consumer =
       config.consumer ?? (name === "client" ? "client" : "server");
+
     const conditions =
       config.resolve?.conditions ??
       (consumer === "client"
         ? defaultClientConditions
         : defaultServerConditions);
+
     config.resolve ??= {};
     config.resolve.conditions = [
       "source",

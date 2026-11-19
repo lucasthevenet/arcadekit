@@ -27,22 +27,28 @@ const seated = (
 ) =>
   Effect.gen(function* () {
     const seats: Seat[] = [];
+
     for (const name of names) {
       const app = yield* game();
       const options = { peer: name, peers: names, delta: DELTA };
+
       const session =
         ahead === undefined
           ? (Lockstep.make(app, options) as Rollback.Session)
           : Rollback.make(app, { ...options, ahead });
+
       // Each peer is a program of its own, with a transport that lasts as
       // long as it does: here they share a scope, so each one's layer is
       // built into it.
       const transport = yield* Layer.build(layerOf(name));
+
       const connected = yield* Transport.connect(session).pipe(
         Effect.provide(transport)
       );
+
       seats.push({ name, app, session, connected });
     }
+
     return seats;
   });
 
@@ -52,9 +58,11 @@ const asPeer = (seat: Seat): Peer => seat as unknown as Peer;
 describe("a hub, the network in memory", () => {
   it("carries what one port sends to every other, and not back", () => {
     const hub = Transport.makeHub();
+
     const [ada, grace, edsger] = ["ada", "grace", "edsger"].map((name) =>
       hub.port(name)
     ) as [Transport.Shape, Transport.Shape, Transport.Shape];
+
     ada.send(message("ada", 0, 3));
     ada.send(message("ada", 1));
     expect(hub.inFlight).toBe(4);
@@ -99,17 +107,21 @@ describe("a hub, the network in memory", () => {
       const ada = hub.port("ada");
       const grace = hub.port("grace");
       const order: number[] = [];
+
       for (let tick = 0; tick < 40; tick++) {
         ada.send(message("ada", tick));
         hub.step();
         order.push(...grace.receive().map((arrived) => arrived.tick));
       }
+
       for (let i = 0; i < 6; i++) {
         hub.step();
         order.push(...grace.receive().map((arrived) => arrived.tick));
       }
+
       return order;
     };
+
     const order = run(1);
     // Every one arrived, once, and not in the order they were sent.
     expect(order.toSorted((a, b) => a - b)).toEqual(
@@ -145,13 +157,16 @@ describe("a session joined to a transport", () => {
             (name) => hub.layer(name),
             undefined
           );
+
           ada!.app.enqueue(Drop, { by: "ada", value: 4 });
           // It waits for grace, and has said its piece all the same.
           expect(ada!.connected.tick()).toBe(false);
           expect(grace.receive().map((sent) => sent.tick)).toEqual([0, 1, 2]);
+
           for (let tick = 0; tick <= 2; tick++) {
             grace.send(message("grace", tick));
           }
+
           expect(ada!.connected.tick()).toBe(true);
           expect(ada!.connected.tick()).toBe(true);
           expect(ada!.connected.tick()).toBe(true);
@@ -174,27 +189,35 @@ describe("a session joined to a transport", () => {
               (name) => hub.layer(name),
               ahead
             );
+
             const steps = seats.map((seat) =>
               Driver.fixedStep(seat.connected, { hz: 30 })
             );
+
             const act = players(11);
+
             const frame = (acting: boolean): void => {
               hub.step();
               seats.forEach((seat, index) => {
                 if (acting) {
                   act(asPeer(seat));
                 }
+
                 steps[index]!(DELTA);
               });
             };
+
             for (let i = 0; i < 200; i++) {
               frame(true);
             }
+
             // To rest, and then to the same tick.
             for (let i = 0; i < 30; i++) {
               frame(false);
             }
+
             const [ada, grace] = seats as [Seat, Seat];
+
             for (
               let i = 0;
               i < 50 && ada.app.time.tick !== grace.app.time.tick;
@@ -206,6 +229,7 @@ describe("a session joined to a transport", () => {
                 : grace
               ).connected.tick();
             }
+
             expect(ada.app.time.tick).toBe(grace.app.time.tick);
             expect(ada.app.time.tick).toBeGreaterThan(
               ahead === undefined ? 60 : 200
@@ -214,9 +238,11 @@ describe("a session joined to a transport", () => {
             expect(ada.app.actionLog).toEqual(grace.app.actionLog);
             expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
             expect(ada.session.drifted).toBeUndefined();
+
             if (ahead !== undefined) {
               expect(ada.session.rewinds).toBeGreaterThan(0);
             }
+
             withApp(game(), (alone) => {
               App.replay(alone, ada.app.actionLog, {
                 delta: DELTA,
@@ -244,11 +270,14 @@ describe("a session joined to a transport", () => {
               (name) => hub.layer(name),
               undefined
             );
+
             setGlitch({ tick: 9, worlds: "all" });
             seats[0]!.app.enqueue(Drop, { by: "ada", value: 1 });
             const stopped = new Map<string, unknown>();
+
             for (let i = 0; i < 200 && stopped.size < 2; i++) {
               hub.step();
+
               for (const seat of seats) {
                 try {
                   seat.connected.tick();
@@ -257,6 +286,7 @@ describe("a session joined to a transport", () => {
                 }
               }
             }
+
             // Both, and with the same report.
             expect(stopped.get("ada")).toBeInstanceOf(Lockstep.Drifted);
             expect(stopped.get("grace")).toBeInstanceOf(Lockstep.Drifted);
@@ -277,6 +307,7 @@ describe("a session joined to a transport", () => {
         Effect.gen(function* () {
           const app = yield* game();
           let drawn = 0;
+
           const connected = yield* Transport.connect({
             ...Lockstep.make(app, {
               peer: "ada",
@@ -287,6 +318,7 @@ describe("a session joined to a transport", () => {
               drawn++;
             },
           }).pipe(Effect.provide(hub.layer("ada")));
+
           Driver.fixedStep(connected, { hz: 30 })(DELTA);
           expect(drawn).toBe(1);
           expect(app.time.tick).toBe(1);
@@ -302,6 +334,7 @@ describe("a session joined to a transport", () => {
         peers: ["ada"],
         delta: DELTA,
       });
+
       expect(() =>
         Effect.runSync(
           // @ts-expect-error A game of several peers is given a transport.
@@ -309,11 +342,13 @@ describe("a session joined to a transport", () => {
         )
       ).toThrow(/Transport/u);
       const hub = Transport.makeHub();
+
       const made = Effect.runSync(
         Transport.connect(session).pipe(
           Effect.provide(Transport.layer(hub.port("ada")))
         )
       );
+
       expect(made.tick()).toBe(true);
     });
   });
@@ -324,6 +359,7 @@ describe("a transport over text", () => {
     const sent: string[] = [];
     let deliver: (text: string) => void = () => {};
     let listening = 0;
+
     const transport = Transport.text({
       send: (text) => {
         sent.push(text);
@@ -331,11 +367,13 @@ describe("a transport over text", () => {
       listen(onText) {
         deliver = onText;
         listening++;
+
         return () => {
           listening--;
         };
       },
     });
+
     transport.send(message("ada", 3, 2));
     expect(sent).toEqual([Lockstep.encode(message("ada", 3, 2))]);
     deliver(Lockstep.encode(message("grace", 0)));
@@ -371,6 +409,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
     stranger.onmessage = (event: MessageEvent<unknown>) => {
       heard.push(event.data);
     };
+
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -378,6 +417,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             Layer.build(Transport.layerBroadcastChannel(name)),
             (context) => Context.get(context, Transport.Transport)
           );
+
           const ada = yield* open;
           const grace = yield* open;
           ada.send(message("ada", 0, 7));
@@ -408,6 +448,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
       onmessage: unknown;
       posted: unknown[];
     }[] = [];
+
     vi.stubGlobal(
       "BroadcastChannel",
       class {
@@ -432,6 +473,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         }
       }
     );
+
     try {
       Effect.runSync(
         Effect.scoped(
@@ -439,6 +481,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             const context = yield* Layer.build(
               Transport.layerBroadcastChannel("game/room")
             );
+
             const transport = Context.get(context, Transport.Transport);
             expect(made).toHaveLength(1);
             expect(made[0]!.name).toBe("game/room");
@@ -461,12 +504,14 @@ describe("the transport between tabs, a BroadcastChannel", () => {
   it("stops hearing when its scope has closed", async () => {
     const name = nextRoom();
     const outside = new BroadcastChannel(name);
+
     // Provided to the one line that asks for it, and gone with that line.
     const kept = await Effect.runPromise(
       Effect.gen(function* () {
         return yield* Transport.Transport;
       }).pipe(Effect.provide(Transport.layerBroadcastChannel(name)))
     );
+
     outside.postMessage(Lockstep.encode(message("grace", 0)));
     await later(20);
     // It says so, in place of a game that waits for ever.
@@ -489,18 +534,22 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             () => Transport.layerBroadcastChannel(name),
             8
           );
+
           const act = players(21);
           const [ada, grace] = seats as [Seat, Seat];
+
           for (let i = 0; i < 60; i++) {
             for (const seat of seats) {
               if (i < 40) {
                 act(asPeer(seat));
               }
+
               seat.connected.tick();
               // The other end hears in its own time, not in this loop's.
               yield* Effect.promise(() => later(1));
             }
           }
+
           for (
             let i = 0;
             i < 200 &&
@@ -514,6 +563,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
               : grace
             ).connected.tick();
           }
+
           expect(ada.app.time.tick).toBe(grace.app.time.tick);
           expect(ada.app.time.tick).toBeGreaterThan(40);
           expect(moves(ada.app.actionLog).length).toBeGreaterThan(10);

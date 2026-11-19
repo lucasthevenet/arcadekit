@@ -65,6 +65,7 @@ import * as System from "./System";
  * @category Actions
  */
 export const pointerX = "PointerX";
+
 /**
  * The axis of the pointer's vertical position, in CSS pixels from the top of
  * its target.
@@ -212,17 +213,20 @@ export const makeManualSource = (): ManualSource => {
   let released = new Set<string>();
   const axes = new Map<string, number>();
   let moved = new Set<string>();
+
   const press = (code: string): void => {
     if (!down.has(code)) {
       down.add(code);
       pressed.add(code);
     }
   };
+
   const release = (code: string): void => {
     if (down.delete(code)) {
       released.add(code);
     }
   };
+
   return {
     press,
     release,
@@ -251,9 +255,11 @@ export const makeManualSource = (): ManualSource => {
         axes: new Map(axes),
         moved: Array.from(moved),
       };
+
       pressed = new Set();
       released = new Set();
       moved = new Set();
+
       return sample;
     },
   };
@@ -266,7 +272,9 @@ export const makeManualSource = (): ManualSource => {
  * went down in, and the tick it last went up in.
  */
 type Marks = readonly [down: number, pressedAt: number, releasedAt: number];
+
 type Buttons = Readonly<Record<string, Marks>>;
+
 type Axes = Readonly<Record<string, number>>;
 
 const NEVER = -1;
@@ -298,6 +306,7 @@ const ReportSchema = Schema.Struct({
   /** The axes that moved, and their new values. */
   axes: Schema.optionalKey(Schema.Record(Schema.String, Schema.Finite)),
 });
+
 type ReportPayload = typeof ReportSchema.Type;
 
 /**
@@ -318,9 +327,11 @@ export const Report = Action.define("arcadekit/Input.Report", ReportSchema);
 
 const sorted = <V>(record: Readonly<Record<string, V>>): Record<string, V> => {
   const out: Record<string, V> = {};
+
   for (const code of Object.keys(record).toSorted()) {
     out[code] = record[code]!;
   }
+
   return out;
 };
 
@@ -332,8 +343,10 @@ const nextButtons = (
 ): Buttons | undefined => {
   const after: Record<string, Marks> = {};
   let changed = false;
+
   for (const code of Object.keys(before)) {
     const marks = before[code]!;
+
     // A button that is up is remembered for the tick it went up in.
     if (marks[0] === 1 || marks[2] >= tick) {
       after[code] = marks;
@@ -341,27 +354,34 @@ const nextButtons = (
       changed = true;
     }
   }
+
   for (const code of payload.up ?? []) {
     const marks = after[code];
+
     if (marks !== undefined && marks[0] === 1) {
       after[code] = [0, marks[1], tick];
       changed = true;
     }
   }
+
   for (const code of payload.down ?? []) {
     const marks = after[code];
+
     if (marks === undefined || marks[0] === 0) {
       after[code] = [1, tick, marks?.[2] ?? NEVER];
       changed = true;
     }
   }
+
   for (const code of payload.tapped ?? []) {
     const marks = after[code];
+
     if (marks === undefined || marks[0] === 0) {
       after[code] = [0, tick, tick];
       changed = true;
     }
   }
+
   // In order of code: two games that hold the same buttons hold the same data.
   return changed ? sorted(after) : undefined;
 };
@@ -371,14 +391,19 @@ const nextAxes = (before: Axes, moves: Axes | undefined): Axes | undefined => {
   if (moves === undefined) {
     return undefined;
   }
+
   const after: Record<string, number> = { ...before };
   let changed = false;
+
   for (const code of Object.keys(moves)) {
     const value = moves[code]!;
+
     if ((before[code] ?? 0) === value) {
       continue;
     }
+
     changed = true;
+
     // An axis at 0 is one nobody has moved: it is not kept.
     if (value === 0) {
       delete after[code];
@@ -386,6 +411,7 @@ const nextAxes = (before: Axes, moves: Axes | undefined): Axes | undefined => {
       after[code] = value;
     }
   }
+
   return changed ? sorted(after) : undefined;
 };
 
@@ -395,10 +421,13 @@ const report = Action.handler(Report, function* (payload) {
   // tick whose systems see it first is the next.
   const tick = (yield* Time).tick + 1;
   const buttons = nextButtons(held.buttons, payload, tick);
+
   if (buttons !== undefined) {
     held.buttons = buttons;
   }
+
   const axes = nextAxes(held.axes, payload.axes);
+
   if (axes !== undefined) {
     held.axes = axes;
   }
@@ -413,6 +442,7 @@ const difference = (
   const down: string[] = [];
   const up: string[] = [];
   const tapped: string[] = [];
+
   for (const code of devices.down) {
     if (buttons[code]?.[0] !== 1) {
       down.push(code);
@@ -423,11 +453,13 @@ const difference = (
       down.push(code);
     }
   }
+
   for (const code of Object.keys(buttons)) {
     if (buttons[code]![0] === 1 && !devices.down.has(code)) {
       up.push(code);
     }
   }
+
   for (const code of devices.pressed) {
     // Down and up again since the last sample: the game never sees it down.
     // If it was held before that, it went up first, which is said above.
@@ -435,18 +467,22 @@ const difference = (
       tapped.push(code);
     }
   }
+
   let moves: Record<string, number> | undefined;
+
   for (const [code, value] of devices.axes) {
     if ((axes[code] ?? 0) !== value) {
       (moves ??= {})[code] = value;
     }
   }
+
   for (const code of Object.keys(axes)) {
     // An axis the devices no longer have is back at 0.
     if (!devices.axes.has(code)) {
       (moves ??= {})[code] = 0;
     }
   }
+
   if (
     down.length === 0 &&
     up.length === 0 &&
@@ -455,6 +491,7 @@ const difference = (
   ) {
     return undefined;
   }
+
   return {
     ...(up.length > 0 ? { up } : {}),
     ...(down.length > 0 ? { down } : {}),
@@ -482,6 +519,7 @@ const Read = System.make("arcadekit/Input.Read", function* () {
   if ((yield* Source) === noSource) {
     return;
   }
+
   const devices = yield* Devices;
   const world = yield* World;
   const { tick } = yield* Time;
@@ -490,15 +528,19 @@ const Read = System.make("arcadekit/Input.Read", function* () {
   // Read twice with no tick between, the picture is what the world holds
   // and what was reported the first time.
   let waiting = reported.get(world);
+
   if (waiting === undefined || waiting.tick !== tick) {
     waiting = { tick, payloads: [] };
     reported.set(world, waiting);
   }
+
   for (const earlier of waiting.payloads) {
     buttons = nextButtons(buttons, earlier, tick + 1) ?? buttons;
     axes = nextAxes(axes, earlier.axes) ?? axes;
   }
+
   const payload = difference(buttons, axes, devices);
+
   if (payload !== undefined) {
     waiting.payloads.push(payload);
     (yield* Action.Actions).enqueue(Report, payload);
@@ -585,9 +627,11 @@ const views = new WeakMap<EcsWorld, Views>();
 
 const viewsOf = (world: EcsWorld, time: Readonly<TimeState>): Views => {
   const found = views.get(world);
+
   if (found !== undefined) {
     return found;
   }
+
   // Whoever asks first may be a system that said what it reads and writes.
   // The picture is not among what it says, as the time is not: no system
   // writes it, so reading it puts no two systems in an order.
@@ -603,6 +647,7 @@ const viewsOf = (world: EcsWorld, time: Readonly<TimeState>): Views => {
   const pressed = (code: string): boolean => held.buttons[code]?.[1] === now();
   const released = (code: string): boolean => held.buttons[code]?.[2] === now();
   const pads: GamepadView[] = [];
+
   const made: Views = {
     keyboard: { down, pressed, released },
     pointer: {
@@ -624,7 +669,9 @@ const viewsOf = (world: EcsWorld, time: Readonly<TimeState>): Views => {
         released: (button) => released(padButton(index, button)),
       }),
   };
+
   views.set(world, made);
+
   return made;
 };
 
@@ -663,14 +710,14 @@ class View<A> extends Effectable.Class<A, never, World | Time> {
  *
  * @category Views
  */
-export const Keyboard: View<KeyboardView> = new View((all) => all.keyboard);
+export const Keyboard = new View<KeyboardView>((all) => all.keyboard);
 
 /**
  * The pointer's state in the current tick. Requires `Input.plugin`.
  *
  * @category Views
  */
-export const Pointer: View<PointerView> = new View((all) => all.pointer);
+export const Pointer = new View<PointerView>((all) => all.pointer);
 
 const padViews: View<GamepadView>[] = [];
 
@@ -723,9 +770,11 @@ const binding =
   ): Binding => {
     const watched = typeof codes === "string" ? [codes] : codes;
     const given = payload[0] as PayloadOf<P>;
+
     return {
       fire(devices, enqueue) {
         const happened = among(devices);
+
         if (
           happened.length > 0 &&
           watched.some((code) => happened.includes(code))
@@ -791,6 +840,7 @@ export const bind = (
 ): System.System<never, Devices | Action.Actions> =>
   System.make(name, function* () {
     const devices = yield* Devices;
+
     if (
       devices.pressed.length === 0 &&
       devices.released.length === 0 &&
@@ -798,7 +848,9 @@ export const bind = (
     ) {
       return;
     }
+
     const { enqueue } = yield* Action.Actions;
+
     for (const one of bindings) {
       one.fire(devices, enqueue);
     }

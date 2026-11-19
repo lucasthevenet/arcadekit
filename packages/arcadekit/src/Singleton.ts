@@ -79,5 +79,6 @@ export const define = <S extends Schema>(
   initial: ValueOf<S>
 ): Singleton<S> => {
   const spec = Component.singleton(name, schema, initial);
+
   return new Singleton(spec.component, spec.initial);
 };

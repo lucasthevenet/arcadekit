@@ -14,37 +14,44 @@ import type { Column, FieldKind, RefCodec } from "./component";
 
 /** Folds one 32-bit word into a hash state. */
 export const add = (state: number, word: number): number => {
-  let k = Math.imul(word, 0xcc9e2d51);
+  let k = Math.imul(word, 0xcc_9e_2d_51);
   k = (k << 15) | (k >>> 17);
-  k = Math.imul(k, 0x1b873593);
+  k = Math.imul(k, 0x1b_87_35_93);
   const h = state ^ k;
-  return (Math.imul((h << 13) | (h >>> 19), 5) + 0xe6546b64) | 0;
+
+  return (Math.imul((h << 13) | (h >>> 19), 5) + 0xe6_54_6b_64) | 0;
 };
 
 /** Scrambles a state so every bit of it depends on every bit of the input. */
 export const finish = (state: number): number => {
   let h = state;
-  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
-  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h = Math.imul(h ^ (h >>> 16), 0x85_eb_ca_6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2_b2_ae_35);
+
   return (h ^ (h >>> 16)) >>> 0;
 };
 
 export const addString = (state: number, text: string): number => {
   let h = add(state, text.length);
+
   for (let i = 0; i < text.length; i++) {
     h = add(h, text.charCodeAt(i));
   }
+
   return h;
 };
 
 // A float is hashed by its bits. Every NaN counts as the same NaN, because
 // which bits a NaN carries is the one thing engines do not agree on.
-const NAN_32 = 0x7fc00000;
-const NAN_64_HIGH = 0x7ff80000;
+const NAN_32 = 0x7f_c0_00_00;
+const NAN_64_HIGH = 0x7f_f8_00_00;
+
 const isNan32 = (bits: number): boolean =>
-  (bits & 0x7f800000) === 0x7f800000 && (bits & 0x007fffff) !== 0;
+  (bits & 0x7f_80_00_00) === 0x7f_80_00_00 && (bits & 0x00_7f_ff_ff) !== 0;
+
 const isNan64 = (low: number, high: number): boolean =>
-  (high & 0x7ff00000) === 0x7ff00000 && ((high & 0x000fffff) | low) !== 0;
+  (high & 0x7f_f0_00_00) === 0x7f_f0_00_00 &&
+  ((high & 0x00_0f_ff_ff) | low) !== 0;
 
 // Which half of a 64-bit float comes first in memory depends on the machine.
 const LOW_FIRST = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
@@ -58,6 +65,7 @@ const addFloat64 = (state: number, value: number): number => {
   float64[0] = value;
   const low = float64Words[LOW]!;
   const high = float64Words[HIGH]!;
+
   return isNan64(low, high)
     ? add(add(state, 0), NAN_64_HIGH)
     : add(add(state, low), high);
@@ -95,22 +103,28 @@ export const addData = (state: number, value: unknown): number => {
     case "undefined": {
       return add(state, DATA_UNDEFINED);
     }
+
     case "boolean": {
       return add(add(state, DATA_BOOLEAN), value ? 1 : 0);
     }
+
     case "number": {
       return addFloat64(add(state, DATA_NUMBER), value);
     }
+
     case "string": {
       return addString(add(state, DATA_STRING), value);
     }
+
     case "bigint": {
       return addString(add(state, DATA_BIGINT), value.toString());
     }
+
     default: {
       if (value === null) {
         return add(state, DATA_NULL);
       }
+
       return addString(add(state, DATA_JSON), jsonText(value));
     }
   }
@@ -130,15 +144,18 @@ const addWords = (state: number, words: Uint32Array, count: number): number => {
   let c = state ^ 2;
   let d = state ^ 3;
   let i = 0;
+
   for (; i + 3 < count; i += 4) {
     a = add(a, words[i]!);
     b = add(b, words[i + 1]!);
     c = add(c, words[i + 2]!);
     d = add(d, words[i + 3]!);
   }
+
   for (; i < count; i++) {
     a = add(a, words[i]!);
   }
+
   return add(add(add(a, b), c), d);
 };
 
@@ -153,6 +170,7 @@ const addFloat32s = (
   let c = state ^ 2;
   let d = state ^ 3;
   let i = 0;
+
   for (; i + 3 < count; i += 4) {
     const w0 = words[i]!;
     const w1 = words[i + 1]!;
@@ -163,10 +181,12 @@ const addFloat32s = (
     c = add(c, isNan32(w2) ? NAN_32 : w2);
     d = add(d, isNan32(w3) ? NAN_32 : w3);
   }
+
   for (; i < count; i++) {
     const w = words[i]!;
     a = add(a, isNan32(w) ? NAN_32 : w);
   }
+
   return add(add(add(a, b), c), d);
 };
 
@@ -182,33 +202,45 @@ export const addColumn = (
   codec?: RefCodec<unknown>
 ): number => {
   let h = state;
+
   switch (kind) {
     case "f32": {
       const { buffer, byteOffset } = column as Float32Array;
+
       return addFloat32s(h, new Uint32Array(buffer, byteOffset, count), count);
     }
+
     case "i32": {
       // The same bits, read as unsigned so that one loop serves both.
       const { buffer, byteOffset } = column as Int32Array;
+
       return addWords(h, new Uint32Array(buffer, byteOffset, count), count);
     }
+
     case "u32": {
       return addWords(h, column as Uint32Array, count);
     }
+
     case "u16": {
       const values = column as Uint16Array;
+
       for (let i = 0; i < count; i++) {
         h = add(h, values[i]!);
       }
+
       return h;
     }
+
     case "u8": {
       const values = column as Uint8Array;
+
       for (let i = 0; i < count; i++) {
         h = add(h, values[i]!);
       }
+
       return h;
     }
+
     case "entity": {
       // An entity's id is a whole number kept as a 64-bit float, and never
       // NaN: its two words as they are, low word first, in the loop that
@@ -217,21 +249,27 @@ export const addColumn = (
       // fields half as slow again.
       const { buffer, byteOffset } = column as Float64Array;
       const words = new Uint32Array(buffer, byteOffset, count * 2);
+
       if (LOW_FIRST) {
         return addWords(h, words, count * 2);
       }
+
       // A machine that keeps the high word first: the same words, in the
       // order every other machine has them.
       const ordered = new Uint32Array(count * 2);
+
       for (let i = 0; i < count; i++) {
         ordered[2 * i] = words[2 * i + 1]!;
         ordered[2 * i + 1] = words[2 * i]!;
       }
+
       return addWords(h, ordered, count * 2);
     }
+
     case "f64": {
       const { buffer, byteOffset } = column as Float64Array;
       const words = new Uint32Array(buffer, byteOffset, count * 2);
+
       for (let i = 0; i < count; i++) {
         const low = words[2 * i + LOW]!;
         const high = words[2 * i + HIGH]!;
@@ -239,22 +277,30 @@ export const addColumn = (
           ? add(add(h, 0), NAN_64_HIGH)
           : add(add(h, low), high);
       }
+
       return h;
     }
+
     case "json": {
       const values = column as unknown[];
+
       for (let i = 0; i < count; i++) {
         h = addData(h, values[i]);
       }
+
       return h;
     }
+
     case "ref": {
       const values = column as unknown[];
+
       for (let i = 0; i < count; i++) {
         h = addData(h, codec!.encode(values[i]));
       }
+
       return h;
     }
+
     case "transient": {
       // Not part of the game's state: not saved, so not hashed.
       return h;
@@ -277,39 +323,53 @@ export const addColumnPerRow = (
     case "f32": {
       const { buffer, byteOffset } = column as Float32Array;
       const words = new Uint32Array(buffer, byteOffset, count);
+
       for (let i = 0; i < count; i++) {
         const bits = words[i]!;
         states[i] = add(states[i]!, isNan32(bits) ? NAN_32 : bits);
       }
+
       return;
     }
+
     case "entity":
     case "f64": {
       const values = column as Float64Array;
+
       for (let i = 0; i < count; i++) {
         states[i] = addFloat64(states[i]!, values[i]!);
       }
+
       return;
     }
+
     case "json": {
       const values = column as unknown[];
+
       for (let i = 0; i < count; i++) {
         states[i] = addData(states[i]!, values[i]);
       }
+
       return;
     }
+
     case "ref": {
       const values = column as unknown[];
+
       for (let i = 0; i < count; i++) {
         states[i] = addData(states[i]!, codec!.encode(values[i]));
       }
+
       return;
     }
+
     case "transient": {
       return;
     }
+
     default: {
       const values = column as Uint32Array;
+
       for (let i = 0; i < count; i++) {
         states[i] = add(states[i]!, values[i]!);
       }
@@ -341,8 +401,10 @@ export const shapeOf = (
 ): number => {
   let h = addString(0, name);
   h = add(h, fields.length);
+
   for (let f = 0; f < fields.length; f++) {
     h = add(addString(h, fields[f]!), KIND_CODE[kinds[f]!]);
   }
+
   return finish(h);
 };

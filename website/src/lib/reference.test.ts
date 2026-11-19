@@ -17,12 +17,14 @@ const kit: ReferencePackage = {
   description: "Games on Effect.",
   modules: ["App", "Query"],
 };
+
 const three: ReferencePackage = {
   folder: "three",
   name: "@arcadekit/three",
   description: "Draws a game with Three.js.",
   modules: ["Three"],
 };
+
 const physics: ReferencePackage = {
   folder: "physics",
   name: "@arcadekit/physics",
@@ -64,9 +66,11 @@ describe("a package's page", () => {
     const modules = (MODULE_GROUPS.arcadekit ?? [])
       .flatMap((group) => group.modules)
       .toReversed();
+
     const blocks = renderPackage({ ...kit, modules }, REPO_URL, "main").split(
       "\n\n"
     );
+
     expect(blocks.filter((block) => block.startsWith("#"))).toStrictEqual([
       "## Modules",
       "### Core",

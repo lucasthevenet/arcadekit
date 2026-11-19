@@ -20,6 +20,7 @@ export const tableNames = defineHastPlugin({
       visit(node, ctx) {
         // In a body cell, also inside a link or emphasis there.
         let inCell = false;
+
         for (
           let parent = ctx.parent(node);
           parent?.type === "element";
@@ -30,13 +31,17 @@ export const tableNames = defineHastPlugin({
             break;
           }
         }
+
         if (!inCell) {
           return;
         }
+
         const pieces = namePieces(ctx.textContent(node));
+
         if (pieces.length < 2) {
           return;
         }
+
         ctx.setField(
           node,
           "children",

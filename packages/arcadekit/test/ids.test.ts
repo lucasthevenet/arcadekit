@@ -16,19 +16,23 @@ import { EntityId, Migrate } from "../src/index";
 
 const Body = Component.define("id/Body", { x: Field.f32 });
 const Owned = Component.define("id/Owned", { by: Field.entity, n: Field.u16 });
+
 const ChildOf = Component.relation("id/ChildOf", {
   onTargetDespawn: "despawn",
 });
+
 const Mark = Component.define(
   "id/Mark",
   { to: Field.entity },
   { storage: "sparse" }
 );
+
 const Count = Component.singleton(
   "id/Count",
   { n: Field.i32, last: Field.entity },
   { n: 0, last: 0 as Entity }
 );
+
 const all = [Body, Owned, ChildOf, Mark, Count.component];
 
 const query = <const D extends Terms>(
@@ -38,6 +42,7 @@ const query = <const D extends Terms>(
 
 /** What an id's generation is multiplied by: 2^22, the number of slots. */
 const SLOTS = 2 ** 22;
+
 /** The generations a slot has. */
 const GENERATIONS = 2 ** 31;
 
@@ -46,6 +51,7 @@ const worn = (world: World, times: number): Entity => {
   for (let n = 0; n < times; n++) {
     world.despawn(world.spawn(Body.of({ x: n })));
   }
+
   return world.spawn(Body.of({ x: -1 }));
 };
 
@@ -54,6 +60,7 @@ describe("an entity's id", () => {
     const world = new World();
     const seen = new Set<number>();
     const kept: Entity[] = [];
+
     // Past the 1,024 times at which an id of 32 bits came round again.
     for (let n = 0; n < 3000; n++) {
       const entity = world.spawn(Body.of({ x: n }));
@@ -61,16 +68,21 @@ describe("an entity's id", () => {
       expect(entityGeneration(entity)).toBe(n);
       expect(seen.has(entity), `given out twice: ${entity}`).toBe(false);
       seen.add(entity);
+
       if (n % 97 === 0 || n === 1023 || n === 1024 || n === 2048) {
         kept.push(entity);
       }
+
       world.despawn(entity);
+
       for (const old of kept) {
         expect(world.isAlive(old)).toBe(false);
       }
     }
+
     const last = world.spawn(Body.of({ x: 7 }));
     expect(entityGeneration(last)).toBe(3000);
+
     for (const old of kept) {
       expect(world.isAlive(old)).toBe(false);
       expect(world.get(old, Body)).toBeUndefined();
@@ -78,8 +90,10 @@ describe("an entity's id", () => {
       expect(world.set(old, Body, { x: 0 })).toBe(false);
       expect(world.despawn(old)).toBe(false);
     }
+
     expect(world.get(last, Body)).toEqual({ x: 7 });
     expect(world.entityCount).toBe(1);
+
     // Nor does a number that is no id at all, though its low bits are a
     // slot that is taken.
     for (const never of [last + 0.5, -1, Number.NaN, 2 ** 53 + last, 0.25]) {
@@ -128,6 +142,7 @@ describe("an entity's id", () => {
     world.view(query([Owned])).eachChunk((start, end, columns, entities) => {
       expect(columns.by).toBeInstanceOf(Float64Array);
       expect(entities).toBeInstanceOf(Float64Array);
+
       for (let i = start; i < end; i++) {
         expect(columns.by[i]).toBe(wide);
         expect(entities[i]).toBe(owned);
@@ -163,11 +178,13 @@ describe("an entity's id", () => {
     const bytes = world.snapshot();
     const copy = new World();
     copy.load(bytes, all);
+
     for (const each of [copy, world]) {
       if (each === world) {
         world.despawn(owned);
         world.restore(bytes);
       }
+
       expect(each.hash()).toBe(hash);
       expect(each.isAlive(wide)).toBe(true);
       expect(each.view(query([Body])).entities()).toEqual(handed);
@@ -176,6 +193,7 @@ describe("an entity's id", () => {
       expect(each.sources(wide, ChildOf)).toEqual([child]);
       expect(each.singleton(Count).last).toBe(wide);
     }
+
     const contents = readSnapshot(bytes);
     expect(contents.generations).toBeInstanceOf(Uint32Array);
     expect(Array.from(contents.generations)).toEqual([0, 1500, 0, 0]);
@@ -227,10 +245,12 @@ describe("an entity's id", () => {
     world.spawn(Body.of({ x: 1 }));
     const contents = readSnapshot(world.snapshot());
     Migrate.addField(contents, "id/Body", "by", "entity", wide);
+
     const Bodied = Component.define("id/Body", {
       x: Field.f32,
       by: Field.entity,
     });
+
     const moved = new World();
     moved.load(writeSnapshot(contents), [Bodied]);
     expect(moved.get(0 as Entity, Bodied)).toEqual({ x: 1, by: wide });
@@ -250,6 +270,7 @@ describe("a slot whose generations are used up", () => {
     contents.tables[0]!.entities[0] = last;
     const world = new World();
     world.load(writeSnapshot(contents), all);
+
     return { world, last };
   };
 
@@ -267,9 +288,11 @@ describe("a slot whose generations are used up", () => {
     // 0 is not, ever.
     const next = [0, 1, 2, 3].map((n) => world.spawn(Body.of({ x: n })));
     expect(next.map((entity) => entityIndex(entity))).toEqual([1, 2, 3, 4]);
+
     for (const entity of next) {
       world.despawn(entity);
     }
+
     const after = [0, 1, 2, 3, 4].map((n) => world.spawn(Body.of({ x: n })));
     expect(after.map((entity) => entityIndex(entity)).toSorted()).toEqual([
       1, 2, 3, 4, 5,
@@ -289,11 +312,13 @@ describe("a slot whose generations are used up", () => {
       GENERATIONS,
       1,
     ]);
+
     for (const each of [world, copy]) {
       expect(entityIndex(each.spawn(Body.of({ x: 0 })))).toBe(1);
       expect(entityIndex(each.spawn(Body.of({ x: 0 })))).toBe(2);
       expect(each.isAlive(last)).toBe(false);
     }
+
     expect(copy.hash()).toBe(world.hash());
     world.restore(bytes);
     expect(entityIndex(world.spawn(Body.of({ x: 0 })))).toBe(1);
@@ -301,11 +326,13 @@ describe("a slot whose generations are used up", () => {
     const contents = readSnapshot(bytes);
     contents.freed = [...contents.freed, 0];
     let problem: unknown;
+
     try {
       new World().load(writeSnapshot(contents), all);
     } catch (error) {
       problem = error;
     }
+
     expect(problem).toBeInstanceOf(SnapshotError);
     expect((problem as SnapshotError).message).toMatch(/one that is used up/);
   });
@@ -330,31 +357,32 @@ describe("a snapshot from before ids were widened", () => {
     ).match(/../gu)!,
     (byte) => Number.parseInt(byte, 16)
   );
+
   // What that build said of the world it wrote, and of the three entities
   // it spawned next.
   const facts = {
-    two: 25165826,
-    four: 8388612,
-    owned: 4194309,
+    two: 25_165_826,
+    four: 8_388_612,
+    owned: 4_194_309,
     child: 6,
     alive: 6,
     bodies: [
       [0, 0],
-      [25165826, 25],
-      [8388612, 41],
+      [25_165_826, 25],
+      [8_388_612, 41],
       [3, 3],
-      [4194309, 100],
+      [4_194_309, 100],
     ],
-    ownedBy: { by: 25165826, n: 7 },
-    childOf: { target: 8388612 },
+    ownedBy: { by: 25_165_826, n: 7 },
+    childOf: { target: 8_388_612 },
     sources: [6],
     marks: [
-      [0, 25165826],
-      [8388612, 4194309],
+      [0, 25_165_826],
+      [8_388_612, 4_194_309],
     ],
-    count: { n: 3, last: 8388612 },
-    random: [3387534915, 427231553, 1090094954, 2995374812],
-    after: [4194305, 7, 8],
+    count: { n: 3, last: 8_388_612 },
+    random: [3_387_534_915, 427_231_553, 1_090_094_954, 2_995_374_812],
+    after: [4_194_305, 7, 8],
   } as unknown as {
     readonly two: Entity;
     readonly four: Entity;

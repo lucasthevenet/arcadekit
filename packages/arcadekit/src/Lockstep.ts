@@ -140,10 +140,12 @@ export class Drifted extends Data.TaggedError("Drifted")<{
     const hashes = Object.entries(this.hashes)
       .map(([name, hash]) => `${name} ${hash}`)
       .join(", ");
+
     const since =
       this.agreedAt === undefined
         ? "No earlier checkpoint matched, so they did not start from the same state: check that every peer was made with the same plugins and the same seed, and spawned the same things before its first tick"
         : `They last agreed at tick ${this.agreedAt}, so they came apart in one of the ${this.tick - this.agreedAt} ticks after it: look for a system, a handler or a script that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers that were not made alike (a plugin, the delta)`;
+
     return `The peers are no longer playing the same game. At tick ${this.tick} the hashes of their worlds are: ${hashes} (found by "${this.peer}"). ${since}.`;
   }
 }
@@ -339,27 +341,33 @@ export const build = <E>(
   options: Options & { readonly delay: number; readonly ahead: number }
 ): Session<E | Save.SaveRefused> & Predicting => {
   const { delay, delta, peer, ahead } = options;
+
   if (!Number.isSafeInteger(delay) || delay < 0) {
     throw new Error(
       `A session's delay is a whole number of ticks, 0 or more, and this one is ${delay}.`
     );
   }
+
   if (!Number.isSafeInteger(ahead) || ahead < 0) {
     throw new Error(
       `How far a session runs ahead is a whole number of ticks, 0 or more, and this one is ${ahead}.`
     );
   }
+
   if (!(delta > 0) || !Number.isFinite(delta)) {
     throw new Error(
       `A session's delta is the seconds a tick simulates, more than 0, and this one is ${delta}.`
     );
   }
+
   const peers = options.peers.toSorted(byName);
+
   if (new Set(peers).size !== peers.length) {
     throw new Error(
       `Two peers of a session have the same name: ${peers.join(", ")}.`
     );
   }
+
   if (!peers.includes(peer)) {
     throw new Error(
       `The peer "${peer}" is not among the peers of its own session: ${peers.join(", ")}. Every peer is given the names of all of them, its own among them.`
@@ -368,6 +376,7 @@ export const build = <E>(
 
   // What this peer issued and has not put in a message yet.
   let issued: Issued[] = [];
+
   const reins = app.divert((name, payload) => {
     issued.push({ name, payload });
   });
@@ -378,19 +387,23 @@ export const build = <E>(
   // Per peer, the first tick its message is missing for: every one before
   // it is in. This peer's own is the first tick it has made none for.
   const have = new Map<string, number>();
+
   for (const name of peers) {
     held.set(name, new Map());
     have.set(name, start);
   }
+
   const own = held.get(peer)!;
   let outbox: Message[] = [];
 
   /** Returns how many ticks every peer's messages have arrived for: those ticks are final. */
   const known = (): number => {
     let least = Number.POSITIVE_INFINITY;
+
     for (const next of have.values()) {
       least = Math.min(least, next);
     }
+
     return least;
   };
 
@@ -400,11 +413,14 @@ export const build = <E>(
       // What was issued up to now applies on the last of them. The ones
       // before it, which only a session's first tick has, are empty.
       const actions = tick === now + delay ? issued : [];
+
       if (tick === now + delay) {
         issued = [];
       }
+
       own.set(tick, actions);
       have.set(peer, tick + 1);
+
       // The checkpoints go with the first message there is to send.
       if (unsent.length === 0) {
         outbox.push({ from: peer, tick, actions });
@@ -437,10 +453,12 @@ export const build = <E>(
   // last tick the peers agreed at is known when the next one differs.
   const early = new Map<string, Map<number, readonly Action.Checkpoint[]>>();
   const next = new Map<string, number>();
+
   for (const name of peers) {
     early.set(name, new Map());
     next.set(name, start);
   }
+
   let unsent: Action.Checkpoint[] = [];
   let drifted: Drifted | undefined;
   let agreedAt: number | undefined;
@@ -454,56 +472,70 @@ export const build = <E>(
     if (drifted !== undefined || wrong !== undefined) {
       return;
     }
+
     const final = Math.min(known(), app.time.tick);
+
     for (const tick of Array.from(taken.keys()).toSorted((a, b) => a - b)) {
       if (tick > final) {
         break;
       }
+
       const hash = taken.get(tick)!;
       taken.delete(tick);
       mine.set(tick, hash);
       unsent.push({ tick, hash });
     }
+
     // One that no peer has answered in all that time is let go of.
     for (const tick of mine.keys()) {
       if (tick >= app.time.tick - UNANSWERED) {
         break;
       }
+
       mine.delete(tick);
       theirs.delete(tick);
     }
+
     for (const tick of Array.from(theirs.keys()).toSorted((a, b) => a - b)) {
       if (tick > final) {
         // This peer is not sure of that tick yet.
         break;
       }
+
       const said = theirs.get(tick)!;
       const hash = mine.get(tick);
+
       if (hash === undefined) {
         // Nothing to hold it against: a checkpoint the other peer took by
         // hand, or one of a schedule that is not this peer's.
         theirs.delete(tick);
         continue;
       }
+
       if (said.size < peers.length - 1) {
         // Once every peer has said, so that the report is whole. No tick
         // is lost by it: their words for this tick come with messages
         // that this peer cannot run far past.
         continue;
       }
+
       mine.delete(tick);
       theirs.delete(tick);
       const hashes: Record<string, number> = {};
       let same = true;
+
       for (const name of peers) {
         const other: number = name === peer ? hash : said.get(name)!;
         hashes[name] = other;
         same &&= other === hash;
       }
+
       if (!same) {
         drifted = new Drifted({ tick, peer, hashes, agreedAt });
+
         return;
       }
+
       agreedAt = tick;
     }
   };
@@ -511,20 +543,25 @@ export const build = <E>(
   /** Runs one tick with the actions known for it. */
   const run = (tick: number): Exit.Exit<void, E | Save.SaveRefused> => {
     let whole = true;
+
     for (const next of have.values()) {
       whole &&= next > tick;
     }
+
     if (whole) {
       moments.delete(tick);
     } else {
       // A peer has not said: the tick is run as if it had nothing to say,
       // and the game is kept as it was, to go back to if it had.
       const moment = app.capture();
+
       if (Exit.isFailure(moment)) {
         return Exit.failCause(moment.cause);
       }
+
       moments.set(tick, moment.value);
     }
+
     // Every peer applies the tick's actions in the same order: peer by
     // peer in order of name, and each peer's in the order it issued them.
     for (const name of peers) {
@@ -532,9 +569,11 @@ export const build = <E>(
         reins.deliver(action.name, action.payload, name);
       }
     }
+
     const exit = reins.tickExit(delta);
     // The checkpoint the tick recorded, if it did.
     const last = app.actionLog.at(-1);
+
     if (
       last !== undefined &&
       Action.isCheckpoint(last) &&
@@ -542,20 +581,24 @@ export const build = <E>(
     ) {
       taken.set(last.tick, last.hash);
     }
+
     return exit;
   };
 
   /** Releases what no tick will need again. */
   const prune = (): void => {
     const final = Math.min(known(), app.time.tick);
+
     for (const turns of held.values()) {
       for (const tick of turns.keys()) {
         if (tick >= final) {
           break;
         }
+
         turns.delete(tick);
       }
     }
+
     for (const tick of moments.keys()) {
       if (tick < final) {
         moments.delete(tick);
@@ -566,6 +609,7 @@ export const build = <E>(
   /** Stops the session, after sending the hash the others are missing. */
   const stop = (reason: Drifted): Exit.Exit<never, Drifted> => {
     say(app.time.tick);
+
     return Exit.fail(reason);
   };
 
@@ -577,7 +621,9 @@ export const build = <E>(
         `A session's tick was given a delta of ${given}, and the session ticks ${delta} seconds at a time, as every peer of it does. Give its driver hz: ${1 / delta}.`
       );
     }
+
     const now = app.time.tick;
+
     if (!begun) {
       begun = true;
       // The state the peers start from is the first thing they compare,
@@ -590,7 +636,9 @@ export const build = <E>(
           : app.checkpoint()
       );
     }
+
     let failed: Exit.Exit<never, E | Save.SaveRefused> | undefined;
+
     if (wrong !== undefined) {
       // A message came for a tick that had run without it. Back to before
       // that tick, and forward again with what is known now.
@@ -598,11 +646,14 @@ export const build = <E>(
       wrong = undefined;
       app.rewind(moments.get(from)!);
       rewinds++;
+
       for (let tick = from; tick < now; tick++) {
         const exit = run(tick);
         resimulated++;
+
         if (Exit.isFailure(exit)) {
           failed ??= Exit.failCause(exit.cause);
+
           if (app.time.tick === tick) {
             // The tick did not run at all: it could not be captured.
             return failed;
@@ -610,33 +661,45 @@ export const build = <E>(
         }
       }
     }
+
     compare();
     prune();
+
     if (drifted !== undefined) {
       return stop(drifted);
     }
+
     if (failed !== undefined) {
       return failed;
     }
+
     // The devices next: what they issue goes into this tick's message.
     const heard = app.inputExit();
+
     if (Exit.isFailure(heard)) {
       return Exit.failCause(heard.cause);
     }
+
     say(now);
+
     // No further than `ahead` ticks past what every peer has said.
     if (now - known() >= ahead) {
       return Exit.succeed(false);
     }
+
     const exit = run(now);
+
     if (Exit.isFailure(exit) && app.time.tick === now) {
       return Exit.failCause(exit.cause);
     }
+
     // The checkpoint this tick recorded, against what the others said of it.
     compare();
+
     if (drifted !== undefined && Exit.isSuccess(exit)) {
       return stop(drifted);
     }
+
     return Exit.map(exit, () => true);
   };
 
@@ -648,6 +711,7 @@ export const build = <E>(
     ahead,
     receive(message) {
       const turns = held.get(message.from);
+
       if (
         turns === undefined ||
         message.from === peer ||
@@ -656,36 +720,47 @@ export const build = <E>(
       ) {
         return;
       }
+
       turns.set(message.tick, message.actions);
       let first = have.get(message.from)!;
+
       while (turns.has(first)) {
         first++;
       }
+
       have.set(message.from, first);
+
       // A tick that ran without it, and it had something to say.
       if (message.tick < app.time.tick && message.actions.length > 0) {
         wrong = Math.min(wrong ?? message.tick, message.tick);
       }
+
       // Its checkpoints, once every message it sent before this one is in.
       const waiting = early.get(message.from)!;
       waiting.set(message.tick, message.checkpoints ?? []);
       let expected = next.get(message.from)!;
+
       for (
         let checkpoints = waiting.get(expected);
         checkpoints !== undefined;
         checkpoints = waiting.get(expected)
       ) {
         waiting.delete(expected++);
+
         for (const { hash, tick } of checkpoints) {
           let said = theirs.get(tick);
+
           if (said === undefined) {
             said = new Map();
             theirs.set(tick, said);
           }
+
           said.set(message.from, hash);
         }
       }
+
       next.set(message.from, expected);
+
       if (begun) {
         compare();
       }
@@ -693,14 +768,17 @@ export const build = <E>(
     outgoing() {
       const messages = outbox;
       outbox = [];
+
       return messages;
     },
     tickExit,
     tick(given) {
       const exit = tickExit(given);
+
       if (Exit.isFailure(exit)) {
         throw Cause.squash(exit.cause);
       }
+
       return exit.value;
     },
     get drifted() {
@@ -709,13 +787,16 @@ export const build = <E>(
     get waitingFor() {
       // The tick that has to be whole before the next one may run.
       const needed = app.time.tick - ahead;
+
       return peers.filter((name) => name !== peer && have.get(name)! <= needed);
     },
     get held() {
       let count = 0;
+
       for (const turns of held.values()) {
         count += turns.size;
       }
+
       return count;
     },
     get unanswered() {

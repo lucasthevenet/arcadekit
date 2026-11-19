@@ -29,10 +29,12 @@ import { Game, Screen } from "./game";
 // UI holds the bridge and nothing of the game; only the one that is shown
 // is loaded.
 const ui = View.makeBridge();
+
 const { mount } =
   new URLSearchParams(location.search).get("ui") === "react"
     ? await import("./ui-react")
     : await import("./ui-dom");
+
 mount(document.querySelector("#ui")!, ui);
 
 // --- the entry point -------------------------------------------------------------

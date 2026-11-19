@@ -20,18 +20,22 @@ server.on("connection", (socket, request) => {
   const connection = relay.connect(request.url ?? "", (text) =>
     socket.send(text)
   );
+
   if (Exit.isFailure(connection)) {
     const refused = Cause.squash(connection.cause) as Relay.Refused;
     console.log(`refused: ${refused.message}`);
     socket.close(refused.code, refused.reason);
+
     return;
   }
+
   const { member } = connection.value;
   console.log(`${member.peer} is in ${member.room}`);
   socket.on("message", (data, isBinary) => {
     const received = connection.value.receive(
       isBinary ? (data as Uint8Array) : String(data)
     );
+
     if (Exit.isFailure(received)) {
       const refused = Cause.squash(received.cause) as Relay.Refused;
       console.log(`closed ${member.peer}: ${refused.message}`);

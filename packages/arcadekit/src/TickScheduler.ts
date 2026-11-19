@@ -19,7 +19,7 @@ import type * as Scheduler from "effect/Scheduler";
  * @category Models
  */
 export class TickDispatcher implements Scheduler.SchedulerDispatcher {
-  private buckets: [priority: number, tasks: Array<() => void>][] = [];
+  private buckets: [priority: number, tasks: (() => void)[]][] = [];
   private flushing = false;
 
   /**
@@ -31,9 +31,11 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
 
   get pending(): number {
     let total = 0;
+
     for (const bucket of this.buckets) {
       total += bucket[1].length;
     }
+
     return total;
   }
 
@@ -41,16 +43,21 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
   scheduleTask(task: () => void, priority: number): void {
     const { buckets } = this;
     let index = 0;
+
     for (const bucket of buckets) {
       if (bucket[0] === priority) {
         bucket[1].push(task);
+
         return;
       }
+
       if (bucket[0] > priority) {
         break;
       }
+
       index += 1;
     }
+
     buckets.splice(index, 0, [priority, [task]]);
   }
 
@@ -59,11 +66,15 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
     if (this.flushing) {
       return;
     }
+
     this.flushing = true;
+
     try {
       let rounds = 0;
+
       while (this.buckets.length > 0) {
         rounds += 1;
+
         if (rounds > this.maxRounds) {
           this.buckets = [];
           throw new Error(
@@ -71,8 +82,10 @@ export class TickDispatcher implements Scheduler.SchedulerDispatcher {
               `A fiber is probably looping on Effect.yieldNow; wait with Script.nextTick instead.`
           );
         }
+
         const { buckets } = this;
         this.buckets = [];
+
         for (const bucket of buckets) {
           for (const task of bucket[1]) {
             task();

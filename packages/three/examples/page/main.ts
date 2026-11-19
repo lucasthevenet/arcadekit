@@ -46,8 +46,10 @@ import {
 import { Gltf, Three } from "../../src/index";
 
 const { Position, Rotation, Scale } = Transform3d;
+
 const COUNT =
   Number(new URLSearchParams(location.search).get("count")) || 10_000;
+
 const BOX = 60;
 
 // --- the simulation: no Three.js here ----------------------------------------------
@@ -55,11 +57,13 @@ const Mote = Component.tag("page/Mote");
 const Card = Component.tag("page/Card");
 const CARDS = 48;
 const Ship = Component.tag("page/Ship");
+
 const Velocity = Component.define("page/Velocity", {
   x: Field.f32,
   y: Field.f32,
   z: Field.f32,
 });
+
 /** How fast a mote spins about the vertical, in radians a second. */
 const Spin = Component.define("page/Spin", {
   rate: Field.f32,
@@ -100,8 +104,10 @@ const Drift = System.make("Drift", function* () {
     for (const [axis, wall] of WALLS) {
       const at = position[axis];
       const speed = velocity[axis];
+
       for (let i = start; i < end; i++) {
         let next = at[i]! + speed[i]! * delta;
+
         // Off a wall of the box, and back, in the colour of that wall.
         if (next > BOX || next < -BOX) {
           speed[i] = -speed[i]!;
@@ -110,6 +116,7 @@ const Drift = System.make("Drift", function* () {
           tint.g[i] = wall.g;
           tint.b[i] = wall.b;
         }
+
         at[i] = next;
       }
     }
@@ -134,6 +141,7 @@ const Turn = System.make("Turn", function* () {
 const Carded = Query.all(Transform2d.Position, Transform2d.Rotation).pipe(
   Query.with(Card)
 );
+
 const Wheel = System.make("Wheel", function* () {
   const { delta } = yield* Time;
   const cos = Math.cos(delta * 0.3);
@@ -152,12 +160,16 @@ const Wheel = System.make("Wheel", function* () {
 const Steer = System.make("Steer", function* () {
   const keys = yield* Input.Keyboard;
   const { delta } = yield* Time;
+
   const x =
     (keys.down("ArrowRight") ? 1 : 0) - (keys.down("ArrowLeft") ? 1 : 0);
+
   const y = (keys.down("ArrowUp") ? 1 : 0) - (keys.down("ArrowDown") ? 1 : 0);
+
   if (x === 0 && y === 0) {
     return;
   }
+
   (yield* Query.all(Position).pipe(Query.with(Ship))).each((position) => {
     position.x += x * 30 * delta;
     position.y += y * 30 * delta;
@@ -173,6 +185,7 @@ const Rules = Plugin.make("page/Rules", {
     const random = yield* Random;
     const within = () => (random.next() * 2 - 1) * BOX;
     const speed = () => (random.next() * 2 - 1) * 12;
+
     for (let i = 0; i < COUNT; i++) {
       const size = 0.3 + random.next() * 0.7;
       commands.spawn(
@@ -185,6 +198,7 @@ const Rules = Plugin.make("page/Rules", {
         Tint.of(code(0xcb_cb_cb))
       );
     }
+
     for (let i = 0; i < CARDS; i++) {
       const around = (i / CARDS) * Math.PI * 2;
       commands.spawn(
@@ -197,6 +211,7 @@ const Rules = Plugin.make("page/Rules", {
         Transform2d.Scale.of({ x: 1, y: 1.5 })
       );
     }
+
     commands.spawn(Ship, Position.of({ x: 0, y: 0, z: 0 }));
   }),
 });
@@ -221,12 +236,15 @@ const Motes = Three.instances("page/Motes", {
 const Deck = Assets.bundle("page/Deck", {
   face: Three.texture("/card.png"),
 });
+
 let deckOut = true;
+
 addEventListener("keydown", (event) => {
   if (event.key === "c") {
     deckOut = !deckOut;
   }
 });
+
 const KeepDeck = Assets.during(
   Effect.sync(() => deckOut),
   Deck
@@ -253,7 +271,9 @@ const Cards = Three.instances("page/Cards", {
 const Fleet = Assets.bundle("page/Fleet", {
   ship: Gltf.model("/ship.gltf"),
 });
+
 const KeepFleet = Assets.during(Effect.succeed(true), Fleet);
+
 const Ships = Three.objects("page/Ships", {
   of: Ship,
   from: Fleet,
@@ -263,6 +283,7 @@ const Ships = Three.objects("page/Ships", {
 
 // The camera goes round the box, in real time: it is no part of the game.
 let angle = 0;
+
 const Orbit = System.make("Orbit", function* () {
   const { camera } = yield* Three.Scene;
   angle += (yield* Frame).delta * 0.1;
@@ -273,10 +294,12 @@ const Orbit = System.make("Orbit", function* () {
 const hud = document.querySelector("#hud") as HTMLElement;
 let shown = 0;
 let frames = 0;
+
 const Hud = System.make("Hud", function* () {
   const { tick } = yield* Time;
   frames++;
   const now = performance.now();
+
   // Twice a second: text that changes every frame is work nobody can read.
   if (now - shown >= 500) {
     hud.textContent = `${COUNT} motes · tick ${tick} · ${Math.round((frames * 1000) / (now - shown))} frames a second`;
@@ -301,6 +324,7 @@ const Look = Plugin.make("page/Look", {
 
 // --- the entry point -------------------------------------------------------------
 const canvas = document.querySelector("#game") as HTMLCanvasElement;
+
 Browser.runMain(
   App.run({ plugins: [Look], seed: 7 }, { hz: 60 }).pipe(
     Effect.provide(Three.layerWebGL({ canvas, antialias: true }))

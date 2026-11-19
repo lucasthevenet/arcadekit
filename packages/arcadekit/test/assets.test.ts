@@ -12,6 +12,7 @@ import {
 } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { Save } from "../src/index";
 import {
   Action,
   App,
@@ -26,7 +27,6 @@ import {
   Plugin,
   Query,
   Random,
-  Save,
   Script,
   Singleton,
   State,
@@ -53,6 +53,7 @@ const tracked = (url: string, log: string[]) =>
     Effect.acquireRelease(
       Effect.sync(() => {
         log.push(`open ${at}`);
+
         return { at, size: bytes.length };
       }),
       (made) => Effect.sync(() => log.push(`close ${made.at}`))
@@ -81,8 +82,10 @@ const makeSlowLoader = () => {
       readonly fail: (message: string) => void;
     }
   >();
+
   const asked: string[] = [];
   const givenUp: string[] = [];
+
   const loader: Assets.LoaderShape = {
     bytes: (url) =>
       Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
@@ -92,11 +95,13 @@ const makeSlowLoader = () => {
           fail: (message) =>
             resume(Effect.fail(new Assets.AssetFailed({ url, message }))),
         });
+
         return Effect.sync(() => {
           givenUp.push(url);
         });
       }),
   };
+
   return { asked, givenUp, loader, waiting };
 };
 
@@ -104,21 +109,27 @@ const makeSlowLoader = () => {
 const makeGame = () => {
   const log: string[] = [];
   const Level = State.define("as/Level", ["menu", "forest", "cave"]);
+
   const Forest = Assets.bundle("as/Forest", {
     backdrop: tracked("/forest.png", log),
     layout: Assets.json("/forest.json", Layout),
   });
+
   const Cave = Assets.bundle("as/Cave", {
     backdrop: tracked("/cave.png", log),
   });
+
   const Go = Action.define(
     "as/Go",
     Schema.Struct({ to: Schema.Literals(["menu", "forest", "cave"]) })
   );
+
   const go = Action.handler(Go, function* ({ to }) {
     (yield* Level).set(to);
   });
+
   const drawn: string[] = [];
+
   const Draw = System.make("Draw", function* () {
     const forest = yield* Forest;
     const cave = yield* Cave;
@@ -126,6 +137,7 @@ const makeGame = () => {
       `${(yield* Level).value}: forest ${forest._tag}${forest._tag === "Ready" ? ` (${forest.assets.layout.name}, ${forest.assets.backdrop.size} bytes)` : ""}, cave ${cave._tag}`
     );
   }).pipe(System.inStage("frame"));
+
   const Game = Plugin.make("Game", {
     plugins: [Assets.plugin],
     components: [Level],
@@ -136,6 +148,7 @@ const makeGame = () => {
       Draw,
     ],
   });
+
   return { Cave, Forest, Game, Go, Level, drawn, log };
 };
 
@@ -145,6 +158,7 @@ describe("a failure, in these tests", () => {
     // passes whatever the two messages are.
     const failed = (url: string, message: string) =>
       new Assets.AssetFailed({ url, message });
+
     expect(failed("/a", "It is not there.")).not.toEqual(
       failed("/a", "It is not JSON.")
     );
@@ -170,19 +184,23 @@ describe("an asset", () => {
 
   it("is loaded into a scope, and let go when the scope closes", async () => {
     const log: string[] = [];
+
     const Forest = Assets.bundle("as/Forest", {
       backdrop: tracked("/forest.png", log),
       layout: Assets.json("/forest.json", Layout),
       notes: Assets.text("/notes.txt"),
       raw: Assets.bytes("/cave.png"),
     });
+
     const scope = Effect.runSync(Scope.make());
+
     const loaded = await Effect.runPromise(
       Assets.load(Forest).pipe(
         Scope.provide(scope),
         Effect.provide(Assets.layerMemory(files))
       )
     );
+
     expect(loaded).toEqual({
       backdrop: { at: "/forest.png", size: 3 },
       layout: { walls: 3, name: "Forest" },
@@ -199,38 +217,45 @@ describe("an asset", () => {
 
     // With Effect.scoped, the scope is the block.
     log.length = 0;
+
     const size = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const { backdrop } = yield* Assets.load(Forest);
           expect(log).toEqual(["open /forest.png"]);
+
           return backdrop.size;
         })
       ).pipe(Effect.provide(Assets.layerMemory(files)))
     );
+
     expect(size).toBe(3);
     expect(log).toEqual(["open /forest.png", "close /forest.png"]);
   });
 
   it("fails with the asset that could not be loaded, and what the others made is let go with the scope", async () => {
     const log: string[] = [];
+
     const Broken = Assets.bundle("as/Broken", {
       backdrop: tracked("/forest.png", log),
       missing: tracked("/nowhere.png", log),
     });
+
     const exit = await Effect.runPromise(
       Effect.exit(Effect.scoped(Assets.load(Broken))).pipe(
         Effect.provide(Assets.layerMemory(files))
       )
     );
+
     expect(Exit.isFailure(exit)).toBe(true);
     const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
     expectFailed(error, "/nowhere.png", "There is no such file.");
     // Nothing that was made is left.
-    expect(log.filter((line) => line.startsWith("open")).length).toBe(
+    expect(log.filter((line) => line.startsWith("open"))).toHaveLength(
       log.filter((line) => line.startsWith("close")).length
     );
-    expect(log.includes("open /nowhere.png")).toBe(false);
+    expect(log).not.toContain("open /nowhere.png");
+
     // A file is one that was given, not a word every object knows.
     const inherited = await Effect.runPromise(
       Effect.exit(
@@ -241,6 +266,7 @@ describe("an asset", () => {
         )
       ).pipe(Effect.provide(Assets.layerMemory(files)))
     );
+
     expectFailed(
       Cause.squash((inherited as Exit.Failure<never, unknown>).cause),
       "toString",
@@ -261,13 +287,16 @@ describe("an asset", () => {
           )
         ).pipe(Effect.provide(Assets.layerMemory({ "/layout.json": file })))
       );
+
     const failure = async (file: string | Uint8Array) => {
       const exit = await tryLoad(file);
       expect(Exit.isFailure(exit)).toBe(true);
+
       return Cause.squash(
         (exit as Exit.Failure<never, unknown>).cause
       ) as Assets.AssetFailed;
     };
+
     expect(await tryLoad('{"walls":2,"name":"Ok"}')).toEqual(
       Exit.succeed({ layout: { walls: 2, name: "Ok" } })
     );
@@ -280,6 +309,7 @@ describe("an asset", () => {
     expect(wrongShape.url).toBe("/layout.json");
     expect(wrongShape.message).not.toMatch(/^It is not JSON/);
     expect((await failure('{"walls":2}')).url).toBe("/layout.json");
+
     // Text has to be text.
     const exit = await Effect.runPromise(
       Effect.exit(
@@ -294,6 +324,7 @@ describe("an asset", () => {
         )
       )
     );
+
     expect(Exit.isFailure(exit)).toBe(true);
     expect(
       (
@@ -306,6 +337,7 @@ describe("an asset", () => {
 
   it("comes by fetch unless told otherwise, and an interrupted load gives the request up", async () => {
     const requests: { url: string; signal: AbortSignal }[] = [];
+
     const answers = new Map<string, () => Response>([
       ["/notes.txt", () => new Response("fetched")],
       [
@@ -313,9 +345,11 @@ describe("an asset", () => {
         () => new Response("no", { status: 404, statusText: "Not Found" }),
       ],
     ]);
+
     vi.stubGlobal("fetch", (url: string, init: { signal: AbortSignal }) => {
       requests.push({ url, signal: init.signal });
       const answer = answers.get(url);
+
       return answer === undefined
         ? new Promise<Response>((_resolve, reject) => {
             init.signal.addEventListener("abort", () =>
@@ -324,10 +358,12 @@ describe("an asset", () => {
           })
         : Promise.resolve(answer());
     });
+
     const one = (url: string) =>
       Effect.scoped(
         Assets.load(Assets.bundle("as/Fetched", { file: Assets.text(url) }))
       );
+
     expect(await Effect.runPromise(one("/notes.txt"))).toEqual({
       file: "fetched",
     });
@@ -355,10 +391,13 @@ describe("a level's assets", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const app = yield* App.make({ plugins: [Game] });
+
           const frame = (): string => {
             app.frame(0);
+
             return drawn.at(-1)!;
           };
+
           app.tick(1);
           expect(frame()).toBe("menu: forest Absent, cave Absent");
           expect(log).toEqual([]);
@@ -410,7 +449,7 @@ describe("a level's assets", () => {
     );
     // The app's scope has closed: what was still loaded went with it.
     expect(log.at(-1)).toBe("close /forest.png");
-    expect(log.filter((line) => line.startsWith("open")).length).toBe(
+    expect(log.filter((line) => line.startsWith("open"))).toHaveLength(
       log.filter((line) => line.startsWith("close")).length
     );
   });
@@ -418,13 +457,17 @@ describe("a level's assets", () => {
   it("are there, or gone, for every system of the frame they come or go in, wherever the system that keeps them is listed", async () => {
     const log: string[] = [];
     const Level = State.define("as/Order", ["menu", "forest"]);
+
     const Forest = Assets.bundle("as/Ordered", {
       backdrop: tracked("/forest.png", log),
     });
+
     const seen: string[] = [];
+
     const Draw = System.make("Draw", function* () {
       seen.push((yield* Forest)._tag);
     }).pipe(System.inStage("frame"));
+
     const Keep = Assets.during(State.is(Level, "forest"), Forest);
     // It is of the stage before a frame's own.
     expect(Keep.stage).toBe("preFrame");
@@ -437,12 +480,15 @@ describe("a level's assets", () => {
             // Listed after what draws with the bundle.
             systems: [Draw, Keep],
           });
+
           expect(app.frameOrder).toEqual(["Assets.during(as/Ordered)", "Draw"]);
+
           const go = (to: "menu" | "forest"): void => {
             app.spawnScript(Effect.map(Level, (level) => level.set(to)));
             app.tick(1);
             app.frame(0);
           };
+
           app.frame(0);
           go("forest");
           go("menu");
@@ -460,10 +506,13 @@ describe("a level's assets", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const app = yield* App.make({ plugins: [Game] });
+
           const frame = (): string => {
             app.frame(0);
+
             return drawn.at(-1)!;
           };
+
           app.dispatch(Go, { to: "forest" });
           app.tick(1);
           expect(frame()).toBe("forest: forest Loading, cave Absent");
@@ -485,7 +534,7 @@ describe("a level's assets", () => {
           expect(frame()).toBe(
             "forest: forest Ready (Slow, 7 bytes), cave Absent"
           );
-          expect(slow.asked.length).toBe(2);
+          expect(slow.asked).toHaveLength(2);
 
           // The cave starts loading, and the game leaves before it has.
           app.dispatch(Go, { to: "cave" });
@@ -511,20 +560,26 @@ describe("a level's assets", () => {
     const slow = makeSlowLoader();
     const logged: unknown[] = [];
     const errors: Assets.AssetFailed[] = [];
+
     const Peek = System.make("Peek", function* () {
       const forest = yield* Forest;
+
       if (forest._tag === "Failed") {
         errors.push(forest.error);
       }
     }).pipe(System.inStage("frame"));
+
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const app = yield* App.make({ plugins: [Game], systems: [Peek] });
+
           const frame = (): string => {
             app.frame(0);
+
             return drawn.at(-1)!;
           };
+
           app.dispatch(Go, { to: "forest" });
           app.tick(1);
           frame();
@@ -538,14 +593,14 @@ describe("a level's assets", () => {
           // The picture that did load is let go at once.
           expect(log).toEqual(["open /forest.png", "close /forest.png"]);
           // It is said once, through the app's loggers.
-          expect(logged.length).toBe(1);
+          expect(logged).toHaveLength(1);
           expect(String(logged[0])).toMatch(
             /The assets "as\/Forest" could not be loaded/
           );
           // It stays failed, and is not asked for again while the level lasts.
           frame();
           frame();
-          expect(slow.asked.length).toBe(2);
+          expect(slow.asked).toHaveLength(2);
           // Left and entered again, it is tried again.
           app.dispatch(Go, { to: "menu" });
           app.tick(1);
@@ -553,7 +608,7 @@ describe("a level's assets", () => {
           app.dispatch(Go, { to: "forest" });
           app.tick(1);
           expect(frame()).toBe("forest: forest Loading, cave Absent");
-          expect(slow.asked.length).toBe(4);
+          expect(slow.asked).toHaveLength(4);
         })
       ).pipe(
         Effect.provideService(Assets.Loader, slow.loader),
@@ -572,12 +627,14 @@ describe("a level's assets", () => {
     const { Game, Go, log } = makeGame();
     const slow = makeSlowLoader();
     const scope = Effect.runSync(Scope.make());
+
     const app = await Effect.runPromise(
       App.make({ plugins: [Game] }).pipe(
         Scope.provide(scope),
         Effect.provideService(Assets.Loader, slow.loader)
       )
     );
+
     app.dispatch(Go, { to: "forest" });
     app.tick(1);
     app.frame(0);
@@ -595,12 +652,15 @@ describe("a level's assets", () => {
     const drawnGame = makeGame();
     const bare = makeGame();
     let asked = 0;
+
     const counting: Assets.LoaderShape = {
       bytes: () => {
         asked++;
+
         return Effect.succeed(new Uint8Array(1));
       },
     };
+
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -608,10 +668,12 @@ describe("a level's assets", () => {
             plugins: [drawnGame.Game],
             checkpointEvery: 1,
           }).pipe(Effect.provide(Assets.layerMemory(files)));
+
           const unseen = yield* App.make({
             plugins: [bare.Game],
             checkpointEvery: 1,
           }).pipe(Effect.provideService(Assets.Loader, counting));
+
           for (const to of ["forest", "cave", "menu"] as const) {
             seen.dispatch(drawnGame.Go, { to });
             unseen.dispatch(bare.Go, { to });
@@ -620,14 +682,17 @@ describe("a level's assets", () => {
             unseen.tick(1);
             expect(seen.world.hash()).toBe(unseen.world.hash());
           }
+
           expect(asked).toBe(0);
           expect(bare.log).toEqual([]);
-          expect(drawnGame.log.length).toBe(4);
+          expect(drawnGame.log).toHaveLength(4);
+
           // The log of one replays in the other, which has no files.
           const again = yield* App.make({
             plugins: [bare.Game],
             checkpointEvery: 1,
           }).pipe(Effect.provideService(Assets.Loader, counting));
+
           App.replay(again, seen.actionLog, { delta: 1, ticks: 3 });
           expect(again.world.hash()).toBe(seen.world.hash());
           expect(asked).toBe(0);
@@ -640,6 +705,7 @@ describe("a level's assets", () => {
     const drawnGame = makeGame();
     const bare = makeGame();
     const reached: string[] = [];
+
     const services = {
       World,
       Time,
@@ -651,36 +717,44 @@ describe("a level's assets", () => {
       Actions: Action.Actions,
       Devices: Input.Devices,
     };
+
     // A loader that draws random numbers, as one that waits a random while
     // before it tries again does, and looks for what the app provides.
     const loader: Assets.LoaderShape = {
       bytes: () =>
         Effect.gen(function* () {
           yield* EffectRandom.next;
+
           for (const [name, key] of Object.entries(services)) {
             const found = yield* Effect.serviceOption(
               key as Context.Key<unknown, unknown>
             );
+
             if (Option.isSome(found)) {
               reached.push(name);
             }
           }
+
           yield* Effect.promise(settle);
           yield* EffectRandom.next;
+
           return new TextEncoder().encode('{"walls":1,"name":"Drawn"}');
         }),
     };
+
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const seen = yield* App.make({ plugins: [drawnGame.Game], seed: 3 });
           const unseen = yield* App.make({ plugins: [bare.Game], seed: 3 });
+
           for (const app of [seen, unseen]) {
             app.dispatch(app === seen ? drawnGame.Go : bare.Go, {
               to: "forest",
             });
             app.tick(1);
           }
+
           // The loader draws at once, while the frame stage is running:
           // not from the world, which is frozen and would say so.
           seen.frame(0);
@@ -711,17 +785,21 @@ describe("a level's assets", () => {
           const Cheat = System.make("Cheat", function* () {
             yield* Forest;
           });
+
           const app = yield* App.make({ plugins: [Game], systems: [Cheat] });
           expect(() => app.tick(1)).toThrow(
             /The assets "as\/Forest" were asked for in the tick/
           );
+
           // A script is the simulation too.
           const other = yield* App.make({ plugins: [Game] }).pipe(
             Effect.provide(quiet)
           );
+
           const fiber = other.spawnScript(Forest.asEffect());
           const exit = fiber.pollUnsafe();
           expect(exit !== undefined && Exit.isFailure(exit)).toBe(true);
+
           // The store that keeps them is no way round: it says the same of
           // being asked, and of being told to load or to let go.
           const calls: Record<string, (store: Assets.StoreShape) => unknown> = {
@@ -729,11 +807,14 @@ describe("a level's assets", () => {
             held: (store) => store.hold(Forest, "Sneak"),
             "let go of": (store) => store.drop(Forest, "Sneak"),
           };
+
           let asked = 0;
+
           for (const [what, call] of Object.entries(calls)) {
             const Sneak = System.make("Sneak", function* () {
               call(yield* Assets.Store);
             });
+
             const sneaking = yield* App.make({
               plugins: [Game],
               systems: [Sneak],
@@ -741,21 +822,26 @@ describe("a level's assets", () => {
               Effect.provideService(Assets.Loader, {
                 bytes: () => {
                   asked++;
+
                   return Effect.succeed(new Uint8Array(1));
                 },
               })
             );
+
             expect(() => sneaking.tick(1), what).toThrow(
               new RegExp(`The assets "as/Forest" were ${what} in the tick`, "u")
             );
           }
+
           // Nothing was loaded on the way to being refused.
           expect(asked).toBe(0);
           // The input stage may ask, as the frame stage may.
           let status = "";
+
           const Ask = System.make("Ask", function* () {
             status = (yield* Forest)._tag;
           }).pipe(System.inStage("input"));
+
           const asking = yield* App.make({ plugins: [Game], systems: [Ask] });
           asking.input();
           expect(status).toBe("Absent");
@@ -766,45 +852,58 @@ describe("a level's assets", () => {
 
   it("reach the game as an action, issued once they are there, which a replay has without the file", async () => {
     const Wall = Component.define("as/Wall", { at: Field.i32 });
+
     const Built = Singleton.define(
       "as/Built",
       { level: Field.json<string>() },
       { level: "" }
     );
+
     const Level = State.define("as/Stage", ["menu", "forest"]);
+
     const Forest = Assets.bundle("as/ForestLayout", {
       layout: Assets.json("/forest.json", Layout),
     });
+
     const Enter = Action.define("as/Enter", Schema.Struct({}));
     const Build = Action.define("as/Build", Layout);
+
     const handlers = [
       Action.handler(Enter, function* () {
         (yield* Level).set("forest");
       }),
       Action.handler(Build, function* ({ name, walls }) {
         const commands = yield* Commands;
+
         for (let at = 0; at < walls; at++) {
           commands.spawn(Wall.of({ at }));
         }
+
         (yield* Built).level = name;
       }),
     ] as const;
+
     // What comes from a file comes in as an action, once the file is there.
     const Begin = System.make("Begin", function* () {
       const forest = yield* Forest;
+
       if (forest._tag === "Ready" && (yield* Built).level === "") {
         (yield* Action.Actions).enqueue(Build, forest.assets.layout);
       }
     }).pipe(System.inStage("input"));
+
     const Rules = Plugin.make("Rules", {
       components: [Wall, Built, Level],
       handlers,
     });
+
     const Shown = Plugin.make("Shown", {
       plugins: [Rules, Assets.plugin],
       systems: [Assets.during(State.is(Level, "forest"), Forest), Begin],
     });
+
     const slow = makeSlowLoader();
+
     const { hash, log, ticks } = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -837,6 +936,7 @@ describe("a level's assets", () => {
               queued: true,
             },
           ]);
+
           return {
             hash: app.world.hash(),
             log: app.actionLog,
@@ -845,6 +945,7 @@ describe("a level's assets", () => {
         })
       ).pipe(Effect.provideService(Assets.Loader, slow.loader))
     );
+
     // The replay has the rules and nothing that loads or draws.
     Effect.runSync(
       Effect.scoped(
@@ -853,6 +954,7 @@ describe("a level's assets", () => {
             plugins: [Rules],
             checkpointEvery: 1,
           });
+
           App.replay(again, log, { delta: 0.1, ticks });
           expect(again.world.hash()).toBe(hash);
           expect(again.world.view(Query.all(Wall)).count()).toBe(4);
@@ -872,10 +974,12 @@ describe("a level's assets", () => {
           app.frame(0);
           const save = app.save();
           expect(Exit.isSuccess(save)).toBe(true);
+
           const loaded = yield* App.load(
             (save as Exit.Success<Save.Save>).value,
             { plugins: [Game] }
           );
+
           drawn.length = 0;
           loaded.frame(0);
           expect(drawn).toEqual([
@@ -900,6 +1004,7 @@ describe("a level's assets", () => {
               systems: [Assets.during(State.is(Level, "menu"), Forest)],
             })
           );
+
           expect(Exit.isFailure(twice)).toBe(true);
           expect(
             (Cause.squash((twice as Exit.Failure<never, never>).cause) as Error)
@@ -907,18 +1012,22 @@ describe("a level's assets", () => {
           ).toMatch(/Duplicate system name "Assets\.during\(as\/Forest\)"/);
           // Kept for two states by one condition that holds in both.
           const log: string[] = [];
+
           const Shared = Assets.bundle("as/Shared", {
             font: tracked("/cave.png", log),
           });
+
           const app = yield* App.make({
             plugins: [Game],
             systems: [Assets.during(State.is(Level, "forest", "cave"), Shared)],
           });
+
           for (const to of ["forest", "cave", "forest"] as const) {
             app.dispatch(Go, { to });
             app.tick(1);
             app.frame(0);
           }
+
           expect(log).toEqual(["open /cave.png"]);
           app.dispatch(Go, { to: "menu" });
           app.tick(1);
@@ -932,23 +1041,29 @@ describe("a level's assets", () => {
   it("stay while anyone holds them: a system of the game's own can keep a bundle the level has left", async () => {
     const { Forest, Game, Go, drawn, log } = makeGame();
     let keep = false;
+
     // Holds the forest while it is told to, whatever the level.
     const Keep = System.make("Keep", function* () {
       const store = yield* Assets.Store;
+
       if (keep) {
         store.hold(Forest, "Keep");
       } else {
         store.drop(Forest, "Keep");
       }
     }).pipe(System.inStage("frame"));
+
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const app = yield* App.make({ plugins: [Game], systems: [Keep] });
+
           const frame = (): string => {
             app.frame(0);
+
             return drawn.at(-1)!;
           };
+
           // Nobody holds it, and dropping what is not held does nothing.
           frame();
           frame();
@@ -981,13 +1096,17 @@ describe("a level's assets", () => {
 
   it("fail as assets that could not be loaded when what makes them dies", async () => {
     const Level = State.define("as/Mode", ["on"]);
+
     const Cursed = Assets.bundle("as/Cursed", {
       one: Assets.make("/forest.png", () => Effect.die(new Error("boom"))),
     });
+
     let status: Assets.Status<unknown> | undefined;
+
     const Look = System.make("Look", function* () {
       status = yield* Cursed;
     }).pipe(System.inStage("frame"));
+
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -996,6 +1115,7 @@ describe("a level's assets", () => {
             components: [Level],
             systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
           });
+
           app.frame(0);
           expect(status?._tag).toBe("Failed");
           expectFailed((status as { error: unknown }).error, "", "boom");
@@ -1006,16 +1126,20 @@ describe("a level's assets", () => {
 
   it("are held by a plugin's layer for as long as the app, when they are loaded there", async () => {
     const log: string[] = [];
+
     const Common = Assets.bundle("as/Common", {
       font: tracked("/forest.png", log),
     });
+
     class Fonts extends Context.Service<
       Fonts,
       Assets.Loaded<(typeof Common)["assets"]>
     >()("as/Fonts") {}
+
     const Ui = Plugin.make("Ui", {
       layer: Layer.effect(Fonts, Assets.load(Common)),
     });
+
     const scope = Effect.runSync(Scope.make());
     await Effect.runPromise(
       App.make({ plugins: [Ui] }).pipe(

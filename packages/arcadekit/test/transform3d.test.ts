@@ -29,11 +29,13 @@ describe("Transform3d", () => {
     expect(Position.fields).toEqual(["x", "y", "z"]);
     expect(Rotation.fields).toEqual(["x", "y", "z", "w"]);
     expect(Scale.fields).toEqual(["x", "y", "z"]);
+
     for (const component of [Position, Rotation, Scale]) {
       expect(new Set(component.kinds)).toEqual(new Set(["f32"]));
       // In tables, so that a loop over columns reads them row for row.
       expect(component.storage).toBe("table");
     }
+
     // One module, whichever entry it is reached through.
     expect(Entry.Position).toBe(Position);
     expect(Entry.plugin).toBe(Transform3d.plugin);
@@ -49,9 +51,11 @@ describe("Transform3d", () => {
         }
       });
     });
+
     const app = run(
       App.make({ plugins: [Transform3d.plugin], systems: [Drift] })
     );
+
     const rock = app.world.spawn(Position.of({ x: 1, y: 2, z: 3 }));
     // Added with no value, it is at the origin.
     const flat = app.world.spawn(Position);
@@ -84,11 +88,13 @@ describe("Transform3d", () => {
     const back = Transform3d.axisAngle(1, 0, 0, -1);
     expect(back.x).toBeCloseTo(-Math.sin(0.5), 12);
     expect(back.w).toBeCloseTo(Math.cos(0.5), 12);
+
     // Of length 1, whatever the angle, for an axis of length 1.
     for (const angle of [0.1, 1, 2.5, 4, -3]) {
       const { w, x, y, z } = Transform3d.axisAngle(0.6, 0.8, 0, angle);
       expect(Math.hypot(x, y, z, w)).toBeCloseTo(1, 12);
     }
+
     // The axis is a direction: of any length, it is the same turn.
     for (const by of [0.001, 2, 300]) {
       const long = Transform3d.axisAngle(0.6 * by, 0, 0.8 * by, 1.3);
@@ -98,6 +104,7 @@ describe("Transform3d", () => {
       expect(long.z).toBeCloseTo(unit.z, 12);
       expect(long.w).toBeCloseTo(unit.w, 12);
     }
+
     // About no axis at all there is no turn, whatever the angle.
     expect(Transform3d.axisAngle(0, 0, 0, 2)).toEqual({
       x: 0,
@@ -116,23 +123,30 @@ describe("Transform3d", () => {
       plugins: [Transform3d.plugin],
       components: [Rock],
     });
+
     expect(Transform3d.plugin.name).toBe("arcadekit/Transform3d");
     expect(Transform3d.plugin.components).toEqual([Position, Rotation, Scale]);
     const made = run(App.make({ plugins: [Rules] }));
+
     const rock = made.world.spawn(
       Rock,
       Position.of({ x: 1, y: 2, z: 3 }),
       Rotation.of(Transform3d.axisAngle(0, 0, 1, 1)),
       Scale.of({ x: 2, y: 3, z: 4 })
     );
+
     const save = made.save();
+
     if (Exit.isFailure(save)) {
       throw new Error("The game could not be saved");
     }
+
     const read = Save.decode(Save.encode(save.value));
+
     if (Exit.isFailure(read)) {
       throw new Error("The save could not be read back");
     }
+
     const loaded = run(App.load(read.value, { plugins: [Rules] }));
     expect(loaded.world.hash()).toBe(made.world.hash());
     expect(loaded.world.get(rock, Position)).toEqual({ x: 1, y: 2, z: 3 });
@@ -140,6 +154,7 @@ describe("Transform3d", () => {
       made.world.get(rock, Rotation)
     );
     expect(loaded.world.get(rock, Scale)).toEqual({ x: 2, y: 3, z: 4 });
+
     // A game that does not list them cannot read the save: they are named in it.
     const without = Effect.runSyncExit(
       Effect.scoped(
@@ -148,6 +163,7 @@ describe("Transform3d", () => {
         })
       )
     );
+
     expect(Exit.isFailure(without)).toBe(true);
   });
 });

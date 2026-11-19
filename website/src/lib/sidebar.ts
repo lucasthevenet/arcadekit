@@ -14,6 +14,7 @@ import { moduleGroups } from "./reference.ts";
 import { BRANCH, REPO_URL } from "./site.ts";
 
 type Topic = StarlightSidebarTopicsUserConfig[number];
+
 type SidebarItem = NonNullable<StarlightUserConfig["sidebar"]>[number];
 
 /** A link to an address, such as the landing page or a folder on GitHub. */
@@ -141,6 +142,7 @@ const sectionOf = (pages: SitePages, slug: string): Section | undefined => {
   if (pages.packages.some((page) => page.slug === slug)) {
     return "packages";
   }
+
   return pages.docs.find((page) => page.slug === slug)?.section;
 };
 
@@ -153,18 +155,23 @@ export const outlinedGroups = (
   pages: SitePages
 ): (Group & { readonly topic: TopicId })[] => {
   const slugs = [...pages.docs, ...pages.packages].map((page) => page.slug);
+
   const named = new Set(
     OUTLINE.flatMap((group) =>
       group.items.filter((item) => typeof item === "string")
     )
   );
+
   const missing = [...named].filter((slug) => !slugs.includes(slug));
+
   if (missing.length > 0) {
     throw new Error(
       `website/src/lib/sidebar.ts lists ${missing.join(", ")}, which no page is`
     );
   }
+
   const sections = new Set(OUTLINE.map((group) => group.section));
+
   const rest = (section: Section | undefined) =>
     section === undefined
       ? []
@@ -172,9 +179,12 @@ export const outlinedGroups = (
           if (named.has(slug)) {
             return false;
           }
+
           const own = sectionOf(pages, slug);
+
           return own === section || (section === "" && !sections.has(own));
         });
+
   return OUTLINE.map(({ section, ...group }) => ({
     ...group,
     section,
@@ -197,9 +207,11 @@ const packageGroups = (
 ): (Group & { readonly topic: TopicId })[] =>
   group.items.flatMap((item) => {
     const page = pages.packages.find((p) => p.slug === item);
+
     if (page === undefined) {
       return [];
     }
+
     return [
       {
         topic: group.topic,
@@ -209,6 +221,7 @@ const packageGroups = (
           ...moduleGroups(page).flatMap(
             ({ label, modules }): (string | Group)[] => {
               const slugs = modules.map((name) => `${page.slug}/${name}`);
+
               return label === undefined ? slugs : [{ label, items: slugs }];
             }
           ),
@@ -221,6 +234,7 @@ const toItem = (item: string | Link | Group): SidebarItem => {
   if (typeof item === "string") {
     return item;
   }
+
   return "link" in item
     ? { label: item.label, link: item.link }
     : { label: item.label, items: item.items.map(toItem) };
@@ -229,10 +243,12 @@ const toItem = (item: string | Link | Group): SidebarItem => {
 /** The Learn, Guides and Reference topics, each linking to its first page. */
 export const sidebarTopics = (pages: SitePages): Topic[] => {
   const groups = outlinedGroups(pages);
+
   const topic = (id: TopicId) =>
     groups
       .filter((group) => group.topic === id)
       .map(({ label, items }) => ({ label, items: items.map(toItem) }));
+
   return [
     {
       id: "learn",

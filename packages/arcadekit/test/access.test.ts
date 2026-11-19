@@ -27,26 +27,32 @@ const Position = Component.define("ac/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Velocity = Component.define("ac/Velocity", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Health = Component.define("ac/Health", { hp: Field.i32 });
 const Bullet = Component.tag("ac/Bullet");
+
 const Burning = Component.define(
   "ac/Burning",
   { seconds: Field.f32 },
   { storage: "sparse" }
 );
+
 const Score = Singleton.define(
   "ac/Score",
   { points: Field.i32 },
   { points: 0 }
 );
+
 const Phase = State.define("ac/Phase", ["playing", "over"]);
 const Hit = Event.define("ac/Hit", Schema.Struct({ damage: Schema.Number }));
 const Fired = Event.define("ac/Fired", Schema.Struct({}));
 const Boost = Action.define("ac/Boost", Schema.Struct({}));
+
 const boost = Action.handler(Boost, function* () {
   (yield* Score).points += 100;
 });
@@ -63,6 +69,7 @@ const playing = (systems: readonly System.System<any, any>[]) =>
       components: [Position, Velocity, Health, Bullet, Burning, Score, Phase],
       seed: 3,
     });
+
     for (let i = 0; i < 6; i++) {
       app.world.spawn(
         Position.of({ x: i, y: 0 }),
@@ -71,6 +78,7 @@ const playing = (systems: readonly System.System<any, any>[]) =>
         ...(i % 2 === 0 ? [Bullet] : [])
       );
     }
+
     return app;
   });
 
@@ -83,9 +91,11 @@ const ticking = (
     Effect.scoped(
       Effect.gen(function* () {
         const made = System.make("Sneaky", body);
+
         const app = yield* playing([
           access === undefined ? made : made.pipe(System.access(access)),
         ]);
+
         app.tick(1);
       })
     )
@@ -99,12 +109,15 @@ describe("a system that says what it reads and writes", () => {
       position.y += velocity.y * delta;
     });
   });
+
   const Scoring = System.make("Scoring", function* () {
     const score = yield* Score;
+
     for (const hit of (yield* Hit).read()) {
       score.points += hit.damage;
     }
   });
+
   const Wounding = System.make("Wounding", function* () {
     const random = yield* Random;
     const hit = yield* Hit;
@@ -113,11 +126,13 @@ describe("a system that says what it reads and writes", () => {
       const damage = random.int(1, 3);
       health.hp -= damage;
       hit.emit({ damage });
+
       if (health.hp <= 0) {
         commands.despawn(entity);
       }
     });
   });
+
   const said = [
     Movement.pipe(System.access({ queries: [Moving] })),
     Wounding.pipe(
@@ -133,17 +148,21 @@ describe("a system that says what it reads and writes", () => {
           Effect.gen(function* () {
             const app = yield* playing(systems);
             const out: number[] = [];
+
             for (let tick = 0; tick < 12; tick++) {
               app.tick(1 / 60);
               out.push(app.world.hash());
             }
+
             // The game is one in which things happen.
             expect(app.world.singleton(Score).points).toBeGreaterThan(20);
             expect(app.world.entityCount).toBeLessThan(6);
+
             return out;
           })
         )
       );
+
     expect(hashes(said)).toEqual(hashes([Movement, Wounding, Scoring]));
   });
 
@@ -155,6 +174,7 @@ describe("a system that says what it reads and writes", () => {
     ).toThrow(
       'System "Sneaky" asked for a query that writes "ac/Health", and did not say it would write it. A system that says what it reads and writes says all of it: add this to its System.access, or leave the system without one.'
     );
+
     // What it requires, excludes or watches is read.
     for (const query of [
       Query.all(Position).pipe(Query.with(Health)),
@@ -170,6 +190,7 @@ describe("a system that says what it reads and writes", () => {
         'System "Sneaky" asked for a query that reads "ac/Health", and did not say it would read it.'
       );
     }
+
     expect(() =>
       ticking({ queries: [Moving] }, function* () {
         yield* Query.removed(Health);
@@ -262,6 +283,7 @@ describe("a system that says what it reads and writes", () => {
       hp = world.get(first, Health)!.hp;
     });
     expect(hp).toBe(10);
+
     for (const use of [
       (world: World["Service"]) => world.get(first, Health),
       (world: World["Service"]) => world.has(first, Health),
@@ -275,6 +297,7 @@ describe("a system that says what it reads and writes", () => {
         'System "Sneaky" read "ac/Health" through the world, and did not say it would read it.'
       );
     }
+
     expect(() =>
       ticking({ reads: [Health] }, function* () {
         (yield* World).set(first, Health, { hp: 1 });
@@ -302,6 +325,7 @@ describe("a system that says what it reads and writes", () => {
 
   it("is held to it through commands, where they are queued", () => {
     const first = 0 as Entity;
+
     const refused = (
       access: System.Access,
       use: (commands: Commands["Service"]) => void
@@ -309,14 +333,17 @@ describe("a system that says what it reads and writes", () => {
       let message = "it was not refused";
       ticking(access, function* () {
         const commands = yield* Commands;
+
         try {
           use(commands);
         } catch (error) {
           ({ message } = error as Error);
         }
       });
+
       return message;
     };
+
     expect(
       refused({ writes: [Position] }, (commands) =>
         commands.spawn(Position.of({ x: 0, y: 0 }), Bullet)
@@ -346,6 +373,7 @@ describe("a system that says what it reads and writes", () => {
     expect(
       refused({ reads: [Bullet] }, (commands) => commands.despawn(first))
     ).toContain("it said it writes (none)");
+
     for (const allowed of [
       (commands: Commands["Service"]) => commands.despawn(first),
       (commands: Commands["Service"]) =>
@@ -447,6 +475,7 @@ describe("a system that says what it reads and writes", () => {
             System.access({ queries: [Moving] }),
             System.runIf(State.is(Phase, "playing"))
           );
+
           const app = yield* playing([Gated]);
           app.tick(1);
           expect(
@@ -469,6 +498,7 @@ describe("a system that says what it reads and writes", () => {
                 System.runIf(Effect.map(Score, (score) => score.points === 0))
               ),
             ]);
+
             app.tick(1);
           })
         )
@@ -487,6 +517,7 @@ describe("a system that says what it reads and writes", () => {
           })
         )
       );
+
     expect(() =>
       frame(
         System.make("Draw", function* () {
@@ -525,6 +556,7 @@ describe("a system that says what it reads and writes", () => {
             yield* Moving;
             (yield* Commands).spawn(Position.of({ x: 0, y: 0 }));
           }).pipe(System.access({ queries: [Moving] }));
+
           // Says nothing, and so may do anything: the next system is not
           // held to what the one before it said.
           const Free = System.make("Free", function* () {
@@ -535,10 +567,12 @@ describe("a system that says what it reads and writes", () => {
             (yield* Hit).emit({ damage: 1 });
             log.push("free");
           });
+
           const Narrow = System.make("Narrow", function* () {
             yield* Score;
             log.push("narrow");
           }).pipe(System.access({ reads: [Hit] }));
+
           const app = yield* playing([Strict, Free, Narrow]);
           expect(() => app.tick(1)).toThrow(
             'System "Narrow" asked for the singleton "ac/Score"'
@@ -571,10 +605,12 @@ describe("a system that says what it reads and writes", () => {
             (yield* Input.Pointer).down();
             (yield* Input.Gamepad()).axis(0);
           }).pipe(System.access({}));
+
           const app = yield* App.make({
             plugins: [Input.plugin],
             systems: [Jump],
           }).pipe(Effect.provideService(Input.Source, source));
+
           app.tick(1);
           expect(jumped).toBe(false);
           source.press("Space");
@@ -599,6 +635,7 @@ describe("a system that says what it reads and writes", () => {
                 }).pipe(System.access({})),
               ],
             });
+
             app.tick(1);
           })
         )
@@ -617,11 +654,13 @@ describe("a system that says what it reads and writes", () => {
             System.access({ queries: [Moving] }),
             System.runIf(State.is(Phase, "over"))
           );
+
           const Free = System.make("Free", function* () {
             (yield* Score).points += 1;
             (yield* Hit).emit({ damage: 1 });
             ran = true;
           });
+
           const app = yield* playing([Asleep, Free]);
           app.tick(1);
         })
@@ -640,9 +679,11 @@ describe("a system that says what it reads and writes", () => {
             State.onEnter(Phase, "playing"),
             System.access({ writes: [Score] })
           );
+
           const Leave = System.make("Leave", function* () {
             (yield* Score).points = 9;
           }).pipe(State.onExit(Phase, "playing"), System.access({}));
+
           const app = yield* playing([Enter, Leave]);
           app.tick(1);
           expect(app.world.singleton(Score).points).toBe(7);
@@ -663,6 +704,7 @@ describe("a system that says what it reads and writes", () => {
       System.access({ queries: [Moving], random: true }),
       System.access({ writes: [Score], reads: [Hit], actions: true })
     );
+
     const said = System.accessOf(system)!;
     expect(
       Array.from(said.components, ([name, { touch }]) => [name, touch])
@@ -677,9 +719,9 @@ describe("a system that says what it reads and writes", () => {
       true,
       false,
     ]);
-    expect(System.accessOf(System.make("Silent", function* () {}))).toBe(
-      undefined
-    );
+    expect(
+      System.accessOf(System.make("Silent", function* () {}))
+    ).toBeUndefined();
   });
 
   it("takes the strongest of the ways it touches a thing", () => {
@@ -690,6 +732,7 @@ describe("a system that says what it reads and writes", () => {
         )!.components,
         ([name, { touch }]) => [name, touch]
       );
+
     expect(
       touches({
         queries: [
@@ -723,11 +766,13 @@ describe("a world with a guard", () => {
     writes: readonly ComponentDef<any>[]
   ): { readonly world: EcsWorld; readonly guard: Guard; first: Entity } => {
     const world = new EcsWorld();
+
     const first = world.spawn(
       Position.of({ x: 1, y: 2 }),
       Health.of({ hp: 3 }),
       Bullet
     );
+
     const guard: Guard = {
       who: "The test",
       advice: " Say so.",
@@ -736,15 +781,20 @@ describe("a world with a guard", () => {
       writeDefs: writes,
       queries: new Set(),
     };
+
     for (const def of [...reads, ...writes]) {
       (guard.reads as true[])[def.id] = true;
     }
+
     for (const def of writes) {
       (guard.writes as true[])[def.id] = true;
     }
+
     world.guard = guard;
+
     return { world, guard, first };
   };
+
   const spec = (
     terms: readonly ComponentDef<any>[],
     more: Partial<QuerySpec> = {}
@@ -782,10 +832,12 @@ describe("a world with a guard", () => {
     const { first, world } = guarded([Position], [Burning]);
     const other = world.guard!;
     world.guard = undefined;
+
     const burning = world.spawn(
       Health.of({ hp: 1 }),
       Burning.of({ seconds: 1 })
     );
+
     world.guard = other;
     expect(() => world.despawn(first)).toThrow(
       'The test despawned an entity that has none of the components it said it writes ("ac/Burning"). A despawn takes everything an entity has, and is said by a component the entity is known by: one of those it has. Say so.'
@@ -798,10 +850,12 @@ describe("a world with a guard", () => {
 
   it("lets a query through when all it touches was said, and does not look at it again", () => {
     const { guard, world } = guarded([Health], [Position]);
+
     const within = spec([Position, Health], {
       readDefs: [Health],
       withoutDefs: [Health],
     });
+
     expect(guard.queries.has(within)).toBe(false);
     expect(world.view(within).count()).toBe(0);
     expect(guard.queries.has(within)).toBe(true);
@@ -809,6 +863,7 @@ describe("a world with a guard", () => {
     const named = spec([Velocity]);
     guard.queries.add(named);
     expect(world.view(named).count()).toBe(0);
+
     for (const [refused, what] of [
       [spec([Position, Health]), 'a query that writes "ac/Health"'],
       [
@@ -829,6 +884,7 @@ describe("a world with a guard", () => {
       );
       expect(guard.queries.has(refused)).toBe(false);
     }
+
     expect(() => world.removed(Bullet)).toThrow(
       'The test asked which entities lost "ac/Bullet"'
     );
@@ -856,9 +912,12 @@ describe("the order of systems", () => {
     access?: System.Access
   ): System.System<never, never> => {
     const made = System.make(name, function* () {});
+
     return access === undefined ? made : made.pipe(System.access(access));
   };
+
   const Move = system("Move", { queries: [Moving] });
+
   const Aim = system("Aim", {
     queries: [Query.all(Position).pipe(Query.reads())],
     writes: [Score],
@@ -928,12 +987,14 @@ describe("the order of systems", () => {
     const Read = system("Read", {
       queries: [Query.all(Position).pipe(Query.reads())],
     });
+
     const Watch = system("Watch", {
       queries: [
         Query.all(Health).pipe(Query.changed(Position), Query.reads()),
         Query.removed(Bullet),
       ],
     });
+
     expect(System.conflicts([Read, Watch, Aim]).conflicts).toEqual([]);
     // Listed ahead of what it watches, it hears of it a tick late.
     const Clean = system("Clean", { writes: [Bullet, Position] });
@@ -967,6 +1028,7 @@ describe("the order of systems", () => {
       actions: true,
       scripts: true,
     });
+
     const Two = system("Two", {
       reads: [Score, Hit, Fired],
       writes: [Phase],
@@ -974,6 +1036,7 @@ describe("the order of systems", () => {
       actions: true,
       scripts: true,
     });
+
     expect(System.conflicts([One, Two]).conflicts).toEqual([
       {
         first: "One",
@@ -1049,9 +1112,11 @@ describe("the order of systems", () => {
   it("leaves out the stages that change nothing, and names the systems that said nothing", () => {
     const Draw = system("Draw").pipe(System.inStage("frame"));
     const Listen = system("Listen").pipe(System.inStage("input"));
+
     const Paint = system("Paint", {
       queries: [Query.all(Position)],
     }).pipe(System.inStage("postFrame"));
+
     const Hook = system("Hook").pipe(State.onEnter(Phase, "over"));
     expect(
       System.conflicts([Move, system("Quiet"), Draw, Listen, Paint, Hook, Aim])
@@ -1089,11 +1154,13 @@ describe("the order of systems", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const Physics = Plugin.make("ac/Physics", { systems: [Move] });
+
           const app = yield* App.make({
             plugins: [Physics],
             systems: [Aim, system("Quiet")],
             components: [Position, Velocity, Score],
           });
+
           expect(app.systemOrder).toEqual(["Move", "Aim", "Quiet"]);
           expect(app.undeclared).toEqual(["Quiet"]);
           expect(app.conflicts).toEqual([
@@ -1110,11 +1177,13 @@ describe("the order of systems", () => {
               ],
             },
           ]);
+
           const settled = yield* App.make({
             plugins: [Physics],
             systems: [Aim.pipe(System.after(Move))],
             components: [Position, Velocity, Score],
           });
+
           expect(settled.conflicts).toEqual([]);
           expect(settled.undeclared).toEqual([]);
         })

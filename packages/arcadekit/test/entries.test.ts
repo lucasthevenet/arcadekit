@@ -30,12 +30,15 @@ const sources = import.meta.glob("../src/**/*.ts", {
   import: "default",
   eager: true,
 });
+
 const modules = import.meta.glob("../src/*.ts", { eager: true });
+
 interface Target {
   readonly source: string;
   readonly types: string;
   readonly default: string;
 }
+
 const manifest = JSON.parse(
   Object.values(
     import.meta.glob("../package.json", {
@@ -56,16 +59,20 @@ const manifest = JSON.parse(
 /** What a file imports from, type-only imports among them. */
 const imported = (text: string): string[] => {
   const found: string[] = [];
+
   const pattern =
     /^\s*(?:import|export)\s(?:[^"';]*?\sfrom\s*)?["']([^"']+)["']/gmu;
+
   for (const match of text.matchAll(pattern)) {
     found.push(match[1]!);
   }
+
   return found;
 };
 
 const resolve = (from: string, specifier: string): string => {
   const parts = from.split("/").slice(0, -1);
+
   for (const part of specifier.split("/")) {
     if (part === "..") {
       parts.pop();
@@ -73,12 +80,15 @@ const resolve = (from: string, specifier: string): string => {
       parts.push(part);
     }
   }
+
   const path = parts.join("/");
+
   for (const candidate of [`${path}.ts`, `${path}/index.ts`]) {
     if (candidate in sources) {
       return candidate;
     }
   }
+
   throw new Error(`${from} imports ${specifier}, which is not a source file`);
 };
 
@@ -88,11 +98,14 @@ const reach = (
 ): { readonly files: string[]; readonly packages: string[] } => {
   const files = new Set<string>();
   const packages = new Set<string>();
+
   const visit = (file: string): void => {
     if (files.has(file)) {
       return;
     }
+
     files.add(file);
+
     for (const specifier of imported(sources[file]!)) {
       if (specifier.startsWith(".")) {
         visit(resolve(file, specifier));
@@ -101,7 +114,9 @@ const reach = (
       }
     }
   };
+
   visit(entry);
+
   return {
     files: Array.from(files).toSorted(),
     packages: Array.from(packages).toSorted(),
@@ -110,8 +125,10 @@ const reach = (
 
 const sourceOf = (subpath: string): string =>
   `../${manifest.exports[subpath]!.source.slice("./".length)}`;
+
 const isEffect = (name: string): boolean =>
   name === "effect" || name.startsWith("effect/");
+
 const entries = Object.keys(manifest.exports);
 
 describe("the package's entries", () => {
@@ -119,6 +136,7 @@ describe("the package's entries", () => {
     // What the sources say the entries are: a module's is named as its
     // file is.
     const expected: Record<string, Target> = {};
+
     const entry = (name: string, source: string): void => {
       const built = name === "." ? "index" : name.slice("./".length);
       expected[name] = {
@@ -127,14 +145,18 @@ describe("the package's entries", () => {
         default: `./dist/${built}.js`,
       };
     };
+
     entry(".", "../src/index.ts");
     entry("./ecs", "../src/ecs/index.ts");
+
     for (const file of Object.keys(sources)) {
       const module = /^\.\.\/src\/([A-Z]\w*)\.ts$/u.exec(file);
+
       if (module !== null) {
         entry(`./${module[1]}`, file);
       }
     }
+
     expect(manifest.exports).toEqual(expected);
     // In order, the package first, so that the list reads.
     expect(entries).toEqual([".", ...entries.slice(1).toSorted()]);
@@ -143,7 +165,7 @@ describe("the package's entries", () => {
     expect(entries).toContain("./Input");
     expect(entries).toContain("./TickScheduler");
     expect(entries).toContain("./Browser");
-    expect(entries.length).toBe(29);
+    expect(entries).toHaveLength(29);
     // No module is in a folder of its own: one file, one entry.
     expect(
       Object.keys(sources).filter(
@@ -151,10 +173,12 @@ describe("the package's entries", () => {
           !/^\.\.\/src\/\w+\.ts$/u.test(file) && !file.startsWith("../src/ecs/")
       )
     ).toEqual([]);
+
     // Every source file is behind some entry.
     const reached = new Set(
       entries.flatMap((name) => reach(sourceOf(name)).files)
     );
+
     expect(Object.keys(sources).filter((file) => !reached.has(file))).toEqual(
       []
     );
@@ -201,6 +225,7 @@ describe("the package's entries", () => {
 
   it("the package's own entry gives every module as its entry does: the same module, not a copy", () => {
     const main = Main as Record<string, unknown>;
+
     const namespaces = [
       "Action",
       "App",
@@ -226,9 +251,11 @@ describe("the package's entries", () => {
       "Transport",
       "View",
     ];
+
     for (const name of namespaces) {
       expect(main[name], name).toBe(modules[`../src/${name}.ts`]);
     }
+
     // The three it gives the names of, in place of the module.
     expect(Main.EntityId).toBe(modules["../src/Schemas.ts"]!.EntityId);
     expect(Main.Time).toBe(modules["../src/Services.ts"]!.Time);
@@ -253,7 +280,9 @@ describe("arcadekit/ecs", () => {
     x: Ecs.Field.f32,
     y: Ecs.Field.f32,
   });
+
   const Tired = Ecs.Component.tag("en/Tired", { storage: "sparse" });
+
   const moving: Ecs.QuerySpec<readonly [typeof Position]> = {
     terms: [Position],
     withDefs: [],

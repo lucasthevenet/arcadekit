@@ -27,17 +27,20 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
 // event, and knows nothing of sound.
 const Ball = Component.define("sd/Ball", { y: Field.f32, speed: Field.f32 });
 const Balls = Query.all(Ball);
+
 const Bounces = Singleton.define(
   "sd/Bounces",
   { count: Field.i32 },
   { count: 0 }
 );
+
 const Phase = State.define("sd/Phase", ["playing", "muted"]);
 
 const Bounced = Event.define(
   "sd/Bounced",
   Schema.Struct({ speed: Schema.Finite })
 );
+
 const Dropped = Event.define("sd/Dropped", Schema.Struct({}));
 const Drop = Action.define("sd/Drop", Schema.Struct({ height: Schema.Finite }));
 const Mute = Action.define("sd/Mute", Schema.Struct({ on: Schema.Boolean }));
@@ -52,6 +55,7 @@ const Fall = System.make("sd/Fall", function* () {
   (yield* Balls).each((ball) => {
     ball.speed += 10 * delta;
     ball.y -= ball.speed * delta;
+
     if (ball.y <= 0) {
       bounced.emit({ speed: ball.speed });
       ball.y = 0;
@@ -59,6 +63,7 @@ const Fall = System.make("sd/Fall", function* () {
       count++;
     }
   });
+
   if (count > 0) {
     bounces.count += count;
   }
@@ -66,11 +71,13 @@ const Fall = System.make("sd/Fall", function* () {
 
 /** How often a line was asked what an event sounds like. */
 let asked = 0;
+
 const Cues = Sound.cues(
   "sd/Cues",
   Sound.on(Dropped, "whoosh"),
   Sound.on(Bounced, ({ speed }) => {
     asked++;
+
     // A slow one makes no sound at all.
     return speed < 2
       ? undefined
@@ -88,9 +95,11 @@ const Rules = Plugin.make("sd/Rules", {
   handlers: [
     Action.handler(Drop, function* ({ height }) {
       (yield* Dropped).emit({});
+
       if (height > 100) {
         return yield* Effect.fail(new TooHigh());
       }
+
       (yield* Commands).spawn(Ball.of({ y: height, speed: 0 }));
     }),
     Action.handler(Mute, function* ({ on }) {
@@ -98,6 +107,7 @@ const Rules = Plugin.make("sd/Rules", {
     }),
   ],
 });
+
 const Game = Plugin.make("sd/Game", {
   plugins: [Rules, Sound.plugin],
   systems: [Cues],
@@ -106,6 +116,7 @@ const Game = Plugin.make("sd/Game", {
 const play = (output: Sound.OutputShape | undefined, seed = 1) => {
   asked = 0;
   const made = App.make({ plugins: [Game], seed, checkpointEvery: 1 });
+
   return run(
     output === undefined ? made : made.pipe(Effect.provide(Sound.layer(output)))
   );
@@ -131,7 +142,7 @@ describe("Sound.cues", () => {
     app.frame(0.5);
     app.tick(0.1);
     app.frame(0);
-    expect(sound.played.length).toBe(1);
+    expect(sound.played).toHaveLength(1);
 
     // A payload decides the cue, how loud, and how fast.
     about(app, 5);
@@ -149,7 +160,7 @@ describe("Sound.cues", () => {
     app.tick(0.1);
     app.frame(0);
     expect(asked).toBe(lines + 1);
-    expect(sound.played.length).toBe(before);
+    expect(sound.played).toHaveLength(before);
   });
 
   it("hears every event of every tick since the last frame, and none twice", () => {
@@ -168,15 +179,17 @@ describe("Sound.cues", () => {
     app.frame(0.4);
     app.tick(0.001);
     app.frame(0);
-    expect(sound.played.length).toBe(2);
+    expect(sound.played).toHaveLength(2);
   });
 
   it("plays a cue once for all the events of a frame that ask for it, as the loudest asked, in the order first asked", () => {
     const sound = Sound.makeRecorder();
     const app = play(sound);
+
     for (const speed of [3, 9, 4, 0.1]) {
       about(app, speed);
     }
+
     app.enqueue(Drop, { height: 50 });
     app.enqueue(Drop, { height: 60 });
     app.tick(0.01);
@@ -193,7 +206,7 @@ describe("Sound.cues", () => {
     about(app, 3);
     app.tick(0.01);
     app.frame(0);
-    expect(sound.played.length).toBe(3);
+    expect(sound.played).toHaveLength(3);
     expect(sound.played[2]!.cue).toBe("thud");
     expect(sound.played[2]!.rate).toBe(1);
   });
@@ -212,12 +225,15 @@ describe("Sound.cues", () => {
     const Quiet = Sound.cues("sd/Quiet", Sound.on(Dropped, "whoosh")).pipe(
       System.runIf(State.is(Phase, "playing"))
     );
+
     const sound = Sound.makeRecorder();
+
     const app = run(
       App.make({ plugins: [Rules, Sound.plugin], systems: [Quiet] }).pipe(
         Effect.provide(Sound.layer(sound))
       )
     );
+
     app.dispatch(Mute, { on: true });
     app.tick(0.1);
     app.dispatch(Drop, { height: 1 });
@@ -270,12 +286,15 @@ describe("Sound.Player", () => {
     const Loud = System.make("sd/Loud", function* () {
       (yield* Sound.Player).play("bang");
     });
+
     const sound = Sound.makeRecorder();
+
     const app = run(
       App.make({ plugins: [Sound.plugin], systems: [Loud] }).pipe(
         Effect.provide(Sound.layer(sound))
       )
     );
+
     expect(() => app.tick(0.1)).toThrow(
       'The cue "bang" was played in the tick'
     );
@@ -283,6 +302,7 @@ describe("Sound.Player", () => {
 
     // Nor by an action's handler, which is the simulation too.
     const Bang = Action.define("sd/Bang", Schema.Struct({}));
+
     const other = run(
       App.make({
         plugins: [Sound.plugin],
@@ -293,6 +313,7 @@ describe("Sound.Player", () => {
         ],
       }).pipe(Effect.provide(Sound.layer(sound)))
     );
+
     // It dies of it, as of any bug, and what it did is taken back.
     const exit = other.dispatch(Bang, {});
     expect(Exit.isFailure(exit) && String(Cause.squash(exit.cause))).toContain(
@@ -305,31 +326,40 @@ describe("Sound.Player", () => {
     let clicks: readonly (Sound.Options | undefined)[] = [];
     const heard: number[] = [];
     const sound = Sound.makeRecorder();
+
     const Click = System.make("sd/Click", function* () {
       const player = yield* Sound.Player;
+
       for (const options of clicks) {
         player.play("click", options);
       }
+
       // Asked for, and not played yet: the frame is not over.
       heard.push(sound.played.length);
     }).pipe(System.inStage("frame"));
+
     let beep = false;
+
     const Beep = System.make("sd/Beep", function* () {
       if (beep) {
         (yield* Sound.Player).play("beep", { volume: 2 });
       }
     }).pipe(System.inStage("input"));
+
     const app = run(
       App.make({ plugins: [Sound.plugin], systems: [Click, Beep] }).pipe(
         Effect.provide(Sound.layer(sound))
       )
     );
+
     const frame = (...asked: (Sound.Options | undefined)[]): Sound.Played[] => {
       clicks = asked;
       sound.played.length = 0;
       app.frame(0);
+
       return [...sound.played];
     };
+
     // As it is, and as it is told.
     expect(frame(undefined)).toEqual([{ cue: "click", volume: 1, rate: 1 }]);
     expect(frame({ volume: 0.25 })).toEqual([
@@ -365,20 +395,24 @@ describe("Sound.Player", () => {
 
   it("makes one sound of a cue that several systems play in one frame, whichever they are", () => {
     const sound = Sound.makeRecorder();
+
     const Theirs = Sound.cues(
       "sd/Theirs",
       Sound.on(Bounced, { cue: "thud", volume: 0.3 }),
       Sound.on(Dropped, "whoosh")
     );
+
     const Mine = System.make("sd/Mine", function* () {
       (yield* Sound.Player).play("whoosh", { volume: 0.2, rate: 2 });
       (yield* Sound.Player).play("ping");
     }).pipe(System.inStage("frame"));
+
     const app = run(
       App.make({ plugins: [Game], systems: [Theirs, Mine] }).pipe(
         Effect.provide(Sound.layer(sound))
       )
     );
+
     about(app, 5);
     app.dispatch(Drop, { height: 50 });
     app.tick(0.1);
@@ -397,11 +431,13 @@ describe("Sound.Player", () => {
 
   it("says whether sound goes anywhere", () => {
     const seen: boolean[] = [];
+
     const Ask = System.make("sd/Ask", function* () {
       seen.push((yield* Sound.Player).audible);
       // Playing to nowhere is no mistake.
       (yield* Sound.Player).play("anything");
     }).pipe(System.inStage("frame"));
+
     const options = { plugins: [Sound.plugin], systems: [Ask] } as const;
     run(App.make(options)).frame(0);
     run(
@@ -414,9 +450,11 @@ describe("Sound.Player", () => {
     const made = App.make({ plugins: [Rules], systems: [Cues] });
     // @ts-expect-error Sound.Player is still needed: Sound.plugin provides it
     const complete: Effect.Effect<unknown, never, Scope.Scope> = made;
+
     const withPlugin: Effect.Effect<unknown, never, Scope.Scope> = App.make({
       plugins: [Game],
     });
+
     expect(complete).toBe(made);
     expect(withPlugin).not.toBe(made);
   });
@@ -425,6 +463,7 @@ describe("Sound.Player", () => {
 describe("a game with sound", () => {
   it("is the same game as one with none: the same hash, log and save, tick for tick", () => {
     const sound = Sound.makeRecorder();
+
     const heard = run(
       App.make({
         plugins: [Game],
@@ -433,24 +472,30 @@ describe("a game with sound", () => {
         verifyFrames: true,
       }).pipe(Effect.provide(Sound.layer(sound)))
     );
+
     // No output, and no system that plays: the rules alone.
     const deaf = run(
       App.make({ plugins: [Rules], seed: 9, checkpointEvery: 1 })
     );
+
     for (const app of [heard, deaf]) {
       app.dispatch(Drop, { height: 2 });
       app.dispatch(Drop, { height: 0.5 });
     }
+
     for (let i = 0; i < 80; i++) {
       heard.tick(0.05);
       heard.frame(0.5);
       deaf.tick(0.05);
       expect(heard.world.hash()).toBe(deaf.world.hash());
     }
+
     expect(heard.actionLog).toEqual(deaf.actionLog);
+
     const saves = [heard.save(), deaf.save()].map((save) =>
       Exit.isSuccess(save) ? save.value : undefined
     );
+
     expect(saves[0]).toBeDefined();
     expect(saves[0]).toEqual(saves[1]);
     // And it was heard: every bounce that was fast enough.
@@ -458,17 +503,19 @@ describe("a game with sound", () => {
     expect(
       sound.played.filter((one) => one.cue === "thud").length
     ).toBeGreaterThan(5);
-    expect(sound.played.filter((one) => one.cue === "whoosh").length).toBe(1);
+    expect(sound.played.filter((one) => one.cue === "whoosh")).toHaveLength(1);
   });
 
   it("replays in silence: a replay runs no frame, and plays nothing", () => {
     const sound = Sound.makeRecorder();
     const app = play(sound, 3);
     app.dispatch(Drop, { height: 1 });
+
     for (let i = 0; i < 30; i++) {
       app.tick(0.05);
       app.frame(0);
     }
+
     expect(sound.played.length).toBeGreaterThan(1);
     const again = Sound.makeRecorder();
     const replayed = play(again, 3);

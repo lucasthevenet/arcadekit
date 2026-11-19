@@ -136,11 +136,15 @@ const convert = <A>(
       })
     );
   }
+
   const exit = run(def.codec);
+
   if (Exit.isSuccess(exit)) {
     return Exit.succeed(exit.value);
   }
+
   const error = Cause.squash(exit.cause);
+
   return Exit.fail(
     new InvalidEvent({
       event: def.name,
@@ -240,8 +244,8 @@ class Channel<P> implements ChannelState {
   frameSeen = 0;
   inputSeen = 0;
   tickStart = 0;
-  readonly readers: Map<string, Handle<P>> = new Map();
-  readonly waiters: Set<() => boolean> = new Set();
+  readonly readers = new Map<string, Handle<P>>();
+  readonly waiters = new Set<() => boolean>();
 
   constructor(def: EventDef<P>, reads: ReadLog) {
     this.def = def;
@@ -323,30 +327,40 @@ class Handle<P> implements EventHandle<P> {
     // than it could if nothing were.
     const oldest = this.forFrame ? channel.offset : channel.tickOffset;
     const from = Math.min(Math.max(this.cursor, oldest), end);
+
     // In an action's handler, a read is one a refusal takes back: the
     // events are unread again, as they are in a replay that never ran it.
     if (channel.reads.open && this.cursor !== end) {
       channel.reads.moved.push({ handle: this, cursor: this.cursor });
     }
+
     this.cursor = end;
+
     return from === end ? EMPTY : channel.buffer.slice(from - channel.offset);
   };
 
   readonly wait: Effect.Effect<readonly P[]> = Effect.suspend(() => {
     const ready = this.read();
+
     if (ready.length > 0) {
       return Effect.succeed(ready);
     }
+
     return Effect.callback<readonly P[]>((resume) => {
       const waiter = (): boolean => {
         const batch = this.read();
+
         if (batch.length === 0) {
           return false;
         }
+
         resume(Effect.succeed(batch));
+
         return true;
       };
+
       this.channel.waiters.add(waiter);
+
       return Effect.sync(() => {
         this.channel.waiters.delete(waiter);
       });
@@ -428,11 +442,11 @@ export class EventBus {
   // Keyed by event definition. The value is the `Channel<P>` of that
   // definition's own `P`, which a Map's type cannot say, so `channel` below
   // is the one place that restores it.
-  private readonly channels: Map<object, ChannelState> = new Map();
+  private readonly channels = new Map<object, ChannelState>();
   private readonly order: Channel<any>[] = [];
   /** Events read from a save, waiting for their channel to be asked for. */
-  private readonly parked: Map<string, SavedEvents> = new Map();
-  private readonly names: Map<string, EventDef<any>> = new Map();
+  private readonly parked = new Map<string, SavedEvents>();
+  private readonly names = new Map<string, EventDef<any>>();
   private readonly reads: ReadLog = { open: false, moved: [] };
   /** True while events are kept for a frame stage that is running. */
   private frames = false;
@@ -454,25 +468,31 @@ export class EventBus {
 
   private channel<P>(def: EventDef<P>): Channel<P> {
     const existing = this.channels.get(def);
+
     if (existing !== undefined) {
       return existing as Channel<P>;
     }
+
     // The name is how a save, a tool and another machine know the event.
     const known = this.names.get(def.name);
+
     if (known !== undefined && known !== def) {
       throw new Error(
         `Two different events are both named "${def.name}". An event's name identifies it in an app, so give each its own, prefixed with the feature it belongs to.`
       );
     }
+
     this.names.set(def.name, def);
     const channel = new Channel<P>(def, this.reads);
     this.channels.set(def, channel);
     this.order.push(channel);
     const saved = this.parked.get(def.name);
+
     if (saved !== undefined) {
       this.parked.delete(def.name);
       this.adopt(channel, saved);
     }
+
     return channel;
   }
 
@@ -480,13 +500,16 @@ export class EventBus {
   private adopt<P>(channel: Channel<P>, saved: SavedEvents): void {
     for (const data of saved.payloads) {
       const payload = decode(channel.def, data);
+
       if (Exit.isFailure(payload)) {
         throw new Error(
           `The save holds an event "${saved.name}" that no longer reads: ${(Cause.squash(payload.cause) as Error).message}`
         );
       }
+
       channel.buffer.push(payload.value);
     }
+
     // Whoever had read some of them goes on from where it was.
     for (const [reader, count] of Object.entries(saved.read)) {
       channel.readers.set(
@@ -504,31 +527,41 @@ export class EventBus {
    */
   save(): Exit.Exit<SavedEvents[], InvalidEvent> {
     const out: SavedEvents[] = [];
+
     for (const channel of this.order) {
       if (channel.size === 0) {
         continue;
       }
+
       const payloads: unknown[] = [];
+
       // What the simulation can read: not what is only kept for the frame
       // stage, whose readers are not saved either.
       for (const payload of channel.buffer.slice(
         channel.tickOffset - channel.offset
       )) {
         const data = encode(channel.def, payload);
+
         if (Exit.isFailure(data)) {
           return Exit.fail(Cause.squash(data.cause) as InvalidEvent);
         }
+
         payloads.push(data.value);
       }
+
       const read: Record<string, number> = {};
+
       for (const [reader, handle] of channel.readers) {
         const count = handle.position - channel.tickOffset;
+
         if (count > 0 && !reader.startsWith(FRAME_READER)) {
           read[reader] = Math.min(count, channel.size);
         }
       }
+
       out.push({ name: channel.def.name, payloads, read });
     }
+
     // In order of name, so that the same game always saves the same bytes.
     return Exit.succeed(
       out.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
@@ -543,6 +576,7 @@ export class EventBus {
   restore(saved: readonly SavedEvents[]): void {
     for (const events of saved) {
       const def = this.names.get(events.name);
+
       if (def === undefined) {
         this.parked.set(events.name, events);
       } else {
@@ -560,15 +594,19 @@ export class EventBus {
     const channel = this.channel(def);
     const { guard, reader } = this;
     const emits = guard === undefined || guard.emits.has(def.name);
+
     if (!emits && !guard!.reads.has(def.name)) {
       throw new Error(
         `${guard!.who} asked for the event "${def.name}", which is not among what it said it reads and writes.${guard!.advice}`
       );
     }
+
     if (reader === undefined) {
       return new Handle(channel, channel.end);
     }
+
     let handle = channel.readers.get(reader);
+
     if (handle === undefined) {
       // From the oldest event kept: `read` goes no further back than its
       // reader may, which for the simulation is `tickOffset`. What a
@@ -583,6 +621,7 @@ export class EventBus {
       );
       channel.readers.set(reader, handle);
     }
+
     return handle;
   }
 
@@ -608,6 +647,7 @@ export class EventBus {
         return true;
       }
     }
+
     return false;
   }
 
@@ -617,6 +657,7 @@ export class EventBus {
    */
   resumeWaiters(): boolean {
     let resumed = false;
+
     for (const channel of this.order) {
       // Copied first: a resumed script may start or cancel other waits.
       for (const waiter of Array.from(channel.waiters)) {
@@ -626,6 +667,7 @@ export class EventBus {
         }
       }
     }
+
     return resumed;
   }
 
@@ -639,26 +681,33 @@ export class EventBus {
     if (this.frames && ++this.ticksSinceFrame > FRAME_PATIENCE) {
       this.frames = false;
     }
+
     if (this.inputs && ++this.ticksSinceInput > FRAME_PATIENCE) {
       this.inputs = false;
     }
+
     for (const channel of this.order) {
       if (channel.tickStart > channel.tickOffset) {
         channel.tickOffset = channel.tickStart;
       }
+
       // Kept a little longer for the stages between ticks: for the frame
       // stage, if several ticks ran since it last did, and for the input
       // stage, which runs before a tick and would otherwise never hear
       // what that tick's actions emitted. The simulation reads from
       // `tickOffset` either way.
       let keep = channel.tickOffset;
+
       if (this.frames) {
         keep = Math.min(keep, channel.frameSeen);
       }
+
       if (this.inputs) {
         keep = Math.min(keep, channel.inputSeen);
       }
+
       const drop = keep - channel.offset;
+
       if (drop > 0) {
         channel.dropOldest(drop);
       }
@@ -673,6 +722,7 @@ export class EventBus {
   endFrame(): void {
     this.frames = true;
     this.ticksSinceFrame = 0;
+
     for (const channel of this.order) {
       channel.frameSeen = channel.end;
     }
@@ -686,6 +736,7 @@ export class EventBus {
   endInput(): void {
     this.inputs = true;
     this.ticksSinceInput = 0;
+
     for (const channel of this.order) {
       channel.inputSeen = channel.end;
     }
@@ -716,9 +767,11 @@ export class EventBus {
       parked: new Map(this.parked),
       channels: this.order.map((channel) => {
         const cursors = new Map<string, number>();
+
         for (const [reader, handle] of channel.readers) {
           cursors.set(reader, handle.position);
         }
+
         return {
           channel,
           buffer: channel.buffer.slice(),
@@ -746,14 +799,18 @@ export class EventBus {
     this.inputs = moment.inputs;
     this.ticksSinceInput = moment.ticksSinceInput;
     this.parked.clear();
+
     for (const [name, saved] of moment.parked) {
       this.parked.set(name, saved);
     }
+
     const captured = new Map(
       moment.channels.map((entry) => [entry.channel, entry])
     );
+
     for (const channel of this.order) {
       const was = captured.get(channel);
+
       if (was === undefined) {
         channel.buffer = [];
         channel.tickOffset = channel.offset;
@@ -763,14 +820,17 @@ export class EventBus {
         channel.readers.clear();
         continue;
       }
+
       channel.buffer = was.buffer.slice();
       channel.offset = was.offset;
       channel.tickOffset = was.tickOffset;
       channel.frameSeen = was.frameSeen;
       channel.inputSeen = was.inputSeen;
       channel.tickStart = was.tickStart;
+
       for (const [reader, handle] of channel.readers) {
         const at = was.cursors.get(reader);
+
         if (at === undefined) {
           channel.readers.delete(reader);
         } else {
@@ -787,10 +847,13 @@ export class EventBus {
    */
   mark(): EventMark {
     const mark: EventMark = new Map();
+
     for (const channel of this.order) {
       mark.set(channel, channel.end);
     }
+
     this.reads.open = true;
+
     return mark;
   }
 
@@ -803,11 +866,14 @@ export class EventBus {
     for (const channel of this.order) {
       channel.truncate(mark.get(channel) ?? channel.tickOffset);
     }
+
     // Newest first, so that a handle that read twice ends where it began.
     const { moved } = this.reads;
+
     for (let i = moved.length - 1; i >= 0; i--) {
       moved[i]!.handle.rewind(moved[i]!.cursor);
     }
+
     this.commit();
   }
 

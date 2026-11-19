@@ -75,12 +75,16 @@ import {
 
 const NOT_PLACED = -1;
 const FREE = -2;
+
 /** The number of slots: what an id's generation is multiplied by. */
 const SLOTS = INDEX_MASK + 1;
+
 /** In a `Saved`, the row value that means "every row". */
 const WHOLE = -1;
+
 /** What `hash` folds in before each singleton, to distinguish it from a sparse set. */
 const SINGLETON = 0x53_49_4e_47;
+
 const storageOf = (def: ComponentDef<any>): 0 | 1 | 2 =>
   def.single ? 2 : def.storage === "sparse" ? 1 : 0;
 
@@ -122,9 +126,11 @@ interface Saved {
 
 const makeColumns = (def: ComponentDef<any>, capacity: number): Columns => {
   const cols: Columns = {};
+
   for (let f = 0; f < def.fields.length; f++) {
     cols[def.fields[f]!] = makeColumn(def.kinds[f]!, capacity);
   }
+
   return cols;
 };
 
@@ -158,10 +164,12 @@ const writeRow = (
 
 const readRow = (def: ComponentDef<any>, cols: Columns, row: number): any => {
   const out: any = {};
+
   for (let f = 0; f < def.fields.length; f++) {
     const name = def.fields[f];
     out[name!] = cols[name!]![row];
   }
+
   return out;
 };
 
@@ -200,9 +208,9 @@ export class Table {
   capacity: number;
   /** Indexed by component id. The record identity is stable; its arrays are replaced on growth. */
   readonly columns: (Columns | undefined)[] = [];
-  readonly ids: Set<number> = new Set();
-  readonly addEdges: Map<number, Table> = new Map();
-  readonly removeEdges: Map<number, Table> = new Map();
+  readonly ids = new Set<number>();
+  readonly addEdges = new Map<number, Table>();
+  readonly removeEdges = new Map<number, Table>();
   /**
    * The table's components in order of name. `defs` is in order of id, which
    * depends on the order the program happened to define its components in.
@@ -217,6 +225,7 @@ export class Table {
     this.capacity = capacity;
     this.entities = new Float64Array(capacity);
     this.defsByName = defs.toSorted(byName);
+
     for (const def of defs) {
       this.ids.add(def.id);
       this.columns[def.id] = makeColumns(def, capacity);
@@ -230,12 +239,16 @@ export class Table {
       const entities = new Float64Array(capacity);
       entities.set(this.entities);
       this.entities = entities;
+
       for (const def of this.defs) {
         growColumns(def, this.columns[def.id]!, capacity);
       }
+
       this.capacity = capacity;
     }
+
     this.entities[this.count] = entity;
+
     return this.count++;
   }
 
@@ -243,23 +256,30 @@ export class Table {
   swapRemove(row: number): Entity | undefined {
     const last = this.count - 1;
     let moved: Entity | undefined;
+
     if (row !== last) {
       moved = this.entities[last] as Entity;
       this.entities[row] = moved;
     }
+
     for (const def of this.defs) {
       const cols = this.columns[def.id]!;
+
       for (let f = 0; f < def.fields.length; f++) {
         const col = cols[def.fields[f]!]!;
+
         if (row !== last) {
           col[row] = col[last];
         }
+
         if (isBoxed(def.kinds[f]!)) {
           col[last] = undefined;
         }
       }
     }
+
     this.count = last;
+
     return moved;
   }
 }
@@ -295,14 +315,18 @@ export class SparseSet {
   add(index: number, value: any | undefined): void {
     if (index >= this.sparse.length) {
       let size = this.sparse.length;
+
       while (size <= index) {
         size *= 2;
       }
+
       const sparse = new Int32Array(size).fill(-1);
       sparse.set(this.sparse);
       this.sparse = sparse;
     }
+
     let pos = this.sparse[index];
+
     if (pos === -1) {
       if (this.count === this.dense.length) {
         const capacity = this.dense.length * 2;
@@ -311,6 +335,7 @@ export class SparseSet {
         this.dense = dense;
         growColumns(this.def, this.columns, capacity);
       }
+
       pos = this.count++;
       this.dense[pos] = index;
       this.sparse[index] = pos;
@@ -324,25 +349,32 @@ export class SparseSet {
     if (!this.has(index)) {
       return false;
     }
+
     const pos = this.sparse[index]!;
     const last = this.count - 1;
     const { def } = this;
+
     if (pos !== last) {
       const movedIndex = this.dense[last]!;
       this.dense[pos] = movedIndex;
       this.sparse[movedIndex] = pos;
     }
+
     for (let f = 0; f < def.fields.length; f++) {
       const col = this.columns[def.fields[f]!]!;
+
       if (pos !== last) {
         col[pos] = col[last];
       }
+
       if (isBoxed(def.kinds[f]!)) {
         col[last] = undefined;
       }
     }
+
     this.sparse[index] = -1;
     this.count = last;
+
     return true;
   }
 }
@@ -396,9 +428,11 @@ export class RelationIndex {
     this.unlink(source);
     const first = this.head[target]!;
     this.next[source] = first;
+
     if (first !== -1) {
       this.prev[first] = source;
     }
+
     this.head[target] = source;
     this.target[source] = target;
   }
@@ -406,19 +440,24 @@ export class RelationIndex {
   /** Makes `source` point at nothing. */
   unlink(source: number): void {
     const target = this.target[source]!;
+
     if (target === -1) {
       return;
     }
+
     const next = this.next[source]!;
     const prev = this.prev[source]!;
+
     if (prev === -1) {
       this.head[target] = next;
     } else {
       this.next[prev] = next;
     }
+
     if (next !== -1) {
       this.prev[next] = prev;
     }
+
     this.next[source] = -1;
     this.prev[source] = -1;
     this.target[source] = -1;
@@ -427,9 +466,11 @@ export class RelationIndex {
   /** Returns the indexes of the entities that point at `target`, ascending. */
   sources(target: number): number[] {
     const out: number[] = [];
+
     for (let at = this.head[target]!; at !== -1; at = this.next[at]!) {
       out.push(at);
     }
+
     return out.sort((a, b) => a - b);
   }
 }
@@ -541,6 +582,7 @@ export class ChangeLog {
     if (this.noted[index] === 1) {
       return;
     }
+
     this.push(index);
     this.noted[index] = 1;
   }
@@ -568,26 +610,33 @@ export class ChangeLog {
     ) {
       this.makeRoom();
     }
+
     const { entries, noted } = this;
     let tail = this.first + (this.end - this.base);
     const before = tail;
+
     for (let row = start; row < end; row++) {
       const index = entities[row]! & INDEX_MASK;
+
       if (noted[index] === 1) {
         continue;
       }
+
       entries[tail++] = index;
       noted[index] = 1;
     }
+
     this.end += tail - before;
   }
 
   /** Appends an entry regardless of what the log holds: an entity id, for a removal. */
   push(value: number): void {
     let tail = this.first + (this.end - this.base);
+
     if (tail === this.entries.length) {
       tail = this.makeRoom();
     }
+
     this.entries[tail] = value;
     this.end++;
   }
@@ -605,7 +654,9 @@ export class ChangeLog {
     ) {
       this.compact();
     }
+
     const size = this.end - this.base;
+
     if (size > this.entries.length >> 1 || this.first === 0) {
       const entries = this.room(this.entries.length * 2);
       entries.set(this.entries.subarray(this.first, this.first + size));
@@ -613,7 +664,9 @@ export class ChangeLog {
     } else {
       this.entries.copyWithin(0, this.first, this.first + size);
     }
+
     this.first = 0;
+
     return size;
   }
 
@@ -635,25 +688,33 @@ export class ChangeLog {
     let next = 0;
     let kept = 0;
     let write = first + size;
+
     for (let read = first + size - 1; read >= first; read--) {
       const sequence = this.base + (read - first);
+
       while (next < byPlace.length && byPlace[next]!.at > sequence) {
         places[next++] = this.end - kept;
       }
+
       const index = entries[read]!;
+
       if (seen[index] === 1) {
         continue;
       }
+
       seen[index] = 1;
       entries[--write] = index;
       kept++;
     }
+
     while (next < byPlace.length) {
       places[next++] = this.end - kept;
     }
+
     for (let i = 0; i < byPlace.length; i++) {
       byPlace[i]!.at = places[i]!;
     }
+
     this.first = write;
     this.base = this.end - kept;
     // An entity that is noted has one entry past the floor, its newest,
@@ -674,12 +735,16 @@ export class ChangeLog {
             `Two readers of what ${this.kind === "removed" ? "lost" : this.kind} "${this.def.name}" are both known as ${JSON.stringify(key)}.`
           );
         }
+
         cursor.claimed = true;
+
         return cursor;
       }
     }
+
     const cursor = { at: this.end, key, fresh, claimed: true };
     this.cursors.push(cursor);
+
     return cursor;
   }
 
@@ -706,6 +771,7 @@ export class ChangeLog {
     if (this.kind !== "removed") {
       const { entries, noted } = this;
       const to = this.first + (this.end - this.base);
+
       for (
         let at = this.first + (Math.max(this.floor, this.base) - this.base);
         at < to;
@@ -714,6 +780,7 @@ export class ChangeLog {
         noted[entries[at]!] = 0;
       }
     }
+
     this.floor = this.end;
     this.moved();
   }
@@ -725,16 +792,20 @@ export class ChangeLog {
     if (this.world._recording) {
       return;
     }
+
     let min = this.end;
+
     for (const cursor of this.cursors) {
       if (cursor.at < min) {
         min = cursor.at;
       }
     }
+
     if (min > this.base) {
       this.first += min - this.base;
       this.base = min;
     }
+
     if (this.base === this.end) {
       this.first = 0;
     }
@@ -743,17 +814,21 @@ export class ChangeLog {
   /** Drops every entry made since the transaction began. */
   rollback(): void {
     const kept = this.first + (this.txEnd - this.base);
+
     if (this.kind !== "removed") {
       for (let at = this.first + (this.end - this.base) - 1; at >= kept; at--) {
         // Its entity is logged afresh the next time it is written.
         this.noted[this.entries[at]!] = 0;
       }
     }
+
     this.end = this.txEnd;
+
     // A visit inside the transaction went to an end that is gone.
     if (this.floor > this.end) {
       this.floor = this.end;
     }
+
     // A reader that was new in the transaction started at an end that is gone.
     for (const cursor of this.cursors) {
       if (cursor.at > this.end) {
@@ -767,21 +842,26 @@ export class ChangeLog {
     const readers: Record<string, number> = {};
     let from = this.end;
     let any = false;
+
     for (const cursor of this.cursors) {
       if (!cursor.fresh && keep(cursor.key)) {
         any = true;
         from = Math.min(from, Math.max(cursor.at, this.base));
       }
     }
+
     if (!any) {
       return undefined;
     }
+
     for (const cursor of this.cursors) {
       if (!cursor.fresh && keep(cursor.key)) {
         readers[cursor.key] = Math.max(cursor.at, this.base) - from;
       }
     }
+
     const start = this.first + (from - this.base);
+
     return {
       component: this.def.name,
       kind: this.kind,
@@ -795,27 +875,36 @@ export class ChangeLog {
   /** Loads what a save held. The log must be new, with nothing logged in it yet. */
   restore(saved: SavedChanges): void {
     const { entries } = saved;
+
     const limit =
       this.kind === "removed" ? Number.MAX_SAFE_INTEGER + 1 : this.world._slots;
+
     this.entries = this.room(Math.max(64, entries.length * 2));
+
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i]!;
+
       if (!Number.isInteger(entry) || entry < 0 || entry >= limit) {
         throw corrupt(
           `the changes it holds for "${this.def.name}" name an entity that cannot be`
         );
       }
+
       this.entries[i] = entry;
     }
+
     this.end = entries.length;
+
     for (const [key, visited] of Object.entries(saved.readers)) {
       if (!Number.isInteger(visited) || visited < 0 || visited > this.end) {
         throw corrupt(
           `a reader of the changes to "${this.def.name}" is further than they go`
         );
       }
+
       this.cursors.push({ at: visited, key, fresh: false, claimed: false });
     }
+
     this.moved();
   }
 }
@@ -849,16 +938,20 @@ export class RemovedReader {
         "A reader of removed components was used after its world was restored from a snapshot. Ask for it again: world.removed(component), or yield* the query."
       );
     }
+
     const { cursor, log } = this;
     const count = log.waiting(cursor.at);
+
     if (count === 0) {
       return [];
     }
+
     const ids = new Float64Array(count);
     log.copy(cursor.at, ids, 0);
     this.world._reading(cursor);
     cursor.at = log.end;
     this.world._read(log);
+
     return Array.from(ids) as Entity[];
   }
 }
@@ -900,10 +993,12 @@ export interface Guard {
 const describeSpec = (spec: QuerySpec<any>): string => {
   const names = (defs: readonly ComponentDef<any>[] | undefined): string =>
     (defs ?? []).map((def) => def.name).join(",");
+
   // What it only reads, in the order of its terms, however it was said.
   const reads = spec.terms.filter(
     (def: ComponentDef<any>) => spec.readDefs?.includes(def) === true
   );
+
   return `all(${names(spec.terms)}) with(${names(spec.withDefs)}) without(${names(spec.withoutDefs)}) changed(${names(spec.changedDefs)}) added(${names(spec.addedDefs)}) reads(${names(reads)})`;
 };
 
@@ -1048,6 +1143,7 @@ interface Members {
 }
 
 type Callback = (...args: any[]) => void;
+
 type OnRun = (table: Table, start: number, end: number) => void;
 
 /**
@@ -1127,13 +1223,17 @@ export class QueryView<D extends Terms = Terms> {
     key = ""
   ) {
     this.restored = world._restored;
+
     const requireSparse = (def: ComponentDef<any>): SparseSet => {
       const set = world._sparse(def);
+
       if (!this.sparseWith.includes(set)) {
         this.sparseWith.push(set);
       }
+
       return set;
     };
+
     for (const def of spec.readDefs ?? []) {
       if (!spec.terms.includes(def)) {
         throw new Error(
@@ -1141,8 +1241,10 @@ export class QueryView<D extends Terms = Terms> {
         );
       }
     }
+
     for (const def of spec.terms) {
       this.termRead.push(spec.readDefs?.includes(def) === true);
+
       if (def.storage === "table") {
         this.requiredIds.push(def.id);
         this.termTableId.push(def.id);
@@ -1154,6 +1256,7 @@ export class QueryView<D extends Terms = Terms> {
         this.termSet.push(requireSparse(def));
       }
     }
+
     for (const def of spec.withDefs) {
       if (def.storage === "table") {
         this.requiredIds.push(def.id);
@@ -1161,6 +1264,7 @@ export class QueryView<D extends Terms = Terms> {
         requireSparse(def);
       }
     }
+
     for (const def of spec.withoutDefs) {
       if (def.storage === "table") {
         this.excludedIds.push(def.id);
@@ -1168,6 +1272,7 @@ export class QueryView<D extends Terms = Terms> {
         this.sparseWithout.push(world._sparse(def));
       }
     }
+
     // Watching a component implies requiring it.
     const watch = (
       defs: readonly ComponentDef<any>[] | undefined,
@@ -1179,12 +1284,15 @@ export class QueryView<D extends Terms = Terms> {
         } else if (!this.requiredIds.includes(def.id)) {
           this.requiredIds.push(def.id);
         }
+
         const log = world._log(def, kind);
+
         if (!this.watches.some((each) => each.log === log)) {
           this.watches.push({ log, cursor: log.cursor(key) });
         }
       }
     };
+
     watch(spec.changedDefs, "changed");
     watch(spec.addedDefs, "added");
     this.watching = this.watches.length > 0;
@@ -1204,16 +1312,20 @@ export class QueryView<D extends Terms = Terms> {
         "A query's view was used after its world was restored from a snapshot. What it held is gone with the tables it was made of. Ask for it again: world.view(spec), or yield* the query, as a system does every tick."
       );
     }
+
     const all = this.world.tables;
+
     for (; this.scanned < all.length; this.scanned++) {
       const table = all[this.scanned]!;
       let match = true;
+
       for (const id of this.requiredIds) {
         if (!table.ids.has(id)) {
           match = false;
           break;
         }
       }
+
       if (match) {
         for (const id of this.excludedIds) {
           if (table.ids.has(id)) {
@@ -1222,7 +1334,9 @@ export class QueryView<D extends Terms = Terms> {
           }
         }
       }
+
       this.slotOf[table.index] = match ? this.tables.length : -1;
+
       if (match) {
         this.tables.push(table);
       }
@@ -1232,16 +1346,19 @@ export class QueryView<D extends Terms = Terms> {
   /** The per-entity part of the filter: sparse `with` and `without`. */
   private pass(entity: number): boolean {
     const index = entity & INDEX_MASK;
+
     for (let s = 0; s < this.sparseWith.length; s++) {
       if (!this.sparseWith[s]!.has(index)) {
         return false;
       }
     }
+
     for (let s = 0; s < this.sparseWithout.length; s++) {
       if (this.sparseWithout[s]!.has(index)) {
         return false;
       }
     }
+
     return true;
   }
 
@@ -1255,6 +1372,7 @@ export class QueryView<D extends Terms = Terms> {
   private enter(): Frame {
     this.refresh();
     const { world } = this;
+
     if (this.notesAt !== world._watched && this.depth === 0) {
       // A component of this query has come to be watched, or this is the
       // first iteration: its terms get accessors that note their writes.
@@ -1266,8 +1384,10 @@ export class QueryView<D extends Terms = Terms> {
       this.notes = this.termLog.some((log) => log !== undefined);
       this.frames.length = 0;
     }
+
     world._iterating++;
     const depth = this.depth++;
+
     return world._frozen
       ? (this.frozenFrames[depth] ??= this.makeFrame(true))
       : (this.frames[depth] ??= this.makeFrame(false));
@@ -1287,9 +1407,11 @@ export class QueryView<D extends Terms = Terms> {
     // The terms that are in the table share the row the loop is at. A
     // sparse term has its rows elsewhere, and a row of its own.
     const row: Row = { i: 0 };
+
     const rows = this.termSet.map((set) =>
       set === undefined ? row : { i: 0 }
     );
+
     const accessors = this.spec.terms.map((def, k) =>
       makeAccessor(
         def,
@@ -1303,6 +1425,7 @@ export class QueryView<D extends Terms = Terms> {
         rows[k]!
       )
     );
+
     return {
       accessors,
       fields: accessors.map((accessor) => accessor.fields),
@@ -1333,27 +1456,34 @@ export class QueryView<D extends Terms = Terms> {
     const { watches, world } = this;
     let fresh = false;
     let count = 0;
+
     for (let w = 0; w < watches.length; w++) {
       const { cursor, log } = watches[w]!;
       fresh ||= cursor.fresh;
       count += log.waiting(cursor.at);
     }
+
     if (fresh) {
       count = 0;
+
       for (let t = 0; t < this.tables.length; t++) {
         count += this.tables[t]!.count;
       }
     }
+
     if (members.dense.length < count) {
       members.dense = new Uint32Array(
         Math.max(count, members.dense.length * 2)
       );
     }
+
     const { dense } = members;
     let at = 0;
+
     if (fresh) {
       for (let t = 0; t < this.tables.length; t++) {
         const { count: rows, entities } = this.tables[t]!;
+
         for (let row = 0; row < rows; row++) {
           dense[at++] = entities[row]! & INDEX_MASK;
         }
@@ -1365,10 +1495,13 @@ export class QueryView<D extends Terms = Terms> {
         at += log.waiting(cursor.at);
       }
     }
+
     members.count = count;
+
     if (visit) {
       for (let w = 0; w < watches.length; w++) {
         const { cursor, log } = watches[w]!;
+
         if (cursor.fresh || cursor.at !== log.end) {
           world._reading(cursor);
           cursor.fresh = false;
@@ -1377,6 +1510,7 @@ export class QueryView<D extends Terms = Terms> {
         }
       }
     }
+
     return count;
   }
 
@@ -1388,30 +1522,37 @@ export class QueryView<D extends Terms = Terms> {
   private runs(frame: Frame, onRun: OnRun): void {
     if (!this.filtered) {
       this._lastPath = "dense";
+
       for (let t = 0; t < this.tables.length; t++) {
         const table = this.tables[t]!;
+
         if (table.count > 0) {
           onRun(table, 0, table.count);
         }
       }
+
       return;
     }
 
     let smallest: Members | undefined;
+
     if (this.watching) {
       // What changed is where to look: nothing else is visited at all.
       if (this.gather(frame.members, true) === 0) {
         return;
       }
+
       smallest = frame.members;
     } else {
       for (let s = 0; s < this.sparseWith.length; s++) {
         const set = this.sparseWith[s]!;
+
         if (smallest === undefined || set.count < smallest.count) {
           smallest = set;
         }
       }
     }
+
     // A change query nested in itself has other entities to visit than the
     // marks in place are for, so it sorts.
     if (
@@ -1420,6 +1561,7 @@ export class QueryView<D extends Terms = Terms> {
     ) {
       this._lastPath = "sorted";
       this.sortedRuns(frame, smallest, onRun);
+
       return;
     }
 
@@ -1427,14 +1569,18 @@ export class QueryView<D extends Terms = Terms> {
     // Only the outermost iteration marks and restores. A nested one sees the
     // marks already in place, and nothing structural can change in between.
     const outermost = this.depth === 1;
+
     if (outermost) {
       this.exceptions = this.mark(smallest);
     }
+
     try {
       let rows = 0;
+
       for (let t = 0; t < this.tables.length; t++) {
         rows += this.tables[t]!.count;
       }
+
       // Long uniform stretches are skipped with a native scan (indexOf), which
       // is far faster per byte but costs more per call than a JS loop. Which
       // stretches are long depends on what the mask marks:
@@ -1443,17 +1589,22 @@ export class QueryView<D extends Terms = Terms> {
       const rare = this.exceptions * NATIVE_SCAN_ROWS_PER_EXCEPTION < rows;
       const nativeSkip = rare && this.maskBase === 1;
       const nativeRun = rare && this.maskBase === 0;
+
       for (let t = 0; t < this.tables.length; t++) {
         const table = this.tables[t]!;
         const { count } = table;
+
         if (count === 0) {
           continue;
         }
+
         const mask = this.maskFor(t, table);
         let i = 0;
+
         while (i < count) {
           if (nativeSkip) {
             i = mask.indexOf(0, i);
+
             if (i === -1) {
               break;
             }
@@ -1462,21 +1613,27 @@ export class QueryView<D extends Terms = Terms> {
               i++;
             }
           }
+
           if (i >= count) {
             break;
           }
+
           const start = i;
+
           if (nativeRun) {
             i = mask.indexOf(1, start + 1);
+
             if (i === -1 || i > count) {
               i = count;
             }
           } else {
             i++;
+
             while (i < count && mask[i] === 0) {
               i++;
             }
           }
+
           onRun(table, start, i);
         }
       }
@@ -1491,23 +1648,30 @@ export class QueryView<D extends Terms = Terms> {
     if (this._path !== "auto") {
       return this._path === "sorted";
     }
+
     let rows = 0;
+
     for (let t = 0; t < this.tables.length; t++) {
       rows += this.tables[t]!.count;
     }
+
     return smallest.count * SORT_ROWS_PER_MEMBER <= rows;
   }
 
   private maskFor(slot: number, table: Table): Uint8Array {
     let mask = this.masks[slot];
+
     // A table only grows between iterations, when no marks are in place.
     if (mask === undefined || mask.length < table.capacity) {
       mask = new Uint8Array(table.capacity);
+
       if (this.maskBase === 1) {
         mask.fill(1);
       }
+
       this.masks[slot] = mask;
     }
+
     return mask;
   }
 
@@ -1519,17 +1683,27 @@ export class QueryView<D extends Terms = Terms> {
     // reserved, and the entries for existing entities are copied unchanged.
     const recTable = world._recTable;
     const recRow = world._recRow;
+
     if (smallest === undefined) {
       // Only exclusions: nothing is skipped except members of an excluded set.
       for (let s = 0; s < this.sparseWithout.length; s++) {
         const set = this.sparseWithout[s]!;
         const dense = set.dense;
+
         for (let k = 0; k < set.count; k++) {
           const index = dense[k]!;
           const tableIndex = recTable[index]!;
-          if (tableIndex < 0) continue;
+
+          if (tableIndex < 0) {
+            continue;
+          }
+
           const slot = this.slotOf[tableIndex];
-          if (slot === undefined || slot === -1) continue;
+
+          if (slot === undefined || slot === -1) {
+            continue;
+          }
+
           this.maskFor(slot, this.tables[slot]!)[recRow[index]!] = 1;
           marked++;
         }
@@ -1538,20 +1712,31 @@ export class QueryView<D extends Terms = Terms> {
       // A sparse component is required: everything is skipped except the
       // members of the smallest required set that pass every other condition.
       const dense = smallest.dense;
+
       for (let k = 0; k < smallest.count; k++) {
         const index = dense[k]!;
         const tableIndex = recTable[index]!;
-        if (tableIndex < 0) continue;
+
+        if (tableIndex < 0) {
+          continue;
+        }
+
         const slot = this.slotOf[tableIndex];
-        if (slot === undefined || slot === -1) continue;
+
+        if (slot === undefined || slot === -1) {
+          continue;
+        }
+
         const table = this.tables[slot]!;
         const row = recRow[index];
+
         if (this.pass(table.entities[row!]!)) {
           this.maskFor(slot, table)[row!] = 0;
           marked++;
         }
       }
     }
+
     return marked;
   }
 
@@ -1560,20 +1745,27 @@ export class QueryView<D extends Terms = Terms> {
     const recTable = this.world._recTable;
     const recRow = this.world._recRow;
     const sets = smallest === undefined ? this.sparseWithout : [smallest];
+
     for (let s = 0; s < sets.length; s++) {
       const set = sets[s]!;
       const { dense } = set;
+
       for (let k = 0; k < set.count; k++) {
         const index = dense[k]!;
         const tableIndex = recTable[index]!;
+
         if (tableIndex < 0) {
           continue;
         }
+
         const slot = this.slotOf[tableIndex];
+
         if (slot === undefined || slot === -1) {
           continue;
         }
+
         const mask = this.masks[slot];
+
         if (mask !== undefined) {
           mask[recRow[index]!] = this.maskBase;
         }
@@ -1589,22 +1781,27 @@ export class QueryView<D extends Terms = Terms> {
     const m = this.sortedKeys(frame, smallest);
     const { keys } = frame;
     let k = 0;
+
     while (k < m) {
       const slot = Math.floor(keys[k]! / ROW_RANGE);
       const start = keys[k]! - slot * ROW_RANGE;
       let end = start + 1;
       k++;
+
       // A row that is there twice (a change query's entity, logged twice)
       // has the same key as the one before it.
       while (k < m) {
         const key = keys[k]!;
+
         if (key === slot * ROW_RANGE + end) {
           end++;
         } else if (key !== slot * ROW_RANGE + end - 1) {
           break;
         }
+
         k++;
       }
+
       onRun(this.tables[slot]!, start, end);
     }
   }
@@ -1616,30 +1813,40 @@ export class QueryView<D extends Terms = Terms> {
   private sortedKeys(frame: Frame, smallest: Members): number {
     const recTable = this.world._recTable;
     const recRow = this.world._recRow;
+
     if (frame.keys.length < smallest.count) {
       frame.keys = new Float64Array(
         Math.max(smallest.count, frame.keys.length * 2)
       );
     }
+
     const { keys } = frame;
     const { dense } = smallest;
     let m = 0;
+
     for (let k = 0; k < smallest.count; k++) {
       const index = dense[k]!;
       const tableIndex = recTable[index]!;
+
       if (tableIndex < 0) {
         continue;
       }
+
       const slot = this.slotOf[tableIndex];
+
       if (slot === undefined || slot === -1) {
         continue;
       }
+
       const row = recRow[index]!;
+
       if (this.pass(this.tables[slot]!.entities[row]!)) {
         keys[m++] = slot * ROW_RANGE + row;
       }
     }
+
     keys.subarray(0, m).sort();
+
     return m;
   }
 
@@ -1649,6 +1856,7 @@ export class QueryView<D extends Terms = Terms> {
   private saveTableTerms(table: Table): void {
     for (let k = 0; k < this.n; k++) {
       const id = this.termTableId[k]!;
+
       // What is only read is not written, and need not be put back.
       if (id !== -1 && !this.termRead[k]) {
         this.world._saveColumns(
@@ -1664,6 +1872,7 @@ export class QueryView<D extends Terms = Terms> {
   private saveSparseTerms(): void {
     for (let k = 0; k < this.n; k++) {
       const set = this.termSet[k];
+
       if (set !== undefined && !this.termRead[k]) {
         this.world._saveColumns(set.def, set.columns, set.count);
       }
@@ -1680,6 +1889,7 @@ export class QueryView<D extends Terms = Terms> {
    */
   each(fn: (...args: [...AccessorsOf<D>, entity: Entity]) => void): void {
     const frame = this.enter();
+
     try {
       const f = fn as Callback;
       const loop = (frame.loop ??= this.makeLoop(frame.frozen));
@@ -1689,17 +1899,22 @@ export class QueryView<D extends Terms = Terms> {
       // An accessor that notes its writes is told whose row each is, and
       // where to note it; any other takes the columns and ignores the rest.
       const { termLog } = this;
+
       for (let k = 0; k < this.n; k++) {
         const set = this.termSet[k];
+
         if (set !== undefined && loop.sets[k] !== set.dense) {
           acc[k]!.bind(set.columns, set.dense, termLog[k]);
           loop.sets[k] = set.dense;
         }
       }
+
       const { world } = this;
+
       if (world._recording) {
         this.saveSparseTerms();
       }
+
       let bound: Table | undefined;
       this.runs(frame, (table, start, end) => {
         if (table !== bound) {
@@ -1707,18 +1922,23 @@ export class QueryView<D extends Terms = Terms> {
           if (loop.table !== table.entities) {
             for (let k = 0; k < this.n; k++) {
               const id = this.termTableId[k];
+
               if (id !== -1) {
                 acc[k]!.bind(table.columns[id!]!, table.entities, termLog[k]);
               }
             }
+
             loop.table = table.entities;
           }
+
           // Once per table, never per entity.
           if (world._recording) {
             this.saveTableTerms(table);
           }
+
           bound = table;
         }
+
         if (this.hasSparseTerms) {
           this.visitSparse(f, loop, table.entities, start, end);
         } else {
@@ -1740,12 +1960,14 @@ export class QueryView<D extends Terms = Terms> {
   ): void {
     const { n } = this;
     const { fields, row } = loop;
+
     // Moving on is one assignment, whatever the number of terms: they all
     // read the row from the same place.
     // Specialised by arity so the callback is called with a fixed number
     // of arguments (a spread call here costs roughly 3x).
     if (n === 1) {
       const a = fields[0]!;
+
       for (let i = start; i < end; i++) {
         row.i = i;
         f(a, ents[i]);
@@ -1753,6 +1975,7 @@ export class QueryView<D extends Terms = Terms> {
     } else if (n === 2) {
       const a = fields[0]!;
       const b = fields[1]!;
+
       for (let i = start; i < end; i++) {
         row.i = i;
         f(a, b, ents[i]);
@@ -1761,15 +1984,18 @@ export class QueryView<D extends Terms = Terms> {
       const a = fields[0]!;
       const b = fields[1]!;
       const c = fields[2]!;
+
       for (let i = start; i < end; i++) {
         row.i = i;
         f(a, b, c, ents[i]);
       }
     } else {
       const args: any[] = Array.from({ length: n + 1 });
+
       for (let k = 0; k < n; k++) {
         args[k] = fields[k];
       }
+
       for (let i = start; i < end; i++) {
         row.i = i;
         args[n] = ents[i];
@@ -1788,13 +2014,16 @@ export class QueryView<D extends Terms = Terms> {
   ): void {
     const { n, sparseTerms, termSet } = this;
     const { fields, row, rows } = loop;
+
     for (let i = start; i < end; i++) {
       const entity = ents[i]!;
       row.i = i;
+
       for (let s = 0; s < sparseTerms.length; s++) {
         const k = sparseTerms[s]!;
         rows[k]!.i = termSet[k]!.sparse[entity & INDEX_MASK]!;
       }
+
       if (n === 1) {
         f(fields[0], entity);
       } else if (n === 2) {
@@ -1843,38 +2072,49 @@ export class QueryView<D extends Terms = Terms> {
     ) => void
   ): void {
     const frame = this.enter();
+
     try {
       const f = fn as Callback;
       const { n } = this;
       const cols: any[] = Array.from({ length: n });
+
       for (let k = 0; k < n; k++) {
         cols[k] = this.termSet[k];
       }
+
       const { world } = this;
       // A frozen world is only read, so nothing a raw loop is handed there
       // counts as written.
       const noting = this.notes && !world._frozen;
+
       if (noting && this.watching) {
         this.refuseOwnWrites();
       }
+
       if (world._recording) {
         this.saveSparseTerms();
       }
+
       let bound: Table | undefined;
       this.runs(frame, (table, start, end) => {
         if (table !== bound) {
           for (let k = 0; k < n; k++) {
             const id = this.termTableId[k];
+
             if (id !== -1) {
               cols[k] = table.columns[id!];
             }
           }
+
           if (world._recording) {
             this.saveTableTerms(table);
           }
+
           bound = table;
         }
+
         const ents = table.entities;
+
         if (noting) {
           // Raw columns cannot say which rows were written, so every row
           // that is handed out counts as written.
@@ -1882,6 +2122,7 @@ export class QueryView<D extends Terms = Terms> {
             this.termLog[k]?.noteRows(ents, start, end);
           }
         }
+
         if (n === 1) {
           f(start, end, cols[0], ents);
         } else if (n === 2) {
@@ -1906,6 +2147,7 @@ export class QueryView<D extends Terms = Terms> {
   private refuseOwnWrites(): void {
     for (let k = 0; k < this.n; k++) {
       const log = this.termLog[k];
+
       if (log !== undefined && this.watches.some((each) => each.log === log)) {
         throw new Error(
           `eachChunk() was called on a query that watches "${log.def.name}" for changes and also hands it out. Raw columns cannot tell a read from a write, so every row handed out counts as written, and the query would see its own visit as a change every time. Visit it with each(), whose accessors note only the rows they assign to; or, if the loop only reads "${log.def.name}", say so with Query.reads (readDefs); or take it out of the query's terms.`
@@ -1922,30 +2164,40 @@ export class QueryView<D extends Terms = Terms> {
    */
   count(): number {
     this.refresh();
+
     if (this.watching) {
       const peek = (this.peek ??= this.makeFrame(false));
+
       if (this.gather(peek.members, false) === 0) {
         return 0;
       }
+
       const m = this.sortedKeys(peek, peek.members);
       let distinct = 0;
+
       for (let k = 0; k < m; k++) {
         if (k === 0 || peek.keys[k] !== peek.keys[k - 1]) {
           distinct++;
         }
       }
+
       return distinct;
     }
+
     let total = 0;
+
     for (const table of this.tables) {
       if (this.filtered) {
         for (let i = 0; i < table.count; i++) {
-          if (this.pass(table.entities[i]!)) total++;
+          if (this.pass(table.entities[i]!)) {
+            total++;
+          }
         }
       } else {
         total += table.count;
       }
     }
+
     return total;
   }
 
@@ -1955,8 +2207,10 @@ export class QueryView<D extends Terms = Terms> {
    */
   entities(): Entity[] {
     const out: Entity[] = [];
+
     if (this.watching) {
       const frame = this.enter();
+
       try {
         this.runs(frame, (table, start, end) => {
           for (let i = start; i < end; i++) {
@@ -1966,9 +2220,12 @@ export class QueryView<D extends Terms = Terms> {
       } finally {
         this.leave();
       }
+
       return out;
     }
+
     this.refresh();
+
     for (const table of this.tables) {
       for (let i = 0; i < table.count; i++) {
         if (!this.filtered || this.pass(table.entities[i]!)) {
@@ -1976,6 +2233,7 @@ export class QueryView<D extends Terms = Terms> {
         }
       }
     }
+
     return out;
   }
 }
@@ -2133,6 +2391,7 @@ export class World {
    */
   isAlive(entity: Entity): boolean {
     const index = entityIndex(entity);
+
     // The generation, compared without rounding it down: a number that is
     // no id, which has a part below its index's bits or none at all, is the
     // generation of no slot.
@@ -2152,21 +2411,27 @@ export class World {
     if (this._frozen) {
       throw new Error(frozenWrite("A spawn"));
     }
+
     let index: number;
     this._reservedFresh = this.freeList.length === 0;
+
     if (this.freeList.length > 0) {
       index = this.freeList.pop()!;
     } else {
       index = this.nextIndex++;
+
       if (index > INDEX_MASK) {
         throw new Error("Entity limit reached");
       }
+
       if (index >= this.recTable.length) {
         this.growRecords();
       }
     }
+
     this.recTable[index] = NOT_PLACED;
     this.alive++;
+
     return makeEntity(index, this.gens[index]!);
   }
 
@@ -2183,20 +2448,26 @@ export class World {
    */
   _release(entity: Entity, fresh: boolean): void {
     const index = entityIndex(entity);
+
     if (!this.isAlive(entity) || this.recTable[index] !== NOT_PLACED) {
       return;
     }
+
     if (fresh && index !== this.nextIndex - 1) {
       this.despawn(entity);
+
       return;
     }
+
     this.recTable[index] = FREE;
     this.alive--;
+
     if (fresh) {
       this.nextIndex--;
     } else {
       this.freeList.push(index);
     }
+
     // Something may have been told to point at the id while it was queued.
     if (this.relationList.length > 0) {
       const pending: Entity[] = [];
@@ -2216,9 +2487,11 @@ export class World {
     const gens = new Uint32Array(size);
     gens.set(this.gens);
     this.gens = gens;
+
     for (const log of this.logs) {
       log.grow(size);
     }
+
     for (const relation of this.relationList) {
       relation.grow(size);
     }
@@ -2229,38 +2502,49 @@ export class World {
     const index = entityIndex(entity);
     // Later inputs win when the same component is given twice.
     const byId = new Map<number, ComponentInput>();
+
     for (const input of inputs) {
       byId.set((isComponentDef(input) ? input : input.def).id, input);
     }
+
     const tableDefs: ComponentDef<any>[] = [];
+
     for (const input of byId.values()) {
       const def = isComponentDef(input) ? input : input.def;
+
       if (def.storage === "table") {
         tableDefs.push(def);
       }
     }
+
     tableDefs.sort((a, b) => a.id - b.id);
     const table = this.tableFor(tableDefs);
     const row = table.push(entity);
     let related: ComponentValue<any>[] | undefined;
+
     for (const input of byId.values()) {
       const def = isComponentDef(input) ? input : input.def;
       const value = isComponentDef(input) ? undefined : input.value;
+
       if (def.storage === "table") {
         writeRow(def, table.columns[def.id]!, row, value);
       } else {
         this._sparse(def).add(index, value);
       }
+
       if (this.logs.length > 0) {
         this.addedLogs[def.id]?.note(index);
         this._changed[def.id]?.note(index);
       }
+
       if (def.relation !== undefined) {
         (related ??= []).push(input as ComponentValue<any>);
       }
     }
+
     this.recTable[index] = table.index;
     this.recRow[index] = row;
+
     if (related !== undefined) {
       this.placeRelations(entity, related);
     }
@@ -2271,8 +2555,10 @@ export class World {
     const index = entityIndex(entity);
     let gone = false;
     const dangling: ComponentDef<any>[] = [];
+
     for (const { def, value } of related) {
       const target = value.target as Entity;
+
       if (this.isAlive(target)) {
         this.relationOf(def).link(index, entityIndex(target));
       } else if (def.relation === "despawn") {
@@ -2281,6 +2567,7 @@ export class World {
         dangling.push(def);
       }
     }
+
     // A target that is gone already: what its despawn would have done.
     if (gone) {
       this.despawn(entity);
@@ -2298,13 +2585,16 @@ export class World {
    */
   spawn(...inputs: readonly ComponentInput[]): Entity {
     this.assertNotIterating("spawn");
+
     if (this.guard !== undefined) {
       this._guardWrites(inputs, "spawned an entity with");
     }
+
     // Before an id is reserved, so a refused component leaves nothing behind.
     this._registerAll(inputs);
     const entity = this._reserve();
     this._place(entity, inputs);
+
     return entity;
   }
 
@@ -2317,17 +2607,21 @@ export class World {
    */
   despawn(entity: Entity): boolean {
     this.assertNotIterating("despawn");
+
     if (!this.isAlive(entity)) {
       return false;
     }
+
     if (this.guard !== undefined) {
       this._guardDespawn(entity);
     }
+
     if (this.relationList.length === 0) {
       this.despawnOne(entity);
     } else {
       this.despawnAll([entity]);
     }
+
     return true;
   }
 
@@ -2339,6 +2633,7 @@ export class World {
   private despawnAll(pending: Entity[]): void {
     while (pending.length > 0) {
       const next = pending.pop()!;
+
       if (this.isAlive(next)) {
         this.despawnOne(next);
         this.orphan(entityIndex(next), pending);
@@ -2353,10 +2648,12 @@ export class World {
    */
   private orphan(index: number, pending: Entity[]): void {
     const doomed: Entity[] = [];
+
     for (const relation of this.relationList) {
       // Each is unlinked as it loses the relation, or is despawned.
       for (const source of relation.sources(index)) {
         const holder = makeEntity(source, this.gens[source]!);
+
         if (relation.def.relation === "despawn") {
           doomed.push(holder);
         } else {
@@ -2364,6 +2661,7 @@ export class World {
         }
       }
     }
+
     for (let i = doomed.length - 1; i >= 0; i--) {
       pending.push(doomed[i]!);
     }
@@ -2374,34 +2672,43 @@ export class World {
     const index = entityIndex(entity);
     const tableIndex = this.recTable[index];
     const { removedLogs } = this;
+
     if (tableIndex !== NOT_PLACED) {
       const table = this.tables[tableIndex!]!;
+
       if (removedLogs.length > 0) {
         for (const def of table.defs) {
           removedLogs[def.id]?.push(entity);
         }
       }
+
       const row = this.recRow[index]!;
       const moved = table.swapRemove(row);
+
       if (moved !== undefined) {
         this.recRow[entityIndex(moved)] = row;
       }
     }
+
     for (const set of this.sparseList) {
       if (set.remove(index)) {
         removedLogs[set.def.id]?.push(entity);
       }
     }
+
     this.recTable[index] = FREE;
     // The slot is given out again with its next generation, so that the id
     // which just died names nobody. When the last generation has been used
     // the slot is given out no more: no id is ever given out twice.
     const next = this.gens[index]! + 1;
     this.gens[index] = next;
+
     if (next < GENERATIONS) {
       this.freeList.push(index);
     }
+
     this.alive--;
+
     // It points at nothing now.
     for (const relation of this.relationList) {
       relation.unlink(index);
@@ -2418,22 +2725,29 @@ export class World {
    */
   add(entity: Entity, input: ComponentInput): boolean {
     this.assertNotIterating("add");
+
     if (this.guard !== undefined) {
       this._guardWrites([input], "added");
     }
+
     if (!this.isAlive(entity)) {
       return false;
     }
+
     const index = entityIndex(entity);
     const def = isComponentDef(input) ? input : input.def;
     const value = isComponentDef(input) ? undefined : input.value;
+
     if (def.relation === undefined) {
       return this.addOne(index, entity, def, value);
     }
+
     if (value === undefined) {
       throw targetless(def);
     }
+
     const target = value.target as Entity;
+
     if (!this.isAlive(target)) {
       // A target that is gone already: what its despawn would have done.
       if (def.relation === "despawn") {
@@ -2441,10 +2755,13 @@ export class World {
       } else {
         this.removeOne(entity, def);
       }
+
       return false;
     }
+
     this.addOne(index, entity, def, value);
     this.relationOf(def).link(index, entityIndex(target));
+
     return true;
   }
 
@@ -2459,71 +2776,94 @@ export class World {
       const set = this._sparse(def);
       const had = set.has(index);
       set.add(index, value);
+
       // A component the entity already had is written, if a value came.
       if (!had) {
         this.addedLogs[def.id]?.note(index);
       }
+
       if (!had || value !== undefined) {
         this._changed[def.id]?.note(index);
       }
+
       return true;
     }
+
     const from = this.placedTable(index);
+
     if (from.ids.has(def.id)) {
       if (value !== undefined) {
         writeRow(def, from.columns[def.id]!, this.recRow[index]!, value);
         this._changed[def.id]?.note(index);
       }
+
       return true;
     }
+
     let to = from.addEdges.get(def.id);
+
     if (to === undefined) {
       to = this.tableFor([...from.defs, def].sort((a, b) => a.id - b.id));
       from.addEdges.set(def.id, to);
     }
+
     const row = this.move(entity, from, to);
     writeRow(def, to.columns[def.id]!, row, value);
     this.addedLogs[def.id]?.note(index);
     this._changed[def.id]?.note(index);
+
     return true;
   }
 
   /** Removes a component from an entity. Returns false when it didn't have it. */
   remove(entity: Entity, def: ComponentDef<any>): boolean {
     this.assertNotIterating("remove");
+
     if (this.guard !== undefined) {
       this._guardWrites([def], "removed");
     }
+
     if (!this.isAlive(entity)) {
       return false;
     }
+
     return this.removeOne(entity, def);
   }
 
   /** Removes a component from a live entity. */
   private removeOne(entity: Entity, def: ComponentDef<any>): boolean {
     const index = entityIndex(entity);
+
     if (def.relation !== undefined) {
       this.relations[def.id]?.unlink(index);
     }
+
     if (def.storage === "sparse") {
       if (!this._sparse(def).remove(index)) {
         return false;
       }
+
       this.removedLogs[def.id]?.push(entity);
+
       return true;
     }
+
     const from = this.placedTable(index);
+
     if (!from.ids.has(def.id)) {
       return false;
     }
+
     let to = from.removeEdges.get(def.id);
+
     if (to === undefined) {
       to = this.tableFor(from.defs.filter((d) => d.id !== def.id));
       from.removeEdges.set(def.id, to);
     }
+
     this.move(entity, from, to);
     this.removedLogs[def.id]?.push(entity);
+
     return true;
   }
 
@@ -2532,14 +2872,19 @@ export class World {
     if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
       this.refuse(`read "${def.name}" through the world`, "read");
     }
+
     if (!this.isAlive(entity)) {
       return false;
     }
+
     const index = entityIndex(entity);
+
     if (def.storage === "sparse") {
       return this._sparse(def).has(index);
     }
+
     const tableIndex = this.recTable[index];
+
     return (
       tableIndex !== NOT_PLACED && this.tables[tableIndex!]!.ids.has(def.id)
     );
@@ -2553,11 +2898,15 @@ export class World {
     if (!this.has(entity, def)) {
       return undefined;
     }
+
     const index = entityIndex(entity);
+
     if (def.storage === "sparse") {
       const set = this._sparse(def);
+
       return readRow(def, set.columns, set.sparse[index]!);
     }
+
     return readRow(
       def,
       this.tables[this.recTable[index]!]!.columns[def.id]!,
@@ -2578,18 +2927,23 @@ export class World {
     if (this.guard !== undefined && this.guard.writes[def.id] !== true) {
       this.refuse(`wrote "${def.name}" through the world`, "write");
     }
+
     if (!this.has(entity, def)) {
       return false;
     }
+
     if (def.relation !== undefined && "target" in value) {
       throw new Error(retarget(def.name));
     }
+
     if (this._frozen) {
       throw new Error(frozenWrite("World.set()"));
     }
+
     const index = entityIndex(entity);
     let cols: Columns;
     let row: number;
+
     if (def.storage === "sparse") {
       const set = this._sparse(def);
       cols = set.columns;
@@ -2598,18 +2952,23 @@ export class World {
       cols = this.tables[this.recTable[index]!]!.columns[def.id]!;
       row = this.recRow[index]!;
     }
+
     if (this._recording) {
       this.saveRow(def, cols, row);
     }
+
     for (const key in value) {
       const given = value[key];
+
       // A number named and not given is left as it was: `set` writes the
       // fields it is handed, and an undefined would be NaN among floats.
       if (given !== undefined || isBoxed(def.schema[key]!.kind)) {
         cols[key]![row] = given as any;
       }
     }
+
     this._changed[def.id]?.note(index);
+
     return true;
   }
 
@@ -2624,10 +2983,13 @@ export class World {
     if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
       this.refuse(`read "${def.name}" through the world`, "read");
     }
+
     const relation = this.relations[def.id];
+
     if (relation === undefined || !this.isAlive(target)) {
       return [];
     }
+
     return relation
       .sources(entityIndex(target))
       .map((source) => makeEntity(source, this.gens[source]!));
@@ -2636,6 +2998,7 @@ export class World {
   /** Returns a relation's index of which entities point at which, creating it if needed. */
   private relationOf(def: ComponentDef<any>): RelationIndex {
     let relation = this.relations[def.id];
+
     if (relation === undefined) {
       relation = new RelationIndex(def, this.recTable.length);
       this.relations[def.id] = relation;
@@ -2643,6 +3006,7 @@ export class World {
         byName(a.def, b.def)
       );
     }
+
     return relation;
   }
 
@@ -2655,6 +3019,7 @@ export class World {
       if (def.relation === undefined) {
         continue;
       }
+
       const link = (
         entities: Uint32Array | Float64Array,
         targets: Float64Array,
@@ -2662,26 +3027,33 @@ export class World {
       ): void => {
         for (let row = 0; row < count; row++) {
           const target = targets[row] as Entity;
+
           if (!this.isAlive(target)) {
             throw corrupt(
               `"${def.name}" points at an entity that does not exist`
             );
           }
+
           this.relationOf(def).link(
             entities[row]! & INDEX_MASK,
             entityIndex(target)
           );
         }
       };
+
       if (def.storage === "sparse") {
         const set = this.sparseById.get(def.id);
+
         if (set !== undefined) {
           link(set.dense, set.columns.target as Float64Array, set.count);
         }
+
         continue;
       }
+
       for (const table of this.tables) {
         const columns = table.columns[def.id];
+
         if (columns !== undefined) {
           link(table.entities, columns.target as Float64Array, table.count);
         }
@@ -2710,37 +3082,46 @@ export class World {
     ) {
       this.refuse(`asked for the singleton "${spec.component.name}"`, "read");
     }
+
     const found = this.singles[spec.component.id];
+
     if (found !== undefined) {
       if (found.initial === undefined) {
         // Made by a load, which knew its fields and not its initial value.
         found.initial = spec.initial;
+
         if (!found.written) {
           writeRow(spec.component, found.columns, 0, spec.initial);
         }
       }
+
       return found.value;
     }
+
     if (!spec.component.single) {
       throw new Error(
         `"${spec.component.name}" is a component, not a singleton. Define a singleton with Component.singleton.`
       );
     }
+
     const single = this.single(spec.component);
     single.initial = spec.initial;
     writeRow(spec.component, single.columns, 0, spec.initial);
+
     return single.value;
   }
 
   /** Returns a singleton's instance, creating it if needed with every field zero. */
   private single(def: ComponentDef<any>): Single {
     let single = this.singles[def.id];
+
     if (single === undefined) {
       this.register(def);
       const columns = makeColumns(def, 1);
       const value = {};
       single = { def, columns, initial: undefined, written: false, value };
       const made = single;
+
       for (const field of def.fields) {
         const column = columns[field]!;
         Object.defineProperty(value, field, {
@@ -2752,9 +3133,11 @@ export class World {
           },
         });
       }
+
       this.singles[def.id] = single;
       this.singlesByName = undefined;
     }
+
     return single;
   }
 
@@ -2765,13 +3148,16 @@ export class World {
         frozenWrite(`A write to the singleton "${single.def.name}"`)
       );
     }
+
     if (this.guard !== undefined && this.guard.writes[single.def.id] !== true) {
       this.refuse(`wrote the singleton "${single.def.name}"`, "write");
     }
+
     if (this._recording && !this.savedWhole.has(single.columns)) {
       this.savedSingles.push({ single, written: single.written });
       this._saveColumns(single.def, single.columns, 1);
     }
+
     single.written = true;
   }
 
@@ -2780,6 +3166,7 @@ export class World {
     this.singlesByName ??= this.singles
       .filter((single) => single !== undefined)
       .toSorted((a, b) => byName(a.def, b.def));
+
     return this.singlesByName.filter((single) => single.written);
   }
 
@@ -2809,6 +3196,7 @@ export class World {
         "World.freeze() was called inside a transaction. Commit or roll back first."
       );
     }
+
     this.frozenRandom.set(this.random.state);
     this._frozen = true;
   }
@@ -2822,9 +3210,11 @@ export class World {
     if (!this._frozen) {
       return;
     }
+
     this._frozen = false;
     const { state } = this.random;
     const was = this.frozenRandom;
+
     if (
       state[0] !== was[0] ||
       state[1] !== was[1] ||
@@ -2868,6 +3258,7 @@ export class World {
         this.refuse(`asked for a query that writes "${def.name}"`, "write");
       }
     }
+
     for (const defs of [
       spec.withDefs,
       spec.withoutDefs,
@@ -2880,6 +3271,7 @@ export class World {
         }
       }
     }
+
     guard.queries.add(spec);
   }
 
@@ -2893,9 +3285,11 @@ export class World {
     did: "spawned an entity with" | "added" | "removed"
   ): void {
     const { writes } = this.guard!;
+
     for (let i = 0; i < inputs.length; i++) {
       const input = inputs[i]!;
       const def = isComponentDef(input) ? input : input.def;
+
       if (writes[def.id] !== true) {
         this.refuse(`${did} "${def.name}"`, "write");
       }
@@ -2911,17 +3305,20 @@ export class World {
    */
   _guardDespawn(entity: Entity): void {
     const { advice, who, writeDefs } = this.guard!;
+
     if (
       !this.isAlive(entity) ||
       this.recTable[entityIndex(entity)] === NOT_PLACED
     ) {
       return;
     }
+
     for (let i = 0; i < writeDefs.length; i++) {
       if (this.has(entity, writeDefs[i]!)) {
         return;
       }
     }
+
     throw new Error(
       `${who} despawned an entity that has none of the components it said it writes (${writeDefs.map((def) => `"${def.name}"`).join(", ") || "none"}). A despawn takes everything an entity has, and is said by a component the entity is known by: one of those it has.${advice}`
     );
@@ -2951,11 +3348,13 @@ export class World {
     if (this._frozen) {
       throw new Error(frozenWrite("World.begin()"));
     }
+
     if (this._recording) {
       throw new Error(
         "World.begin() was called inside a transaction. Commit or roll back the one in progress first."
       );
     }
+
     // Four assignments, not `set`: this runs for every action.
     const from = this.random.state;
     const to = this.savedRandom;
@@ -2965,9 +3364,11 @@ export class World {
     to[3] = from[3]!;
     // What is noted from here on is forgotten again by a rollback.
     const { writeLogs } = this;
+
     for (let i = 0; i < writeLogs.length; i++) {
       writeLogs[i]!.txEnd = writeLogs[i]!.end;
     }
+
     this._recording = true;
   }
 
@@ -2979,16 +3380,20 @@ export class World {
   /** Ends the transaction and restores everything written since `begin`. */
   rollback(): void {
     const { saved } = this;
+
     // Newest first, so that where a row was saved before its whole column,
     // the oldest value is the one left standing.
     for (let i = saved.length - 1; i >= 0; i--) {
       const { cols, copies, count, def, row } = saved[i]!;
+
       for (let f = 0; f < def.fields.length; f++) {
         const column = cols[def.fields[f]!]!;
+
         if (row !== WHOLE) {
           column[row] = copies[f];
         } else if (isBoxed(def.kinds[f]!)) {
           const from = copies[f] as unknown[];
+
           for (let r = 0; r < count; r++) {
             column[r] = from[r];
           }
@@ -2999,24 +3404,30 @@ export class World {
         }
       }
     }
+
     this.random.state.set(this.savedRandom);
     const { savedSingles } = this;
+
     for (let i = savedSingles.length - 1; i >= 0; i--) {
       savedSingles[i]!.single.written = savedSingles[i]!.written;
     }
+
     // The changes it noted, and the visits its change queries made.
     const { movedReaders, writeLogs } = this;
+
     for (let i = movedReaders.length - 1; i >= 0; i--) {
       const { at, cursor, fresh } = movedReaders[i]!;
       cursor.at = at;
       cursor.fresh = fresh;
     }
+
     for (let i = 0; i < writeLogs.length; i++) {
       // A log started inside the transaction has noted nothing before it.
       const log = writeLogs[i]!;
       log.txEnd = Math.min(log.txEnd, log.end);
       log.rollback();
     }
+
     this.endTransaction("rollback");
   }
 
@@ -3026,16 +3437,21 @@ export class World {
         `World.${op}() was called with no transaction in progress. Call begin() first.`
       );
     }
+
     this.saved.length = 0;
     this.savedSingles.length = 0;
+
     if (this.savedWhole.size > 0) {
       this.savedWhole.clear();
     }
+
     this._recording = false;
+
     if (this.movedReaders.length > 0) {
       // Readers stay where they are for as long as a rollback could put
       // them back; now the logs can forget what all of them have visited.
       this.movedReaders.length = 0;
+
       for (const log of this.logs) {
         log.moved();
       }
@@ -3051,20 +3467,25 @@ export class World {
     if (def.isTag || this.savedWhole.has(cols)) {
       return;
     }
+
     this.savedWhole.add(cols);
     let copies = this.spare.get(cols);
+
     if (copies === undefined) {
       copies = [];
       this.spare.set(cols, copies);
     }
+
     for (let f = 0; f < def.fields.length; f++) {
       const column = cols[def.fields[f]!]!;
       const kept = copies[f] as Column | undefined;
+
       if (kept === undefined || kept.length < count) {
         // Room for the column as it is now; a column only grows by doubling.
         copies[f] = column.slice(0, column.length);
       } else if (isBoxed(def.kinds[f]!)) {
         const to = kept as unknown[];
+
         for (let r = 0; r < count; r++) {
           to[r] = column[r];
         }
@@ -3072,6 +3493,7 @@ export class World {
         (kept as Float32Array).set((column as Float32Array).subarray(0, count));
       }
     }
+
     this.saved.push({ cols, copies, count, def, row: WHOLE });
   }
 
@@ -3080,10 +3502,13 @@ export class World {
     if (this.savedWhole.has(cols)) {
       return;
     }
+
     const copies: unknown[] = [];
+
     for (let f = 0; f < def.fields.length; f++) {
       copies.push(cols[def.fields[f]!]![row]);
     }
+
     this.saved.push({ cols, copies, count: 1, def, row });
   }
 
@@ -3097,12 +3522,15 @@ export class World {
     if (this.registered[def.id] === true) {
       return;
     }
+
     const known = this.componentsByName.get(def.name);
+
     if (known !== undefined) {
       throw new Error(
         `Two different components are both named "${def.name}". A component's name identifies it in a world, so give each its own, prefixed with the feature it belongs to.`
       );
     }
+
     this.componentsByName.set(def.name, def);
     this.shapes[def.id] = shapeOf(def.name, def.fields, def.kinds);
     this.registered[def.id] = true;
@@ -3113,12 +3541,15 @@ export class World {
     for (let i = 0; i < inputs.length; i++) {
       const input = inputs[i]!;
       const def = isComponentDef(input) ? input : input.def;
+
       if (def.single) {
         this.refuseSingle(def);
       }
+
       if (def.relation !== undefined && isComponentDef(input)) {
         throw targetless(def);
       }
+
       this.register(def);
     }
   }
@@ -3155,25 +3586,34 @@ export class World {
     if (this.guard !== undefined && !this.guard.queries.has(spec)) {
       this.guardQuery(this.guard, spec);
     }
+
     let view = this.views.get(spec);
+
     if (view !== undefined) {
       return view;
     }
+
     const watching =
       (spec.changedDefs?.length ?? 0) + (spec.addedDefs?.length ?? 0) > 0;
+
     const who = reader ?? this.reader ?? "";
     let byReader: Map<string, QueryView<any>> | undefined;
+
     if (watching) {
       byReader = this.watchViews.get(spec);
+
       if (byReader === undefined) {
         byReader = new Map();
         this.watchViews.set(spec, byReader);
       }
+
       view = byReader.get(who);
+
       if (view !== undefined) {
         return view;
       }
     }
+
     for (const defs of [
       spec.terms,
       spec.withDefs,
@@ -3185,18 +3625,24 @@ export class World {
         this.register(def);
       }
     }
+
     if (byReader === undefined) {
       view = new QueryView(this, spec);
       this.views.set(spec, view);
+
       return view;
     }
+
     const key = `${who}\n${describeSpec(spec)}`;
     view = this.watchViewsByKey.get(key);
+
     if (view === undefined) {
       view = new QueryView(this, spec, key);
       this.watchViewsByKey.set(key, view);
     }
+
     byReader.set(who, view);
+
     return view;
   }
 
@@ -3212,15 +3658,18 @@ export class World {
     if (this.guard !== undefined && this.guard.reads[def.id] !== true) {
       this.refuse(`asked which entities lost "${def.name}"`, "read");
     }
+
     const who = reader ?? this.reader ?? "";
     const key = `${def.id}\n${who}`;
     let found = this.removedReaders.get(key);
+
     if (found === undefined) {
       this.register(def);
       const log = this._log(def, "removed");
       found = new RemovedReader(this, log, log.cursor(who, false));
       this.removedReaders.set(key, found);
     }
+
     return found;
   }
 
@@ -3232,19 +3681,24 @@ export class World {
         : kind === "added"
           ? this.addedLogs
           : this.removedLogs;
+
     let log = byId[def.id];
+
     if (log === undefined) {
       log = new ChangeLog(def, kind, this);
       byId[def.id] = log;
       this.logs.push(log);
+
       if (kind === "changed") {
         this.writeLogs.push(log);
         this._watched++;
+
         if (this._iterating > 0) {
           this.lateLogs.push(log);
         }
       }
     }
+
     return log;
   }
 
@@ -3271,6 +3725,7 @@ export class World {
           cursor.fresh = true;
         }
       }
+
       this.lateLogs = [];
     }
   }
@@ -3284,14 +3739,17 @@ export class World {
    */
   saveChanges(keep?: (reader: string) => boolean): SavedChanges[] {
     const out: SavedChanges[] = [];
+
     for (const log of this.logs) {
       const saved = log.save((key) =>
         keep === undefined ? true : keep(key.split("\n", 1)[0]!)
       );
+
       if (saved !== undefined) {
         out.push(saved);
       }
     }
+
     return out.toSorted(
       (a, b) =>
         byName({ name: a.component }, { name: b.component }) ||
@@ -3312,8 +3770,10 @@ export class World {
         "World.restoreChanges() was called in a world whose changes are already being watched. Call it right after load(), before any query runs."
       );
     }
+
     for (const changes of saved) {
       const def = this.componentsByName.get(changes.component);
+
       if (def !== undefined) {
         this._log(def, changes.kind).restore(changes);
       }
@@ -3344,38 +3804,47 @@ export class World {
     const { tables } = this;
     let placed = 0;
     let estimate = 256 + this.nextIndex * 4 + this.freeList.length * 4;
+
     for (const table of tables) {
       placed += table.count;
       estimate += 64 + table.count * 8;
+
       for (const def of table.defs) {
         for (const kind of def.kinds) {
           estimate += table.count * (isBoxed(kind) ? 8 : WIDTH[kind as "f32"]);
         }
       }
     }
+
     if (placed !== this.alive) {
       throw new SnapshotError(
         "cannot be saved",
         `${this.alive - placed} entities were spawned through a CommandBuffer that has not been applied yet. Apply it, or roll it back, and take the snapshot then.`
       );
     }
+
     const sets = this.sparseSetsByName().filter((set) => set.count > 0);
     const singles = this.writtenSingles();
 
     // The components that hold anything, or have a table, in order of name.
     const used = new Map<ComponentDef<any>, number>();
+
     for (const table of tables) {
       for (const def of table.defs) {
         used.set(def, 0);
       }
     }
+
     for (const set of sets) {
       used.set(set.def, 0);
     }
+
     for (const single of singles) {
       used.set(single.def, 0);
     }
+
     const components = Array.from(used.keys()).toSorted(byName);
+
     for (let i = 0; i < components.length; i++) {
       used.set(components[i]!, i);
     }
@@ -3384,6 +3853,7 @@ export class World {
     writer.u32(MAGIC);
     writer.u32(FORMAT);
     const random = this.random.state;
+
     for (let word = 0; word < 4; word++) {
       writer.u32(random[word]!);
     }
@@ -3393,15 +3863,18 @@ export class World {
     writer.u32(this.nextIndex);
     writer.numbers(this.gens, this.nextIndex, 4);
     writer.u32(this.freeList.length);
+
     for (const index of this.freeList) {
       writer.u32(index);
     }
 
     writer.u32(components.length);
+
     for (const def of components) {
       writer.text(def.name);
       writer.u8(storageOf(def));
       writer.u32(def.fields.length);
+
       for (let f = 0; f < def.fields.length; f++) {
         writer.text(def.fields[f]!);
         writer.u8(KIND_CODES.indexOf(def.kinds[f]!));
@@ -3415,6 +3888,7 @@ export class World {
     ): void => {
       for (let f = 0; f < def.fields.length; f++) {
         const field = def.fields[f]!;
+
         const row = writeColumn(
           writer,
           def.kinds[f]!,
@@ -3422,6 +3896,7 @@ export class World {
           count,
           def.codecs[f]
         );
+
         if (row !== -1) {
           throw new SnapshotError(
             "cannot be saved",
@@ -3437,33 +3912,42 @@ export class World {
     // Tables in creation order, the empty ones too: where a table stands
     // decides where its entities are visited.
     writer.u32(tables.length);
+
     for (const table of tables) {
       const { count, defsByName } = table;
       writer.u32(defsByName.length);
+
       for (const def of defsByName) {
         writer.u32(used.get(def)!);
       }
+
       writer.u32(count);
       writer.numbers(table.entities, count, 8);
+
       for (const def of defsByName) {
         writeFields(def, table.columns[def.id]!, count);
       }
     }
 
     writer.u32(sets.length);
+
     for (const set of sets) {
       writer.u32(used.get(set.def)!);
       writer.u32(set.count);
       writer.numbers(set.dense, set.count, 4);
       writeFields(set.def, set.columns, set.count);
     }
+
     // The singletons that have been written, each one row.
     writer.u32(singles.length);
+
     for (const single of singles) {
       writer.u32(used.get(single.def)!);
       writeFields(single.def, single.columns, 1);
     }
+
     writer.u32(END);
+
     return writer.finish();
   }
 
@@ -3495,17 +3979,21 @@ export class World {
         "World.restore() was called between begin() and commit() or rollback(). A transaction puts back what it wrote itself; restore a snapshot outside one."
       );
     }
+
     // Not in a frozen world either, nor in the middle of a loop.
     this.assertNotIterating("restore");
     let placed = 0;
+
     for (const table of this.tables) {
       placed += table.count;
     }
+
     if (placed !== this.alive) {
       throw new Error(
         `World.restore() was called while ${this.alive - placed} entities were spawned through a CommandBuffer that has not been applied. Their ids would outlive the world they were given in: apply the buffer, or roll it back, first.`
       );
     }
+
     // The entities.
     this.recTable.fill(FREE);
     this.recRow.fill(0);
@@ -3534,6 +4022,7 @@ export class World {
     this.writeLogs.length = 0;
     this._watched = 0;
     this.lateLogs = [];
+
     // The singletons stay the objects they are, as if never written.
     for (const single of this.singles) {
       if (single !== undefined) {
@@ -3541,6 +4030,7 @@ export class World {
         writeRow(single.def, single.columns, 0, single.initial);
       }
     }
+
     this.load(bytes);
   }
 
@@ -3573,24 +4063,31 @@ export class World {
         "World.load() fills an empty world, and this one has held entities or has written a singleton. Load into a new World."
       );
     }
+
     for (const def of components) {
       this.register(def);
     }
+
     const reader = new Reader(bytes);
+
     if (reader.left < 8 || reader.u32() !== MAGIC) {
       throw new SnapshotError(
         "not a snapshot",
         "These bytes are not a snapshot of a world."
       );
     }
+
     const format = reader.u32();
+
     if (format < 1 || format > FORMAT) {
       throw new SnapshotError(
         "newer format",
         `The snapshot is in format ${format}, and this version reads formats 1 to ${FORMAT}.`
       );
     }
+
     const random = this.random.state;
+
     for (let word = 0; word < 4; word++) {
       random[word] = reader.u32();
     }
@@ -3600,12 +4097,15 @@ export class World {
     // An id of the older formats is the same number, in a narrower place.
     const narrow = format < 3;
     const nextIndex = reader.count(narrow ? 2 : 4);
+
     if (nextIndex > INDEX_MASK + 1) {
       throw corrupt("it holds more entity slots than a world can have");
     }
+
     while (this.recTable.length < nextIndex) {
       this.growRecords();
     }
+
     if (narrow) {
       const generations = new Uint16Array(nextIndex);
       reader.numbers(generations, nextIndex, 2);
@@ -3613,21 +4113,27 @@ export class World {
     } else {
       reader.numbers(this.gens, nextIndex, 4);
     }
+
     // A slot whose generations are used up is neither free nor anyone's.
     let retired = 0;
+
     for (let index = 0; index < nextIndex; index++) {
       if (this.gens[index]! > GENERATIONS) {
         throw corrupt("a slot has a generation no entity could have");
       }
+
       if (this.gens[index] === GENERATIONS) {
         retired++;
       }
     }
+
     const freed = reader.count(4);
     // Every slot is taken to be free until a table claims it.
     const isFree = new Uint8Array(nextIndex);
+
     for (let i = 0; i < freed; i++) {
       const index = reader.u32();
+
       if (
         index >= nextIndex ||
         isFree[index] === 1 ||
@@ -3637,25 +4143,31 @@ export class World {
           "its list of freed slots names a slot twice, one that does not exist, or one that is used up"
         );
       }
+
       isFree[index] = 1;
       this.freeList.push(index);
     }
+
     this.nextIndex = nextIndex;
 
     // The components, checked against the ones this program defines.
     const named: ComponentDef<any>[] = [];
     const componentCount = reader.count(9);
+
     for (let c = 0; c < componentCount; c++) {
       const name = reader.text();
       const storage = reader.u8();
       const fields: string[] = [];
       const kinds: (string | undefined)[] = [];
       const fieldCount = reader.count(5);
+
       for (let f = 0; f < fieldCount; f++) {
         fields.push(reader.text());
         kinds.push(KIND_CODES[reader.u8()]);
       }
+
       const def = this.componentsByName.get(name);
+
       if (def === undefined) {
         throw new SnapshotError(
           "unknown component",
@@ -3663,10 +4175,13 @@ export class World {
           name
         );
       }
+
       const was = fields.map((field, f) => `${field}: ${kinds[f]}`).join(", ");
+
       const is = def.fields
         .map((field, f) => `${field}: ${def.kinds[f]}`)
         .join(", ");
+
       if (was !== is || storage !== storageOf(def)) {
         throw new SnapshotError(
           "component changed",
@@ -3674,42 +4189,56 @@ export class World {
           name
         );
       }
+
       named.push(def);
     }
+
     const componentAt = (): ComponentDef<any> => {
       const def = named[reader.u32()];
+
       if (def === undefined) {
         throw corrupt("it refers to a component it does not list");
       }
+
       return def;
     };
 
     const tableCount = reader.count(8);
+
     for (let t = 0; t < tableCount; t++) {
       const defs: ComponentDef<any>[] = [];
       const defCount = reader.count(4);
+
       for (let d = 0; d < defCount; d++) {
         const def = componentAt();
+
         if (def.storage !== "table" || def.single || defs.includes(def)) {
           throw corrupt(
             "a table lists a component twice, or one that no table holds"
           );
         }
+
         defs.push(def);
       }
+
       const sorted = defs.toSorted((a, b) => a.id - b.id);
       const key = sorted.map((def) => def.id).join(",");
+
       if (this.tableByKey.has(key)) {
         throw corrupt("it holds two tables for the same components");
       }
+
       const count = reader.count(narrow ? 4 : 8);
       let capacity = 16;
+
       while (capacity < count) {
         capacity *= 2;
       }
+
       const table = new Table(this.tables.length, sorted, capacity);
       this.tables.push(table);
       this.tableByKey.set(key, table);
+
       if (narrow) {
         const ids = new Uint32Array(count);
         reader.numbers(ids, count, 4);
@@ -3717,10 +4246,13 @@ export class World {
       } else {
         reader.numbers(table.entities, count, 8);
       }
+
       table.count = count;
+
       for (let row = 0; row < count; row++) {
         const entity = table.entities[row] as Entity;
         const index = entityIndex(entity);
+
         // Eight bytes can hold what is no id at all: a number that is not
         // whole, below nothing, or past the last id. None of those is its
         // index and a generation a slot could have; and a slot whose
@@ -3736,10 +4268,13 @@ export class World {
             "an entity is in two places, or in a slot that is free or of another generation"
           );
         }
+
         this.recTable[index] = table.index;
         this.recRow[index] = row;
       }
+
       this.alive += count;
+
       // The same order the fields were written in: components by name.
       for (const def of defs) {
         for (let f = 0; f < def.fields.length; f++) {
@@ -3747,55 +4282,74 @@ export class World {
         }
       }
     }
+
     if (this.alive + freed + retired !== nextIndex) {
       throw corrupt("some entity slots are neither in a table nor free");
     }
 
     const setCount = reader.count(8);
+
     for (let s = 0; s < setCount; s++) {
       const def = componentAt();
+
       if (def.storage !== "sparse" || def.single) {
         throw corrupt("a sparse set is of a component that is not sparse");
       }
+
       const set = this._sparse(def);
       const count = reader.count(4);
+
       if (set.count > 0) {
         throw corrupt("it holds two sparse sets for one component");
       }
+
       for (let i = 0; i < count; i++) {
         const index = reader.u32();
+
         if (index >= nextIndex || this.recTable[index]! < 0 || set.has(index)) {
           throw corrupt(
             "a sparse component is on an entity that does not exist, or on one twice"
           );
         }
+
         set.add(index, undefined);
       }
+
       for (let f = 0; f < def.fields.length; f++) {
         this.readField(reader, def, f, set.columns, count, narrow);
       }
     }
+
     // Format 1 had no singletons.
     const singleCount = format >= 2 ? reader.count(4) : 0;
     const loaded = new Set<Single>();
+
     for (let s = 0; s < singleCount; s++) {
       const def = componentAt();
+
       if (!def.single) {
         throw corrupt("a singleton is of a component that is not one");
       }
+
       const single = this.single(def);
+
       if (loaded.has(single)) {
         throw corrupt("it holds two values for one singleton");
       }
+
       loaded.add(single);
+
       for (let f = 0; f < def.fields.length; f++) {
         this.readField(reader, def, f, single.columns, 1, narrow);
       }
+
       single.written = true;
     }
+
     if (reader.left !== 4 || reader.u32() !== END) {
       throw corrupt("it does not end where it should");
     }
+
     this.indexRelations();
   }
 
@@ -3809,6 +4363,7 @@ export class World {
     narrow: boolean
   ): void {
     const field = def.fields[f]!;
+
     try {
       readColumn(
         reader,
@@ -3822,6 +4377,7 @@ export class World {
       if (error instanceof SnapshotError) {
         throw error;
       }
+
       throw new SnapshotError(
         "component changed",
         `"${def.name}.${field}" has a codec that refuses a value the snapshot holds: ${error instanceof Error ? error.message : String(error)}`,
@@ -3875,6 +4431,7 @@ export class World {
     let h = add(add(0, this.nextIndex), this.alive);
     const { freeList, gens } = this;
     h = add(h, freeList.length);
+
     for (let i = 0; i < freeList.length; i++) {
       const index = freeList[i]!;
       h = add(add(h, index), gens[index]!);
@@ -3884,16 +4441,19 @@ export class World {
     // where it stands decides where its future entities are visited.
     const { tables } = this;
     h = add(h, tables.length);
+
     for (let t = 0; t < tables.length; t++) {
       const table = tables[t]!;
       const { count, defsByName } = table;
       h = add(add(h, defsByName.length), count);
       // An entity's id carries its generation.
       h = addColumn(h, "entity", table.entities, count);
+
       for (let d = 0; d < defsByName.length; d++) {
         const def = defsByName[d]!;
         h = add(h, shapes[def.id]!);
         const columns = table.columns[def.id]!;
+
         for (let f = 0; f < def.fields.length; f++) {
           h = addColumn(
             h,
@@ -3910,23 +4470,29 @@ export class World {
     // not something a query shows, so each member is hashed on its own and
     // the results are added up. A set nobody is in is as good as absent.
     const sets = this.sparseSetsByName();
+
     for (let s = 0; s < sets.length; s++) {
       const set = sets[s]!;
       const { count, def } = set;
+
       if (count === 0) {
         continue;
       }
+
       if (this.memberStates.length < count) {
         this.memberStates = new Int32Array(
           Math.max(count, this.memberStates.length * 2)
         );
       }
+
       const states = this.memberStates;
       const shape = shapes[def.id]!;
       const { dense } = set;
+
       for (let i = 0; i < count; i++) {
         states[i] = add(shape, dense[i]!);
       }
+
       for (let f = 0; f < def.fields.length; f++) {
         addColumnPerRow(
           states,
@@ -3936,10 +4502,13 @@ export class World {
           def.codecs[f]
         );
       }
+
       let members = 0;
+
       for (let i = 0; i < count; i++) {
         members = (members + finish(states[i]!)) | 0;
       }
+
       h = add(add(add(h, shape), count), members);
     }
 
@@ -3949,6 +4518,7 @@ export class World {
     if (this.singles.length > 0) {
       for (const { columns, def } of this.writtenSingles()) {
         h = add(add(h, SINGLETON), shapes[def.id]!);
+
         for (let f = 0; f < def.fields.length; f++) {
           h = addColumn(
             h,
@@ -3963,6 +4533,7 @@ export class World {
 
     const random = this.random.state;
     h = add(add(add(add(h, random[0]!), random[1]!), random[2]!), random[3]!);
+
     return finish(h);
   }
 
@@ -3971,6 +4542,7 @@ export class World {
   /** @internal */
   _sparse(def: ComponentDef<any>): SparseSet {
     let set = this.sparseById.get(def.id);
+
     if (set === undefined) {
       this.refuseSingle(def);
       this.register(def);
@@ -3979,21 +4551,25 @@ export class World {
       this.sparseList.push(set);
       this.sparseByName = undefined;
     }
+
     return set;
   }
 
   private tableFor(sortedDefs: readonly ComponentDef<any>[]): Table {
     const key = sortedDefs.map((d) => d.id).join(",");
     let table = this.tableByKey.get(key);
+
     if (table === undefined) {
       for (const def of sortedDefs) {
         this.refuseSingle(def);
         this.register(def);
       }
+
       table = new Table(this.tables.length, sortedDefs);
       this.tables.push(table);
       this.tableByKey.set(key, table);
     }
+
     return table;
   }
 
@@ -4008,11 +4584,13 @@ export class World {
 
   private placedTable(index: number): Table {
     const tableIndex = this.recTable[index];
+
     if (tableIndex === NOT_PLACED) {
       throw new Error(
         "Entity was spawned through a CommandBuffer that has not been applied yet"
       );
     }
+
     return this.tables[tableIndex!]!;
   }
 
@@ -4021,23 +4599,31 @@ export class World {
     const index = entityIndex(entity);
     const oldRow = this.recRow[index]!;
     const newRow = to.push(entity);
+
     for (const def of to.defs) {
       const src = from.columns[def.id];
+
       if (src === undefined) {
         continue;
       }
+
       const dst = to.columns[def.id]!;
+
       for (let f = 0; f < def.fields.length; f++) {
         const name = def.fields[f];
         dst[name!]![newRow] = src[name!]![oldRow];
       }
     }
+
     const moved = from.swapRemove(oldRow);
+
     if (moved !== undefined) {
       this.recRow[entityIndex(moved)] = oldRow;
     }
+
     this.recTable[index] = to.index;
     this.recRow[index] = newRow;
+
     return newRow;
   }
 
@@ -4045,11 +4631,13 @@ export class World {
     if (this._frozen) {
       throw new Error(frozenWrite(`World.${op}()`));
     }
+
     if (this._recording) {
       throw new Error(
         `World.${op}() was called inside a transaction, where an action's handler runs. Queue it on Commands (a CommandBuffer): a refused action's commands are discarded, and its direct changes to which entities exist could not be.`
       );
     }
+
     if (this._iterating > 0) {
       throw new Error(
         `World.${op}() called while a query is iterating. Queue it on a CommandBuffer and apply it after the loop.`
@@ -4101,9 +4689,11 @@ export class CommandBuffer {
   spawn(...inputs: readonly ComponentInput[]): Entity {
     // Checked here, where the mistake is, and not when the queue is applied.
     this.world._registerAll(inputs);
+
     if (this.world.guard !== undefined) {
       this.world._guardWrites(inputs, "spawned an entity with");
     }
+
     const entity = this.world._reserve();
     this.ops.push({
       op: "spawn",
@@ -4111,31 +4701,38 @@ export class CommandBuffer {
       inputs,
       fresh: this.world._reservedFresh,
     });
+
     return entity;
   }
 
   despawn(entity: Entity): void {
     this.refuseFrozen("despawn");
+
     if (this.world.guard !== undefined) {
       this.world._guardDespawn(entity);
     }
+
     this.ops.push({ op: "despawn", entity });
   }
 
   add(entity: Entity, input: ComponentInput): void {
     this.refuseFrozen("add");
     this.world._registerAll([input]);
+
     if (this.world.guard !== undefined) {
       this.world._guardWrites([input], "added");
     }
+
     this.ops.push({ op: "add", entity, input });
   }
 
   remove(entity: Entity, def: ComponentDef<any>): void {
     this.refuseFrozen("remove");
+
     if (this.world.guard !== undefined) {
       this.world._guardWrites([def], "removed");
     }
+
     this.ops.push({ op: "remove", entity, def });
   }
 
@@ -4160,10 +4757,12 @@ export class CommandBuffer {
   rollback(mark: number): void {
     for (let i = this.ops.length - 1; i >= mark; i--) {
       const cmd = this.ops[i]!;
+
       if (cmd.op === "spawn") {
         this.world._release(cmd.entity, cmd.fresh);
       }
     }
+
     this.ops.length = Math.min(this.ops.length, mark);
   }
 
@@ -4172,30 +4771,40 @@ export class CommandBuffer {
     if (this.ops.length === 0) {
       return 0;
     }
+
     const { ops } = this;
     this.ops = [];
     const { world } = this;
+
     for (let i = 0; i < ops.length; i++) {
       const cmd = ops[i]!;
+
       switch (cmd.op) {
         case "spawn": {
-          if (world.isAlive(cmd.entity)) world._place(cmd.entity, cmd.inputs);
+          if (world.isAlive(cmd.entity)) {
+            world._place(cmd.entity, cmd.inputs);
+          }
+
           break;
         }
+
         case "despawn": {
           world.despawn(cmd.entity);
           break;
         }
+
         case "add": {
           world.add(cmd.entity, cmd.input);
           break;
         }
+
         case "remove": {
           world.remove(cmd.entity, cmd.def);
           break;
         }
       }
     }
+
     return ops.length;
   }
 }

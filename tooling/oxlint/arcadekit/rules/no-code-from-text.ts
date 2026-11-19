@@ -8,6 +8,7 @@ type Callee = ESTree.CallExpression["callee"];
  * made this way: see `makeAccessor`.
  */
 const compilesCalled = new Set(["eval", "Function"]);
+
 const compilesConstructed = new Set([
   "Function",
   "AsyncFunction",
@@ -20,6 +21,7 @@ const nameOf = (callee: Callee): string | undefined => {
   if (callee.type === "Identifier") {
     return callee.name;
   }
+
   if (
     callee.type === "MemberExpression" &&
     !callee.computed &&
@@ -27,6 +29,7 @@ const nameOf = (callee: Callee): string | undefined => {
   ) {
     return callee.property.name;
   }
+
   return undefined;
 };
 
@@ -47,15 +50,18 @@ export const noCodeFromTextRule = defineRule({
         node,
         message: `${name} makes code from text, which a strict Content Security Policy forbids, so a game that sets one could not run. Write the code out, or build it from closures.`,
       });
+
     return {
       CallExpression: (node) => {
         const name = nameOf(node.callee);
+
         if (name !== undefined && compilesCalled.has(name)) {
           report(node, name);
         }
       },
       NewExpression: (node) => {
         const name = nameOf(node.callee);
+
         if (name !== undefined && compilesConstructed.has(name)) {
           report(node, `new ${name}`);
         }

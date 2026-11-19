@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 /** Where the site is served: its canonical address, with no trailing slash. */
 export const SITE_URL = "https://arcadekit.dev";
 export const REPO_URL = "https://github.com/lucasthevenet/arcadekit";
+
 /**
  * The branch the site is built from, and that its links to GitHub point at.
  */

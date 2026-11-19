@@ -32,7 +32,9 @@ export const Coin = Component.define("ls/Coin", {
   value: Field.i32,
   x: Field.f32,
 });
+
 export const Coins = Query.all(Coin);
+
 export const Purse = Singleton.define(
   "ls/Purse",
   {
@@ -44,35 +46,44 @@ export const Purse = Singleton.define(
   },
   { ada: 0, grace: 0, taken: 0, tallied: 0, born: 0 }
 );
+
 /** A coin was taken: read by a system that runs before whoever emits it. */
 export const Taken = Event.define(
   "ls/Taken",
   Schema.Struct({ value: Schema.Int })
 );
+
 const Fresh = Query.all(Coin).pipe(Query.added(Coin));
 
 export const Player = Schema.Literals(["ada", "grace", "edsger"]);
+
 export const Drop = Action.define(
   "ls/Drop",
   Schema.Struct({ by: Player, value: Schema.Int })
 );
+
 export const Take = Action.define(
   "ls/Take",
   Schema.Struct({ by: Player, coin: EntityId })
 );
+
 export const Fire = Action.define("ls/Fire", Schema.Struct({}));
+
 /** A gift to oneself: whose purse it goes to is whoever issued it. */
 export const Tip = Action.define(
   "ls/Tip",
   Schema.Struct({ amount: Schema.Int })
 );
+
 export class Stranger extends Data.TaggedError("Stranger")<{
   readonly from: string | undefined;
 }> {}
+
 export const Mint = Action.define(
   "ls/Mint",
   Schema.Struct({ on: Schema.Date })
 );
+
 export const Whisper = Action.define<{ readonly to: string }>()("ls/Whisper");
 
 export class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
@@ -81,38 +92,50 @@ export class NoSuchCoin extends Data.TaggedError("NoSuchCoin")<{
 
 export const drop = Action.handler(Drop, function* ({ value }) {
   const random = yield* Random;
+
   return (yield* Commands).spawn(Coin.of({ value, x: random.next() }));
 });
+
 export const take = Action.handler(Take, function* ({ by, coin }) {
   const world = yield* World;
   const held = world.get(coin, Coin);
+
   if (held === undefined) {
     return yield* Effect.fail(new NoSuchCoin({ coin }));
   }
+
   (yield* Commands).despawn(coin);
   (yield* Taken).emit({ value: held.value });
   const purse = yield* Purse;
   purse.taken += 1;
+
   if (by === "ada") {
     purse.ada += held.value;
   } else {
     purse.grace += held.value;
   }
+
   return held.value;
 });
+
 export const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
     return yield* Effect.fail(new Stranger({ from }));
   }
+
   (yield* Purse)[from] += amount;
+
   return from;
 });
+
 export const fire = Action.handler(Fire, function* () {
   (yield* Commands).spawn(Coin.of({ value: 100, x: 0 }));
 });
+
 export const mint = Action.handler(Mint, function* ({ on }) {
   (yield* Commands).spawn(Coin.of({ value: on.getUTCFullYear(), x: 0 }));
 });
+
 export const whisper = Action.handler(Whisper, function* () {
   // Nothing: it is here to be enqueued.
 });
@@ -123,6 +146,7 @@ export const Drift = System.make("ls/Drift", function* () {
     coin.x += random.next() - 0.5;
   });
 });
+
 /**
  * Counts what was taken from the events of it, and the coins that came to
  * be from a change query: both have a place of their own in what they
@@ -130,14 +154,18 @@ export const Drift = System.make("ls/Drift", function* () {
  */
 export const Tally = System.make("ls/Tally", function* () {
   const purse = yield* Purse;
+
   for (const taken of (yield* Taken).read()) {
     purse.tallied += taken.value;
   }
+
   const born = (yield* Fresh).entities().length;
+
   if (born > 0) {
     purse.born += born;
   }
 });
+
 /** The simulation's own player: it drops a coin now and then. */
 export const Bot = System.make("ls/Bot", function* () {
   if ((yield* Time).tick % 7 === 3) {
@@ -147,22 +175,27 @@ export const Bot = System.make("ls/Bot", function* () {
     });
   }
 });
+
 /**
  * A bug of the kind that drift detection is for: on one tick, in the worlds
  * it is set for, a system moves a coin by a number that is not the game's.
  */
 let glitch: { tick: number; worlds: Set<EcsWorld> | "all" } | undefined;
+
 /** Sets the bug, or takes it away. */
 export const setGlitch = (to: typeof glitch): void => {
   glitch = to;
 };
+
 export const Fault = System.make("ls/Fault", function* () {
   if (glitch === undefined || (yield* Time).tick !== glitch.tick) {
     return;
   }
+
   if (glitch.worlds !== "all" && !glitch.worlds.has(yield* World)) {
     return;
   }
+
   let first = true;
   (yield* Coins).each((coin) => {
     if (first) {
@@ -171,13 +204,16 @@ export const Fault = System.make("ls/Fault", function* () {
     }
   });
 });
+
 /** What each app's input stage heard refused, in the order it heard it. */
 export const refusals: string[] = [];
+
 export const Hear = System.make("ls/Hear", function* () {
   for (const refusal of (yield* Action.Rejected).read()) {
     refusals.push(refusal.action);
   }
 }).pipe(System.inStage("input"));
+
 export const Controls = Input.bind(
   "ls/Controls",
   Input.onPress("Space", Fire, {})
@@ -193,13 +229,16 @@ export const gameOptions = (seed = 5, checkpointEvery = 1) => ({
   seed,
   checkpointEvery,
 });
+
 export const game = (seed = 5, checkpointEvery = 1) =>
   App.make(gameOptions(seed, checkpointEvery));
+
 export type Game = Effect.Success<ReturnType<typeof game>>;
 
 /** What each of the two players has in the purse. */
 export const purseOf = (app: Game): { ada: number; grace: number } => {
   const { ada, grace } = app.world.singleton(Purse);
+
   return { ada, grace };
 };
 
@@ -234,12 +273,15 @@ export const withPeers = <A>(
     Effect.scoped(
       Effect.gen(function* () {
         const peers: Peer[] = [];
+
         for (const name of names) {
           const source = Input.makeManualSource();
+
           const app = yield* game(
             setup.seeds?.[name],
             setup.checkpointEvery?.[name]
           ).pipe(Effect.provideService(Input.Source, source));
+
           const options = {
             peer: name,
             peers:
@@ -249,12 +291,15 @@ export const withPeers = <A>(
             delta: DELTA,
             ...(setup.delay === undefined ? {} : { delay: setup.delay }),
           };
+
           const session =
             setup.ahead === undefined
               ? (Lockstep.make(app, options) as Rollback.Session)
               : Rollback.make(app, { ...options, ahead: setup.ahead });
+
           peers.push({ name, app, session, hashes: [], source });
         }
+
         return use(peers);
       })
     )
@@ -275,6 +320,7 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
   const dice = new EcsWorld({ seed }).random;
   let now = 0;
   let inFlight: { at: number; to: string; text: string }[] = [];
+
   return {
     get inFlight() {
       return inFlight.length;
@@ -296,16 +342,20 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
     arrivals(to: string): Lockstep.Message[] {
       const due = inFlight.filter((m) => m.to === to && m.at <= now);
       inFlight = inFlight.filter((m) => !(m.to === to && m.at <= now));
+
       return dice.shuffle(due).map((m) => {
         const message = Lockstep.decode(m.text);
+
         if (Exit.isFailure(message)) {
           throw new Error("a message did not survive the wire");
         }
+
         return message.value;
       });
     },
   };
 };
+
 export type Network = ReturnType<typeof network>;
 
 /** One round: every peer is handed what arrived, tries its tick, and sends. */
@@ -315,13 +365,16 @@ export const round = (
   only: readonly Peer[] = peers
 ): void => {
   net.round();
+
   for (const peer of only) {
     for (const message of net.arrivals(peer.name)) {
       peer.session.receive(message);
     }
+
     if (peer.session.tick()) {
       peer.hashes.push(peer.app.world.hash());
     }
+
     net.send(
       peers.filter((other) => other !== peer).map((other) => other.name),
       peer.session.outgoing()
@@ -332,13 +385,17 @@ export const round = (
 /** Brings every peer to the tick the furthest has reached. */
 export const catchUp = (peers: readonly Peer[], net: Network): number => {
   const furthest = Math.max(...peers.map((peer) => peer.app.time.tick));
+
   for (let i = 0; i < 1000; i++) {
     const behind = peers.filter((peer) => peer.app.time.tick < furthest);
+
     if (behind.length === 0) {
       return furthest;
     }
+
     round(peers, net, behind);
   }
+
   throw new Error("the peers never caught up with each other");
 };
 
@@ -348,9 +405,11 @@ export const coinsOf = (peer: Peer): Entity[] =>
 /** Each peer's player does something at random, from what its own world holds. */
 export const players = (seed: number) => {
   const dice = new EcsWorld({ seed }).random;
+
   return (peer: Peer): void => {
     const by = peer.name as "ada" | "grace";
     const roll = dice.int(1, 6);
+
     if (roll <= 2) {
       peer.app.enqueue(Drop, { by, value: dice.int(1, 9) });
     } else if (roll === 4) {
@@ -358,6 +417,7 @@ export const players = (seed: number) => {
       peer.app.enqueue(Tip, { amount: 1 });
     } else if (roll === 3) {
       const coins = coinsOf(peer);
+
       if (coins.length > 0) {
         // Both players go for the oldest coin: one of them is refused.
         peer.app.enqueue(Take, { by, coin: coins[0]! });
@@ -380,21 +440,27 @@ export const untilStopped = (
   rounds: number
 ): Map<string, unknown> => {
   const stopped = new Map<string, unknown>();
+
   for (let i = 0; i < rounds && stopped.size < peers.length; i++) {
     net.round();
+
     for (const peer of peers) {
       for (const message of net.arrivals(peer.name)) {
         peer.session.receive(message);
       }
+
       const exit = peer.session.tickExit();
+
       if (Exit.isFailure(exit)) {
         stopped.set(peer.name, Cause.squash(exit.cause));
       }
+
       net.send(
         peers.filter((other) => other !== peer).map((other) => other.name),
         peer.session.outgoing()
       );
     }
   }
+
   return stopped;
 };

@@ -30,11 +30,13 @@ const componentOf = (
   name: string
 ): SnapshotComponent => {
   const component = world.components.find((each) => each.name === name);
+
   if (component === undefined) {
     throw new Error(
       `The save holds no component named "${name}". It holds: ${world.components.map((each) => each.name).join(", ") || "none"}.`
     );
   }
+
   return component;
 };
 
@@ -60,11 +62,13 @@ const columnsOf = (
 
 const fieldOf = (component: SnapshotComponent, field: string) => {
   const found = component.fields.find((each) => each.name === field);
+
   if (found === undefined) {
     throw new Error(
       `"${component.name}" has no field named "${field}" in the save. It has: ${component.fields.map((each) => each.name).join(", ") || "none"}.`
     );
   }
+
   return found;
 };
 
@@ -73,24 +77,31 @@ const column = (kind: FieldKind, count: number, value: unknown): Column => {
     case "f32": {
       return new Float32Array(count).fill(value as number);
     }
+
     case "f64": {
       return new Float64Array(count).fill(value as number);
     }
+
     case "i32": {
       return new Int32Array(count).fill(value as number);
     }
+
     case "u32": {
       return new Uint32Array(count).fill(value as number);
     }
+
     case "entity": {
       return new Float64Array(count).fill(value as number);
     }
+
     case "u16": {
       return new Uint16Array(count).fill(value as number);
     }
+
     case "u8": {
       return new Uint8Array(count).fill(value as number);
     }
+
     default: {
       return Array.from({ length: count }, () => value);
     }
@@ -108,18 +119,23 @@ export const renameComponent = (
   to: string
 ): void => {
   const component = componentOf(world, from);
+
   if (world.components.some((each) => each.name === to)) {
     throw new Error(`The save already holds a component named "${to}".`);
   }
+
   component.name = to;
+
   for (const table of world.tables) {
     const at = table.components.indexOf(from);
+
     if (at !== -1) {
       table.components[at] = to;
       table.columns[to] = table.columns[from] ?? {};
       delete table.columns[from];
     }
   }
+
   for (const set of [...world.sparse, ...world.singletons]) {
     if (set.component === from) {
       set.component = to;
@@ -140,10 +156,13 @@ export const renameField = (
 ): void => {
   const definition = componentOf(world, component);
   const field = fieldOf(definition, from);
+
   if (definition.fields.some((each) => each.name === to)) {
     throw new Error(`"${component}" already has a field named "${to}".`);
   }
+
   field.name = to;
+
   for (const { columns } of columnsOf(world, component)) {
     if (columns[from] !== undefined) {
       columns[to] = columns[from];
@@ -168,17 +187,22 @@ export const addField = (
   before?: string
 ): void => {
   const definition = componentOf(world, component);
+
   if (definition.fields.some((each) => each.name === field)) {
     throw new Error(`"${component}" already has a field named "${field}".`);
   }
+
   const at =
     before === undefined
       ? definition.fields.length
       : definition.fields.indexOf(fieldOf(definition, before));
+
   definition.fields.splice(at, 0, { name: field, kind });
+
   if (kind === "transient") {
     return;
   }
+
   for (const { columns, count } of columnsOf(world, component)) {
     columns[field] = column(kind, count, value);
   }
@@ -199,6 +223,7 @@ export const removeField = (
     definition.fields.indexOf(fieldOf(definition, field)),
     1
   );
+
   for (const { columns } of columnsOf(world, component)) {
     delete columns[field];
   }
@@ -222,16 +247,21 @@ export const mapField = (
   const found = fieldOf(definition, field);
   const was = found.kind;
   found.kind = kind;
+
   for (const { columns, count } of columnsOf(world, component)) {
     const old = columns[field];
+
     if (kind === "transient") {
       delete columns[field];
       continue;
     }
+
     const next = column(kind, count, 0);
+
     for (let row = 0; row < count; row++) {
       next[row] = map(was === "transient" ? undefined : old?.[row]) as never;
     }
+
     columns[field] = next;
   }
 };
@@ -255,37 +285,46 @@ export const removeComponent = (
   );
   const merged = new Map<string, SnapshotTable>();
   const tables: SnapshotTable[] = [];
+
   for (const table of world.tables) {
     const at = table.components.indexOf(name);
+
     if (at !== -1) {
       table.components.splice(at, 1);
       delete table.columns[name];
     }
+
     const key = table.components.toSorted().join("\\u0000");
     const first = merged.get(key);
+
     if (first === undefined) {
       merged.set(key, table);
       tables.push(table);
       continue;
     }
+
     // The same set of components as an earlier table: its rows move there.
     const count = first.entities.length;
     const entities = new Float64Array(count + table.entities.length);
     entities.set(first.entities);
     entities.set(table.entities, count);
     first.entities = entities;
+
     for (const [of, columns] of Object.entries(first.columns)) {
       for (const [field, values] of Object.entries(columns)) {
         const more = table.columns[of]?.[field];
+
         if (more === undefined) {
           continue;
         }
+
         if (Array.isArray(values)) {
           columns[field] = [...values, ...(more as unknown[])];
         } else {
           const joined = new (values.constructor as Float32ArrayConstructor)(
             entities.length
           );
+
           joined.set(values as Float32Array);
           joined.set(more as Float32Array, count);
           columns[field] = joined;
@@ -293,5 +332,6 @@ export const removeComponent = (
       }
     }
   }
+
   world.tables = tables;
 };

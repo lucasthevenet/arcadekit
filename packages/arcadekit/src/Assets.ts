@@ -154,9 +154,11 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
   schema: S
 ): Asset<S["Type"]> => {
   const decode = Schema.decodeUnknownExit(Schema.toCodecJson(schema));
+
   return make(url, (data, at) =>
     Effect.suspend(() => {
       let parsed: unknown;
+
       try {
         parsed = JSON.parse(new TextDecoder().decode(data));
       } catch (error) {
@@ -167,7 +169,9 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
           })
         );
       }
+
       const exit = decode(parsed);
+
       return Exit.isSuccess(exit)
         ? Effect.succeed(exit.value as S["Type"])
         : Effect.fail(
@@ -198,11 +202,13 @@ const fetching: LoaderShape = {
     Effect.tryPromise({
       try: async (signal) => {
         const response = await fetch(url, { signal });
+
         if (!response.ok) {
           throw new Error(
             `The server answered ${response.status} ${response.statusText}`.trim()
           );
         }
+
         return new Uint8Array(await response.arrayBuffer());
       },
       catch: (error) => new AssetFailed({ url, message: describe(error) }),
@@ -234,11 +240,13 @@ export const layerMemory = (
     bytes: (url) =>
       Effect.suspend(() => {
         const file = Object.hasOwn(files, url) ? files[url] : undefined;
+
         if (file === undefined) {
           return Effect.fail(
             new AssetFailed({ url, message: "There is no such file." })
           );
         }
+
         return Effect.succeed(
           typeof file === "string" ? new TextEncoder().encode(file) : file
         );
@@ -348,20 +356,25 @@ export const load: <B extends Entries>(
 )(function* (bundle: Bundle<Entries>) {
   const loader = yield* Loader;
   const names = Object.keys(bundle.assets);
+
   const values = yield* Effect.forEach(
     names,
     (name) => {
       const asset = bundle.assets[name]!;
+
       return Effect.flatMap(loader.bytes(asset.url), (data) =>
         asset.decode(data)
       );
     },
     { concurrency: "unbounded" }
   );
+
   const loaded: Record<string, unknown> = {};
+
   for (let i = 0; i < names.length; i++) {
     loaded[names[i]!] = values[i];
   }
+
   return loaded;
 }) as <B extends Entries>(
   bundle: Bundle<B>
@@ -441,11 +454,13 @@ const storeLayer = Layer.effect(
       Input.Devices,
       EffectRandom.Random
     )(yield* Effect.context<never>()) as Context.Context<never>;
+
     const runFork = Effect.runForkWith(context);
     const held = new Map<Bundle<Entries>, Held>();
     // Between ticks an app's world is frozen: that is how the stages that
     // may know about assets are told from the tick.
     const world = yield* World;
+
     const betweenTicks = (bundle: Bundle<Entries>, what: string): void => {
       if (!world.frozen) {
         throw new Error(
@@ -456,6 +471,7 @@ const storeLayer = Layer.effect(
 
     const entryOf = (bundle: Bundle<Entries>): Held => {
       let entry = held.get(bundle);
+
       if (entry === undefined) {
         entry = {
           bundle,
@@ -466,6 +482,7 @@ const storeLayer = Layer.effect(
         };
         held.set(bundle, entry);
       }
+
       return entry;
     };
 
@@ -475,15 +492,19 @@ const storeLayer = Layer.effect(
       entry.status = LOADING;
       const fiber = runFork(Scope.provide(load(entry.bundle), scope));
       entry.fiber = fiber;
+
       const ended = (exit: Exit.Exit<unknown, AssetFailed>): void => {
         // Let go while it was loading: nobody is waiting for this.
         if (entry.fiber !== fiber) {
           return;
         }
+
         if (Exit.isSuccess(exit)) {
           entry.status = { _tag: "Ready", assets: exit.value };
+
           return;
         }
+
         const error = Cause.squash(exit.cause);
         entry.status = {
           _tag: "Failed",
@@ -504,7 +525,9 @@ const storeLayer = Layer.effect(
           )
         );
       };
+
       const exit = fiber.pollUnsafe();
+
       if (exit === undefined) {
         fiber.addObserver(ended);
       } else {
@@ -519,9 +542,11 @@ const storeLayer = Layer.effect(
         entry.fiber = undefined;
         entry.scope = undefined;
         entry.status = ABSENT;
+
         if (scope === undefined) {
           return Effect.void;
         }
+
         return Effect.andThen(
           fiber === undefined ? Effect.void : Fiber.interrupt(fiber),
           Scope.close(scope, Exit.void)
@@ -538,15 +563,19 @@ const storeLayer = Layer.effect(
     return {
       status<B extends Entries>(bundle: Bundle<B>) {
         betweenTicks(bundle, "asked for");
+
         return (held.get(bundle)?.status ?? ABSENT) as Status<Loaded<B>>;
       },
       hold(bundle, holder) {
         betweenTicks(bundle, "held");
         const entry = entryOf(bundle);
+
         if (entry.holders.has(holder)) {
           return;
         }
+
         entry.holders.add(holder);
+
         if (entry.holders.size === 1) {
           start(entry);
         }
@@ -554,9 +583,11 @@ const storeLayer = Layer.effect(
       drop(bundle, holder) {
         betweenTicks(bundle, "let go of");
         const entry = held.get(bundle);
+
         if (entry === undefined || !entry.holders.delete(holder)) {
           return;
         }
+
         if (entry.holders.size === 0) {
           runFork(letGo(entry));
         }
@@ -600,8 +631,10 @@ export const during = <E, R, B extends Entries>(
   bundle: Bundle<B>
 ): System.System<E, R | Store> => {
   const name = `Assets.during(${bundle.name})`;
+
   return System.make(name, function* () {
     const store = yield* Store;
+
     if (yield* condition) {
       store.hold(bundle, name);
     } else {

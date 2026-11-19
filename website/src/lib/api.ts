@@ -21,6 +21,7 @@ export const KINDS = [
   "Types",
   "Namespaces",
 ] as const;
+
 export type Kind = (typeof KINDS)[number];
 
 /** One declaration of an exported name: a name can be both a value and a type. */
@@ -90,9 +91,11 @@ interface DeclarationFile {
 
 const nameOf = (node: unknown): string | undefined => {
   const named = node as { name?: unknown; value?: unknown } | null | undefined;
+
   if (typeof named?.name === "string") {
     return named.name;
   }
+
   return typeof named?.value === "string" ? named.value : undefined;
 };
 
@@ -109,18 +112,23 @@ export const sourceLines = (mappings: string): SourcePosition[] => {
   const lines: SourcePosition[] = [];
   let sourceLine = 0;
   let sourceIndex = 0;
+
   for (const line of mappings.split(";")) {
     let first: SourcePosition;
+
     for (const segment of line.split(",")) {
       if (segment === "") {
         continue;
       }
+
       const values: number[] = [];
       let value = 0;
       let shift = 0;
+
       for (const char of segment) {
         const digit = BASE64.indexOf(char);
         value += (digit & 31) << shift;
+
         if (digit & 32) {
           shift += 5;
         } else {
@@ -129,14 +137,17 @@ export const sourceLines = (mappings: string): SourcePosition[] => {
           shift = 0;
         }
       }
+
       if (values.length >= 4) {
         sourceIndex += values[1] ?? 0;
         sourceLine += values[2] ?? 0;
         first ??= { source: sourceIndex, line: sourceLine };
       }
     }
+
     lines.push(first);
   }
+
   return lines;
 };
 
@@ -144,23 +155,29 @@ const cache = new Map<string, DeclarationFile>();
 
 const readDeclarations = (file: string): DeclarationFile => {
   const cached = cache.get(file);
+
   if (cached !== undefined) {
     return cached;
   }
-  const source = readFileSync(file, "utf-8");
+
+  const source = readFileSync(file, "utf8");
   const result = parseSync(file, source, { lang: "dts" });
+
   if (result.errors.length > 0) {
     throw new Error(`${file} doesn't parse: ${result.errors[0]?.message}`);
   }
+
   const body = result.program.body as unknown as readonly Node[];
   const imports = new Map<string, { file: string; name: string }>();
   const exports = new Map<string, string>();
   const declarations = new Map<string, Node[]>();
+
   const declare = (name: string | undefined, node: Node) => {
     if (name !== undefined) {
       declarations.set(name, [...(declarations.get(name) ?? []), node]);
     }
   };
+
   const declareNode = (node: Node) => {
     if (node.type === "VariableDeclaration") {
       for (const declarator of node.declarations as Node[]) {
@@ -170,14 +187,17 @@ const readDeclarations = (file: string): DeclarationFile => {
       declare(nameOf(node.id), node);
     }
   };
+
   for (const node of body) {
     if (node.type === "ImportDeclaration") {
       const from = path.resolve(
         path.dirname(file),
         String((node.source as Node).value).replace(/\.js$/u, ".d.ts")
       );
+
       for (const specifier of (node.specifiers as Node[]) ?? []) {
         const local = nameOf(specifier.local);
+
         if (local !== undefined && from.endsWith(".d.ts")) {
           imports.set(local, {
             file: from,
@@ -189,13 +209,16 @@ const readDeclarations = (file: string): DeclarationFile => {
       if (node.declaration) {
         const declaration = node.declaration as Node;
         declareNode(declaration);
+
         for (const name of namesOf(declaration)) {
           exports.set(name, name);
         }
       }
+
       for (const specifier of (node.specifiers as Node[]) ?? []) {
         const local = nameOf(specifier.local);
         const exported = nameOf(specifier.exported);
+
         if (local !== undefined && exported !== undefined) {
           exports.set(exported, local);
         }
@@ -204,16 +227,20 @@ const readDeclarations = (file: string): DeclarationFile => {
       declareNode(node);
     }
   }
+
   let lines: SourcePosition[] = [];
   let mapSources: string[] = [];
+
   if (existsSync(`${file}.map`)) {
-    const map = JSON.parse(readFileSync(`${file}.map`, "utf-8")) as {
+    const map = JSON.parse(readFileSync(`${file}.map`, "utf8")) as {
       sources: string[];
       mappings: string;
     };
+
     lines = sourceLines(map.mappings);
     mapSources = map.sources;
   }
+
   const parsed: DeclarationFile = {
     file,
     source,
@@ -224,7 +251,9 @@ const readDeclarations = (file: string): DeclarationFile => {
     lines,
     mapSources,
   };
+
   cache.set(file, parsed);
+
   return parsed;
 };
 
@@ -238,6 +267,7 @@ const namesOf = (node: Node): string[] =>
 const isExportList = (node: Node) => {
   const body = node.body as Node | null;
   const statements = (body?.body as Node[] | undefined) ?? [];
+
   return (
     statements.length > 0 &&
     statements.every(
@@ -249,17 +279,26 @@ const isExportList = (node: Node) => {
 
 const kindOf = (node: Node): Kind => {
   switch (node.type) {
-    case "ClassDeclaration":
+    case "ClassDeclaration": {
       return "Classes";
-    case "TSInterfaceDeclaration":
+    }
+
+    case "TSInterfaceDeclaration": {
       return "Interfaces";
+    }
+
     case "TSTypeAliasDeclaration":
-    case "TSEnumDeclaration":
+    case "TSEnumDeclaration": {
       return "Types";
-    case "TSModuleDeclaration":
+    }
+
+    case "TSModuleDeclaration": {
       return "Namespaces";
-    default:
+    }
+
+    default: {
       return "Values";
+    }
   }
 };
 
@@ -286,26 +325,33 @@ export const docMarkdown = (
   const params: string[] = [];
   const out: string[] = [];
   let code: string[] | undefined;
+
   const flush = () => {
     if (code === undefined) {
       return;
     }
+
     while (code.length > 0 && code.at(-1)?.trim() === "") {
       code.pop();
     }
+
     const indent = Math.min(
       ...code
         .filter((line) => line.trim() !== "")
         .map((line) => line.length - line.trimStart().length)
     );
+
     out.push("```ts", ...code.map((line) => line.slice(indent)), "```", "");
     code = undefined;
   };
+
   for (const [index, line] of lines.entries()) {
     const tag = /^@(?<name>\w+)\s*(?<rest>.*)$/u.exec(line);
+
     if (tag?.groups !== undefined) {
       flush();
       const rest = (tag.groups.rest ?? "").trim();
+
       if (tag.groups.name === "category") {
         category = rest;
       } else if (tag.groups.name === "internal") {
@@ -319,28 +365,37 @@ export const docMarkdown = (
           `- \`${param?.groups?.name ?? rest}\`: ${param?.groups?.text ?? ""}`
         );
       }
+
       continue;
     }
+
     if (params.length > 0 && /^\s+\S/u.test(line) && code === undefined) {
       params[params.length - 1] += ` ${line.trim()}`;
       continue;
     }
+
     const indented = /^ {2,}\S/u.test(line);
+
     if (code !== undefined) {
       if (indented || line.trim() === "") {
         code.push(line);
         continue;
       }
+
       flush();
     }
+
     if (indented && (index === 0 || lines[index - 1]?.trim() === "")) {
       code = [line];
       continue;
     }
+
     out.push(line);
   }
+
   flush();
   const body = out.join("\n").trim();
+
   return {
     body: [body, params.join("\n")].filter((part) => part !== "").join("\n\n"),
     category,
@@ -353,6 +408,7 @@ const docAbove = (parsed: DeclarationFile, node: Node): string => {
   const comment = parsed.comments
     .filter((c) => c.type === "Block" && c.end <= node.start)
     .at(-1);
+
   if (
     comment === undefined ||
     !comment.value.startsWith("*") ||
@@ -361,6 +417,7 @@ const docAbove = (parsed: DeclarationFile, node: Node): string => {
   ) {
     return "";
   }
+
   return comment.value;
 };
 
@@ -382,9 +439,11 @@ const resolve = (
 ): { parsed: DeclarationFile; local: string } | undefined => {
   const parsed = readDeclarations(file);
   const local = parsed.exports.get(exported);
+
   if (local === undefined || seen > 10) {
     return undefined;
   }
+
   return follow(parsed, local, seen);
 };
 
@@ -396,7 +455,9 @@ const follow = (
   if (parsed.declarations.has(local)) {
     return { parsed, local };
   }
+
   const imported = parsed.imports.get(local);
+
   return imported === undefined
     ? undefined
     : resolve(imported.file, imported.name, seen + 1);
@@ -414,29 +475,38 @@ export const readModule = (
   sourceFile: string
 ): Module => {
   const entry = path.join(root, folder, "dist", `${name}.d.ts`);
+
   if (!existsSync(entry)) {
     throw new Error(
       `${path.relative(root, entry)} is missing: the reference is read from the packages' built declarations. Run \`pnpm build:packages\` first.`
     );
   }
+
   const parsed = readDeclarations(entry);
   const exports: Export[] = [];
+
   for (const exported of parsed.exports.keys()) {
     const found = resolve(entry, exported);
+
     if (found === undefined) {
       continue;
     }
+
     const nodes = found.parsed.declarations.get(found.local) ?? [];
+
     const parts = nodes.map((node): Part => {
       const { body, category, internal } = docMarkdown(
         docAbove(found.parsed, node)
       );
+
       const position =
         found.parsed.lines[lineOf(found.parsed.source, node.start)];
+
       const mapped =
         position === undefined
           ? undefined
           : found.parsed.mapSources[position.source];
+
       const source =
         position === undefined || mapped === undefined
           ? undefined
@@ -450,6 +520,7 @@ export const readModule = (
                 .join("/"),
               line: position.line + 1,
             };
+
       return {
         kind: kindOf(node),
         signature: signatureOf(found.parsed, node),
@@ -459,20 +530,26 @@ export const readModule = (
         source,
       };
     });
+
     if (parts.length > 0 && !parts.some((part) => part.internal)) {
       exports.push({ name: exported, parts });
     }
   }
-  const sourceText = readFileSync(path.join(root, sourceFile), "utf-8");
+
+  const sourceText = readFileSync(path.join(root, sourceFile), "utf8");
   const first = /^\s*\/\*\*(?<value>[\s\S]*?)\*\//u.exec(sourceText);
+
   const comment =
     first?.groups === undefined
       ? ""
       : docMarkdown(`*${first.groups.value}`).body;
+
   const index = path.join(root, folder, "src", "index.ts");
+
   const inRoot =
     existsSync(index) &&
-    readFileSync(index, "utf-8").includes(`export * as ${name} from`);
+    readFileSync(index, "utf8").includes(`export * as ${name} from`);
+
   return {
     name,
     packageName,
@@ -530,8 +607,13 @@ export const CATEGORIES = [
  */
 const rank = (category: string) => {
   const known = (CATEGORIES as readonly string[]).indexOf(category);
-  if (known !== -1) return known;
+
+  if (known !== -1) {
+    return known;
+  }
+
   const kind = (KINDS as readonly string[]).indexOf(category);
+
   return kind === -1 ? CATEGORIES.length : CATEGORIES.length + 1 + kind;
 };
 
@@ -543,7 +625,9 @@ const renderExport = (item: Export, repoUrl: string, branch: string) => {
   const docs = [...new Set(item.parts.map((part) => part.doc))].filter(
     (doc) => doc !== ""
   );
+
   const source = item.parts.find((part) => part.source !== undefined)?.source;
+
   return [
     `### ${item.name}`,
     ...docs,
@@ -564,10 +648,12 @@ export const renderModule = (
   branch: string
 ): string => {
   const groups = new Map<string, Export[]>();
+
   for (const item of module.exports) {
     const category = categoryOf(item);
     groups.set(category, [...(groups.get(category) ?? []), item]);
   }
+
   const sections = [...groups]
     .toSorted(([a], [b]) => rank(a) - rank(b))
     .map(([category, items]) =>
@@ -576,6 +662,7 @@ export const renderModule = (
         ...items.map((item) => renderExport(item, repoUrl, branch)),
       ].join("\n\n")
     );
+
   return [
     ...(module.comment === "" ? [] : [module.comment]),
     [

@@ -117,6 +117,7 @@ export function define(
       name: typeOnlyName,
     });
   }
+
   // The JSON codec turns values such as dates and bigints into JSON on the
   // way out and back on the way in, so the log is always safe to serialize.
   return { codec: Schema.toCodecJson(payload), name };

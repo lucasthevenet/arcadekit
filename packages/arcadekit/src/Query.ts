@@ -289,8 +289,10 @@ export const reads: {
         );
       }
     }
+
     // In the order of the terms, each once.
     const given = defs.length === 0 ? self.terms : defs;
+
     return new Query(
       self.terms,
       self.withDefs,

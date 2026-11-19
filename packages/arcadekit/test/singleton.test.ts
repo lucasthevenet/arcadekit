@@ -26,11 +26,13 @@ const Turn = Singleton.define(
   { player: Field.u8, round: Field.u32 },
   { player: 1, round: 0 }
 );
+
 const Score = Singleton.define(
   "sg/Score",
   { points: Field.f64, best: Field.json<string>() },
   { points: 0, best: "nobody" }
 );
+
 // One field of every kind.
 const Everything = Singleton.define(
   "sg/Everything",
@@ -59,6 +61,7 @@ const Everything = Singleton.define(
     handle: undefined,
   }
 );
+
 const Body = Component.define("sg/Body", { x: Field.f32 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
@@ -71,8 +74,10 @@ const problemOf = (attempt: () => unknown): SnapshotError => {
     if (error instanceof SnapshotError) {
       return error;
     }
+
     throw error;
   }
+
   throw new Error("nothing was refused");
 };
 
@@ -167,10 +172,13 @@ describe("a singleton and the world's hash", () => {
       world.singleton(Score).best = "ann";
       world.singleton(Everything).byte = 1;
       change?.(world);
+
       return world.hash();
     };
+
     const same = build();
     expect(build()).toBe(same);
+
     const changes: ((world: EcsWorld) => void)[] = [
       (world) => (world.singleton(Turn).player = 2),
       (world) => (world.singleton(Turn).round = 5),
@@ -180,6 +188,7 @@ describe("a singleton and the world's hash", () => {
       (world) => (world.singleton(Everything).note = { nested: [1, "2"] }),
       (world) => (world.singleton(Everything).single = 1.25),
     ];
+
     const hashes = changes.map((change) => build(change));
     expect(new Set([same, ...hashes]).size).toBe(changes.length + 1);
     // A transient field is not part of the game's state.
@@ -199,12 +208,14 @@ describe("a singleton and the world's hash", () => {
     backwards.singleton(Score).points = 2;
     backwards.singleton(Turn).round = 1;
     expect(backwards.hash()).toBe(forwards.hash());
+
     // Two singletons with the same fields are told apart by name.
     const Twin = Singleton.define(
       "sg/Twin",
       { player: Field.u8, round: Field.u32 },
       { player: 1, round: 0 }
     );
+
     const one = new EcsWorld();
     one.singleton(Turn).round = 1;
     const other = new EcsWorld();
@@ -225,8 +236,10 @@ describe("a singleton in a snapshot", () => {
     all.double = Math.PI;
     // Read, and never written.
     void world.singleton(Score).points;
+
     return world;
   };
+
   const listed = [Body, Turn.component, Score.component, Everything.component];
 
   it("is saved once it is written, and comes back as it was", () => {
@@ -253,12 +266,14 @@ describe("a singleton in a snapshot", () => {
 
   it("leaves one that was never written to the game that loads it", () => {
     const bytes = written().snapshot();
+
     // The same name and fields, another first value: a newer build.
     const Rescored = Singleton.define(
       "sg/Score",
       { points: Field.f64, best: Field.json<string>() },
       { points: 100, best: "the house" }
     );
+
     const copy = new EcsWorld();
     copy.load(bytes, [Body, Turn.component, Everything.component]);
     expect({ ...copy.singleton(Rescored) }).toEqual({
@@ -279,16 +294,20 @@ describe("a singleton in a snapshot", () => {
     expect(problemOf(() => wrote.load(bytes, listed)).problem).toBe(
       "world not empty"
     );
+
     const unknown = problemOf(() =>
       new EcsWorld().load(bytes, [Body, Turn.component])
     );
+
     expect(unknown.problem).toBe("unknown component");
     expect(unknown.component).toBe("sg/Everything");
+
     const Shorter = Singleton.define(
       "sg/Turn",
       { player: Field.u8 },
       { player: 1 }
     );
+
     const changed = problemOf(() =>
       new EcsWorld().load(bytes, [
         Body,
@@ -296,18 +315,22 @@ describe("a singleton in a snapshot", () => {
         Everything.component,
       ])
     );
+
     expect(changed.problem).toBe("component changed");
     expect(changed.message).toMatch(
       /Then: singleton \{ player: u8, round: u32 \}\. Now: singleton \{ player: u8 \}/
     );
+
     // A component of the same name and fields is not a singleton.
     const AsComponent = Component.define("sg/Turn", {
       player: Field.u8,
       round: Field.u32,
     });
+
     const kind = problemOf(() =>
       new EcsWorld().load(bytes, [Body, AsComponent, Everything.component])
     );
+
     expect(kind.problem).toBe("component changed");
     expect(kind.message).toMatch(/Then: singleton .* Now: table/);
     // A value its field cannot save is refused when the snapshot is taken.
@@ -320,20 +343,26 @@ describe("a singleton in a snapshot", () => {
 
   it("is refused when the bytes are cut short or do not hang together", () => {
     const bytes = written().snapshot();
+
     for (let length = bytes.length - 60; length < bytes.length; length++) {
       const error = problemOf(() =>
         new EcsWorld().load(bytes.subarray(0, length), listed)
       );
+
       expect(["truncated", "corrupt"]).toContain(error.problem);
     }
+
     const contents = readSnapshot(bytes);
+
     const twice = writeSnapshot({
       ...contents,
       singletons: [...contents.singletons, contents.singletons[0]!],
     });
+
     expect(problemOf(() => new EcsWorld().load(twice, listed)).message).toMatch(
       /two values for one singleton/
     );
+
     const inTable = writeSnapshot({
       ...contents,
       tables: [
@@ -349,9 +378,11 @@ describe("a singleton in a snapshot", () => {
         },
       ],
     });
+
     expect(
       problemOf(() => new EcsWorld().load(inTable, listed)).message
     ).toMatch(/one that no table holds/);
+
     const asSingleton = writeSnapshot({
       ...contents,
       singletons: [
@@ -359,6 +390,7 @@ describe("a singleton in a snapshot", () => {
         { component: "sg/Body", columns: { x: new Float32Array(1) } },
       ],
     });
+
     expect(
       problemOf(() => new EcsWorld().load(asSingleton, listed)).message
     ).toMatch(/a singleton is of a component that is not one/);
@@ -368,6 +400,7 @@ describe("a singleton in a snapshot", () => {
     const world = new EcsWorld({ seed: 2 });
     world.spawn(Body.of({ x: 5 }));
     const bytes = world.snapshot();
+
     // This world as the build that wrote format 2 wrote it. Format 1 is
     // format 2 without the count of singletons before the end.
     const second = Uint8Array.from(
@@ -376,6 +409,7 @@ describe("a singleton in a snapshot", () => {
       )!,
       (byte) => Number.parseInt(byte, 16)
     );
+
     expect(new DataView(second.buffer).getUint32(4, true)).toBe(2);
     const old = new Uint8Array(second.length - 4);
     old.set(second.subarray(0, second.length - 8));
@@ -420,11 +454,13 @@ describe("a singleton in a snapshot", () => {
     Migrate.mapField(contents, "sg/Clock", "lap", "f64", (lap) => lap / 8);
     Migrate.removeField(contents, "sg/Clock", "player");
     Migrate.removeComponent(contents, "sg/Everything");
+
     const Clock = Singleton.define(
       "sg/Clock",
       { lap: Field.f64, speed: Field.f32 },
       { lap: 0, speed: 1 }
     );
+
     const copy = new EcsWorld();
     copy.load(writeSnapshot(contents), [Body, Clock.component]);
     expect({ ...copy.singleton(Clock) }).toEqual({ lap: 1.5, speed: 2 });
@@ -478,37 +514,48 @@ const EndTurn = Action.define(
   "sg/EndTurn",
   Schema.Struct({ player: Schema.Int })
 );
+
 const Cheat = Action.define("sg/Cheat", Schema.Struct({}));
+
 class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
   readonly waitingFor: number;
 }> {}
+
 class Caught extends Data.TaggedError("Caught")<{}> {}
 
 const endTurn = Action.handler(EndTurn, function* ({ player }) {
   const turn = yield* Turn;
+
   if (turn.player !== player) {
     return yield* Effect.fail(new NotYourTurn({ waitingFor: turn.player }));
   }
+
   turn.player = player === 1 ? 2 : 1;
   turn.round++;
+
   return turn.round;
 });
+
 const cheat = Action.handler(Cheat, function* () {
   const turn = yield* Turn;
   const score = yield* Score;
   turn.round += 100;
   score.points += 1000;
   score.best = "the cheat";
+
   return yield* Effect.fail(new Caught());
 });
+
 const Reward = System.make("Reward", function* () {
   const turn = yield* Turn;
   const score = yield* Score;
+
   if (turn.round > 0 && turn.round % 2 === 0) {
     score.points += turn.round;
     score.best = `player ${turn.player}`;
   }
 });
+
 const Rules = Plugin.make("sg/Rules", {
   components: [Turn, Score],
   systems: [Reward],
@@ -524,6 +571,7 @@ describe("a singleton in an app", () => {
         app.spawnScript(
           Effect.gen(function* () {
             const script = yield* Script;
+
             for (;;) {
               rounds.push((yield* Turn).round);
               yield* script.nextTick;
@@ -561,21 +609,25 @@ describe("a singleton in an app", () => {
         expect(Exit.isFailure(app.dispatch(Cheat, {}))).toBe(true);
         // Never written, so never there.
         expect(app.world.hash()).toBe(before);
+
         for (let move = 0; move < 12; move++) {
           app.dispatch(EndTurn, { player: (move % 2) + 1 });
           app.dispatch(Cheat, {});
           app.enqueue(Cheat, {});
           app.tick(1);
         }
+
         expect({ ...app.world.singleton(Turn) }).toEqual({
           player: 1,
           round: 12,
         });
         expect(app.world.singleton(Score).points).toBe(42);
+
         const again = yield* App.make({
           plugins: [Rules],
           checkpointEvery: 1,
         });
+
         App.replay(again, app.actionLog, { delta: 1, ticks: 12 });
         expect(again.world.hash()).toBe(app.world.hash());
       })
@@ -586,22 +638,29 @@ describe("a singleton in an app", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
+
         for (let move = 0; move < 5; move++) {
           app.dispatch(EndTurn, { player: (move % 2) + 1 });
           app.tick(1);
         }
+
         const save = app.save();
+
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
+
         const read = Save.decode(Save.encode(save.value));
+
         if (Exit.isFailure(read)) {
           throw new Error("the save did not decode");
         }
+
         const loaded = yield* App.load(read.value, {
           plugins: [Rules],
           checkpointEvery: 1,
         });
+
         expect(loaded.world.hash()).toBe(app.world.hash());
         expect({ ...loaded.world.singleton(Turn) }).toEqual({
           player: 2,
@@ -620,6 +679,7 @@ describe("a singleton in an app", () => {
         const refused = yield* Effect.exit(
           App.load(read.value, { handlers: [endTurn], systems: [Reward] })
         );
+
         expect(
           Exit.isFailure(refused) ? Cause.squash(refused.cause) : undefined
         ).toMatchObject({

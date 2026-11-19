@@ -17,6 +17,7 @@ const ROOT = "../../../../../";
 
 const makeRewriter = () => {
   const reported: DeadLink[] = [];
+
   const links = createLinkRewriter({
     repoRoot: REPO_ROOT,
     repoUrl: REPO_URL,
@@ -30,6 +31,7 @@ const makeRewriter = () => {
     ]),
     onDeadLink: (link) => reported.push(link),
   });
+
   return { ...links, reported };
 };
 
@@ -39,6 +41,7 @@ const render = async (markdown: string, file = GUIDE) => {
     mdastPlugins: [makeRewriter().plugin],
     fileURL: pathToFileURL(path.join(REPO_ROOT, file)),
   });
+
   return html;
 };
 
@@ -91,10 +94,12 @@ describe("a relative link in a page", () => {
     expect(rewrite("../nope.md", GUIDE)).toBe("../nope.md");
     // Out of the repository.
     expect(rewrite(`../${ROOT}README.md`, GUIDE)).toBe(`../${ROOT}README.md`);
+
     const dead = [
       { file: GUIDE, href: "../nope.md" },
       { file: GUIDE, href: `../${ROOT}README.md` },
     ];
+
     expect(deadLinks()).toStrictEqual(dead);
     expect(reported).toStrictEqual(dead);
   });
@@ -105,6 +110,7 @@ describe("the plugin", () => {
     const html = await render(
       `See [the hash](../concepts/determinism.md#read-more), [the page](${ROOT}packages/three/examples/page) and [Effect](https://effect.website).\n`
     );
+
     expect(html).toContain(
       '<a href="/concepts/determinism#read-more">the hash</a>'
     );
@@ -117,11 +123,14 @@ describe("the plugin", () => {
   it("leaves markdown from outside the repository, or from no file, alone", async () => {
     const { plugin } = makeRewriter();
     const markdown = "See [it](../three/README.md), as #25 asked.\n";
+
     const outside = await markdownToHtml(markdown, {
       mdastPlugins: [plugin],
       fileURL: pathToFileURL(path.join(path.dirname(REPO_ROOT), "README.md")),
     });
+
     const nowhere = await markdownToHtml(markdown, { mdastPlugins: [plugin] });
+
     for (const { html } of [outside, nowhere]) {
       expect(html).toBe(
         '<p>See <a href="../three/README.md">it</a>, as #25 asked.</p>\n'
@@ -146,9 +155,11 @@ describe("a full link", () => {
     const renamed = `${REPO_URL}/blob/main/packages/arcadekit/src/RENAMED.ts`;
     const missing = `${REPO_URL}/tree/main/packages/nope`;
     const outside = `${REPO_URL}/blob/main/../other/README.md`;
+
     for (const href of [renamed, missing, outside]) {
       expect(rewrite(href, GUIDE)).toBe(href);
     }
+
     expect(deadLinks()).toStrictEqual(
       [renamed, missing, outside].map((href) => ({ file: GUIDE, href }))
     );
@@ -156,6 +167,7 @@ describe("a full link", () => {
 
   it("is left alone otherwise", () => {
     const { rewrite, deadLinks } = makeRewriter();
+
     for (const href of [
       `${REPO_URL}/blob/main/packages/arcadekit/src/App.ts`,
       `${REPO_URL}/tree/main/.changeset`,
@@ -171,6 +183,7 @@ describe("a full link", () => {
     ]) {
       expect(rewrite(href, GUIDE)).toBe(href);
     }
+
     expect(deadLinks()).toStrictEqual([]);
   });
 });
@@ -191,6 +204,7 @@ describe("a bare issue number", () => {
 
   it("is not part of a colour, a word, an address or an entity", () => {
     const { issueLinks } = makeRewriter();
+
     for (const text of [
       "the colour #17151f",
       "the colour #000000ff",
@@ -214,6 +228,7 @@ describe("a bare issue number", () => {
     const html = await render(
       "# What #26 asked\n\nSee [#30](https://example.com/30) and `#7`.\n"
     );
+
     expect(html).toContain('<a href="https://example.com/30"');
     expect(html).toContain("<code>#7</code>");
     expect(html).not.toContain("/issues/");

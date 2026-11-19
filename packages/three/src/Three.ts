@@ -142,6 +142,7 @@ const sceneLayer = Layer.effect(
     Effect.sync((): SceneShape => {
       const camera = new PerspectiveCamera(50, 1, 0.1, 2000);
       camera.position.set(0, 0, 10);
+
       return { scene: new ThreeScene(), camera, _kept: new Map() };
     }),
     // What the systems made goes with the app. Geometries and materials
@@ -151,6 +152,7 @@ const sceneLayer = Layer.effect(
         for (const one of kept._kept.values()) {
           one.dispose();
         }
+
         kept._kept.clear();
       })
   )
@@ -252,10 +254,12 @@ export const layerRenderer = (
         let width = 0;
         let height = 0;
         let ratio = 0;
+
         return {
           render(scene, camera) {
             const w = renderer.domElement.clientWidth ?? 0;
             const h = renderer.domElement.clientHeight ?? 0;
+
             // A canvas that is not laid out has no size to fit.
             if (fit && w > 0 && h > 0) {
               const r =
@@ -265,6 +269,7 @@ export const layerRenderer = (
                     .devicePixelRatio ?? 1,
                   2
                 );
+
               if (w !== width || h !== height || r !== ratio) {
                 width = w;
                 height = h;
@@ -272,12 +277,14 @@ export const layerRenderer = (
                 renderer.setPixelRatio(r);
                 renderer.setSize(w, h, false);
               }
+
               // Asked of the camera each frame, since it can be replaced.
               if (isPerspective(camera) && camera.aspect !== w / h) {
                 camera.aspect = w / h;
                 camera.updateProjectionMatrix();
               }
             }
+
             renderer.render(scene, camera);
           },
         };
@@ -314,9 +321,11 @@ export const layerWebGL = (
  */
 export const Render = System.make("arcadekit/three/Render", function* () {
   const { _kept, camera, scene } = yield* Scene;
+
   for (const one of _kept.values()) {
     one.settle?.();
   }
+
   (yield* Renderer).render(scene, camera);
 }).pipe(System.inStage("postFrame"));
 
@@ -345,26 +354,31 @@ export const plugin = Plugin.make("arcadekit/three", {
 interface Numbers {
   readonly [row: number]: number;
 }
+
 /** The columns of a three-number component, as a loop reads them. */
 interface Xyz {
   readonly x: Numbers;
   readonly y: Numbers;
   readonly z: Numbers;
 }
+
 /** The columns of a colour. */
 interface Rgb {
   readonly r: Numbers;
   readonly g: Numbers;
   readonly b: Numbers;
 }
+
 interface Xyzw extends Xyz {
   readonly w: { readonly [row: number]: number };
 }
+
 /** The columns of a 2D position or scale. */
 interface Xy {
   readonly x: { readonly [row: number]: number };
   readonly y: { readonly [row: number]: number };
 }
+
 interface Angle {
   readonly angle: { readonly [row: number]: number };
 }
@@ -445,17 +459,22 @@ abstract class Blend {
   /** Makes room for these rows and their entities, before the loop reads either. */
   protected fit(start: number, end: number, entities: EntityColumn): void {
     let most = -1;
+
     for (let i = start; i < end; i++) {
       const index = entityIndex(entities[i]!);
+
       if (index > most) {
         most = index;
       }
     }
+
     if (most >= this.owner.length) {
       let length = Math.max(64, this.owner.length);
+
       while (length <= most) {
         length *= 2;
       }
+
       const owner = new Float64Array(length);
       owner.set(this.owner);
       this.owner = owner;
@@ -469,6 +488,7 @@ abstract class Blend {
       cur.set(this.cur);
       this.cur = cur;
     }
+
     if (end > this.rows) {
       this.rows = Math.max(end, this.rows * 2);
       this.widen(this.rows);
@@ -517,6 +537,7 @@ class Lerp3 extends Blend {
     const { cur, out, owner, prev, seen, snap } = this;
     const { alpha, shift, stamp } = this.clock;
     const { x: ox, y: oy, z: oz } = out;
+
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
@@ -527,6 +548,7 @@ class Lerp3 extends Blend {
       let px = a;
       let py = b;
       let pz = c;
+
       // Drawn in the frame before this one: it has a place to come from.
       if (owner[index] === entity && seen[index] === stamp - 1) {
         px = shift ? cur[at]! : prev[at]!;
@@ -535,12 +557,14 @@ class Lerp3 extends Blend {
         const dx = a - px;
         const dy = b - py;
         const dz = c - pz;
+
         if (dx * dx + dy * dy + dz * dz > snap) {
           px = a;
           py = b;
           pz = c;
         }
       }
+
       owner[index] = entity;
       seen[index] = stamp;
       prev[at] = px;
@@ -553,6 +577,7 @@ class Lerp3 extends Blend {
       oy[i] = py + (b - py) * alpha;
       oz[i] = pz + (c - pz) * alpha;
     }
+
     return out;
   }
 }
@@ -578,6 +603,7 @@ class Lerp2 extends Blend {
     const { alpha, shift, stamp } = this.clock;
     const { x, y } = from;
     const { x: ox, y: oy } = out;
+
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
@@ -586,16 +612,19 @@ class Lerp2 extends Blend {
       const b = y[i]!;
       let px = a;
       let py = b;
+
       if (owner[index] === entity && seen[index] === stamp - 1) {
         px = shift ? cur[at]! : prev[at]!;
         py = shift ? cur[at + 1]! : prev[at + 1]!;
         const dx = a - px;
         const dy = b - py;
+
         if (dx * dx + dy * dy > snap) {
           px = a;
           py = b;
         }
       }
+
       owner[index] = entity;
       seen[index] = stamp;
       prev[at] = px;
@@ -605,6 +634,7 @@ class Lerp2 extends Blend {
       ox[i] = px + (a - px) * alpha;
       oy[i] = py + (b - py) * alpha;
     }
+
     return out;
   }
 }
@@ -638,6 +668,7 @@ class Nlerp4 extends Blend {
     const { alpha, shift, stamp } = this.clock;
     const { x, y, z, w } = from;
     const { x: ox, y: oy, z: oz, w: ow } = out;
+
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
@@ -650,12 +681,14 @@ class Nlerp4 extends Blend {
       let py = b;
       let pz = c;
       let pw = d;
+
       if (owner[index] === entity && seen[index] === stamp - 1) {
         px = shift ? cur[at]! : prev[at]!;
         py = shift ? cur[at + 1]! : prev[at + 1]!;
         pz = shift ? cur[at + 2]! : prev[at + 2]!;
         pw = shift ? cur[at + 3]! : prev[at + 3]!;
       }
+
       owner[index] = entity;
       seen[index] = stamp;
       prev[at] = px;
@@ -680,6 +713,7 @@ class Nlerp4 extends Blend {
       oz[i] = bz;
       ow[i] = bw;
     }
+
     return out;
   }
 }
@@ -709,14 +743,17 @@ class Arc extends Blend {
     const { alpha, shift, stamp } = this.clock;
     const { angle } = from;
     const out = this.out.angle;
+
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
       const a = angle[i]!;
       let before = a;
+
       if (owner[index] === entity && seen[index] === stamp - 1) {
         before = shift ? cur[index]! : prev[index]!;
       }
+
       owner[index] = entity;
       seen[index] = stamp;
       prev[index] = before;
@@ -724,6 +761,7 @@ class Arc extends Blend {
       const turned = a - before;
       out[i] = before + (turned - TURN * Math.round(turned / TURN)) * alpha;
     }
+
     return this.out;
   }
 }
@@ -785,6 +823,7 @@ class FromAssets<T extends Kept> implements Kept {
   /** Returns the assets the app currently holds, if any. */
   private held(): unknown {
     const status = this.store.status(this.bundle);
+
     return status._tag === "Ready" ? status.assets : undefined;
   }
 
@@ -792,13 +831,16 @@ class FromAssets<T extends Kept> implements Kept {
   now(): T | undefined {
     // Loaded again is loaded anew: other pictures, though of the same files.
     const assets = this.held();
+
     if (assets !== this.assets) {
       this.dispose();
       this.assets = assets;
+
       if (assets !== undefined) {
         this.made = this.make(assets);
       }
     }
+
     return this.made;
   }
 
@@ -870,6 +912,7 @@ export const texture = (
   options: TextureOptions = {}
 ): Assets.Asset<Texture> => {
   const flipY = options.flipY ?? true;
+
   return Assets.make(url, (data, at) =>
     Effect.acquireRelease(
       Effect.tryPromise({
@@ -879,18 +922,22 @@ export const texture = (
             new Blob([data.slice()]),
             { imageOrientation: flipY ? "flipY" : "from-image" }
           );
+
           const made = new Texture(bitmap);
           made.colorSpace = SRGBColorSpace;
           // What the texture says of itself is how it was decoded.
           made.flipY = flipY;
           options.prepare?.(made);
+
           if (made.flipY !== flipY) {
             bitmap.close();
             throw new Error(
               `flipY was set to ${made.flipY} in prepare, which does nothing: a texture made of a bitmap is turned over when it is decoded, and Three.js does not read flipY of it after. Say which way up it is where it is made: Three.texture("${url}", { flipY: ${made.flipY} }).`
             );
           }
+
           made.needsUpdate = true;
+
           return made;
         },
         catch: (error) =>
@@ -929,10 +976,12 @@ const STEPS = 4080;
  */
 const LINEAR = /* @__PURE__ */ (() => {
   const table = new Float32Array(STEPS + 1);
+
   for (let i = 0; i <= STEPS; i++) {
     const c = i / STEPS;
     table[i] = c < 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   }
+
   return table;
 })();
 
@@ -1099,6 +1148,7 @@ class Instances implements Kept {
       options.color !== undefined && isWhole(options.color.schema.r.kind)
         ? 1 / 255
         : 1;
+
     if (options.color === undefined) {
       this.loops = {
         placed: this.placed,
@@ -1123,6 +1173,7 @@ class Instances implements Kept {
         wholeFlat: this.painted3(this.wholeFlat),
       };
     }
+
     this.mesh = new InstancedMesh(options.geometry, options.material, 0);
     this.mesh.name = name;
     // Its instances are wherever the entities are, which a bounding sphere
@@ -1137,6 +1188,7 @@ class Instances implements Kept {
     const attribute = new InstancedBufferAttribute(this.array, 16);
     attribute.setUsage(DynamicDrawUsage);
     this.mesh.instanceMatrix = attribute;
+
     if (this.colors !== undefined) {
       const colors = new InstancedBufferAttribute(this.colors, 3);
       colors.setUsage(DynamicDrawUsage);
@@ -1223,6 +1275,7 @@ class Instances implements Kept {
     // Read after the loop, which may have made more room for both.
     const out = this.colors!;
     let { r, g, b } = color;
+
     if (this.smooth !== undefined) {
       ({
         x: r,
@@ -1230,8 +1283,10 @@ class Instances implements Kept {
         z: b,
       } = this.smooth.color.run(start, end, r, g, b, entities));
     }
+
     let at = from * 3;
     const { gain } = this;
+
     if (!this.curved) {
       // The renderer's own numbers: as they are, or bytes over 255.
       for (let i = start; i < end; i++) {
@@ -1240,20 +1295,25 @@ class Instances implements Kept {
         out[at + 2] = b[i]! * gain;
         at += 3;
       }
+
       return;
     }
+
     // A hex code's numbers, each looked up in the table at the nearest of
     // its steps. One that is off either end of it is no colour.
     const scale = gain * STEPS;
+
     for (let i = start; i < end; i++) {
       const u = (r[i]! * scale + 0.5) | 0;
       const v = (g[i]! * scale + 0.5) | 0;
       const w = (b[i]! * scale + 0.5) | 0;
+
       // Under zero or past the table's end, either of which leaves one of
       // the six below zero: one test for the three numbers.
       if ((u | v | w | (STEPS - u) | (STEPS - v) | (STEPS - w)) < 0) {
         this.refuse(entities[i]!, r[i]!, g[i]!, b[i]!);
       }
+
       out[at] = LINEAR[u]!;
       out[at + 1] = LINEAR[v]!;
       out[at + 2] = LINEAR[w]!;
@@ -1276,18 +1336,23 @@ class Instances implements Kept {
   private reserve(rows: number): number {
     const at = this.count;
     const needed = at + rows;
+
     if (needed > this.capacity) {
       let { capacity } = this;
+
       while (capacity < needed) {
         capacity *= 2;
       }
+
       const array = new Float32Array(capacity * 16);
       array.set(this.array.subarray(0, at * 16));
+
       if (this.colors !== undefined) {
         const colors = new Float32Array(capacity * 3);
         colors.set(this.colors.subarray(0, at * 3));
         this.colors = colors;
       }
+
       // A buffer cannot grow where it is: the renderer lets go of the ones
       // it made for the old attributes, and makes new ones.
       this.mesh.dispose();
@@ -1295,7 +1360,9 @@ class Instances implements Kept {
       this.capacity = capacity;
       this.attach();
     }
+
     this.count = needed;
+
     return at * 16;
   }
 
@@ -1312,12 +1379,15 @@ class Instances implements Kept {
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
+
     if (smooth !== undefined) {
       position = smooth.position.blend(start, end, position, entities);
     }
+
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y, z } = position;
+
     for (let i = start; i < end; i++) {
       out[at] = 1;
       out[at + 1] = 0;
@@ -1348,14 +1418,17 @@ class Instances implements Kept {
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
+
     if (smooth !== undefined) {
       position = smooth.position.blend(start, end, position, entities);
       scale = smooth.scale.blend(start, end, scale, entities);
     }
+
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y, z } = position;
     const { x: sx, y: sy, z: sz } = scale;
+
     for (let i = start; i < end; i++) {
       out[at] = sx[i]!;
       out[at + 1] = 0;
@@ -1386,14 +1459,17 @@ class Instances implements Kept {
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
+
     if (smooth !== undefined) {
       position = smooth.position.blend(start, end, position, entities);
       rotation = smooth.rotation.blend(start, end, rotation, entities);
     }
+
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y, z } = position;
     const { x: qx, y: qy, z: qz, w: qw } = rotation;
+
     for (let i = start; i < end; i++) {
       const a = qx[i]!;
       const b = qy[i]!;
@@ -1437,16 +1513,19 @@ class Instances implements Kept {
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
+
     if (smooth !== undefined) {
       position = smooth.position.blend(start, end, position, entities);
       rotation = smooth.rotation.blend(start, end, rotation, entities);
       scale = smooth.scale.blend(start, end, scale, entities);
     }
+
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y, z } = position;
     const { x: qx, y: qy, z: qz, w: qw } = rotation;
     const { x: sx, y: sy, z: sz } = scale;
+
     for (let i = start; i < end; i++) {
       const a = qx[i]!;
       const b = qy[i]!;
@@ -1494,12 +1573,15 @@ class Instances implements Kept {
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
+
     if (smooth !== undefined) {
       position = smooth.flatPosition.blend(start, end, position, entities);
     }
+
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y } = position;
+
     for (let i = start; i < end; i++) {
       out[at] = 1;
       out[at + 1] = 0;
@@ -1530,14 +1612,17 @@ class Instances implements Kept {
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
+
     if (smooth !== undefined) {
       position = smooth.flatPosition.blend(start, end, position, entities);
       scale = smooth.flatScale.blend(start, end, scale, entities);
     }
+
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y } = position;
     const { x: sx, y: sy } = scale;
+
     for (let i = start; i < end; i++) {
       out[at] = sx[i]!;
       out[at + 1] = 0;
@@ -1568,14 +1653,17 @@ class Instances implements Kept {
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
+
     if (smooth !== undefined) {
       position = smooth.flatPosition.blend(start, end, position, entities);
       rotation = smooth.flatRotation.blend(start, end, rotation, entities);
     }
+
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y } = position;
     const { angle } = rotation;
+
     for (let i = start; i < end; i++) {
       const cos = Math.cos(angle[i]!);
       const sin = Math.sin(angle[i]!);
@@ -1609,16 +1697,19 @@ class Instances implements Kept {
     entities: EntityColumn
   ): void => {
     const { smooth } = this;
+
     if (smooth !== undefined) {
       position = smooth.flatPosition.blend(start, end, position, entities);
       rotation = smooth.flatRotation.blend(start, end, rotation, entities);
       scale = smooth.flatScale.blend(start, end, scale, entities);
     }
+
     let at = this.reserve(end - start);
     const out = this.array;
     const { x, y } = position;
     const { angle } = rotation;
     const { x: sx, y: sy } = scale;
+
     for (let i = start; i < end; i++) {
       const cos = Math.cos(angle[i]!);
       const sin = Math.sin(angle[i]!);
@@ -1648,6 +1739,7 @@ class Instances implements Kept {
   finish(): void {
     const { count, mesh, range } = this;
     mesh.count = count;
+
     if (count > 0) {
       const attribute = mesh.instanceMatrix;
       // Only what is drawn is sent. The one range is this object every
@@ -1657,6 +1749,7 @@ class Instances implements Kept {
       attribute.updateRanges.push(range);
       attribute.needsUpdate = true;
       const colors = mesh.instanceColor;
+
       if (colors !== null) {
         this.colorRange.count = count * 3;
         colors.updateRanges.length = 0;
@@ -1784,6 +1877,7 @@ export const instances: {
   const marked = required(options);
   const excluded = options.without ?? [];
   const { color } = options;
+
   if (
     color !== undefined &&
     (color.storage !== "table" ||
@@ -1793,11 +1887,14 @@ export const instances: {
       `Three.instances("${name}") was given "${color.name}" as its colour, which is not one: a colour is a component kept in a table with the fields r, g and b.`
     );
   }
+
   if (color !== undefined) {
     const kinds = [color.schema.r, color.schema.g, color.schema.b].map(
       (field) => field.kind
     );
+
     const numbers = ["f32", "f64", "u8", "u16", "u32", "i32"];
+
     if (
       !kinds.every((kind) => numbers.includes(kind)) ||
       new Set(kinds.map(isWhole)).size > 1
@@ -1807,6 +1904,7 @@ export const instances: {
       );
     }
   }
+
   // `any`: the terms of a query are a tuple in its type, and a kind with a
   // colour has one more than one without, after the ones its loop reads.
   const kind = (
@@ -1818,42 +1916,51 @@ export const instances: {
       Query.without(...excluded, ...absent),
       Query.reads()
     );
+
   // An entity's table has a rotation or it does not, and a scale or not:
   // four queries, each handed exactly the columns its entities have.
   const Placed = kind(
     [Transform3d.Position],
     [Transform3d.Rotation, Transform3d.Scale]
   );
+
   const Sized = kind(
     [Transform3d.Position, Transform3d.Scale],
     [Transform3d.Rotation]
   );
+
   const Turned = kind(
     [Transform3d.Position, Transform3d.Rotation],
     [Transform3d.Scale]
   );
+
   const Whole = kind(
     [Transform3d.Position, Transform3d.Rotation, Transform3d.Scale],
     []
   );
+
   // And the same four for a flat game's components, but for the entities
   // that are placed in three dimensions as well, which are drawn above.
   const PlacedFlat = kind(
     [Transform2d.Position],
     [Transform3d.Position, Transform2d.Rotation, Transform2d.Scale]
   );
+
   const SizedFlat = kind(
     [Transform2d.Position, Transform2d.Scale],
     [Transform3d.Position, Transform2d.Rotation]
   );
+
   const TurnedFlat = kind(
     [Transform2d.Position, Transform2d.Rotation],
     [Transform3d.Position, Transform2d.Scale]
   );
+
   const WholeFlat = kind(
     [Transform2d.Position, Transform2d.Rotation, Transform2d.Scale],
     [Transform3d.Position]
   );
+
   return System.make(name, function* () {
     const kept = yield* Scene;
     const placed = yield* Placed;
@@ -1869,14 +1976,17 @@ export const instances: {
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
     let drawn: Instances | undefined;
+
     if (from === undefined) {
       drawn = kept._kept.get(name) as Instances | undefined;
+
       if (drawn === undefined) {
         drawn = new Instances(kept.scene, name, options as InstancesOptions);
         kept._kept.set(name, drawn);
       }
     } else {
       let sourced = kept._kept.get(name) as FromAssets<Sourced> | undefined;
+
       if (sourced === undefined) {
         // The room the instances came to need is kept from one loading of
         // the bundle to the next.
@@ -1887,12 +1997,14 @@ export const instances: {
           from.from,
           (assets): Sourced => {
             const look = from.look(assets);
+
             const made = new Instances(scene, name, {
               ...from,
               geometry: look.geometry,
               material: look.material,
               capacity: room,
             });
+
             return {
               instances: made,
               dispose: () => {
@@ -1905,12 +2017,15 @@ export const instances: {
         );
         kept._kept.set(name, sourced);
       }
+
       drawn = sourced.now()?.instances;
+
       // Its assets are not there: nothing of it is in the scene.
       if (drawn === undefined) {
         return;
       }
     }
+
     // Plain loops from here on: one pass over the columns of each kind.
     drawn.begin(tick, frame?.alpha ?? 0, frame?.count ?? 0);
     const { loops } = drawn;
@@ -2014,18 +2129,22 @@ class Objects<O extends Object3D> implements Kept {
 
   private grow(size: number): void {
     let length = Math.max(64, this.seen.length);
+
     while (length < size) {
       length *= 2;
     }
+
     // An id is wider than a frame's number: an array of 64-bit floats.
     const owner = new Float64Array(length);
     owner.set(this.owner);
     this.owner = owner;
+
     for (const name of ["seen", "turnedAt", "sizedAt"] as const) {
       const bigger = new Uint32Array(length);
       bigger.set(this[name]);
       this[name] = bigger;
     }
+
     const flat = new Uint8Array(length);
     flat.set(this.flat);
     this.flat = flat;
@@ -2045,12 +2164,14 @@ class Objects<O extends Object3D> implements Kept {
     } else {
       this.release(index);
     }
+
     const object = this.options.make(entity, this.assets);
     this.objects[index] = object;
     this.owner[index] = entity;
     this.turnedAt[index] = 0;
     this.sizedAt[index] = 0;
     this.scene.add(object);
+
     return object;
   }
 
@@ -2068,18 +2189,24 @@ class Objects<O extends Object3D> implements Kept {
     if (this.smooth !== undefined) {
       position = this.smooth.position.blend(start, end, position, entities);
     }
+
     const { x, y, z } = position;
     const { objects, stamp } = this;
+
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+
       if (index >= this.seen.length) {
         this.grow(index + 1);
       }
+
       let object = objects[index];
+
       if (object === undefined || this.owner[index] !== entity) {
         object = this.adopt(index, entity);
       }
+
       object.position.set(x[i]!, y[i]!, z[i]!);
       this.seen[index] = stamp;
       this.flat[index] = 0;
@@ -2099,18 +2226,24 @@ class Objects<O extends Object3D> implements Kept {
     if (this.smooth !== undefined) {
       position = this.smooth.flatPosition.blend(start, end, position, entities);
     }
+
     const { x, y } = position;
     const { objects, stamp } = this;
+
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+
       if (index >= this.seen.length) {
         this.grow(index + 1);
       }
+
       let object = objects[index];
+
       if (object === undefined || this.owner[index] !== entity) {
         object = this.adopt(index, entity);
       }
+
       object.position.x = x[i]!;
       object.position.y = y[i]!;
       this.seen[index] = stamp;
@@ -2127,8 +2260,10 @@ class Objects<O extends Object3D> implements Kept {
     if (this.smooth !== undefined) {
       rotation = this.smooth.flatRotation.blend(start, end, rotation, entities);
     }
+
     const { angle } = rotation;
     const { objects, stamp, turnedAt } = this;
+
     for (let i = start; i < end; i++) {
       const index = entityIndex(entities[i]!);
       objects[index]!.rotation.z = angle[i]!;
@@ -2145,8 +2280,10 @@ class Objects<O extends Object3D> implements Kept {
     if (this.smooth !== undefined) {
       scale = this.smooth.flatScale.blend(start, end, scale, entities);
     }
+
     const { x, y } = scale;
     const { objects, sizedAt, stamp } = this;
+
     for (let i = start; i < end; i++) {
       const index = entityIndex(entities[i]!);
       const size = objects[index]!.scale;
@@ -2165,8 +2302,10 @@ class Objects<O extends Object3D> implements Kept {
     if (this.smooth !== undefined) {
       rotation = this.smooth.rotation.blend(start, end, rotation, entities);
     }
+
     const { x, y, z, w } = rotation;
     const { objects, stamp, turnedAt } = this;
+
     for (let i = start; i < end; i++) {
       const index = entityIndex(entities[i]!);
       // An Object3D's quaternion has to be of length 1, which the game's
@@ -2177,12 +2316,14 @@ class Objects<O extends Object3D> implements Kept {
       const c = z[i]!;
       const d = w[i]!;
       const n = a * a + b * b + c * c + d * d;
+
       if (n > 0) {
         const s = 1 / Math.sqrt(n);
         objects[index]!.quaternion.set(a * s, b * s, c * s, d * s);
       } else {
         objects[index]!.quaternion.identity();
       }
+
       turnedAt[index] = stamp;
     }
   };
@@ -2196,8 +2337,10 @@ class Objects<O extends Object3D> implements Kept {
     if (this.smooth !== undefined) {
       scale = this.smooth.scale.blend(start, end, scale, entities);
     }
+
     const { x, y, z } = scale;
     const { objects, sizedAt, stamp } = this;
+
     for (let i = start; i < end; i++) {
       const index = entityIndex(entities[i]!);
       objects[index]!.scale.set(x[i]!, y[i]!, z[i]!);
@@ -2208,14 +2351,17 @@ class Objects<O extends Object3D> implements Kept {
   /** Releases the objects whose entities weren't found this frame. */
   finish(): void {
     const { flat, live, objects, seen, sizedAt, stamp, turnedAt } = this;
+
     for (let k = live.length - 1; k >= 0; k--) {
       const index = live[k]!;
+
       if (seen[index] !== stamp) {
         this.release(index);
         live[k] = live.at(-1)!;
         live.pop();
         continue;
       }
+
       // An entity that is no longer turned, or sized, is drawn as one that
       // never was.
       if (turnedAt[index] !== stamp && turnedAt[index] !== 0) {
@@ -2224,16 +2370,20 @@ class Objects<O extends Object3D> implements Kept {
         } else {
           objects[index]!.quaternion.identity();
         }
+
         turnedAt[index] = 0;
       }
+
       if (sizedAt[index] !== stamp && sizedAt[index] !== 0) {
         const size = objects[index]!.scale;
+
         if (flat[index] === 1) {
           size.x = 1;
           size.y = 1;
         } else {
           size.set(1, 1, 1);
         }
+
         sizedAt[index] = 0;
       }
     }
@@ -2243,6 +2393,7 @@ class Objects<O extends Object3D> implements Kept {
     for (const index of this.live) {
       this.release(index);
     }
+
     this.live.length = 0;
   }
 }
@@ -2317,38 +2468,46 @@ export const objects: {
   const smooth = options.smooth === true;
   const marked = required(options);
   const excluded = options.without ?? [];
+
   const Placed = Query.all(Transform3d.Position).pipe(
     Query.with(...marked),
     Query.without(...excluded),
     Query.reads()
   );
+
   const Turned = Query.all(Transform3d.Rotation).pipe(
     Query.with(Transform3d.Position, ...marked),
     Query.without(...excluded),
     Query.reads()
   );
+
   const Sized = Query.all(Transform3d.Scale).pipe(
     Query.with(Transform3d.Position, ...marked),
     Query.without(...excluded),
     Query.reads()
   );
+
   // A flat game's, but for the entities placed in three dimensions too.
   const flat = [...excluded, Transform3d.Position];
+
   const PlacedFlat = Query.all(Transform2d.Position).pipe(
     Query.with(...marked),
     Query.without(...flat),
     Query.reads()
   );
+
   const TurnedFlat = Query.all(Transform2d.Rotation).pipe(
     Query.with(Transform2d.Position, ...marked),
     Query.without(...flat),
     Query.reads()
   );
+
   const SizedFlat = Query.all(Transform2d.Scale).pipe(
     Query.with(Transform2d.Position, ...marked),
     Query.without(...flat),
     Query.reads()
   );
+
   return System.make(name, function* () {
     const kept = yield* Scene;
     const placed = yield* Placed;
@@ -2360,14 +2519,17 @@ export const objects: {
     const tick = smooth ? (yield* Time).tick : 0;
     const frame = smooth ? yield* Frame : undefined;
     let held: Objects<O> | undefined;
+
     if (from === undefined) {
       held = kept._kept.get(name) as Objects<O> | undefined;
+
       if (held === undefined) {
         held = new Objects(kept.scene, options, undefined);
         kept._kept.set(name, held);
       }
     } else {
       let sourced = kept._kept.get(name) as FromAssets<Objects<O>> | undefined;
+
       if (sourced === undefined) {
         const { scene } = kept;
         sourced = new FromAssets(
@@ -2377,12 +2539,15 @@ export const objects: {
         );
         kept._kept.set(name, sourced);
       }
+
       held = sourced.now();
+
       // Its assets are not there: there is nothing to make an object of.
       if (held === undefined) {
         return;
       }
     }
+
     // Every entity that is one of these is found by the first loop, which
     // makes the objects that are missing; whatever it did not find is let
     // go at the end.

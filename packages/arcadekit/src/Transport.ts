@@ -98,11 +98,13 @@ export const connect: (
 ) => Effect.Effect<Connected, never, Transport> = Effect.fnUntraced(
   function* (session) {
     const transport = yield* Transport;
+
     return {
       tick(delta) {
         for (const message of transport.receive()) {
           session.receive(message);
         }
+
         try {
           return session.tick(delta);
         } finally {
@@ -163,14 +165,17 @@ export interface TextTransport extends Shape {
 export const text = (wire: Wire): TextTransport => {
   let inbox: Lockstep.Message[] = [];
   let dropped = 0;
+
   const close = wire.listen((arrived) => {
     const message = Lockstep.decode(arrived);
+
     if (Exit.isSuccess(message)) {
       inbox.push(message.value);
     } else {
       dropped++;
     }
   });
+
   return {
     send(message) {
       wire.send(Lockstep.encode(message));
@@ -178,6 +183,7 @@ export const text = (wire: Wire): TextTransport => {
     receive() {
       const messages = inbox;
       inbox = [];
+
       return messages;
     },
     close,
@@ -209,6 +215,7 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
       Effect.acquireRelease(
         Effect.sync(() => {
           const channel = new BroadcastChannel(name);
+
           const over = text({
             send: (message) => channel.postMessage(message),
             listen(onText) {
@@ -217,11 +224,13 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
                 // is dropped as what is not a message.
                 onText(event.data as string);
               };
+
               return () => {
                 channel.onmessage = null;
               };
             },
           });
+
           return { channel, over, open: true };
         }),
         (held) =>
@@ -238,8 +247,10 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
               `The transport "${name}" was used after its scope had closed, and its channel with it. A layer that listens lasts as long as what it is provided to: provide it to the whole program, the one that makes the session and drives it, and not to Transport.connect alone.`
             );
           }
+
           return held.over;
         };
+
         return {
           send: (message) => use().send(message),
           receive: () => use().receive(),
@@ -299,21 +310,25 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
       Effect.acquireRelease(
         Effect.sync(() => {
           const socket = new WebSocket(url);
+
           const held: {
             readonly socket: WebSocket;
             over: TextTransport | undefined;
             open: boolean;
             closed: Closed | undefined;
           } = { socket, over: undefined, open: true, closed: undefined };
+
           // What was sent before the socket opened.
           let waiting: string[] | undefined = [];
           socket.onopen = () => {
             const kept = waiting ?? [];
             waiting = undefined;
+
             for (const sent of kept) {
               socket.send(sent);
             }
           };
+
           socket.onclose = (event: CloseEvent) => {
             held.closed ??= new Closed({
               url,
@@ -321,11 +336,13 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
               reason: event.reason,
             });
           };
+
           // A connection that could not be made, or was cut, may say so
           // here alone: not every platform follows it with a close.
           socket.onerror = () => {
             held.closed ??= new Closed({ url, code: 1006, reason: "" });
           };
+
           held.over = text({
             send(sent) {
               if (waiting === undefined) {
@@ -339,11 +356,13 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
                 // A frame that is not text is dropped as what is not a message.
                 onText(event.data as string);
               };
+
               return () => {
                 socket.onmessage = null;
               };
             },
           });
+
           return held;
         }),
         (held) =>
@@ -362,11 +381,14 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
               `The transport to ${url} was used after its scope had closed, and its socket with it. A layer that listens lasts as long as what it is provided to: provide it to the whole program, the one that makes the session and drives it, and not to Transport.connect alone.`
             );
           }
+
           if (held.closed !== undefined) {
             throw held.closed;
           }
+
           return held.over!;
         };
+
         return {
           send: (message) => use().send(message),
           receive: () => use().receive(),
@@ -429,6 +451,7 @@ export const makeHub = (options: HubOptions = {}): Hub => {
   const delay = options.delay ?? 0;
   const min = typeof delay === "number" ? delay : delay.min;
   const max = typeof delay === "number" ? delay : delay.max;
+
   if (
     !Number.isSafeInteger(min) ||
     !Number.isSafeInteger(max) ||
@@ -439,22 +462,28 @@ export const makeHub = (options: HubOptions = {}): Hub => {
       `A hub's delay is a whole number of steps, 0 or more, or a range of them, and this one is ${min} to ${max}.`
     );
   }
+
   let now = 0;
   let sent = 0;
+
   // Per peer, what is on its way to it.
   const flights = new Map<
     string,
     { readonly at: number; readonly order: number; readonly text: string }[]
   >();
+
   const ports = new Map<string, Shape>();
+
   const port = (peer: string): Shape => {
     let made = ports.get(peer);
+
     if (made === undefined) {
       const mine: { at: number; order: number; text: string }[] = [];
       flights.set(peer, mine);
       made = {
         send(message) {
           const encoded = Lockstep.encode(message);
+
           for (const [other, theirs] of flights) {
             if (other !== peer) {
               theirs.push({
@@ -469,26 +498,33 @@ export const makeHub = (options: HubOptions = {}): Hub => {
           const due = mine
             .filter((flight) => flight.at <= now)
             .toSorted((a, b) => a.at - b.at || a.order - b.order);
+
           if (due.length === 0) {
             return [];
           }
+
           const left = mine.filter((flight) => flight.at > now);
           mine.length = 0;
           mine.push(...left);
           const messages: Lockstep.Message[] = [];
+
           for (const flight of due) {
             const message = Lockstep.decode(flight.text);
+
             if (Exit.isSuccess(message)) {
               messages.push(message.value);
             }
           }
+
           return messages;
         },
       };
       ports.set(peer, made);
     }
+
     return made;
   };
+
   return {
     port,
     layer: (peer) => Layer.succeed(Transport, port(peer)),
@@ -497,9 +533,11 @@ export const makeHub = (options: HubOptions = {}): Hub => {
     },
     get inFlight() {
       let count = 0;
+
       for (const mine of flights.values()) {
         count += mine.length;
       }
+
       return count;
     },
   };

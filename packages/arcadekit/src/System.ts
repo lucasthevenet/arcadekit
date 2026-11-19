@@ -23,6 +23,7 @@ import type { EventDef } from "./Event";
  * @category Constants
  */
 export const stages = ["preUpdate", "update", "postUpdate"] as const;
+
 /**
  * The stages of a frame, in the order they run, mirroring the three of a tick:
  * `"preFrame"` for what a frame's systems depend on, such as which assets are
@@ -32,6 +33,7 @@ export const stages = ["preUpdate", "update", "postUpdate"] as const;
  * @category Constants
  */
 export const frameStages = ["preFrame", "frame", "postFrame"] as const;
+
 /**
  * A stage of the tick, or one of the stages that run between ticks and must not
  * change the world: `"input"`, which reads the devices and turns their input
@@ -355,6 +357,7 @@ export const runIf: {
     condition: Effect.Effect<boolean, E2, R2>
   ): System<E | E2, R | R2> => {
     const earlier = self.condition;
+
     return build<E | E2, R | R2>({
       ...self,
       implied: [...self.implied, ...(conditionReads.get(condition) ?? [])],
@@ -384,6 +387,7 @@ export const reading = <A, E, R>(
   reads: readonly Touched[]
 ): Effect.Effect<A, E, R> => {
   conditionReads.set(condition, reads);
+
   return condition;
 };
 
@@ -487,6 +491,7 @@ export const access: {
   <E, R>(self: System<E, R>, access: Access): System<E, R>;
 } = dual(2, <E, R>(self: System<E, R>, given: Access): System<E, R> => {
   const earlier = self.access;
+
   return build({
     ...self,
     access:
@@ -517,20 +522,26 @@ const STRENGTH: Readonly<Record<Touch, number>> = {
  */
 export const accessOf = (system: System<any, any>): Resolved | undefined => {
   const said = system.access;
+
   if (said === undefined) {
     return undefined;
   }
+
   const components = new Map<
     string,
     { readonly def: ComponentDef<any>; readonly touch: Touch }
   >();
+
   const events = new Map<string, Touch>();
+
   const component = (def: ComponentDef<any>, touch: Touch): void => {
     const known = components.get(def.name);
+
     if (known === undefined || STRENGTH[touch] > STRENGTH[known.touch]) {
       components.set(def.name, { def, touch });
     }
   };
+
   const touched = (thing: Touched, touch: Touch): void => {
     if ("initial" in thing) {
       // A singleton, or a state, which is one.
@@ -539,28 +550,35 @@ export const accessOf = (system: System<any, any>): Resolved | undefined => {
       component(thing, touch);
     } else {
       const known = events.get(thing.name);
+
       if (known === undefined || STRENGTH[touch] > STRENGTH[known]) {
         events.set(thing.name, touch);
       }
     }
   };
+
   const queries: QuerySpec<any>[] = [];
+
   for (const query of said.queries ?? []) {
     if (!("terms" in query)) {
       // Query.removed: it hears of whoever takes the component away.
       component(query.component, "watches");
       continue;
     }
+
     queries.push(query);
+
     for (const def of query.terms as readonly ComponentDef<any>[]) {
       component(
         def,
         query.readDefs?.includes(def) === true ? "reads" : "writes"
       );
     }
+
     for (const def of [...query.withDefs, ...query.withoutDefs]) {
       component(def, "reads");
     }
+
     for (const def of [
       ...(query.changedDefs ?? []),
       ...(query.addedDefs ?? []),
@@ -568,12 +586,15 @@ export const accessOf = (system: System<any, any>): Resolved | undefined => {
       component(def, "watches");
     }
   }
+
   for (const thing of [...(said.reads ?? []), ...system.implied]) {
     touched(thing, "reads");
   }
+
   for (const thing of said.writes ?? []) {
     touched(thing, "writes");
   }
+
   return {
     components,
     events,
@@ -603,10 +624,12 @@ export const withSpan = <E, R>(self: System<E, R>): System<E, R> =>
  */
 export const unique = (systems: readonly System<any, any>[]): void => {
   const names = new Set<string>();
+
   for (const system of systems) {
     if (names.has(system.name)) {
       throw new Error(`Duplicate system name "${system.name}"`);
     }
+
     names.add(system.name);
   }
 };
@@ -622,80 +645,100 @@ export const order = (
   unique(systems);
   const out: System<any, any>[] = [];
   const stageOf = new Map(systems.map((s) => [s.name, s.stage]));
+
   for (const stage of everyStage) {
     const inStage = systems.filter((s) => s.stage === stage);
     const stageNames = new Set(inStage.map((s) => s.name));
     // "A before B" is the same constraint as "B after A", so fold both into
     // one map of what must already have run.
     const mustFollow = new Map<string, string[]>();
+
     for (const system of inStage) {
       mustFollow.set(system.name, []);
     }
+
     for (const system of inStage) {
       for (const dep of system.after) {
         if (!stageNames.has(dep)) {
           const other = stageOf.get(dep);
+
           if (other === undefined) {
             throw new Error(
               `System "${system.name}" must run after "${dep}", which is not in the "${stage}" stage`
             );
           }
+
           // A stage that runs earlier has run: there is nothing to order.
           if (everyStage.indexOf(other) < everyStage.indexOf(stage)) {
             continue;
           }
+
           throw new Error(
             `System "${system.name}" must run after "${dep}", which is in the "${other}" stage: that stage runs after every system of the "${stage}" stage, this one among them`
           );
         }
+
         mustFollow.get(system.name)!.push(dep);
       }
+
       for (const later of system.before) {
         if (!stageNames.has(later)) {
           const other = stageOf.get(later);
+
           if (other === undefined) {
             throw new Error(
               `System "${system.name}" must run before "${later}", which is not in the "${stage}" stage`
             );
           }
+
           // A stage that runs later has yet to run: there is nothing to order.
           if (everyStage.indexOf(other) > everyStage.indexOf(stage)) {
             continue;
           }
+
           throw new Error(
             `System "${system.name}" must run before "${later}", which is in the "${other}" stage: that stage runs before every system of the "${stage}" stage, this one among them`
           );
         }
+
         mustFollow.get(later)!.push(system.name);
       }
     }
+
     // Each system keeps its registered position unless something has to run
     // first, in which case those systems are pulled forward to just before it.
     const byName = new Map(inStage.map((system) => [system.name, system]));
     const done = new Set<string>();
     const visiting: string[] = [];
+
     const place = (system: System<any, any>): void => {
       if (done.has(system.name)) {
         return;
       }
+
       if (visiting.includes(system.name)) {
         const cycle = visiting.slice(visiting.indexOf(system.name));
         throw new Error(
           `Circular ordering constraints among: ${cycle.join(", ")}`
         );
       }
+
       visiting.push(system.name);
+
       for (const dep of mustFollow.get(system.name)!) {
         place(byName.get(dep)!);
       }
+
       visiting.pop();
       done.add(system.name);
       out.push(system);
     };
+
     for (const system of inStage) {
       place(system);
     }
   }
+
   return out;
 };
 
@@ -738,6 +781,7 @@ export interface Report {
 /** Returns what two systems both touch, with at least one writing it. */
 const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
   const over: Conflict["over"][number][] = [];
+
   const clash = (
     what: string,
     kind: Conflict["over"][number]["kind"],
@@ -752,12 +796,15 @@ const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
       over.push({ what, kind, first: a, second: b });
     }
   };
+
   for (const [name, { touch }] of first.components) {
     clash(name, "component", touch, second.components.get(name)?.touch);
   }
+
   for (const [name, touch] of first.events) {
     clash(name, "event", touch, second.events.get(name));
   }
+
   // What comes of either depends on which went first: the numbers drawn,
   // the order the actions are applied in and the scripts started.
   for (const [what, a, b] of [
@@ -769,7 +816,9 @@ const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
       over.push({ what, kind: "service", first: "writes", second: "writes" });
     }
   }
+
   const kinds = ["component", "event", "service"];
+
   return over.toSorted(
     (a, b) =>
       kinds.indexOf(a.kind) - kinds.indexOf(b.kind) ||
@@ -818,53 +867,67 @@ const overlap = (first: Resolved, second: Resolved): Conflict["over"] => {
 export const conflicts = (systems: readonly System<any, any>[]): Report => {
   const found: Conflict[] = [];
   const undeclared: string[] = [];
+
   const check = (group: readonly System<any, any>[]): void => {
     const ordered = order(group);
+
     const stageOf = new Map(
       ordered.map((system) => [system.name, system.stage])
     );
+
     // Who has to have run before whom, as it was said.
     const follows = new Map<string, string[]>(
       ordered.map((system) => [system.name, []])
     );
+
     for (const system of ordered) {
       for (const earlier of system.after) {
         if (stageOf.get(earlier) === system.stage) {
           follows.get(system.name)!.push(earlier);
         }
       }
+
       for (const later of system.before) {
         if (stageOf.get(later) === system.stage) {
           follows.get(later)!.push(system.name);
         }
       }
     }
+
     /** Returns whether `first` was specified to run before `second`, directly or transitively. */
     const said = (first: string, second: string): boolean => {
       const seen = new Set<string>();
       const pending = [second];
+
       while (pending.length > 0) {
         for (const earlier of follows.get(pending.pop()!)!) {
           if (earlier === first) {
             return true;
           }
+
           if (!seen.has(earlier)) {
             seen.add(earlier);
             pending.push(earlier);
           }
         }
       }
+
       return false;
     };
+
     const resolved = ordered.map((system) => accessOf(system));
+
     for (let i = 0; i < ordered.length; i++) {
       const first = resolved[i];
+
       if (first === undefined) {
         undeclared.push(ordered[i]!.name);
         continue;
       }
+
       for (let j = i + 1; j < ordered.length; j++) {
         const second = resolved[j];
+
         // Stages run one after the other: that order is said.
         if (
           second === undefined ||
@@ -873,7 +936,9 @@ export const conflicts = (systems: readonly System<any, any>[]): Report => {
         ) {
           continue;
         }
+
         const over = overlap(first, second);
+
         if (over.length > 0) {
           found.push({
             first: ordered[i]!.name,
@@ -884,9 +949,11 @@ export const conflicts = (systems: readonly System<any, any>[]): Report => {
       }
     }
   };
+
   // Hooks run when their state is entered or left, each moment's among
   // themselves; the rest of the tick's systems, stage by stage.
   const hooks = new Map<string, System<any, any>[]>();
+
   for (const system of systems) {
     if (system.trigger !== undefined) {
       const { on, state, value } = system.trigger;
@@ -894,9 +961,11 @@ export const conflicts = (systems: readonly System<any, any>[]): Report => {
       hooks.set(key, [...(hooks.get(key) ?? []), system]);
     }
   }
+
   for (const group of hooks.values()) {
     check(group);
   }
+
   check(
     systems.filter(
       (system) =>
@@ -904,5 +973,6 @@ export const conflicts = (systems: readonly System<any, any>[]): Report => {
         (stages as readonly string[]).includes(system.stage)
     )
   );
+
   return { conflicts: found, undeclared };
 };

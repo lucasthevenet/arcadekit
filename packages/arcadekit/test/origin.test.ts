@@ -49,14 +49,17 @@ describe("who issued an action", () => {
     // And for one the simulation issues, a bot's: no peer stands behind it.
     const told: (string | undefined)[] = [];
     const Poke = Action.define<{ readonly n: number }>()("or/Poke");
+
     const poke = Action.handler(Poke, function* (_, origin) {
       yield* Effect.sync(() => told.push(origin.from));
     });
+
     const Bot = System.make("or/Bot", function* () {
       if ((yield* Time).tick === 1) {
         (yield* Action.Actions).enqueue(Poke, { n: 1 });
       }
     });
+
     withApp(App.make({ systems: [Bot], handlers: [poke] }), (app) => {
       app.tick(DELTA);
       app.tick(DELTA);
@@ -70,8 +73,10 @@ describe("who issued an action", () => {
       app.enqueueByName("ls/Tip", { amount: 5 }, "grace");
       app.enqueueByName("ls/Tip", { amount: 9 }, "mallory");
       app.tick(DELTA);
+
       return { log: [...app.actionLog], hash: app.world.hash() };
     });
+
     expect(moves(recorded.log)).toEqual([
       { tick: 0, name: "ls/Tip", payload: { amount: 2 }, from: "ada" },
       {
@@ -102,14 +107,18 @@ describe("who issued an action", () => {
       expect(app.world.hash()).toBe(recorded.hash);
       expect(purseOf(app)).toEqual({ ada: 2, grace: 5 });
     });
+
     // A log that had lost who issued each is another game, and says so.
     const anonymous = recorded.log.map((entry) => {
       if (Action.isCheckpoint(entry)) {
         return entry;
       }
+
       const { from: _, ...rest } = entry;
+
       return rest;
     });
+
     withApp(game(), (app) => {
       expect(() =>
         App.replay(app, anonymous, { delta: DELTA, ticks: 1 })
@@ -130,9 +139,11 @@ describe("who issued an action", () => {
       app.tick(DELTA);
       app.enqueueByName("ls/Tip", { amount: 6 }, "grace");
       const save = app.save();
+
       if (Exit.isFailure(save)) {
         throw new Error("the game could not be saved");
       }
+
       expect(save.value.queued).toEqual([
         { name: "ls/Tip", payload: { amount: 6 }, from: "grace" },
       ]);
@@ -144,12 +155,16 @@ describe("who issued an action", () => {
       expect(purseOf(app)).toEqual({ ada: 0, grace: 0 });
       app.tick(DELTA);
       expect(purseOf(app)).toEqual({ ada: 0, grace: 6 });
+
       return Save.encode(save.value);
     });
+
     const read = Save.decode(saved);
+
     if (Exit.isFailure(read)) {
       throw new Error("the save could not be read");
     }
+
     Effect.runSync(
       Effect.scoped(
         Effect.gen(function* () {
@@ -164,15 +179,19 @@ describe("who issued an action", () => {
 
   it("is told with a refusal", () => {
     const heard: (string | undefined)[] = [];
+
     const Hear = System.make("or/Hear", function* () {
       for (const refusal of (yield* Action.Rejected).read()) {
         heard.push(refusal.from);
       }
     });
+
     const Never = Action.define<{ readonly n: number }>()("or/Never");
+
     const never = Action.handler(Never, function* () {
       return yield* Effect.fail(new Stranger({ from: undefined }));
     });
+
     withApp(App.make({ systems: [Hear], handlers: [never] }), (app) => {
       app.enqueueByName("or/Never", { n: 1 }, "ada");
       app.enqueue(Never, { n: 2 });
@@ -196,10 +215,13 @@ describe("who issued an action, in a session", () => {
           ada.app.enqueue(Tip, { amount: 2 });
           grace.app.enqueue(Tip, { amount: 5 });
           grace.app.enqueue(Tip, { amount: 1 });
+
           for (let i = 0; i < 30; i++) {
             round(peers, net);
           }
+
           catchUp(peers, net);
+
           for (const peer of peers) {
             expect(purseOf(peer.app)).toEqual({ ada: 2, grace: 6 });
             expect(
@@ -213,6 +235,7 @@ describe("who issued an action, in a session", () => {
               ["grace", 1],
             ]);
           }
+
           expect(ada.app.world.hash()).toBe(grace.app.world.hash());
         }
       );
@@ -224,9 +247,11 @@ describe("who issued an action, in a session", () => {
       const net = network(1, { min: 0, max: 0 });
       const [ada, grace] = peers as [Peer, Peer];
       grace.source.tap("Space");
+
       for (let i = 0; i < 6; i++) {
         round(peers, net);
       }
+
       catchUp(peers, net);
       expect(moves(ada.app.actionLog)).toEqual([
         {

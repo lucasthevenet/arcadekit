@@ -25,12 +25,15 @@ export const noPageRule = defineRule({
   },
   create: (context) => {
     const source = sourceOf(context.filename);
+
     if (source === undefined || source.rules.ofFile(source.file).page) {
       return {};
     }
+
     const { file } = source;
     // Where one was found: `{ navigator }` is a key and a variable at once.
     const found = new Set<number>();
+
     return {
       // Every name in the file: a variable, a property, a key, a type.
       Identifier: (node) => {

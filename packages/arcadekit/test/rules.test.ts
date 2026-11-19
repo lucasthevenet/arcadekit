@@ -19,6 +19,7 @@ import type { Entity } from "../src/index";
 const Health = Component.define("ru/Health", { hp: Field.i32 });
 const Energy = Component.define("ru/Energy", { points: Field.i32 });
 const Owner = Component.define("ru/Owner", { player: Field.u8 });
+
 const Turn = Component.define("ru/Turn", {
   player: Field.u8,
   number: Field.i32,
@@ -28,6 +29,7 @@ const Damaged = Event.define<{
   readonly target: Entity;
   readonly amount: number;
 }>("ru/Damaged");
+
 const Died = Event.define<{ readonly entity: Entity }>("ru/Died");
 const Ping = Event.define<number>("ru/Ping");
 
@@ -43,29 +45,35 @@ const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
 
 describe("events", () => {
   it("reach every system exactly once, whichever side of the emitter it runs on", () => {
-    const seen: Record<string, Array<number>[]> = { Before: [], After: [] };
+    const seen: Record<string, number[][]> = { Before: [], After: [] };
+
     const reader = (name: string) =>
       System.make(name, function* () {
         const ping = yield* Ping;
         seen[name]!.push([...ping.read()]);
       });
+
     const Emitter = System.make("Emitter", function* () {
       const ping = yield* Ping;
       const { tick } = yield* Time;
+
       if (tick <= 2) {
         ping.emit(tick * 10);
         ping.emit(tick * 10 + 1);
       }
     });
+
     const systems = [
       reader("Before"),
       Emitter.pipe(System.after("Before")),
       reader("After").pipe(System.after(Emitter)),
     ];
+
     withApp(App.make({ systems }), (app) => {
       for (let i = 0; i < 4; i++) {
         app.tick(1);
       }
+
       // The later system sees events the tick they are emitted...
       expect(seen.After).toEqual([[10, 11], [20, 21], [], []]);
       // ...the earlier one sees the same events, once, a tick later.
@@ -84,13 +92,17 @@ describe("events", () => {
         damaged.emit({ target: entity, amount: 3 });
       });
     });
+
     const log: string[] = [];
+
     const Report = System.make("Report", function* () {
       const damaged = yield* Damaged;
+
       for (const event of damaged.read()) {
         log.push(`${event.target}:${event.amount}`);
       }
     }).pipe(System.after(Hit));
+
     withApp(App.make({ systems: [Hit, Report] }), (app) => {
       const a = app.world.spawn(Health.of({ hp: 10 }));
       const b = app.world.spawn(Health.of({ hp: 10 }));
@@ -100,13 +112,16 @@ describe("events", () => {
   });
 
   it("are dropped a tick after they were emitted, read or not", () => {
-    const seen: Array<number>[] = [];
+    const seen: number[][] = [];
+
     const Sometimes = System.make("Sometimes", function* () {
       const { tick } = yield* Time;
+
       if (tick === 1 || tick === 4) {
         seen.push([...(yield* Ping).read()]);
       }
     });
+
     withApp(App.make({ systems: [Sometimes] }), (app) => {
       app.tick(1); // creates the reader
       app.events.emit(Ping, 1);
@@ -122,12 +137,15 @@ describe("events", () => {
 
   it("wake scripts that wait for them, in the tick they are emitted", () => {
     const log: string[] = [];
+
     const Emitter = System.make("Emitter", function* () {
       const { tick } = yield* Time;
+
       if (tick === 2) {
         (yield* Ping).emit(7);
       }
     });
+
     withApp(App.make({ systems: [Emitter] }), (app) => {
       app.spawnScript(
         Effect.gen(function* () {
@@ -140,6 +158,7 @@ describe("events", () => {
           died.emit({ entity: 99 as Entity });
         })
       );
+
       // A second script woken by the first one's event, still in the same tick.
       const second = app.spawnScript(
         Effect.gen(function* () {
@@ -148,9 +167,11 @@ describe("events", () => {
           log.push(
             `second got ${batch[0]!.entity} at tick ${(yield* Time).tick}`
           );
+
           return "done";
         })
       );
+
       app.tick(1);
       expect(log).toEqual([]);
       app.tick(1);
@@ -166,9 +187,11 @@ describe("events", () => {
           const ping = yield* Ping;
           ping.emit(1);
           ping.emit(2);
+
           return yield* ping.wait;
         })
       );
+
       expect(fiber.pollUnsafe()).toEqual(Exit.succeed([1, 2]));
     });
   });
@@ -179,24 +202,30 @@ describe("events", () => {
 class NotYourTurn extends Data.TaggedError("NotYourTurn")<{
   readonly player: number;
 }> {}
+
 class NotEnoughEnergy extends Data.TaggedError("NotEnoughEnergy")<{
   readonly have: number;
   readonly need: number;
 }> {}
+
 class NoSuchTarget extends Data.TaggedError("NoSuchTarget")<{}> {}
 
 const Attack = Action.define<{
   readonly attacker: Entity;
   readonly target: Entity;
 }>()("Attack");
+
 const EndTurn = Action.define<{ readonly player: number }>()("EndTurn");
+
 const Summon = Action.define<{
   readonly player: number;
   readonly hp: number;
 }>()("Summon");
+
 const Unhandled = Action.define<{}>()("Unhandled");
 
 const TurnQuery = Query.all(Turn);
+
 const currentTurn = Effect.gen(function* () {
   const turns = yield* TurnQuery;
   let player = 0;
@@ -205,38 +234,48 @@ const currentTurn = Effect.gen(function* () {
     player = turn.player;
     number = turn.number;
   });
+
   return { player, number };
 });
 
 const attack = Action.handler(Attack, function* ({ attacker, target }) {
   const world =
     (yield* Query.all(Health)).spec && (yield* Effect.service(App_World));
+
   const turn = yield* currentTurn;
   const owner = world.get(attacker, Owner);
+
   if (owner === undefined || owner.player !== turn.player) {
     return yield* Effect.fail(new NotYourTurn({ player: turn.player }));
   }
+
   const energy = world.get(attacker, Energy)!.points;
+
   if (energy < 2) {
     return yield* Effect.fail(new NotEnoughEnergy({ have: energy, need: 2 }));
   }
+
   if (!world.has(target, Health)) {
     return yield* Effect.fail(new NoSuchTarget());
   }
+
   // Validation is done; from here on the action will succeed.
   world.set(attacker, Energy, { points: energy - 2 });
   const hp = world.get(target, Health)!.hp - 4;
   world.set(target, Health, { hp });
   (yield* Damaged).emit({ target, amount: 4 });
+
   return hp;
 });
 
 const endTurn = Action.handler(EndTurn, function* ({ player }) {
   const turns = yield* TurnQuery;
   const turn = yield* currentTurn;
+
   if (player !== turn.player) {
     return yield* Effect.fail(new NotYourTurn({ player: turn.player }));
   }
+
   turns.each((t) => {
     t.player = t.player === 1 ? 2 : 1;
     t.number += 1;
@@ -247,15 +286,19 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
 const summon = Action.handler(Summon, function* ({ hp, player }) {
   const commands = yield* Commands;
   const died = yield* Died;
+
   const entity = commands.spawn(
     Health.of({ hp }),
     Owner.of({ player }),
     Energy.of({ points: 0 })
   );
+
   died.emit({ entity });
+
   if (hp <= 0) {
     return yield* Effect.fail(new NoSuchTarget());
   }
+
   return entity;
 });
 
@@ -267,8 +310,10 @@ const Death = System.make("Death", function* () {
   const died = yield* Died;
   const commands = yield* Commands;
   const world = yield* App_World;
+
   for (const { target } of damaged.read()) {
     const health = world.get(target, Health);
+
     if (health !== undefined && health.hp <= 0) {
       commands.despawn(target);
       died.emit({ entity: target });
@@ -291,16 +336,19 @@ const duel = () =>
     }),
     (app) => {
       app.world.spawn(Turn.of({ player: 1, number: 1 }));
+
       const one = app.world.spawn(
         Health.of({ hp: 10 }),
         Energy.of({ points: 3 }),
         Owner.of({ player: 1 })
       );
+
       const two = app.world.spawn(
         Health.of({ hp: 6 }),
         Energy.of({ points: 3 }),
         Owner.of({ player: 2 })
       );
+
       return { app, one, two };
     }
   );
@@ -309,6 +357,7 @@ const snapshot = (app: App.Any): string[] => {
   const out: string[] = [
     `tick=${app.time.tick} entities=${app.world.entityCount}`,
   ];
+
   app.world.view(Query.all(Health)).each((health, entity) => {
     const energy = app.world.get(entity, Energy);
     out.push(`${entity}: hp=${health.hp} energy=${energy?.points}`);
@@ -316,6 +365,7 @@ const snapshot = (app: App.Any): string[] => {
   app.world
     .view(TurnQuery)
     .each((turn) => void out.push(`turn ${turn.number} player ${turn.player}`));
+
   return out;
 };
 
@@ -335,10 +385,13 @@ describe("actions", () => {
         number,
         NotYourTurn | NotEnoughEnergy | NoSuchTarget
       > = exit;
+
       void typed;
+
       const ended: Exit.Exit<void, NotYourTurn> = app.dispatch(EndTurn, {
         player: 1,
       });
+
       expect(Exit.isSuccess(ended)).toBe(true);
     });
   });
@@ -373,6 +426,7 @@ describe("actions", () => {
       expect(Exit.isSuccess(accepted)).toBe(true);
       expect(app.world.entityCount).toBe(entities + 1);
       expect(app.events.pending(Died)).toBe(1);
+
       // The id the refused summon had reserved was released and is reused.
       if (Exit.isSuccess(accepted)) {
         expect(app.world.get(accepted.value, Health)).toEqual({ hp: 5 });
@@ -386,8 +440,11 @@ describe("actions", () => {
       app.spawnScript(
         Effect.gen(function* () {
           const died = yield* Died;
+
           while (true) {
-            for (const event of yield* died.wait) deaths.push(event.entity);
+            for (const event of yield* died.wait) {
+              deaths.push(event.entity);
+            }
           }
         })
       );
@@ -405,6 +462,7 @@ describe("actions", () => {
 
   it("can be queued for the next tick, where a refusal becomes an event", () => {
     const rejected: string[] = [];
+
     const Watch = System.make("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
         rejected.push(
@@ -412,23 +470,28 @@ describe("actions", () => {
         );
       }
     });
+
     const make = Effect.map(
       App.make({ systems: [Watch], handlers: [attack, endTurn] }),
       (app) => {
         app.world.spawn(Turn.of({ player: 1, number: 1 }));
+
         const one = app.world.spawn(
           Health.of({ hp: 10 }),
           Energy.of({ points: 3 }),
           Owner.of({ player: 1 })
         );
+
         const two = app.world.spawn(
           Health.of({ hp: 6 }),
           Energy.of({ points: 3 }),
           Owner.of({ player: 2 })
         );
+
         return { app, one, two };
       }
     );
+
     withApp(make, ({ app, one, two }) => {
       app.enqueue(Attack, { attacker: one, target: two });
       app.enqueue(Attack, { attacker: two, target: one });
@@ -461,17 +524,21 @@ describe("actions", () => {
     const Bot = System.make("Bot", function* () {
       const actions = yield* Action.Actions;
       const turn = yield* currentTurn;
+
       if (turn.player === 2) {
         actions.enqueue(EndTurn, { player: 2 });
       }
     });
+
     const make = Effect.map(
       App.make({ systems: [Bot], handlers: [endTurn] }),
       (app) => {
         app.world.spawn(Turn.of({ player: 1, number: 1 }));
+
         return app;
       }
     );
+
     withApp(make, (app) => {
       app.dispatch(EndTurn, { player: 1 });
       app.tick(1); // the bot sees it is its turn and queues EndTurn
@@ -502,6 +569,7 @@ describe("actions", () => {
     const waits = Action.handler(EndTurn, function* () {
       yield* (yield* Script).nextTick;
     });
+
     withApp(App.make({ systems: [], handlers: [waits] }), (app) => {
       expect(() => app.dispatch(EndTurn, { player: 1 })).toThrow(
         /did not finish synchronously/
@@ -516,14 +584,17 @@ describe("actions", () => {
     class Rng extends Context.Service<Rng, { readonly next: () => number }>()(
       "ru/Rng"
     ) {}
+
     const roll = Action.handler(Unhandled, function* () {
       return (yield* Rng).next();
     });
+
     const unprovided = withApp(
       // @ts-expect-error the handler needs Rng and nothing provides it
       App.make({ systems: [], handlers: [roll] }),
       (app) => app.dispatch(Unhandled, {})
     );
+
     // Forced past the compiler, it surfaces as a defect rather than a crash.
     expect(Exit.isFailure(unprovided as Exit.Exit<unknown, unknown>)).toBe(
       true
@@ -538,9 +609,11 @@ describe("actions", () => {
 
   it("cannot be dispatched in the middle of a tick", () => {
     let app!: App.Any;
+
     const Sneaky = System.make("Sneaky", function* () {
       yield* Effect.sync(() => app.dispatchByName("EndTurn", { player: 1 }));
     });
+
     withApp(App.make({ systems: [Sneaky], handlers: [endTurn] }), (made) => {
       app = made;
       expect(() => made.tick(1)).toThrow(/Use enqueue/);
@@ -570,6 +643,7 @@ describe("replay", () => {
         app.dispatch(Attack, { attacker: one, target: two });
         app.tick(1);
         app.tick(1);
+
         return {
           log: [...app.actionLog],
           state: snapshot(app),
@@ -578,11 +652,13 @@ describe("replay", () => {
       });
 
     const original = play();
+
     const listed = (log: readonly Action.LogEntry[]) =>
       moves(log).map(
         (entry) =>
           `${entry.tick}:${entry.name}${entry.queued === true ? " queued" : ""}${entry.refused === undefined ? "" : ` refused (${entry.refused})`}`
       );
+
     expect(listed(original.log)).toEqual([
       "0:Attack",
       "1:EndTurn queued",
@@ -599,8 +675,10 @@ describe("replay", () => {
 
     const replayed = withApp(duel(), ({ app }) => {
       App.replay(app, original.log, { delta: 1, ticks: original.ticks });
+
       return { log: [...app.actionLog], state: snapshot(app) };
     });
+
     expect(replayed.state).toEqual(original.state);
     expect(replayed.log).toEqual(original.log);
   });

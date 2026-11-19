@@ -30,12 +30,15 @@ const sources = import.meta.glob("../src/**/*.ts", {
   import: "default",
   eager: true,
 });
+
 const modules = import.meta.glob("../src/*.ts", { eager: true });
+
 interface Target {
   readonly source: string;
   readonly types: string;
   readonly default: string;
 }
+
 const manifest = JSON.parse(
   Object.values(
     import.meta.glob("../package.json", {
@@ -57,11 +60,14 @@ const manifest = JSON.parse(
 /** What a file imports from, type-only imports among them. */
 const imported = (text: string): string[] => {
   const found: string[] = [];
+
   const pattern =
     /^\s*(?:import|export)\s(?:[^"';]*?\sfrom\s*)?["']([^"']+)["']/gmu;
+
   for (const match of text.matchAll(pattern)) {
     found.push(match[1]!);
   }
+
   return found;
 };
 
@@ -71,11 +77,14 @@ const reach = (
 ): { readonly files: string[]; readonly packages: string[] } => {
   const files = new Set<string>();
   const packages = new Set<string>();
+
   const visit = (file: string): void => {
     if (files.has(file)) {
       return;
     }
+
     files.add(file);
+
     for (const specifier of imported(sources[file]!)) {
       if (specifier.startsWith("./")) {
         visit(`../src/${specifier.slice("./".length)}.ts`);
@@ -84,7 +93,9 @@ const reach = (
       }
     }
   };
+
   visit(entry);
+
   return {
     files: Array.from(files).toSorted(),
     packages: Array.from(packages).toSorted(),
@@ -93,6 +104,7 @@ const reach = (
 
 const sourceOf = (subpath: string): string =>
   `../${manifest.exports[subpath]!.source.slice("./".length)}`;
+
 /** The package a specifier names: "arcadekit/ecs" is of "arcadekit". */
 const packageOf = (specifier: string): string =>
   specifier
@@ -109,8 +121,10 @@ describe("the entries of @arcadekit/three", () => {
         default: "./dist/index.js",
       },
     };
+
     for (const file of Object.keys(sources)) {
       const module = /^\.\.\/src\/([A-Z]\w*)\.ts$/u.exec(file);
+
       if (module !== null) {
         expected[`./${module[1]}`] = {
           source: `./src/${module[1]}.ts`,
@@ -119,6 +133,7 @@ describe("the entries of @arcadekit/three", () => {
         };
       }
     }
+
     expect(manifest.exports).toEqual(expected);
     expect(Object.keys(manifest.exports)).toEqual([".", "./Gltf", "./Three"]);
     // Every source file is a module or the entry that gives them all.
@@ -184,9 +199,11 @@ describe("the entries of @arcadekit/three", () => {
     // The components it draws from are the ones the game's world knows,
     // and their plugin the one the game's app installs.
     const world = new Arcadekit.EcsWorld();
+
     const entity = world.spawn(
       Arcadekit.Transform3d.Position.of({ x: 1, y: 2, z: 3 })
     );
+
     expect(world.component("arcadekit/Transform3d.Position")).toBe(
       Arcadekit.Transform3d.Position
     );

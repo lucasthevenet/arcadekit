@@ -11,6 +11,7 @@ describe("a doc comment as markdown", () => {
     const { body } = docMarkdown(
       '*\n * Plays a cue.\n *\n *   Sound.on(Scored, "coin")\n *     .pipe(x)\n *\n * Then more.\n '
     );
+
     expect(body).toBe(
       'Plays a cue.\n\n```ts\nSound.on(Scored, "coin")\n  .pipe(x)\n```\n\nThen more.'
     );
@@ -92,6 +93,7 @@ describe.runIf(built)("a module's page", () => {
       "Event",
       "packages/arcadekit/src/Event.ts"
     );
+
     const define = event.exports.find((item) => item.name === "define");
     expect(define?.parts[0]?.source?.file).toBe(
       "packages/arcadekit/src/Event.ts"

@@ -213,6 +213,7 @@ export const makeRecorder = (): Recorder => {
   const played: Played[] = [];
   const scored: Scored[] = [];
   const playing = new Map<string, string>();
+
   return {
     played,
     scored,
@@ -228,8 +229,10 @@ export const makeRecorder = (): Recorder => {
       if (track === undefined) {
         playing.delete(channel);
         scored.push({ channel, track, volume, fade });
+
         return;
       }
+
       playing.set(channel, nameOf(track));
       scored.push({
         channel,
@@ -347,6 +350,7 @@ const playerLayer = Layer.effect(
     // Between ticks an app's world is frozen: that is how the stages that
     // may play are told from the tick.
     const world = yield* World;
+
     // What each channel was last told: the output hears of a change only.
     // And what this frame's systems have said of it so far, if any has:
     // kept in the same record, so that a frame makes none.
@@ -363,8 +367,10 @@ const playerLayer = Layer.effect(
         nextFade: number;
       }
     >();
+
     const describe = (track: Playable, volume: number, once: boolean) =>
       `"${nameOf(track)}"${volume === 1 ? "" : ` at ${volume}`}${once ? ", once" : ""}`;
+
     // An app that goes leaves nothing playing in an output that stays.
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -373,6 +379,7 @@ const playerLayer = Layer.effect(
             output.music(channel, undefined, 0, 0, false);
           }
         }
+
         channels.clear();
         asked.clear();
       })
@@ -380,6 +387,7 @@ const playerLayer = Layer.effect(
     // What a frame's systems have asked to hear, by the cue: one sound for
     // each, however many asked and whichever system they were.
     const asked = new Map<Playable, { volume: number; rate: number }>();
+
     return {
       audible: output !== silent,
       play(cue, options) {
@@ -388,8 +396,10 @@ const playerLayer = Layer.effect(
             `The cue "${nameOf(cue)}" was played in the tick. Sound follows real time and is no part of the game: a replay and a server play nothing, and a tick must not depend on whether anything is heard. Emit an event for what happened, and play what it sounds like from a system of the frame stage, which Sound.cues makes.`
           );
         }
+
         const volume = Math.max(0, options?.volume ?? 1);
         const already = asked.get(cue);
+
         if (already === undefined) {
           asked.set(cue, { volume, rate: options?.rate ?? 1 });
         } else if (volume > already.volume) {
@@ -402,8 +412,10 @@ const playerLayer = Layer.effect(
           if (!told.said) {
             continue;
           }
+
           told.said = false;
           const { next, nextOnce, nextVolume } = told;
+
           if (
             told.track === next &&
             told.volume === nextVolume &&
@@ -411,17 +423,21 @@ const playerLayer = Layer.effect(
           ) {
             continue;
           }
+
           told.track = next;
           told.volume = nextVolume;
           told.once = nextOnce;
           output.music(channel, next, nextVolume, told.nextFade, nextOnce);
         }
+
         if (asked.size === 0) {
           return;
         }
+
         for (const [cue, how] of asked) {
           output.play(cue, how.volume, how.rate);
         }
+
         asked.clear();
       },
       music(channel, track, options) {
@@ -430,11 +446,14 @@ const playerLayer = Layer.effect(
             `The music of "${channel}" was set in the tick. Sound follows real time and is no part of the game: a replay and a server play nothing, and a tick must not depend on whether anything is heard. Say what should be playing from a system of the frame stage, which Sound.music makes, from the game as it is.`
           );
         }
+
         const volume =
           track === undefined ? 0 : Math.max(0, options?.volume ?? 1);
+
         const once = track !== undefined && options?.once === true;
         const fade = Math.max(0, options?.fade ?? 0.5);
         const told = channels.get(channel);
+
         if (told === undefined) {
           // A channel that was never told anything is silent already.
           if (track !== undefined) {
@@ -449,28 +468,35 @@ const playerLayer = Layer.effect(
               nextFade: fade,
             });
           }
+
           return;
         }
+
         if (!told.said) {
           told.said = true;
           told.next = track;
           told.nextVolume = volume;
           told.nextOnce = once;
           told.nextFade = fade;
+
           return;
         }
+
         // Said already this frame. Silence gives way to a track, whichever
         // came first; the same thing said twice is said once.
         if (track === undefined) {
           return;
         }
+
         if (told.next === undefined) {
           told.next = track;
           told.nextVolume = volume;
           told.nextOnce = once;
           told.nextFade = fade;
+
           return;
         }
+
         if (
           told.next !== track ||
           told.nextVolume !== volume ||
@@ -579,14 +605,17 @@ type Heard = readonly (readonly [
 
 const byEvent = (lines: readonly Line[]): Heard => {
   const found = new Map<Event.EventDef<any>, Line["pick"][]>();
+
   for (const line of lines) {
     const picks = found.get(line.event);
+
     if (picks === undefined) {
       found.set(line.event, [line.pick]);
     } else {
       picks.push(line.pick);
     }
   }
+
   return Array.from(found);
 };
 
@@ -640,45 +669,61 @@ export const cues: {
   // which the two signatures above say and one body cannot.
 ): System.System<never, any> => {
   const from = rest[0] instanceof Assets.Bundle ? rest[0] : undefined;
+
   const fixed =
     from === undefined ? byEvent(rest as readonly Line[]) : undefined;
+
   const make = rest[1] as (assets: unknown) => readonly Line[];
+
   // The lines of a bundle, and the assets they were made of: per app, by
   // the app's player, since a system is made once and may be in several.
   const made = new WeakMap<
     PlayerShape,
     { readonly assets: unknown; readonly lines: Heard }
   >();
+
   return System.make(name, function* () {
     const player = yield* Player;
+
     if (!player.audible) {
       return;
     }
+
     let lines = fixed;
+
     if (from !== undefined) {
       const status = yield* from;
+
       if (status._tag !== "Ready") {
         // The lines hold the bundle's clips: let go, so that they can be.
         made.delete(player);
+
         return;
       }
+
       let now = made.get(player);
+
       if (now === undefined || now.assets !== status.assets) {
         now = { assets: status.assets, lines: byEvent(make(status.assets)) };
         made.set(player, now);
       }
+
       ({ lines } = now);
     }
+
     for (const [event, picks] of lines!) {
       // Read once: a system is handed an event once, however many of its
       // lines are of it.
       const heard = (yield* event).read();
+
       for (const pick of picks) {
         for (const payload of heard) {
           const picked = pick(payload);
+
           if (picked === undefined) {
             continue;
           }
+
           // The player makes one sound of all that ask for the same cue.
           if (isCue(picked)) {
             player.play(picked.cue, picked);
@@ -766,13 +811,18 @@ export const music = <Eff extends Effect.Effect<any, any, any>>(
     Effect.Error<Eff>,
     Effect.Services<Eff>
   >;
+
   const channel = options.channel ?? MUSIC;
+
   return System.make(name, function* () {
     const player = yield* Player;
+
     if (!player.audible) {
       return;
     }
+
     const picked = yield* pick;
+
     if (picked === undefined) {
       player.music(channel, undefined, options);
     } else if (isTrack(picked)) {

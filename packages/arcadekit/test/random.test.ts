@@ -32,6 +32,7 @@ const reference = (state: readonly number[]) => {
   const mask = 0xff_ff_ff_ffn;
   const rotl = (x: bigint, k: bigint) => ((x << k) | (x >> (32n - k))) & mask;
   const s = state.map((word) => BigInt(word));
+
   return (): number => {
     const result = (rotl((s[1]! * 5n) & mask, 7n) * 9n) & mask;
     const t = (s[1]! << 9n) & mask;
@@ -41,6 +42,7 @@ const reference = (state: readonly number[]) => {
     s[0]! ^= s[3]!;
     s[2]! ^= t;
     s[3] = rotl(s[3]!, 11n);
+
     return Number(result);
   };
 };
@@ -67,6 +69,7 @@ describe("the random number generator", () => {
       Number.MAX_SAFE_INTEGER,
       Number.MAX_SAFE_INTEGER - 1,
     ];
+
     const starts = new Set(seeds.map((seed) => new Rng(seed).state.join(",")));
     expect(starts.size).toBe(new Set(seeds).size);
     const firsts = new Set(seeds.map((seed) => draws(new Rng(seed), 2).join()));
@@ -79,10 +82,12 @@ describe("the random number generator", () => {
     for (const seed of [0, 1, 7, 2 ** 31, 2 ** 32, 2 ** 40 + 12_345]) {
       const rng = new Rng(seed);
       const expected = reference(Array.from(rng.state));
+
       for (let i = 0; i < 2000; i++) {
         expect(rng.bits()).toBe(expected());
       }
     }
+
     // The first numbers of seed 1, written down. A change here changes every
     // game ever recorded with a seed, so it has to be meant.
     expect(draws(new Rng(1), 4)).toEqual(KNOWN_FIRST_DRAWS_OF_SEED_1);
@@ -92,6 +97,7 @@ describe("the random number generator", () => {
     for (const seed of [-1, 0.5, Number.NaN, Infinity, 2 ** 53]) {
       expect(() => new Rng(seed)).toThrow(/random seed must be a whole number/);
     }
+
     expect(() => new EcsWorld({ seed: -1 })).toThrow(/random seed/);
     const rng = new Rng(5);
     rng.bits();
@@ -108,7 +114,7 @@ describe("the random number generator", () => {
     restored.state.set(saved);
     expect(draws(restored, 50)).toEqual(expected);
     // The state is all there is: four 32-bit numbers.
-    expect(rng.state.length).toBe(4);
+    expect(rng.state).toHaveLength(4);
     expect(rng.state).toBeInstanceOf(Uint32Array);
   });
 
@@ -116,17 +122,21 @@ describe("the random number generator", () => {
     const rng = new Rng(3);
     const buckets = Array.from({ length: 10 }, () => 0);
     let sum = 0;
+
     for (let i = 0; i < 100_000; i++) {
       const value = rng.next();
       expect(value >= 0 && value < 1).toBe(true);
       buckets[Math.floor(value * 10)]!++;
       sum += value;
     }
+
     expect(sum / 100_000).toBeCloseTo(0.5, 2);
+
     for (const count of buckets) {
       expect(count).toBeGreaterThan(9500);
       expect(count).toBeLessThan(10_500);
     }
+
     // One draw of 32 bits, divided by 2^32: exact, so it is the same everywhere.
     const a = new Rng(8);
     const b = new Rng(8);
@@ -136,15 +146,19 @@ describe("the random number generator", () => {
   it("int() includes both ends and gives every value equal odds", () => {
     const rng = new Rng(11);
     const counts = new Map<number, number>();
+
     for (let i = 0; i < 60_000; i++) {
       const roll = rng.int(1, 6);
       counts.set(roll, (counts.get(roll) ?? 0) + 1);
     }
+
     expect([...counts.keys()].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+
     for (const count of counts.values()) {
       expect(count).toBeGreaterThan(9600);
       expect(count).toBeLessThan(10_400);
     }
+
     expect(rng.int(5, 5)).toBe(5);
     const negatives = Array.from({ length: 200 }, () => rng.int(-2, 1));
     expect(new Set(negatives)).toEqual(new Set([-2, -1, 0, 1]));
@@ -161,11 +175,13 @@ describe("the random number generator", () => {
     const top = 3 * 2 ** 30 - 1;
     let low = 0;
     const total = 30_000;
+
     for (let i = 0; i < total; i++) {
       if (rng.int(0, top) < 2 ** 30) {
         low++;
       }
     }
+
     expect(low / total).toBeGreaterThan(0.31);
     expect(low / total).toBeLessThan(0.36);
   });
@@ -185,13 +201,16 @@ describe("the random number generator", () => {
     const rng = new Rng(4);
     const items = ["a", "b", "c", "d"] as const;
     const counts: Record<string, number> = { a: 0, b: 0, c: 0, d: 0 };
+
     for (let i = 0; i < 40_000; i++) {
       counts[rng.pick(items)]!++;
     }
+
     for (const item of items) {
       expect(counts[item]).toBeGreaterThan(9600);
       expect(counts[item]).toBeLessThan(10_400);
     }
+
     expect(rng.pick(["only"])).toBe("only");
     expect(rng.pick(Float32Array.of(1.5))).toBe(1.5);
     expect(() => rng.pick([])).toThrow(/empty list/);
@@ -206,20 +225,26 @@ describe("the random number generator", () => {
     expect(items).not.toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 
     const orders = new Map<string, number>();
+
     for (let i = 0; i < 24_000; i++) {
       const order = rng.shuffle(["a", "b", "c", "d"]).join("");
       orders.set(order, (orders.get(order) ?? 0) + 1);
     }
+
     expect(orders.size).toBe(24);
+
     for (const count of orders.values()) {
       expect(count).toBeGreaterThan(850);
       expect(count).toBeLessThan(1150);
     }
+
     expect(rng.shuffle([])).toEqual([]);
     expect(rng.shuffle(["one"])).toEqual(["one"]);
+
     // The same seed shuffles the same way.
     const order = (seed: number) =>
       new Rng(seed).shuffle(Array.from({ length: 20 }, (_, i) => i));
+
     expect(order(77)).toEqual(order(77));
     expect(order(77)).not.toEqual(order(78));
   });
@@ -231,21 +256,25 @@ const Die = Component.define("rnd/Die", { face: Field.u8, rolls: Field.u32 });
 const Spark = Component.define("rnd/Spark", { x: Field.f32, y: Field.f32 });
 
 const Roll = Action.define("rnd/Roll", Schema.Struct({ sides: Schema.Int }));
+
 class NoSuchDie extends Data.TaggedError("NoSuchDie")<{}> {}
 
 /** A handler that draws: the die's new face is random. */
 const roll = Action.handler(Roll, function* ({ sides }) {
   const random = yield* Random;
   const dice = yield* Query.all(Die);
+
   if (dice.count() === 0) {
     return yield* Effect.fail(new NoSuchDie());
   }
+
   let face = 0;
   dice.each((die) => {
     die.face = random.int(1, sides);
     die.rolls++;
     face = die.face;
   });
+
   return face;
 });
 
@@ -257,11 +286,13 @@ const Sparks = System.make("Sparks", function* () {
   sparks.each((spark, entity) => {
     spark.x += random.next() - 0.5;
     spark.y += random.next() - 0.5;
+
     if (random.int(1, 10) === 1) {
       commands.despawn(entity);
     }
   });
   const born = random.int(0, 3);
+
   for (let i = 0; i < born; i++) {
     commands.spawn(Spark.of({ x: random.next(), y: random.next() }));
   }
@@ -272,6 +303,7 @@ const Gambler = Effect.gen(function* () {
   const random = yield* Random;
   const script = yield* Script;
   const actions = yield* Action.Actions;
+
   for (;;) {
     yield* script.sleep(random.pick([1, 2, 3]));
     actions.enqueue(Roll, { sides: random.pick([6, 20]) });
@@ -288,12 +320,15 @@ const play = (seed: number | undefined, ticks: number) =>
     (app) => {
       app.world.spawn(Die.of({ face: 1, rolls: 0 }));
       app.spawnScript(Gambler);
+
       for (let i = 0; i < ticks; i++) {
         if (i % 7 === 3) {
           app.dispatch(Roll, { sides: 6 });
         }
+
         app.tick(1);
       }
+
       return snapshot(app);
     }
   );
@@ -307,6 +342,7 @@ const snapshot = (app: App.Any) => {
   app.world.view(Query.all(Die)).each((die) => {
     dice.push([die.face, die.rolls]);
   });
+
   return {
     sparks,
     dice,
@@ -318,9 +354,11 @@ const snapshot = (app: App.Any) => {
 describe("the Random service", () => {
   it("is the world's generator, so its state is part of the world", () => {
     let seen: Rng | undefined;
+
     const Probe = System.make("Probe", function* () {
       seen = yield* Random;
     });
+
     withApp(App.make({ systems: [Probe], seed: 5 }), (app) => {
       app.tick(1);
       expect(seen).toBe(app.world.random);
@@ -361,15 +399,19 @@ describe("the Random service", () => {
         (app) => {
           app.world.spawn(Die.of({ face: 1, rolls: 0 }));
           const other = new Rng(seed + 1000);
+
           for (let i = 0; i < 150; i++) {
             if (other.int(1, 4) === 1) {
               app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
             }
+
             app.tick(1 / 60);
           }
+
           return snapshot(app);
         }
       );
+
     const replayOf = (recorded: ReturnType<typeof record>, seed: number) =>
       withApp(
         App.make({ systems: [Sparks], handlers: [roll], seed }),
@@ -377,10 +419,13 @@ describe("the Random service", () => {
           app.world.spawn(Die.of({ face: 1, rolls: 0 }));
           // Through text and back, as a save file would be.
           const loaded = Action.decodeLog(Action.encodeLog(recorded.log));
+
           if (Exit.isFailure(loaded)) {
             throw new Error("the log did not survive being written down");
           }
+
           App.replay(app, loaded.value, { delta: 1 / 60, ticks: 150 });
+
           return snapshot(app);
         }
       );
@@ -420,8 +465,10 @@ describe("the Random service", () => {
         );
         // It drew from the world's generator, not from one of its own.
         expect(Array.from(app.world.random.state)).not.toEqual(before);
+
         return out;
       });
+
     const first = run(8);
     expect(run(8)).toEqual(first);
     expect(run(9)).not.toEqual(first);

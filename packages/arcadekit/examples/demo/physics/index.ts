@@ -18,10 +18,12 @@ export const Position = Component.define("demo/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+
 export const Velocity = Component.define("demo/Velocity", {
   x: Field.f32,
   y: Field.f32,
 });
+
 // Toggled often, so it lives in a sparse set and never moves entities around.
 export const Frozen = Component.tag("demo/Frozen", { storage: "sparse" });
 

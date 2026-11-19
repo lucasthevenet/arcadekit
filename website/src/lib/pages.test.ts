@@ -35,6 +35,7 @@ describe("the site's pages", () => {
     expect(links).toContain("/making-a-game");
     expect(links).toContain("/guides/input");
     expect(links).toContain("/concepts/determinism");
+
     for (const page of own) {
       expect(page.file).toBe(`website/src/content/docs/${page.slug}.md`);
       expect(page.link).toBe(`/${page.slug}`);
@@ -58,6 +59,7 @@ describe("the site's pages", () => {
     for (const page of pages.all) {
       expect(existsSync(path.join(REPO_ROOT, page.file))).toBe(true);
     }
+
     const links = pages.all.map((page) => page.link);
     expect(new Set(links).size).toBe(links.length);
   });
@@ -66,6 +68,7 @@ describe("the site's pages", () => {
 describe("the sidebar", () => {
   it("lists a page the outline doesn't name at the end of its folder's group", () => {
     const pages = discoverPages();
+
     const groups = labelled(
       outlinedGroups(
         withDocs(pages, [
@@ -77,6 +80,7 @@ describe("the sidebar", () => {
         ])
       )
     );
+
     expect(groups.Concepts?.at(-1)).toBe("concepts/physics");
     expect(groups.More).toStrictEqual(["guides/menus"]);
     // A file directly in src/content/docs/, or in a folder no group has, goes in Get started.
@@ -93,10 +97,12 @@ describe("the sidebar", () => {
 
   it("names only pages that exist", () => {
     const pages = discoverPages();
+
     const without = withDocs(
       pages,
       pages.docs.filter((page) => page.slug !== "guides/input")
     );
+
     expect(() => outlinedGroups(without)).toThrow("guides/input");
   });
 
@@ -110,9 +116,11 @@ describe("the sidebar", () => {
     ]);
     // Every page is in a topic.
     const listed = JSON.stringify(topics);
+
     for (const page of [...pages.docs, ...pages.modules]) {
       expect(listed).toContain(`"${page.slug}"`);
     }
+
     for (const page of [pages.reference, ...pages.packages]) {
       expect(listed).toContain(`"${page.link}"`);
     }
@@ -122,6 +130,7 @@ describe("the sidebar", () => {
     const groups = outlinedGroups(discoverPages()).filter(
       (group) => group.topic === "reference"
     );
+
     expect(groups.map((group) => group.label)).toStrictEqual([
       "arcadekit",
       "@arcadekit/three",
@@ -149,6 +158,7 @@ describe("the sidebar", () => {
       if (MODULE_GROUPS[page.folder] === undefined) {
         continue;
       }
+
       const labels = moduleGroups(page).map((group) => group.label);
       // A new module goes under a group in MODULE_GROUPS of src/lib/reference.ts.
       expect(labels, page.folder).not.toContain("Other");

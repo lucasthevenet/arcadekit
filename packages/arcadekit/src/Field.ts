@@ -23,36 +23,42 @@ import type { FieldDef } from "./ecs/component";
  * @category Fields
  */
 export const f32 = Field.f32;
+
 /**
  * A 64-bit float, in a `Float64Array`, for a number that needs full precision.
  *
  * @category Fields
  */
 export const f64 = Field.f64;
+
 /**
  * A signed 32-bit integer, in an `Int32Array`.
  *
  * @category Fields
  */
 export const i32 = Field.i32;
+
 /**
  * An unsigned 32-bit integer, in a `Uint32Array`.
  *
  * @category Fields
  */
 export const u32 = Field.u32;
+
 /**
  * An unsigned 16-bit integer, in a `Uint16Array`.
  *
  * @category Fields
  */
 export const u16 = Field.u16;
+
 /**
  * An unsigned 8-bit integer, in a `Uint8Array`: a flag or a small count.
  *
  * @category Fields
  */
 export const u8 = Field.u8;
+
 /**
  * A reference to another entity, such as a target or a parent. The id is stored
  * in a `Float64Array`, eight bytes per row, and is saved and hashed as a
@@ -72,6 +78,7 @@ export const u8 = Field.u8;
  * @category Fields
  */
 export const entity = Field.entity;
+
 /**
  * Plain data, saved and hashed as is: a string, number, boolean, bigint, null
  * or undefined, or an array or object of strings, numbers, booleans and null.
@@ -89,6 +96,7 @@ export const entity = Field.entity;
  * @category Fields
  */
 export const json = Field.json;
+
 /**
  * A value of any type, saved and hashed through the given codec: an `encode` to
  * plain data and a `decode` back. `Field.schema` is built on it.
@@ -104,6 +112,7 @@ export const json = Field.json;
  * @category Fields
  */
 export const ref = Field.ref;
+
 /**
  * A value that is neither saved nor hashed, such as a sprite or a handle to
  * something outside the game. It is `undefined` after a load.
@@ -131,6 +140,7 @@ export const schema = <S extends Schema.Codec<unknown, unknown>>(
   const codec = Schema.toCodecJson(definition);
   const encode = Schema.encodeUnknownSync(codec);
   const decode = Schema.decodeUnknownSync(codec);
+
   return ref<S["Type"]>({
     encode: (value) => encode(value),
     decode: (data) => decode(data) as S["Type"],

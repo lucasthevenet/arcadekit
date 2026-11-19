@@ -29,6 +29,7 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     const relay = yield* Relay;
+
     return { url: relay.url };
   })
 );

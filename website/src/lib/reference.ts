@@ -83,16 +83,20 @@ export const moduleGroups = (
   item: Pick<ReferencePackage, "folder" | "modules">
 ): readonly { readonly label?: string; readonly modules: string[] }[] => {
   const groups = MODULE_GROUPS[item.folder];
+
   if (groups === undefined) {
     return [{ modules: [...item.modules] }];
   }
+
   const named = groups.flatMap((group) => group.modules);
   const missing = named.filter((name) => !item.modules.includes(name));
+
   if (missing.length > 0) {
     throw new Error(
       `MODULE_GROUPS of website/src/lib/reference.ts names ${missing.join(", ")}, which ${item.folder} doesn't export`
     );
   }
+
   return [
     ...groups.map((group) => ({
       label: group.label,
@@ -117,6 +121,7 @@ export const renderIndex = (packages: readonly ReferencePackage[]): string =>
     const listed = packages.filter(
       (item) => packageCategory(item.folder) === category
     );
+
     return listed.length === 0
       ? []
       : [

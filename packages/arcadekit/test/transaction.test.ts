@@ -31,6 +31,7 @@ const kinds = {
   other: Field.entity,
   note: Field.json<unknown>(),
 };
+
 const Body = Component.define("tx/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("tx/Sheet", kinds);
 const Aura = Component.define("tx/Aura", kinds, { storage: "sparse" });
@@ -50,6 +51,7 @@ const sheet = (n: number) => ({
 
 // Two singletons: one the populated world has written, one it has not.
 const Clock = Component.singleton("tx/Clock", kinds, sheet(500));
+
 const Mood = Component.singleton(
   "tx/Mood",
   { level: Field.i32, word: Field.json<string>() },
@@ -65,25 +67,33 @@ const Both = Query.all(Body, Aura).pipe(Query.without(Chilled));
 const populated = (): { world: EcsWorld; entities: Entity[] } => {
   const world = new EcsWorld({ seed: 12 });
   const entities: Entity[] = [];
+
   for (let n = 0; n < 24; n++) {
     const entity = world.spawn(Body.of({ x: n, y: -n }));
+
     if (n % 2 === 0) {
       world.add(entity, Sheet.of(sheet(n)));
     }
+
     if (n % 3 === 0) {
       world.add(entity, Aura.of(sheet(n + 100)));
     }
+
     if (n % 5 === 0) {
       world.add(entity, Marked);
     }
+
     if (n % 7 === 0) {
       world.add(entity, Chilled);
     }
+
     entities.push(entity);
   }
+
   world.despawn(entities.splice(20, 1)[0]!);
   world.despawn(entities.splice(4, 1)[0]!);
   world.singleton(Clock).signed = -1;
+
   return { world, entities };
 };
 
@@ -186,6 +196,7 @@ describe("a transaction of a world", () => {
     it(`takes back ${name} on rollback, and keeps it on commit`, () => {
       const { entities, world } = populated();
       const before = world.hash();
+
       const values = entities.map((entity) => [
         world.get(entity, Body),
         world.get(entity, Sheet),
@@ -223,13 +234,16 @@ describe("a transaction of a world", () => {
   it("takes back every writer at once, in any order", () => {
     const names = Object.keys(writers);
     const dice = new EcsWorld({ seed: 5 }).random;
+
     for (let round = 0; round < 30; round++) {
       const { entities, world } = populated();
       const before = world.hash();
       world.begin();
+
       for (const name of dice.shuffle([...names])) {
         writers[name]!(world, entities);
       }
+
       world.rollback();
       expect(world.hash()).toBe(before);
     }
@@ -240,6 +254,7 @@ describe("a transaction of a world", () => {
     // so each must hold this transaction's rows and no stale ones.
     const { entities, world } = populated();
     const dice = new EcsWorld({ seed: 8 }).random;
+
     for (let round = 0; round < 40; round++) {
       if (round % 3 === 0) {
         // Past the room the tables had when their columns were last saved.
@@ -256,11 +271,14 @@ describe("a transaction of a world", () => {
           );
         }
       }
+
       const before = world.hash();
       world.begin();
+
       for (const write of Object.values(writers)) {
         write(world, entities);
       }
+
       if (round % 4 === 3) {
         world.commit();
         expect(world.hash()).not.toBe(before);
@@ -275,6 +293,7 @@ describe("a transaction of a world", () => {
     const { entities, world } = populated();
     const before = world.hash();
     world.begin();
+
     const refusals = [
       () => world.spawn(Body),
       () => world.despawn(entities[0]!),
@@ -283,11 +302,13 @@ describe("a transaction of a world", () => {
       () => world.remove(entities[0]!, Body),
       () => world.remove(entities[0]!, Aura),
     ];
+
     for (const refusal of refusals) {
       expect(refusal).toThrow(
         /was called inside a transaction.*Queue it on Commands/
       );
     }
+
     expect(() => world.spawn(Body)).toThrow(/World\.spawn\(\)/);
     expect(() => world.remove(entities[0]!, Body)).toThrow(/World\.remove\(\)/);
     world.rollback();
@@ -370,14 +391,18 @@ describe("commands that are rolled back", () => {
   it("give their reserved ids back exactly, so the next entities get the ids they would have", () => {
     const { world } = populated();
     const before = world.hash();
+
     const ids = (): Entity[] => {
       const probe = populated().world;
+
       return [probe.spawn(), probe.spawn(), probe.spawn(), probe.spawn()];
     };
+
     const expected = ids();
 
     const commands = new CommandBuffer(world);
     const mark = commands.mark();
+
     // Two slots were freed in this world: these four reserve both of them
     // and then two indices that have never been used.
     const reserved = [
@@ -386,6 +411,7 @@ describe("commands that are rolled back", () => {
       commands.spawn(),
       commands.spawn(Aura),
     ];
+
     expect(reserved).toEqual(expected);
     expect(world.hash()).not.toBe(before);
     commands.rollback(mark);
@@ -437,7 +463,9 @@ describe("commands that are rolled back", () => {
 // --- through an app: an action that is refused leaves nothing behind ------------
 
 class Refused extends Data.TaggedError("Refused")<{}> {}
+
 const Noted = Event.define<{ readonly step: string }>("tx/Noted");
+
 /** Emitted by a system every tick, for a handler to read. */
 const Rung = Event.define("tx/Rung", Schema.Struct({ at: Schema.Int }));
 
@@ -457,6 +485,7 @@ const Step = Schema.Literals([
   "ring",
   "bug",
 ]);
+
 const Act = Action.define(
   "tx/Act",
   Schema.Struct({
@@ -465,6 +494,7 @@ const Act = Action.define(
     refuse: Schema.Boolean,
   })
 );
+
 const Echo = Action.define("tx/Echo", Schema.Struct({ by: Schema.Int }));
 
 /** Does whatever it is told, in order, and only then decides to refuse. */
@@ -474,18 +504,21 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
   const random = yield* Random;
   const noted = yield* Noted;
   const actions = yield* Action.Actions;
+
   for (const step of steps) {
     switch (step) {
       case "set": {
         world.set(target, Body, { x: random.int(1, 1000) });
         break;
       }
+
       case "each": {
         (yield* Bodies).each((body) => {
           body.y += 1;
         });
         break;
       }
+
       case "chunk": {
         (yield* Sheets).eachChunk((start, end, row) => {
           for (let i = start; i < end; i++) {
@@ -495,70 +528,85 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
         });
         break;
       }
+
       case "sparse": {
         (yield* Auras).each((aura) => {
           aura.double += 0.5;
         });
         break;
       }
+
       case "draw": {
         random.next();
         break;
       }
+
       case "spawn": {
         commands.spawn(Body.of({ x: 0, y: random.next() }), Sheet.of(sheet(3)));
         break;
       }
+
       case "despawn": {
         commands.despawn(target);
         break;
       }
+
       case "add": {
         commands.add(target, Aura.of(sheet(random.int(1, 50))));
         commands.add(target, Marked);
         break;
       }
+
       case "remove": {
         commands.remove(target, Sheet);
         commands.remove(target, Chilled);
         break;
       }
+
       case "emit": {
         noted.emit({ step });
         break;
       }
+
       case "enqueue": {
         actions.enqueue(Echo, { by: 1 });
         break;
       }
+
       case "read": {
         // What it has heard since it last listened goes into the world, so
         // that an event read twice, or never, shows.
         const heard = (yield* Rung)
           .read()
           .reduce((sum, { at }) => sum + 100 + at, 0);
+
         (yield* Bodies).each((body) => {
           body.y += heard;
         });
         break;
       }
+
       case "ring": {
         // An event of the kind it reads, so that it can read twice.
         (yield* Rung).emit({ at: 0 });
         break;
       }
+
       case "bug": {
         throw new Error("a bug in the handler");
       }
     }
   }
+
   if (refuse) {
     return yield* Effect.fail(new Refused());
   }
+
   return steps.length;
 });
 
 const echoes: number[] = [];
+
 const echo = Action.handler(Echo, function* ({ by }) {
   echoes.push(by);
   (yield* Bodies).each((body) => {
@@ -567,16 +615,20 @@ const echo = Action.handler(Echo, function* ({ by }) {
 });
 
 const notes: string[] = [];
+
 const Listen = System.make("Listen", function* () {
   for (const { step } of (yield* Noted).read()) {
     notes.push(step);
   }
 });
+
 const Ring = System.make("Ring", function* () {
   (yield* Rung).emit({ at: (yield* Time).tick });
 });
+
 /** Hears each ring in the tick it is rung in: once, whatever is refused. */
 const rings: number[] = [];
+
 const Hear = System.make("Hear", function* () {
   for (const { at } of (yield* Rung).read()) {
     rings.push(at);
@@ -598,27 +650,34 @@ const game = (checkpointEvery = 1) =>
     }),
     (app) => {
       const entities: Entity[] = [];
+
       for (let n = 0; n < 12; n++) {
         const entity = app.world.spawn(
           Body.of({ x: n, y: n }),
           Sheet.of(sheet(n))
         );
+
         if (n % 2 === 0) {
           app.world.add(entity, Aura.of(sheet(n)));
         }
+
         if (n % 3 === 0) {
           app.world.add(entity, Chilled);
         }
+
         entities.push(entity);
       }
+
       // Two freed slots, so a spawn reuses one before it takes a fresh index.
       app.world.despawn(entities.splice(7, 1)[0]!);
       app.world.despawn(entities.splice(2, 1)[0]!);
+
       return { app, entities };
     }
   );
 
 type Steps = (typeof Step.Type)[];
+
 const everyStep: Steps = [
   "set",
   "each",
@@ -643,16 +702,18 @@ describe("an action that is refused", () => {
         app.tick(1);
         const before = app.world.hash();
         const log = app.actionLog.length;
+
         const exit = app.dispatch(Act, {
           target: entities[0]!,
           steps: [step],
           refuse: true,
         });
+
         expect(exit).toEqual(Exit.fail(new Refused()));
         expect(app.world.hash()).toBe(before);
         expect(app.commands.size).toBe(0);
         expect(app.events.pending(Noted)).toBe(0);
-        expect(app.actionLog.length).toBe(log);
+        expect(app.actionLog).toHaveLength(log);
         // Nor does it show up later: no queued action, no event, no entity.
         app.tick(1);
         expect(echoes).toEqual([]);
@@ -665,11 +726,14 @@ describe("an action that is refused", () => {
           steps: [step],
           refuse: false,
         });
+
         expect(accepted).toEqual(Exit.succeed(1));
         app.tick(1);
         app.tick(1);
+
         const changed =
           app.world.hash() !== before || notes.length > 0 || echoes.length > 0;
+
         expect(changed).toBe(true);
       });
     });
@@ -678,11 +742,13 @@ describe("an action that is refused", () => {
   it("leaves nothing behind when its handler dies of a bug half-way", () => {
     withApp(game(), ({ app, entities }) => {
       const before = app.world.hash();
+
       const exit = app.dispatch(Act, {
         target: entities[0]!,
         steps: [...everyStep, "bug"],
         refuse: false,
       });
+
       expect(Exit.isFailure(exit)).toBe(true);
       expect(app.world.hash()).toBe(before);
       expect(app.commands.size).toBe(0);
@@ -724,8 +790,10 @@ describe("an action that is refused", () => {
         other.app.enqueue(Echo, { by: 2 });
         other.app.enqueue(Echo, { by: 3 });
         other.app.tick(1);
+
         return other.app.world.hash();
       });
+
       expect(after).toBe(plain);
     });
   });
@@ -737,8 +805,10 @@ describe("an action that is refused", () => {
         const y = (): number => app.world.get(target, Body)!.y;
         const before = y();
         app.tick(1);
+
         for (const attempt of attempts) {
           const payload = { target, steps: ["read" as const], refuse: true };
+
           if (attempt === "refused") {
             expect(app.dispatch(Act, payload)).toEqual(
               Exit.fail(new Refused())
@@ -748,19 +818,24 @@ describe("an action that is refused", () => {
             app.enqueue(Act, payload);
             app.tick(1);
           }
+
           expect(y()).toBe(before);
         }
+
         app.dispatch(Act, { target, steps: ["read"], refuse: false });
         const heard = y() - before;
         // And what was read by an action that was accepted stays read.
         app.dispatch(Act, { target, steps: ["read"], refuse: false });
         expect(y() - before).toBe(heard);
+
         return heard;
       });
+
     // The event of tick 1, whether or not anything was refused before.
     expect(heardBy([])).toBe(101);
     expect(heardBy(["refused"])).toBe(101);
     expect(heardBy(["refused", "refused", "refused"])).toBe(101);
+
     // After a refusal that took a tick: the events of ticks 1 and 2.
     const afterATick = withApp(game(), ({ app, entities }) => {
       const target = entities[0]!;
@@ -768,8 +843,10 @@ describe("an action that is refused", () => {
       app.tick(1);
       app.tick(1);
       app.dispatch(Act, { target, steps: ["read"], refuse: false });
+
       return app.world.get(target, Body)!.y - before;
     });
+
     expect(heardBy(["queued"])).toBe(afterATick);
   });
 
@@ -777,9 +854,11 @@ describe("an action that is refused", () => {
     withApp(game(), ({ app, entities }) => {
       const target = entities[0]!;
       const y = (): number => app.world.get(target, Body)!.y;
+
       const act = (steps: Steps, refuse: boolean): void => {
         app.dispatch(Act, { target, steps, refuse });
       };
+
       rings.length = 0;
       app.tick(1);
       const before = y();
@@ -818,12 +897,16 @@ describe("an action that is refused", () => {
       app.enqueue(Act, { target, steps: ["read"], refuse: true });
       app.enqueue(Act, { target, steps: ["read"], refuse: false });
       app.tick(1);
+
       return { log: [...app.actionLog], hash: app.world.hash() };
     });
+
     const replayed = withApp(game(), ({ app }) => {
       App.replay(app, log, { delta: 1, ticks: 3 });
+
       return app.world.hash();
     });
+
     expect(replayed).toBe(hash);
   });
 
@@ -837,8 +920,10 @@ describe("an action that is refused", () => {
             refuse: true,
           });
         }
+
         return [app.world.spawn(), app.world.spawn(), app.world.spawn()];
       });
+
     expect(next(true)).toEqual(next(false));
   });
 });
@@ -849,6 +934,7 @@ describe("an action that is accepted", () => {
       "tx/Twice",
       Schema.Struct({ target: EntityId })
     );
+
     const twice = Action.handler(Twice, function* ({ target }) {
       const world = yield* World;
       world.set(target, Body, { x: 10 });
@@ -861,8 +947,10 @@ describe("an action that is accepted", () => {
       (yield* Bodies).each((body) => {
         total += body.y;
       });
+
       return [world.get(target, Body)!.x, total] as const;
     });
+
     withApp(App.make({ handlers: [twice] }), (app) => {
       const target = app.world.spawn(Body.of({ x: 1, y: 5 }));
       app.world.spawn(Body.of({ x: 1, y: 5 }));
@@ -879,15 +967,18 @@ describe("an action that is accepted", () => {
         how: Schema.Literals(["world", "commands"]),
       })
     );
+
     const direct = Action.handler(Direct, function* ({ how, target }) {
       const world = yield* World;
       world.set(target, Body, { x: 42 });
+
       if (how === "world") {
         world.despawn(target);
       } else {
         (yield* Commands).despawn(target);
       }
     });
+
     withApp(App.make({ handlers: [direct] }), (app) => {
       const target = app.world.spawn(Body.of({ x: 1, y: 1 }));
       const before = app.world.hash();
@@ -909,12 +1000,14 @@ describe("an action that is accepted", () => {
   it("cannot dispatch another action from its handler, and is told what to do instead", () => {
     const Outer = Action.define("tx/Outer", Schema.Struct({}));
     let app: App.Any | undefined;
+
     const outer = Action.handler(Outer, function* () {
       (yield* Bodies).each((body) => {
         body.x = 7;
       });
       app!.dispatchByName("tx/Echo", { by: 1 });
     });
+
     withApp(App.make({ handlers: [outer, echo] }), (made) => {
       app = made;
       const entity = made.world.spawn(Body.of({ x: 1, y: 1 }));
@@ -937,42 +1030,53 @@ describe("a game full of refused actions", () => {
     // of them left anything in the world, the replay's hash would differ at
     // the next checkpoint. Random steps, random targets, half of them refused.
     const steps = everyStep;
+
     for (const seed of [1, 2, 3]) {
       const recorded = withApp(game(), ({ app, entities }) => {
         const dice = new EcsWorld({ seed }).random;
         let refusedCount = 0;
+
         for (let tick = 0; tick < 60; tick++) {
           for (let n = dice.int(0, 3); n > 0; n--) {
             const chosen = Array.from({ length: dice.int(1, 6) }, () =>
               dice.pick(steps)
             );
+
             const refuse = dice.int(0, 1) === 1;
+
             const payload = {
               target: dice.pick(entities),
               steps: chosen,
               refuse,
             };
+
             if (dice.int(0, 2) === 0) {
               app.enqueue(Act, payload);
             } else {
               app.dispatch(Act, payload);
             }
+
             refusedCount += refuse ? 1 : 0;
           }
+
           app.tick(1 / 60);
         }
+
         return {
           log: [...app.actionLog],
           refusedCount,
           hash: app.world.hash(),
         };
       });
+
       expect(recorded.refusedCount).toBeGreaterThan(20);
 
       const replayed = withApp(game(), ({ app }) => {
         App.replay(app, recorded.log, { delta: 1 / 60, ticks: 60 });
+
         return app.world.hash();
       });
+
       expect(replayed).toBe(recorded.hash);
     }
   });

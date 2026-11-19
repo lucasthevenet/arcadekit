@@ -97,6 +97,7 @@ export const fixedStep = (
   let settling = false;
   // Whether the call before this one found the game at rest.
   let resting = false;
+
   return (realDelta) => {
     // The time spent at rest is not owed. A game at rest has one tick
     // ready, so that the tick a move asks for runs in the frame the move
@@ -104,23 +105,29 @@ export const fixedStep = (
     accumulator = resting ? dt : accumulator + realDelta;
     resting = false;
     let steps = 0;
+
     // The epsilon stops float error from swallowing a tick: 1 - 59 * (1 / 60)
     // is a hair less than 1 / 60.
     while (accumulator + EPSILON >= dt && steps < maxSteps) {
       app.input?.();
+
       if (whenNeeded) {
         // Asked after the input stage, which is where a move comes in.
         const needed = app.settled !== true;
+
         if (!needed && !settling) {
           resting = true;
           break;
         }
+
         settling = needed;
       }
+
       app.tick(dt);
       accumulator = Math.max(0, accumulator - dt);
       steps++;
     }
+
     if (resting) {
       // All the way to its last tick: that is where the game stands.
       accumulator = dt;
@@ -128,8 +135,10 @@ export const fixedStep = (
       // After a long stall, drop the backlog instead of spiralling.
       accumulator = 0;
     }
+
     // What is left is part of a tick: how far the frame is into the next.
     app.frame?.(Math.min(1, accumulator / dt), realDelta);
+
     return steps;
   };
 };
@@ -151,16 +160,20 @@ export const interval = (
   Effect.callback<never>((resume) => {
     const advance = fixedStep(app, options);
     let last = performance.now();
+
     const id = setInterval(() => {
       const now = performance.now();
+
       try {
         advance((now - last) / 1000);
       } catch (error) {
         clearInterval(id);
         resume(Effect.die(error));
       }
+
       last = now;
     }, 1000 / options.hz);
+
     return Effect.sync(() => clearInterval(id));
   });
 
@@ -192,6 +205,7 @@ export interface DisplayShape {
 const timerDisplay: DisplayShape = {
   request(callback) {
     const id = setTimeout(() => callback(performance.now()), 1000 / 60);
+
     return () => clearTimeout(id);
   },
   hidden: () => false,
@@ -248,20 +262,26 @@ export const makeManualDisplay = (): ManualDisplay => {
   let requests: ((now: number) => void)[] = [];
   const listeners = new Set<() => void>();
   let hidden = false;
+
   const setHidden = (value: boolean): void => {
     if (hidden === value) {
       return;
     }
+
     hidden = value;
+
     for (const listener of Array.from(listeners)) {
       listener();
     }
   };
+
   return {
     request(callback) {
       requests.push(callback);
+
       return () => {
         const at = requests.indexOf(callback);
+
         if (at !== -1) {
           requests.splice(at, 1);
         }
@@ -272,6 +292,7 @@ export const makeManualDisplay = (): ManualDisplay => {
       // Wrapped, so that the same function given twice is two listeners.
       const own = (): void => listener();
       listeners.add(own);
+
       return () => {
         listeners.delete(own);
       };
@@ -279,9 +300,11 @@ export const makeManualDisplay = (): ManualDisplay => {
     frame(now) {
       const due = requests;
       requests = [];
+
       for (const callback of due) {
         callback(now);
       }
+
       return due.length;
     },
     hide: () => setHidden(true),
@@ -331,6 +354,7 @@ export const frames: (
   options: StepOptions
 ) {
   const display = yield* Display;
+
   return yield* Effect.callback<never>((resume) => {
     const advance = fixedStep(app, options);
     // When the frame before this one was, or undefined when time starts
@@ -339,37 +363,48 @@ export const frames: (
     let takeBack: (() => void) | undefined;
     let unwatch = (): void => {};
     let stopped = false;
+
     const stop = (): void => {
       stopped = true;
       takeBack?.();
       takeBack = undefined;
       unwatch();
     };
+
     const onFrame = (now: number): void => {
       takeBack = undefined;
+
       if (stopped) {
         return;
       }
+
       if (display.hidden()) {
         // Paused. Whoever watches the tab asks again when it is shown.
         last = undefined;
+
         return;
       }
+
       const delta = last === undefined ? 0 : Math.max(0, (now - last) / 1000);
       last = now;
+
       try {
         advance(delta);
       } catch (error) {
         stop();
         resume(Effect.die(error));
+
         return;
       }
+
       takeBack = display.request(onFrame);
     };
+
     unwatch = display.onVisibilityChange(() => {
       if (stopped) {
         return;
       }
+
       if (display.hidden()) {
         takeBack?.();
         takeBack = undefined;
@@ -378,9 +413,11 @@ export const frames: (
         takeBack = display.request(onFrame);
       }
     });
+
     if (!display.hidden()) {
       takeBack = display.request(onFrame);
     }
+
     return Effect.sync(stop);
   });
 });

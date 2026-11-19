@@ -22,13 +22,16 @@ const Position = Component.define("ch/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Health = Component.define("ch/Health", { hp: Field.i32 });
 const Sprite = Component.define("ch/Sprite", { frame: Field.u8 });
+
 const Heat = Component.define(
   "ch/Heat",
   { degrees: Field.f32 },
   { storage: "sparse" }
 );
+
 const Frozen = Component.tag("ch/Frozen", { storage: "sparse" });
 const Boss = Component.tag("ch/Boss");
 
@@ -37,6 +40,7 @@ const Moved = Query.all(Position).pipe(Query.changed(Position));
 const Hurt = Query.all(Health).pipe(Query.changed(Health));
 const Born = Query.all(Sprite).pipe(Query.added(Sprite));
 const Warmed = Query.all(Heat).pipe(Query.changed(Heat));
+
 /** What a save knows the query `Moved` by, after its reader's name. */
 const MOVED =
   "all(ch/Position) with() without() changed(ch/Position) added() reads()";
@@ -51,6 +55,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
 const populated = (count = 10): { world: EcsWorld; entities: Entity[] } => {
   const world = new EcsWorld();
   const entities: Entity[] = [];
+
   for (let n = 0; n < count; n++) {
     entities.push(
       n < count / 2
@@ -58,6 +63,7 @@ const populated = (count = 10): { world: EcsWorld; entities: Entity[] } => {
         : world.spawn(Position.of({ x: n, y: 0 }))
     );
   }
+
   return { world, entities };
 };
 
@@ -90,10 +96,12 @@ describe("a change query", () => {
     const { entities, world } = populated();
     const moved = world.view(Moved);
     moved.entities();
+
     for (let n = 0; n < 5; n++) {
       world.set(entities[3]!, Position, { x: n });
       world.set(entities[1]!, Position, { x: n });
     }
+
     world.view(Positions).each((pos, entity) => {
       if (entity === entities[1] || entity === entities[3]) {
         pos.x += 1;
@@ -259,14 +267,18 @@ describe("a change query", () => {
 
   it("watches a sparse component, and filters on others", () => {
     const { entities, world } = populated();
+
     for (const n of [1, 2, 3, 4]) {
       world.add(entities[n]!, Heat.of({ degrees: n }));
     }
+
     world.add(entities[2]!, Frozen);
     const warmed = world.view(Warmed);
+
     const thawed = world.view(
       Query.all(Position, Heat).pipe(Query.without(Frozen), Query.changed(Heat))
     );
+
     expect(warmed.entities()).toEqual([1, 2, 3, 4].map((n) => entities[n]));
     expect(thawed.entities()).toEqual([1, 3, 4].map((n) => entities[n]));
 
@@ -294,12 +306,15 @@ describe("a change query", () => {
 
   it("visits an entity when any of the components it watches fired", () => {
     const { entities, world } = populated();
+
     const either = world.view(
       Query.all(Position, Health).pipe(Query.changed(Position, Health))
     );
+
     const both = world.view(
       Query.all(Position).pipe(Query.changed(Position), Query.added(Boss))
     );
+
     either.entities();
     both.entities();
     world.set(entities[0]!, Position, { x: 1 });
@@ -328,6 +343,7 @@ describe("a change query", () => {
     // Another description that says the same is the same query to a reader.
     const alike = Query.all(Position).pipe(Query.changed(Position));
     expect(world.view(alike, "first")).toBe(first);
+
     // One that watches something else is another query, however alike.
     const others: Query.Query<any>[] = [
       Query.all(Position).pipe(Query.changed(Health)),
@@ -336,9 +352,11 @@ describe("a change query", () => {
       Query.all(Position).pipe(Query.changed(Position), Query.without(Boss)),
       Query.all(Position, Health).pipe(Query.changed(Position)),
     ];
+
     for (const other of others) {
       expect(world.view(other, "first")).not.toBe(first);
     }
+
     // And the order a query was put together in does not matter to it.
     const built = [
       Query.all(Position).pipe(
@@ -354,6 +372,7 @@ describe("a change query", () => {
         Query.with(Boss)
       ),
     ];
+
     expect(world.view(built[0]!, "first")).toBe(world.view(built[1]!, "first"));
     expect(world.saveChanges()).toEqual([]);
     world.view(built[1]!, "first").entities();
@@ -398,6 +417,7 @@ describe("a change query", () => {
     expect(visits).toBe(4);
     moved.each((pos, entity) => {
       visits++;
+
       if (entity === entities[0]) {
         pos.x += 1;
       }
@@ -416,12 +436,14 @@ describe("a change query", () => {
     const inner: Entity[] = [];
     moved.each((pos, entity) => {
       outer.push(entity);
+
       if (entity === entities[0]) {
         world.set(entities[1]!, Position, { x: 5 });
         moved.each((_, other) => {
           inner.push(other);
         });
       }
+
       void pos;
     });
     expect(outer).toEqual([entities[0], entities[2]]);
@@ -437,13 +459,16 @@ describe("a change query", () => {
       moved._path = path;
       moved.entities();
       const written = [150, 3, 77, 78, 79, 199, 0, 3];
+
       for (const n of written) {
         world.set(entities[n]!, Position, { y: 1 });
       }
+
       const chunks: [number, number][] = [];
       const seen: Entity[] = [];
       moved.eachChunk((start, end, ids) => {
         chunks.push([start, end]);
+
         for (let i = start; i < end; i++) {
           seen.push(ids[i]!);
         }
@@ -453,7 +478,7 @@ describe("a change query", () => {
         [0, 3, 77, 78, 79, 150, 199].map((n) => entities[n])
       );
       // Consecutive rows come as one run, in either table.
-      expect(chunks.length).toBe(5);
+      expect(chunks).toHaveLength(5);
       // And the marks are gone: a later visit starts clean.
       world.set(entities[5]!, Position, { y: 2 });
       expect(moved.entities()).toEqual([entities[5]]);
@@ -470,6 +495,7 @@ describe("a change query", () => {
           early.push(seen);
         });
       }
+
       pos.x += 1;
     });
     expect(early).toEqual(entities);
@@ -642,6 +668,7 @@ describe("changes against a simple model", () => {
       const dice = new EcsWorld({ seed }).random;
       const world = new EcsWorld();
       const alive: Entity[] = [];
+
       // Two readers per query, which visit at different times.
       const readers = specs.flatMap((spec, s) =>
         [0, 1].map((r) => ({
@@ -652,7 +679,9 @@ describe("changes against a simple model", () => {
           lazy: r === 1,
         }))
       );
+
       const lost = { reader: world.removed(Health), expected: [] as Entity[] };
+
       const fire = (what: string, entity: Entity): void => {
         for (const reader of readers) {
           if (reader.spec.fires.includes(what)) {
@@ -660,13 +689,16 @@ describe("changes against a simple model", () => {
           }
         }
       };
+
       const defs = { Position, Health, Heat } as const;
+
       const value = (name: keyof typeof defs) =>
         name === "Position"
           ? Position.of({ x: dice.int(0, 99), y: 0 })
           : name === "Health"
             ? Health.of({ hp: dice.int(1, 99) })
             : Heat.of({ degrees: dice.int(1, 99) });
+
       const gained = (name: keyof typeof defs, entity: Entity): void => {
         fire(`${name}:added`, entity);
         fire(`${name}:changed`, entity);
@@ -675,12 +707,15 @@ describe("changes against a simple model", () => {
       for (let step = 0; step < 3000; step++) {
         const roll = dice.int(0, 19);
         const some = alive.length > 0 ? dice.pick(alive) : undefined;
+
         if (roll < 3 || some === undefined) {
           const names = (["Position", "Health", "Heat"] as const).filter(
             () => dice.next() < 0.6
           );
+
           const entity = world.spawn(...names.map((name) => value(name)));
           alive.push(entity);
+
           for (const name of names) {
             gained(name, entity);
           }
@@ -688,8 +723,10 @@ describe("changes against a simple model", () => {
           if (world.has(some, Health)) {
             lost.expected.push(some);
           }
+
           world.despawn(some);
           alive.splice(alive.indexOf(some), 1);
+
           for (const reader of readers) {
             reader.pending.delete(some);
           }
@@ -698,6 +735,7 @@ describe("changes against a simple model", () => {
           const had = world.has(some, defs[name]);
           const bare = dice.next() < 0.3;
           world.add(some, bare ? defs[name] : value(name));
+
           if (!had) {
             gained(name, some);
           } else if (!bare) {
@@ -705,9 +743,11 @@ describe("changes against a simple model", () => {
           }
         } else if (roll < 10) {
           const name = dice.pick(["Position", "Health", "Heat"] as const);
+
           if (name === "Health" && world.has(some, Health)) {
             lost.expected.push(some);
           }
+
           world.remove(some, defs[name]);
         } else if (roll < 11) {
           if (world.has(some, Frozen)) {
@@ -717,6 +757,7 @@ describe("changes against a simple model", () => {
           }
         } else if (roll < 14) {
           const name = dice.pick(["Position", "Health", "Heat"] as const);
+
           if (world.has(some, defs[name])) {
             world.set(
               some,
@@ -765,15 +806,19 @@ describe("changes against a simple model", () => {
             if (dice.next() < (reader.lazy ? 0.05 : 0.5)) {
               reader.view._path = dice.pick(["auto", "sorted", "mask"]);
               const matching = world.view(reader.spec.plain).entities();
+
               const expected = reader.fresh
                 ? matching
                 : matching.filter((entity) => reader.pending.has(entity));
+
               if (dice.next() < 0.3) {
                 expect(reader.view.count()).toBe(expected.length);
               }
+
               const seen: Entity[] = [];
               // Before the visit: what the visit itself fires is for later.
               reader.pending.clear();
+
               if (!reader.spec.raw || dice.next() < 0.5) {
                 reader.view.each((...args) => {
                   seen.push(args.at(-1) as Entity);
@@ -781,10 +826,12 @@ describe("changes against a simple model", () => {
               } else {
                 reader.view.eachChunk((start, end, ...args) => {
                   const ids = args.at(-1) as Uint32Array;
+
                   for (let i = start; i < end; i++) {
                     seen.push(ids[i] as Entity);
                   }
                 });
+
                 // The raw loop was handed the rows it visited: to every
                 // reader that watches one of its terms, they were written,
                 // but for the terms it said it only reads.
@@ -796,10 +843,12 @@ describe("changes against a simple model", () => {
                   }
                 }
               }
+
               expect(seen).toEqual(expected);
               reader.fresh = false;
             }
           }
+
           if (dice.next() < 0.3) {
             expect(lost.reader.read()).toEqual(lost.expected);
             lost.expected = [];
@@ -822,6 +871,7 @@ describe("a change log", () => {
     const expected = new Set<Entity>();
     const lately = new Set<Entity>();
     let longest = 0;
+
     // Ten entities are written once, long before the readers that stay
     // away come back, and the other forty over and over.
     for (let n = 40; n < 50; n++) {
@@ -829,6 +879,7 @@ describe("a change log", () => {
       expected.add(entities[n]!);
       lately.add(entities[n]!);
     }
+
     for (let round = 0; round < 3000; round++) {
       // The busy reader visits every round, so each round logs afresh.
       for (let n = round % 7; n < 40; n += 7) {
@@ -836,8 +887,10 @@ describe("a change log", () => {
         expected.add(entities[n]!);
         lately.add(entities[n]!);
       }
+
       expect(busy.count()).toBeGreaterThan(0);
       busy.entities();
+
       if (round % 331 === 5 || round % 331 === 6) {
         // A reader part of the way along sees what is new to it, no more.
         expect(sometimes.entities()).toEqual(
@@ -845,8 +898,10 @@ describe("a change log", () => {
         );
         lately.clear();
       }
+
       longest = Math.max(longest, world.saveChanges()[0]!.entries.length);
     }
+
     // Some 17,000 writes were logged, of 50 entities.
     expect(longest).toBeLessThan(2100);
     expect(expected.size).toBe(50);
@@ -867,19 +922,23 @@ describe("a change log", () => {
     const moved = world.view(Moved);
     const lost = world.removed(Position);
     moved.entities();
+
     for (let n = 0; n < 5000; n++) {
       entities.push(world.spawn(Position.of({ x: n, y: 0 })));
     }
+
     expect(moved.count()).toBe(5000);
     expect(moved.entities()).toEqual(entities.slice(10));
+
     for (let pass = 0; pass < 3; pass++) {
       world.view(Positions).each((pos) => {
         pos.x += 1;
       });
     }
+
     expect(moved.count()).toBe(5010);
     // Each is waiting once, the ones past the first room too.
-    expect(world.saveChanges()[0]!.entries.length).toBe(5010);
+    expect(world.saveChanges()[0]!.entries).toHaveLength(5010);
     moved.entities();
     world.view(Positions).each((pos, entity) => {
       if (entity % 1000 === 7) {
@@ -890,9 +949,11 @@ describe("a change log", () => {
     expect(moved.entities()).toEqual(
       entities.filter((entity, n) => entity % 1000 === 7 || n === 4500)
     );
+
     for (const entity of entities.slice(3000)) {
       world.despawn(entity);
     }
+
     expect(lost.read()).toEqual(entities.slice(3000));
     expect(moved.count()).toBe(0);
   });
@@ -1004,6 +1065,7 @@ describe("changes in a transaction", () => {
     world.set(entities[2]!, Position, { x: 1 });
     expect(moved.entities()).toEqual([entities[1], entities[2]]);
     world.rollback();
+
     for (let round = 0; round < 3; round++) {
       world.set(entities[3]!, Position, { x: round });
       expect(moved.entities()).toEqual([entities[3]]);
@@ -1089,14 +1151,17 @@ describe("changes and a snapshot", () => {
   it("refuses changes that do not fit the world, and a world already watched", () => {
     const { world } = populated(3);
     const bytes = world.snapshot();
+
     const restore = (entries: number[], readers: Record<string, number>) => {
       const copy = new EcsWorld();
       copy.load(bytes, [Position, Health]);
       copy.restoreChanges([
         { component: "ch/Position", kind: "changed", entries, readers },
       ]);
+
       return copy;
     };
+
     expect(() => restore([0, 3], {})).toThrow(/name an entity that cannot be/);
     expect(() => restore([0, 1.5], {})).toThrow(/cannot be/);
     expect(() => restore([0, 1], { reader: 3 })).toThrow(
@@ -1124,7 +1189,9 @@ const Tally = Component.define("ch/Tally", {
   gone: Field.u32,
   early: Field.u32,
 });
+
 const Tallies = Query.all(Tally);
+
 const tallyOf = (app: App.Any) => {
   let out: Record<string, number> = {};
   app.world.view(Tallies).each((tally) => {
@@ -1136,6 +1203,7 @@ const tallyOf = (app: App.Any) => {
       early: tally.early,
     };
   });
+
   return out;
 };
 
@@ -1143,8 +1211,10 @@ const Push = Action.define(
   "ch/Push",
   Schema.Struct({ slot: Schema.Int, refuse: Schema.Boolean })
 );
+
 const Spawn = Action.define("ch/Spawn", Schema.Struct({}));
 const Cull = Action.define("ch/Cull", Schema.Struct({ slot: Schema.Int }));
+
 class Refused extends Data.TaggedError("Refused")<{}> {}
 
 const push = Action.handler(Push, function* ({ refuse, slot }) {
@@ -1154,15 +1224,19 @@ const push = Action.handler(Push, function* ({ refuse, slot }) {
       pos.x += 1;
     }
   });
+
   if (refuse) {
     return yield* Effect.fail(new Refused());
   }
 });
+
 const spawn = Action.handler(Spawn, function* () {
   (yield* Commands).spawn(Position.of({ x: 0, y: 0 }), Sprite);
 });
+
 const cull = Action.handler(Cull, function* ({ slot }) {
   const all = (yield* Positions).entities();
+
   if (all[slot] !== undefined) {
     (yield* Commands).despawn(all[slot]);
   }
@@ -1176,6 +1250,7 @@ const Early = System.make("Early", function* () {
     tally.early += moved;
   });
 });
+
 const Drift = System.make("Drift", function* () {
   const { tick } = yield* Time;
   (yield* Positions).each((pos, entity) => {
@@ -1184,6 +1259,7 @@ const Drift = System.make("Drift", function* () {
     }
   });
 });
+
 const Count = System.make("Count", function* () {
   let moved = 0;
   (yield* Moved).each(() => {
@@ -1215,10 +1291,13 @@ const game = (
       handlers: [push, spawn, cull],
       checkpointEvery: options.checkpointEvery ?? 1,
     });
+
     app.world.spawn(Tally);
+
     for (let n = 0; n < 6; n++) {
       app.world.spawn(Position.of({ x: n, y: 0 }));
     }
+
     return app;
   });
 
@@ -1226,12 +1305,15 @@ const game = (
 const play = (app: App.Any, from: number, to: number): void => {
   for (let tick = from; tick < to; tick++) {
     app.dispatchByName("ch/Push", { slot: tick % 5, refuse: tick % 3 === 1 });
+
     if (tick % 4 === 0) {
       app.enqueueByName("ch/Spawn", {});
     }
+
     if (tick % 7 === 3) {
       app.enqueueByName("ch/Cull", { slot: 1 });
     }
+
     app.tick(1);
   }
 };
@@ -1268,6 +1350,7 @@ describe("change queries in an app", () => {
           handlers: [push],
           components: [Position, Sprite, Tally],
         });
+
         quiet.world.spawn(Tally);
         quiet.world.spawn(Position.of({ x: 0, y: 0 }));
         quiet.tick(1);
@@ -1286,26 +1369,33 @@ describe("change queries in an app", () => {
 
   it("give a handler and a script a place of their own", () => {
     const Inspect = Action.define("ch/Inspect", Schema.Struct({}));
+
     const inspect = Action.handler(Inspect, function* () {
       return (yield* Moved).entities().length;
     });
+
     run(
       Effect.gen(function* () {
         const watched: number[] = [];
+
         const Watch = System.make("Watch", function* () {
           watched.push((yield* Moved).entities().length);
         });
+
         const app = yield* App.make({
           systems: [Watch],
           handlers: [inspect, push],
         });
+
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Position.of({ x: n, y: 0 }));
         }
+
         const seen: number[] = [];
         app.spawnScript(
           Effect.gen(function* () {
             const script = yield* Script;
+
             for (;;) {
               seen.push((yield* Moved).entities().length);
               yield* script.nextTick;
@@ -1351,21 +1441,27 @@ describe("change queries in an app", () => {
           // Between ticks, with changes waiting for both systems.
           app.dispatchByName("ch/Push", { slot: 2, refuse: false });
           const save = app.save();
+
           if (Exit.isFailure(save)) {
             throw new Error("the save was refused");
           }
+
           const bytes = Save.encode(save.value);
           const read = Save.decode(bytes);
+
           if (Exit.isFailure(read)) {
             throw new Error("the save did not decode");
           }
+
           expect(read.value.changes).toEqual(save.value.changes);
+
           const loaded = yield* App.load(read.value, {
             components: [Position, Sprite, Tally, Health],
             systems: [Early, Drift, Count],
             handlers: [push, spawn, cull],
             checkpointEvery: 1,
           });
+
           play(app, savedAt, savedAt + 12);
           // The tail of the original's log replays in the loaded game, and
           // every checkpoint of it holds.
@@ -1384,36 +1480,45 @@ describe("change queries in an app", () => {
     const Place = Component.define("ch/Place", { x: Field.f32, y: Field.f32 });
     const Placed = Query.all(Place).pipe(Query.changed(Place));
     const Look = Action.define("ch/Look", Schema.Struct({}));
+
     const before = Action.handler(Look, function* () {
       return [(yield* Moved).count(), (yield* Hurt).count()];
     });
+
     const after = Action.handler(Look, function* () {
       return [(yield* Placed).count(), (yield* Hurt).count()];
     });
+
     run(
       Effect.gen(function* () {
         const app = yield* App.make({
           components: [Position, Health],
           handlers: [before],
         });
+
         const { entities } = (() => {
           const made: Entity[] = [];
+
           for (let n = 0; n < 4; n++) {
             made.push(
               app.world.spawn(Position.of({ x: n, y: 0 }), Health.of({ hp: n }))
             );
           }
+
           return { entities: made };
         })();
+
         expect(app.dispatch(Look, {})).toEqual(Exit.succeed([4, 4]));
         app.world.view(Moved, "action:ch/Look").entities();
         app.world.view(Hurt, "action:ch/Look").entities();
         app.world.set(entities[1]!, Health, { hp: 9 });
         app.world.set(entities[1]!, Position, { x: 9 });
         const save = app.save();
+
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
+
         const loaded = yield* App.load(save.value, {
           components: [Place, Health],
           handlers: [after],
@@ -1436,6 +1541,7 @@ describe("change queries in an app", () => {
             },
           ],
         });
+
         // Everything placed counts as changed; health goes on from the save.
         expect(loaded.dispatch(Look, {})).toEqual(Exit.succeed([4, 1]));
       })
@@ -1448,9 +1554,11 @@ describe("change queries in an app", () => {
         const app = yield* game();
         play(app, 0, 3);
         const save = app.save();
+
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
+
         const damaged = {
           ...save.value,
           changes: [
@@ -1462,11 +1570,13 @@ describe("change queries in an app", () => {
             },
           ],
         };
+
         const exit = yield* Effect.exit(
           App.load(damaged, {
             components: [Position, Sprite, Tally, Health],
           })
         );
+
         expect(
           Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
         ).toMatchObject({
@@ -1476,6 +1586,7 @@ describe("change queries in an app", () => {
             'the changes it holds for "ch/Position" name an entity that cannot be'
           ),
         });
+
         // And bytes whose changes are not of the right shape do not decode.
         const misshapen = Save.decode(
           Save.encode({
@@ -1483,6 +1594,7 @@ describe("change queries in an app", () => {
             changes: [{ component: 1 }] as unknown as Save.Save["changes"],
           })
         );
+
         expect(
           Exit.isFailure(misshapen) ? Cause.squash(misshapen.cause) : undefined
         ).toMatchObject({ _tag: "LoadRefused", problem: "corrupt" });

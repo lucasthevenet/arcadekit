@@ -179,8 +179,10 @@ export const makeBridge = (): Bridge => {
   let sent: Sent[] = [];
   // Which actions the game handles, once a game is there to say.
   let handles: ((action: Sent["action"]) => boolean) | undefined;
+
   const slotOf = (view: View<any>): Slot => {
     let slot = slots.get(view.name);
+
     if (slot === undefined) {
       slot = { view, value: view.initial, listeners: new Set() };
       slots.set(view.name, slot);
@@ -189,13 +191,16 @@ export const makeBridge = (): Bridge => {
         `Two different views are both named "${view.name}". A view's name identifies it on a bridge, so give each its own, prefixed with the feature it belongs to.`
       );
     }
+
     return slot;
   };
+
   return {
     get: (view) => slotOf(view).value as never,
     subscribe(view, listener) {
       const { listeners } = slotOf(view);
       listeners.add(listener);
+
       return () => {
         listeners.delete(listener);
       };
@@ -206,20 +211,25 @@ export const makeBridge = (): Bridge => {
           `The action "${action.name}" was sent to a game that has no handler for it. List its handler in a plugin's handlers, or in the app's.`
         );
       }
+
       sent.push({ action, payload: payload[0] });
     },
     _publish(view, value) {
       const slot = slotOf(view);
+
       // Compared as data: an object made anew each frame with the same
       // fields is the same value, and nobody is told.
       if (Equal.equals(slot.value, value)) {
         return false;
       }
+
       slot.value = value;
+
       if (slot.listeners.size > 0) {
         // Every listener hears of it, even if one of them throws; the
         // first to throw then fails the frame, as a bug there does.
         let failure: { readonly error: unknown } | undefined;
+
         // Copied first: a listener may stop itself, or start another.
         for (const listener of Array.from(slot.listeners)) {
           if (slot.listeners.has(listener)) {
@@ -230,22 +240,27 @@ export const makeBridge = (): Bridge => {
             }
           }
         }
+
         if (failure !== undefined) {
           throw failure.error;
         }
       }
+
       return true;
     },
     _take() {
       if (sent.length === 0) {
         return NOTHING;
       }
+
       const taken = sent;
       sent = [];
+
       return taken;
     },
     _connect(mine) {
       handles = mine;
+
       return () => {
         // A game that ended after another began leaves the other's.
         if (handles === mine) {
@@ -338,6 +353,7 @@ const portLayer = Layer.effect(
       Effect.sync(() => bridge._connect(handles)),
       (leave) => Effect.sync(leave)
     );
+
     return {
       connected: bridge !== noBridge,
       publish(view, value) {
@@ -346,6 +362,7 @@ const portLayer = Layer.effect(
             `The view "${view.name}" was published in the tick. What the UI sees is no part of the game: a replay and a server have no UI, and a tick must not depend on whether one is there. Publish it from a system of the frame stage, which View.publish makes.`
           );
         }
+
         return bridge._publish(view, value);
       },
       take: () => bridge._take(),
@@ -356,10 +373,13 @@ const portLayer = Layer.effect(
 /** Issues the UI's requests as actions, before the tick: input like any other. */
 const Send = System.make("arcadekit/View.Send", function* () {
   const sent = (yield* Port).take();
+
   if (sent.length === 0) {
     return;
   }
+
   const { enqueue } = yield* Action.Actions;
+
   for (const one of sent) {
     enqueue(one.action, one.payload);
   }
@@ -418,8 +438,10 @@ export const publish = <A, Eff extends Effect.Effect<any, any, any>>(
     Effect.Error<Eff>,
     Effect.Services<Eff>
   >;
+
   return System.make(`View.publish(${view.name})`, function* () {
     const port = yield* Port;
+
     if (port.connected) {
       port.publish(view, yield* read);
     }

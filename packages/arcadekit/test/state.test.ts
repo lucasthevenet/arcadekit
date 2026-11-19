@@ -39,14 +39,18 @@ const Go = Action.define(
     refuse: Schema.Boolean,
   })
 );
+
 class Refused extends Data.TaggedError("Refused")<{}> {}
+
 const go = Action.handler(Go, function* ({ refuse, to }) {
   const phase = yield* Phase;
   const from = phase.value;
   phase.set(to);
+
   if (refuse) {
     return yield* Effect.fail(new Refused());
   }
+
   return from;
 });
 
@@ -55,13 +59,16 @@ describe("a state", () => {
     run(
       Effect.gen(function* () {
         const app = yield* App.make({ handlers: [go] });
+
         const read = app.spawnScript(
           Effect.gen(function* () {
             const phase = yield* Phase;
             const weather = yield* Weather;
+
             return [phase.value, phase.next, weather.value, weather.is("wet")];
           })
         );
+
         expect(read.pollUnsafe()).toEqual(
           Exit.succeed(["menu", undefined, "wet", true])
         );
@@ -82,15 +89,18 @@ describe("a state", () => {
     run(
       Effect.gen(function* () {
         const seen: string[] = [];
+
         const Watch = System.make("Watch", function* () {
           const phase = yield* Phase;
           seen.push(`${phase.value}${phase.next ? `>${phase.next}` : ""}`);
           const { tick } = yield* Time;
+
           if (tick === 2) {
             phase.set("playing");
             // Asked for, and not entered yet.
             expect([phase.value, phase.next]).toEqual(["menu", "playing"]);
           }
+
           if (tick === 4) {
             // @ts-expect-error not one of the state's values
             expect(() => phase.set("flying")).toThrow(
@@ -103,10 +113,13 @@ describe("a state", () => {
             expect(phase.next).toBeUndefined();
           }
         });
+
         const app = yield* App.make({ systems: [Watch], handlers: [go] });
+
         for (let tick = 0; tick < 5; tick++) {
           app.tick(1);
         }
+
         expect(seen).toEqual(["menu", "menu", "playing", "playing", "playing"]);
         // From outside, an action asks; the next tick enters.
         expect(app.dispatch(Go, { to: "paused", refuse: false })).toEqual(
@@ -122,12 +135,14 @@ describe("a state", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
+
         const app = yield* App.make({
           systems: [
             noting("Entered", ran).pipe(State.onEnter(Phase, "playing")),
           ],
           handlers: [go],
         });
+
         // Asking for the state a game is in already changes nothing at all.
         const untouched = app.world.hash();
         app.dispatch(Go, { to: "menu", refuse: false });
@@ -156,6 +171,7 @@ describe("a run condition", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
+
         const app = yield* App.make({
           systems: [
             noting("Always", ran),
@@ -168,11 +184,14 @@ describe("a run condition", () => {
           ],
           handlers: [go],
         });
+
         const tick = (): string[] => {
           ran.length = 0;
           app.tick(1);
+
           return [...ran];
         };
+
         expect(tick()).toEqual(["Always"]);
         app.dispatch(Go, { to: "playing", refuse: false });
         expect(tick()).toEqual(["Always", "Playing", "NotMenu"]);
@@ -192,33 +211,44 @@ describe("a run condition", () => {
       Switch,
       { on: boolean; asked: number }
     >()("st/Switch") {}
+
     class Broken extends Data.TaggedError("Broken")<{}> {}
+
     const evenTick = Effect.map(Time, (time) => time.tick % 2 === 0);
+
     const switchedOn = Effect.gen(function* () {
       const held = yield* Switch;
       held.asked++;
+
       if (held.asked > 100) {
         return yield* Effect.fail(new Broken());
       }
+
       return held.on;
     });
+
     run(
       Effect.gen(function* () {
         const ran: number[] = [];
         const held = { on: true, asked: 0 };
+
         const Both = System.make("Both", function* () {
           ran.push((yield* Time).tick);
         }).pipe(System.runIf(evenTick), System.runIf(switchedOn));
+
         const Either = System.runIf(
           System.make("Other", function* () {}),
           switchedOn
         );
+
         const app = yield* App.make({ systems: [Both, Either] }).pipe(
           Effect.provide(Layer.succeed(Switch, held))
         );
+
         for (let tick = 0; tick < 6; tick++) {
           app.tick(1);
         }
+
         expect(ran).toEqual([2, 4, 6]);
         // The second condition is asked only when the first held; the
         // other system asks every tick.
@@ -237,6 +267,7 @@ describe("a run condition", () => {
         void failure;
       })
     );
+
     // And what it needs has to be provided, like what a system needs.
     const needs: Effect.Effect<unknown, never, Scope.Scope | Switch> = App.make(
       {
@@ -245,6 +276,7 @@ describe("a run condition", () => {
         ],
       }
     );
+
     void needs;
   });
 
@@ -252,10 +284,12 @@ describe("a run condition", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
+
         const say = (what: string) =>
           Effect.sync(() => {
             ran.push(what);
           });
+
         const app = yield* App.make({
           components: [Ball],
           systems: [
@@ -295,12 +329,15 @@ describe("a run condition", () => {
           ],
           handlers: [go],
         });
+
         const tick = (): string[] => {
           ran.length = 0;
           app.tick(1);
           app.frame(0);
+
           return [...ran];
         };
+
         expect(tick()).toEqual([
           "Hud hidden",
           "Music off",
@@ -336,6 +373,7 @@ describe("a run condition", () => {
         ]);
       })
     );
+
     // What a frame system does in place of running may not change the
     // game either.
     const Vandal = System.make("Vandal", function* () {}).pipe(
@@ -343,11 +381,15 @@ describe("a run condition", () => {
       System.runIf(Effect.succeed(false)),
       System.otherwise(Effect.map(Phase, (phase) => phase.set("paused")))
     );
+
     const app = run(App.make({ components: [Phase], systems: [Vandal] }));
     expect(() => app.frame(0)).toThrow('singleton "st/Phase"');
+
     // And what it needs and can fail with are the system's.
     class Lamp extends Context.Service<Lamp, { lit: boolean }>()("st/Lamp") {}
+
     class Burnt extends Data.TaggedError("Burnt")<{}> {}
+
     const Lit = System.make("Lit", function* () {}).pipe(
       System.runIf(Effect.succeed(false)),
       System.otherwise(
@@ -356,6 +398,7 @@ describe("a run condition", () => {
         )
       )
     );
+
     const typed: System.System<Burnt, Lamp> = Lit;
     // @ts-expect-error it can fail, and needs a lamp
     const untyped: System.System<never, never> = Lit;
@@ -368,6 +411,7 @@ describe("a run condition", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
+
         const app = yield* App.make({
           systems: [
             noting("Fanfare", ran).pipe(
@@ -382,6 +426,7 @@ describe("a run condition", () => {
           ],
           handlers: [go],
         });
+
         app.tick(1);
         expect(ran).toEqual([]);
         app.dispatch(Go, { to: "playing", refuse: false });
@@ -398,10 +443,12 @@ describe("a run condition", () => {
       "st/Bounced",
       Schema.Struct({ at: Schema.Int })
     );
+
     run(
       Effect.gen(function* () {
         const heard: number[] = [];
         const moved: number[] = [];
+
         const Emit = System.make("Emit", function* () {
           const { tick } = yield* Time;
           (yield* Bounced).emit({ at: tick });
@@ -411,29 +458,36 @@ describe("a run condition", () => {
             }
           });
         });
+
         const Listen = System.make("Listen", function* () {
           for (const { at } of (yield* Bounced).read()) {
             heard.push(at);
           }
+
           moved.push(
             (yield* Balls.pipe(Query.changed(Ball))).entities().length
           );
         }).pipe(System.runIf(State.is(Phase, "playing")));
+
         const app = yield* App.make({
           components: [Phase, Ball],
           systems: [Listen, Emit],
           handlers: [go],
         });
+
         for (let n = 0; n < 3; n++) {
           app.world.spawn(Ball.of({ x: 0 }));
         }
+
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
         app.tick(1);
         app.dispatch(Go, { to: "paused", refuse: false });
+
         for (let tick = 0; tick < 6; tick++) {
           app.tick(1);
         }
+
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
         // It hears the event of the tick before it came back, and none of
@@ -469,11 +523,14 @@ describe("hooks", () => {
       Effect.gen(function* () {
         const ran: string[] = [];
         const app = yield* game(ran);
+
         const tick = (): string[] => {
           ran.length = 0;
           app.tick(1);
+
           return [...ran];
         };
+
         // The state a game starts in is entered on its first tick.
         expect(ran).toEqual([]);
         expect(tick()).toEqual(["EnterMenu", "Tick"]);
@@ -515,10 +572,12 @@ describe("hooks", () => {
     run(
       Effect.gen(function* () {
         const seen: string[] = [];
+
         const Leaving = System.make("Leaving", function* () {
           seen.push(`leaving ${(yield* Phase).value}`);
           (yield* Commands).spawn(Ball.of({ x: 1 }));
         }).pipe(State.onExit(Phase, "menu"));
+
         const Entering = System.make("Entering", function* () {
           // What the hook before it queued has been applied.
           seen.push(
@@ -526,13 +585,16 @@ describe("hooks", () => {
           );
           (yield* Commands).spawn(Ball.of({ x: 2 }));
         }).pipe(State.onEnter(Phase, "playing"));
+
         const Count = System.make("Count", function* () {
           seen.push(`tick with ${(yield* Balls).count()}`);
         });
+
         const app = yield* App.make({
           systems: [Count, Entering, Leaving],
           handlers: [go],
         });
+
         app.tick(1);
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
@@ -550,10 +612,13 @@ describe("hooks", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
+
         const First = noting("First", ran).pipe(
           State.onEnter(Phase, "playing")
         );
+
         const Last = noting("Last", ran).pipe(State.onEnter(Phase, "playing"));
+
         const app = yield* App.make({
           systems: [
             noting("Third", ran).pipe(
@@ -578,6 +643,7 @@ describe("hooks", () => {
           ],
           handlers: [go],
         });
+
         app.tick(1);
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
@@ -592,14 +658,17 @@ describe("hooks", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
+
         const SkipIntro = System.make("SkipIntro", function* () {
           ran.push("SkipIntro");
           (yield* Phase).set("playing");
         }).pipe(State.onEnter(Phase, "menu"));
+
         const Bail = System.make("Bail", function* () {
           ran.push("Bail");
           (yield* Phase).set("paused");
         }).pipe(State.onExit(Phase, "menu"));
+
         const app = yield* game(ran, [SkipIntro, Bail]);
         app.tick(1);
         expect(ran).toEqual(["EnterMenu", "SkipIntro", "Tick"]);
@@ -619,10 +688,12 @@ describe("hooks", () => {
     run(
       Effect.gen(function* () {
         const ran: string[] = [];
+
         const Overrule = System.make("Overrule", function* () {
           ran.push("Overrule");
           (yield* Phase).set("paused");
         }).pipe(State.onEnter(Phase, "menu"));
+
         const app = yield* game(ran, [Overrule]);
         app.dispatch(Go, { to: "playing", refuse: false });
         app.tick(1);
@@ -643,11 +714,14 @@ describe("hooks", () => {
             void (yield* Phase).value;
           }
         });
+
         const looked = yield* App.make({
           components: [Phase],
           systems: [Late],
         });
+
         const unseen = yield* App.make({ components: [Phase] });
+
         for (let tick = 0; tick < 5; tick++) {
           looked.tick(1);
           unseen.tick(1);
@@ -663,27 +737,33 @@ describe("hooks", () => {
       run(
         Effect.gen(function* () {
           const ran: string[] = [];
+
           const hooks = [
             noting("Rain", ran).pipe(State.onEnter(Weather, "wet")),
             noting("Sun", ran).pipe(State.onEnter(Weather, "dry")),
             noting("Menu", ran).pipe(State.onEnter(Phase, "menu")),
             noting("Play", ran).pipe(State.onEnter(Phase, "playing")),
           ];
+
           const Change = System.make("Change", function* () {
             if ((yield* Time).tick !== 1) {
               return;
             }
+
             const asks = [
               Effect.map(Weather, (weather) => weather.set("dry")),
               Effect.map(Phase, (phase) => phase.set("playing")),
             ];
+
             for (const ask of weatherFirst ? asks : asks.toReversed()) {
               yield* ask;
             }
           });
+
           const app = yield* App.make({
             systems: [...(weatherFirst ? hooks : hooks.toReversed()), Change],
           });
+
           app.tick(1);
           app.tick(1);
           // "st/Phase" before "st/Weather".
@@ -699,6 +779,7 @@ describe("hooks", () => {
       on: "enter",
       value: "flying",
     });
+
     expect(() => run(App.make({ systems: [Flying] }))).toThrow(
       /System "Flying" is a hook for "flying", which is not a value of the state "st\/Phase"/
     );
@@ -718,15 +799,19 @@ describe("hooks", () => {
 describe("a state in a save", () => {
   const Level = State.define("st/Level", ["one", "two", "three"]);
   const Next = Action.define("st/Next", Schema.Struct({}));
+
   const next = Action.handler(Next, function* () {
     const level = yield* Level;
     level.set(level.value === "one" ? "two" : "three");
   });
+
   const Built = Component.define("st/Built", { level: Field.json<string>() });
+
   const build = (level: "one" | "two" | "three") =>
     System.make(`Build ${level}`, function* () {
       (yield* Commands).spawn(Built.of({ level }));
     }).pipe(State.onEnter(Level, level));
+
   const Rules = Plugin.make("st/Rules", {
     components: [Level, Built, Ball],
     systems: [
@@ -744,11 +829,13 @@ describe("a state in a save", () => {
       (yield* Commands).spawn(Ball.of({ x: 0 }));
     }),
   });
+
   const built = (app: App.Any): string[] => {
     const out: string[] = [];
     app.world.view(Query.all(Built)).each((row) => {
       out.push(row.level);
     });
+
     return out;
   };
 
@@ -765,24 +852,31 @@ describe("a state in a save", () => {
         // Saved with a move asked for and not made yet.
         app.dispatch(Next, {});
         const save = app.save();
+
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
+
         const read = Save.decode(Save.encode(save.value));
+
         if (Exit.isFailure(read)) {
           throw new Error("the save did not decode");
         }
+
         const loaded = yield* App.load(read.value, {
           plugins: [Rules],
           checkpointEvery: 1,
         });
+
         expect(loaded.world.hash()).toBe(app.world.hash());
+
         for (const each of [app, loaded]) {
           each.tick(1);
           each.tick(1);
           each.dispatch(Next, {});
           each.tick(1);
         }
+
         // Level one was not built again; two and three were built once.
         expect(built(loaded)).toEqual(["one", "two", "three"]);
         expect(loaded.world.hash()).toBe(app.world.hash());
@@ -806,12 +900,15 @@ describe("a state in a save", () => {
         const app = yield* App.make({ plugins: [Rules] });
         app.tick(1);
         const save = app.save();
+
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
+
         const refused = yield* Effect.exit(
           App.load(save.value, { components: [Built, Ball], handlers: [next] })
         );
+
         expect(
           Exit.isFailure(refused) ? Cause.squash(refused.cause) : undefined
         ).toMatchObject({

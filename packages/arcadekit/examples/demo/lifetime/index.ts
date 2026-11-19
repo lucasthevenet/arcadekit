@@ -24,6 +24,7 @@ const Expiry = System.make("Expiry", function* () {
   const { delta } = yield* Time;
   mortal.each((life, entity) => {
     life.seconds -= delta;
+
     if (life.seconds <= 0) {
       commands.despawn(entity);
     }

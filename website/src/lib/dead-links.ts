@@ -57,6 +57,7 @@ const servedFrom = (
   address: string
 ): string | undefined => {
   const file = address.replace(/^\//u, "").replace(/\/$/u, "");
+
   return [
     file === "" ? "index.html" : `${file}.html`,
     `${file}/index.html`,
@@ -71,14 +72,18 @@ const addressOf = (file: string) =>
 /** Every link of a built site, in `dist`, to a page or an anchor it doesn't have. */
 export const findBrokenLinks = (dist: string): BrokenLink[] => {
   const files = new Set(filesUnder(dist));
+
   const html = new Map(
     [...files]
       .filter((file) => file.endsWith(".html"))
-      .map((file) => [file, readFileSync(path.join(dist, file), "utf-8")])
+      .map((file) => [file, readFileSync(path.join(dist, file), "utf8")])
   );
+
   const anchors = new Map<string, ReadonlySet<string>>();
+
   const anchorsOf = (page: string) => {
     let ids = anchors.get(page);
+
     if (ids === undefined) {
       ids = new Set(
         [...(html.get(page) ?? "").matchAll(ID)].map((match) =>
@@ -87,24 +92,30 @@ export const findBrokenLinks = (dist: string): BrokenLink[] => {
       );
       anchors.set(page, ids);
     }
+
     return ids;
   };
 
   const broken: BrokenLink[] = [];
+
   for (const [page, text] of html) {
     for (const match of text.matchAll(LINK)) {
       const href = unescape(match.groups?.href ?? "");
+
       // A link to another site, or to a page by a relative path, which the site doesn't write.
       if (!href.startsWith("/") && !href.startsWith("#")) {
         continue;
       }
+
       if (href.startsWith("//")) {
         continue;
       }
+
       const cut = href.search(/[?#]/u);
       const address = cut === -1 ? href : href.slice(0, cut);
       const fragment = /#(?<fragment>.+)$/u.exec(href)?.groups?.fragment;
       const target = address === "" ? page : servedFrom(files, address);
+
       if (target === undefined) {
         broken.push({
           page: addressOf(page),
@@ -113,6 +124,7 @@ export const findBrokenLinks = (dist: string): BrokenLink[] => {
         });
         continue;
       }
+
       if (
         fragment !== undefined &&
         target.endsWith(".html") &&
@@ -126,6 +138,7 @@ export const findBrokenLinks = (dist: string): BrokenLink[] => {
       }
     }
   }
+
   return broken;
 };
 
@@ -150,6 +163,7 @@ export const deadLinks = (repositoryLinks: {
           ({ href, page, reason }) => `  ${href} on ${page}: ${reason}`
         ),
       ];
+
       if (messages.length > 0) {
         throw new Error(
           [`${messages.length} dead link(s):`, ...messages].join("\n")

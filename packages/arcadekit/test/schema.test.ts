@@ -35,22 +35,28 @@ const Damage = Action.define(
 const Rename = Action.define<{ readonly name: string }>()("Rename");
 
 const received: unknown[] = [];
+
 const damage = Action.handler(Damage, function* (payload) {
   received.push(payload);
   const world = yield* World;
   const health = world.get(payload.target, Health);
+
   if (health === undefined) {
     return yield* Effect.fail(new NoSuchTarget({ target: payload.target }));
   }
+
   world.set(payload.target, Health, { hp: health.hp - payload.amount });
+
   return health.hp - payload.amount;
 });
+
 const rename = Action.handler(Rename, function* ({ name }) {
   return name.toUpperCase();
 });
 
 const game = Effect.map(App.make({ handlers: [damage, rename] }), (app) => {
   const target = app.world.spawn(Health.of({ hp: 50 }));
+
   return { app, target };
 });
 
@@ -67,6 +73,7 @@ const failure = (exit: Exit.Exit<unknown, unknown>): any => {
   if (!Exit.isFailure(exit)) {
     throw new Error("expected a failure");
   }
+
   return (exit.cause.reasons[0] as any).error;
 };
 
@@ -74,11 +81,13 @@ describe("actions with a schema", () => {
   it("infer the payload type and log the payload in its JSON form", () => {
     withApp(game, ({ app, target }) => {
       received.length = 0;
+
       const exit = app.dispatch(Damage, {
         target,
         amount: 4,
         seed: 12_345_678_901_234_567_890n,
       });
+
       expect(exit).toEqual(Exit.succeed(46));
       // The handler gets the value as given...
       expect(received).toEqual([
@@ -97,6 +106,7 @@ describe("actions with a schema", () => {
       // The failure type says a schema-defined action can be rejected as invalid.
       const typed: Exit.Exit<number, NoSuchTarget | Action.InvalidPayload> =
         exit;
+
       void typed;
     });
   });
@@ -119,12 +129,14 @@ describe("actions with a schema", () => {
   it("validate and convert payloads that arrive as data", () => {
     withApp(game, ({ app, target }) => {
       received.length = 0;
+
       const exit = app.dispatchByName("Damage", {
         target,
         amount: 3,
         seed: "77",
         note: "from the network",
       });
+
       expect(exit).toEqual(Exit.succeed(47));
       // Decoded for the handler: the seed is a bigint again.
       expect(received).toEqual([
@@ -142,6 +154,7 @@ describe("actions with a schema", () => {
   it("turn every kind of bad input into a failure, never a crash", () => {
     withApp(game, ({ app, target }) => {
       received.length = 0;
+
       const bad: [label: string, payload: unknown][] = [
         ["missing field", { target, amount: 3 }],
         ["wrong type", { target, amount: "3", seed: "1" }],
@@ -155,11 +168,13 @@ describe("actions with a schema", () => {
         ["an array", [1, 2, 3]],
         ["undefined", undefined],
       ];
+
       for (const [label, payload] of bad) {
         const error = failure(app.dispatchByName("Damage", payload));
         expect(error, label).toBeInstanceOf(Action.InvalidPayload);
         expect(error.message.length, label).toBeGreaterThan(0);
       }
+
       expect(failure(app.dispatchByName("Nope", {}))).toEqual(
         new Action.UnknownAction({ action: "Nope" })
       );
@@ -183,6 +198,7 @@ describe("actions with a schema", () => {
 
   it("report bad queued input as events", () => {
     const rejected: string[] = [];
+
     const Watch = System.make("Watch", function* () {
       for (const event of (yield* Action.Rejected).read()) {
         rejected.push(
@@ -190,13 +206,16 @@ describe("actions with a schema", () => {
         );
       }
     });
+
     const make = Effect.map(
       App.make({ systems: [Watch], handlers: [damage] }),
       (app) => {
         const target = app.world.spawn(Health.of({ hp: 50 }));
+
         return { app, target };
       }
     );
+
     withApp(make, ({ app, target }) => {
       app.enqueueByName("Damage", { target, amount: 5, seed: "9" });
       app.enqueueByName("Damage", { target, amount: 500, seed: "9" });
@@ -225,11 +244,13 @@ describe("actions with a schema", () => {
         ["Teleport", undefined, true, "refused"],
         ["Damage", 2, true, "applied"],
       ]);
+
       // The mark is the error's own message where it has one, and its name
       // where it has none.
       const invalid = Exit.findErrorOption(
         app.dispatchByName("Damage", { target, amount: 500, seed: "9" })
       );
+
       expect(moves(app.actionLog)[1]!.refused).toBe(
         Option.getOrThrow(invalid as Option.Option<Error>).message
       );
@@ -249,6 +270,7 @@ describe("actions with a schema", () => {
       const exit: Exit.Exit<string, never> = app.dispatch(Rename, {
         name: "bob",
       });
+
       expect(exit).toEqual(Exit.succeed("BOB"));
       // By name, the payload is passed through as it is. A wrong shape reaches
       // the handler, which here crashes on it: a defect, contained in the Exit.
@@ -265,6 +287,7 @@ describe("actions with a schema", () => {
     // largest there is: an id is a whole number below 2^53.
     expect(Exit.isSuccess(ok(4_294_967_296))).toBe(true);
     expect(Exit.isSuccess(ok(2 ** 53 - 1))).toBe(true);
+
     for (const bad of [-1, 2 ** 53, 1.5, Number.NaN, "7", null]) {
       expect(Exit.isFailure(ok(bad))).toBe(true);
     }
@@ -282,11 +305,13 @@ describe("events with a schema", () => {
       note: Schema.optional(Schema.String),
     })
   );
+
   /** Type-only: the compiler checks it and nothing else can. */
   const Quiet = Event.define<{ readonly n: number }>("sc/Quiet");
 
   it("infer the payload type, and are emitted and read as ever, with no check", () => {
     const seen: unknown[] = [];
+
     const Emit = System.make("Emit", function* () {
       const hit = yield* Hit;
       // The payload is typed by the schema: a string here would not compile.
@@ -302,11 +327,13 @@ describe("events with a schema", () => {
       // checks nothing, so that it stays a plain call inside a loop.
       hit.emit({ target: 1 as Entity, amount: 500, at: new Date(5), seed: 9n });
     });
+
     const Read = System.make("Read", function* () {
       for (const hit of (yield* Hit).read()) {
         seen.push(hit.amount);
       }
     });
+
     withApp(App.make({ systems: [Emit, Read] }), (app) => {
       app.tick(1);
       expect(seen).toEqual([3, "three", 500]);
@@ -324,6 +351,7 @@ describe("events with a schema", () => {
       at: new Date("2026-11-15T12:00:00.000Z"),
       seed: 12_345_678_901_234_567_890n,
     };
+
     const encoded = Event.encode(Hit, payload);
     expect(encoded).toEqual(
       Exit.succeed({
@@ -345,6 +373,7 @@ describe("events with a schema", () => {
       expect(error).toBeInstanceOf(Event.InvalidEvent);
       expect(error.event).toBe("sc/Hit");
     }
+
     for (const bad of [
       { target: 7, amount: 500, at: "2026-11-15T12:00:00.000Z", seed: "1" },
       { target: 7, amount: 3, at: "yesterday", seed: "1" },
@@ -357,6 +386,7 @@ describe("events with a schema", () => {
       expect(error.event).toBe("sc/Hit");
       expect(error.message.length).toBeGreaterThan(0);
     }
+
     expect(
       failure(Event.decode(Hit, { ...payload, amount: 500 })).message
     ).toMatch(/amount/);
@@ -372,6 +402,7 @@ describe("events with a schema", () => {
 
   it("are known by name in an app: two different events with one name are refused", () => {
     const Twin = Event.define<number>("sc/Hit");
+
     const Both = System.make("Both", function* () {
       (yield* Hit).emit({
         target: 1 as Entity,
@@ -381,15 +412,18 @@ describe("events with a schema", () => {
       });
       (yield* Twin).emit(1);
     });
+
     withApp(App.make({ systems: [Both] }), (app) => {
       expect(() => app.tick(1)).toThrow(
         /Two different events are both named "sc\/Hit"/
       );
     });
+
     // Each on its own, in an app of its own, is fine.
     const Alone = System.make("Alone", function* () {
       (yield* Twin).emit(2);
     });
+
     withApp(App.make({ systems: [Alone] }), (app) => {
       app.tick(1);
       expect(app.events.pending(Twin)).toBe(1);
@@ -418,6 +452,7 @@ describe("saving and replaying", () => {
       app.dispatchByName("Damage", { target, amount: 1, seed: "3" });
       app.dispatch(Rename, { name: "x" });
       app.tick(1);
+
       return {
         text: Action.encodeLog(app.actionLog),
         hp: app.world.get(target, Health)!.hp,
@@ -428,6 +463,7 @@ describe("saving and replaying", () => {
   const replayInto = (log: readonly Action.LogEntry[], ticks: number) =>
     withApp(game, ({ app, target }) => {
       App.replay(app, log, { delta: 1, ticks });
+
       return app.world.get(target, Health)!.hp;
     });
 
@@ -438,9 +474,11 @@ describe("saving and replaying", () => {
 
     const loaded = Action.decodeLog(saved.text);
     expect(Exit.isSuccess(loaded)).toBe(true);
+
     if (!Exit.isSuccess(loaded)) {
       return;
     }
+
     expect(
       moves(loaded.value).map((entry) => `${entry.tick}:${entry.name}`)
     ).toEqual(["0:Damage", "1:Damage", "3:Damage", "3:Rename"]);
@@ -459,6 +497,7 @@ describe("saving and replaying", () => {
     ]) {
       expect(Exit.isFailure(Action.decodeLog(text)), text).toBe(true);
     }
+
     expect(Exit.isSuccess(Action.decodeLog("[]"))).toBe(true);
   });
 
@@ -479,11 +518,13 @@ describe("saving and replaying", () => {
     const edited = structuredClone(log);
     edited[2].payload.amount = 9999;
     let caught: unknown;
+
     try {
       replayInto(edited, saved.ticks);
     } catch (error) {
       caught = error;
     }
+
     expect(caught).toBeInstanceOf(App.ReplayDiverged);
     expect((caught as App.ReplayDiverged).index).toBe(2);
     expect((caught as App.ReplayDiverged).tick).toBe(1);

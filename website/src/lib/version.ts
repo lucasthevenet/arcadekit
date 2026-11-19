@@ -11,6 +11,7 @@
 export const releases = (changeset: string, packageName: string): boolean => {
   const frontmatter = /^---\n(?<body>[\s\S]*?)\n---/u.exec(changeset)?.groups
     ?.body;
+
   return (frontmatter ?? "")
     .split("\n")
     .some((line) =>

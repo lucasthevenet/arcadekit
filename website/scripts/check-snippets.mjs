@@ -28,6 +28,7 @@ import path from "node:path";
 
 const site = path.resolve(import.meta.dirname, "..");
 const root = path.resolve(site, "..");
+
 /** The site's own pages, relative to the repository's root. */
 const DOCS = "website/src/content/docs";
 const out = path.join(site, ".snippets");
@@ -38,6 +39,7 @@ const pages = readdirSync(path.join(root, DOCS), { recursive: true })
   .toSorted();
 
 rmSync(out, { recursive: true, force: true });
+
 mkdirSync(out, { recursive: true });
 
 /** For each written file, the blocks it is made of: where each starts in the file and on its page. */
@@ -47,9 +49,11 @@ let blocks = 0;
 const write = (file, page, start, lines) => {
   const absolute = path.join(out, file);
   const segments = origins.get(file) ?? [];
+
   const offset = existsSync(absolute)
-    ? readFileSync(absolute, "utf-8").split("\n").length - 1
+    ? readFileSync(absolute, "utf8").split("\n").length - 1
     : 0;
+
   segments.push({ page: `${DOCS}/${page}`, start, offset });
   origins.set(file, segments);
   mkdirSync(path.dirname(absolute), { recursive: true });
@@ -58,27 +62,33 @@ const write = (file, page, start, lines) => {
 
 for (const page of pages) {
   const folder = page.replace(/\.md$/u, "");
-  const lines = readFileSync(path.join(root, DOCS, page), "utf-8").split("\n");
+  const lines = readFileSync(path.join(root, DOCS, page), "utf8").split("\n");
   let block;
   let untitled = 0;
   lines.forEach((line, index) => {
     if (block === undefined) {
       const open = /^```ts(?<meta>\s.*)?$/u.exec(line);
+
       if (open !== null && !/\bsketch\b/u.test(open.groups.meta ?? "")) {
         const title = /title="(?<title>[^"]+)"/u.exec(open.groups.meta ?? "")
           ?.groups.title;
+
         block = { start: index + 2, title, lines: [] };
       }
+
       return;
     }
+
     if (/^```\s*$/u.test(line)) {
       blocks++;
       untitled += block.title === undefined ? 1 : 0;
       const name = block.title ?? `block-${untitled}.ts`;
       write(`${folder}/${name}`, page, block.start, block.lines);
       block = undefined;
+
       return;
     }
+
     block.lines.push(line);
   });
 }
@@ -111,7 +121,7 @@ writeFileSync(
 
 const tsc = spawnSync("tsc", ["-p", out, "--pretty", "false"], {
   cwd: site,
-  encoding: "utf-8",
+  encoding: "utf8",
   shell: process.platform === "win32",
 });
 
@@ -119,6 +129,7 @@ const tsc = spawnSync("tsc", ["-p", out, "--pretty", "false"], {
 const originOf = (file, line) => {
   const segments = origins.get(file) ?? [];
   const segment = segments.findLast((candidate) => candidate.offset < line);
+
   return (
     segment && `${segment.page}:${segment.start + line - 1 - segment.offset}`
   );
@@ -126,6 +137,7 @@ const originOf = (file, line) => {
 
 const ERROR =
   /^(?:.*[/\\])?\.snippets[/\\](?<file>[^(]+)\((?<line>\d+),\d+\): (?<message>.*)$/u;
+
 const errors = `${tsc.stdout ?? ""}${tsc.stderr ?? ""}`
   .split("\n")
   .filter((line) => line.trim() !== "")
@@ -133,6 +145,7 @@ const errors = `${tsc.stdout ?? ""}${tsc.stderr ?? ""}`
     const match = ERROR.exec(line);
     const file = match?.groups.file.split(path.sep).join("/");
     const origin = file && originOf(file, Number(match.groups.line));
+
     return origin ? `${origin}: ${match.groups.message}` : line;
   });
 
@@ -143,15 +156,18 @@ if (tsc.status !== 0) {
   );
   process.exit(1);
 }
+
 console.log(`${blocks} blocks of the site's pages compile.`);
 
 const tests = [...origins.keys()].filter((file) => file.endsWith(".test.ts"));
+
 if (tests.length > 0) {
   const vitest = spawnSync(
     "vitest",
     ["run", ...tests.map((file) => path.join(out, file))],
     { cwd: root, stdio: "inherit", shell: process.platform === "win32" }
   );
+
   if (vitest.status !== 0) {
     console.error(`\nThe tests of the site's pages fail: ${tests.join(", ")}.`);
     process.exit(1);

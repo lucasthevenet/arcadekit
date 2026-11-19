@@ -26,6 +26,7 @@ const store = async (context: LoaderContext, page: LoadedPage, edit = true) => {
   const absolute = path.join(REPO_ROOT, page.file);
   // Astro's paths of an entry's file are relative to the site's folder.
   const filePath = path.relative(fileURLToPath(context.config.root), absolute);
+
   const data = await context.parseData({
     id: page.slug,
     data: {
@@ -36,6 +37,7 @@ const store = async (context: LoaderContext, page: LoadedPage, edit = true) => {
     },
     filePath,
   });
+
   context.store.set({
     id: page.slug,
     data,
@@ -58,6 +60,7 @@ const modulePage = (page: ModulePage): LoadedPage => {
     page.name,
     page.file
   );
+
   return {
     ...page,
     title: page.name,

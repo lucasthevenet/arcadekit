@@ -1,8 +1,8 @@
 /// <reference types="node" />
 import { App, Assets, Component, State, Transform3d } from "arcadekit";
 import { Cause, Effect, Exit, Fiber, Layer, Logger, Scope } from "effect";
-import { InstancedMesh, Mesh, Texture } from "three";
-import type { BufferGeometry, MeshStandardMaterial, Scene } from "three";
+import { InstancedMesh, Texture } from "three";
+import type { BufferGeometry, MeshStandardMaterial, Scene, Mesh } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -11,16 +11,21 @@ import { Gltf, Three } from "../src/index";
 // --- a model small enough to write out ----------------------------------------------
 // One triangle: three indices, then, on a multiple of four, three positions.
 const indices = new Uint8Array(new Uint16Array([0, 1, 2]).buffer);
+
 const positions = new Uint8Array(
   new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer
 );
+
 const both = new Uint8Array(8 + positions.length);
+
 both.set(indices, 0);
+
 both.set(positions, 8);
 
 interface Doc {
   [key: string]: unknown;
 }
+
 /** The triangle's document, with its buffers and views as given. */
 const triangle = (
   buffers: readonly Doc[],
@@ -54,13 +59,16 @@ const triangle = (
   ],
   ...(more.document as Doc),
 });
+
 /** Its two views, in one buffer. */
 const oneBuffer = [
   { buffer: 0, byteOffset: 0, byteLength: 6 },
   { buffer: 0, byteOffset: 8, byteLength: 36 },
 ];
+
 const base64 = (bytes: Uint8Array): string =>
   Buffer.from(bytes).toString("base64");
+
 const text = (document: Doc): string => JSON.stringify(document);
 
 /** A binary glTF of a document and what goes in its one chunk of data. */
@@ -68,38 +76,47 @@ const glb = (document: Doc, binary?: Uint8Array): Uint8Array => {
   const pad = (bytes: Uint8Array, fill: number): Uint8Array => {
     const out = new Uint8Array((bytes.length + 3) & ~3).fill(fill);
     out.set(bytes);
+
     return out;
   };
+
   const json = pad(new TextEncoder().encode(text(document)), 0x20);
   const chunks: (readonly [number, Uint8Array])[] = [[0x4e_4f_53_4a, json]];
+
   if (binary !== undefined) {
     chunks.push([0x00_4e_49_42, pad(binary, 0)]);
   }
+
   const length =
     12 + chunks.reduce((sum, [, data]) => sum + 8 + data.length, 0);
+
   const out = new Uint8Array(length);
   const view = new DataView(out.buffer);
   view.setUint32(0, 0x46_54_6c_67, true);
   view.setUint32(4, 2, true);
   view.setUint32(8, length, true);
   let at = 12;
+
   for (const [type, data] of chunks) {
     view.setUint32(at, data.length, true);
     view.setUint32(at + 4, type, true);
     out.set(data, at + 8);
     at += 8 + data.length;
   }
+
   return out;
 };
 
 /** A loader of files in memory that notes what it was asked for. */
 const makeLoader = (files: Readonly<Record<string, Uint8Array | string>>) => {
   const asked: string[] = [];
+
   const layer = Layer.succeed(Assets.Loader, {
     bytes: (url) =>
       Effect.suspend(() => {
         asked.push(url);
         const file = Object.hasOwn(files, url) ? files[url] : undefined;
+
         return file === undefined
           ? Effect.fail(
               new Assets.AssetFailed({ url, message: "There is no such file." })
@@ -109,6 +126,7 @@ const makeLoader = (files: Readonly<Record<string, Uint8Array | string>>) => {
             );
       }),
   }) as Layer.Layer<never>;
+
   return { asked, layer };
 };
 
@@ -120,6 +138,7 @@ const load = async (
 ) => {
   const loader = makeLoader(files);
   const scope = Effect.runSync(Scope.make());
+
   const exit = await Effect.runPromise(
     Effect.exit(
       Assets.load(
@@ -127,6 +146,7 @@ const load = async (
       )
     ).pipe(Scope.provide(scope), Effect.provide(loader.layer))
   );
+
   return {
     asked: loader.asked,
     exit,
@@ -139,6 +159,7 @@ const load = async (
 /** The one mesh of the triangle, and what it is made of. */
 const shape = (model: Gltf.Model | undefined) => {
   const mesh = model!.scene.children[0] as Mesh<BufferGeometry>;
+
   return {
     mesh,
     name: mesh.name,
@@ -146,6 +167,7 @@ const shape = (model: Gltf.Model | undefined) => {
     positions: Array.from(mesh.geometry.attributes.position!.array),
   };
 };
+
 const TRIANGLE = {
   name: "Tri",
   indices: [0, 1, 2],
@@ -159,11 +181,13 @@ afterEach(() => {
 describe("a model", () => {
   it("is a binary glTF, loaded as it is and disposed of with the scope it was loaded in", async () => {
     const file = glb(triangle([{ byteLength: both.length }], oneBuffer), both);
+
     const { asked, close, model } = await load("/tri.glb", {
       "/tri.glb": file,
     });
+
     expect(shape(model)).toMatchObject(TRIANGLE);
-    expect(model!.scenes.length).toBe(1);
+    expect(model!.scenes).toHaveLength(1);
     expect(model!.animations).toEqual([]);
     // One file, asked for once: it names no other.
     expect(asked).toEqual(["/tri.glb"]);
@@ -204,6 +228,7 @@ describe("a model", () => {
         )
       ),
     };
+
     const beside = await load("/models/tri.gltf", files);
     expect(shape(beside.model)).toMatchObject(TRIANGLE);
     expect(beside.asked).toEqual(["/models/tri.gltf", "/models/tri.bin"]);
@@ -221,10 +246,12 @@ describe("a model", () => {
     // in the file itself and the second beside it.
     const padded = new Uint8Array(4 + positions.length);
     padded.set(positions, 4);
+
     const views = [
       { buffer: 0, byteLength: 6 },
       { buffer: 1, byteOffset: 4, byteLength: 36 },
     ];
+
     const files = {
       "/m/two.gltf": text(
         triangle(
@@ -247,6 +274,7 @@ describe("a model", () => {
       ),
       "/m/positions.bin": padded,
     };
+
     const two = await load("/m/two.gltf", files);
     expect(shape(two.model)).toMatchObject(TRIANGLE);
     expect(two.asked).toEqual(["/m/two.gltf", "/m/positions.bin"]);
@@ -271,26 +299,33 @@ describe("a model", () => {
       // A binary glTF that says it has a document, and has none.
       "/hollow.glb": glb({}).subarray(0, 12),
     };
+
     expect((await load("/m/tri.gltf", files)).failure).toEqual(
       new Assets.AssetFailed({
         url: "/m/gone.bin",
         message: "There is no such file.",
       })
     );
+
     const garbage = (await load("/garbage.glb", files))
       .failure as Assets.AssetFailed;
+
     expect(garbage).toBeInstanceOf(Assets.AssetFailed);
     expect(garbage.url).toBe("/garbage.glb");
     expect(garbage.message).toMatch(/^It is not a glTF model: /u);
+
     const hollow = (await load("/hollow.glb", files))
       .failure as Assets.AssetFailed;
+
     expect([hollow.url, hollow.message]).toEqual([
       "/hollow.glb",
       "It is not a glTF model: It is a binary glTF with no JSON in it.",
     ]);
+
     // JSON, and no model: Three.js says what it makes of it.
     const empty = (await load("/empty.gltf", files))
       .failure as Assets.AssetFailed;
+
     expect(empty).toBeInstanceOf(Assets.AssetFailed);
     expect(empty.url).toBe("/empty.gltf");
     expect(empty.message).toMatch(/^It could not be made a model: .+/u);
@@ -311,6 +346,7 @@ describe("a model", () => {
   it("gives up the files it was still fetching when its loading is given up", async () => {
     const waiting: string[] = [];
     const givenUp: string[] = [];
+
     const slow = Layer.succeed(Assets.Loader, {
       bytes: (url) =>
         url.endsWith(".gltf")
@@ -332,11 +368,13 @@ describe("a model", () => {
             )
           : Effect.callback<Uint8Array, Assets.AssetFailed>(() => {
               waiting.push(url);
+
               return Effect.sync(() => {
                 givenUp.push(url);
               });
             }),
     }) as Layer.Layer<never>;
+
     const fiber = Effect.runFork(
       Effect.scoped(
         Assets.load(
@@ -344,6 +382,7 @@ describe("a model", () => {
         )
       ).pipe(Effect.provide(slow))
     );
+
     await new Promise((resolve) => setTimeout(resolve, 0));
     // Both at once, and neither is here.
     expect(waiting.toSorted()).toEqual(["/m/a.bin", "/m/b.bin"]);
@@ -354,14 +393,16 @@ describe("a model", () => {
   it("hands its loader to prepare, once each time it is loaded, before the model is read", async () => {
     const file = glb(triangle([{ byteLength: both.length }], oneBuffer), both);
     const prepared: unknown[] = [];
+
     const options: Gltf.ModelOptions = {
       prepare: (loader) => {
         prepared.push(loader);
       },
     };
+
     await load("/tri.glb", { "/tri.glb": file }, options);
     await load("/tri.glb", { "/tri.glb": file }, options);
-    expect(prepared.length).toBe(2);
+    expect(prepared).toHaveLength(2);
     expect(prepared[0]).toBeInstanceOf(GLTFLoader);
     expect(prepared[1]).not.toBe(prepared[0]);
   });
@@ -376,6 +417,7 @@ describe("a model", () => {
         bytes: Array.from(new Uint8Array(await blob.arrayBuffer())),
         type: blob.type,
       });
+
       const bitmap = {
         width: 1,
         height: 1,
@@ -384,12 +426,15 @@ describe("a model", () => {
           bitmap.closed++;
         },
       };
+
       bitmaps.push(bitmap);
+
       return bitmap;
     });
     // Enough of a JPEG to be told for one, and bytes that are nothing.
     const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 9, 8, 7]);
     const unknown = new Uint8Array([1, 2, 3]);
+
     const skinned = (...uris: string[]): Doc =>
       triangle([{ byteLength: both.length, uri: "tri.bin" }], oneBuffer, {
         primitive: { material: 0 },
@@ -404,6 +449,7 @@ describe("a model", () => {
           images: uris.map((uri) => ({ uri })),
         },
       });
+
     const files = {
       "/m/skin.gltf": text(skinned("skin.jpg")),
       "/m/kinds.gltf": text(
@@ -413,6 +459,7 @@ describe("a model", () => {
       "/m/skin.jpg": jpeg,
       "/m/skins/plain.bin": unknown,
     };
+
     const { asked, close, model } = await load("/m/skin.gltf", files);
     expect(asked.toSorted()).toEqual([
       "/m/skin.gltf",
@@ -493,13 +540,14 @@ describe("Gltf.mesh", () => {
       }),
       both
     );
+
     const { model } = await load("/two.glb", { "/two.glb": file });
     const [first, second, pair, nameless] = model!.scene.children as Mesh[];
     expect(Gltf.mesh(model!)).toBe(first);
     expect(Gltf.mesh(model!, "Other")).toBe(second);
     expect(Gltf.mesh(model!, "Tri")).toBe(first);
     // The first part of the mesh of two, by the name of what holds both.
-    expect(pair!.children.length).toBe(2);
+    expect(pair!.children).toHaveLength(2);
     expect(Gltf.mesh(model!, "Pair")).toBe(pair!.children[0]);
     expect(Gltf.mesh(model!, "Nameless")).toBe(nameless);
     expect(() => Gltf.mesh(model!, "Hull")).toThrow(
@@ -516,6 +564,7 @@ describe("Gltf.mesh", () => {
     expect(() => Gltf.mesh(model!, "TriMesh")).toThrow("found no mesh named");
     // A look is a geometry and a material, which a mesh has.
     expect(Gltf.mesh(model!).geometry).toBe(first!.geometry);
+
     const bare = await load("/bare.gltf", {
       "/bare.gltf": text({
         asset: { version: "2.0" },
@@ -524,6 +573,7 @@ describe("Gltf.mesh", () => {
         nodes: [{ name: "Empty" }],
       }),
     });
+
     expect(() => Gltf.mesh(bare.model!)).toThrow(
       "Gltf.mesh was given a model with no mesh in it."
     );
@@ -541,23 +591,29 @@ describe("a level's models", () => {
   it("are what its objects and its instances are made of, for as long as the level", async () => {
     const file = glb(triangle([{ byteLength: both.length }], oneBuffer), both);
     const Fleet = Assets.bundle("gl/Fleet", { ship: Gltf.model("/tri.glb") });
+
     const Ships = Three.objects("gl/Ships", {
       of: Ship,
       from: Fleet,
       make: (_entity, { ship }) => ship.scene.clone(),
     });
+
     const Rocks = Three.instances("gl/Rocks", {
       of: Rock,
       from: Fleet,
       look: ({ ship }) => Gltf.mesh(ship, "Tri"),
     });
+
     let scene: Scene | undefined;
+
     const renderer = Layer.succeed(Three.Renderer, {
       render(drawn) {
         scene = drawn;
       },
     });
+
     const scope = Effect.runSync(Scope.make());
+
     const app = Effect.runSync(
       App.make({
         plugins: [Three.plugin, Assets.plugin],
@@ -574,10 +630,12 @@ describe("a level's models", () => {
         Scope.provide(scope)
       )
     );
+
     const at = (x: number) => Transform3d.Position.of({ x, y: 0, z: 0 });
     app.world.spawn(Ship, at(1));
     app.world.spawn(Ship, at(2));
     app.world.spawn(Rock, at(3));
+
     const go = async (to: "dock" | "space"): Promise<void> => {
       app.world.singleton(Level).next = to;
       app.tick(1);
@@ -586,15 +644,19 @@ describe("a level's models", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       app.frame(0);
     };
+
     app.frame(0);
     expect(scene!.children).toEqual([]);
     await go("space");
+
     const [one, two] = scene!.children.filter(
       (child) => !(child instanceof InstancedMesh)
     );
+
     const rocks = scene!.children.find(
       (child): child is InstancedMesh => child instanceof InstancedMesh
     )!;
+
     // Two ships, each a copy of the model's scene, where its entity is.
     expect([one!.position.x, two!.position.x]).toEqual([1, 2]);
     expect(one).not.toBe(two);

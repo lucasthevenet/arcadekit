@@ -41,6 +41,7 @@ import type * as System from "./System";
  * @category Type-level
  */
 export type AnySystem = System.System<any, any>;
+
 /**
  * Any action handler, whatever its action, result and requirements.
  *
@@ -103,6 +104,7 @@ export type Any = Plugin<any, any, any, any, any, any>;
  */
 export type TickErrorOf<T> =
   T extends Plugin<infer X, any, any, any, any, any> ? X : never;
+
 /**
  * A plugin's action handlers, or a union's.
  *
@@ -110,6 +112,7 @@ export type TickErrorOf<T> =
  */
 export type HandlerOf<T> =
   T extends Plugin<any, infer X, any, any, any, any> ? X : never;
+
 /**
  * The services a plugin's layer provides, or a union's.
  *
@@ -117,6 +120,7 @@ export type HandlerOf<T> =
  */
 export type ProvidedOf<T> =
   T extends Plugin<any, any, infer X, any, any, any> ? X : never;
+
 /**
  * The error that building a plugin's layer or running its setup can fail with.
  *
@@ -124,6 +128,7 @@ export type ProvidedOf<T> =
  */
 export type ErrorOf<T> =
   T extends Plugin<any, any, any, infer X, any, any> ? X : never;
+
 /**
  * What a plugin's layer requires that its dependencies don't provide.
  *
@@ -131,6 +136,7 @@ export type ErrorOf<T> =
  */
 export type LayerNeedsOf<T> =
   T extends Plugin<any, any, any, any, infer X, any> ? X : never;
+
 /**
  * What a plugin's systems, handlers and setup require.
  *
@@ -140,14 +146,21 @@ export type NeedsOf<T> =
   T extends Plugin<any, any, any, any, any, infer X> ? X : never;
 
 type SystemError<T> = T extends System.System<infer E, any> ? E : never;
+
 type SystemNeeds<T> = T extends System.System<any, infer R> ? R : never;
+
 type HandlerNeeds<T> =
   T extends Action.Handler<any, any, any, any, infer R> ? R : never;
+
 type LayerProvides<L> =
   L extends Layer.Layer<infer ROut, any, any> ? ROut : never;
+
 type LayerError<L> = L extends Layer.Layer<any, infer E, any> ? E : never;
+
 type LayerNeeds<L> = L extends Layer.Layer<any, any, infer RIn> ? RIn : never;
+
 type EffectError<T> = T extends Effect.Effect<any, infer E, any> ? E : never;
+
 type EffectNeeds<T> = T extends Effect.Effect<any, any, infer R> ? R : never;
 
 /**
@@ -241,23 +254,31 @@ export const flatten = (plugins: readonly Any[]): Any[] => {
   const out: Any[] = [];
   const seen = new Set<Any>();
   const names = new Map<string, Any>();
+
   const visit = (plugin: Any): void => {
     if (seen.has(plugin)) {
       return;
     }
+
     seen.add(plugin);
     const other = names.get(plugin.name);
+
     if (other !== undefined) {
       throw new Error(`Two different plugins are both named "${plugin.name}"`);
     }
+
     names.set(plugin.name, plugin);
+
     for (const dependency of plugin.plugins) {
       visit(dependency);
     }
+
     out.push(plugin);
   };
+
   for (const plugin of plugins) {
     visit(plugin);
   }
+
   return out;
 };

@@ -48,6 +48,7 @@ export const Member: Schema.Struct<{
   readonly room: typeof Schema.String;
   readonly peer: typeof Schema.String;
 }> = Schema.Struct({ room: Schema.String, peer: Schema.String });
+
 export type Member = typeof Member.Type;
 
 /**
@@ -158,6 +159,7 @@ export const join = (
 ): Exit.Exit<Member, Refused> => {
   let room: string | undefined;
   let peer: string | null;
+
   try {
     // A host may be handed the whole address or its path alone.
     const parsed = new URL(url, "ws://relay");
@@ -169,6 +171,7 @@ export const join = (
     room = undefined;
     peer = null;
   }
+
   if (
     room === undefined ||
     room === "" ||
@@ -184,6 +187,7 @@ export const join = (
       1008
     );
   }
+
   if (options.peers !== undefined && !options.peers.includes(peer)) {
     return refuse(
       "not a peer",
@@ -192,7 +196,9 @@ export const join = (
       1008
     );
   }
+
   const inRoom = present.filter((member) => member.room === room);
+
   if (inRoom.some((member) => member.peer === peer)) {
     return refuse(
       "name taken",
@@ -201,7 +207,9 @@ export const join = (
       1008
     );
   }
+
   const most = options.maxPeers ?? 8;
+
   if (inRoom.length >= most) {
     return refuse(
       "room full",
@@ -210,6 +218,7 @@ export const join = (
       1008
     );
   }
+
   return Exit.succeed({ room, peer });
 };
 
@@ -235,6 +244,7 @@ export const forward = (
 ): Exit.Exit<readonly Delivery[], Refused> => {
   const text = typeof data === "string" ? data : decoder.decode(data);
   const longest = options.maxLength ?? 65_536;
+
   if (text.length > longest) {
     return refuse(
       "too long",
@@ -243,7 +253,9 @@ export const forward = (
       1009
     );
   }
+
   const message = Lockstep.decode(text);
+
   if (Exit.isFailure(message)) {
     return refuse(
       "not a message",
@@ -252,6 +264,7 @@ export const forward = (
       1007
     );
   }
+
   if (message.value.from !== from.peer) {
     return refuse(
       "speaks for another",
@@ -260,13 +273,16 @@ export const forward = (
       1008
     );
   }
+
   const passedOn = Lockstep.encode(message.value);
   const deliveries: Delivery[] = [];
+
   for (const member of present) {
     if (member.room === from.room && member.peer !== from.peer) {
       deliveries.push({ to: member, text: passedOn });
     }
   }
+
   return Exit.succeed(deliveries);
 };
 
@@ -329,26 +345,33 @@ export const make = (options: Options = {}): Server => {
     string,
     Map<string, { readonly send: (text: string) => void }>
   >();
+
   const members = (room: string): Member[] =>
     Array.from(rooms.get(room)?.keys() ?? [], (peer) => ({ room, peer }));
+
   return {
     connect(url, send) {
       // Only that room's members are needed, and the address says which.
       const all = Array.from(rooms.keys()).flatMap((room) => members(room));
       const joined = join(url, all, options);
+
       if (Exit.isFailure(joined)) {
         return Exit.failCause(joined.cause);
       }
+
       const member = joined.value;
       let room = rooms.get(member.room);
+
       if (room === undefined) {
         room = new Map();
         rooms.set(member.room, room);
       }
+
       // The connection itself, so that its close is told from a later one's.
       const self = { send };
       room.set(member.peer, self);
       const peers = room;
+
       return Exit.succeed({
         member,
         receive(data) {
@@ -358,18 +381,22 @@ export const make = (options: Options = {}): Server => {
             members(member.room),
             options
           );
+
           if (Exit.isFailure(deliveries)) {
             return Exit.failCause(deliveries.cause);
           }
+
           for (const { text, to } of deliveries.value) {
             peers.get(to.peer)?.send(text);
           }
+
           return Exit.void;
         },
         close() {
           // Unless the name has been given to a newer connection since.
           if (peers.get(member.peer) === self) {
             peers.delete(member.peer);
+
             if (peers.size === 0 && rooms.get(member.room) === peers) {
               rooms.delete(member.room);
             }

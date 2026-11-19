@@ -41,17 +41,21 @@ const Landed = Event.define("st/Landed", Schema.Struct({}));
 /** Counts the moves it hears of. It is listed before the system that says so. */
 const Tally = System.make("st/Tally", function* () {
   const heard = (yield* Landed).read();
+
   if (heard.length > 0) {
     (yield* Score).moves += heard.length;
   }
 });
+
 /** Says that a piece has landed, a tick after it was moved. */
 const Land = System.make("st/Land", function* () {
   if ((yield* Moved).read().length > 0) {
     (yield* Landed).emit({});
   }
 });
+
 const entered: string[] = [];
+
 const Opening = System.make("st/Opening", function* () {
   entered.push("playing");
   (yield* Commands).spawn(Piece.of({ x: 0 }));
@@ -152,9 +156,11 @@ describe("app.settled", () => {
 
   it("does not wait for what draws: an event kept for the frame stage is nothing a tick is needed for", () => {
     const heard: number[] = [];
+
     const Watch = System.make("st/Watch", function* () {
       heard.push((yield* Moved).read().length + (yield* Landed).read().length);
     }).pipe(System.inStage("frame"));
+
     const app = run(App.make({ plugins: [Rules], systems: [Watch] }));
     app.dispatch(Begin, {});
     app.tick(1);
@@ -196,11 +202,13 @@ describe("app.settled", () => {
     app.tick(0.1);
     expect(done).toEqual(["slept", "ticked"]);
     expect(app.settled).toBe(true);
+
     for (let i = 0; i < 5; i++) {
       app.tick(0.1);
     }
+
     expect(app.settled).toBe(true);
-    expect(done.length).toBe(2);
+    expect(done).toHaveLength(2);
   });
 
   it("is false while a fiber is due to run at the next tick", () => {
@@ -226,9 +234,11 @@ describe("app.settled", () => {
   it("is not changed by looking, nor by the stages between ticks", () => {
     const app = run(App.make({ plugins: [Rules], checkpointEvery: 1 }));
     const before = app.world.hash();
+
     for (let i = 0; i < 3; i++) {
       expect(app.settled).toBe(false);
     }
+
     app.frame(0);
     app.input();
     expect(app.settled).toBe(false);
@@ -241,6 +251,7 @@ describe("a game that ticks when its player moves", () => {
   const Shown = View.define("st/Shown", { x: 0, moves: 0, phase: "title" });
   let frames = 0;
   let lastAlpha = Number.NaN;
+
   const Show = View.publish(Shown, function* () {
     frames++;
     lastAlpha = (yield* Frame).alpha;
@@ -248,39 +259,49 @@ describe("a game that ticks when its player moves", () => {
     (yield* Pieces).each((piece) => {
       ({ x } = piece);
     });
+
     return {
       x,
       moves: (yield* Score).moves,
       phase: (yield* Phase).value as string,
     };
   });
+
   const Keys = Input.bind(
     "st/Keys",
     Input.onPress("ArrowRight", Move, { by: 1 })
   );
+
   const Game = Plugin.make("st/Game", {
     plugins: [Rules, View.plugin],
     systems: [Show, Keys],
   });
+
   const play = () => {
     frames = 0;
     const ui = View.makeBridge();
     const source = Input.makeManualSource();
+
     const app = run(
       App.make({ plugins: [Game], checkpointEvery: 1, seed: 5 }).pipe(
         Effect.provide(View.layer(ui)),
         Effect.provideService(Input.Source, source)
       )
     );
+
     const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
+
     /** Frames at the screen's rate, sixty a second. */
     const frame = (count = 1): number => {
       let ticks = 0;
+
       for (let i = 0; i < count; i++) {
         ticks += advance(1 / 60);
       }
+
       return ticks;
     };
+
     return { app, ui, source, frame };
   };
 
@@ -363,10 +384,12 @@ describe("a game that ticks when its player moves", () => {
     ui.send(Move, { by: -4 });
     frame(200);
     expect(ui.get(Shown)).toEqual({ x: -3, moves: 2, phase: "playing" });
+
     // The same game with no UI, no devices and no rest: tick after tick.
     const again = run(
       App.make({ plugins: [Game], checkpointEvery: 1, seed: 5 })
     );
+
     App.replay(again, app.actionLog, {
       delta: 1 / 60,
       ticks: app.time.tick,
@@ -383,26 +406,33 @@ describe("a game that ticks when its player moves", () => {
 // state, no script, no event. The system says so itself.
 const Clock = Singleton.define("st/Clock", { left: Field.i32 }, { left: 0 });
 const Wind = Action.define("st/Wind", Schema.Struct({ ticks: Schema.Int }));
+
 const wind = Action.handler(Wind, function* ({ ticks }) {
   (yield* Clock).left = ticks;
 });
+
 const windAndSay = Action.handler(Wind, function* ({ ticks }) {
   (yield* Clock).left = ticks;
   // A handler may say so too: it is the tick's.
   (yield* Ticks).more();
 });
+
 let ran = 0;
+
 const RunDown = System.make("st/RunDown", function* () {
   ran++;
   const clock = yield* Clock;
+
   if (clock.left > 0) {
     clock.left -= 1;
     (yield* Ticks).more();
   }
 });
+
 /** The same clock, kept by a system that does not say it has more to do. */
 const RunDownSilently = System.make("st/RunDown", function* () {
   const clock = yield* Clock;
+
   if (clock.left > 0) {
     clock.left -= 1;
   }
@@ -419,10 +449,12 @@ describe("a system that has more to do", () => {
     app.enqueue(Wind, { ticks: 3 });
     expect(app.settled).toBe(false);
     const settled: boolean[] = [];
+
     for (let i = 0; i < 5; i++) {
       app.tick(1);
       settled.push(app.settled);
     }
+
     // Three ticks with more to do; the fourth finds it run down.
     expect(settled).toEqual([false, false, false, true, true]);
     expect(app.world.singleton(Clock).left).toBe(0);
@@ -430,6 +462,7 @@ describe("a system that has more to do", () => {
     app.dispatch(Wind, { ticks: 1 });
     expect(app.settled).toBe(true);
     app.tick(1);
+
     for (let i = 0; i < 3; i++) {
       app.frame(0);
       app.input();
@@ -441,11 +474,13 @@ describe("a system that has more to do", () => {
     ran = 0;
     const app = run(App.make({ ...options, systems: [RunDown] }));
     const advance = Driver.fixedStep(app, { hz: 10, ticks: "whenNeeded" });
+
     const frames = (count: number): void => {
       for (let i = 0; i < count; i++) {
         advance(0.1);
       }
     };
+
     // A new game runs a tick to be asked in, and the one after it.
     frames(50);
     expect(app.time.tick).toBe(2);
@@ -469,9 +504,11 @@ describe("a system that has more to do", () => {
     step(0.1);
     step(0.1);
     silent.enqueue(Wind, { ticks: 20 });
+
     for (let i = 0; i < 100; i++) {
       step(0.1);
     }
+
     expect(silent.world.singleton(Clock).left).toBe(18);
   });
 
@@ -479,6 +516,7 @@ describe("a system that has more to do", () => {
     const app = run(
       App.make({ components: [Clock], handlers: [windAndSay], systems: [] })
     );
+
     app.tick(1);
     expect(app.settled).toBe(true);
     // Dispatched between two ticks, the handler has run: the game is
@@ -501,18 +539,22 @@ describe("a system that has more to do", () => {
     expect(app.settled).toBe(false);
     app.tick(1);
     expect(app.settled).toBe(true);
+
     // In real time every tick runs whoever asks: the same game, tick for
     // tick, as one whose system says nothing.
     const said = run(
       App.make({ ...options, systems: [RunDown], checkpointEvery: 1 })
     );
+
     const unsaid = run(
       App.make({ ...options, systems: [RunDownSilently], checkpointEvery: 1 })
     );
+
     for (const one of [said, unsaid]) {
       one.enqueue(Wind, { ticks: 4 });
       Driver.fixedStep(one, { hz: 10 })(1);
     }
+
     expect(said.time.tick).toBe(5);
     expect(said.world.hash()).toBe(unsaid.world.hash());
     expect(said.actionLog).toEqual(unsaid.actionLog);
@@ -527,19 +569,24 @@ describe("a system that has more to do", () => {
     expect(app.world.singleton(Clock).left).toBe(4);
     const save = app.save();
     expect(save._tag).toBe("Success");
+
     if (save._tag !== "Success") {
       return;
     }
+
     // Loaded in the middle of the clock's run. What the system asked is
     // not in the save; the first tick asks it afresh.
     const loaded = run(
       App.load(save.value, { ...options, systems: [RunDown] })
     );
+
     expect(loaded.settled).toBe(false);
     const advance = Driver.fixedStep(loaded, { hz: 10, ticks: "whenNeeded" });
+
     for (let i = 0; i < 50; i++) {
       advance(0.1);
     }
+
     expect(loaded.world.singleton(Clock).left).toBe(0);
     expect(loaded.time.tick).toBe(2 + 4 + 2);
   });
@@ -549,10 +596,13 @@ describe("a system that has more to do", () => {
       const Pushy = System.make("st/Pushy", function* () {
         (yield* Ticks).more();
       }).pipe(System.inStage(stage));
+
       const app = run(App.make({ systems: [Pushy] }));
       app.tick(1, { input: false });
+
       const between = (): void =>
         stage === "input" ? app.input() : app.frame(0);
+
       expect(between, stage).toThrow(
         "Ticks.more was called in the frame stage or the input stage"
       );

@@ -8,7 +8,9 @@ export const sourceOf = (
   const match = /(?:^|\/)packages\/([^/]+)\/(src\/.+)$/u.exec(
     filename.replaceAll("\\", "/")
   );
+
   const rules = packages.find((one) => one.dir === match?.[1]);
+
   return match === null || rules === undefined
     ? undefined
     : { rules, file: match[2]! };
@@ -17,6 +19,7 @@ export const sourceOf = (
 /** Where a relative specifier leads, from a file: "src/ecs/world.ts" and "../App" give "src/App". */
 export const resolve = (file: string, specifier: string): string => {
   const parts = file.split("/").slice(0, -1);
+
   for (const part of specifier.split("/")) {
     if (part === "..") {
       parts.pop();
@@ -24,5 +27,6 @@ export const resolve = (file: string, specifier: string): string => {
       parts.push(part);
     }
   }
+
   return parts.join("/");
 };

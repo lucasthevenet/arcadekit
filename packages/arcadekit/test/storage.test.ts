@@ -9,15 +9,18 @@ const Position = Component.define("st/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Velocity = Component.define("st/Velocity", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Health = Component.define("st/Health", { hp: Field.i32 });
 const Name = Component.define("st/Name", { value: Field.json<string>() });
 const Target = Component.define("st/Target", { entity: Field.entity });
 const Enemy = Component.tag("st/Enemy");
 const Stunned = Component.tag("st/Stunned", { storage: "sparse" });
+
 const Burning = Component.define(
   "st/Burning",
   { seconds: Field.f32 },
@@ -33,11 +36,13 @@ const query = <const D extends Terms>(
 describe("entities and components", () => {
   it("spawns, reads, writes and despawns", () => {
     const world = new World();
+
     const e = world.spawn(
       Position.of({ x: 1, y: 2 }),
       Health.of({ hp: 10 }),
       Enemy
     );
+
     expect(world.isAlive(e)).toBe(true);
     expect(world.entityCount).toBe(1);
     expect(world.get(e, Position)).toEqual({ x: 1, y: 2 });
@@ -83,12 +88,15 @@ describe("entities and components", () => {
       name: Field.json<string | undefined>(),
       cache: Field.transient<object>(),
     });
+
     const Faint = Component.define(
       "st/Faint",
       { seconds: Field.f32, turns: Field.u8 },
       { storage: "sparse" }
     );
+
     const world = new World();
+
     // A row that held other numbers, so that nothing is 0 by luck.
     const old = world.spawn(
       Mixed.of({
@@ -101,12 +109,15 @@ describe("entities and components", () => {
       }),
       Faint.of({ seconds: 9, turns: 9 })
     );
+
     world.despawn(old);
+
     // Past the compiler, as JavaScript or a cast gets there.
     const spawned = world.spawn(
       Mixed.of({ x: 3 } as never),
       Faint.of({} as never)
     );
+
     expect(world.get(spawned, Mixed)).toEqual({
       x: 3,
       wide: 0,
@@ -117,10 +128,12 @@ describe("entities and components", () => {
       cache: undefined,
     });
     expect(world.get(spawned, Faint)).toEqual({ seconds: 0, turns: 0 });
+
     // Named and not given is the same as not named.
     const named = world.spawn(
       Mixed.of({ x: undefined, wide: 2, hp: undefined } as never)
     );
+
     expect(world.get(named, Mixed)).toMatchObject({ x: 0, wide: 2, hp: 0 });
     // Added, to an entity without it and over the one it has: a value is
     // the whole component, and what it leaves out is 0 again.
@@ -150,16 +163,20 @@ describe("entities and components", () => {
       hp: Field.i32,
       name: Field.json<string | undefined>(),
     });
+
     const Faint = Component.define(
       "st/Faint2",
       { seconds: Field.f32 },
       { storage: "sparse" }
     );
+
     const world = new World();
+
     const one = world.spawn(
       Mixed.of({ x: 1.5, hp: 4, name: "one" }),
       Faint.of({ seconds: 2.5 })
     );
+
     world.set(one, Mixed, { x: undefined, hp: 6 } as never);
     expect(world.get(one, Mixed)).toEqual({ x: 1.5, hp: 6, name: "one" });
     world.set(one, Mixed, { hp: undefined, x: 8 } as never);
@@ -177,10 +194,12 @@ describe("entities and components", () => {
   it("stores arbitrary values and entity references", () => {
     const world = new World();
     const a = world.spawn(Name.of({ value: "goblin" }));
+
     const b = world.spawn(
       Name.of({ value: "archer" }),
       Target.of({ entity: a })
     );
+
     expect(world.get(b, Name)).toEqual({ value: "archer" });
     const target = world.get(b, Target)!.entity;
     expect(target).toBe(a);
@@ -266,15 +285,18 @@ describe("entities and components", () => {
 describe("queries", () => {
   it("iterates every matching table with accessors and writes through them", () => {
     const world = new World();
+
     const a = world.spawn(
       Position.of({ x: 0, y: 0 }),
       Velocity.of({ x: 1, y: 2 })
     );
+
     const b = world.spawn(
       Position.of({ x: 10, y: 10 }),
       Velocity.of({ x: -1, y: 0 }),
       Enemy
     );
+
     const still = world.spawn(Position.of({ x: 5, y: 5 }));
 
     const moving = world.view(query([Position, Velocity]));
@@ -293,9 +315,11 @@ describe("queries", () => {
 
   it("gives raw columns, one chunk per table when nothing is filtered per entity", () => {
     const world = new World();
+
     for (let i = 0; i < 100; i++) {
       world.spawn(Position.of({ x: i, y: 0 }), Velocity.of({ x: 1, y: 0 }));
     }
+
     for (let i = 0; i < 50; i++) {
       world.spawn(
         Position.of({ x: 0, y: 0 }),
@@ -303,13 +327,16 @@ describe("queries", () => {
         Enemy
       );
     }
+
     const moving = world.view(query([Position, Velocity]));
     const chunks: [number, number][] = [];
     moving.eachChunk((start, end, pos, vel, entities) => {
       expect(entities.length).toBeGreaterThanOrEqual(end);
+
       for (let i = start; i < end; i++) {
         pos.x[i]! += vel.x[i]!;
       }
+
       chunks.push([start, end]);
     });
     expect(chunks).toEqual([
@@ -379,15 +406,18 @@ describe("queries", () => {
   it("splits raw iteration into runs around rows a sparse filter excludes", () => {
     const world = new World();
     const all: Entity[] = [];
+
     for (let i = 0; i < 10; i++) {
       all.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
+
     world.add(all[3]!, Stunned);
     world.add(all[7]!, Stunned);
     const awake = world.view(query([Position], [], [Stunned]));
     const chunks: [number, number][] = [];
     awake.eachChunk((start, end, pos) => {
       chunks.push([start, end]);
+
       for (let i = start; i < end; i++) {
         pos.x[i]! += 100;
       }
@@ -411,9 +441,11 @@ describe("queries", () => {
       [4, 7],
       [8, 9],
     ]);
+
     for (const e of all) {
       world.add(e, Stunned);
     }
+
     chunks.length = 0;
     awake.eachChunk((start, end) => void chunks.push([start, end]));
     expect(chunks).toEqual([]);
@@ -421,16 +453,20 @@ describe("queries", () => {
 
   it("reads and writes sparse components as query data through accessors", () => {
     const world = new World();
+
     const a = world.spawn(
       Position.of({ x: 1, y: 0 }),
       Burning.of({ seconds: 5 })
     );
+
     const b = world.spawn(Position.of({ x: 2, y: 0 }));
+
     const c = world.spawn(
       Position.of({ x: 3, y: 0 }),
       Enemy,
       Burning.of({ seconds: 9 })
     );
+
     const burning = world.view(query([Position, Burning]));
     const seen: string[] = [];
     burning.each((pos, burn, entity) => {
@@ -447,19 +483,24 @@ describe("queries", () => {
   it("hands sparse data terms to raw loops as columns plus a row lookup", () => {
     const world = new World();
     const ents: Entity[] = [];
+
     for (let i = 0; i < 20; i++) {
       ents.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
+
     for (const i of [11, 3, 2, 4]) {
       world.add(ents[i]!, Burning.of({ seconds: 1 }));
     }
+
     const view = world.view(query([Position, Burning]));
+
     for (const path of ["mask", "sorted"] as const) {
       view._path = path;
       const chunks: [number, number][] = [];
       view.eachChunk((start, end, pos, burning, entities) => {
         chunks.push([start, end]);
         const { seconds } = burning.columns;
+
         for (let i = start; i < end; i++) {
           seconds[burning.indexOf(entities[i]!)]! += pos.x[i]!;
         }
@@ -471,6 +512,7 @@ describe("queries", () => {
       ]);
       expect(view._lastPath).toBe(path);
     }
+
     expect(
       [2, 3, 4, 11].map((i) => world.get(ents[i]!, Burning)!.seconds)
     ).toEqual([5, 7, 9, 23]);
@@ -479,6 +521,7 @@ describe("queries", () => {
   it("visits entities in the same order whichever strategy finds them", () => {
     const world = new World();
     const ents: Entity[] = [];
+
     for (let i = 0; i < 4000; i++) {
       ents.push(
         i % 2 === 0
@@ -486,17 +529,22 @@ describe("queries", () => {
           : world.spawn(Position.of({ x: i, y: 0 }), Enemy)
       );
     }
+
     // Added in an order that is not table order.
     for (const i of [900, 17, 500, 3]) {
       world.add(ents[i]!, Burning.of({ seconds: i }));
     }
+
     const view = world.view(query([Position], [Burning]));
+
     const order = (path: "auto" | "mask" | "sorted") => {
       view._path = path;
       const out: number[] = [];
       view.each((pos) => void out.push(pos.x));
+
       return out;
     };
+
     const tableOrder = [500, 900, 3, 17];
     expect(order("mask")).toEqual(tableOrder);
     expect(order("sorted")).toEqual(tableOrder);
@@ -507,9 +555,11 @@ describe("queries", () => {
     // Rare component: sort its few members. Common component: scan a mask.
     expect(order("auto")).toEqual(tableOrder);
     expect(view._lastPath).toBe("sorted");
+
     for (let i = 0; i < 1000; i++) {
       world.add(ents[i]!, Burning);
     }
+
     const common = order("auto");
     expect(view._lastPath).toBe("mask");
     expect(order("sorted")).toEqual(common);
@@ -520,19 +570,26 @@ describe("queries", () => {
   it("finds exact chunks when exclusions are rare enough for the native scan", () => {
     const world = new World();
     const ents: Entity[] = [];
+
     for (let i = 0; i < 3000; i++) {
       ents.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
+
     const awake = world.view(query([Position], [], [Stunned]));
+
     const chunks = () => {
       const out: [number, number][] = [];
       awake.eachChunk((start, end) => void out.push([start, end]));
+
       return out;
     };
+
     expect(chunks()).toEqual([[0, 3000]]);
+
     for (const i of [0, 1000, 1001, 2999]) {
       world.add(ents[i]!, Stunned);
     }
+
     expect(chunks()).toEqual([
       [1, 1000],
       [1002, 2999],
@@ -548,22 +605,27 @@ describe("queries", () => {
     const world = new World();
     const plain: Entity[] = [];
     const enemies: Entity[] = [];
+
     for (let i = 0; i < 200; i++) {
       plain.push(world.spawn(Position.of({ x: i, y: 0 })));
       enemies.push(world.spawn(Position.of({ x: 1000 + i, y: 0 }), Enemy));
     }
+
     // Row 2 of the first table and row 3 of the second sort next to each other.
     world.add(plain[2]!, Burning);
     world.add(enemies[3]!, Burning);
     const view = world.view(query([Position], [Burning]));
+
     for (const path of ["sorted", "mask"] as const) {
       view._path = path;
-      const seen: Array<number>[] = [];
+      const seen: number[][] = [];
       view.eachChunk((start, end, pos) => {
         const xs: number[] = [];
+
         for (let i = start; i < end; i++) {
           xs.push(pos.x[i]!);
         }
+
         seen.push(xs);
       });
       expect(seen).toEqual([[2], [1003]]);
@@ -573,11 +635,14 @@ describe("queries", () => {
   it("supports nested iteration over the same view", () => {
     const world = new World();
     const ents: Entity[] = [];
+
     for (let i = 1; i <= 6; i++) {
       ents.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
+
     world.add(ents[1]!, Stunned);
     world.add(ents[4]!, Stunned);
+
     for (const view of [
       world.view(query([Position])),
       world.view(query([Position], [], [Stunned])),
@@ -593,12 +658,15 @@ describe("queries", () => {
         pairs.push(`after:${a.x}`);
       });
       const expected: string[] = [];
+
       for (const a of xs) {
         for (const b of xs) {
           expected.push(`${a}-${b}`);
         }
+
         expected.push(`after:${a}`);
       }
+
       expect(pairs).toEqual(expected);
     }
   });
@@ -606,21 +674,27 @@ describe("queries", () => {
   it("leaves no trace in its masks after a callback throws or a loop nests", () => {
     const world = new World();
     const ents: Entity[] = [];
+
     for (let i = 0; i < 50; i++) {
       ents.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
+
     for (const i of [5, 6, 30]) {
       world.add(ents[i]!, Stunned);
     }
+
     const awake = world.view(query([Position], [], [Stunned]));
     const stunned = world.view(query([Position], [Stunned]));
     stunned._path = "mask";
+
     const snapshot = () =>
       [awake, stunned].map((view) => {
         const out: number[] = [];
         view.each((pos) => void out.push(pos.x));
+
         return out;
       });
+
     const before = snapshot();
     expect(before[0]).toHaveLength(47);
     expect(before[1]).toEqual([5, 6, 30]);
@@ -634,6 +708,7 @@ describe("queries", () => {
         })
       ).toThrow("boom");
     }
+
     expect(snapshot()).toEqual(before);
 
     // The world moved on: the masks must reflect it, not the previous pass.
@@ -666,10 +741,13 @@ describe("what each hands its callback", () => {
     }),
     transient: Field.transient<{ readonly n: number }>(),
   };
+
   const Every = Component.define("st/Every", fields);
+
   const EverySparse = Component.define("st/EverySparse", fields, {
     storage: "sparse",
   });
+
   /** A value that is a different one in every field for every `n`. */
   const valueOf = (n: number) => ({
     f32: n + 0.5,
@@ -683,12 +761,14 @@ describe("what each hands its callback", () => {
     ref: new Date(1000 * n),
     transient: { n },
   });
+
   const names = Object.keys(fields) as (keyof typeof fields)[];
 
   for (const def of [Every, EverySparse]) {
     it(`reads and writes a field of every kind, each in its own column and at its own row (${def.storage})`, () => {
       const world = new World();
       const entities: Entity[] = [];
+
       for (let n = 0; n < 40; n++) {
         // A second table, and rows of the sparse set that are not the
         // table's: every third entity has no such component.
@@ -699,6 +779,7 @@ describe("what each hands its callback", () => {
             : world.spawn(Health.of({ hp: n }), def.of(valueOf(n)), ...extra)
         );
       }
+
       const having = entities.filter((_, n) => n % 3 !== 2);
       const view = world.view(query([Health, def]));
 
@@ -707,9 +788,11 @@ describe("what each hands its callback", () => {
       view.each((health, every, entity) => {
         seen.push(entity);
         const expected = valueOf(health.hp);
+
         for (const name of names) {
           expect(every[name], name).toEqual(expected[name]);
         }
+
         // What it holds is its fields, and no more.
         expect(Object.keys(every)).toEqual([]);
         expect(names.every((name) => name in every)).toBe(true);
@@ -719,10 +802,12 @@ describe("what each hands its callback", () => {
       // Written through the accessors: what the world then holds.
       view.each((health, every) => {
         const next = valueOf(health.hp + 100);
+
         for (const name of names) {
           (every as Record<string, unknown>)[name] = next[name];
         }
       });
+
       for (const entity of having) {
         const n = world.get(entity, Health)!.hp;
         expect(world.get(entity, def)).toEqual(valueOf(n + 100));
@@ -735,6 +820,7 @@ describe("what each hands its callback", () => {
           every.u16 = 1;
         }
       });
+
       for (const entity of having) {
         const n = world.get(entity, Health)!.hp;
         expect(world.get(entity, def)).toEqual(
@@ -745,13 +831,16 @@ describe("what each hands its callback", () => {
 
     it(`reads the same through a query that only reads, in a frozen world, and where writes are noticed (${def.storage})`, () => {
       const world = new World();
+
       // Others first, so that no entity's row is its index.
       for (let n = 0; n < 7; n++) {
         world.spawn(Health.of({ hp: 100 + n }));
       }
+
       for (let n = 0; n < 12; n++) {
         world.spawn(Health.of({ hp: n }), def.of(valueOf(n)));
       }
+
       const read = (spec: QuerySpec<any>): unknown[] => {
         const rows: unknown[] = [];
         world.view(spec).each((...args: unknown[]) => {
@@ -759,14 +848,18 @@ describe("what each hands its callback", () => {
             { readonly hp: number },
             Record<string, unknown>,
           ];
+
           rows.push([health.hp, ...names.map((name) => every[name])]);
         });
+
         return rows;
       };
+
       const expected = Array.from({ length: 12 }, (_, n) => [
         n,
         ...names.map((name) => valueOf(n)[name]),
       ]);
+
       const plain = query([Health, def]);
       expect(read(plain)).toEqual(expected);
       expect(read({ ...query([Health, def]), readDefs: [def] })).toEqual(
@@ -775,13 +868,16 @@ describe("what each hands its callback", () => {
       world.freeze();
       expect(read(plain)).toEqual(expected);
       world.thaw();
+
       // A query that watches the component: from now on its writes are noted.
       const watching = world.view({
         ...query([Health]),
         changedDefs: [def],
       });
+
       watching.entities();
       expect(read(plain)).toEqual(expected);
+
       // And every field's assignment is one, noted for the entity it was.
       for (const name of names) {
         const written: Entity[] = [];
@@ -795,6 +891,7 @@ describe("what each hands its callback", () => {
         });
         expect(watching.entities(), name).toEqual(written);
       }
+
       expect(read(plain)).toEqual(
         Array.from({ length: 12 }, (_, n) => [
           n,
@@ -809,6 +906,7 @@ describe("what each hands its callback", () => {
     const view = world.view(query([Health, Burning]));
     const plain = world.view(query([Health]));
     const entities: Entity[] = [];
+
     const grow = (upTo: number): void => {
       while (entities.length < upTo) {
         const n = entities.length;
@@ -817,10 +915,12 @@ describe("what each hands its callback", () => {
         );
       }
     };
+
     // A table and a sparse set start with room for sixteen, and move
     // their columns to larger arrays when that is used up.
     for (const count of [10, 16, 17, 40, 200]) {
       grow(count);
+
       for (const each of [view, plain]) {
         const seen: number[] = [];
         each.each((...args: unknown[]) => {
@@ -828,11 +928,14 @@ describe("what each hands its callback", () => {
             { hp: number },
             { seconds: number } | Entity,
           ];
+
           seen.push(health.hp);
+
           if (typeof burning === "object") {
             expect(burning.seconds).toBe(health.hp / 2);
             burning.seconds += 0;
           }
+
           health.hp += 1000;
         });
         expect(seen).toEqual(Array.from({ length: count }, (_, n) => n));
@@ -841,22 +944,27 @@ describe("what each hands its callback", () => {
           (health as { hp: number }).hp -= 1000;
         });
       }
+
       for (let n = 0; n < count; n++) {
         expect(world.get(entities[n]!, Health)).toEqual({ hp: n });
         expect(world.get(entities[n]!, Burning)).toEqual({ seconds: n / 2 });
       }
     }
+
     // And a sparse set that grows on its own, its table as it was.
     const Mark = Component.define(
       "st/Mark",
       { v: Field.i32 },
       { storage: "sparse" }
     );
+
     const marked = world.view(query([Mark]));
+
     for (const count of [10, 20, 70]) {
       for (let n = 0; n < count; n++) {
         world.add(entities[n]!, Mark.of({ v: n }));
       }
+
       const seen: number[] = [];
       marked.each((mark) => {
         seen.push(mark.v);
@@ -865,6 +973,7 @@ describe("what each hands its callback", () => {
       expect(seen.toSorted((a, b) => a - b)).toEqual(
         Array.from({ length: count }, (_, n) => n)
       );
+
       for (let n = 0; n < count; n++) {
         expect(world.get(entities[n]!, Mark)).toEqual({ v: -n || 0 });
       }
@@ -880,6 +989,7 @@ describe("what each hands its callback", () => {
     const D = Component.define("st/D", { v: Field.i32 }, { storage: "sparse" });
     const E = Component.define("st/E", { v: Field.i32 }, { storage: "sparse" });
     const entities: Entity[] = [];
+
     for (let n = 0; n < 30; n++) {
       entities.push(
         world.spawn(
@@ -890,10 +1000,12 @@ describe("what each hands its callback", () => {
         )
       );
     }
+
     // The sparse sets in two other orders than the table's rows.
     for (let n = 29; n >= 0; n--) {
       world.add(entities[n]!, D.of({ v: 1000 * n }));
     }
+
     for (const n of [
       3,
       1,
@@ -903,6 +1015,7 @@ describe("what each hands its callback", () => {
     ]) {
       world.add(entities[n]!, E.of({ v: 10_000 * n }));
     }
+
     // Components of one shape and several names: told apart nowhere here.
     const lists: ComponentDef<any>[][] = [
       // In the table alone: one loop for each number of terms up to three,
@@ -919,16 +1032,19 @@ describe("what each hands its callback", () => {
       [D, A, E],
       [E],
     ];
+
     for (const terms of lists) {
       const rows: number[][] = [];
       world.view(query(terms)).each((...args: unknown[]) => {
         const entity = args.pop() as Entity;
         const n = entities.indexOf(entity);
         rows.push([n, ...args.map((term) => (term as { v: number }).v)]);
+
         for (const term of args) {
           (term as { v: number }).v += 1;
         }
       });
+
       const scale = new Map<ComponentDef<any>, number>([
         [A, 1],
         [B, 10],
@@ -937,7 +1053,9 @@ describe("what each hands its callback", () => {
         [E, 10_000],
         [F, 100_000],
       ]);
-      expect(rows.length).toBe(30);
+
+      expect(rows).toHaveLength(30);
+
       for (const [n, ...values] of rows) {
         // A term that is there twice was handed out twice, and added to
         // twice.
@@ -948,6 +1066,7 @@ describe("what each hands its callback", () => {
               terms.filter((other) => other === def).length
           )
         );
+
         // Whatever was added so far, each value is still its own entity's.
         for (let k = 0; k < terms.length; k++) {
           const of = scale.get(terms[k]!)!;
@@ -964,9 +1083,11 @@ describe("structural changes during iteration", () => {
   it("throws on direct changes and defers them through a command buffer", () => {
     const world = new World();
     const commands = new CommandBuffer(world);
+
     for (let i = 0; i < 10; i++) {
       world.spawn(Health.of({ hp: i }));
     }
+
     const view = world.view(query([Health]));
 
     expect(() => view.each((_, entity) => world.despawn(entity))).toThrow(
@@ -981,6 +1102,7 @@ describe("structural changes during iteration", () => {
       if (health.hp < 5) {
         commands.despawn(entity);
       }
+
       if (health.hp === 9) {
         spawned = commands.spawn(Health.of({ hp: 100 }), Enemy);
       }
@@ -1019,20 +1141,26 @@ describe("randomized comparison against a simple model", () => {
   // A second, obviously-correct implementation: a Map of entity -> components.
   // Thousands of random operations must leave both in the same state.
   const defs = [Position, Velocity, Health, Enemy, Stunned, Burning] as const;
+
   const random = (seed: number) => () => {
     seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
+
     return seed / 0x1_00_00_00_00;
   };
+
   const sample = (def: (typeof defs)[number], rnd: () => number): any => {
     if (def === Position || def === Velocity) {
       return { x: Math.fround(rnd() * 100), y: Math.fround(rnd() * 100) };
     }
+
     if (def === Health) {
       return { hp: Math.floor(rnd() * 1000) };
     }
+
     if (def === Burning) {
       return { seconds: Math.fround(rnd() * 10) };
     }
+
     return {};
   };
 
@@ -1046,17 +1174,23 @@ describe("randomized comparison against a simple model", () => {
       for (let step = 0; step < 4000; step++) {
         const roll = rnd();
         const live = [...model.keys()];
+
         const pick =
           live.length > 0 ? live[Math.floor(rnd() * live.length)] : undefined;
+
         const def = defs[Math.floor(rnd() * defs.length)]!;
+
         if (roll < 0.3 || pick === undefined) {
           const chosen = defs.filter(() => rnd() < 0.4);
           const values = new Map<number, any>();
+
           const inputs = chosen.map((d) => {
             const value = sample(d, rnd);
             values.set(d.id, value);
+
             return (d as any).of(value);
           });
+
           model.set(world.spawn(...inputs), values);
         } else if (roll < 0.45) {
           expect(world.despawn(pick)).toBe(true);
@@ -1072,11 +1206,14 @@ describe("randomized comparison against a simple model", () => {
       }
 
       expect(world.entityCount).toBe(model.size);
+
       for (const entity of dead) {
         expect(world.isAlive(entity)).toBe(false);
       }
+
       for (const [entity, values] of model) {
         expect(world.isAlive(entity)).toBe(true);
+
         for (const def of defs) {
           expect(world.has(entity, def)).toBe(values.has(def.id));
           expect(world.get(entity, def as any)).toEqual(values.get(def.id));
@@ -1088,10 +1225,12 @@ describe("randomized comparison against a simple model", () => {
         if (required.storage !== "table") {
           continue;
         }
+
         for (const excluded of defs) {
           if (excluded === required) {
             continue;
           }
+
           const expected = [...model]
             .filter(
               ([, values]) =>
@@ -1099,6 +1238,7 @@ describe("randomized comparison against a simple model", () => {
             )
             .map(([entity]) => entity)
             .sort();
+
           const view = world.view(query([required], [], [excluded]));
           expect(view.entities().sort()).toEqual(expected);
           expect(view.count()).toBe(expected.length);
@@ -1123,6 +1263,7 @@ describe("randomized comparison against a simple model", () => {
             )
             .map(([entity]) => entity)
             .sort();
+
           const view = world.view(query([Position], [sparse], [Enemy]));
           view._path = path;
           const visited: Entity[] = [];
@@ -1134,6 +1275,7 @@ describe("randomized comparison against a simple model", () => {
           const chunked: Entity[] = [];
           view.eachChunk((start, end, pos, entities) => {
             expect(end).toBeGreaterThan(start);
+
             for (let i = start; i < end; i++) {
               const entity = entities[i] as Entity;
               expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id).y);
@@ -1152,6 +1294,7 @@ describe("randomized comparison against a simple model", () => {
           )
           .map(([entity]) => entity)
           .sort();
+
         const view = world.view(query([Health, Burning], [], [Stunned]));
         view._path = path;
         const visited: Entity[] = [];
@@ -1182,6 +1325,7 @@ describe("randomized comparison against a simple model", () => {
         )
         .map(([entity]) => entity)
         .sort();
+
       const chunked: Entity[] = [];
       world
         .view(query([Position], [], [Stunned]))

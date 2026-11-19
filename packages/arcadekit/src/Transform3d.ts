@@ -88,12 +88,15 @@ export const axisAngle = (
   angle: number
 ): { x: number; y: number; z: number; w: number } => {
   const length = Math.hypot(x, y, z);
+
   if (length === 0) {
     return { x: 0, y: 0, z: 0, w: 1 };
   }
+
   // Over the axis's length: the angle would be another for an axis that
   // is not of length 1, and not only the quaternion's length.
   const sin = Math.sin(angle / 2) / length;
+
   return { x: x * sin, y: y * sin, z: z * sin, w: Math.cos(angle / 2) };
 };
 

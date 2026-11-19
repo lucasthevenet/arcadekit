@@ -20,12 +20,13 @@ const TWO_32 = 4_294_967_296;
 /** One step of splitmix32's output function, which maps each 32-bit number to a different one. */
 const mix = (value: number): number => {
   let z = value | 0;
-  z = Math.imul(z ^ (z >>> 16), 0x21f0aaad);
-  z = Math.imul(z ^ (z >>> 15), 0x735a2d97);
+  z = Math.imul(z ^ (z >>> 16), 0x21_f0_aa_ad);
+  z = Math.imul(z ^ (z >>> 15), 0x73_5a_2d_97);
+
   return (z ^ (z >>> 15)) >>> 0;
 };
 
-const GOLDEN = 0x9e3779b9;
+const GOLDEN = 0x9e_37_79_b9;
 
 /**
  * A seeded random number generator, xoshiro128**: the same seed produces the
@@ -52,6 +53,7 @@ export class Rng {
         `A random seed must be a whole number from 0 to ${Number.MAX_SAFE_INTEGER}, and this one is ${seed}.`
       );
     }
+
     // Two seeds differ in their low or their high 32 bits, and `mix` never
     // maps two numbers to one, so two seeds never give the same state. The
     // state is never all zeros, the one state the generator cannot leave.
@@ -81,6 +83,7 @@ export class Rng {
     s[1] = s1;
     s[2] = s2 ^ shifted;
     s[3] = (s3 << 11) | (s3 >>> 21);
+
     return result;
   }
 
@@ -95,6 +98,7 @@ export class Rng {
    */
   int(min: number, max: number): number {
     const range = max - min + 1;
+
     if (
       !Number.isSafeInteger(min) ||
       !Number.isSafeInteger(max) ||
@@ -105,14 +109,17 @@ export class Rng {
         `Random.int(${min}, ${max}): both must be whole numbers, with max no less than min and no more than 2^32 - 1 above it.`
       );
     }
+
     // Reducing 32 bits with `%` alone would favour the low values whenever
     // the range does not divide 2^32. Draws at or above the largest multiple
     // of the range are thrown away instead, so each value keeps equal odds.
     const limit = TWO_32 - (TWO_32 % range);
     let drawn = this.bits();
+
     while (drawn >= limit) {
       drawn = this.bits();
     }
+
     return min + (drawn % range);
   }
 
@@ -121,6 +128,7 @@ export class Rng {
     if (items.length === 0) {
       throw new Error("Random.pick was given an empty list.");
     }
+
     return items[this.int(0, items.length - 1)]!;
   }
 
@@ -134,6 +142,7 @@ export class Rng {
       items[i] = items[j]!;
       items[j] = held;
     }
+
     return items;
   }
 }

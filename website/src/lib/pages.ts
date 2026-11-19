@@ -17,6 +17,7 @@ import { REPO_ROOT, WEBSITE_DIR } from "./site.ts";
 /** The site's own pages, relative to the repository's root. */
 const SITE_DOCS = `${WEBSITE_DIR}/src/content/docs`;
 const PACKAGES = "packages";
+
 /** Where the packages' pages are served: a package's page is this, then its folder's name. */
 const REFERENCE = "reference";
 const HOME = `${WEBSITE_DIR}/src/content/docs/index.mdx`;
@@ -56,8 +57,7 @@ export interface PackagePage extends SitePage, ReferencePackage {
 
 const toPosix = (file: string) => file.split(path.sep).join("/");
 
-const read = (file: string) =>
-  readFileSync(path.join(REPO_ROOT, file), "utf-8");
+const read = (file: string) => readFileSync(path.join(REPO_ROOT, file), "utf8");
 
 /** Markdown's inline marks removed: links keep their text, code and emphasis their content. */
 const plainText = (markdown: string) =>
@@ -80,13 +80,17 @@ const STARTS_PROSE = /^(?:[\p{L}`*[]|#\d)/u;
 export const firstParagraph = (markdown: string): string => {
   const afterTitle = markdown.slice(markdown.search(/^# /mu));
   const [, ...blocks] = afterTitle.split(/\n{2,}/u);
+
   const paragraph = plainText(
     blocks.find((block) => STARTS_PROSE.test(block)) ?? ""
   );
+
   if (paragraph.length <= DESCRIPTION_LENGTH) {
     return paragraph;
   }
+
   let description = "";
+
   for (const sentence of paragraph.match(/.+?\.(?:\s|$)/gu) ?? []) {
     if (
       description !== "" &&
@@ -94,8 +98,10 @@ export const firstParagraph = (markdown: string): string => {
     ) {
       break;
     }
+
     description += sentence;
   }
+
   return description.trim() || paragraph;
 };
 
@@ -111,6 +117,7 @@ const sitePages = (): DocPage[] =>
   markdownUnder(SITE_DOCS).map((file) => {
     const slug = file.replace(/\.md$/u, "");
     const section = file.includes("/") ? (file.split("/", 1)[0] ?? "") : "";
+
     return { file: `${SITE_DOCS}/${file}`, slug, link: `/${slug}`, section };
   });
 
@@ -142,10 +149,13 @@ const packagePages = (): PackagePage[] =>
     .flatMap((folder) => {
       const manifest = manifestOf(folder);
       const modules = entriesOf(manifest).map((entry) => entry.name);
+
       if (modules.length === 0) {
         return [];
       }
+
       const slug = `${REFERENCE}/${folder}`;
+
       return [
         {
           file: `${PACKAGES}/${folder}/package.json`,
@@ -177,6 +187,7 @@ const modulePages = (packages: readonly PackagePage[]): ModulePage[] =>
   packages.flatMap((page) =>
     entriesOf(manifestOf(page.folder)).map(({ name, source }) => {
       const slug = `${REFERENCE}/${page.folder}/${name}`;
+
       return {
         file: `${PACKAGES}/${page.folder}/${source}`,
         slug,
@@ -194,24 +205,29 @@ export const discoverPages = () => {
   /** The pages of the Learn and Guides topics. */
   const docs: readonly DocPage[] = sitePages();
   const packages = packagePages();
+
   /** The reference's index, which lists the packages. */
   const reference: SitePage = {
     file: `${WEBSITE_DIR}/src/lib/reference.ts`,
     slug: REFERENCE,
     link: `/${REFERENCE}`,
   };
+
   const all: readonly SitePage[] = [home, ...docs, reference, ...packages];
   /** The modules' pages, made from their doc comments by the loader. */
   const modules = modulePages(packages);
 
   const files = new Map<string, string>();
+
   for (const page of [...all, ...modules]) {
     const taken = files.get(page.slug);
+
     if (taken !== undefined) {
       throw new Error(
         `${page.file} and ${taken} would both be served at ${page.link}`
       );
     }
+
     files.set(page.slug, page.file);
   }
 

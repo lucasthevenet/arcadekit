@@ -57,14 +57,17 @@ const Steer = System.make("Steer", function* () {
     if (keys.down("ArrowLeft")) {
       ship.x -= 10 * delta;
     }
+
     if (keys.down("ArrowRight")) {
       ship.x += 10 * delta;
     }
+
     if (keys.pressed("Space")) {
       ship.shots += 1;
     }
   });
 });
+
 const Flying = Plugin.make("Flying", {
   plugins: [Input.plugin],
   components: [Ship],
@@ -73,11 +76,13 @@ const Flying = Plugin.make("Flying", {
     commands.spawn(Ship.of({ x: 0, shots: 0 }));
   }),
 });
+
 const ship = (app: App.Any): { x: number; shots: number } => {
   let found = { x: Number.NaN, shots: Number.NaN };
   app.world.view(Ships).each((one) => {
     found = { x: one.x, shots: one.shots };
   });
+
   return found;
 };
 
@@ -109,9 +114,11 @@ class Listened extends EventTarget {
 
   get total(): number {
     let total = 0;
+
     for (const count of this.listening.values()) {
       total += count;
     }
+
     return total;
   }
 
@@ -124,7 +131,9 @@ class Listened extends EventTarget {
       new globalThis.Event(type, { cancelable: true }),
       fields
     );
+
     this.dispatchEvent(event);
+
     return event.defaultPrevented;
   }
 }
@@ -146,6 +155,7 @@ const makePage = () => {
   const requested = new Map<number, (now: number) => void>();
   let ids = 0;
   const visibility = new Set<() => void>();
+
   const document = {
     visibilityState: "visible",
     addEventListener(_type: string, listener: () => void) {
@@ -155,9 +165,11 @@ const makePage = () => {
       visibility.delete(listener);
     },
   };
+
   const window = new Listened();
   vi.stubGlobal("requestAnimationFrame", (callback: (now: number) => void) => {
     requested.set(++ids, callback);
+
     return ids;
   });
   vi.stubGlobal("cancelAnimationFrame", (id: number) => {
@@ -167,6 +179,7 @@ const makePage = () => {
   // In a page the window is the global object.
   vi.stubGlobal("addEventListener", window.addEventListener.bind(window));
   vi.stubGlobal("removeEventListener", window.removeEventListener.bind(window));
+
   return {
     requested,
     visibility,
@@ -174,6 +187,7 @@ const makePage = () => {
     repaint(now: number): void {
       const due = Array.from(requested.values());
       requested.clear();
+
       for (const callback of due) {
         callback(now);
       }
@@ -181,12 +195,14 @@ const makePage = () => {
     /** The tab goes out of sight, and whoever watches is told. */
     hide(): void {
       document.visibilityState = "hidden";
+
       for (const listener of Array.from(visibility)) {
         listener();
       }
     },
     show(): void {
       document.visibilityState = "visible";
+
       for (const listener of Array.from(visibility)) {
         listener();
       }
@@ -206,6 +222,7 @@ describe("a page's display", () => {
     let ids = 0;
     const cancelled: number[] = [];
     const listeners = new Set<() => void>();
+
     const document = {
       visibilityState: "visible",
       addEventListener(type: string, listener: () => void) {
@@ -217,10 +234,12 @@ describe("a page's display", () => {
         listeners.delete(listener);
       },
     };
+
     vi.stubGlobal(
       "requestAnimationFrame",
       (callback: (now: number) => void) => {
         requested.set(++ids, callback);
+
         return ids;
       }
     );
@@ -229,22 +248,28 @@ describe("a page's display", () => {
       requested.delete(id);
     });
     vi.stubGlobal("document", document);
+
     const repaint = (now: number): void => {
       const due = Array.from(requested.values());
       requested.clear();
+
       for (const callback of due) {
         callback(now);
       }
     };
+
     let app: App.Any | undefined;
+
     const fiber = Effect.runFork(
       Effect.scoped(
         Effect.gen(function* () {
           app = yield* App.make({ systems: [Roll] });
+
           return yield* Driver.frames(app, { hz: 60 });
         })
       ).pipe(Effect.provideService(Driver.Display, Browser.display))
     );
+
     expect(requested.size).toBe(1);
     expect(listeners.size).toBe(1);
     repaint(0);
@@ -254,15 +279,19 @@ describe("a page's display", () => {
     expect(requested.size).toBe(1);
     // The tab is hidden: the request is cancelled.
     document.visibilityState = "hidden";
+
     for (const listener of listeners) {
       listener();
     }
+
     expect(requested.size).toBe(0);
     expect(cancelled).toEqual([4]);
     document.visibilityState = "visible";
+
     for (const listener of listeners) {
       listener();
     }
+
     expect(requested.size).toBe(1);
     repaint(90_000);
     repaint(90_000 + 1000 / 60);
@@ -580,6 +609,7 @@ describe("a page's devices", () => {
             window: page,
             gamepads: () => {
               polls++;
+
               return pads;
             },
           })
@@ -612,10 +642,12 @@ describe("a page's devices", () => {
         const Listen = System.make("Listen", function* () {
           yield* Input.Devices;
         }).pipe(System.inStage("input"));
+
         // The layer is let go as soon as the app is made.
         const app = yield* App.make({ systems: [Listen] }).pipe(
           Effect.provide(Browser.layer({ window: page, gamepads: () => [] }))
         );
+
         expect(page.total).toBe(0);
         expect(() => app.input()).toThrow(
           /were read after Browser\.layer was let go/
@@ -658,19 +690,24 @@ describe("a picture", () => {
     vi.stubGlobal("createImageBitmap", async (blob: Blob) => {
       const bytes = new Uint8Array(await blob.arrayBuffer());
       given.push(bytes.length);
+
       return { width: bytes[0], close: () => closed.push(bytes.length) };
     });
+
     const Art = Assets.bundle("br/Art", {
       one: Browser.image("/forest.png"),
       two: Browser.image("/cave.png"),
     });
+
     const scope = Effect.runSync(Scope.make());
+
     const loaded = await Effect.runPromise(
       Assets.load(Art).pipe(
         Scope.provide(scope),
         Effect.provide(Assets.layerMemory(files))
       )
     );
+
     expect(loaded.one.width).toBe(1);
     expect(loaded.two.width).toBe(4);
     expect(given.toSorted()).toEqual([2, 3]);
@@ -682,14 +719,17 @@ describe("a picture", () => {
     vi.stubGlobal("createImageBitmap", () =>
       Promise.reject(new Error("The source image could not be decoded."))
     );
+
     const exit = await Effect.runPromise(
       Effect.exit(Effect.scoped(Assets.load(Art))).pipe(
         Effect.provide(Assets.layerMemory(files))
       )
     );
+
     const error = Cause.squash(
       (exit as Exit.Failure<never, unknown>).cause
     ) as Assets.AssetFailed;
+
     expect(error).toBeInstanceOf(Assets.AssetFailed);
     expect(error.message).toBe(
       "It could not be made a picture: The source image could not be decoded."
@@ -705,6 +745,7 @@ describe("Browser.layer", () => {
   it("is the page's display and its devices together, for as long as it is provided", async () => {
     const page = makePage();
     let made: App.Any | undefined;
+
     const fiber = Effect.runFork(
       App.run(
         { plugins: [Flying] },
@@ -717,6 +758,7 @@ describe("Browser.layer", () => {
         }
       ).pipe(Effect.provide(Browser.layer({ gamepads: () => [] })))
     );
+
     // The frame loop asks the page for its frames, and watches its tab.
     expect(page.requested.size).toBe(1);
     expect(page.visibility.size).toBe(1);
@@ -744,6 +786,7 @@ describe("Browser.runMain", () => {
   it("runs the game in the page, and interrupts it when the page goes away for good", async () => {
     const page = makePage();
     const log: string[] = [];
+
     const Sound = Plugin.make("Sound", {
       plugins: [Flying],
       layer: Layer.effectDiscard(
@@ -753,6 +796,7 @@ describe("Browser.runMain", () => {
         )
       ),
     });
+
     let made: App.Any | undefined;
     let ended: Exit.Exit<unknown, unknown> | undefined;
     Browser.runMain(
@@ -813,14 +857,17 @@ describe("Browser.runMain", () => {
 
   it("ends with what the game fails with, and takes only a game that needs nothing more", async () => {
     class NoCanvas extends Data.TaggedError("NoCanvas")<{}> {}
+
     const page = makePage();
     // What Effect's logger writes, wherever it writes it.
     const said: string[] = [];
+
     for (const method of ["log", "error", "warn", "info", "debug"] as const) {
       vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
         said.push(args.map(String).join(" "));
       });
     }
+
     let ended: Exit.Exit<unknown, unknown> | undefined;
     Browser.runMain(Effect.fail(new NoCanvas()), {
       gamepads: () => [],
@@ -856,6 +903,7 @@ describe("Browser.runMain", () => {
       Effect.service(Assets.Store),
       () => Effect.never
     );
+
     // @ts-expect-error the game still needs a service
     void (() => Browser.runMain(unprovided));
   });
@@ -877,9 +925,11 @@ describe("a page's sound", () => {
     /** There, and true, while it is to play to its end and no further. */
     once?: true;
   }
+
   /** A stand-in for the page's audio, which notes what it is asked. */
   const makeAudio = () => {
     const destination = { name: "speakers" };
+
     interface Gain {
       readonly gain: {
         value: number;
@@ -891,6 +941,7 @@ describe("a page's sound", () => {
       into: unknown;
       connect(to: unknown): unknown;
     }
+
     const audio = {
       destination,
       state: "running",
@@ -913,6 +964,7 @@ describe("a page's sound", () => {
         return {
           connect(to: unknown) {
             audio.streams.push({ media, gain: to as Gain });
+
             return to;
           },
         };
@@ -921,6 +973,7 @@ describe("a page's sound", () => {
         let gain: Gain | undefined;
         let looped: Looped | undefined;
         let loop = false;
+
         const source = {
           buffer: undefined as unknown,
           get loop(): boolean {
@@ -928,6 +981,7 @@ describe("a page's sound", () => {
           },
           set loop(value: boolean) {
             loop = value;
+
             if (looped !== undefined) {
               if (value) {
                 delete looped.once;
@@ -939,6 +993,7 @@ describe("a page's sound", () => {
           playbackRate: { value: 1 },
           connect(to: unknown) {
             gain = to as Gain;
+
             return to;
           },
           start() {
@@ -952,8 +1007,10 @@ describe("a page's sound", () => {
                 ...(source.loop ? {} : { once: true as const }),
               };
               audio.loops.push(looped);
+
               return;
             }
+
             audio.started.push({
               buffer: source.buffer,
               rate: source.playbackRate.value,
@@ -967,10 +1024,12 @@ describe("a page's sound", () => {
             }
           },
         };
+
         return source;
       },
       createGain() {
         const levels: (readonly [string, ...number[]])[] = [];
+
         const gain: Gain = {
           gain: {
             value: 1,
@@ -992,42 +1051,52 @@ describe("a page's sound", () => {
           into: undefined,
           connect(to: unknown) {
             gain.into = to;
+
             return to;
           },
         };
+
         return gain;
       },
       suspend() {
         audio.suspended++;
         audio.state = "suspended";
+
         return Promise.resolve();
       },
       resume() {
         audio.resumed++;
         audio.state = "running";
+
         return Promise.resolve();
       },
       close() {
         audio.closed++;
+
         return Promise.resolve();
       },
     };
+
     return audio;
   };
+
   const sounds = {
     "/coin.wav": new Uint8Array(3),
     "/thud.wav": new Uint8Array(5),
     "/noise.wav": new Uint8Array(1),
   };
+
   /** Makes a sound of a file: one of a single byte is none. */
   const decodeInto =
     (decoded: number[]) =>
     (data: ArrayBuffer): Promise<unknown> => {
       decoded.push(data.byteLength);
+
       return data.byteLength === 1
         ? Promise.reject(new Error("Unable to decode audio data"))
         : Promise.resolve({ samples: data.byteLength });
     };
+
   /** Builds the layer into a scope of the test's, and gives what it provides. */
   /** A stand-in for what plays a streamed track, which notes what it is asked. */
   const makeMedia = (url: string, broken: boolean) => {
@@ -1039,12 +1108,15 @@ describe("a page's sound", () => {
       pauses: 0,
       play(): Promise<void> {
         media.plays++;
+
         if (broken) {
           return Promise.reject(
             new Error("The element has no supported sources.")
           );
         }
+
         media.playing = true;
+
         return Promise.resolve();
       },
       pause(): void {
@@ -1052,8 +1124,10 @@ describe("a page's sound", () => {
         media.playing = false;
       },
     };
+
     return media;
   };
+
   const build = async (
     files: Readonly<Record<string, string | Sound.Clip>>,
     options: {
@@ -1068,10 +1142,12 @@ describe("a page's sound", () => {
   ) => {
     const page = new Listened();
     const audio = makeAudio();
+
     if (options.noStreams === true) {
       delete (audio as { createMediaElementSource?: unknown })
         .createMediaElementSource;
     }
+
     const streamed: ReturnType<typeof makeMedia>[] = [];
     const display = Driver.makeManualDisplay();
     let made = 0;
@@ -1080,18 +1156,21 @@ describe("a page's sound", () => {
     const decode = options.decode ?? decodeInto(decoded);
     const logged: string[] = [];
     const scope = Effect.runSync(Scope.make());
+
     const context = await Effect.runPromise(
       Layer.build(
         Browser.layerSound(files, {
           window: page,
           audio: () => {
             made++;
+
             return audio;
           },
           decode,
           media: (url) => {
             const media = makeMedia(url, options.brokenMedia === true);
             streamed.push(media);
+
             return media;
           },
           ...(options.volume === undefined ? {} : { volume: options.volume }),
@@ -1113,7 +1192,9 @@ describe("a page's sound", () => {
         )
       )
     );
+
     await settle();
+
     return {
       page,
       audio,
@@ -1136,6 +1217,7 @@ describe("a page's sound", () => {
       coin: "/coin.wav",
       thud: "/thud.wav",
     });
+
     // The files are decoded as they arrive, which needs no touch.
     expect(decoded.toSorted()).toEqual([3, 5]);
     // A page may not make a sound before its user has touched it: nothing
@@ -1164,7 +1246,7 @@ describe("a page's sound", () => {
     audio.state = "suspended";
     page.send("pointerdown");
     expect(audio.resumed).toBe(1);
-    expect(decoded.length).toBe(2);
+    expect(decoded).toHaveLength(2);
     // The cue that came before the touch was said, and nothing else.
     expect(logged).toEqual([UNTOUCHED("coin")]);
   });
@@ -1173,6 +1255,7 @@ describe("a page's sound", () => {
     const { audio, close, logged, output, page } = await build({
       coin: "/coin.wav",
     });
+
     const clip = Sound.clip("/level/chirp.wav", { samples: 2 });
     // A clip is named as it is; a track is not a cue, and waits.
     output.music("score", "coin", 1, 0, false);
@@ -1191,12 +1274,12 @@ describe("a page's sound", () => {
     output.play("coin", 1, 1);
     audio.state = "suspended";
     output.play("coin", 1, 1);
-    expect(audio.started.length).toBe(1);
-    expect(logged.length).toBe(2);
+    expect(audio.started).toHaveLength(1);
+    expect(logged).toHaveLength(2);
     // Let go, the layer plays nothing and says nothing.
     await close();
     output.play("coin", 1, 1);
-    expect(logged.length).toBe(2);
+    expect(logged).toHaveLength(2);
 
     // Let go before it was ever touched, it has nothing to say either.
     const gone = await build({ coin: "/coin.wav" });
@@ -1212,6 +1295,7 @@ describe("a page's sound", () => {
     const page = new Listened();
     const logged: string[] = [];
     const scope = Effect.runSync(Scope.make());
+
     const context = await Effect.runPromise(
       Layer.build(
         Browser.layerSound(
@@ -1231,6 +1315,7 @@ describe("a page's sound", () => {
         )
       )
     );
+
     await settle();
     const output = Context.get(context, Sound.Output);
     output.play("coin", 1, 1);
@@ -1247,6 +1332,7 @@ describe("a page's sound", () => {
       { coin: "/coin.wav" },
       { volume: 0.5 }
     );
+
     page.send("pointerdown");
     await settle();
     output.play("coin", 0.5, 1);
@@ -1260,13 +1346,15 @@ describe("a page's sound", () => {
       noise: "/noise.wav",
       lost: "/lost.wav",
     });
+
     // Said when the request fails, or the file turns out to be no sound.
     expect(logged.toSorted()).toEqual([
       'The sound "lost" (/lost.wav) will not be played: There is no such file.',
       'The sound "noise" (/noise.wav) will not be played: Unable to decode audio data',
     ]);
     page.send("pointerdown");
-    expect(logged.length).toBe(2);
+    expect(logged).toHaveLength(2);
+
     for (let i = 0; i < 3; i++) {
       output.play("noise", 1, 1);
       output.play("lost", 1, 1);
@@ -1274,31 +1362,36 @@ describe("a page's sound", () => {
       // A name every object has is no cue either.
       output.play("toString", 1, 1);
     }
+
     expect(audio.started).toEqual([]);
     expect(logged.slice(2)).toEqual([
       'The sound "laser" was played and has no file. The page\'s sounds are: coin, noise, lost.',
       'The sound "toString" was played and has no file. The page\'s sounds are: coin, noise, lost.',
     ]);
     output.play("coin", 1, 1);
-    expect(audio.started.length).toBe(1);
+    expect(audio.started).toHaveLength(1);
   });
 
   it("plays a cue once its file has arrived, and gives up a file still on its way when it is let go", async () => {
     const waiting = new Map<string, (bytes: Uint8Array) => void>();
     const givenUp: string[] = [];
+
     const loader: Assets.LoaderShape = {
       bytes: (url) =>
         Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
           waiting.set(url, (bytes) => resume(Effect.succeed(bytes)));
+
           return Effect.sync(() => {
             givenUp.push(url);
           });
         }),
     };
+
     const { audio, close, decoded, output, page } = await build(
       { coin: "/coin.wav", thud: "/thud.wav" },
       { loader }
     );
+
     // Both asked for at once, and neither is here.
     expect(Array.from(waiting.keys()).toSorted()).toEqual([
       "/coin.wav",
@@ -1313,7 +1406,7 @@ describe("a page's sound", () => {
     expect(decoded).toEqual([7]);
     output.play("coin", 1, 1);
     // The one that was asked for too early is not played late.
-    expect(audio.started.length).toBe(1);
+    expect(audio.started).toHaveLength(1);
     expect(givenUp).toEqual([]);
     await close();
     expect(givenUp).toEqual(["/thud.wav"]);
@@ -1323,6 +1416,7 @@ describe("a page's sound", () => {
     const { audio, close, made, output, page } = await build({
       coin: "/coin.wav",
     });
+
     page.send("pointerdown");
     await settle();
     output.play("coin", 1, 1);
@@ -1331,13 +1425,14 @@ describe("a page's sound", () => {
     expect(audio.closed).toBe(1);
     expect(page.total).toBe(0);
     output.play("coin", 1, 1);
-    expect(audio.started.length).toBe(1);
+    expect(audio.started).toHaveLength(1);
     page.send("pointerdown");
     expect(made()).toBe(1);
 
     // A file that is still being decoded when the layer is let go is not
     // kept when it is done.
     let done = (_sound: unknown): void => {};
+
     const late = await build(
       { coin: "/coin.wav" },
       {
@@ -1347,6 +1442,7 @@ describe("a page's sound", () => {
           }),
       }
     );
+
     late.page.send("pointerdown");
     await late.close();
     done({ samples: 3 });
@@ -1367,6 +1463,7 @@ describe("a page's sound", () => {
       { theme: "/coin.wav", drip: "/thud.wav" },
       { volume: 0.5 }
     );
+
     // Asked for before the first touch: music is not a cue, which would be
     // late. It is what should be playing, and starts when it can.
     output.music("score", "theme", 0.8, 2);
@@ -1392,7 +1489,7 @@ describe("a page's sound", () => {
     // The same track, softer: the one source, turned down from where it is.
     audio.currentTime = 20;
     output.music("score", "theme", 0.2, 1);
-    expect(audio.loops.length).toBe(1);
+    expect(audio.loops).toHaveLength(1);
     expect(audio.loops[0]!.levels.slice(2)).toEqual([
       ["cancel", 20],
       ["set", 0.4, 20],
@@ -1404,7 +1501,7 @@ describe("a page's sound", () => {
     // second fades in.
     audio.currentTime = 30;
     output.music("score", "drip", 1, 4);
-    expect(audio.loops.length).toBe(2);
+    expect(audio.loops).toHaveLength(2);
     expect(audio.loops[0]!.levels.slice(5)).toEqual([
       ["cancel", 30],
       ["set", 0.1, 30],
@@ -1424,7 +1521,7 @@ describe("a page's sound", () => {
     // Silence: it fades out, stops, and nothing takes its place.
     audio.currentTime = 40;
     output.music("score", undefined, 0, 0.5);
-    expect(audio.loops.length).toBe(2);
+    expect(audio.loops).toHaveLength(2);
     expect(audio.loops[1]!.levels.slice(2)).toEqual([
       ["cancel", 40],
       ["set", 0.5, 40],
@@ -1433,8 +1530,8 @@ describe("a page's sound", () => {
     expect(audio.loops[1]!.stopped).toBe(40.5);
     // Silence again changes nothing, and the first is left as it was.
     output.music("score", undefined, 0, 0.5);
-    expect(audio.loops[1]!.levels.length).toBe(5);
-    expect(audio.loops[0]!.levels.length).toBe(8);
+    expect(audio.loops[1]!.levels).toHaveLength(5);
+    expect(audio.loops[0]!.levels).toHaveLength(8);
     // At once is a fade of no time.
     audio.currentTime = 50;
     output.music("score", "theme", 1, 0);
@@ -1449,6 +1546,7 @@ describe("a page's sound", () => {
       fanfare: "/coin.wav",
       theme: "/thud.wav",
     });
+
     page.send("pointerdown");
     output.music("score", "fanfare", 1, 0.5, true);
     expect(audio.loops).toEqual([
@@ -1473,11 +1571,11 @@ describe("a page's sound", () => {
     // The track that is playing, asked to stop at its end after all, and
     // then to go on again: the one source, told so.
     output.music("score", "theme", 1, 2, true);
-    expect(audio.loops.length).toBe(2);
+    expect(audio.loops).toHaveLength(2);
     expect(audio.loops[1]!.once).toBe(true);
     output.music("score", "theme", 1, 2, false);
     expect(audio.loops[1]!.once).toBeUndefined();
-    expect(audio.loops.length).toBe(2);
+    expect(audio.loops).toHaveLength(2);
   });
 
   it("streams a track that is given as a stream: fetched as it plays, and faded and stopped as any track", async () => {
@@ -1486,6 +1584,7 @@ describe("a page's sound", () => {
         { theme: Browser.stream("/theme.ogg"), coin: "/coin.wav" },
         { volume: 0.5 }
       );
+
     // Only the file that is to be decoded was fetched, and nothing was
     // said of the other.
     expect(decoded).toEqual([3]);
@@ -1496,7 +1595,7 @@ describe("a page's sound", () => {
     expect(streamed).toEqual([]);
     audio.currentTime = 10;
     page.send("keydown", { code: "Enter" });
-    expect(streamed.length).toBe(1);
+    expect(streamed).toHaveLength(1);
     expect(streamed[0]).toMatchObject({
       url: "/theme.ogg",
       loop: true,
@@ -1505,7 +1604,7 @@ describe("a page's sound", () => {
     });
     // It plays into the page's audio, on a volume of its own, led from
     // silence as a decoded track's is; and it is no decoded track.
-    expect(audio.streams.length).toBe(1);
+    expect(audio.streams).toHaveLength(1);
     expect(audio.streams[0]!.media).toBe(streamed[0]);
     expect(audio.streams[0]!.gain.into).toBe(audio.destination);
     expect(audio.streams[0]!.gain.levels).toEqual([
@@ -1518,7 +1617,7 @@ describe("a page's sound", () => {
     // Softer, and to its end and no further: the one stream, told so.
     audio.currentTime = 20;
     output.music("score", "theme", 0.2, 1, true);
-    expect(streamed.length).toBe(1);
+    expect(streamed).toHaveLength(1);
     expect(streamed[0]!.loop).toBe(false);
     expect(audio.streams[0]!.gain.levels.slice(2)).toEqual([
       ["cancel", 20],
@@ -1533,12 +1632,12 @@ describe("a page's sound", () => {
     output.music("score", "coin", 1, 0);
     expect(audio.streams[0]!.gain.levels.at(-1)).toEqual(["ramp", 0, 20]);
     expect(streamed[0]).toMatchObject({ playing: false, pauses: 1 });
-    expect(audio.loops.length).toBe(1);
+    expect(audio.loops).toHaveLength(1);
 
     // Back to it, and away over a moment: it is a new stream, and is
     // stopped when the moment has gone, and not before.
     output.music("score", "theme", 1, 0);
-    expect(streamed.length).toBe(2);
+    expect(streamed).toHaveLength(2);
     expect(audio.loops[0]!.stopped).toBe(20);
     output.music("score", undefined, 0, 0.02);
     expect(streamed[1]!.playing).toBe(true);
@@ -1551,6 +1650,7 @@ describe("a page's sound", () => {
     const { audio, display, logged, output, page, streamed } = await build({
       theme: Browser.stream("/theme.ogg"),
     });
+
     const wind = Browser.stream("/wind.ogg");
     // A clip like any other, named for where it is.
     expect(wind).toBeInstanceOf(Sound.Clip);
@@ -1578,7 +1678,7 @@ describe("a page's sound", () => {
     output.play("theme", 1, 1);
     output.play(wind, 1, 1);
     expect(audio.started).toEqual([]);
-    expect(streamed.length).toBe(2);
+    expect(streamed).toHaveLength(2);
     expect(logged).toEqual([
       'The sound "/wind.ogg" is streamed, which is for a channel\'s track: as a cue it is not played. A cue is a file given by its URL, or Browser.sound.',
       'The sound "/theme.ogg" is streamed, which is for a channel\'s track: as a cue it is not played. A cue is a file given by its URL, or Browser.sound.',
@@ -1597,6 +1697,7 @@ describe("a page's sound", () => {
       theme: Browser.stream("/theme.ogg"),
       other: Browser.stream("/other.ogg"),
     });
+
     page.send("pointerdown");
     output.music("score", "theme", 1, 0);
     output.music("air", "other", 1, 0);
@@ -1624,7 +1725,7 @@ describe("a page's sound", () => {
     output.music("score", "other", 1, 0);
     display.show();
     await new Promise((resolve) => setTimeout(resolve, 40));
-    expect(streamed.length).toBe(2);
+    expect(streamed).toHaveLength(2);
     expect(streamed.map((media) => media.plays)).toEqual([2, 2]);
     expect(streamed.map((media) => media.pauses)).toEqual(
       before.map((pauses) => pauses + 1)
@@ -1636,6 +1737,7 @@ describe("a page's sound", () => {
       { theme: Browser.stream("/gone.ogg") },
       { brokenMedia: true }
     );
+
     broken.page.send("pointerdown");
     broken.output.music("score", "theme", 1, 0);
     broken.output.music("score", undefined, 0, 0);
@@ -1644,10 +1746,12 @@ describe("a page's sound", () => {
     expect(broken.logged).toEqual([
       'The sound "/gone.ogg" will not be played: The element has no supported sources.',
     ]);
+
     const deaf = await build(
       { theme: Browser.stream("/theme.ogg"), coin: "/coin.wav" },
       { noStreams: true }
     );
+
     deaf.page.send("pointerdown");
     deaf.output.music("score", "theme", 1, 0);
     deaf.output.music("score", "theme", 0.5, 0);
@@ -1657,13 +1761,14 @@ describe("a page's sound", () => {
     ]);
     // What it can play, it plays.
     deaf.output.music("score", "coin", 1, 0);
-    expect(deaf.audio.loops.length).toBe(1);
+    expect(deaf.audio.loops).toHaveLength(1);
   });
 
   it("sleeps while the page is hidden, music and all, and wakes when it is seen again", async () => {
     const { audio, close, display, output, page } = await build({
       theme: "/coin.wav",
     });
+
     // Before it was ever touched there is no audio to put to sleep, and
     // the page is not watched.
     expect(display.watching).toBe(0);
@@ -1689,8 +1794,10 @@ describe("a page's sound", () => {
     const waking = audio.resume;
     audio.resume = () => {
       audio.resumed++;
+
       return Promise.resolve();
     };
+
     display.show();
     expect([audio.suspended, audio.resumed]).toEqual([1, 1]);
     expect(audio.state).toBe("suspended");
@@ -1700,14 +1807,14 @@ describe("a page's sound", () => {
     audio.resume = waking;
     audio.state = "running";
     output.play("theme", 0.5, 1);
-    expect(audio.started.length).toBe(1);
+    expect(audio.started).toHaveLength(1);
     expect(audio.started[0]!.volume).toBe(0.5);
     expect(audio.loops[0]!.stopped).toBe(0);
     // The browser can put it to sleep for reasons of its own, and by
     // other names: a touch wakes it from any of them.
     audio.state = "interrupted";
     output.play("theme", 1, 1);
-    expect(audio.started.length).toBe(1);
+    expect(audio.started).toHaveLength(1);
     page.send("keydown", { code: "Enter" });
     expect(audio.resumed).toBe(2);
     expect(audio.state).toBe("running");
@@ -1715,7 +1822,7 @@ describe("a page's sound", () => {
     // is taken to be running.
     delete (audio as { state?: string }).state;
     output.play("theme", 1, 1);
-    expect(audio.started.length).toBe(2);
+    expect(audio.started).toHaveLength(2);
     page.send("keydown", { code: "Enter" });
     expect(audio.resumed).toBe(2);
     audio.state = "running";
@@ -1730,6 +1837,7 @@ describe("a page's sound", () => {
       theme: "/coin.wav",
       wind: "/thud.wav",
     });
+
     page.send("pointerdown");
     output.music("score", "theme", 1, 1);
     output.music("air", "wind", 0.3, 1);
@@ -1739,31 +1847,34 @@ describe("a page's sound", () => {
       { samples: 5 },
     ]);
     // A cue of the same file is a sound of its own, played once.
-    expect(audio.started.length).toBe(1);
+    expect(audio.started).toHaveLength(1);
     // One channel goes quiet; the other is not touched.
     audio.currentTime = 5;
     output.music("air", undefined, 0, 2);
     expect(audio.loops[1]!.stopped).toBe(7);
     expect(audio.loops[0]!.stopped).toBeUndefined();
-    expect(audio.loops[0]!.levels.length).toBe(2);
+    expect(audio.loops[0]!.levels).toHaveLength(2);
     // The same track on two channels is played twice.
     output.music("air", "theme", 1, 0);
-    expect(audio.loops.length).toBe(3);
+    expect(audio.loops).toHaveLength(3);
     expect(audio.loops[2]!.buffer).toEqual({ samples: 3 });
   });
 
   it("starts a track whose file was not there yet when it is, and says once of one that has no file", async () => {
     const waiting = new Map<string, (bytes: Uint8Array) => void>();
+
     const loader: Assets.LoaderShape = {
       bytes: (url) =>
         Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
           waiting.set(url, (bytes) => resume(Effect.succeed(bytes)));
         }),
     };
+
     const { audio, logged, output, page } = await build(
       { theme: "/coin.wav", drip: "/thud.wav" },
       { loader }
     );
+
     page.send("pointerdown");
     output.music("score", "theme", 1, 1);
     // What it changed its mind to before either file came is what plays.
@@ -1819,7 +1930,7 @@ describe("a page's sound", () => {
     expect(audio.loops[0]!.stopped).toBe(1);
     // The clip it is playing, at another volume, is the one source still.
     output.music("air", again, 0.5, 1);
-    expect(audio.loops.length).toBe(2);
+    expect(audio.loops).toHaveLength(2);
     expect(audio.loops[1]!.levels.at(-1)).toEqual(["ramp", 0.5, 1]);
     expect(logged).toEqual([]);
   });
@@ -1828,7 +1939,7 @@ describe("a page's sound", () => {
     const { audio, close, output, page } = await build({ theme: "/coin.wav" });
     page.send("pointerdown");
     output.music("score", "theme", 1, 1);
-    expect(audio.loops.length).toBe(1);
+    expect(audio.loops).toHaveLength(1);
     await close();
     expect(audio.closed).toBe(1);
     output.music("score", "theme", 0.5, 1);
@@ -1836,19 +1947,21 @@ describe("a page's sound", () => {
     // Nor a clip, which the page never held and so did not let go of.
     output.music("air", Sound.clip("wind", { samples: 1 }), 1, 1);
     output.play(Sound.clip("chirp", { samples: 1 }), 1, 1);
-    expect(audio.loops.length).toBe(1);
-    expect(audio.loops[0]!.levels.length).toBe(2);
+    expect(audio.loops).toHaveLength(1);
+    expect(audio.loops[0]!.levels).toHaveLength(2);
     expect(audio.started).toEqual([]);
 
     // No Web Audio at all, as under Node: a touch makes nothing, and
     // nothing throws.
     const bare = new Listened();
     const scope = Effect.runSync(Scope.make());
+
     const context = await Effect.runPromise(
       Layer.build(Browser.layerSound(undefined, { window: bare })).pipe(
         Scope.provide(scope)
       )
     );
+
     const quiet = Context.get(context, Sound.Output);
     expect(bare.total).toBe(2);
     bare.send("pointerdown");
@@ -1866,21 +1979,25 @@ describe("a page's sound", () => {
       class {
         decodeAudioData(data: ArrayBuffer): Promise<unknown> {
           decoded.push(data.byteLength);
+
           return data.byteLength === 1
             ? Promise.reject(new Error("Unable to decode audio data"))
             : Promise.resolve({ samples: data.byteLength });
         }
       }
     );
+
     const Forest = Assets.bundle("br/Forest", {
       chirp: Browser.sound("/coin.wav"),
       wind: Browser.sound("/thud.wav"),
     });
+
     const { chirp, wind } = await Effect.runPromise(
       Effect.scoped(Assets.load(Forest)).pipe(
         Effect.provide(Assets.layerMemory(sounds))
       )
     );
+
     expect(chirp).toBeInstanceOf(Sound.Clip);
     // Named for where it came from, which is what a log calls it.
     expect([chirp.name, chirp.data]).toEqual(["/coin.wav", { samples: 3 }]);
@@ -1902,6 +2019,7 @@ describe("a page's sound", () => {
         )
       ).pipe(Effect.provide(Assets.layerMemory(sounds)))
     );
+
     expect(Exit.isFailure(exit)).toBe(true);
     const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
     expect(error).toBeInstanceOf(Assets.AssetFailed);
@@ -1913,25 +2031,31 @@ describe("a page's sound", () => {
 
   it("is part of Browser.layer unless the page is told it has none, and a game's events are heard through it", async () => {
     const Scored = Event.define("br/Scored", Schema.Struct({}));
+
     const Score = System.make("br/Score", function* () {
       if ((yield* Time).tick === 2) {
         (yield* Scored).emit({});
       }
     });
+
     const Cues = Sound.cues(
       "br/Cues",
       Sound.on(Scored, { cue: "coin", volume: 0.8 })
     );
+
     const Game = Plugin.make("br/Noisy", {
       plugins: [Sound.plugin],
       systems: [Score, Cues],
     });
+
     const page = makePage();
     const audio = makeAudio();
     const audible: boolean[] = [];
+
     const Ask = System.make("br/Ask", function* () {
       audible.push((yield* Sound.Player).audible);
     }).pipe(System.inStage("frame"));
+
     const start = (options: Browser.Options) =>
       Effect.runFork(
         App.run({ plugins: [Game], systems: [Ask] }, { hz: 60 }).pipe(
@@ -1939,11 +2063,13 @@ describe("a page's sound", () => {
           Effect.provide(Assets.layerMemory(sounds))
         )
       );
+
     const fiber = start({
       sounds: { coin: "/coin.wav" },
       audio: () => audio,
       decode: decodeInto([]),
     });
+
     await settle();
     // The devices' seven listeners, and the two that wait for a touch.
     expect(page.window.total).toBe(9);

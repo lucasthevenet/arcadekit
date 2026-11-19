@@ -21,6 +21,7 @@ const kinds = {
   other: Field.entity,
   note: Field.json<unknown>(),
 };
+
 const define = (prefix: string) => ({
   Body: Component.define(`${prefix}/Body`, { x: Field.f32, y: Field.f32 }),
   Sheet: Component.define(`${prefix}/Sheet`, kinds),
@@ -28,6 +29,7 @@ const define = (prefix: string) => ({
   Aura: Component.define(`${prefix}/Aura`, kinds, { storage: "sparse" }),
   Chilled: Component.tag(`${prefix}/Chilled`, { storage: "sparse" }),
 });
+
 const C = define("snap");
 const all = Object.values(C) as ComponentDef<any>[];
 
@@ -48,6 +50,7 @@ const notes: unknown[] = [
   12_345_678_901_234_567_890n,
   -7n,
 ];
+
 const sheet = (n: number) => ({
   single: n + 0.5,
   double: n + 0.25,
@@ -77,6 +80,7 @@ const play = (
   const commands = new CommandBuffer(world);
   const optional = Object.values(kit) as ComponentDef<any>[];
   let serial = seed * 1000;
+
   const valueFor = (def: ComponentDef<any>) =>
     def === kit.Body
       ? kit.Body.of({ x: ++serial, y: dice.next() })
@@ -85,16 +89,19 @@ const play = (
         : def === kit.Aura
           ? kit.Aura.of(sheet(++serial))
           : def;
+
   for (let step = 0; step < steps; step++) {
     // Whatever is alive is read from the world, so that a world which was
     // loaded is played exactly like the one it was saved from.
     const alive = world.view(Query.all()).entities();
     const choice = alive.length === 0 ? 0 : dice.int(0, 7);
     const entity = alive.length === 0 ? undefined : dice.pick(alive);
+
     if (choice <= 1 || entity === undefined) {
       const inputs = optional
         .filter(() => dice.int(0, 1) === 1)
         .map((def) => valueFor(def));
+
       if (choice === 0) {
         world.spawn(...inputs);
       } else {
@@ -105,6 +112,7 @@ const play = (
       world.despawn(entity);
     } else if (choice === 3 || choice === 4) {
       const def = dice.pick(optional);
+
       if (world.has(entity, def)) {
         world.remove(entity, def);
       } else {
@@ -117,6 +125,7 @@ const play = (
     } else {
       world.add(entity, valueFor(kit.Body));
     }
+
     after();
   }
 };
@@ -138,6 +147,7 @@ const contents = (world: EcsWorld, kit: Kit) =>
 const loaded = (bytes: Uint8Array, components = all): EcsWorld => {
   const world = new EcsWorld({ seed: 999 });
   world.load(bytes, components);
+
   return world;
 };
 
@@ -160,14 +170,18 @@ describe("a snapshot of a world", () => {
 
   it("holds every kind of field, in tables and sparse sets, exactly", () => {
     const world = new EcsWorld({ seed: 3 });
+
     const entities = notes.map((_, n) => {
       const entity = world.spawn(
         C.Body.of({ x: n, y: -n }),
         C.Sheet.of(sheet(n))
       );
+
       world.add(entity, C.Aura.of(sheet(n + 3)));
+
       return entity;
     });
+
     world.set(entities[0]!, C.Sheet, {
       single: -0,
       double: -0,
@@ -183,9 +197,11 @@ describe("a snapshot of a world", () => {
     });
     const copy = loaded(world.snapshot());
     expect(copy.hash()).toBe(world.hash());
+
     for (const entity of entities) {
       const then = world.get(entity, C.Sheet)!;
       const now = copy.get(entity, C.Sheet)!;
+
       for (const field of C.Sheet.fields) {
         // Object.is tells 0 from -0, and takes NaN for NaN.
         expect(
@@ -196,8 +212,10 @@ describe("a snapshot of a world", () => {
           `Sheet.${field} of ${entity}`
         ).toBe(true);
       }
+
       expect(copy.get(entity, C.Aura)).toEqual(world.get(entity, C.Aura));
     }
+
     expect(copy.get(entities[13]!, C.Sheet)!.note).toBe(
       12_345_678_901_234_567_890n
     );
@@ -213,6 +231,7 @@ describe("a snapshot of a world", () => {
       const copy = loaded(world.snapshot());
       const original: unknown[] = [];
       const resumed: unknown[] = [];
+
       const record = (of: EcsWorld, into: unknown[]) => () => {
         into.push([
           of.hash(),
@@ -220,6 +239,7 @@ describe("a snapshot of a world", () => {
           of.view(Query.all(C.Aura).pipe(Query.without(C.Chilled))).entities(),
         ]);
       };
+
       play(world, C, seed + 100, 200, record(world, original));
       play(copy, C, seed + 100, 200, record(copy, resumed));
       expect(resumed).toEqual(original);
@@ -239,9 +259,11 @@ describe("a snapshot of a world", () => {
     world.despawn(reborn);
     const copy = loaded(world.snapshot());
     expect(copy.hash()).toBe(world.hash());
+
     for (const stale of [first, second, reborn]) {
       expect(copy.isAlive(stale)).toBe(false);
     }
+
     expect(copy.isAlive(third)).toBe(true);
     expect(copy.get(third, C.Body)).toEqual({ x: 3, y: 3 });
     const next = [world.spawn(), world.spawn(), world.spawn()];
@@ -264,9 +286,11 @@ describe("a snapshot of a world", () => {
 
   it("is as big as the data it holds, give or take a header", () => {
     const world = new EcsWorld();
+
     for (let n = 0; n < 10_000; n++) {
       world.spawn(C.Body.of({ x: n, y: n }));
     }
+
     // Per entity: 8 bytes of id, two floats of 4, and 4 of generation.
     const data = 10_000 * (8 + 4 + 4 + 4);
     const { length } = world.snapshot();
@@ -303,6 +327,7 @@ describe("a snapshot of a world", () => {
       Body: Component.define("snap/Body", { x: Field.f32, y: Field.f32 }),
       Marked: Component.tag("snap/Marked"),
     };
+
     const world = new EcsWorld({ seed: 6 });
     play(world, C, 6, 200);
     const copy = loaded(world.snapshot(), Object.values(other));
@@ -315,9 +340,11 @@ describe("a snapshot of a world", () => {
     expect(empty.component("snap/Body")).toBe(C.Body);
     // Ones the world already knows need not be given again.
     const known = new EcsWorld();
+
     for (const def of all) {
       known.register(def);
     }
+
     known.load(world.snapshot());
     expect(known.hash()).toBe(world.hash());
   });
@@ -330,8 +357,10 @@ const problemOf = (run: () => unknown): SnapshotError => {
     if (error instanceof SnapshotError) {
       return error;
     }
+
     throw error;
   }
+
   throw new Error("expected a SnapshotError");
 };
 
@@ -339,6 +368,7 @@ describe("a snapshot that cannot be taken", () => {
   it("names the field that holds a value that is not plain data", () => {
     const cyclic: { self?: unknown } = {};
     cyclic.self = cyclic;
+
     for (const [value, what] of [
       [() => 1, "a function"],
       [Symbol("s"), "a symbol"],
@@ -382,6 +412,7 @@ describe("a snapshot that cannot be loaded", () => {
   const sample = (): Uint8Array => {
     const world = new EcsWorld({ seed: 2 });
     play(world, C, 2, 60);
+
     return world.snapshot();
   };
 
@@ -422,6 +453,7 @@ describe("a snapshot that cannot be loaded", () => {
         all.filter((def) => def !== C.Aura)
       )
     );
+
     expect(error.problem).toBe("unknown component");
     expect(error.component).toBe("snap/Aura");
     expect(error.message).toContain('"snap/Aura"');
@@ -432,14 +464,17 @@ describe("a snapshot that cannot be loaded", () => {
       problemOf(() =>
         loaded(sample(), [...all.filter((def) => def !== C.Body), body])
       );
+
     const renamed = changed(
       Component.define("snap/Body", { x: Field.f32, z: Field.f32 })
     );
+
     expect(renamed.problem).toBe("component changed");
     expect(renamed.component).toBe("snap/Body");
     expect(renamed.message).toBe(
       '"snap/Body" is not what it was when the snapshot was taken. Then: table { x: f32, y: f32 }. Now: table { x: f32, z: f32 }.'
     );
+
     for (const body of [
       Component.define("snap/Body", { x: Field.f32, y: Field.f64 }),
       Component.define("snap/Body", { x: Field.f32 }),
@@ -468,6 +503,7 @@ describe("a snapshot that cannot be loaded", () => {
     ]) {
       expect(problemOf(() => loaded(bytes)).problem).toBe("not a snapshot");
     }
+
     const newer = sample();
     new DataView(newer.buffer).setUint32(4, 4, true);
     const error = problemOf(() => loaded(newer));
@@ -479,12 +515,14 @@ describe("a snapshot that cannot be loaded", () => {
 
   it("is refused wherever it is cut short, without a crash", () => {
     const bytes = sample();
+
     for (let length = 0; length < bytes.length; length++) {
       const error = problemOf(() => loaded(bytes.subarray(0, length)));
       expect(["truncated", "not a snapshot", "corrupt"]).toContain(
         error.problem
       );
     }
+
     // And with something after its end.
     const longer = new Uint8Array(bytes.length + 1);
     longer.set(bytes);
@@ -505,13 +543,16 @@ describe("a snapshot that cannot be loaded", () => {
     const dice = new EcsWorld({ seed: 31 }).random;
     let refusedCount = 0;
     let loadedCount = 0;
+
     for (let round = 0; round < 1500; round++) {
       const damaged = Uint8Array.from(bytes);
       const at = round < bytes.length ? round : dice.int(0, bytes.length - 1);
       damaged[at] = damaged[at]! ^ (1 << dice.int(0, 7));
+
       if (round % 5 === 0) {
         damaged[dice.int(0, bytes.length - 1)] = dice.int(0, 255);
       }
+
       try {
         const world = loaded(damaged);
         // What loads is a world that works.
@@ -523,6 +564,7 @@ describe("a snapshot that cannot be loaded", () => {
         refusedCount++;
       }
     }
+
     expect(refusedCount).toBeGreaterThan(50);
     expect(loadedCount).toBeGreaterThan(50);
   });
@@ -533,9 +575,11 @@ describe("a snapshot that cannot be loaded", () => {
     // one generation of four bytes per slot, the number of freed slots, and
     // those slots in the order they will be reused. An id is eight bytes.
     const world = new EcsWorld();
+
     const [a, b, c, d] = [0, 1, 2, 3].map((n) =>
       world.spawn(C.Body.of({ x: n, y: n }))
     );
+
     world.despawn(b!);
     world.despawn(c!);
     world.add(a!, C.Aura.of(sheet(1)));
@@ -550,6 +594,7 @@ describe("a snapshot that cannot be loaded", () => {
       view.getUint32(freed + 4, true),
       view.getUint32(freed + 8, true),
     ]).toEqual([1, 2]);
+
     /** Where two ids stand side by side in the bytes. */
     const find = (first: number, second: number): number => {
       for (let at = freed + 12; at + 16 <= bytes.length; at++) {
@@ -560,8 +605,10 @@ describe("a snapshot that cannot be loaded", () => {
           return at;
         }
       }
+
       throw new Error("not found");
     };
+
     const rows = find(a!, d!);
     // The sparse set comes last but for the singletons: its one member,
     // the index of entity a, then that member's eight fields (36 bytes, the
@@ -570,11 +617,14 @@ describe("a snapshot that cannot be loaded", () => {
     const member = bytes.length - 4 - 4 - 36 - 4;
     expect(view.getUint32(member - 4, true)).toBe(1);
     expect(view.getUint32(member, true)).toBe(0);
+
     const damaged = (change: (view: DataView) => void): SnapshotError => {
       const copy = Uint8Array.from(bytes);
       change(new DataView(copy.buffer));
+
       return problemOf(() => loaded(copy));
     };
+
     expect(loaded(bytes).hash()).toBe(world.hash());
 
     const cases: [string, (view: DataView) => void][] = [
@@ -636,6 +686,7 @@ describe("a snapshot that cannot be loaded", () => {
         (v) => v.setUint32(member, 50, true),
       ],
     ];
+
     for (const [what, change] of cases) {
       const error = damaged(change);
       expect(error.problem, what).toBe("corrupt");
@@ -658,9 +709,11 @@ describe("a snapshot that cannot be loaded", () => {
     world.spawn(C.Sheet.of({ ...sheet(1), note: "abcdef" }));
     const bytes = world.snapshot();
     const text = new TextEncoder().encode("abcdef");
+
     const at = bytes.findIndex((_, i) =>
       text.every((byte, k) => bytes[i + k] === byte)
     );
+
     expect(at).toBeGreaterThan(0);
     // 0xff is a byte no UTF-8 text contains.
     bytes[at + 2] = 0xff;
@@ -674,7 +727,7 @@ describe("a snapshot that cannot be loaded", () => {
     // billion: refused before a single byte is allocated for them.
     const bytes = new EcsWorld().snapshot();
     const view = new DataView(bytes.buffer);
-    view.setUint32(24, 0xffffffff, true);
+    view.setUint32(24, 0xff_ff_ff_ff, true);
     const started = performance.now();
     expect(problemOf(() => loaded(bytes)).problem).toBe("truncated");
     expect(performance.now() - started).toBeLessThan(50);

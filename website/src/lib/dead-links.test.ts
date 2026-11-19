@@ -12,10 +12,12 @@ const sites: string[] = [];
 const builtSite = (files: Readonly<Record<string, string>>) => {
   const dist = mkdtempSync(path.join(tmpdir(), "arcadekit-site-"));
   sites.push(dist);
+
   for (const [file, text] of Object.entries(files)) {
     mkdirSync(path.dirname(path.join(dist, file)), { recursive: true });
     writeFileSync(path.join(dist, file), text);
   }
+
   return dist;
 };
 
@@ -40,6 +42,7 @@ describe("the built site's links", () => {
       "net/worker/index.html": page('<h2 id="abuse">Abuse</h2>'),
       "favicon.svg": "<svg/>",
     });
+
     expect(findBrokenLinks(dist)).toStrictEqual([]);
   });
 
@@ -50,6 +53,7 @@ describe("the built site's links", () => {
       ),
       "core/index.html": page('<a href="#here">here</a>'),
     });
+
     expect(findBrokenLinks(dist)).toStrictEqual([
       { page: "/", href: "/nope", reason: "no page has this address" },
       {
@@ -74,6 +78,7 @@ describe("the built site's links", () => {
         '<h2 id="café">Café</h2> <h2 id="a&amp;b">a&amp;b</h2>'
       ),
     });
+
     expect(findBrokenLinks(dist)).toStrictEqual([]);
   });
 
@@ -83,6 +88,7 @@ describe("the built site's links", () => {
         '<a href="https://github.com/x/y#nothing">gh</a> <a href="//example.com/x">x</a> <a href="mailto:a@b.c">mail</a>'
       ),
     });
+
     expect(findBrokenLinks(dist)).toStrictEqual([]);
   });
 });

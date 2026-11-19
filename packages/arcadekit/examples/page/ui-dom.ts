@@ -13,13 +13,16 @@ export const mount = (root: Element, ui: View.Bridge): (() => void) => {
   const hud = document.createElement("p");
   hud.className = "hud";
   const menu = document.createElement("nav");
+
   const button = (send: () => void): HTMLButtonElement => {
     const made = document.createElement("button");
     made.type = "button";
     made.addEventListener("click", send);
     menu.append(made);
+
     return made;
   };
+
   const start = button(() => ui.send(Start, {}));
   start.textContent = "Start";
   const pause = button(() => ui.send(TogglePause, {}));
@@ -32,18 +35,22 @@ export const mount = (root: Element, ui: View.Bridge): (() => void) => {
     pause.textContent = phase === "paused" ? "Resume" : "Pause";
     quit.hidden = phase === "title";
   };
+
   const showHud = ({ caught, level }: typeof Hud.initial): void => {
     hud.textContent = level === "Loading" ? "Loading" : `Caught ${caught}`;
   };
+
   // As the game has it now, and again each time it changes.
   showMenu(ui.get(Menu));
   showHud(ui.get(Hud));
   const stops = [ui.subscribe(Menu, showMenu), ui.subscribe(Hud, showHud)];
   root.append(hud, menu);
+
   return () => {
     for (const stop of stops) {
       stop();
     }
+
     hud.remove();
     menu.remove();
   };

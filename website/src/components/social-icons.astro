@@ -17,10 +17,13 @@ const changesets = import.meta.glob<string>("../../../.changeset/*.md", {
   import: "default",
   eager: true,
 });
+
 const unreleased = hasUnreleased(changesets, kit.name);
+
 const versionLink = unreleased
   ? `${REPO_URL}/tree/${BRANCH}/.changeset`
   : `${REPO_URL}/blob/${BRANCH}/packages/arcadekit/CHANGELOG.md`;
+
 const versionTitle = unreleased
   ? "The pages describe changes not released yet: see the changesets that wait for the next release"
   : "What each release changed";

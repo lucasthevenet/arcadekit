@@ -18,19 +18,23 @@ const Position = Component.define("rd/Position", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Velocity = Component.define("rd/Velocity", {
   x: Field.f32,
   y: Field.f32,
 });
+
 const Heat = Component.define(
   "rd/Heat",
   { degrees: Field.f32 },
   { storage: "sparse" }
 );
+
 const Boss = Component.tag("rd/Boss");
 
 /** Moves by a velocity it only reads. */
 const Moving = Query.all(Position, Velocity).pipe(Query.reads(Velocity));
+
 /** Reads everything it is handed. */
 const Looking = Query.all(Position, Velocity, Heat).pipe(Query.reads());
 const Moved = Query.all(Position).pipe(Query.changed(Position));
@@ -42,16 +46,20 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
 const populated = (count = 6): { world: EcsWorld; entities: Entity[] } => {
   const world = new EcsWorld();
   const entities: Entity[] = [];
+
   for (let n = 0; n < count; n++) {
     const entity = world.spawn(
       Position.of({ x: n, y: 0 }),
       Velocity.of({ x: 1, y: 2 })
     );
+
     if (n % 2 === 0) {
       world.add(entity, Heat.of({ degrees: n }));
     }
+
     entities.push(entity);
   }
+
   return { world, entities };
 };
 
@@ -84,6 +92,7 @@ describe("a query that says what it only reads", () => {
       sum += pos.x + vel.y + heat.degrees;
     });
     expect(sum).toBe(0 + 3 + 5 + 6 + 6);
+
     for (const write of [
       () =>
         world.view(Looking).each((pos) => {
@@ -112,18 +121,21 @@ describe("a query that says what it only reads", () => {
       for (let i = start; i < end; i++) {
         pos.x[i] = pos.x[i]! + vel.x[i]!;
         sum += vel.y[i]!;
+
         if (start < 0) {
           // Never run: it is the compiler that refuses it.
           // @ts-expect-error Velocity is only read by this query
           vel.x[i] = 0;
         }
       }
+
       expect(vel.x.length).toBeGreaterThanOrEqual(end);
     });
     expect(sum).toBe(12);
     world.view(Looking).eachChunk((start, end, pos, vel, heat, ids) => {
       for (let i = start; i < end; i++) {
         sum += pos.x[i]! + heat.columns.degrees[heat.indexOf(ids[i]!)]!;
+
         if (start < 0) {
           // @ts-expect-error every term of this query is only read
           pos.x[i] = 0;
@@ -157,11 +169,14 @@ describe("a query that says what it only reads", () => {
 
   it("lets a change query read what it watches with raw columns", () => {
     const { entities, world } = populated();
+
     const Drawn = Query.all(Position, Velocity).pipe(
       Query.changed(Position),
       Query.reads(Position)
     );
+
     const drawn = world.view(Drawn);
+
     const visit = (): number[] => {
       const seen: number[] = [];
       drawn.eachChunk((start, end, pos) => {
@@ -169,8 +184,10 @@ describe("a query that says what it only reads", () => {
           seen.push(pos.x[i]!);
         }
       });
+
       return seen;
     };
+
     expect(visit()).toEqual([0, 1, 2, 3, 4, 5]);
     // It did not take its own visit for a change.
     expect(visit()).toEqual([]);
@@ -210,6 +227,7 @@ describe("a query that says what it only reads", () => {
       for (let i = start; i < end; i++) {
         (pos.y as unknown as Float32Array)[i] = 77;
       }
+
       (heat.columns.degrees as unknown as Float32Array)[0] = 77;
     });
     world.rollback();
@@ -223,6 +241,7 @@ describe("a query that says what it only reads", () => {
       /Query\.reads was given "rd\/Velocity", which is not one of the query's terms: rd\/Position/
     );
     const { world } = populated();
+
     const built = [
       Query.all(Position, Velocity).pipe(
         Query.reads(Velocity),
@@ -248,6 +267,7 @@ describe("a query that says what it only reads", () => {
         Velocity
       ),
     ];
+
     for (const query of built) {
       expect(query.readDefs).toEqual([Velocity]);
       expect(() =>
@@ -258,6 +278,7 @@ describe("a query that says what it only reads", () => {
         })
       ).toThrow(/only reads "rd\/Velocity"/);
     }
+
     // To one reader, the three are one query, and not the query that
     // reads nothing, or everything.
     expect(world.view(built[0]!, "reader")).toBe(
@@ -266,18 +287,21 @@ describe("a query that says what it only reads", () => {
     expect(world.view(built[0]!, "reader")).toBe(
       world.view(built[2]!, "reader")
     );
+
     const plain = Query.all(Position, Velocity).pipe(
       Query.with(Heat),
       Query.without(Boss),
       Query.changed(Position),
       Query.added(Heat)
     );
+
     expect(world.view(plain, "reader")).not.toBe(
       world.view(built[0]!, "reader")
     );
     expect(world.view(plain.pipe(Query.reads()), "reader")).not.toBe(
       world.view(built[0]!, "reader")
     );
+
     // Said in two steps, it reads both; and a description that is not a
     // Query, with the same components in another order, is the same query.
     const twice = Query.all(Position, Velocity).pipe(
@@ -285,7 +309,9 @@ describe("a query that says what it only reads", () => {
       Query.reads(Velocity),
       Query.reads(Position)
     );
+
     expect(twice.readDefs).toEqual([Position, Velocity]);
+
     const byHand = {
       terms: [Position, Velocity] as const,
       withDefs: [],
@@ -293,6 +319,7 @@ describe("a query that says what it only reads", () => {
       changedDefs: [Position],
       readDefs: [Velocity, Position],
     };
+
     expect(world.view(byHand, "reader")).toBe(world.view(twice, "reader"));
     expect(() =>
       world.view({
@@ -335,7 +362,9 @@ describe("a query that says what it only reads", () => {
 // --- in an app --------------------------------------------------------------------
 
 class TooFast extends Data.TaggedError("TooFast")<{}> {}
+
 const Survey = Action.define("rd/Survey", Schema.Struct({ limit: Schema.Int }));
+
 /** Looks at every body, changes one field of each, and may then refuse. */
 const survey = Action.handler(Survey, function* ({ limit }) {
   let fastest = 0;
@@ -345,9 +374,11 @@ const survey = Action.handler(Survey, function* ({ limit }) {
       pos.y[i] = pos.y[i]! + 1;
     }
   });
+
   if (fastest > limit) {
     return yield* Effect.fail(new TooFast());
   }
+
   return fastest;
 });
 
@@ -356,6 +387,7 @@ describe("a query that says what it only reads, in an app", () => {
     run(
       Effect.gen(function* () {
         const turned: number[] = [];
+
         const Move = System.make("Move", function* () {
           (yield* Moving).eachChunk((start, end, pos, vel) => {
             for (let i = start; i < end; i++) {
@@ -363,20 +395,24 @@ describe("a query that says what it only reads, in an app", () => {
             }
           });
         });
+
         const Watch = System.make("Watch", function* () {
           turned.push((yield* Turned).entities().length);
         });
+
         const app = yield* App.make({
           systems: [Move, Watch],
           handlers: [survey],
           checkpointEvery: 1,
         });
+
         for (let n = 0; n < 4; n++) {
           app.world.spawn(
             Position.of({ x: n, y: 0 }),
             Velocity.of({ x: n, y: 0 })
           );
         }
+
         app.tick(1);
         app.tick(1);
         app.tick(1);

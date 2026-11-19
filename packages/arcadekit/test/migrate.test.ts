@@ -22,12 +22,15 @@ const withApp = <T, E, A>(
   make: Effect.Effect<T, E, Scope.Scope>,
   use: (app: T) => A
 ): A => Effect.runSync(Effect.scoped(Effect.map(make, use)));
+
 const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
   if (Exit.isFailure(exit)) {
     throw Cause.squash(exit.cause);
   }
+
   return exit.value;
 };
+
 const refusal = (exit: Exit.Exit<unknown, unknown>): any =>
   Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
 
@@ -37,17 +40,21 @@ const Hp0 = Component.define("mg/Hp", { points: Field.i32 });
 const Pos0 = Component.define("mg/Pos", { x: Field.f32, y: Field.f32 });
 const Name0 = Component.define("mg/Name", { value: Field.json<string>() });
 const Old0 = Component.tag("mg/Old");
+
 const Buff0 = Component.define(
   "mg/Buff",
   { power: Field.u8, note: Field.json<string>() },
   { storage: "sparse" }
 );
+
 const Heal0 = Action.define("mg/Heal", Schema.Struct({ amount: Schema.Int }));
+
 const heal0 = Action.handler(Heal0, function* ({ amount }) {
   (yield* Query.all(Hp0)).each((hp) => {
     hp.points += amount;
   });
 });
+
 const Game0 = Plugin.make("mg/Game", {
   components: [Hp0, Pos0, Name0, Old0, Buff0],
   handlers: [heal0],
@@ -57,23 +64,29 @@ const Game0 = Plugin.make("mg/Game", {
 const savedByVersion0 = () =>
   withApp(App.make({ plugins: [Game0] }), (app) => {
     const entities: Entity[] = [];
+
     for (let n = 0; n < 9; n++) {
       const entity = app.world.spawn(
         Hp0.of({ points: 10 * n }),
         Pos0.of({ x: n, y: -n }),
         Name0.of({ value: `unit ${n}` })
       );
+
       if (n % 2 === 0) {
         app.world.add(entity, Old0);
       }
+
       if (n % 3 === 0) {
         app.world.add(entity, Buff0.of({ power: n, note: `buff ${n}` }));
       }
+
       entities.push(entity);
     }
+
     app.world.despawn(entities.splice(4, 1)[0]!);
     app.tick(1);
     app.enqueue(Heal0, { amount: 3 });
+
     return { save: unwrap(app.save()), entities };
   });
 
@@ -83,8 +96,10 @@ const Health2 = Component.define("mg/Health", {
   armor: Field.i32,
   points: Field.f32,
 });
+
 const Pos2 = Component.define("mg/Pos", { px: Field.f32 });
 const Name2 = Component.define("mg/Name", { value: Field.json<string>() });
+
 const Buff2 = Component.define(
   "mg/Buff",
   {
@@ -94,12 +109,15 @@ const Buff2 = Component.define(
   },
   { storage: "sparse" }
 );
+
 const Mend2 = Action.define("mg/Mend", Schema.Struct({ by: Schema.Int }));
+
 const mend2 = Action.handler(Mend2, function* ({ by }) {
   (yield* Query.all(Health2)).each((health) => {
     health.points += by;
   });
 });
+
 const Game2 = Plugin.make("mg/Game", {
   components: [Health2, Pos2, Name2, Buff2],
   handlers: [mend2],
@@ -129,6 +147,7 @@ const migrations: Save.Migration[] = [
         (power) => power * 100
       );
       Migrate.addField(world, "mg/Buff", "fresh", "transient", undefined);
+
       // The action that was waiting has another name and payload now.
       for (const action of contents.queued) {
         if (action.name === "mg/Heal") {
@@ -141,6 +160,7 @@ const migrations: Save.Migration[] = [
     },
   },
 ];
+
 const version2 = { plugins: [Game2], version: 2, migrations } as const;
 
 describe("a snapshot read without the program's components", () => {
@@ -213,9 +233,11 @@ describe("a snapshot read without the program's components", () => {
       }),
       handle: Field.transient<object>(),
     };
+
     const Wide = Component.define("mg/Wide", kinds);
     const Thin = Component.define("mg/Thin", kinds, { storage: "sparse" });
     const Tag = Component.tag("mg/Tag");
+
     const row = (n: number) => ({
       single: n / 3,
       double: n / 7,
@@ -228,22 +250,29 @@ describe("a snapshot read without the program's components", () => {
       when: new Date(n * 1000),
       handle: { n },
     });
+
     const dice = new EcsWorld({ seed: 5 }).random;
+
     for (let round = 0; round < 20; round++) {
       const world = new EcsWorld({ seed: round });
       const commands = new CommandBuffer(world);
       const alive: Entity[] = [];
+
       for (let step = 0; step < 60; step++) {
         const choice = dice.int(0, 5);
+
         if (choice <= 2 || alive.length === 0) {
           const entity = commands.spawn(Wide.of(row(step)));
           commands.apply();
+
           if (dice.int(0, 1) === 1) {
             world.add(entity, Thin.of(row(step + 7)));
           }
+
           if (dice.int(0, 2) === 1) {
             world.add(entity, Tag);
           }
+
           alive.push(entity);
         } else if (choice === 3) {
           world.despawn(alive.splice(dice.int(0, alive.length - 1), 1)[0]!);
@@ -251,6 +280,7 @@ describe("a snapshot read without the program's components", () => {
           world.random.next();
         }
       }
+
       const bytes = world.snapshot();
       expect(writeSnapshot(readSnapshot(bytes))).toEqual(bytes);
     }
@@ -265,6 +295,7 @@ describe("a save from another version of the game", () => {
       expect(save.version).toBe(7);
       expect(unwrap(Save.decode(Save.encode(save))).version).toBe(7);
     });
+
     for (const bad of [-1, 1.5, Number.NaN]) {
       expect(() => withApp(App.make({ version: bad }), () => 0)).toThrow(
         /A game's version must be a whole number from 0 up/
@@ -277,6 +308,7 @@ describe("a save from another version of the game", () => {
     withApp(App.load(save, version2), (app) => {
       const { world } = app;
       expect(world.entityCount).toBe(8);
+
       for (const entity of entities) {
         const n = world.get(entity, Name2)!.value.slice("unit ".length);
         // Hp became Health: points a quarter of what they were, as a float,
@@ -288,6 +320,7 @@ describe("a save from another version of the game", () => {
         // Pos kept x under its new name and lost y.
         expect(world.get(entity, Pos2)).toEqual({ px: Number(n) });
       }
+
       // The sparse component kept its members, with power a hundredfold.
       const buffed = entities.filter((entity) => world.has(entity, Buff2));
       expect(buffed.map((entity) => world.get(entity, Buff2))).toEqual([
@@ -352,9 +385,11 @@ describe("a save from another version of the game", () => {
     const save = withApp(App.make({ plugins: [Game2], version: 3 }), (app) =>
       unwrap(app.save())
     );
+
     const error = refusal(
       Effect.runSync(Effect.scoped(Effect.exit(App.load(save, version2))))
     );
+
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("newer version");
     expect(error.message).toBe(
@@ -364,6 +399,7 @@ describe("a save from another version of the game", () => {
 
   it("is refused when a migration is missing, and says which", () => {
     const { save } = savedByVersion0();
+
     const load = (given: readonly Save.Migration[], version = 2) =>
       refusal(
         Effect.runSync(
@@ -374,6 +410,7 @@ describe("a save from another version of the game", () => {
           )
         )
       );
+
     const none = load([]);
     expect(none.problem).toBe("no migration");
     expect(none.message).toBe(
@@ -399,15 +436,19 @@ describe("a save from another version of the game", () => {
 
   it("is refused when a migration fails, and says which and why", () => {
     const { save } = savedByVersion0();
+
     const failing = (migrate: Save.Migration["migrate"]) =>
       refusal(Save.migrate(save, 1, [{ from: 0, migrate }]));
+
     const thrown = failing(() => {
       throw new Error("the old saves had no such thing");
     });
+
     expect(thrown.problem).toBe("migration failed");
     expect(thrown.message).toBe(
       "The migration from version 0 to version 1 failed: the old saves had no such thing"
     );
+
     // Each helper refuses what is not there, by name.
     const cases: [(world: Save.Contents["world"]) => void, RegExp][] = [
       [
@@ -447,6 +488,7 @@ describe("a save from another version of the game", () => {
         /no component named/,
       ],
     ];
+
     for (const [change, message] of cases) {
       const error = failing(({ world }) => change(world));
       expect(error.problem).toBe("migration failed");
@@ -458,6 +500,7 @@ describe("a save from another version of the game", () => {
     // The first migration alone: the save now claims version 1, and the game
     // of version 1 given here still has version 2's components.
     const { save } = savedByVersion0();
+
     const error = refusal(
       Effect.runSync(
         Effect.scoped(
@@ -471,6 +514,7 @@ describe("a save from another version of the game", () => {
         )
       )
     );
+
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(["component changed", "unknown component"]).toContain(error.problem);
     expect(error.message).toMatch(/mg\//);
@@ -507,11 +551,13 @@ describe("a save from another version of the game", () => {
 
     const Apos = Component.define("mg/Apos", { x: Field.f32, y: Field.f32 });
     const Zhp = Component.define("mg/Zhp", { points: Field.i32 });
+
     const Boon = Component.define(
       "mg/Boon",
       { power: Field.u8, note: Field.json<string>() },
       { storage: "sparse" }
     );
+
     const world = new EcsWorld();
     world.load(bytes, [Apos, Zhp, Boon, Name0]);
     expect(world.get(entities[0]!, Apos)).toEqual({ x: 0, y: -0 });
@@ -533,6 +579,7 @@ describe("a save from another version of the game", () => {
 
   it("is refused when a migration leaves a column with the wrong number of values", () => {
     const { save } = savedByVersion0();
+
     const error = refusal(
       Save.migrate(save, 1, [
         {
@@ -543,9 +590,11 @@ describe("a save from another version of the game", () => {
         },
       ])
     );
+
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("corrupt");
     expect(error.message).toMatch(/"mg\/Hp\.points" has no column of 4 values/);
+
     // And when it takes a column away, or leaves data for a component it
     // took off the list.
     const missing = refusal(
@@ -558,7 +607,9 @@ describe("a save from another version of the game", () => {
         },
       ])
     );
+
     expect(missing.message).toMatch(/"mg\/Pos\.y" has no column/);
+
     const unlisted = refusal(
       Save.migrate(save, 1, [
         {
@@ -571,6 +622,7 @@ describe("a save from another version of the game", () => {
         },
       ])
     );
+
     expect(unlisted.problem).toBe("corrupt");
     expect(unlisted.message).toMatch(
       /holds data for "mg\/Buff", which it does not list/
@@ -582,10 +634,13 @@ describe("a save from another version of the game", () => {
       a: Field.u8,
       b: Field.json<string>(),
     });
+
     const world = new EcsWorld();
+
     const entities = [1, 2, 3].map((n) =>
       world.spawn(Thing.of({ a: n, b: `b${n}` }))
     );
+
     const contents = readSnapshot(world.snapshot());
     Migrate.mapField(contents, "mg/Thing", "a", "json", (a) => ({ was: a }));
     Migrate.mapField(
@@ -599,6 +654,7 @@ describe("a save from another version of the game", () => {
     Migrate.addField(contents, "mg/Thing", "d", "json", "new", "a");
     Migrate.addField(contents, "mg/Thing", "e", "u16", 500);
     Migrate.addField(contents, "mg/Thing", "f", "f32", 0.5);
+
     const Thing2: ComponentDef<any> = Component.define("mg/Thing", {
       d: Field.json<string>(),
       a: Field.json<{ was: number }>(),
@@ -607,6 +663,7 @@ describe("a save from another version of the game", () => {
       e: Field.u16,
       f: Field.f32,
     });
+
     const loaded = new EcsWorld();
     loaded.load(writeSnapshot(contents), [Thing2]);
     expect(entities.map((entity) => loaded.get(entity, Thing2))).toEqual([

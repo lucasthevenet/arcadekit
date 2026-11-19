@@ -11,6 +11,7 @@ const message = (from: string, tick: number, value = 0): Lockstep.Message => ({
   tick,
   actions: value === 0 ? [] : [{ name: "ls/Tip", payload: { amount: value } }],
 });
+
 const text = (from: string, tick: number, value = 0): string =>
   Lockstep.encode(message(from, tick, value));
 
@@ -18,6 +19,7 @@ const refusal = <A>(exit: Exit.Exit<A, Relay.Refused>): Relay.Refused => {
   if (Exit.isSuccess(exit)) {
     throw new Error("it was let through");
   }
+
   return Cause.squash(exit.cause) as Relay.Refused;
 };
 
@@ -35,6 +37,7 @@ describe("a relay's address", () => {
     expect(Relay.address("ws://localhost:8787/", ada)).toBe(
       "ws://localhost:8787/blue?peer=ada"
     );
+
     for (const member of [
       ada,
       { room: "the blue room/7", peer: "ada & grace?" },
@@ -44,6 +47,7 @@ describe("a relay's address", () => {
         Relay.join(Relay.address("wss://r.example/rooms", member), [])
       ).toEqual(Exit.succeed(member));
     }
+
     // A host is often handed the path alone.
     expect(Relay.join("/rooms/blue?peer=ada", [])).toEqual(Exit.succeed(ada));
   });
@@ -89,11 +93,13 @@ describe("a peer that asks to come in", () => {
         Relay.join("/blue?peer=grace", [ada, linus], { maxPeers: 2 })
       )
     ).toBe(true);
+
     // Eight, unless told.
     const eight = Array.from({ length: 8 }, (_, n) => ({
       room: "blue",
       peer: `p${n}`,
     }));
+
     expect(Exit.isSuccess(Relay.join("/blue?peer=x", eight.slice(1)))).toBe(
       true
     );
@@ -129,6 +135,7 @@ describe("a peer that asks to come in", () => {
       expect(refused.reason, url).toBe("not an address");
       expect(refused.status, url).toBe(400);
     }
+
     // As long as a name may be.
     expect(
       Exit.isSuccess(
@@ -146,6 +153,7 @@ describe("what a member sent", () => {
       linus,
       edsger,
     ]);
+
     expect(deliveries).toEqual(
       Exit.succeed([
         { to: grace, text: text("ada", 3, 2) },
@@ -160,16 +168,19 @@ describe("what a member sent", () => {
 
   it("is read whether it came as text or as bytes, and written out again as the message it is", () => {
     const bytes = new TextEncoder().encode(text("ada", 1));
+
     for (const data of [bytes, bytes.buffer]) {
       expect(Relay.forward(ada, data, [ada, grace])).toEqual(
         Exit.succeed([{ to: grace, text: text("ada", 1) }])
       );
     }
+
     // What rides along and is no part of a message is not passed on.
     const padded = JSON.stringify({
       ...message("ada", 1),
       extra: "x".repeat(100),
     });
+
     expect(Relay.forward(ada, padded, [ada, grace])).toEqual(
       Exit.succeed([{ to: grace, text: text("ada", 1) }])
     );
@@ -179,6 +190,7 @@ describe("what a member sent", () => {
     const refused = refusal(
       Relay.forward(ada, text("grace", 3, 9), [ada, grace, edsger])
     );
+
     expect(refused).toEqual(
       new Relay.Refused({
         reason: "speaks for another",
@@ -203,17 +215,22 @@ describe("what a member sent", () => {
       ...message("ada", 1),
       actions: [{ name: "ls/Tip", payload: "x".repeat(200) }],
     });
+
     expect(Exit.isSuccess(Relay.forward(ada, long, [ada, grace]))).toBe(true);
+
     const refused = refusal(
       Relay.forward(ada, long, [ada, grace], { maxLength: 100 })
     );
+
     expect(refused.reason).toBe("too long");
     expect(refused.code).toBe(1009);
+
     // 65,536 characters, unless told.
     const huge = JSON.stringify({
       ...message("ada", 1),
       actions: [{ name: "ls/Tip", payload: "x".repeat(65_536) }],
     });
+
     expect(refusal(Relay.forward(ada, huge, [ada, grace])).reason).toBe(
       "too long"
     );
@@ -224,13 +241,17 @@ describe("a relay that keeps its rooms itself", () => {
   it("sends what a peer sent to the others in its room", () => {
     const relay = Relay.make();
     const got: Record<string, string[]> = { ada: [], grace: [], linus: [] };
+
     const connect = (url: string, name: string) => {
       const connection = relay.connect(url, (sent) => got[name]!.push(sent));
+
       if (Exit.isFailure(connection)) {
         throw new Error("it was refused");
       }
+
       return connection.value;
     };
+
     const first = connect("/blue?peer=ada", "ada");
     const second = connect("/blue?peer=grace", "grace");
     const third = connect("/red?peer=linus", "linus");
@@ -263,18 +284,22 @@ describe("a relay that keeps its rooms itself", () => {
     expect(refusal(relay.connect("/blue?peer=edsger", none)).reason).toBe(
       "room full"
     );
+
     if (Exit.isSuccess(first)) {
       first.value.close();
       // Closing twice frees nobody else's name.
       first.value.close();
     }
+
     expect(relay.members("blue")).toEqual([grace]);
     const again = relay.connect("/blue?peer=ada", none);
     expect(Exit.isSuccess(again)).toBe(true);
+
     // The first connection's close, come late, does not take the new one out.
     if (Exit.isSuccess(first)) {
       first.value.close();
     }
+
     expect(relay.members("blue")).toEqual([grace, ada]);
   });
 
@@ -286,9 +311,11 @@ describe("a relay that keeps its rooms itself", () => {
     expect(refusal(relay.connect("/blue?peer=edsger", () => {})).reason).toBe(
       "not a peer"
     );
+
     if (Exit.isFailure(first)) {
       throw new Error("ada was refused");
     }
+
     expect(first.value.receive(text("ada", 0))).toEqual(Exit.void);
     expect(refusal(first.value.receive(text("ada", 1, 123_456))).reason).toBe(
       "too long"
@@ -301,11 +328,13 @@ describe("a relay that keeps its rooms itself", () => {
     const one = relay.connect("/blue?peer=ada", () => {});
     const two = relay.connect("/blue?peer=grace", () => {});
     expect(relay.rooms).toBe(1);
+
     if (Exit.isSuccess(one) && Exit.isSuccess(two)) {
       one.value.close();
       expect(relay.rooms).toBe(1);
       two.value.close();
     }
+
     expect(relay.rooms).toBe(0);
     expect(relay.members("blue")).toEqual([]);
   });
@@ -325,16 +354,20 @@ const serve = async (options?: Relay.Options) => {
     const connection = relay.connect(request.url ?? "", (sent) =>
       socket.send(sent)
     );
+
     if (Exit.isFailure(connection)) {
       const refused = Cause.squash(connection.cause) as Relay.Refused;
       socket.close(refused.code, refused.reason);
+
       return;
     }
+
     const { member } = connection.value;
     socket.on("message", (data, isBinary) => {
       const received = connection.value.receive(
         isBinary ? (data as Uint8Array) : String(data)
       );
+
       if (Exit.isFailure(received)) {
         const refused = Cause.squash(received.cause) as Relay.Refused;
         closes.push({ peer: member.peer, code: refused.code });
@@ -344,6 +377,7 @@ const serve = async (options?: Relay.Options) => {
     socket.on("close", () => connection.value.close());
   });
   const { port } = server.address() as { port: number };
+
   return {
     relay,
     closes,
@@ -353,6 +387,7 @@ const serve = async (options?: Relay.Options) => {
         for (const client of server.clients) {
           client.terminate();
         }
+
         server.close(() => resolve());
       }),
   };
@@ -369,8 +404,10 @@ const until = async (holds: () => boolean, what: string): Promise<void> => {
     if (holds()) {
       return;
     }
+
     await later(5);
   }
+
   throw new Error(`timed out waiting until ${what}`);
 };
 
@@ -400,16 +437,19 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           one.send(message("ada", 0, 3));
           one.send(message("ada", 1));
           two.send(message("grace", 0));
+
           const heard: Record<string, Lockstep.Message[]> = {
             ada: [],
             grace: [],
             linus: [],
           };
+
           yield* Effect.promise(() =>
             until(() => {
               heard.ada!.push(...one.receive());
               heard.grace!.push(...two.receive());
               heard.linus!.push(...elsewhere.receive());
+
               return heard.grace!.length === 2 && heard.ada!.length === 1;
             }, "the messages arrived")
           );
@@ -438,34 +478,43 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             session: Rollback.Session;
             connected: Transport.Connected;
           }[] = [];
+
           for (const name of ["ada", "grace"]) {
             const app = yield* game();
+
             const session = Rollback.make(app, {
               peer: name,
               peers: ["ada", "grace"],
               delta: DELTA,
             });
+
             const transport = yield* Layer.build(
               Transport.layerWebSocket(
                 Relay.address(served.url, { room: "match", peer: name })
               )
             );
+
             const connected = yield* Transport.connect(session).pipe(
               Effect.provide(transport)
             );
+
             seats.push({ name, app, session, connected });
           }
+
           const act = players(31);
           const [one, two] = seats as [(typeof seats)[0], (typeof seats)[0]];
+
           for (let i = 0; i < 60; i++) {
             for (const seat of seats) {
               if (i < 40) {
                 act(seat as unknown as Peer);
               }
+
               seat.connected.tick();
               yield* Effect.promise(() => later(1));
             }
           }
+
           for (
             let i = 0;
             i < 300 &&
@@ -479,15 +528,18 @@ describe("the transport between machines, a WebSocket to a relay", () => {
               : two
             ).connected.tick();
           }
+
           expect(one.app.time.tick).toBe(two.app.time.tick);
           expect(one.app.time.tick).toBeGreaterThan(40);
           expect(one.app.world.hash()).toBe(two.app.world.hash());
           expect(one.app.actionLog).toEqual(two.app.actionLog);
           expect(one.session.drifted).toBeUndefined();
+
           // Tips went to whoever issued them, by the name the relay knows.
           const tips = moves(one.app.actionLog).filter(
             (entry) => entry.name === "ls/Tip"
           );
+
           expect(tips.length).toBeGreaterThan(4);
           expect(tips.map((entry) => entry.from).toSorted()).toEqual([
             ...tips.filter((entry) => entry.from === "ada").map(() => "ada"),
@@ -524,11 +576,13 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           expect(honest.receive()).toEqual([message("ada", 0)]);
           // Its own transport says what became of it.
           let thrown: unknown;
+
           try {
             liar.receive();
           } catch (error) {
             thrown = error;
           }
+
           expect(thrown).toEqual(
             new Transport.Closed({
               url: Relay.address(served.url, ada),
@@ -558,9 +612,11 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             until(() => {
               try {
                 second.receive();
+
                 return false;
               } catch (error) {
                 thrown = error;
+
                 return true;
               }
             }, "the second was turned away")
@@ -579,6 +635,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
   it("is told why in the few words a close frame has room for, however long the names", async () => {
     const served = await serve();
     stop = served.stop;
+
     // Every reason fits: a close frame carries 123 bytes at most, and a
     // server that is handed more throws.
     const reasons: Relay.Refused["reason"][] = [
@@ -590,9 +647,11 @@ describe("the transport between machines, a WebSocket to a relay", () => {
       "speaks for another",
       "too long",
     ];
+
     for (const reason of reasons) {
       expect(new TextEncoder().encode(reason).length).toBeLessThanOrEqual(123);
     }
+
     const long = { room: "r".repeat(64), peer: "p".repeat(64) };
     expect(
       refusal(Relay.join(Relay.address("/rooms", long), [long])).message.length
@@ -606,20 +665,25 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           );
           const taken = yield* open(Relay.address(served.url, long));
           const nowhere = yield* open(`${served.url}/blue`);
+
           const closedWith = (transport: Transport.Shape) =>
             Effect.promise(async () => {
               let thrown: unknown;
               await until(() => {
                 try {
                   transport.receive();
+
                   return false;
                 } catch (error) {
                   thrown = error;
+
                   return true;
                 }
               }, "it was closed");
+
               return thrown as Transport.Closed;
             });
+
           expect((yield* closedWith(taken)).reason).toBe("name taken");
           expect((yield* closedWith(nowhere)).reason).toBe("not an address");
           // The server is still there for whoever comes next.
@@ -649,6 +713,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             until(() => {
               try {
                 transport.receive();
+
                 return false;
               } catch {
                 return true;
@@ -665,9 +730,11 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             until(() => {
               try {
                 nowhere.receive();
+
                 return false;
               } catch (error) {
                 thrown = error;
+
                 return true;
               }
             }, "it gave up")
@@ -682,11 +749,13 @@ describe("the transport between machines, a WebSocket to a relay", () => {
     const served = await serve();
     stop = served.stop;
     const url = Relay.address(served.url, ada);
+
     const kept = await Effect.runPromise(
       Effect.gen(function* () {
         return yield* Transport.Transport;
       }).pipe(Effect.provide(Transport.layerWebSocket(url)))
     );
+
     expect(() => kept.receive()).toThrow(
       /was used after its scope had closed, and its socket with it.*provide it to the whole program/u
     );
