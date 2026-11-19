@@ -55,7 +55,7 @@ import { SnapshotError } from "./ecs/snapshot";
 import { CommandBuffer, World as EcsWorld } from "./ecs/world";
 import type { Guard, SavedChanges } from "./ecs/world";
 import { EventBus, FRAME_READER } from "./Event";
-import type { EventGuard, EventsMoment } from "./Event";
+import type { EventDef, EventGuard, EventsMoment } from "./Event";
 import * as Input from "./Input";
 import * as Plugin from "./Plugin";
 import * as Save from "./Save";
@@ -530,6 +530,12 @@ export interface Options<
    */
   readonly components?: readonly Listed[];
   /**
+   * Events that belong to the app itself, not to a plugin, that a save may
+   * hold waiting to be read. A save that holds an event listed neither here
+   * nor by a plugin is refused, and so is saving while one is waiting.
+   */
+  readonly events?: readonly EventDef<unknown>[];
+  /**
    * The game's version: an integer you increment when the game changes its
    * components or what its saves contain. Defaults to 0. A save records it.
    * `App.load` loads a save of this version as is, migrates an older one with
@@ -836,6 +842,12 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         world.register(listed);
       }
     }
+    for (const listed of [
+      ...plugins.flatMap((plugin) => plugin.events),
+      ...(options.events ?? []),
+    ]) {
+      events.list(listed);
+    }
     const version = options.version ?? 0;
     if (!Number.isSafeInteger(version) || version < 0) {
       throw new Error(
@@ -874,7 +886,10 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
       time.tick = save.tick;
       time.elapsed = save.elapsed;
       time.delta = save.delta;
-      events.restore(save.events);
+      const restored = events.restore(save.events);
+      if (restored !== undefined) {
+        return yield* new Save.LoadRefused(restored);
+      }
     }
     const allSystems = [
       ...plugins.flatMap((plugin) => plugin.systems),

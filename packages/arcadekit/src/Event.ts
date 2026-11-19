@@ -28,7 +28,7 @@
  * with no validation: the schema is only used when the event leaves the
  * program, by `Event.encode` and `Event.decode`.
  */
-import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
+import { Cause, Data, Effect, Effectable, Exit, Option, Schema } from "effect";
 
 import type { SavedEvents } from "./Save";
 import { Events } from "./Services";
@@ -379,7 +379,6 @@ export interface EventsMoment {
   readonly ticksSinceFrame: number;
   readonly inputs: boolean;
   readonly ticksSinceInput: number;
-  readonly parked: ReadonlyMap<string, SavedEvents>;
   readonly channels: readonly {
     readonly channel: object;
     readonly buffer: readonly unknown[];
@@ -436,9 +435,9 @@ export class EventBus {
   // is the one place that restores it.
   private readonly channels: Map<object, ChannelState> = new Map();
   private readonly order: Channel<unknown>[] = [];
-  /** Events read from a save, waiting for their channel to be asked for. */
-  private readonly parked: Map<string, SavedEvents> = new Map();
   private readonly names: Map<string, EventDef<unknown>> = new Map();
+  /** The names of the events a plugin or the app listed, which a save may hold. */
+  private readonly listed: Set<string> = new Set();
   private readonly reads: ReadLog = { open: false, moved: [] };
   /** True while events are kept for a frame stage that is running. */
   private frames = false;
@@ -474,32 +473,22 @@ export class EventBus {
     const channel = new Channel<P>(def, this.reads);
     this.channels.set(def, channel);
     this.order.push(channel);
-    const saved = this.parked.get(def.name);
-    if (saved !== undefined) {
-      this.parked.delete(def.name);
-      this.adopt(channel, saved);
-    }
     return channel;
   }
 
-  /** Puts the events of a save into their channel, as they were waiting. */
-  private adopt<P>(channel: Channel<P>, saved: SavedEvents): void {
-    for (const data of saved.payloads) {
-      const payload = decode(channel.def, data);
-      if (Exit.isFailure(payload)) {
-        throw new Error(
-          `The save holds an event "${saved.name}" that no longer reads: ${(Cause.squash(payload.cause) as Error).message}`
-        );
-      }
-      channel.buffer.push(payload.value);
-    }
-    // Whoever had read some of them goes on from where it was.
-    for (const [reader, count] of Object.entries(saved.read)) {
-      channel.readers.set(
-        reader,
-        new Handle(channel, channel.offset + Math.min(count, channel.size))
+  /**
+   * Lists an event that a plugin or the app named, so that a save may hold
+   * it. Before the app is loaded from a save.
+   * @internal
+   */
+  list(def: EventDef<unknown>): void {
+    if (def.codec === undefined) {
+      throw new Error(
+        `The event "${def.name}" is listed so that a save can hold it, and was defined with a type and no schema, so it cannot be written down. Give Event.define a schema, or leave it out of \`events\`.`
       );
     }
+    this.channel(def);
+    this.listed.add(def.name);
   }
 
   /**
@@ -526,6 +515,14 @@ export class EventBus {
         }
         payloads.push(data.value);
       }
+      if (payloads.length > 0 && !this.listed.has(channel.def.name)) {
+        return Exit.fail(
+          new InvalidEvent({
+            event: channel.def.name,
+            message: `The event "${channel.def.name}" is waiting to be read, and no plugin lists it, so a save that holds it could not be loaded. List it in a plugin's \`events\`, or in the app's.`,
+          })
+        );
+      }
       const read: Record<string, number> = {};
       for (const [reader, handle] of channel.readers) {
         const count = handle.position - channel.tickOffset;
@@ -542,19 +539,57 @@ export class EventBus {
   }
 
   /**
-   * Takes the events of a save. Each kind is put into its channel when the
-   * channel is first asked for, which is when its event is known here.
+   * Takes the events of a save, each decoded with its event's schema, and
+   * every reader's place in them. Returns why the save cannot be loaded: it
+   * holds an event that is not listed, or one whose payload its schema no
+   * longer takes. Into an empty bus, before anything has read.
    * @internal
    */
-  restore(saved: readonly SavedEvents[]): void {
+  restore(saved: readonly SavedEvents[]):
+    | {
+        readonly problem: "unknown event" | "event changed";
+        readonly message: string;
+      }
+    | undefined {
+    const decoded: [Channel<unknown>, SavedEvents, unknown[]][] = [];
     for (const events of saved) {
-      const def = this.names.get(events.name);
+      const def = this.listed.has(events.name)
+        ? this.names.get(events.name)
+        : undefined;
       if (def === undefined) {
-        this.parked.set(events.name, events);
-      } else {
-        this.adopt(this.channel(def), events);
+        if (events.payloads.length === 0) {
+          continue;
+        }
+        return {
+          problem: "unknown event",
+          message: `The save holds the event "${events.name}", waiting to be read, which no plugin lists. List it in a plugin's \`events\`, or in the app's.`,
+        };
+      }
+      const payloads: unknown[] = [];
+      for (const data of events.payloads) {
+        const payload = decode(def, data);
+        if (Exit.isFailure(payload)) {
+          const why = Cause.findErrorOption(payload.cause);
+          return {
+            problem: "event changed",
+            message: `The save holds the event "${events.name}" in a form its schema no longer takes${Option.isSome(why) ? `: ${why.value.message}` : ""}. A migration changes the events of a save in \`events\`.`,
+          };
+        }
+        payloads.push(payload.value);
+      }
+      decoded.push([this.channel(def), events, payloads]);
+    }
+    for (const [channel, events, payloads] of decoded) {
+      channel.buffer.push(...payloads);
+      // Whoever had read some of them goes on from where it was.
+      for (const [reader, count] of Object.entries(events.read)) {
+        channel.readers.set(
+          reader,
+          new Handle(channel, channel.offset + Math.min(count, channel.size))
+        );
       }
     }
+    return undefined;
   }
 
   /**
@@ -719,7 +754,6 @@ export class EventBus {
       ticksSinceFrame: this.ticksSinceFrame,
       inputs: this.inputs,
       ticksSinceInput: this.ticksSinceInput,
-      parked: new Map(this.parked),
       channels: this.order.map((channel) => {
         const cursors = new Map<string, number>();
         for (const [reader, handle] of channel.readers) {
@@ -751,10 +785,6 @@ export class EventBus {
     this.ticksSinceFrame = moment.ticksSinceFrame;
     this.inputs = moment.inputs;
     this.ticksSinceInput = moment.ticksSinceInput;
-    this.parked.clear();
-    for (const [name, saved] of moment.parked) {
-      this.parked.set(name, saved);
-    }
     const captured = new Map(
       moment.channels.map((entry) => [entry.channel, entry])
     );

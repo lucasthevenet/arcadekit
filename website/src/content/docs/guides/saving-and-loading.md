@@ -46,9 +46,10 @@ To return to an earlier moment of the same app within the same run, `app.capture
 - **List every component.** A world identifies components by name, so every component, singleton and state a save contains must be in some plugin's `components`. Loading a save with an unlisted one fails and names it.
 - **Keep script progress in the world.** A save can't capture a running script. A plugin's `scripts` restart from the beginning after a load, so a script resumes from what it finds in the world. A script started by hand, with `app.spawnScript` or `Script.spawn`, isn't restarted: whoever loads the game starts it.
 - **Give pending actions and events a schema.** A queued action or unread event is saved in its JSON form, so one defined without a schema can't be saved. A game that emits such an event every tick can't be saved.
+- **List every event a save may hold.** An event waiting to be read is decoded with its schema as the save is loaded, so it must be in some plugin's `events`, or the app's. Saving while an unlisted one is waiting fails, and so does loading a save that holds one, with `"unknown event"`.
 - **Save after a tick.** A game can't be saved while commands are queued but not applied. A tick applies them at its end.
 
-When one of the last two requirements isn't met, or a field holds a value that can't be saved, `app.save()` fails with `Save.SaveRefused`, whose message names the problem.
+When one of the last three requirements isn't met, or a field holds a value that can't be saved, `app.save()` fails with `Save.SaveRefused`, whose message names the problem.
 
 These aren't saved: `Field.transient` fields, which are `undefined` after a load, and any state held by your game's own services.
 
@@ -99,7 +100,7 @@ A migration receives the save in a plain, self-describing form, `Save.Contents`,
 `Migrate` covers the common changes to a world: `renameComponent`, `removeComponent`, `renameField`, `addField`, `removeField` and `mapField`. Each fails, by name, when what it targets doesn't exist. `addField` and `mapField` also fail for a value that a field of a number type cannot hold, such as a string, a fraction in an `i32`, or 300 in a `u8`, where the typed array would have stored something else; the compiler refuses a value that is not a number. Singletons are migrated the same way, by name. Entities keep their ids, and two tables that only a removed component kept apart are merged.
 
 - `Save.Contents` also holds what change queries haven't visited, under each component's name. For a component a migration renames, the queries watching it start over after the load: every entity counts as changed.
-- When a migration accompanies a schema change, it must also update the payloads in `queued` and `events`. Loading doesn't validate them: a queued action whose payload doesn't match is refused when its turn comes, and an event's payload throws when a system first reads the event.
+- When a migration accompanies a schema change, it must also update the payloads in `queued` and `events`. A waiting event whose payload its schema no longer takes refuses the save as it is loaded, with `"event changed"`; a queued action whose payload doesn't match is refused when its turn comes, as an `Action.Rejected` event.
 - A migration turns an old save into a new game, so the log recorded before it doesn't replay against the migrated save.
 
 ## When a load is refused

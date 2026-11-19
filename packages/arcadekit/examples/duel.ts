@@ -139,6 +139,7 @@ const Rest = System.make("Rest", function* () {
 const Rules = Plugin.make("Rules", {
   // Listed so that a saved game, which names them, can be loaded.
   components: [Fighter, Name, Turn],
+  events: [Struck, Fell, TurnEnded],
   systems: [Casualties, Rest],
   handlers: [strike, pass],
 });

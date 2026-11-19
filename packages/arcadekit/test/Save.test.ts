@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Logger, Option, Schema } from "effect";
 import type { Scope } from "effect";
-import { assert, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -145,6 +145,7 @@ const Pulsing = Effect.gen(function* () {
 
 const Game = Plugin.make("sv/Game", {
   components: [Tally, Mote],
+  events: [Sounded],
   systems: [Listen, Drift, Bot, Sound],
   handlers: [add, double, scatter, pulse],
   scripts: [Pulsing],
@@ -484,6 +485,33 @@ describe("a game that cannot be saved as it stands", () => {
     });
   });
 
+  it("says which event is waiting that no plugin lists", () => {
+    const Loud = Event.define("sv/Loud", Schema.Number);
+    const Shout = System.make("Shout", function* () {
+      (yield* Loud).emit(1);
+    });
+    withApp(App.make({ systems: [Shout] }), (app) => {
+      app.tick(1);
+      const error = refusal(app.save());
+      expect(error).toBeInstanceOf(Save.SaveRefused);
+      expect(error.message).toBe(
+        "The event \"sv/Loud\" is waiting to be read, and no plugin lists it, so a save that holds it could not be loaded. List it in a plugin's `events`, or in the app's."
+      );
+    });
+    withApp(App.make({ systems: [Shout], events: [Loud] }), (app) => {
+      app.tick(1);
+      expect(Exit.isSuccess(app.save())).toBe(true);
+    });
+  });
+
+  it("refuses to list an event with no schema to save it by", () => {
+    expect(() =>
+      withApp(App.make({ systems: [Hum], events: [Quiet] }), () => {})
+    ).toThrow(
+      'The event "sv/Quiet" is listed so that a save can hold it, and was defined with a type and no schema'
+    );
+  });
+
   it("says which event is waiting with no schema to save it by", () => {
     withApp(App.make({ systems: [Hum] }), (app) => {
       expect(Exit.isSuccess(app.save())).toBe(true);
@@ -537,6 +565,7 @@ describe("a save that cannot be loaded", () => {
     const { save } = record(10, 5);
     const Partial = Plugin.make("sv/Partial", {
       components: [Tally],
+      events: [Sounded],
       systems: [Listen, Drift, Bot, Sound],
       handlers: [add, double, scatter, pulse],
     });
@@ -626,7 +655,7 @@ describe("a save that cannot be loaded", () => {
     expect(refusal(load(short))).toBeInstanceOf(Save.LoadRefused);
   });
 
-  it("says which waiting event no longer reads, when its schema has changed", () => {
+  it("says which waiting event no longer reads, when its schema has changed, as it is loaded", () => {
     const { save } = record(10, 5);
     const altered = {
       ...save,
@@ -636,19 +665,31 @@ describe("a save that cannot be loaded", () => {
       })),
     };
     expect(altered.events.length).toBe(1);
-    const exit = Effect.runSync(
-      Effect.scoped(
-        Effect.exit(
-          Effect.map(App.load(altered, options), (app) => {
-            app.tick(1);
-          })
-        )
-      )
+    const error = refusal(load(altered));
+    expect(error).toBeInstanceOf(Save.LoadRefused);
+    expect(error.problem).toBe("event changed");
+    expect(error.message).toMatch(
+      /The save holds the event "sv\/Sounded" in a form its schema no longer takes: .*A migration changes the events of a save in `events`\./s
     );
-    assert(Exit.isFailure(exit));
-    expect(Cause.pretty(exit.cause)).toMatch(
-      /The save holds an event "sv\/Sounded" that no longer reads/
+  });
+
+  it("names a waiting event that no plugin lists, and says where to list it", () => {
+    const { save } = record(10, 5);
+    const Unlisted = Plugin.make("sv/Unlisted", {
+      components: [Tally, Mote],
+      systems: [Listen, Drift, Bot, Sound],
+      handlers: [add, double, scatter, pulse],
+    });
+    const error = refusal(load(save, { plugins: [Unlisted] }));
+    expect(error).toBeInstanceOf(Save.LoadRefused);
+    expect(error.problem).toBe("unknown event");
+    expect(error.message).toBe(
+      "The save holds the event \"sv/Sounded\", waiting to be read, which no plugin lists. List it in a plugin's `events`, or in the app's."
     );
+    // The app's own list will do as well as a plugin's.
+    expect(
+      Exit.isSuccess(load(save, { plugins: [Unlisted], events: [Sounded] }))
+    ).toBe(true);
   });
 });
 

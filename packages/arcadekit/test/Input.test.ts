@@ -560,8 +560,9 @@ describe("the input stage", () => {
             hear("Hear", heard, "input"),
             hear("Also", also, "input"),
           ],
+          events: [Landed],
         });
-        const plain = yield* App.make({ systems: [Land] });
+        const plain = yield* App.make({ systems: [Land], events: [Landed] });
         for (let i = 0; i < 3; i++) {
           app.input();
           app.tick(1);
