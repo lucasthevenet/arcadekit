@@ -53,6 +53,16 @@ export default defineConfig({
     "typescript/consistent-indexed-object-style": "off",
     "unicorn/no-immediate-mutation": "off",
     "unicorn/prefer-reflect-apply": "off",
+    // Off for now, to be turned back on once the rest is fixed: key order
+    // carries meaning (schema fields, config sections); Effect.gen takes an
+    // unnamed function*; Effect's APIs take callbacks; TypeScript checks a
+    // switch over a union is exhaustive, and a default would hide a missing
+    // case; Schema names a value and its type alike.
+    "eslint/sort-keys": "off",
+    "eslint/func-names": "off",
+    "promise/prefer-await-to-callbacks": "off",
+    "eslint/default-case": "off",
+    "eslint/no-redeclare": "off",
     // A system or a handler is a generator even when it needs no service,
     // so it may have no `yield`.
     "eslint/require-yield": "off",
