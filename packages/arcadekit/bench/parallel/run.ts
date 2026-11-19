@@ -24,7 +24,16 @@ import { execFileSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Worker } from "node:worker_threads";
 
-import { DONE, INTEGERS, JOB, KERNEL, kernels, RANGES, SPIN } from "./kernels";
+import {
+  DONE,
+  INTEGERS,
+  JOB,
+  KERNEL,
+  kernels,
+  numbered,
+  RANGES,
+  SPIN,
+} from "./kernels";
 
 const DT = 1 / 60;
 
@@ -56,7 +65,8 @@ const run = async (
   const numbers = new Float64Array(control, INTEGERS * 4, 8);
   numbers[0] = DT;
   numbers[1] = count;
-  signals[KERNEL] = Object.keys(kernels).indexOf(kernel);
+  const number = Object.keys(kernels).indexOf(kernel);
+  signals[KERNEL] = number;
   signals[SPIN] = mode === "spin" ? 1 : 0;
 
   const pool = Array.from(
@@ -70,7 +80,7 @@ const run = async (
 
   // Until they are up and waiting.
   await sleep(400);
-  const loop = kernels[kernel]!;
+  const loop = numbered[number]!;
 
   const pass =
     workers === 0

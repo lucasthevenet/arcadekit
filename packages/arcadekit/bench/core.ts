@@ -125,10 +125,13 @@ export interface Variant {
 }
 
 /** A variant's time as a number in the unit it is reported in, and that unit. */
-export const inUnit = (
-  variant: Variant,
-  ms: number
-): { readonly value: number; readonly unit: string } => {
+export interface Timed {
+  readonly value: number;
+  readonly unit: string;
+}
+
+/** A variant's time as a number in the unit it is reported in, and that unit. */
+export const inUnit = (variant: Variant, ms: number): Timed => {
   switch (variant.unit) {
     case "matches": {
       return { value: ms * 1000, unit: "µs per pass" };
@@ -148,7 +151,12 @@ export const inUnit = (
   }
 };
 
-export const variants: Record<string, Variant> = {
+/** The variants, by the name `bench/core.ts` and `bench/compare.ts` are given. */
+export interface Variants {
+  readonly [name: string]: Variant;
+}
+
+export const variants: Variants = {
   raw: {
     label: "eachChunk: raw typed-array columns",
     run: () => {

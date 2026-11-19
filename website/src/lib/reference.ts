@@ -16,18 +16,18 @@ export interface ReferencePackage {
 }
 
 /** The heading each package is listed under in the index, by its folder, in this order. */
-export const PACKAGE_CATEGORIES: Readonly<Record<string, string>> = {
-  arcadekit: "Core",
-  three: "Rendering",
-};
+export const PACKAGE_CATEGORIES: ReadonlyMap<string, string> = new Map([
+  ["arcadekit", "Core"],
+  ["three", "Rendering"],
+]);
 
 const OTHER = "Other";
 
 /** The heading a package is listed under in the index. */
 export const packageCategory = (folder: string): string =>
-  PACKAGE_CATEGORIES[folder] ?? OTHER;
+  PACKAGE_CATEGORIES.get(folder) ?? OTHER;
 
-const RANK = [...new Set(Object.values(PACKAGE_CATEGORIES)), OTHER];
+const RANK = [...new Set(PACKAGE_CATEGORIES.values()), OTHER];
 
 /** A group of a package's modules, with the modules listed under it. */
 export interface ModuleGroup {
@@ -41,37 +41,44 @@ export interface ModuleGroup {
  * package not here lists its modules in one list, and a module its package's groups don't name is
  * listed under Other, last.
  */
-export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
-  arcadekit: [
-    {
-      label: "Core",
-      modules: [
-        "Action",
-        "App",
-        "Driver",
-        "Event",
-        "Field",
-        "Plugin",
-        "Query",
-        "Resource",
-        "Schemas",
-        "Services",
-        "Singleton",
-        "State",
-        "System",
-        "TickScheduler",
-        "Transform2d",
-        "Transform3d",
-        "View",
+export const MODULE_GROUPS: ReadonlyMap<string, readonly ModuleGroup[]> =
+  new Map([
+    [
+      "arcadekit",
+      [
+        {
+          label: "Core",
+          modules: [
+            "Action",
+            "App",
+            "Driver",
+            "Event",
+            "Field",
+            "Plugin",
+            "Query",
+            "Resource",
+            "Schemas",
+            "Services",
+            "Singleton",
+            "State",
+            "System",
+            "TickScheduler",
+            "Transform2d",
+            "Transform3d",
+            "View",
+          ],
+        },
+        { label: "Storage", modules: ["ecs"] },
+        { label: "Browser", modules: ["Browser"] },
+        { label: "Media", modules: ["Assets", "Input", "Sound"] },
+        { label: "Saves", modules: ["Migrate", "Save"] },
+        {
+          label: "Net",
+          modules: ["Lockstep", "Relay", "Rollback", "Transport"],
+        },
       ],
-    },
-    { label: "Storage", modules: ["ecs"] },
-    { label: "Browser", modules: ["Browser"] },
-    { label: "Media", modules: ["Assets", "Input", "Sound"] },
-    { label: "Saves", modules: ["Migrate", "Save"] },
-    { label: "Net", modules: ["Lockstep", "Relay", "Rollback", "Transport"] },
-  ],
-};
+    ],
+  ]);
 
 /**
  * A package's modules by group: each group of MODULE_GROUPS that has a module, with its modules
@@ -82,7 +89,7 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
 export const moduleGroups = (
   item: Pick<ReferencePackage, "folder" | "modules">
 ): readonly { readonly label?: string; readonly modules: string[] }[] => {
-  const groups = MODULE_GROUPS[item.folder];
+  const groups = MODULE_GROUPS.get(item.folder);
 
   if (groups === undefined) {
     return [{ modules: [...item.modules] }];

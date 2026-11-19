@@ -534,12 +534,18 @@ interface Noting {
 }
 
 /**
+ * The prototype of an accessor's fields: an object with no properties of its
+ * own until `DefineField` gives it one per field.
+ */
+type FieldsProto = Record<never, never>;
+
+/**
  * Defines one field on `target` and returns a function that points it at a
  * column. `noting` is given for an accessor that records writes, and `refusal`,
  * what an assignment throws, for a read-only field.
  */
 type DefineField = (
-  target: object,
+  target: FieldsProto,
   name: string,
   row: Row,
   noting: Noting | undefined,
@@ -813,7 +819,7 @@ export const makeAccessor = (
   const noting: Noting | undefined =
     mode === "notes" ? { entities: undefined, log: undefined } : undefined;
 
-  const target = {};
+  const target: FieldsProto = {};
 
   const binders = fields.map((field, f) =>
     DEFINE_FIELD[kinds[f]!](

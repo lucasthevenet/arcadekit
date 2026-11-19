@@ -603,10 +603,9 @@ describe("a game that cannot be saved as it stands", () => {
   });
 });
 
-const load = (save: Save.Save, given: object = options) =>
-  Effect.runSync(
-    Effect.scoped(Effect.exit(App.load(save, given as typeof options)))
-  );
+/** Runs a load to its end, in a scope that closes after it. */
+const load = <A, E>(loading: Effect.Effect<A, E, Scope.Scope>) =>
+  Effect.runSync(Effect.scoped(Effect.exit(loading)));
 
 describe("a save that cannot be loaded", () => {
   it("names a component that no plugin lists, and says where to list it", () => {
@@ -618,7 +617,7 @@ describe("a save that cannot be loaded", () => {
       handlers: [add, double, scatter, pulse],
     });
 
-    const error = loadRefusal(load(save, { plugins: [Partial] }));
+    const error = loadRefusal(load(App.load(save, { plugins: [Partial] })));
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("unknown component");
     expect(error.message).toMatch(
@@ -626,7 +625,9 @@ describe("a save that cannot be loaded", () => {
     );
     // The app's own list will do as well as a plugin's.
     expect(
-      Exit.isSuccess(load(save, { plugins: [Partial], components: [Mote] }))
+      Exit.isSuccess(
+        load(App.load(save, { plugins: [Partial], components: [Mote] }))
+      )
     ).toBe(true);
   });
 
@@ -643,7 +644,7 @@ describe("a save that cannot be loaded", () => {
       ],
     });
 
-    const error = loadRefusal(load(save, { plugins: [Changed] }));
+    const error = loadRefusal(load(App.load(save, { plugins: [Changed] })));
     expect(error.problem).toBe("component changed");
     expect(error.message).toContain("x: f32");
     expect(error.message).toContain("x: f64");
@@ -653,13 +654,15 @@ describe("a save that cannot be loaded", () => {
     const { save } = record(10, 5);
 
     const error = loadRefusal(
-      load({ ...save, world: save.world.subarray(0, -9) })
+      load(App.load({ ...save, world: save.world.subarray(0, -9) }, options))
     );
 
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(["truncated", "corrupt"]).toContain(error.problem);
     expect(
-      loadRefusal(load({ ...save, world: new Uint8Array(40) })).problem
+      loadRefusal(
+        load(App.load({ ...save, world: new Uint8Array(40) }, options))
+      ).problem
     ).toBe("not a snapshot");
   });
 
@@ -708,7 +711,9 @@ describe("a save that cannot be loaded", () => {
     // Cut inside the world: the save's own shape is whole, and the world
     // is found short when it is loaded.
     const short = unwrap(Save.decode(bytes.subarray(0, -5)));
-    expect(loadRefusal(load(short))).toBeInstanceOf(Save.LoadRefused);
+    expect(loadRefusal(load(App.load(short, options)))).toBeInstanceOf(
+      Save.LoadRefused
+    );
   });
 
   it("says which waiting event no longer reads, when its schema has changed", () => {

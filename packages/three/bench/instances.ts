@@ -40,7 +40,7 @@ const noRenderer = Layer.mergeAll(
 const median = (values: number[]): number =>
   values.toSorted((a, b) => a - b)[values.length >> 1]!;
 
-const measure = (frame: () => void): { ns: number; bytes: number } => {
+const measure = (frame: () => void) => {
   for (let i = 0; i < 300; i += 1) {
     frame();
   }

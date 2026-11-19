@@ -125,10 +125,14 @@ const documentOf = (bytes: Uint8Array): Document => {
 const describe = (cause: unknown): string =>
   cause instanceof Error ? cause.message || cause.name : String(cause);
 
+/** A model's document, and the binary chunk from the same file, if any. */
+interface ModelFile {
+  readonly document: Document;
+  readonly binary: Uint8Array | undefined;
+}
+
 /** Returns a model's document, and the binary chunk from the same file, if any. */
-const read = (
-  data: Uint8Array
-): { readonly document: Document; readonly binary: Uint8Array | undefined } => {
+const read = (data: Uint8Array): ModelFile => {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
 
   if (data.byteLength < 12 || view.getUint32(0, true) !== MAGIC) {
@@ -162,10 +166,14 @@ const read = (
   return { document, binary };
 };
 
+/** The bytes of a `data:` URI, and the media type it declares. */
+interface Embedded {
+  readonly bytes: Uint8Array;
+  readonly type: string;
+}
+
 /** Returns the bytes of a `data:` URI, and the media type it declares. */
-const fromDataUri = (
-  uri: string
-): { readonly bytes: Uint8Array; readonly type: string } => {
+const fromDataUri = (uri: string): Embedded => {
   const comma = uri.indexOf(",");
   const head = uri.slice("data:".length, comma);
   const body = uri.slice(comma + 1);

@@ -52,7 +52,7 @@ const scratch64 = new Float64Array(1);
 const scratch64Bits = new BigUint64Array(scratch64.buffer);
 
 /** The value a field would hold after the smallest change it can take. */
-const nudged = (kind: string, value: unknown): unknown => {
+const nudged = (kind: string, value: unknown): number | string => {
   switch (kind) {
     case "f32": {
       scratch32[0] = value as number;

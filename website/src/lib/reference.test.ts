@@ -63,7 +63,7 @@ describe("a package's page", () => {
   });
 
   it("lists the modules of a package with groups under each group, in the package's order", () => {
-    const modules = (MODULE_GROUPS.arcadekit ?? [])
+    const modules = (MODULE_GROUPS.get("arcadekit") ?? [])
       .flatMap((group) => group.modules)
       .toReversed();
 
@@ -87,7 +87,7 @@ describe("a package's page", () => {
 });
 
 describe("the groups of a package's modules", () => {
-  const groups = MODULE_GROUPS.arcadekit ?? [];
+  const groups = MODULE_GROUPS.get("arcadekit") ?? [];
   const every = groups.flatMap((group) => group.modules);
 
   it("names each module once", () => {

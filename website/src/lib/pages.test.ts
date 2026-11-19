@@ -155,7 +155,7 @@ describe("the sidebar", () => {
 
   it("lists every module of a package with groups under one of them", () => {
     for (const page of discoverPages().packages) {
-      if (MODULE_GROUPS[page.folder] === undefined) {
+      if (!MODULE_GROUPS.has(page.folder)) {
         continue;
       }
 

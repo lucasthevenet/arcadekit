@@ -333,7 +333,7 @@ type Draft<T> = { -readonly [K in keyof T]: T[K] };
  */
 export const Report = Action.define("arcadekit/Input.Report", ReportSchema);
 
-const sorted = <V>(record: Readonly<Record<string, V>>): Record<string, V> => {
+const sorted = <V>(record: Readonly<Record<string, V>>) => {
   const out: Record<string, V> = {};
 
   for (const code of Object.keys(record).toSorted()) {
@@ -400,7 +400,7 @@ const nextAxes = (before: Axes, moves: Axes | undefined): Axes | undefined => {
     return undefined;
   }
 
-  const after: Record<string, number> = { ...before };
+  const after = { ...before };
   let changed = false;
 
   for (const code of Object.keys(moves)) {

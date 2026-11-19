@@ -42,7 +42,7 @@ import {
   Layer,
   Schema,
 } from "effect";
-import type { Fiber, Scope } from "effect";
+import type { Fiber, Scope, Types } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "./Action";
@@ -1529,9 +1529,7 @@ const build = <
     // taken when the stage begins. It is not told about the frame.
     const source = Context.get(context, Input.Source);
 
-    const devices: {
-      -readonly [K in keyof Input.Sample]: Input.Sample[K];
-    } = {
+    const devices: Types.Mutable<Input.Sample> = {
       down: new Set(),
       pressed: [],
       released: [],

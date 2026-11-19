@@ -346,13 +346,18 @@ const paramLine = (rest: string): string => {
   return `- \`${param?.groups?.name ?? rest}\`: ${param?.groups?.text ?? ""}`;
 };
 
+/** A doc comment as markdown, and what its tags say of the export. */
+export interface DocMarkdown {
+  readonly body: string;
+  readonly category: string | undefined;
+  readonly internal: boolean;
+}
+
 /**
  * A doc comment as markdown. The comments are written for an editor's tooltip, with examples as
  * lines indented under a blank line; here each such run of lines is a `ts` block.
  */
-export const docMarkdown = (
-  value: string
-): { body: string; category: string | undefined; internal: boolean } => {
+export const docMarkdown = (value: string): DocMarkdown => {
   const lines = commentLines(value);
   let category: string | undefined;
   let internal = false;

@@ -5,7 +5,7 @@
  */
 import { workerData } from "node:worker_threads";
 
-import { DONE, INTEGERS, JOB, KERNEL, kernels, RANGES, SPIN } from "./kernels";
+import { DONE, INTEGERS, JOB, KERNEL, numbered, RANGES, SPIN } from "./kernels";
 
 const { columns, control, id } = workerData as {
   readonly columns: readonly SharedArrayBuffer[];
@@ -16,7 +16,6 @@ const { columns, control, id } = workerData as {
 const signals = new Int32Array(control, 0, INTEGERS);
 const numbers = new Float64Array(control, INTEGERS * 4, 8);
 const [px, py, vx, vy] = columns.map((buffer) => new Float32Array(buffer));
-const names = Object.keys(kernels);
 
 let seen = 0;
 
@@ -38,7 +37,7 @@ for (;;) {
     break;
   }
 
-  kernels[names[signals[KERNEL]!]!]!(
+  numbered[signals[KERNEL]!]!(
     signals[RANGES + id * 2]!,
     signals[RANGES + id * 2 + 1]!,
     px!,

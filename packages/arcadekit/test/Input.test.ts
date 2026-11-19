@@ -103,6 +103,17 @@ const reports = (app: App.Any): unknown[] =>
     )
     .map((entry) => entry.payload);
 
+/** What a system read from each device, in one tick. */
+interface Seen {
+  readonly at: readonly number[];
+  readonly main: readonly boolean[];
+  readonly second: readonly boolean[];
+  readonly stick: readonly number[];
+  readonly a: readonly boolean[];
+  readonly other: readonly (number | boolean)[];
+  readonly key: boolean;
+}
+
 describe("the input stage", () => {
   it("runs before a tick, by whoever steps the app or else by the tick itself, in order, and not in the frame", () => {
     run(
@@ -1235,7 +1246,7 @@ describe("the picture of the devices in the world", () => {
     const source = Input.makeManualSource();
     run(
       Effect.gen(function* () {
-        let seen: unknown;
+        let seen: Seen | undefined;
 
         const Look = System.make("Look", function* () {
           const pointer = yield* Input.Pointer;

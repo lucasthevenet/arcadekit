@@ -44,7 +44,7 @@ import {
   Position,
   Velocity,
 } from "./core";
-import type { Variant } from "./core";
+import type { Variant, Variants } from "./core";
 
 // As `bench/core.ts` has them, and constants of this module so that a loop
 // reads them at no cost.
@@ -528,7 +528,7 @@ const MovementRaw = System.make("MovementRaw", function* () {
   });
 });
 
-const variants: Record<string, Variant> = {
+const variants: Variants = {
   // The storage core's own, which `bench/core.ts` holds and CI compares.
   ...coreVariants,
 

@@ -80,6 +80,12 @@ export interface ActionDef<N extends string, P, VE = never> {
   readonly _VE?: VE;
 }
 
+/** What `define` makes, before its overloads give it its types. */
+interface Defined {
+  readonly name: string;
+  readonly codec: Schema.Codec<unknown, unknown> | undefined;
+}
+
 /**
  * Defines an action.
  *
@@ -110,7 +116,7 @@ export function define<
 export function define(
   name?: string,
   payload?: Schema.Codec<unknown, unknown>
-): unknown {
+): Defined | ((typeOnlyName: string) => Defined) {
   if (name === undefined || payload === undefined) {
     return (typeOnlyName: string) => ({
       codec: undefined,

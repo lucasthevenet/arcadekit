@@ -135,9 +135,13 @@ export interface Options {
 const isPad = (code: string): boolean => code.startsWith("Pad");
 const isPointer = (code: string): boolean => code.startsWith("Pointer");
 
-const listen = (
-  options: Options
-): { readonly source: Input.Source; readonly stop: () => void } => {
+/** What the page's devices say, and how to stop listening to them. */
+interface Listening {
+  readonly source: Input.Source;
+  readonly stop: () => void;
+}
+
+const listen = (options: Options): Listening => {
   const state = Input.makeManualSource();
   const page: EventTarget = options.window ?? globalThis;
   const target: PointerTarget = options.target ?? page;

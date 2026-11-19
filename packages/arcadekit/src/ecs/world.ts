@@ -132,7 +132,7 @@ interface Saved {
   readonly copies: unknown[];
 }
 
-const makeColumns = (def: ComponentDef, capacity: number): Columns => {
+const makeColumns = (def: ComponentDef, capacity: number) => {
   const cols: Columns = {};
 
   for (let f = 0; f < def.fields.length; f += 1) {
@@ -4403,10 +4403,7 @@ export class World {
    * Reads the entity slots: their generations, and which are free. Returns
    * how many are freed, and how many are used up.
    */
-  private loadSlots(
-    reader: Reader,
-    narrow: boolean
-  ): { freed: number; isFree: Uint8Array; retired: number } {
+  private loadSlots(reader: Reader, narrow: boolean) {
     const nextIndex = reader.count(narrow ? 2 : 4);
 
     if (nextIndex > INDEX_MASK + 1) {

@@ -24,13 +24,13 @@ export interface BrokenLink {
   readonly reason: string;
 }
 
-const ENTITIES: Readonly<Record<string, string>> = {
-  amp: "&",
-  quot: '"',
-  apos: "'",
-  lt: "<",
-  gt: ">",
-};
+const ENTITIES: ReadonlyMap<string, string> = new Map([
+  ["amp", "&"],
+  ["quot", '"'],
+  ["apos", "'"],
+  ["lt", "<"],
+  ["gt", ">"],
+]);
 
 /** An attribute's value as the browser reads it. */
 const unescape = (value: string) =>
@@ -38,7 +38,7 @@ const unescape = (value: string) =>
     /&(?:#(?<code>\d+)|(?<name>[a-z]+));/gu,
     (entity, code?: string, name?: string) =>
       code === undefined
-        ? (ENTITIES[name ?? ""] ?? entity)
+        ? (ENTITIES.get(name ?? "") ?? entity)
         : String.fromCodePoint(Number(code))
   );
 

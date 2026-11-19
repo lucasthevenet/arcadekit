@@ -18,7 +18,7 @@ export type Kernel = (
   count: number
 ) => void;
 
-export const kernels: Record<string, Kernel> = {
+export const kernels = {
   // What the package's benchmark does: pos += vel * dt.
   move(start, end, px, py, vx, vy, dt) {
     for (let i = start; i < end; i += 1) {
@@ -82,7 +82,10 @@ export const kernels: Record<string, Kernel> = {
       vy[i] = nvy * 0.999;
     }
   },
-};
+} satisfies Record<string, Kernel>;
+
+/** The kernels by the number a worker is told in `signals[KERNEL]`. */
+export const numbered: readonly Kernel[] = Object.values(kernels);
 
 /** Where the threads tell each other what to do, in a shared array of 32-bit integers. */
 export const JOB = 0;

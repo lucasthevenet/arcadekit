@@ -81,12 +81,7 @@ export const Scale = Component.define("arcadekit/Transform3d.Scale", {
  *
  * @category Utilities
  */
-export const axisAngle = (
-  x: number,
-  y: number,
-  z: number,
-  angle: number
-): { x: number; y: number; z: number; w: number } => {
+export const axisAngle = (x: number, y: number, z: number, angle: number) => {
   const length = Math.hypot(x, y, z);
 
   if (length === 0) {

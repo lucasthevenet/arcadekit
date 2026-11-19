@@ -46,7 +46,7 @@ const sheet = (n: number) => ({
   short: 60_000 + n,
   byte: 200 + (n % 50),
   other: n as Entity,
-  note: `note ${n}` as unknown,
+  note: `note ${n}`,
 });
 
 // Two singletons: one the populated world has written, one it has not.
