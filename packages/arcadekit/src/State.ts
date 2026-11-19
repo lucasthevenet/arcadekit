@@ -25,20 +25,20 @@
 import { Effect, Effectable } from "effect";
 
 import { Component, Field } from "./ecs/component";
-import type { ComponentDef, FieldDef, SingletonSpec } from "./ecs/component";
+import type { ComponentDef, FieldDef, Schema, SingletonSpec } from "./ecs/component";
 import type { World as EcsWorld } from "./ecs/world";
 import { World } from "./Services";
 import * as System from "./System";
 
 /** What the world stores for a state. */
-type Fields = {
+interface Fields extends Schema {
   /** The current state. */
   readonly value: FieldDef<string, string[]>;
   /** The requested state that hasn't been entered yet, or null. */
   readonly next: FieldDef<string | null, (string | null)[]>;
   /** 1 once the enter hooks of the first state have run. */
   readonly entered: FieldDef<number, Uint8Array>;
-};
+}
 
 /**
  * A system's handle to a state, from `yield* SomeState`: the current state, and

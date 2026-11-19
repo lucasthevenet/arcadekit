@@ -157,7 +157,7 @@ const load = async (
 };
 
 /** The one mesh of the triangle, and what it is made of. */
-const shape = (model: Gltf.Model | undefined) => {
+const meshOf = (model: Gltf.Model | undefined) => {
   const mesh = model!.scene.children[0] as Mesh<BufferGeometry>;
 
   return {
@@ -186,12 +186,12 @@ describe("a model", () => {
       "/tri.glb": file,
     });
 
-    expect(shape(model)).toMatchObject(TRIANGLE);
+    expect(meshOf(model)).toMatchObject(TRIANGLE);
     expect(model!.scenes).toHaveLength(1);
     expect(model!.animations).toStrictEqual([]);
     // One file, asked for once: it names no other.
     expect(asked).toStrictEqual(["/tri.glb"]);
-    const { mesh } = shape(model);
+    const { mesh } = meshOf(model);
     const gone: string[] = [];
     mesh.geometry.addEventListener("dispose", () => gone.push("geometry"));
     (mesh.material as MeshStandardMaterial).addEventListener("dispose", () =>
@@ -230,13 +230,13 @@ describe("a model", () => {
     };
 
     const beside = await load("/models/tri.gltf", files);
-    expect(shape(beside.model)).toMatchObject(TRIANGLE);
+    expect(meshOf(beside.model)).toMatchObject(TRIANGLE);
     expect(beside.asked).toStrictEqual(["/models/tri.gltf", "/models/tri.bin"]);
     const far = await load("/far.gltf", files);
-    expect(shape(far.model)).toMatchObject(TRIANGLE);
+    expect(meshOf(far.model)).toMatchObject(TRIANGLE);
     expect(far.asked).toStrictEqual(["/far.gltf", "/shared/tri.bin"]);
     const inline = await load("/inline.gltf", files);
-    expect(shape(inline.model)).toMatchObject(TRIANGLE);
+    expect(meshOf(inline.model)).toMatchObject(TRIANGLE);
     expect(inline.asked).toStrictEqual(["/inline.gltf"]);
   });
 
@@ -276,10 +276,10 @@ describe("a model", () => {
     };
 
     const two = await load("/m/two.gltf", files);
-    expect(shape(two.model)).toMatchObject(TRIANGLE);
+    expect(meshOf(two.model)).toMatchObject(TRIANGLE);
     expect(two.asked).toStrictEqual(["/m/two.gltf", "/m/positions.bin"]);
     const mixed = await load("/m/mixed.glb", files);
-    expect(shape(mixed.model)).toMatchObject(TRIANGLE);
+    expect(meshOf(mixed.model)).toMatchObject(TRIANGLE);
     expect(mixed.asked).toStrictEqual(["/m/mixed.glb", "/m/positions.bin"]);
   });
 
@@ -467,8 +467,8 @@ describe("a model", () => {
       "/m/tri.bin",
     ]);
     // The geometry is where it was, with the picture after it.
-    expect(shape(model)).toMatchObject(TRIANGLE);
-    const { map } = shape(model).mesh.material as MeshStandardMaterial;
+    expect(meshOf(model)).toMatchObject(TRIANGLE);
+    const { map } = meshOf(model).mesh.material as MeshStandardMaterial;
     expect(map).toBeInstanceOf(Texture);
     // The picture's own bytes, and the kind they say they are.
     expect(decoded).toStrictEqual([{ bytes: [...jpeg], type: "image/jpeg" }]);
@@ -496,7 +496,9 @@ describe("a model", () => {
       { bytes: [1, 2, 3], type: "image/png" },
       { bytes: [1, 2, 3], type: "image/webp" },
     ]);
-    const material = shape(kinds.model).mesh.material as MeshStandardMaterial;
+
+    const material = meshOf(kinds.model).mesh.material as MeshStandardMaterial;
+
     expect(material.emissiveMap).toBeInstanceOf(Texture);
     await kinds.close();
     expect(bitmaps.map((bitmap) => bitmap.closed)).toStrictEqual([1, 1, 1]);

@@ -76,9 +76,11 @@ describe("the random number generator", () => {
 
     const starts = new Set(seeds.map((seed) => new Rng(seed).state.join(",")));
     expect(starts.size).toBe(new Set(seeds).size);
+
     const firsts = new Set(
       seeds.map((seed) => draws(new Rng(seed), 2).join(","))
     );
+
     expect(firsts.size).toBe(new Set(seeds).size);
     // The one state the generator could never leave.
     expect(starts.has("0,0,0,0")).toBe(false);
@@ -454,8 +456,9 @@ describe("the Random service", () => {
         const before = [...app.world.random.state];
         app.spawnScript(
           Effect.gen(function* () {
-            out.push(yield* EffectRandom.next, yield* EffectRandom.nextInt);
             out.push(
+              yield* EffectRandom.next,
+              yield* EffectRandom.nextInt,
               yield* EffectRandom.nextIntBetween(1, 6),
               ...(yield* EffectRandom.shuffle([1, 2, 3, 4, 5]))
             );

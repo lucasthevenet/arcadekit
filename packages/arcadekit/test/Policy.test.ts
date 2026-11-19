@@ -12,7 +12,7 @@ const { execFileSync } = (await import(
   readonly execFileSync: (
     file: string,
     args: readonly string[],
-    options: { readonly cwd: string; readonly encoding: "utf8" }
+    options: { readonly cwd: string; readonly encoding: "utf-8" }
   ) => string;
 };
 
@@ -35,7 +35,7 @@ const playIn = (
         "--eval",
         'const { generates, play } = await import("./test/policyGame.ts"); console.log(JSON.stringify({ generates: generates(), game: play() }));',
       ],
-      { cwd: new URL("..", import.meta.url).pathname, encoding: "utf8" }
+      { cwd: new URL("..", import.meta.url).pathname, encoding: "utf-8" }
     )
       .trim()
       .split("\n")

@@ -180,7 +180,7 @@ const readDeclarations = (file: string): DeclarationFile => {
     return cached;
   }
 
-  const source = readFileSync(file, "utf8");
+  const source = readFileSync(file, "utf-8");
   const result = parseSync(file, source, { lang: "dts" });
 
   if (result.errors.length > 0) {
@@ -252,7 +252,7 @@ const readDeclarations = (file: string): DeclarationFile => {
   let mapSources: string[] = [];
 
   if (existsSync(`${file}.map`)) {
-    const map = JSON.parse(readFileSync(`${file}.map`, "utf8")) as {
+    const map = JSON.parse(readFileSync(`${file}.map`, "utf-8")) as {
       sources: string[];
       mappings: string;
     };
@@ -538,7 +538,7 @@ export const readModule = (
     }
   }
 
-  const sourceText = readFileSync(path.join(root, sourceFile), "utf8");
+  const sourceText = readFileSync(path.join(root, sourceFile), "utf-8");
   const first = /^\s*\/\*\*(?<value>[\s\S]*?)\*\//u.exec(sourceText);
 
   const comment =
@@ -550,7 +550,7 @@ export const readModule = (
 
   const inRoot =
     existsSync(index) &&
-    readFileSync(index, "utf8").includes(`export * as ${name} from`);
+    readFileSync(index, "utf-8").includes(`export * as ${name} from`);
 
   return {
     name,

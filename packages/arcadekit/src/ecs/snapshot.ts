@@ -610,7 +610,7 @@ const columnOf = (kind: FieldKind, count: number): Column => {
     }
 
     default: {
-      return Array.from({ length: count }, () => undefined);
+      return Array.from({ length: count });
     }
   }
 };

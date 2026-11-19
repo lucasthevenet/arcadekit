@@ -51,7 +51,7 @@ const write = (file, page, start, lines) => {
   const segments = origins.get(file) ?? [];
 
   const offset = existsSync(absolute)
-    ? readFileSync(absolute, "utf8").split("\n").length - 1
+    ? readFileSync(absolute, "utf-8").split("\n").length - 1
     : 0;
 
   segments.push({ page: `${DOCS}/${page}`, start, offset });
@@ -62,7 +62,7 @@ const write = (file, page, start, lines) => {
 
 for (const page of pages) {
   const folder = page.replace(/\.md$/u, "");
-  const lines = readFileSync(path.join(root, DOCS, page), "utf8").split("\n");
+  const lines = readFileSync(path.join(root, DOCS, page), "utf-8").split("\n");
   let block;
   let untitled = 0;
   lines.forEach((line, index) => {
@@ -121,7 +121,7 @@ writeFileSync(
 
 const tsc = spawnSync("tsc", ["-p", out, "--pretty", "false"], {
   cwd: site,
-  encoding: "utf8",
+  encoding: "utf-8",
   shell: process.platform === "win32",
 });
 

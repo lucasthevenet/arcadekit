@@ -1141,7 +1141,7 @@ describe("a page's sound", () => {
     files: Readonly<Record<string, string | Sound.Clip>>,
     options: {
       readonly volume?: number;
-      readonly loader?: Assets.LoaderShape;
+      readonly loader?: Assets.Loader;
       readonly decode?: (data: ArrayBuffer) => Promise<unknown>;
       /** Whether what is streamed cannot be played. */
       readonly brokenMedia?: boolean;
@@ -1381,7 +1381,7 @@ describe("a page's sound", () => {
     const waiting = new Map<string, (bytes: Uint8Array) => void>();
     const givenUp: string[] = [];
 
-    const loader: Assets.LoaderShape = {
+    const loader: Assets.Loader = {
       bytes: (url) =>
         Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
           waiting.set(url, (bytes) => resume(Effect.succeed(bytes)));
@@ -1878,7 +1878,7 @@ describe("a page's sound", () => {
   it("starts a track whose file was not there yet when it is, and says once of one that has no file", async () => {
     const waiting = new Map<string, (bytes: Uint8Array) => void>();
 
-    const loader: Assets.LoaderShape = {
+    const loader: Assets.Loader = {
       bytes: (url) =>
         Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
           waiting.set(url, (bytes) => resume(Effect.succeed(bytes)));

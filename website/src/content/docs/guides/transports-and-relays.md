@@ -102,7 +102,7 @@ export const layer = Transport.layer(transport);
 - `transport.close()` stops listening. Unlike the two layers, a transport created this way doesn't report being used after that, unless your game makes it.
 - It authenticates no sender, unless whatever is at the other end of the channel does.
 
-A transport that doesn't carry text is a `Transport.Shape` of your own, passed to `Transport.layer`. Neither of its calls waits, so a tick stays one synchronous step: whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
+A transport that doesn't carry text is a `Transport.Transport` of your own, passed to `Transport.layer`. Neither of its calls waits, so a tick stays one synchronous step: whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
 
 ## Read more
 

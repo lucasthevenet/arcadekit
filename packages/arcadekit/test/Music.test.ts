@@ -63,7 +63,7 @@ const Score = Sound.music(
     const level = (yield* Level).value;
 
     if (level === "menu") {
-      return undefined;
+      return;
     }
 
     if ((yield* Hush).on === 1) {
@@ -81,7 +81,7 @@ const Score = Sound.music(
 /** An app in a scope of its own, which the test closes when it likes. */
 const start = <A, E, R>(
   make: Effect.Effect<A, E, R>,
-  output?: Sound.OutputShape
+  output?: Sound.Output
 ) => {
   const scope = Effect.runSync(Scope.make());
 
@@ -103,7 +103,7 @@ const start = <A, E, R>(
 const play = (
   // `any`: whatever the systems need is among the plugins, or the test fails.
   systems: readonly System.System<never, any>[],
-  output?: Sound.OutputShape
+  output?: Sound.Output
 ) => {
   asked = 0;
 
@@ -219,7 +219,7 @@ describe("Sound.music", () => {
     // same piece goes round and round, softly.
     const Fanfare = Sound.music("mu/Fanfare", function* () {
       if ((yield* Level).value !== "cave") {
-        return undefined;
+        return;
       }
 
       return (yield* Hush).on === 1
@@ -546,10 +546,9 @@ describe("Sound.music", () => {
 
     const Never = Sound.music(
       "mu/Never",
+      // Hushed music, and nothing in this test hushes the game.
       function* () {
-        yield* Level;
-
-        return undefined;
+        return (yield* Hush).on === 1 ? "lull" : undefined;
       },
       { channel: "never" }
     );

@@ -126,7 +126,7 @@ export interface Sample {
  *
  * @category Services
  */
-export interface SourceShape {
+export interface Source {
   /**
    * Returns the devices' current state, and what changed since the last call.
    * An app calls it once per run of its input stage.
@@ -143,7 +143,7 @@ const NOTHING: Sample = {
 };
 
 /** No devices at all, which differs from devices with nothing pressed. */
-const noSource: SourceShape = { sample: () => NOTHING };
+const noSource: Source = { sample: () => NOTHING };
 
 /**
  * Where an app's input stage takes its samples from. Nothing has to provide it:
@@ -155,10 +155,12 @@ const noSource: SourceShape = { sample: () => NOTHING };
  *
  * @category Services
  */
-export const Source: Context.Reference<SourceShape> =
-  Context.Reference<SourceShape>("arcadekit/Input.Source", {
+export const Source: Context.Reference<Source> = Context.Reference<Source>(
+  "arcadekit/Input.Source",
+  {
     defaultValue: () => noSource,
-  });
+  }
+);
 
 /**
  * The devices' state, for an input-stage system: one sample, taken when the
@@ -179,7 +181,7 @@ export class Devices extends Context.Service<Devices, Sample>()(
  *
  * @category Testing
  */
-export interface ManualSource extends SourceShape {
+export interface ManualSource extends Source {
   /** Presses a button. Does nothing if it is already down. */
   readonly press: (code: string) => void;
   /** Releases a button. Does nothing if it is already up. */

@@ -173,7 +173,7 @@ if (kernel === undefined) {
             how,
             ...(memory === undefined ? [] : [memory]),
           ],
-          { encoding: "utf8" }
+          { encoding: "utf-8" }
         )
           .trim()
           .split("\n")

@@ -87,7 +87,8 @@ const jsonText = (value: unknown): string => {
     return JSON.stringify(value) ?? "";
   } catch (error) {
     throw new Error(
-      `A json field holds a value that JSON cannot write, so the world cannot be hashed or saved: ${error instanceof Error ? error.message : String(error)}`
+      `A json field holds a value that JSON cannot write, so the world cannot be hashed or saved: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
     );
   }
 };
@@ -394,7 +395,7 @@ const KIND_CODE: Record<FieldKind, number> = {
  * Returns a component's identity as the hash sees it: its name, and the name
  * and type of each field, in definition order.
  */
-export const shapeOf = (
+export const identityOf = (
   name: string,
   fields: readonly string[],
   kinds: readonly FieldKind[]

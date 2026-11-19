@@ -39,7 +39,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): A =>
   Effect.runSync(Effect.scoped(effect));
 
 const withSource =
-  (source: Input.SourceShape) =>
+  (source: Input.Source) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
     Effect.provideService(effect, Input.Source, source);
 
@@ -254,7 +254,7 @@ describe("the input stage", () => {
     let samples = 0;
     const inner = Input.makeManualSource();
 
-    const source: Input.SourceShape = {
+    const source: Input.Source = {
       sample() {
         samples += 1;
 
@@ -400,7 +400,7 @@ describe("the input stage", () => {
     run(
       Effect.gen(function* () {
         let app: App.App<never, never, typeof bump> | undefined;
-        let reach: () => unknown = () => undefined;
+        let reach: () => unknown = () => {};
 
         const Reach = System.make("Reach", function* () {
           reach();
@@ -430,7 +430,7 @@ describe("the input stage", () => {
         );
         reach = () => made.save();
         expect(() => made.input()).toThrow(/save\(\) was called during/u);
-        reach = () => undefined;
+        reach = () => {};
         made.input();
         expect(made.world.singleton(Score).points).toBe(0);
         // And the input stage is not run from inside a tick.

@@ -57,7 +57,7 @@ import type {
   SingletonSpec,
   ValueOf,
 } from "./component";
-import { add, addColumn, addColumnPerRow, finish, shapeOf } from "./hash";
+import { add, addColumn, addColumnPerRow, finish, identityOf } from "./hash";
 import { Rng } from "./random";
 import {
   END,
@@ -2332,7 +2332,7 @@ export class World {
   /** Indexed by component id: true once registered, so the common check is a single read. */
   private readonly registered: (true | undefined)[] = [];
   /** Indexed by component id: what `hash` folds in for the component itself. */
-  private readonly shapes: number[] = [];
+  private readonly identities: number[] = [];
   /** The sparse sets in order of component name, rebuilt when one is created. */
   private sparseByName: SparseSet[] | undefined;
   /** Scratch space for `hash`: one state per member of a sparse set. */
@@ -3565,12 +3565,16 @@ export class World {
 
     for (let f = 0; f < def.fields.length; f += 1) {
       const column = cols[def.fields[f]!]!;
-      const kept = copies[f] as Column | undefined;
+      const kind = def.kinds[f]!;
+      let kept = copies[f] as Column | undefined;
 
       if (kept === undefined || kept.length < count) {
         // Room for the column as it is now; a column only grows by doubling.
-        copies[f] = column.slice(0);
-      } else if (isBoxed(def.kinds[f]!)) {
+        kept = makeColumn(kind, column.length);
+        copies[f] = kept;
+      }
+
+      if (isBoxed(kind)) {
         const to = kept as unknown[];
 
         for (let r = 0; r < count; r += 1) {
@@ -3619,7 +3623,7 @@ export class World {
     }
 
     this.componentsByName.set(def.name, def);
-    this.shapes[def.id] = shapeOf(def.name, def.fields, def.kinds);
+    this.identities[def.id] = identityOf(def.name, def.fields, def.kinds);
     this.registered[def.id] = true;
   }
 
@@ -4534,7 +4538,7 @@ export class World {
    * float fields, and about four times that per field of a sparse component.
    */
   hash(): number {
-    const { shapes } = this;
+    const { identities } = this;
     // The ids to come: the next unused index, then the freed slots in the
     // order they will be reused, each with the generation it will get.
     let h = add(add(0, this.nextIndex), this.alive);
@@ -4560,7 +4564,7 @@ export class World {
 
       for (let d = 0; d < defsByName.length; d += 1) {
         const def = defsByName[d]!;
-        h = add(h, shapes[def.id]!);
+        h = add(h, identities[def.id]!);
         const columns = table.columns[def.id]!;
 
         for (let f = 0; f < def.fields.length; f += 1) {
@@ -4595,11 +4599,11 @@ export class World {
       }
 
       const states = this.memberStates;
-      const shape = shapes[def.id]!;
+      const identity = identities[def.id]!;
       const { dense } = set;
 
       for (let i = 0; i < count; i += 1) {
-        states[i] = add(shape, dense[i]!);
+        states[i] = add(identity, dense[i]!);
       }
 
       for (let f = 0; f < def.fields.length; f += 1) {
@@ -4618,7 +4622,7 @@ export class World {
         members = (members + finish(states[i]!)) | 0;
       }
 
-      h = add(add(add(h, shape), count), members);
+      h = add(add(add(h, identity), count), members);
     }
 
     // Singletons that have been written, in order of name. One that has
@@ -4626,7 +4630,7 @@ export class World {
     // from its not being there.
     if (this.singles.length > 0) {
       for (const { columns, def } of this.writtenSingles()) {
-        h = add(add(h, SINGLETON), shapes[def.id]!);
+        h = add(add(h, SINGLETON), identities[def.id]!);
 
         for (let f = 0; f < def.fields.length; f += 1) {
           h = addColumn(

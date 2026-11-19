@@ -396,6 +396,7 @@ export const build = <E>(
     early.set(name, new Map());
     next.set(name, start);
   }
+
   let drifted: Drifted | undefined;
   let agreedAt: number | undefined;
   let begun = false;

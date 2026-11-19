@@ -797,7 +797,7 @@ if (only === undefined) {
       const out = execFileSync(
         process.execPath,
         ["--import", "tsx", self, name],
-        { encoding: "utf8" }
+        { encoding: "utf-8" }
       );
 
       ms = Math.min(ms, JSON.parse(out.trim().split("\n").pop()!) as number);

@@ -81,7 +81,7 @@ describe("a hub, the network in memory", () => {
 
     const [ada, grace, edsger] = ["ada", "grace", "edsger"].map((name) =>
       hub.port(name)
-    ) as [Transport.Shape, Transport.Shape, Transport.Shape];
+    ) as [Transport.Transport, Transport.Transport, Transport.Transport];
 
     ada.send(message("ada", 0, 3));
     ada.send(message("ada", 1));

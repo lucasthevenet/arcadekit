@@ -3124,7 +3124,7 @@ describe("Three.plugin", () => {
   });
 
   it("gives a scene with a perspective camera ten units back, for a plugin that depends on it to set up", () => {
-    let seen: Three.SceneShape | undefined;
+    let seen: Three.Scene | undefined;
     const light = new Object3D();
 
     const Stage = Plugin.make("th/Stage", {

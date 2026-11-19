@@ -671,13 +671,13 @@ describe("a save that cannot be loaded", () => {
     );
     expect(problem(negative)).toBe("corrupt");
     // Whole JSON that is not a save's: a member under another name.
-    const reshaped = Uint8Array.from(bytes);
+    const renamedMember = Uint8Array.from(bytes);
     expect(text).toContain('"logLength"');
-    reshaped.set(
+    renamedMember.set(
       new TextEncoder().encode(text.replace('"logLength"', '"logLengtx"')),
       12
     );
-    expect(problem(reshaped)).toBe("corrupt");
+    expect(problem(renamedMember)).toBe("corrupt");
     const notText = Uint8Array.from(bytes);
     notText[20] = 0xff;
     expect(problem(notText)).toBe("corrupt");

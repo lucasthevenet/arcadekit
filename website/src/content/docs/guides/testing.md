@@ -115,7 +115,7 @@ import { Assets } from "arcadekit";
 import { Effect } from "effect";
 
 const arrive = new Map<string, (bytes: Uint8Array) => void>();
-export const slowLoader: Assets.LoaderShape = {
+export const slowLoader: Assets.Loader = {
   bytes: (url) =>
     Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
       arrive.set(url, (bytes) => resume(Effect.succeed(bytes)));

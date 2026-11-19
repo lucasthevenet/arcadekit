@@ -312,7 +312,7 @@ export const layer = (bridge: Bridge): Layer.Layer<never> =>
  *
  * @category Services
  */
-export interface PortShape {
+export interface Port {
   /** Whether a UI is listening. False on a server, in a replay, and in most tests. */
   readonly connected: boolean;
   /**
@@ -335,9 +335,9 @@ export interface PortShape {
  *
  * @category Services
  */
-export class Port extends Context.Service<Port, PortShape>()(
+export const Port: Context.Service<Port, Port> = Context.Service<Port>(
   "arcadekit/View.Port"
-) {}
+);
 
 const portLayer = Layer.effect(
   Port,

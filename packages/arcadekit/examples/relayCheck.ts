@@ -62,7 +62,7 @@ const open = (peer: string, inRoom = room) =>
   );
 
 /** Waits until a transport's socket has closed, and gives why. */
-const closed = (transport: Transport.Shape) =>
+const closed = (transport: Transport.Transport) =>
   Effect.gen(function* () {
     for (let i = 0; i < 400; i += 1) {
       try {

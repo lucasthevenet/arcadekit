@@ -146,7 +146,7 @@ const run = (build: string, name: string): number =>
     execFileSync(
       process.execPath,
       ["--import", "tsx", `bench/${build === base ? ASKED : "core.ts"}`, name],
-      { cwd: build, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+      { cwd: build, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }
     )
       .trim()
       .split("\n")
@@ -154,13 +154,13 @@ const run = (build: string, name: string): number =>
   ) as number;
 
 const git = (...command: string[]): string =>
-  execFileSync("git", command, { cwd: head, encoding: "utf8" });
+  execFileSync("git", command, { cwd: head, encoding: "utf-8" });
 
 const meant = onPurpose(
   git(
     "log",
     "--format=%B",
-    `${since ?? execFileSync("git", ["rev-parse", "HEAD"], { cwd: baseRoot, encoding: "utf8" }).trim()}..HEAD`
+    `${since ?? execFileSync("git", ["rev-parse", "HEAD"], { cwd: baseRoot, encoding: "utf-8" }).trim()}..HEAD`
   )
 );
 

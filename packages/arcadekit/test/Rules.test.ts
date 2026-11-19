@@ -13,9 +13,9 @@ import {
   Script,
   System,
   Time,
+  World as App_World,
 } from "../src/index";
 import type { Entity } from "../src/index";
-import { World as App_World } from "../src/index";
 
 const Health = Component.define("ru/Health", { hp: Field.i32 });
 const Energy = Component.define("ru/Energy", { points: Field.i32 });

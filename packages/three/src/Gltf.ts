@@ -176,7 +176,7 @@ const aligned = (length: number): number => (length + 3) & ~3;
 const pack = (
   data: Uint8Array,
   url: string,
-  loader: Assets.LoaderShape
+  loader: Assets.Loader
 ): Effect.Effect<ArrayBuffer, Assets.AssetFailed> =>
   Effect.gen(function* () {
     const { binary, document } = yield* Effect.try({

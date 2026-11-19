@@ -79,6 +79,8 @@ export default defineConfig({
     "eslint/no-bitwise": "off",
     // x | 0 is int32 arithmetic, which a hash wraps on; Math.trunc is not.
     "unicorn/prefer-math-trunc": "off",
+    // A module holds its service and its tagged errors, as Effect's do.
+    "eslint/max-classes-per-file": "off",
     // It takes Effect's data-first calls, Effect.map(effect, f), for an
     // array's map with a thisArg.
     "unicorn/no-array-method-this-argument": "off",
@@ -129,6 +131,11 @@ export default defineConfig({
           { case: "pascalCase", ignore: [String.raw`^index\.ts$`] },
         ],
       },
+    },
+    {
+      // A package's index.ts is its root entry, which re-exports its modules.
+      files: ["packages/*/src/index.ts"],
+      rules: { "oxc/no-barrel-file": "off" },
     },
     {
       // The storage core's loops index their arrays: for-of over them

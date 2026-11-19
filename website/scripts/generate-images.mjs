@@ -19,7 +19,7 @@ const publicDir = path.resolve(import.meta.dirname, "..", "public");
 
 // The mark's shape, from the one file that holds it, drawn here in the colour each image asks for.
 const markPath = /\sd="(?<d>[^"]+)"/u.exec(
-  readFileSync(path.join(publicDir, "favicon.svg"), "utf8")
+  readFileSync(path.join(publicDir, "favicon.svg"), "utf-8")
 )?.groups?.d;
 
 if (markPath === undefined) {

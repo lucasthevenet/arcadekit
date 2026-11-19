@@ -192,12 +192,12 @@ export const json = <S extends Schema.Codec<unknown, unknown>>(
  *
  * @category Services
  */
-export interface LoaderShape {
+export interface Loader {
   /** Returns the bytes at a URL. Interrupting it cancels the request. */
   readonly bytes: (url: string) => Effect.Effect<Uint8Array, AssetFailed>;
 }
 
-const fetching: LoaderShape = {
+const fetching: Loader = {
   bytes: (url) =>
     Effect.tryPromise({
       try: async (signal) => {
@@ -222,10 +222,12 @@ const fetching: LoaderShape = {
  *
  * @category Services
  */
-export const Loader: Context.Reference<LoaderShape> =
-  Context.Reference<LoaderShape>("arcadekit/Assets.Loader", {
+export const Loader: Context.Reference<Loader> = Context.Reference<Loader>(
+  "arcadekit/Assets.Loader",
+  {
     defaultValue: () => fetching,
-  });
+  }
+);
 
 /**
  * A loader of in-memory files by URL, for a test or a tool. A file given as
@@ -303,9 +305,9 @@ const LOADING: Status<never> = { _tag: "Loading" };
  *
  * @category Services
  */
-export class Store extends Context.Service<Store, StoreShape>()(
+export const Store: Context.Service<Store, Store> = Context.Service<Store>(
   "arcadekit/Assets.Store"
-) {}
+);
 
 /**
  * Assets that are loaded and released together, such as a level's or a menu's.
@@ -411,7 +413,7 @@ export const load: <B extends Entries>(
  *
  * @category Services
  */
-export interface StoreShape {
+export interface Store {
   /** Returns a bundle's current status in the app. */
   readonly status: <B extends Entries>(bundle: Bundle<B>) => Status<Loaded<B>>;
   /**

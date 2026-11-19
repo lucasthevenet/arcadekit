@@ -113,7 +113,7 @@ const Game = Plugin.make("sd/Game", {
   systems: [Cues],
 });
 
-const play = (output: Sound.OutputShape | undefined, seed = 1) => {
+const play = (output: Sound.Output | undefined, seed = 1) => {
   asked = 0;
   const made = App.make({ plugins: [Game], seed, checkpointEvery: 1 });
 

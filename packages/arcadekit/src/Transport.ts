@@ -39,7 +39,7 @@ import * as Lockstep from "./Lockstep";
  *
  * @category Services
  */
-export interface Shape {
+export interface Transport {
   /** Sends a message to every other peer. */
   readonly send: (message: Lockstep.Message) => void;
   /**
@@ -56,16 +56,15 @@ export interface Shape {
  *
  * @category Services
  */
-export class Transport extends Context.Service<Transport, Shape>()(
-  "arcadekit/Transport"
-) {}
+export const Transport: Context.Service<Transport, Transport> =
+  Context.Service<Transport>("arcadekit/Transport");
 
 /**
  * Returns a layer that provides a hand-made transport.
  *
  * @category Layers
  */
-export const layer = (transport: Shape): Layer.Layer<Transport> =>
+export const layer = (transport: Transport): Layer.Layer<Transport> =>
   Layer.succeed(Transport, transport);
 
 /**
@@ -139,7 +138,7 @@ export interface Wire {
  *
  * @category Models
  */
-export interface TextTransport extends Shape {
+export interface TextTransport extends Transport {
   /** Stops listening to the wire. */
   readonly close: () => void;
   /**
@@ -240,7 +239,7 @@ export const layerBroadcastChannel = (name: string): Layer.Layer<Transport> =>
             held.channel.close();
           })
       ),
-      (held): Shape => {
+      (held): Transport => {
         const use = (): TextTransport => {
           if (!held.open) {
             throw new Error(
@@ -374,7 +373,7 @@ export const layerWebSocket = (url: string): Layer.Layer<Transport> =>
             held.socket.close(1000);
           })
       ),
-      (held): Shape => {
+      (held): Transport => {
         const use = (): TextTransport => {
           if (!held.open) {
             throw new Error(
@@ -424,7 +423,7 @@ export interface Hub {
    * Returns a peer's end of the network. A peer receives messages sent from the
    * moment it has a port.
    */
-  readonly port: (peer: string) => Shape;
+  readonly port: (peer: string) => Transport;
   /** Returns a layer that provides a peer's end. */
   readonly layer: (peer: string) => Layer.Layer<Transport>;
   /** Advances time by one step: every message in transit is one step closer. */
@@ -472,9 +471,9 @@ export const makeHub = (options: HubOptions = {}): Hub => {
     { readonly at: number; readonly order: number; readonly text: string }[]
   >();
 
-  const ports = new Map<string, Shape>();
+  const ports = new Map<string, Transport>();
 
-  const port = (peer: string): Shape => {
+  const port = (peer: string): Transport => {
     let made = ports.get(peer);
 
     if (made === undefined) {

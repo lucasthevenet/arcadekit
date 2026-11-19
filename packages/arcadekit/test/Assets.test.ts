@@ -86,7 +86,7 @@ const makeSlowLoader = () => {
   const asked: string[] = [];
   const givenUp: string[] = [];
 
-  const loader: Assets.LoaderShape = {
+  const loader: Assets.Loader = {
     bytes: (url) =>
       Effect.callback<Uint8Array, Assets.AssetFailed>((resume) => {
         asked.push(url);
@@ -309,10 +309,10 @@ describe("an asset", () => {
     expect(notJson).toBeInstanceOf(Assets.AssetFailed);
     expect(notJson.url).toBe("/layout.json");
     expect(notJson.message).toMatch(/^It is not JSON/u);
-    const wrongShape = await failure('{"walls":-1,"name":"Bad"}');
-    expect(wrongShape).toBeInstanceOf(Assets.AssetFailed);
-    expect(wrongShape.url).toBe("/layout.json");
-    expect(wrongShape.message).not.toMatch(/^It is not JSON/u);
+    const notALayout = await failure('{"walls":-1,"name":"Bad"}');
+    expect(notALayout).toBeInstanceOf(Assets.AssetFailed);
+    expect(notALayout.url).toBe("/layout.json");
+    expect(notALayout.message).not.toMatch(/^It is not JSON/u);
     expect((await failure('{"walls":2}')).url).toBe("/layout.json");
 
     // Text has to be text.
@@ -656,7 +656,7 @@ describe("a level's assets", () => {
     const bare = makeGame();
     let asked = 0;
 
-    const counting: Assets.LoaderShape = {
+    const counting: Assets.Loader = {
       bytes: () => {
         asked += 1;
 
@@ -723,7 +723,7 @@ describe("a level's assets", () => {
 
     // A loader that draws random numbers, as one that waits a random while
     // before it tries again does, and looks for what the app provides.
-    const loader: Assets.LoaderShape = {
+    const loader: Assets.Loader = {
       bytes: () =>
         Effect.gen(function* () {
           yield* EffectRandom.next;
@@ -805,7 +805,7 @@ describe("a level's assets", () => {
 
           // The store that keeps them is no way round: it says the same of
           // being asked, and of being told to load or to let go.
-          const calls: Record<string, (store: Assets.StoreShape) => unknown> = {
+          const calls: Record<string, (store: Assets.Store) => unknown> = {
             "asked for": (store) => store.status(Forest),
             held: (store) => store.hold(Forest, "Sneak"),
             "let go of": (store) => store.drop(Forest, "Sneak"),

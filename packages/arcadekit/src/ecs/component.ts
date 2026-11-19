@@ -211,7 +211,7 @@ export const makeColumn = (kind: FieldKind, capacity: number): Column => {
     case "json":
     case "ref":
     case "transient": {
-      return Array.from({ length: capacity }, () => undefined);
+      return Array.from({ length: capacity });
     }
   }
 };

@@ -291,7 +291,7 @@ const Score = Sound.music(
     const phase = (yield* Phase).value;
 
     if (phase === "title") {
-      return undefined;
+      return;
     }
 
     return { track: "theme", volume: phase === "paused" ? 0.1 : 0.4 };

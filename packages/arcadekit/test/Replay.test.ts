@@ -332,6 +332,7 @@ describe("checkpoints", () => {
         inside = error;
       }
     });
+
     withApp(App.make({ systems: [Asks] }), (app) => {
       asking = app;
       app.tick(1);

@@ -41,7 +41,7 @@ const turn = (
 };
 
 const withDisplay =
-  (display: Driver.DisplayShape) =>
+  (display: Driver.Display) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
     Effect.provideService(effect, Driver.Display, display);
 
@@ -281,7 +281,7 @@ describe("the frame loop", () => {
     let tell = (): void => {};
     let hidden = false;
 
-    const display: Driver.DisplayShape = {
+    const display: Driver.Display = {
       request(callback) {
         callbacks.push(callback);
 

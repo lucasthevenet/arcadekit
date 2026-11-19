@@ -38,7 +38,7 @@ const describe = (error: unknown): string =>
  *
  * @category Services
  */
-export const display: Driver.DisplayShape = {
+export const display: Driver.Display = {
   request(callback) {
     const id = requestAnimationFrame(callback);
 
@@ -136,7 +136,7 @@ const isPointer = (code: string): boolean => code.startsWith("Pointer");
 
 const listen = (
   options: Options
-): { readonly source: Input.SourceShape; readonly stop: () => void } => {
+): { readonly source: Input.Source; readonly stop: () => void } => {
   const state = Input.makeManualSource();
   const page: EventTarget = options.window ?? globalThis;
   const target: PointerTarget = options.target ?? page;

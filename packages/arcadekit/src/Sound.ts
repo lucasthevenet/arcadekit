@@ -107,7 +107,7 @@ const nameOf = (sound: Playable): string =>
  *
  * @category Services
  */
-export interface OutputShape {
+export interface Output {
   /**
    * Starts a cue now, at `volume`, where 1 is the cue as recorded, and at
    * `rate` times its normal speed, which also sets its pitch.
@@ -128,7 +128,7 @@ export interface OutputShape {
   ) => void;
 }
 
-const silent: OutputShape = { play() {}, music() {} };
+const silent: Output = { play() {}, music() {} };
 
 /**
  * Where sound goes. A `Context.Reference` whose default is nowhere, which suits
@@ -138,10 +138,12 @@ const silent: OutputShape = { play() {}, music() {} };
  *
  * @category Services
  */
-export const Output: Context.Reference<OutputShape> =
-  Context.Reference<OutputShape>("arcadekit/Sound.Output", {
+export const Output: Context.Reference<Output> = Context.Reference<Output>(
+  "arcadekit/Sound.Output",
+  {
     defaultValue: () => silent,
-  });
+  }
+);
 
 /**
  * Returns a layer that provides an output to the game:
@@ -149,7 +151,7 @@ export const Output: Context.Reference<OutputShape> =
  *
  * @category Layers
  */
-export const layer = (output: OutputShape): Layer.Layer<never> =>
+export const layer = (output: Output): Layer.Layer<never> =>
   Layer.succeed(Output, output) as Layer.Layer<never>;
 
 /**
@@ -189,7 +191,7 @@ export interface Scored {
  *
  * @category Testing
  */
-export interface Recorder extends OutputShape {
+export interface Recorder extends Output {
   /** Every cue it was asked to play, oldest first. */
   readonly played: Played[];
   /** Everything a channel was told, oldest first. */
@@ -294,7 +296,7 @@ export interface MusicOptions {
  *
  * @category Services
  */
-export interface PlayerShape {
+export interface Player {
   /** Whether sound goes anywhere. False on a server, in a replay, and in most tests. */
   readonly audible: boolean;
   /**
@@ -342,9 +344,9 @@ export interface PlayerShape {
  *
  * @category Services
  */
-export class Player extends Context.Service<Player, PlayerShape>()(
+export const Player: Context.Service<Player, Player> = Context.Service<Player>(
   "arcadekit/Sound.Player"
-) {}
+);
 
 const playerLayer = Layer.effect(
   Player,
@@ -373,6 +375,7 @@ const playerLayer = Layer.effect(
 
     const describe = (track: Playable, volume: number, once: boolean) =>
       `"${nameOf(track)}"${volume === 1 ? "" : ` at ${volume}`}${once ? ", once" : ""}`;
+
     // What a frame's systems have asked to hear, by the cue: one sound for
     // each, however many asked and whichever system they were.
     const asked = new Map<Playable, { volume: number; rate: number }>();
@@ -681,7 +684,7 @@ export const cues: {
   // The lines of a bundle, and the assets they were made of: per app, by
   // the app's player, since a system is made once and may be in several.
   const made = new WeakMap<
-    PlayerShape,
+    Player,
     { readonly assets: unknown; readonly lines: Heard }
   >();
 

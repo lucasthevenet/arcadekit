@@ -76,7 +76,7 @@ export const findBrokenLinks = (dist: string): BrokenLink[] => {
   const html = new Map(
     [...files]
       .filter((file) => file.endsWith(".html"))
-      .map((file) => [file, readFileSync(path.join(dist, file), "utf8")])
+      .map((file) => [file, readFileSync(path.join(dist, file), "utf-8")])
   );
 
   const anchors = new Map<string, ReadonlySet<string>>();

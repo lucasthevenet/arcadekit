@@ -98,7 +98,7 @@ interface Kept {
  *
  * @category Services
  */
-export interface SceneShape {
+export interface Scene {
   /** The scene everything is drawn into. Add lights and anything else to it. */
   readonly scene: ThreeScene;
   /**
@@ -132,14 +132,14 @@ export interface SceneShape {
  *
  * @category Services
  */
-export class Scene extends Context.Service<Scene, SceneShape>()(
+export const Scene: Context.Service<Scene, Scene> = Context.Service<Scene>(
   "arcadekit/three/Scene"
-) {}
+);
 
 const sceneLayer = Layer.effect(
   Scene,
   Effect.acquireRelease(
-    Effect.sync((): SceneShape => {
+    Effect.sync((): Scene => {
       const camera = new PerspectiveCamera(50, 1, 0.1, 2000);
       camera.position.set(0, 0, 10);
 
@@ -166,7 +166,7 @@ const sceneLayer = Layer.effect(
  *
  * @category Services
  */
-export interface RendererShape {
+export interface Renderer {
   /** Draws the scene as the camera sees it. Called once per frame. */
   readonly render: (scene: ThreeScene, camera: Camera) => void;
 }
@@ -182,9 +182,8 @@ export interface RendererShape {
  *
  * @category Services
  */
-export class Renderer extends Context.Service<Renderer, RendererShape>()(
-  "arcadekit/three/Renderer"
-) {}
+export const Renderer: Context.Service<Renderer, Renderer> =
+  Context.Service<Renderer>("arcadekit/three/Renderer");
 
 /**
  * The parts of a Three.js renderer that are used. `WebGLRenderer` and
@@ -249,7 +248,7 @@ export const layerRenderer = (
         Effect.sync(() => make()),
         (renderer) => Effect.sync(() => renderer.dispose())
       ),
-      (renderer): RendererShape => {
+      (renderer): Renderer => {
         const fit = options.fit !== false;
         let width = 0;
         let height = 0;
@@ -814,12 +813,12 @@ class FromAssets<T extends Kept> implements Kept {
   private assets: unknown;
   private made: T | undefined;
 
-  private readonly store: Assets.StoreShape;
+  private readonly store: Assets.Store;
   private readonly bundle: Assets.Bundle<Entries>;
   private readonly make: (assets: any) => T;
 
   constructor(
-    store: Assets.StoreShape,
+    store: Assets.Store,
     bundle: Assets.Bundle<Entries>,
     make: (assets: any) => T
   ) {

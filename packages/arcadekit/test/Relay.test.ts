@@ -421,7 +421,7 @@ const open = (url: string) =>
     Context.get(context, Transport.Transport)
   );
 
-const closedWith = (transport: Transport.Shape) =>
+const closedWith = (transport: Transport.Transport) =>
   Effect.promise(async () => {
     let thrown: unknown;
     await until(() => {

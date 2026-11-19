@@ -183,7 +183,7 @@ export const interval = (
  *
  * @category Services
  */
-export interface DisplayShape {
+export interface Display {
   /**
    * Requests a single callback when the next frame is due, with the time in
    * milliseconds. Returns a function that cancels the request.
@@ -202,7 +202,7 @@ export interface DisplayShape {
  * A display for environments without a screen: a 60 frames per second timer,
  * never hidden. It holds no state.
  */
-const timerDisplay: DisplayShape = {
+const timerDisplay: Display = {
   request(callback) {
     const id = setTimeout(() => callback(performance.now()), 1000 / 60);
 
@@ -224,17 +224,19 @@ const timerDisplay: DisplayShape = {
  *
  * @category Services
  */
-export const Display: Context.Reference<DisplayShape> =
-  Context.Reference<DisplayShape>("arcadekit/Display", {
+export const Display: Context.Reference<Display> = Context.Reference<Display>(
+  "arcadekit/Display",
+  {
     defaultValue: () => timerDisplay,
-  });
+  }
+);
 
 /**
  * A display advanced by hand, for tests and tools.
  *
  * @category Testing
  */
-export interface ManualDisplay extends DisplayShape {
+export interface ManualDisplay extends Display {
   /**
    * Signals that a frame is due at `now` milliseconds: calls every pending
    * callback, and returns how many it called. Callbacks requested meanwhile

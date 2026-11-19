@@ -57,7 +57,8 @@ export interface PackagePage extends SitePage, ReferencePackage {
 
 const toPosix = (file: string) => file.split(path.sep).join("/");
 
-const read = (file: string) => readFileSync(path.join(REPO_ROOT, file), "utf8");
+const read = (file: string) =>
+  readFileSync(path.join(REPO_ROOT, file), "utf-8");
 
 /** Markdown's inline marks removed: links keep their text, code and emphasis their content. */
 const plainText = (markdown: string) =>

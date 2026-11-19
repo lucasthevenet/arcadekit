@@ -1592,7 +1592,7 @@ describe("change queries in an app", () => {
         });
 
         // And bytes whose changes are not of the right shape do not decode.
-        const misshapen = Save.decode(
+        const badChanges = Save.decode(
           Save.encode({
             ...save.value,
             changes: [{ component: 1 }] as unknown as Save.Save["changes"],
@@ -1600,7 +1600,9 @@ describe("change queries in an app", () => {
         );
 
         expect(
-          Exit.isFailure(misshapen) ? Cause.squash(misshapen.cause) : undefined
+          Exit.isFailure(badChanges)
+            ? Cause.squash(badChanges.cause)
+            : undefined
         ).toMatchObject({ _tag: "LoadRefused", problem: "corrupt" });
       })
     );
