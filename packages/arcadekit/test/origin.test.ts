@@ -216,7 +216,7 @@ describe("who issued an action, in a session", () => {
           grace.app.enqueue(Tip, { amount: 5 });
           grace.app.enqueue(Tip, { amount: 1 });
 
-          for (let i = 0; i < 30; i++) {
+          for (let i = 0; i < 30; i += 1) {
             round(peers, net);
           }
 
@@ -248,7 +248,7 @@ describe("who issued an action, in a session", () => {
       const [ada, grace] = peers as [Peer, Peer];
       grace.source.tap("Space");
 
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 6; i += 1) {
         round(peers, net);
       }
 

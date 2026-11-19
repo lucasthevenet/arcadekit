@@ -68,7 +68,7 @@ const populated = (): { world: EcsWorld; entities: Entity[] } => {
   const world = new EcsWorld({ seed: 12 });
   const entities: Entity[] = [];
 
-  for (let n = 0; n < 24; n++) {
+  for (let n = 0; n < 24; n += 1) {
     const entity = world.spawn(Body.of({ x: n, y: -n }));
 
     if (n % 2 === 0) {
@@ -140,13 +140,13 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
   },
   "eachChunk over raw columns": (world) => {
     world.view(Bodies).eachChunk((start, end, body) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         body.x[i] = 5;
         body.y[i] = body.y[i]! + 5;
       }
     });
     world.view(Sheets).eachChunk((start, end, row) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         row.double[i] = 1e9;
         row.note[i] = { replaced: true };
       }
@@ -154,7 +154,7 @@ const writers: Record<string, (world: EcsWorld, entities: Entity[]) => void> = {
   },
   "eachChunk over a sparse component's columns": (world) => {
     world.view(Both).eachChunk((start, end, body, aura, ids) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         body.y[i] = 0;
         aura.columns.signed[aura.indexOf(ids[i]!)] = 123;
       }
@@ -235,7 +235,7 @@ describe("a transaction of a world", () => {
     const names = Object.keys(writers);
     const dice = new EcsWorld({ seed: 5 }).random;
 
-    for (let round = 0; round < 30; round++) {
+    for (let round = 0; round < 30; round += 1) {
       const { entities, world } = populated();
       const before = world.hash();
       world.begin();
@@ -255,17 +255,17 @@ describe("a transaction of a world", () => {
     const { entities, world } = populated();
     const dice = new EcsWorld({ seed: 8 }).random;
 
-    for (let round = 0; round < 40; round++) {
+    for (let round = 0; round < 40; round += 1) {
       if (round % 3 === 0) {
         // Past the room the tables had when their columns were last saved.
-        for (let n = 0; n < 30; n++) {
+        for (let n = 0; n < 30; n += 1) {
           const entity = world.spawn(Body.of({ x: n, y: round }));
           world.add(entity, Sheet.of(sheet(n + round)));
           world.add(entity, Aura.of(sheet(n)));
           entities.push(entity);
         }
       } else {
-        for (let n = 0; n < 12 && entities.length > 6; n++) {
+        for (let n = 0; n < 12 && entities.length > 6; n += 1) {
           world.despawn(
             entities.splice(dice.int(3, entities.length - 1), 1)[0]!
           );
@@ -305,12 +305,14 @@ describe("a transaction of a world", () => {
 
     for (const refusal of refusals) {
       expect(refusal).toThrow(
-        /was called inside a transaction.*Queue it on Commands/
+        /was called inside a transaction.*Queue it on Commands/u
       );
     }
 
-    expect(() => world.spawn(Body)).toThrow(/World\.spawn\(\)/);
-    expect(() => world.remove(entities[0]!, Body)).toThrow(/World\.remove\(\)/);
+    expect(() => world.spawn(Body)).toThrow(/World\.spawn\(\)/u);
+    expect(() => world.remove(entities[0]!, Body)).toThrow(
+      /World\.remove\(\)/u
+    );
     world.rollback();
     expect(world.hash()).toBe(before);
     // Outside one they work as ever.
@@ -321,18 +323,18 @@ describe("a transaction of a world", () => {
   it("is one at a time, and has to be begun before it is ended", () => {
     const world = new EcsWorld();
     expect(() => world.commit()).toThrow(
-      /World\.commit\(\) was called with no transaction/
+      /World\.commit\(\) was called with no transaction/u
     );
     expect(() => world.rollback()).toThrow(
-      /World\.rollback\(\) was called with no transaction/
+      /World\.rollback\(\) was called with no transaction/u
     );
     world.begin();
-    expect(() => world.begin()).toThrow(/inside a transaction/);
+    expect(() => world.begin()).toThrow(/inside a transaction/u);
     world.commit();
-    expect(() => world.commit()).toThrow(/no transaction/);
+    expect(() => world.commit()).toThrow(/no transaction/u);
     world.begin();
     world.rollback();
-    expect(() => world.rollback()).toThrow(/no transaction/);
+    expect(() => world.rollback()).toThrow(/no transaction/u);
   });
 
   it("starts each transaction from what the last one left", () => {
@@ -521,7 +523,7 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
 
       case "chunk": {
         (yield* Sheets).eachChunk((start, end, row) => {
-          for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i += 1) {
             row.signed[i] = row.signed[i]! - 1;
             row.note[i] = `seen ${row.signed[i]}`;
           }
@@ -651,7 +653,7 @@ const game = (checkpointEvery = 1) =>
     (app) => {
       const entities: Entity[] = [];
 
-      for (let n = 0; n < 12; n++) {
+      for (let n = 0; n < 12; n += 1) {
         const entity = app.world.spawn(
           Body.of({ x: n, y: n }),
           Sheet.of(sheet(n))
@@ -985,7 +987,7 @@ describe("an action that is accepted", () => {
       const exit = app.dispatch(Direct, { target, how: "world" });
       expect(Exit.isFailure(exit)).toBe(true);
       expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(
-        /World\.despawn\(\) was called inside a transaction/
+        /World\.despawn\(\) was called inside a transaction/u
       );
       expect(app.world.hash()).toBe(before);
       expect(app.world.get(target, Body)).toEqual({ x: 1, y: 1 });
@@ -1013,7 +1015,7 @@ describe("an action that is accepted", () => {
       const entity = made.world.spawn(Body.of({ x: 1, y: 1 }));
       const exit = made.dispatch(Outer, {});
       expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(
-        /dispatch\("tx\/Echo"\) was called from the handler of "tx\/Outer".*Actions\.enqueue/
+        /dispatch\("tx\/Echo"\) was called from the handler of "tx\/Outer".*Actions\.enqueue/u
       );
       expect(made.world.get(entity, Body)).toEqual({ x: 1, y: 1 });
       // The world is out of its transaction: the next dispatch works.
@@ -1036,8 +1038,8 @@ describe("a game full of refused actions", () => {
         const dice = new EcsWorld({ seed }).random;
         let refusedCount = 0;
 
-        for (let tick = 0; tick < 60; tick++) {
-          for (let n = dice.int(0, 3); n > 0; n--) {
+        for (let tick = 0; tick < 60; tick += 1) {
+          for (let n = dice.int(0, 3); n > 0; n -= 1) {
             const chosen = Array.from({ length: dice.int(1, 6) }, () =>
               dice.pick(steps)
             );

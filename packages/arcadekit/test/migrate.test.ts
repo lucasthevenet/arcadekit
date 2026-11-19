@@ -65,7 +65,7 @@ const savedByVersion0 = () =>
   withApp(App.make({ plugins: [Game0] }), (app) => {
     const entities: Entity[] = [];
 
-    for (let n = 0; n < 9; n++) {
+    for (let n = 0; n < 9; n += 1) {
       const entity = app.world.spawn(
         Hp0.of({ points: 10 * n }),
         Pos0.of({ x: n, y: -n }),
@@ -253,12 +253,12 @@ describe("a snapshot read without the program's components", () => {
 
     const dice = new EcsWorld({ seed: 5 }).random;
 
-    for (let round = 0; round < 20; round++) {
+    for (let round = 0; round < 20; round += 1) {
       const world = new EcsWorld({ seed: round });
       const commands = new CommandBuffer(world);
       const alive: Entity[] = [];
 
-      for (let step = 0; step < 60; step++) {
+      for (let step = 0; step < 60; step += 1) {
         const choice = dice.int(0, 5);
 
         if (choice <= 2 || alive.length === 0) {
@@ -298,7 +298,7 @@ describe("a save from another version of the game", () => {
 
     for (const bad of [-1, 1.5, Number.NaN]) {
       expect(() => withApp(App.make({ version: bad }), () => 0)).toThrow(
-        /A game's version must be a whole number from 0 up/
+        /A game's version must be a whole number from 0 up/u
       );
     }
   });
@@ -375,7 +375,7 @@ describe("a save from another version of the game", () => {
       expect(order.toSorted()).toEqual(entities.toSorted());
       let chunks = 0;
       app.world.view(Query.all(Name2)).eachChunk(() => {
-        chunks++;
+        chunks += 1;
       });
       expect(chunks).toBe(1);
     });
@@ -417,10 +417,10 @@ describe("a save from another version of the game", () => {
       "The save was written by version 0 of the game, and this is version 2. There is no migration from version 0 to version 1."
     );
     expect(load([migrations[0]!]).message).toMatch(
-      /no migration from version 1 to version 2/
+      /no migration from version 1 to version 2/u
     );
     expect(load([migrations[1]!]).message).toMatch(
-      /no migration from version 0 to version 1/
+      /no migration from version 0 to version 1/u
     );
     // With no migrations given at all, an older save is refused the same way.
     expect(
@@ -453,39 +453,39 @@ describe("a save from another version of the game", () => {
     const cases: [(world: Save.Contents["world"]) => void, RegExp][] = [
       [
         (world) => Migrate.renameComponent(world, "mg/Nope", "mg/Else"),
-        /holds no component named "mg\/Nope"\. It holds: mg\/Buff, mg\/Hp/,
+        /holds no component named "mg\/Nope"\. It holds: mg\/Buff, mg\/Hp/u,
       ],
       [
         (world) => Migrate.renameComponent(world, "mg/Hp", "mg/Pos"),
-        /already holds a component named "mg\/Pos"/,
+        /already holds a component named "mg\/Pos"/u,
       ],
       [
         (world) => Migrate.renameField(world, "mg/Pos", "z", "w"),
-        /"mg\/Pos" has no field named "z" in the save\. It has: x, y/,
+        /"mg\/Pos" has no field named "z" in the save\. It has: x, y/u,
       ],
       [
         (world) => Migrate.renameField(world, "mg/Pos", "x", "y"),
-        /"mg\/Pos" already has a field named "y"/,
+        /"mg\/Pos" already has a field named "y"/u,
       ],
       [
         (world) => Migrate.addField(world, "mg/Pos", "x", "f32", 0),
-        /"mg\/Pos" already has a field named "x"/,
+        /"mg\/Pos" already has a field named "x"/u,
       ],
       [
         (world) => Migrate.addField(world, "mg/Pos", "z", "f32", 0, "w"),
-        /no field named "w"/,
+        /no field named "w"/u,
       ],
       [
         (world) => Migrate.removeField(world, "mg/Pos", "z"),
-        /no field named "z"/,
+        /no field named "z"/u,
       ],
       [
         (world) => Migrate.mapField(world, "mg/Pos", "z", "f64", (v) => v),
-        /no field named "z"/,
+        /no field named "z"/u,
       ],
       [
         (world) => Migrate.removeComponent(world, "mg/Nope"),
-        /no component named/,
+        /no component named/u,
       ],
     ];
 
@@ -517,13 +517,20 @@ describe("a save from another version of the game", () => {
 
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(["component changed", "unknown component"]).toContain(error.problem);
-    expect(error.message).toMatch(/mg\//);
+    expect(error.message).toMatch(/mg\//u);
   });
 
   it("is left as it is when it is of this version already", () => {
     const { save } = savedByVersion0();
     let ran = 0;
-    const counting: Save.Migration[] = [{ from: 0, migrate: () => void ran++ }];
+    const counting: Save.Migration[] = [
+      {
+        from: 0,
+        migrate: () => {
+          ran += 1;
+        },
+      },
+    ];
     expect(unwrap(Save.migrate(save, 0, counting))).toBe(save);
     expect(ran).toBe(0);
     // A migration that changes nothing gives the same game, a version on.
@@ -593,7 +600,9 @@ describe("a save from another version of the game", () => {
 
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("corrupt");
-    expect(error.message).toMatch(/"mg\/Hp\.points" has no column of 4 values/);
+    expect(error.message).toMatch(
+      /"mg\/Hp\.points" has no column of 4 values/u
+    );
 
     // And when it takes a column away, or leaves data for a component it
     // took off the list.
@@ -608,7 +617,7 @@ describe("a save from another version of the game", () => {
       ])
     );
 
-    expect(missing.message).toMatch(/"mg\/Pos\.y" has no column/);
+    expect(missing.message).toMatch(/"mg\/Pos\.y" has no column/u);
 
     const unlisted = refusal(
       Save.migrate(save, 1, [
@@ -625,7 +634,7 @@ describe("a save from another version of the game", () => {
 
     expect(unlisted.problem).toBe("corrupt");
     expect(unlisted.message).toMatch(
-      /holds data for "mg\/Buff", which it does not list/
+      /holds data for "mg\/Buff", which it does not list/u
     );
   });
 

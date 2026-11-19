@@ -678,12 +678,20 @@ export class EventBus {
    */
   endTick(): void {
     // A stage that has not run for a long time is taken to be gone.
-    if (this.frames && ++this.ticksSinceFrame > FRAME_PATIENCE) {
-      this.frames = false;
+    if (this.frames) {
+      this.ticksSinceFrame += 1;
+
+      if (this.ticksSinceFrame > FRAME_PATIENCE) {
+        this.frames = false;
+      }
     }
 
-    if (this.inputs && ++this.ticksSinceInput > FRAME_PATIENCE) {
-      this.inputs = false;
+    if (this.inputs) {
+      this.ticksSinceInput += 1;
+
+      if (this.ticksSinceInput > FRAME_PATIENCE) {
+        this.inputs = false;
+      }
     }
 
     for (const channel of this.order) {
@@ -870,7 +878,7 @@ export class EventBus {
     // Newest first, so that a handle that read twice ends where it began.
     const { moved } = this.reads;
 
-    for (let i = moved.length - 1; i >= 0; i--) {
+    for (let i = moved.length - 1; i >= 0; i -= 1) {
       moved[i]!.handle.rewind(moved[i]!.cursor);
     }
 

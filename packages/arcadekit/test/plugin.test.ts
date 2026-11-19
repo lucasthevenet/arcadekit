@@ -177,7 +177,7 @@ describe("plugins", () => {
         expect(seen).toEqual([1]);
         expect(app.dispatch(Ping, {})).toEqual(Exit.succeed("pong"));
         // @ts-expect-error Heal belongs to Combat, which this app did not install
-        expect(() => app.dispatch(Heal, { amount: 1 })).toThrow(/No handler/);
+        expect(() => app.dispatch(Heal, { amount: 1 })).toThrow(/No handler/u);
       }
     );
   });
@@ -200,8 +200,15 @@ describe("plugins", () => {
       layer: Layer.effect(
         Clock,
         Effect.acquireRelease(
-          Effect.sync(() => ({ id: ++built })),
-          () => Effect.sync(() => void released++)
+          Effect.sync(() => {
+            built += 1;
+
+            return { id: built };
+          }),
+          () =>
+            Effect.sync(() => {
+              released += 1;
+            })
         )
       ),
       setup: Effect.sync(() => void order.push("setup:Core")),
@@ -413,7 +420,7 @@ describe("plugins", () => {
 
     expect(Exit.isFailure(exit)).toBe(true);
     expect(String(exit)).toMatch(
-      /setup of plugin \\?"Slow\\?" did not finish synchronously/
+      /setup of plugin \\?"Slow\\?" did not finish synchronously/u
     );
   });
 
@@ -422,7 +429,7 @@ describe("plugins", () => {
     const two = Plugin.make("Twin", {});
     expect(() =>
       Effect.runSync(Effect.scoped(App.make({ plugins: [one, two] })))
-    ).toThrow(/both named "Twin"/);
+    ).toThrow(/both named "Twin"/u);
     // The same plugin listed twice is fine.
     withApp(App.make({ plugins: [one, one] }), (app) =>
       expect(app.plugins).toEqual(["Twin"])
@@ -431,10 +438,10 @@ describe("plugins", () => {
     const clash = Plugin.make("Clash", { systems: [Movement] });
     expect(() =>
       Effect.runSync(Effect.scoped(App.make({ plugins: [Physics, clash] })))
-    ).toThrow(/Duplicate system name "Movement"/);
+    ).toThrow(/Duplicate system name "Movement"/u);
     const healAgain = Plugin.make("HealAgain", { handlers: [heal] });
     expect(() =>
       Effect.runSync(Effect.scoped(App.make({ plugins: [Combat, healAgain] })))
-    ).toThrow(/Two handlers for action "Heal"/);
+    ).toThrow(/Two handlers for action "Heal"/u);
   });
 });

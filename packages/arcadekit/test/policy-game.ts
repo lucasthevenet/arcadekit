@@ -216,7 +216,7 @@ export const play = (): Record<string, unknown> =>
         const { world } = app;
         let leader: Entity | undefined;
 
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < 40; i += 1) {
           const entity = world.spawn(
             Position.of({ x: i, y: 2 * i }),
             ...(i % 2 === 0 ? [Velocity.of({ x: 1 + i, y: -i })] : []),
@@ -245,7 +245,7 @@ export const play = (): Record<string, unknown> =>
 
         const outcomes: string[] = [];
 
-        for (let tick = 0; tick < 6; tick++) {
+        for (let tick = 0; tick < 6; tick += 1) {
           app.tick(1 / 60);
           app.frame(0.5);
 

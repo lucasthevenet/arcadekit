@@ -74,7 +74,7 @@ const tagEvery = (world: World, n: number): void => {
 };
 
 export const populate = (world: World, fragmented = false): void => {
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < N; i += 1) {
     const extra = fragmented ? tags.filter((_, bit) => (i >> bit) & 1) : [];
     world.spawn(
       Position.of({ x: i, y: i }),
@@ -94,14 +94,14 @@ export const measure = (
   warmup = 80,
   before?: () => void
 ): number => {
-  for (let i = 0; i < warmup; i++) {
+  for (let i = 0; i < warmup; i += 1) {
     before?.();
     run();
   }
 
   const samples: number[] = [];
 
-  for (let i = 0; i < runs; i++) {
+  for (let i = 0; i < runs; i += 1) {
     before?.();
     const start = performance.now();
     run();
@@ -149,7 +149,7 @@ export const variants: Record<string, Variant> = {
           const vx = vel.x;
           const vy = vel.y;
 
-          for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i += 1) {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
           }
@@ -186,7 +186,7 @@ export const variants: Record<string, Variant> = {
       const velocities = world.view(query([Velocity]));
       let sink = 0;
 
-      for (let pass = 0; pass < 80; pass++) {
+      for (let pass = 0; pass < 80; pass += 1) {
         positions.each((pos) => {
           sink += pos.x;
         });
@@ -266,7 +266,7 @@ export const variants: Record<string, Variant> = {
 
       const Age = Component.define("bench/Age", { seconds: Field.f32 });
 
-      for (let i = 0; i < 2000; i++) {
+      for (let i = 0; i < 2000; i += 1) {
         world.spawn(
           Health.of({ hp: i, max: i }),
           Spin.of({ angle: 0, speed: 1 }),
@@ -286,7 +286,7 @@ export const variants: Record<string, Variant> = {
       const falling = world.view(query([Mass, Age, Spin]));
       let sink = 0;
 
-      for (let pass = 0; pass < 400; pass++) {
+      for (let pass = 0; pass < 400; pass += 1) {
         wounds.each((health, team) => {
           health.hp = Math.min(health.max, health.hp + team.rank);
         });
@@ -347,7 +347,7 @@ export const variants: Record<string, Variant> = {
           const vx = vel.x;
           const vy = vel.y;
 
-          for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i += 1) {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
           }
@@ -394,7 +394,7 @@ export const variants: Record<string, Variant> = {
           const vx = vel.x;
           const vy = vel.y;
 
-          for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i += 1) {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
           }
@@ -467,7 +467,7 @@ export const variants: Record<string, Variant> = {
           const vx = vel.x;
           const vy = vel.y;
 
-          for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i += 1) {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
           }
@@ -649,7 +649,7 @@ export const variants: Record<string, Variant> = {
             const vx = vel.x;
             const vy = vel.y;
 
-            for (let i = start; i < end; i++) {
+            for (let i = start; i < end; i += 1) {
               px[i]! += vx[i]! * DT;
               py[i]! += vy[i]! * DT;
             }
@@ -682,7 +682,7 @@ export const variants: Record<string, Variant> = {
             const vx = vel.x;
             const vy = vel.y;
 
-            for (let i = start; i < end; i++) {
+            for (let i = start; i < end; i += 1) {
               vx[i]! += px[i]! * DT;
               vy[i]! += py[i]! * DT;
             }
@@ -707,7 +707,7 @@ export const variants: Record<string, Variant> = {
       const ms = measure(
         () => {
           // A thousand visits a sample: one is too short to time.
-          for (let i = 0; i < 1000; i++) {
+          for (let i = 0; i < 1000; i += 1) {
             watcher.each((vel) => {
               sink += vel.x;
             });
@@ -735,7 +735,7 @@ export const variants: Record<string, Variant> = {
 
       const ms = measure(
         () => {
-          for (let i = 0; i < 1000; i++) {
+          for (let i = 0; i < 1000; i += 1) {
             world.set(target, Position, { x: i });
             watcher.each((vel) => {
               sink += vel.x;
@@ -823,7 +823,7 @@ export const variants: Record<string, Variant> = {
 
       return measure(
         () => {
-          for (let i = 0; i < 1000; i++) {
+          for (let i = 0; i < 1000; i += 1) {
             made.push(
               world.spawn(
                 Position.of({ x: i, y: i }),
@@ -832,7 +832,7 @@ export const variants: Record<string, Variant> = {
             );
           }
 
-          for (let i = 0; i < 1000; i++) {
+          for (let i = 0; i < 1000; i += 1) {
             world.despawn(made[i]!);
           }
 
@@ -855,7 +855,7 @@ export const variants: Record<string, Variant> = {
 
       return measure(
         () => {
-          for (let i = 0; i < 1000; i++) {
+          for (let i = 0; i < 1000; i += 1) {
             made.push(
               world.spawn(
                 Position.of({ x: i, y: i }),
@@ -865,7 +865,7 @@ export const variants: Record<string, Variant> = {
             );
           }
 
-          for (let i = 0; i < 1000; i++) {
+          for (let i = 0; i < 1000; i += 1) {
             world.despawn(made[i]!);
           }
 
@@ -886,7 +886,7 @@ export const variants: Record<string, Variant> = {
 
       return measure(
         () => {
-          for (let i = 0; i < 100; i++) {
+          for (let i = 0; i < 100; i += 1) {
             world.despawn(parents[i]!);
           }
 
@@ -895,11 +895,11 @@ export const variants: Record<string, Variant> = {
         2000,
         500,
         () => {
-          for (let i = 0; i < 100; i++) {
+          for (let i = 0; i < 100; i += 1) {
             const parent = world.spawn(Position.of({ x: i, y: i }));
             parents.push(parent);
 
-            for (let c = 0; c < 10; c++) {
+            for (let c = 0; c < 10; c += 1) {
               world.spawn(
                 Position.of({ x: c, y: c }),
                 Child.of({ target: parent })

@@ -118,20 +118,20 @@ describe("a singleton", () => {
   it("is not a component: no entity has it, and its name is taken", () => {
     const world = new EcsWorld();
     expect(() => world.spawn(Turn.component)).toThrow(
-      /"sg\/Turn" is a singleton.*World\.singleton\(\)/
+      /"sg\/Turn" is a singleton.*World\.singleton\(\)/u
     );
     const entity = world.spawn(Body.of({ x: 1 }));
     expect(() => world.add(entity, Turn.component.of(Turn.initial))).toThrow(
-      /is a singleton/
+      /is a singleton/u
     );
     expect(world.entityCount).toBe(1);
     // Queued, it is refused where the mistake is, and leaves no id behind.
     const commands = new CommandBuffer(world);
     expect(() => commands.spawn(Body, Turn.component)).toThrow(
-      /is a singleton/
+      /is a singleton/u
     );
     expect(() => commands.add(entity, Turn.component)).toThrow(
-      /is a singleton/
+      /is a singleton/u
     );
     expect(commands.size).toBe(0);
     expect(world.spawn(Body)).toBe(entity + 1);
@@ -139,11 +139,11 @@ describe("a singleton", () => {
     expect(world.component("sg/Turn")).toBe(Turn.component);
     const clash = Component.define("sg/Turn", { player: Field.u8 });
     expect(() => world.spawn(clash)).toThrow(
-      /Two different components are both named "sg\/Turn"/
+      /Two different components are both named "sg\/Turn"/u
     );
     expect(() =>
       world.singleton({ component: Body, initial: { x: 0 } })
-    ).toThrow(/"sg\/Body" is a component, not a singleton/);
+    ).toThrow(/"sg\/Body" is a component, not a singleton/u);
     // The plain form, with no Effect, is the same thing.
     const plain = Component.singleton("sg/Plain", { n: Field.i32 }, { n: 5 });
     expect(world.singleton(plain).n).toBe(5);
@@ -259,8 +259,8 @@ describe("a singleton in a snapshot", () => {
     });
     expect(copy.snapshot()).toEqual(bytes);
     // It goes on the same.
-    copy.singleton(Turn).round++;
-    world.singleton(Turn).round++;
+    copy.singleton(Turn).round += 1;
+    world.singleton(Turn).round += 1;
     expect(copy.hash()).toBe(world.hash());
   });
 
@@ -318,7 +318,7 @@ describe("a singleton in a snapshot", () => {
 
     expect(changed.problem).toBe("component changed");
     expect(changed.message).toMatch(
-      /Then: singleton \{ player: u8, round: u32 \}\. Now: singleton \{ player: u8 \}/
+      /Then: singleton \{ player: u8, round: u32 \}\. Now: singleton \{ player: u8 \}/u
     );
 
     // A component of the same name and fields is not a singleton.
@@ -332,19 +332,19 @@ describe("a singleton in a snapshot", () => {
     );
 
     expect(kind.problem).toBe("component changed");
-    expect(kind.message).toMatch(/Then: singleton .* Now: table/);
+    expect(kind.message).toMatch(/Then: singleton .* Now: table/u);
     // A value its field cannot save is refused when the snapshot is taken.
     const world = written();
     world.singleton(Everything).note = () => 1;
     const unsaved = problemOf(() => world.snapshot());
     expect(unsaved.problem).toBe("cannot be saved");
-    expect(unsaved.message).toMatch(/"sg\/Everything\.note"/);
+    expect(unsaved.message).toMatch(/"sg\/Everything\.note"/u);
   });
 
   it("is refused when the bytes are cut short or do not hang together", () => {
     const bytes = written().snapshot();
 
-    for (let length = bytes.length - 60; length < bytes.length; length++) {
+    for (let length = bytes.length - 60; length < bytes.length; length += 1) {
       const error = problemOf(() =>
         new EcsWorld().load(bytes.subarray(0, length), listed)
       );
@@ -360,7 +360,7 @@ describe("a singleton in a snapshot", () => {
     });
 
     expect(problemOf(() => new EcsWorld().load(twice, listed)).message).toMatch(
-      /two values for one singleton/
+      /two values for one singleton/u
     );
 
     const inTable = writeSnapshot({
@@ -381,7 +381,7 @@ describe("a singleton in a snapshot", () => {
 
     expect(
       problemOf(() => new EcsWorld().load(inTable, listed)).message
-    ).toMatch(/one that no table holds/);
+    ).toMatch(/one that no table holds/u);
 
     const asSingleton = writeSnapshot({
       ...contents,
@@ -393,7 +393,7 @@ describe("a singleton in a snapshot", () => {
 
     expect(
       problemOf(() => new EcsWorld().load(asSingleton, listed)).message
-    ).toMatch(/a singleton is of a component that is not one/);
+    ).toMatch(/a singleton is of a component that is not one/u);
   });
 
   it("can still be read from a snapshot of the format before singletons", () => {
@@ -531,7 +531,7 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
   }
 
   turn.player = player === 1 ? 2 : 1;
-  turn.round++;
+  turn.round += 1;
 
   return turn.round;
 });
@@ -610,7 +610,7 @@ describe("a singleton in an app", () => {
         // Never written, so never there.
         expect(app.world.hash()).toBe(before);
 
-        for (let move = 0; move < 12; move++) {
+        for (let move = 0; move < 12; move += 1) {
           app.dispatch(EndTurn, { player: (move % 2) + 1 });
           app.dispatch(Cheat, {});
           app.enqueue(Cheat, {});
@@ -639,7 +639,7 @@ describe("a singleton in an app", () => {
       Effect.gen(function* () {
         const app = yield* App.make({ plugins: [Rules], checkpointEvery: 1 });
 
-        for (let move = 0; move < 5; move++) {
+        for (let move = 0; move < 5; move += 1) {
           app.dispatch(EndTurn, { player: (move % 2) + 1 });
           app.tick(1);
         }
@@ -686,7 +686,7 @@ describe("a singleton in an app", () => {
           _tag: "LoadRefused",
           problem: "unknown component",
           message: expect.stringMatching(
-            /"sg\/Score".*List it in a plugin's `components`/
+            /"sg\/Score".*List it in a plugin's `components`/u
           ),
         });
       })

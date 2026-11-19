@@ -89,7 +89,7 @@ describe("a frozen world", () => {
       sum += row.x;
     });
     world.view(Balls).eachChunk((start, end, rows) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         sum += rows.x[i]!;
       }
     });
@@ -127,7 +127,7 @@ describe("a frozen world", () => {
     ];
 
     for (const [what, change] of changes) {
-      expect(change, what).toThrow(/while the world is frozen/);
+      expect(change, what).toThrow(/while the world is frozen/u);
       expect(change, what).toThrow(what);
     }
 
@@ -159,7 +159,7 @@ describe("a frozen world", () => {
     const seen: number[] = [];
     // Thawed, this throws: it would take its own visit for a change.
     moved.eachChunk((start, end, rows) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         seen.push(rows.x[i]!);
       }
     });
@@ -170,7 +170,7 @@ describe("a frozen world", () => {
     world.view(Balls).eachChunk(() => {});
     expect(other.count()).toBe(0);
     world.thaw();
-    expect(() => moved.eachChunk(() => {})).toThrow(/watches "fr\/Ball"/);
+    expect(() => moved.eachChunk(() => {})).toThrow(/watches "fr\/Ball"/u);
     world.set(ball, Ball, { x: 4 });
     world.freeze();
     expect(moved.entities()).toEqual([ball]);
@@ -185,7 +185,7 @@ describe("a frozen world", () => {
     world.random.next();
     world.random.shuffle([1, 2, 3]);
     expect(() => world.thaw()).toThrow(
-      /A draw from world\.random was made while the world is frozen.*frame stage's own Random/
+      /A draw from world\.random was made while the world is frozen.*frame stage's own Random/u
     );
     // Thawed all the same, and as it was found.
     expect(world.frozen).toBe(false);
@@ -206,7 +206,7 @@ describe("a frozen world", () => {
   it("cannot be frozen in the middle of a transaction", () => {
     const { world } = populated();
     world.begin();
-    expect(() => world.freeze()).toThrow(/inside a transaction/);
+    expect(() => world.freeze()).toThrow(/inside a transaction/u);
     world.rollback();
   });
 });
@@ -348,7 +348,7 @@ describe("the frame stage", () => {
             })
           ),
         stage
-      ).toThrow(/System "Splash" is a hook and is in the frame stage/);
+      ).toThrow(/System "Splash" is a hook and is in the frame stage/u);
     }
   });
 
@@ -607,7 +607,7 @@ describe("the frame stage", () => {
         app.tick(1);
         const before = app.world.hash();
         expect(() => app.frame(0)).toThrow(
-          /A draw from world\.random was made while the world is frozen/
+          /A draw from world\.random was made while the world is frozen/u
         );
         expect(app.world.hash()).toBe(before);
         expect(app.world.frozen).toBe(false);
@@ -658,7 +658,7 @@ describe("the frame stage", () => {
 
         const app = yield* make([Roll, Button]);
 
-        for (let n = 0; n < 5; n++) {
+        for (let n = 0; n < 5; n += 1) {
           app.tick(1);
           app.frame(0);
         }
@@ -685,7 +685,7 @@ describe("the frame stage", () => {
         const hasty = yield* make([Hasty]);
         own = hasty;
         expect(() => hasty.frame(0)).toThrow(
-          /dispatch\("fr\/Kick"\) was called during the frame stage.*Actions\.enqueue/
+          /dispatch\("fr\/Kick"\) was called during the frame stage.*Actions\.enqueue/u
         );
       })
     );
@@ -710,19 +710,19 @@ describe("the frame stage", () => {
         const app: App.Any = yield* App.make({ systems: [Reenter, InTick] });
         inFrame = () => app.tick(1);
         expect(() => app.frame(0)).toThrow(
-          /App\.tick was called from inside a frame/
+          /App\.tick was called from inside a frame/u
         );
         inFrame = () => app.frame(0);
         expect(() => app.frame(0)).toThrow(
-          /App\.frame was called from inside a frame/
+          /App\.frame was called from inside a frame/u
         );
         inFrame = () => app.save();
-        expect(() => app.frame(0)).toThrow(/save\(\) was called during/);
+        expect(() => app.frame(0)).toThrow(/save\(\) was called during/u);
         inFrame = undefined;
         inTick = () => app.frame(0);
         drawn.length = 0;
         expect(() => app.tick(1)).toThrow(
-          /App\.frame was called from inside a tick/
+          /App\.frame was called from inside a tick/u
         );
         // Nothing was drawn in the middle of the tick.
         expect(drawn).toEqual([]);
@@ -742,7 +742,7 @@ describe("the frame stage", () => {
 
         const app = yield* App.make({ systems: [Peek] });
         expect(() => app.tick(1)).toThrow(
-          /Frame was read by a system that runs in the tick.*read Time instead/
+          /Frame was read by a system that runs in the tick.*read Time instead/u
         );
       })
     );
@@ -757,7 +757,7 @@ describe("the frame stage", () => {
           ],
         })
       )
-    ).toThrow(/System "Splash" is a hook and is in the frame stage/);
+    ).toThrow(/System "Splash" is a hook and is in the frame stage/u);
   });
 
   it("stops with the app when a script has failed and the app was told to stop", () => {
@@ -818,7 +818,7 @@ describe("what the frame stage reads", () => {
         expect(heard).toEqual([1]);
 
         // Four ticks with no frame between them, as after a hitch.
-        for (let n = 0; n < 4; n++) {
+        for (let n = 0; n < 4; n += 1) {
           app.tick(1);
         }
 
@@ -833,7 +833,7 @@ describe("what the frame stage reads", () => {
         const without: number[] = [];
         late.length = 0;
 
-        for (let n = 0; n < 5; n++) {
+        for (let n = 0; n < 5; n += 1) {
           headless.tick(1);
         }
 
@@ -844,7 +844,7 @@ describe("what the frame stage reads", () => {
         again.tick(1);
         again.frame(0);
 
-        for (let n = 0; n < 4; n++) {
+        for (let n = 0; n < 4; n += 1) {
           again.tick(1);
         }
 
@@ -874,7 +874,7 @@ describe("what the frame stage reads", () => {
             each.tick(1);
             each.frame(0);
 
-            for (let n = 0; n < 5; n++) {
+            for (let n = 0; n < 5; n += 1) {
               each.tick(1);
             }
 
@@ -917,12 +917,12 @@ describe("what the frame stage reads", () => {
         const app = yield* App.make({ systems: [Emit, Listen] });
 
         // A frame stage that keeps running is kept for, however long.
-        for (let n = 0; n < 700; n++) {
+        for (let n = 0; n < 700; n += 1) {
           app.tick(1);
           app.frame(0);
         }
 
-        for (let n = 0; n < 4; n++) {
+        for (let n = 0; n < 4; n += 1) {
           app.tick(1);
         }
 
@@ -932,7 +932,7 @@ describe("what the frame stage reads", () => {
         app.tick(1);
         app.frame(0);
 
-        for (let n = 0; n < 500; n++) {
+        for (let n = 0; n < 500; n += 1) {
           app.tick(1);
         }
 
@@ -940,7 +940,7 @@ describe("what the frame stage reads", () => {
         // All 500 were kept.
         expect(heard).toEqual([1, 500]);
 
-        for (let n = 0; n < 2000; n++) {
+        for (let n = 0; n < 2000; n += 1) {
           app.tick(1);
         }
 
@@ -988,7 +988,7 @@ describe("what the frame stage reads", () => {
 
         const app = yield* App.make(options);
 
-        for (let n = 0; n < 3; n++) {
+        for (let n = 0; n < 3; n += 1) {
           app.world.spawn(Ball.of({ x: n, vx: 0 }));
         }
 
@@ -1015,7 +1015,7 @@ describe("what the frame stage reads", () => {
         );
 
         expect(readers).toHaveLength(1);
-        expect(readers[0]).toMatch(/^Count\n/);
+        expect(readers[0]).toMatch(/^Count\n/u);
         const read = Save.decode(Save.encode(save.value));
 
         if (Exit.isFailure(read)) {
@@ -1070,7 +1070,7 @@ describe("what the frame stage reads", () => {
               verifyFrames: true,
             });
 
-            for (let n = 0; n < 4; n++) {
+            for (let n = 0; n < 4; n += 1) {
               app.world.spawn(Ball.of({ x: n, vx: 1 }));
             }
 
@@ -1080,10 +1080,10 @@ describe("what the frame stage reads", () => {
         const drawn = yield* make([Roll, Tally, Watch]);
         const undrawn = yield* make([Roll, Tally]);
 
-        for (let n = 0; n < 20; n++) {
+        for (let n = 0; n < 20; n += 1) {
           drawn.tick(1 / 60);
 
-          for (let f = 0; f < n % 3; f++) {
+          for (let f = 0; f < n % 3; f += 1) {
             drawn.frame(f / 3, 0.005);
           }
 
@@ -1108,7 +1108,7 @@ describe("a frame stage that is checked", () => {
     System.make("Sneak", function* () {
       if (how === "raw") {
         (yield* Balls).eachChunk((start, end, balls) => {
-          for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i += 1) {
             balls.x[i]! += 1;
           }
         });
@@ -1130,7 +1130,7 @@ describe("a frame stage that is checked", () => {
           System.otherwise(
             Effect.map(Balls, (balls) => {
               balls.eachChunk((start, end, ball) => {
-                for (let i = start; i < end; i++) {
+                for (let i = start; i < end; i += 1) {
                   ball.x[i] = 99;
                 }
               });
@@ -1172,7 +1172,7 @@ describe("a frame stage that is checked", () => {
           expect(error).toBeInstanceOf(App.FrameChangedWorld);
           expect(error).toMatchObject({ system: "Sneak", frame: 1 });
           expect((error as Error).message).toMatch(
-            /after system "Sneak" ran in frame 1.*raw columns of eachChunk.*world\.random/
+            /after system "Sneak" ran in frame 1.*raw columns of eachChunk.*world\.random/u
           );
           // It is a defect: nothing in the error channel to handle.
           expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);

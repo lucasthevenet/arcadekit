@@ -73,7 +73,7 @@ const populated = (count = 9) => {
   const world = new EcsWorld({ seed: 1 });
   const entities: Entity[] = [];
 
-  for (let n = 0; n < count; n++) {
+  for (let n = 0; n < count; n += 1) {
     const entity = world.spawn(Card.of(card(n)));
     world.add(entity, Badge.of(card(n + 50)));
     entities.push(entity);
@@ -331,7 +331,7 @@ describe("a field that is not a number", () => {
 
     expect(error).toBeInstanceOf(SnapshotError);
     expect((error as SnapshotError).problem).toBe("corrupt");
-    expect((error as SnapshotError).message).toMatch(/is not JSON/);
+    expect((error as SnapshotError).message).toMatch(/is not JSON/u);
   });
 
   it("saves plain data in a json field as JSON does: what comes back is what JSON makes of it", () => {

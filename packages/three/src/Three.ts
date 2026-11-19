@@ -460,7 +460,7 @@ abstract class Blend {
   protected fit(start: number, end: number, entities: EntityColumn): void {
     let most = -1;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const index = entityIndex(entities[i]!);
 
       if (index > most) {
@@ -538,7 +538,7 @@ class Lerp3 extends Blend {
     const { alpha, shift, stamp } = this.clock;
     const { x: ox, y: oy, z: oz } = out;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
       const at = index * 3;
@@ -604,7 +604,7 @@ class Lerp2 extends Blend {
     const { x, y } = from;
     const { x: ox, y: oy } = out;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
       const at = index * 2;
@@ -669,7 +669,7 @@ class Nlerp4 extends Blend {
     const { x, y, z, w } = from;
     const { x: ox, y: oy, z: oz, w: ow } = out;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
       const at = index * 4;
@@ -744,7 +744,7 @@ class Arc extends Blend {
     const { angle } = from;
     const out = this.out.angle;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
       const a = angle[i]!;
@@ -977,7 +977,7 @@ const STEPS = 4080;
 const LINEAR = /* @__PURE__ */ (() => {
   const table = new Float32Array(STEPS + 1);
 
-  for (let i = 0; i <= STEPS; i++) {
+  for (let i = 0; i <= STEPS; i += 1) {
     const c = i / STEPS;
     table[i] = c < 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   }
@@ -1289,7 +1289,7 @@ class Instances implements Kept {
 
     if (!this.curved) {
       // The renderer's own numbers: as they are, or bytes over 255.
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         out[at] = r[i]! * gain;
         out[at + 1] = g[i]! * gain;
         out[at + 2] = b[i]! * gain;
@@ -1303,7 +1303,7 @@ class Instances implements Kept {
     // its steps. One that is off either end of it is no colour.
     const scale = gain * STEPS;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const u = (r[i]! * scale + 0.5) | 0;
       const v = (g[i]! * scale + 0.5) | 0;
       const w = (b[i]! * scale + 0.5) | 0;
@@ -1388,7 +1388,7 @@ class Instances implements Kept {
     const out = this.array;
     const { x, y, z } = position;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       out[at] = 1;
       out[at + 1] = 0;
       out[at + 2] = 0;
@@ -1429,7 +1429,7 @@ class Instances implements Kept {
     const { x, y, z } = position;
     const { x: sx, y: sy, z: sz } = scale;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       out[at] = sx[i]!;
       out[at + 1] = 0;
       out[at + 2] = 0;
@@ -1470,7 +1470,7 @@ class Instances implements Kept {
     const { x, y, z } = position;
     const { x: qx, y: qy, z: qz, w: qw } = rotation;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const a = qx[i]!;
       const b = qy[i]!;
       const c = qz[i]!;
@@ -1526,7 +1526,7 @@ class Instances implements Kept {
     const { x: qx, y: qy, z: qz, w: qw } = rotation;
     const { x: sx, y: sy, z: sz } = scale;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const a = qx[i]!;
       const b = qy[i]!;
       const c = qz[i]!;
@@ -1582,7 +1582,7 @@ class Instances implements Kept {
     const out = this.array;
     const { x, y } = position;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       out[at] = 1;
       out[at + 1] = 0;
       out[at + 2] = 0;
@@ -1623,7 +1623,7 @@ class Instances implements Kept {
     const { x, y } = position;
     const { x: sx, y: sy } = scale;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       out[at] = sx[i]!;
       out[at + 1] = 0;
       out[at + 2] = 0;
@@ -1664,7 +1664,7 @@ class Instances implements Kept {
     const { x, y } = position;
     const { angle } = rotation;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const cos = Math.cos(angle[i]!);
       const sin = Math.sin(angle[i]!);
       out[at] = cos;
@@ -1710,7 +1710,7 @@ class Instances implements Kept {
     const { angle } = rotation;
     const { x: sx, y: sy } = scale;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const cos = Math.cos(angle[i]!);
       const sin = Math.sin(angle[i]!);
       const u = sx[i]!;
@@ -2176,7 +2176,7 @@ class Objects<O extends Object3D> implements Kept {
   }
 
   begin(tick: number, alpha: number, frame: number): void {
-    this.stamp++;
+    this.stamp += 1;
     this.smooth?.begin(tick, alpha, frame);
   }
 
@@ -2193,7 +2193,7 @@ class Objects<O extends Object3D> implements Kept {
     const { x, y, z } = position;
     const { objects, stamp } = this;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
 
@@ -2230,7 +2230,7 @@ class Objects<O extends Object3D> implements Kept {
     const { x, y } = position;
     const { objects, stamp } = this;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
 
@@ -2264,7 +2264,7 @@ class Objects<O extends Object3D> implements Kept {
     const { angle } = rotation;
     const { objects, stamp, turnedAt } = this;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const index = entityIndex(entities[i]!);
       objects[index]!.rotation.z = angle[i]!;
       turnedAt[index] = stamp;
@@ -2284,7 +2284,7 @@ class Objects<O extends Object3D> implements Kept {
     const { x, y } = scale;
     const { objects, sizedAt, stamp } = this;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const index = entityIndex(entities[i]!);
       const size = objects[index]!.scale;
       size.x = x[i]!;
@@ -2306,7 +2306,7 @@ class Objects<O extends Object3D> implements Kept {
     const { x, y, z, w } = rotation;
     const { objects, stamp, turnedAt } = this;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const index = entityIndex(entities[i]!);
       // An Object3D's quaternion has to be of length 1, which the game's
       // may not be: it is given the turn that one stands for. All zeros
@@ -2341,7 +2341,7 @@ class Objects<O extends Object3D> implements Kept {
     const { x, y, z } = scale;
     const { objects, sizedAt, stamp } = this;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const index = entityIndex(entities[i]!);
       objects[index]!.scale.set(x[i]!, y[i]!, z[i]!);
       sizedAt[index] = stamp;
@@ -2352,7 +2352,7 @@ class Objects<O extends Object3D> implements Kept {
   finish(): void {
     const { flat, live, objects, seen, sizedAt, stamp, turnedAt } = this;
 
-    for (let k = live.length - 1; k >= 0; k--) {
+    for (let k = live.length - 1; k >= 0; k -= 1) {
       const index = live[k]!;
 
       if (seen[index] !== stamp) {

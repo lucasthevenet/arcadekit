@@ -64,7 +64,7 @@ const open = (peer: string, inRoom = room) =>
 /** Waits until a transport's socket has closed, and gives why. */
 const closed = (transport: Transport.Shape) =>
   Effect.gen(function* () {
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 400; i += 1) {
       try {
         transport.receive();
       } catch (error) {
@@ -111,7 +111,7 @@ const check = Effect.gen(function* () {
 
   const [ada, grace] = seats as [(typeof seats)[0], (typeof seats)[0]];
 
-  for (let round = 0; round < 60; round++) {
+  for (let round = 0; round < 60; round += 1) {
     for (const seat of seats) {
       if (round < 40 && round % 5 === (seat.peer === "ada" ? 0 : 2)) {
         seat.app.enqueue(Tip, { amount: 1 });
@@ -128,7 +128,7 @@ const check = Effect.gen(function* () {
     i < 200 &&
     (ada.app.time.tick !== grace.app.time.tick ||
       ada.session.confirmed < ada.app.time.tick - 1);
-    i++
+    i += 1
   ) {
     yield* wait(30);
     (ada.app.time.tick <= grace.app.time.tick ? ada : grace).connected.tick();

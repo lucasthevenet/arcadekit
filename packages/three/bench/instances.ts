@@ -41,14 +41,14 @@ const median = (values: number[]): number =>
   values.toSorted((a, b) => a - b)[values.length >> 1]!;
 
 const measure = (frame: () => void): { ns: number; bytes: number } => {
-  for (let i = 0; i < 300; i++) {
+  for (let i = 0; i < 300; i += 1) {
     frame();
   }
 
   const times: number[] = [];
   const grown: number[] = [];
 
-  for (let i = 0; i < 301; i++) {
+  for (let i = 0; i < 301; i += 1) {
     const heap = process.memoryUsage().heapUsed;
     const started = performance.now();
     frame();
@@ -78,7 +78,7 @@ const variant = (
     }).pipe(Effect.provide(noRenderer), Scope.provide(scope))
   );
 
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < N; i += 1) {
     app.world.spawn(Thing, ...parts());
   }
 
@@ -279,7 +279,7 @@ variant(
   const dummy = new Object3D();
 
   const { bytes, ns } = measure(() => {
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < N; i += 1) {
       const entity = entities[i]!;
       const position = app.world.get(entity, Position)!;
       const rotation = app.world.get(entity, Rotation)!;

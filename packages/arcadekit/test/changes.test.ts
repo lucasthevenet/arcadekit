@@ -56,7 +56,7 @@ const populated = (count = 10): { world: EcsWorld; entities: Entity[] } => {
   const world = new EcsWorld();
   const entities: Entity[] = [];
 
-  for (let n = 0; n < count; n++) {
+  for (let n = 0; n < count; n += 1) {
     entities.push(
       n < count / 2
         ? world.spawn(Position.of({ x: n, y: 0 }), Health.of({ hp: 10 }))
@@ -87,7 +87,7 @@ describe("a change query", () => {
     ]);
     let visits = 0;
     moved.each(() => {
-      visits++;
+      visits += 1;
     });
     expect(visits).toBe(0);
   });
@@ -97,7 +97,7 @@ describe("a change query", () => {
     const moved = world.view(Moved);
     moved.entities();
 
-    for (let n = 0; n < 5; n++) {
+    for (let n = 0; n < 5; n += 1) {
       world.set(entities[3]!, Position, { x: n });
       world.set(entities[1]!, Position, { x: n });
     }
@@ -146,7 +146,7 @@ describe("a change query", () => {
     moved.entities();
     // Raw columns cannot tell: the loop reads, and counts as writing.
     world.view(Query.all(Health)).eachChunk((start, end, health) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         void health.hp[i];
       }
     });
@@ -160,7 +160,7 @@ describe("a change query", () => {
     const moved = world.view(Moved);
     // Every row handed out counts as written: it would never come to rest.
     expect(() => moved.eachChunk(() => {})).toThrow(
-      /watches "ch\/Position" for changes and also hands it out.*Visit it with each\(\)/
+      /watches "ch\/Position" for changes and also hands it out.*Visit it with each\(\)/u
     );
     // The refusal was not a visit.
     expect(moved.count()).toBe(10);
@@ -411,12 +411,12 @@ describe("a change query", () => {
     const moved = world.view(Moved);
     let visits = 0;
     moved.each((pos) => {
-      visits++;
+      visits += 1;
       pos.x += 1;
     });
     expect(visits).toBe(4);
     moved.each((pos, entity) => {
-      visits++;
+      visits += 1;
 
       if (entity === entities[0]) {
         pos.x += 1;
@@ -469,7 +469,7 @@ describe("a change query", () => {
       moved.eachChunk((start, end, ids) => {
         chunks.push([start, end]);
 
-        for (let i = start; i < end; i++) {
+        for (let i = start; i < end; i += 1) {
           seen.push(ids[i]!);
         }
       });
@@ -704,7 +704,7 @@ describe("changes against a simple model", () => {
         fire(`${name}:changed`, entity);
       };
 
-      for (let step = 0; step < 3000; step++) {
+      for (let step = 0; step < 3000; step += 1) {
         const roll = dice.int(0, 19);
         const some = alive.length > 0 ? dice.pick(alive) : undefined;
 
@@ -791,13 +791,13 @@ describe("changes against a simple model", () => {
           world
             .view(Query.all(Position).pipe(Query.with(Frozen)))
             .eachChunk((start, end, _, ids) => {
-              for (let i = start; i < end; i++) {
+              for (let i = start; i < end; i += 1) {
                 fire("Position:changed", ids[i]!);
               }
             });
           // Unless the loop says it only reads it.
           world.view(RawReader).eachChunk((start, end, _, __, ids) => {
-            for (let i = start; i < end; i++) {
+            for (let i = start; i < end; i += 1) {
               fire("Health:changed", ids[i]!);
             }
           });
@@ -827,7 +827,7 @@ describe("changes against a simple model", () => {
                 reader.view.eachChunk((start, end, ...args) => {
                   const ids = args.at(-1) as Uint32Array;
 
-                  for (let i = start; i < end; i++) {
+                  for (let i = start; i < end; i += 1) {
                     seen.push(ids[i] as Entity);
                   }
                 });
@@ -874,13 +874,13 @@ describe("a change log", () => {
 
     // Ten entities are written once, long before the readers that stay
     // away come back, and the other forty over and over.
-    for (let n = 40; n < 50; n++) {
+    for (let n = 40; n < 50; n += 1) {
       world.set(entities[n]!, Position, { x: -1 });
       expected.add(entities[n]!);
       lately.add(entities[n]!);
     }
 
-    for (let round = 0; round < 3000; round++) {
+    for (let round = 0; round < 3000; round += 1) {
       // The busy reader visits every round, so each round logs afresh.
       for (let n = round % 7; n < 40; n += 7) {
         world.set(entities[n]!, Position, { x: round });
@@ -923,14 +923,14 @@ describe("a change log", () => {
     const lost = world.removed(Position);
     moved.entities();
 
-    for (let n = 0; n < 5000; n++) {
+    for (let n = 0; n < 5000; n += 1) {
       entities.push(world.spawn(Position.of({ x: n, y: 0 })));
     }
 
     expect(moved.count()).toBe(5000);
     expect(moved.entities()).toEqual(entities.slice(10));
 
-    for (let pass = 0; pass < 3; pass++) {
+    for (let pass = 0; pass < 3; pass += 1) {
       world.view(Positions).each((pos) => {
         pos.x += 1;
       });
@@ -1066,7 +1066,7 @@ describe("changes in a transaction", () => {
     expect(moved.entities()).toEqual([entities[1], entities[2]]);
     world.rollback();
 
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < 3; round += 1) {
       world.set(entities[3]!, Position, { x: round });
       expect(moved.entities()).toEqual([entities[3]]);
     }
@@ -1162,14 +1162,14 @@ describe("changes and a snapshot", () => {
       return copy;
     };
 
-    expect(() => restore([0, 3], {})).toThrow(/name an entity that cannot be/);
-    expect(() => restore([0, 1.5], {})).toThrow(/cannot be/);
+    expect(() => restore([0, 3], {})).toThrow(/name an entity that cannot be/u);
+    expect(() => restore([0, 1.5], {})).toThrow(/cannot be/u);
     expect(() => restore([0, 1], { reader: 3 })).toThrow(
-      /further than they go/
+      /further than they go/u
     );
     const copy = restore([0, 2], { [`reader\n${MOVED}`]: 1 });
     expect(copy.view(Moved, "reader").entities()).toEqual([2]);
-    expect(() => copy.restoreChanges([])).toThrow(/already being watched/);
+    expect(() => copy.restoreChanges([])).toThrow(/already being watched/u);
     // A component the world does not know is left out.
     const other = new EcsWorld();
     other.load(bytes, [Position, Health]);
@@ -1220,9 +1220,11 @@ class Refused extends Data.TaggedError("Refused")<{}> {}
 const push = Action.handler(Push, function* ({ refuse, slot }) {
   let n = 0;
   (yield* Positions).each((pos) => {
-    if (n++ === slot) {
+    if (n === slot) {
       pos.x += 1;
     }
+
+    n += 1;
   });
 
   if (refuse) {
@@ -1263,11 +1265,11 @@ const Drift = System.make("Drift", function* () {
 const Count = System.make("Count", function* () {
   let moved = 0;
   (yield* Moved).each(() => {
-    moved++;
+    moved += 1;
   });
   let born = 0;
   (yield* Born).each(() => {
-    born++;
+    born += 1;
   });
   const gone = (yield* Query.removed(Position)).read().length;
   (yield* Tallies).each((tally) => {
@@ -1294,7 +1296,7 @@ const game = (
 
     app.world.spawn(Tally);
 
-    for (let n = 0; n < 6; n++) {
+    for (let n = 0; n < 6; n += 1) {
       app.world.spawn(Position.of({ x: n, y: 0 }));
     }
 
@@ -1303,7 +1305,7 @@ const game = (
 
 /** A game with a move every tick, some of them refused. */
 const play = (app: App.Any, from: number, to: number): void => {
-  for (let tick = from; tick < to; tick++) {
+  for (let tick = from; tick < to; tick += 1) {
     app.dispatchByName("ch/Push", { slot: tick % 5, refuse: tick % 3 === 1 });
 
     if (tick % 4 === 0) {
@@ -1387,7 +1389,7 @@ describe("change queries in an app", () => {
           handlers: [inspect, push],
         });
 
-        for (let n = 0; n < 3; n++) {
+        for (let n = 0; n < 3; n += 1) {
           app.world.spawn(Position.of({ x: n, y: 0 }));
         }
 
@@ -1499,7 +1501,7 @@ describe("change queries in an app", () => {
         const { entities } = (() => {
           const made: Entity[] = [];
 
-          for (let n = 0; n < 4; n++) {
+          for (let n = 0; n < 4; n += 1) {
             made.push(
               app.world.spawn(Position.of({ x: n, y: 0 }), Health.of({ hp: n }))
             );

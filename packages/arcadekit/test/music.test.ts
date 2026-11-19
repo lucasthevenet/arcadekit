@@ -59,7 +59,7 @@ let asked = 0;
 const Score = Sound.music(
   "mu/Score",
   function* () {
-    asked++;
+    asked += 1;
     const level = (yield* Level).value;
 
     if (level === "menu") {
@@ -146,7 +146,7 @@ describe("Sound.music", () => {
     expect(Object.fromEntries(sound.playing)).toEqual({ music: "theme" });
 
     // It goes on, and nothing is said again, however many frames and ticks.
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 5; i += 1) {
       app.tick(0.1);
       app.frame(0);
       app.frame(0.5);
@@ -237,7 +237,7 @@ describe("Sound.music", () => {
     ]);
 
     // However long after: it has ended by now, and is not begun again.
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 20; i += 1) {
       app.tick(0.1);
       app.frame(0);
     }
@@ -887,7 +887,7 @@ describe("a level's cues", () => {
     let made = 0;
 
     const ForestCues = Sound.cues("mu/ForestCues", Forest, ({ creak }) => {
-      made++;
+      made += 1;
 
       return [
         Sound.on(Stepped, ({ hard }) => ({
@@ -959,7 +959,7 @@ describe("a level's cues", () => {
     let made = 0;
 
     const ForestCues = Sound.cues("mu/ForestCues", Forest, ({ creak }) => {
-      made++;
+      made += 1;
 
       return [Sound.on(Stepped, creak)];
     });

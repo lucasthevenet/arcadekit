@@ -60,7 +60,7 @@ const Fall = System.make("sd/Fall", function* () {
       bounced.emit({ speed: ball.speed });
       ball.y = 0;
       ball.speed = -ball.speed;
-      count++;
+      count += 1;
     }
   });
 
@@ -76,7 +76,7 @@ const Cues = Sound.cues(
   "sd/Cues",
   Sound.on(Dropped, "whoosh"),
   Sound.on(Bounced, ({ speed }) => {
-    asked++;
+    asked += 1;
 
     // A slow one makes no sound at all.
     return speed < 2
@@ -483,7 +483,7 @@ describe("a game with sound", () => {
       app.dispatch(Drop, { height: 0.5 });
     }
 
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 80; i += 1) {
       heard.tick(0.05);
       heard.frame(0.5);
       deaf.tick(0.05);
@@ -511,7 +511,7 @@ describe("a game with sound", () => {
     const app = play(sound, 3);
     app.dispatch(Drop, { height: 1 });
 
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 30; i += 1) {
       app.tick(0.05);
       app.frame(0);
     }

@@ -18,11 +18,11 @@ const Draw = System.make("Draw", function* () {
   const { delta } = yield* Time;
   let highest = 0;
   (yield* Drawn).eachChunk((start, end, pos, vel) => {
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       highest = Math.max(highest, pos.y[i]! + vel.y[i]! * delta * alpha);
     }
   });
-  sketch.frames++;
+  sketch.frames += 1;
   sketch.highest = highest;
 }).pipe(System.inStage("frame"), System.access({ queries: [Drawn] }));
 

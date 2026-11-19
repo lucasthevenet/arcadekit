@@ -238,21 +238,21 @@ describe("entities and components", () => {
     const world = new World();
     const entity = world.spawn(mine.of({ x: 1 }));
     expect(() => world.spawn(theirs.of({ x: 2 }))).toThrow(
-      /both named "st\/Clash"/
+      /both named "st\/Clash"/u
     );
-    expect(() => world.add(entity, theirs.of({ x: 2 }))).toThrow(/both named/);
-    expect(() => world.add(entity, tag)).toThrow(/both named/);
-    expect(() => world.view(query([theirs]))).toThrow(/both named/);
-    expect(() => world.view(query([], [theirs]))).toThrow(/both named/);
-    expect(() => world.view(query([], [], [tag]))).toThrow(/both named/);
+    expect(() => world.add(entity, theirs.of({ x: 2 }))).toThrow(/both named/u);
+    expect(() => world.add(entity, tag)).toThrow(/both named/u);
+    expect(() => world.view(query([theirs]))).toThrow(/both named/u);
+    expect(() => world.view(query([], [theirs]))).toThrow(/both named/u);
+    expect(() => world.view(query([], [], [tag]))).toThrow(/both named/u);
     // A table component that a query only excludes is met there too.
-    expect(() => world.view(query([], [], [theirs]))).toThrow(/both named/);
-    expect(() => world.register(theirs)).toThrow(/both named/);
+    expect(() => world.view(query([], [], [theirs]))).toThrow(/both named/u);
+    expect(() => world.register(theirs)).toThrow(/both named/u);
     // Through a command buffer the refusal comes when the command is queued,
     // where the mistake is, and nothing is queued.
     const commands = new CommandBuffer(world);
-    expect(() => commands.spawn(mine, theirs)).toThrow(/both named/);
-    expect(() => commands.add(entity, theirs)).toThrow(/both named/);
+    expect(() => commands.spawn(mine, theirs)).toThrow(/both named/u);
+    expect(() => commands.add(entity, theirs)).toThrow(/both named/u);
     expect(commands.size).toBe(0);
     // A refused component leaves the world as it was.
     expect(world.entityCount).toBe(1);
@@ -262,7 +262,7 @@ describe("entities and components", () => {
     const other = new World();
     const there = other.spawn(theirs.of({ x: 2 }));
     expect(other.get(there, theirs)).toEqual({ x: 2 });
-    expect(() => other.spawn(mine)).toThrow(/both named/);
+    expect(() => other.spawn(mine)).toThrow(/both named/u);
   });
 
   it("finds a component by its name once the world has met it", () => {
@@ -316,11 +316,11 @@ describe("queries", () => {
   it("gives raw columns, one chunk per table when nothing is filtered per entity", () => {
     const world = new World();
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 100; i += 1) {
       world.spawn(Position.of({ x: i, y: 0 }), Velocity.of({ x: 1, y: 0 }));
     }
 
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 50; i += 1) {
       world.spawn(
         Position.of({ x: 0, y: 0 }),
         Velocity.of({ x: 1, y: 0 }),
@@ -333,7 +333,7 @@ describe("queries", () => {
     moving.eachChunk((start, end, pos, vel, entities) => {
       expect(entities.length).toBeGreaterThanOrEqual(end);
 
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         pos.x[i]! += vel.x[i]!;
       }
 
@@ -407,7 +407,7 @@ describe("queries", () => {
     const world = new World();
     const all: Entity[] = [];
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 10; i += 1) {
       all.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
 
@@ -418,7 +418,7 @@ describe("queries", () => {
     awake.eachChunk((start, end, pos) => {
       chunks.push([start, end]);
 
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         pos.x[i]! += 100;
       }
     });
@@ -484,7 +484,7 @@ describe("queries", () => {
     const world = new World();
     const ents: Entity[] = [];
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 20; i += 1) {
       ents.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
 
@@ -501,7 +501,7 @@ describe("queries", () => {
         chunks.push([start, end]);
         const { seconds } = burning.columns;
 
-        for (let i = start; i < end; i++) {
+        for (let i = start; i < end; i += 1) {
           seconds[burning.indexOf(entities[i]!)]! += pos.x[i]!;
         }
       });
@@ -522,7 +522,7 @@ describe("queries", () => {
     const world = new World();
     const ents: Entity[] = [];
 
-    for (let i = 0; i < 4000; i++) {
+    for (let i = 0; i < 4000; i += 1) {
       ents.push(
         i % 2 === 0
           ? world.spawn(Position.of({ x: i, y: 0 }))
@@ -556,7 +556,7 @@ describe("queries", () => {
     expect(order("auto")).toEqual(tableOrder);
     expect(view._lastPath).toBe("sorted");
 
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < 1000; i += 1) {
       world.add(ents[i]!, Burning);
     }
 
@@ -571,7 +571,7 @@ describe("queries", () => {
     const world = new World();
     const ents: Entity[] = [];
 
-    for (let i = 0; i < 3000; i++) {
+    for (let i = 0; i < 3000; i += 1) {
       ents.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
 
@@ -606,7 +606,7 @@ describe("queries", () => {
     const plain: Entity[] = [];
     const enemies: Entity[] = [];
 
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 200; i += 1) {
       plain.push(world.spawn(Position.of({ x: i, y: 0 })));
       enemies.push(world.spawn(Position.of({ x: 1000 + i, y: 0 }), Enemy));
     }
@@ -622,7 +622,7 @@ describe("queries", () => {
       view.eachChunk((start, end, pos) => {
         const xs: number[] = [];
 
-        for (let i = start; i < end; i++) {
+        for (let i = start; i < end; i += 1) {
           xs.push(pos.x[i]!);
         }
 
@@ -636,7 +636,7 @@ describe("queries", () => {
     const world = new World();
     const ents: Entity[] = [];
 
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= 6; i += 1) {
       ents.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
 
@@ -675,7 +675,7 @@ describe("queries", () => {
     const world = new World();
     const ents: Entity[] = [];
 
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 50; i += 1) {
       ents.push(world.spawn(Position.of({ x: i, y: 0 })));
     }
 
@@ -769,7 +769,7 @@ describe("what each hands its callback", () => {
       const world = new World();
       const entities: Entity[] = [];
 
-      for (let n = 0; n < 40; n++) {
+      for (let n = 0; n < 40; n += 1) {
         // A second table, and rows of the sparse set that are not the
         // table's: every third entity has no such component.
         const extra = n % 2 === 0 ? [Enemy] : [];
@@ -833,11 +833,11 @@ describe("what each hands its callback", () => {
       const world = new World();
 
       // Others first, so that no entity's row is its index.
-      for (let n = 0; n < 7; n++) {
+      for (let n = 0; n < 7; n += 1) {
         world.spawn(Health.of({ hp: 100 + n }));
       }
 
-      for (let n = 0; n < 12; n++) {
+      for (let n = 0; n < 12; n += 1) {
         world.spawn(Health.of({ hp: n }), def.of(valueOf(n)));
       }
 
@@ -945,7 +945,7 @@ describe("what each hands its callback", () => {
         });
       }
 
-      for (let n = 0; n < count; n++) {
+      for (let n = 0; n < count; n += 1) {
         expect(world.get(entities[n]!, Health)).toEqual({ hp: n });
         expect(world.get(entities[n]!, Burning)).toEqual({ seconds: n / 2 });
       }
@@ -961,7 +961,7 @@ describe("what each hands its callback", () => {
     const marked = world.view(query([Mark]));
 
     for (const count of [10, 20, 70]) {
-      for (let n = 0; n < count; n++) {
+      for (let n = 0; n < count; n += 1) {
         world.add(entities[n]!, Mark.of({ v: n }));
       }
 
@@ -974,7 +974,7 @@ describe("what each hands its callback", () => {
         Array.from({ length: count }, (_, n) => n)
       );
 
-      for (let n = 0; n < count; n++) {
+      for (let n = 0; n < count; n += 1) {
         expect(world.get(entities[n]!, Mark)).toEqual({ v: -n || 0 });
       }
     }
@@ -990,7 +990,7 @@ describe("what each hands its callback", () => {
     const E = Component.define("st/E", { v: Field.i32 }, { storage: "sparse" });
     const entities: Entity[] = [];
 
-    for (let n = 0; n < 30; n++) {
+    for (let n = 0; n < 30; n += 1) {
       entities.push(
         world.spawn(
           A.of({ v: n }),
@@ -1002,7 +1002,7 @@ describe("what each hands its callback", () => {
     }
 
     // The sparse sets in two other orders than the table's rows.
-    for (let n = 29; n >= 0; n--) {
+    for (let n = 29; n >= 0; n -= 1) {
       world.add(entities[n]!, D.of({ v: 1000 * n }));
     }
 
@@ -1068,7 +1068,7 @@ describe("what each hands its callback", () => {
         );
 
         // Whatever was added so far, each value is still its own entity's.
-        for (let k = 0; k < terms.length; k++) {
+        for (let k = 0; k < terms.length; k += 1) {
           const of = scale.get(terms[k]!)!;
           expect(Math.floor(values[k]! / of) % 10 === n! % 10 || of === 1).toBe(
             true
@@ -1084,14 +1084,14 @@ describe("structural changes during iteration", () => {
     const world = new World();
     const commands = new CommandBuffer(world);
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 10; i += 1) {
       world.spawn(Health.of({ hp: i }));
     }
 
     const view = world.view(query([Health]));
 
     expect(() => view.each((_, entity) => world.despawn(entity))).toThrow(
-      /CommandBuffer/
+      /CommandBuffer/u
     );
     // The guard must be released even though the loop threw.
     expect(() => world.spawn(Health.of({ hp: 1 }))).not.toThrow();
@@ -1171,7 +1171,7 @@ describe("randomized comparison against a simple model", () => {
       const model = new Map<Entity, Map<number, any>>();
       const dead: Entity[] = [];
 
-      for (let step = 0; step < 4000; step++) {
+      for (let step = 0; step < 4000; step += 1) {
         const roll = rnd();
         const live = [...model.keys()];
 
@@ -1276,7 +1276,7 @@ describe("randomized comparison against a simple model", () => {
           view.eachChunk((start, end, pos, entities) => {
             expect(end).toBeGreaterThan(start);
 
-            for (let i = start; i < end; i++) {
+            for (let i = start; i < end; i += 1) {
               const entity = entities[i] as Entity;
               expect(pos.y[i]).toBe(model.get(entity)!.get(Position.id).y);
               chunked.push(entity);
@@ -1306,7 +1306,7 @@ describe("randomized comparison against a simple model", () => {
         expect(visited.sort()).toEqual(expected);
         const chunked: Entity[] = [];
         view.eachChunk((start, end, health, burning, entities) => {
-          for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i += 1) {
             const entity = entities[i] as Entity;
             expect(health.hp[i]).toBe(model.get(entity)!.get(Health.id).hp);
             expect(burning.columns.seconds[burning.indexOf(entity)]).toBe(
@@ -1330,7 +1330,7 @@ describe("randomized comparison against a simple model", () => {
       world
         .view(query([Position], [], [Stunned]))
         .eachChunk((start, end, _pos, entities) => {
-          for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i += 1) {
             chunked.push(entities[i] as Entity);
           }
         });

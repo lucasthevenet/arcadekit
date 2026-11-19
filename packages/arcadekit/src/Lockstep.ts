@@ -409,7 +409,7 @@ export const build = <E>(
 
   /** Creates this peer's messages up to the tick `delay` ahead of `now`. */
   const say = (now: number): void => {
-    for (let tick = have.get(peer)!; tick <= now + delay; tick++) {
+    for (let tick = have.get(peer)!; tick <= now + delay; tick += 1) {
       // What was issued up to now applies on the last of them. The ones
       // before it, which only a session's first tick has, are empty.
       const actions = tick === now + delay ? issued : [];
@@ -645,11 +645,11 @@ export const build = <E>(
       const from = wrong;
       wrong = undefined;
       app.rewind(moments.get(from)!);
-      rewinds++;
+      rewinds += 1;
 
-      for (let tick = from; tick < now; tick++) {
+      for (let tick = from; tick < now; tick += 1) {
         const exit = run(tick);
-        resimulated++;
+        resimulated += 1;
 
         if (Exit.isFailure(exit)) {
           failed ??= Exit.failCause(exit.cause);
@@ -725,7 +725,7 @@ export const build = <E>(
       let first = have.get(message.from)!;
 
       while (turns.has(first)) {
-        first++;
+        first += 1;
       }
 
       have.set(message.from, first);
@@ -745,7 +745,8 @@ export const build = <E>(
         checkpoints !== undefined;
         checkpoints = waiting.get(expected)
       ) {
-        waiting.delete(expected++);
+        waiting.delete(expected);
+        expected += 1;
 
         for (const { hash, tick } of checkpoints) {
           let said = theirs.get(tick);

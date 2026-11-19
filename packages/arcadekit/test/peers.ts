@@ -326,7 +326,7 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
       return inFlight.length;
     },
     round(): void {
-      now++;
+      now += 1;
     },
     send(to: readonly string[], messages: readonly Lockstep.Message[]): void {
       for (const message of messages) {
@@ -386,7 +386,7 @@ export const round = (
 export const catchUp = (peers: readonly Peer[], net: Network): number => {
   const furthest = Math.max(...peers.map((peer) => peer.app.time.tick));
 
-  for (let i = 0; i < 1000; i++) {
+  for (let i = 0; i < 1000; i += 1) {
     const behind = peers.filter((peer) => peer.app.time.tick < furthest);
 
     if (behind.length === 0) {
@@ -441,7 +441,7 @@ export const untilStopped = (
 ): Map<string, unknown> => {
   const stopped = new Map<string, unknown>();
 
-  for (let i = 0; i < rounds && stopped.size < peers.length; i++) {
+  for (let i = 0; i < rounds && stopped.size < peers.length; i += 1) {
     net.round();
 
     for (const peer of peers) {

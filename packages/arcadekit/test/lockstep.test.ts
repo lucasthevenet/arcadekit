@@ -35,7 +35,7 @@ describe("a lockstep session", () => {
         const net = network(seed, lag);
         const act = players(seed + 100);
 
-        for (let i = 0; i < 300; i++) {
+        for (let i = 0; i < 300; i += 1) {
           for (const peer of peers) {
             act(peer);
           }
@@ -78,7 +78,7 @@ describe("a lockstep session", () => {
       const net = network(8, { min: 0, max: 5 });
       const act = players(9);
 
-      for (let i = 0; i < 120; i++) {
+      for (let i = 0; i < 120; i += 1) {
         for (const peer of peers) {
           act(peer);
         }
@@ -100,7 +100,7 @@ describe("a lockstep session", () => {
       const net = network(4, { min: 0, max: 6 });
       const act = players(5);
 
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 200; i += 1) {
         act(peers[0]!);
         act(peers[1]!);
         round(peers, net);
@@ -133,7 +133,7 @@ describe("a lockstep session", () => {
       // Nothing of it yet: not in the queue, and not in the log.
       expect(moves(ada.app.actionLog)).toEqual([]);
 
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 8; i += 1) {
         round(peers, net);
       }
 
@@ -208,7 +208,7 @@ describe("a lockstep session", () => {
           });
         }
 
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 6; i += 1) {
           round(order, net);
         }
 
@@ -283,7 +283,7 @@ describe("a lockstep session", () => {
       ada.app.enqueueByName("ls/Drop", { by: "nobody", value: 1.5 });
       ada.app.enqueueByName("ls/Nothing", {});
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 5; i += 1) {
         round(peers, net);
       }
 
@@ -310,7 +310,7 @@ describe("a lockstep session", () => {
 
       ada.source.tap("Space");
 
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 6; i += 1) {
         round(peers, net);
       }
 
@@ -339,7 +339,7 @@ describe("a lockstep session", () => {
       expect(ada.session.outgoing()).toEqual([]);
       net.send(["grace"], said);
 
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 6; i += 1) {
         round(peers, net);
       }
 
@@ -370,7 +370,7 @@ describe("a lockstep session", () => {
       ]);
       net.send(["grace"], said);
 
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 3; i += 1) {
         round(peers, net);
       }
 
@@ -394,7 +394,7 @@ describe("a lockstep session", () => {
       // The compiler takes 1.5 for a number; the schema wants a whole one.
       ada.app.enqueue(Drop, { by: "ada", value: 1.5 });
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 5; i += 1) {
         round(peers, net);
       }
 
@@ -480,7 +480,7 @@ describe("a lockstep session", () => {
       const [ada, grace] = peers as [Peer, Peer];
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
 
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 10; i += 1) {
         // Each says its piece, then both run.
         ada.session.tick();
         grace.session.tick();
@@ -520,7 +520,7 @@ describe("a lockstep session", () => {
 
       ada.app.enqueue(Drop, { by: "ada", value: 3 });
 
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 20; i += 1) {
         steps[0]!(DELTA);
         steps[1]!(DELTA);
 
@@ -636,7 +636,7 @@ describe("a lockstep session", () => {
           for (const app of apps) {
             app.dispatch(Drop, { by: "ada", value: 2 });
 
-            for (let i = 0; i < 9; i++) {
+            for (let i = 0; i < 9; i += 1) {
               app.tick(DELTA);
             }
           }
@@ -766,7 +766,7 @@ describe("peers that have come apart", () => {
 
       // Grace, by hand: every message up to tick 5, and a hash for tick 2
       // that is not ada's.
-      for (let tick = 0; tick <= 5; tick++) {
+      for (let tick = 0; tick <= 5; tick += 1) {
         ada.session.receive({
           from: "grace",
           tick,
@@ -797,7 +797,7 @@ describe("peers that have come apart", () => {
     withPeers(["ada", "grace"], {}, (peers) => {
       const net = network(2, { min: 0, max: 4 });
 
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 200; i += 1) {
         round(peers, net);
       }
 
@@ -813,7 +813,7 @@ describe("peers that have come apart", () => {
         delta: DELTA,
       });
 
-      for (let i = 0; i < 700; i++) {
+      for (let i = 0; i < 700; i += 1) {
         session.tick();
       }
 
@@ -907,7 +907,7 @@ describe("peers that have come apart", () => {
         const act = players(4);
         const [ada, grace] = peers as [Peer, Peer];
 
-        for (let i = 0; i < 100; i++) {
+        for (let i = 0; i < 100; i += 1) {
           act(ada);
           act(grace);
           round(peers, net);

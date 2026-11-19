@@ -118,7 +118,7 @@ describe("actions with a schema", () => {
       const error = failure(exit);
       expect(error).toBeInstanceOf(Action.InvalidPayload);
       expect(error.action).toBe("Damage");
-      expect(error.message).toMatch(/amount/);
+      expect(error.message).toMatch(/amount/u);
       // The handler never ran, nothing changed, nothing was logged.
       expect(received).toEqual([]);
       expect(app.world.get(target, Health)).toEqual({ hp: 50 });
@@ -254,7 +254,7 @@ describe("actions with a schema", () => {
       expect(moves(app.actionLog)[1]!.refused).toBe(
         Option.getOrThrow(invalid as Option.Option<Error>).message
       );
-      expect(moves(app.actionLog)[1]!.refused).toMatch(/amount/);
+      expect(moves(app.actionLog)[1]!.refused).toMatch(/amount/u);
       expect(moves(app.actionLog)[2]!.refused).toBe("UnknownAction");
       expect(moves(app.actionLog)[3]!.payload).toEqual({
         target,
@@ -389,15 +389,17 @@ describe("events with a schema", () => {
 
     expect(
       failure(Event.decode(Hit, { ...payload, amount: 500 })).message
-    ).toMatch(/amount/);
+    ).toMatch(/amount/u);
   });
 
   it("cannot be written down without one, and say what to do", () => {
     const encoded = failure(Event.encode(Quiet, { n: 1 }));
     expect(encoded).toBeInstanceOf(Event.InvalidEvent);
     expect(encoded.event).toBe("sc/Quiet");
-    expect(encoded.message).toMatch(/no schema.*Give Event\.define a schema/);
-    expect(failure(Event.decode(Quiet, { n: 1 })).message).toMatch(/no schema/);
+    expect(encoded.message).toMatch(/no schema.*Give Event\.define a schema/u);
+    expect(failure(Event.decode(Quiet, { n: 1 })).message).toMatch(
+      /no schema/u
+    );
   });
 
   it("are known by name in an app: two different events with one name are refused", () => {
@@ -415,7 +417,7 @@ describe("events with a schema", () => {
 
     withApp(App.make({ systems: [Both] }), (app) => {
       expect(() => app.tick(1)).toThrow(
-        /Two different events are both named "sc\/Hit"/
+        /Two different events are both named "sc\/Hit"/u
       );
     });
 
@@ -435,8 +437,8 @@ describe("events with a schema", () => {
         at: new Date(1),
         seed: 1n,
       });
-      expect(() => app.events.emit(Twin, 1)).toThrow(/both named/);
-      expect(() => app.events.pending(Twin)).toThrow(/both named/);
+      expect(() => app.events.emit(Twin, 1)).toThrow(/both named/u);
+      expect(() => app.events.pending(Twin)).toThrow(/both named/u);
     });
   });
 });
@@ -530,28 +532,28 @@ describe("saving and replaying", () => {
     expect((caught as App.ReplayDiverged).tick).toBe(1);
     // It was enqueued, so the replay enqueues it too, and stops after the
     // tick in which its own rules refused what the game had accepted.
-    expect((caught as App.ReplayDiverged).reason).toMatch(/amount/);
+    expect((caught as App.ReplayDiverged).reason).toMatch(/amount/u);
     expect((caught as Error).message).toMatch(
-      /Log entry 2 \("Damage" at tick 1\) was refused on replay/
+      /Log entry 2 \("Damage" at tick 1\) was refused on replay/u
     );
 
     // An action this build of the game does not have.
     const renamed = structuredClone(log);
     renamed[1].name = "Smite";
     expect(() => replayInto(renamed, saved.ticks)).toThrow(
-      /Log entry 1 \("Smite" at tick 0\)/
+      /Log entry 1 \("Smite" at tick 0\)/u
     );
 
     // Valid entries the rules refuse: the target is not in this game.
     const retargeted = structuredClone(log);
     retargeted[3].payload.target = 4000;
-    expect(() => replayInto(retargeted, saved.ticks)).toThrow(/Log entry 3/);
+    expect(() => replayInto(retargeted, saved.ticks)).toThrow(/Log entry 3/u);
 
     // Entries that could never be reached.
     const late = structuredClone(log);
     late[4].tick = 99;
     expect(() => replayInto(late, saved.ticks)).toThrow(
-      /its tick \(99\) was never reached/
+      /its tick \(99\) was never reached/u
     );
   });
 });

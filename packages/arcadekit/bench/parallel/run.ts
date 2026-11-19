@@ -44,7 +44,7 @@ const run = async (
 
   const [px, py, vx, vy] = columns.map((buffer) => new Float32Array(buffer));
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count; i += 1) {
     px![i] = (i * 7919) % 1000;
     py![i] = (i * 104_729) % 1000;
     vx![i] = 1;
@@ -82,7 +82,7 @@ const run = async (
           // The main thread takes the last, and then waits for the rest.
           const share = Math.ceil(count / (workers + 1));
 
-          for (let id = 0; id < workers; id++) {
+          for (let id = 0; id < workers; id += 1) {
             signals[RANGES + id * 2] = id * share;
             signals[RANGES + id * 2 + 1] = Math.min(count, (id + 1) * share);
           }
@@ -107,13 +107,13 @@ const run = async (
           }
         };
 
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < 80; i += 1) {
     pass();
   }
 
   const samples: number[] = [];
 
-  for (let i = 0; i < 300; i++) {
+  for (let i = 0; i < 300; i += 1) {
     const start = performance.now();
     pass();
     samples.push(performance.now() - start);
@@ -122,7 +122,7 @@ const run = async (
   samples.sort((a, b) => a - b);
   let sum = 0;
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count; i += 1) {
     sum += px![i]! + vx![i]!;
   }
 
@@ -159,7 +159,7 @@ if (kernel === undefined) {
     let ms = Infinity;
     let sum = 0;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       const out = JSON.parse(
         execFileSync(
           process.execPath,

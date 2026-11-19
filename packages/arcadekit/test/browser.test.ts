@@ -168,7 +168,8 @@ const makePage = () => {
 
   const window = new Listened();
   vi.stubGlobal("requestAnimationFrame", (callback: (now: number) => void) => {
-    requested.set(++ids, callback);
+    ids += 1;
+    requested.set(ids, callback);
 
     return ids;
   });
@@ -238,7 +239,8 @@ describe("a page's display", () => {
     vi.stubGlobal(
       "requestAnimationFrame",
       (callback: (now: number) => void) => {
-        requested.set(++ids, callback);
+        ids += 1;
+        requested.set(ids, callback);
 
         return ids;
       }
@@ -608,7 +610,7 @@ describe("a page's devices", () => {
           Browser.layer({
             window: page,
             gamepads: () => {
-              polls++;
+              polls += 1;
 
               return pads;
             },
@@ -650,9 +652,9 @@ describe("a page's devices", () => {
 
         expect(page.total).toBe(0);
         expect(() => app.input()).toThrow(
-          /were read after Browser\.layer was let go/
+          /were read after Browser\.layer was let go/u
         );
-        expect(() => app.input()).toThrow(/Provide it to the whole program/);
+        expect(() => app.input()).toThrow(/Provide it to the whole program/u);
       })
     );
   });
@@ -896,7 +898,7 @@ describe("Browser.runMain", () => {
     });
     await settle();
     expect(ended).toBeDefined();
-    expect(said.join("\n")).toMatch(/NoCanvas/);
+    expect(said.join("\n")).toMatch(/NoCanvas/u);
     vi.restoreAllMocks();
 
     const unprovided = Effect.flatMap(
@@ -1059,19 +1061,19 @@ describe("a page's sound", () => {
         return gain;
       },
       suspend() {
-        audio.suspended++;
+        audio.suspended += 1;
         audio.state = "suspended";
 
         return Promise.resolve();
       },
       resume() {
-        audio.resumed++;
+        audio.resumed += 1;
         audio.state = "running";
 
         return Promise.resolve();
       },
       close() {
-        audio.closed++;
+        audio.closed += 1;
 
         return Promise.resolve();
       },
@@ -1107,7 +1109,7 @@ describe("a page's sound", () => {
       plays: 0,
       pauses: 0,
       play(): Promise<void> {
-        media.plays++;
+        media.plays += 1;
 
         if (broken) {
           return Promise.reject(
@@ -1120,7 +1122,7 @@ describe("a page's sound", () => {
         return Promise.resolve();
       },
       pause(): void {
-        media.pauses++;
+        media.pauses += 1;
         media.playing = false;
       },
     };
@@ -1162,7 +1164,7 @@ describe("a page's sound", () => {
         Browser.layerSound(files, {
           window: page,
           audio: () => {
-            made++;
+            made += 1;
 
             return audio;
           },
@@ -1355,7 +1357,7 @@ describe("a page's sound", () => {
     page.send("pointerdown");
     expect(logged).toHaveLength(2);
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 3; i += 1) {
       output.play("noise", 1, 1);
       output.play("lost", 1, 1);
       output.play("laser", 1, 1);
@@ -1793,7 +1795,7 @@ describe("a page's sound", () => {
     // when its lid is opened, while the game goes on at once.
     const waking = audio.resume;
     audio.resume = () => {
-      audio.resumed++;
+      audio.resumed += 1;
 
       return Promise.resolve();
     };

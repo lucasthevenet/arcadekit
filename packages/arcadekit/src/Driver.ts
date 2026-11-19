@@ -125,7 +125,7 @@ export const fixedStep = (
 
       app.tick(dt);
       accumulator = Math.max(0, accumulator - dt);
-      steps++;
+      steps += 1;
     }
 
     if (resting) {

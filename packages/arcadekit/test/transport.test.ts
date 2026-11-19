@@ -108,13 +108,13 @@ describe("a hub, the network in memory", () => {
       const grace = hub.port("grace");
       const order: number[] = [];
 
-      for (let tick = 0; tick < 40; tick++) {
+      for (let tick = 0; tick < 40; tick += 1) {
         ada.send(message("ada", tick));
         hub.step();
         order.push(...grace.receive().map((arrived) => arrived.tick));
       }
 
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 6; i += 1) {
         hub.step();
         order.push(...grace.receive().map((arrived) => arrived.tick));
       }
@@ -163,7 +163,7 @@ describe("a session joined to a transport", () => {
           expect(ada!.connected.tick()).toBe(false);
           expect(grace.receive().map((sent) => sent.tick)).toEqual([0, 1, 2]);
 
-          for (let tick = 0; tick <= 2; tick++) {
+          for (let tick = 0; tick <= 2; tick += 1) {
             grace.send(message("grace", tick));
           }
 
@@ -207,12 +207,12 @@ describe("a session joined to a transport", () => {
               });
             };
 
-            for (let i = 0; i < 200; i++) {
+            for (let i = 0; i < 200; i += 1) {
               frame(true);
             }
 
             // To rest, and then to the same tick.
-            for (let i = 0; i < 30; i++) {
+            for (let i = 0; i < 30; i += 1) {
               frame(false);
             }
 
@@ -221,7 +221,7 @@ describe("a session joined to a transport", () => {
             for (
               let i = 0;
               i < 50 && ada.app.time.tick !== grace.app.time.tick;
-              i++
+              i += 1
             ) {
               hub.step();
               (ada.app.time.tick < grace.app.time.tick
@@ -275,7 +275,7 @@ describe("a session joined to a transport", () => {
             seats[0]!.app.enqueue(Drop, { by: "ada", value: 1 });
             const stopped = new Map<string, unknown>();
 
-            for (let i = 0; i < 200 && stopped.size < 2; i++) {
+            for (let i = 0; i < 200 && stopped.size < 2; i += 1) {
               hub.step();
 
               for (const seat of seats) {
@@ -315,7 +315,7 @@ describe("a session joined to a transport", () => {
               delta: DELTA,
             }),
             frame: () => {
-              drawn++;
+              drawn += 1;
             },
           }).pipe(Effect.provide(hub.layer("ada")));
 
@@ -366,10 +366,10 @@ describe("a transport over text", () => {
       },
       listen(onText) {
         deliver = onText;
-        listening++;
+        listening += 1;
 
         return () => {
-          listening--;
+          listening -= 1;
         };
       },
     });
@@ -538,7 +538,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           const act = players(21);
           const [ada, grace] = seats as [Seat, Seat];
 
-          for (let i = 0; i < 60; i++) {
+          for (let i = 0; i < 60; i += 1) {
             for (const seat of seats) {
               if (i < 40) {
                 act(asPeer(seat));
@@ -555,7 +555,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             i < 200 &&
             (ada.app.time.tick !== grace.app.time.tick ||
               ada.session.confirmed < ada.app.time.tick - 1);
-            i++
+            i += 1
           ) {
             yield* Effect.promise(() => later(2));
             (ada.app.time.tick <= grace.app.time.tick

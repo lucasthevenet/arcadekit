@@ -179,7 +179,7 @@ console.log(
   `Comparing ${names.length} variants of bench/core.ts, up to ${runs} runs each by each build.`
 );
 
-for (let round = 0; round < runs; round++) {
+for (let round = 0; round < runs; round += 1) {
   for (const name of names) {
     if (done.has(name)) {
       continue;

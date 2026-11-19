@@ -47,7 +47,7 @@ const populated = (count = 6): { world: EcsWorld; entities: Entity[] } => {
   const world = new EcsWorld();
   const entities: Entity[] = [];
 
-  for (let n = 0; n < count; n++) {
+  for (let n = 0; n < count; n += 1) {
     const entity = world.spawn(
       Position.of({ x: n, y: 0 }),
       Velocity.of({ x: 1, y: 2 })
@@ -78,7 +78,7 @@ describe("a query that says what it only reads", () => {
         vel.x = 9;
       })
     ).toThrow(
-      /"rd\/Velocity\.x" was assigned to through a query that only reads "rd\/Velocity".*Query\.reads/
+      /"rd\/Velocity\.x" was assigned to through a query that only reads "rd\/Velocity".*Query\.reads/u
     );
     expect(world.get(entities[0]!, Velocity)).toEqual({ x: 1, y: 2 });
     // The same components through a query that does not say so are written.
@@ -110,7 +110,7 @@ describe("a query that says what it only reads", () => {
           heat.degrees = 1;
         }),
     ]) {
-      expect(write).toThrow(/was assigned to through a query that only reads/);
+      expect(write).toThrow(/was assigned to through a query that only reads/u);
     }
   });
 
@@ -118,7 +118,7 @@ describe("a query that says what it only reads", () => {
     const { world } = populated();
     let sum = 0;
     world.view(Moving).eachChunk((start, end, pos, vel) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         pos.x[i] = pos.x[i]! + vel.x[i]!;
         sum += vel.y[i]!;
 
@@ -133,7 +133,7 @@ describe("a query that says what it only reads", () => {
     });
     expect(sum).toBe(12);
     world.view(Looking).eachChunk((start, end, pos, vel, heat, ids) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         sum += pos.x[i]! + heat.columns.degrees[heat.indexOf(ids[i]!)]!;
 
         if (start < 0) {
@@ -180,7 +180,7 @@ describe("a query that says what it only reads", () => {
     const visit = (): number[] => {
       const seen: number[] = [];
       drawn.eachChunk((start, end, pos) => {
-        for (let i = start; i < end; i++) {
+        for (let i = start; i < end; i += 1) {
           seen.push(pos.x[i]!);
         }
       });
@@ -202,7 +202,7 @@ describe("a query that says what it only reads", () => {
     expect(world.view(Turned).entities()).toEqual([entities[1]]);
     // One that hands out what it watches without the word is still refused.
     expect(() => world.view(Moved).eachChunk(() => {})).toThrow(
-      /watches "rd\/Position" for changes and also hands it out.*Query\.reads/
+      /watches "rd\/Position" for changes and also hands it out.*Query\.reads/u
     );
   });
 
@@ -214,7 +214,7 @@ describe("a query that says what it only reads", () => {
       pos.x += vel.x;
     });
     world.view(Moving).eachChunk((start, end, pos, vel) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         pos.y[i] = vel.y[i]!;
       }
     });
@@ -224,7 +224,7 @@ describe("a query that says what it only reads", () => {
     // compiler, is on its own: there is no copy to put back.
     world.begin();
     world.view(Looking).eachChunk((start, end, pos, _, heat) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         (pos.y as unknown as Float32Array)[i] = 77;
       }
 
@@ -238,7 +238,7 @@ describe("a query that says what it only reads", () => {
 
   it("names components of the query, and keeps its word however the query is put together", () => {
     expect(() => Query.all(Position).pipe(Query.reads(Velocity))).toThrow(
-      /Query\.reads was given "rd\/Velocity", which is not one of the query's terms: rd\/Position/
+      /Query\.reads was given "rd\/Velocity", which is not one of the query's terms: rd\/Position/u
     );
     const { world } = populated();
 
@@ -276,7 +276,7 @@ describe("a query that says what it only reads", () => {
           // @ts-expect-error Velocity is only read by this query
           vel.x = 1;
         })
-      ).toThrow(/only reads "rd\/Velocity"/);
+      ).toThrow(/only reads "rd\/Velocity"/u);
     }
 
     // To one reader, the three are one query, and not the query that
@@ -329,7 +329,7 @@ describe("a query that says what it only reads", () => {
         readDefs: [Velocity],
       })
     ).toThrow(
-      /A query says it only reads "rd\/Velocity", which is not one of its terms: rd\/Position/
+      /A query says it only reads "rd\/Velocity", which is not one of its terms: rd\/Position/u
     );
     world.view(built[0]!, "reader").entities();
     expect(Object.keys(world.saveChanges()[0]!.readers)).toContain(
@@ -345,7 +345,7 @@ describe("a query that says what it only reads", () => {
       sum += pos.x + vel.x;
     });
     world.view(Looking).eachChunk((start, end, pos) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         sum += pos.x[i]!;
       }
     });
@@ -354,7 +354,7 @@ describe("a query that says what it only reads", () => {
       world.view(Moving).each((pos) => {
         pos.x = 1;
       })
-    ).toThrow(/while the world is frozen/);
+    ).toThrow(/while the world is frozen/u);
     world.thaw();
   });
 });
@@ -369,7 +369,7 @@ const Survey = Action.define("rd/Survey", Schema.Struct({ limit: Schema.Int }));
 const survey = Action.handler(Survey, function* ({ limit }) {
   let fastest = 0;
   (yield* Moving).eachChunk((start, end, pos, vel) => {
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       fastest = Math.max(fastest, vel.x[i]!);
       pos.y[i] = pos.y[i]! + 1;
     }
@@ -390,7 +390,7 @@ describe("a query that says what it only reads, in an app", () => {
 
         const Move = System.make("Move", function* () {
           (yield* Moving).eachChunk((start, end, pos, vel) => {
-            for (let i = start; i < end; i++) {
+            for (let i = start; i < end; i += 1) {
               pos.x[i] = pos.x[i]! + vel.x[i]!;
             }
           });
@@ -406,7 +406,7 @@ describe("a query that says what it only reads, in an app", () => {
           checkpointEvery: 1,
         });
 
-        for (let n = 0; n < 4; n++) {
+        for (let n = 0; n < 4; n += 1) {
           app.world.spawn(
             Position.of({ x: n, y: 0 }),
             Velocity.of({ x: n, y: 0 })

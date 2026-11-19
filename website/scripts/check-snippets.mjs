@@ -80,7 +80,7 @@ for (const page of pages) {
     }
 
     if (/^```\s*$/u.test(line)) {
-      blocks++;
+      blocks += 1;
       untitled += block.title === undefined ? 1 : 0;
       const name = block.title ?? `block-${untitled}.ts`;
       write(`${folder}/${name}`, page, block.start, block.lines);

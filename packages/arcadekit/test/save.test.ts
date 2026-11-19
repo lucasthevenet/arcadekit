@@ -72,7 +72,7 @@ const scatter = Action.handler(Scatter, function* ({ count }) {
   const random = yield* Random;
   const commands = yield* Commands;
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count; i += 1) {
     commands.spawn(
       Mote.of({ x: random.next(), name: `mote ${random.int(1, 99)}` })
     );
@@ -81,7 +81,7 @@ const scatter = Action.handler(Scatter, function* ({ count }) {
 
 const pulse = Action.handler(Pulse, function* () {
   (yield* Tallies).each((tally) => {
-    tally.pulses++;
+    tally.pulses += 1;
   });
 });
 
@@ -94,7 +94,7 @@ const Sounded = Event.define(
 let ticksRun = 0;
 
 const Listen = System.make("Listen", function* () {
-  ticksRun++;
+  ticksRun += 1;
   const sounded = (yield* Sounded).read();
   const refused = (yield* Action.Rejected).read().length;
   (yield* Tallies).each((tally) => {
@@ -151,7 +151,7 @@ let scriptStarts = 0;
 
 /** A script with nothing of its own to lose: what it does follows from the time. */
 const Pulsing = Effect.gen(function* () {
-  scriptStarts++;
+  scriptStarts += 1;
   const script = yield* Script;
   const actions = yield* Action.Actions;
 
@@ -170,7 +170,7 @@ const Game = Plugin.make("sv/Game", {
   handlers: [add, double, scatter, pulse],
   scripts: [Pulsing],
   setup: Effect.gen(function* () {
-    setups++;
+    setups += 1;
     const commands = yield* Commands;
     commands.spawn(
       Tally.of({ value: 1, heard: 0, rejections: 0, pulses: 0, echoes: 0 })
@@ -194,7 +194,7 @@ type GameApp = Effect.Success<
 const move = (app: GameApp, tick: number): void => {
   const dice = new EcsWorld({ seed: tick + 1 }).random;
 
-  for (let n = dice.int(0, 2); n > 0; n--) {
+  for (let n = dice.int(0, 2); n > 0; n -= 1) {
     const choice = dice.int(1, 5);
 
     if (choice === 1) {
@@ -228,7 +228,7 @@ const record = (ticks: number, saveAt: number) =>
     let save: Save.Save | undefined;
     const hashes: number[] = [];
 
-    for (let tick = 0; tick < ticks; tick++) {
+    for (let tick = 0; tick < ticks; tick += 1) {
       if (tick === saveAt) {
         // After this tick's moves have arrived, so that some are waiting.
         move(app, tick);
@@ -304,7 +304,7 @@ describe("a saved game", () => {
 
   it("holds the actions that were waiting, the simulation's own among them, and applies them in order", () => {
     withApp(App.make({ ...options, checkpointEvery: 0 }), (app) => {
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 12; i += 1) {
         app.tick(1);
       }
 
@@ -375,7 +375,7 @@ describe("a saved game", () => {
 
   it("holds the events that were waiting, and how far each system had read them", () => {
     withApp(App.make({ ...options, checkpointEvery: 0 }), (app) => {
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 4; i += 1) {
         app.tick(1);
       }
 
@@ -426,7 +426,7 @@ describe("a saved game", () => {
       expect(app.world.view(Tallies).count()).toBe(1);
 
       // The script is running: on the fifth tick it fires a pulse.
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 6; i += 1) {
         app.tick(1);
       }
 
@@ -509,7 +509,7 @@ describe("a game that cannot be saved as it stands", () => {
       const error = refusal(app.save());
       expect(error).toBeInstanceOf(Save.SaveRefused);
       expect(error.message).toMatch(
-        /The action "sv\/Typed" is waiting for the next tick.*no schema/
+        /The action "sv\/Typed" is waiting for the next tick.*no schema/u
       );
       // Once it has been applied there is nothing in the way.
       app.tick(1);
@@ -534,7 +534,7 @@ describe("a game that cannot be saved as it stands", () => {
     withApp(App.make({ systems: [Issue], handlers: [small] }), (app) => {
       app.tick(1);
       expect(refusal(app.save()).message).toMatch(
-        /The action "sv\/Small" is waiting.*payload its schema does not take/
+        /The action "sv\/Small" is waiting.*payload its schema does not take/u
       );
     });
   });
@@ -545,7 +545,7 @@ describe("a game that cannot be saved as it stands", () => {
       app.tick(1);
       const error = refusal(app.save());
       expect(error).toBeInstanceOf(Save.SaveRefused);
-      expect(error.message).toMatch(/The event "sv\/Quiet".*no schema/);
+      expect(error.message).toMatch(/The event "sv\/Quiet".*no schema/u);
     });
   });
 
@@ -557,7 +557,7 @@ describe("a game that cannot be saved as it stands", () => {
       expect(Exit.isSuccess(app.save())).toBe(true);
       app.commands.despawn(entity);
       expect(refusal(app.save()).message).toMatch(
-        /1 commands are queued and not applied/
+        /1 commands are queued and not applied/u
       );
       app.tick(1);
       expect(Exit.isSuccess(app.save())).toBe(true);
@@ -580,7 +580,7 @@ describe("a game that cannot be saved as it stands", () => {
       app = made;
       made.tick(1);
     });
-    expect(String(thrown)).toMatch(/save\(\) was called during a tick/);
+    expect(String(thrown)).toMatch(/save\(\) was called during a tick/u);
   });
 });
 
@@ -603,7 +603,7 @@ describe("a save that cannot be loaded", () => {
     expect(error).toBeInstanceOf(Save.LoadRefused);
     expect(error.problem).toBe("unknown component");
     expect(error.message).toMatch(
-      /"sv\/Mote".*List it in a plugin's `components`, or in the app's\./
+      /"sv\/Mote".*List it in a plugin's `components`, or in the app's\./u
     );
     // The app's own list will do as well as a plugin's.
     expect(
@@ -713,7 +713,7 @@ describe("a save that cannot be loaded", () => {
     );
 
     expect(Cause.pretty((exit as Exit.Failure<never, never>).cause)).toMatch(
-      /The save holds an event "sv\/Sounded" that no longer reads/
+      /The save holds an event "sv\/Sounded" that no longer reads/u
     );
   });
 });
@@ -781,7 +781,7 @@ describe("a plugin's scripts", () => {
       (app) => {
         app.tick(1);
         expect(logged).toHaveLength(1);
-        expect(logged[0]).toMatch(/A script failed at tick 1: .*TooBig/);
+        expect(logged[0]).toMatch(/A script failed at tick 1: .*TooBig/u);
         expect(cleanedUp).toBe(false);
       }
     );

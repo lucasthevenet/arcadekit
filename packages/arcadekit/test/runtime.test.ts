@@ -98,9 +98,9 @@ describe("systems", () => {
         sys("x").pipe(System.after("y")),
         sys("y").pipe(System.after("x")),
       ])
-    ).toThrow(/Circular/);
+    ).toThrow(/Circular/u);
     expect(() => System.order([sys("x").pipe(System.after("nope"))])).toThrow(
-      /not in the "update" stage/
+      /not in the "update" stage/u
     );
 
     // `before` slots a system in ahead of one registered earlier.
@@ -122,9 +122,9 @@ describe("systems", () => {
         sys("x").pipe(System.before("y")),
         sys("y").pipe(System.before("x")),
       ])
-    ).toThrow(/Circular/);
+    ).toThrow(/Circular/u);
     expect(() => System.order([sys("x").pipe(System.before("nope"))])).toThrow(
-      /must run before "nope"/
+      /must run before "nope"/u
     );
   });
 
@@ -194,7 +194,7 @@ describe("systems", () => {
       onFire.eachChunk((start, end, _health, burning, entities) => {
         const { seconds } = burning.columns;
 
-        for (let i = start; i < end; i++) {
+        for (let i = start; i < end; i += 1) {
           const row = burning.indexOf(entities[i]!);
           seconds[row]! -= delta;
 
@@ -215,7 +215,7 @@ describe("systems", () => {
       const rock = app.world.spawn(Health.of({ hp: 100 }));
       const tables = app.world.tables.length;
 
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 4; i += 1) {
         app.tick(1);
       }
 
@@ -316,10 +316,10 @@ describe("systems", () => {
 
     withApp(App.make({ systems: [Lazy] }), (app) => {
       expect(() => app.tick(1)).toThrow(
-        /"Lazy" did not finish within the tick/
+        /"Lazy" did not finish within the tick/u
       );
       // The app is still usable afterwards.
-      expect(() => app.tick(1)).toThrow(/did not finish/);
+      expect(() => app.tick(1)).toThrow(/did not finish/u);
     });
   });
 });
@@ -378,7 +378,7 @@ describe("the tick scheduler", () => {
   const busy = Effect.gen(function* () {
     let total = 0;
 
-    for (let i = 0; i < 10_000; i++) {
+    for (let i = 0; i < 10_000; i += 1) {
       total += yield* Effect.sync(() => 1);
     }
 
@@ -447,7 +447,7 @@ describe("the tick scheduler", () => {
     withApp(App.make({ systems: [] }), (app) => {
       app.dispatcher.maxRounds = 50;
       app.spawnScript(Effect.forever(Effect.yieldNow));
-      expect(() => app.tick(1)).toThrow(/still busy after 50 rounds/);
+      expect(() => app.tick(1)).toThrow(/still busy after 50 rounds/u);
     });
   });
 });
@@ -460,7 +460,7 @@ describe("scripts", () => {
       Effect.gen(function* () {
         const { nextTick } = yield* Script;
 
-        for (let i = 0; i < waits; i++) {
+        for (let i = 0; i < waits; i += 1) {
           yield* nextTick;
           log.push(`${name}@${(yield* Time).tick}`);
         }
@@ -583,7 +583,7 @@ describe("a script that fails", () => {
     Effect.gen(function* () {
       const { nextTick } = yield* Script;
 
-      for (let i = 0; i < ticks; i++) {
+      for (let i = 0; i < ticks; i += 1) {
         yield* nextTick;
       }
 
@@ -770,7 +770,7 @@ describe("a script that fails", () => {
     let ran = 0;
 
     const Counter = System.make("Counter", function* () {
-      ran++;
+      ran += 1;
     });
 
     withApp(
@@ -807,8 +807,8 @@ describe("a script that fails", () => {
         expect(
           ended !== undefined && Exit.isFailure(ended) && ended.cause
         ).toBe(stopped.cause);
-        expect(stopped.message).toMatch(/A script failed at tick 2/);
-        expect(stopped.message).toMatch(/Tripped/);
+        expect(stopped.message).toMatch(/A script failed at tick 2/u);
+        expect(stopped.message).toMatch(/Tripped/u);
         // A defect, not a typed failure: nothing is expected to recover from it.
         expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
         // The tick the script failed in ran to its end first.
@@ -835,7 +835,7 @@ describe("a script that fails", () => {
     let ran = 0;
 
     const Counter = System.make("Counter", function* () {
-      ran++;
+      ran += 1;
     });
 
     const logs = capturedLogs();
@@ -909,8 +909,8 @@ describe("a script that fails", () => {
     }
 
     const text = seen.flat().join(" ");
-    expect(text).toMatch(/A script failed at tick 1/);
-    expect(text).toMatch(/Tripped/);
+    expect(text).toMatch(/A script failed at tick 1/u);
+    expect(text).toMatch(/Tripped/u);
   });
 });
 
@@ -929,7 +929,7 @@ describe("determinism", () => {
       }).pipe(System.after(Movement));
 
       withApp(App.make({ systems: [Movement, Bounce] }), (app) => {
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 50; i += 1) {
           app.world.spawn(
             Position.of({ x: i % 10, y: 0 }),
             Velocity.of({ x: (i % 7) - 3, y: 0 })
@@ -941,7 +941,7 @@ describe("determinism", () => {
             const script = yield* Script;
             const commands = yield* Commands;
 
-            for (let i = 0; i < 20; i++) {
+            for (let i = 0; i < 20; i += 1) {
               yield* script.sleep(0.1);
               commands.spawn(
                 Position.of({ x: 5, y: i }),
@@ -975,7 +975,7 @@ describe("the fixed-step driver", () => {
       expect(step(1)).toBe(60);
       expect(step(1)).toBe(60);
 
-      for (let i = 0; i < 1000; i++) {
+      for (let i = 0; i < 1000; i += 1) {
         step(0.001);
       }
 

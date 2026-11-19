@@ -203,7 +203,7 @@ describe("app.settled", () => {
     expect(done).toEqual(["slept", "ticked"]);
     expect(app.settled).toBe(true);
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 5; i += 1) {
       app.tick(0.1);
     }
 
@@ -235,7 +235,7 @@ describe("app.settled", () => {
     const app = run(App.make({ plugins: [Rules], checkpointEvery: 1 }));
     const before = app.world.hash();
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 3; i += 1) {
       expect(app.settled).toBe(false);
     }
 
@@ -253,7 +253,7 @@ describe("a game that ticks when its player moves", () => {
   let lastAlpha = Number.NaN;
 
   const Show = View.publish(Shown, function* () {
-    frames++;
+    frames += 1;
     lastAlpha = (yield* Frame).alpha;
     let x = 0;
     (yield* Pieces).each((piece) => {
@@ -295,7 +295,7 @@ describe("a game that ticks when its player moves", () => {
     const frame = (count = 1): number => {
       let ticks = 0;
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         ticks += advance(1 / 60);
       }
 
@@ -420,7 +420,7 @@ const windAndSay = Action.handler(Wind, function* ({ ticks }) {
 let ran = 0;
 
 const RunDown = System.make("st/RunDown", function* () {
-  ran++;
+  ran += 1;
   const clock = yield* Clock;
 
   if (clock.left > 0) {
@@ -450,7 +450,7 @@ describe("a system that has more to do", () => {
     expect(app.settled).toBe(false);
     const settled: boolean[] = [];
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 5; i += 1) {
       app.tick(1);
       settled.push(app.settled);
     }
@@ -463,7 +463,7 @@ describe("a system that has more to do", () => {
     expect(app.settled).toBe(true);
     app.tick(1);
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 3; i += 1) {
       app.frame(0);
       app.input();
       expect(app.settled).toBe(false);
@@ -476,7 +476,7 @@ describe("a system that has more to do", () => {
     const advance = Driver.fixedStep(app, { hz: 10, ticks: "whenNeeded" });
 
     const frames = (count: number): void => {
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         advance(0.1);
       }
     };
@@ -505,7 +505,7 @@ describe("a system that has more to do", () => {
     step(0.1);
     silent.enqueue(Wind, { ticks: 20 });
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 100; i += 1) {
       step(0.1);
     }
 
@@ -583,7 +583,7 @@ describe("a system that has more to do", () => {
     expect(loaded.settled).toBe(false);
     const advance = Driver.fixedStep(loaded, { hz: 10, ticks: "whenNeeded" });
 
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 50; i += 1) {
       advance(0.1);
     }
 

@@ -40,8 +40,8 @@ const Fountain = Effect.gen(function* () {
   // Seeded: the same seed sprays the same fountain on every run and machine.
   const random = yield* Random;
 
-  for (let wave = 1; wave <= 5; wave++) {
-    for (let i = 0; i < 100; i++) {
+  for (let wave = 1; wave <= 5; wave += 1) {
+    for (let i = 0; i < 100; i += 1) {
       commands.spawn(
         Position.of({ x: 0, y: 0 }),
         Velocity.of({ x: random.next() * 10 - 5, y: 8 + wave }),
@@ -85,7 +85,7 @@ const program = Effect.gen(function* () {
           const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
           const started = performance.now();
 
-          for (let second = 1; second <= 3; second++) {
+          for (let second = 1; second <= 3; second += 1) {
             step(1);
             console.log(
               `t=${app.time.elapsed.toFixed(2)}s tick=${app.time.tick} entities=${app.world.entityCount} ` +

@@ -70,7 +70,7 @@ describe("events", () => {
     ];
 
     withApp(App.make({ systems }), (app) => {
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 4; i += 1) {
         app.tick(1);
       }
 
@@ -556,7 +556,7 @@ describe("actions", () => {
   it("are checked at compile time and guarded at run time", () => {
     withApp(duel(), ({ app, one, two }) => {
       // @ts-expect-error no handler was registered for this action
-      expect(() => app.dispatch(Unhandled, {})).toThrow(/No handler/);
+      expect(() => app.dispatch(Unhandled, {})).toThrow(/No handler/u);
       // @ts-expect-error the payload does not match the action
       void app.dispatch(Attack, { attacker: one });
       expect(
@@ -572,14 +572,14 @@ describe("actions", () => {
 
     withApp(App.make({ systems: [], handlers: [waits] }), (app) => {
       expect(() => app.dispatch(EndTurn, { player: 1 })).toThrow(
-        /did not finish synchronously/
+        /did not finish synchronously/u
       );
     });
     expect(() =>
       Effect.runSync(
         Effect.scoped(App.make({ systems: [], handlers: [endTurn, endTurn] }))
       )
-    ).toThrow(/Two handlers/);
+    ).toThrow(/Two handlers/u);
 
     class Rng extends Context.Service<Rng, { readonly next: () => number }>()(
       "ru/Rng"
@@ -616,7 +616,7 @@ describe("actions", () => {
 
     withApp(App.make({ systems: [Sneaky], handlers: [endTurn] }), (made) => {
       app = made;
-      expect(() => made.tick(1)).toThrow(/Use enqueue/);
+      expect(() => made.tick(1)).toThrow(/Use enqueue/u);
     });
   });
 });

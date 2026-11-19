@@ -48,7 +48,7 @@ const GENERATIONS = 2 ** 31;
 
 /** Gives one slot out and takes it back, `times` over, and gives it out once more. */
 const worn = (world: World, times: number): Entity => {
-  for (let n = 0; n < times; n++) {
+  for (let n = 0; n < times; n += 1) {
     world.despawn(world.spawn(Body.of({ x: n })));
   }
 
@@ -62,7 +62,7 @@ describe("an entity's id", () => {
     const kept: Entity[] = [];
 
     // Past the 1,024 times at which an id of 32 bits came round again.
-    for (let n = 0; n < 3000; n++) {
+    for (let n = 0; n < 3000; n += 1) {
       const entity = world.spawn(Body.of({ x: n }));
       expect(entityIndex(entity)).toBe(0);
       expect(entityGeneration(entity)).toBe(n);
@@ -143,7 +143,7 @@ describe("an entity's id", () => {
       expect(columns.by).toBeInstanceOf(Float64Array);
       expect(entities).toBeInstanceOf(Float64Array);
 
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         expect(columns.by[i]).toBe(wide);
         expect(entities[i]).toBe(owned);
       }
@@ -334,7 +334,7 @@ describe("a slot whose generations are used up", () => {
     }
 
     expect(problem).toBeInstanceOf(SnapshotError);
-    expect((problem as SnapshotError).message).toMatch(/one that is used up/);
+    expect((problem as SnapshotError).message).toMatch(/one that is used up/u);
   });
 });
 

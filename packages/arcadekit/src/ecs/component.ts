@@ -227,7 +227,7 @@ export const growColumn = (
     const from = old as any[];
     const to = next as any[];
 
-    for (let i = 0; i < from.length; i++) {
+    for (let i = 0; i < from.length; i += 1) {
       to[i] = from[i];
     }
   } else {
@@ -760,7 +760,7 @@ export const makeAccessor = (
   return {
     fields: Object.create(target) as object,
     bind(columns, entities, log) {
-      for (let f = 0; f < binders.length; f++) {
+      for (let f = 0; f < binders.length; f += 1) {
         binders[f]!(columns[fields[f]!]!);
       }
 
@@ -786,9 +786,12 @@ const define = <
   }
 ): ComponentDef<S, St, N> => {
   const fields = Object.keys(schema);
+  const id = nextId;
+
+  nextId += 1;
 
   const def: ComponentDef<S, St, N> = {
-    id: nextId++,
+    id,
     name,
     schema,
     fields,

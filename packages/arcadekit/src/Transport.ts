@@ -172,7 +172,7 @@ export const text = (wire: Wire): TextTransport => {
     if (Exit.isSuccess(message)) {
       inbox.push(message.value);
     } else {
-      dropped++;
+      dropped += 1;
     }
   });
 
@@ -488,9 +488,10 @@ export const makeHub = (options: HubOptions = {}): Hub => {
             if (other !== peer) {
               theirs.push({
                 at: now + (min === max ? min : dice.int(min, max)),
-                order: sent++,
+                order: sent,
                 text: encoded,
               });
+              sent += 1;
             }
           }
         },
@@ -529,7 +530,7 @@ export const makeHub = (options: HubOptions = {}): Hub => {
     port,
     layer: (peer) => Layer.succeed(Transport, port(peer)),
     step() {
-      now++;
+      now += 1;
     },
     get inFlight() {
       let count = 0;

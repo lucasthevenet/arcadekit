@@ -32,7 +32,7 @@ const turn = (
 ): number => {
   let now = from;
 
-  for (let i = 0; i < frames; i++) {
+  for (let i = 0; i < frames; i += 1) {
     display.frame(now);
     now += 1000 / 60;
   }
@@ -289,11 +289,11 @@ describe("the frame loop", () => {
       },
       hidden: () => hidden,
       onVisibilityChange(listener) {
-        listening++;
+        listening += 1;
         tell = listener;
 
         return () => {
-          listening--;
+          listening -= 1;
         };
       },
     };
@@ -553,7 +553,7 @@ describe("ticking when needed", () => {
       },
       tick(delta: number) {
         stepped.calls.push(`tick ${delta}`);
-        stepped.ticks++;
+        stepped.ticks += 1;
         stepped.onTick();
       },
       frame(alpha: number) {
@@ -576,7 +576,7 @@ describe("ticking when needed", () => {
 
     // From then on: every frame the devices are read, and the game is
     // drawn all the way to its last tick.
-    for (let frame = 0; frame < 50; frame++) {
+    for (let frame = 0; frame < 50; frame += 1) {
       expect(advance(0.016)).toBe(0);
     }
 
@@ -610,7 +610,7 @@ describe("ticking when needed", () => {
     };
 
     game.onTick = () => {
-      waiting--;
+      waiting -= 1;
       game.settled = waiting <= 0;
     };
 
@@ -656,7 +656,7 @@ describe("ticking when needed", () => {
     });
 
     // A long rest.
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 20; i += 1) {
       advance(5);
     }
 
@@ -732,7 +732,11 @@ describe("ticking when needed", () => {
     let ticks = 0;
 
     const plain = Driver.fixedStep(
-      { tick: () => ticks++ },
+      {
+        tick: () => {
+          ticks += 1;
+        },
+      },
       { hz: 10, ticks: "whenNeeded" }
     );
 

@@ -66,7 +66,8 @@ const makeForest = (log: string[]) => {
     bark: Assets.make("/bark.png", (bytes) =>
       Effect.acquireRelease(
         Effect.sync((): Bark => {
-          const bark = { load: ++loads, size: bytes.length, open: true };
+          loads += 1;
+          const bark = { load: loads, size: bytes.length, open: true };
           log.push(`open ${bark.load}`);
 
           return bark;
@@ -109,7 +110,7 @@ const makeRenderer = () => {
         const bark = (child.userData as { bark?: Bark }).bark;
 
         if (bark !== undefined && !bark.open) {
-          renderer.stale++;
+          renderer.stale += 1;
         }
       }
     },
@@ -299,7 +300,7 @@ describe("instances whose look is made of assets", () => {
     const drawn = mesh()!;
     let disposed = 0;
     drawn.addEventListener("dispose", () => {
-      disposed++;
+      disposed += 1;
     });
     log.length = 0;
 
@@ -807,7 +808,7 @@ describe("a texture", () => {
         height: 2,
         closed: 0,
         close() {
-          bitmap.closed++;
+          bitmap.closed += 1;
         },
       };
 
@@ -866,7 +867,7 @@ describe("a texture", () => {
     ]);
     let disposed = 0;
     bark.addEventListener("dispose", () => {
-      disposed++;
+      disposed += 1;
     });
     expect(bitmaps.map((bitmap) => bitmap.closed)).toEqual([0, 0]);
     await Effect.runPromise(Scope.close(scope, Exit.void));

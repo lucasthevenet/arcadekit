@@ -371,7 +371,7 @@ export const load: <B extends Entries>(
 
   const loaded: Record<string, unknown> = {};
 
-  for (let i = 0; i < names.length; i++) {
+  for (let i = 0; i < names.length; i += 1) {
     loaded[names[i]!] = values[i];
   }
 

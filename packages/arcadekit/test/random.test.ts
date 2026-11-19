@@ -83,7 +83,7 @@ describe("the random number generator", () => {
       const rng = new Rng(seed);
       const expected = reference(Array.from(rng.state));
 
-      for (let i = 0; i < 2000; i++) {
+      for (let i = 0; i < 2000; i += 1) {
         expect(rng.bits()).toBe(expected());
       }
     }
@@ -95,10 +95,12 @@ describe("the random number generator", () => {
 
   it("refuses a seed that is not a whole number from 0 up", () => {
     for (const seed of [-1, 0.5, Number.NaN, Infinity, 2 ** 53]) {
-      expect(() => new Rng(seed)).toThrow(/random seed must be a whole number/);
+      expect(() => new Rng(seed)).toThrow(
+        /random seed must be a whole number/u
+      );
     }
 
-    expect(() => new EcsWorld({ seed: -1 })).toThrow(/random seed/);
+    expect(() => new EcsWorld({ seed: -1 })).toThrow(/random seed/u);
     const rng = new Rng(5);
     rng.bits();
     rng.seed(5);
@@ -123,10 +125,10 @@ describe("the random number generator", () => {
     const buckets = Array.from({ length: 10 }, () => 0);
     let sum = 0;
 
-    for (let i = 0; i < 100_000; i++) {
+    for (let i = 0; i < 100_000; i += 1) {
       const value = rng.next();
       expect(value >= 0 && value < 1).toBe(true);
-      buckets[Math.floor(value * 10)]!++;
+      buckets[Math.floor(value * 10)]! += 1;
       sum += value;
     }
 
@@ -147,7 +149,7 @@ describe("the random number generator", () => {
     const rng = new Rng(11);
     const counts = new Map<number, number>();
 
-    for (let i = 0; i < 60_000; i++) {
+    for (let i = 0; i < 60_000; i += 1) {
       const roll = rng.int(1, 6);
       counts.set(roll, (counts.get(roll) ?? 0) + 1);
     }
@@ -176,9 +178,9 @@ describe("the random number generator", () => {
     let low = 0;
     const total = 30_000;
 
-    for (let i = 0; i < total; i++) {
+    for (let i = 0; i < total; i += 1) {
       if (rng.int(0, top) < 2 ** 30) {
-        low++;
+        low += 1;
       }
     }
 
@@ -188,11 +190,11 @@ describe("the random number generator", () => {
 
   it("int() refuses a range it cannot serve", () => {
     const rng = new Rng(1);
-    expect(() => rng.int(6, 1)).toThrow(/Random\.int\(6, 1\)/);
-    expect(() => rng.int(0.5, 3)).toThrow(/whole numbers/);
-    expect(() => rng.int(0, 2.5)).toThrow(/whole numbers/);
-    expect(() => rng.int(0, 2 ** 32)).toThrow(/no more than 2\^32 - 1 above/);
-    expect(() => rng.int(Number.NaN, 3)).toThrow(/whole numbers/);
+    expect(() => rng.int(6, 1)).toThrow(/Random\.int\(6, 1\)/u);
+    expect(() => rng.int(0.5, 3)).toThrow(/whole numbers/u);
+    expect(() => rng.int(0, 2.5)).toThrow(/whole numbers/u);
+    expect(() => rng.int(0, 2 ** 32)).toThrow(/no more than 2\^32 - 1 above/u);
+    expect(() => rng.int(Number.NaN, 3)).toThrow(/whole numbers/u);
     // A refused call draws nothing.
     expect(draws(rng, 3)).toEqual(draws(new Rng(1), 3));
   });
@@ -202,8 +204,8 @@ describe("the random number generator", () => {
     const items = ["a", "b", "c", "d"] as const;
     const counts: Record<string, number> = { a: 0, b: 0, c: 0, d: 0 };
 
-    for (let i = 0; i < 40_000; i++) {
-      counts[rng.pick(items)]!++;
+    for (let i = 0; i < 40_000; i += 1) {
+      counts[rng.pick(items)]! += 1;
     }
 
     for (const item of items) {
@@ -213,7 +215,7 @@ describe("the random number generator", () => {
 
     expect(rng.pick(["only"])).toBe("only");
     expect(rng.pick(Float32Array.of(1.5))).toBe(1.5);
-    expect(() => rng.pick([])).toThrow(/empty list/);
+    expect(() => rng.pick([])).toThrow(/empty list/u);
   });
 
   it("shuffle() reorders an array in place, into every order equally often", () => {
@@ -226,7 +228,7 @@ describe("the random number generator", () => {
 
     const orders = new Map<string, number>();
 
-    for (let i = 0; i < 24_000; i++) {
+    for (let i = 0; i < 24_000; i += 1) {
       const order = rng.shuffle(["a", "b", "c", "d"]).join("");
       orders.set(order, (orders.get(order) ?? 0) + 1);
     }
@@ -271,7 +273,7 @@ const roll = Action.handler(Roll, function* ({ sides }) {
   let face = 0;
   dice.each((die) => {
     die.face = random.int(1, sides);
-    die.rolls++;
+    die.rolls += 1;
     face = die.face;
   });
 
@@ -293,7 +295,7 @@ const Sparks = System.make("Sparks", function* () {
   });
   const born = random.int(0, 3);
 
-  for (let i = 0; i < born; i++) {
+  for (let i = 0; i < born; i += 1) {
     commands.spawn(Spark.of({ x: random.next(), y: random.next() }));
   }
 });
@@ -321,7 +323,7 @@ const play = (seed: number | undefined, ticks: number) =>
       app.world.spawn(Die.of({ face: 1, rolls: 0 }));
       app.spawnScript(Gambler);
 
-      for (let i = 0; i < ticks; i++) {
+      for (let i = 0; i < ticks; i += 1) {
         if (i % 7 === 3) {
           app.dispatch(Roll, { sides: 6 });
         }
@@ -400,7 +402,7 @@ describe("the Random service", () => {
           app.world.spawn(Die.of({ face: 1, rolls: 0 }));
           const other = new Rng(seed + 1000);
 
-          for (let i = 0; i < 150; i++) {
+          for (let i = 0; i < 150; i += 1) {
             if (other.int(1, 4) === 1) {
               app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
             }
@@ -438,13 +440,13 @@ describe("the Random service", () => {
     // replay says so before its first tick.
     expect(() => replayOf(recorded, 32)).toThrow(App.ReplayDiverged);
     expect(() => replayOf(recorded, 32)).toThrow(
-      /the world's hash at tick 0 .* check the seed/
+      /the world's hash at tick 0 .* check the seed/u
     );
   });
 
   it("refuses a bad seed when the app is made", () => {
     expect(() => withApp(App.make({ seed: 1.5 }), () => 0)).toThrow(
-      /random seed must be a whole number/
+      /random seed must be a whole number/u
     );
   });
 
@@ -482,7 +484,7 @@ describe("the Random service", () => {
       const ints: number[] = [];
       app.spawnScript(
         Effect.gen(function* () {
-          for (let i = 0; i < 2000; i++) {
+          for (let i = 0; i < 2000; i += 1) {
             floats.push(yield* EffectRandom.next);
             ints.push(yield* EffectRandom.nextInt);
           }

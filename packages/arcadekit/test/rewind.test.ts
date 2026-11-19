@@ -35,7 +35,7 @@ const stretch = (app: Game, seed: number, ticks: number): number[] => {
   const dice = new EcsWorld({ seed }).random;
   const hashes: number[] = [];
 
-  for (let i = 0; i < ticks; i++) {
+  for (let i = 0; i < ticks; i += 1) {
     const roll = dice.int(1, 5);
 
     if (roll <= 2) {
@@ -324,7 +324,7 @@ describe("a game that is put back to a moment", () => {
     withApp(
       App.make({ systems: [Count, Draw, Grow], components: [Dot] }),
       (app) => {
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 3; i += 1) {
           app.tick(DELTA);
           app.frame(0);
         }

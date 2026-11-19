@@ -269,14 +269,14 @@ const listen = (
     const seen = new Set<string>();
     const pads = gamepads();
 
-    for (let p = 0; p < pads.length; p++) {
+    for (let p = 0; p < pads.length; p += 1) {
       const pad = pads[p];
 
       if (pad === null || pad === undefined || !pad.connected) {
         continue;
       }
 
-      for (let b = 0; b < pad.buttons.length; b++) {
+      for (let b = 0; b < pad.buttons.length; b += 1) {
         const code = Input.padButton(pad.index, b);
         seen.add(code);
 
@@ -287,7 +287,7 @@ const listen = (
         }
       }
 
-      for (let a = 0; a < pad.axes.length; a++) {
+      for (let a = 0; a < pad.axes.length; a += 1) {
         const code = Input.padAxis(pad.index, a);
         seen.add(code);
         state.move(code, round(pad.axes[a]!));

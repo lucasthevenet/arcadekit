@@ -89,7 +89,7 @@ export const chance = (
 ): number => {
   let share = 1;
 
-  for (let i = 0; i < beaten; i++) {
+  for (let i = 0; i < beaten; i += 1) {
     share *= (winners - i) / (winners + losers - i);
   }
 
@@ -102,7 +102,7 @@ const faster = (runs: readonly number[], than: number): number => {
 
   for (const run of runs) {
     if (run < than) {
-      count++;
+      count += 1;
     }
   }
 
@@ -195,7 +195,7 @@ export const onPurpose = (log: string): Set<string> => {
   const named = new Set<string>();
   const lines = log.split("\n");
 
-  for (let at = 0; at < lines.length; at++) {
+  for (let at = 0; at < lines.length; at += 1) {
     const match = /^\s*Bench-slower:(.*)$/iu.exec(lines[at]!);
 
     if (match === null) {
@@ -206,7 +206,8 @@ export const onPurpose = (log: string): Set<string> => {
 
     // As a trailer is continued: by lines that begin with a space.
     while (at + 1 < lines.length && /^\s+\S/u.test(lines[at + 1]!)) {
-      names += ` ${lines[++at]!}`;
+      at += 1;
+      names += ` ${lines[at]!}`;
     }
 
     for (const name of names.split(/[\s,]+/u)) {

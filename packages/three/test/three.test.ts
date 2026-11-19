@@ -72,7 +72,7 @@ const makeRenderer = () => {
 
   renderer.layer = Layer.succeed(Three.Renderer, {
     render(scene, camera) {
-      renderer.frames++;
+      renderer.frames += 1;
       renderer.scene = scene;
       renderer.camera = camera;
       renderer.counts = scene.children
@@ -125,7 +125,7 @@ const meshOf = (scene: Scene | undefined, name: string): InstancedMesh => {
 const drawn = (mesh: InstancedMesh): string[] => {
   const out: string[] = [];
 
-  for (let i = 0; i < mesh.count; i++) {
+  for (let i = 0; i < mesh.count; i += 1) {
     out.push(
       Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)).join(
         " "
@@ -238,7 +238,7 @@ const expectDrawn = (
   expect(mesh.count).toBe(entities.length);
   const rows: number[][] = [];
 
-  for (let i = 0; i < mesh.count; i++) {
+  for (let i = 0; i < mesh.count; i += 1) {
     rows.push(
       Array.from(mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16))
     );
@@ -247,8 +247,8 @@ const expectDrawn = (
   const drawnRows = byPlace(rows);
   const wanted = byPlace(entities.map((entity) => placeOf(app, entity)));
 
-  for (let i = 0; i < wanted.length; i++) {
-    for (let k = 0; k < 16; k++) {
+  for (let i = 0; i < wanted.length; i += 1) {
+    for (let k = 0; k < 16; k += 1) {
       expect(drawnRows[i]![k], `instance ${i}, element ${k}`).toBeCloseTo(
         wanted[i]![k]!,
         5
@@ -416,7 +416,7 @@ describe("Three.instances", () => {
     ];
 
     for (const [i, row] of byHand.entries()) {
-      for (let k = 0; k < 16; k++) {
+      for (let k = 0; k < 16; k += 1) {
         expect(rows[i]![k], `rock ${i}, element ${k}`).toBeCloseTo(row[k]!, 5);
       }
     }
@@ -449,8 +449,8 @@ describe("Three.instances", () => {
         z: 0.5 + random.next(),
       });
 
-    for (let frame = 0; frame < 120; frame++) {
-      for (let step = 0; step < 12; step++) {
+    for (let frame = 0; frame < 120; frame += 1) {
+      for (let step = 0; step < 12; step += 1) {
         const roll = random.int(9);
         const one = alive[random.int(alive.length)];
 
@@ -617,7 +617,7 @@ describe("Three.instances", () => {
     const rocks: Entity[] = [];
 
     const more = (count: number) => {
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         rocks.push(
           app.world.spawn(Rock, Position.of({ x: rocks.length, y: 1, z: 2 }))
         );
@@ -631,7 +631,7 @@ describe("Three.instances", () => {
     expect(first.array).toHaveLength(4 * 16);
     let dropped = 0;
     mesh.addEventListener("dispose", () => {
-      dropped++;
+      dropped += 1;
     });
     // Full, and not over: nothing is allocated.
     app.frame(0);
@@ -720,14 +720,14 @@ describe("Three.instances", () => {
       const Move = System.make("th/Move", function* () {
         const { delta } = yield* Time;
         (yield* Moving).eachChunk((from, to, position, velocity) => {
-          for (let i = from; i < to; i++) {
+          for (let i = from; i < to; i += 1) {
             position.x[i] = position.x[i]! + velocity.x[i]! * delta;
             position.y[i] = position.y[i]! + velocity.y[i]! * delta;
             position.z[i] = position.z[i]! + velocity.z[i]! * delta;
           }
         });
         (yield* MovingFlat).eachChunk((from, to, position, velocity) => {
-          for (let i = from; i < to; i++) {
+          for (let i = from; i < to; i += 1) {
             position.x[i] = position.x[i]! + velocity.x[i]! * delta;
             position.y[i] = position.y[i]! + velocity.y[i]! * delta;
           }
@@ -754,7 +754,7 @@ describe("Three.instances", () => {
       const count = 10_000;
       const rocks: Entity[] = [];
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         // Of every kind: an eighth each only placed, sized, turned, and
         // both, in three dimensions and in two.
         const flat = i % 8 >= 4;
@@ -813,7 +813,7 @@ describe("Three.instances", () => {
       ];
 
       // Until the loops are compiled, and whatever is made once is made.
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 200; i += 1) {
         step();
       }
 
@@ -825,7 +825,7 @@ describe("Three.instances", () => {
       // middle one, since now and then the collector runs in between.
       const grown: number[] = [];
 
-      for (let i = 0; i < 101; i++) {
+      for (let i = 0; i < 101; i += 1) {
         const before = process.memoryUsage().heapUsed;
         step();
         grown.push(process.memoryUsage().heapUsed - before);
@@ -933,8 +933,8 @@ describe("a flat game's Transform2d", () => {
     const size = () =>
       Flat.Scale.of({ x: 0.5 + random.next(), y: 0.5 + random.next() });
 
-    for (let frame = 0; frame < 100; frame++) {
-      for (let step = 0; step < 12; step++) {
+    for (let frame = 0; frame < 100; frame += 1) {
+      for (let step = 0; step < 12; step += 1) {
         const roll = random.int(10);
         const one = alive[random.int(alive.length)];
 
@@ -1197,7 +1197,7 @@ describe("a flat game's Transform2d", () => {
     // after it, more than there was room for.
     app.world.remove(first, Flat.Rotation);
 
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 200; i += 1) {
       app.world.spawn(Ship, at(i, 2));
     }
 
@@ -1281,7 +1281,7 @@ describe("an entity drawn between two ticks", () => {
 
   /** The sixteen numbers of the instance that is at this height: no two of a test share one. */
   const rowAt = (mesh: InstancedMesh, y: number): number[] => {
-    for (let i = 0; i < mesh.count; i++) {
+    for (let i = 0; i < mesh.count; i += 1) {
       const row = Array.from(
         mesh.instanceMatrix.array.subarray(i * 16, i * 16 + 16)
       );
@@ -1329,7 +1329,7 @@ describe("an entity drawn between two ticks", () => {
     const { app, mesh } = play(Smoothed);
 
     // A slot given out 1,100 times: the next entity in it has such an id.
-    for (let n = 0; n < 1100; n++) {
+    for (let n = 0; n < 1100; n += 1) {
       app.world.despawn(app.world.spawn(Rock));
     }
 
@@ -1551,10 +1551,10 @@ describe("an entity drawn between two ticks", () => {
     ).elements;
 
     // And again in a frame with no tick before it: the same two turns.
-    for (let frame = 0; frame < 2; frame++) {
+    for (let frame = 0; frame < 2; frame += 1) {
       const drawnRow = rowAt(mesh(), 1);
 
-      for (let k = 0; k < 16; k++) {
+      for (let k = 0; k < 16; k += 1) {
         expect(drawnRow[k], `element ${k}`).toBeCloseTo(eighth[k]!, 5);
       }
 
@@ -1582,7 +1582,7 @@ describe("an entity drawn between two ticks", () => {
       app.frame(alpha);
       const now = rowAt(mesh(), 1);
 
-      for (let k = 0; k < 11; k++) {
+      for (let k = 0; k < 11; k += 1) {
         expect(now[k], `alpha ${alpha}, element ${k}`).toBeCloseTo(
           there[k]!,
           5
@@ -1614,10 +1614,10 @@ describe("an entity drawn between two ticks", () => {
       new Vector3(2, 3, 1)
     ).elements;
 
-    for (let frame = 0; frame < 2; frame++) {
+    for (let frame = 0; frame < 2; frame += 1) {
       const drawnRow = rowAt(mesh(), 1);
 
-      for (let k = 0; k < 16; k++) {
+      for (let k = 0; k < 16; k += 1) {
         expect(drawnRow[k], `element ${k}`).toBeCloseTo(half[k]!, 5);
       }
 
@@ -1666,19 +1666,20 @@ describe("an entity drawn between two ticks", () => {
         ? world.get(one.entity, Flat.Position)!.x
         : world.get(one.entity, Position)!.x;
 
-    for (let frame = 1; frame <= 300; frame++) {
+    for (let frame = 1; frame <= 300; frame += 1) {
       const ticks = random.int(4);
 
-      for (let i = 0; i < ticks; i++) {
+      for (let i = 0; i < ticks; i += 1) {
         app.tick(1);
       }
 
-      for (let step = 0; step < 3; step++) {
+      for (let step = 0; step < 3; step += 1) {
         const roll = random.int(6);
         const one = alive[random.int(alive.length)];
 
         if (roll < 2 || one === undefined) {
-          const y = ++heights;
+          heights += 1;
+          const y = heights;
           const flat = random.next() < 0.5;
           const x = random.int(1000);
           alive.push({
@@ -1771,7 +1772,7 @@ describe("an entity drawn between two ticks", () => {
       new Vector3(1, 1, 1)
     ).elements;
 
-    for (let k = 0; k < 16; k++) {
+    for (let k = 0; k < 16; k += 1) {
       expect(rowAt(mesh(), 1)[k], `element ${k}`).toBeCloseTo(eighth[k]!, 5);
       expect(rowAt(mesh(), 2)[k], `element ${k}`).toBeCloseTo(
         eighthBare[k]!,
@@ -1793,7 +1794,7 @@ describe("an entity drawn between two ticks", () => {
     ] as const) {
       const row = rowAt(mesh(), y);
 
-      for (let column = 0; column < 3; column++) {
+      for (let column = 0; column < 3; column += 1) {
         expect(
           Math.hypot(
             row[column * 4]!,
@@ -1928,7 +1929,7 @@ describe("an entity drawn between two ticks", () => {
     app.world.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
     const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 10; i += 1) {
       advance(1 / 120);
     }
 
@@ -1945,7 +1946,7 @@ describe("an entity drawn between two ticks", () => {
 
     // The game comes to rest, and the piece is where the game has it: not
     // a tick behind, waiting for a tick that is not coming.
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 10; i += 1) {
       advance(1 / 120);
     }
 
@@ -2008,7 +2009,7 @@ describe("an entity drawn between two ticks", () => {
       app.world.spawn(Ship, Position.of({ x: 0, y: 3, z: 0 }), Scale);
     }
 
-    for (let tick = 0; tick < 40; tick++) {
+    for (let tick = 0; tick < 40; tick += 1) {
       drawnGame.tick(1);
       drawnGame.frame(0.2);
       drawnGame.frame(0.7);
@@ -2062,7 +2063,7 @@ describe("a colour per instance", () => {
 
   /** The colour of the instance that is drawn at this height. */
   const colorAt = (mesh: InstancedMesh, y: number): number[] => {
-    for (let i = 0; i < mesh.count; i++) {
+    for (let i = 0; i < mesh.count; i += 1) {
       if (Math.abs(mesh.instanceMatrix.array[i * 16 + 13]! - y) < 1e-4) {
         return Array.from(mesh.instanceColor!.array.subarray(i * 3, i * 3 + 3));
       }
@@ -2104,11 +2105,11 @@ describe("a colour per instance", () => {
     app.frame(0);
     expectDrawn(mesh(), app, rocks);
 
-    for (let y = 1; y <= 4; y++) {
+    for (let y = 1; y <= 4; y += 1) {
       expect(colorAt(mesh(), y)).toEqual([y / 8, 0, 0]);
     }
 
-    for (let y = 5; y <= 8; y++) {
+    for (let y = 5; y <= 8; y += 1) {
       expect(colorAt(mesh(), y)).toEqual([0, (y - 4) / 8, 0.75]);
     }
 
@@ -2133,13 +2134,14 @@ describe("a colour per instance", () => {
     const alive: { readonly entity: Entity; readonly y: number }[] = [];
     let dropped = 0;
 
-    for (let frame = 0; frame < 120; frame++) {
-      for (let step = 0; step < 6; step++) {
+    for (let frame = 0; frame < 120; frame += 1) {
+      for (let step = 0; step < 6; step += 1) {
         const roll = random.int(8);
         const one = alive[random.int(alive.length)];
 
         if (roll < 4 || one === undefined) {
-          const y = ++heights;
+          heights += 1;
+          const y = heights;
 
           const parts = [
             Rock,
@@ -2174,7 +2176,7 @@ describe("a colour per instance", () => {
 
       if (frame === 0) {
         mesh().addEventListener("dispose", () => {
-          dropped++;
+          dropped += 1;
         });
       }
 
@@ -2340,7 +2342,7 @@ describe("a colour per instance", () => {
       [0.999, 0.501, 0.251],
     ];
 
-    for (let i = 0; i < 3000; i++) {
+    for (let i = 0; i < 3000; i += 1) {
       colours.push([random.next(), random.next(), random.next()]);
     }
 
@@ -2357,7 +2359,7 @@ describe("a colour per instance", () => {
     const heights = mesh().instanceMatrix.array;
     const want = new Color();
 
-    for (let i = 0; i < colours.length; i++) {
+    for (let i = 0; i < colours.length; i += 1) {
       const [r, g, b] = colours[Math.round(heights[i * 16 + 13]!) - 1]!;
       want.setRGB(r, g, b, SRGBColorSpace);
       expect(Math.abs(drawnColours[i * 3]! - want.r)).toBeLessThan(3e-4);
@@ -2648,7 +2650,7 @@ describe("a colour per instance", () => {
     const kept = mesh();
     let disposed = 0;
     kept.instanceColor!.addEventListener("dispose", () => {
-      disposed++;
+      disposed += 1;
     });
     close();
     expect(disposed).toBe(1);
@@ -2740,7 +2742,7 @@ describe("Three.objects", () => {
     objectOf(long)!.updateMatrix();
     const wanted = [0, 2, 0, 0, -3, 0, 0, 0, 0, 0, 4, 0, 1, 0, 0, 1];
 
-    for (let k = 0; k < 16; k++) {
+    for (let k = 0; k < 16; k += 1) {
       expect(objectOf(long)!.matrix.elements[k], `element ${k}`).toBeCloseTo(
         wanted[k]!,
         5
@@ -2790,7 +2792,7 @@ describe("Three.objects", () => {
     const { app } = fresh();
 
     // A slot given out 1,100 times: the next entity in it has such an id.
-    for (let n = 0; n < 1100; n++) {
+    for (let n = 0; n < 1100; n += 1) {
       app.world.despawn(app.world.spawn(Ship));
     }
 
@@ -2912,8 +2914,8 @@ describe("Three.objects", () => {
     const { world } = app;
     const all: Entity[] = [];
 
-    for (let frame = 0; frame < 150; frame++) {
-      for (let step = 0; step < 8; step++) {
+    for (let frame = 0; frame < 150; frame += 1) {
+      for (let step = 0; step < 8; step += 1) {
         const roll = random.int(10);
         const one = all[random.int(all.length)];
 
@@ -3088,7 +3090,7 @@ describe("Three.plugin", () => {
 
     expect(app.frameOrder.at(-1)).toBe("arcadekit/three/Render");
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 3; i += 1) {
       app.world.spawn(Rock, Position.of({ x: i, y: 0, z: 0 }));
     }
 
@@ -3182,7 +3184,7 @@ describe("Three.plugin", () => {
       )
     );
 
-    for (let tick = 0; tick < 60; tick++) {
+    for (let tick = 0; tick < 60; tick += 1) {
       drawnGame.tick(1 / 60);
       drawnGame.frame(0.3);
       drawnGame.frame(0.8);
@@ -3248,7 +3250,7 @@ describe("Three.layerRenderer", () => {
       Effect.runSync(
         Layer.build(
           Three.layerRenderer(() => {
-            makes++;
+            makes += 1;
 
             return standIn;
           }, options)
@@ -3275,7 +3277,7 @@ describe("Three.layerRenderer", () => {
     let projected = 0;
     const project = camera.updateProjectionMatrix.bind(camera);
     camera.updateProjectionMatrix = () => {
-      projected++;
+      projected += 1;
       project();
     };
 

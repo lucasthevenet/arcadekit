@@ -303,11 +303,11 @@ describe("an asset", () => {
     const notJson = await failure("<html>");
     expect(notJson).toBeInstanceOf(Assets.AssetFailed);
     expect(notJson.url).toBe("/layout.json");
-    expect(notJson.message).toMatch(/^It is not JSON/);
+    expect(notJson.message).toMatch(/^It is not JSON/u);
     const wrongShape = await failure('{"walls":-1,"name":"Bad"}');
     expect(wrongShape).toBeInstanceOf(Assets.AssetFailed);
     expect(wrongShape.url).toBe("/layout.json");
-    expect(wrongShape.message).not.toMatch(/^It is not JSON/);
+    expect(wrongShape.message).not.toMatch(/^It is not JSON/u);
     expect((await failure('{"walls":2}')).url).toBe("/layout.json");
 
     // Text has to be text.
@@ -332,7 +332,7 @@ describe("an asset", () => {
           (exit as Exit.Failure<never, unknown>).cause
         ) as Assets.AssetFailed
       ).message
-    ).toMatch(/^It is not text/);
+    ).toMatch(/^It is not text/u);
   });
 
   it("comes by fetch unless told otherwise, and an interrupted load gives the request up", async () => {
@@ -595,7 +595,7 @@ describe("a level's assets", () => {
           // It is said once, through the app's loggers.
           expect(logged).toHaveLength(1);
           expect(String(logged[0])).toMatch(
-            /The assets "as\/Forest" could not be loaded/
+            /The assets "as\/Forest" could not be loaded/u
           );
           // It stays failed, and is not asked for again while the level lasts.
           frame();
@@ -655,7 +655,7 @@ describe("a level's assets", () => {
 
     const counting: Assets.LoaderShape = {
       bytes: () => {
-        asked++;
+        asked += 1;
 
         return Effect.succeed(new Uint8Array(1));
       },
@@ -788,7 +788,7 @@ describe("a level's assets", () => {
 
           const app = yield* App.make({ plugins: [Game], systems: [Cheat] });
           expect(() => app.tick(1)).toThrow(
-            /The assets "as\/Forest" were asked for in the tick/
+            /The assets "as\/Forest" were asked for in the tick/u
           );
 
           // A script is the simulation too.
@@ -821,7 +821,7 @@ describe("a level's assets", () => {
             }).pipe(
               Effect.provideService(Assets.Loader, {
                 bytes: () => {
-                  asked++;
+                  asked += 1;
 
                   return Effect.succeed(new Uint8Array(1));
                 },
@@ -875,7 +875,7 @@ describe("a level's assets", () => {
       Action.handler(Build, function* ({ name, walls }) {
         const commands = yield* Commands;
 
-        for (let at = 0; at < walls; at++) {
+        for (let at = 0; at < walls; at += 1) {
           commands.spawn(Wall.of({ at }));
         }
 
@@ -1009,7 +1009,7 @@ describe("a level's assets", () => {
           expect(
             (Cause.squash((twice as Exit.Failure<never, never>).cause) as Error)
               .message
-          ).toMatch(/Duplicate system name "Assets\.during\(as\/Forest\)"/);
+          ).toMatch(/Duplicate system name "Assets\.during\(as\/Forest\)"/u);
           // Kept for two states by one condition that holds in both.
           const log: string[] = [];
 

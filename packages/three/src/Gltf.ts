@@ -128,7 +128,7 @@ const fromDataUri = (
   const text = atob(body);
   const bytes = new Uint8Array(text.length);
 
-  for (let i = 0; i < text.length; i++) {
+  for (let i = 0; i < text.length; i += 1) {
     bytes[i] = text.codePointAt(i)!;
   }
 
@@ -265,7 +265,7 @@ const pack = (
     // And each picture after them, as a view of its own.
     const pictures: { readonly at: number; readonly bytes: Uint8Array }[] = [];
 
-    for (let i = 0; i < images.length; i++) {
+    for (let i = 0; i < images.length; i += 1) {
       const file = imageBytes[i];
       const image = images[i]!;
 
@@ -304,7 +304,7 @@ const pack = (
     out.setUint32(start, length, true);
     out.setUint32(start + 4, BIN_CHUNK, true);
 
-    for (let i = 0; i < bufferBytes.length; i++) {
+    for (let i = 0; i < bufferBytes.length; i += 1) {
       packed.set(bufferBytes[i]!, start + 8 + offsets[i]!);
     }
 

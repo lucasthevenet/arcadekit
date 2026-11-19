@@ -102,7 +102,7 @@ describe("a relation", () => {
       [second, parent],
     ]);
     world.view(Query.all(ChildOf)).eachChunk((start, end, child, ids) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         expect(child.target[i]).toBe(parent);
         expect([first, second]).toContain(ids[i]);
       }
@@ -245,13 +245,13 @@ describe("a relation", () => {
     expect(world.get(debtor, Owes)).toEqual({ target: b, amount: 4 });
     // Its target is not: the world would lose track of who points at whom.
     expect(() => world.set(debtor, Owes, { target: a })).toThrow(
-      /"rl\/Owes" is a relation.*add\(entity, .*\.of\(\{ target \}\)\)/
+      /"rl\/Owes" is a relation.*add\(entity, .*\.of\(\{ target \}\)\)/u
     );
     expect(() =>
       world.view(Query.all(Owes)).each((owes) => {
         owes.target = a;
       })
-    ).toThrow(/is a relation/);
+    ).toThrow(/is a relation/u);
     expect(world.sources(b, Owes)).toEqual([debtor]);
 
     // The old target's despawn is nothing to it now; the new one's is.
@@ -267,11 +267,11 @@ describe("a relation", () => {
     const parent = body(world);
     const commands = new CommandBuffer(world);
     expect(() => world.spawn(Body, ChildOf)).toThrow(
-      /"rl\/ChildOf" is a relation, and a relation needs a target/
+      /"rl\/ChildOf" is a relation, and a relation needs a target/u
     );
-    expect(() => world.add(parent, Targets)).toThrow(/needs a target/);
-    expect(() => commands.spawn(ChildOf)).toThrow(/needs a target/);
-    expect(() => commands.add(parent, ChildOf)).toThrow(/needs a target/);
+    expect(() => world.add(parent, Targets)).toThrow(/needs a target/u);
+    expect(() => commands.spawn(ChildOf)).toThrow(/needs a target/u);
+    expect(() => commands.add(parent, ChildOf)).toThrow(/needs a target/u);
     expect(commands.size).toBe(0);
     expect(world.entityCount).toBe(1);
 
@@ -340,7 +340,7 @@ describe("a relation", () => {
     let last = body(world);
     const first = last;
 
-    for (let n = 0; n < 10_000; n++) {
+    for (let n = 0; n < 10_000; n += 1) {
       last = childOf(world, last);
     }
 
@@ -388,9 +388,9 @@ describe("a relation", () => {
     const before = world.hash();
     world.begin();
     expect(() => world.add(child, ChildOf.of({ target: b }))).toThrow(
-      /inside a transaction.*Queue it on Commands/
+      /inside a transaction.*Queue it on Commands/u
     );
-    expect(() => world.despawn(a)).toThrow(/inside a transaction/);
+    expect(() => world.despawn(a)).toThrow(/inside a transaction/u);
     world.rollback();
     expect(world.hash()).toBe(before);
     expect(world.sources(a, ChildOf)).toEqual([child]);
@@ -486,7 +486,7 @@ describe("relations and a snapshot", () => {
     expect(error).toBeInstanceOf(SnapshotError);
     expect((error as SnapshotError).problem).toBe("corrupt");
     expect((error as SnapshotError).message).toMatch(
-      /"rl\/ChildOf" points at an entity that does not exist/
+      /"rl\/ChildOf" points at an entity that does not exist/u
     );
   });
 });
@@ -547,7 +547,7 @@ describe("relations against a simple model", () => {
           ? dice.pick(graveyard)
           : dice.pick(Array.from(alive));
 
-      for (let step = 0; step < 4000; step++) {
+      for (let step = 0; step < 4000; step += 1) {
         const roll = dice.int(0, 9);
 
         if (roll < 3 || alive.size < 3) {

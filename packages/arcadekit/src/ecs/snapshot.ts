@@ -143,7 +143,8 @@ export class Writer {
 
   u8(value: number): void {
     this.room(1);
-    this.bytes[this.at++] = value;
+    this.bytes[this.at] = value;
+    this.at += 1;
   }
 
   u32(value: number): void {
@@ -286,7 +287,11 @@ export class Reader {
   u8(): number {
     this.need(1);
 
-    return this.bytes[this.at++]!;
+    const value = this.bytes[this.at]!;
+
+    this.at += 1;
+
+    return value;
   }
 
   u32(): number {
@@ -436,7 +441,7 @@ export const writeColumn = (
 
   const values = column as unknown[];
 
-  for (let row = 0; row < count; row++) {
+  for (let row = 0; row < count; row += 1) {
     let value = values[row];
 
     if (kind === "ref") {
@@ -488,7 +493,7 @@ export const readColumn = (
 
   const values = column as unknown[];
 
-  for (let row = 0; row < count; row++) {
+  for (let row = 0; row < count; row += 1) {
     const value = reader.value();
     values[row] = kind === "ref" ? codec!.decode(value) : value;
   }
@@ -639,7 +644,7 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
 
   const random = new Uint32Array(4);
 
-  for (let word = 0; word < 4; word++) {
+  for (let word = 0; word < 4; word += 1) {
     random[word] = reader.u32();
   }
 
@@ -657,13 +662,13 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
 
   const freed: number[] = [];
 
-  for (let i = reader.count(4); i > 0; i--) {
+  for (let i = reader.count(4); i > 0; i -= 1) {
     freed.push(reader.u32());
   }
 
   const components: SnapshotComponent[] = [];
 
-  for (let c = reader.count(9); c > 0; c--) {
+  for (let c = reader.count(9); c > 0; c -= 1) {
     const name = reader.text();
     const storage = STORAGES[reader.u8()];
 
@@ -673,7 +678,7 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
 
     const fields: SnapshotComponent["fields"] = [];
 
-    for (let f = reader.count(5); f > 0; f--) {
+    for (let f = reader.count(5); f > 0; f -= 1) {
       const field = reader.text();
       const kind = KIND_CODES[reader.u8()];
 
@@ -726,10 +731,10 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
 
   const tables: SnapshotTable[] = [];
 
-  for (let t = reader.count(8); t > 0; t--) {
+  for (let t = reader.count(8); t > 0; t -= 1) {
     const of: SnapshotComponent[] = [];
 
-    for (let d = reader.count(4); d > 0; d--) {
+    for (let d = reader.count(4); d > 0; d -= 1) {
       of.push(componentAt());
     }
 
@@ -758,7 +763,7 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
 
   const sparse: SnapshotSparse[] = [];
 
-  for (let s = reader.count(8); s > 0; s--) {
+  for (let s = reader.count(8); s > 0; s -= 1) {
     const component = componentAt();
     const members = new Uint32Array(reader.count(4));
     reader.numbers(members, members.length, 4);
@@ -771,7 +776,7 @@ export const readSnapshot = (bytes: Uint8Array): SnapshotContents => {
 
   const singletons: SnapshotSingleton[] = [];
 
-  for (let s = format >= 2 ? reader.count(4) : 0; s > 0; s--) {
+  for (let s = format >= 2 ? reader.count(4) : 0; s > 0; s -= 1) {
     const component = componentAt();
     singletons.push({
       component: component.name,
@@ -831,7 +836,7 @@ export const writeSnapshot = (contents: SnapshotContents): Uint8Array => {
   writer.u32(MAGIC);
   writer.u32(FORMAT);
 
-  for (let word = 0; word < 4; word++) {
+  for (let word = 0; word < 4; word += 1) {
     writer.u32(contents.random[word] ?? 0);
   }
 

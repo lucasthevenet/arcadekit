@@ -81,16 +81,29 @@ const play = (
   const optional = Object.values(kit) as ComponentDef<any>[];
   let serial = seed * 1000;
 
-  const valueFor = (def: ComponentDef<any>) =>
-    def === kit.Body
-      ? kit.Body.of({ x: ++serial, y: dice.next() })
-      : def === kit.Sheet
-        ? kit.Sheet.of(sheet(++serial))
-        : def === kit.Aura
-          ? kit.Aura.of(sheet(++serial))
-          : def;
+  const valueFor = (def: ComponentDef<any>) => {
+    if (def === kit.Body) {
+      serial += 1;
 
-  for (let step = 0; step < steps; step++) {
+      return kit.Body.of({ x: serial, y: dice.next() });
+    }
+
+    if (def === kit.Sheet) {
+      serial += 1;
+
+      return kit.Sheet.of(sheet(serial));
+    }
+
+    if (def === kit.Aura) {
+      serial += 1;
+
+      return kit.Aura.of(sheet(serial));
+    }
+
+    return def;
+  };
+
+  for (let step = 0; step < steps; step += 1) {
     // Whatever is alive is read from the world, so that a world which was
     // loaded is played exactly like the one it was saved from.
     const alive = world.view(Query.all()).entities();
@@ -287,7 +300,7 @@ describe("a snapshot of a world", () => {
   it("is as big as the data it holds, give or take a header", () => {
     const world = new EcsWorld();
 
-    for (let n = 0; n < 10_000; n++) {
+    for (let n = 0; n < 10_000; n += 1) {
       world.spawn(C.Body.of({ x: n, y: n }));
     }
 
@@ -383,7 +396,7 @@ describe("a snapshot that cannot be taken", () => {
       expect(error.component).toBe("snap/Sheet");
       expect(error.message).toContain(`"snap/Sheet.note"`);
       expect(error.message).toContain(what);
-      expect(error.message).toMatch(/Field\.ref.*Field\.transient/);
+      expect(error.message).toMatch(/Field\.ref.*Field\.transient/u);
       // The same in a sparse component.
       const sparse = new EcsWorld();
       sparse.add(sparse.spawn(), C.Aura.of({ ...sheet(2), note: value }));
@@ -401,7 +414,7 @@ describe("a snapshot that cannot be taken", () => {
     const error = problemOf(() => world.snapshot());
     expect(error.problem).toBe("cannot be saved");
     expect(error.message).toMatch(
-      /2 entities were spawned through a CommandBuffer/
+      /2 entities were spawned through a CommandBuffer/u
     );
     commands.apply();
     expect(loaded(world.snapshot()).entityCount).toBe(2);
@@ -509,14 +522,14 @@ describe("a snapshot that cannot be loaded", () => {
     const error = problemOf(() => loaded(newer));
     expect(error.problem).toBe("newer format");
     expect(error.message).toMatch(
-      /format 4, and this version reads formats 1 to 3/
+      /format 4, and this version reads formats 1 to 3/u
     );
   });
 
   it("is refused wherever it is cut short, without a crash", () => {
     const bytes = sample();
 
-    for (let length = 0; length < bytes.length; length++) {
+    for (let length = 0; length < bytes.length; length += 1) {
       const error = problemOf(() => loaded(bytes.subarray(0, length)));
       expect(["truncated", "not a snapshot", "corrupt"]).toContain(
         error.problem
@@ -544,7 +557,7 @@ describe("a snapshot that cannot be loaded", () => {
     let refusedCount = 0;
     let loadedCount = 0;
 
-    for (let round = 0; round < 1500; round++) {
+    for (let round = 0; round < 1500; round += 1) {
       const damaged = Uint8Array.from(bytes);
       const at = round < bytes.length ? round : dice.int(0, bytes.length - 1);
       damaged[at] = damaged[at]! ^ (1 << dice.int(0, 7));
@@ -558,10 +571,10 @@ describe("a snapshot that cannot be loaded", () => {
         // What loads is a world that works.
         world.hash();
         world.spawn(C.Body);
-        loadedCount++;
+        loadedCount += 1;
       } catch (error) {
         expect(error).toBeInstanceOf(SnapshotError);
-        refusedCount++;
+        refusedCount += 1;
       }
     }
 
@@ -597,7 +610,7 @@ describe("a snapshot that cannot be loaded", () => {
 
     /** Where two ids stand side by side in the bytes. */
     const find = (first: number, second: number): number => {
-      for (let at = freed + 12; at + 16 <= bytes.length; at++) {
+      for (let at = freed + 12; at + 16 <= bytes.length; at += 1) {
         if (
           view.getFloat64(at, true) === first &&
           view.getFloat64(at + 8, true) === second
@@ -690,7 +703,7 @@ describe("a snapshot that cannot be loaded", () => {
     for (const [what, change] of cases) {
       const error = damaged(change);
       expect(error.problem, what).toBe("corrupt");
-      expect(error.message, what).toMatch(/^The snapshot is damaged: /);
+      expect(error.message, what).toMatch(/^The snapshot is damaged: /u);
     }
 
     // One freed slot cut out of the list: a slot that is neither in a table
@@ -701,7 +714,7 @@ describe("a snapshot that cannot be loaded", () => {
     new DataView(shorter.buffer).setUint32(freed, 1, true);
     const lost = problemOf(() => loaded(shorter));
     expect(lost.problem).toBe("corrupt");
-    expect(lost.message).toMatch(/neither in a table nor free/);
+    expect(lost.message).toMatch(/neither in a table nor free/u);
   });
 
   it("is refused when its text is not text", () => {
@@ -719,7 +732,7 @@ describe("a snapshot that cannot be loaded", () => {
     bytes[at + 2] = 0xff;
     const error = problemOf(() => loaded(bytes));
     expect(error.problem).toBe("corrupt");
-    expect(error.message).toMatch(/text that is not text/);
+    expect(error.message).toMatch(/text that is not text/u);
   });
 
   it("is refused when it claims more than its bytes could hold", () => {

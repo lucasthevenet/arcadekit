@@ -219,7 +219,7 @@ export const migrate = (
       })),
     };
 
-    for (let from = save.version; from < version; from++) {
+    for (let from = save.version; from < version; from += 1) {
       const step = migrations.find((migration) => migration.from === from);
 
       if (step === undefined) {

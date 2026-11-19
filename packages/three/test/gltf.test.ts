@@ -423,7 +423,7 @@ describe("a model", () => {
         height: 1,
         closed: 0,
         close() {
-          bitmap.closed++;
+          bitmap.closed += 1;
         },
       };
 
@@ -475,7 +475,7 @@ describe("a model", () => {
     expect(map!.image).toBe(bitmaps[0]);
     let disposed = 0;
     map!.addEventListener("dispose", () => {
-      disposed++;
+      disposed += 1;
     });
     await close();
     expect(disposed).toBe(1);
@@ -667,7 +667,7 @@ describe("a level's models", () => {
     expect(rocks.count).toBe(1);
     let disposed = 0;
     hull.addEventListener("dispose", () => {
-      disposed++;
+      disposed += 1;
     });
     await go("dock");
     expect(scene!.children).toEqual([]);

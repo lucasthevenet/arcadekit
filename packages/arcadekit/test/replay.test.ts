@@ -123,7 +123,7 @@ const record = (options: Options & { readonly ticks: number }) =>
     const hashes: number[] = [];
     const starting = app.world.hash();
 
-    for (let tick = 0; tick < options.ticks; tick++) {
+    for (let tick = 0; tick < options.ticks; tick += 1) {
       const roll = dice.int(1, 6);
 
       if (roll <= 2 || tick < 3) {
@@ -197,7 +197,7 @@ describe("checkpoints", () => {
     // were made once its tick had completed.
     expect(Action.isCheckpoint(recorded.log[0]!)).toBe(true);
 
-    for (let i = 1; i < recorded.log.length; i++) {
+    for (let i = 1; i < recorded.log.length; i += 1) {
       expect(recorded.log[i]!.tick).toBeGreaterThanOrEqual(
         recorded.log[i - 1]!.tick
       );
@@ -231,7 +231,7 @@ describe("checkpoints", () => {
         })
       );
 
-      for (let tick = 1; tick <= 5; tick++) {
+      for (let tick = 1; tick <= 5; tick += 1) {
         app.tick(1 / 60);
         expect(app.world.entityCount).toBe(tick);
         expect(app.actionLog.at(-1)).toEqual({
@@ -259,7 +259,7 @@ describe("checkpoints", () => {
 
     for (const bad of [-1, 1.5, Number.NaN, Infinity]) {
       expect(() => withApp(game({ checkpointEvery: bad }), () => 0)).toThrow(
-        /checkpointEvery must be a whole number of ticks/
+        /checkpointEvery must be a whole number of ticks/u
       );
     }
   });
@@ -338,7 +338,7 @@ describe("checkpoints", () => {
       asking = app;
       app.tick(1);
     });
-    expect(String(inside)).toMatch(/checkpoint\(\) was called during a tick/);
+    expect(String(inside)).toMatch(/checkpoint\(\) was called during a tick/u);
   });
 
   it("survive being written down, and a malformed one is refused", () => {
@@ -442,7 +442,7 @@ describe("a replay that checks itself", () => {
     expect(blind.stopped!.tick).toBeLessThanOrEqual(100);
     expect(blind.stopped!.reason).toBeInstanceOf(NoSuchCoin);
     expect(blind.stopped!.message).toMatch(
-      /\("rp\/Take" at tick \d+\) was refused on replay/
+      /\("rp\/Take" at tick \d+\) was refused on replay/u
     );
     // With them, sixty ticks earlier, where it went wrong.
     const checked = replayInto({ faulty: fault(40, "lose") }, log, 110);
@@ -504,7 +504,7 @@ describe("a replay that checks itself", () => {
     expect(reason.agreedAt).toBeUndefined();
     expect(reason.expected).toBe(recorded.starting);
     expect(otherSeed.stopped!.message).toMatch(
-      /No earlier checkpoint matched, so the two did not start from the same state: check the seed and what was spawned before the first tick\.$/
+      /No earlier checkpoint matched, so the two did not start from the same state: check the seed and what was spawned before the first tick\.$/u
     );
     // Nothing was applied to a world that was wrong from the start.
     expect(moves(otherSeed.log)).toEqual([]);
@@ -582,7 +582,7 @@ describe("a replay that checks itself", () => {
     // Between two ticks the recorded game spawns a coin directly, which no
     // action in the log says. The replay cannot know, and says where it shows.
     const recorded = withApp(game({ checkpointEvery: 1 }), (app) => {
-      for (let tick = 0; tick < 20; tick++) {
+      for (let tick = 0; tick < 20; tick += 1) {
         if (tick === 8) {
           app.world.spawn(Coin.of({ value: 7, x: 0 }));
         }
@@ -611,7 +611,7 @@ describe("a replay that checks itself", () => {
     expect(short.stopped!.tick).toBe(30);
     expect(Action.isCheckpoint(short.stopped!.entry)).toBe(true);
     expect(short.stopped!.message).toMatch(
-      /\(a checkpoint at tick 30\) was not reached on replay: its tick \(30\) was never reached/
+      /\(a checkpoint at tick 30\) was not reached on replay: its tick \(30\) was never reached/u
     );
     expect(short.tick).toBe(25);
   });
@@ -767,7 +767,7 @@ describe("the action log", () => {
       expect(app.world.get(tally, Tally)!.value).toBe((1001 + 1 + 100) * 2);
 
       // The tick ran the bot and the script, and none of their moves is logged.
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 12; i += 1) {
         app.tick(1);
       }
 
@@ -791,7 +791,7 @@ describe("the action log", () => {
       ).toEqual([
         ["rp/Double", "TooBig"],
         ["rp/Nothing", "UnknownAction"],
-        ["rp/Add", expect.stringMatching(/by/)],
+        ["rp/Add", expect.stringMatching(/by/u)],
       ]);
       // The referee saw all three refusals.
       app.tick(1);
@@ -827,8 +827,8 @@ describe("a game whose simulation issues actions itself", () => {
   const play = (app: Effect.Success<ReturnType<typeof busy>>["app"]) => {
     const dice = new EcsWorld({ seed: 77 }).random;
 
-    for (let tick = 0; tick < 90; tick++) {
-      for (let n = dice.int(0, 3); n > 0; n--) {
+    for (let tick = 0; tick < 90; tick += 1) {
+      for (let n = dice.int(0, 3); n > 0; n -= 1) {
         const by = dice.int(1, 5);
         const move = dice.int(1, 6);
 
@@ -893,7 +893,7 @@ describe("a game whose simulation issues actions itself", () => {
     // so a move the bot made was made twice, once from the log and once by
     // the replay's own bot. Here the bot's moves are put back in by hand.
     const recorded = withApp(busy(), ({ app }) => {
-      for (let i = 0; i < 9; i++) {
+      for (let i = 0; i < 9; i += 1) {
         app.tick(1);
       }
 

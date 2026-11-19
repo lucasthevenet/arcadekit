@@ -105,7 +105,7 @@ const Drift = System.make("Drift", function* () {
       const at = position[axis];
       const speed = velocity[axis];
 
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         let next = at[i]! + speed[i]! * delta;
 
         // Off a wall of the box, and back, in the colour of that wall.
@@ -126,7 +126,7 @@ const Drift = System.make("Drift", function* () {
 const Turn = System.make("Turn", function* () {
   const { delta } = yield* Time;
   (yield* Spinning).eachChunk((start, end, rotation, spin) => {
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const angle = spin.angle[i]! + spin.rate[i]! * delta;
       spin.angle[i] = angle;
       // About the vertical: a quaternion written out, with nothing made.
@@ -147,7 +147,7 @@ const Wheel = System.make("Wheel", function* () {
   const cos = Math.cos(delta * 0.3);
   const sin = Math.sin(delta * 0.3);
   (yield* Carded).eachChunk((start, end, position, rotation) => {
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const x = position.x[i]!;
       const y = position.y[i]!;
       position.x[i] = x * cos - y * sin;
@@ -186,7 +186,7 @@ const Rules = Plugin.make("page/Rules", {
     const within = () => (random.next() * 2 - 1) * BOX;
     const speed = () => (random.next() * 2 - 1) * 12;
 
-    for (let i = 0; i < COUNT; i++) {
+    for (let i = 0; i < COUNT; i += 1) {
       const size = 0.3 + random.next() * 0.7;
       commands.spawn(
         Mote,
@@ -199,7 +199,7 @@ const Rules = Plugin.make("page/Rules", {
       );
     }
 
-    for (let i = 0; i < CARDS; i++) {
+    for (let i = 0; i < CARDS; i += 1) {
       const around = (i / CARDS) * Math.PI * 2;
       commands.spawn(
         Card,
@@ -297,7 +297,7 @@ let frames = 0;
 
 const Hud = System.make("Hud", function* () {
   const { tick } = yield* Time;
-  frames++;
+  frames += 1;
   const now = performance.now();
 
   // Twice a second: text that changes every frame is work nobody can read.

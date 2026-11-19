@@ -139,7 +139,7 @@ describe("the hash of a world", () => {
 
       // Every operation of the history changes something a simulation can
       // see, so no two neighbouring steps may share a hash.
-      for (let i = 1; i < first.length; i++) {
+      for (let i = 1; i < first.length; i += 1) {
         expect(first[i]).not.toBe(first[i - 1]);
       }
 
@@ -158,7 +158,7 @@ describe("the hash of a world", () => {
       const world = new EcsWorld();
       const entities: Entity[] = [];
 
-      for (let n = 0; n < size; n++) {
+      for (let n = 0; n < size; n += 1) {
         const entity = world.spawn(
           Body.of({ x: n, y: -n }),
           Sheet.of(sheet(n))
@@ -176,7 +176,7 @@ describe("the hash of a world", () => {
         for (const def of [Body, Sheet, Aura] as ComponentDef<any>[]) {
           const original = world.get(entity, def)!;
 
-          for (let f = 0; f < def.fields.length; f++) {
+          for (let f = 0; f < def.fields.length; f += 1) {
             const field = def.fields[f]!;
             const kind = def.kinds[f]!;
             const values = [nudged(kind, original[field])];
@@ -195,7 +195,7 @@ describe("the hash of a world", () => {
               const changed = world.hash();
               expect(changed, `${def.name}.${field}`).not.toBe(base);
               seen.add(changed);
-              changes++;
+              changes += 1;
               world.set(entity, def, { [field]: original[field] });
               expect(world.hash(), `${def.name}.${field} restored`).toBe(base);
             }
@@ -257,7 +257,7 @@ describe("the hash of a world", () => {
     ): number => {
       const world = new EcsWorld();
 
-      for (let n = 0; n < 6; n++) {
+      for (let n = 0; n < 6; n += 1) {
         world.add(world.spawn(Sheet.of(sheet(n))), Aura.of(sheet(n)));
       }
 
@@ -481,7 +481,7 @@ describe("the hash of a world", () => {
     const reused = (times: number) => {
       const world = new EcsWorld();
 
-      for (let i = 0; i < times; i++) {
+      for (let i = 0; i < times; i += 1) {
         world.despawn(world.spawn(Body));
       }
 
@@ -533,7 +533,7 @@ describe("the hash of a world", () => {
     world.random.state.set(state);
     expect(world.hash()).toBe(before);
 
-    for (let word = 0; word < 4; word++) {
+    for (let word = 0; word < 4; word += 1) {
       world.random.state[word]! ^= 1;
       expect(world.hash()).not.toBe(before);
       world.random.state[word]! ^= 1;
@@ -549,7 +549,7 @@ describe("the hash of a world", () => {
       const world = new EcsWorld({ seed: 3 });
       const entities: Entity[] = [];
 
-      for (let n = 0; n < 40; n++) {
+      for (let n = 0; n < 40; n += 1) {
         entities.push(world.spawn(Body.of({ x: n, y: n }), Sheet.of(sheet(n))));
       }
 
@@ -659,7 +659,7 @@ describe("the hash of a world", () => {
     );
     // A value JSON cannot write is refused in so many words.
     expect(() => hashOf({ big: 1n })).toThrow(
-      /A json field holds a value that JSON cannot write/
+      /A json field holds a value that JSON cannot write/u
     );
   });
 
@@ -696,16 +696,29 @@ const history = (seed: number, steps: number): number[] => {
   let serial = 0;
   const optional = [Body, Sheet, Marked, Aura, Chilled] as ComponentDef<any>[];
 
-  const valueFor = (def: ComponentDef<any>) =>
-    def === Body
-      ? Body.of({ x: ++serial, y: dice.next() })
-      : def === Sheet
-        ? Sheet.of(sheet(++serial))
-        : def === Aura
-          ? Aura.of(sheet(++serial))
-          : def;
+  const valueFor = (def: ComponentDef<any>) => {
+    if (def === Body) {
+      serial += 1;
 
-  for (let step = 0; step < steps; step++) {
+      return Body.of({ x: serial, y: dice.next() });
+    }
+
+    if (def === Sheet) {
+      serial += 1;
+
+      return Sheet.of(sheet(serial));
+    }
+
+    if (def === Aura) {
+      serial += 1;
+
+      return Aura.of(sheet(serial));
+    }
+
+    return def;
+  };
+
+  for (let step = 0; step < steps; step += 1) {
     const choice = alive.length === 0 ? 0 : dice.int(0, 7);
     const entity = alive.length === 0 ? undefined : dice.pick(alive);
 
@@ -781,7 +794,7 @@ describe("the hash of an app's world", () => {
     withApp(make, (app) => {
       const out: number[] = [];
 
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i < 100; i += 1) {
         app.tick(1 / 60);
         out.push(app.world.hash());
       }
@@ -802,7 +815,7 @@ describe("the hash of an app's world", () => {
     let tick = 0;
 
     const Wrong = System.make("Wrong", function* () {
-      tick++;
+      tick += 1;
 
       if (tick === 40) {
         let first = true;

@@ -24,7 +24,7 @@ export const fall = (
   gravity: number,
   delta: number
 ): void => {
-  for (let i = start; i < end; i++) {
+  for (let i = start; i < end; i += 1) {
     vy[i]! += gravity * delta;
     px[i]! += vx[i]! * delta;
     py[i]! += vy[i]! * delta;

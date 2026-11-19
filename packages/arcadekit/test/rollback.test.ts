@@ -38,7 +38,7 @@ import type { Network, Peer } from "./peers";
  * every peer brought to the same tick. Returns that tick.
  */
 const settle = (peers: readonly Peer[], net: Network, lag: number): number => {
-  for (let i = 0; i < 3 * lag + 12; i++) {
+  for (let i = 0; i < 3 * lag + 12; i += 1) {
     round(peers, net);
   }
 
@@ -55,7 +55,7 @@ describe("a rollback session", () => {
       const net = network(3, { min: 4, max: 6 });
       const [ada, grace] = peers as [Peer, Peer];
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 5; i += 1) {
         round(peers, net);
       }
 
@@ -102,7 +102,7 @@ describe("a rollback session", () => {
         const net = network(seed, lag);
         const act = players(seed + 200);
 
-        for (let i = 0; i < 300; i++) {
+        for (let i = 0; i < 300; i += 1) {
           for (const peer of peers) {
             act(peer);
           }
@@ -167,7 +167,7 @@ describe("a rollback session", () => {
       const net = network(9, { min: 0, max: 6 });
       const act = players(10);
 
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 200; i += 1) {
         act(peers[0]!);
         act(peers[1]!);
         round(peers, net);
@@ -199,7 +199,7 @@ describe("a rollback session", () => {
           const net = network(5, { min: 3, max: 6 });
           const act = players(6);
 
-          for (let i = 0; i < 120; i++) {
+          for (let i = 0; i < 120; i += 1) {
             act(peers[0]!);
             round(peers, net);
           }
@@ -217,7 +217,7 @@ describe("a rollback session", () => {
       const net = network(7, { min: 2, max: 5 });
       const [ada, grace] = peers as [Peer, Peer];
 
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; i < 60; i += 1) {
         round(peers, net);
       }
 
@@ -227,7 +227,7 @@ describe("a rollback session", () => {
       expect(grace.session.resimulated).toBe(0);
       ada.app.enqueue(Drop, { by: "ada", value: 1 });
 
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 20; i += 1) {
         round(peers, net);
       }
 
@@ -243,7 +243,7 @@ describe("a rollback session", () => {
     withPeers(["ada", "grace"], { ahead: 10 }, (peers) => {
       const [ada] = peers as [Peer];
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 5; i += 1) {
         ada.session.tick();
       }
 
@@ -251,7 +251,7 @@ describe("a rollback session", () => {
       expect(ada.session.kept).toBe(5);
 
       // Grace's word for those five ticks, with a move on the third.
-      for (let tick = 0; tick < 5; tick++) {
+      for (let tick = 0; tick < 5; tick += 1) {
         ada.session.receive({
           from: "grace",
           tick,
@@ -296,7 +296,7 @@ describe("a rollback session", () => {
               {
                 ...app,
                 capture: () => {
-                  count.captures++;
+                  count.captures += 1;
 
                   return app.capture();
                 },
@@ -312,7 +312,7 @@ describe("a rollback session", () => {
           const start = sure.session.peers.length;
           expect(start).toBe(2);
 
-          for (let tick = 0; tick < 20; tick++) {
+          for (let tick = 0; tick < 20; tick += 1) {
             sure.session.receive({ from: "grace", tick, actions: [] });
             expect(sure.session.tick()).toBe(true);
           }
@@ -322,7 +322,7 @@ describe("a rollback session", () => {
           // Grace says nothing: every tick is a guess, and is captured.
           const unsure = counted(yield* game());
 
-          for (let tick = 0; tick < 5; tick++) {
+          for (let tick = 0; tick < 5; tick += 1) {
             expect(unsure.session.tick()).toBe(true);
           }
 
@@ -339,7 +339,7 @@ describe("a rollback session", () => {
       expect(ada.session.ahead).toBe(3);
       expect(ada.session.delay).toBe(0);
 
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 3; i += 1) {
         expect(ada.session.waitingFor).toEqual([]);
         expect(ada.session.tick()).toBe(true);
       }
@@ -376,7 +376,7 @@ describe("a rollback session", () => {
       let ran = 0;
 
       while (session.tick()) {
-        ran++;
+        ran += 1;
       }
 
       expect(ran).toBe(8);
@@ -401,7 +401,7 @@ describe("a rollback session", () => {
       const net = network(2, { min: 1, max: 4 });
       const act = players(3);
 
-      for (let i = 0; i < 150; i++) {
+      for (let i = 0; i < 150; i += 1) {
         act(peers[0]!);
         act(peers[1]!);
         round(peers, net);

@@ -26,8 +26,8 @@ for (;;) {
   if (Atomics.load(signals, SPIN) === 1) {
     let spins = 0;
 
-    while (Atomics.load(signals, JOB) === seen && spins++ < 20_000) {
-      // Spinning.
+    while (Atomics.load(signals, JOB) === seen && spins < 20_000) {
+      spins += 1;
     }
   }
 

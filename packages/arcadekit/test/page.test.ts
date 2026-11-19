@@ -67,7 +67,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
     ...ui,
     subscribe: (view, listener) =>
       ui.subscribe(view, (value) => {
-        told++;
+        told += 1;
         listener(value);
       }),
   };
@@ -152,7 +152,7 @@ const play = async (mount: (root: Element, ui: View.Bridge) => () => void) => {
     /** What a driver does each frame a tick is due: the devices, a tick, a frame. */
     step: async (times = 1) => {
       await act(async () => {
-        for (let i = 0; i < times; i++) {
+        for (let i = 0; i < times; i += 1) {
           app.input();
           app.tick(1 / 60);
           app.frame(0);
@@ -209,13 +209,13 @@ describe.each([
     // nothing it shows changed changes nothing in the document.
     let quiet = 0;
 
-    for (let i = 0; i < 900 && page.ui.get(Hud).caught < 3; i++) {
+    for (let i = 0; i < 900 && page.ui.get(Hud).caught < 3; i += 1) {
       const told = page.told();
       await page.step();
       const changed = await page.changed();
 
       if (page.told() === told) {
-        quiet++;
+        quiet += 1;
         expect(changed).toBe(0);
       } else {
         expect(changed).toBeGreaterThan(0);

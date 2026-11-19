@@ -77,7 +77,7 @@ describe("a state", () => {
       })
     );
     expect(() => State.define("st/Bad", ["a", "b"], "c" as never)).toThrow(
-      /cannot start in "c".*Its values are: a, b/
+      /cannot start in "c".*Its values are: a, b/u
     );
     // @ts-expect-error not one of the state's values
     State.is(Phase, "flying");
@@ -104,7 +104,7 @@ describe("a state", () => {
           if (tick === 4) {
             // @ts-expect-error not one of the state's values
             expect(() => phase.set("flying")).toThrow(
-              /"st\/Phase" has no value "flying"/
+              /"st\/Phase" has no value "flying"/u
             );
             // Asking for where the game is takes an earlier ask back.
             phase.set("paused");
@@ -116,7 +116,7 @@ describe("a state", () => {
 
         const app = yield* App.make({ systems: [Watch], handlers: [go] });
 
-        for (let tick = 0; tick < 5; tick++) {
+        for (let tick = 0; tick < 5; tick += 1) {
           app.tick(1);
         }
 
@@ -218,7 +218,7 @@ describe("a run condition", () => {
 
     const switchedOn = Effect.gen(function* () {
       const held = yield* Switch;
-      held.asked++;
+      held.asked += 1;
 
       if (held.asked > 100) {
         return yield* Effect.fail(new Broken());
@@ -245,7 +245,7 @@ describe("a run condition", () => {
           Effect.provide(Layer.succeed(Switch, held))
         );
 
-        for (let tick = 0; tick < 6; tick++) {
+        for (let tick = 0; tick < 6; tick += 1) {
           app.tick(1);
         }
 
@@ -475,7 +475,7 @@ describe("a run condition", () => {
           handlers: [go],
         });
 
-        for (let n = 0; n < 3; n++) {
+        for (let n = 0; n < 3; n += 1) {
           app.world.spawn(Ball.of({ x: 0 }));
         }
 
@@ -484,7 +484,7 @@ describe("a run condition", () => {
         app.tick(1);
         app.dispatch(Go, { to: "paused", refuse: false });
 
-        for (let tick = 0; tick < 6; tick++) {
+        for (let tick = 0; tick < 6; tick += 1) {
           app.tick(1);
         }
 
@@ -722,7 +722,7 @@ describe("hooks", () => {
 
         const unseen = yield* App.make({ components: [Phase] });
 
-        for (let tick = 0; tick < 5; tick++) {
+        for (let tick = 0; tick < 5; tick += 1) {
           looked.tick(1);
           unseen.tick(1);
           // A plugin that only looks does not change the game it looks at.
@@ -781,7 +781,7 @@ describe("hooks", () => {
     });
 
     expect(() => run(App.make({ systems: [Flying] }))).toThrow(
-      /System "Flying" is a hook for "flying", which is not a value of the state "st\/Phase"/
+      /System "Flying" is a hook for "flying", which is not a value of the state "st\/Phase"/u
     );
     expect(() =>
       run(
@@ -792,7 +792,7 @@ describe("hooks", () => {
           ],
         })
       )
-    ).toThrow(/Duplicate system name "Twice"/);
+    ).toThrow(/Duplicate system name "Twice"/u);
   });
 });
 

@@ -58,14 +58,26 @@ const play = (
   const commands = new CommandBuffer(world);
   let serial = seed * 1000;
 
-  const valueFor = (def: ComponentDef<any>) =>
-    def === Body
-      ? Body.of({ x: ++serial, y: dice.next() })
-      : def === Aura
-        ? Aura.of({ power: ++serial, note: serial % 3 === 0 ? [serial] : "n" })
-        : def;
+  const valueFor = (def: ComponentDef<any>) => {
+    if (def === Body) {
+      serial += 1;
 
-  for (let step = 0; step < steps; step++) {
+      return Body.of({ x: serial, y: dice.next() });
+    }
+
+    if (def === Aura) {
+      serial += 1;
+
+      return Aura.of({
+        power: serial,
+        note: serial % 3 === 0 ? [serial] : "n",
+      });
+    }
+
+    return def;
+  };
+
+  for (let step = 0; step < steps; step += 1) {
     const alive = world.view(Query.all()).entities();
     const choice = alive.length === 0 ? 0 : dice.int(0, 11);
     const entity = alive.length === 0 ? undefined : dice.pick(alive);
@@ -204,7 +216,7 @@ describe("a world that is restored from a snapshot", () => {
     world.singleton(Level);
     const taken: { bytes: Uint8Array; held: unknown }[] = [];
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 5; i += 1) {
       play(world, 40 + i, 60);
       taken.push({ bytes: world.snapshot(), held: contents(world) });
     }

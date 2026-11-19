@@ -108,7 +108,7 @@ const Fall = System.make("Fall", function* () {
       Math.abs(star.x - basket.x) <= BASKET.width / 2;
 
     if (got) {
-      caught++;
+      caught += 1;
     }
 
     if (got || star.y > HEIGHT) {
@@ -178,7 +178,7 @@ const handlers = [
     const commands = yield* Commands;
     const random = yield* Random;
 
-    for (let i = 0; i < stars; i++) {
+    for (let i = 0; i < stars; i += 1) {
       commands.spawn(
         Star.of({
           x: random.next() * WIDTH,
@@ -257,7 +257,7 @@ const Draw = System.make("Draw", function* () {
     // Each star is drawn where it is by now: `alpha` of a tick further on.
     const ahead = phase.is("paused") ? 0 : (yield* Frame).alpha * delta;
     (yield* Stars.pipe(Query.reads())).eachChunk((start, end, star) => {
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         const y = star.y[i]! + star.speed[i]! * ahead;
         canvas.drawImage(picture, star.x[i]! - 4, y - 4);
       }

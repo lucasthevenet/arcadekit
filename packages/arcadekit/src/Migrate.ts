@@ -258,7 +258,7 @@ export const mapField = (
 
     const next = column(kind, count, 0);
 
-    for (let row = 0; row < count; row++) {
+    for (let row = 0; row < count; row += 1) {
       next[row] = map(was === "transient" ? undefined : old?.[row]) as never;
     }
 

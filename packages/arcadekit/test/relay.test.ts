@@ -400,7 +400,7 @@ const later = (ms = 5): Promise<void> =>
 
 /** Waits, a few milliseconds at a time, until something holds. */
 const until = async (holds: () => boolean, what: string): Promise<void> => {
-  for (let i = 0; i < 400; i++) {
+  for (let i = 0; i < 400; i += 1) {
     if (holds()) {
       return;
     }
@@ -504,7 +504,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           const act = players(31);
           const [one, two] = seats as [(typeof seats)[0], (typeof seats)[0]];
 
-          for (let i = 0; i < 60; i++) {
+          for (let i = 0; i < 60; i += 1) {
             for (const seat of seats) {
               if (i < 40) {
                 act(seat as unknown as Peer);
@@ -520,7 +520,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             i < 300 &&
             (one.app.time.tick !== two.app.time.tick ||
               one.session.confirmed < one.app.time.tick - 1);
-            i++
+            i += 1
           ) {
             yield* Effect.promise(() => later(2));
             (one.app.time.tick <= two.app.time.tick

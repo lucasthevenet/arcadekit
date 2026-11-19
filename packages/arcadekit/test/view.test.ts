@@ -41,13 +41,13 @@ class TooPoor extends Data.TaggedError("TooPoor")<{}> {}
 const worked = { hud: 0, menu: 0 };
 
 const ShowHud = View.publish(Hud, function* () {
-  worked.hud++;
+  worked.hud += 1;
 
   return { gold: (yield* Purse).gold, coins: (yield* Coins).count() };
 });
 
 const ShowMenu = View.publish(Menu, function* () {
-  worked.menu++;
+  worked.menu += 1;
 
   return { phase: (yield* Phase).value };
 });
@@ -86,7 +86,7 @@ const Game = Plugin.make("vw/Game", {
       (yield* Commands).spawn(Coin.of({ value: 1 }));
     }),
     Action.handler(Ping, function* () {
-      pings++;
+      pings += 1;
     }),
   ],
 });
@@ -179,7 +179,7 @@ describe("a view", () => {
     const first = ui.get(Menu);
 
     // Frames, and ticks of a game that is not played yet: nothing changes.
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 20; i += 1) {
       app.tick(1);
       app.frame(0);
       app.frame(0.5);
@@ -244,7 +244,7 @@ describe("a view", () => {
       )
     );
 
-    for (frame = 0; frame < values.length; frame++) {
+    for (frame = 0; frame < values.length; frame += 1) {
       app.frame(0);
     }
 
@@ -317,7 +317,7 @@ describe("a view", () => {
     const app = play(undefined);
     app.world.spawn(Coin.of({ value: 1 }));
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 5; i += 1) {
       app.tick(1);
       app.frame(0);
     }
@@ -641,7 +641,7 @@ describe("what the UI sends", () => {
     const idle = play(undefined, 11);
     idle.world.spawn(Coin.of({ value: 1 }));
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 5; i += 1) {
       idle.input();
       idle.tick(1);
       idle.frame(0);
@@ -778,7 +778,7 @@ describe("the bridge", () => {
       app.dispatch(Start, {});
     }
 
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 30; i += 1) {
       watched.input();
       watched.tick(1);
       watched.frame(0.5);

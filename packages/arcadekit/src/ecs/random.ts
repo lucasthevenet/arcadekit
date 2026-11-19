@@ -136,7 +136,7 @@ export class Rng {
    * Shuffles an array in place and returns it. Every order is equally likely.
    */
   shuffle<T>(items: T[]): T[] {
-    for (let i = items.length - 1; i > 0; i--) {
+    for (let i = items.length - 1; i > 0; i -= 1) {
       const j = this.int(0, i);
       const held = items[i]!;
       items[i] = items[j]!;

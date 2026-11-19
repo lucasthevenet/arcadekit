@@ -50,7 +50,7 @@ const turn = (
   frames: number,
   from = 0
 ): void => {
-  for (let i = 0; i < frames; i++) {
+  for (let i = 0; i < frames; i += 1) {
     display.frame(from + (i * 1000) / 60);
   }
 };
@@ -368,7 +368,7 @@ describe("App.run", () => {
     let frames = 0;
 
     const Count = System.make("run/Count", function* () {
-      frames++;
+      frames += 1;
     }).pipe(System.inStage("frame"));
 
     let made: App.Any | undefined;
@@ -392,7 +392,7 @@ describe("App.run", () => {
     let now = 0;
 
     const repaint = (count: number): void => {
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         display.frame(now);
         now += 1000 / 60;
       }
@@ -448,7 +448,7 @@ describe("App.run", () => {
         type: string,
         listener: EventListenerOrEventListenerObject | null
       ): void {
-        this.listening++;
+        this.listening += 1;
         super.addEventListener(type, listener);
       }
 
@@ -456,7 +456,7 @@ describe("App.run", () => {
         type: string,
         listener: EventListenerOrEventListenerObject | null
       ): void {
-        this.listening--;
+        this.listening -= 1;
         super.removeEventListener(type, listener);
       }
     }

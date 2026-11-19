@@ -38,11 +38,11 @@ describe("how often by chance", () => {
       let deals = 0;
       let extreme = 0;
 
-      for (let mask = 0; mask < 1 << size; mask++) {
+      for (let mask = 0; mask < 1 << size; mask += 1) {
         const first: number[] = [];
         const second: number[] = [];
 
-        for (let run = 0; run < size; run++) {
+        for (let run = 0; run < size; run += 1) {
           (((mask >> run) & 1) === 1 ? first : second).push(run);
         }
 
@@ -50,11 +50,11 @@ describe("how often by chance", () => {
           continue;
         }
 
-        deals++;
+        deals += 1;
         const best = Math.min(...second);
 
         if (first.filter((run) => run < best).length >= beaten) {
-          extreme++;
+          extreme += 1;
         }
       }
 
@@ -67,7 +67,7 @@ describe("how often by chance", () => {
       [6, 3],
       [3, 7],
     ] as const) {
-      for (let beaten = 0; beaten <= winners; beaten++) {
+      for (let beaten = 0; beaten <= winners; beaten += 1) {
         expect(
           chance(beaten, winners, losers),
           `${beaten} of ${winners}`
@@ -214,7 +214,7 @@ describe("the verdict on a variant", () => {
     let faster = 0;
     const comparisons = 20_000;
 
-    for (let i = 0; i < comparisons; i++) {
+    for (let i = 0; i < comparisons; i += 1) {
       const { outcome } = judge(
         runsOf(random, 100, 15),
         runsOf(random, 100, 15)
@@ -235,7 +235,7 @@ describe("the verdict on a variant", () => {
     let found = 0;
     const comparisons = 2000;
 
-    for (let i = 0; i < comparisons; i++) {
+    for (let i = 0; i < comparisons; i += 1) {
       found +=
         judge(runsOf(random, 100, 15), runsOf(random, 115, 15)).outcome ===
         "slower"

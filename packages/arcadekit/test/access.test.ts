@@ -70,7 +70,7 @@ const playing = (systems: readonly System.System<any, any>[]) =>
       seed: 3,
     });
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 6; i += 1) {
       app.world.spawn(
         Position.of({ x: i, y: 0 }),
         Velocity.of({ x: 1, y: 1 }),
@@ -149,7 +149,7 @@ describe("a system that says what it reads and writes", () => {
             const app = yield* playing(systems);
             const out: number[] = [];
 
-            for (let tick = 0; tick < 12; tick++) {
+            for (let tick = 0; tick < 12; tick += 1) {
               app.tick(1 / 60);
               out.push(app.world.hash());
             }
@@ -206,12 +206,12 @@ describe("a system that says what it reads and writes", () => {
       // Not the query it would have named, and within what it said.
       (yield* Query.all(Position, Velocity).pipe(Query.reads(Velocity))).each(
         () => {
-          visited++;
+          visited += 1;
         }
       );
       (yield* Query.all(Velocity).pipe(Query.reads(), Query.with(Health))).each(
         () => {
-          visited++;
+          visited += 1;
         }
       );
       (yield* Query.removed(Health)).read();
@@ -470,7 +470,7 @@ describe("a system that says what it reads and writes", () => {
         Effect.gen(function* () {
           const Gated = System.make("Gated", function* () {
             yield* Moving;
-            runs++;
+            runs += 1;
           }).pipe(
             System.access({ queries: [Moving] }),
             System.runIf(State.is(Phase, "playing"))

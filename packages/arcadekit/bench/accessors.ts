@@ -257,7 +257,7 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
         const ui = View.makeBridge();
         let heard = 0;
         ui.subscribe(Hud, () => {
-          heard++;
+          heard += 1;
         });
 
         const made = App.make({
@@ -273,7 +273,7 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
 
         return measure(
           () => {
-            frames++;
+            frames += 1;
             app.frame(0);
           },
           50_000,
@@ -385,7 +385,7 @@ const atRest = (): number =>
         const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
 
         // The first tick enters the state, and one more follows it.
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 10; i += 1) {
           advance(DT);
         }
 
@@ -408,7 +408,7 @@ const rewinding = (back: boolean): number =>
       Effect.gen(function* () {
         const Movement = System.make("Movement", function* () {
           (yield* Moving).eachChunk((start, end, pos, vel) => {
-            for (let n = start; n < end; n++) {
+            for (let n = start; n < end; n += 1) {
               pos.x[n] = pos.x[n]! + vel.x[n]! * DT;
             }
           });
@@ -457,7 +457,7 @@ const drawing = (count: number, reading: boolean, verify: boolean): number =>
                 const px = pos.x;
                 const vx = vel.x;
 
-                for (let n = start; n < end; n++) {
+                for (let n = start; n < end; n += 1) {
                   sink += px[n]! + vx[n]! * DT;
                 }
               });
@@ -517,7 +517,7 @@ const MovementRaw = System.make("MovementRaw", function* () {
     const vx = vel.x;
     const vy = vel.y;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       px[i]! += vx[i]! * delta;
       py[i]! += vy[i]! * delta;
     }
@@ -537,7 +537,7 @@ const variants: Record<string, Variant> = {
       }));
 
       return measure(() => {
-        for (let i = 0; i < objects.length; i++) {
+        for (let i = 0; i < objects.length; i += 1) {
           const o = objects[i]!;
           o.pos.x += o.vel.x * DT;
           o.pos.y += o.vel.y * DT;
@@ -566,7 +566,7 @@ const variants: Record<string, Variant> = {
           vy = vel.y;
         });
 
-        for (let i = 0; i < N; i++) {
+        for (let i = 0; i < N; i += 1) {
           yield* Effect.sync(() => {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
@@ -794,7 +794,7 @@ if (only === undefined) {
     // one least disturbed by its neighbours.
     let ms = Infinity;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       const out = execFileSync(
         process.execPath,
         ["--import", "tsx", self, name],

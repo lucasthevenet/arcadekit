@@ -256,7 +256,7 @@ describe("the input stage", () => {
 
     const source: Input.SourceShape = {
       sample() {
-        samples++;
+        samples += 1;
 
         return inner.sample();
       },
@@ -296,9 +296,9 @@ describe("the input stage", () => {
             stage === "frame" ? app.frame(0) : app.tick(1);
 
           expect(peek, stage).toThrow(
-            /Input\.Devices was read outside the input stage/
+            /Input\.Devices was read outside the input stage/u
           );
-          expect(peek, stage).toThrow(/Input\.Keyboard/);
+          expect(peek, stage).toThrow(/Input\.Keyboard/u);
         }
 
         // And the input stage is not told about a frame.
@@ -308,7 +308,7 @@ describe("the input stage", () => {
 
         const app = yield* App.make({ systems: [Blink] });
         expect(() => app.input()).toThrow(
-          /Frame was read by a system of the input stage/
+          /Frame was read by a system of the input stage/u
         );
 
         // Every field of both says so.
@@ -320,7 +320,7 @@ describe("the input stage", () => {
           });
 
           const one = yield* App.make({ systems: [Peek] });
-          expect(() => one.tick(1), field).toThrow(/outside the input stage/);
+          expect(() => one.tick(1), field).toThrow(/outside the input stage/u);
         }
 
         for (const field of ["delta", "count"] as const) {
@@ -329,7 +329,7 @@ describe("the input stage", () => {
           }).pipe(System.inStage("input"));
 
           const one = yield* App.make({ systems: [Peek] });
-          expect(() => one.input(), field).toThrow(/of the input stage/);
+          expect(() => one.input(), field).toThrow(/of the input stage/u);
         }
       })
     );
@@ -414,22 +414,22 @@ describe("the input stage", () => {
         const made = app;
         reach = () => made.dispatch(Bump, {});
         expect(() => made.input()).toThrow(
-          /dispatch\("in\/Bump"\) was called during the input stage/
+          /dispatch\("in\/Bump"\) was called during the input stage/u
         );
         reach = () => made.tick(1);
         expect(() => made.input()).toThrow(
-          /App\.tick was called from inside a run of the input stage/
+          /App\.tick was called from inside a run of the input stage/u
         );
         reach = () => made.input();
         expect(() => made.input()).toThrow(
-          /App\.input was called from inside a run of the input stage/
+          /App\.input was called from inside a run of the input stage/u
         );
         reach = () => made.frame(0);
         expect(() => made.input()).toThrow(
-          /App\.frame was called from inside a run of the input stage/
+          /App\.frame was called from inside a run of the input stage/u
         );
         reach = () => made.save();
-        expect(() => made.input()).toThrow(/save\(\) was called during/);
+        expect(() => made.input()).toThrow(/save\(\) was called during/u);
         reach = () => undefined;
         made.input();
         expect(made.world.singleton(Score).points).toBe(0);
@@ -442,7 +442,7 @@ describe("the input stage", () => {
 
         nested = yield* App.make({ systems: [Nested, Reach] });
         expect(() => nested!.tick(1)).toThrow(
-          /App\.input was called from inside a tick/
+          /App\.input was called from inside a tick/u
         );
       })
     );
@@ -453,7 +453,7 @@ describe("the input stage", () => {
       Effect.gen(function* () {
         const Scribble = System.make("Scribble", function* () {
           (yield* Ships).eachChunk((start, end, ships) => {
-            for (let i = start; i < end; i++) {
+            for (let i = start; i < end; i += 1) {
               ships.x[i] = 99;
             }
           });
@@ -475,13 +475,13 @@ describe("the input stage", () => {
         expect(error).toBeInstanceOf(App.FrameChangedWorld);
         expect(error.stage).toBe("input");
         expect(error.system).toBe("Scribble");
-        expect(error.message).toMatch(/^The input stage changed the world/);
-        expect(error.message).toMatch(/reads the devices before a tick/);
+        expect(error.message).toMatch(/^The input stage changed the world/u);
+        expect(error.message).toMatch(/reads the devices before a tick/u);
 
         // A frame system that does the same is still called a frame system.
         const Smudge = System.make("Smudge", function* () {
           (yield* Ships).eachChunk((start, end, ships) => {
-            for (let i = start; i < end; i++) {
+            for (let i = start; i < end; i += 1) {
               ships.x[i] = 7;
             }
           });
@@ -500,7 +500,7 @@ describe("the input stage", () => {
 
         expect(smudged.stage).toBe("frame");
         expect(smudged.message).toMatch(
-          /^The frame stage changed the world: its hash was not the same after system "Smudge" ran in frame 1 as before/
+          /^The frame stage changed the world: its hash was not the same after system "Smudge" ran in frame 1 as before/u
         );
       })
     );
@@ -634,7 +634,7 @@ describe("the input stage", () => {
 
         const plain = yield* App.make({ systems: [Land] });
 
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 3; i += 1) {
           app.input();
           app.tick(1);
           plain.tick(1);
@@ -765,7 +765,7 @@ describe("the input stage", () => {
         expect(events[1]).toEqual(events[2]);
 
         // Heard, they are kept no longer.
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 3; i += 1) {
           alone.input();
           alone.tick(1);
         }
@@ -810,7 +810,7 @@ describe("the input stage", () => {
             systems: [late(stage, () => listening, heard)],
           });
 
-          for (let tick = 1; tick <= 6; tick++) {
+          for (let tick = 1; tick <= 6; tick += 1) {
             listening = tick === 6;
             app.input();
             app.enqueue(Emit, {});
@@ -846,7 +846,7 @@ describe("the input stage", () => {
         const ticked = function* (ticks: number) {
           const app = yield* App.make({ handlers: [emit], systems: [Hear] });
 
-          for (let i = 0; i < ticks; i++) {
+          for (let i = 0; i < ticks; i += 1) {
             app.enqueue(Emit, {});
             // As a replay ticks: reading nothing.
             app.tick(1, { input: false });
@@ -867,7 +867,7 @@ describe("the input stage", () => {
         expect(heard).toBe(0);
 
         // Run again, it hears again from then on.
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 3; i += 1) {
           gone.enqueue(Emit, {});
           gone.tick(1);
           gone.input();
@@ -918,7 +918,7 @@ describe("the input stage", () => {
         let ran = 0;
 
         const Read = System.make("Read", function* () {
-          ran++;
+          ran += 1;
 
           if (broken) {
             return yield* Effect.fail(new NoKeyboard());
@@ -928,7 +928,7 @@ describe("the input stage", () => {
         let ticked = 0;
 
         const Tick = System.make("Tick", function* () {
-          ticked++;
+          ticked += 1;
         });
 
         const app = yield* App.make({ systems: [Read, Tick] });
@@ -1017,7 +1017,7 @@ describe("the input stage", () => {
           Effect.provide(Logger.layer([])),
           withSource({
             sample() {
-              samples++;
+              samples += 1;
 
               return Input.makeManualSource().sample();
             },
@@ -1041,7 +1041,7 @@ describe("the input stage", () => {
 
         const waiting = yield* App.make({ systems: [Wait] });
         expect(() => waiting.input()).toThrow(
-          /System "Wait" did not finish within the input stage/
+          /System "Wait" did not finish within the input stage/u
         );
         expect(waiting.world.frozen).toBe(false);
       })
@@ -1064,7 +1064,7 @@ describe("the input stage", () => {
         expect(
           (Cause.squash((exit as Exit.Failure<never, never>).cause) as Error)
             .message
-        ).toMatch(/System "Hook" is a hook and is in the input stage/);
+        ).toMatch(/System "Hook" is a hook and is in the input stage/u);
       })
     );
   });
@@ -1421,7 +1421,7 @@ describe("the picture of the devices in the world", () => {
 
         const bare = yield* App.make({ plugins: [Bare], checkpointEvery: 0 });
 
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 3; i += 1) {
           app.input();
           app.tick(1);
           bare.tick(1);
@@ -1434,7 +1434,7 @@ describe("the picture of the devices in the world", () => {
         app.tick(1);
 
         // Held still: one report, however long it is held.
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 5; i += 1) {
           app.input();
           app.tick(1);
         }
@@ -1585,7 +1585,7 @@ describe("the picture of the devices in the world", () => {
         const app = yield* App.make({ plugins: [Flying], checkpointEvery: 0 });
         const step = Driver.fixedStep(app, { hz: 10 });
 
-        for (let tick = 0; tick < hashes.length; tick++) {
+        for (let tick = 0; tick < hashes.length; tick += 1) {
           for (const entry of log.filter((one) => one.tick === tick)) {
             app.enqueueByName(entry.name, entry.payload);
           }
@@ -2027,7 +2027,7 @@ describe("bindings", () => {
         const app = yield* App.make({ systems: [Controls] });
         app.input();
         source.press("Space");
-        expect(() => app.input()).toThrow(/No handler for action "in\/Jump"/);
+        expect(() => app.input()).toThrow(/No handler for action "in\/Jump"/u);
       }).pipe(withSource(source))
     );
   });

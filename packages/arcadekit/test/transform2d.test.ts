@@ -70,7 +70,7 @@ describe("Transform2d", () => {
     const Drift = System.make("t2/Drift", function* () {
       const { delta } = yield* Time;
       (yield* Moving).eachChunk((start, end, position, rotation) => {
-        for (let i = start; i < end; i++) {
+        for (let i = start; i < end; i += 1) {
           position.x[i] = position.x[i]! + 4 * delta;
           position.y[i] = position.y[i]! - 2 * delta;
           rotation.angle[i] = rotation.angle[i]! + delta;

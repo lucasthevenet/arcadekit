@@ -127,7 +127,7 @@ interface Saved {
 const makeColumns = (def: ComponentDef<any>, capacity: number): Columns => {
   const cols: Columns = {};
 
-  for (let f = 0; f < def.fields.length; f++) {
+  for (let f = 0; f < def.fields.length; f += 1) {
     cols[def.fields[f]!] = makeColumn(def.kinds[f]!, capacity);
   }
 
@@ -139,7 +139,7 @@ const growColumns = (
   cols: Columns,
   capacity: number
 ): void => {
-  for (let f = 0; f < def.fields.length; f++) {
+  for (let f = 0; f < def.fields.length; f += 1) {
     const name = def.fields[f];
     cols[name!] = growColumn(def.kinds[f]!, cols[name!]!, capacity);
   }
@@ -151,7 +151,7 @@ const writeRow = (
   row: number,
   value: any | undefined
 ): void => {
-  for (let f = 0; f < def.fields.length; f++) {
+  for (let f = 0; f < def.fields.length; f += 1) {
     const name = def.fields[f];
     // A number that is not given is 0, whether the whole value was left
     // out or the one field, which JavaScript and a cast allow: written as
@@ -165,7 +165,7 @@ const writeRow = (
 const readRow = (def: ComponentDef<any>, cols: Columns, row: number): any => {
   const out: any = {};
 
-  for (let f = 0; f < def.fields.length; f++) {
+  for (let f = 0; f < def.fields.length; f += 1) {
     const name = def.fields[f];
     out[name!] = cols[name!]![row];
   }
@@ -247,9 +247,12 @@ export class Table {
       this.capacity = capacity;
     }
 
-    this.entities[this.count] = entity;
+    const row = this.count;
 
-    return this.count++;
+    this.entities[row] = entity;
+    this.count += 1;
+
+    return row;
   }
 
   /** Removes a row by moving the last row into it. Returns the entity that moved, if any. */
@@ -265,7 +268,7 @@ export class Table {
     for (const def of this.defs) {
       const cols = this.columns[def.id]!;
 
-      for (let f = 0; f < def.fields.length; f++) {
+      for (let f = 0; f < def.fields.length; f += 1) {
         const col = cols[def.fields[f]!]!;
 
         if (row !== last) {
@@ -336,7 +339,8 @@ export class SparseSet {
         growColumns(this.def, this.columns, capacity);
       }
 
-      pos = this.count++;
+      pos = this.count;
+      this.count += 1;
       this.dense[pos] = index;
       this.sparse[index] = pos;
       writeRow(this.def, this.columns, pos, value);
@@ -360,7 +364,7 @@ export class SparseSet {
       this.sparse[movedIndex] = pos;
     }
 
-    for (let f = 0; f < def.fields.length; f++) {
+    for (let f = 0; f < def.fields.length; f += 1) {
       const col = this.columns[def.fields[f]!]!;
 
       if (pos !== last) {
@@ -615,14 +619,15 @@ export class ChangeLog {
     let tail = this.first + (this.end - this.base);
     const before = tail;
 
-    for (let row = start; row < end; row++) {
+    for (let row = start; row < end; row += 1) {
       const index = entities[row]! & INDEX_MASK;
 
       if (noted[index] === 1) {
         continue;
       }
 
-      entries[tail++] = index;
+      entries[tail] = index;
+      tail += 1;
       noted[index] = 1;
     }
 
@@ -638,7 +643,7 @@ export class ChangeLog {
     }
 
     this.entries[tail] = value;
-    this.end++;
+    this.end += 1;
   }
 
   /** Makes room for one more entry and returns its position. */
@@ -689,11 +694,12 @@ export class ChangeLog {
     let kept = 0;
     let write = first + size;
 
-    for (let read = first + size - 1; read >= first; read--) {
+    for (let read = first + size - 1; read >= first; read -= 1) {
       const sequence = this.base + (read - first);
 
       while (next < byPlace.length && byPlace[next]!.at > sequence) {
-        places[next++] = this.end - kept;
+        places[next] = this.end - kept;
+        next += 1;
       }
 
       const index = entries[read]!;
@@ -703,15 +709,17 @@ export class ChangeLog {
       }
 
       seen[index] = 1;
-      entries[--write] = index;
-      kept++;
+      write -= 1;
+      entries[write] = index;
+      kept += 1;
     }
 
     while (next < byPlace.length) {
-      places[next++] = this.end - kept;
+      places[next] = this.end - kept;
+      next += 1;
     }
 
-    for (let i = 0; i < byPlace.length; i++) {
+    for (let i = 0; i < byPlace.length; i += 1) {
       byPlace[i]!.at = places[i]!;
     }
 
@@ -775,7 +783,7 @@ export class ChangeLog {
       for (
         let at = this.first + (Math.max(this.floor, this.base) - this.base);
         at < to;
-        at++
+        at += 1
       ) {
         noted[entries[at]!] = 0;
       }
@@ -816,7 +824,11 @@ export class ChangeLog {
     const kept = this.first + (this.txEnd - this.base);
 
     if (this.kind !== "removed") {
-      for (let at = this.first + (this.end - this.base) - 1; at >= kept; at--) {
+      for (
+        let at = this.first + (this.end - this.base) - 1;
+        at >= kept;
+        at -= 1
+      ) {
         // Its entity is logged afresh the next time it is written.
         this.noted[this.entries[at]!] = 0;
       }
@@ -881,7 +893,7 @@ export class ChangeLog {
 
     this.entries = this.room(Math.max(64, entries.length * 2));
 
-    for (let i = 0; i < entries.length; i++) {
+    for (let i = 0; i < entries.length; i += 1) {
       const entry = entries[i]!;
 
       if (!Number.isInteger(entry) || entry < 0 || entry >= limit) {
@@ -1323,7 +1335,7 @@ export class QueryView<D extends Terms = Terms> {
 
     const all = this.world.tables;
 
-    for (; this.scanned < all.length; this.scanned++) {
+    for (; this.scanned < all.length; this.scanned += 1) {
       const table = all[this.scanned]!;
       let match = true;
 
@@ -1355,13 +1367,13 @@ export class QueryView<D extends Terms = Terms> {
   private pass(entity: number): boolean {
     const index = entity & INDEX_MASK;
 
-    for (let s = 0; s < this.sparseWith.length; s++) {
+    for (let s = 0; s < this.sparseWith.length; s += 1) {
       if (!this.sparseWith[s]!.has(index)) {
         return false;
       }
     }
 
-    for (let s = 0; s < this.sparseWithout.length; s++) {
+    for (let s = 0; s < this.sparseWithout.length; s += 1) {
       if (this.sparseWithout[s]!.has(index)) {
         return false;
       }
@@ -1393,8 +1405,10 @@ export class QueryView<D extends Terms = Terms> {
       this.frames.length = 0;
     }
 
-    world._iterating++;
-    const depth = this.depth++;
+    world._iterating += 1;
+    const { depth } = this;
+
+    this.depth += 1;
 
     return world._frozen
       ? (this.frozenFrames[depth] ??= this.makeFrame(true))
@@ -1445,7 +1459,7 @@ export class QueryView<D extends Terms = Terms> {
   }
 
   private leave(): void {
-    this.depth--;
+    this.depth -= 1;
     this.world._left();
   }
 
@@ -1465,7 +1479,7 @@ export class QueryView<D extends Terms = Terms> {
     let fresh = false;
     let count = 0;
 
-    for (let w = 0; w < watches.length; w++) {
+    for (let w = 0; w < watches.length; w += 1) {
       const { cursor, log } = watches[w]!;
       fresh ||= cursor.fresh;
       count += log.waiting(cursor.at);
@@ -1474,7 +1488,7 @@ export class QueryView<D extends Terms = Terms> {
     if (fresh) {
       count = 0;
 
-      for (let t = 0; t < this.tables.length; t++) {
+      for (let t = 0; t < this.tables.length; t += 1) {
         count += this.tables[t]!.count;
       }
     }
@@ -1489,15 +1503,16 @@ export class QueryView<D extends Terms = Terms> {
     let at = 0;
 
     if (fresh) {
-      for (let t = 0; t < this.tables.length; t++) {
+      for (let t = 0; t < this.tables.length; t += 1) {
         const { count: rows, entities } = this.tables[t]!;
 
-        for (let row = 0; row < rows; row++) {
-          dense[at++] = entities[row]! & INDEX_MASK;
+        for (let row = 0; row < rows; row += 1) {
+          dense[at] = entities[row]! & INDEX_MASK;
+          at += 1;
         }
       }
     } else {
-      for (let w = 0; w < watches.length; w++) {
+      for (let w = 0; w < watches.length; w += 1) {
         const { cursor, log } = watches[w]!;
         log.copy(cursor.at, dense, at);
         at += log.waiting(cursor.at);
@@ -1507,7 +1522,7 @@ export class QueryView<D extends Terms = Terms> {
     members.count = count;
 
     if (visit) {
-      for (let w = 0; w < watches.length; w++) {
+      for (let w = 0; w < watches.length; w += 1) {
         const { cursor, log } = watches[w]!;
 
         if (cursor.fresh || cursor.at !== log.end) {
@@ -1531,7 +1546,7 @@ export class QueryView<D extends Terms = Terms> {
     if (!this.filtered) {
       this._lastPath = "dense";
 
-      for (let t = 0; t < this.tables.length; t++) {
+      for (let t = 0; t < this.tables.length; t += 1) {
         const table = this.tables[t]!;
 
         if (table.count > 0) {
@@ -1552,7 +1567,7 @@ export class QueryView<D extends Terms = Terms> {
 
       smallest = frame.members;
     } else {
-      for (let s = 0; s < this.sparseWith.length; s++) {
+      for (let s = 0; s < this.sparseWith.length; s += 1) {
         const set = this.sparseWith[s]!;
 
         if (smallest === undefined || set.count < smallest.count) {
@@ -1585,7 +1600,7 @@ export class QueryView<D extends Terms = Terms> {
     try {
       let rows = 0;
 
-      for (let t = 0; t < this.tables.length; t++) {
+      for (let t = 0; t < this.tables.length; t += 1) {
         rows += this.tables[t]!.count;
       }
 
@@ -1598,7 +1613,7 @@ export class QueryView<D extends Terms = Terms> {
       const nativeSkip = rare && this.maskBase === 1;
       const nativeRun = rare && this.maskBase === 0;
 
-      for (let t = 0; t < this.tables.length; t++) {
+      for (let t = 0; t < this.tables.length; t += 1) {
         const table = this.tables[t]!;
         const { count } = table;
 
@@ -1618,7 +1633,7 @@ export class QueryView<D extends Terms = Terms> {
             }
           } else {
             while (i < count && mask[i] === 1) {
-              i++;
+              i += 1;
             }
           }
 
@@ -1635,10 +1650,10 @@ export class QueryView<D extends Terms = Terms> {
               i = count;
             }
           } else {
-            i++;
+            i += 1;
 
             while (i < count && mask[i] === 0) {
-              i++;
+              i += 1;
             }
           }
 
@@ -1659,7 +1674,7 @@ export class QueryView<D extends Terms = Terms> {
 
     let rows = 0;
 
-    for (let t = 0; t < this.tables.length; t++) {
+    for (let t = 0; t < this.tables.length; t += 1) {
       rows += this.tables[t]!.count;
     }
 
@@ -1694,11 +1709,11 @@ export class QueryView<D extends Terms = Terms> {
 
     if (smallest === undefined) {
       // Only exclusions: nothing is skipped except members of an excluded set.
-      for (let s = 0; s < this.sparseWithout.length; s++) {
+      for (let s = 0; s < this.sparseWithout.length; s += 1) {
         const set = this.sparseWithout[s]!;
         const dense = set.dense;
 
-        for (let k = 0; k < set.count; k++) {
+        for (let k = 0; k < set.count; k += 1) {
           const index = dense[k]!;
           const tableIndex = recTable[index]!;
 
@@ -1713,7 +1728,7 @@ export class QueryView<D extends Terms = Terms> {
           }
 
           this.maskFor(slot, this.tables[slot]!)[recRow[index]!] = 1;
-          marked++;
+          marked += 1;
         }
       }
     } else {
@@ -1721,7 +1736,7 @@ export class QueryView<D extends Terms = Terms> {
       // members of the smallest required set that pass every other condition.
       const dense = smallest.dense;
 
-      for (let k = 0; k < smallest.count; k++) {
+      for (let k = 0; k < smallest.count; k += 1) {
         const index = dense[k]!;
         const tableIndex = recTable[index]!;
 
@@ -1740,7 +1755,7 @@ export class QueryView<D extends Terms = Terms> {
 
         if (this.pass(table.entities[row!]!)) {
           this.maskFor(slot, table)[row!] = 0;
-          marked++;
+          marked += 1;
         }
       }
     }
@@ -1754,11 +1769,11 @@ export class QueryView<D extends Terms = Terms> {
     const recRow = this.world._recRow;
     const sets = smallest === undefined ? this.sparseWithout : [smallest];
 
-    for (let s = 0; s < sets.length; s++) {
+    for (let s = 0; s < sets.length; s += 1) {
       const set = sets[s]!;
       const { dense } = set;
 
-      for (let k = 0; k < set.count; k++) {
+      for (let k = 0; k < set.count; k += 1) {
         const index = dense[k]!;
         const tableIndex = recTable[index]!;
 
@@ -1794,7 +1809,7 @@ export class QueryView<D extends Terms = Terms> {
       const slot = Math.floor(keys[k]! / ROW_RANGE);
       const start = keys[k]! - slot * ROW_RANGE;
       let end = start + 1;
-      k++;
+      k += 1;
 
       // A row that is there twice (a change query's entity, logged twice)
       // has the same key as the one before it.
@@ -1802,12 +1817,12 @@ export class QueryView<D extends Terms = Terms> {
         const key = keys[k]!;
 
         if (key === slot * ROW_RANGE + end) {
-          end++;
+          end += 1;
         } else if (key !== slot * ROW_RANGE + end - 1) {
           break;
         }
 
-        k++;
+        k += 1;
       }
 
       onRun(this.tables[slot]!, start, end);
@@ -1832,7 +1847,7 @@ export class QueryView<D extends Terms = Terms> {
     const { dense } = smallest;
     let m = 0;
 
-    for (let k = 0; k < smallest.count; k++) {
+    for (let k = 0; k < smallest.count; k += 1) {
       const index = dense[k]!;
       const tableIndex = recTable[index]!;
 
@@ -1849,7 +1864,8 @@ export class QueryView<D extends Terms = Terms> {
       const row = recRow[index]!;
 
       if (this.pass(this.tables[slot]!.entities[row]!)) {
-        keys[m++] = slot * ROW_RANGE + row;
+        keys[m] = slot * ROW_RANGE + row;
+        m += 1;
       }
     }
 
@@ -1862,7 +1878,7 @@ export class QueryView<D extends Terms = Terms> {
 
   /** Saves the columns of this query's table terms in one table. */
   private saveTableTerms(table: Table): void {
-    for (let k = 0; k < this.n; k++) {
+    for (let k = 0; k < this.n; k += 1) {
       const id = this.termTableId[k]!;
 
       // What is only read is not written, and need not be put back.
@@ -1878,7 +1894,7 @@ export class QueryView<D extends Terms = Terms> {
 
   /** Saves the columns of this query's sparse terms. */
   private saveSparseTerms(): void {
-    for (let k = 0; k < this.n; k++) {
+    for (let k = 0; k < this.n; k += 1) {
       const set = this.termSet[k];
 
       if (set !== undefined && !this.termRead[k]) {
@@ -1908,7 +1924,7 @@ export class QueryView<D extends Terms = Terms> {
       // where to note it; any other takes the columns and ignores the rest.
       const { termLog } = this;
 
-      for (let k = 0; k < this.n; k++) {
+      for (let k = 0; k < this.n; k += 1) {
         const set = this.termSet[k];
 
         if (set !== undefined && loop.sets[k] !== set.dense) {
@@ -1928,7 +1944,7 @@ export class QueryView<D extends Terms = Terms> {
         if (table !== bound) {
           // Unless they are pointed at it already, from the last time.
           if (loop.table !== table.entities) {
-            for (let k = 0; k < this.n; k++) {
+            for (let k = 0; k < this.n; k += 1) {
               const id = this.termTableId[k];
 
               if (id !== -1) {
@@ -1976,7 +1992,7 @@ export class QueryView<D extends Terms = Terms> {
     if (n === 1) {
       const a = fields[0]!;
 
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         row.i = i;
         f(a, ents[i]);
       }
@@ -1984,7 +2000,7 @@ export class QueryView<D extends Terms = Terms> {
       const a = fields[0]!;
       const b = fields[1]!;
 
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         row.i = i;
         f(a, b, ents[i]);
       }
@@ -1993,18 +2009,18 @@ export class QueryView<D extends Terms = Terms> {
       const b = fields[1]!;
       const c = fields[2]!;
 
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         row.i = i;
         f(a, b, c, ents[i]);
       }
     } else {
       const args: any[] = Array.from({ length: n + 1 });
 
-      for (let k = 0; k < n; k++) {
+      for (let k = 0; k < n; k += 1) {
         args[k] = fields[k];
       }
 
-      for (let i = start; i < end; i++) {
+      for (let i = start; i < end; i += 1) {
         row.i = i;
         args[n] = ents[i];
         f.apply(undefined, args);
@@ -2023,11 +2039,11 @@ export class QueryView<D extends Terms = Terms> {
     const { n, sparseTerms, termSet } = this;
     const { fields, row, rows } = loop;
 
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       const entity = ents[i]!;
       row.i = i;
 
-      for (let s = 0; s < sparseTerms.length; s++) {
+      for (let s = 0; s < sparseTerms.length; s += 1) {
         const k = sparseTerms[s]!;
         rows[k]!.i = termSet[k]!.sparse[entity & INDEX_MASK]!;
       }
@@ -2086,7 +2102,7 @@ export class QueryView<D extends Terms = Terms> {
       const { n } = this;
       const cols: any[] = Array.from({ length: n });
 
-      for (let k = 0; k < n; k++) {
+      for (let k = 0; k < n; k += 1) {
         cols[k] = this.termSet[k];
       }
 
@@ -2106,7 +2122,7 @@ export class QueryView<D extends Terms = Terms> {
       let bound: Table | undefined;
       this.runs(frame, (table, start, end) => {
         if (table !== bound) {
-          for (let k = 0; k < n; k++) {
+          for (let k = 0; k < n; k += 1) {
             const id = this.termTableId[k];
 
             if (id !== -1) {
@@ -2126,7 +2142,7 @@ export class QueryView<D extends Terms = Terms> {
         if (noting) {
           // Raw columns cannot say which rows were written, so every row
           // that is handed out counts as written.
-          for (let k = 0; k < n; k++) {
+          for (let k = 0; k < n; k += 1) {
             this.termLog[k]?.noteRows(ents, start, end);
           }
         }
@@ -2153,7 +2169,7 @@ export class QueryView<D extends Terms = Terms> {
    * time.
    */
   private refuseOwnWrites(): void {
-    for (let k = 0; k < this.n; k++) {
+    for (let k = 0; k < this.n; k += 1) {
       const log = this.termLog[k];
 
       if (log !== undefined && this.watches.some((each) => each.log === log)) {
@@ -2183,9 +2199,9 @@ export class QueryView<D extends Terms = Terms> {
       const m = this.sortedKeys(peek, peek.members);
       let distinct = 0;
 
-      for (let k = 0; k < m; k++) {
+      for (let k = 0; k < m; k += 1) {
         if (k === 0 || peek.keys[k] !== peek.keys[k - 1]) {
-          distinct++;
+          distinct += 1;
         }
       }
 
@@ -2196,9 +2212,9 @@ export class QueryView<D extends Terms = Terms> {
 
     for (const table of this.tables) {
       if (this.filtered) {
-        for (let i = 0; i < table.count; i++) {
+        for (let i = 0; i < table.count; i += 1) {
           if (this.pass(table.entities[i]!)) {
-            total++;
+            total += 1;
           }
         }
       } else {
@@ -2221,7 +2237,7 @@ export class QueryView<D extends Terms = Terms> {
 
       try {
         this.runs(frame, (table, start, end) => {
-          for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i += 1) {
             out.push(table.entities[i] as Entity);
           }
         });
@@ -2235,7 +2251,7 @@ export class QueryView<D extends Terms = Terms> {
     this.refresh();
 
     for (const table of this.tables) {
-      for (let i = 0; i < table.count; i++) {
+      for (let i = 0; i < table.count; i += 1) {
         if (!this.filtered || this.pass(table.entities[i]!)) {
           out.push(table.entities[i] as Entity);
         }
@@ -2460,7 +2476,8 @@ export class World {
     if (this.freeList.length > 0) {
       index = this.freeList.pop()!;
     } else {
-      index = this.nextIndex++;
+      index = this.nextIndex;
+      this.nextIndex += 1;
 
       if (index > INDEX_MASK) {
         throw new Error("Entity limit reached");
@@ -2472,7 +2489,7 @@ export class World {
     }
 
     this.recTable[index] = NOT_PLACED;
-    this.alive++;
+    this.alive += 1;
 
     return makeEntity(index, this.gens[index]!);
   }
@@ -2506,10 +2523,10 @@ export class World {
     }
 
     this.recTable[index] = FREE;
-    this.alive--;
+    this.alive -= 1;
 
     if (fresh) {
-      this.nextIndex--;
+      this.nextIndex -= 1;
     } else {
       this.freeList.push(index);
     }
@@ -2708,7 +2725,7 @@ export class World {
       }
     }
 
-    for (let i = doomed.length - 1; i >= 0; i--) {
+    for (let i = doomed.length - 1; i >= 0; i -= 1) {
       pending.push(doomed[i]!);
     }
   }
@@ -2753,7 +2770,7 @@ export class World {
       this.freeList.push(index);
     }
 
-    this.alive--;
+    this.alive -= 1;
 
     // It points at nothing now.
     for (const relation of this.relationList) {
@@ -3071,7 +3088,7 @@ export class World {
         targets: Float64Array,
         count: number
       ): void => {
-        for (let row = 0; row < count; row++) {
+        for (let row = 0; row < count; row += 1) {
           const target = targets[row] as Entity;
 
           if (!this.isAlive(target)) {
@@ -3332,7 +3349,7 @@ export class World {
   ): void {
     const { writes } = this.guard!;
 
-    for (let i = 0; i < inputs.length; i++) {
+    for (let i = 0; i < inputs.length; i += 1) {
       const input = inputs[i]!;
       const def = isComponentDef(input) ? input : input.def;
 
@@ -3359,7 +3376,7 @@ export class World {
       return;
     }
 
-    for (let i = 0; i < writeDefs.length; i++) {
+    for (let i = 0; i < writeDefs.length; i += 1) {
       if (this.has(entity, writeDefs[i]!)) {
         return;
       }
@@ -3411,7 +3428,7 @@ export class World {
     // What is noted from here on is forgotten again by a rollback.
     const { writeLogs } = this;
 
-    for (let i = 0; i < writeLogs.length; i++) {
+    for (let i = 0; i < writeLogs.length; i += 1) {
       writeLogs[i]!.txEnd = writeLogs[i]!.end;
     }
 
@@ -3429,10 +3446,10 @@ export class World {
 
     // Newest first, so that where a row was saved before its whole column,
     // the oldest value is the one left standing.
-    for (let i = saved.length - 1; i >= 0; i--) {
+    for (let i = saved.length - 1; i >= 0; i -= 1) {
       const { cols, copies, count, def, row } = saved[i]!;
 
-      for (let f = 0; f < def.fields.length; f++) {
+      for (let f = 0; f < def.fields.length; f += 1) {
         const column = cols[def.fields[f]!]!;
 
         if (row !== WHOLE) {
@@ -3440,7 +3457,7 @@ export class World {
         } else if (isBoxed(def.kinds[f]!)) {
           const from = copies[f] as unknown[];
 
-          for (let r = 0; r < count; r++) {
+          for (let r = 0; r < count; r += 1) {
             column[r] = from[r];
           }
         } else {
@@ -3454,20 +3471,20 @@ export class World {
     this.random.state.set(this.savedRandom);
     const { savedSingles } = this;
 
-    for (let i = savedSingles.length - 1; i >= 0; i--) {
+    for (let i = savedSingles.length - 1; i >= 0; i -= 1) {
       savedSingles[i]!.single.written = savedSingles[i]!.written;
     }
 
     // The changes it noted, and the visits its change queries made.
     const { movedReaders, writeLogs } = this;
 
-    for (let i = movedReaders.length - 1; i >= 0; i--) {
+    for (let i = movedReaders.length - 1; i >= 0; i -= 1) {
       const { at, cursor, fresh } = movedReaders[i]!;
       cursor.at = at;
       cursor.fresh = fresh;
     }
 
-    for (let i = 0; i < writeLogs.length; i++) {
+    for (let i = 0; i < writeLogs.length; i += 1) {
       // A log started inside the transaction has noted nothing before it.
       const log = writeLogs[i]!;
       log.txEnd = Math.min(log.txEnd, log.end);
@@ -3522,7 +3539,7 @@ export class World {
       this.spare.set(cols, copies);
     }
 
-    for (let f = 0; f < def.fields.length; f++) {
+    for (let f = 0; f < def.fields.length; f += 1) {
       const column = cols[def.fields[f]!]!;
       const kept = copies[f] as Column | undefined;
 
@@ -3532,7 +3549,7 @@ export class World {
       } else if (isBoxed(def.kinds[f]!)) {
         const to = kept as unknown[];
 
-        for (let r = 0; r < count; r++) {
+        for (let r = 0; r < count; r += 1) {
           to[r] = column[r];
         }
       } else {
@@ -3551,7 +3568,7 @@ export class World {
 
     const copies: unknown[] = [];
 
-    for (let f = 0; f < def.fields.length; f++) {
+    for (let f = 0; f < def.fields.length; f += 1) {
       copies.push(cols[def.fields[f]!]![row]);
     }
 
@@ -3588,7 +3605,7 @@ export class World {
    * @internal
    */
   _registerAll(inputs: readonly ComponentInput[]): void {
-    for (let i = 0; i < inputs.length; i++) {
+    for (let i = 0; i < inputs.length; i += 1) {
       const input = inputs[i]!;
       const def = isComponentDef(input) ? input : input.def;
 
@@ -3745,7 +3762,7 @@ export class World {
 
       if (kind === "changed") {
         this.writeLogs.push(log);
-        this._watched++;
+        this._watched += 1;
 
         if (this._iterating > 0) {
           this.lateLogs.push(log);
@@ -3782,7 +3799,9 @@ export class World {
    * @internal
    */
   _left(): void {
-    if (--this._iterating === 0 && this.lateLogs.length > 0) {
+    this._iterating -= 1;
+
+    if (this._iterating === 0 && this.lateLogs.length > 0) {
       // A log that was started while a loop was running missed what that
       // loop went on to write: its accessors were made before there was a
       // log to note in. So its readers start over, from everything.
@@ -3911,7 +3930,7 @@ export class World {
 
     const components = Array.from(used.keys()).toSorted(byName);
 
-    for (let i = 0; i < components.length; i++) {
+    for (let i = 0; i < components.length; i += 1) {
       used.set(components[i]!, i);
     }
 
@@ -3920,7 +3939,7 @@ export class World {
     writer.u32(FORMAT);
     const random = this.random.state;
 
-    for (let word = 0; word < 4; word++) {
+    for (let word = 0; word < 4; word += 1) {
       writer.u32(random[word]!);
     }
 
@@ -3941,7 +3960,7 @@ export class World {
       writer.u8(storageOf(def));
       writer.u32(def.fields.length);
 
-      for (let f = 0; f < def.fields.length; f++) {
+      for (let f = 0; f < def.fields.length; f += 1) {
         writer.text(def.fields[f]!);
         writer.u8(KIND_CODES.indexOf(def.kinds[f]!));
       }
@@ -3952,7 +3971,7 @@ export class World {
       columns: Columns,
       count: number
     ): void => {
-      for (let f = 0; f < def.fields.length; f++) {
+      for (let f = 0; f < def.fields.length; f += 1) {
         const field = def.fields[f]!;
 
         const row = writeColumn(
@@ -4076,7 +4095,7 @@ export class World {
     this.relations.length = 0;
     this.relationList = [];
     // What was made of those: views, and what they had yet to visit.
-    this._restored++;
+    this._restored += 1;
     this.views.clear();
     this.watchViews.clear();
     this.watchViewsByKey.clear();
@@ -4154,7 +4173,7 @@ export class World {
 
     const random = this.random.state;
 
-    for (let word = 0; word < 4; word++) {
+    for (let word = 0; word < 4; word += 1) {
       random[word] = reader.u32();
     }
 
@@ -4183,13 +4202,13 @@ export class World {
     // A slot whose generations are used up is neither free nor anyone's.
     let retired = 0;
 
-    for (let index = 0; index < nextIndex; index++) {
+    for (let index = 0; index < nextIndex; index += 1) {
       if (this.gens[index]! > GENERATIONS) {
         throw corrupt("a slot has a generation no entity could have");
       }
 
       if (this.gens[index] === GENERATIONS) {
-        retired++;
+        retired += 1;
       }
     }
 
@@ -4197,7 +4216,7 @@ export class World {
     // Every slot is taken to be free until a table claims it.
     const isFree = new Uint8Array(nextIndex);
 
-    for (let i = 0; i < freed; i++) {
+    for (let i = 0; i < freed; i += 1) {
       const index = reader.u32();
 
       if (
@@ -4220,14 +4239,14 @@ export class World {
     const named: ComponentDef<any>[] = [];
     const componentCount = reader.count(9);
 
-    for (let c = 0; c < componentCount; c++) {
+    for (let c = 0; c < componentCount; c += 1) {
       const name = reader.text();
       const storage = reader.u8();
       const fields: string[] = [];
       const kinds: (string | undefined)[] = [];
       const fieldCount = reader.count(5);
 
-      for (let f = 0; f < fieldCount; f++) {
+      for (let f = 0; f < fieldCount; f += 1) {
         fields.push(reader.text());
         kinds.push(KIND_CODES[reader.u8()]);
       }
@@ -4271,11 +4290,11 @@ export class World {
 
     const tableCount = reader.count(8);
 
-    for (let t = 0; t < tableCount; t++) {
+    for (let t = 0; t < tableCount; t += 1) {
       const defs: ComponentDef<any>[] = [];
       const defCount = reader.count(4);
 
-      for (let d = 0; d < defCount; d++) {
+      for (let d = 0; d < defCount; d += 1) {
         const def = componentAt();
 
         if (def.storage !== "table" || def.single || defs.includes(def)) {
@@ -4315,7 +4334,7 @@ export class World {
 
       table.count = count;
 
-      for (let row = 0; row < count; row++) {
+      for (let row = 0; row < count; row += 1) {
         const entity = table.entities[row] as Entity;
         const index = entityIndex(entity);
 
@@ -4343,7 +4362,7 @@ export class World {
 
       // The same order the fields were written in: components by name.
       for (const def of defs) {
-        for (let f = 0; f < def.fields.length; f++) {
+        for (let f = 0; f < def.fields.length; f += 1) {
           this.readField(reader, def, f, table.columns[def.id]!, count, narrow);
         }
       }
@@ -4355,7 +4374,7 @@ export class World {
 
     const setCount = reader.count(8);
 
-    for (let s = 0; s < setCount; s++) {
+    for (let s = 0; s < setCount; s += 1) {
       const def = componentAt();
 
       if (def.storage !== "sparse" || def.single) {
@@ -4369,7 +4388,7 @@ export class World {
         throw corrupt("it holds two sparse sets for one component");
       }
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         const index = reader.u32();
 
         if (index >= nextIndex || this.recTable[index]! < 0 || set.has(index)) {
@@ -4381,7 +4400,7 @@ export class World {
         set.add(index, undefined);
       }
 
-      for (let f = 0; f < def.fields.length; f++) {
+      for (let f = 0; f < def.fields.length; f += 1) {
         this.readField(reader, def, f, set.columns, count, narrow);
       }
     }
@@ -4390,7 +4409,7 @@ export class World {
     const singleCount = format >= 2 ? reader.count(4) : 0;
     const loaded = new Set<Single>();
 
-    for (let s = 0; s < singleCount; s++) {
+    for (let s = 0; s < singleCount; s += 1) {
       const def = componentAt();
 
       if (!def.single) {
@@ -4405,7 +4424,7 @@ export class World {
 
       loaded.add(single);
 
-      for (let f = 0; f < def.fields.length; f++) {
+      for (let f = 0; f < def.fields.length; f += 1) {
         this.readField(reader, def, f, single.columns, 1, narrow);
       }
 
@@ -4498,7 +4517,7 @@ export class World {
     const { freeList, gens } = this;
     h = add(h, freeList.length);
 
-    for (let i = 0; i < freeList.length; i++) {
+    for (let i = 0; i < freeList.length; i += 1) {
       const index = freeList[i]!;
       h = add(add(h, index), gens[index]!);
     }
@@ -4508,19 +4527,19 @@ export class World {
     const { tables } = this;
     h = add(h, tables.length);
 
-    for (let t = 0; t < tables.length; t++) {
+    for (let t = 0; t < tables.length; t += 1) {
       const table = tables[t]!;
       const { count, defsByName } = table;
       h = add(add(h, defsByName.length), count);
       // An entity's id carries its generation.
       h = addColumn(h, "entity", table.entities, count);
 
-      for (let d = 0; d < defsByName.length; d++) {
+      for (let d = 0; d < defsByName.length; d += 1) {
         const def = defsByName[d]!;
         h = add(h, shapes[def.id]!);
         const columns = table.columns[def.id]!;
 
-        for (let f = 0; f < def.fields.length; f++) {
+        for (let f = 0; f < def.fields.length; f += 1) {
           h = addColumn(
             h,
             def.kinds[f]!,
@@ -4537,7 +4556,7 @@ export class World {
     // the results are added up. A set nobody is in is as good as absent.
     const sets = this.sparseSetsByName();
 
-    for (let s = 0; s < sets.length; s++) {
+    for (let s = 0; s < sets.length; s += 1) {
       const set = sets[s]!;
       const { count, def } = set;
 
@@ -4555,11 +4574,11 @@ export class World {
       const shape = shapes[def.id]!;
       const { dense } = set;
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         states[i] = add(shape, dense[i]!);
       }
 
-      for (let f = 0; f < def.fields.length; f++) {
+      for (let f = 0; f < def.fields.length; f += 1) {
         addColumnPerRow(
           states,
           def.kinds[f]!,
@@ -4571,7 +4590,7 @@ export class World {
 
       let members = 0;
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         members = (members + finish(states[i]!)) | 0;
       }
 
@@ -4585,7 +4604,7 @@ export class World {
       for (const { columns, def } of this.writtenSingles()) {
         h = add(add(h, SINGLETON), shapes[def.id]!);
 
-        for (let f = 0; f < def.fields.length; f++) {
+        for (let f = 0; f < def.fields.length; f += 1) {
           h = addColumn(
             h,
             def.kinds[f]!,
@@ -4675,7 +4694,7 @@ export class World {
 
       const dst = to.columns[def.id]!;
 
-      for (let f = 0; f < def.fields.length; f++) {
+      for (let f = 0; f < def.fields.length; f += 1) {
         const name = def.fields[f];
         dst[name!]![newRow] = src[name!]![oldRow];
       }
@@ -4821,7 +4840,7 @@ export class CommandBuffer {
    * way.
    */
   rollback(mark: number): void {
-    for (let i = this.ops.length - 1; i >= mark; i--) {
+    for (let i = this.ops.length - 1; i >= mark; i -= 1) {
       const cmd = this.ops[i]!;
 
       if (cmd.op === "spawn") {
@@ -4842,7 +4861,7 @@ export class CommandBuffer {
     this.ops = [];
     const { world } = this;
 
-    for (let i = 0; i < ops.length; i++) {
+    for (let i = 0; i < ops.length; i += 1) {
       const cmd = ops[i]!;
 
       switch (cmd.op) {

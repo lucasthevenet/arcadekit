@@ -917,7 +917,7 @@ export const conflicts = (systems: readonly System<any, any>[]): Report => {
 
     const resolved = ordered.map((system) => accessOf(system));
 
-    for (let i = 0; i < ordered.length; i++) {
+    for (let i = 0; i < ordered.length; i += 1) {
       const first = resolved[i];
 
       if (first === undefined) {
@@ -925,7 +925,7 @@ export const conflicts = (systems: readonly System<any, any>[]): Report => {
         continue;
       }
 
-      for (let j = i + 1; j < ordered.length; j++) {
+      for (let j = i + 1; j < ordered.length; j += 1) {
         const second = resolved[j];
 
         // Stages run one after the other: that order is said.

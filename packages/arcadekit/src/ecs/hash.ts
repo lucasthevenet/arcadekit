@@ -34,7 +34,7 @@ export const finish = (state: number): number => {
 export const addString = (state: number, text: string): number => {
   let h = add(state, text.length);
 
-  for (let i = 0; i < text.length; i++) {
+  for (let i = 0; i < text.length; i += 1) {
     h = add(h, text.charCodeAt(i));
   }
 
@@ -152,7 +152,7 @@ const addWords = (state: number, words: Uint32Array, count: number): number => {
     d = add(d, words[i + 3]!);
   }
 
-  for (; i < count; i++) {
+  for (; i < count; i += 1) {
     a = add(a, words[i]!);
   }
 
@@ -182,7 +182,7 @@ const addFloat32s = (
     d = add(d, isNan32(w3) ? NAN_32 : w3);
   }
 
-  for (; i < count; i++) {
+  for (; i < count; i += 1) {
     const w = words[i]!;
     a = add(a, isNan32(w) ? NAN_32 : w);
   }
@@ -224,7 +224,7 @@ export const addColumn = (
     case "u16": {
       const values = column as Uint16Array;
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         h = add(h, values[i]!);
       }
 
@@ -234,7 +234,7 @@ export const addColumn = (
     case "u8": {
       const values = column as Uint8Array;
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         h = add(h, values[i]!);
       }
 
@@ -258,7 +258,7 @@ export const addColumn = (
       // order every other machine has them.
       const ordered = new Uint32Array(count * 2);
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         ordered[2 * i] = words[2 * i + 1]!;
         ordered[2 * i + 1] = words[2 * i]!;
       }
@@ -270,7 +270,7 @@ export const addColumn = (
       const { buffer, byteOffset } = column as Float64Array;
       const words = new Uint32Array(buffer, byteOffset, count * 2);
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         const low = words[2 * i + LOW]!;
         const high = words[2 * i + HIGH]!;
         h = isNan64(low, high)
@@ -284,7 +284,7 @@ export const addColumn = (
     case "json": {
       const values = column as unknown[];
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         h = addData(h, values[i]);
       }
 
@@ -294,7 +294,7 @@ export const addColumn = (
     case "ref": {
       const values = column as unknown[];
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         h = addData(h, codec!.encode(values[i]));
       }
 
@@ -324,7 +324,7 @@ export const addColumnPerRow = (
       const { buffer, byteOffset } = column as Float32Array;
       const words = new Uint32Array(buffer, byteOffset, count);
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         const bits = words[i]!;
         states[i] = add(states[i]!, isNan32(bits) ? NAN_32 : bits);
       }
@@ -336,7 +336,7 @@ export const addColumnPerRow = (
     case "f64": {
       const values = column as Float64Array;
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         states[i] = addFloat64(states[i]!, values[i]!);
       }
 
@@ -346,7 +346,7 @@ export const addColumnPerRow = (
     case "json": {
       const values = column as unknown[];
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         states[i] = addData(states[i]!, values[i]);
       }
 
@@ -356,7 +356,7 @@ export const addColumnPerRow = (
     case "ref": {
       const values = column as unknown[];
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         states[i] = addData(states[i]!, codec!.encode(values[i]));
       }
 
@@ -370,7 +370,7 @@ export const addColumnPerRow = (
     default: {
       const values = column as Uint32Array;
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count; i += 1) {
         states[i] = add(states[i]!, values[i]!);
       }
     }
@@ -402,7 +402,7 @@ export const shapeOf = (
   let h = addString(0, name);
   h = add(h, fields.length);
 
-  for (let f = 0; f < fields.length; f++) {
+  for (let f = 0; f < fields.length; f += 1) {
     h = add(addString(h, fields[f]!), KIND_CODE[kinds[f]!]);
   }
 

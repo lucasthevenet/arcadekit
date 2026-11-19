@@ -1483,7 +1483,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         yield* enterStates;
       }
 
-      for (let at = 0; at < ordered.length; at++) {
+      for (let at = 0; at < ordered.length; at += 1) {
         const system = ordered[at]!;
         running = system.name;
         // Each system reads events, and what changed, from its own position.
@@ -1898,7 +1898,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
       frame.alpha = alpha;
       frame.delta = delta;
-      frame.count++;
+      frame.count += 1;
 
       return runBetween("frame");
     };
@@ -1997,7 +1997,7 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
 
         time.delta = delta;
         time.elapsed += delta;
-        time.tick++;
+        time.tick += 1;
 
         events.beginTick();
         const fiber = runFork(tickEffect);
@@ -2035,7 +2035,9 @@ const build = <S extends Systems, H extends Handlers, P extends Plugins>(
         while (events.resumeWaiters()) {
           dispatcher.flush();
 
-          if (++rounds > dispatcher.maxRounds) {
+          rounds += 1;
+
+          if (rounds > dispatcher.maxRounds) {
             throw new Error(
               "Scripts kept waking each other with events for too long in one tick"
             );
@@ -2565,7 +2567,7 @@ export const replay = (
         }
       }
 
-      next++;
+      next += 1;
     }
   };
 
@@ -2589,7 +2591,7 @@ export const replay = (
     waiting.length = 0;
   };
 
-  for (let i = 0; i < options.ticks; i++) {
+  for (let i = 0; i < options.ticks; i += 1) {
     applyDue();
     // A replay reads no device: what the devices said is in the log.
     app.tick(options.delta, NO_INPUT);

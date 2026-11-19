@@ -21,7 +21,7 @@ export type Kernel = (
 export const kernels: Record<string, Kernel> = {
   // What the package's benchmark does: pos += vel * dt.
   move(start, end, px, py, vx, vy, dt) {
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       px[i]! += vx[i]! * dt;
       py[i]! += vy[i]! * dt;
     }
@@ -33,7 +33,7 @@ export const kernels: Record<string, Kernel> = {
   // rows write nothing the other reads, and the result is the same however
   // the rows are shared out.
   flock(start, end, px, py, vx, vy, dt, count) {
-    for (let i = start; i < end; i++) {
+    for (let i = start; i < end; i += 1) {
       let cx = 0;
       let cy = 0;
       let ax = 0;
@@ -42,7 +42,7 @@ export const kernels: Record<string, Kernel> = {
       const x = px[i]!;
       const y = py[i]!;
 
-      for (let k = -4; k <= 4; k++) {
+      for (let k = -4; k <= 4; k += 1) {
         if (k === 0) {
           continue;
         }
